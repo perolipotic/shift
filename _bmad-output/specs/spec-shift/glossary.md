@@ -37,10 +37,21 @@ Canonical vocabulary. Every consumer of this spec uses these terms exactly; intr
 
 - **Leave Allowance** — the Leave Days a Member is entitled to in a Leave Year.
 - **Leave Year** — the Organization-defined annual period against which Leave Allowance is measured. Need not align to the calendar year.
-- **Leave Record** — a date range of annual leave for one Member, entered by an Admin.
-- **Leave Day** — one date within a Leave Record on which the Member had a working Scheduled Shift. Only Leave Days draw down Leave Balance.
-- **Leave Balance** — Leave Allowance minus Leave Days consumed in the Leave Year.
-- **Leave Hours** — Nominal Durations of working Scheduled Shifts covered by a Leave Record. Reported separately; never counted into Band Hours or Total Hours.
-- **Conflict** — the state of a working Scheduled Shift whose Shift Roster includes a Member covered by a Leave Record on that date. First-class and visible; derived from the Schedule and Leave Records rather than stored, so it can never be missed. What is stored is its Conflict Resolution.
+- **Absence Type** — an Organization-defined kind of absence, given by its name and whether it draws down the Leave Allowance. Annual leave is the drawing type every Organization starts with. Never carries a reason. Its name is visible only to Admins and to the Member themselves.
+- **Leave Record** — a date range of absence of one Absence Type for one Member, entered by an Admin or created by approving a Leave Request. A one-date record may be a Half-day Record.
+- **Half-day Record** — a one-date Leave Record covering the first or the second half of the Member's working Scheduled Shift on that date. Costs 0.5 Leave Days.
+- **Leave Request** — a Member's own request for a Leave Record, pending until an Admin approves or rejects it, or the Member withdraws it. While pending, it derives nothing.
+- **Leave Day** — one date within a Leave Record on which the Member had a working Scheduled Shift. A Half-day Record counts 0.5. Only Leave Days of drawing Absence Types draw down Leave Balance, and the hours views report leave as Leave Days, never as hours.
+- **Carried-over Days** — the unused Leave Balance of the previous Leave Year that moves into the current one, capped by the Organization's setting and expiring on the date that setting names. Derived, never entered.
+- **Leave Balance** — Leave Allowance plus Carried-over Days not yet expired, minus Leave Days of drawing Absence Types consumed in the Leave Year.
+- **Conflict** — the state of a working Scheduled Shift whose Shift Roster includes a Member covered by a Leave Record on that date. First-class and visible; derived from the Schedule and Leave Records rather than stored, so it can never be missed. What is stored is its Conflict Resolution. *UI vocabulary:* the Croatian UI renders a Conflict as an item *za odluku* (absence in a shift), never as "konflikt"; this term stays in code and docs.
 - **Conflict Resolution** — the explicit Admin action clearing a Conflict: **Accept as Uncovered**, **Replace Member**, or **Amend Leave**.
 - **Uncovered Shift** — a working Scheduled Shift deliberately recorded as having no Member to work it, via Accept as Uncovered.
+- **Swap Request** — a Member's proposal to give a colleague their working Scheduled Shift, optionally taking one of the colleague's in return. The colleague accepts or declines; an Admin approves or rejects. Only approval writes anything, as Roster Overrides.
+
+## Staffing, notifications and history (added 2026-10-10)
+
+- **Minimum Members** — an Organization setting: how many people a working Scheduled Shift needs. Empty means no staffing signal at all.
+- **Short-staffed Shift** — a working Scheduled Shift whose people at work — its Shift Roster after Overrides, minus every Member absent that date — number fewer than Minimum Members. Derived, never stored; it warns and never blocks.
+- **Notification** — an email or push message telling a Member about their own schedule or requests, or an Admin about an item waiting for a decision. Written as a code and operands by the request that asserts the fact it reports.
+- **Change History** — the Admin-only, append-only record of every write to an Organization's records: author, time, and values before and after.

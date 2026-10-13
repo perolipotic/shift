@@ -44,6 +44,13 @@ Capabilities from `SPEC.md`. Each is an independently reviewable slice; `engine-
 - **CAP-15** — Annual leave against a per-member allowance. Recording leave leaves every shift in place; cost visible before saving; overlapping range refused; allowance minus used equals balance at all times within the current leave year; deleting restores the balance.
 - **CAP-16** — Leave/schedule conflicts resolved explicitly. A conflict exists for every affected working shift and stands until explicitly resolved; none expires or auto-clears; a configuration change that would remove a cause surfaces it for an explicit decision; detection alters no shift; non-working shifts raise nothing; exactly three resolutions, each attributable; a shift a resolution moves to leave drops out of the worked hours and lands as its leave day, never as hours (human decision 2026-10-10).
 - **CAP-17** — Role-appropriate landing surfaces. Member: today's shift stated in words when not working, next working shift with both times, band hours and total, leave used and remaining, seven days ahead, usable at phone width with no horizontal scrolling. Admin: today's coverage for any team count, unresolved-conflict count shown even at zero and matching the list exactly. Every dashboard figure equals its detail view.
+- **CAP-18** — An installable app that reads offline (added 2026-10-10, `sprint-change-proposal-2026-10-10-v1-scope-expansion.md`). Installs on Android and iOS. Offline, every surface already read shows its last snapshot with "as of {date time}" and refuses every write with a stated reason; a cached figure never sits beside a fresh one; signing out removes every cached snapshot from the device.
+- **CAP-19** — Leave requests (added 2026-10-10). A member requests a range and sees its cost before sending; a pending request creates no conflict, charges no balance and alters no shift; the admin sees, before deciding, its cost, the balance after it, its conflicts and any short-staffed shift; approval creates a Leave Record attributed to the approving admin, rejection creates nothing; a member withdraws a pending request; each decision is attributable.
+- **CAP-20** — Notifications (added 2026-10-10). Email reaches a member with an email address, push a member who installed the app and allowed it, and a member with neither is told so in their settings. A notification names facts and links to the surface; each member can turn each channel off; nothing about another member's leave or absence type reaches a member-role account.
+- **CAP-21** — Minimum members per shift (added 2026-10-10). A working shift whose people at work (roster after overrides, minus everyone absent that date, plus replacements) number fewer than the organization's setting is short-staffed. It is shown before every save that would cause it, marked on the calendar day and counted on admin Danas; nothing is blocked; with the setting empty nothing is reported.
+- **CAP-22** — Shift swaps (added 2026-10-10). A member proposes their shift and, optionally, a colleague's shift in return; the colleague accepts; an admin approves. Until approval the schedule is unchanged; approval writes Roster Overrides attributed to the admin; the admin first sees each member's hour delta, any leave or double booking and any short-staffed result, which warn and never block; either member can withdraw before the decision.
+- **CAP-23** — Absence types, carry-over and part-day absence (added 2026-10-10). An Absence Type is organization data with a name and whether it draws down the allowance; every type raises a conflict against a rostered working shift and only drawing types change the balance; carried-over days are derived from the previous leave year's unused balance, capped by the organization's setting, and expire on its date; a half-day record costs 0.5; no record carries a reason.
+- **CAP-24** — Change history (added 2026-10-10). Every write to a rule, an exception, a decision, a request, a member or a setting appears with its author, time and before/after values, deletions included; filterable by date range, member, team and kind; the PDF holds exactly the filtered rows; member-role accounts reach none of it. History begins at the migration that introduces it, earlier entries reconstructed from existing attribution columns.
 
 ### NonFunctional Requirements
 
@@ -53,15 +60,15 @@ From `quality-requirements.md`.
 - **Q2** Role enforcement at the same layer; administrative writes refused identically via UI or direct API. Needs its own policy design.
 - **Q3** Every organization-scoped record carries its organization reference; no record reachable without it.
 - **Q4** Uploaded branding assets readable only by members of the owning organization.
-- **Q5** Personal data limited to name, optional email, team, hours, leave. No health data, no absence-reason field.
+- **Q5** Personal data limited to name, optional email, team, hours, absence by type. No absence record has a reason, diagnosis or free-text field. An absence type's name is visible only to admins and to the member themselves; to anyone else it reads as absent. Where an organization names a type for sick leave, that fact is health data, held under that visibility rule and no wider (amended 2026-10-10, decision D1).
 - **Q6** An organization can never be left with zero admins; the last admin's role cannot be downgraded.
 - **Q7** Rotation projection, schedule generation, hour computation, leave-day counting and conflict detection are pure, framework-free, unit-testable; no React and no direct data-access dependency.
 - **Q8** Exactly one canonical implementation of each domain calculation. A declarative database *constraint* is not a calculation; a database routine that *computes* a domain answer is.
 - **Q9** Every constraint in SPEC.md and every rule in engine-rules.md has at least one automated assertion, executable without rendering a component or starting a browser.
 - **Q10** Two configuration fixtures minimum: the pilot, and the UJ-5 security organization whose bands and shifts diverge.
 - **Q11** Every override and conflict resolution records the acting admin, a timestamp and the affected records, outliving what it modified.
-- **Q12** The data model supports reconstructing who changed a schedule entry and when. No audit-log interface in MVP.
-- **Q13** Responsive web supporting mobile, tablet, desktop. No native application.
+- **Q12** Every write to an organization's records is reconstructable — author, time, before and after — and readable by admins on the change-history surface (CAP-24) (amended 2026-10-10).
+- **Q13** Responsive web supporting mobile, tablet, desktop. No native application. Installable as a PWA and readable offline (CAP-18, added 2026-10-10).
 - **Q14** Members primarily on phones. Small-viewport priority: today's shift, next shift, calendar, hours, leave.
 - **Q15** Admins primarily on desktop or tablet, with every administrative task also completable on mobile — degraded in comfort, never in capability.
 - **Q16** No screen requires horizontal scrolling at phone width; wide content scrolls within its own container.
@@ -72,6 +79,8 @@ From `quality-requirements.md`.
 - **Q21** No information conveyed by colour alone; shift types, conflicts, uncovered, overridden and leave each carry a non-colour signal.
 - **Q22** Calendar and both dashboards keyboard navigable, exposing meaningful labels to assistive technology.
 - **Q23** WCAG 2.1 AA target, without formal audit in MVP.
+- **Q24** A cached snapshot is never shown without its as-of time, never beside a fresh one, and never survives sign-out (added 2026-10-10).
+- **Q25** A notification is derived from a recorded fact, never a calculation the notifier makes on its own, and is sent at most once per recipient and channel (added 2026-10-10).
 
 **Localization contract** (`localization.md`) applies to every surface: no hard-coded user-facing string (L1, merge-blocking per L2); adding a language changes no component and no business logic (L3); domain returns keys, codes and values only (L4); a missing key degrades visibly and safely (L5); one centralized locale-aware formatting layer (L6); Croatian's three plural forms — an `count === 1` check is a defect (L7); every date and time in the organization timezone (L8). Terminology is settled: `Smjena` = Team, `Tip smjene` = Shift Type, `Sve smjene (N)` carries a count.
 
@@ -109,17 +118,17 @@ From `DESIGN.md` (visual) and `EXPERIENCE.md` (behavioural). Both are binding an
 - **UX-DR1** Implement the 48-token colour layer as a shadcn theme delta: `primary`, `destructive`, the six-slot working-shift ramp plus `shift-nonworking` and its `shift-nonworking-border`, and four modifier signals — each defined in *both* light and dark.
 - **UX-DR2** Light and dark both ship. The default follows `prefers-color-scheme`; a Sustav / Svijetla / Tamna control pins either theme, persisted per device in `localStorage` (changed 2026-09-25 by human decision — it originally forbade any toggle, setting or persisted preference). It sits beside Odjava: in the *Više* sheet on a phone and in the user (profile) menu on desktop (story 7.3).
 - **UX-DR3** Convert DESIGN.md's hex tokens to the space shadcn now emits (OKLCH), and contrast-verify ramp slots 3–6 in both themes before any second organization uses them. Slots 3–6 are marked `[ASSUMPTION]` and unexercised by the pilot.
-- **UX-DR4** `destructive` is reserved exclusively for an unresolved conflict — not delete buttons, not validation errors, not an organization's accent. Destructive actions use neutral styling plus a confirmation step.
+- **UX-DR4** `destructive` is reserved exclusively for an unresolved conflict — not delete buttons, not validation errors, not an organization's accent. Destructive actions use neutral styling plus a confirmation step. *Planned (2026-10-10, `sprint-change-proposal-2026-10-10-v1-scope-expansion.md`), rewritten by the story that ships it:* a `warning` token is reserved for a short-staffed shift (UX-DR48), never `destructive` and never an accent (story 11.3).
 - **UX-DR5** An organization's accent may tint the application shell and logo lockup only; never a shift state, a modifier, or `destructive`. It is chosen from named radio cards, with this rule said beside them (story 7.18).
 - **UX-DR6** Shift types are assigned ramp slots in creation order; beyond six a slot repeats and the always-visible label carries the distinction. No `shift-day` or `shift-night` token may exist.
 
 **Domain components**
 - **UX-DR7** `shift-cell` — base fill from the assigned slot, label always visible, time range shown when width allows and dropped rather than abbreviated, 30 px minimum height, tap opens day detail.
-- **UX-DR8** `shift-cell` modifiers, composable on any base and on each other: conflict (inset 2 px `destructive` + `⚠`), overridden (inset 2 px + `✎`), leave (hatch + `◷`), uncovered (hatch + `◌`). Conflict and uncovered render on an admin's calendar only (story 7.10).
+- **UX-DR8** `shift-cell` modifiers, composable on any base and on each other: conflict (inset 2 px `destructive` + `⚠`), overridden (inset 2 px + `✎`), leave (hatch + `◷`), uncovered (hatch + `◌`). Conflict and uncovered render on an admin's calendar only (story 7.10). *Planned (2026-10-10, `sprint-change-proposal-2026-10-10-v1-scope-expansion.md`), rewritten by the story that ships it:* a fifth modifier, short-staffed, with its own glyph and the `warning` token, on an admin's calendar only (story 11.3).
 - **UX-DR9** `duty-block` — groups consecutive working shifts with no non-working interval into one duty; end time as headline, span and total as metadata, progress bar, one leg per constituent shift marked done or in progress. Presentation only; the data remains two scheduled shifts on two dates.
 - **UX-DR10** `resolution-option` — radio-selection card, exactly one selected, no option primary-styled or labelled recommended, fixed order so muscle memory is possible. Nothing is preselected; the selected card takes a border, a ring and a filled radio, never a new background. ‹ › move to the adjacent unresolved conflict in queue order, without saving (decision 20, story 5.4b). "Zamijeni osobu" sits at position 2; its candidate picker is a sibling after the card, its own radio group, grouped `slobodan` / `radi taj dan · 24 h bez pauze` / `na godišnjem taj dan`, every candidate selectable and none preselected (story 5.4c). "Izmijeni godišnji odmor" sits at position 3, the three cards one arrow-key group; it states the computed range that would clear the conflict (rule A: start `d + 1`, end `d − 1` on the last day, removal of a one-day record), never preselected or recommended, records no resolution, and its Spremi opens the member page's leave amend prefilled, or the record's removal confirmation, with "Natrag na konflikte" back to the queue (story 5.4d). Story 7.9: the day detail's roster dialog groups its "Dolazi" candidates by the same three groups, as native option groups, every candidate selectable and none preselected.
 - **UX-DR11** `consequence-strip` — three fixed terms in a fixed order on every resolution option: coverage, the absent member (labelled *Odsutni član* since 2026-10-10: the first two cards state their leave day, "1 dan godišnjeg", never hours; amending states their hours as work), the leave balance. Three columns at every width, a phone's included; uncovered coverage carries lucide `CircleDashed` (story 5.4b). A replacement's coverage reads one higher and names the person picked, never "Nepokriveno"; its hours and balance read as uncovered's, because the absent member stays on leave (story 5.4c). Amending the leave reads the coverage one higher with "{ime} radi", the shift's hours as work ("12 h rada"), and the balance once the dropped days are given back over what that gives ("17 dana preostalo" / "+1 dan"), in the conflict date's leave year (story 5.4d).
-- **UX-DR12** `state-glyph` — the fixed four-mark vocabulary with a persistent legend anywhere glyphs render. Not a tooltip, not behind an info icon.
+- **UX-DR12** `state-glyph` — the fixed four-mark vocabulary with a persistent legend anywhere glyphs render. Not a tooltip, not behind an info icon. *Planned (2026-10-10, `sprint-change-proposal-2026-10-10-v1-scope-expansion.md`), rewritten by the story that ships it:* the vocabulary becomes five marks with short-staffed (story 11.3); the conflict mark's legend reads *čeka odluku* (story 9.1) and the leave mark's *odsutnost* (story 13.2).
 - **UX-DR13** Hour Band editor — name and start time only, with window, duration and midnight-crossing derived and read-only; a 24-hour partition bar with any gap hatched and flagged.
 - **UX-DR14** Pattern builder — ordered, reorderable, arbitrary length, the same shift type may repeat; cycle length, working steps and hours per cycle update live beneath it.
 - **UX-DR15** Cycle preview — renders the next full cycle from pattern, offsets and anchor date before saving.
@@ -132,9 +141,9 @@ From `DESIGN.md` (visual) and `EXPERIENCE.md` (behavioural). Both are binding an
 - **UX-DR20** Empty states state what is true, never absence. A zero count is still shown — `0 neriješenih konflikata` — because hiding it is indistinguishable from not having loaded. A filter that leaves no row says why and where instead (`Luka Knežević nije u smjeni Smjena B u listopadu 2026.` · `Luka Knežević je u smjeni Smjena A.`) and offers `Ukloni filtar: Smjena B` and `Poništi filtre`.
 - **UX-DR21** Loading uses skeletons matching final layout for the calendar grid and tables; no spinners on primary surfaces. A visited and an unvisited month must feel the same.
 - **UX-DR22** A refused save names the specific problem in hours and keeps every entered value.
-- **UX-DR23** Warnings appear at save time with the consequence in numbers and never block, and never persist as standing banners. The one thing a configuration save waits on is an erasure (AD-5): since story 5.5a, a rotation save that would erase an unresolved conflict opens a confirmation listing each, and saves only once every one is confirmed ("Potvrdi brisanje"); the warnings show beside them and still never block. Since story 5.5b the same confirmation guards a calendar roster change, saved or removed, beside the day detail. Since story 7.9 a change opened from the day detail — the roster dialog and the type dialog — computes *Što se mijenja* before its one Save (the type from and to, who leaves and arrives, each member's hour delta), from the same "after" snapshot as its erasure check; it informs and never blocks. Since story 7.12 the leave dialog computes, before its Save, the cost, the balance after it and the conflicts the record creates (an amend: which clear and which stay) through the domain's collision rule; none of it blocks, an over-balance range included.
+- **UX-DR23** Warnings appear at save time with the consequence in numbers and never block, and never persist as standing banners. The one thing a configuration save waits on is an erasure (AD-5): since story 5.5a, a rotation save that would erase an unresolved conflict opens a confirmation listing each, and saves only once every one is confirmed ("Potvrdi brisanje"); the warnings show beside them and still never block. Since story 5.5b the same confirmation guards a calendar roster change, saved or removed, beside the day detail. Since story 7.9 a change opened from the day detail — the roster dialog and the type dialog — computes *Što se mijenja* before its one Save (the type from and to, who leaves and arrives, each member's hour delta), from the same "after" snapshot as its erasure check; it informs and never blocks. Since story 7.12 the leave dialog computes, before its Save, the cost, the balance after it and the conflicts the record creates (an amend: which clear and which stay) through the domain's collision rule; none of it blocks, an over-balance range included. *Planned (2026-10-10, `sprint-change-proposal-2026-10-10-v1-scope-expansion.md`), rewritten by the story that ships it:* a short-staffed shift is the second named exception to "never persist as standing banners", after conflicts: it is a standing derived state on the calendar and admin Danas, and at save a block in *Što se mijenja* (`Smjena B, 14.10. Dan: rade 2 od najmanje 3`), never a quiet line (stories 11.2–11.4). The erasure dialog reads *Promjena uklanja N stavki koje čekaju odluku* (story 9.1).
 - **UX-DR24** Overridden state is identifiable on the calendar and in a list without opening detail; detail names author, timestamp, reason and the projected value replaced.
-- **UX-DR25** Past-but-unresolved conflicts stay in the queue, visually distinguished from upcoming ones. Since story 7.16, *Raspored* has *Neriješeni* (the default, its count kept at zero) and *Riješeni*, which lists the decided conflicts from `conflict_resolutions` only, each with its decision, the acting admin and the timestamp; a resolved conflict is never in the queue, and the tab is not an audit-log screen.
+- **UX-DR25** Past-but-unresolved conflicts stay in the queue, visually distinguished from upcoming ones. Since story 7.16, *Raspored* has *Neriješeni* (the default, its count kept at zero) and *Riješeni*, which lists the decided conflicts from `conflict_resolutions` only, each with its decision, the acting admin and the timestamp; a resolved conflict is never in the queue, and the tab is not an audit-log screen. *Planned (2026-10-10, `sprint-change-proposal-2026-10-10-v1-scope-expansion.md`), rewritten by the story that ships it:* the queue is *Za odluku*, its tabs *Čeka odluku* (default) and *Odlučeno* (story 9.1); it also lists pending leave and swap requests, and *Odlučeno* their decisions (stories 9.5, 12.4). *Odlučeno* stays a read of stored decisions; the change history is its own surface (UX-DR51).
 
 **Interaction**
 - **UX-DR26** 44 px minimum tap targets on touch, including calendar cells — which sets the real floor for grid density.
@@ -144,9 +153,9 @@ From `DESIGN.md` (visual) and `EXPERIENCE.md` (behavioural). Both are binding an
 - **UX-DR30** Month navigation symmetric in both directions across every month the calendar represents (0001-01…9999-12); no month unreachable or slower. Since story 7.4 one month toolbar (‹ month ▾ ›) on *Kalendar* and *Sati*: PgUp/PgDn step the month within it, and the month opens a twelve-month picker with the year's ‹ ›.
 
 **Information architecture**
-- **UX-DR31** Bottom tabs on mobile, sidebar on desktop — two layouts, one architecture. Member-role reaches five destinations (Danas, Kalendar, Sati, Godišnji, Ljudi) and no configuration surface at all. *Ljudi* is role-scoped, as *Sati* is: for a member it is the read-only directory of who is on which team (story 7.17). On a phone the bar is four fixed tabs plus *Više* and never scrolls; a member's tabs are Danas, Kalendar, Sati and Godišnji, and their *Više* holds Ljudi under *Pregled*, then the theme and Odjava (stories 7.3, 7.17).
-- **UX-DR32** The admin reaches the member's five destinations plus three admin-only ones — Raspored, Postavke rotacije, Organizacija — eight in all. The sidebar lists them in binding order: Danas, Kalendar, Sati, Godišnji, Raspored, Ljudi, Postavke rotacije, Organizacija. Sati, Godišnji and Ljudi are shared and role-scoped: Sati shows organization-wide hours to an admin, Godišnji shows an admin the leave overview of every member active today in place of their own tiles (story 7.15), and Ljudi shows an admin the members list where a member sees the directory (story 7.17). The sidebar has no group labels yet (deferred from story 7.3). On a phone an admin's tabs are Danas, Kalendar, Raspored, Ljudi; *Više* holds Sati and Godišnji (*Pregled*) and Postavke rotacije and Organizacija (*Postavke*) (story 7.3).
-- **UX-DR33** Build the 18 surfaces in the EXPERIENCE.md inventory. The member roster is one page for a member: *Ljudi* shows every active team with today's members as `Ime · čin · položaj`, their own team first and marked *tvoja smjena*, with a name search in `?trazi=` — read-only, with no allowance, balance, leave, hours, username or contact detail (story 7.17, CAP-5). One team's roster also stays inside team detail (`/smjene/$id`), reached from Danas. *Riješeni* (story 7.16) is a tab of the conflicts queue, not another surface. A member's *Sati* is titled *Moji sati* (story 7.14). An admin's *Godišnji* is the leave overview (story 7.15): *Osoba* (a link to the member page), *Smjena*, *Pravo*, *Iskorišteno* and *Preostalo* for the members active today, with `?trazi=` and `?sort=`, read-only; a member-role account is refused its data at the database (`leave_overview_records()`, 0034).
+- **UX-DR31** Bottom tabs on mobile, sidebar on desktop — two layouts, one architecture. Member-role reaches five destinations (Danas, Kalendar, Sati, Godišnji, Ljudi) and no configuration surface at all. *Ljudi* is role-scoped, as *Sati* is: for a member it is the read-only directory of who is on which team (story 7.17). On a phone the bar is four fixed tabs plus *Više* and never scrolls; a member's tabs are Danas, Kalendar, Sati and Godišnji, and their *Više* holds Ljudi under *Pregled*, then the theme and Odjava (stories 7.3, 7.17). *Planned (2026-10-10, `sprint-change-proposal-2026-10-10-v1-scope-expansion.md`), rewritten by the story that ships it:* a member's *Više* gains *Obavijesti* (story 10.3) and *Instaliraj* (story 8.4); their *Godišnji* gains *Zatraži godišnji* (story 9.3); their day detail gains *Predloži zamjenu* (story 12.2).
+- **UX-DR32** The admin reaches the member's five destinations plus three admin-only ones — Raspored, Postavke rotacije, Organizacija — eight in all. The sidebar lists them in binding order: Danas, Kalendar, Sati, Godišnji, Raspored, Ljudi, Postavke rotacije, Organizacija. Sati, Godišnji and Ljudi are shared and role-scoped: Sati shows organization-wide hours to an admin, Godišnji shows an admin the leave overview of every member active today in place of their own tiles (story 7.15), and Ljudi shows an admin the members list where a member sees the directory (story 7.17). The sidebar has no group labels yet (deferred from story 7.3). On a phone an admin's tabs are Danas, Kalendar, Raspored, Ljudi; *Više* holds Sati and Godišnji (*Pregled*) and Postavke rotacije and Organizacija (*Postavke*) (story 7.3). *Planned (2026-10-10, `sprint-change-proposal-2026-10-10-v1-scope-expansion.md`), rewritten by the story that ships it:* *Za odluku* replaces *Raspored* in the binding order and on the phone bar (story 9.1); the admin's *Više* gains *Povijest promjena* under *Pregled* (story 14.2).
+- **UX-DR33** Build the 18 surfaces in the EXPERIENCE.md inventory. The member roster is one page for a member: *Ljudi* shows every active team with today's members as `Ime · čin · položaj`, their own team first and marked *tvoja smjena*, with a name search in `?trazi=` — read-only, with no allowance, balance, leave, hours, username or contact detail (story 7.17, CAP-5). One team's roster also stays inside team detail (`/smjene/$id`), reached from Danas. *Riješeni* (story 7.16) is a tab of the conflicts queue, not another surface. A member's *Sati* is titled *Moji sati* (story 7.14). An admin's *Godišnji* is the leave overview (story 7.15): *Osoba* (a link to the member page), *Smjena*, *Pravo*, *Iskorišteno* and *Preostalo* for the members active today, with `?trazi=` and `?sort=`, read-only; a member-role account is refused its data at the database (`leave_overview_records()`, 0034). *Planned (2026-10-10, `sprint-change-proposal-2026-10-10-v1-scope-expansion.md`), rewritten by the story that ships it:* five more surfaces — request leave (9.3), request decision screen (9.4, 12.4), request swap (12.2), notification settings (10.3), change history (14.2) — bring the inventory from 18 to 23.
 
 **Voice and localization**
 - **UX-DR34** Croatian microcopy rules: state the fact not the absence; numbers not adjectives; no exclamation marks; second person singular informal; `19:00–07:00` with an en dash; `12.09.2026` date format. A data name (a team, a person) is never declined: it stands in apposition (`nije u smjeni Smjena B`), and a month in a sentence reads in the locative (`u listopadu 2026.`).
@@ -164,6 +173,17 @@ From `DESIGN.md` (visual) and `EXPERIENCE.md` (behavioural). Both are binding an
 - **UX-DR42** The compressed grid is the same component as the full grid with a narrower column treatment, not a separate mobile calendar.
 - **UX-DR43** Every administrative task completes on a phone; rotation configuration is the hardest case and the one to test first.
 - **UX-DR44** Hours export — one action on Organization hours, `Izvezi u Excel`, admin-only; exports the current period, filter and sort; the file's figures match the table exactly.
+
+**Added 2026-10-10** (`sprint-change-proposal-2026-10-10-v1-scope-expansion.md`), each binding from the story that ships it:
+
+- **UX-DR45** Install and offline — the install prompt sits in *Više* and is never a modal on first visit. Offline, a `Notice` reads `Bez veze · stanje od 10.10.2026. 14:32` above the surface, and every write control states that it needs a connection (stories 8.2–8.4).
+- **UX-DR46** *Za odluku* items — three kinds: absence in a shift, a leave request, a swap request. Each kind has its own decision screen; the queue is soonest-first across all kinds and each item names its kind in words. The UI never says *konflikt*: a collision item reads *Odsutnost u smjeni* (`{ime} je na godišnjem, a raspoređen je`), the count `3 čekaju odluku` in three plural forms, the button *Odluči*, the back link *Natrag na Za odluku* (stories 9.1, 9.5).
+- **UX-DR47** Request forms — a member's leave request: range, type (from story 13.2), half day (from 13.5), then the cost and the balance after it, and one *Pošalji*. A swap request: my shift, a colleague, an optional return shift, the colleague's own consequence, and one *Pošalji* (stories 9.3, 12.2).
+- **UX-DR48** Short-staffed — a fifth state glyph with a legend entry, its own `warning` token in light and dark, contrast-verified, never `destructive`, never accent, and a non-colour signal. Standing on the calendar and admin Danas (a card beside *Za odluku*, shown at zero); a block in *Što se mijenja* at save; in the consequence strip it lives in the coverage term (stories 11.2–11.4).
+- **UX-DR49** Notification settings — in *Više*: email on/off with the address, or `Nemaš upisan e-mail`; push on/off, or `Instaliraj aplikaciju za obavijesti` on iOS before install (story 10.3).
+- **UX-DR50** Absence type — a radio card group in the leave dialog and the request form. A member sees another member's absence as *odsutan*, never its type; the calendar ◷ legend reads *odsutnost* (story 13.2).
+- **UX-DR51** Change history — a table, stacked rows below 640 px, of time, author, kind, subject and *bilo → sada*; filter chips for period, member, team and kind; one `Izvezi u PDF` that exports exactly the filtered rows. Admin only (stories 14.2, 14.3).
+- **UX-DR52** Decided requests — *Odlučeno* lists decided leave and swap requests beside decided collisions, each with the decision, the acting admin and the time (stories 9.5, 12.4).
 
 ### FR Coverage Map
 
@@ -188,14 +208,21 @@ Capabilities are the functional requirements (see basis note above). Every capab
 | CAP-15 Annual leave against allowance | Epic 5 | leave records, cost preview, balance |
 | CAP-16 Conflicts resolved explicitly | Epic 5 | derived collisions, queue, three resolutions |
 | CAP-17 Role-appropriate landing surfaces | Epic 6 | member and admin dashboards |
+| CAP-18 Installable, reads offline | Epic 8 | manifest, service worker, persisted snapshots with as-of note |
+| CAP-19 Leave requests | Epic 9 | request record, member form, admin decision screen, *Za odluku* |
+| CAP-20 Notifications | Epic 10 | outbox, `notify` function, email, Web Push, settings |
+| CAP-21 Minimum members per shift | Epic 11 | `domain/staffing`, setting, save blocks, calendar mark, Danas card |
+| CAP-22 Shift swaps | Epic 12 | swap record, proposal, acceptance, admin decision |
+| CAP-23 Absence types, carry-over, half days | Epic 13 | absence types, allowance per leave year, carry-over, half-day records |
+| CAP-24 Change history | Epic 14 | `audit_events`, history surface, PDF export |
 
-**Non-functional allocation.** Q1–Q3 and Q6 land in Epic 1 and are re-asserted by every epic that adds a table. Q7–Q10 land in Epic 2 with the domain package and both fixtures, and each later epic extends the suite. Q11–Q12 land in Epic 3 with the first attributable writes. Q13–Q16 and Q21–Q23 are definition-of-done on every epic with a surface. Q17–Q18 are proven in Epic 3, Q19 in Epic 6, Q20 in Epic 1. The localization contract L1–L8 is definition-of-done everywhere.
+**Non-functional allocation.** Q1–Q3 and Q6 land in Epic 1 and are re-asserted by every epic that adds a table. Q7–Q10 land in Epic 2 with the domain package and both fixtures, and each later epic extends the suite. Q11–Q12 land in Epic 3 with the first attributable writes. Q13–Q16 and Q21–Q23 are definition-of-done on every epic with a surface. Q17–Q18 are proven in Epic 3, Q19 in Epic 6, Q20 in Epic 1. The localization contract L1–L8 is definition-of-done everywhere. Added 2026-10-10: Q24 lands in Epic 8; Q25 in Epic 10; the amended Q5 in Epic 13 and the amended Q12 in Epic 14; Q2 is re-asserted by Epics 9 and 12, which add the first member-role domain writes (own requests only, never an administrative write).
 
-**UX design requirement allocation.** UX-DR1–2, 4–5, 31–32, 34, 40 land in Epic 1 — the theme layer and the i18n layer are built once, first. UX-DR3, 6, 13–16, 23, 35, 43 land in Epic 2, including the ramp-slot contrast verification, which belongs where shift types are first assigned to slots. UX-DR7–8, 12, 18–21, 24, 26, 30, 33, 36–39, 41–42 land in Epic 3 with the calendar, skeleton loading included. UX-DR17, 29, 44 land in Epic 4. UX-DR10–11, 22, 25, 27–28 land in Epic 5. UX-DR9 (duty-block) lands in Epic 6. Epic 7 (sprint change 2026-10-02) revises UX-DR1, 2, 10, 16–17, 19–20, 23, 25, 29–34, 36 and 40 on shipped surfaces; each line is rewritten by the story that ships its change, not up front.
+**UX design requirement allocation.** UX-DR1–2, 4–5, 31–32, 34, 40 land in Epic 1 — the theme layer and the i18n layer are built once, first. UX-DR3, 6, 13–16, 23, 35, 43 land in Epic 2, including the ramp-slot contrast verification, which belongs where shift types are first assigned to slots. UX-DR7–8, 12, 18–21, 24, 26, 30, 33, 36–39, 41–42 land in Epic 3 with the calendar, skeleton loading included. UX-DR17, 29, 44 land in Epic 4. UX-DR10–11, 22, 25, 27–28 land in Epic 5. UX-DR9 (duty-block) lands in Epic 6. Epic 7 (sprint change 2026-10-02) revises UX-DR1, 2, 10, 16–17, 19–20, 23, 25, 29–34, 36 and 40 on shipped surfaces; each line is rewritten by the story that ships its change, not up front. Epics 8–14 (sprint change 2026-10-10) add UX-DR45–52 and revise UX-DR4, 8, 12, 23, 25 and 31–33 the same way: UX-DR45 in Epic 8, UX-DR46, 47 and 52 in Epic 9 (47 and 52 extended by Epic 12), UX-DR49 in Epic 10, UX-DR48 in Epic 11, UX-DR50 in Epic 13, UX-DR51 in Epic 14.
 
 ## Epic List
 
-Seven epics. Each stands alone and enables the next without requiring it. Epic 7 was added on 2026-10-02 by `sprint-change-proposal-2026-10-02-ux-redesign.md`; its four foundation stories (7.1–7.4) ship before Epic 6.
+Fourteen epics. Each stands alone and enables the next without requiring it. Epic 7 was added on 2026-10-02 by `sprint-change-proposal-2026-10-02-ux-redesign.md`; its four foundation stories (7.1–7.4) ship before Epic 6. Epics 8–14 were added on 2026-10-10 by `sprint-change-proposal-2026-10-10-v1-scope-expansion.md`, in priority order: former v2 items that ship in v1, before pilot go-live. Each is shippable on its own, so go-live may follow any finished epic.
 
 ### Epic 1: An organization exists, and its people can sign in
 
@@ -252,6 +279,62 @@ Every screen reads calm, minimal and simple on a phone and a desktop, in both th
 **Capabilities covered:** none exclusively — it reworks the surfaces of CAP-1, CAP-4, CAP-5, CAP-13, CAP-14, CAP-15 and CAP-16, and adds PRD FR-3a, FR-42b, FR-45a and FR-48a
 **Standalone:** every story improves a surface that already works; no story is required for any earlier epic to be correct.
 **Implementation notes:** source is `sprint-change-proposal-2026-10-02-ux-redesign.md` and the 27 approved decisions in `ux-designs/ux-shift-2026-10-01-redesign/README.md`. Foundations 7.1–7.4 ship before Epic 6; 7.5–7.18 follow Epic 6, ordered by dependency. Each story updates the DESIGN.md, EXPERIENCE.md and UX-DR lines it changes in the same PR, so no binding doc describes unbuilt UI.
+
+### Epic 8: The app installs, and the schedule reads without a connection (added 2026-10-10)
+
+A member adds Shift to their phone's home screen and opens it on a truck with no signal: the last schedule they saw is there, with the time it is from, and nothing pretends to save.
+
+**Capabilities covered:** CAP-18
+**Standalone:** every surface already works online; this epic makes it installable and readable offline.
+**Implementation notes:** amends AD-13 (a persisted snapshot renders only while offline, whole, labelled with its as-of time) in story 8.2. Q24 is proven here. The installed name is decided in 8.1, since the PRD's "Shift" is a working title.
+
+### Epic 9: A member asks for leave, and an admin decides (added 2026-10-10)
+
+A member requests a leave range from their phone and sees what it would cost. An admin sees the request in *Za odluku* with the conflicts it would raise and decides it; on approval the leave exists. Until then nothing in the schedule moved. The conflicts queue becomes *Za odluku*, and the UI stops saying *konflikt*.
+
+**Capabilities covered:** CAP-19
+**Standalone:** leave still works admin-entered; requests add a path into it.
+**Implementation notes:** amends AD-4 (*Za odluku* is the union of unresolved collisions and pending requests) and AD-10 (member-owned request rows, the first member-role domain writes) in story 9.2. Story 9.1 renames the shipped surfaces of 5.3b, 5.4, 6.3 and 7.16 and rewrites the 71 *konflikt* strings in `hr.json`.
+
+### Epic 10: People hear about what concerns them (added 2026-10-10)
+
+A member learns by email or push that their request was decided or their shifts changed; an admin learns that something waits in *Za odluku*. A member without an email address gets push once they install the app.
+
+**Capabilities covered:** CAP-20
+**Standalone:** every fact it reports already exists on a surface; notifications only carry it out.
+**Implementation notes:** an Architect pass (`bmad-architecture`, update intent) precedes 10.1. It amends AD-14 (exactly two Edge Functions: `admin-auth` and `notify`) and AD-17 (email provider and VAPID keys only in `notify`'s environment), and adds AD-18 (a notification is written to the outbox by the request that asserts its fact, as codes and operands; `notify` computes no domain answer). Shift reminders are out of v1. Push depends on Epic 8's service worker. Q25 is proven here.
+
+### Epic 11: A shift short of people is impossible to miss (added 2026-10-10)
+
+An organization sets how many people a working shift needs. Every save that would leave a shift short says so in numbers, the calendar marks the day, and admin Danas counts it. Nothing is ever blocked.
+
+**Capabilities covered:** CAP-21
+**Standalone:** a derived signal beside collisions; with the setting empty, nothing changes.
+**Implementation notes:** `domain/staffing`, derived on read (AD-1). Minimum members is current-state (AD-2 row, story 11.1), so moving it re-reports past dates, as hour bands do. It never reads fire rank or team position (FR-18a stays inert). Answers the deactivation open question (R7.4): a vacated shift shows as short-staffed.
+
+### Epic 12: Members swap shifts, and an admin signs it off (added 2026-10-10)
+
+A member proposes to give a shift to a colleague, optionally taking one of theirs in return. The colleague accepts, an admin approves in *Za odluku*, and the schedule changes by two roster overrides attributed to the admin.
+
+**Capabilities covered:** CAP-22
+**Standalone:** reuses Epic 9's request model and Epic 3's roster overrides.
+**Implementation notes:** the AD-10 member-owned pattern of 9.2, extended to the addressee. Approval runs the AD-5 erasure check and the Epic 11 staffing check. A return shift is optional, so one-way cover is a swap with no return (default adopted 2026-10-10).
+
+### Epic 13: Absence has a type, unused leave carries over, and a half day exists (added 2026-10-10)
+
+An organization records absence other than annual leave without recording why, carries unused leave into the next leave year with an expiry, and records half days at 0.5.
+
+**Capabilities covered:** CAP-23
+**Standalone:** existing leave becomes annual leave and reads as before.
+**Implementation notes:** amends AD-2 — absence type is current-state, leave allowance becomes **versioned per leave year** (story 13.3), because carry-over must read the previous year's allowance as it was. Q5 as amended (decision D1) is proven here. Whether the pilot records sick leave at all is asked at the presentation (story 13.1). Half-day default: one collision, and the worked half's interval counts in Band Hours (story 13.5).
+
+### Epic 14: Every change can be read back, and printed (added 2026-10-10)
+
+An admin reads who changed what and when — before and after, deletions included — filters it, and exports exactly what they filtered as a PDF.
+
+**Capabilities covered:** CAP-24
+**Standalone:** attribution already exists on every asserted row; this epic records every write and makes it readable.
+**Implementation notes:** an Architect pass precedes 14.1. It amends AD-3 (a second permitted trigger class: append-only audit triggers that compute and refuse nothing) and AD-11 (the change history reads `audit_events`), and resolves the spine's Deferred "conflict-resolution history". Admin only (decision D4). Q12 as amended is proven here.
 
 
 ---
@@ -1639,3 +1722,723 @@ So that I change one thing at a time.
 **Given** this story ships
 **When** it is merged
 **Then** the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change (DESIGN.md §Components, EXPERIENCE.md §Component Patterns and §IA)
+
+## Epic 8: The app installs, and the schedule reads without a connection
+
+A member adds Shift to their phone's home screen and opens it on a truck with no signal: the last schedule they saw is there, with the time it is from, and nothing pretends to save.
+
+Added 2026-10-10 by `sprint-change-proposal-2026-10-10-v1-scope-expansion.md` (approved that day). Epics 8–14 ship in priority order, after Epic 7.
+
+**Capabilities:** CAP-18 · **Governed by:** AD-13 (amended by 8.2), AD-14 · **Proves:** Q13, Q19, Q24 · **UX:** UX-DR31, 45
+
+### Story 8.1: The app is installable
+
+As a member,
+I want to install Shift on my phone's home screen,
+So that it opens like an app instead of a browser tab.
+
+**Depends on:** none.
+
+**Acceptance Criteria:**
+
+**Given** a supported browser on Android or iOS
+**When** the app is opened
+**Then** it offers a web app manifest with name, icons, theme colours for both themes and a start URL, and a service worker that caches the app shell (CAP-18)
+
+**Given** a new version is deployed
+**When** an installed app next opens online
+**Then** it states that a new version is ready and reloads on the member's action, never mid-task
+
+**Given** the installed name
+**When** this story is specified
+**Then** the human decides it, since the PRD's "Shift" is a working title; the manifest is not organization-specific in v1 (spine Deferred)
+
+**Given** this story ships
+**When** it is merged
+**Then** the spine's Stack table names the PWA plugin and its pinned version, and the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change
+
+### Story 8.2: Surfaces read offline
+
+As a member,
+I want the screens I already opened to show their last state with no connection,
+So that I can see when I work even without signal.
+
+**Depends on:** 8.1. Applies the AD-13 amendment row.
+
+**Acceptance Criteria:**
+
+**Given** a surface was read online
+**When** it opens offline
+**Then** it renders its last snapshot whole, from the persisted query cache (IndexedDB), under a `Notice` reading `Bez veze · stanje od {datum} {vrijeme}` (UX-DR45, Q24)
+**And** no figure from the cache is shown beside a fresh one (Q19, AD-13)
+
+**Given** the member opens Danas online
+**When** it loads
+**Then** their current and next month are prefetched so Danas and Kalendar read offline
+
+**Given** the connection returns
+**When** the surface refetches
+**Then** the as-of note disappears and the whole surface renders from the fresh snapshot
+
+**Given** this story ships
+**When** it is merged
+**Then** AD-13 carries the offline clause, and the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change (EXPERIENCE.md §State Patterns, UX-DR45)
+
+### Story 8.3: Offline writes are refused, and signing out clears the device
+
+As a member,
+I want the app to say plainly that nothing saves offline, and to leave nothing behind when I sign out,
+So that I never think a change saved when it did not, and a shared phone keeps nobody's data.
+
+**Depends on:** 8.2.
+
+**Acceptance Criteria:**
+
+**Given** the app is offline
+**When** any write control is shown
+**Then** it states that it needs a connection, and nothing is queued for later (no optimistic writes, UX-DR29)
+
+**Given** a member signs out
+**When** sign-out completes
+**Then** every persisted snapshot is removed from the device (Q24)
+
+**Given** this story ships
+**When** it is merged
+**Then** the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change (UX-DR45)
+
+### Story 8.4: Install from Više
+
+As a member,
+I want to find how to install the app in one place,
+So that I do not need someone to show me.
+
+**Depends on:** 8.1.
+
+**Acceptance Criteria:**
+
+**Given** the app is not installed
+**When** the member opens *Više*
+**Then** *Instaliraj* offers the browser's install prompt where it exists, and on iOS Safari states the Share → Add to Home Screen steps; it is never a modal on first visit (UX-DR45)
+
+**Given** the app is installed
+**When** *Više* opens
+**Then** *Instaliraj* is not shown
+
+**Given** this story ships
+**When** it is merged
+**Then** the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change (EXPERIENCE.md §IA, UX-DR31)
+
+## Epic 9: A member asks for leave, and an admin decides
+
+A member requests a leave range from their phone and sees what it would cost. An admin sees the request in *Za odluku* with the conflicts it would raise and decides it; on approval the leave exists. Until then nothing in the schedule moved.
+
+Added 2026-10-10 by `sprint-change-proposal-2026-10-10-v1-scope-expansion.md`. Story 9.1 renames the shipped surfaces of 5.3b, 5.4, 6.3 and 7.16; their original criteria stay in history.
+
+**Capabilities:** CAP-19 · **Governed by:** AD-4 and AD-10 (amended by 9.2), AD-5, AD-11 · **Proves:** Q2, Q11 · **UX:** UX-DR12, 23, 25, 31–33, 46, 47, 52
+
+### Story 9.1: Raspored becomes Za odluku, and no screen says konflikt
+
+As an admin,
+I want the place where decisions wait to be named for what it is,
+So that a member going on leave never reads as a conflict.
+
+**Depends on:** none.
+
+**Acceptance Criteria:**
+
+**Given** the sidebar, the phone bar and the queue page
+**When** they render
+**Then** *Raspored* reads *Za odluku*, its tabs *Čeka odluku* (default, count kept at zero) and *Odlučeno*, and the old URL redirects to the new one (UX-DR25, UX-DR32)
+
+**Given** any Croatian string
+**When** the locale resource is checked
+**Then** none contains *konflikt*: a collision item reads *Odsutnost u smjeni*, the count `# čeka odluku` / `# čekaju odluku` in three plural forms, the button *Odluči*, the legend ⚠ *čeka odluku*, the erasure dialog *Promjena uklanja N stavki koje čekaju odluku*, the back link *Natrag na Za odluku* (UX-DR46, L7)
+**And** a test fails the build if *konflikt* reappears in `hr.json`
+
+**Given** code, docs and the glossary
+**When** they name the domain state
+**Then** "Conflict" stays the domain term (DI-4, AD-4); only the Croatian UI changes
+
+**Given** this story ships
+**When** it is merged
+**Then** the e2e page objects follow the new names, and the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change (EXPERIENCE.md §IA, UX-DR12, 23, 25, 32, 46)
+
+### Story 9.2: The leave request record
+
+As a member,
+I want my leave request stored as mine and nothing more,
+So that asking changes nothing until an admin decides.
+
+**Depends on:** 9.1. Applies the AD-4 and AD-10 amendment rows.
+
+**Acceptance Criteria:**
+
+**Given** `leave_requests` and `leave_request_decisions`
+**When** a member-role account writes
+**Then** it may insert a request only for itself and withdraw only its own pending request; the member is read from the AD-10 helper, never from the request (AD-10, Q1–Q3)
+**And** it can write no decision, no Leave Record and nobody else's request, through the UI or a direct API call (Q2)
+
+**Given** a pending request
+**When** any surface derives conflicts, balance, hours or rosters
+**Then** the request changes nothing (R9.1)
+
+**Given** a request overlapping the member's existing leave or another pending request of theirs
+**When** it is inserted
+**Then** it is refused by schema shape (R9.4, AD-3)
+
+**Given** a decision
+**When** it is recorded
+**Then** it carries the acting admin and timestamp by column default (AD-11)
+
+### Story 9.3: A member requests leave and sees what it costs
+
+As a member,
+I want to ask for leave from Godišnji and see its cost before sending,
+So that I know what I am asking for.
+
+**Depends on:** 9.2.
+
+**Acceptance Criteria:**
+
+**Given** *Godišnji* for a member
+**When** they choose *Zatraži godišnji*
+**Then** a form takes the range and shows the cost in days and the balance after it before one *Pošalji*, computed by `domain/leave` (UX-DR47, CAP-19)
+
+**Given** the member's requests
+**When** *Godišnji* renders
+**Then** it lists pending, approved, rejected and withdrawn requests, and a pending one can be withdrawn
+
+**Given** this story ships
+**When** it is merged
+**Then** the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change (EXPERIENCE.md §IA, UX-DR31, 33, 47)
+
+### Story 9.4: An admin decides a leave request on its own screen
+
+As an admin,
+I want to see what approving a request would do before I decide,
+So that I approve with the conflicts in front of me.
+
+**Depends on:** 9.2.
+
+**Acceptance Criteria:**
+
+**Given** a pending request
+**When** the admin opens it
+**Then** it shows the cost, the balance after it, the conflicts approval would create, and — once Epic 11 has shipped — any short-staffed shift, computed by the same rules as a direct leave save (R9.3); none of it blocks
+
+**Given** the admin approves
+**When** the decision lands
+**Then** a Leave Record attributed to that admin exists, its conflicts appear, and the request reads approved (R9.2)
+
+**Given** the admin rejects
+**When** the decision lands
+**Then** nothing but the decision is recorded
+
+**Given** this story ships
+**When** it is merged
+**Then** the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change (UX-DR33, 46)
+
+### Story 9.5: Za odluku lists requests beside collisions
+
+As an admin,
+I want every item that waits for me in one queue,
+So that one count tells me what needs me.
+
+**Depends on:** 9.4.
+
+**Acceptance Criteria:**
+
+**Given** *Čeka odluku*
+**When** it renders
+**Then** it lists unresolved collisions and pending requests soonest-first, each naming its kind in words (UX-DR46)
+**And** the admin Danas count equals the queue exactly, shown at zero (FR-48, FR-53)
+
+**Given** *Odlučeno*
+**When** it renders
+**Then** it lists decided requests beside decided collisions, each with the decision, the acting admin and the time; it is still not a history surface (UX-DR52, FR-48a)
+
+**Given** this story ships
+**When** it is merged
+**Then** the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change (UX-DR25, 46, 52)
+
+## Epic 10: People hear about what concerns them
+
+A member learns by email or push that their request was decided or their shifts changed; an admin learns that something waits in *Za odluku*.
+
+Added 2026-10-10 by `sprint-change-proposal-2026-10-10-v1-scope-expansion.md`. An Architect pass (`bmad-architecture`, update intent) over AD-14, AD-17 and the new AD-18 precedes 10.1.
+
+**Capabilities:** CAP-20 · **Governed by:** AD-14 and AD-17 (amended), AD-18 (new), AD-8 · **Proves:** Q25 · **UX:** UX-DR31, 49
+
+### Story 10.1: The outbox and the notify function
+
+As the product owner,
+I want notifications to leave through one place that computes nothing,
+So that a message can never say something the data does not.
+
+**Depends on:** the Architect pass. Applies the AD-14, AD-17 and AD-18 amendment rows.
+
+**Acceptance Criteria:**
+
+**Given** `notification_outbox`
+**When** a fact is asserted that a notification reports
+**Then** the same request writes the outbox row as codes and operands (AD-18, AD-8)
+
+**Given** the `notify` Edge Function on its schedule
+**When** it runs
+**Then** it sends each row at most once per recipient and channel, writes only delivery columns, renders text from the shared locale resource by code, and computes no domain answer (Q25, AD-14)
+
+**Given** each environment
+**When** it is deployed
+**Then** the email provider key and the VAPID private key exist only in `notify`'s environment, and DEPLOY.md names them (AD-17)
+
+### Story 10.2: Email tells people what concerns them
+
+As a member,
+I want an email when something about my own shifts or requests changes,
+So that I find out without opening the app.
+
+**Depends on:** 10.1, 9.4.
+
+**Acceptance Criteria:**
+
+**Given** a member with an email address
+**When** their leave request is decided; their shifts change by a roster or shift-type override, a swap, or a rotation change effective within the next 30 days; or an admin records leave for them
+**Then** they receive one email naming the facts and linking to the surface (CAP-20)
+
+**Given** a new item in *Za odluku*
+**When** it is created
+**Then** every admin with an email address receives one email
+
+**Given** any email to a member-role account
+**When** it is rendered
+**Then** it names nothing about another member's leave or absence type (Q5)
+
+### Story 10.3: Notification settings in Više
+
+As a member,
+I want to turn each kind of notification on or off,
+So that I get only what I want.
+
+**Depends on:** 10.2.
+
+**Acceptance Criteria:**
+
+**Given** *Više* → *Obavijesti*
+**When** it opens
+**Then** email has an on/off with the address, or reads `Nemaš upisan e-mail`; push has an on/off, or reads `Instaliraj aplikaciju za obavijesti` where install is required (UX-DR49)
+
+**Given** a channel turned off
+**When** an event occurs
+**Then** nothing is sent on that channel
+
+**Given** this story ships
+**When** it is merged
+**Then** the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change (EXPERIENCE.md §IA, UX-DR31, 33, 49)
+
+### Story 10.4: Web Push reaches members without email
+
+As a member without an email address,
+I want push notifications once I install the app,
+So that I am not left out.
+
+**Depends on:** 10.3, 8.1.
+
+**Acceptance Criteria:**
+
+**Given** an installed app with permission granted
+**When** the member turns push on
+**Then** a subscription is stored for that member only, and the same events as email arrive as push (CAP-20)
+
+**Given** iOS before install
+**When** push settings render
+**Then** they state that push needs the installed app (iOS 16.4+)
+
+**Given** a subscription the push service reports gone
+**When** `notify` sends to it
+**Then** it is removed and nothing else changes
+
+## Epic 11: A shift short of people is impossible to miss
+
+An organization sets how many people a working shift needs. Every save that would leave a shift short says so in numbers, the calendar marks the day, and admin Danas counts it. Nothing is ever blocked.
+
+Added 2026-10-10 by `sprint-change-proposal-2026-10-10-v1-scope-expansion.md`.
+
+**Capabilities:** CAP-21 · **Governed by:** AD-1, AD-2 (amended by 11.1), AD-7, AD-8 · **Proves:** Q9, Q21 · **UX:** UX-DR4, 8, 12, 23, 48
+
+### Story 11.1: The staffing rule and the minimum-members setting
+
+As an admin,
+I want to set how many people a shift needs,
+So that the app can tell me where a shift falls short.
+
+**Depends on:** none. Applies the AD-2 row for minimum members (current-state).
+
+**Acceptance Criteria:**
+
+**Given** `domain/staffing`
+**When** it derives a working Scheduled Shift
+**Then** people at work = the roster after overrides, minus everyone absent that date, plus replacements (R10.1), and the shift is short-staffed when that is below the minimum (R10.2), derived on read and never stored (R10.3, AD-1)
+**And** the R10.5 worked example holds against both fixtures: pilot teams of 4, minimum 3 — one member on leave leaves 3 at work, not short; two on leave is short (AD-15)
+**And** it never reads fire rank or team position (FR-18a)
+
+**Given** *Organizacija*
+**When** the admin sets *Najmanje ljudi u smjeni*
+**Then** it saves a positive whole number or empty; empty reports nothing; the demo seed sets 3
+
+**Given** this story ships
+**When** it is merged
+**Then** the spine's AD-2 table carries the row, and the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change
+
+### Story 11.2: Every save that can cause it shows a short-staffed shift
+
+As an admin,
+I want to see before saving that a change leaves a shift short,
+So that I never find out on the day.
+
+**Depends on:** 11.1.
+
+**Acceptance Criteria:**
+
+**Given** the leave dialog, a request approval, the roster and type dialogs, a conflict resolution, a deactivation or a rotation save
+**When** the change would leave a working shift short-staffed
+**Then** *Što se mijenja* shows a block, not a quiet line: `Smjena B, 14.10. Dan: rade 2 od najmanje 3`, from the same "after" snapshot as its erasure check (UX-DR48, UX-DR23)
+**And** the save still goes through (R10.4)
+
+**Given** a conflict resolution
+**When** its consequence strip renders
+**Then** the coverage term states the people at work against the minimum (UX-DR11)
+
+**Given** this story ships
+**When** it is merged
+**Then** the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change (UX-DR11, 23, 48)
+
+### Story 11.3: The calendar day marks a short-staffed shift
+
+As an admin,
+I want short-staffed days marked on the calendar,
+So that I see them without opening each day.
+
+**Depends on:** 11.1.
+
+**Acceptance Criteria:**
+
+**Given** an admin's calendar
+**When** a working shift is short-staffed
+**Then** its cell carries a fifth glyph and the `warning` token, with a legend entry, never `destructive` or accent, and never by colour alone (UX-DR8, 12, 48, Q21)
+**And** the cell's accessible label names it
+
+**Given** day detail
+**When** it opens on that shift
+**Then** it states `rade 2 od najmanje 3`
+
+**Given** this story ships
+**When** it is merged
+**Then** the `warning` token is defined in light and dark and contrast-verified, and the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change (DESIGN.md §Colors, UX-DR4, 8, 12, 48)
+
+### Story 11.4: Admin Danas counts short-staffed shifts
+
+As an admin,
+I want Danas to tell me how many shifts are short,
+So that I see it on landing.
+
+**Depends on:** 11.3.
+
+**Acceptance Criteria:**
+
+**Given** admin Danas with the setting on
+**When** it renders
+**Then** a card beside *Za odluku* counts short-staffed shifts ahead, shown at zero, linking to their dates (UX-DR48, UX-DR20)
+**And** the count equals the calendar marks from the same snapshot (AD-13, Q19)
+
+**Given** the setting is empty
+**When** Danas renders
+**Then** the card is not shown
+
+**Given** this story ships
+**When** it is merged
+**Then** the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change (EXPERIENCE.md §Key Flows, UX-DR48)
+
+## Epic 12: Members swap shifts, and an admin signs it off
+
+A member proposes to give a shift to a colleague, optionally taking one of theirs in return. The colleague accepts, an admin approves in *Za odluku*, and the schedule changes by roster overrides attributed to the admin.
+
+Added 2026-10-10 by `sprint-change-proposal-2026-10-10-v1-scope-expansion.md`. A return shift is optional (default adopted 2026-10-10).
+
+**Capabilities:** CAP-22 · **Governed by:** AD-4, AD-5, AD-10, AD-11 · **Proves:** Q2, Q11 · **UX:** UX-DR31, 33, 46, 47, 52
+
+### Story 12.1: The swap request record
+
+As a member,
+I want my swap proposal stored as a proposal,
+So that nothing moves until it is agreed and approved.
+
+**Depends on:** 9.2.
+
+**Acceptance Criteria:**
+
+**Given** `swap_requests` and their decisions
+**When** they are written
+**Then** a proposal names the proposer's shift (date, team) and the addressee, and optionally the addressee's shift in return; its states are proposed → accepted or declined → approved or rejected, or withdrawn
+
+**Given** RLS
+**When** a member-role account writes
+**Then** only the proposer inserts and withdraws, only the addressee accepts or declines, and only an admin approves or rejects, through the UI or a direct API call (AD-10, Q2)
+
+**Given** any state before approval
+**When** a surface derives the schedule
+**Then** nothing changes (R9.1)
+
+### Story 12.2: A member proposes a swap from the day detail
+
+As a member,
+I want to propose a swap from my shift's day detail,
+So that I ask for it where I see the shift.
+
+**Depends on:** 12.1.
+
+**Acceptance Criteria:**
+
+**Given** the member's own working shift in day detail
+**When** they choose *Predloži zamjenu*
+**Then** a form takes a colleague and an optional return shift, shows each member's consequence in hours, and sends with one *Pošalji* (UX-DR47)
+
+**Given** this story ships
+**When** it is merged
+**Then** the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change (EXPERIENCE.md §IA, UX-DR31, 33, 47)
+
+### Story 12.3: The colleague accepts or declines
+
+As a member,
+I want to answer a swap addressed to me from Danas,
+So that I agree before an admin sees it.
+
+**Depends on:** 12.2.
+
+**Acceptance Criteria:**
+
+**Given** a swap addressed to the member
+**When** Danas renders
+**Then** it shows the swap and its consequence for them, with *Prihvati* and *Odbij*
+
+**Given** acceptance
+**When** it lands
+**Then** the swap enters *Za odluku* for admins; a decline closes it and the proposer sees it declined
+
+**Given** this story ships
+**When** it is merged
+**Then** the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change
+
+### Story 12.4: An admin decides a swap on its own screen
+
+As an admin,
+I want to see what a swap does before approving it,
+So that a swap never leaves a shift short or puts someone on leave to work.
+
+**Depends on:** 12.3, 11.1.
+
+**Acceptance Criteria:**
+
+**Given** an accepted swap
+**When** the admin opens it
+**Then** it shows each member's hour delta, any leave or double booking, and any short-staffed result; none blocks (CAP-22, R9.3)
+
+**Given** approval
+**When** it is saved
+**Then** it writes Roster Overrides replacing the proposer with the addressee, and the addressee with the proposer where a return shift exists, with reason `swap`, attributed to the admin (R9.2, AD-11), through the AD-5 erasure check
+
+**Given** *Odlučeno*
+**When** it renders
+**Then** it lists the decided swap with the decision, the admin and the time (UX-DR52)
+
+**Given** this story ships
+**When** it is merged
+**Then** the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change (UX-DR33, 46, 52)
+
+## Epic 13: Absence has a type, unused leave carries over, and a half day exists
+
+An organization records absence other than annual leave without recording why, carries unused leave into the next leave year with an expiry, and records half days at 0.5.
+
+Added 2026-10-10 by `sprint-change-proposal-2026-10-10-v1-scope-expansion.md`. It changes the leave surfaces of 5.1, 5.2, 7.12 and 7.15 through new stories; their original criteria stay in history.
+
+**Capabilities:** CAP-23 · **Governed by:** AD-2 (amended by 13.1 and 13.3), AD-3, AD-8 · **Proves:** Q5 (amended), Q9, Q19 · **UX:** UX-DR12, 17, 47, 50
+
+### Story 13.1: Absence types are organization data
+
+As an admin,
+I want to define the kinds of absence my organization records,
+So that sick leave or training is not recorded as annual leave.
+
+**Depends on:** none. Applies the AD-2 row for absence type (current-state).
+
+**Acceptance Criteria:**
+
+**Given** `absence_types`
+**When** an admin defines one
+**Then** it has a name and whether it draws down the allowance, and no reason, diagnosis or free-text field exists on it or on any Leave Record (Q5)
+
+**Given** an existing organization
+**When** the migration runs
+**Then** annual leave is seeded as a drawing type and every existing Leave Record becomes annual leave, its figures unchanged
+
+**Given** this story is specified
+**When** the pilot's needs are confirmed at the presentation
+**Then** whether the pilot records sick leave at all is recorded in the story spec
+
+### Story 13.2: Leave has a type everywhere it is recorded or reported
+
+As an admin,
+I want to choose the type when recording absence and see it reported by type,
+So that hours and balances stay right.
+
+**Depends on:** 13.1.
+
+**Acceptance Criteria:**
+
+**Given** the leave dialog and the request form
+**When** they open
+**Then** a radio card group chooses the type (UX-DR50, UX-DR47)
+
+**Given** any type
+**When** it covers a rostered working shift
+**Then** it raises a conflict; only drawing types change the balance (CAP-23)
+
+**Given** another member's absence
+**When** a member-role account sees it
+**Then** it reads *odsutan*, never the type (Q5)
+
+**Given** Sati and the Excel file
+**When** they render
+**Then** they show a days column per drawing type and one for the rest, named by organization data (DI-8, FR-42a)
+
+**Given** this story ships
+**When** it is merged
+**Then** the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change (UX-DR12, 17, 50)
+
+### Story 13.3: The allowance is set per leave year
+
+As an admin,
+I want each member's allowance recorded per leave year,
+So that last year's figures stay what they were.
+
+**Depends on:** none. Applies the AD-2 row for leave allowance (versioned per leave year).
+
+**Acceptance Criteria:**
+
+**Given** `leave_allowances`
+**When** the migration runs
+**Then** each member's current single value becomes their allowance for the current leave year, and every balance reads as before
+
+**Given** an allowance changed for this year
+**When** a past year's balance is derived
+**Then** it uses that year's allowance
+
+### Story 13.4: Unused leave carries over and expires
+
+As a member,
+I want unused leave carried into the next year until its expiry,
+So that days I did not take are not lost at the turn of the year.
+
+**Depends on:** 13.3.
+
+**Acceptance Criteria:**
+
+**Given** the organization's carry-over setting (maximum days, expiry date; Croatian practice is 30.06.)
+**When** a leave year begins
+**Then** carried-over days are derived from the previous year's unused balance, capped by the maximum, and expire on the date (R4.13–R4.15); nothing derived is stored (AD-1)
+
+**Given** a drawing record in the new year
+**When** its cost is charged
+**Then** carried days are consumed before the current allowance
+
+**Given** the member's tiles and the leave overview
+**When** they render
+**Then** they show carried days and their expiry, and allowance plus carried minus used equals balance on every row (Q19)
+
+**Given** this story ships
+**When** it is merged
+**Then** the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change
+
+### Story 13.5: A half-day record costs half a day
+
+As an admin,
+I want to record a half day,
+So that half a shift away is not charged as a whole day.
+
+**Depends on:** 13.2.
+
+**Acceptance Criteria:**
+
+**Given** a one-date record
+**When** the admin marks it a half day, first or second half of the shift
+**Then** it costs 0.5 (CAP-23)
+
+**Given** a half-day record on a rostered working shift
+**When** collisions and hours derive
+**Then** it raises one collision, and the worked half's interval counts in Band Hours by intersection (DI-7); the story spec may refine this default
+
+**Given** this story ships
+**When** it is merged
+**Then** the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change (UX-DR47, 50)
+
+## Epic 14: Every change can be read back, and printed
+
+An admin reads who changed what and when — before and after, deletions included — filters it, and exports exactly what they filtered as a PDF.
+
+Added 2026-10-10 by `sprint-change-proposal-2026-10-10-v1-scope-expansion.md`. An Architect pass over AD-3 and AD-11 precedes 14.1. Admin only (decision D4).
+
+**Capabilities:** CAP-24 · **Governed by:** AD-3 and AD-11 (amended by 14.1), AD-13 · **Proves:** Q11, Q12 (amended) · **UX:** UX-DR32, 33, 51
+
+### Story 14.1: Every change is recorded in the change history
+
+As an admin,
+I want every write recorded with its author and before/after values,
+So that a deletion leaves a trace.
+
+**Depends on:** the Architect pass. Applies the AD-3 and AD-11 amendment rows.
+
+**Acceptance Criteria:**
+
+**Given** every organization table
+**When** a row is inserted, updated or deleted
+**Then** an append-only trigger copies `OLD`/`NEW`, `auth.uid()` and `now()` into `audit_events`, computing and refusing nothing (AD-3); the Q6 trigger stays the only refusing one
+
+**Given** RLS on `audit_events`
+**When** a member-role account reads
+**Then** it reads nothing, through the UI or a direct API call (Q2, D4)
+
+**Given** the migration
+**When** it runs
+**Then** history before it is backfilled from existing attribution columns where they exist, and deletions before it are stated as unrecoverable
+
+### Story 14.2: An admin reads the change history
+
+As an admin,
+I want to read who changed what, filtered,
+So that I can answer what happened without asking around.
+
+**Depends on:** 14.1.
+
+**Acceptance Criteria:**
+
+**Given** *Povijest promjena* under *Pregled*
+**When** it opens
+**Then** a table (stacked rows below 640 px) shows time, author, kind, subject and *bilo → sada* in words from codes, with chips for period, member, team and kind (UX-DR51, L4)
+
+**Given** this story ships
+**When** it is merged
+**Then** the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change (EXPERIENCE.md §IA, UX-DR32, 33, 51)
+
+### Story 14.3: The change history exports to PDF
+
+As an admin,
+I want to export the filtered history as a PDF,
+So that I can hand it on.
+
+**Depends on:** 14.2.
+
+**Acceptance Criteria:**
+
+**Given** a filtered history
+**When** the admin chooses `Izvezi u PDF`
+**Then** the file holds exactly the filtered rows in their order, built from the rendered snapshot and never a second read, with the organization name, the period and the generation time (UX-DR51, AD-13)
+**And** the PDF writer is lazily loaded in `apps/web` only, and the spine's Stack table names its pinned version
