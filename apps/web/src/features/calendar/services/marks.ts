@@ -1,4 +1,6 @@
 import {
+  CALENDAR_FETCH_FETCHING,
+  CALENDAR_FETCH_PAUSED,
   CALENDAR_UNAVAILABLE,
   type CalendarReadFailure,
   type CalendarSnapshot,
@@ -33,10 +35,20 @@ import type { MemberRole } from '@/features/navigation/utils/destinations';
  * cannot be trusted — and any `RangeError` of the derivation — make the whole
  * calendar unavailable, logged, rather than a month drawn with its marks
  * missing or a resolved conflict still marked.
+ *
+ * A FAILED READ BEING READ AGAIN IS LOADING (as *Sati*'s, story 5.3d): the
+ * retry's press shows as the skeleton, not as the same alert standing still.
+ *
+ * ROWS NEWER THAN THE SNAPSHOT ARE A SKEW, NOT A BREAK (story 5.5d's edge
+ * case). The leave and resolution reads can land after a member or team was
+ * added and before the cached snapshot is read again; their rows then name an
+ * id the snapshot does not hold yet. That is unavailable with the RETRY —
+ * which re-reads the snapshot — and loading while the snapshot is being read
+ * again (`useSnapshotSkewRefresh` re-reads it once by itself). The rows are
+ * never dropped: a row the snapshot cannot place may still be a conflict on
+ * the new member's or team's shift, and a month drawn without it would hide
+ * it.
  */
-
-/** TanStack Query's name for a fetch it has not started (offline). */
-const FETCH_PAUSED = 'paused';
 
 /** The role whose marks carry every collision and every member's leave. */
 const ADMIN_ROLE: MemberRole = 'admin';
@@ -54,7 +66,8 @@ export type CalendarMarksState =
       readonly kind: typeof MARKS_UNAVAILABLE;
       /**
        * Whether reading again can change the answer: true for a read that
-       * failed or is paused offline; false for rows that answered but cannot
+       * failed or is paused offline, or rows naming a member or team the
+       * snapshot does not hold yet; false for rows that answered but cannot
        * be trusted, or a derivation the domain refused — the same rows would
        * be refused again.
        */
@@ -119,22 +132,94 @@ export function calendarMarksOf(
 
 /** Whether a read failed or is paused offline, a failed refetch over cached rows included. */
 function readFailed(answer: LeaveRowsAnswer): boolean {
-  return answer.isError || answer.fetchStatus === FETCH_PAUSED || (!answer.isPending && answer.data === undefined);
+  return answer.isError || answer.fetchStatus === CALENDAR_FETCH_PAUSED || (!answer.isPending && answer.data === undefined);
+}
+
+/** Whether a failed read is being read again: a retry in flight. */
+function retrying(answer: LeaveRowsAnswer): boolean {
+  return answer.isError && answer.fetchStatus === CALENDAR_FETCH_FETCHING;
+}
+
+/** The member a leave or resolution row names. */
+const MEMBER_COLUMN = 'member_id';
+/** The team a resolution row names. */
+const TEAM_COLUMN = 'team_id';
+
+/** The text at `column` of a row that is a record, or `null`: anything else is the parser's to refuse. */
+function idAt(row: unknown, column: string): string | null {
+  if (typeof row !== 'object' || row === null) return null;
+
+  const value = (row as Record<string, unknown>)[column];
+
+  return typeof value === 'string' ? value : null;
+}
+
+/**
+ * The ids an admin's leave and resolution rows name that `snapshot` does not
+ * hold — `member:<id>` and `team:<id>`, sorted and distinct — so a skew
+ * between the reads is told apart from a row that cannot be trusted. A
+ * member's own rows always name the viewer, so they name none.
+ */
+export function unknownSnapshotIdsOf(
+  snapshot: CalendarSnapshot,
+  leaveRows: readonly unknown[] | undefined,
+  resolutionRows: readonly unknown[] | undefined,
+): readonly string[] {
+  if (!readsOrganizationLeave(snapshot.viewer.role)) return [];
+
+  const members = new Set(snapshot.members.map((member) => member.id));
+  const teams = new Set(snapshot.teams.map((team) => team.id));
+  const unknown = new Set<string>();
+
+  for (const row of [...(leaveRows ?? []), ...(resolutionRows ?? [])]) {
+    const memberId = idAt(row, MEMBER_COLUMN);
+
+    if (memberId !== null && !members.has(memberId)) unknown.add(`member:${memberId}`);
+  }
+
+  for (const row of resolutionRows ?? []) {
+    const teamId = idAt(row, TEAM_COLUMN);
+
+    if (teamId !== null && !teams.has(teamId)) unknown.add(`team:${teamId}`);
+  }
+
+  return [...unknown].sort();
+}
+
+/** No id the snapshot lacks: {@link snapshotSkewOf}'s answer when nothing needs reading again. */
+export const NO_SKEW = '';
+
+/**
+ * {@link unknownSnapshotIdsOf} as one text — {@link NO_SKEW} for none or no
+ * snapshot yet — so the re-read asks once for each distinct set.
+ */
+export function snapshotSkewOf(
+  snapshot: CalendarSnapshot | null,
+  leaveRows: readonly unknown[] | undefined,
+  resolutionRows: readonly unknown[] | undefined,
+): string {
+  return snapshot === null ? NO_SKEW : unknownSnapshotIdsOf(snapshot, leaveRows, resolutionRows).join(' ');
 }
 
 /**
  * What the leave read — and, for an admin, the resolution read (story 5.4a);
  * a member's are not read, and pass `null`; an admin's `null` is unavailable — give the calendar
- * once the snapshot is in: unavailable when either failed or is paused
- * offline, or its rows are refused; loading while either is pending;
- * otherwise the marks. A `RangeError` is logged and is unavailable; nothing
- * else is caught.
+ * once the snapshot is in: loading while either is pending or a failed one
+ * is being read again; unavailable when either failed or is paused offline,
+ * or its rows are refused; otherwise the marks. Rows naming a member or team
+ * the snapshot does not hold yet ({@link unknownSnapshotIdsOf}) are loading
+ * while `snapshotFetching` — the snapshot being read again — and otherwise
+ * unavailable WITH the retry. A `RangeError` is logged and is unavailable;
+ * nothing else is caught.
  */
 export function calendarMarksStateOf(
   snapshot: CalendarSnapshot,
   answer: LeaveRowsAnswer,
   resolutions: LeaveRowsAnswer | null,
+  snapshotFetching = false,
 ): CalendarMarksState {
+  if (retrying(answer) || (resolutions !== null && retrying(resolutions))) return { kind: MARKS_LOADING };
+
   if (readFailed(answer) || (resolutions !== null && readFailed(resolutions))) {
     return { kind: MARKS_UNAVAILABLE, retryable: true };
   }
@@ -155,6 +240,10 @@ export function calendarMarksStateOf(
   const resolutionRows = admin ? resolutions?.data : [];
 
   if (answer.data === undefined || resolutionRows === undefined) return { kind: MARKS_LOADING };
+
+  if (unknownSnapshotIdsOf(snapshot, answer.data, resolutionRows).length > 0) {
+    return snapshotFetching ? { kind: MARKS_LOADING } : { kind: MARKS_UNAVAILABLE, retryable: true };
+  }
 
   try {
     return { kind: MARKS_READY, marks: calendarMarksOf(snapshot, answer.data, resolutionRows) };

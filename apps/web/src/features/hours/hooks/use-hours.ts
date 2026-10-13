@@ -2,13 +2,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
 import { readsOrganizationLeave } from '@/features/calendar/services/marks';
-import {
-  CALENDAR_KEY,
-  CALENDAR_READ_TABLE,
-  calendarQueryOptions,
-  type CalendarMembersRpc,
-} from '@/features/calendar/services/snapshot';
-import { calendarTodayOf } from '@/features/calendar/utils/month';
+import { useCalendarSnapshot } from '@/features/calendar/hooks/use-calendar-snapshot';
+import { CALENDAR_KEY } from '@/features/calendar/services/snapshot';
 import {
   CONFLICT_RESOLUTIONS_TABLE,
   MY_CONFLICT_RESOLUTIONS_KEY,
@@ -45,6 +40,7 @@ import {
   type MyLeaveRecordsRpc,
   type OrganizationLeaveRecordsTable,
 } from '@/features/leave/services/leave-list';
+import { useOrganizationToday } from '@/hooks/organization-today';
 import { supabaseClient } from '@/lib/supabase/client';
 
 /**
@@ -75,13 +71,7 @@ import { supabaseClient } from '@/lib/supabase/client';
  * leave write names both keys too, and the retry reads them again.
  */
 export function useHours(search: HoursSearch, go: (next: HoursSearch) => void) {
-  const answer = useQuery(
-    calendarQueryOptions(
-      () => supabaseClient().from(CALENDAR_READ_TABLE),
-      // As the calendar's: the client's `rpc` is wider than the calls made.
-      () => supabaseClient() as unknown as CalendarMembersRpc,
-    ),
-  );
+  const answer = useCalendarSnapshot();
   const { snapshot, refusal, loading } = hoursSnapshotStateOf(answer);
   const role = snapshot === null ? null : snapshot.viewer.role;
   const organizationLeave = useQuery({
@@ -154,7 +144,8 @@ export function useHours(search: HoursSearch, go: (next: HoursSearch) => void) {
       resolutionsFetchStatus,
     ],
   );
-  const today = snapshot === null ? null : calendarTodayOf(snapshot, new Date());
+  // The organization's today, moved at its midnight (the `Ovaj mjesec` target included).
+  const { today } = useOrganizationToday(snapshot === null ? null : snapshot.timeZone);
   const { mjesec, smjena, osoba, sort, smjer } = search;
   // Worked out once per snapshot, leave, search and day, not on every render.
   const surface = useMemo(

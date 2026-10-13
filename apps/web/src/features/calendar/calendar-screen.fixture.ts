@@ -22,6 +22,10 @@
 export const CALENDAR_SCREEN_PARTS = {
   page: ['pages', 'kalendar.tsx'],
   screenHook: ['features', 'calendar', 'hooks', 'use-calendar-screen.ts'],
+  // The snapshot's one binding, shared with every screen that reads it, and
+  // the marks' re-read of a snapshot older than the leave or resolution rows.
+  snapshotHook: ['features', 'calendar', 'hooks', 'use-calendar-snapshot.ts'],
+  skewRefreshHook: ['features', 'calendar', 'hooks', 'use-snapshot-skew-refresh.ts'],
   dayDetailHook: ['features', 'calendar', 'hooks', 'use-day-detail.ts'],
   overrideFormHook: ['features', 'calendar', 'hooks', 'use-override-form.ts'],
   rosterFormHook: ['features', 'calendar', 'hooks', 'use-roster-form.ts'],

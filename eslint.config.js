@@ -136,8 +136,13 @@ export const FEATURE_PUBLIC = {
   // left in the month off their own schedule (`memberScheduleInputOf`)
   // and the one leg recipe *Danas*'s duty uses (`shiftLegOn`), from the
   // calendar snapshot the page already reads.
+  // The calendar snapshot's one binding (deferred work from 7.13c): every
+  // screen that reads `CALENDAR_KEY` observes it through `useCalendarSnapshot`
+  // (or its options, for the erasure guard's fresh read), never a copied
+  // `calendarQueryOptions(...)`.
   calendar: [
     'components/calendar-cell', // today
+    'hooks/use-calendar-snapshot', // conflicts, hours, leave, members, today
     'components/modifier-glyphs', // today
     'services/marks', // hours, today
     'services/snapshot', // conflicts, hours, leave, members, pages, teams, today

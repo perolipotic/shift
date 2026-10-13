@@ -1,14 +1,8 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 
-import {
-  CALENDAR_KEY,
-  CALENDAR_READ_TABLE,
-  calendarQueryOptions,
-  calendarSurfaceStateOf,
-  type CalendarMembersRpc,
-} from '@/features/calendar/services/snapshot';
-import { calendarTodayOf } from '@/features/calendar/utils/month';
+import { useCalendarSnapshot } from '@/features/calendar/hooks/use-calendar-snapshot';
+import { CALENDAR_KEY, calendarSurfaceStateOf } from '@/features/calendar/services/snapshot';
 import {
   LEAVE_OVERVIEW_RECORDS_KEY,
   leaveOverviewRecordsQueryOptions,
@@ -47,6 +41,7 @@ import {
   ORGANIZATION_TABLE,
   organizationSnapshotQueryOptions,
 } from '@/features/organization/services/snapshot';
+import { useOrganizationToday } from '@/hooks/organization-today';
 import { supabaseClient } from '@/lib/supabase/client';
 
 /** How the hook writes the URL: the next search, and whether it replaces the entry (typing does). */
@@ -91,13 +86,7 @@ export function useLeaveOverview(search: GodisnjiSearch, navigate: GodisnjiNavig
     setText(filters.search);
   }, [filters.search]);
 
-  const calendar = useQuery(
-    calendarQueryOptions(
-      () => supabaseClient().from(CALENDAR_READ_TABLE),
-      // As the calendar's: the client's `rpc` is wider than the calls made.
-      () => supabaseClient() as unknown as CalendarMembersRpc,
-    ),
-  );
+  const calendar = useCalendarSnapshot();
   const calendarState = calendarSurfaceStateOf(calendar);
   const view = godisnjiViewOf(calendarState);
   const admin = view === GODISNJI_OVERVIEW;
@@ -125,8 +114,8 @@ export function useLeaveOverview(search: GodisnjiSearch, navigate: GodisnjiNavig
     fetchStatus: organizationFetch,
   } = organization;
   const { data: recordsData, isError: recordsFailed, isPending: recordsPending, fetchStatus: recordsFetch } = records;
-  // THE ORGANIZATION'S TODAY, so the rows are worked out again when the day turns.
-  const today = calendarState.snapshot === null ? null : calendarTodayOf(calendarState.snapshot, new Date());
+  // THE ORGANIZATION'S TODAY, moved at its midnight, so the rows are worked out again when the day turns.
+  const { now } = useOrganizationToday(calendarState.snapshot === null ? null : calendarState.snapshot.timeZone);
   // EVERY MEMBER'S FIGURES, once per answer and day — never on a keystroke:
   // the search and the sort below run over these rows.
   const rows = useMemo(
@@ -158,9 +147,8 @@ export function useLeaveOverview(search: GodisnjiSearch, navigate: GodisnjiNavig
             fetchStatus: recordsFetch,
           }),
         },
-        new Date(),
+        now,
       ),
-    // `today` is read only to re-run the rows when the organization's day turns.
     [
       membersData,
       membersFailed,
@@ -178,7 +166,7 @@ export function useLeaveOverview(search: GodisnjiSearch, navigate: GodisnjiNavig
       recordsFailed,
       recordsPending,
       recordsFetch,
-      today,
+      now,
     ],
   );
   const { search: query, sort } = filters;

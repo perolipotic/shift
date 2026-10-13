@@ -2,13 +2,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type MouseEvent } from 'react';
 
-import {
-  CALENDAR_KEY,
-  CALENDAR_READ_TABLE,
-  calendarQueryOptions,
-  calendarSurfaceStateOf,
-  type CalendarMembersRpc,
-} from '@/features/calendar/services/snapshot';
+import { useCalendarSnapshot } from '@/features/calendar/hooks/use-calendar-snapshot';
+import { CALENDAR_KEY, calendarSurfaceStateOf } from '@/features/calendar/services/snapshot';
 import {
   CONFLICT_RESOLUTIONS_TABLE,
   ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
@@ -240,13 +235,7 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
   const organization = useQuery(
     organizationSnapshotQueryOptions(() => supabaseClient().from(ORGANIZATION_TABLE)),
   );
-  const calendar = useQuery(
-    calendarQueryOptions(
-      () => supabaseClient().from(CALENDAR_READ_TABLE),
-      // As the calendar's: the client's `rpc` is wider than the calls made.
-      () => supabaseClient() as unknown as CalendarMembersRpc,
-    ),
-  );
+  const calendar = useCalendarSnapshot();
   const records = useQuery(
     leaveRecordsQueryOptions(
       // Named structurally, as the calendar's `rpc` is: checking supabase-js's
