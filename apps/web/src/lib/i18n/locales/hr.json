@@ -1407,10 +1407,7 @@
       }
     },
     "today": {
-      "label": "Tvoja smjena",
-      "error": {
-        "unavailable": "Tvoju smjenu trenutačno nije moguće učitati. Pokušaj ponovno."
-      }
+      "label": "Tvoja smjena"
     }
   },
   "sort": {

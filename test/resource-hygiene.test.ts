@@ -827,7 +827,6 @@ const SANCTIONED_SCREEN_KEYS = [
   'smjene.position.unknown',
   'smjene.roster.error.unavailable',
   'smjene.today.label',
-  'smjene.today.error.unavailable',
   // STORY 2.1b: the hour band editor, under `organization.hourBands` because
   // the bands are an organization setting reached from `Organizacija`. Only a
   // name and a start are entered; the window, duration and midnight flag are
@@ -1780,6 +1779,8 @@ const SANCTIONED_SCREEN_KEYS = [
   'danas.admin.listSeparator',
   'danas.admin.status.working',
   'danas.admin.status.workingUntimed',
+  // E897: a working shift carried over from yesterday, marked as on the member's card.
+  'danas.admin.status.workingFromYesterday',
   'danas.admin.status.duty',
   'danas.admin.status.leave',
   'danas.admin.status.free',

@@ -361,6 +361,8 @@ const TODAY_DUTY_KEYS = join(TODAY_FEATURE, 'services', 'today-duty.ts');
 const TODAY_ADMIN_KEYS = join(TODAY_FEATURE, 'services', 'admin-today.ts');
 /** SINCE STORY 6.3: *Treba tebe*, the one Danas part sanctioned to draw `destructive`. */
 const NEEDS_YOU_CARD = join(srcRoot, ...TODAY_SCREEN_PARTS.needsYouCard);
+/** SINCE E804: the caller's team today and its one link to the roster, in the today card and the admin's subtitle. */
+const OWN_TEAM_LINE = join(srcRoot, ...TODAY_SCREEN_PARTS.ownTeamLine);
 const TEAM_ROSTER_KEYS = join(srcRoot, 'features', 'teams', 'services', 'roster.ts');
 
 /** The hour bands feature, which holds both hour band screens' parts. */
@@ -2491,19 +2493,22 @@ const KEY_SOURCES = [
     // THIRTY-TWO SINCE THE STORY 6.3 REVIEW: a one-day absence's line and
     // tomorrow's, each with or without a team (four), and a working team's
     // staffing, full or nobody rostered (two).
+    //
+    // THIRTY-THREE SINCE E897: a working shift carried over from yesterday,
+    // marked `od jučer` in the subtitle as on the member's card.
     name: 'the Danas admin rules',
     file: TODAY_ADMIN_KEYS,
     keys: messageKeyUnions,
-    strings: 32,
+    strings: 33,
   },
   {
-    // FIVE over three unions: the roster's two refusals (unknown, and the
-    // service), the Danas line's two openings (the team label, or no team),
-    // and the own-row read's one refusal.
+    // FOUR over two unions: the roster's two refusals (unknown, and the
+    // service) and the Danas line's two openings (the team label, or no
+    // team). The own-row read's refusal left with Danas's own read (E804).
     name: 'the team roster rules',
     file: TEAM_ROSTER_KEYS,
     keys: memberListKeys,
-    strings: 5,
+    strings: 4,
   },
   {
     // STORY 2.1b. THIRTEEN on the band list: its heading, the link back
@@ -6366,8 +6371,20 @@ describe('the roster and the Danas line read once, show names only, and write no
       organizationReads: 0,
     },
   ];
+  /** The surfaces with a read of their own: Danas's line reads the calendar snapshot since E804. */
+  const READING_SURFACES = SURFACES.filter((surface) => surface.name !== 'the Danas destination');
 
-  it.each(SURFACES)('reads exactly once, under its one key, on $name', ({ file, hookFile, read, key, organizationReads }) => {
+  it('derives the Danas line from the calendar snapshot, with no read of its own (E804, AD-13)', () => {
+    for (const file of DANAS) {
+      const screen = source(file);
+
+      expect(screen, `${file} reads the own team again`).not.toContain('readOwnTeamToday(');
+      expect(screen, `${file} names the own-team key`).not.toContain('OWN_TEAM_KEY');
+    }
+    expect(source(TODAY_KEYS), 'the today view does not carry the own team').toContain('ownTeam: ownTeamOf(snapshot, today)');
+  });
+
+  it.each(READING_SURFACES)('reads exactly once, under its one key, on $name', ({ file, hookFile, read, key, organizationReads }) => {
     // AD-13. The roster's name, flag, count and names are one RPC's answer;
     // the Danas line is the caller's own row, derived in `@/features/teams/services/roster`.
     // SOURCE STRUCTURE B7: counted over the roster's whole set, so a read in
@@ -6424,13 +6441,15 @@ describe('the roster and the Danas line read once, show names only, and write no
   });
 
   it('links Danas to the roster of the team it names, and to nothing else', () => {
-    // The page alone, which draws the line; the week's link to the calendar
-    // is a card's (story 6.1a).
-    const screen = source(DANAS_PAGE);
+    // The line's own part, which draws the one link for the member's today
+    // card and the admin's subtitle alike (E804); the page draws none of its
+    // own, and the week's link to the calendar is a card's (story 6.1a).
+    const screen = source(OWN_TEAM_LINE);
 
+    expect(linkElements(source(DANAS_PAGE)), 'the page draws a link of its own').toHaveLength(0);
     expect(linkElements(screen)).toHaveLength(1);
     expect(screen).toContain('to="/smjene/$id"');
-    expect(screen).toContain('params={{ id: shown.team.id }}');
+    expect(screen).toContain('params={{ id: team.id }}');
     expect(heightPx(/className="([^"]*)"/.exec(linkElements(screen)[0] ?? '')?.[1] ?? null)).toBeGreaterThanOrEqual(44);
     // The roster's only way out is back to Danas: no other surface links in.
     // SOURCE STRUCTURE B7: over the whole set, and in the page, which draws it.

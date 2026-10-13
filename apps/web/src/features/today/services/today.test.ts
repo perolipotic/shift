@@ -20,6 +20,8 @@ import {
   todayDateShownOf,
   todayMessageKey,
   todayOf,
+  ownTeamOf,
+  ownTeamShownOf,
   todayViewOf,
   type Today,
   type TodayRowsAnswer,
@@ -1044,5 +1046,35 @@ describe("today's 24 h duty (story 6.2)", () => {
       'danas.duty.noteReplacing',
       'danas.duty.noteAdded',
     ]);
+  });
+});
+
+describe("the viewer's team today, from the calendar snapshot (E804)", () => {
+  it("names the team the viewer's membership puts them on today, whatever today's shift", () => {
+    // A working day, a free day and a day of leave alike: the line is the
+    // membership, not the shift.
+    for (const date of ['2026-10-01', '2026-10-02']) {
+      expect(readyOf(todayViewOf(pilot, [], noonOf(date))).ownTeam).toEqual({ id: TEAM_A, name: 'Smjena A' });
+    }
+    expect(
+      readyOf(todayViewOf(pilot, [rowOf('leave-1', '2026-09-28', '2026-10-05')], noonOf('2026-10-01'))).ownTeam,
+    ).toEqual({ id: TEAM_A, name: 'Smjena A' });
+  });
+
+  it('follows a move on its date, and says no team once a version names none', async () => {
+    const moved = await snapshotOf({
+      versions: [membershipRow(TEAM_A, SEEDED), membershipRow(TEAM_D, '2026-10-01'), membershipRow(null, '2026-10-05')],
+    });
+
+    expect(ownTeamOf(moved, '2026-09-30')).toEqual({ id: TEAM_A, name: 'Smjena A' });
+    expect(ownTeamOf(moved, '2026-10-01')).toEqual({ id: TEAM_D, name: 'Smjena D' });
+    expect(ownTeamOf(moved, '2026-10-05')).toBeNull();
+    expect(readyOf(todayViewOf(moved, [], noonOf('2026-10-06'))).ownTeam).toBeNull();
+  });
+
+  it('is shown once the view is ready, and never before', () => {
+    expect(ownTeamShownOf(todayViewOf(pilot, [], noonOf('2026-10-01')))).toEqual({ id: TEAM_A, name: 'Smjena A' });
+    expect(ownTeamShownOf({ kind: TODAY_LOADING })).toBeNull();
+    expect(ownTeamShownOf({ kind: TODAY_UNAVAILABLE, retryable: true })).toBeNull();
   });
 });

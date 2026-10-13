@@ -20,11 +20,11 @@ import type { TodayTiles } from '@/features/today/services/today-tiles';
 import { t } from '@/lib/i18n';
 
 /**
- * What *Danas* shows above the team line (story 6.1a), in phone priority
- * order: the skeleton while the reads are unanswered; one alert, with a retry
+ * What *Danas* shows a member (story 6.1a), in phone priority order: the skeleton while the reads are unanswered; one alert, with a retry
  * where reading again can help, and no case when a read failed or what it
  * answered cannot be trusted; the viewer's own sentence when they have no
- * membership; and otherwise today's card, the next shift and the week —
+ * membership; and otherwise today's card (closing on the viewer's team
+ * today), the next shift and the week —
  * then, since story 6.1b, the hours and leave tiles side by side, each
  * resolving on its own. `todayOf` and `todayTilesOf` decide which; this only
  * draws it. No tile on the unavailable or unscheduled screen.
@@ -65,7 +65,7 @@ export function TodayBody({
 
   return (
     <>
-      <TodayCard todayCase={view.todayCase} />
+      <TodayCard todayCase={view.todayCase} ownTeam={view.ownTeam} />
       <NextShiftCard next={view.next} returning={view.returning} />
       <WeekList week={view.week} />
       <div className="grid min-w-0 grid-cols-2 gap-3">

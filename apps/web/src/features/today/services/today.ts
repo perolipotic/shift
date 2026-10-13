@@ -1,4 +1,4 @@
-import { DUTY_RUNNING, leaveCostOf, monthOf, type LeaveRange } from '@shift/domain';
+import { DUTY_RUNNING, leaveCostOf, membershipOn, monthOf, type LeaveRange } from '@shift/domain';
 
 import type { CalendarSnapshot, CalendarSurfaceState } from '@/features/calendar/services/snapshot';
 import {
@@ -12,6 +12,7 @@ import {
   type CalendarMarks,
 } from '@/features/calendar/utils/month';
 import { leaveRecordsOf, type LeaveRecord } from '@/features/leave/services/leave-list';
+import type { MemberTeam } from '@/features/members/services/list';
 import {
   legKeyOf,
   runningFromYesterdayOf,
@@ -51,6 +52,10 @@ import { formatIsoDate, nextIsoDate, organizationWallClock } from '@/lib/i18n/fo
  * carried-over shift ends, today is the free or the leave case again. A
  * viewer with no membership at all is unscheduled, and has no next shift
  * and no week.
+ *
+ * THE VIEWER'S TEAM TODAY ("Tvoja smjena ‹tim›") comes from the same
+ * snapshot — the viewer's membership history and the teams it names — so
+ * one fact on the screen has one read (AD-13); the today card states it.
  *
  * NEVER A GUESS. A read that failed or is paused offline is unavailable with
  * a retry; a row that cannot be trusted or any error the derivation throws
@@ -149,6 +154,8 @@ export interface TodayView {
   /** Whether the next shift is the viewer's return from leave (`Vraćaš se`). */
   readonly returning: boolean;
   readonly week: readonly TodayWeekDay[];
+  /** The viewer's team today, `null` for none (`Bez smjene`): {@link ownTeamOf}. */
+  readonly ownTeam: MemberTeam | null;
 }
 
 export type Today =
@@ -275,6 +282,7 @@ export function todayViewOf(snapshot: CalendarSnapshot, rows: readonly unknown[]
         next: nextShiftOf(days, today, records, working, skip),
         returning: todayCase.kind === CASE_LEAVE,
         week: weekOf(days, today, records),
+        ownTeam: ownTeamOf(snapshot, today),
       },
     };
   } catch (cause) {
@@ -406,6 +414,26 @@ function dayLookupOf(snapshot: CalendarSnapshot, today: string, records: readonl
       );
     },
   };
+}
+
+/**
+ * The viewer's team on `date` from the snapshot: their membership version in
+ * effect then (the domain's `membershipOn`, as the member list judges it),
+ * named from the snapshot's teams; `null` for no team.
+ *
+ * @throws RangeError on any precondition of `membershipOn`, or for a team the
+ *   snapshot does not carry.
+ */
+export function ownTeamOf(snapshot: CalendarSnapshot, date: string): MemberTeam | null {
+  const membership = membershipOn(snapshot.viewer.memberships, date);
+
+  if (membership === null) return null;
+
+  const team = snapshot.teams.find((candidate) => candidate.id === membership.teamId);
+
+  if (team === undefined) throw new RangeError(`the team ${membership.teamId} is not in the snapshot`);
+
+  return { id: team.id, name: team.name };
 }
 
 /** A day's shift as today states it, its team named; `fromYesterday` for a carried-over one. */
@@ -553,4 +581,9 @@ export function todayMessageKey(
   const unhandled: never = kind;
 
   return unhandled;
+}
+
+/** The viewer's team today once the snapshot answers it — the admin subtitle's link — else `null`. */
+export function ownTeamShownOf(today: Today): MemberTeam | null {
+  return today.kind === TODAY_READY ? today.view.ownTeam : null;
 }
