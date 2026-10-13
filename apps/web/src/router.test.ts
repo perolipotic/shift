@@ -2,11 +2,12 @@ import { readdirSync, readFileSync } from 'node:fs';
 
 import { isRedirect } from '@tanstack/react-router';
 import type { Session } from '@supabase/supabase-js';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ROUTE_PENDING_MS, router } from '@/router';
 import {
   knownPathOf,
+  returnSearchOf,
   returnTargetOf,
   type RouteMatcher,
 } from '@/features/auth/services/return-target';
@@ -23,6 +24,7 @@ import {
   type MemberRoleReadOptions,
 } from '@/features/navigation/services/role';
 import { currentSession, SESSION_UNRESOLVED } from '@/lib/supabase/client';
+import { sessionEnded } from '@/lib/supabase/session-cache';
 import { AppLayout, appLayoutRoute } from '@/pages/_app';
 import { DanasScreen, danasRoute } from '@/pages/danas';
 import { GodisnjiScreen, godisnjiRoute } from '@/pages/godisnji';
@@ -152,6 +154,13 @@ function stringLiterals(source: string): string[] {
  */
 const REFUSES_ROLE = (): Promise<MemberRoleOutcome> =>
   Promise.resolve({ ok: false, code: MEMBER_ROLE_REFUSED });
+
+/**
+ * The third member (C512, E853): whether the tree has a screen for a path,
+ * asked of the REAL tree, so a return target these guards follow is judged
+ * exactly as it is in a browser.
+ */
+const KNOWN_PATH = knownPathOf(router);
 
 /**
  * The eight destinations, each paired with what must render on it.
@@ -752,6 +761,7 @@ describe('the deployed root resolves both ways and is never a blank page', () =>
         context: {
           currentSession: () => Promise.resolve(session),
           currentMemberRole: REFUSES_ROLE,
+          isKnownPath: KNOWN_PATH,
         },
       });
     } catch (thrown) {
@@ -900,6 +910,7 @@ describe('the deployed root resolves both ways and is never a blank page', () =>
         context: {
           currentSession: () => Promise.resolve(SESSION),
           currentMemberRole: REFUSES_ROLE,
+          isKnownPath: KNOWN_PATH,
         },
       }),
       'the layout refuses the session / forwarded — the two guards disagree',
@@ -1015,6 +1026,7 @@ describe('the deployed root resolves both ways and is never a blank page', () =>
         context: {
           currentSession: () => Promise.reject(new Error('SecurityError')),
           currentMemberRole: REFUSES_ROLE,
+          isKnownPath: KNOWN_PATH,
         },
       });
     } catch (caught) {
@@ -1062,6 +1074,18 @@ describe('the deployed root resolves both ways and is never a blank page', () =>
     ).toBe(routeMemberRole);
   });
 
+  it('binds the real tree as the known-path question (C512, E853)', () => {
+    // Executed rather than named: the predicate is a closure over the router,
+    // and an inline `() => true` here would follow any same-origin target into
+    // a not-found screen with the whole suite green.
+    const isKnownPath = (router.options as { context?: { isKnownPath?: (path: string) => boolean } })
+      .context?.isKnownPath;
+
+    expect(isKnownPath?.('/kalendar')).toBe(true);
+    expect(isKnownPath?.('/ljudi/smjene')).toBe(true);
+    expect(isKnownPath?.('/ne-postoji')).toBe(false);
+  });
+
   it('reads the session through the context rather than reaching for a client', async () => {
     // What makes both branches assertable at all. A `beforeLoad` that imported
     // the Supabase client would ignore this stub entirely, and the signed-in
@@ -1086,6 +1110,7 @@ describe('the deployed root resolves both ways and is never a blank page', () =>
             return Promise.resolve(SESSION);
           },
           currentMemberRole: REFUSES_ROLE,
+          isKnownPath: KNOWN_PATH,
         },
       });
     } catch (caught) {
@@ -1146,6 +1171,7 @@ describe('a slug that cannot be one never reaches the credential form', () => {
         context: {
           currentSession: () => Promise.resolve(session),
           currentMemberRole: REFUSES_ROLE,
+          isKnownPath: KNOWN_PATH,
         },
       });
     } catch (caught) {
@@ -1236,6 +1262,7 @@ describe('a signed-in visitor is never offered a credential form', () => {
 
   type SignInBeforeLoad = (options: {
     params: { slug: string };
+    search: { povratak?: string };
     context: AppRouterContext;
   }) => unknown;
 
@@ -1256,6 +1283,7 @@ describe('a signed-in visitor is never offered a credential form', () => {
   async function beforeLoad(
     route: { options: unknown },
     currentSession: () => Promise<Session | null>,
+    search: { povratak?: string } = {},
   ): Promise<unknown> {
     const run = (route.options as { beforeLoad?: SignInBeforeLoad }).beforeLoad;
 
@@ -1270,7 +1298,8 @@ describe('a signed-in visitor is never offered a credential form', () => {
     try {
       await run({
         params: { slug: 'dvd-kastel-novi' },
-        context: { currentSession, currentMemberRole: REFUSES_ROLE },
+        search,
+        context: { currentSession, currentMemberRole: REFUSES_ROLE, isKnownPath: KNOWN_PATH },
       });
     } catch (thrown) {
       return thrown;
@@ -1287,7 +1316,26 @@ describe('a signed-in visitor is never offered a credential form', () => {
     // `/` and not a destination: `/` is the one path that decides where a
     // signed-in person belongs, and naming a destination here would be this file
     // deciding it instead.
-    expect((thrown as { options: { to?: string } }).options.to).toBe('/');
+    expect((thrown as { options: { href?: string } }).options.href).toBe('/');
+  });
+
+  it.each(SIGN_IN_ROUTES)('sends a signed-in visitor where povratak points on $name (C512)', async ({ route }) => {
+    // A second tab bounced to sign in while the first one was signing in: once
+    // the session exists, the link it carried is still where they were going.
+    const thrown = await beforeLoad(route, () => Promise.resolve(SESSION), {
+      povratak: '/kalendar?tim=2#tjedan',
+    });
+
+    expect(isRedirect(thrown), 'the guard threw something that is not a redirect').toBe(true);
+    expect((thrown as { options: { href?: string } }).options.href).toBe('/kalendar?tim=2#tjedan');
+  });
+
+  it.each(SIGN_IN_ROUTES)('follows no target the validator refuses on $name', async ({ route }) => {
+    for (const povratak of ['//evil.example', 'https://evil.example/', '/ne-postoji']) {
+      const thrown = await beforeLoad(route, () => Promise.resolve(SESSION), { povratak });
+
+      expect((thrown as { options: { href?: string } }).options.href, povratak).toBe('/');
+    }
   });
 
   it.each(SIGN_IN_ROUTES)('leaves a signed-out visitor on $name', async ({ route }) => {
@@ -1377,6 +1425,11 @@ describe('the signed-in layout guards every destination once, and is pathless', 
     location: { href: string };
   }) => unknown;
 
+  // The mark is page-wide; a test that sets it must not hand it to the next.
+  afterEach(() => {
+    sessionEnded.clear();
+  });
+
   /** What running the guard did: it either threw something, or returned
    *  something. Collapsing "returned normally" to `null` made a guard that
    *  returned a VALUE indistinguishable from a clean pass, which matters here
@@ -1402,7 +1455,7 @@ describe('the signed-in layout guards every destination once, and is pathless', 
       return {
         returned: await guard()({
           location: DEEP_LINK,
-          context: { currentSession, currentMemberRole: REFUSES_ROLE },
+          context: { currentSession, currentMemberRole: REFUSES_ROLE, isKnownPath: KNOWN_PATH },
         }),
       };
     } catch (thrown) {
@@ -1531,6 +1584,46 @@ describe('the signed-in layout guards every destination once, and is pathless', 
 
     expect(isRedirect(thrown), 'the layout let a flagged session through').toBe(true);
     expect((thrown as { options: { to?: string } }).options.to).toBe('/postavi-lozinku');
+    // E853: the deep link travels to the step, so saving lands there.
+    expect((thrown as { options: { search?: unknown } }).options.search).toEqual({
+      povratak: '/kalendar?tim=2#tjedan',
+    });
+  });
+
+  it('drops the location when the bounce is the re-guard for a session change (C516)', async () => {
+    // A sign-out or expiry in another tab, or another account taking over:
+    // the next person to sign in on this device is probably not the one who
+    // opened this location, so the redirect carries none.
+    sessionEnded.mark();
+    const signedOut = thrownBy(await beforeLoad(() => Promise.resolve(null))) as {
+      options: { to?: string; search?: unknown };
+    };
+
+    expect(signedOut.options.to).toBe('/prijava');
+    expect(signedOut.options.search, 'the previous person\'s deep link was kept').toEqual({});
+
+    sessionEnded.mark();
+    const flagged = {
+      access_token: 'token',
+      user: { id: 'member', app_metadata: { must_set_password: true } },
+    } as unknown as Session;
+    const held = thrownBy(await beforeLoad(() => Promise.resolve(flagged))) as {
+      options: { to?: string; search?: unknown };
+    };
+
+    expect(held.options.to).toBe('/postavi-lozinku');
+    expect(held.options.search).toEqual({});
+  });
+
+  it('takes the mark on every run, so a later bounce in the same tab keeps its target', async () => {
+    sessionEnded.mark();
+    await beforeLoad(() => Promise.resolve(SESSION));
+
+    const { options } = thrownBy(await beforeLoad(() => Promise.resolve(null))) as {
+      options: { search?: unknown };
+    };
+
+    expect(options.search).toEqual({ povratak: '/kalendar?tim=2#tjedan' });
   });
 
   it('lets a session through once its flag is cleared, or when it never had one', async () => {
@@ -1807,6 +1900,7 @@ describe('/ljudi decides its content by permission level, and the admin screens 
             // prevent.
             currentSession: () => Promise.reject(new Error('the guard asked for a session')),
             currentMemberRole: role,
+            isKnownPath: KNOWN_PATH,
           },
         }),
       };
@@ -1959,6 +2053,7 @@ describe('/ljudi decides its content by permission level, and the admin screens 
 
             return Promise.resolve({ ok: true, role: 'admin' });
           },
+          isKnownPath: KNOWN_PATH,
         },
       });
 
@@ -2308,7 +2403,12 @@ describe('the set-password step opens only to a flagged session (story 7.8)', ()
   type BeforeLoad = (options: {
     context: AppRouterContext;
     location: { href: string };
+    search: { povratak?: string };
   }) => unknown;
+
+  afterEach(() => {
+    sessionEnded.clear();
+  });
 
   const STEP = { href: '/postavi-lozinku' };
 
@@ -2316,13 +2416,20 @@ describe('the set-password step opens only to a flagged session (story 7.8)', ()
     return { access_token: 'token', user: { id: 'member', app_metadata: metadata } } as unknown as Session;
   }
 
-  async function outcomeOf(currentSession: () => Promise<Session | null>): Promise<unknown> {
+  async function outcomeOf(
+    currentSession: () => Promise<Session | null>,
+    search: { povratak?: string } = {},
+  ): Promise<unknown> {
     const run = (postaviLozinkuRoute.options as unknown as { beforeLoad?: BeforeLoad }).beforeLoad;
 
     if (typeof run !== 'function') throw new Error('the step has no beforeLoad');
 
     try {
-      await run({ location: STEP, context: { currentSession, currentMemberRole: REFUSES_ROLE } });
+      await run({
+        location: STEP,
+        search,
+        context: { currentSession, currentMemberRole: REFUSES_ROLE, isKnownPath: KNOWN_PATH },
+      });
 
       return undefined;
     } catch (thrown) {
@@ -2338,7 +2445,34 @@ describe('the set-password step opens only to a flagged session (story 7.8)', ()
     const thrown = await outcomeOf(() => Promise.resolve(sessionWith({ must_set_password: false })));
 
     expect(isRedirect(thrown)).toBe(true);
-    expect((thrown as { options: { to?: string } }).options.to).toBe('/');
+    expect((thrown as { options: { href?: string } }).options.href).toBe('/');
+  });
+
+  it('carries the return target through, and validates it on the way out (E853)', () => {
+    // `povratak` is what the layout's guard put on the step; once the flag is
+    // gone (the save re-runs this guard), the session goes where it pointed.
+    expect(postaviLozinkuRoute.options.validateSearch).toBe(returnSearchOf);
+  });
+
+  it.each([
+    ['/kalendar?tim=2#tjedan', '/kalendar?tim=2#tjedan'],
+    ['//evil.example', '/'],
+    ['/ne-postoji', '/'],
+  ])('sends an unflagged session with povratak %s to %s', async (povratak, expected) => {
+    const thrown = await outcomeOf(() => Promise.resolve(sessionWith({})), { povratak });
+
+    expect(isRedirect(thrown)).toBe(true);
+    expect((thrown as { options: { href?: string } }).options.href).toBe(expected);
+  });
+
+  it('carries nothing to sign-in when the session ended outside this tab (C516)', async () => {
+    sessionEnded.mark();
+    const thrown = await outcomeOf(() => Promise.resolve(null));
+
+    expect((thrown as { options: { to?: string; search?: unknown } }).options).toMatchObject({
+      to: '/prijava',
+      search: {},
+    });
   });
 
   it('sends nobody to the sign-in form, carrying the step as the return target', async () => {

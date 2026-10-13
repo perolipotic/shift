@@ -113,7 +113,7 @@ export const FEATURE_PUBLIC = {
   // set-password step through `mustSetPassword`, never a reading of its own.
   auth: [
     'services/address', // pages
-    'services/return-target', // pages
+    'services/return-target', // pages, router
     'services/set-password', // pages
     'services/sign-out', // navigation
   ],

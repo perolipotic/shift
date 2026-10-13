@@ -30,7 +30,10 @@ regenerated types file, which would add a step to every migration.
   over a stale cache), the cache forgets the previous user so that mounted
   screens see it (a reset on a switch, a clear on a sign-out or sign-in) and
   the router re-runs every guard (not on a sign-in, which the sign-in hook
-  navigates). A token refresh for the same user changes nothing.
+  navigates). A token refresh for the same user changes nothing. A sign-out,
+  expiry or account switch also sets `sessionEnded`, which the session guards
+  take on their next run, so that re-guard's redirect carries no `povratak`
+  and the next person to sign in is not sent to the previous one's deep link.
   `session-cache.test.ts` drives it with a real `QueryClient` and observer.
 - `claims.ts` — `claimedOrganizationOf`, the organization the session's own
   access token claims, read without a query. Every admin write surface uses

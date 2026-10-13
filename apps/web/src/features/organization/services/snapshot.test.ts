@@ -1314,7 +1314,7 @@ describe('the query cache is wired into the application, not merely installed', 
     const entry = source(ENTRY);
 
     expect(entry, 'main.tsx does not clear the cache on a session change').toContain(
-      'resetOnSessionChange(() => supabaseClient().auth, { cache: queryClient, router })',
+      'resetOnSessionChange(() => supabaseClient().auth, { cache: queryClient, router, ended: sessionEnded })',
     );
     expect(occurrences(entry, 'resetOnSessionChange(')).toBe(1);
   });

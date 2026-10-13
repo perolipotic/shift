@@ -61,6 +61,16 @@ export interface AppRouterContext {
    * the level per keystroke (`@/features/navigation/services/admin-guard`).
    */
   readonly currentMemberRole: MemberRoleReader;
+  /**
+   * Whether the route tree has a screen for a pathname (C512, E853).
+   *
+   * The guards that FOLLOW a return target — a signed-in visitor on a sign-in
+   * route, a session done with the set-password step — validate it through
+   * `returnTargetOf`, which asks the tree whether the path is one of its own.
+   * The tree imports the pages, so a page cannot import it back: the question
+   * arrives here instead, bound to the real router in `router.ts`.
+   */
+  readonly isKnownPath: (pathname: string) => boolean;
 }
 
 function AppShell() {
