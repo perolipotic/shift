@@ -774,9 +774,9 @@ describe('a working shift never reads as a free day (story 7.1)', () => {
    * LIGHT SLOT-1 IS NOT ASSERTED. The light theme is out of this story's scope
    * (changing a light value needs a human), and light Dan (#E4F0FA) against
    * light non-working (#F0F3F6) measures about 1.04:1, ΔE×100 1.9. There the
-   * label carries the distinction. Tracked as an open design question in
-   * `_bmad-output/implementation-artifacts/deferred-work.md`, not a value to
-   * nudge.
+   * label carries the distinction, by decision (2026-10-13, deferred-work
+   * sweep): the always-visible label is the sole distinguisher between ramp
+   * slots, recorded in DESIGN.md § Colors, so this is not a value to nudge.
    *
    * DARK SLOTS 3–6 ARE NOT ASSERTED EITHER. They predate the re-tune, the pilot
    * uses none of them, and story 7.1 may change only the six approved dark

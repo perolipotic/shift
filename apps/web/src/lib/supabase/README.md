@@ -3,10 +3,13 @@
 The single browser Supabase client. The synthesized sign-in address and the
 credential exchange live in `features/auth/services/`.
 
-There are no generated database types here yet. This file claimed them before
-one existed; the decision to generate them is open and sits in
-`deferred-work.md`, so `createClient` currently takes no `Database` generic and
-every query is untyped at the row level.
+There are no generated database types, by decision (2026-10-13,
+deferred-work sweep): the client stays untyped. `createClient` takes no
+`Database` generic, every query is untyped at the row level, and each service
+parses the rows it reads at its own boundary into its own types, so a row that
+does not match is refused there. Drift between a migration and a parser is
+caught by the database-attached tests and the e2e suite rather than by a
+regenerated types file, which would add a step to every migration.
 
 - `client.ts` — the one client, constructed from `VITE_SUPABASE_URL` and
   `VITE_SUPABASE_PUBLISHABLE_KEY` only. AD-17 keeps `sb_secret_*` out of this
