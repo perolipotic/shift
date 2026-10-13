@@ -7,7 +7,8 @@ import {
   type RotationStep,
 } from '@shift/domain';
 
-import { formatIsoDate, formatIsoDayMonth, isIsoDate, nextIsoDate } from '@/lib/i18n/format';
+import { formatIsoDate, formatIsoDayMonth, isIsoDate } from '@/lib/i18n/format';
+import { datesFrom } from '@/utils/dates';
 import {
   assignmentInForceOf,
   patternStepsOf,
@@ -36,7 +37,7 @@ import type { TeamRow } from '@/features/teams/services/list';
  * per position, one assignment per team at the shared anchor — and handed to
  * `projectedStepId` and `projectedShiftType` exactly as a stored rotation is.
  * Nothing here takes a modulo or walks a cycle by hand; dates advance with
- * `nextIsoDate`, and durations are `shiftDurationOn`'s.
+ * `datesFrom` (`@/utils/dates`), and durations are `shiftDurationOn`'s.
  *
  * A TEAM'S OFFSET IS A STEP, held as the step's index in the draft. The step
  * operations keep every team on the step it stands on: moving a step moves its
@@ -440,22 +441,6 @@ export function draftStepIndexOn(draft: RotationDraft, teamId: string, date: str
 /** The shift type id `teamId` works on `date` under the draft, through `projectedShiftType`. */
 export function draftShiftTypeOn(draft: RotationDraft, teamId: string, date: string): string {
   return projectedShiftType(draftStepsOf(draft), draftAssignmentOf(draft, teamId), date);
-}
-
-/**
- * `count` consecutive dates from `from`, advanced with `nextIsoDate`. Shorter
- * only at the end of the calendar (9999-12-31 has no next day).
- */
-export function datesFrom(from: string, count: number): readonly string[] {
-  const dates: string[] = [];
-  let date: string | null = from;
-
-  while (date !== null && dates.length < count) {
-    dates.push(date);
-    date = nextIsoDate(date);
-  }
-
-  return dates;
 }
 
 // --------------------------------------------------------------- display

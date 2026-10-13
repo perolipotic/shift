@@ -18,7 +18,6 @@ import {
   STEP_DOWN,
   STEP_UP,
   addableTypesOf,
-  datesFrom,
   draftRefusalOf,
   draftShiftTypeOn,
   draftStepRowsOf,
@@ -50,6 +49,7 @@ import {
   withTeamStep,
   type RotationDraft,
 } from '@/features/rotation/utils/draft';
+import { datesFrom } from '@/utils/dates';
 import { readRotation, rotationTeamsOf, teamAssignmentsOf, type RotationSnapshot } from '@/features/rotation/services/list';
 import {
   PILOT,

@@ -20,6 +20,7 @@ import {
   type TodayDuty,
 } from '@/features/today/services/today-duty';
 import { formatIsoDate, nextIsoDate, organizationWallClock } from '@/lib/i18n/format';
+import { dayAfter } from '@/utils/dates';
 
 /**
  * *Danas* for the viewer (story 6.1a): today in words — on leave, with what
@@ -350,15 +351,6 @@ export function absenceOn(records: readonly LeaveRecord[], date: string): Absenc
     .map((record) => ({ from: record.from, to: record.to }));
 
   return { from, to, records: joined };
-}
-
-/** The day after `date`. @throws RangeError at the end of the calendar. */
-function dayAfter(date: string): string {
-  const next = nextIsoDate(date);
-
-  if (next === null) throw new RangeError(`the date ${date} has no next day`);
-
-  return next;
 }
 
 /** The viewer's days by date, each month worked out once, on demand. */
