@@ -27,6 +27,9 @@ regenerated types file, which would add a step to every migration.
   the router re-runs every guard (not on a sign-in, which the sign-in hook
   navigates). A token refresh for the same user changes nothing.
   `session-cache.test.ts` drives it with a real `QueryClient` and observer.
+- `claims.ts` — `claimedOrganizationOf`, the organization the session's own
+  access token claims, read without a query. Every admin write surface uses
+  it; the database pins the tenant again, so it is never trusted.
 
 - `features/auth/services/address.ts` — AD-12's synthesized sign-in address,
   `username@slug.shift.invalid`, and the DNS-label rule the `organizations`

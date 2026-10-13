@@ -7,17 +7,8 @@ import {
   type ShiftTypeRow,
   type ShiftTypesSurfaceState,
 } from '@/features/shift-types/services/list';
-import { claimedOrganizationOf } from '@/features/teams/services/write';
 import type { ShiftTypeVersion } from '@shift/domain';
 import { enteredName } from '@/utils/name';
-
-/**
- * The organization the caller's token names, or `null` — the claim reader
- * `@/features/teams/services/write` holds and tests, re-exported so the shift type screens import
- * every write rule from one module. Not trusted: `0013`'s insert policy pins
- * the tenant again.
- */
-export { claimedOrganizationOf };
 
 /**
  * Adding, renaming, correcting the times of, and archiving a shift type —

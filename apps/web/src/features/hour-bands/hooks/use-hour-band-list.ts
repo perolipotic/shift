@@ -15,12 +15,12 @@ import {
   HOUR_BAND_START_FIELD,
   HOUR_BAND_WRITE_REFUSED,
   HOUR_BAND_WRITE_UNAVAILABLE,
-  claimedOrganizationOf,
   createHourBand,
   refusedFieldOf,
   type HourBandWriteFailure,
   type HourBandWriteTable,
 } from '@/features/hour-bands/services/write';
+import { claimedOrganizationOf } from '@/lib/supabase/claims';
 import { NO_TEXT } from '@/features/members/services/list';
 import { HOUR_BAND_WRITE_DEPENDENTS, refreshAfterWrite } from '@/features/teams/services/dependents';
 import { supabaseClient } from '@/lib/supabase/client';

@@ -14,11 +14,11 @@ import {
 import {
   TEAM_WRITE_REFUSED,
   TEAM_WRITE_UNAVAILABLE,
-  claimedOrganizationOf,
   createTeam,
   type TeamWriteFailure,
   type TeamWriteTable,
 } from '@/features/teams/services/write';
+import { claimedOrganizationOf } from '@/lib/supabase/claims';
 import { supabaseClient } from '@/lib/supabase/client';
 
 /**
