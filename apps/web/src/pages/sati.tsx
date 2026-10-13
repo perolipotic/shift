@@ -7,12 +7,8 @@ import { HoursBody, HoursNotice } from '@/features/hours/components/hours-body';
 import { HoursExplanationDialog } from '@/features/hours/components/hours-explanation';
 import { useHours } from '@/features/hours/hooks/use-hours';
 import { useHoursExplanation } from '@/features/hours/hooks/use-hours-explanation';
-import {
-  HOURS_MONTH_HEADING_ID,
-  hoursSearchOf,
-  legacyHoursSearchOf,
-  type HoursSearch,
-} from '@/features/hours/services/my-hours';
+import { hoursSearchOf, legacyHoursSearchOf, type HoursSearch } from '@/features/hours/services/hours-search';
+import { HOURS_MONTH_HEADING_ID } from '@/features/hours/services/my-hours';
 import { t } from '@/lib/i18n';
 import { appLayoutRoute } from '@/pages/_app';
 

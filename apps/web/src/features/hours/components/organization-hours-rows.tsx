@@ -9,16 +9,16 @@ import { CONFLICT_GLYPH } from '@/features/calendar/utils/modifiers';
 import { ExplainButton } from '@/features/hours/components/hours-explanation';
 import { EmptyResult } from '@/features/hours/components/organization-hours-empty';
 import {
+  SORT_CONFLICTS,
   SORT_LEAVE,
   SORT_NAME,
   SORT_SHIFTS,
   SORT_TEAM,
   SORT_TOTAL,
-  figureIsEmpty,
-  leaveShownOf,
   type HoursSearchChange,
   type HoursSortKey,
-} from '@/features/hours/services/my-hours';
+} from '@/features/hours/services/hours-search';
+import { figureIsEmpty, leaveShownOf } from '@/features/hours/services/my-hours';
 import { hoursSortDirectionArrowOf, type OrganizationHoursView } from '@/features/hours/services/organization-hours';
 import { t } from '@/lib/i18n';
 import type { SortControlColumn } from '@/utils/sort-control';
@@ -59,6 +59,7 @@ export function OrganizationHoursRows({
     ...view.bands.map((band) => ({ key: band.sortKey, label: band.name })),
     { key: SORT_TOTAL, label: t('sati.organization.total') },
     { key: SORT_LEAVE, label: t('sati.organization.leave') },
+    { key: SORT_CONFLICTS, label: t('sati.organization.conflicts') },
   ];
 
   return (

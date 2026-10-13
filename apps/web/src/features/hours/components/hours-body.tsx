@@ -10,13 +10,8 @@ import { OrganizationHoursExport } from '@/features/hours/components/organizatio
 import { OrganizationHoursFilters } from '@/features/hours/components/organization-hours-filters';
 import { OrganizationHoursRows } from '@/features/hours/components/organization-hours-rows';
 import { OrganizationHoursTable } from '@/features/hours/components/organization-hours-table';
-import {
-  hoursMessageKey,
-  type HoursFailure,
-  type HoursSearchChange,
-  type HoursSortKey,
-  type MyHoursView,
-} from '@/features/hours/services/my-hours';
+import type { HoursSearchChange, HoursSortKey } from '@/features/hours/services/hours-search';
+import { hoursMessageKey, type HoursFailure, type MyHoursView } from '@/features/hours/services/my-hours';
 import type { OrganizationHoursView } from '@/features/hours/services/organization-hours';
 import { usePhone } from '@/hooks/viewport';
 import { t } from '@/lib/i18n';

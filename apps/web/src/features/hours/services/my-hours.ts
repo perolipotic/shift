@@ -14,13 +14,13 @@ import {
   type CalendarSurfaceState,
 } from '@/features/calendar/services/snapshot';
 import {
-  MONTH_SEARCH_PARAM,
-  isCalendarMonth,
   memberScheduleInputOf,
+  snapshotScheduleInputOf,
   type CalendarMemberHistory,
   monthHeaderOf,
   monthShownOf,
   type MonthHeader,
+  type SnapshotScheduleInput,
 } from '@/features/calendar/utils/month';
 import { durationMessageKey, durationValuesOf, type DurationValues } from '@/features/hour-bands/services/list';
 import {
@@ -32,6 +32,7 @@ import {
   type HoursConflictsState,
   type LeaveRecordsByMember,
 } from '@/features/hours/services/hours-conflicts';
+import type { HoursSearch } from '@/features/hours/services/hours-search';
 
 /**
  * *Sati*: the viewer's own month of hours (story 4.1b). A member sees their
@@ -81,144 +82,6 @@ export const HOURS_UNAVAILABLE = 'HOURS_UNAVAILABLE';
 export type HoursFailure = typeof HOURS_UNAVAILABLE;
 
 /**
- * The search parameter naming the one team the organization's table is
- * narrowed to (story 4.2): `smjena`, as on the calendar, since story 7.5.
- */
-export const HOURS_TEAM_PARAM = 'smjena';
-
-/** The parameter *Sati* named the team with before story 7.5: an old URL carrying it is redirected. */
-export const LEGACY_HOURS_TEAM_PARAM = 'tim';
-
-/** The search parameter naming the one person the organization's table is narrowed to (story 4.2). */
-export const HOURS_PERSON_PARAM = 'osoba';
-
-/** The search parameter naming the column the organization's table is sorted by (story 4.2). */
-export const HOURS_SORT_PARAM = 'sort';
-
-/** The search parameter naming the sort's direction (story 4.2). */
-export const HOURS_DIRECTION_PARAM = 'smjer';
-
-/** The fixed sortable columns, as `sort` names them. */
-export const SORT_NAME = 'ime';
-export const SORT_TEAM = 'tim';
-export const SORT_SHIFTS = 'smjene';
-export const SORT_TOTAL = 'ukupno';
-export const SORT_LEAVE = 'dopust';
-
-const FIXED_SORT_KEYS = [SORT_NAME, SORT_TEAM, SORT_SHIFTS, SORT_TOTAL, SORT_LEAVE] as const;
-
-/** A band's column, as `sort` names it: `pojas-<band id>`. */
-export const BAND_SORT_PREFIX = 'pojas-';
-
-export type HoursSortKey = (typeof FIXED_SORT_KEYS)[number] | `${typeof BAND_SORT_PREFIX}${string}`;
-
-/** The two directions, as `smjer` names them. */
-export const SORT_UP = 'uzlazno';
-export const SORT_DOWN = 'silazno';
-
-export type HoursSortDirection = typeof SORT_UP | typeof SORT_DOWN;
-
-/**
- * *Sati*'s search, as `validateSearch` returns it: each parameter valid in
- * its own shape, or absent. Whether `smjena`, `osoba` or a band's `sort` names
- * something the snapshot holds is the organization view's decision, not the
- * parser's: the parser cannot see the snapshot.
- */
-export interface HoursSearch {
-  readonly mjesec?: string | undefined;
-  readonly smjena?: string | undefined;
-  readonly osoba?: string | undefined;
-  readonly sort?: HoursSortKey | undefined;
-  readonly smjer?: HoursSortDirection | undefined;
-}
-
-/** Whether a value is a column `sort` can name: a fixed one, or `pojas-<id>` with an id. */
-export function isHoursSortKey(value: unknown): value is HoursSortKey {
-  if (typeof value !== 'string') return false;
-  if (FIXED_SORT_KEYS.some((key) => key === value)) return true;
-
-  return value.startsWith(BAND_SORT_PREFIX) && value.length > BAND_SORT_PREFIX.length;
-}
-
-/** Whether a value is one of the two directions. */
-export function isHoursSortDirection(value: unknown): value is HoursSortDirection {
-  return value === SORT_UP || value === SORT_DOWN;
-}
-
-function nonEmptyText(value: unknown): value is string {
-  return typeof value === 'string' && value !== '';
-}
-
-/**
- * The raw search as *Sati* reads it: `?mjesec=YYYY-MM`, the calendar's own
- * rule, and for an admin's table (story 4.2) `smjena`, `osoba`, `sort` and
- * `smjer`. Each invalid or missing parameter is dropped on its own — a month
- * falls back to the organization's current one, a sort to the name,
- * ascending — and every other parameter is dropped too.
- */
-export function hoursSearchOf(search: Record<string, unknown>): HoursSearch {
-  const month = search[MONTH_SEARCH_PARAM];
-  const team = search[HOURS_TEAM_PARAM];
-  const person = search[HOURS_PERSON_PARAM];
-  const sort = search[HOURS_SORT_PARAM];
-  const direction = search[HOURS_DIRECTION_PARAM];
-
-  return {
-    ...(isCalendarMonth(month) ? { mjesec: month } : {}),
-    ...(nonEmptyText(team) ? { smjena: team } : {}),
-    ...(nonEmptyText(person) ? { osoba: person } : {}),
-    ...(isHoursSortKey(sort) ? { sort } : {}),
-    ...(isHoursSortDirection(direction) ? { smjer: direction } : {}),
-  };
-}
-
-/**
- * The search an old *Sati* URL (before story 7.5) is redirected to, or
- * `null` when it names no `tim`: `tim` becomes `smjena`, appended last, and
- * every other parameter is kept as it was, in order. A `smjena` already there
- * wins, and `tim` is dropped.
- */
-export function legacyHoursSearchOf(search: Record<string, unknown>): Record<string, unknown> | null {
-  if (!(LEGACY_HOURS_TEAM_PARAM in search)) return null;
-
-  const { [LEGACY_HOURS_TEAM_PARAM]: team, ...rest } = search;
-
-  return HOURS_TEAM_PARAM in rest ? rest : { ...rest, [HOURS_TEAM_PARAM]: team };
-}
-
-/**
- * A change of the search: the month (`null`: the current one), the filters —
- * the team and the person, both keys, as the filter bar writes them (story
- * 7.5; `null`: all) — or the sort (both keys; `null` drops either, the
- * default).
- */
-export type HoursSearchChange =
-  | { readonly mjesec: string | null }
-  | { readonly smjena: string | null; readonly osoba: string | null }
-  | { readonly sort: HoursSortKey | null; readonly smjer: HoursSortDirection | null };
-
-/**
- * The search to navigate to: the one `change` applied, everything else the
- * search names kept, so the month keeps the filters and the sort, and a
- * filter or a sort keeps the month. `null` drops a parameter.
- */
-export function hoursSearchTo(search: HoursSearch, change: HoursSearchChange): HoursSearch {
-  const mjesec = 'mjesec' in change ? change.mjesec : (search.mjesec ?? null);
-  const smjena = 'smjena' in change ? change.smjena : (search.smjena ?? null);
-  const osoba = 'osoba' in change ? change.osoba : (search.osoba ?? null);
-  const sort = 'sort' in change ? change.sort : (search.sort ?? null);
-  const smjer = 'smjer' in change ? change.smjer : (search.smjer ?? null);
-
-  return {
-    ...(mjesec === null ? {} : { mjesec }),
-    ...(smjena === null ? {} : { smjena }),
-    ...(osoba === null ? {} : { osoba }),
-    ...(sort === null ? {} : { sort }),
-    ...(smjer === null ? {} : { smjer }),
-  };
-}
-
-/**
  * One member's month as the domain's input — the viewer's unless `history`
  * names another (story 4.2): the calendar's schedule recipe for that member,
  * plus every hour band and every shift type with its versions — archived ones
@@ -228,17 +91,46 @@ export function hoursSearchTo(search: HoursSearch, change: HoursSearchChange): H
  * bands, the total and the shift count, into its `leaveMinutes` — kept only
  * for that removal and deliberately shown nowhere, since leave is counted in
  * days (human decision 2026-10-10).
+ *
+ * The organization's table works the snapshot-wide part out once
+ * ({@link hoursSnapshotInputOf}) and passes it as `shared` for every member
+ * (Epic 4 retro, C8); it is the same value either way.
  */
 export function memberHoursInputOf(
   snapshot: CalendarSnapshot,
   history: CalendarMemberHistory = snapshot.viewer,
   leaveKeys: readonly CollisionResolution[] = [],
+  shared: HoursSnapshotInput = hoursSnapshotInputOf(snapshot),
 ): MemberHoursInput {
+  const { bands, shiftTypes, ...schedule } = shared;
+
   return {
-    ...memberScheduleInputOf(snapshot, history),
+    ...memberScheduleInputOf(snapshot, history, schedule),
+    bands,
+    shiftTypes,
+    leaveShifts: leaveShiftsOf(leaveKeys, history.memberId),
+  };
+}
+
+/** The part of {@link memberHoursInputOf} that is the same for every member. */
+export interface HoursSnapshotInput extends SnapshotScheduleInput {
+  readonly bands: MemberHoursInput['bands'];
+  readonly shiftTypes: MemberHoursInput['shiftTypes'];
+}
+
+/**
+ * The snapshot-wide part of every member's hours input: the calendar's
+ * ({@link snapshotScheduleInputOf}), every hour band, and every shift type
+ * with its versions. `schedule`, when the caller already holds it.
+ */
+export function hoursSnapshotInputOf(
+  snapshot: CalendarSnapshot,
+  schedule: SnapshotScheduleInput = snapshotScheduleInputOf(snapshot),
+): HoursSnapshotInput {
+  return {
+    ...schedule,
     bands: snapshot.bands,
     shiftTypes: snapshot.types.map((type) => ({ type, versions: type.versions })),
-    leaveShifts: leaveShiftsOf(leaveKeys, history.memberId),
   };
 }
 
@@ -307,7 +199,7 @@ export function leaveShownOf(leave: LeaveDaysFigure | null): LeaveShown {
  * The member's charged leave dates of `month` (`YYYY-MM`), in order: the
  * domain's `leaveDaysOfMonth` over their records and the calendar's schedule
  * recipe (`memberScheduleInputOf`), which the hours' `memberHoursInputOf`
- * builds on. Their count is the leave figure.
+ * builds on. Their count is the leave figure. `shared` as there.
  *
  * @throws RangeError on any precondition of `leaveDaysOfMonth`.
  */
@@ -316,10 +208,13 @@ export function memberLeaveDatesOf(
   history: CalendarMemberHistory,
   leaveRecords: LeaveRecordsByMember,
   month: string,
+  shared?: SnapshotScheduleInput,
 ): readonly string[] {
   const records = leaveRecordsIn(leaveRecords, history.memberId);
 
-  return records.length === 0 ? [] : leaveDaysOfMonth(memberScheduleInputOf(snapshot, history), records, month);
+  if (records.length === 0) return [];
+
+  return leaveDaysOfMonth(memberScheduleInputOf(snapshot, history, shared), records, month);
 }
 
 /** One band's row: its name as stored, its hours, and the shifts overlapping it. */
@@ -359,9 +254,31 @@ export interface MyHoursView {
   readonly conflictCount: number | null;
 }
 
-export type MyHoursOutcome =
-  | { readonly ok: true; readonly view: MyHoursView }
+/** A view *Sati* built, or the one failure. */
+export type HoursOutcome<View> =
+  | { readonly ok: true; readonly view: View }
   | { readonly ok: false; readonly code: HoursFailure };
+
+export type MyHoursOutcome = HoursOutcome<MyHoursView>;
+
+/**
+ * THE ONE GUARD of *Sati*'s views — the viewer's own and the organization's
+ * table (Epic 4 retro, D3): `build` answered, or a `RangeError` from it (the
+ * domain's, or a row that cannot be trusted) logged and answered as the one
+ * failure — never a crashed route, never a partial view and never a figure.
+ * Any other error is a bug, and is thrown.
+ */
+export function hoursGuarded<View>(build: () => View): HoursOutcome<View> {
+  try {
+    return { ok: true, view: build() };
+  } catch (cause) {
+    if (!(cause instanceof RangeError)) throw cause;
+
+    console.error(HOURS_UNAVAILABLE, cause);
+
+    return { ok: false, code: HOURS_UNAVAILABLE };
+  }
+}
 
 /**
  * The domain's hours as display rows, the bands named from the snapshot in
@@ -400,9 +317,7 @@ export function myHoursViewOf(
  * the organization's (`calendarTodayOf`) — with their own conflicts of that
  * month counted from `collisions` and their accepted-uncovered shifts in
  * `leaveKeys` counted as leave (story 5.4b) and their charged leave days
- * counted over `leaveRecords`, GUARDED: a `RangeError` from the
- * domain is logged and is the one failure, never a crashed route and never a
- * figure.
+ * counted over `leaveRecords`, GUARDED ({@link hoursGuarded}).
  */
 export function myHoursOf(
   snapshot: CalendarSnapshot,
@@ -412,20 +327,14 @@ export function myHoursOf(
   leaveKeys: readonly CollisionResolution[],
   leaveRecords: LeaveRecordsByMember,
 ): MyHoursOutcome {
-  try {
+  return hoursGuarded(() => {
     const month = monthShownOf(search, today);
     const hours = memberHoursOfMonth(memberHoursInputOf(snapshot, snapshot.viewer, leaveKeys), month);
     const conflictCount = conflictCountOf(collisions, snapshot.viewer.memberId, month);
     const leaveDays = memberLeaveDatesOf(snapshot, snapshot.viewer, leaveRecords, month).length;
 
-    return { ok: true, view: myHoursViewOf(snapshot, monthHeaderOf(month, today), hours, conflictCount, leaveDays) };
-  } catch (cause) {
-    if (!(cause instanceof RangeError)) throw cause;
-
-    console.error(HOURS_UNAVAILABLE, cause);
-
-    return { ok: false, code: HOURS_UNAVAILABLE };
-  }
+    return myHoursViewOf(snapshot, monthHeaderOf(month, today), hours, conflictCount, leaveDays);
+  });
 }
 
 /**

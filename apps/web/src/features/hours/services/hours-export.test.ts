@@ -1,4 +1,4 @@
-import type { Collision } from '@shift/domain';
+import { MINUTES_PER_DAY, type Collision } from '@shift/domain';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { readCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
@@ -17,8 +17,9 @@ import {
 } from '@/features/hours/services/hours-export';
 import { durationMessageKey } from '@/features/hour-bands/services/list';
 import { NO_LEAVE_RECORDS, type LeaveRecordsByMember } from '@/features/hours/services/hours-conflicts';
-import { hoursSearchOf, leaveFigureOf, type HoursSearch } from '@/features/hours/services/my-hours';
-import { organizationHoursOf, type OrganizationHoursView } from '@/features/hours/services/organization-hours';
+import { hoursSearchOf, type HoursSearch } from '@/features/hours/services/hours-search';
+import { leaveFigureOf } from '@/features/hours/services/my-hours';
+import { bandMinutesOf, organizationHoursOf, type OrganizationHoursView } from '@/features/hours/services/organization-hours';
 import {
   HOURS_FORMAT_HOURS,
   HOURS_FORMAT_HOURS_MINUTES,
@@ -297,19 +298,68 @@ describe('the sheet', () => {
     for (const row of sheet.rows) expect(row).toHaveLength(6);
   });
 
-  it('a band a row does not carry refuses the sheet', () => {
+  it("a band a row does not carry reads as 0, by the table's own rule — never a second one (Epic 4 retro, D3)", () => {
     const view = viewOf(pilot, NO_LEAVE_RECORDS);
     const broken = { ...view, bands: [...view.bands, { ...view.bands[0]!, bandId: 'gone' }] };
+    const sheet = hoursExportOf(broken, pilot.organizationName);
+    const gone = 3 + view.bands.length;
 
-    expect(() => hoursExportOf(broken, pilot.organizationName)).toThrow(RangeError);
+    expect(bandMinutesOf(view.rows[0]!, 'gone')).toBe(0);
+    for (const row of sheet.rows) expect(row[gone]).toEqual({ kind: 'hours', value: 0, shape: hoursShapeOf(0) });
+  });
+
+  it('the footer is the screen\'s: its label, an empty Team cell, and each total over the rows shown (E922)', () => {
+    const view = viewOf(uj5, NO_LEAVE_RECORDS);
+    const sheet = hoursExportOf(view, uj5.organizationName);
+    const footer = view.footer!;
+    const cells = sheet.footer!;
+    const minutes = (cell: HoursExportCell | undefined): number =>
+      cell?.kind === 'hours' ? Math.round(cell.value * MINUTES_PER_DAY) : Number.NaN;
+
+    expect(cells).toHaveLength(sheet.columns.length);
+    expect(cells[0]).toEqual({ kind: 'text', value: t('sati.organization.footer') });
+    expect(t('sati.organization.footer')).toBe('Ukupno za prikazane osobe');
+    expect(cells[1]).toEqual({ kind: 'empty' });
+    expect(cells[2]).toEqual({ kind: 'count', value: footer.shiftCount });
+    // EACH DURATION COLUMN STILL SUMS: the footer is the sum of the cells above it.
+    for (let column = 3; column < 3 + view.bands.length + 1; column += 1) {
+      const above = sheet.rows.reduce((sum, row) => sum + minutes(row[column]), 0);
+
+      expect(minutes(cells[column]), sheet.columns[column]).toBe(above);
+      expect(cells[column]).toEqual({ kind: 'hours', value: above / MINUTES_PER_DAY, shape: hoursShapeOf(above) });
+    }
+    expect(minutes(cells.at(-3))).toBe(footer.totalMinutes);
+    expect(cells.at(-2)).toEqual(footer.leaveDays === 0 ? { kind: 'empty' } : { kind: 'count', value: footer.leaveDays });
+    expect(cells.at(-1)).toEqual({ kind: 'count', value: footer.conflictCount });
+    // The status line still counts the people, never the footer.
+    expect(sheet.rows).toHaveLength(view.rows.length);
+  });
+
+  it('the footer counts leave days as the screen does, and there is none with no row', () => {
+    const memberId = viewOf(pilot, NO_LEAVE_RECORDS).rows[0]!.memberId;
+    const view = viewOf(pilot, new Map([[memberId, [{ from: `${MONTH}-05`, to: `${MONTH}-12` }]]]), { mjesec: MONTH });
+    const sheet = hoursExportOf(view, pilot.organizationName);
+
+    expect(view.footer!.leaveDays).toBeGreaterThan(0);
+    expect(sheet.footer!.at(-2)).toEqual({ kind: 'count', value: view.footer!.leaveDays });
+    expect(hoursExportOf({ ...view, rows: [], footer: null }, pilot.organizationName).footer).toBeNull();
   });
 
   it('writes every figure as a number cell, every heading as text, and an empty leave as no cell', () => {
     const view = viewOf(uj5, NO_LEAVE_RECORDS);
     const sheet = hoursExportOf(view, uj5.organizationName);
-    const [header, ...rows] = sheetDataOf(sheet);
+    const [header, ...body] = sheetDataOf(sheet);
+    const rows = body.slice(0, view.rows.length);
 
     expect(header).toEqual(sheet.columns.map((column) => ({ type: String, value: column, fontWeight: 'bold' })));
+    // The footer last, in bold, its empty Team cell no cell at all.
+    expect(body).toHaveLength(view.rows.length + 1);
+    const footer = body.at(-1)!;
+
+    expect(footer[0]).toEqual({ type: String, value: t('sati.organization.footer'), fontWeight: 'bold' });
+    expect(footer[1]).toBeNull();
+    expect(footer.slice(2).every((cell) => cell === null || (cell as { fontWeight?: string }).fontWeight === 'bold')).toBe(true);
+    expect(footer[2]).toEqual({ type: Number, value: view.footer!.shiftCount, fontWeight: 'bold' });
     for (const [index, row] of rows.entries()) {
       const figures = row.slice(2, -2);
       const leave = view.rows[index]!.leave;
@@ -343,7 +393,8 @@ describe('the column widths', () => {
     for (const [index, width] of widths.slice(2).entries()) {
       const heading = sheet.columns[index + 2]!;
 
-      const widest = Math.max(0, ...sheet.rows.map((row) => renderedLengthOf(row[index + 2]!)));
+      // The footer's totals included: they are the widest figures of their columns.
+      const widest = Math.max(0, ...[...sheet.rows, sheet.footer!].map((row) => renderedLengthOf(row[index + 2]!)));
 
       expect(width).toBe(Math.max(10, Math.min(24, heading.length + 2), widest + 2));
     }
@@ -448,7 +499,7 @@ describe('the action', () => {
 
     await expect(exportHours(view, pilot.organizationName, () => Promise.reject(chunk))).resolves.toBeNull();
     expect(errors).toHaveBeenCalledWith(HOURS_EXPORT_FAILED, chunk);
-    const broken = { ...view, bands: [...view.bands, { ...view.bands[0]!, bandId: 'gone' }] };
+    const broken = { ...view, header: { ...view.header, month: 'never' } };
 
     await expect(exportHours(broken, pilot.organizationName, () => Promise.resolve())).resolves.toBeNull();
     expect(errors).toHaveBeenLastCalledWith(HOURS_EXPORT_FAILED, expect.any(RangeError));

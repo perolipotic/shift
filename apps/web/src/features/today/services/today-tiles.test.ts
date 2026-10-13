@@ -3,7 +3,8 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { readCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { calendarTodayOf } from '@/features/calendar/utils/month';
 import { hoursConflictsStateOf } from '@/features/hours/services/hours-conflicts';
-import { myHoursSurfaceOf, type HoursSearch, type MyHoursSurface } from '@/features/hours/services/my-hours';
+import type { HoursSearch } from '@/features/hours/services/hours-search';
+import { myHoursSurfaceOf, type MyHoursSurface } from '@/features/hours/services/my-hours';
 import type { LeaveMembersSource, LeaveOrganizationSource } from '@/features/leave/services/leave-section';
 import { MY_LEAVE_READY, myLeaveOf, myLeaveRowsStateOf, type MyLeave, type MyLeaveSources } from '@/features/leave/services/my-leave';
 import {
