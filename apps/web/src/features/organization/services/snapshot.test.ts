@@ -1172,7 +1172,11 @@ describe('the surface reads once, under one key', () => {
     // still that the ROW is read once here and the derived read is one hook
     // call, so a third query on this screen is the AD-13 violation it always
     // was.
-    expect(occurrences(screen, 'useQuery('), 'the screen issues a second query').toBe(1);
+    // THE ONE OTHER QUERY is the *Satni pojasi* card's read of the bands
+    // (deferred work from 7.18): another table, through the band list's own
+    // query options and key, in its own hook — never a second organization read.
+    expect(occurrences(screen, 'useQuery('), 'the screen issues a third query').toBe(2);
+    expect(occurrences(screen, 'hourBandsQueryOptions('), 'the bands are read other than by their list').toBe(1);
     expect(occurrences(hook, 'useQuery('), 'the one query is not the hook\'s').toBe(1);
     expect(
       occurrences(screen, 'useRenderableLogo('),

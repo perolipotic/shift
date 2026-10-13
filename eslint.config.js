@@ -194,7 +194,7 @@ export const FEATURE_PUBLIC = {
     'services/resolutions', // calendar, hours, teams, today
   ],
   'hour-bands': [
-    'services/list', // calendar, conflicts, hours, shift-types, pages
+    'services/list', // calendar, conflicts, hours, organization, shift-types, pages
     'services/write', // pages
   ],
   // Story 6.1b: *Danas*'s hours tile is *Sati*'s own surface for the

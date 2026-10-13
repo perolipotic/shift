@@ -1,4 +1,6 @@
-import { formatIsoDayMonth, formatMonthName } from '@/lib/i18n/format';
+import { leaveYearOf } from '@shift/domain';
+
+import { formatIsoDate, formatIsoDayMonth, formatMonthName, organizationIsoDate } from '@/lib/i18n/format';
 
 /**
  * The leave year's start as the organization screen offers it: a day and a
@@ -62,4 +64,35 @@ export function leaveYearStartLabel(month: number, day: number): string | null {
   const isoDay = String(day).padStart(ISO_PART_WIDTH, '0');
 
   return formatIsoDayMonth(`${String(REFERENCE_YEAR)}-${isoMonth}-${isoDay}`);
+}
+
+/** A leave year as the dialog states it: `01.01.2026` to `31.12.2026`. */
+export interface LeaveYearShown {
+  readonly from: string;
+  readonly to: string;
+}
+
+/**
+ * *Tekuća godina godišnjeg* (deferred work from 7.18): the leave year that
+ * holds the organization's today (L8) under the stored start — the domain's
+ * `leaveYearOf`, the one rule every balance is counted by. `null` for a start
+ * or a date the domain refuses, so the dialog shows no line rather than a
+ * wrong one.
+ */
+export function currentLeaveYearOf(
+  start: { readonly month: number; readonly day: number },
+  timeZone: string,
+  now: Date,
+): LeaveYearShown | null {
+  try {
+    const year = leaveYearOf(organizationIsoDate(now, timeZone), start);
+    const from = formatIsoDate(year.from);
+    const to = formatIsoDate(year.to);
+
+    return from === null || to === null ? null : { from, to };
+  } catch (cause) {
+    if (cause instanceof RangeError) return null;
+
+    throw cause;
+  }
 }

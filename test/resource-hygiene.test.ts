@@ -1939,6 +1939,13 @@ const SANCTIONED_SCREEN_KEYS = [
   'organization.timezoneReason',
   'organization.leaveYear',
   'organization.leaveYearStartsOn',
+  // Deferred work from 7.18: the leave dialog's current leave year, and the
+  // *Satni pojasi* facts card's bands label, value and way to the editor.
+  'organization.leaveYearCurrent',
+  'organization.hourBandsBands',
+  'organization.hourBandsBandsValue',
+  'organization.hourBandsOpen',
+  'organization.hourBandsOpenLabel',
   'organization.fireRanksUse',
   'organization.fireRanksHint',
   'rotation.builder.history.close',

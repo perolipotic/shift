@@ -334,6 +334,30 @@ export function hourBandDisplayRowsOf(bands: readonly HourBandRow[]): HourBandDi
   });
 }
 
+/** The bands as one fact card states them (deferred work from 7.18): how many, their names, the day covered. */
+export interface HourBandsSummary {
+  readonly count: number;
+  /** The names in START order, as the list and the bar order them. */
+  readonly names: readonly string[];
+  /** Out of 1440: the bar's own figure, never recomputed. */
+  readonly coveredMinutes: number;
+}
+
+/**
+ * *Organizacija*'s *Satni pojasi* card: the count, the names and the day
+ * covered — the list's rows and the bar's covered minutes, read off the same
+ * derivations, so the card and `/organizacija/satni-pojasi` cannot disagree.
+ */
+export function hourBandsSummaryOf(bands: readonly HourBandRow[]): HourBandsSummary {
+  const rows = hourBandDisplayRowsOf(bands);
+
+  return {
+    count: rows.length,
+    names: rows.map((row) => row.band.name),
+    coveredMinutes: partitionBarOf(bands).coveredMinutes,
+  };
+}
+
 // ---------------------------------------------------------- the preview
 
 /** What a band being entered would span, before it is saved. */

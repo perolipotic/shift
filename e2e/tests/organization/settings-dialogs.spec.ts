@@ -1,5 +1,5 @@
 import { ADMIN_STATE } from '../../utils/run-fixture.ts';
-import { hr } from '../../utils/i18n.ts';
+import { escapeRegExp, hr } from '../../utils/i18n.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
 
 test.use({ storageState: ADMIN_STATE });
@@ -24,6 +24,19 @@ test('the page states its facts, with the zone locked and the reason said, and n
   await expect(page.getByRole('region', { name: organization.timeHeading })).toContainText(organization.timezoneLocked);
 });
 
+test('Satni pojasi is a card of facts about the bands, and Otvori leads to their editor', async ({ page, organizationPage }) => {
+  // Deferred work from 7.18: the count and names, the day covered, and the way in.
+  await organizationPage.goto();
+
+  const card = page.getByRole('region', { name: organization.hourBands.heading, exact: true });
+  await expect(card).toBeVisible();
+  await expect(card).toContainText(organization.hourBandsBands);
+  await expect(card).toContainText(organization.hourBands.covered);
+  await expect(card).toContainText(organization.hourBands.coveredValue.split('}')[1] ?? '');
+  await card.getByRole('link', { name: organization.hourBandsOpenLabel, exact: true }).click();
+  await expect(page).toHaveURL(/\/organizacija\/satni-pojasi$/);
+});
+
 test('every change opens its own dialog with one Spremi, and each way out returns focus to its button', async ({
   page,
   organizationPage,
@@ -43,6 +56,9 @@ test('every change opens its own dialog with one Spremi, and each way out return
   const leaveYear = organizationPage.dialog(organization.leaveYearStart);
   await organizationPage.leaveYearOpener.click();
   await expect(leaveYear.getByLabel(organization.leaveYearStartDay, { exact: true })).toBeVisible();
+  // The current leave year the saved start gives, in full dates (deferred work from 7.18).
+  const lead = escapeRegExp(organization.leaveYearCurrent.split('{')[0] ?? '');
+  await expect(leaveYear.getByText(new RegExp(`^${lead}\\d{2}\\.\\d{2}\\.\\d{4}–\\d{2}\\.\\d{2}\\.\\d{4}$`))).toBeVisible();
   await leaveYear.getByRole('button', { name: organization.close, exact: true }).click();
   await expect(leaveYear).toHaveCount(0);
   await expect(organizationPage.leaveYearOpener).toBeFocused();

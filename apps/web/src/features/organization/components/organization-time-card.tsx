@@ -29,6 +29,7 @@ import {
 import {
   LEAVE_START_DAYS,
   LEAVE_START_MONTHS,
+  currentLeaveYearOf,
   leaveYearStartLabel,
 } from '@/features/organization/utils/leave-start';
 
@@ -99,7 +100,8 @@ export function OrganizationTimeCard({
 
 /**
  * The leave year's start: a day and a month, named together by the dialog's
- * title and each by its own label, behind one Spremi. Not a date picker: the setting recurs yearly, so a year would mean
+ * title and each by its own label, behind one Spremi; under them, the
+ * current leave year the saved start gives (*Tekuća godina godišnjeg*). Not a date picker: the setting recurs yearly, so a year would mean
  * nothing, and `0002:106` admits days 1-28 by SHAPE, which two closed lists
  * express and a calendar cannot. See `@/features/organization/utils/leave-start`.
  */
@@ -111,6 +113,12 @@ function LeaveYearForm({
   readonly organization: OrganizationSnapshot;
 }): ReactNode {
   const { pending, failure, refusedField, saveLeaveYear } = settings;
+  // The leave year the stored start puts today in, under the fields.
+  const current = currentLeaveYearOf(
+    { month: organization.leaveYearStartMonth, day: organization.leaveYearStartDay },
+    organization.timezone,
+    new Date(),
+  );
 
   return (
     <OrganizationDialogForm settings={settings} onSubmit={saveLeaveYear}>
@@ -159,6 +167,11 @@ function LeaveYearForm({
           </InputGroup>
         </div>
       </div>
+      {current === null ? null : (
+        <p className="text-sm text-muted-foreground tabular-nums">
+          {t('organization.leaveYearCurrent', { from: current.from, to: current.to })}
+        </p>
+      )}
     </OrganizationDialogForm>
   );
 }

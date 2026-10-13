@@ -741,7 +741,8 @@ const SCREENS = [
   // accent and the fire-rank setting are radio groups, which are not fields
   // anybody types in, and a slug, a zone or a locale control would still be
   // the count moving.
-  { name: 'the organization settings surface', file: SETTINGS, expectedControls: 11 },
+  // TWELVE since the *Satni pojasi* card's `Otvori` (deferred work from 7.18).
+  { name: 'the organization settings surface', file: SETTINGS, expectedControls: 12 },
   // THREE on the member list, and the count is what keeps a fourth from
   // arriving unreviewed: the search field, the permission-level filter, and ONE
   // `<Button>` — the sort control, written once inside a map over
@@ -2269,7 +2270,12 @@ const KEY_SOURCES = [
   // option names, the accent's stored label and the fire-rank status line
   // reach `t()` through their `MessageKey` modules. The aside left the page:
   // its title and body went with it.
-  { name: 'the organization settings surface', file: SETTINGS, keys: translationKeys, strings: 48 },
+  //
+  // FIFTY-SEVEN SINCE THE DEFERRED 7.18 WORK: the leave dialog's current
+  // leave year, and the *Satni pojasi* card — its heading (the header link's
+  // key written a second time), `Otvori` and its name, the bands' label, the
+  // count and its value with the names, and the coverage's label and value.
+  { name: 'the organization settings surface', file: SETTINGS, keys: translationKeys, strings: 57 },
   {
     // EIGHT on the member list since story 1.5b, up from five, and the number is
     // still small because most of what this screen says is read off a table
