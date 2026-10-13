@@ -5,7 +5,6 @@ import {
   ALL_TEAMS,
   DEFAULT_FILTERS,
   MEMBERS_TABLE,
-  NO_TEXT,
   chooseChip,
   membersAwaitTodayOf,
   memberChipChoiceOf,
@@ -27,6 +26,7 @@ import {
   type NarrowingInputs,
 } from '@/features/members/services/list';
 import { supabaseClient } from '@/lib/supabase/client';
+import { NO_TEXT } from '@/utils/text';
 
 /** How the hook writes the URL: the whole search, pushed, or replacing the entry. */
 export type MembersNavigate = (search: MembersSearch, options: { readonly replace: boolean }) => void;

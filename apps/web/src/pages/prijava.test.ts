@@ -2784,10 +2784,11 @@ const KEY_SOURCES = [
     // STORY 2.5: the six warning lines (gap, duplicate, and the rest gap
     // known, unknown, endless and endless unknown), the summary counting
     // them, a date's detail, and the list's and the run's separators.
+    // ELEVEN: a doubled type of a duplicate date, naming its teams.
     name: 'the rotation warning rules',
     file: ROTATION_WARNING_KEYS,
     keys: memberListKeys,
-    strings: 10,
+    strings: 11,
   },
   {
     // STORY 2.6: the history's three statuses, in words, and the unknown author.
@@ -3187,11 +3188,11 @@ const KEY_SOURCES = [
     // the pattern, and the confirmation.
     // FIFTEEN SINCE STORY 2.6: the past effective date; the cancel's three
     // refusals (stale, and the save's refused and unavailable again) and its
-    // confirmation.
+    // confirmation. SIXTEEN: an effective date more than a year ahead.
     name: 'the rotation write rules',
     file: ROTATION_WRITE_KEYS,
     keys: memberWriteKeys,
-    strings: 15,
+    strings: 16,
   },
   {
     // THIRTEEN on the create form: its own heading, five field labels, the save
@@ -3995,7 +3996,7 @@ describe('the screen is read at all, so every sweep below means something', () =
     // ONE DECLARATION PER HANDLER PER SET, because the extractors take the
     // first match in a joined set.
     for (const [set, hookFile, names] of [
-      [SHIFT_TYPE_LIST, SHIFT_TYPE_LIST_HOOK, ['submit', 'openAdding', 'chooseKind']],
+      [SHIFT_TYPE_LIST, SHIFT_TYPE_LIST_HOOK, ['submit', 'openAdding', 'closeAdding', 'chooseKind']],
       [
         SHIFT_TYPE_EDIT,
         SHIFT_TYPE_EDIT_HOOK,
@@ -4038,7 +4039,7 @@ describe('the screen is read at all, so every sweep below means something', () =
     },
   ];
   const SHIFT_TYPE_HANDLERS =
-    'submit|saveTimes|cancelTimes|archive|chooseKind|openAdding|refresh|close|clearOutcomes';
+    'submit|saveTimes|cancelTimes|archive|chooseKind|openAdding|closeAdding|refresh|close|clearOutcomes';
   const SHIFT_TYPE_WRITES = [
     'supabaseClient(',
     'createShiftType(',

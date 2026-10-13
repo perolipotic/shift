@@ -24,7 +24,6 @@ import { myLeaveRowsStateOf } from '@/features/leave/services/my-leave';
 import {
   MEMBERS_LIST_KEY,
   MEMBERS_TABLE,
-  NO_TEXT,
   membersQueryOptions,
   membersSurfaceStateOf,
 } from '@/features/members/services/list';
@@ -35,6 +34,7 @@ import {
 } from '@/features/organization/services/snapshot';
 import { useOrganizationToday } from '@/hooks/organization-today';
 import { supabaseClient } from '@/lib/supabase/client';
+import { NO_TEXT } from '@/utils/text';
 
 /** How the hook writes the URL: the next search, and whether it replaces the entry (typing does). */
 export type GodisnjiNavigate = (next: GodisnjiSearch, options: { readonly replace: boolean }) => void;

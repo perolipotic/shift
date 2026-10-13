@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ROTATION_CHANGED_TODAY,
   ROTATION_EFFECTIVE_PAST,
+  ROTATION_EFFECTIVE_TOO_FAR,
   ROTATION_EMPTY,
   ROTATION_NO_TEAMS,
   ROTATION_SCHEDULED,
@@ -850,6 +851,7 @@ describe('the messages', () => {
       ROTATION_NO_TEAMS,
       ROTATION_SCHEDULED,
       ROTATION_EFFECTIVE_PAST,
+      ROTATION_EFFECTIVE_TOO_FAR,
       ROTATION_TYPE_ARCHIVED,
       ROTATION_UNCHANGED,
       ROTATION_CHANGED_TODAY,
