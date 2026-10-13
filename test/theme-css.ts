@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 
 import { parse, type Color } from 'culori';
 
+import { stripCssComments } from './source-scan.ts';
+
 /**
  * One reading of the theme stylesheet, shared by every theme test (story 1.1b).
  *
@@ -123,7 +125,7 @@ function source(): string {
  * over. Follows the two-pass idiom in `key-hygiene.test.ts`.
  */
 export function stripped(): string {
-  return source().replace(/\/\*[\s\S]*?\*\//g, '');
+  return stripCssComments(source());
 }
 
 /** The span of a brace-delimited block starting at `from`, as [open, close). */

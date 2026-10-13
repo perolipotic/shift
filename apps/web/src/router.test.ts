@@ -21,6 +21,7 @@ import {
   type MemberRoleOutcome,
 } from '@/features/navigation/services/role';
 import { currentSession, SESSION_UNRESOLVED } from '@/lib/supabase/client';
+import { SESSION } from '@/lib/supabase/session.fixture';
 import { AppLayout, appLayoutRoute } from '@/pages/_app';
 import { DanasScreen, danasRoute } from '@/pages/danas';
 import { GodisnjiScreen, godisnjiRoute } from '@/pages/godisnji';
@@ -688,9 +689,6 @@ describe('the deployed root resolves both ways and is never a blank page', () =>
    * (`__root.tsx` explains why), so the stub is a function too.
    */
 
-  /** Enough of a session to be distinguishable from `null`. */
-  const SESSION = { access_token: 'token', user: { id: 'member' } } as unknown as Session;
-
   /** The location `/` is loaded at: a real link's shape, with a search and a hash. */
   const ROOT_LINK = { href: '/?invite=abc#section' };
 
@@ -1187,9 +1185,6 @@ describe('a signed-in visitor is never offered a credential form', () => {
    * have made the missing exit HARDER to notice, not easier. Both ship here.
    */
 
-  /** Enough of a session to be distinguishable from `null`. */
-  const SESSION = { access_token: 'token', user: { id: 'member' } } as unknown as Session;
-
   type SignInBeforeLoad = (options: {
     params: { slug: string };
     context: AppRouterContext;
@@ -1321,9 +1316,6 @@ describe('the signed-in layout guards every destination once, and is pathless', 
    * anything but the reader would pass here and fail in a browser; keeping the
    * stub minimal is what makes that a test failure rather than a discovery.
    */
-
-  /** Enough of a session to be distinguishable from `null`. */
-  const SESSION = { access_token: 'token', user: { id: 'member' } } as unknown as Session;
 
   /** The destination the guard is loaded at, as a real deep link. */
   const DEEP_LINK = { href: '/kalendar?tim=2#tjedan' };

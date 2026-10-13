@@ -14,6 +14,7 @@ import {
   type MemberTable,
   type PostgrestAnswer,
 } from '@/features/navigation/services/role';
+import { SESSION } from '@/lib/supabase/session.fixture';
 
 /**
  * The role read's I/O matrix, EXECUTED.
@@ -30,12 +31,6 @@ import {
  * must never look alike. So the last block below asserts the two outcomes are
  * distinguishable rather than only that each one maps somewhere.
  */
-
-/** Enough of a session to carry the one field the read uses. */
-const SESSION = {
-  access_token: 'token',
-  user: { id: 'auth-user-id' },
-} as unknown as Session;
 
 const signedIn = (): Promise<Session | null> => Promise.resolve(SESSION);
 const signedOut = (): Promise<Session | null> => Promise.resolve(null);

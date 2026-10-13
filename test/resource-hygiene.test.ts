@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { leafKeys, leafMessages } from '../apps/web/src/lib/i18n/resource-tree.fixture.ts';
+
 /**
  * `hr.json` is the artifact story 1.1d multiplies, and nothing guarded it.
  *
@@ -2163,14 +2165,6 @@ function resource(): Record<string, unknown> {
   return JSON.parse(readFileSync(RESOURCE, 'utf8')) as Record<string, unknown>;
 }
 
-/** Every leaf key path, dotted the way i18next resolves them. */
-function leafKeys(node: unknown, prefix = ''): string[] {
-  if (typeof node !== 'object' || node === null) return [prefix];
-
-  return Object.entries(node).flatMap(([key, value]) =>
-    leafKeys(value, prefix === '' ? key : `${prefix}.${key}`),
-  );
-}
 
 /** One message by its dotted key path. */
 function messageAt(key: string): unknown {
@@ -2179,18 +2173,9 @@ function messageAt(key: string): unknown {
     .reduce<unknown>((node, part) => (node as Record<string, unknown>)?.[part], resource());
 }
 
+/** Every message, however deeply nested (the shared flattener). */
 function messages(): string[] {
-  const found: string[] = [];
-  const walk = (node: unknown): void => {
-    if (typeof node === 'string') {
-      found.push(node);
-      return;
-    }
-    if (typeof node === 'object' && node !== null) Object.values(node).forEach(walk);
-  };
-  walk(resource());
-
-  return found;
+  return leafMessages(resource());
 }
 
 describe('the resource file holds only what this story sanctions', () => {
