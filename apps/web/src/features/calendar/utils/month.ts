@@ -256,7 +256,7 @@ export function calendarSearchTo(search: CalendarSearch, change: CalendarSearchC
 }
 
 /** The order the calendar writes its parameters in. */
-const CALENDAR_SEARCH_ORDER = ['mjesec', 'prikaz', 'smjena', 'osoba'] as const;
+const CALENDAR_SEARCH_ORDER = [MONTH_SEARCH_PARAM, MODE_SEARCH_PARAM, TEAM_SEARCH_PARAM, PERSON_SEARCH_PARAM] as const;
 
 /** A cell's shape: at least 30 px high, the small radius, the label never truncated. */
 export const CALENDAR_CELL_CLASS =
@@ -311,10 +311,10 @@ export function calendarSearchOf(search: Record<string, unknown>): CalendarSearc
   const person = search[PERSON_SEARCH_PARAM];
 
   return {
-    ...searchEntryOf('mjesec', month, isCalendarMonth),
-    ...searchEntryOf('prikaz', mode, isCalendarMode),
-    ...searchEntryOf('smjena', team, isSearchText),
-    ...searchEntryOf('osoba', person, isSearchText),
+    ...searchEntryOf(MONTH_SEARCH_PARAM, month, isCalendarMonth),
+    ...searchEntryOf(MODE_SEARCH_PARAM, mode, isCalendarMode),
+    ...searchEntryOf(TEAM_SEARCH_PARAM, team, isSearchText),
+    ...searchEntryOf(PERSON_SEARCH_PARAM, person, isSearchText),
   };
 }
 

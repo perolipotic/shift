@@ -76,7 +76,13 @@ export interface HoursSearch {
 }
 
 /** The order *Sati* writes its parameters in. */
-const HOURS_SEARCH_ORDER = ['mjesec', 'smjena', 'osoba', 'sort', 'smjer'] as const;
+const HOURS_SEARCH_ORDER = [
+  MONTH_SEARCH_PARAM,
+  HOURS_TEAM_PARAM,
+  HOURS_PERSON_PARAM,
+  HOURS_SORT_PARAM,
+  HOURS_DIRECTION_PARAM,
+] as const;
 
 /** Whether a value is a column `sort` can name: a fixed one, or `pojas-<id>` with an id. */
 export function isHoursSortKey(value: unknown): value is HoursSortKey {
@@ -100,11 +106,11 @@ export function isHoursSortDirection(value: unknown): value is HoursSortDirectio
  */
 export function hoursSearchOf(search: Record<string, unknown>): HoursSearch {
   return {
-    ...searchEntryOf('mjesec', search[MONTH_SEARCH_PARAM], isCalendarMonth),
-    ...searchEntryOf('smjena', search[HOURS_TEAM_PARAM], isSearchText),
-    ...searchEntryOf('osoba', search[HOURS_PERSON_PARAM], isSearchText),
-    ...searchEntryOf('sort', search[HOURS_SORT_PARAM], isHoursSortKey),
-    ...searchEntryOf('smjer', search[HOURS_DIRECTION_PARAM], isHoursSortDirection),
+    ...searchEntryOf(MONTH_SEARCH_PARAM, search[MONTH_SEARCH_PARAM], isCalendarMonth),
+    ...searchEntryOf(HOURS_TEAM_PARAM, search[HOURS_TEAM_PARAM], isSearchText),
+    ...searchEntryOf(HOURS_PERSON_PARAM, search[HOURS_PERSON_PARAM], isSearchText),
+    ...searchEntryOf(HOURS_SORT_PARAM, search[HOURS_SORT_PARAM], isHoursSortKey),
+    ...searchEntryOf(HOURS_DIRECTION_PARAM, search[HOURS_DIRECTION_PARAM], isHoursSortDirection),
   };
 }
 
