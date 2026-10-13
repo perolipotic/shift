@@ -1,3 +1,4 @@
+import { QueryClient } from '@tanstack/react-query';
 import type { Session } from '@supabase/supabase-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -9,8 +10,12 @@ import {
   MEMBER_ROLE_REFUSED,
   MEMBER_ROLE_UNAVAILABLE,
   MEMBER_ROLE_UNRECOGNISED,
+  MEMBER_ROLES,
+  cachedMemberRole,
+  isAdministrator,
   memberRoleOf,
   readMemberRole,
+  type MemberRoleOutcome,
   type MemberTable,
   type PostgrestAnswer,
 } from '@/features/navigation/services/role';
@@ -349,5 +354,82 @@ describe('the names the chrome reads through', () => {
     // that invalidates it.
     expect(MEMBER_ROLE_KEY).toEqual(['member-role']);
     expect(MEMBER_ROLE_COLUMNS).toBe('role');
+  });
+});
+
+describe('the one admin predicate every admin guard decides by (B393)', () => {
+  it('admits the level that administers, and nothing else', () => {
+    expect(isAdministrator({ ok: true, role: MEMBER_ROLES[0] })).toBe(true);
+    expect(isAdministrator({ ok: true, role: 'admin' })).toBe(true);
+    expect(isAdministrator({ ok: true, role: 'member_role' })).toBe(false);
+  });
+
+  it.each([MEMBER_ROLE_REFUSED, MEMBER_ROLE_UNRECOGNISED, MEMBER_ROLE_UNAVAILABLE] as const)(
+    'treats a %s read as no permission',
+    (code) => {
+      expect(isAdministrator({ ok: false, code })).toBe(false);
+    },
+  );
+});
+
+describe('the route guards read the level through the chrome\'s cache entry (E878)', () => {
+  const ADMIN: MemberRoleOutcome = { ok: true, role: 'admin' };
+
+  it('reads fresh on every entry, and writes the answer where the chrome reads it', async () => {
+    const cache = new QueryClient();
+    const read = vi.fn(() => Promise.resolve(ADMIN));
+    const reader = cachedMemberRole(cache, read);
+
+    expect(await reader()).toEqual(ADMIN);
+    expect(await reader({ reuse: false })).toEqual(ADMIN);
+    // FRESH: a demoted admin loses the route on their next navigation.
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(cache.getQueryData(MEMBER_ROLE_KEY)).toEqual(ADMIN);
+  });
+
+  it('serves the cached answer while the route stays, with no read', async () => {
+    const cache = new QueryClient();
+    const read = vi.fn(() => Promise.resolve(ADMIN));
+    const reader = cachedMemberRole(cache, read);
+
+    await reader();
+    // A keystroke in the search: three runs, no further read.
+    await reader({ reuse: true });
+    await reader({ reuse: true });
+    expect(await reader({ reuse: true })).toEqual(ADMIN);
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads once when a staying route finds nothing cached', async () => {
+    const cache = new QueryClient();
+    const read = vi.fn(() => Promise.resolve(ADMIN));
+
+    expect(await cachedMemberRole(cache, read)({ reuse: true })).toEqual(ADMIN);
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it('joins a read already in flight rather than starting a second one', async () => {
+    // The chrome's first read and the guard's land together on a cold load.
+    const cache = new QueryClient();
+    let answer: (outcome: MemberRoleOutcome) => void = () => undefined;
+    const read = vi.fn(
+      () =>
+        new Promise<MemberRoleOutcome>((resolve) => {
+          answer = resolve;
+        }),
+    );
+    const chrome = cache.fetchQuery({ queryKey: MEMBER_ROLE_KEY, queryFn: read });
+    const guard = cachedMemberRole(cache, read)();
+
+    answer(ADMIN);
+    expect(await Promise.all([chrome, guard])).toEqual([ADMIN, ADMIN]);
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects when the read rejects, so the guard fails closed', async () => {
+    const cache = new QueryClient();
+    const reader = cachedMemberRole(cache, () => Promise.reject(new Error('READ_TIMED_OUT')));
+
+    await expect(reader()).rejects.toThrow('READ_TIMED_OUT');
   });
 });

@@ -1,10 +1,8 @@
-import { createRoute, redirect } from '@tanstack/react-router';
+import { createRoute } from '@tanstack/react-router';
 
 import { PageDescription, PageTitle } from '@/components/ui/page-header';
 import { t } from '@/lib/i18n';
-import { mayReadMembers } from '@/features/members/services/list';
-import { DESTINATIONS } from '@/features/navigation/utils/destinations';
-import { MEMBER_ROLE_UNAVAILABLE, type MemberRoleOutcome } from '@/features/navigation/services/role';
+import { requireAdmin } from '@/features/navigation/services/admin-guard';
 import { RotationSection } from '@/features/rotation/components/rotation-section';
 import { ShiftTypeAddDialog } from '@/features/shift-types/components/shift-type-add-dialog';
 import { ShiftTypeListSection } from '@/features/shift-types/components/shift-type-list-section';
@@ -36,8 +34,6 @@ import { appLayoutRoute } from '@/pages/_app';
  * `@/features/shift-types/services/list` and
  * `@/features/shift-types/services/write`, which the node suite executes.
  */
-
-const FIRST_DESTINATION = DESTINATIONS[0];
 
 export function PostavkeRotacijeScreen() {
   const screen = useShiftTypeList();
@@ -71,21 +67,7 @@ export function PostavkeRotacijeScreen() {
 export const postavkeRotacijeRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: '/postavke-rotacije',
-  /** The guard `/ljudi/smjene` carries, copied verbatim; `router.test.ts` drives it. */
-  beforeLoad: async ({ context }) => {
-    let outcome: MemberRoleOutcome;
-
-    try {
-      outcome = await context.currentMemberRole();
-    } catch (cause) {
-      console.error(MEMBER_ROLE_UNAVAILABLE, cause);
-
-      outcome = { ok: false, code: MEMBER_ROLE_UNAVAILABLE };
-    }
-
-    if (mayReadMembers(outcome)) return;
-
-    throw redirect({ to: FIRST_DESTINATION.path, replace: true });
-  },
+  /** The shared admin guard (`@/features/navigation/services/admin-guard`). */
+  beforeLoad: requireAdmin,
   component: PostavkeRotacijeScreen,
 });
