@@ -1,17 +1,16 @@
 import { createRoute, redirect } from '@tanstack/react-router';
-import type { Session } from '@supabase/supabase-js';
 
 import { DESTINATIONS } from '@/features/navigation/utils/destinations';
 import { returnSearchFor } from '@/features/auth/services/return-target';
 import { rootRoute } from '@/pages/__root';
-import { SESSION_UNRESOLVED } from '@/lib/supabase/client';
+import { resolvedSession } from '@/lib/supabase/client';
 
 /**
  * The deployed root: a DECISION, never a screen. Both ways out are redirects.
  *
  * `/` must resolve to SOMETHING. A branch that falls through to no redirect and
- * no component is a blank page at HTTP 200, and `__root.tsx` registers no
- * `errorComponent` to catch what escapes — so every path out of here throws,
+ * no component is a blank page at HTTP 200, and what escapes lands on the root
+ * error screen rather than on a decision — so every path out of here throws,
  * and `router.test.ts` asserts each separately for that reason.
  *
  * SIGNED IN it forwards to the first destination rather than rendering. `/` sits
@@ -70,32 +69,19 @@ export const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
   beforeLoad: async ({ context, location }) => {
-    // THREE outcomes reach this line, not two, and the third is why the read is
-    // wrapped. `currentSession` can REJECT: the client throws its stable code on
-    // a build with no environment, and `getSession` rejects wherever storage is
-    // blocked — Safari's private mode, a locked-down enterprise profile. An
-    // escaping rejection resolves `/` to neither redirect, which is the blank
-    // page at HTTP 200 the header exists to rule out.
+    // THREE outcomes reach this line, not two, and the third is why the read
+    // goes through `resolvedSession`. `currentSession` can REJECT: the client
+    // throws its stable code on a build with no environment, `getSession`
+    // rejects wherever storage is blocked — Safari's private mode, a
+    // locked-down enterprise profile — and a read over its time budget rejects
+    // too. The shared read logs `SESSION_UNRESOLVED` with the cause and answers
+    // `null`, the same read `_app.tsx` and both sign-in routes make.
     //
     // Failing CLOSED, and with no new copy: a session that cannot be read is
     // not a session, so the visitor goes to the sign-in path like any other
     // signed-out visitor. Reading it as a session would forward a signed-out
     // person into the layout, whose own guard would send them back out again.
-    let session: Session | null = null;
-
-    try {
-      session = await context.currentSession();
-    } catch (cause) {
-      // `session` stays `null`, which IS the decision — naming a different
-      // outcome here would be the third branch this block exists to rule out.
-      // What is NOT silent is the reason: this catch swallowed
-      // `SUPABASE_ENVIRONMENT_MISSING` whole, so a deployment with no
-      // environment redirected every visitor to the sign-in form with an empty
-      // console and nothing anywhere to say why. `client.ts` exists to stop a
-      // misconfiguration reading as an outage; logging is what keeps that
-      // promise once the throw is caught. Same shape as `lib/i18n/boot.ts`.
-      console.error(SESSION_UNRESOLVED, cause);
-    }
+    const session = await resolvedSession(context.currentSession);
 
     // ONE FURTHER HOP on the ordinary paths, and they end here. Both sign-in
     // routes send a signed-in visitor to `/`, and this line sends them on to a

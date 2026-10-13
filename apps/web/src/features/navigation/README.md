@@ -10,5 +10,10 @@ rule cannot close. Keeping the mapping as data moves the guarantee to a test tha
 executes it: `utils/destinations.test.ts` counts what each role yields and resolves
 every key against `hr.json`.
 
+`services/role.ts` reads the member's own level (bounded by a time budget) and
+binds the reader the router's guards use, served through the chrome's query
+entry. `services/admin-guard.ts` is the one admin route guard every admin-only
+page registers, and the guard read `/ljudi` shares.
+
 Keys, never labels. A string here that a person could read is the defect this
 directory exists to make impossible.

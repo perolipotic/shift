@@ -133,7 +133,8 @@ The derivation lives in one pure package that cannot reach for data. The store e
 
 - **Binds:** CAP-13, CAP-14, CAP-15, CAP-17; quality-requirements Q19
 - **Prevents:** a screen showing a stale total beside a fresh one, which independent TanStack Query keys do by default.
-- **Rule:** Each surface fetches one composite payload — configuration plus the exception layer for its window — under a single query key. Every figure on that surface is derived from that one snapshot. Two figures on a screen may never come from two reads.
+- **Rule:** Each surface derives every figure from one shared query key per fact. Configuration plus the exception layer for its window is one composite snapshot under one key; every other fact a surface shows (the own leave, the resolutions, the member list, the organization) is read under the key its detail view reads, through that view's own query options, so each fact is one cache entry shared by every surface that shows it. Two figures on a screen never come from two reads of the same fact, and a figure equals its detail view because it is that view's derivation over the same entry (Q19).
+- **Amended 2026-10-13 (deferred-work sweep, epics 5–7 retro A6).** The rule read "one composite payload … under a single query key"; the surface hooks read four to five shared keys each (`use-today.ts`), which keeps Q19 by construction, so the rule now says what the code does. Known exception until story 11.4: admin *Danas* coverage (`coverageOf` in `admin-today.ts`) has its own derivation, and 11.4 derives it from `dayDetailOf` (retro R1).
 - **Home:** a surface's loader is `features/<module>/services/snapshot.ts` in `apps/web`. There is no `surfaces/` folder (`sprint-change-proposal-2026-09-27-source-structure.md`).
 
 ### AD-14 — No server runtime beyond the privileged auth boundary

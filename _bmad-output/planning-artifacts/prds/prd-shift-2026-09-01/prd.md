@@ -516,6 +516,7 @@ Approved leave is visible on the Calendar.
 **Consequences (testable):**
 - In a Member-filtered view, that Member's leave dates are marked, including dates where they had no working shift.
 - In the all-Teams view, leave is indicated without making the shift grid unreadable. `[ASSUMPTION: an indicator or count rather than per-Member detail in the all-Teams view; UX to settle the treatment.]`
+- The all-Teams leave indication and another Member's leave apply to an Admin. A Member Role account sees only their own leave (2026-10-13, deferred-work sweep; as FR-38).
 
 #### FR-38: Conflicts and Uncovered Shifts on the Calendar
 The Calendar visually distinguishes shifts in Conflict and Uncovered Shifts.

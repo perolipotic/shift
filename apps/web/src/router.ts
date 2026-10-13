@@ -20,9 +20,10 @@ import { prijavaBareRoute, prijavaRoute } from '@/pages/prijava';
 import { rasporedKonfliktRoute } from '@/pages/raspored.$memberId.$date.$teamId';
 import { rasporedRoute } from '@/pages/raspored';
 import { rootRoute } from '@/pages/__root';
+import { RoutePending } from '@/pages/pending';
 import { satiRoute } from '@/pages/sati';
 import { smjenaRoute } from '@/pages/smjene.$id';
-import { currentMemberRole } from '@/features/navigation/services/role';
+import { routeMemberRole } from '@/features/navigation/services/role';
 import { currentSession } from '@/lib/supabase/client';
 
 /**
@@ -108,6 +109,16 @@ const routeTree = rootRoute.addChildren([
 ]);
 
 /**
+ * How long a resolution may take before the shared pending skeleton shows
+ * (A224). TanStack's own default, stated here so `router.test.ts` can pin it:
+ * a guard that answers within a second paints nothing extra, and one that
+ * waits on a token refresh over a slow connection shows the page skeleton
+ * rather than a frozen frame. TanStack keeps it up at least `pendingMinMs`
+ * once shown, so it does not flash.
+ */
+export const ROUTE_PENDING_MS = 1000;
+
+/**
  * The router, and the one place the session reader is bound into the context.
  *
  * `currentSession` and `currentMemberRole` are the whole of the router context
@@ -119,7 +130,11 @@ const routeTree = rootRoute.addChildren([
  * `currentMemberRole` joined in story 1.5a, and it is the second reader for the
  * same reason the first one is a reader rather than a value: it is read at
  * resolution time, so a demoted admin loses `/ljudi` on their next navigation
- * rather than at token expiry.
+ * rather than at token expiry. It is bound to `routeMemberRole`, which reads
+ * through the one query cache under the chrome's key (E878): fresh on entering
+ * a route, reused while only the search changes. Both readers reject after a
+ * time budget (`@/utils/time-budget`), so a hung read ends on a guard's
+ * fail-closed path rather than in a navigation that never completes.
  *
  * The reader is IMPORTED rather than written here as an arrow, because an arrow
  * here is executed by no test at all: `router.test.ts` supplies its own context
@@ -137,7 +152,9 @@ const routeTree = rootRoute.addChildren([
  */
 export const router = createRouter({
   routeTree,
-  context: { currentSession, currentMemberRole },
+  context: { currentSession, currentMemberRole: routeMemberRole },
+  defaultPendingComponent: RoutePending,
+  defaultPendingMs: ROUTE_PENDING_MS,
 });
 
 declare module '@tanstack/react-router' {

@@ -875,6 +875,11 @@
     "heading": "Stranica ne postoji",
     "back": "Vrati se na prijavu"
   },
+  "error": {
+    "heading": "Nešto nije uspjelo",
+    "lede": "Stranicu trenutačno nije moguće prikazati. Pokušaj ponovno.",
+    "retry": "Pokušaj ponovno"
+  },
   "organization": {
     "lede": "Osnovni podaci o organizaciji i kako se prikazuje u aplikaciji.",
     "profileHeading": "Profil",

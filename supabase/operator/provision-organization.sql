@@ -32,26 +32,42 @@
 
 do $$
 declare
+  -- A setting is BLANK when nothing but white space is left of it, by the same
+  -- class `private.name_key` strips (0024): a plain `btrim` removes spaces
+  -- only, so a value of a tab or a no-break space would arrive as a name the
+  -- schema then refuses as blank (23514) — or, for a column with no blank
+  -- check, be stored as one. Copied rather than called, because the value is
+  -- kept as written (trimmed, not lowercased or normalized);
+  -- `test/supabase-scaffold.test.ts` holds the two copies equal.
+  white_space constant text := U&'\0009\000A\000B\000C\000D\001C\001D\001E\001F\0020\0085\00A0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200A\2028\2029\202F\205F\3000\FEFF';
+
+  -- The first admin's password floor. The same as `[auth]
+  -- minimum_password_length` in `supabase/config.toml`, which GoTrue enforces
+  -- on every password the application later sets; a row written here bypasses
+  -- GoTrue, so the floor is restated. `test/provisioning.test.ts` holds the
+  -- two equal.
+  minimum_password_length constant int := 10;
+
   -- Organization. No value is defaulted: a default here is where one
   -- organization's answer becomes every organization's answer.
-  organization_slug          text     := nullif(btrim(coalesce(current_setting('shift.organization_slug', true), '')), '');
-  organization_name          text     := nullif(btrim(coalesce(current_setting('shift.organization_name', true), '')), '');
-  organization_short_name    text     := nullif(btrim(coalesce(current_setting('shift.organization_short_name', true), '')), '');
-  organization_description   text     := nullif(btrim(coalesce(current_setting('shift.organization_description', true), '')), '');
-  organization_address       text     := nullif(btrim(coalesce(current_setting('shift.organization_address', true), '')), '');
-  organization_contact_email text     := nullif(btrim(coalesce(current_setting('shift.organization_contact_email', true), '')), '');
-  organization_type          text     := nullif(btrim(coalesce(current_setting('shift.organization_type', true), '')), '');
-  organization_timezone      text     := nullif(btrim(coalesce(current_setting('shift.organization_timezone', true), '')), '');
-  organization_locale        text     := nullif(btrim(coalesce(current_setting('shift.organization_locale', true), '')), '');
-  leave_year_start_month     smallint := nullif(btrim(coalesce(current_setting('shift.leave_year_start_month', true), '')), '')::smallint;
-  leave_year_start_day       smallint := nullif(btrim(coalesce(current_setting('shift.leave_year_start_day', true), '')), '')::smallint;
+  organization_slug          text     := nullif(btrim(coalesce(current_setting('shift.organization_slug', true), ''), white_space), '');
+  organization_name          text     := nullif(btrim(coalesce(current_setting('shift.organization_name', true), ''), white_space), '');
+  organization_short_name    text     := nullif(btrim(coalesce(current_setting('shift.organization_short_name', true), ''), white_space), '');
+  organization_description   text     := nullif(btrim(coalesce(current_setting('shift.organization_description', true), ''), white_space), '');
+  organization_address       text     := nullif(btrim(coalesce(current_setting('shift.organization_address', true), ''), white_space), '');
+  organization_contact_email text     := nullif(btrim(coalesce(current_setting('shift.organization_contact_email', true), ''), white_space), '');
+  organization_type          text     := nullif(btrim(coalesce(current_setting('shift.organization_type', true), ''), white_space), '');
+  organization_timezone      text     := nullif(btrim(coalesce(current_setting('shift.organization_timezone', true), ''), white_space), '');
+  organization_locale        text     := nullif(btrim(coalesce(current_setting('shift.organization_locale', true), ''), white_space), '');
+  leave_year_start_month     smallint := nullif(btrim(coalesce(current_setting('shift.leave_year_start_month', true), ''), white_space), '')::smallint;
+  leave_year_start_day       smallint := nullif(btrim(coalesce(current_setting('shift.leave_year_start_day', true), ''), white_space), '')::smallint;
 
   -- The first admin. AD-12: the operator issues a username, not an address.
-  admin_name                 text     := nullif(btrim(coalesce(current_setting('shift.admin_name', true), '')), '');
-  admin_username             text     := lower(nullif(btrim(coalesce(current_setting('shift.admin_username', true), '')), ''));
+  admin_name                 text     := nullif(btrim(coalesce(current_setting('shift.admin_name', true), ''), white_space), '');
+  admin_username             text     := lower(nullif(btrim(coalesce(current_setting('shift.admin_username', true), ''), white_space), ''));
   admin_password             text     := nullif(current_setting('shift.admin_password', true), '');
-  admin_email                text     := nullif(btrim(coalesce(current_setting('shift.admin_email', true), '')), '');
-  admin_leave_allowance_days smallint := nullif(btrim(coalesce(current_setting('shift.admin_leave_allowance_days', true), '')), '')::smallint;
+  admin_email                text     := nullif(btrim(coalesce(current_setting('shift.admin_email', true), ''), white_space), '');
+  admin_leave_allowance_days smallint := nullif(btrim(coalesce(current_setting('shift.admin_leave_allowance_days', true), ''), white_space), '')::smallint;
 
   new_organization_id uuid;
   new_auth_user_id    uuid := gen_random_uuid();
@@ -64,6 +80,23 @@ begin
   -- A missing organization attribute needs no check here: the columns are not
   -- null and their values are constrained, so the schema refuses with 23502 or
   -- 23514 (AD-3 — a validation that could have been a shape is a defect).
+  -- The timezone is an IANA `Area/Location` name the database knows, the one
+  -- form both Postgres and the browser's `Intl` read the same way. An
+  -- abbreviation (`CET`, `UTC`), a POSIX string (`CET-1CEST`) or a `posix/`
+  -- or `right/` alias would be accepted by one side and refused, or read
+  -- differently, by the other, and the timezone cannot be changed in the
+  -- product afterwards. A missing one is left to the schema's `not null`.
+  if organization_timezone is not null
+     and (organization_timezone !~ '^[A-Za-z]+(/[A-Za-z0-9_+-]+)+$'
+          or organization_timezone ~ '^(posix|right)/'
+          or not exists (select 1 from pg_catalog.pg_timezone_names where name = organization_timezone))
+  then
+    raise exception using
+      errcode = 'check_violation',
+      message = 'ORGANIZATION_TIMEZONE_UNKNOWN',
+      detail = organization_timezone;
+  end if;
+
   insert into organizations (
     slug, name, short_name, description, address, contact_email,
     organization_type, timezone, locale,
@@ -90,6 +123,17 @@ begin
       errcode = 'check_violation',
       message = 'ORGANIZATION_WITHOUT_ADMIN',
       detail = new_organization_id::text;
+  end if;
+
+  -- Counted in characters. The account this creates can do anything, and it
+  -- is the one password in the system that never passed through GoTrue's own
+  -- check. An admin-issued reset (story 7.8) is the recovery for one already
+  -- issued; this keeps a short one from being issued in the first place.
+  if char_length(admin_password) < minimum_password_length then
+    raise exception using
+      errcode = 'check_violation',
+      message = 'ADMIN_PASSWORD_TOO_SHORT',
+      detail = format('at least %s characters', minimum_password_length);
   end if;
 
   -- AD-12: a non-routable synthesized address. `.invalid` is reserved by

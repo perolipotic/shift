@@ -3,7 +3,7 @@ import { queryOptions } from '@tanstack/react-query';
 import { initialsOf } from '@/utils/initials';
 import { compareText, formatIsoDayMonth, isIsoDate, organizationIsoDate } from '@/lib/i18n/format';
 import type { MemberRole } from '@/features/navigation/utils/destinations';
-import { MEMBER_ROLES, type MemberRoleOutcome } from '@/features/navigation/services/role';
+import { MEMBER_ROLES, isAdministrator, type MemberRoleOutcome } from '@/features/navigation/services/role';
 import { NO_TEXT, shownDate } from '@/utils/text';
 
 /**
@@ -893,9 +893,13 @@ export async function readMembers(table: MembersTable): Promise<MembersOutcome> 
  * complete forwards the visitor rather than admitting them. That is the right
  * direction for a guard whose only cost of being wrong in the other direction is
  * handing a member their colleagues' addresses.
+ *
+ * THE SAME DECISION AS THE ADMIN ROUTES' since the router-guards fix:
+ * `isAdministrator` is the one predicate, and this is it under the member
+ * list's name, so the list and every admin guard cannot drift apart.
  */
 export function mayReadMembers(outcome: MemberRoleOutcome): boolean {
-  return outcome.ok && outcome.role === MEMBER_ROLES[0];
+  return isAdministrator(outcome);
 }
 
 /** What `/ljudi` shows an administrator: the member list (story 1.5a). */
