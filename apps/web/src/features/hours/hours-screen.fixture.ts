@@ -32,6 +32,10 @@ export const HOURS_SCREEN_PARTS = {
   filterBar: ['components', 'filter-bar.tsx'],
   // Story 7.6: the phone's sort control Sati and Ljudi share.
   sortControl: ['components', 'sort-control.tsx'],
+  // Epic 4 retro D2: the sortable heading Sati and Godišnji share, and the
+  // one glyph record it, Ljudi's headings and the sort control draw from.
+  sortableHead: ['components', 'sortable-head.tsx'],
+  sortGlyphs: ['components', 'sort-glyphs.ts'],
 } as const;
 
 /**
@@ -47,6 +51,10 @@ export const HOURS_SCREEN_EXEMPT: readonly { readonly file: string; readonly why
   {
     file: 'services/my-hours.ts',
     why: 'every rule of the screen and its failure message; a key source of its own, executed by my-hours.test.ts',
+  },
+  {
+    file: 'services/hours-search.ts',
+    why: "the table's URL vocabulary and the search's parser and change (Epic 4 retro, P1); renders nothing, executed by hours-search.test.ts",
   },
   {
     file: 'services/organization-hours.ts',

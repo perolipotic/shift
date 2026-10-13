@@ -2,7 +2,7 @@ import type { ReactNode, RefObject } from 'react';
 
 import type { FilterBarHandle } from '@/components/filter-bar';
 import { Button } from '@/components/ui/button';
-import type { HoursSearchChange } from '@/features/hours/services/my-hours';
+import type { HoursSearchChange } from '@/features/hours/services/hours-search';
 import {
   HOURS_EMPTY_MONTH,
   HOURS_EMPTY_NOT_IN_TEAM,

@@ -19,6 +19,7 @@ import {
 } from '@/features/members/services/list';
 import { compareText } from '@/lib/i18n/format';
 import { NO_TEXT } from '@/utils/text';
+import type { SortControlDirection } from '@/utils/sort-control';
 
 /**
  * The admin's leave overview on *Godišnji* (story 7.15), as a pure view model
@@ -102,8 +103,8 @@ export const OVERVIEW_SORT_KEYS = [
 
 export type LeaveOverviewSortKey = (typeof OVERVIEW_SORT_KEYS)[number];
 
-/** Which way a sorted column runs: the arrow it draws. */
-export type LeaveOverviewSortArrow = 'up' | 'down';
+/** Which way a sorted column runs: the arrow it draws, the shared direction every sorted heading draws. */
+export type LeaveOverviewSortArrow = SortControlDirection;
 
 export interface LeaveOverviewSort {
   readonly key: LeaveOverviewSortKey;

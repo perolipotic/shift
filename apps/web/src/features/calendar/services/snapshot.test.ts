@@ -26,6 +26,7 @@ import {
   CALENDAR_VIEWER_OPERATOR,
   calendarMessageKey,
   calendarQueryOptions,
+  calendarRetryStateOf,
   calendarSurfaceStateOf,
   readCalendar,
   type CalendarAnswer,
@@ -1094,6 +1095,35 @@ describe('the surface state, driven through the one query definition', () => {
     await observer.refetch();
 
     expect(calendarSurfaceStateOf(await settled(observer))).toEqual({ snapshot: pilot, refusal: null, loading: false });
+  });
+
+  it('shows the retry of a failed read as loading, and a second press never restarts it (calendarRetryStateOf)', async () => {
+    // A failed refetch over a cached answer: the case where `isError` outlives the press.
+    const table = answeringInTurn(good, miscounted, miscounted, good);
+    const observer = observe(() => table);
+
+    await settled(observer);
+    await client.invalidateQueries({ queryKey: CALENDAR_KEY });
+
+    expect(calendarRetryStateOf(await settled(observer))).toEqual({
+      snapshot: null,
+      refusal: CALENDAR_UNAVAILABLE,
+      loading: false,
+    });
+    // Two presses, as the calendar's retry makes them: the read in flight is left to land.
+    void client.invalidateQueries({ queryKey: CALENDAR_KEY }, { cancelRefetch: false });
+    void client.invalidateQueries({ queryKey: CALENDAR_KEY }, { cancelRefetch: false });
+    await vi.waitFor(() => {
+      expect(observer.getCurrentResult().fetchStatus).toBe('fetching');
+    });
+    const retrying = observer.getCurrentResult();
+
+    // TanStack Query keeps `isError` while the retry is in flight: the plain state would stand still.
+    expect(retrying.isError).toBe(true);
+    expect(calendarSurfaceStateOf(retrying).refusal).toBe(CALENDAR_UNAVAILABLE);
+    expect(calendarRetryStateOf(retrying)).toEqual({ snapshot: null, refusal: null, loading: true });
+    expect(calendarRetryStateOf(await settled(observer))).toEqual({ snapshot: pilot, refusal: null, loading: false });
+    expect(table.calls()).toBe(4);
   });
 
   it('never pulses a skeleton beside a message', () => {

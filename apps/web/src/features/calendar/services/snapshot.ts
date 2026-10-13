@@ -151,6 +151,9 @@ export const CALENDAR_READ_STALE_MS = 0;
 /** TanStack Query's name for a fetch it has not started (offline). */
 export const CALENDAR_FETCH_PAUSED = 'paused';
 
+/** TanStack Query's name for a fetch in flight — a retry's included. */
+export const CALENDAR_FETCH_FETCHING = 'fetching';
+
 /**
  * The snapshot could not be read, or what came back cannot be trusted as one.
  * THE ONLY FAILURE: no teams and no rotation are honest answers. Offline is
@@ -997,4 +1000,18 @@ export function calendarSurfaceStateOf(answer: CalendarQueryAnswer): CalendarSur
   }
 
   return { snapshot: answer.data ?? null, refusal: null, loading: answer.isPending };
+}
+
+/**
+ * {@link calendarSurfaceStateOf} for a surface that offers the retry, except
+ * that a failed read being read again is LOADING, not the refusal: TanStack
+ * Query keeps `isError` while the retry is in flight, so the message and its
+ * retry would otherwise stand unchanged under the press. Never the cached
+ * snapshot: the skeleton, until the new answer is in. The calendar's and
+ * *Sati*'s one rule (story 5.3d).
+ */
+export function calendarRetryStateOf(answer: CalendarQueryAnswer): CalendarSurfaceState {
+  if (answer.isError && answer.fetchStatus === CALENDAR_FETCH_FETCHING) return { snapshot: null, refusal: null, loading: true };
+
+  return calendarSurfaceStateOf(answer);
 }

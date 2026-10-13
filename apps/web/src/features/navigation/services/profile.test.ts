@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest';
 
 import { MEMBER_NAME_COLUMNS, readMemberName } from '@/features/navigation/services/profile';
 import type { MemberTable, PostgrestAnswer } from '@/features/navigation/services/role';
+import { SESSION } from '@/lib/supabase/session.fixture';
 
-const SESSION = { user: { id: 'auth-user-id' } } as unknown as Session;
 const signedIn = (): Promise<Session | null> => Promise.resolve(SESSION);
 
 function answering(answer: PostgrestAnswer | Error) {

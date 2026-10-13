@@ -1190,6 +1190,7 @@
           "denied": "Ne možeš mijenjati izmjene. Za to trebaš ovlasti administratora.",
           "gone": "Izmjena je već pregledana ili uklonjena. Prikaz je osvježen.",
           "archived": "Smjena ili tip smjene je arhiviran. Osvježi prikaz.",
+          "changed": "Rotacija je u međuvremenu promijenjena. Prikaz je osvježen, pregledaj izmjenu ponovno.",
           "reason": "Upiši razlog, 1–200 znakova.",
           "sameAsProjected": "To je već tip smjene prema rotaciji.",
           "failed": "Promjena nije uspjela. Pokušaj ponovno."

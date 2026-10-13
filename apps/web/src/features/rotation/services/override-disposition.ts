@@ -4,6 +4,7 @@ import { compareText, formatIsoDate } from '@/lib/i18n/format';
 import {
   overrideStandingOfSnapshot,
   teamAssignmentsOf,
+  type RotationHistoryRecord,
   type RotationOverride,
   type RotationSnapshot,
 } from '@/features/rotation/services/list';
@@ -19,6 +20,8 @@ import {
  *
  *   * CONFIRM — 0022's `confirm_shift_type_override`, which re-anchors it to
  *     the version in force now. Not offered where no version governs the date.
+ *     It carries the save time of the version the review showed governing
+ *     the date (0035), and a newer one saved meanwhile refuses it.
  *   * AMEND — 0022's `amend_shift_type_override`, which soft-removes it and
  *     inserts the new type and reason in one transaction. Not offered where no
  *     version governs the date.
@@ -45,6 +48,8 @@ export const DISPOSITION_REASON = 'reason';
 export const DISPOSITION_SAME_AS_PROJECTED = 'sameAsProjected';
 /** The team, or the type the override would name, was archived meanwhile (0022's P0001). */
 export const DISPOSITION_ARCHIVED = 'archived';
+/** The rotation version governing the override's date changed since the review was read (0035's P0001). */
+export const DISPOSITION_CHANGED = 'changed';
 /** Anything else, 23503 included: try again. */
 export const DISPOSITION_FAILED = 'failed';
 
@@ -52,6 +57,7 @@ export type DispositionFailure =
   | typeof DISPOSITION_DENIED
   | typeof DISPOSITION_GONE
   | typeof DISPOSITION_ARCHIVED
+  | typeof DISPOSITION_CHANGED
   | typeof DISPOSITION_REASON
   | typeof DISPOSITION_SAME_AS_PROJECTED
   | typeof DISPOSITION_FAILED;
@@ -98,6 +104,11 @@ export interface PendingOverrideRow {
   readonly authorName: string | null;
   /** Confirm and amend are offered only where a version governs the date. */
   readonly governed: boolean;
+  /**
+   * The `created_at` of the version governing the date, exactly as sent, or
+   * `null` where none does: the confirmation's concurrency token (0035).
+   */
+  readonly governingSavedAt: string | null;
   /** What the amend offers: every type not archived and not projected now, in creation order. */
   readonly options: readonly DispositionTypeOption[];
 }
@@ -116,6 +127,15 @@ function rowOf(snapshot: RotationSnapshot, override: RotationOverride): PendingO
 
   if (team === undefined) throw new RangeError(`team ${override.teamId} is not in the rotation snapshot`);
   if (date === null) throw new RangeError(`the date ${override.date} could not be formatted`);
+
+  // The version governing the date: the greatest `effective_from` on or
+  // before it, over every version's attribution, as the pending rule reads it.
+  const governing = snapshot.history
+    .filter((record) => record.teamId === override.teamId && record.effectiveFrom <= override.date)
+    .reduce<RotationHistoryRecord | null>(
+      (latest, record) => (latest === null || record.effectiveFrom > latest.effectiveFrom ? record : latest),
+      null,
+    );
 
   const projectedShiftTypeId = projectedShiftTypeOn(
     teamAssignmentsOf(snapshot, override.teamId),
@@ -136,6 +156,7 @@ function rowOf(snapshot: RotationSnapshot, override: RotationOverride): PendingO
     reason: override.reason,
     authorName: snapshot.authors.find((author) => author.authUserId === override.createdBy)?.name ?? null,
     governed: projectedShiftTypeId !== null,
+    governingSavedAt: governing?.createdAt ?? null,
     options:
       projectedShiftTypeId === null
         ? []
@@ -264,9 +285,10 @@ export interface DispositionAnswer {
 /** The three functions a disposition calls, named structurally so they can be stubbed. */
 export interface DispositionRpc {
   rpc(
-    fn: typeof CONFIRM_OVERRIDE_FUNCTION | typeof DISCARD_OVERRIDE_FUNCTION,
-    args: { readonly p_override_id: string },
+    fn: typeof CONFIRM_OVERRIDE_FUNCTION,
+    args: { readonly p_override_id: string; readonly p_governing_saved_at: string | null },
   ): PromiseLike<DispositionAnswer>;
+  rpc(fn: typeof DISCARD_OVERRIDE_FUNCTION, args: { readonly p_override_id: string }): PromiseLike<DispositionAnswer>;
   rpc(
     fn: typeof AMEND_OVERRIDE_FUNCTION,
     args: { readonly p_override_id: string; readonly p_shift_type_id: string; readonly p_reason: string },
@@ -281,17 +303,21 @@ const NO_DATA_FOUND = 'P0002';
 const RAISED = 'P0001';
 /** The message 0022 raises an archived team or type with; another P0001 is no refusal of ours. */
 const ARCHIVED_MESSAGE = 'SHIFT_TYPE_OVERRIDE_ARCHIVED';
+/** The message 0035 raises a confirmation whose governing version changed with. */
+const CHANGED_MESSAGE = 'SHIFT_TYPE_OVERRIDE_CHANGED';
 
 /**
  * A refusal of a disposition as this application's own failure. `23514` IS
  * THE REASON, the only check of 0019's an amend can trip; `P0001` with 0022's
- * message is an archived team or type; `23503` — a type of another tenant —
+ * message is an archived team or type, and with 0035's a confirmation whose
+ * governing version changed meanwhile; `23503` — a type of another tenant —
  * and everything unforeseen are {@link DISPOSITION_FAILED}.
  */
 export function dispositionFailureOf(error: DispositionError): DispositionFailure {
   if (error.code === INSUFFICIENT_PRIVILEGE) return DISPOSITION_DENIED;
   if (error.code === NO_DATA_FOUND) return DISPOSITION_GONE;
   if (error.code === RAISED && error.message === ARCHIVED_MESSAGE) return DISPOSITION_ARCHIVED;
+  if (error.code === RAISED && error.message === CHANGED_MESSAGE) return DISPOSITION_CHANGED;
   if (error.code === CHECK_VIOLATION) return DISPOSITION_REASON;
 
   return DISPOSITION_FAILED;
@@ -326,11 +352,20 @@ async function settled(call: () => PromiseLike<DispositionAnswer>): Promise<Disp
   return { ok: true };
 }
 
-/** Confirm `row`'s override; the database attributes the confirmation. Refused without a request where no version governs the date. */
+/**
+ * Confirm `row`'s override; the database attributes the confirmation, and
+ * refuses it when the version governing the date is no longer the one `row`
+ * was derived from. Refused without a request where no version governs the
+ * date.
+ */
 export async function confirmShiftTypeOverride(client: DispositionRpc, row: PendingOverrideRow): Promise<DispositionOutcome> {
-  if (!row.governed) return { ok: false, code: DISPOSITION_FAILED };
+  if (!row.governed || row.governingSavedAt === null) return { ok: false, code: DISPOSITION_FAILED };
 
-  return settled(() => client.rpc(CONFIRM_OVERRIDE_FUNCTION, { p_override_id: row.id }));
+  const governingSavedAt = row.governingSavedAt;
+
+  return settled(() =>
+    client.rpc(CONFIRM_OVERRIDE_FUNCTION, { p_override_id: row.id, p_governing_saved_at: governingSavedAt }),
+  );
 }
 
 /**
@@ -373,12 +408,14 @@ export function dispositionMessageKey(
   | 'rotation.builder.overrides.refused.denied'
   | 'rotation.builder.overrides.refused.gone'
   | 'rotation.builder.overrides.refused.archived'
+  | 'rotation.builder.overrides.refused.changed'
   | 'rotation.builder.overrides.refused.reason'
   | 'rotation.builder.overrides.refused.sameAsProjected'
   | 'rotation.builder.overrides.refused.failed' {
   if (failure === DISPOSITION_DENIED) return 'rotation.builder.overrides.refused.denied';
   if (failure === DISPOSITION_GONE) return 'rotation.builder.overrides.refused.gone';
   if (failure === DISPOSITION_ARCHIVED) return 'rotation.builder.overrides.refused.archived';
+  if (failure === DISPOSITION_CHANGED) return 'rotation.builder.overrides.refused.changed';
   if (failure === DISPOSITION_REASON) return 'rotation.builder.overrides.refused.reason';
   if (failure === DISPOSITION_SAME_AS_PROJECTED) return 'rotation.builder.overrides.refused.sameAsProjected';
   if (failure === DISPOSITION_FAILED) return 'rotation.builder.overrides.refused.failed';

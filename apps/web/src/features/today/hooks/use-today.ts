@@ -1,13 +1,8 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
-import {
-  CALENDAR_KEY,
-  CALENDAR_READ_TABLE,
-  calendarQueryOptions,
-  calendarSurfaceStateOf,
-  type CalendarMembersRpc,
-} from '@/features/calendar/services/snapshot';
+import { useCalendarSnapshot } from '@/features/calendar/hooks/use-calendar-snapshot';
+import { CALENDAR_KEY, calendarSurfaceStateOf } from '@/features/calendar/services/snapshot';
 import { calendarTodayOf } from '@/features/calendar/utils/month';
 import { useReplacementLinkRefresh } from '@/features/conflicts/hooks/use-replacement-link-refresh';
 import {
@@ -16,7 +11,8 @@ import {
   type MyConflictResolutionsRpc,
 } from '@/features/conflicts/services/resolutions';
 import { hoursConflictsStateOf } from '@/features/hours/services/hours-conflicts';
-import { hoursSnapshotStateOf, myHoursSurfaceOf, type HoursSearch } from '@/features/hours/services/my-hours';
+import type { HoursSearch } from '@/features/hours/services/hours-search';
+import { hoursSnapshotStateOf, myHoursSurfaceOf } from '@/features/hours/services/my-hours';
 import {
   MY_LEAVE_RECORDS_KEY,
   myLeaveRecordsQueryOptions,
@@ -67,13 +63,7 @@ const CURRENT_MONTH: HoursSearch = {};
 export function useToday() {
   const queryClient = useQueryClient();
   const now = useMinuteTicker();
-  const calendar = useQuery(
-    calendarQueryOptions(
-      () => supabaseClient().from(CALENDAR_READ_TABLE),
-      // As the calendar's: the client's `rpc` is wider than the calls made.
-      () => supabaseClient() as unknown as CalendarMembersRpc,
-    ),
-  );
+  const calendar = useCalendarSnapshot();
   const records = useQuery(
     // Named structurally, as *Godišnji*'s read is.
     myLeaveRecordsQueryOptions(() => supabaseClient() as unknown as MyLeaveRecordsRpc),
@@ -148,7 +138,7 @@ export function useToday() {
       resolutionsFetchStatus,
     ],
   );
-  const hoursToday = hoursSnapshot === null ? null : calendarTodayOf(hoursSnapshot, new Date());
+  const hoursToday = hoursSnapshot === null ? null : calendarTodayOf(hoursSnapshot, now);
   // Worked out once per answer and per day, not on every render.
   const hours = useMemo(
     () =>
@@ -168,7 +158,7 @@ export function useToday() {
       organization,
       records: myLeaveRowsStateOf(records),
     },
-    new Date(),
+    now,
   );
   const tiles = todayTilesOf(hours, leave);
 
