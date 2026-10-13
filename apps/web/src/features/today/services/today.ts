@@ -1,4 +1,4 @@
-import { DUTY_RUNNING, leaveCostOf, membershipOn, monthOf, type LeaveRange } from '@shift/domain';
+import { DUTY_RUNNING, activeOn, leaveCostOf, membershipOn, monthOf, type LeaveRange } from '@shift/domain';
 
 import type { CalendarSnapshot, CalendarSurfaceState } from '@/features/calendar/services/snapshot';
 import {
@@ -119,8 +119,10 @@ export type TodayCase =
   | { readonly kind: typeof CASE_WORKING; readonly shifts: readonly TodayShift[] }
   | {
       readonly kind: typeof CASE_FREE;
-      /** The non-working type and its team, or `null` for no shift (`Bez smjene`). */
+      /** The non-working type and its team, or `null` for no shift (`Bez smjene`, or `Neaktivno`). */
       readonly shift: TodayShift | null;
+      /** Inactive today (B449): no shift then says so, never "no team". */
+      readonly inactive: boolean;
     };
 
 /** A date as the screen states it: `četvrtak` and `01.10.2026`. */
@@ -410,6 +412,7 @@ function dayLookupOf(snapshot: CalendarSnapshot, today: string, records: readonl
           weekday: weekdayOf(date),
           isToday: date === today,
           shifts: [],
+          inactive: !activeOn(viewer.statuses, date),
         }
       );
     },
@@ -487,7 +490,7 @@ function todayCaseOf(
 
   const free = day.shifts[0];
 
-  return { kind: CASE_FREE, shift: free === undefined ? null : todayShiftOf(snapshot, free) };
+  return { kind: CASE_FREE, shift: free === undefined ? null : todayShiftOf(snapshot, free), inactive: day.inactive };
 }
 
 /** No leg to skip: today is no duty. */

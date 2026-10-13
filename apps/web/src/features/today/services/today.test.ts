@@ -57,6 +57,7 @@ import {
   membershipRow,
   overridesAnswerOf,
   rosterOverridesAnswerOf,
+  statusRow,
   viewerRow,
   viewerSession,
 } from '@/features/rotation/rotation.fixture';
@@ -87,6 +88,8 @@ async function snapshotOf(
     /** Other members' membership versions, each with its `member_id` (story 6.2). */
     readonly others?: readonly Record<string, unknown>[];
     readonly rows?: FixtureRows;
+    /** Status versions, each with its `member_id` (B449). */
+    readonly statuses?: readonly Record<string, unknown>[];
   } = {},
 ): Promise<CalendarSnapshot> {
   const versions = options.versions ?? [membershipRow(TEAM_A, SEEDED)];
@@ -95,6 +98,7 @@ async function snapshotOf(
       data: [
         calendarOrganizationRow(options.rows ?? PILOT, {
           viewers: [viewerRow(versions, { role: options.role ?? 'member_role' })],
+          statuses: options.statuses ?? [],
           versions:
             options.others === undefined
               ? null
@@ -161,6 +165,7 @@ describe("today's one case", () => {
     expect(view.todayCase).toEqual({
       kind: CASE_FREE,
       shift: { teamId: TEAM_A, teamName: 'Smjena A', name: 'Slobodno', range: null, fromYesterday: false },
+      inactive: false,
     });
     expect(caseSentenceOf(view)).toBe('Danas ne radiš');
     expect(view.next).toMatchObject({ date: '2026-09-30', inDays: 2, name: 'Dan', range: '07:00–19:00' });
@@ -260,7 +265,7 @@ describe("today's one case", () => {
     });
     const view = readyOf(todayViewOf(snapshot, [], noonOf('2026-10-01')));
 
-    expect(view.todayCase).toEqual({ kind: CASE_FREE, shift: null });
+    expect(view.todayCase).toEqual({ kind: CASE_FREE, shift: null, inactive: false });
     expect(view.next).toMatchObject({ date: '2026-10-04', inDays: 3, name: 'Dan' });
   });
 
@@ -287,7 +292,7 @@ describe("today's one case", () => {
     const snapshot = await snapshotOf({ versions: [membershipRow(TEAM_A, SEEDED), membershipRow(null, '2026-09-01')] });
     const view = readyOf(todayViewOf(snapshot, [], noonOf('2026-10-01')));
 
-    expect(view.todayCase).toEqual({ kind: CASE_FREE, shift: null });
+    expect(view.todayCase).toEqual({ kind: CASE_FREE, shift: null, inactive: false });
     expect(view.next).toBeNull();
     expect(t('danas.next.none', { days: t('count.days', { count: NEXT_SHIFT_HORIZON_DAYS }) })).toBe(
       'U sljedećih 366 dana nemaš nijednu smjenu.',
@@ -865,6 +870,7 @@ describe("today's 24 h duty (story 6.2)", () => {
       expect(view.todayCase).toEqual({
         kind: CASE_FREE,
         shift: { teamId: TEAM_A, teamName: 'Smjena A', name: 'Slobodno', range: null, fromYesterday: false },
+        inactive: false,
       });
       // One minute before, it still runs.
       expect(readyOf(todayViewOf(pilot, [], zagrebOf('2026-10-02', '06:59'))).todayCase.kind).toBe(CASE_WORKING);
@@ -1076,5 +1082,28 @@ describe("the viewer's team today, from the calendar snapshot (E804)", () => {
     expect(ownTeamShownOf(todayViewOf(pilot, [], noonOf('2026-10-01')))).toEqual({ id: TEAM_A, name: 'Smjena A' });
     expect(ownTeamShownOf({ kind: TODAY_LOADING })).toBeNull();
     expect(ownTeamShownOf({ kind: TODAY_UNAVAILABLE, retryable: true })).toBeNull();
+  });
+});
+
+describe('a day the viewer is inactive (B449)', () => {
+  it('reads as inactive, never as no team: today free and inactive, and each such day of the week', async () => {
+    // Inactive from 02.10. to 05.10., on team A throughout.
+    const snapshot = await snapshotOf({
+      statuses: [statusRow(VIEWER_MEMBER, false, '2026-10-02'), statusRow(VIEWER_MEMBER, true, '2026-10-06')],
+    });
+    const view = readyOf(todayViewOf(snapshot, [], noonOf('2026-10-02')));
+
+    expect(view.todayCase).toEqual({ kind: CASE_FREE, shift: null, inactive: true });
+    expect(view.week.map(({ day }) => day.inactive)).toEqual([true, true, true, false, false, false, false]);
+    expect(view.week.slice(0, 3).every(({ day }) => day.shifts.length === 0)).toBe(true);
+  });
+
+  it('marks a day inactive in a month with no shift at all', async () => {
+    // Inactive from 01.10. on: October has no shift, so its days are the fallback ones.
+    const snapshot = await snapshotOf({ statuses: [statusRow(VIEWER_MEMBER, false, '2026-10-01')] });
+    const view = readyOf(todayViewOf(snapshot, [], noonOf('2026-10-05')));
+
+    expect(view.todayCase).toEqual({ kind: CASE_FREE, shift: null, inactive: true });
+    expect(view.week.every(({ day }) => day.inactive && day.shifts.length === 0)).toBe(true);
   });
 });

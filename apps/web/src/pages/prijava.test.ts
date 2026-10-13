@@ -515,6 +515,8 @@ const CALENDAR_OVERRIDE_WRITE_KEYS = join(srcRoot, 'features', 'calendar', 'serv
 const CALENDAR_ROSTER_WRITE_KEYS = join(srcRoot, 'features', 'calendar', 'services', 'roster-write.ts');
 /** Story 3.2b's modifier vocabulary: the four marks' labels and a cell with no rotation. */
 const CALENDAR_MODIFIER_KEYS = join(srcRoot, 'features', 'calendar', 'utils', 'modifiers.ts');
+/** B449: what an empty day or month says, inactive or on no team; shared with *Danas*. */
+const CALENDAR_EMPTY_DAY_KEYS = join(srcRoot, 'features', 'calendar', 'utils', 'empty-day.ts');
 
 /**
  * The member write path's rules, as a `.ts` module that renders nothing.
@@ -2468,10 +2470,14 @@ const KEY_SOURCES = [
     //
     // SIXTY SINCE THE LONE-NOĆ CARRY-OVER: a shift from yesterday still
     // running is marked `od jučer` on its row (one more).
+    //
+    // FIFTY-EIGHT SINCE B449: an empty day of the week and the today card's
+    // no-shift line say inactive or no team through `dayEmptyMessageKey`,
+    // counted in the calendar's `empty-day` (two fewer).
     name: 'the Danas destination',
     file: DANAS,
     keys: translationKeys,
-    strings: 60,
+    strings: 58,
   },
   {
     // STORY 6.1a: today's three cases, the next shift's two headings, and
@@ -2827,7 +2833,20 @@ const KEY_SOURCES = [
     // each dialog's close now names its change. ONE HUNDRED AND SIXTY-EIGHT
     // SINCE ITS CODE REVIEW: the notice when the day stops offering the type
     // form with no override on it.
-    strings: 168,
+    //
+    // ONE HUNDRED AND SIXTY-FIVE SINCE B449: an empty day, the viewer's empty
+    // month and a person's say inactive or no team through `empty-day`'s
+    // unions, counted there (three fewer).
+    strings: 165,
+  },
+  {
+    // B449: what an empty day or month says — inactive, or on no team — for
+    // a day, the viewer's month and a chosen person's. `memberListKeys`, for
+    // the module's TWO unions.
+    name: 'the calendar empty-day words',
+    file: CALENDAR_EMPTY_DAY_KEYS,
+    keys: memberListKeys,
+    strings: 6,
   },
   {
     // STORY 3.2b: the four marks' labels and the no-rotation label a cell's
@@ -3595,7 +3614,9 @@ describe('the screen is read at all, so every sweep below means something', () =
     // SIXTY-EIGHT SINCE STORY 7.17: the member directory.
     //
     // SIXTY-NINE SINCE THE ROUTER-GUARDS FIX: the error screen (A148).
-    expect(KEY_SOURCES).toHaveLength(69);
+    //
+    // SEVENTY SINCE B449: the calendar's empty-day words.
+    expect(KEY_SOURCES).toHaveLength(70);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"

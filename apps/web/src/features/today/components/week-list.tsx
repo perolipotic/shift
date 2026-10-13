@@ -5,6 +5,7 @@ import { Card } from '@/components/ui/card';
 import { CalendarCellBox } from '@/features/calendar/components/calendar-cell';
 import { ModifierGlyphs } from '@/features/calendar/components/modifier-glyphs';
 import { MODIFIER_LEAVE, glyphOf } from '@/features/calendar/utils/modifiers';
+import { dayEmptyMessageKey } from '@/features/calendar/utils/empty-day';
 import { MODE_MOJ, type CalendarDay } from '@/features/calendar/utils/month';
 import type { TodayWeekDay } from '@/features/today/services/today';
 import { t } from '@/lib/i18n';
@@ -31,7 +32,8 @@ function renderLeave(day: CalendarDay): ReactNode {
 
 /**
  * One day: its date and weekday, then each shift as *Moj raspored* draws it
- * — the same cell, its fill, range and marks — or `Bez smjene`; and on a
+ * — the same cell, its fill, range and marks — or `Bez smjene` (`Neaktivno`
+ * on a day the viewer is inactive); and on a
  * leave day `Godišnji` in words.
  */
 function renderDay({ day, onLeave }: TodayWeekDay): ReactNode {
@@ -43,7 +45,7 @@ function renderDay({ day, onLeave }: TodayWeekDay): ReactNode {
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-1">
         {day.shifts.length === 0 ? (
-          <span className="text-sm text-muted-foreground">{t('kalendar.day.noTeam')}</span>
+          <span className="text-sm text-muted-foreground">{t(dayEmptyMessageKey(day))}</span>
         ) : null}
         {day.shifts.map((shift, index) => (
           <span key={`${String(index)}-${shift.teamId}`} className="flex min-w-0">

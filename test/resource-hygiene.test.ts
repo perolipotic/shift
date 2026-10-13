@@ -1121,6 +1121,10 @@ const SANCTIONED_SCREEN_KEYS = [
   // STORY 3.3b: the note for a person on no team all month. The filter
   // itself moved to the shared `filter.*` namespace in story 7.5.
   'kalendar.person.noTeam',
+  // B449: an inactive day, month or person, never read as no team.
+  'kalendar.inactive',
+  'kalendar.day.inactive',
+  'kalendar.person.inactive',
   // STORY 7.5: the filter bar Kalendar and Sati share, which replaced the
   // calendar's one Select (3.3a/3.3b) and Sati's two (4.2): the bar's name,
   // `Filtri` with and without its count, a chip in each of its four states,

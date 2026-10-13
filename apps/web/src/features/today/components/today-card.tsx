@@ -2,6 +2,7 @@ import { useId, type ReactNode } from 'react';
 
 import { Card } from '@/components/ui/card';
 import type { MemberTeam } from '@/features/members/services/list';
+import { dayEmptyMessageKey } from '@/features/calendar/utils/empty-day';
 import { DutyBlock } from '@/features/today/components/duty-block';
 import { OwnTeamLine } from '@/features/today/components/own-team-line';
 import {
@@ -50,9 +51,10 @@ function renderDetail(todayCase: Exclude<TodayCase, { readonly kind: typeof CASE
     return <ul className="grid gap-2">{todayCase.shifts.map(renderShift)}</ul>;
   }
 
-  // What is true, never an empty area: the free day's type and team, or no shift.
+  // What is true, never an empty area: the free day's type and team, or no
+  // shift — on no team, or inactive (B449).
   return todayCase.shift === null ? (
-    <p className="text-muted-foreground">{t('kalendar.day.noTeam')}</p>
+    <p className="text-muted-foreground">{t(dayEmptyMessageKey(todayCase))}</p>
   ) : (
     <ul className="grid gap-2">{renderShift(todayCase.shift, 0)}</ul>
   );

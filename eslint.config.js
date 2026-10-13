@@ -140,6 +140,8 @@ export const FEATURE_PUBLIC = {
   // screen that reads `CALENDAR_KEY` observes it through `useCalendarSnapshot`
   // (or its options, for the erasure guard's fresh read), never a copied
   // `calendarQueryOptions(...)`.
+  // B449: *Danas*'s week and today card say an empty day the calendar's way —
+  // inactive, or on no team (`empty-day`).
   calendar: [
     'components/calendar-cell', // today
     'hooks/use-calendar-snapshot', // conflicts, hours, leave, members, today
@@ -147,6 +149,7 @@ export const FEATURE_PUBLIC = {
     'services/marks', // hours, today
     'services/snapshot', // conflicts, hours, leave, members, pages, teams, today
     'utils/day-detail', // conflicts
+    'utils/empty-day', // today
     'utils/grid-keys', // today
     'utils/modifiers', // conflicts, hours, today
     'utils/month', // conflicts, hours, leave, members, pages, today
