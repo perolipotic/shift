@@ -81,7 +81,7 @@ The opportunity is that the same generic engine serves every one of those indust
   - **success:** Filter options are populated from actual records with no hard-coded entries; filter state survives month navigation and clears in one action. A midnight-crossing shift renders once, on its start date, labelled with both clock times. An unresolved conflict is visible to an admin without opening a detail view. No state is distinguished by color alone. See `DESIGN.md` and `EXPERIENCE.md` for the legibility requirements this surface must satisfy.
 
 - **CAP-14 — Hours computed by band intersection**
-  - **intent:** The system derives each member's shift counts, hours per band, total hours, and leave hours for a period from the schedule, so nobody enters or reconciles an hour by hand.
+  - **intent:** The system derives each member's shift counts, hours per band, total hours, and leave days for a period from the schedule, so nobody enters or reconciles an hour by hand.
   - **success:** Band hours are derived by intersecting each working shift's nominal interval with the organization's bands and always sum exactly to total hours. A shift straddling a boundary is split, not rounded: with bands at 06:00 and 21:00 a 19:00–07:00 shift yields 3 day and 9 night hours. A 12-hour shift contributes 12 hours on both daylight-saving transition dates. Hours follow the roster, so a roster override moves them between members. A member's own figures reconcile exactly with the admin's view of them. See `engine-rules.md`.
 
 - **CAP-15 — Annual leave against a per-member allowance**
@@ -90,11 +90,41 @@ The opportunity is that the same generic engine serves every one of those indust
 
 - **CAP-16 — Leave/schedule conflicts resolved explicitly**
   - **intent:** When recorded leave collides with a working shift the member is rostered for, the system raises a visible conflict and requires an admin to choose an outcome, so an absence never silently becomes an unnoticed coverage gap.
-  - **success:** A conflict exists for every affected working shift and stands until explicitly resolved; none expires or auto-clears. A configuration change that would remove a collision's cause surfaces it for an explicit decision rather than clearing it silently. Detection deletes, hides, and alters no shift. Non-working shifts coinciding with leave raise nothing. Exactly three resolutions exist — accept as uncovered, replace the member, amend the leave — each attributable, and the resulting hours land as leave hours rather than worked hours for the absent member. See `engine-rules.md`.
+  - **success:** A conflict exists for every affected working shift and stands until explicitly resolved; none expires or auto-clears. A configuration change that would remove a collision's cause surfaces it for an explicit decision rather than clearing it silently. Detection deletes, hides, and alters no shift. Non-working shifts coinciding with leave raise nothing. Exactly three resolutions exist — accept as uncovered, replace the member, amend the leave — each attributable, and the shift drops out of the absent member's worked hours and counts as its Leave Day (human decision 2026-10-10). In the Croatian UI a conflict is an item *za odluku*, never "konflikt". See `engine-rules.md`.
 
 - **CAP-17 — Role-appropriate landing surfaces**
   - **intent:** Each role lands on a screen answering its standing questions without navigation: a member's next shift, hours, and leave; an admin's coverage, conflicts, and pending work.
   - **success:** A member sees today's shift — stated explicitly in words when not working — their next working shift with date and both clock times, band hours and total for the period, leave used and remaining, and at least seven days of upcoming shifts, all usable at phone width with no horizontal scrolling. An admin sees today's coverage for any number of teams and an unresolved-conflict count shown even when zero, matching the conflict list exactly. Every dashboard figure equals its detail view. The standing questions each role arrives with are fixed in `experience-direction.md`.
+
+*CAP-18 to CAP-24 were added on 2026-10-10 by `sprint-change-proposal-2026-10-10-v1-scope-expansion.md`. They ship in v1, before pilot go-live.*
+
+- **CAP-18 — An installable app that reads offline**
+  - **intent:** A member installs the app to their home screen and opens their schedule with no connection.
+  - **success:** The app installs on Android and iOS. Offline, every surface already read shows its last snapshot with "as of {date time}", and every write is refused with a stated reason. A cached figure is never shown beside a fresh one. Signing out removes every cached snapshot from the device.
+
+- **CAP-19 — Leave requests**
+  - **intent:** A member requests a leave range, and an admin approves or rejects it.
+  - **success:** The member sees the request's cost before sending it. A pending request creates no conflict, charges no balance, and alters no shift. Before deciding, the admin sees what approval would create: the cost, the balance after it, the conflicts, and any short-staffed shift. Approval creates a Leave Record attributed to the approving admin. Rejection creates nothing. A member can withdraw a pending request. Each decision is attributable.
+
+- **CAP-20 — Notifications**
+  - **intent:** A member learns about a decision on their request, or a change to their own shifts, without opening the app. An admin learns that something waits in *Za odluku*.
+  - **success:** Email reaches a member who has an email address. Push reaches a member who installed the app and allowed push. A member with neither is told so in their settings. A notification states facts and links to the surface. Each member can turn each channel off. A member-role account is never told about another member's leave or absence type.
+
+- **CAP-21 — Minimum members per shift**
+  - **intent:** An organization sets how many people a working shift needs, and the app says plainly where a shift falls short.
+  - **success:** A working shift is short-staffed when fewer people are at work on it than the setting requires. People at work are the roster after overrides, minus everyone absent on that date, plus replacements. Every save that would make a shift short-staffed shows it before saving: leave, a request approval, a roster change, a swap approval, a conflict resolution, a deactivation, and a rotation change. Short-staffed shifts are marked on the calendar day and counted on the admin's landing surface. Nothing is blocked. When the setting is empty, nothing is reported.
+
+- **CAP-22 — Shift swaps**
+  - **intent:** A member proposes to exchange a shift with a colleague. The colleague accepts, and an admin approves.
+  - **success:** A swap names A's shift and, optionally, B's shift in return. The schedule is unchanged until the admin approves. Approval writes Roster Overrides attributed to the admin: one replacing A with B, and, when there is a return shift, one replacing B with A. Before approving, the admin sees each member's hour delta, any leave or double booking, and any short-staffed result. These warn and never block. Either member can withdraw the swap before the decision.
+
+- **CAP-23 — Absence types, carry-over and part-day absence**
+  - **intent:** An organization records absence other than annual leave, carries unused leave into the next leave year, and records half days.
+  - **success:** An Absence Type has a name and states whether it draws down the allowance. Every type raises a conflict against a rostered working shift. Only drawing types change the balance. Carried-over days are derived from the previous leave year's unused balance, capped by the organization's setting, and expire on the date the organization sets. A Half-day Record costs 0.5. No record carries a reason.
+
+- **CAP-24 — Change history**
+  - **intent:** An admin reads who changed what and when, and can export the result as a PDF.
+  - **success:** Every write to a rule, an exception, a decision, a request, a member, or a setting appears with its author, its time, and its values before and after, deletions included. The history filters by date range, member, team, and kind. The PDF holds exactly the filtered rows. A member-role account reaches none of it. History begins at the migration that introduces it. Earlier entries are reconstructed from existing attribution columns where those exist.
 
 ## Constraints
 
@@ -117,16 +147,15 @@ The opportunity is that the same generic engine serves every one of those indust
 
 - **Not a fire-department management system.** No interventions, incident reporting, equipment, vehicles, readiness, or training. Any requirement that cannot be expressed as organization data is one to reject or generalize.
 - **Not payroll or time-and-attendance.** Hours are what was scheduled, not what was attended. No rates, pay, overtime, premiums, breaks, period locking, or government reporting.
-- **Not a workforce-optimization tool.** No demand forecasting, auto-assignment, minimum-staffing rules, qualification constraints, or statutory rest-period enforcement.
-- **Not a communication tool.** No notifications, reminders, messaging, push, SMS, or email beyond authentication and invitation.
-- **No member-initiated workflows in MVP.** Members do not request leave, propose swaps, trade shifts, or resolve conflicts. Leave is admin-entered only.
-- **No absence types beyond annual leave.** No sick, personal, training, parental, or unpaid leave; no carry-over, part-day leave, public-holiday calendars, or accrual.
-- **No export or reporting beyond the hours view.** No CSV, Excel, PDF, analytics, or team statistics.
+- **Not a workforce-optimization tool.** No demand forecasting, auto-assignment, qualification constraints, or statutory rest-period enforcement. One minimum-members number per organization warns and never blocks (CAP-21).
+- **Not a communication tool.** Notifications tell a member about their own schedule and their own requests, and tell an admin what waits for a decision (CAP-20). No messaging, chat, broadcast, announcements, or SMS.
+- **Members propose; admins decide.** A member may request leave (CAP-19) and propose a swap (CAP-22). Nothing a member does changes the schedule until an admin approves it. Members never resolve conflicts.
+- **Absence is typed by the organization, not by the product.** Absence types are organization data (CAP-23). No reason or diagnosis is recorded. No public-holiday calendars, no accrual over time, and no per-group leave policies.
+- **No export beyond the hours Excel file and the change-history PDF.** No CSV, payroll formats, analytics, or team statistics.
 - **No self-service commerce.** Organizations are operator-provisioned. No signup wizard, billing, subscriptions, or payment processing.
 - **No general permission system.** Exactly two roles. Not a role builder, not per-resource ACLs.
 - **No multi-membership.** One member in at most one team; one user in exactly one organization. No multi-site or sub-organization hierarchy.
-- **No audit-log interface.** The data model supports auditability; no screen exposes it.
-- **No calendar surfaces beyond the monthly view.** No weekly or daily views, drag-and-drop editing, print layout, or iCal feeds.
+- **No calendar surfaces beyond the monthly view.** No weekly or daily views, drag-and-drop editing, print layout, or iCal feeds. Re-confirmed out of v1 on 2026-10-10.
 
 ## Success signal
 
@@ -139,22 +168,20 @@ Two things must *not* happen, and their absence is part of the signal: override 
 ## Assumptions
 
 - Leave days are counted as dates in the range on which the member had a working scheduled shift. Inferred, not confirmed by the pilot organization; it changes what a 30-day allowance means by roughly a factor of two.
-- On-screen hour reporting is sufficient for the pilot; no export is needed in MVP.
 - Another member's leave, hours, and contact details are visible only to admins. A volunteer organization may prefer full transparency.
 - When a rotation changes, overrides on or after the effective date are surfaced for explicit review rather than silently kept or silently dropped.
 - In the all-teams calendar view, leave is shown as an indicator or count rather than per-member detail.
 - Leave whose cost exceeds the remaining balance is saved with a warning rather than refused, so a real agreement is never unrecordable.
-- No absence reason is recorded, which keeps personal-data exposure minimal.
+- No absence reason is ever recorded, which keeps personal-data exposure minimal. An absence type's name is visible only to admins and to the member themselves (human decision 2026-10-10).
 - WCAG 2.1 AA is the accessibility target, without formal audit in MVP.
 - The pilot's rotation is `DAY → NIGHT → OFF → OFF` with every team at its own offset, making it a 24-hour-on / 48-hour-off rota. Confirmed by the author; the pilot's own PRD contained a contradicting table, now retired.
 
 ## Open Questions
 
 - How exactly does the pilot organization count leave days — calendar days, working days, or shifts? Needs the fire department, not an inference. Highest-cost question open.
-- A deactivated member is removed from future rosters and no past shift changes. Open: does the shift they vacated stay silently short-handed, or raise something? A conflict is specifically leave against a rostered working shift, so answering "conflict-like" means defining a second signal with its own resolution vocabulary.
 - Beyond name and team membership, how much of another member's information may a member-role account see? Settled for rosters (CAP-5); leave, hours, and contact details remain assumed admin-only.
 - Can a member be temporarily loaned to another team, or are repeated roster overrides adequate?
 - Should one user ever belong to multiple organizations? Out of scope now, and no longer cheap to relax: the single-organization non-goal is what licenses the architecture to carry the organization in a session claim, so reversing it changes every access policy at once.
 - What retention applies to schedule and leave history? Unbounded is assumed.
 - Is WCAG 2.1 AA the target, and is a formal audit ever expected?
-- Does the pilot need an absence reason recorded?
+- No reason is ever recorded (human decision 2026-10-10). Open: does the pilot record sick leave at all? If it does, the admin-only visibility of an absence type is the minimum its legal basis requires (GDPR Art. 9(2)(b)). Confirm with the pilot.

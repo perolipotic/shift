@@ -2,7 +2,7 @@
 title: Shift Management Platform
 status: draft
 created: 2026-09-01
-updated: 2026-09-01
+updated: 2026-10-10
 ---
 
 # PRD: Shift Management Platform
@@ -102,14 +102,23 @@ Downstream workflows and readers use these terms exactly. Introducing a synonym 
   - **Roster Override** — adds, removes, or replaces a Member on a specific Scheduled Shift.
 - **Leave Allowance** — the Leave Days a Member is entitled to in a Leave Year.
 - **Leave Year** — the Organization-defined annual period against which Leave Allowance is measured.
-- **Leave Record** — a date range of annual leave for one Member, entered by an Admin.
-- **Leave Day** — one date within a Leave Record on which the Member was active and had a working Scheduled Shift (R4.2). Only Leave Days draw down Leave Balance, and the hours views report the leave as the Leave Days of the period, never as hours (FR-40). A record across a period's edge counts each date in its own period, so the periods of one record sum to its cost.
-- **Leave Balance** — Leave Allowance minus Leave Days consumed in the Leave Year.
-- **Conflict** — the state of a working Scheduled Shift whose Shift Roster includes a Member covered by a Leave Record on that date. A first-class, visible, persisted state.
+- **Absence Type** — an Organization-defined kind of absence, given by its name and whether it draws down the Leave Allowance. Annual leave is the drawing type every Organization starts with. Never carries a reason. Its name is visible only to Admins and to the Member themselves.
+- **Leave Record** — a date range of absence of one Absence Type for one Member, entered by an Admin or created by approving a Leave Request. A one-date record may be a Half-day Record.
+- **Half-day Record** — a one-date Leave Record covering the first or the second half of the Member's working Scheduled Shift on that date. Costs 0.5 Leave Days.
+- **Leave Request** — a Member's own request for a Leave Record, pending until an Admin approves or rejects it, or the Member withdraws it. While pending, it derives nothing.
+- **Leave Day** — one date within a Leave Record on which the Member was active and had a working Scheduled Shift (R4.2). Only Leave Days draw down Leave Balance, and the hours views report the leave as the Leave Days of the period, never as hours (FR-40). A record across a period's edge counts each date in its own period, so the periods of one record sum to its cost. A Half-day Record counts 0.5, and only Leave Days of drawing Absence Types draw down Leave Balance (added 2026-10-10).
+- **Carried-over Days** — the unused Leave Balance of the previous Leave Year that moves into the current one, capped by the Organization's setting and expiring on the date that setting names. Derived, never entered.
+- **Leave Balance** — Leave Allowance plus Carried-over Days not yet expired, minus Leave Days of drawing Absence Types consumed in the Leave Year.
+- **Conflict** — the state of a working Scheduled Shift whose Shift Roster includes a Member covered by a Leave Record on that date. A first-class, visible, persisted state. *UI vocabulary:* the Croatian UI renders a Conflict as an item *za odluku* (absence in a shift), never as "konflikt" (2026-10-10).
 - **Conflict Resolution** — the explicit Admin action clearing a Conflict: **Accept as Uncovered**, **Replace Member**, or **Amend Leave**.
 - **Uncovered Shift** — a working Scheduled Shift deliberately recorded as having no Member to work it, via Accept as Uncovered.
 - **Coverage Warning** — a non-blocking notice that a Rotation configuration produces dates with no working Team, or more than one working Team on the same Shift Type.
 - **Rest Gap Warning** — a non-blocking notice that a Rotation configuration schedules a Team for consecutive working Shift Types with no non-working interval between them.
+- **Swap Request** — a Member's proposal to give a colleague their working Scheduled Shift, optionally taking one of the colleague's in return. The colleague accepts or declines; an Admin approves or rejects. Only approval writes anything, as Roster Overrides.
+- **Minimum Members** — an Organization setting: how many people a working Scheduled Shift needs. Empty means no staffing signal at all.
+- **Short-staffed Shift** — a working Scheduled Shift whose people at work — its Shift Roster after Overrides, minus every Member absent that date — number fewer than Minimum Members. Derived, never stored; it warns and never blocks.
+- **Notification** — an email or push message telling a Member about their own schedule or requests, or an Admin about an item waiting for a decision. Written as a code and operands by the request that asserts the fact it reports.
+- **Change History** — the Admin-only, append-only record of every write to an Organization's records: author, time, and values before and after.
 
 ## 4. Domain Invariants
 
@@ -184,6 +193,7 @@ The system refuses every administrative write to a Member Role account.
 - A Member Role account is refused every write in §5.2, §5.3, §5.4, §5.5, §5.6, §5.8, §5.11 and every Conflict Resolution in §5.12 — at the data layer (DI-9).
 - Removing the last Admin from an Organization is refused.
 - Refusal is identical whether attempted through the UI or by direct API call.
+- A Member Role account may write only rows it owns and that decide nothing: sending and withdrawing its own Leave Requests (FR-58, FR-59), proposing and withdrawing its own Swap Requests and answering one addressed to it (FR-66, FR-67, FR-69), and its own notification settings and push subscriptions (FR-64, FR-65). None of these is an administrative write (added 2026-10-10).
 
 ### 5.2 Organization Settings and Branding
 
@@ -522,7 +532,7 @@ Working and non-working shift types are distinguishable at a glance.
 - Day, night, non-working, and leave are each distinguishable without reading the label.
 - Distinction does not rely on color alone, and holds for an Organization defining Shift Types the design never anticipated.
 
-**Out of Scope for MVP:** weekly and daily views; drag-and-drop editing; print layout; iCal or calendar-subscription feeds.
+**Out of Scope for MVP:** weekly and daily views; drag-and-drop editing; print layout; iCal or calendar-subscription feeds. Re-confirmed out of v1, 2026-10-10.
 
 ### 5.10 Hours
 
@@ -579,11 +589,11 @@ Any figure on the Member or Organization hours view can be opened to show the Sc
 - The explained figure and the figure on the view are always equal (FR-41, FR-42).
 - A shift in unresolved Conflict is marked in the explanation as it is on the view (FR-41).
 
-**Out of Scope for MVP:** export as CSV or PDF, and any export other than FR-42a; pay rates and premiums; overtime rules; breaks within a shift; actual attendance as distinct from scheduled; period locking.
+**Out of Scope for MVP:** export as CSV or payroll formats (re-confirmed 2026-10-10), and any hours export other than FR-42a; pay rates and premiums; overtime rules; breaks within a shift; actual attendance as distinct from scheduled; period locking.
 
 ### 5.11 Annual Leave
 
-**Description:** Each Member has a Leave Allowance for the Leave Year. An Admin records leave as a date range; only dates on which the Member had a working Scheduled Shift consume Leave Balance, which keeps the cost fair in a rotation where a Member is rostered roughly half the days. Members do not request leave in MVP — request and approval workflow is deferred. Recording leave never alters the rotation or the schedule (DI-3); it produces Conflicts, handled in §5.12. Realizes UJ-3.
+**Description:** Each Member has a Leave Allowance for the Leave Year. An Admin records leave as a date range; only dates on which the Member had a working Scheduled Shift consume Leave Balance, which keeps the cost fair in a rotation where a Member is rostered roughly half the days. Members may also request leave, which an Admin approves or rejects (§5.15). Absence types, carry-over and half days are §5.19 (changed 2026-10-10). Recording leave never alters the rotation or the schedule (DI-3); it produces Conflicts, handled in §5.12. Realizes UJ-3.
 
 **Functional Requirements:**
 
@@ -629,7 +639,7 @@ An Admin can change a Leave Record's dates or delete it.
 - Deleting clears Conflicts arising from that record and leaves unrelated Conflicts intact.
 - A Conflict already resolved by Replace Member does not have its Override silently reverted; the situation is surfaced to the Admin.
 
-**Out of Scope for MVP:** member-submitted leave requests and approval workflow; absence types other than annual leave (sick, personal, training, unpaid); carry-over between Leave Years; part-day and half-day leave; public-holiday calendars; accrual over time; differing leave policies per Member group.
+**Out of Scope for MVP:** public-holiday calendars; accrual over time; differing leave policies per Member group. Leave requests, absence types, carry-over and half days moved into v1 on 2026-10-10 (§5.15, §5.19).
 
 ### 5.12 Conflict Detection and Resolution
 
@@ -647,19 +657,20 @@ The system creates a Conflict for every working Scheduled Shift whose Shift Rost
 - Non-working shifts coinciding with leave produce no Conflict.
 
 #### FR-48: Conflict list
-An Admin can see all unresolved Conflicts for their Organization, soonest first. Realizes UJ-3, UJ-4.
+An Admin can see all unresolved Conflicts for their Organization, soonest first, in *Za odluku* beside pending Leave Requests and Swap Requests (changed 2026-10-10). Realizes UJ-3, UJ-4.
 
 **Consequences (testable):**
 - Each entry shows date, Team, Shift Type, Member, and the Leave Record that caused it.
 - Conflicts for dates already past remain listed and are distinguishable from upcoming ones.
-- The count matches the Admin dashboard figure exactly (FR-53).
+- The count of items waiting in *Za odluku* — unresolved Conflicts, pending Leave Requests and accepted Swap Requests — matches the Admin dashboard figure exactly (FR-53).
+- The Croatian UI calls the queue *Za odluku*, its tabs *Čeka odluku* and *Odlučeno*, and never uses the word "konflikt" (changed 2026-10-10).
 
 #### FR-48a: Resolved conflicts stay readable (added 2026-10-02, sprint-change-proposal-2026-10-02-ux-redesign)
 An Admin can see the Organization's resolved Conflicts, each with its resolution, the acting Admin, and the timestamp.
 
 **Consequences (testable):**
 - Each entry shows date, Team, Shift Type, Member, the resolution chosen, who chose it, and when (DI-11).
-- The list is a read of stored Conflict Resolutions only; it adds no new record and is not an audit-log interface (§7.2).
+- The list is a read of stored Conflict Resolutions and request decisions only; it adds no new record and is not the change history, which is FR-78 (changed 2026-10-10).
 - A resolved Conflict never reappears in the unresolved list (FR-48).
 
 #### FR-49: Resolve as Uncovered
@@ -686,7 +697,7 @@ An Admin can resolve a Conflict by amending or deleting the underlying Leave Rec
 - Amending recomputes cost, Balance, and Conflicts for the new range (FR-46).
 - Deleting restores consumed Balance and clears every Conflict from that record.
 
-**Out of Scope for MVP:** two-member shift swaps; Shift Type substitution as a resolution; Member-initiated resolution; notification of any resolution; bulk resolution across a date range.
+**Out of Scope for MVP:** Shift Type substitution as a resolution; Member-initiated resolution; notification beyond FR-62; bulk resolution across a date range. Two-member shift swaps moved into v1 on 2026-10-10 (§5.17).
 
 ### 5.13 Dashboards
 
@@ -710,15 +721,275 @@ An Admin landing in the application sees today's coverage by Team, upcoming shif
 
 **Consequences (testable):**
 - Today's coverage lists each Team with its Shift Type, for any number of Teams.
-- Unresolved Conflict count is always shown, including when zero, and matches FR-48.
+- The count of items waiting in *Za odluku* is always shown, including when zero, and matches FR-48 (changed 2026-10-10).
+- Where the Organization sets Minimum Members, the count of Short-staffed Shifts ahead is shown beside it, including when zero (FR-73).
 - Each summary links to its corresponding list view.
+
+*Sections §5.14–§5.20 were added on 2026-10-10 by `sprint-change-proposal-2026-10-10-v1-scope-expansion.md`. They ship in v1, before pilot go-live, in this order. Decisions taken that day: D1, Absence Types are Organization data, no record carries a reason, and a type's name is Admin- and self-only; D2, a swap goes Member → colleague → Admin; D3, part-day leave is a half day; D4, the change history is Admin-only.*
+
+### 5.14 Installable and Offline (added 2026-10-10, sprint-change-proposal-2026-10-10-v1-scope-expansion)
+
+**Description:** Members are on phones, often where the signal is poor. The application installs to the home screen as a PWA and shows the last schedule a Member read when there is no connection. It is labelled with the time that schedule is from, and nothing pretends to save. Realizes UJ-2.
+
+**Functional Requirements:**
+
+#### FR-54: Install the application
+A Member can install the application to their device's home screen.
+
+**Consequences (testable):**
+- The application installs from Chrome on Android and from Safari on iOS, and opens without browser chrome.
+- The installed name is the confirmed product name, not a working title, and no Organization's name or logo is hard-coded into the installed manifest (DI-8).
+- An install entry is reachable from *Više*; nothing prompts installation as a modal on a first visit.
+- A new version is announced in the application and applied on reload. It is never applied silently mid-task.
+
+#### FR-55: Read offline with an as-of note
+A Member without a connection can open every surface they have already read and see its last snapshot, labelled with the time that snapshot was taken.
+
+**Consequences (testable):**
+- Offline, a surface renders its whole last snapshot with `stanje od {datum} {vrijeme}` in the Organization timezone (FR-8).
+- A cached figure is never shown beside a fresh one. A surface is either wholly cached and labelled, or wholly fresh (NFR-24).
+- Online, a cached snapshot is never shown in place of a fresh read.
+- The Member's current and next month are available offline after they have opened their dashboard once online.
+
+#### FR-56: Writes refused offline
+Every write is refused while offline, with a stated reason.
+
+**Consequences (testable):**
+- Each write control states that it needs a connection. No write is queued for later, and none is applied optimistically.
+- Coming back online changes no record by itself.
+
+#### FR-57: Signing out clears the device
+Signing out removes every cached snapshot from the device.
+
+**Consequences (testable):**
+- After sign-out, no Organization data is readable from the device's storage, offline or online.
+- A second account signing in on the same device sees none of the first account's cached data.
+
+### 5.15 Leave Requests (added 2026-10-10, sprint-change-proposal-2026-10-10-v1-scope-expansion)
+
+**Description:** A Member asks for leave from their phone and sees what it would cost; an Admin decides. Until an Admin approves, nothing in the schedule, the hours or the balance moves, and no Conflict exists (DI-3, DI-4). Approval asserts the Leave Record exactly as if the Admin had entered it. Realizes UJ-3.
+
+**Functional Requirements:**
+
+#### FR-58: A Member requests leave
+A Member can send a request for a date range, of an Absence Type (FR-74), optionally a half day (FR-75), and sees its cost in Leave Days and their balance after it before sending.
+
+**Consequences (testable):**
+- The cost is computed by FR-44 from the same schedule the Member sees.
+- A pending request creates no Conflict, charges no Leave Balance, changes no hours, and alters no Scheduled Shift or Shift Roster (DI-3).
+- A range overlapping the Member's existing Leave Records or another pending request of theirs is refused when sent.
+- A request carries no reason field (NFR-5).
+
+#### FR-59: Withdraw a request
+A Member can withdraw their own pending request.
+
+**Consequences (testable):**
+- A withdrawn request can no longer be decided, and it creates nothing.
+- A decided request cannot be withdrawn. An approved leave is changed by an Admin through FR-46.
+
+#### FR-60: An Admin decides a request
+An Admin can approve or reject a pending request on its own screen, after seeing what approval would create.
+
+**Consequences (testable):**
+- Before deciding, the Admin sees the cost, the Member's balance after it, every Conflict approval would create, and every Short-staffed Shift it would cause (FR-72). These are computed by the same rules as a direct Leave Record (FR-43, FR-47), never a second implementation (NFR-19).
+- Approval creates one Leave Record of the requested range, type and half, attributed to the approving Admin (DI-11). From that moment it behaves exactly as FR-43.
+- Rejection records the decision and creates nothing.
+- Each decision records the acting Admin and timestamp.
+- If the schedule has changed so that the request no longer applies, approval is refused as stale and the request stays pending.
+- A pending request appears in *Za odluku* beside unresolved Conflicts (FR-48); a decided one appears in *Odlučeno* (FR-48a).
+
+#### FR-61: A Member sees their requests
+A Member can see their own pending, approved, rejected and withdrawn requests.
+
+**Consequences (testable):**
+- Each request shows its range, type, cost and state, and for a decision its date.
+- A Member Role account cannot read another Member's requests (FR-16).
+
+### 5.16 Notifications (added 2026-10-10, sprint-change-proposal-2026-10-10-v1-scope-expansion)
+
+**Description:** People hear about what concerns them without opening the application. Email comes first; push follows for Members who installed the application, which is the only channel for a Member without an email address. A notification reports a fact that was recorded. It is never a calculation of its own, and never news about another Member's absence. Realizes UJ-2, UJ-3.
+
+**Functional Requirements:**
+
+#### FR-62: Events and recipients
+The system notifies a Member when their leave request is decided, when an Admin records leave for them, when their own shifts change through a Roster or Shift Type Override, a swap, or a rotation change taking effect within the next 30 days, and when a swap is proposed to them or decided. It notifies every Admin when a new item waits in *Za odluku*.
+
+**Consequences (testable):**
+- Each notification is written by the same request that records the fact it reports, as a code and its operands. The sender computes no domain answer.
+- Each notification is sent at most once per recipient and channel.
+- A notification states facts in the Organization locale and links to the surface concerned.
+- No notification to a Member Role account names another Member's absence or Absence Type (NFR-5).
+- Shift reminders that need a projection outside the browser are out of v1.
+
+#### FR-63: Email
+A Member with an email address receives notifications by email.
+
+**Consequences (testable):**
+- Email goes only to the Member's own recorded address, never to a synthesized sign-in address.
+- An email failure is retried and never blocks the write that caused it.
+
+#### FR-64: Push
+A Member who installed the application and allowed notifications receives them as push.
+
+**Consequences (testable):**
+- Push carries the same events as email (FR-62).
+- On iOS, push is offered only to the installed application, and the settings say so.
+- A subscription the push service reports as gone is removed.
+
+#### FR-65: Notification settings
+A Member can turn email and push on or off for themselves.
+
+**Consequences (testable):**
+- The settings show the recorded email address, or state that none is recorded.
+- A Member with neither channel available is told so in words.
+- A channel turned off receives nothing from that moment.
+
+### 5.17 Shift Swaps (added 2026-10-10, sprint-change-proposal-2026-10-10-v1-scope-expansion)
+
+**Description:** Members arrange swaps between themselves today by phone, and the rota never learns of them. Here a Member proposes, the colleague accepts, and an Admin approves. Only approval writes anything, and what it writes is ordinary Roster Overrides, so the rotation is untouched (DI-2) and the hours follow (FR-40). Realizes UJ-3.
+
+**Functional Requirements:**
+
+#### FR-66: Propose a swap
+A Member can propose to give a colleague one of their own working Scheduled Shifts, optionally taking one of the colleague's working Scheduled Shifts in return.
+
+**Consequences (testable):**
+- The return shift is optional. Without it, the swap is a one-way cover.
+- A given shift that is not a working shift on the proposer's roster, or a return shift not on the colleague's, is refused when sent.
+- The proposer sees the consequence for both Members before sending: who works which date, and each Member's hour delta.
+- A proposal changes no Scheduled Shift, Shift Roster or hours (DI-2).
+
+#### FR-67: The colleague answers
+The colleague can accept or decline a swap proposed to them.
+
+**Consequences (testable):**
+- A declined swap is closed and creates nothing.
+- An accepted swap appears in *Za odluku* for an Admin. Until the Admin decides, it still changes nothing.
+
+#### FR-68: An Admin decides a swap
+An Admin can approve or reject an accepted swap on its own screen, after seeing its consequences.
+
+**Consequences (testable):**
+- Before deciding, the Admin sees each Member's hour delta, any leave or double booking either Member would have, and any Short-staffed Shift (FR-72). These warn and never block, as in FR-50.
+- Approval writes a Roster Override replacing the proposer with the colleague on the given shift and, when there is a return shift, one replacing the colleague with the proposer on it. Each is attributed to the approving Admin with the reason "swap", and passes the AD-5 erasure check.
+- Rejection records the decision and creates nothing.
+- If either shift has changed so that the swap no longer applies, approval is refused as stale.
+
+#### FR-69: Withdraw a swap
+Either Member can withdraw a swap before an Admin decides it.
+
+**Consequences (testable):**
+- A withdrawn swap disappears from *Za odluku* and creates nothing.
+
+### 5.18 Minimum Members (added 2026-10-10, sprint-change-proposal-2026-10-10-v1-scope-expansion)
+
+**Description:** An Admin needs to know a shift is short before it arrives. An Organization sets one number: how many people a working shift needs. The application states plainly wherever a shift falls short — before the save that causes it, on the calendar, and on the Admin dashboard. It warns and never blocks, because the Admin may have no one else (FR-25, FR-26 stance). It never reads Fire Rank or Team Position (FR-18a). Realizes UJ-3.
+
+**Functional Requirements:**
+
+#### FR-70: Minimum Members setting
+An Admin can set the Organization's Minimum Members, or leave it empty.
+
+**Consequences (testable):**
+- An empty setting reports nothing anywhere.
+- The value is Organization data. No default exists in the core (DI-8).
+- Changing it changes the short-staffed state of past and future shifts alike, as moving an Hour Band does.
+
+#### FR-71: Short-staffed is derived
+The system derives, for every working Scheduled Shift, the people at work and whether they are fewer than Minimum Members.
+
+**Consequences (testable):**
+- People at work are the Shift Roster after Overrides, minus every Member absent that date by any Absence Type, with replacements counted. A Member on a half day counts as at work.
+- Non-working shifts are never short-staffed.
+- The state is derived on read and never stored. It ends only when the roster, the absence or the setting changes. Nothing resolves it.
+- A Member deactivated from a date leaves their future shifts short-staffed where the count falls below the setting (§11.2 Q5).
+
+#### FR-72: Shown before every save that causes it
+Every write that can make a shift short-staffed reports it before saving.
+
+**Consequences (testable):**
+- Reported by: recording or amending leave (FR-43), approving a Leave Request (FR-60), a Roster or Shift Type Override (FR-30, FR-31), approving a swap (FR-68), every Conflict Resolution (FR-49 to FR-51, in the consequence strip's coverage term), deactivating a Member (FR-12), and saving a Rotation (FR-24).
+- The report names the date, the Team, the people at work, and the minimum. It is a block in the change summary, not a quiet line.
+- It never blocks the save.
+
+#### FR-73: Shown on the calendar and the dashboard
+Short-staffed shifts are marked on the Calendar day and counted on the Admin dashboard.
+
+**Consequences (testable):**
+- The Calendar marks a short-staffed shift for an Admin without opening a detail view, with a glyph and a legend entry, not by colour alone (NFR-25).
+- The day detail states the people at work against the minimum.
+- The Admin dashboard shows the count of short-staffed shifts ahead, including zero, linked to their dates.
+
+### 5.19 Absence Types, Carry-over and Half Days (added 2026-10-10, sprint-change-proposal-2026-10-10-v1-scope-expansion)
+
+**Description:** Annual leave is not the only absence an Organization records, unused leave carries into the next year, and some absences are half a shift. All three are Organization data or derived from it. None records a reason (NFR-5). Every absence collides with a rostered working shift exactly as annual leave does (DI-3, DI-4); only the types that draw down the allowance change the balance. Realizes UJ-3, UJ-4.
+
+**Functional Requirements:**
+
+#### FR-74: Absence Types
+An Admin can define Absence Types by name, each stating whether it draws down the Leave Allowance, and every Leave Record has one.
+
+**Consequences (testable):**
+- Every Organization starts with one drawing type for annual leave. Existing Leave Records become that type.
+- Every type raises Conflicts against a rostered working shift (FR-47). Only drawing types count toward Leave Balance (FR-45).
+- A type's name is visible only to Admins and to the Member themselves. To any other Member, the Member reads as absent (NFR-5).
+- The hours views and the Excel export report Leave Days per drawing type and one total for the rest, with columns named by Organization data (FR-42a, DI-8).
+
+#### FR-75: Half-day records
+An Admin, or a Member through a request, can record a one-date absence covering the first or second half of the Member's working shift that date.
+
+**Consequences (testable):**
+- It costs 0.5 Leave Days.
+- It raises one Conflict, like a full day.
+- The worked half's interval counts in Band Hours and Total Hours by band intersection (FR-40, DI-7). The absent half counts in neither.
+- A half-day record on a date without a working shift is refused.
+
+#### FR-76: Carry-over
+An Admin can set the Organization's carry-over: the maximum days that carry into the next Leave Year, and the date they expire.
+
+**Consequences (testable):**
+- Leave Allowance is held per Leave Year, so an earlier year's allowance stays as it was.
+- Carried-over Days are the previous year's unused balance, capped by the maximum. They are derived and never entered.
+- Leave Days consume carried days first; carried days not used by the expiry date lapse.
+- An empty or zero maximum means no carry-over. No default exists in the core (DI-8).
+
+#### FR-77: Balance with carry-over
+A Member and an Admin see the Leave Balance including carried days and their expiry.
+
+**Consequences (testable):**
+- Balance = Allowance + unexpired Carried-over Days − Leave Days of drawing types, consistent at all times (FR-45).
+- The Member's view, the Admin's leave overview (FR-45a) and the dashboard show the same figures (NFR-24).
+
+### 5.20 Change History (added 2026-10-10, sprint-change-proposal-2026-10-10-v1-scope-expansion)
+
+**Description:** DI-11 made every manual change attributable; this makes it readable. An Admin sees who changed what and when, deletions included, and can hand it on as a PDF. Member Role accounts reach none of it. Realizes UJ-4.
+
+**Functional Requirements:**
+
+#### FR-78: History surface
+An Admin can read the Organization's change history, filtered by period, Member, Team and kind of change.
+
+**Consequences (testable):**
+- Every write to a rule, an exception, a decision, a request, a Member or a setting appears with its author, its time, and its values before and after. A deletion appears as well.
+- The history is append-only. No surface edits or removes an entry.
+- History begins at its introduction. Earlier entries are reconstructed from existing attribution where it exists, and the surface says where history begins.
+- A Member Role account is refused every entry at the data layer (NFR-2).
+
+#### FR-79: Export the history to PDF
+An Admin can export the filtered history to a PDF file.
+
+**Consequences (testable):**
+- The file holds exactly the rows the surface shows for that filter, in its order, built from the same data the surface rendered.
+- It names the Organization, the period, the filter, and the time it was generated, in the Organization locale and timezone.
+- Only an Admin can export it.
 
 ## 6. Non-Goals
 
 - **This is not a fire-department management system.** No interventions, incident reporting, equipment, vehicles, readiness, or training. Those are candidate industry modules layered on a validated core, never part of it.
 - **This is not a payroll or time-and-attendance system.** Hours are what was *scheduled*, not what was *attended*. No rates, no pay, no government reporting.
 - **This is not a workforce-optimization tool.** No demand forecasting, no auto-assignment, no optimization of coverage against predicted load.
-- **This is not a communication tool.** No notifications, messaging, push, SMS, or email beyond authentication and invitation.
+- **This is not a communication tool.** Notifications tell a Member about their own schedule and their own requests, and tell an Admin what waits for a decision (§5.16). No messaging, chat, broadcast, announcements, or SMS (changed 2026-10-10).
+- **This does not become a staffing optimizer.** One Minimum Members number warns. It never assigns anyone, never blocks a save, and never reads Fire Rank or Team Position, which stay inert (FR-18a) (added 2026-10-10).
 - **This does not become a general permission system.** Two Roles. Not a role builder, not per-resource ACLs.
 - **This does not become a fire-department product by accretion.** Any requirement that cannot be expressed as Organization data is a requirement to reject or generalize (DI-8). The one recorded exception is FR-18a, whose fixed lists are descriptive, inert and gated by a setting.
 
@@ -726,24 +997,23 @@ An Admin landing in the application sees today's coverage by Team, upcoming shif
 
 ### 7.1 In Scope
 
-Authentication with Organization and Role resolution · operator-provisioned multi-tenant Organizations with enforced isolation · Organization profile, Organization Type, timezone, locale, Hour Bands, Leave Year, and branding · Members with Roles, status, Team, and Leave Allowance · Admin member list with search, sort, filter · read-only member directory · Teams of any number · configurable Shift Types including midnight-crossing and non-working · band-based day/night hour computation · Rotation Patterns of arbitrary cycle length · Rotation Assignments with Offset and Anchor Date · coverage and rest-gap warnings · schedule projection for any date · Shift Rosters · Shift Type and Roster Overrides with attribution and visible overridden state · monthly Calendar with Team/Member filters, filter reset, leave, conflicts, and uncovered shifts · shift counts and Band Hours per Member and Organization · Excel export of Organization hours · annual leave with allowance, Leave Day cost, and balance · leave/schedule Conflict detection with three explicit resolutions · Member and Admin dashboards · Croatian UI on a fully internationalized architecture · responsive across mobile, tablet, desktop.
+Authentication with Organization and Role resolution · operator-provisioned multi-tenant Organizations with enforced isolation · Organization profile, Organization Type, timezone, locale, Hour Bands, Leave Year, and branding · Members with Roles, status, Team, and Leave Allowance · Admin member list with search, sort, filter · read-only member directory · Teams of any number · configurable Shift Types including midnight-crossing and non-working · band-based day/night hour computation · Rotation Patterns of arbitrary cycle length · Rotation Assignments with Offset and Anchor Date · coverage and rest-gap warnings · schedule projection for any date · Shift Rosters · Shift Type and Roster Overrides with attribution and visible overridden state · monthly Calendar with Team/Member filters, filter reset, leave, conflicts, and uncovered shifts · shift counts and Band Hours per Member and Organization · Excel export of Organization hours · annual leave with allowance, Leave Day cost, and balance · leave/schedule Conflict detection with three explicit resolutions · Member and Admin dashboards · *added 2026-10-10:* installable PWA with offline reading · Member leave requests with Admin approval · email and push notifications · Minimum Members with short-staffed warnings · Member shift swaps with Admin approval · Absence Types, carry-over and half-day records · Admin change history with PDF export · Croatian UI on a fully internationalized architecture · responsive across mobile, tablet, desktop.
 
 ### 7.2 Out of Scope for MVP
 
 Grouped with reasons where the reason matters.
 
+*On 2026-10-10 leave requests, shift swaps, Absence Types, carry-over, part-day leave, minimum staffing, the change-history interface, PDF export of that history, notifications and PWA installation moved into v1 (`sprint-change-proposal-2026-10-10-v1-scope-expansion.md`). What remains below is re-confirmed out.*
+
 **Deferred because the workflow is a feature in itself:**
-- Member-submitted leave requests and approval workflow. `[NOTE FOR PM: this is the most likely thing the pilot asks for within weeks of go-live. The data model should not make it expensive.]`
-- Shift swaps and trades between Members.
 - Temporary loan of a Member to another Team.
 
 **Deferred because MVP has no need:**
-- Absence types other than annual leave; carry-over; part-day leave; public-holiday calendars.
+- Public-holiday calendars; accrual over time; leave policies per Member group.
 - Breaks within a shift; overtime; actual attendance distinct from scheduled.
-- Export beyond FR-42a's Excel file of Organization hours (CSV, PDF, payroll formats, other surfaces); advanced reporting; analytics; team statistics.
-- Minimum-staffing rules; qualification constraints; statutory rest-period enforcement.
-- Weekly and daily Calendar views; drag-and-drop editing; print; iCal feeds.
-- Audit-log user interface. The data model supports auditability (DI-11); no screen exposes it. **Carve-out:** the resolved-Conflicts list of FR-48a is not an audit-log interface. It reads only the stored Conflict Resolutions, and exposes no other change history (added 2026-10-02, sprint-change-proposal-2026-10-02-ux-redesign).
+- Export beyond FR-42a's Excel file of Organization hours and FR-79's change-history PDF (CSV, payroll formats, other surfaces); advanced reporting; analytics; team statistics.
+- Staffing rules beyond one Minimum Members warning (§5.18); qualification constraints; statutory rest-period enforcement.
+- Weekly and daily Calendar views; drag-and-drop editing; print; iCal feeds (re-confirmed 2026-10-10).
 - Multiple Teams per Member; multiple Organizations per user.
 
 **Deferred because it is a go-to-market decision, not a product one:**
@@ -752,7 +1022,7 @@ Grouped with reasons where the reason matters.
 - English or any second shipped language. The architecture is ready (§8.2); the translation is not in MVP.
 
 **Deferred because it is a different product:**
-- Notifications of any kind — shift reminders, schedule changes, conflict alerts.
+- Notifications beyond FR-62's events: shift reminders, messaging, broadcast, SMS.
 - Native mobile applications.
 - Industry modules (interventions, equipment, vehicles, training, patrol routes, production lines).
 - Public API and third-party integrations.
@@ -765,7 +1035,7 @@ Grouped with reasons where the reason matters.
 - **NFR-2.** Role restriction is enforced at the same layer. Every administrative write is refused for a Member Role account identically whether attempted through the UI or a direct API call (FR-5).
 - **NFR-3.** Every Organization-scoped record carries its Organization reference; no record is reachable without it.
 - **NFR-4.** Uploaded branding assets are readable only by Members of the owning Organization.
-- **NFR-5.** Personal data held is limited to what scheduling requires: name, optional email, team, hours, leave. No health data, and no reason field on a leave record that invites it. `[ASSUMPTION: no absence reason is captured, which keeps GDPR exposure minimal; confirm this is acceptable for the pilot's records.]`
+- **NFR-5.** Personal data held is limited to what scheduling requires: name, optional email, team, hours, and absence by type. No absence record has a reason, a diagnosis, or a free-text field. An Absence Type's name is visible only to Admins and to the Member themselves; to anyone else the Member reads as absent. Where an Organization names a type for sick leave, that fact is health data, and it is held under that visibility rule and no wider (changed 2026-10-10).
 
 ### 8.2 Internationalization and Localization
 
@@ -778,7 +1048,7 @@ Grouped with reasons where the reason matters.
 
 ### 8.3 Platform and Responsiveness
 
-- **NFR-12.** The application is a responsive web application supporting mobile, tablet, and desktop. No native application in MVP.
+- **NFR-12.** The application is a responsive web application supporting mobile, tablet, and desktop, installable as a PWA and readable offline (§5.14). No native application in MVP.
 - **NFR-13.** Members are assumed to be primarily on phones. Their priority order on small viewports is: today's shift, next shift, calendar, hours, leave.
 - **NFR-14.** Admins are assumed to be primarily on desktop or tablet, with every administrative task also completable on mobile — degraded in comfort, never in capability.
 - **NFR-15.** No screen requires horizontal scrolling at a phone-width viewport. A table — the member list, the hours table — becomes stacked rows below 640 px, and the Calendar grid still scrolls within its own container (changed 2026-10-02, sprint-change-proposal-2026-10-02-ux-redesign).
@@ -793,7 +1063,7 @@ Grouped with reasons where the reason matters.
 ### 8.5 Auditability
 
 - **NFR-20.** Every Override and Conflict Resolution records the acting Admin, a timestamp, and the affected records, and that record outlives the schedule entry it modified (DI-11).
-- **NFR-21.** The data model supports reconstructing who changed a schedule entry and when, without an audit-log interface existing in MVP.
+- **NFR-21.** Every write to an Organization's records can be reconstructed: its author, its time, and the values before and after. Admins read it on the change-history surface (FR-78) (changed 2026-10-10).
 
 ### 8.6 Performance and Reliability
 
@@ -865,13 +1135,13 @@ Ordered by how much they cost to get wrong.
 2. **Are generated shifts persisted or computed on read?** The invariants (DI-1, DI-2) point toward computing from Pattern, Offset, and Anchor Date with only Overrides persisted, but Calendar performance (NFR-22) and roster queries may argue otherwise. *For `bmad-architecture`.*
 3. **If persisted, how far ahead, and how is the horizon maintained?** *For `bmad-architecture`.*
 4. **What happens to future schedule and Overrides when a rotation changes mid-cycle?** FR-24 states explicit review; the mechanism is unspecified. *For `bmad-architecture`.*
-5. **What happens to a deactivated Member's future scheduled shifts?** FR-12 removes them from future rosters; whether that leaves shifts short-handed silently, or raises something Conflict-like, is undecided. *Product question, revisit before epics.*
+5. **What happens to a deactivated Member's future scheduled shifts?** *Answered 2026-10-10:* nothing Conflict-like. Where the Organization sets Minimum Members, a vacated shift shows as short-staffed (FR-71), and the deactivation's preview reports it (FR-72).
 6. **How much of another Member's information may a Member Role account see?** FR-16 assumes leave and hours are Admin-only. A volunteer organization may expect full transparency. *Product question.*
 7. **Can a Member be temporarily loaned to another Team?** Currently expressible only as repeated Roster Overrides (FR-31). Whether that is adequate or needs a first-class concept is a v2 question. *Deferred.*
 8. **Should one user eventually belong to multiple Organizations?** Out of scope now (§2.2); worth knowing whether it is ever intended, since it shapes the identity model. *For `bmad-architecture` to note, not to solve.*
-9. **What retention applies to schedule and leave history?** Unbounded is assumed. *Deferred.*
+9. **What retention applies to schedule and leave history, and to the change history (FR-78)?** Unbounded is assumed. *Deferred.*
 10. **Is WCAG 2.1 AA the accessibility target, and is a formal audit ever expected?** *For `bmad-ux`.*
-11. **Does the pilot need any absence reason recorded?** NFR-5 deliberately captures none. *Product question.*
+11. **Does the pilot need any absence reason recorded?** *Answered 2026-10-10:* no, never (NFR-5). Open: does the pilot record sick leave at all? If it does, admin-only visibility of the Absence Type is the minimum its legal basis requires (GDPR Art. 9(2)(b)). *Confirm with the pilot.*
 
 ## 12. Assumptions Index
 
@@ -882,5 +1152,5 @@ Every `[ASSUMPTION]` in this document, for explicit confirmation:
 - **§5.9 FR-37** — In the all-Teams Calendar view, leave is shown as an indicator or count rather than per-Member detail; UX to settle the treatment.
 - **§5.11 FR-43** — A Leave Record whose cost exceeds Leave Balance is saved with a warning rather than refused, so a real agreement is never unrecordable.
 - **§5.11 FR-44** — Leave Days are counted as dates in the range on which the Member had a working Scheduled Shift. *The most consequential assumption in the document — see §11.2 Q1.*
-- **§8.1 NFR-5** — No absence reason is recorded, keeping personal-data exposure minimal. *See §11.2 Q11.*
+- **§8.1 NFR-5** — *Settled 2026-10-10:* no absence reason is ever recorded. Whether the pilot records sick leave at all is still open. *See §11.2 Q11.*
 - **§8.7 NFR-26** — WCAG 2.1 AA is the target, without formal audit in MVP.

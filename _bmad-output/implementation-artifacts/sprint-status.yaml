@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 10-10-2026 12:00
+last_updated: 10-10-2026 22:00
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -559,6 +559,59 @@ development_status:
   7-17-members-find-the-directory-by-team-in-vise: done
   7-18-organization-settings-show-facts-and-change-through-dialogs: done
   epic-7-retrospective: done
+
+  # Epics 8-14 added by sprint-change-proposal-2026-10-10-v1-scope-expansion.md
+  # (approved 2026-10-10): former v2 items ship in v1, before pilot go-live, in
+  # priority order 8 -> 14. Architect pass before 10.1 and before 14.1.
+  epic-8: backlog
+  8-1-the-app-is-installable: backlog
+  8-2-surfaces-read-offline: backlog
+  8-3-offline-writes-are-refused-and-sign-out-clears-the-device: backlog
+  8-4-install-from-vise: backlog
+  epic-8-retrospective: optional
+
+  epic-9: backlog
+  9-1-raspored-becomes-za-odluku-and-no-screen-says-konflikt: backlog
+  9-2-the-leave-request-record: backlog
+  9-3-a-member-requests-leave-and-sees-what-it-costs: backlog
+  9-4-an-admin-decides-a-leave-request-on-its-own-screen: backlog
+  9-5-za-odluku-lists-requests-beside-collisions: backlog
+  epic-9-retrospective: optional
+
+  epic-10: backlog
+  10-1-the-outbox-and-the-notify-function: backlog
+  10-2-email-tells-people-what-concerns-them: backlog
+  10-3-notification-settings-in-vise: backlog
+  10-4-web-push-reaches-members-without-email: backlog
+  epic-10-retrospective: optional
+
+  epic-11: backlog
+  11-1-the-staffing-rule-and-the-minimum-members-setting: backlog
+  11-2-every-save-that-can-cause-it-shows-a-short-staffed-shift: backlog
+  11-3-the-calendar-day-marks-a-short-staffed-shift: backlog
+  11-4-admin-danas-counts-short-staffed-shifts: backlog
+  epic-11-retrospective: optional
+
+  epic-12: backlog
+  12-1-the-swap-request-record: backlog
+  12-2-a-member-proposes-a-swap-from-the-day-detail: backlog
+  12-3-the-colleague-accepts-or-declines: backlog
+  12-4-an-admin-decides-a-swap-on-its-own-screen: backlog
+  epic-12-retrospective: optional
+
+  epic-13: backlog
+  13-1-absence-types-are-organization-data: backlog
+  13-2-leave-has-a-type-everywhere-it-is-recorded-or-reported: backlog
+  13-3-the-allowance-is-set-per-leave-year: backlog
+  13-4-unused-leave-carries-over-and-expires: backlog
+  13-5-a-half-day-record-costs-half-a-day: backlog
+  epic-13-retrospective: optional
+
+  epic-14: backlog
+  14-1-every-change-is-recorded-in-the-change-history: backlog
+  14-2-an-admin-reads-the-change-history: backlog
+  14-3-the-change-history-exports-to-pdf: backlog
+  epic-14-retrospective: optional
 action_items:
   - id: "epic-4-retro-item-1-fix-c1-a-sati-name-for-a-member-no-longe"
     epic: 4

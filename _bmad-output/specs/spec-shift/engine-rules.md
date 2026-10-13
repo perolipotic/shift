@@ -118,7 +118,14 @@ Same shift records, same nominal durations, different split. **The pilot exercis
 - **R4.7** A record whose cost exceeds remaining Balance is saved **with a warning**, not refused, so a real agreement is never unrecordable.
 - **R4.8** Deleting a Leave Record restores consumed Balance. Amending recomputes cost, Balance, and Conflicts for the new range.
 - **R4.9** Changing a Member's Leave Allowance recomputes Balance and never retroactively invalidates an existing Leave Record.
-- **R4.10** Hours from a working shift covered by a Leave Record are reported as **Leave Hours**, and are never added into Band Hours or Total Hours.
+- **R4.10** A working shift covered by a Leave Record is never added into Band Hours or Total Hours. Leave is reported as the Leave Days of the period, never as hours (human decision 2026-10-10). Summed over the periods a record spans, a record's Leave Days equal its cost.
+- **R4.11** Every Leave Record has an Absence Type. A type's name and its *draws allowance* flag are Organization data. Every type raises Conflicts by R6.1, and only drawing types count toward R4.5. No type and no record carries a reason (Q5). *(R4.11–R4.15 added 2026-10-10, sprint-change-proposal-2026-10-10-v1-scope-expansion.)*
+- **R4.12** A Half-day Record is a one-date record covering the first or second half of the Member's working Scheduled Shift that date. Its halves are split at the midpoint of the shift's nominal interval. It costs 0.5 Leave Days and raises one Conflict like a full day. The worked half's interval is intersected with the Hour Bands and counted in Band Hours and Total Hours by R3.6; the absent half counts in neither. A Half-day Record on a date without a working shift is refused.
+- **R4.13** Leave Allowance is held per Leave Year. Carried-over Days into year *Y* = min(the Organization's carry-over cap, max(0, Leave Balance of year *Y − 1* at its end)). The cap and the expiry date are Organization settings; no default value exists in the core (DI-8). A cap of 0 or an empty setting means no carry-over.
+- **R4.14** Leave Days of drawing types in year *Y* consume Carried-over Days first, in date order, and the current year's allowance after them. Carried-over Days not consumed by Leave Days dated on or before the expiry date expire and are not part of the balance after it.
+- **R4.15** Carried-over Days are derived on read (AD-1), never stored. Changing an earlier year's records or allowance recomputes every later year's carry-over and balance.
+
+**Worked example — carry-over.** Cap 5, and an expiry date the Organization sets inside year *Y*. Year *Y − 1*: allowance 20, used 14, balance 6 → carried 5. Year *Y*: allowance 20; 3 Leave Days before expiry consume 3 carried days; at expiry the remaining 2 carried days lapse; balance after expiry = 20.
 
 **Worked example.** Leave 10.09–14.09 against a schedule of `Dan`, `Noć`, `Slobodno`, `Slobodno`, `Dan`: cost is **3 Leave Days** and **3 Conflicts** are raised. The two `Slobodno` dates cost nothing and raise nothing.
 
@@ -155,7 +162,7 @@ Conflict exists  ⟺  a working Scheduled Shift's roster includes a Member
 
 | Resolution | Effect |
 |---|---|
-| **Accept as Uncovered** | Shift remains, marked Uncovered, stays visible on the Calendar. Absent Member's hours count as Leave Hours, not Band Hours. |
+| **Accept as Uncovered** | Shift remains, marked Uncovered, stays visible on the Calendar. The shift leaves the absent Member's Band Hours and counts as its Leave Day (R4.10). |
 | **Replace Member** | Implemented as a Roster Override (§2). Replacement's Band Hours rise; absent Member's do not. Shift is neither in Conflict nor Uncovered. Warns without blocking if the replacement is themselves on leave or already rostered that date. |
 | **Amend Leave** | Recomputes cost, Balance, and Conflicts for the new range (R4.8). Deleting the record clears every Conflict from it and restores Balance. |
 
@@ -169,7 +176,7 @@ Conflict exists  ⟺  a working Scheduled Shift's roster includes a Member
 - **R7.1** A Member with no Team has an empty schedule and generates no Conflicts.
 - **R7.2** Moving a Member between Teams changes their schedule from the move date forward and rewrites no history.
 - **R7.3** Deactivating a Member preserves all historical Scheduled Shifts, Overrides, hours, and Leave Records; removes them from **future** Shift Rosters; alters no past shift; and generates no new Conflicts.
-- **R7.4** Deactivation removes a Member from **future** Shift Rosters and alters no past roster, because active status is versioned (`ARCHITECTURE-SPINE.md` AD-2). *Open:* whether the vacated shift stays silently short-handed or raises a signal. It would not be a Conflict, which is specifically Leave against a rostered working Shift, so raising one means defining a second derived signal. Product decision.
+- **R7.4** Deactivation removes a Member from **future** Shift Rosters and alters no past roster, because active status is versioned (`ARCHITECTURE-SPINE.md` AD-2). *Closed 2026-10-10:* a vacated shift is not a Conflict. When the Organization sets Minimum Members, it shows as a Short-staffed Shift by §10, and the deactivation's preview reports it before saving.
 - **R7.5** Adding an active Member to a Team adds them to that Team's future Shift Rosters without touching past ones.
 - **R7.6** A Team with historical Scheduled Shifts is archived rather than deleted, and its history remains readable.
 
@@ -180,3 +187,22 @@ Conflict exists  ⟺  a working Scheduled Shift's roster includes a Member
 - **R8.1** Every constraint in SPEC.md and every rule in this document has at least one automated assertion, executable without rendering a component or starting a browser.
 - **R8.2** Two configuration fixtures at minimum: the pilot, and a structurally different organization differing in team count, cycle length, shift durations, **and** band boundaries such that shifts straddle a band edge (worked example B). The second fixture is the UJ-5 configuration from `EXPERIENCE.md`: a security organization, three teams, a five-slot rotation pattern, eight-hour shifts, and its own band boundaries. It is named rather than left to the test author because the pilot's bands coincide with its shift changeovers (R3.8, R8.2 note), so an abstractly-chosen second fixture can satisfy the wording while still never exercising band splitting.
 - **R8.3** Explicit cases for all three save refusals — empty pattern (R1.5), offset outside cycle (R1.6), and an hour-band gap or overlap — and for: negative `daysBetween` (R1.2), midnight-crossing intersection (R3.10), both daylight-saving transition dates (R3.5), band-hours-sum invariant across randomized configurations (R3.7), and the leave-overlap refusal (R4.4).
+
+---
+
+## 9. Requests (added 2026-10-10, sprint-change-proposal-2026-10-10-v1-scope-expansion)
+
+Leave Requests (CAP-19) and Swap Requests (CAP-22) are stored assertions by a Member. They change nothing until an Admin decides them.
+
+- **R9.1** A pending, rejected or withdrawn request derives nothing. It creates no Conflict, charges no Leave Balance, moves no hours, alters no Scheduled Shift or Shift Roster, and creates no Short-staffed Shift. Removing every request leaves every derived figure byte-identical.
+- **R9.2** Approval is the only effect a request has. Approving a Leave Request creates one Leave Record of the requested range, Absence Type and half, attributed to the approving Admin. Approving a Swap Request creates a Roster Override replacing A with B on A's shift and, when the request names a return shift, one replacing B with A on B's shift, each attributed to the approving Admin with the reason code `swap`. A Swap Request needs the colleague's acceptance before an Admin may approve it. Rejection and withdrawal record a decision and create nothing.
+- **R9.3** An approval preview runs the same rules as the direct write it would make: cost and balance by §4, Conflicts by §6, Short-staffed Shifts by §10, hour deltas by §3, and erasures by AD-5. It never computes a second version of any of them (Q8). Every finding warns and none blocks, except an AD-5 erasure, which needs explicit confirmation.
+- **R9.4** A Leave Request whose range overlaps the Member's existing Leave Records or another pending Leave Request of theirs is refused when it is sent. A Swap Request whose given shift is not a working Scheduled Shift on the proposer's roster, or whose return shift is not on the colleague's, is refused when it is sent. If the schedule has changed by approval time so that the request no longer applies, the approval is refused as stale, and the request stays pending for rejection.
+
+## 10. Staffing (added 2026-10-10, sprint-change-proposal-2026-10-10-v1-scope-expansion)
+
+- **R10.1** The people at work on a working Scheduled Shift are its Shift Roster after Roster Overrides, minus every Member covered on that date by a Leave Record of any Absence Type. A Member on a Half-day Record counts as at work. A replacement placed by an Override counts.
+- **R10.2** A Scheduled Shift is short-staffed when it is working **and** its people at work number fewer than the Organization's Minimum Members. Non-working shifts are never short-staffed. When Minimum Members is empty, nothing is short-staffed.
+- **R10.3** Short-staffed is derived on read (AD-1), never stored, and never resolved: it ends only when the roster, the absence or the setting changes.
+- **R10.4** Short-staffed never blocks a save. Every write that can change it reports the shifts it would newly make short-staffed before saving, as `{ code: 'SHORT_STAFFED', date, team, atWork, minimum }` (AD-8). Minimum Members is current-state (AD-2), so changing it changes the report for past dates too.
+- **R10.5** Worked example. A team of four on a working shift, Minimum Members 3. One Member on leave: 3 at work, not short-staffed. Two Members on leave: 2 at work, short-staffed. One of those two replaced by an Override: 3 at work, not short-staffed. The same team with Minimum Members empty: never short-staffed.

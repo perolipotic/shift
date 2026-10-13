@@ -8,7 +8,7 @@ Cross-cutting non-functional requirements. Vocabulary per `glossary.md`.
 - **Q2.** Role enforcement lives at the same layer. Every administrative write is refused for a Member Role account identically whether attempted through the UI or a direct API call. This is more than tenant scoping and needs its own policy design.
 - **Q3.** Every Organization-scoped record carries its Organization reference; no record is reachable without it.
 - **Q4.** Uploaded branding assets are readable only by Members of the owning Organization.
-- **Q5.** Personal data is limited to what scheduling requires: name, optional email, team, hours, leave. No health data, and no absence-reason field that invites it.
+- **Q5.** Personal data is limited to what scheduling requires: name, optional email, team, hours, and absence by type. No absence record has a reason, a diagnosis, or a free-text field. An absence type's name is visible only to admins and to the member themselves; to anyone else the member reads as absent. Where an organization names a type for sick leave, that fact is health data, and it is held under that visibility rule and no wider (changed 2026-10-10, sprint-change-proposal-2026-10-10-v1-scope-expansion).
 - **Q6.** An Organization can never be left with zero Admins, and the last Admin's Role cannot be downgraded.
 
 ## Domain logic isolation
@@ -21,11 +21,11 @@ Cross-cutting non-functional requirements. Vocabulary per `glossary.md`.
 ## Auditability
 
 - **Q11.** Every Override and Conflict Resolution records the acting Admin, a timestamp, and the affected records, and that record outlives the schedule entry it modified.
-- **Q12.** The data model supports reconstructing who changed a schedule entry and when. No audit-log interface exists in MVP.
+- **Q12.** Every write to an organization's records can be reconstructed: its author, its time, and the values before and after. Admins read it on the change-history surface (CAP-24) (changed 2026-10-10).
 
 ## Platform and responsiveness
 
-- **Q13.** Responsive web application supporting mobile, tablet, and desktop. No native application.
+- **Q13.** Responsive web application supporting mobile, tablet, and desktop, installable as a PWA and readable offline (CAP-18). No native application.
 - **Q14.** Members are primarily on phones. Small-viewport priority order: today's shift, next shift, calendar, hours, leave.
 - **Q15.** Admins are primarily on desktop or tablet, with every administrative task also completable on mobile — degraded in comfort, never in capability.
 - **Q16.** No screen requires horizontal scrolling at phone width. Wide content — the Calendar, member list, hours table — scrolls within its own container.
@@ -36,6 +36,8 @@ Cross-cutting non-functional requirements. Vocabulary per `glossary.md`.
 - **Q18.** Navigating to any month, past or future, performs comparably whether or not that range has been visited before.
 - **Q19.** Hour and leave figures are consistent across every surface displaying them at a given moment. No screen shows a stale total beside a fresh one.
 - **Q20.** The member list remains usable at the pilot's scale and at several hundred members.
+- **Q24.** A cached snapshot is never shown without its as-of time, never shown beside a fresh one, and never survives sign-out (added 2026-10-10).
+- **Q25.** A notification is derived from a recorded fact, never from a calculation the notifier makes on its own. It is sent at most once per recipient and channel (added 2026-10-10).
 
 ## Accessibility
 
