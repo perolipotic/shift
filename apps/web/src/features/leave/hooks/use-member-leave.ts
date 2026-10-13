@@ -37,6 +37,7 @@ import {
   leaveConflictOf,
   leaveFormFailureOf,
   leaveHandoffKeyOf,
+  leaveHandoffMissed,
   leaveHandoffOpeningOf,
   leaveInvalidFieldOf,
   leavePreviewStateOf,
@@ -80,13 +81,15 @@ import { focusLater } from '@/utils/focus-later';
 /**
  * One opening of a leave dialog (story 7.12; the member page's
  * `DialogOpening` from 7.11): a fresh key, so each opening renders its body
- * anew, the record it amends — null for a new record — and the range its
- * fields start at, null for empty.
+ * anew, the record it amends — null for a new record — the range its
+ * fields start at, null for empty, and whether that range was handed over
+ * from a conflict, which the dialog says.
  */
 export interface LeaveDialogOpening {
   readonly key: number;
   readonly target: LeaveRecord | null;
   readonly range: { readonly from: string; readonly to: string } | null;
+  readonly handed: boolean;
 }
 
 /**
@@ -138,7 +141,9 @@ export interface LeaveDialogOpening {
  * the amend dialog for the record with the computed range in the fields and
  * the od field focused, or that record's removal confirmation — by the rule
  * applied to the record as it is now. A record already gone, or no longer
- * covering the conflict's date, opens nothing, and the card stays as it was.
+ * covering the conflict's date, opens nothing, and the card says so in a
+ * status line (`handoffMissed`); the amend dialog it opens says its od and do
+ * came from the conflict.
  * Either way the history entry is then replaced without the opening, so a
  * reload or Back never reopens it; the origin stays, for "Natrag na
  * konflikte". Nothing is written here until the admin saves; cancelling leaves
@@ -210,6 +215,8 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
   const [leaveRemoved, setLeaveRemoved] = useState<LeaveRecordRow | null>(null);
   /** What a landed amend cost, for the form's status line. */
   const [leaveAmended, setLeaveAmended] = useState<LeaveSaved | null>(null);
+  /** A hand-off from a conflict that opened nothing: its record is gone or no longer covers the date. */
+  const [handoffMissed, setHandoffMissed] = useState(false);
   const [from, setFrom] = useState(LEAVE_NO_DATE);
   const [to, setTo] = useState(LEAVE_NO_DATE);
   const [leaveFailure, setLeaveFailure] = useState<LeaveFailure | null>(null);
@@ -419,7 +426,10 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
       state: (entry) => withoutLeaveHandoffOpening(entry),
     });
 
-    if (handedOpening === null) return;
+    if (handedOpening === null) {
+      setHandoffMissed(leaveHandoffMissed(handoff, memberId, handedOpening));
+      return;
+    }
 
     // No row action opened it, so a close has nothing to return to but the list's heading.
     amendOpener.current = null;
@@ -428,7 +438,7 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
     rereadResolutions();
 
     if (handedOpening.kind === LEAVE_AMEND_ACTION) {
-      openDialog(handedOpening.row.record, handedOpening.range);
+      openDialog(handedOpening.row.record, handedOpening.range, true);
     } else {
       setConfirming(handedOpening.row);
     }
@@ -446,6 +456,7 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
     setLeaveRemoved(null);
     setAmendedReplacements(null);
     setRemovedReplacements(null);
+    setHandoffMissed(false);
   }
 
   /**
@@ -465,9 +476,13 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
    * `target` — with a fresh body whose fields start at `range`, the preview
    * following them, and the od field focused once it is drawn.
    */
-  function openDialog(target: LeaveRecord | null, range: { readonly from: string; readonly to: string } | null): void {
+  function openDialog(
+    target: LeaveRecord | null,
+    range: { readonly from: string; readonly to: string } | null,
+    handed = false,
+  ): void {
     openings.current += 1;
-    setOpening({ key: openings.current, target, range });
+    setOpening({ key: openings.current, target, range, handed });
     setFrom(range?.from ?? LEAVE_NO_DATE);
     setTo(range?.to ?? LEAVE_NO_DATE);
     focusLater([() => fromField.current], () => toField.current);
@@ -831,6 +846,7 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
     leaveSaved,
     leaveAmended,
     leaveRemoved,
+    handoffMissed,
     amendGuard,
     removeGuard,
     amendedReplacements,

@@ -39,6 +39,7 @@ import {
   saveFocusOf,
   replacementOf,
   leaveDaysMessageKey,
+  resolutionAmendDroppedOf,
   resolutionOptionOf,
   refetchingAfterFailure,
   resolutionSavedMessageKey,
@@ -759,6 +760,31 @@ describe('amending the leave (story 5.4d)', () => {
     // 10.09. and 11.09. are dropped, both working days.
     expect([view.amend.balanceDays, view.amend.gainedDays]).toEqual([18, 2]);
     expect(t('raspored.resolution.balanceGained', { count: 2 })).toBe('+2 dana');
+  });
+
+  it('Dropped (D726): a later start names the days before the conflict it drops, and says when some are past', () => {
+    // 10.09. goes with the conflict's 11.09.; today (01.09.) is before it.
+    expect(amendViewOn('2026-09-11').amend.dropped).toEqual({ days: 1, rangeShown: '10.09.', past: false });
+    expect(t('raspored.resolution.amendDrops', { count: 1, range: '10.09.' })).toBe(
+      'Godišnji se skraćuje i za 1 dan prije toga (10.09.).',
+    );
+    // The first day drops nothing before it; an earlier end or a removal drops nothing at all.
+    expect(amendViewOn('2026-09-10').amend.dropped).toBeNull();
+    expect(amendViewOn('2026-09-14').amend.dropped).toBeNull();
+
+    const record = { from: '2026-10-02', to: '2026-10-09' };
+    const target = amendTargetOf(record, '2026-10-06');
+
+    expect(resolutionAmendDroppedOf(record, '2026-10-06', target, '2026-10-04')).toEqual({
+      days: 4,
+      rangeShown: '02.10.–05.10.',
+      past: true,
+    });
+    expect(resolutionAmendDroppedOf(record, '2026-10-06', target, '2026-10-02')?.past).toBe(false);
+    expect(t('raspored.resolution.amendDrops', { count: 4, range: '02.10.–05.10.' })).toBe(
+      'Godišnji se skraćuje i za 4 dana prije toga (02.10.–05.10.).',
+    );
+    expect(t('raspored.resolution.amendDrops', { count: 5, range: '' })).toContain('5 dana');
   });
 
   it('Last day: "završava 13.09."', () => {
