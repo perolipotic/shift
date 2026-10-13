@@ -49,7 +49,106 @@ function allMigrations(): string {
  * creates.
  */
 function migrationStatements(): string {
-  return allMigrations().replaceAll(/--[^\n]*/g, '');
+  return stripLineComments(allMigrations());
+}
+
+/** The end of the quoted run that opens at `start` (`'…'` or `"…"`), past its closing quote. */
+function quotedEnd(sql: string, start: number): number {
+  const quote = sql[start];
+  // `E'…'` takes backslash escapes; a plain literal and an identifier double the quote instead.
+  const escaped = quote === "'" && /[eE]/.test(sql[start - 1] ?? '') && !/[\w$]/.test(sql[start - 2] ?? '');
+  let index = start + 1;
+  while (index < sql.length) {
+    if (escaped && sql[index] === '\\') {
+      index += 2;
+      continue;
+    }
+    if (sql[index] === quote) {
+      if (sql[index + 1] === quote) {
+        index += 2;
+        continue;
+      }
+      return index + 1;
+    }
+    index += 1;
+  }
+  // Unterminated: everything after it counts as quoted, so nothing more is stripped or split.
+  return sql.length;
+}
+
+/**
+ * `sql` with its `--` comments removed, and nothing else.
+ *
+ * FAIL CLOSED. A strip that removed too much would hide a statement from an
+ * assertion that it is absent, so this removes only what is certainly prose: a
+ * `--` at the start of a line or after white space, outside a string literal
+ * or a quoted identifier, up to the end of that line. `'--'` inside a literal
+ * survives, and so does the rest of its line. A `--` glued to a token is left
+ * in place — it costs a positive assertion nothing it could not see before,
+ * and no migration writes one. Dollar quotes are NOT literals here: a
+ * function body is code, and its comments are prose like any other.
+ */
+function stripLineComments(sql: string): string {
+  let out = '';
+  let index = 0;
+  while (index < sql.length) {
+    const char = sql[index];
+    if (char === "'" || char === '"') {
+      const end = quotedEnd(sql, index);
+      out += sql.slice(index, end);
+      index = end;
+    } else if (char === '-' && sql[index + 1] === '-' && (index === 0 || /\s/.test(sql[index - 1] ?? ''))) {
+      const newline = sql.indexOf('\n', index);
+      index = newline < 0 ? sql.length : newline;
+    } else {
+      out += char;
+      index += 1;
+    }
+  }
+  return out;
+}
+
+/**
+ * The top-level statements of `sql`, each trimmed and without its `;`.
+ *
+ * A `;` inside a string literal, a quoted identifier or a dollar-quoted body
+ * does not end a statement, so a policy body is never cut short at one. Expects
+ * comments already stripped (a `;` in prose would otherwise split).
+ */
+function sqlStatements(sql: string): string[] {
+  const statements: string[] = [];
+  let start = 0;
+  let index = 0;
+  while (index < sql.length) {
+    const char = sql[index];
+    if (char === "'" || char === '"') {
+      index = quotedEnd(sql, index);
+      continue;
+    }
+    const tag = char === '$' && !/[\w$]/.test(sql[index - 1] ?? '')
+      ? /^\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/.exec(sql.slice(index))?.[0]
+      : undefined;
+    if (tag !== undefined) {
+      const close = sql.indexOf(tag, index + tag.length);
+      index = close < 0 ? sql.length : close + tag.length;
+      continue;
+    }
+    if (char === ';') {
+      statements.push(sql.slice(start, index).trim());
+      start = index + 1;
+    }
+    index += 1;
+  }
+  const rest = sql.slice(start).trim();
+  if (rest !== '') statements.push(rest);
+  return statements.filter((statement) => statement !== '');
+}
+
+/** Every `create policy … ;` declaration in comment-stripped `sql`, whole, with its `;`. */
+function policyDeclarations(sql: string): string[] {
+  return sqlStatements(sql)
+    .filter((statement) => /^create policy\b/i.test(statement))
+    .map((statement) => `${statement};`);
 }
 
 /**
@@ -151,6 +250,73 @@ describe('supabase scaffold', () => {
     ).toEqual([]);
     expect(operator.map((entry) => entry.name)).toContain('provision-organization.sql');
   });
+
+  it('never forces row level security on a table, in any migration', () => {
+    // `current_member_access()` and every other SECURITY DEFINER reader read
+    // `members` past the policies that call them. That exemption stands on two
+    // legs: the owner, `postgres`, is BYPASSRLS on Supabase, AND it owns the
+    // tables, and an owner is exempt from its own table's policies.
+    // `force row level security` removes the second leg, a plausible-looking
+    // hardening step that leaves the whole system on a role attribute the
+    // platform grants and this repository does not control. Where that
+    // attribute is missing, the helpers become subject to the very policies
+    // that call them, read nothing, and every policy denies: a total, silent
+    // loss of access with a green static suite. Migrations are immutable, so
+    // the rule lives here.
+    const statements = migrationStatements();
+
+    expect(statements.length, 'no migration statement was read').toBeGreaterThan(0);
+    expect(
+      statements,
+      'a migration forces row level security; the definer helpers would lose their owner exemption',
+    ).not.toMatch(/\bforce\s+row\s+level\s+security\b/i);
+  });
+});
+
+describe('the migration source matchers', () => {
+  // Every source-text assertion in this file reads through these, so they
+  // FAIL CLOSED: a strip that removed a statement would make "no migration
+  // says X" pass vacuously, and a policy body cut short would hide its tail.
+  it('strips a comment that starts a line or follows white space', () => {
+    expect(stripLineComments('-- header\nselect 1; -- trailing\n')).toBe('\nselect 1; \n');
+  });
+
+  it('strips a comment inside a dollar-quoted function body, which is code', () => {
+    expect(stripLineComments('as $$\n  -- prose\n  select 1;\n$$;')).toBe('as $$\n  \n  select 1;\n$$;');
+  });
+
+  it("keeps `--` inside a string literal or a quoted identifier, and the rest of its line", () => {
+    expect(stripLineComments("select ' -- not a comment', 1; grant x;")).toBe(
+      "select ' -- not a comment', 1; grant x;",
+    );
+    expect(stripLineComments('select 1 as " -- id"; grant x;')).toBe('select 1 as " -- id"; grant x;');
+    expect(stripLineComments("select 'it''s -- still', 1;")).toBe("select 'it''s -- still', 1;");
+  });
+
+  it('keeps a `--` glued to a token, and everything after an unterminated literal', () => {
+    expect(stripLineComments('select 1--x\n')).toBe('select 1--x\n');
+    expect(stripLineComments("select ' -- open\n-- grant x;")).toBe("select ' -- open\n-- grant x;");
+  });
+
+  it('does not end a policy at a `;` inside its body', () => {
+    const sql = "create policy p on public.t for select to authenticated using (x <> ';' and y);\ncreate policy q on public.t;";
+
+    expect(policyDeclarations(sql)).toEqual([
+      "create policy p on public.t for select to authenticated using (x <> ';' and y);",
+      'create policy q on public.t;',
+    ]);
+  });
+
+  it('does not split a statement at a `;` inside a dollar-quoted body', () => {
+    expect(sqlStatements('create function f() returns int as $$ select 1; $$;\nselect 2;')).toEqual([
+      'create function f() returns int as $$ select 1; $$',
+      'select 2',
+    ]);
+    expect(sqlStatements('do $body$ begin perform 1; end $body$; select 3;')).toEqual([
+      'do $body$ begin perform 1; end $body$',
+      'select 3',
+    ]);
+  });
 });
 
 describe('the first schema migration', () => {
@@ -248,10 +414,8 @@ describe('the first schema migration', () => {
 describe('the access-control migration', () => {
   /** The `create policy <name> on <table> … ;` body for one policy, comments out. */
   function policyBody(name: string): string {
-    const declaration = new RegExp(`create policy ${name}\\b[\\s\\S]*?;`, 'i').exec(
-      migrationStatements(),
-    );
-    return declaration?.[0] ?? '';
+    const pattern = new RegExp(`^create policy ${name}\\b`, 'i');
+    return policyDeclarations(migrationStatements()).find((declaration) => pattern.test(declaration)) ?? '';
   }
 
   it('is named 0003 and hand-numbered', () => {
@@ -286,7 +450,7 @@ describe('the access-control migration', () => {
     // clause at all opens both tables to an unauthenticated caller, and a
     // `for all` policy silently covers writes that were never reviewed as
     // writes. None of that needs a running stack to catch.
-    const declarations = migrationStatements().match(/create policy[\s\S]*?;/gi) ?? [];
+    const declarations = policyDeclarations(migrationStatements());
 
     expect(declarations.length, 'no policy declarations were found to check').toBeGreaterThan(0);
     expect(
@@ -438,7 +602,7 @@ describe('the access-control migration', () => {
     // another's object; and the helper, so `is_active` and `member_role` are
     // re-read on every evaluation rather than trusted from a token minted
     // before a demotion.
-    const storagePolicies = (migrationStatements().match(/create policy[\s\S]*?;/gi) ?? []).filter(
+    const storagePolicies = policyDeclarations(migrationStatements()).filter(
       (declaration) => /on storage\.objects\b/i.test(declaration),
     );
 
@@ -522,7 +686,7 @@ describe('the access-control migration', () => {
     // service resolves a bucket on its own privileged connection, so deny-all
     // by absence is what should hold there.
     const statements = migrationStatements();
-    const storagePolicies = (statements.match(/create policy[\s\S]*?;/gi) ?? []).filter(
+    const storagePolicies = policyDeclarations(statements).filter(
       (declaration) => /on storage\./i.test(declaration),
     );
 
@@ -725,9 +889,9 @@ describe('the access-control migration', () => {
     // Asserted over the whole migration tree rather than over `0004`, because
     // the fear is a LATER file adding one, and the exact-policy-set assertion
     // above would notice the name while saying nothing about what it is for.
-    const organizationPolicies = (
-      migrationStatements().match(/create policy[\s\S]*?;/gi) ?? []
-    ).filter((declaration) => /on public\.organizations\b/i.test(declaration));
+    const organizationPolicies = policyDeclarations(migrationStatements()).filter((declaration) =>
+      /on public\.organizations\b/i.test(declaration),
+    );
 
     expect(organizationPolicies.length, 'no policy on organizations was found').toBe(2);
     for (const verb of ['insert', 'delete', 'all']) {
@@ -747,7 +911,7 @@ describe('the access-control migration', () => {
     // dated after today, which has decided no day yet. An update policy written
     // later would let an admin move a past deactivation, which rewrites past
     // rosters.
-    const statusPolicies = (migrationStatements().match(/create policy[\s\S]*?;/gi) ?? []).filter(
+    const statusPolicies = policyDeclarations(migrationStatements()).filter(
       (declaration) => /on public\.member_status_versions\b/i.test(declaration),
     );
 
@@ -778,7 +942,7 @@ describe('the access-control migration', () => {
     // that reaches only the latest version while it is dated after today. No
     // update policy, and the privilege revoked.
     const statements = migrationStatements();
-    const membershipPolicies = (statements.match(/create policy[\s\S]*?;/gi) ?? []).filter(
+    const membershipPolicies = policyDeclarations(statements).filter(
       (declaration) => /on public\.team_membership_versions\b/i.test(declaration),
     );
 
@@ -1063,7 +1227,7 @@ describe('the access-control migration', () => {
     // reaches only a row that is not archived yet. Source text only; what each
     // clause does is `test/rls-isolation.test.ts`.
     const statements = migrationStatements();
-    const teamPolicies = (statements.match(/create policy[\s\S]*?;/gi) ?? []).filter(
+    const teamPolicies = policyDeclarations(statements).filter(
       (declaration) => /on public\.teams\b/i.test(declaration),
     );
 
@@ -1157,7 +1321,7 @@ describe('the access-control migration', () => {
     // STORY 2.1a. Source text only; what each clause does is
     // `test/rls-isolation.test.ts`, which skips without a database.
     const statements = migrationStatements();
-    const bandPolicies = (statements.match(/create policy[\s\S]*?;/gi) ?? []).filter(
+    const bandPolicies = policyDeclarations(statements).filter(
       (declaration) => /on public\.hour_bands\b/i.test(declaration),
     );
     expect(bandPolicies.length, 'hour_bands does not carry exactly four policies').toBe(4);
@@ -1242,7 +1406,7 @@ describe('the access-control migration', () => {
       /create unique index \w+\s+on shift_types \(organization_id, lower\(btrim\(name\)\)\)\s+where not archived;/i,
     );
 
-    const typePolicies = (statements.match(/create policy[\s\S]*?;/gi) ?? []).filter(
+    const typePolicies = policyDeclarations(statements).filter(
       (declaration) => /on public\.shift_types\b/i.test(declaration),
     );
     expect(typePolicies.length, 'shift_types does not carry exactly three policies').toBe(3);
@@ -1347,7 +1511,7 @@ describe('the access-control migration', () => {
     // insert and a delete that reaches only the latest version while it is
     // dated after today. No update policy, and the privilege revoked.
     const statements = migrationStatements();
-    const versionPolicies = (statements.match(/create policy[\s\S]*?;/gi) ?? []).filter(
+    const versionPolicies = policyDeclarations(statements).filter(
       (declaration) => /on public\.shift_type_versions\b/i.test(declaration),
     );
 
@@ -1559,7 +1723,7 @@ describe('the access-control migration', () => {
     // no version names, and the delete privilege it narrows.
     const statements = migrationStatements();
     for (const table of ['rotation_patterns', 'rotation_steps']) {
-      const policies = (statements.match(/create policy[\s\S]*?;/gi) ?? []).filter((declaration) =>
+      const policies = policyDeclarations(statements).filter((declaration) =>
         new RegExp(`on public\\.${table}\\b`, 'i').test(declaration),
       );
       expect(policies.length, `${table} does not carry exactly three policies`).toBe(3);
@@ -1629,7 +1793,7 @@ describe('the access-control migration', () => {
     // reaches only the latest version while it is dated after today. No update
     // policy, and the privilege revoked.
     const statements = migrationStatements();
-    const policies = (statements.match(/create policy[\s\S]*?;/gi) ?? []).filter((declaration) =>
+    const policies = policyDeclarations(statements).filter((declaration) =>
       /on public\.rotation_assignments\b/i.test(declaration),
     );
     expect(policies.length, 'rotation_assignments does not carry exactly three policies').toBe(3);
@@ -1720,7 +1884,7 @@ describe('the access-control migration', () => {
     const migration = readFileSync(join(supabaseRoot, 'migrations', '0016_rotation.sql'), 'utf8');
     expect(migration, 'story 2.3a takes no trigger').not.toMatch(/create (or replace )?trigger/i);
     expect(
-      (migration.replaceAll(/--[^\n]*/g, '').match(/create function/gi) ?? []).length,
+      (stripLineComments(migration).match(/create function/gi) ?? []).length,
       'story 2.3a takes no RPC: its functions are the three readers',
     ).toBe(3);
   });
@@ -1797,7 +1961,7 @@ describe('the access-control migration', () => {
 
   it('opens the override table to an active admin alone, insert only, and never to update or delete (story 3.5a)', () => {
     const statements = migrationStatements();
-    const policies = (statements.match(/create policy[\s\S]*?;/gi) ?? []).filter((declaration) =>
+    const policies = policyDeclarations(statements).filter((declaration) =>
       /on public\.shift_type_overrides\b/i.test(declaration),
     );
     expect(policies.length, 'shift_type_overrides does not carry exactly two policies').toBe(2);
@@ -1905,10 +2069,12 @@ describe('the access-control migration', () => {
       expect(statements).toContain(`revoke execute on function public.remove_shift_type_override(uuid) from ${role};`);
     }
     expect(statements).toContain('grant execute on function public.remove_shift_type_override(uuid) to authenticated;');
-    const migration = readFileSync(
-      join(supabaseRoot, 'migrations', '0021_remove_shift_type_override.sql'),
-      'utf8',
-    ).replaceAll(/--[^\n]*/g, '');
+    const migration = stripLineComments(
+      readFileSync(
+        join(supabaseRoot, 'migrations', '0021_remove_shift_type_override.sql'),
+        'utf8',
+      ),
+    );
     expect(migration, 'story 3.5b takes no trigger').not.toMatch(/create (or replace )?trigger/i);
     expect(migration, 'story 3.5b writes or refers to a rotation row').not.toMatch(/rotation_/);
     expect(migration, 'story 3.5b changes a policy').not.toMatch(/\b(create|alter|drop) policy\b/i);
@@ -1918,10 +2084,12 @@ describe('the access-control migration', () => {
 
   it('confirms or amends a pending override through two attributed definer functions, and reads confirmed_at (story 3.5c)', () => {
     const statements = migrationStatements();
-    const migration = readFileSync(
-      join(supabaseRoot, 'migrations', '0022_shift_type_override_disposition.sql'),
-      'utf8',
-    ).replaceAll(/--[^\n]*/g, '');
+    const migration = stripLineComments(
+      readFileSync(
+        join(supabaseRoot, 'migrations', '0022_shift_type_override_disposition.sql'),
+        'utf8',
+      ),
+    );
 
     // The confirmation: both or neither, and no session privilege on either.
     expect(migration).toMatch(
@@ -2072,7 +2240,7 @@ describe('the access-control migration', () => {
 
   it('opens the roster override table to an active admin alone, insert only, and never to update or delete (story 3.6a)', () => {
     const statements = migrationStatements();
-    const policies = (statements.match(/create policy[\s\S]*?;/gi) ?? []).filter((declaration) =>
+    const policies = policyDeclarations(statements).filter((declaration) =>
       /on public\.roster_overrides\b/i.test(declaration),
     );
     expect(policies.length, 'roster_overrides does not carry exactly two policies').toBe(2);
@@ -2414,7 +2582,7 @@ describe('the access-control migration', () => {
 
   it('opens conflict resolutions to an active admin\'s insert and read, and never to update or delete (story 5.4a)', () => {
     const statements = migrationStatements();
-    const policies = (statements.match(/create policy[\s\S]*?;/gi) ?? []).filter((declaration) =>
+    const policies = policyDeclarations(statements).filter((declaration) =>
       /on public\.conflict_resolutions\b/i.test(declaration),
     );
     expect(policies.length, 'conflict_resolutions does not carry exactly two policies').toBe(2);
@@ -2608,10 +2776,12 @@ describe('the access-control migration', () => {
     // body and refusals, plus the soft-removal of the resolution that names
     // the override; backfills the live rows whose override is already gone;
     // and re-creates the member's read with the link, under 0031's grants.
-    const migration = readFileSync(
-      join(supabaseRoot, 'migrations', '0033_replacement_resolution_lifetime.sql'),
-      'utf8',
-    ).replaceAll(/--[^\n]*/g, '');
+    const migration = stripLineComments(
+      readFileSync(
+        join(supabaseRoot, 'migrations', '0033_replacement_resolution_lifetime.sql'),
+        'utf8',
+      ),
+    );
     const remove = /create or replace function public\.remove_roster_override\(p_override_id uuid\)[\s\S]*?\$\$;/i.exec(
       migration,
     )?.[0];
@@ -2727,7 +2897,7 @@ describe('the access-control migration', () => {
 
   it('opens leave records to an active admin\'s insert and a member\'s own read, and never to update or delete (story 5.1b)', () => {
     const statements = migrationStatements();
-    const policies = (statements.match(/create policy[\s\S]*?;/gi) ?? []).filter((declaration) =>
+    const policies = policyDeclarations(statements).filter((declaration) =>
       /on public\.leave_records\b/i.test(declaration),
     );
     expect(policies.length, 'leave_records does not carry exactly two policies').toBe(2);
@@ -2813,6 +2983,16 @@ describe('the access-control migration', () => {
       .join('');
     expect(decoded, 'the SQL list and apps/web/src/utils/name.ts disagree').toBe(NAME_WHITESPACE);
 
+    // The operator script's blank-setting class is the same list, copied
+    // because it keeps the value as written rather than keyed.
+    const provisioning = readFileSync(join(operatorRoot, 'provision-organization.sql'), 'utf8');
+    const operatorList = /white_space constant text := U&'((?:\\[0-9A-Fa-f]{4})+)';/.exec(provisioning)?.[1];
+    expect(operatorList, 'provision-organization.sql does not declare its white-space class').toBe(list);
+    expect(
+      provisioning.match(/btrim\(coalesce\(current_setting\([^)]*\), ''\)(?!, white_space\))/g) ?? [],
+      'provision-organization.sql blank-checks a setting with a space-only btrim',
+    ).toEqual([]);
+
     // NOT AN RPC: in `private`, which PostgREST does not expose, and executable
     // by the two roles that write the tables and nobody else.
     expect(statements).toContain('create schema if not exists private;');
@@ -2861,7 +3041,7 @@ describe('the access-control migration', () => {
     // stripped, so a header may still say what an older file did.
     const later = migrationNames().filter((name) => Number.parseInt(name, 10) > 24);
     for (const name of later) {
-      const statements = readFileSync(join(supabaseRoot, 'migrations', name), 'utf8').replaceAll(/--[^\n]*/g, '');
+      const statements = stripLineComments(readFileSync(join(supabaseRoot, 'migrations', name), 'utf8'));
       expect(statements, `${name} blank-checks or keys a name with btrim`).not.toMatch(
         /lower\s*\(\s*btrim\s*\(|btrim\s*\(\s*name\s*\)/i,
       );

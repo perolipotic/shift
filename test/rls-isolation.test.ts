@@ -7,6 +7,16 @@ import { Client } from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import {
+  FIXTURES,
+  connect,
+  inRolledBackTransaction,
+  noDatabase,
+  organizationId,
+  refused,
+  type Refusal,
+} from './database.js';
+
+import {
   ACCESS_UNREADABLE,
   NOT_AN_ADMIN,
 } from '../supabase/functions/admin-auth/authorize.ts';
@@ -118,46 +128,6 @@ import {
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 
 /**
- * The Supabase CLI's fixed local default. Read from the environment when set,
- * so no credential for any other database is written down here.
- */
-const databaseUrl =
-  process.env['SUPABASE_DB_URL'] ?? 'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
-
-/**
- * Whether there is a database here with this schema in it.
- *
- * The schema check is not decoration. `test/provisioning.test.ts` probes
- * TCP and authentication only, and the deferred ledger indicts it for exactly
- * that: `supabase db reset` ends by restarting containers, and in that window
- * Postgres accepts connections while no migration has been applied, so every
- * case fails with `relation "organizations" does not exist` instead of
- * skipping. This file is the suite every later epic re-runs, so it asks the
- * question the ledger proposes — connected AND migrated, or not ready.
- */
-async function reachable(): Promise<boolean> {
-  const client = new Client({ connectionString: databaseUrl, connectionTimeoutMillis: 2000 });
-  try {
-    await client.connect();
-    const { rows } = await client.query<{ migrated: boolean }>(
-      `select to_regclass('public.organizations') is not null
-                and to_regclass('public.members') is not null as migrated`,
-    );
-    await client.end();
-    return rows[0]?.migrated === true;
-  } catch {
-    await client.end().catch(() => undefined);
-    return false;
-  }
-}
-
-/**
- * A sanctioned module-scope await: `skipIf` is evaluated at collection time, so
- * the answer has to exist before the first `it` is registered.
- */
-const noDatabase = !(await reachable());
-
-/**
  * The local API endpoint and the key needed to reach it, or `undefined`.
  *
  * Same derivation as `test/provisioning.test.ts:65-83`, and for the same
@@ -229,33 +199,6 @@ const noAdminApi = noApi || adminKey === undefined;
 const FIXTURE_PASSWORD = 'local-fixture-password';
 
 /**
- * The two fixtures every rule is asserted against (AD-15, Q10), and the three
- * accounts each case needs: the organization's own admin, a member-role account
- * to attempt an administrative write as, and a second member-role account to
- * attempt it *on* — so a refusal has both a subject and a bystander.
- *
- * Accounts are named by username rather than by display name: the username is
- * the local part of the synthesized sign-in address (AD-12), which is the one
- * key that reaches both GoTrue and the domain tables.
- */
-const FIXTURES = [
-  {
-    fixture: 'pilot',
-    slug: 'dvd-kastel-novi',
-    admin: 'ivan.maric',
-    member: 'ana.kovac',
-    bystander: 'marko.novak',
-  },
-  {
-    fixture: 'UJ-5',
-    slug: 'zastita-split',
-    admin: 'josip.peric',
-    member: 'lucija.simic',
-    bystander: 'tomislav.juric',
-  },
-] as const;
-
-/**
  * Each fixture paired with the other one — the tenant it must never reach.
  *
  * Generated rather than written out, so neither direction can be the one
@@ -301,38 +244,6 @@ const OWN_ORGANIZATION_READS = FIXTURES.flatMap((entry) =>
 /** Name and address prefix for rows this file creates outside a transaction. */
 const THROWAWAY = 'rls-isolation-test';
 
-async function connect(): Promise<Client> {
-  const client = new Client({ connectionString: databaseUrl });
-  await client.connect();
-  return client;
-}
-
-/** Run `work` in a transaction that is always rolled back. */
-async function inRolledBackTransaction<T>(work: (client: Client) => Promise<T>): Promise<T> {
-  const client = await connect();
-  try {
-    await client.query('begin');
-    return await work(client);
-  } finally {
-    await client.query('rollback').catch(() => undefined);
-    await client.end();
-  }
-}
-
-interface Refusal {
-  readonly code: string;
-  readonly message: string;
-}
-
-/**
- * Assert that `work` is refused, and hand back what the database raised.
- *
- * Copied from `test/provisioning.test.ts:124-148` for the reason stated there:
- * a refusal case that only asserts "it threw" passes when the schema breaks in
- * a different way — a typo in a column name throws too. Here it matters twice
- * over, because the refusal this file is about has a specific SQLSTATE and a
- * different failure would still be a throw.
- */
 /**
  * `refused`, for a case that still has work to do afterwards.
  *
@@ -355,16 +266,6 @@ async function refusedThenContinue(
   } finally {
     await client.query('rollback to savepoint refusal_probe').catch(() => undefined);
   }
-}
-
-async function refused(work: () => Promise<unknown>): Promise<Refusal> {
-  try {
-    await work();
-  } catch (cause) {
-    const error = cause as { code?: string; message?: string };
-    return { code: error.code ?? '', message: error.message ?? '' };
-  }
-  throw new Error('nothing was refused: the statement was permitted');
 }
 
 // ------------------------------------------------------------------- identity
@@ -676,16 +577,6 @@ interface MemberRow {
   readonly organizationId: string;
   readonly role: string;
   readonly leaveAllowanceDays: number;
-}
-
-async function organizationId(client: Client, slug: string): Promise<string> {
-  const { rows } = await client.query<{ id: string }>(
-    'select id from organizations where slug = $1',
-    [slug],
-  );
-  const found = rows[0];
-  if (found === undefined) throw new Error(`seed fixture ${slug} is not in the database`);
-  return found.id;
 }
 
 /**

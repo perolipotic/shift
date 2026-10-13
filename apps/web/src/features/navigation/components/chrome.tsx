@@ -35,7 +35,7 @@ import {
   MEMBERS_TABLE,
   MEMBER_ROLE_KEY,
   MEMBER_ROLE_UNAVAILABLE,
-  readMemberRole,
+  currentMemberRole,
   type MemberRoleFailure,
 } from '@/features/navigation/services/role';
 import { brandAccentAppearance } from '@/features/organization/utils/accent';
@@ -221,9 +221,11 @@ export function AppChrome({ children }: AppChromeProps) {
   const [failure, setFailure] = useState<SignOutFailure | null>(null);
   const [pending, setPending] = useState(false);
 
+  // THE SAME queryFn THE ROUTE GUARDS READ UNDER THIS KEY (`routeMemberRole`,
+  // E878), so the key has one answer and one time budget whoever fetches it.
   const member = useQuery({
     queryKey: MEMBER_ROLE_KEY,
-    queryFn: () => readMemberRole(supabaseClient().from(MEMBERS_TABLE), currentSession),
+    queryFn: currentMemberRole,
   });
 
   // THE SAME KEY `/organizacija` READS UNDER, which is what makes this one cache

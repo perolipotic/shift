@@ -1,11 +1,10 @@
 import { Outlet, createRoute, redirect } from '@tanstack/react-router';
-import type { Session } from '@supabase/supabase-js';
 
 import { AppChrome } from '@/features/navigation/components/chrome';
 import { returnSearchFor } from '@/features/auth/services/return-target';
 import { mustSetPassword } from '@/features/auth/services/set-password';
 import { rootRoute } from '@/pages/__root';
-import { SESSION_UNRESOLVED } from '@/lib/supabase/client';
+import { resolvedSession } from '@/lib/supabase/client';
 
 /**
  * The signed-in layout: one session guard for every destination.
@@ -33,8 +32,9 @@ import { SESSION_UNRESOLVED } from '@/lib/supabase/client';
  * location — to be re-derived against a layout, for nothing gained. `/`
  * carries the equivalent guard itself (`index.tsx`) and is redirect-only, so it
  * renders nothing this chrome would need to wrap: a signed-in visitor reaches
- * the chrome by being forwarded INTO a destination. The duplicated guard is two
- * call sites of a four-line check, which is the cheaper of the two prices.
+ * the chrome by being forwarded INTO a destination. The READ is shared
+ * (`resolvedSession`, which `index.tsx` and both sign-in routes call too); the
+ * branches after it are each route's own.
  *
  * SESSION ONLY, NEVER ROLE, and that is a decision rather than an omission.
  * When this layout was written, a signed-in member who typed `/organizacija`
@@ -95,26 +95,15 @@ export const appLayoutRoute = createRoute({
   // `routesById` as the file does on disk.
   id: '_app',
   beforeLoad: async ({ context, location }) => {
-    // THREE outcomes, not two, and the third is why the read is wrapped.
-    // `currentSession` can REJECT: the client throws its stable code on a build
-    // with no environment, and `getSession` rejects wherever storage is blocked
-    // — Safari's private mode, a locked-down enterprise profile. A rejection
-    // escaping from here resolves the destination to neither a redirect nor a
-    // component, which is the blank page at HTTP 200 that `__root.tsx`
-    // registers no `errorComponent` to catch. Same shape as `index.tsx`, and
-    // deliberately so: two guards that differ are two guards to reason about.
-    let session: Session | null = null;
-
-    try {
-      session = await context.currentSession();
-    } catch (cause) {
-      // `session` stays `null`, which IS the decision: a session that cannot be
-      // read is not a session, so the visitor is treated as signed out and
-      // fails CLOSED. What is not silent is the reason — swallowing it is how a
-      // deployment with no environment redirects every visitor to the sign-in
-      // form with an empty console and nothing anywhere to say why.
-      console.error(SESSION_UNRESOLVED, cause);
-    }
+    // THREE outcomes, not two, and the third is why the read goes through
+    // `resolvedSession`. `currentSession` can REJECT: the client throws its
+    // stable code on a build with no environment, `getSession` rejects
+    // wherever storage is blocked — Safari's private mode, a locked-down
+    // enterprise profile — and a read over its time budget rejects too. The
+    // shared read logs `SESSION_UNRESOLVED` with the cause and answers `null`,
+    // which IS the decision here: a session that cannot be read is not a
+    // session, so the visitor is treated as signed out and fails CLOSED.
+    const session = await resolvedSession(context.currentSession);
 
     if (session !== null) {
       // THE FIRST SIGN-IN (story 7.8). A session admin-auth flagged — a new

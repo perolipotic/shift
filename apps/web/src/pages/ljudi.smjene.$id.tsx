@@ -1,4 +1,4 @@
-import { createRoute, redirect } from '@tanstack/react-router';
+import { createRoute } from '@tanstack/react-router';
 
 import { Dialog, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Notice } from '@/components/ui/notice';
@@ -7,9 +7,7 @@ import { useTeamEdit } from '@/features/teams/hooks/use-team-edit';
 import { teamHeadingMessageKey, teamsMessageKey } from '@/features/teams/services/list';
 import { teamSavedMessageKey, teamWriteMessageKey } from '@/features/teams/services/write';
 import { t } from '@/lib/i18n';
-import { mayReadMembers } from '@/features/members/services/list';
-import { DESTINATIONS } from '@/features/navigation/utils/destinations';
-import { MEMBER_ROLE_UNAVAILABLE, type MemberRoleOutcome } from '@/features/navigation/services/role';
+import { requireAdmin } from '@/features/navigation/services/admin-guard';
 import { appLayoutRoute } from '@/pages/_app';
 import { LjudiSmjeneScreen } from '@/pages/ljudi.smjene';
 
@@ -44,8 +42,6 @@ import { LjudiSmjeneScreen } from '@/pages/ljudi.smjene';
  * `@/features/teams/services/list` and `@/features/teams/services/write`,
  * which the node suite executes.
  */
-
-const FIRST_DESTINATION = DESTINATIONS[0];
 
 export function LjudiSmjenaScreen() {
   const { id } = ljudiSmjenaRoute.useParams();
@@ -95,21 +91,7 @@ function TeamScreen({ id }: { readonly id: string }) {
 export const ljudiSmjenaRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: '/ljudi/smjene/$id',
-  /** The guard `/ljudi` carries, copied verbatim; `router.test.ts` drives it. */
-  beforeLoad: async ({ context }) => {
-    let outcome: MemberRoleOutcome;
-
-    try {
-      outcome = await context.currentMemberRole();
-    } catch (cause) {
-      console.error(MEMBER_ROLE_UNAVAILABLE, cause);
-
-      outcome = { ok: false, code: MEMBER_ROLE_UNAVAILABLE };
-    }
-
-    if (mayReadMembers(outcome)) return;
-
-    throw redirect({ to: FIRST_DESTINATION.path, replace: true });
-  },
+  /** The shared admin guard (`@/features/navigation/services/admin-guard`). */
+  beforeLoad: requireAdmin,
   component: LjudiSmjenaScreen,
 });

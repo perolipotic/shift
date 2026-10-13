@@ -1,10 +1,8 @@
-import { createRoute, redirect } from '@tanstack/react-router';
+import { createRoute } from '@tanstack/react-router';
 
 import { ConflictResolutionBody } from '@/features/conflicts/components/conflict-resolution-body';
 import { useConflictResolution } from '@/features/conflicts/hooks/use-conflict-resolution';
-import { mayReadMembers } from '@/features/members/services/list';
-import { DESTINATIONS } from '@/features/navigation/utils/destinations';
-import { MEMBER_ROLE_UNAVAILABLE, type MemberRoleOutcome } from '@/features/navigation/services/role';
+import { requireAdmin } from '@/features/navigation/services/admin-guard';
 import { appLayoutRoute } from '@/pages/_app';
 
 /**
@@ -24,12 +22,10 @@ import { appLayoutRoute } from '@/pages/_app';
  * KEYED BY THE CONFLICT, so ‹ › to another one starts with nothing chosen
  * and no refusal carried over.
  *
- * ADMIN ONLY, with the guard `/raspored` carries, copied verbatim;
+ * ADMIN ONLY, with the admin guard `/raspored` carries;
  * `router.test.ts` drives it. A member who types this URL is forwarded as
  * from `/raspored`. Not a destination: the `Raspored` tab lights for it.
  */
-
-const FIRST_DESTINATION = DESTINATIONS[0];
 
 function ResolutionScreen({ params }: { readonly params: Parameters<typeof useConflictResolution>[0] }) {
   const state = useConflictResolution(params);
@@ -50,21 +46,7 @@ export function RasporedKonfliktScreen() {
 export const rasporedKonfliktRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: '/raspored/$memberId/$date/$teamId',
-  /** The guard `/raspored` carries, copied verbatim; `router.test.ts` drives it. */
-  beforeLoad: async ({ context }) => {
-    let outcome: MemberRoleOutcome;
-
-    try {
-      outcome = await context.currentMemberRole();
-    } catch (cause) {
-      console.error(MEMBER_ROLE_UNAVAILABLE, cause);
-
-      outcome = { ok: false, code: MEMBER_ROLE_UNAVAILABLE };
-    }
-
-    if (mayReadMembers(outcome)) return;
-
-    throw redirect({ to: FIRST_DESTINATION.path, replace: true });
-  },
+  /** The shared admin guard (`@/features/navigation/services/admin-guard`). */
+  beforeLoad: requireAdmin,
   component: RasporedKonfliktScreen,
 });

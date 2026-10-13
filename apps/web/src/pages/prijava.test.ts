@@ -118,6 +118,9 @@ const SET_PASSWORD_SCREEN: readonly string[] = Object.values(SET_PASSWORD_PARTS)
 /** Its rules: the local refusals, the save's failures and the live checks' state, off `\w*MessageKey` unions. */
 const SET_PASSWORD_KEYS = join(srcRoot, 'features', 'auth', 'services', 'set-password.ts');
 const NOT_FOUND = join(srcRoot, 'pages', 'not-found.tsx');
+/** The root route's error screen (A148), and the shared pending skeleton (A224). */
+const ERROR_SCREEN = join(srcRoot, 'pages', 'error.tsx');
+const ROUTE_PENDING = join(srcRoot, 'pages', 'pending.tsx');
 // `pages/index.tsx` IS NOT A SCREEN and is swept by nothing here: `/` forwards
 // a signed-in visitor to the first destination and renders nothing, so the file
 // carries no JSX and no key for any sweep below to read.
@@ -694,6 +697,12 @@ const SCREENS = [
   // repeat, the show/hide toggle, `Spremi i nastavi` and `Odjava`.
   { name: 'the set-password screen', file: SET_PASSWORD_SCREEN, expectedControls: 5 },
   { name: 'the not-found component', file: NOT_FOUND, expectedControls: 1 },
+  // A148. ONE on the error screen: *Pokušaj ponovno*. It shows nothing of the
+  // error itself, which the literal sweeps below hold it to.
+  { name: 'the error screen', file: ERROR_SCREEN, expectedControls: 1 },
+  // A224. ZERO on the pending skeleton, which renders no string either, and is
+  // swept so it stays that way.
+  { name: 'the pending skeleton', file: ROUTE_PENDING, expectedControls: 0 },
   // EIGHT, and it was seven until story 1.4b: the settings surface carries five
   // fields — name, type, timezone and the leave year's month and day — plus a
   // save, a cancel, and now the logo's choose action. The number is what notices
@@ -2197,6 +2206,8 @@ const KEY_SOURCES = [
   // (`ruleStateMessageKey`).
   { name: 'the set-password rules', file: SET_PASSWORD_KEYS, keys: messageKeyUnions, strings: 8 },
   { name: 'the not-found component', file: NOT_FOUND, keys: translationKeys, strings: 2 },
+  // A148. THREE on the error screen: the heading, the lede and the retry.
+  { name: 'the error screen', file: ERROR_SCREEN, keys: translationKeys, strings: 3 },
   // THREE on the sign-in frame (visual refresh A): the brand panel's product
   // name, headline and subline, written once and rendered around both steps,
   // so neither step's own count moved.
@@ -3528,7 +3539,9 @@ describe('the screen is read at all, so every sweep below means something', () =
     // TWENTY-SEVEN SINCE STORY 7.8: the set-password step.
     // TWENTY-EIGHT SINCE STORY 7.18: the rotation history's dialog.
     // TWENTY-NINE SINCE STORY 7.17: the member directory.
-    expect(SCREENS).toHaveLength(29);
+    // THIRTY-ONE SINCE THE ROUTER-GUARDS FIX: the error screen (A148) and the
+    // pending skeleton (A224).
+    expect(SCREENS).toHaveLength(31);
     //
     // FORTY-NINE SINCE STORY 3.6b: `@/features/calendar/services/roster-write`.
     //
@@ -3574,7 +3587,9 @@ describe('the screen is read at all, so every sweep below means something', () =
     // `@/features/hours/services/hours-explanation` and 7.18's history dialog.
     //
     // SIXTY-EIGHT SINCE STORY 7.17: the member directory.
-    expect(KEY_SOURCES).toHaveLength(68);
+    //
+    // SIXTY-NINE SINCE THE ROUTER-GUARDS FIX: the error screen (A148).
+    expect(KEY_SOURCES).toHaveLength(69);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"

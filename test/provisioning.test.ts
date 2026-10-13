@@ -6,6 +6,15 @@ import { fileURLToPath } from 'node:url';
 import { Client } from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
 
+import {
+  FIXTURES,
+  connect,
+  inRolledBackTransaction,
+  noDatabase,
+  organizationId,
+  refused,
+} from './database.js';
+
 /**
  * Story 1.2's refusals, executed rather than read.
  *
@@ -31,26 +40,6 @@ import { afterAll, describe, expect, it } from 'vitest';
  */
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
-
-/**
- * The Supabase CLI's fixed local default. Read from the environment when set,
- * so no credential for any other database is written down here.
- */
-const databaseUrl =
-  process.env['SUPABASE_DB_URL'] ?? 'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
-
-async function reachable(): Promise<boolean> {
-  const client = new Client({ connectionString: databaseUrl, connectionTimeoutMillis: 2000 });
-  try {
-    await client.connect();
-    await client.end();
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-const noDatabase = !(await reachable());
 
 /**
  * The local auth endpoint and the key needed to reach it, or `undefined`.
@@ -81,12 +70,6 @@ const authEndpoint: { readonly url: string; readonly key: string } | undefined =
     return undefined;
   }
 })();
-
-/** The two fixtures every rule is asserted against (AD-15). */
-const FIXTURES = [
-  { fixture: 'pilot', slug: 'dvd-kastel-novi' },
-  { fixture: 'UJ-5', slug: 'zastita-split' },
-] as const;
 
 /**
  * GoTrue's password hashing cost. `gen_salt('bf')` alone is cost 6; GoTrue
@@ -133,50 +116,6 @@ const usernameMigration = readFileSync(
 /** The one `update` statement `0007` carries, extracted from the file. */
 function backfillStatement(): string {
   return /update members m[\s\S]*?;/.exec(usernameMigration)?.[0] ?? '';
-}
-
-async function connect(): Promise<Client> {
-  const client = new Client({ connectionString: databaseUrl });
-  await client.connect();
-  return client;
-}
-
-/** Run `work` in a transaction that is always rolled back. */
-async function inRolledBackTransaction<T>(work: (client: Client) => Promise<T>): Promise<T> {
-  const client = await connect();
-  try {
-    await client.query('begin');
-    return await work(client);
-  } finally {
-    await client.query('rollback').catch(() => undefined);
-    await client.end();
-  }
-}
-
-interface Refusal {
-  readonly code: string;
-  readonly message: string;
-  readonly detail: string | undefined;
-}
-
-/**
- * Assert that `work` is refused, and hand back what the database raised.
- *
- * A refusal case that only asserts "it threw" passes when the schema breaks in
- * a different way — a typo in a column name throws too.
- */
-async function refused(work: () => Promise<unknown>): Promise<Refusal> {
-  try {
-    await work();
-  } catch (cause) {
-    const error = cause as { code?: string; message?: string; detail?: string };
-    return {
-      code: error.code ?? '',
-      message: error.message ?? '',
-      detail: error.detail,
-    };
-  }
-  throw new Error('nothing was refused: the statement was permitted');
 }
 
 interface RecipeHealth {
@@ -335,16 +274,6 @@ function expectRunsAsOwner(security: FunctionSecurity, name: string): void {
     security.publicGrants,
     `${name} reads past RLS as its owner and must not be executable by PUBLIC`,
   ).toBe(0);
-}
-
-async function organizationId(client: Client, slug: string): Promise<string> {
-  const { rows } = await client.query<{ id: string }>(
-    'select id from organizations where slug = $1',
-    [slug],
-  );
-  const found = rows[0];
-  if (found === undefined) throw new Error(`seed fixture ${slug} is not in the database`);
-  return found.id;
 }
 
 /**
@@ -2025,6 +1954,44 @@ describe('the access-control layer runs as the owner and hands that power to nob
     }
   });
 
+  it.skipIf(noDatabase)('holds an expected grantee entry for every function in public and private', async () => {
+    // The list above is exact per function, but only for the functions it
+    // names. The convention is a per-function revoke in the migration that
+    // creates the function (no `alter default privileges`), so a new function
+    // whose author forgot the revokes would keep Supabase's default EXECUTE
+    // for `anon`, `authenticated` and `service_role`, and nothing would look
+    // at it. This sweep makes every function the migrations create a decision
+    // somebody wrote down: unlisted is a failure, never a pass. Functions an
+    // extension owns are the extension's, not ours, and are left out.
+    const client = await connect();
+    try {
+      const { rows } = await client.query<{ schema: string; name: string; argumentCount: number }>(
+        `select n.nspname as schema, p.proname as name, p.pronargs::int as "argumentCount"
+           from pg_proc p
+           join pg_namespace n on n.oid = p.pronamespace
+          where n.nspname in ('public', 'private')
+            and not exists (
+              select 1 from pg_depend d
+               where d.classid = 'pg_proc'::regclass and d.objid = p.oid and d.deptype = 'e'
+            )
+          order by 1, 2, 3`,
+      );
+      const listed = new Set(
+        grantees.map((entry) => `${entry.schema ?? 'public'}.${entry.name}/${entry.argumentCount}`),
+      );
+
+      expect(rows.length, 'no function was found to sweep').toBeGreaterThan(0);
+      expect(
+        rows
+          .map((row) => `${row.schema}.${row.name}/${row.argumentCount}`)
+          .filter((key) => !listed.has(key)),
+        'a function has no expected grantee entry above; write its revokes and list it',
+      ).toEqual([]);
+    } finally {
+      await client.end();
+    }
+  });
+
   it.skipIf(noDatabase)('keeps a role and an organization out of every account metadata column', async () => {
     // The hook writes `organization_id` and nothing else, and AD-10 keeps the
     // domain role out of every claim. GoTrue also copies the metadata columns
@@ -2073,7 +2040,7 @@ describe('the operator provisioning script', () => {
     organization_slug: slug,
     organization_name: 'Provisioned Organization',
     organization_type: 'Provisioned Type',
-    organization_timezone: 'UTC',
+    organization_timezone: 'Europe/Zagreb',
     organization_locale: 'en',
     leave_year_start_month: '1',
     leave_year_start_day: '1',
@@ -2221,6 +2188,136 @@ describe('the operator provisioning script', () => {
     } finally {
       await client.end();
     }
+  });
+
+  /** `[auth] minimum_password_length` in `supabase/config.toml`, the floor GoTrue holds every later password to. */
+  const configuredFloor = Number(
+    /^\s*minimum_password_length\s*=\s*(\d+)\s*$/m.exec(
+      readFileSync(join(repoRoot, 'supabase', 'config.toml'), 'utf8'),
+    )?.[1],
+  );
+
+  it('holds the first admin to the same password floor as GoTrue', () => {
+    const scriptFloor = Number(
+      /minimum_password_length constant int := (\d+);/.exec(provisioningScript)?.[1],
+    );
+
+    expect(configuredFloor, 'supabase/config.toml sets no minimum_password_length').toBeGreaterThan(0);
+    expect(scriptFloor, 'the script and supabase/config.toml disagree on the password floor').toBe(
+      configuredFloor,
+    );
+  });
+
+  it.skipIf(noDatabase)('refuses a first-admin password shorter than the floor', async () => {
+    const slug = `${THROWAWAY_SLUG}-short-password`;
+
+    await inRolledBackTransaction(async (client) => {
+      await parameterize(client, {
+        ...organizationParameters(slug),
+        ...adminParameters,
+        // Counted in characters, so a multi-byte password is not let through
+        // on its byte count.
+        admin_password: 'ž'.repeat(configuredFloor - 1),
+      });
+      const refusal = await refused(() => client.query(provisioningScript));
+
+      expect(refusal.code).toBe('23514');
+      expect(refusal.message).toBe('ADMIN_PASSWORD_TOO_SHORT');
+    });
+
+    // The floor itself is accepted: the boundary is `<`, not `<=`.
+    await inRolledBackTransaction(async (client) => {
+      await parameterize(client, {
+        ...organizationParameters(slug),
+        ...adminParameters,
+        admin_password: 'p'.repeat(configuredFloor),
+      });
+      await client.query(provisioningScript);
+      const { rows } = await client.query<{ admins: number }>(
+        `select count(*)::int as admins
+           from members m join organizations o on o.id = m.organization_id
+          where o.slug = $1 and m.role = 'admin'`,
+        [slug],
+      );
+      expect(rows[0]?.admins).toBe(1);
+    });
+  });
+
+  it.skipIf(noDatabase).each([
+    { timezone: 'CET', why: 'an abbreviation' },
+    { timezone: 'UTC', why: 'an abbreviation' },
+    { timezone: 'CET-1CEST', why: 'a POSIX string' },
+    { timezone: 'posix/Europe/Zagreb', why: 'a posix/ alias' },
+    { timezone: 'europe/zagreb', why: 'not the canonical spelling' },
+    { timezone: 'Europe/Nowhere', why: 'not a zone the database knows' },
+  ])('refuses $timezone as the timezone, $why', async ({ timezone }) => {
+    const slug = `${THROWAWAY_SLUG}-timezone`;
+
+    await inRolledBackTransaction(async (client) => {
+      await parameterize(client, {
+        ...organizationParameters(slug),
+        ...adminParameters,
+        organization_timezone: timezone,
+      });
+      const refusal = await refused(() => client.query(provisioningScript));
+
+      expect(refusal.code).toBe('23514');
+      expect(refusal.message).toBe('ORGANIZATION_TIMEZONE_UNKNOWN');
+      expect(refusal.detail).toBe(timezone);
+    });
+  });
+
+  it.skipIf(noDatabase).each(['Europe/Zagreb', 'America/Argentina/Buenos_Aires', 'Etc/UTC'])(
+    'accepts %s as the timezone',
+    async (timezone) => {
+      const slug = `${THROWAWAY_SLUG}-timezone`;
+
+      await inRolledBackTransaction(async (client) => {
+        await parameterize(client, {
+          ...organizationParameters(slug),
+          ...adminParameters,
+          organization_timezone: timezone,
+        });
+        await client.query(provisioningScript);
+        const { rows } = await client.query<{ timezone: string }>(
+          'select timezone from organizations where slug = $1',
+          [slug],
+        );
+        expect(rows[0]?.timezone).toBe(timezone);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase)('reads a setting of white space alone as missing, by name_key’s class', async () => {
+    // A no-break space and a tab: `btrim` alone strips neither, so the admin
+    // name used to pass the script's own check and reach the schema's
+    // 23514 instead of the script's ORGANIZATION_WITHOUT_ADMIN.
+    const blank = ' \t　';
+    const slug = `${THROWAWAY_SLUG}-blank-setting`;
+
+    await inRolledBackTransaction(async (client) => {
+      await parameterize(client, { ...organizationParameters(slug), ...adminParameters, admin_name: blank });
+      const refusal = await refused(() => client.query(provisioningScript));
+
+      expect(refusal.message).toBe('ORGANIZATION_WITHOUT_ADMIN');
+    });
+
+    // An optional setting with no blank check of its own is stored as absent,
+    // not as white space; a value around white space is stored trimmed.
+    await inRolledBackTransaction(async (client) => {
+      await parameterize(client, {
+        ...organizationParameters(slug),
+        ...adminParameters,
+        organization_short_name: blank,
+        organization_address: `${blank}Ulica 1${blank}`,
+      });
+      await client.query(provisioningScript);
+      const { rows } = await client.query<{ shortName: string | null; address: string | null }>(
+        'select short_name as "shortName", address from organizations where slug = $1',
+        [slug],
+      );
+      expect(rows[0]).toEqual({ shortName: null, address: 'Ulica 1' });
+    });
   });
 });
 
