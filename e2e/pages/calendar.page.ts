@@ -83,6 +83,11 @@ export class CalendarPage extends BasePage {
     return this.monthPicker.getByRole('button', { name: new RegExp(`^${escapeRegExp(heading)}(?:, |$)`) });
   }
 
+  /** The picker footer's `Ovaj mjesec` (deferred-work E795), which picks the current month. */
+  get pickerCurrent(): Locator {
+    return this.monthPicker.getByRole('button', { name: kalendar.current, exact: true });
+  }
+
   /** The picker's year, a live region announcing each change. */
   get pickerYear(): Locator {
     return this.monthPicker.locator('[aria-live="polite"]');

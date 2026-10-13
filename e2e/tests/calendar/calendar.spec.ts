@@ -441,9 +441,13 @@ test.describe('the month toolbar', () => {
     await expect(calendarPage.monthPicker).toHaveCount(0);
     await expect(calendarPage.monthTrigger).toHaveAttribute('aria-expanded', 'false');
 
-    // Tab from the focused month leaves the picker: it closes where focus went.
+    // Tab from the focused month reaches the footer's Ovaj mjesec, still in
+    // the picker; Tab again leaves it: it closes where focus went.
     await calendarPage.monthTrigger.click();
     await expect(calendarPage.pickerMonth(monthHeading('2026-07-01'))).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(calendarPage.pickerCurrent).toBeFocused();
+    await expect(calendarPage.monthPicker).toBeVisible();
     await page.keyboard.press('Tab');
     await expect(calendarPage.monthPicker).toHaveCount(0);
     await expect(page).toHaveURL(/mjesec=2026-07/);
@@ -462,14 +466,40 @@ test.describe('the month toolbar', () => {
     await expect(calendarPage.monthTrigger).toBeFocused();
   });
 
-  test('at 320 px the open picker fits: every control 44 px and no sideways scroll', async ({ page, calendarPage }) => {
+  test('the picker\'s footer names its keys and picks the current month (deferred-work E795)', async ({
+    page,
+    calendarPage,
+  }) => {
+    await calendarPage.goto('?mjesec=2026-07&prikaz=sve');
+    await calendarPage.monthTrigger.click();
+    await expect(calendarPage.monthPicker.getByText(kalendar.monthPickerKeys, { exact: true })).toBeVisible();
+    await calendarPage.pickerCurrent.click();
+
+    await expect(page).not.toHaveURL(/mjesec=/);
+    await expect(page).toHaveURL(/prikaz=sve/);
+    await expect(calendarPage.monthPicker).toHaveCount(0);
+    await expect(calendarPage.thisMonthLabel).toBeVisible();
+    await expect(calendarPage.monthTrigger).toBeFocused();
+  });
+
+  test('at 320 px the picker is a bottom sheet that fits: every control 44 px and no sideways scroll (deferred-work E792)', async ({
+    page,
+    calendarPage,
+  }) => {
     await page.setViewportSize({ width: 320, height: 720 });
     // The current month: the widest trigger, with its "ovaj mjesec" label.
     await calendarPage.goto();
     await expect(calendarPage.thisMonthLabel).toBeVisible();
     await expectNoHorizontalScroll(page);
+    const shown = (await calendarPage.monthHeading().innerText()).trim();
     await calendarPage.monthTrigger.click();
     await expect(calendarPage.monthPicker).toBeVisible();
+    // Modal, opened on the shown month, and docked to the bottom edge, full width.
+    await expect(calendarPage.monthPicker).toHaveJSProperty('open', true);
+    await expect(calendarPage.monthPicker.locator('xpath=self::dialog')).toHaveCount(1);
+    await expect(calendarPage.pickerMonth(shown)).toBeFocused();
+    // The keys are not offered where there are none to press.
+    await expect(calendarPage.monthPicker.getByText(kalendar.monthPickerKeys, { exact: true })).toBeHidden();
 
     await expectNoHorizontalScroll(page);
     await expectTouchTargets(page);
@@ -477,6 +507,22 @@ test.describe('the month toolbar', () => {
     expect(box, 'the picker has no box').not.toBeNull();
     expect(box!.x).toBeGreaterThanOrEqual(0);
     expect(box!.x + box!.width).toBeLessThanOrEqual(320);
+    expect(Math.round(box!.y + box!.height), 'the sheet is not docked to the bottom').toBe(720);
+
+    // Picking a month — the next one, by the keys — closes it, and focus returns to the trigger.
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('Enter');
+    await expect(calendarPage.monthPicker).toHaveCount(0);
+    await expect(calendarPage.monthTrigger).toBeFocused();
+    await expect(page).toHaveURL(/mjesec=/);
+
+    // Its close closes it too, the month unchanged.
+    const url = page.url();
+    await calendarPage.monthTrigger.click();
+    await calendarPage.monthPicker.getByRole('button', { name: kalendar.monthPickerClose, exact: true }).click();
+    await expect(calendarPage.monthPicker).toHaveCount(0);
+    await expect(calendarPage.monthTrigger).toBeFocused();
+    expect(page.url()).toBe(url);
   });
 });
 
@@ -876,8 +922,8 @@ test.describe('the day detail at 1280 px, as an admin', () => {
     );
 
     await setFireRanks(fixture.slug, false);
+    // The open day is the URL's (deferred-work E862): the reload reopens it.
     await page.reload();
-    await (await calendarPage.cellOf(fixture.team.name, rotation.today)).click();
     await expect(line()).toHaveText(fixture.member.name);
   });
 
@@ -912,50 +958,62 @@ test.describe('the day detail at 1280 px, as an admin', () => {
     await expect(calendarPage.listsIn(detail)).toHaveCount(0);
   });
 
-  test('browser Back after an in-app month change closes the detail and returns focus to the grid', async ({ page, calendarPage, fixture }) => {
+  test('browser Back while the detail is open closes it, keeps the month, and returns focus to its cell', async ({
+    page,
+    calendarPage,
+    fixture,
+  }) => {
     test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
-    // The opener is gone once Back shows the other month, so focus falls back
-    // to the grid's one tab stop. The months are changed in the app, not by
-    // `goto`: a Back across two loaded documents restores the earlier document,
-    // where focus starts on the body as in any fresh page.
+    // The open day is the URL's (deferred-work E862): opening pushed it, so
+    // Back closes the day and nothing else. The months are changed in the app,
+    // not by `goto`: a Back across two loaded documents restores the earlier
+    // document, where focus starts on the body as in any fresh page.
     const rotation = await seeded(fixture.slug, fixture.team.id);
     const next = firstOfNextMonth(rotation.today);
 
     await calendarPage.goto(gridMonthOf(rotation.today));
     await calendarPage.nextButton.click();
     await expect(calendarPage.monthHeading(monthHeading(next))).toBeVisible();
-    await (await calendarPage.cellOf(fixture.team.name, next)).click();
+    const cell = await calendarPage.cellOf(fixture.team.name, next);
+    await cell.click();
     await expect(calendarPage.detailOf(fixture.team.name, next)).toBeVisible();
+    await page.goBack();
+    await expect(calendarPage.dialog()).toHaveCount(0);
+    await expect(calendarPage.monthHeading(monthHeading(next))).toBeVisible();
+    await expect(cell).toBeFocused();
+
+    // Forward reopens it, as any link to the day does; Back again closes it,
+    // and the Back after that is the month change.
+    await page.goForward();
+    await expect(calendarPage.detailOf(fixture.team.name, next)).toBeVisible();
+    await page.goBack();
+    await expect(calendarPage.dialog()).toHaveCount(0);
     await page.goBack();
     await expect(calendarPage.monthHeading(monthHeading(rotation.today))).toBeVisible();
     await expect(calendarPage.dialog()).toHaveCount(0);
-    await expect(calendarPage.tabStops).toHaveCount(1);
-    await expect(calendarPage.tabStops).toBeFocused();
   });
 
-  test('a day opened before the late close event of a month change stays open', async ({ page, calendarPage, fixture }) => {
+  test('a day opened before the late close event of a Back stays open', async ({ page, calendarPage, fixture }) => {
     test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
-    // Back to the earlier month closes the detail through a `detailKey`
-    // change, and the dialog's `close` event comes as a later task. A click
-    // the browser runs ahead of that task opens a day of the month Back
-    // showed; the late event is stale and must not close it.
+    // Back closes the detail through the URL, a close the screen did not ask
+    // for, so it owes no event; the dialog's `close` event comes as a later
+    // task. A click the browser runs ahead of that task opens another day of
+    // the same month; the late event is stale and must not close it.
     const rotation = await seeded(fixture.slug, fixture.team.id);
     const next = firstOfNextMonth(rotation.today);
+    const second = addDays(next, 1);
 
-    await calendarPage.goto(gridMonthOf(rotation.today));
-    const today = calendarPage.detailOf(fixture.team.name, rotation.today);
-    const cell = await calendarPage.cellOf(fixture.team.name, rotation.today);
+    await calendarPage.goto(gridMonthOf(next));
+    const other = calendarPage.detailOf(fixture.team.name, second);
+    const cell = await calendarPage.cellOf(fixture.team.name, second);
     const position = await calendarPage.positionOf(cell);
-    await calendarPage.nextButton.click();
-    await expect(calendarPage.monthHeading(monthHeading(next))).toBeVisible();
     await (await calendarPage.cellOf(fixture.team.name, next)).click();
     await expect(calendarPage.detailOf(fixture.team.name, next)).toBeVisible();
 
     await calendarPage.clickOnDialogClose(position);
     await page.goBack();
-    await expect(calendarPage.monthHeading(monthHeading(rotation.today))).toBeVisible();
     await expect.poll(() => calendarPage.clickedOnDialogClose()).toBe(true);
-    await expect(today).toBeVisible();
+    await expect(other).toBeVisible();
     await expect(calendarPage.dialog()).toHaveCount(1);
 
     // It still closes as any day does, and focus returns to its cell.
@@ -964,20 +1022,29 @@ test.describe('the day detail at 1280 px, as an admin', () => {
     await expect(cell).toBeFocused();
   });
 
-  test('browser Back while the detail is open closes it, and it does not reopen', async ({ page, calendarPage, fixture }) => {
+  test('a closed day leaves no open state to step back into', async ({
+    page,
+    calendarPage,
+    fixture,
+  }) => {
     test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     const rotation = await seeded(fixture.slug, fixture.team.id);
     const next = firstOfNextMonth(rotation.today);
 
     await calendarPage.goto(gridMonthOf(rotation.today));
-    await calendarPage.goto(gridMonthOf(next));
-    await (await calendarPage.cellOf(fixture.team.name, next)).click();
-    await expect(calendarPage.detailOf(fixture.team.name, next)).toBeVisible();
+    await (await calendarPage.cellOf(fixture.team.name, rotation.today)).click();
+    await expect(calendarPage.detailOf(fixture.team.name, rotation.today)).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(calendarPage.dialog()).toHaveCount(0);
+    // Closing replaced the entry.
+    await expect(page).not.toHaveURL(/[?&]dan=/);
+
+    // A month change while nothing is open, then Back: the
+    // earlier month, and no day in it.
+    await calendarPage.nextButton.click();
+    await expect(calendarPage.monthHeading(monthHeading(next))).toBeVisible();
     await page.goBack();
     await expect(calendarPage.monthHeading(monthHeading(rotation.today))).toBeVisible();
-    await expect(calendarPage.dialog()).toHaveCount(0);
-    await page.goForward();
-    await expect(calendarPage.monthHeading(monthHeading(next))).toBeVisible();
     await expect(calendarPage.dialog()).toHaveCount(0);
   });
 });

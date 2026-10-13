@@ -492,6 +492,22 @@ export function dayDetailShownOf(snapshot: CalendarSnapshot | null, opened: Open
   }
 }
 
+/** The open day as one string, a team on a date; `null` for none. Two keys are equal exactly for the same day. */
+export function openedDayKeyOf(opened: OpenedDay | null): string | null {
+  return opened === null ? null : `${opened.date}|${opened.teamId}`;
+}
+
+/**
+ * Whether a day the URL names must be DROPPED from it (deferred-work E862):
+ * with a snapshot, when {@link dayDetailShownOf} says close (the team gone, a
+ * derivation that threw, an unknown team in a link); with none, only when the
+ * day was already shown — a day still waiting for the first read (a reload, a
+ * Back) waits, and one whose snapshot went away closes for good.
+ */
+export function dayDetailCloseOf(shown: DayDetailShown | null, wasShown: boolean): boolean {
+  return shown === null ? wasShown : shown.close;
+}
+
 // ------------------------------------------------ setting an override (3.5b)
 
 /** One type the override form offers: its id and name. */

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { Locator, Page, Route } from '@playwright/test';
 
 import type { CalendarPage } from '../../pages/calendar.page.ts';
+import { escapeRegExp, hr } from '../../utils/i18n.ts';
 import { ADMIN_STATE, MEMBER_STATE, type Fixture } from '../../utils/run-fixture.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
 
@@ -22,6 +23,9 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * - Under forced colours every modifier treatment, the focused cell and the
  *   sticky header keep a visible outline or border, where the box-shadows and
  *   gradients they normally draw are dropped.
+ * - On a phone the month toolbar and the filter chips (or *Moj raspored*'s
+ *   sentence) are one sticky head at the top of the viewport, on *Kalendar*
+ *   and *Sati*, and the grid's scroller fits below it (deferred-work E816).
  */
 
 /** Whether a request is the calendar's one read, not the chrome's branding read of the same table. */
@@ -136,31 +140,46 @@ for (const [width, height, name] of [
   test.describe(`the team header ${name}`, () => {
     test.use({ storageState: ADMIN_STATE, viewport: { width, height } });
 
-    test('stays in view when the month is scrolled to its end', async ({ calendarPage, fixture }) => {
+    test('stays in view when the month is scrolled to its end', async ({ page, calendarPage, fixture }) => {
       await calendarPage.goto('?prikaz=sve');
       const header = calendarPage.columnHeader(fixture.team.name);
       await expect(header).toBeAttached();
+      // The whole month drawn, so nothing above or inside the scroller moves later.
+      await expect.poll(() => calendarPage.rowCount()).toBeGreaterThanOrEqual(28);
       const scroller = scrollerOf(calendarPage.grid);
 
       // The month is taller than its scroller, so there is somewhere to scroll.
       const room = await scroller.evaluate((element) => element.scrollHeight - element.clientHeight);
       expect(room, 'the grid does not scroll inside its own container').toBeGreaterThan(0);
 
+      // The grid to its end, and the page to its end too: on a phone the
+      // sticky head stays over the page, and the header must stay clear of it.
       await scroller.evaluate((element) => {
         element.scrollTop = element.scrollHeight;
       });
+      await page.evaluate(() => {
+        window.scrollTo(0, document.documentElement.scrollHeight);
+      });
       await expect.poll(() => scroller.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
 
-      const frame = await scroller.boundingBox();
-      const named = await header.boundingBox();
-      expect(frame).not.toBeNull();
-      expect(named, 'the team header has no box').not.toBeNull();
-      expect(named!.y, 'the team header scrolled up out of its container').toBeGreaterThanOrEqual(frame!.y - ROUNDING);
-      expect(named!.y + named!.height, 'the team header sits below its container').toBeLessThanOrEqual(
-        frame!.y + frame!.height + ROUNDING,
-      );
-      // And it is the top of the container, not merely somewhere inside it.
-      expect(named!.y - frame!.y).toBeLessThanOrEqual(ROUNDING);
+      // Measured in ONE frame, polled, so a late layout change never splits the
+      // container's box from the header's.
+      const offsets = () =>
+        header.evaluate((cell, rounding) => {
+          const frame = cell.closest('table')?.parentElement?.getBoundingClientRect();
+          const head = document.querySelector('[data-sticky-head]')?.getBoundingClientRect();
+          const named = cell.getBoundingClientRect();
+          if (frame === undefined) throw new Error('E2E: the header has no scroller');
+
+          return {
+            // The top of the container, not merely somewhere inside it.
+            atTop: Math.abs(named.top - frame.top) <= rounding,
+            inside: named.bottom <= frame.bottom + rounding,
+            // Below the head: where it sticks (a phone) it must not cover the header.
+            clearOfHead: head === undefined || named.top >= head.bottom - rounding,
+          };
+        }, ROUNDING);
+      await expect.poll(offsets).toEqual({ atTop: true, inside: true, clearOfHead: true });
     });
   });
 }
@@ -365,6 +384,11 @@ test.describe('the sticky layers on a phone', () => {
         );
       const wrapper = document.querySelector('table[role="grid"]')?.parentElement;
       if (bar === undefined || wrapper === null || wrapper === undefined) throw new Error('E2E: no bar or grid');
+      // On a phone the scroller is bounded to fit above the bar (deferred-work
+      // E816), so at the page's end it never reaches it. Unbounded here, it
+      // does, deterministically: what is probed is the isolation of its sticky
+      // layers, whatever the bound.
+      wrapper.style.maxHeight = 'none';
       const barBox = bar.getBoundingClientRect();
       // Bring the scroller's lower half under the bar.
       window.scrollBy(0, wrapper.getBoundingClientRect().bottom - barBox.bottom - 150);
@@ -381,6 +405,110 @@ test.describe('the sticky layers on a phone', () => {
     });
     expect(covered.under, 'the grid does not run under the bar').toBe(true);
     expect(covered.misses, 'the grid paints over the bottom bar at these x').toEqual([]);
+  });
+});
+
+/** The sticky head's box, and whether it is sticky, measured in one frame. */
+async function stickyHead(page: Page): Promise<{ readonly top: number; readonly bottom: number; readonly sticky: boolean }> {
+  return page.evaluate(() => {
+    const head = document.querySelector('[data-sticky-head]');
+    if (!(head instanceof HTMLElement)) throw new Error('E2E: no sticky head');
+    const box = head.getBoundingClientRect();
+
+    return { top: box.top, bottom: box.bottom, sticky: getComputedStyle(head).position === 'sticky' };
+  });
+}
+
+/** Whether `locator` is inside the sticky head and drawn wholly inside the viewport. */
+async function inHead(locator: Locator): Promise<boolean> {
+  return locator.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+
+    return (
+      element.closest('[data-sticky-head]') !== null &&
+      box.height > 0 &&
+      box.top >= -1 &&
+      box.bottom <= window.innerHeight + 1
+    );
+  });
+}
+
+test.describe("the phone's sticky head (deferred-work E816)", () => {
+  test.use({ storageState: ADMIN_STATE, viewport: { width: 390, height: 844 } });
+
+  test('holds the month toolbar and the active chip at the top while the page scrolls to its end', async ({
+    page,
+    calendarPage,
+    fixture,
+  }) => {
+    await calendarPage.goto(`?prikaz=sve&smjena=${fixture.team.id}`);
+    const chip = calendarPage.filters.removeTeam(fixture.team.name);
+    await expect(chip).toBeVisible();
+    await expect.poll(() => calendarPage.rowCount()).toBeGreaterThanOrEqual(28);
+    expect((await stickyHead(page)).sticky, 'the head is not sticky on a phone').toBe(true);
+
+    await page.evaluate(() => {
+      window.scrollTo(0, document.documentElement.scrollHeight);
+    });
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+
+    // At the top of the viewport (the Card's 1 px border above it at most),
+    // with the toolbar and the chip in it and on screen.
+    await expect.poll(async () => Math.abs((await stickyHead(page)).top)).toBeLessThanOrEqual(1 + ROUNDING);
+    expect(await inHead(calendarPage.monthTrigger), 'the month toolbar scrolled away').toBe(true);
+    expect(await inHead(chip), 'the active chip scrolled away').toBe(true);
+    // The grid's own team header stays clear of it: the scroller fits below it.
+    const header = await calendarPage.columnHeader(fixture.team.name).boundingBox();
+    const head = await stickyHead(page);
+    expect(header, 'the team header has no box').not.toBeNull();
+    expect(header!.y, 'the sticky head covers the team header').toBeGreaterThanOrEqual(head.bottom - ROUNDING);
+  });
+
+  test('is in flow from 640 px up', async ({ page, calendarPage }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await calendarPage.goto('?prikaz=sve');
+    await expect(calendarPage.monthTrigger).toBeVisible();
+    expect((await stickyHead(page)).sticky).toBe(false);
+  });
+
+  test('on Sati holds the month toolbar too', async ({ page, hoursPage }) => {
+    await hoursPage.goto();
+    await expect(hoursPage.monthTrigger).toBeVisible();
+    expect((await stickyHead(page)).sticky, 'the head is not sticky on a phone').toBe(true);
+    expect(await inHead(hoursPage.monthTrigger)).toBe(true);
+  });
+});
+
+test.describe('Moj raspored on a phone (deferred-work E816, E822)', () => {
+  test.use({ storageState: MEMBER_STATE, viewport: { width: 390, height: 844 } });
+
+  test('stays at the top with the toolbar while the long day list scrolls under it (E816)', async ({
+    page,
+    calendarPage,
+  }) => {
+    await calendarPage.goto('?prikaz=moj');
+    await expect(calendarPage.dayList).toBeVisible();
+    const natural = await stickyHead(page);
+
+    await page.evaluate((by) => {
+      window.scrollBy(0, by);
+    }, natural.top + 600);
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(natural.top + 300);
+    await expect.poll(async () => Math.round((await stickyHead(page)).top)).toBe(0);
+    expect(await inHead(calendarPage.monthTrigger), 'the month toolbar scrolled away').toBe(true);
+  });
+
+  test('says whose schedule it is, the team, and that the filters are Sve smjene’s, in the filters’ place', async ({
+    page,
+    calendarPage,
+  }) => {
+    await calendarPage.goto('?prikaz=moj');
+    await expect(calendarPage.dayList).toBeVisible();
+    const sentence = page.locator('[data-sticky-head] p');
+    await expect(sentence).toHaveText(
+      new RegExp(`^Tvoj raspored · .+\\. Filtri vrijede za „${escapeRegExp(hr.kalendar.mode.sve)}”\\.$`),
+    );
+    await expect(calendarPage.filters.bar).toHaveCount(0);
   });
 });
 

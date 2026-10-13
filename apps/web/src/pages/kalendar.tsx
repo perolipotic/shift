@@ -1,6 +1,7 @@
 import { createRoute, useNavigate } from '@tanstack/react-router';
 
 import { MonthNav } from '@/components/month-nav';
+import { StickyHead } from '@/components/sticky-head';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Notice } from '@/components/ui/notice';
@@ -12,7 +13,13 @@ import { DayDetailDialog } from '@/features/calendar/components/day-detail-dialo
 import { useCalendarScreen } from '@/features/calendar/hooks/use-calendar-screen';
 import { useOverrideForm } from '@/features/calendar/hooks/use-override-form';
 import { useRosterForm } from '@/features/calendar/hooks/use-roster-form';
-import { MODE_SVE, MONTH_HEADING_ID, calendarSearchOf, type CalendarSearch } from '@/features/calendar/utils/month';
+import {
+  MODE_MOJ,
+  MODE_SVE,
+  MONTH_HEADING_ID,
+  calendarSearchOf,
+  type CalendarSearch,
+} from '@/features/calendar/utils/month';
 import { calendarMessageKey } from '@/features/calendar/services/snapshot';
 import { t } from '@/lib/i18n';
 import { appLayoutRoute } from '@/pages/_app';
@@ -48,15 +55,23 @@ import { appLayoutRoute } from '@/pages/_app';
  * shown and one `Poništi filtre`. A person chosen replaces the grid with their
  * day list, headed with their name, and wins over a team. The state lives in
  * the URL alone, and the bar waits for the month, so a loading screen shows
- * the toolbar and the skeleton only.
+ * the toolbar and the skeleton only. *Moj raspored* shows no filters but one
+ * sentence in their place: whose schedule it is, the viewer's team, and that
+ * the filters belong to *Sve smjene* (deferred-work E822).
+ *
+ * ON A PHONE the toolbar and the filters (or that sentence) are one sticky
+ * head under the top of the viewport while the month scrolls (`StickyHead`,
+ * deferred-work E816).
  *
  * ONE DAY (story 3.4b): a grid cell — clicked, or Enter or Space on it — and a
  * day-list day on a team open a Dialog of that team on that date: facts only
  * since story 7.9 — the type, an admin's unresolved conflicts with "Riješi
  * konflikt", the roster and *Izmjene* — with each change in its own dialog.
- * Which day is open lives in `useState`, not in the URL, and every close
- * returns focus to the opener, or to the grid's tab stop or the month heading
- * when the opener is gone.
+ * Which day is open lives in the URL (`?dan=…&danSmjena=…`, deferred-work
+ * E862): opening pushes it, so Back closes the day and Back from "Riješi
+ * konflikt" reopens it; closing replaces it. Every close returns focus to the
+ * opener, or to the grid's tab stop or the month heading when the opener is
+ * gone.
  *
  * ONE CHANGE (story 3.5b): an admin sets a shift-type override on the open
  * day from its own dialog ("Promijeni tip smjene", story 7.9), or removes the one it has through a neutral
@@ -79,10 +94,22 @@ import { appLayoutRoute } from '@/pages/_app';
 export function KalendarScreen() {
   const search = kalendarRoute.useSearch();
   const navigate = useNavigate({ from: kalendarRoute.fullPath });
-  const screen = useCalendarScreen(search, (next) => {
-    void navigate({ search: next });
+  const screen = useCalendarScreen(search, (next, options) => {
+    void navigate({
+      search: next,
+      replace: options?.replace ?? false,
+      // A day opening or closing is a dialog over the page: the page stays where it is.
+      ...(options?.keepScroll === true ? { resetScroll: false } : {}),
+    });
   });
   const { snapshot, loading, refusal, month, mode } = screen;
+  // *Moj raspored*'s one sentence in the filters' place (deferred-work E822).
+  const ownNote =
+    month === null || mode !== MODE_MOJ
+      ? null
+      : month.ownTeamName === null
+        ? t('kalendar.ownNoteNoTeam')
+        : t('kalendar.ownNote', { team: month.ownTeamName });
   const overrideForm = useOverrideForm(snapshot, screen.detail, screen.leaveKeys);
   const rosterForm = useRosterForm(
     snapshot,
@@ -116,13 +143,18 @@ export function KalendarScreen() {
       )}
       {refusal !== null ? null : (
         <Card className="min-w-0">
-          <div className="flex min-w-0 flex-wrap items-center gap-3 px-4 py-4">
-            <MonthNav month={month} headingId={MONTH_HEADING_ID} onShow={screen.show} />
-            {mode === null ? null : <CalendarModeSwitch chosen={mode} onChoose={screen.choose} />}
-          </div>
-          {month === null || mode !== MODE_SVE ? null : (
-            <CalendarFilters shown={month} onFilter={screen.filter} />
-          )}
+          <StickyHead>
+            <div className="flex min-w-0 flex-wrap items-center gap-3 px-4 py-4">
+              <MonthNav month={month} headingId={MONTH_HEADING_ID} onShow={screen.show} />
+              {mode === null ? null : <CalendarModeSwitch chosen={mode} onChoose={screen.choose} />}
+            </div>
+            {month === null || mode !== MODE_SVE ? null : (
+              <CalendarFilters shown={month} onFilter={screen.filter} />
+            )}
+            {ownNote === null ? null : (
+              <p className="min-w-0 px-4 pb-4 text-sm text-muted-foreground">{ownNote}</p>
+            )}
+          </StickyHead>
           <CalendarMonthBody screen={screen} />
         </Card>
       )}

@@ -7,7 +7,9 @@ import {
   OVERRIDE_REFUSED_TYPE,
   dayConflictsOf,
   dayDetailOf,
+  dayDetailCloseOf,
   dayDetailShownOf,
+  openedDayKeyOf,
   overrideEntryOf,
   overrideOffersOf,
   overrideRemovalTargetOf,
@@ -364,6 +366,33 @@ describe('the detail shown while open (story 3.4b)', () => {
     } finally {
       logged.mockRestore();
     }
+  });
+});
+
+describe('the open day in the URL (deferred-work E862)', () => {
+  const OPENED = { teamId: TEAM, date: WORKING };
+
+  it('keys a day by its team and date, and nothing open by null', () => {
+    expect(openedDayKeyOf(OPENED)).toBe(openedDayKeyOf({ ...OPENED }));
+    expect(openedDayKeyOf(OPENED)).not.toBe(openedDayKeyOf({ ...OPENED, teamId: 'other' }));
+    expect(openedDayKeyOf(OPENED)).not.toBe(openedDayKeyOf({ ...OPENED, date: '2026-10-06' }));
+    expect(openedDayKeyOf(null)).toBeNull();
+  });
+
+  it('a day waiting for the first read stays in the URL; one shown and then without a snapshot is dropped', () => {
+    expect(dayDetailCloseOf(null, false)).toBe(false);
+    expect(dayDetailCloseOf(null, true)).toBe(true);
+  });
+
+  it('with a snapshot, drops exactly the day the detail cannot show', async () => {
+    const snapshot = await onSmjenaB();
+    const removed = { ...snapshot, teams: snapshot.teams.filter((team) => team.id !== TEAM) };
+
+    expect(dayDetailCloseOf(dayDetailShownOf(snapshot, OPENED), false)).toBe(false);
+    expect(dayDetailCloseOf(dayDetailShownOf(snapshot, OPENED), true)).toBe(false);
+    // A link naming a team the snapshot does not hold, shown or not.
+    expect(dayDetailCloseOf(dayDetailShownOf(removed, OPENED), false)).toBe(true);
+    expect(dayDetailCloseOf(dayDetailShownOf(removed, OPENED), true)).toBe(true);
   });
 });
 

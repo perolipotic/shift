@@ -12,6 +12,7 @@ import {
   calendarModeOf,
   calendarMonthOf,
   calendarMonthOutcomeOf,
+  calendarOpenDayOf,
   calendarSearchOf,
   calendarSearchTo,
   calendarTodayOf,
@@ -141,6 +142,39 @@ describe('the search', () => {
 
     expect(calendarTodayOf(pilot, lateNight)).toBe('2026-10-01');
     expect(calendarTodayOf({ ...pilot, timeZone: 'America/New_York' }, lateNight)).toBe('2026-09-30');
+  });
+});
+
+describe('the open day in the search (deferred-work E862)', () => {
+  const DAY = { dan: '2026-10-05', danSmjena: 'team-a' };
+
+  it('keeps a day only whole: a real date and a team', () => {
+    expect(calendarSearchOf(DAY)).toEqual(DAY);
+    expect(calendarSearchOf({ ...DAY, mjesec: '2026-10' })).toEqual({ ...DAY, mjesec: '2026-10' });
+    expect(calendarSearchOf({ dan: '2026-10-05' })).toEqual({});
+    expect(calendarSearchOf({ danSmjena: 'team-a' })).toEqual({});
+    for (const bad of ['2026-02-31', '2026-10', '05.10.2026', '', 20261005, null]) {
+      expect(calendarSearchOf({ ...DAY, dan: bad }), String(bad)).toEqual({});
+    }
+    expect(calendarSearchOf({ ...DAY, danSmjena: '' })).toEqual({});
+    expect(calendarSearchOf({ ...DAY, danSmjena: 7 })).toEqual({});
+  });
+
+  it('reads the day the search opens, or none', () => {
+    expect(calendarOpenDayOf(DAY)).toEqual({ teamId: 'team-a', date: '2026-10-05' });
+    expect(calendarOpenDayOf({ dan: '2026-10-05' })).toBeNull();
+    expect(calendarOpenDayOf({})).toBeNull();
+  });
+
+  it('opens and closes a day keeping everything else, and any other change closes it', () => {
+    const shown = { mjesec: '2026-10', prikaz: 'sve', smjena: 'team-a' } as const;
+    const open = calendarSearchTo(shown, { dan: { teamId: 'team-b', date: '2026-10-05' } });
+
+    expect(open).toEqual({ ...shown, dan: '2026-10-05', danSmjena: 'team-b' });
+    expect(calendarSearchTo(open, { dan: null })).toEqual(shown);
+    expect(calendarSearchTo(open, { mjesec: '2026-11' })).toEqual({ ...shown, mjesec: '2026-11' });
+    expect(calendarSearchTo(open, { prikaz: 'moj' })).toEqual({ ...shown, prikaz: 'moj' });
+    expect(calendarSearchTo(open, { smjena: null, osoba: 'P' })).toEqual({ mjesec: '2026-10', prikaz: 'sve', osoba: 'P' });
   });
 });
 
@@ -501,6 +535,33 @@ describe('the letters (story 3.2a)', () => {
     expect(COMPRESSED_CELL_CLASS.split(' ').every((name) => name.startsWith('max-sm:'))).toBe(true);
     expect(COMPRESSED_CELL_CLASS).toContain('max-sm:min-h-11');
     expect(COMPRESSED_CELL_CLASS).toContain('max-sm:min-w-11');
+  });
+});
+
+describe("Moj raspored's sentence (deferred-work E822)", () => {
+  it("names the viewer's team for the month, and that the filters are Sve smjene's", () => {
+    const month = calendarMonthOf(pilot, {}, TODAY);
+    const team = pilot.teams.find((one) => one.id === pilot.viewer.memberships[0]!.teamId)!.name;
+
+    expect(month.ownTeamName).toBe(team);
+    expect(t('kalendar.ownNote', { team })).toBe(`Tvoj raspored · ${team}. Filtri vrijede za „Sve smjene”.`);
+  });
+
+  it('takes the team of the last active date, as the filter does: B after a move in the middle of the month', async () => {
+    const moved = await snapshotOf(PILOT, {
+      viewers: [viewerRow([membershipRow('pilot-smjena-a', '2026-10-01'), membershipRow('pilot-smjena-b', '2026-10-15')])],
+    });
+    const month = calendarMonthOf(moved, { mjesec: '2026-10' }, TODAY);
+
+    expect(month.ownTeamName).toBe(moved.teams.find((one) => one.id === 'pilot-smjena-b')!.name);
+  });
+
+  it('says what is true on no team: bez smjene', async () => {
+    const none = await snapshotOf(PILOT, { viewers: [viewerRow([])] });
+    const month = calendarMonthOf(none, {}, TODAY);
+
+    expect(month.ownTeamName).toBeNull();
+    expect(t('kalendar.ownNoteNoTeam')).toBe('Tvoj raspored · bez smjene. Filtri vrijede za „Sve smjene”.');
   });
 });
 

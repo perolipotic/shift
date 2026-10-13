@@ -919,7 +919,8 @@ const SCREENS = [
   // sastav" and "Promijeni tip smjene" — each change dialog's cancel, and
   // "Riješi konflikt", a `<Button asChild>` over the link, written once
   // inside the map over the day's conflicts.
-  { name: 'the Kalendar destination', file: KALENDAR, expectedControls: 39 },
+  // FORTY SINCE DEFERRED-WORK E795: the month picker footer's `Ovaj mjesec`.
+  { name: 'the Kalendar destination', file: KALENDAR, expectedControls: 40 },
   // STORY 4.1b. THREE on Sati: the month navigation it shares with the
   // calendar — the previous month, `Ovaj mjesec` and the next month. The
   // figures are read, never pressed.
@@ -943,7 +944,8 @@ const SCREENS = [
   // table's `EmptyResult`, so its two ways out are not written twice.
   // TWENTY-THREE SINCE STORY 7.14: the ⓘ `Button` beside an hours figure,
   // written once in `ExplainButton` however many figures carry one.
-  { name: 'the Sati destination', file: SATI, expectedControls: 23 },
+  // TWENTY-FOUR SINCE DEFERRED-WORK E795: the month picker footer's `Ovaj mjesec`.
+  { name: 'the Sati destination', file: SATI, expectedControls: 24 },
   // STORY 5.2c. ONE on Godišnji: the retry its unavailable alert offers. The
   // three figures are read, never pressed, and nothing here writes: a member
   // requests no leave (story 5.3 is conflicts, not requests).
@@ -2816,7 +2818,11 @@ const KEY_SOURCES = [
     // each dialog's close now names its change. ONE HUNDRED AND SIXTY-EIGHT
     // SINCE ITS CODE REVIEW: the notice when the day stops offering the type
     // form with no override on it.
-    strings: 168,
+    // ONE HUNDRED AND SEVENTY-FOUR SINCE THE DEFERRED-WORK SWEEP: the month
+    // picker's phone sheet — its title and close (E792) — and its footer — the
+    // key hint and `Ovaj mjesec` (E795); and *Moj raspored*'s sentence, with
+    // the team and without (E822).
+    strings: 174,
   },
   {
     // STORY 3.2b: the four marks' labels and the no-rotation label a cell's
@@ -2893,10 +2899,14 @@ const KEY_SOURCES = [
     // `@/features/hours/services/hours-explanation` (a key source), since a
     // leave line pairs each shift's team and type, so the dialog renders the
     // line it is given.
+    //
+    // ONE HUNDRED AND NINE SINCE THE DEFERRED-WORK SWEEP: the shared month
+    // picker's phone sheet, its title and close (E792), and its footer, the
+    // key hint and `Ovaj mjesec` (E795).
     name: 'the Sati destination',
     file: SATI,
     keys: translationKeys,
-    strings: 105,
+    strings: 109,
   },
   {
     // STORY 5.2c. THREE on Godišnji: its own `nav.godisnji` heading, the
@@ -3725,8 +3735,10 @@ describe('the screen is read at all, so every sweep below means something', () =
     expect(ariaHaspopupValues(nav)).toEqual(['dialog']);
     expect(nav).toMatch(/ref=\{trigger\}[\s\S]{0,240}?aria-haspopup="dialog"\s+aria-expanded=\{open\}/);
     expect(nav).toMatch(/<Popover\s+id=\{pickerId\}[^>]*aria-label=\{t\('kalendar\.monthPicker'\)\}/);
-    // While open, the trigger names the picker it opened.
-    expect(nav).toMatch(/aria-controls=\{open \? pickerId : undefined\}/);
+    // While open, the trigger names the picker it opened: the Popover, or below
+    // 640 px the bottom sheet (deferred-work E792).
+    expect(nav).toMatch(/aria-controls=\{open \? \(isPhone \? sheetId : pickerId\) : undefined\}/);
+    expect(nav).toMatch(/<SheetDialog id=\{sheetId\}[^>]*open=\{open && isPhone\}/);
     // The picker belongs to the month it was opened on.
     expect(nav).toMatch(/const open = shownMonth !== null && openOn === shownMonth;/);
     // PgUp and PgDn on the group, by the pure rule, never page-wide.
