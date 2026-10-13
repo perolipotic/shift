@@ -1,7 +1,7 @@
 import type { ReactNode, RefObject } from 'react';
 
 import { FilterBar, type FilterBarHandle } from '@/components/filter-bar';
-import type { HoursSearchChange } from '@/features/hours/services/my-hours';
+import type { HoursSearchChange } from '@/features/hours/services/hours-search';
 import type { OrganizationHoursView } from '@/features/hours/services/organization-hours';
 
 /**

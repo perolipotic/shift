@@ -17,6 +17,7 @@ import {
   supabaseClient,
   withRequestTimeout,
 } from '@/lib/supabase/client';
+import { SESSION } from '@/lib/supabase/session.fixture';
 
 /**
  * The environment contract, executed rather than declared (story 1.3b).
@@ -365,9 +366,6 @@ describe('a request that never answers ends, and reads as unavailable (C520)', (
 });
 
 describe('the session reader is a function, not a line in the router', () => {
-  /** Enough of a session to be distinguishable from `null`. */
-  const SESSION = { access_token: 'token', user: { id: 'member' } } as unknown as Session;
-
   const answering = (answer: {
     session: Session | null;
     error: { message?: string } | null;

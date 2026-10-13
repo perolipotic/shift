@@ -5,6 +5,15 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import {
+  BLOCK_COMMENT,
+  HTML_COMMENT,
+  LINE_DASH,
+  LINE_HASH,
+  LINE_SLASH,
+  collectFiles,
+} from './source-scan.ts';
+
 /**
  * AD-17 — the secret key exists in exactly one place: the admin-auth Edge
  * Function's per-environment env.
@@ -51,15 +60,8 @@ const KEY_MATERIAL_LENGTH = Number(/\{(\d+),\}/.exec(PLAUSIBLE_KEY.source)?.[1])
 
 
 // --------------------------------------------------------------- comment rules
-
-const BLOCK_COMMENT = /\/\*[\s\S]*?\*\//g;
-/** `//` to end of line. The leading class keeps `http://` in a string intact. */
-const LINE_SLASH = /(^|[\s;,{}()[\]])\/\/[^\n]*/g;
-/** `--` to end of line. SQL only: in TypeScript this is the decrement operator. */
-const LINE_DASH = /(^|[\s;,()])--[^\n]*/g;
-/** `#` to end of line, for the configuration formats that use it. */
-const LINE_HASH = /(^|[\s])#[^\n]*/g;
-const HTML_COMMENT = /<!--[\s\S]*?-->/g;
+// The patterns themselves live in `test/source-scan.ts`, shared by the root
+// source scans; which pattern applies to which file type is this file's own.
 
 /**
  * Comment syntax by file type. Applying one language's rule to another file is
@@ -95,32 +97,7 @@ function stripComments(file: string, source: string): string {
 }
 
 // ------------------------------------------------------------- file collection
-
-const SKIP_DIRECTORIES = new Set([
-  'node_modules',
-  '.git',
-  'dist',
-  'coverage',
-  '.temp',
-  '.branches',
-  // Vendored BMAD tooling: not our source, and not shipped.
-  '_bmad',
-]);
-
-function collectFiles(directory: string, keep: (file: string) => boolean): string[] {
-  if (!existsSync(directory)) return [];
-  const found: string[] = [];
-  for (const entry of readdirSync(directory)) {
-    if (SKIP_DIRECTORIES.has(entry)) continue;
-    const absolute = join(directory, entry);
-    if (statSync(absolute).isDirectory()) {
-      found.push(...collectFiles(absolute, keep));
-    } else if (keep(absolute)) {
-      found.push(absolute);
-    }
-  }
-  return found;
-}
+// `collectFiles` and its skip list live in `test/source-scan.ts`.
 
 const byExtension =
   (...extensions: readonly string[]) =>

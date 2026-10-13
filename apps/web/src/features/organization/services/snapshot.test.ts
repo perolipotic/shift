@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { formatDate } from '@/lib/i18n/format';
 import { offersReadRetry, organizationMessageKey } from '@/features/organization/utils/messages';
@@ -507,6 +507,29 @@ describe('the member screens read the organization through one query definition'
     expect(await queryFn()).toEqual({ ok: true, snapshot: pilotSnapshot() });
     expect(resolved).toBe(1);
     expect(log.selected).toEqual([ORGANIZATION_COLUMNS]);
+  });
+
+  it('logs a failed answer once, in the query function, and a good one not at all', async () => {
+    // THE CHROME'S LOG, now the factory's (deferred from fix-member-screens):
+    // the chrome shows no message for an unreadable organization, so the log
+    // is what makes it diagnosable — whichever consumer of the key fetched.
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      const failing = organizationSnapshotQueryOptions(() => throwing()).queryFn as () => Promise<OrganizationOutcome>;
+      const good = organizationSnapshotQueryOptions(() => answering({ data: [PILOT_ROW], error: null }))
+        .queryFn as () => Promise<OrganizationOutcome>;
+
+      expect(await failing()).toEqual({ ok: false, code: ORGANIZATION_UNAVAILABLE });
+      expect(logged).toHaveBeenCalledTimes(1);
+      expect(logged).toHaveBeenCalledWith(ORGANIZATION_UNAVAILABLE, ORGANIZATION_UNAVAILABLE);
+
+      await good();
+
+      expect(logged).toHaveBeenCalledTimes(1);
+    } finally {
+      logged.mockRestore();
+    }
   });
 });
 

@@ -4,14 +4,13 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { CALENDAR_UNAVAILABLE, readCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { calendarDayListOf, calendarMonthOf, memberScheduleInputOf, monthHeaderOf } from '@/features/calendar/utils/month';
 import { HOURS_CONFLICTS_READY, NO_LEAVE_RECORDS, type HoursConflictsState, type LeaveRecordsByMember } from '@/features/hours/services/hours-conflicts';
+import { SORT_CONFLICTS, hoursSearchOf, hoursSearchTo, type HoursSearch } from '@/features/hours/services/hours-search';
 import {
   HOURS_UNAVAILABLE,
-  hoursSearchOf,
   memberHoursInputOf,
   myHoursOf,
   myHoursSurfaceOf,
   type HoursFigure,
-  type HoursSearch,
 } from '@/features/hours/services/my-hours';
 import {
   DEFAULT_HOURS_SORT,
@@ -33,9 +32,13 @@ import {
   hoursFooterOf,
   organizationHoursOf,
   organizationHoursRowsOf,
+  sortedHoursRows,
+  hoursSortOf,
+  type OrganizationHoursRow,
   type OrganizationHoursView,
 } from '@/features/hours/services/organization-hours';
 import { initLocalization, t } from '@/lib/i18n';
+import { compareText } from '@/lib/i18n/format';
 import {
   PILOT,
   SEEDED,
@@ -58,6 +61,7 @@ import {
   viewerSession,
   type FixtureRows,
 } from '@/features/rotation/rotation.fixture';
+import { FILTERS_CLEARED, FILTER_TEAM, filterChoiceOf } from '@/utils/filter-bar';
 
 /**
  * Story 4.2's rules, executed (AD-15): which members are rows, each row's
@@ -501,6 +505,29 @@ describe('the sort', () => {
     expect(nextHoursSort(DEFAULT_HOURS_SORT, 'ime')).toEqual({ key: 'ime', direction: 'silazno' });
   });
 
+  it('sorts by the shifts in unresolved conflict, either way, ties by name (E909)', () => {
+    const rows = viewOf(pilot, NO_LEAVE_RECORDS).rows;
+    // The counts are the module's from collisions, executed elsewhere; the order is what this pins.
+    const counted = rows.map((row, index) => ({ ...row, conflictCount: index % 3 }));
+    const up = sortedHoursRows(counted, { key: SORT_CONFLICTS, direction: 'uzlazno' });
+    const down = sortedHoursRows(counted, { key: SORT_CONFLICTS, direction: 'silazno' });
+    const byName = (first: OrganizationHoursRow, second: OrganizationHoursRow): number =>
+      compareText(first.name, second.name);
+
+    expect(up.map((row) => row.conflictCount)).toEqual([...counted.map((row) => row.conflictCount)].sort());
+    expect(down.map((row) => row.conflictCount)).toEqual([...counted.map((row) => row.conflictCount)].sort().reverse());
+    for (const sorted of [up, down]) {
+      for (const count of [0, 1, 2]) {
+        const tied = sorted.filter((row) => row.conflictCount === count);
+
+        expect(tied, `ties at ${String(count)} read by name`).toEqual([...tied].sort(byName));
+      }
+    }
+    // Its heading is a sortable one like any other.
+    expect(hoursAriaSortOf({ key: SORT_CONFLICTS, direction: 'silazno' }, SORT_CONFLICTS)).toBe('descending');
+    expect(hoursSortOf({ sort: SORT_CONFLICTS }, [])).toEqual({ key: SORT_CONFLICTS, direction: 'uzlazno' });
+  });
+
   it('writes no parameter for the default', () => {
     expect(hoursSortChangeOf(DEFAULT_HOURS_SORT)).toEqual({ sort: null, smjer: null });
     expect(hoursSortChangeOf({ key: 'ime', direction: 'silazno' })).toEqual({ sort: null, smjer: 'silazno' });
@@ -523,14 +550,45 @@ describe('the sort', () => {
 });
 
 describe('the matrix edges', () => {
-  it('stale params: an unknown person and a deleted band are dropped — all rows, by name', () => {
+  it('stale params: an unknown person or team narrows nothing and stays in the search, a deleted band is dropped — all rows, by name', () => {
     const view = viewOf(pilot, NO_LEAVE_RECORDS, hoursSearchOf({ mjesec: MONTH, osoba: 'nobody', smjena: 'gone', sort: 'pojas-deleted' }));
 
     expect(view.person).toBeNull();
     expect(view.team).toBeNull();
     expect(view.sort).toEqual(DEFAULT_HOURS_SORT);
     expect(names(view)).toEqual(names(viewOf(pilot, NO_LEAVE_RECORDS)));
-    expect(view.search).toEqual({ mjesec: MONTH });
+    // Epic 4 retro, C5: kept as the URL names them, as on the calendar.
+    expect(view.search).toEqual({ mjesec: MONTH, smjena: 'gone', osoba: 'nobody' });
+  });
+
+  it('a filter that matches no row this month stays across the months, and applies again where it has a row (C5, E826)', () => {
+    // Ema and Smjena C, hers alone, have a row in July and none in September.
+    const july = viewOf(pilot, NO_LEAVE_RECORDS, { mjesec: '2026-07', smjena: teamOf(PILOT, 2), osoba: EMA });
+
+    expect(july.team).toBe(teamOf(PILOT, 2));
+    expect(july.person).toBe(EMA);
+    expect(names(july)).toEqual(['Ema Emić']);
+
+    // The next month: no row for either, so the table shows everyone — and
+    // the search it navigates from still names both.
+    const september = viewOf(pilot, NO_LEAVE_RECORDS, hoursSearchTo(hoursSearchBaseOf(july, {}), { mjesec: MONTH }));
+
+    expect(september.team).toBeNull();
+    expect(september.person).toBeNull();
+    expect(names(september)).toEqual(names(viewOf(pilot, NO_LEAVE_RECORDS)));
+    expect(september.search).toEqual({ mjesec: MONTH, smjena: teamOf(PILOT, 2), osoba: EMA });
+
+    // Back to July: the filter applies again, never lost on the way.
+    const back = viewOf(pilot, NO_LEAVE_RECORDS, hoursSearchTo(hoursSearchBaseOf(september, {}), { mjesec: '2026-07' }));
+
+    expect(back.search).toEqual(july.search);
+    expect(names(back)).toEqual(['Ema Emić']);
+
+    // AN EXPLICIT FILTER CHANGE drops it: the bar writes both keys from what it shows.
+    const changed = hoursSearchTo(hoursSearchBaseOf(september, {}), filterChoiceOf(september.filters, FILTER_TEAM, teamOf(PILOT, 1)));
+
+    expect(changed).toEqual({ mjesec: MONTH, smjena: teamOf(PILOT, 1) });
+    expect(hoursSearchTo(hoursSearchBaseOf(september, {}), FILTERS_CLEARED)).toEqual({ mjesec: MONTH });
   });
 
   it('a stale column falls back to the whole default: name ascending, neither parameter kept', () => {
@@ -600,7 +658,8 @@ describe('the matrix edges', () => {
     const view = viewOf(pilot, NO_LEAVE_RECORDS, { mjesec: MONTH, smjena: teamOf(PILOT, 1), osoba: 'gone', sort: 'ukupno', smjer: 'silazno' });
     const raw: HoursSearch = { mjesec: MONTH, smjena: 't', osoba: 'o', sort: 'ukupno', smjer: 'silazno' };
 
-    expect(hoursSearchBaseOf(view, raw)).toEqual({ mjesec: MONTH, smjena: teamOf(PILOT, 1), sort: 'ukupno', smjer: 'silazno' });
+    // The unmatched person is kept (C5): only an explicit filter change drops it.
+    expect(hoursSearchBaseOf(view, raw)).toEqual({ mjesec: MONTH, smjena: teamOf(PILOT, 1), osoba: 'gone', sort: 'ukupno', smjer: 'silazno' });
     expect(hoursSearchBaseOf(null, raw)).toEqual({ mjesec: MONTH });
     expect(hoursSearchBaseOf(null, { smjena: 't', sort: 'ukupno' })).toEqual({});
   });

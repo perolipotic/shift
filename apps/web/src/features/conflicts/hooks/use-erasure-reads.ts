@@ -1,10 +1,6 @@
 import { skipToken, useQueryClient, type FetchQueryOptions, type QueryFunction, type QueryKey, type SkipToken } from '@tanstack/react-query';
 
-import {
-  CALENDAR_READ_TABLE,
-  calendarQueryOptions,
-  type CalendarMembersRpc,
-} from '@/features/calendar/services/snapshot';
+import { calendarSnapshotQueryOptions } from '@/features/calendar/hooks/use-calendar-snapshot';
 import type { ErasureReads } from '@/features/conflicts/services/erasure-check';
 import {
   CONFLICT_RESOLUTIONS_TABLE,
@@ -93,11 +89,7 @@ export interface ErasureReadsHook {
 
 export function useErasureReads(): ErasureReadsHook {
   const queryClient = useQueryClient();
-  const calendarRead = calendarQueryOptions(
-    () => supabaseClient().from(CALENDAR_READ_TABLE),
-    // As the calendar's: the client's `rpc` is wider than the calls made.
-    () => supabaseClient() as unknown as CalendarMembersRpc,
-  );
+  const calendarRead = calendarSnapshotQueryOptions();
   const leaveRead = organizationLeaveRecordsQueryOptions(
     () => supabaseClient().from(LEAVE_RECORDS_TABLE) as unknown as OrganizationLeaveRecordsTable,
   );
