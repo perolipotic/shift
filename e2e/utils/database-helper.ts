@@ -795,6 +795,29 @@ export async function setFireRanks(slug: string, on: boolean): Promise<boolean> 
   }
 }
 
+/**
+ * The position on every membership version the run organization's member
+ * named `name` has on `teamId`, oldest first: what a team move wrote.
+ */
+export async function membershipPositionsOf(slug: string, name: string, teamId: string): Promise<(string | null)[]> {
+  const client = await connect();
+  try {
+    const answer = await client.query<{ position: string | null }>(
+      `select v.position
+         from team_membership_versions v
+         join members m on m.id = v.member_id
+         join organizations o on o.id = m.organization_id
+        where o.slug = $1 and m.name = $2 and v.team_id = $3
+        order by v.effective_from`,
+      [slug, name, teamId],
+    );
+
+    return answer.rows.map((row) => row.position);
+  } finally {
+    await client.end();
+  }
+}
+
 /** A member's rank and their position on a team, as {@link setRankAndPosition} found them. */
 export interface RankAndPosition {
   readonly fireRank: string | null;

@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import type { Locator } from '@playwright/test';
 
 import type { CalendarPage } from '../../pages/calendar.page.ts';
+import { anyErasureTitleOf } from '../../pages/erasure-dialog.ts';
 import {
   holdRotation,
   removeLeaveMemberInSql,
@@ -20,7 +21,7 @@ import {
   type SeededRotation,
 } from '../../utils/database-helper.ts';
 import { addDays, dayMonth, weekdayOf } from '../../utils/dates.ts';
-import { escapeRegExp, fill, hr, plural } from '../../utils/i18n.ts';
+import { fill, hr, plural } from '../../utils/i18n.ts';
 import { expectNoHorizontalScroll } from '../../utils/layout.ts';
 import { ADMIN_STATE } from '../../utils/run-fixture.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
@@ -82,8 +83,8 @@ function gridMonthOf(date: string): string {
   return `?prikaz=sve&mjesec=${date.slice(0, 7)}`;
 }
 
-/** Every count of the confirmation's title: its words before the ICU count. */
-const anyErasureTitle = new RegExp(`^${escapeRegExp(/one \{([^#]*)#/.exec(erasures.title)?.[1] ?? 'E2E: no title')}`);
+/** Every count of the confirmation's title (`anyErasureTitleOf`). */
+const anyErasureTitle = anyErasureTitleOf(erasures.title);
 
 interface Setup {
   readonly rotation: SeededRotation;
@@ -279,7 +280,6 @@ test('removing an override that made a free day working goes through its confirm
 });
 
 test('an override from one working type to another erases nothing and saves in one click', async ({
-  page,
   fixture,
   calendarPage,
   conflictsPage,
@@ -292,7 +292,7 @@ test('an override from one working type to another erases nothing and saves in o
 
   await expect(calendarPage.statusIn(detail)).toHaveText(override.saved);
   // No erasure confirmation of ANY count was shown.
-  await expect(page.getByRole('dialog', { name: anyErasureTitle })).toHaveCount(0);
+  await expect(calendarPage.dialog(anyErasureTitle)).toHaveCount(0);
 
   // The member still works that day, on leave: the conflict stands.
   await conflictsPage.goto();
@@ -453,7 +453,7 @@ test('an override another admin wrote meanwhile is refused as taken, with no era
   await expect(calendarPage.overrideRemoveIn(detail)).toBeVisible();
   await expect(detail).toContainText(fill(override.projected, { type: rotation.steps[0] }));
   await expect(calendarPage.statusIn(detail)).toHaveCount(0);
-  await expect(page.getByRole('dialog', { name: anyErasureTitle })).toHaveCount(0);
+  await expect(calendarPage.dialog(anyErasureTitle)).toHaveCount(0);
   expect(inserts, 'an insert was sent for a write refused anyway').toEqual([]);
 });
 
@@ -478,7 +478,6 @@ async function armRemoval(
 }
 
 test('removing an override a rotation change left pending is checked against the fresh read, lists nothing, and removes at once', async ({
-  page,
   fixture,
   calendarPage,
 }) => {
@@ -497,7 +496,7 @@ test('removing an override a rotation change left pending is checked against the
   await calendarPage.confirmRemoveIn(confirm).click();
 
   await expect(confirm).toHaveCount(0);
-  await expect(page.getByRole('dialog', { name: anyErasureTitle })).toHaveCount(0);
+  await expect(calendarPage.dialog(anyErasureTitle)).toHaveCount(0);
   await expect(calendarPage.statusIn(detail)).toHaveText(override.pending.removed);
   await expect(calendarPage.pendingOverrideIn(detail)).toHaveCount(0);
 });
@@ -589,7 +588,6 @@ test('a removal whose erasures cannot be checked again at the dialog\'s save re-
 });
 
 test('a removal whose override was removed meanwhile is refused as gone at the dialog\'s save, after a re-read', async ({
-  page,
   fixture,
   calendarPage,
 }) => {
@@ -605,7 +603,7 @@ test('a removal whose override was removed meanwhile is refused as gone at the d
   await parts.saveIn(dialog).click();
 
   await expect(dialog).toHaveCount(0);
-  await expect(page.getByRole('dialog', { name: anyErasureTitle })).toHaveCount(0);
+  await expect(calendarPage.dialog(anyErasureTitle)).toHaveCount(0);
   await expect(calendarPage.alertIn(detail).filter({ hasText: override.refused.gone })).toBeVisible();
   await expect(calendarPage.overrideRemoveIn(detail)).toHaveCount(0);
   await expect(calendarPage.statusIn(detail)).toHaveCount(0);

@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 
+import { anyErasureTitleOf } from '../../pages/erasure-dialog.ts';
 import {
   holdRotation,
   removeLeaveMemberInSql,
@@ -16,7 +17,7 @@ import {
   type SeededRotation,
 } from '../../utils/database-helper.ts';
 import { addDays, dayMonth, weekdayOf } from '../../utils/dates.ts';
-import { escapeRegExp, fill, hr, icu, plural } from '../../utils/i18n.ts';
+import { fill, hr, icu, plural } from '../../utils/i18n.ts';
 import { expectNoHorizontalScroll, expectTouchTargets } from '../../utils/layout.ts';
 import { ADMIN_STATE } from '../../utils/run-fixture.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
@@ -73,8 +74,8 @@ test.afterEach(async () => {
   if (failures.length > 0) throw failures[0];
 });
 
-/** Every count of the dialog's title: its words before the ICU count. */
-const anyErasureTitle = new RegExp(`^${escapeRegExp(/one \{([^#]*)#/.exec(erasures.title)?.[1] ?? 'E2E: no title')}`);
+/** Every count of the dialog's title (`anyErasureTitleOf`). */
+const anyErasureTitle = anyErasureTitleOf(erasures.title);
 
 interface Setup {
   readonly rotation: SeededRotation;
@@ -136,7 +137,7 @@ test('moving a member on leave to another team waits for the erasure dialog, by 
   // The erasure dialog opens OVER the team dialog, which keeps what was
   // entered; only one erasure dialog is open (its save carries the change's
   // own words).
-  await expect(page.getByRole('dialog', { name: anyErasureTitle })).toHaveCount(1);
+  await expect(peoplePage.dialog(anyErasureTitle)).toHaveCount(1);
   const rows = parts.rowsIn(dialog);
   await expect(rows).toHaveCount(1);
   await expect(rows.nth(0)).toContainText(
@@ -229,7 +230,7 @@ test('deactivating a member on leave lists every conflict it erases, by keyboard
   await expect(conflictsPage.rowsOf(person.name)).toHaveCount(0);
 });
 
-test('a status change that erases nothing writes as it always did', async ({ page, fixture, peoplePage }) => {
+test('a status change that erases nothing writes as it always did', async ({ fixture, peoplePage }) => {
   test.slow();
   const { person } = await setUp(fixture.slug, null);
 
@@ -238,7 +239,7 @@ test('a status change that erases nothing writes as it always did', async ({ pag
 
   await expect(peoplePage.statusWith(hr.ljudi.status.saved)).toBeVisible();
   // No erasure dialog of ANY count was shown.
-  await expect(page.getByRole('dialog', { name: anyErasureTitle })).toHaveCount(0);
+  await expect(peoplePage.dialog(anyErasureTitle)).toHaveCount(0);
 });
 
 test('a kept conflict holds the move, and going back keeps the team dialog as entered and writes nothing', async ({
@@ -306,7 +307,7 @@ test('a move whose erasures cannot be checked is refused inside its dialog, writ
   await expect(peoplePage.memberUncheckedRetry, 'the retry is not in reach').toBeFocused();
   // Nothing written, and no erasure dialog.
   await expect(peoplePage.statusWith(membership.saved)).toHaveCount(0);
-  await expect(page.getByRole('dialog', { name: anyErasureTitle })).toHaveCount(0);
+  await expect(peoplePage.dialog(anyErasureTitle)).toHaveCount(0);
 
   // The read answers again: the retry checks afresh and asks about the conflict.
   await page.unroute(resolutions);
@@ -314,7 +315,7 @@ test('a move whose erasures cannot be checked is refused inside its dialog, writ
   const parts = peoplePage.memberErasures(fill(membership.moveConfirm, { name: person.name }));
   const dialog = parts.dialog(1);
   await expect(dialog).toBeVisible();
-  await expect(page.getByRole('dialog', { name: anyErasureTitle })).toHaveCount(1);
+  await expect(peoplePage.dialog(anyErasureTitle)).toHaveCount(1);
   await expect(peoplePage.memberUnchecked).toHaveCount(0);
   await parts.backIn(dialog).click();
   await expect(peoplePage.statusWith(membership.saved)).toHaveCount(0);
@@ -518,7 +519,7 @@ test('a dialog save whose re-check cannot be derived returns to the team dialog 
   await expect(dialog).toHaveCount(0);
   await expect(peoplePage.teamDialog.getByRole('alert').filter({ hasText: hr.ljudi.erasures.unavailable })).toBeVisible();
   await expect(peoplePage.memberUncheckedRetry, 'the retry is not in reach').toBeFocused();
-  await expect(page.getByRole('dialog')).toHaveCount(1);
+  await expect(peoplePage.dialog()).toHaveCount(1);
   await expect(peoplePage.statusWith(membership.saved)).toHaveCount(0);
 
   await page.unroute(resolutions);
@@ -544,7 +545,7 @@ test('a deactivation whose erasures cannot be checked is refused inside the stat
 
   await expect(peoplePage.memberUnchecked).toBeVisible();
   await expect(peoplePage.memberUncheckedRetry, 'the retry is not in reach').toBeFocused();
-  await expect(page.getByRole('dialog', { name: anyErasureTitle })).toHaveCount(0);
+  await expect(peoplePage.dialog(anyErasureTitle)).toHaveCount(0);
   await expect(peoplePage.statusWith(hr.ljudi.status.saved)).toHaveCount(0);
 
   await page.unroute(resolutions);

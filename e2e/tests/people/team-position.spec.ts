@@ -1,7 +1,12 @@
 import { randomBytes } from 'node:crypto';
 
 import { TeamsPage } from '../../pages/teams.page.ts';
-import { holdFireRanks, type RotationHold } from '../../utils/database-helper.ts';
+import {
+  holdFireRanks,
+  membershipPositionsOf,
+  setFireRanks,
+  type RotationHold,
+} from '../../utils/database-helper.ts';
 import { ADMIN_STATE, MEMBER_STATE } from '../../utils/run-fixture.ts';
 import { fill, hr } from '../../utils/i18n.ts';
 import { uniqueMember } from '../../utils/members.ts';
@@ -10,8 +15,9 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
 test.use({ storageState: ADMIN_STATE });
 
 /**
- * The fire-rank setting, held for this test (story 3.4b): `calendar.spec.ts`
- * switches it off for a moment to read the day detail without ranks.
+ * The fire-rank setting, held for each test (story 3.4b): `calendar.spec.ts`
+ * switches it off for a moment to read the day detail without ranks, and the
+ * setting-off case here does the same for a team move.
  */
 let ranksHold: RotationHold | null = null;
 
@@ -166,4 +172,54 @@ test('with positions in use, a member moved in as driver shows it on the roster,
   await peoplePage.moveButton(person.name).click();
   await peoplePage.teamSelect.selectOption({ label: currentChoice });
   await expect(peoplePage.selectedPosition).toHaveText(driver);
+});
+
+test('with positions not in use, a member moved onto a team gets no position control, and a null position is stored', async ({
+  page,
+  fixture,
+  peoplePage,
+  teamsPage,
+  holdRotationForTeams,
+}) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
+  // SWITCHED OFF under the hold, and restored whatever happens: the other
+  // specs of the run read the setting as they left it.
+  const was = await setFireRanks(fixture.slug, false);
+  try {
+    const teamName = `Smjena ${randomBytes(3).toString('hex')}`;
+    const person = uniqueMember('Bezpolozaja');
+
+    await teamsPage.goto();
+    await holdRotationForTeams(async () => {
+      await teamsPage.addTeam(teamName);
+      await expect(teamsPage.status).toHaveText(hr.smjene.created);
+    });
+
+    await teamsPage.openTeam(teamName);
+    const teamPath = /\/ljudi\/smjene\/([0-9a-f-]{36})$/;
+    await expect(page).toHaveURL(teamPath);
+    const teamId = teamPath.exec(new URL(page.url()).pathname)?.[1];
+    if (teamId === undefined) throw new Error(`E2E: no team id in ${page.url()}`);
+
+    await peoplePage.createMember(person.name, person.username);
+    await peoplePage.openMember(person.name);
+
+    // NO POSITION CONTROL, before the team pick or after it.
+    await peoplePage.moveButton(person.name).click();
+    await expect(peoplePage.positionSelect).toHaveCount(0);
+    await peoplePage.teamSelect.selectOption({ label: teamName });
+    await expect(peoplePage.positionSelect).toHaveCount(0);
+    await peoplePage.teamSaveButton.click();
+    await expect(peoplePage.teamDialog).toHaveCount(0);
+    await expect(peoplePage.teamCard.getByRole('status')).toContainText(hr.smjene.membership.saved);
+    await expect(peoplePage.text(fill(hr.smjene.membership.current, { team: teamName }))).toBeVisible();
+
+    // STORED WITHOUT A POSITION, and the roster line is the name alone.
+    expect(await membershipPositionsOf(fixture.slug, person.name, teamId)).toEqual([null]);
+    await teamsPage.gotoRoster(teamId);
+    await expect(teamsPage.heading(teamName)).toBeVisible();
+    await expect(teamsPage.rosterLine(person.name)).toBeVisible();
+  } finally {
+    await setFireRanks(fixture.slug, was);
+  }
 });

@@ -15,7 +15,7 @@ test('the member list shows the fixture members', async ({ peoplePage, fixture }
 
   await expect(peoplePage.heading(hr.nav.ljudi)).toBeVisible();
   for (const person of [fixture.admin, fixture.member, fixture.spare]) {
-    await expect(peoplePage.listedMember(person.name)).toBeVisible();
+    await expect(peoplePage.memberRow(person.name)).toBeVisible();
   }
 });
 
@@ -351,7 +351,7 @@ test.describe('the member list filters by status and states it in a column', () 
     // No `<select>` and no stat card are left on the list: the page outside
     // any dialog — the add dialog's own selects stay mounted while it is
     // closed (story 7.13b), and are its fields, not the list's.
-    await expect(page.locator('main select:not(dialog *)')).toHaveCount(0);
+    await expect(peoplePage.listSelects).toHaveCount(0);
 
     await expect(peoplePage.memberRow(fixture.member.name)).toContainText(hr.ljudi.status.cellActive);
     await expect(peoplePage.memberRow(leaving)).toContainText(peoplePage.scheduledStatusText(later, false));
@@ -521,7 +521,7 @@ test.describe('the member page shows facts and each change opens one dialog', ()
       await expect(peoplePage.basicsCard).toContainText(hr.ljudi.basics.noEmail);
       // NO FIELD ON THE PAGE: every change opens its own dialog, the leave
       // record's too since story 7.12, so no form is mounted at all.
-      await expect(page.locator('main form')).toHaveCount(0);
+      await expect(peoplePage.mainForms).toHaveCount(0);
       await expect(peoplePage.basicsCard.getByRole('textbox')).toHaveCount(0);
       await expect(peoplePage.teamCard.getByRole('combobox')).toHaveCount(0);
       // THE ALLOWANCE SITS IN THE LEAVE CARD, beside its figure.

@@ -9,7 +9,7 @@ export class TeamsPage extends BasePage {
 
   /** A team's edit link in the list. */
   editLink(teamName: string): Locator {
-    return this.page.getByRole('link', { name: fill(hr.smjene.edit, { name: teamName }) });
+    return this.editLinkNamed(hr.smjene.edit, teamName);
   }
 
   /** The add dialog. */

@@ -657,9 +657,9 @@ test.describe('as an admin', () => {
     await expect(todayPage.needsYouRowLinks).toHaveCount(0);
     await expect(todayPage.openConflictsLink(0)).toBeVisible();
     await expect(todayPage.absentCard).toContainText(admin.absent.none);
-    await expect(todayPage.page.getByText(new RegExp(`${escapeRegExp(admin.status.unscheduled)}$`))).toBeVisible();
+    await expect(todayPage.text(new RegExp(`${escapeRegExp(admin.status.unscheduled)}$`))).toBeVisible();
     // No "Tvoja smjena" card for an admin.
-    await expect(todayPage.page.getByText(hr.smjene.membership.none, { exact: true })).toHaveCount(0);
+    await expect(todayPage.text(hr.smjene.membership.none)).toHaveCount(0);
 
     await todayPage.openConflictsLink(0).click();
     await expect(page).toHaveURL(/\/raspored$/);
@@ -795,7 +795,7 @@ test.describe('as an admin', () => {
     await expect(todayPage.teamLink(team.name)).toHaveAttribute('href', `/smjene/${team.id}`);
     // No "Tvoja smjena" card: the subtitle's link is the only one to the team.
     await expect(todayPage.teamLink(team.name)).toHaveCount(1);
-    await expect(todayPage.page.getByText(hr.smjene.today.label, { exact: true })).toHaveCount(0);
+    await expect(todayPage.text(hr.smjene.today.label)).toHaveCount(0);
   });
 
   test('a failed leave read is one alert with no figure, and the retry brings Treba tebe back', async ({ page, todayPage }) => {

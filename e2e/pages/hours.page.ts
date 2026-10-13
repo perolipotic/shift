@@ -183,6 +183,11 @@ export class HoursPage extends BasePage {
     return this.organizationTable.locator('tbody').getByRole('row');
   }
 
+  /** Every body row holding a link: a member's, as no other row has one. */
+  get linkedOrganizationRows(): Locator {
+    return this.organizationRows.filter({ has: this.page.getByRole('link') });
+  }
+
   /** A member's row, found by the link their name is. */
   organizationRow(name: string): Locator {
     return this.organizationRows.filter({ has: this.page.getByRole('link', { name, exact: true }) });

@@ -192,7 +192,7 @@ test('opens a conflict from its queue row, shows K of N, moves with ‹ › in t
   await expect(resolutionPage.acceptOption).toHaveAttribute('aria-checked', 'false');
   await expect(resolutionPage.replaceOption).toHaveAttribute('aria-checked', 'false');
   await expect(resolutionPage.amendOption).toHaveAttribute('aria-checked', 'false');
-  await expect(resolutionPage.line(resolution.hintChoose)).toBeVisible();
+  await expect(resolutionPage.text(resolution.hintChoose)).toBeVisible();
 
   // ‹ TO THE 1ST: ‹ disabled there, nothing saved.
   await resolutionPage.previousButton.click();
@@ -290,7 +290,7 @@ test('accepts a conflict as uncovered by keyboard: the queue drops it with a sta
   await page.keyboard.press('Enter');
   await expect(resolutionPage.acceptOption).toBeFocused();
   await expect(resolutionPage.acceptOption).toHaveAttribute('aria-checked', 'false');
-  await expect(resolutionPage.line(resolution.hintChoose)).toBeVisible();
+  await expect(resolutionPage.text(resolution.hintChoose)).toBeVisible();
   await expect(page).toHaveURL(`/raspored/${seeded.id}/${today}/${team.id}`);
 
   // BY KEYBOARD: Tab reaches the card, Space selects it, and Tab goes on to Spremi.
@@ -299,7 +299,7 @@ test('accepts a conflict as uncovered by keyboard: the queue drops it with a sta
   await expect(resolutionPage.acceptOption).toBeFocused();
   await page.keyboard.press('Space');
   await expect(resolutionPage.acceptOption).toHaveAttribute('aria-checked', 'true');
-  await expect(resolutionPage.line(resolution.hintRecorded)).toBeVisible();
+  await expect(resolutionPage.text(resolution.hintRecorded)).toBeVisible();
   await page.keyboard.press('Tab');
   await expect(resolutionPage.cancelLink).toBeFocused();
   await page.keyboard.press('Tab');
@@ -561,7 +561,7 @@ test('replaces the absent member by keyboard: the queue drops the conflict with 
   await expect(resolutionPage.candidateGroup(resolution.candidates.free).getByRole('radio', { name: new RegExp(`^${escapeRegExp(dino.name)}`) })).toHaveCount(1);
   // Neither the absent member nor anyone on the team is offered.
   await expect(resolutionPage.candidate(seeded.name)).toHaveCount(0);
-  await expect(resolutionPage.line(resolution.hintChooseReplacement)).toBeVisible();
+  await expect(resolutionPage.text(resolution.hintChooseReplacement)).toBeVisible();
   await expect(resolutionPage.saveButton).toHaveAttribute('aria-disabled', 'true');
   await resolutionPage.saveButton.focus();
   await page.keyboard.press('Enter');
@@ -578,7 +578,7 @@ test('replaces the absent member by keyboard: the queue drops the conflict with 
   await expect(dinoRadio).toHaveAttribute('aria-checked', 'true');
   await expect(dinoRadio).toBeFocused();
   await expect(resolutionPage.replaceOption).toContainText(`${replaceCoverageOfOne()}${fill(resolution.replacementShown, { name: dino.name })}`);
-  await expect(resolutionPage.line(resolution.hintRecorded)).toBeVisible();
+  await expect(resolutionPage.text(resolution.hintRecorded)).toBeVisible();
   await page.keyboard.press('Tab');
   await expect(resolutionPage.cancelLink).toBeFocused();
   await page.keyboard.press('Tab');
@@ -641,7 +641,7 @@ test('a replacement already put on the shift meanwhile is named and leaves the l
   await expect(resolutionPage.alertWith(fill(resolution.error.taken, { name: dino.name }))).toBeVisible();
   // The candidates are read again: Dino is gone from the list, and nobody is picked.
   await expect(resolutionPage.candidate(dino.name)).toHaveCount(0);
-  await expect(resolutionPage.line(resolution.hintChooseReplacement)).toBeVisible();
+  await expect(resolutionPage.text(resolution.hintChooseReplacement)).toBeVisible();
   // The next step is another pick: focus is on the re-read list.
   await expect(resolutionPage.candidates.getByRole('radio').first()).toBeFocused();
   await expect(page).toHaveURL(`/raspored/${seeded.id}/${today}/${team.id}`);
@@ -721,7 +721,7 @@ test('a pick is dropped when the choice moves to the first card: accepting saves
   // BACK TO CARD 2: nobody is picked.
   await resolutionPage.replaceOption.click();
   await expect(resolutionPage.candidates.getByRole('radio', { checked: true })).toHaveCount(0);
-  await expect(resolutionPage.line(resolution.hintChooseReplacement)).toBeVisible();
+  await expect(resolutionPage.text(resolution.hintChooseReplacement)).toBeVisible();
   await resolutionPage.acceptOption.click();
   await resolutionPage.saveButton.click();
 
@@ -842,12 +842,70 @@ test('Removed override: removing the replacement in the calendar asks nothing, t
   await expect(rows).toHaveCount(3);
   await resolutionPage.gotoConflict(seeded.id, today, team.id);
   await expect(resolutionPage.acceptOption).toBeVisible();
-  await expect(resolutionPage.line(resolution.held)).toHaveCount(0);
+  await expect(resolutionPage.text(resolution.held)).toHaveCount(0);
   await resolutionPage.acceptOption.click();
   await resolutionPage.saveButton.click();
   await expect(page).toHaveURL('/raspored');
   await expect(conflictsPage.savedStatus).toContainText(seeded.name);
   await expect(rows).toHaveCount(2);
+});
+
+test('Riješeni: a replacement saved on the screen is listed with its decision, the admin and the time, and once the replacement is removed in the calendar the conflict is back in Neriješeni', async ({
+  page,
+  conflictsPage,
+  resolutionPage,
+  calendarPage,
+  fixture,
+}) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
+  const { team, seeded, today } = await scenarioOf(fixture.slug);
+  const dino = await replacementOf(fixture.slug, today);
+  const rosterChange = hr.kalendar.detail.rosterChange;
+  // `Odluka: {admin}, {date} u {time}`: the date as the screen formats it, the time as hours and minutes.
+  const decided = new RegExp(
+    escapeRegExp(fill(raspored.resolved.decided, { actor: fixture.admin.name, date: 'DATE', time: 'TIME' }))
+      .replace('DATE', '\\S.*')
+      .replace('TIME', '\\d{1,2}:\\d{2}'),
+  );
+
+  // RESOLVED ON THE SCREEN: today's conflict, replaced by Dino.
+  await resolutionPage.gotoConflict(seeded.id, today, team.id);
+  await resolutionPage.replaceOption.click();
+  await resolutionPage.candidate(dino.name).click();
+  await resolutionPage.saveButton.click();
+  await expect(page).toHaveURL('/raspored');
+  await expect(conflictsPage.savedStatus).toContainText(dino.name);
+  await expect(conflictsPage.rowsOf(seeded.name)).toHaveCount(2);
+
+  // RIJEŠENI: one entry, naming the replacement, the admin who decided and when.
+  await conflictsPage.resolvedTab.click();
+  await expect(conflictsPage.resolvedTab).toHaveAttribute('aria-selected', 'true');
+  const entry = conflictsPage.resolvedEntriesOf(seeded.name);
+  await expect(entry).toHaveCount(1);
+  await expect(entry).toContainText(fill(raspored.resolved.replace_member, { replacement: dino.name }));
+  await expect(entry).toContainText(fill(raspored.who, { member: seeded.name, team: team.name }));
+  await expect(entry).toContainText(decided);
+
+  // THE CALENDAR: the replacement's override is removed from the day detail.
+  await calendarPage.goto(`?prikaz=sve&mjesec=${today.slice(0, 7)}`);
+  await (await calendarPage.cellOf(team.name, today)).click();
+  const detail = calendarPage.detailOf(team.name, today);
+  const block = calendarPage.rosterChangesIn(detail);
+  const added = fill(rosterChange.added, { name: dino.name });
+  await expect(block).toContainText(added);
+  await calendarPage.rosterRemoveIn(block).click();
+  await calendarPage.confirmRosterRemoveIn(calendarPage.rosterRemoveConfirmOf(added, team.name, today)).click();
+  await expect(calendarPage.statusIn(detail)).toContainText(rosterChange.removedDone);
+  await expect(block).toHaveCount(0);
+
+  // BACK IN NERIJEŠENI, and gone from Riješeni.
+  await conflictsPage.goto();
+  await conflictsPage.resolvedTab.click();
+  await expect(conflictsPage.resolvedTab).toHaveAttribute('aria-selected', 'true');
+  await expect(conflictsPage.resolvedEntriesOf(seeded.name)).toHaveCount(0);
+  await conflictsPage.unresolvedTab.click();
+  await expect(conflictsPage.unresolvedTab).toHaveAttribute('aria-selected', 'true');
+  await expect(conflictsPage.rowsOf(seeded.name)).toHaveCount(3);
 });
 
 test('Pending after rotation save: the conflict is listed again, Spremi waits with the hint linking to the calendar, and once the pending change is removed accepting saves', async ({
@@ -878,7 +936,7 @@ test('Pending after rotation save: the conflict is listed again, Spremi waits wi
     await conflictsPage.goto();
     await expect(rows).toHaveCount(3);
     await resolutionPage.gotoConflict(seeded.id, last, team.id);
-    await expect(resolutionPage.line(resolution.held)).toBeVisible();
+    await expect(resolutionPage.text(resolution.held)).toBeVisible();
 
     // The key is still held: Spremi waits, and a press writes nothing.
     const writes = resolutionWritesOf(page);
@@ -891,7 +949,7 @@ test('Pending after rotation save: the conflict is listed again, Spremi waits wi
     expect(writes.count()).toBe(0);
 
     // THE HINT'S LINK: the grid on that month, narrowed to the team; the pending change is removed there.
-    await page.getByRole('link', { name: resolution.heldAction, exact: true }).click();
+    await resolutionPage.heldActionLink.click();
     await expect(page).toHaveURL(new RegExp(`/kalendar\\?.*mjesec=${last.slice(0, 7)}`));
     await expect(page).toHaveURL(new RegExp(`smjena=${team.id}`));
     await (await calendarPage.cellOf(team.name, last)).click();
@@ -909,7 +967,7 @@ test('Pending after rotation save: the conflict is listed again, Spremi waits wi
     // RE-DECIDED: the key is free, the line is gone, and accepting saves.
     await resolutionPage.gotoConflict(seeded.id, last, team.id);
     await expect(resolutionPage.acceptOption).toBeVisible();
-    await expect(resolutionPage.line(resolution.held)).toHaveCount(0);
+    await expect(resolutionPage.text(resolution.held)).toHaveCount(0);
     await resolutionPage.acceptOption.click();
     await resolutionPage.saveButton.click();
     await expect(page).toHaveURL('/raspored');
@@ -939,7 +997,7 @@ test('Inert replacement: a replacement deactivated before the date holds the con
   const rows = conflictsPage.rowsOf(seeded.name);
   await expect(rows).toHaveCount(3);
   await resolutionPage.gotoConflict(seeded.id, last, team.id);
-  await expect(resolutionPage.line(resolution.held)).toBeVisible();
+  await expect(resolutionPage.text(resolution.held)).toBeVisible();
   await resolutionPage.acceptOption.click();
   await expect(resolutionPage.saveButton).toHaveAttribute('aria-disabled', 'true');
 
@@ -959,7 +1017,7 @@ test('Inert replacement: a replacement deactivated before the date holds the con
 
   await resolutionPage.gotoConflict(seeded.id, last, team.id);
   await expect(resolutionPage.acceptOption).toBeVisible();
-  await expect(resolutionPage.line(resolution.held)).toHaveCount(0);
+  await expect(resolutionPage.text(resolution.held)).toHaveCount(0);
   await resolutionPage.acceptOption.click();
   await resolutionPage.saveButton.click();
   await expect(page).toHaveURL('/raspored');
@@ -1056,7 +1114,7 @@ test('amends the leave by keyboard: card 3 opens the member page\'s amend form p
   await expect(resolutionPage.amendOption).toContainText(plural(resolution.balanceGained, 1));
   await expect(resolutionPage.amendOption).not.toContainText(/preporu/i);
   await resolutionPage.amendOption.click();
-  await expect(resolutionPage.line(fill(resolution.hintAmend, { date: dayMonth(start) }))).toBeVisible();
+  await expect(resolutionPage.text(fill(resolution.hintAmend, { date: dayMonth(start) }))).toBeVisible();
   await resolutionPage.cancelLink.click();
   await expect(page).toHaveURL('/raspored');
 
@@ -1067,7 +1125,7 @@ test('amends the leave by keyboard: card 3 opens the member page\'s amend form p
     fill(resolution.amendBodyEnds, { name: seeded.name, date: dayMonth(last), newDate: dayMonth(dayBefore) }),
   );
   await resolutionPage.amendOption.click();
-  await expect(resolutionPage.line(fill(resolution.hintAmend, { date: dayMonth(dayBefore) }))).toBeVisible();
+  await expect(resolutionPage.text(fill(resolution.hintAmend, { date: dayMonth(dayBefore) }))).toBeVisible();
   await resolutionPage.cancelLink.click();
   await expect(page).toHaveURL('/raspored');
 
@@ -1134,7 +1192,7 @@ test('a one-day record: card 3 says the leave is removed and Spremi opens its re
     fill(resolution.amendBodyRemoves, { name: seeded.name, date: dayMonth(today) }),
   );
   await resolutionPage.amendOption.click();
-  await expect(resolutionPage.line(resolution.hintAmendRemove)).toBeVisible();
+  await expect(resolutionPage.text(resolution.hintAmendRemove)).toBeVisible();
   await resolutionPage.saveButton.click();
   await expect(page).toHaveURL(`/ljudi/${seeded.id}`);
   const confirm = peoplePage.removeLeaveConfirmOf(today, today, 1);
@@ -1154,7 +1212,7 @@ test('a one-day record: card 3 says the leave is removed and Spremi opens its re
   await expect(peoplePage.leaveHeading).toBeVisible();
   await expect(peoplePage.text(hr.ljudi.leaveRecord.recordsEmpty)).toBeVisible();
   await expect(peoplePage.leaveRecordRows).toHaveCount(0);
-  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(resolutionPage.dialog()).toHaveCount(0);
   await expect(peoplePage.backToConflictsLink).toBeVisible();
   expect(writes.count()).toBe(0);
 });

@@ -1,6 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 
-import { hr } from '../utils/i18n.ts';
+import { fill, hr } from '../utils/i18n.ts';
 
 /**
  * The chrome every screen shares: the navigation, the page's h1, the page-wide
@@ -39,6 +39,41 @@ export abstract class BasePage {
   /** The page's h1; `exact` matches the whole name, not a part of it. */
   heading(name: string | RegExp, { exact = false }: { readonly exact?: boolean } = {}): Locator {
     return this.page.getByRole('heading', { level: 1, name, exact });
+  }
+
+  /** The page's h1, whatever it says. */
+  get anyHeading(): Locator {
+    return this.page.getByRole('heading', { level: 1 });
+  }
+
+  /** The sidebar's *Sakrij izbornik*, which collapses it to the rail. */
+  get menuHideButton(): Locator {
+    return this.page.getByRole('button', { name: hr.shell.menuHide, exact: true });
+  }
+
+  /** The rail's *Prikaži izbornik*, which expands the sidebar again. */
+  get menuShowButton(): Locator {
+    return this.page.getByRole('button', { name: hr.shell.menuShow, exact: true });
+  }
+
+  /** The main landmark: the screen below the chrome. */
+  get main(): Locator {
+    return this.page.getByRole('main');
+  }
+
+  /** The main landmark while its read is in flight (`aria-busy`). */
+  get busyMain(): Locator {
+    return this.page.locator('main[aria-busy="true"]');
+  }
+
+  /** Every form mounted in the main landmark, open dialogs' included. */
+  get mainForms(): Locator {
+    return this.page.locator('main form');
+  }
+
+  /** The shell's own *Pokušaj ponovno*, on a read that failed. */
+  get shellRetryButton(): Locator {
+    return this.page.getByRole('button', { name: hr.shell.retry, exact: true });
   }
 
   /** The sidebar's profile card, named by the person's own name; it discloses the exit. */
@@ -87,8 +122,20 @@ export abstract class BasePage {
   }
 
   /** Any dialog, or the one named `name`. */
-  dialog(name?: string): Locator {
+  dialog(name?: string | RegExp): Locator {
     return name === undefined ? this.page.getByRole('dialog') : this.page.getByRole('dialog', { name });
+  }
+
+  /** An element the spec marked with the attribute `name` itself, to tell a
+   *  remounted node from the one it marked. */
+  markedWith(name: string): Locator {
+    return this.page.locator(`[${name}]`);
+  }
+
+  /** A list's edit link, named by `message` (`Uredi … {name}`) for `name`.
+   *  Each list screen names its own: `editLink` on people, teams and bands. */
+  protected editLinkNamed(message: string, name: string): Locator {
+    return this.page.getByRole('link', { name: fill(message, { name }) });
   }
 
   /** A message on the screen, matched whole unless it is a pattern. */
