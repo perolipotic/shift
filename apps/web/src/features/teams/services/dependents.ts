@@ -255,3 +255,23 @@ export async function refreshAfterWrite(
 ): Promise<void> {
   await Promise.all([own, ...dependents].map((queryKey) => client.invalidateQueries({ queryKey })));
 }
+
+/** The one call a read's retry makes on the cache, named structurally so it can be stubbed. */
+export interface RetryingClient {
+  invalidateQueries(
+    filters: { readonly queryKey: QueryKey },
+    options: { readonly cancelRefetch: boolean },
+  ): Promise<void>;
+}
+
+/**
+ * Read a surface's own key again, from its unavailable notice's retry (as
+ * `kalendar.retry` does). Nothing was written, so nothing depends on it.
+ *
+ * A READ ALREADY IN FLIGHT IS LEFT TO LAND (`cancelRefetch: false`), so
+ * repeated presses never restart it. Like {@link refreshAfterWrite} it
+ * resolves over a read that fails again; the notice then simply stays.
+ */
+export async function retryRead(client: RetryingClient, own: QueryKey): Promise<void> {
+  await client.invalidateQueries({ queryKey: own }, { cancelRefetch: false });
+}

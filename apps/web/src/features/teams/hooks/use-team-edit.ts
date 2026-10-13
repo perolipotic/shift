@@ -6,6 +6,7 @@ import {
   NO_DEPENDENTS,
   TEAM_CHANGE_DEPENDENTS,
   refreshAfterWrite,
+  retryRead,
 } from '@/features/teams/services/dependents';
 import {
   TEAMS_LIST_KEY,
@@ -177,6 +178,11 @@ export function useTeamEdit(id: string) {
     }
   }
 
+  /** Read the list again, from the unavailable notice's retry. */
+  function retry(): void {
+    void retryRead(queryClient, TEAMS_LIST_KEY);
+  }
+
   return {
     nameField,
     pending,
@@ -188,6 +194,7 @@ export function useTeamEdit(id: string) {
     setSaved,
     renames,
     readRefusal,
+    retry,
     loading,
     form,
     refusal,

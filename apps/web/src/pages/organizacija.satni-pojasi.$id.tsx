@@ -1,11 +1,12 @@
 import { createRoute } from '@tanstack/react-router';
 
+import { Button } from '@/components/ui/button';
 import { Dialog, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Notice } from '@/components/ui/notice';
 import { HourBandEditBody } from '@/features/hour-bands/components/hour-band-edit-body';
 import { HourBandRemoveRefusal } from '@/features/hour-bands/components/hour-band-remove';
 import { useHourBandEdit } from '@/features/hour-bands/hooks/use-hour-band-edit';
-import { hourBandsMessageKey } from '@/features/hour-bands/services/list';
+import { hourBandsMessageKey, hourBandsRetryMessageKey } from '@/features/hour-bands/services/list';
 import { hourBandSavedMessageKey, hourBandWriteMessageKey } from '@/features/hour-bands/services/write';
 import { t } from '@/lib/i18n';
 import { requireAdmin } from '@/features/navigation/services/admin-guard';
@@ -77,7 +78,17 @@ function HourBandScreen({ id }: { readonly id: string }) {
           <DialogTitle id="hour-band-edit-heading">{t('organization.hourBands.editHeading')}</DialogTitle>
         </DialogHeader>
         {readRefusal === null ? null : (
-          <Notice role="alert">{t(hourBandsMessageKey(readRefusal))}</Notice>
+          <div className="grid min-w-0 gap-2">
+            <Notice role="alert">{t(hourBandsMessageKey(readRefusal))}</Notice>
+            <Button
+              className="h-11 w-full sm:w-auto sm:justify-self-start"
+              type="button"
+              variant="outline"
+              onClick={screen.retry}
+            >
+              {t(hourBandsRetryMessageKey(readRefusal))}
+            </Button>
+          </div>
         )}
         {refusal === null ? null : (
           <Notice id="hour-band-form-error" role="alert">

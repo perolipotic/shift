@@ -26,6 +26,9 @@ export const MEMBER_ALLOWANCE_FIELD_ID = 'member-leave';
 export const MEMBER_STATUS_HEADING_ID = 'member-status-heading';
 export const MEMBER_STATUS_DIALOG_HEADING_ID = 'member-status-dialog-heading';
 export const MEMBER_STATUS_ERROR_ID = 'member-status-error';
+/** *Vrijedi od*'s hint, which describes the date; with the refusal beside it once there is one. */
+export const MEMBER_STATUS_DATE_HINT_ID = 'member-status-date-hint';
+export const MEMBER_STATUS_DATE_HINT_AND_ERROR = `${MEMBER_STATUS_DATE_HINT_ID} ${MEMBER_STATUS_ERROR_ID}`;
 /** The status dialog's one neutral question. */
 export const MEMBER_STATUS_PROMPT_ID = 'member-status-prompt';
 /** The withdrawal confirmation's question. */
@@ -34,6 +37,8 @@ export const MEMBER_STATUS_WITHDRAW_PROMPT_ID = 'member-status-withdraw-prompt';
 /** *Prijava*: the card's heading, and the reset's refusal, which describes its button. */
 export const MEMBER_SIGN_IN_HEADING_ID = 'member-sign-in-heading';
 export const MEMBER_RESET_ERROR_ID = 'member-reset-error';
+/** The issued password's dialog title, where focus lands once a reset lands (E915, story 7.8). */
+export const MEMBER_RESET_DIALOG_HEADING_ID = 'member-reset-dialog-heading';
 
 /** *Dodaj osobu*'s dialog: its title, and its refusal. */
 export const MEMBER_ADD_DIALOG_HEADING_ID = 'member-add-dialog-heading';

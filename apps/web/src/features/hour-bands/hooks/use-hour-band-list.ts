@@ -21,7 +21,7 @@ import {
   type HourBandWriteFailure,
   type HourBandWriteTable,
 } from '@/features/hour-bands/services/write';
-import { HOUR_BAND_WRITE_DEPENDENTS, refreshAfterWrite } from '@/features/teams/services/dependents';
+import { HOUR_BAND_WRITE_DEPENDENTS, refreshAfterWrite, retryRead } from '@/features/teams/services/dependents';
 import { supabaseClient } from '@/lib/supabase/client';
 import { NO_TEXT } from '@/utils/text';
 
@@ -138,7 +138,13 @@ export function useHourBandList() {
     }
   }
 
+  /** Read the list again, from the unavailable notice's retry. */
+  function retry(): void {
+    void retryRead(queryClient, HOUR_BANDS_LIST_KEY);
+  }
+
   return {
+    retry,
     nameField,
     startField,
     pending,

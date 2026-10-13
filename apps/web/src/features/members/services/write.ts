@@ -801,6 +801,15 @@ export function memberFormRefusalOf(state: MembersSurfaceState, id: string): Mem
 }
 
 /**
+ * Whether the edit screen's read refusal offers a retry: only a read that was
+ * unavailable. A refused session needs a new sign-in, and a member the list
+ * does not hold is not brought back by reading it again.
+ */
+export function memberReadRetryable(refusal: MemberWriteFailure | null): boolean {
+  return refusal === MEMBER_WRITE_UNAVAILABLE;
+}
+
+/**
  * As much of the organization read as the create form needs.
  *
  * A STRUCTURAL PARAMETER, the shape `membersSurfaceStateOf` established, so the
@@ -1065,8 +1074,9 @@ export interface StatusContext {
  * ONLY THE CERTAIN ONES — facts about what was entered and about the history
  * the list holds. Whether the organization would be left without an active
  * admin is NOT decided here: the list may be stale, and refusing on a stale
- * list would block a write the database admits. That one is read only after
- * the database has refused.
+ * list would block a write the database admits. That one is read after the
+ * database has refused, and before an erasure dialog would ask for decisions
+ * ({@link statusRefusalBeforeErasuresOf}).
  */
 export function statusPreflightOf(
   change: StatusChange,
@@ -1123,6 +1133,29 @@ function leavesNoAdmin(change: StatusChange, day: string, context: StatusContext
     (candidate) =>
       candidate.role === 'admin' && candidate.id !== target.id && memberActiveFrom(candidate, day),
   );
+}
+
+/**
+ * The refusal a status change earns before its erasure dialog opens, or
+ * `null`: the preflight's named refusals, then the last-admin rule by the
+ * list's reading.
+ *
+ * ONLY WHERE THE DIALOG WOULD OPEN. A deactivation that erases nothing is
+ * still sent and judged by the database, so a stale list never blocks a write
+ * the database admits there. Where it would erase, the admin would otherwise
+ * decide every row and only then meet the last-admin refusal; a stale list
+ * costs one refusal, after which the list is read again.
+ */
+export function statusRefusalBeforeErasuresOf(
+  change: StatusChange,
+  day: string,
+  context: StatusContext,
+): MemberWriteFailure | null {
+  const named = statusPreflightOf(change, day, context);
+
+  if (named !== null) return named;
+
+  return leavesNoAdmin(change, day, context) ? ORGANIZATION_WOULD_HAVE_NO_ADMIN : null;
 }
 
 /**

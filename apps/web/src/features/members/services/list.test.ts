@@ -69,6 +69,7 @@ import {
   memberListRowOf,
   memberRowOutcomeOf,
   membersMessageKey,
+  membersRetryMessageKey,
   membersQueryOptions,
   membersNoticeOf,
   membersSurfaceStateOf,
@@ -1261,6 +1262,13 @@ describe('every code and every level resolves to its own message', () => {
     expect(membersMessageKey(MEMBERS_REFUSED)).toBe('ljudi.error.refused');
     expect(membersMessageKey(MEMBERS_UNAVAILABLE)).toBe('ljudi.error.unavailable');
     expect(membersMessageKey(MEMBERS_REFUSED)).not.toBe(membersMessageKey(MEMBERS_UNAVAILABLE));
+  });
+
+  it('offers a retry beside an unavailable read and none beside a refusal', () => {
+    expect(membersRetryMessageKey(MEMBERS_UNAVAILABLE)).toBe('ljudi.error.retry');
+    expect(t('ljudi.error.retry')).toBe('Pokušaj ponovno');
+    // A REFUSAL IS NOT RETRIED: only signing in again fixes it.
+    expect(membersRetryMessageKey(MEMBERS_REFUSED)).toBeNull();
   });
 
   it('maps each level to its own label rather than defaulting to the member one', () => {

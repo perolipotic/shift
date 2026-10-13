@@ -1,5 +1,6 @@
 import { createRoute } from '@tanstack/react-router';
 
+import { Button } from '@/components/ui/button';
 import { Dialog, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Notice } from '@/components/ui/notice';
 import { t } from '@/lib/i18n';
@@ -8,7 +9,11 @@ import { appLayoutRoute } from '@/pages/_app';
 import { PostavkeRotacijeScreen } from '@/pages/postavke-rotacije';
 import { ShiftTypeEditBody } from '@/features/shift-types/components/shift-type-edit-body';
 import { useShiftTypeEdit } from '@/features/shift-types/hooks/use-shift-type-edit';
-import { shiftTypeHeadingMessageKey, shiftTypesMessageKey } from '@/features/shift-types/services/list';
+import {
+  shiftTypeHeadingMessageKey,
+  shiftTypesMessageKey,
+  shiftTypesRetryMessageKey,
+} from '@/features/shift-types/services/list';
 import { shiftTypeSavedMessageKey, shiftTypeWriteMessageKey } from '@/features/shift-types/services/write';
 
 /**
@@ -71,7 +76,17 @@ function ShiftTypeScreen({ id }: { readonly id: string }) {
           <DialogTitle id="shift-type-edit-heading">{t(shiftTypeHeadingMessageKey(form.type))}</DialogTitle>
         </DialogHeader>
         {readRefusal === null ? null : (
-          <Notice role="alert">{t(shiftTypesMessageKey(readRefusal))}</Notice>
+          <div className="grid min-w-0 gap-2">
+            <Notice role="alert">{t(shiftTypesMessageKey(readRefusal))}</Notice>
+            <Button
+              className="h-11 w-full sm:w-auto sm:justify-self-start"
+              type="button"
+              variant="outline"
+              onClick={screen.retry}
+            >
+              {t(shiftTypesRetryMessageKey(readRefusal))}
+            </Button>
+          </div>
         )}
         {refusal === null ? null : (
           <Notice id="shift-type-form-error" role="alert">
