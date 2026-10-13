@@ -14,7 +14,9 @@ every query is untyped at the row level.
   rather than yielding a client that fails every call like an outage. It also
   holds `sessionReader` — the function `/`'s `beforeLoad` resolves a session
   through, built from an injected source so both of that route's branches are
-  executable without a browser.
+  executable without a browser — bound as `currentSession` under a time budget
+  that rejects a read that never settles, and `resolvedSession`, the one
+  session read every guard shares (a rejection becomes `null`, logged).
 - `session-cache.ts` — the app-wide rule `main.tsx` installs: whenever the
   signed-in user id changes or becomes null (another tab, an expiry, a sign-in
   over a stale cache), the cache forgets the previous user so that mounted
