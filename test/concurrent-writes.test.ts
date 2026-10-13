@@ -930,3 +930,61 @@ describe('TRUNCATE is refused where row rules would be bypassed', () => {
     }
   });
 });
+
+describe('the isolation level 0023 relies on', () => {
+  // 0023's lock works because the write that waited on it reads AFTER the
+  // wait: under READ COMMITTED each statement takes a fresh snapshot, so the
+  // re-check behind the lock sees the commit it waited for. Under REPEATABLE
+  // READ the snapshot is taken when the waiting statement starts, before the
+  // lock, and the re-check would see the world without the other writer's
+  // commit again — the race 0023 closes. No migration chooses the level, so it
+  // is asserted where it is decided: the server default, and the per-role and
+  // per-function settings PostgREST honours for a request.
+  const REQUEST_ROLES = ['authenticator', 'authenticated', 'anon', 'service_role'];
+
+  it.skipIf(noDatabase)('runs every request transaction at read committed', async () => {
+    const client = await connect();
+    try {
+      const { rows: overrides } = await client.query<{ role: string; config: string }>(
+        `select coalesce(r.rolname, '(every role)') as role, s.setconfig::text as config
+           from pg_db_role_setting s
+           left join pg_roles r on r.oid = s.setrole
+          where s.setdatabase in (0, (select oid from pg_database where datname = current_database()))
+            and (s.setrole = 0 or r.rolname = any($1))
+            and exists (select 1 from unnest(s.setconfig) as entry
+                         where entry like 'default_transaction_isolation=%')`,
+        [REQUEST_ROLES],
+      );
+      expect(overrides, 'a database or request-role setting changes the isolation level').toEqual([]);
+
+      const { rows: functions } = await client.query<{ name: string }>(
+        `select p.oid::regprocedure::text as name
+           from pg_proc p
+          where p.pronamespace in ('public'::regnamespace, 'private'::regnamespace)
+            and exists (select 1 from unnest(p.proconfig) as entry
+                         where entry like 'default_transaction_isolation=%')`,
+      );
+      expect(functions, 'a function PostgREST calls sets its own isolation level').toEqual([]);
+
+      const { rows: server } = await client.query<{ level: string }>(
+        `select current_setting('default_transaction_isolation') as level`,
+      );
+      expect(server[0]?.level, 'the server default').toBe('read committed');
+
+      for (const role of REQUEST_ROLES.filter((name) => name !== 'authenticator')) {
+        await client.query('begin');
+        try {
+          await client.query(`set local role ${role}`);
+          const { rows } = await client.query<{ level: string }>(
+            `select current_setting('transaction_isolation') as level`,
+          );
+          expect(rows[0]?.level, `a ${role} transaction`).toBe('read committed');
+        } finally {
+          await client.query('rollback');
+        }
+      }
+    } finally {
+      await client.end();
+    }
+  });
+});
