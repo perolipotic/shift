@@ -1,6 +1,8 @@
 import { Client } from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
 
+import { connect, databaseUrl, noDatabase } from './database.js';
+
 /**
  * `0023_serialize_organization_writes.sql`, executed with TWO REAL
  * CONNECTIONS. Every other live suite runs one connection per case, so it
@@ -30,28 +32,6 @@ import { afterAll, describe, expect, it } from 'vitest';
  * back and closed in `finally`.
  */
 
-const databaseUrl =
-  process.env['SUPABASE_DB_URL'] ?? 'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
-
-/** Connected AND migrated, for the reason `test/rls-isolation.test.ts` gives. */
-async function reachable(): Promise<boolean> {
-  const client = new Client({ connectionString: databaseUrl, connectionTimeoutMillis: 2000 });
-  try {
-    await client.connect();
-    const { rows } = await client.query<{ migrated: boolean }>(
-      `select to_regclass('public.organizations') is not null
-                and to_regclass('public.members') is not null as migrated`,
-    );
-    await client.end();
-    return rows[0]?.migrated === true;
-  } catch {
-    await client.end().catch(() => undefined);
-    return false;
-  }
-}
-
-const noDatabase = !(await reachable());
-
 /** Every organization slug and account address this file issues carries it. */
 const THROWAWAY = 'concurrent-writes-test';
 
@@ -64,12 +44,6 @@ const BLOCK_DEADLINE_MS = 3_000;
 
 /** The timeout of a case that has to outlast a deadline or a deadlock check. */
 const LONG_CASE_MS = 15_000;
-
-async function connect(): Promise<Client> {
-  const client = new Client({ connectionString: databaseUrl });
-  await client.connect();
-  return client;
-}
 
 interface Account {
   readonly id: string;

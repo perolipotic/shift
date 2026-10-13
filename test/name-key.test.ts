@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url';
 import { Client } from 'pg';
 import { describe, expect, it } from 'vitest';
 
+import { FIXTURES, connect, noDatabase } from './database.js';
+
 import { isBlankName, nameKey } from '../apps/web/src/utils/name.ts';
 
 /**
@@ -23,22 +25,6 @@ import { isBlankName, nameKey } from '../apps/web/src/utils/name.ts';
  */
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
-
-const databaseUrl =
-  process.env['SUPABASE_DB_URL'] ?? 'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
-
-async function reachable(): Promise<boolean> {
-  const client = new Client({ connectionString: databaseUrl, connectionTimeoutMillis: 2000 });
-  try {
-    await client.connect();
-    await client.end();
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-const noDatabase = !(await reachable());
 
 /**
  * The local API and its publishable key, or `undefined`: read from `supabase
@@ -66,15 +52,7 @@ const noApi = noDatabase || apiEndpoint === undefined;
 /** `supabase/seed.sql` — one password, shared, local and test only. */
 const FIXTURE_PASSWORD = 'local-fixture-password';
 
-async function connect(): Promise<Client> {
-  const client = new Client({ connectionString: databaseUrl });
-  await client.connect();
-  return client;
-}
-
-const PILOT = 'dvd-kastel-novi';
-const PILOT_ADMIN = 'ivan.maric';
-const PILOT_MEMBER = 'ana.kovac';
+const [{ slug: PILOT, admin: PILOT_ADMIN, member: PILOT_MEMBER }] = FIXTURES;
 
 interface Admin {
   readonly authUserId: string;

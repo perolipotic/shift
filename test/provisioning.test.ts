@@ -6,6 +6,15 @@ import { fileURLToPath } from 'node:url';
 import { Client } from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
 
+import {
+  FIXTURES,
+  connect,
+  inRolledBackTransaction,
+  noDatabase,
+  organizationId,
+  refused,
+} from './database.js';
+
 /**
  * Story 1.2's refusals, executed rather than read.
  *
@@ -31,26 +40,6 @@ import { afterAll, describe, expect, it } from 'vitest';
  */
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
-
-/**
- * The Supabase CLI's fixed local default. Read from the environment when set,
- * so no credential for any other database is written down here.
- */
-const databaseUrl =
-  process.env['SUPABASE_DB_URL'] ?? 'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
-
-async function reachable(): Promise<boolean> {
-  const client = new Client({ connectionString: databaseUrl, connectionTimeoutMillis: 2000 });
-  try {
-    await client.connect();
-    await client.end();
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-const noDatabase = !(await reachable());
 
 /**
  * The local auth endpoint and the key needed to reach it, or `undefined`.
@@ -81,12 +70,6 @@ const authEndpoint: { readonly url: string; readonly key: string } | undefined =
     return undefined;
   }
 })();
-
-/** The two fixtures every rule is asserted against (AD-15). */
-const FIXTURES = [
-  { fixture: 'pilot', slug: 'dvd-kastel-novi' },
-  { fixture: 'UJ-5', slug: 'zastita-split' },
-] as const;
 
 /**
  * GoTrue's password hashing cost. `gen_salt('bf')` alone is cost 6; GoTrue
@@ -133,50 +116,6 @@ const usernameMigration = readFileSync(
 /** The one `update` statement `0007` carries, extracted from the file. */
 function backfillStatement(): string {
   return /update members m[\s\S]*?;/.exec(usernameMigration)?.[0] ?? '';
-}
-
-async function connect(): Promise<Client> {
-  const client = new Client({ connectionString: databaseUrl });
-  await client.connect();
-  return client;
-}
-
-/** Run `work` in a transaction that is always rolled back. */
-async function inRolledBackTransaction<T>(work: (client: Client) => Promise<T>): Promise<T> {
-  const client = await connect();
-  try {
-    await client.query('begin');
-    return await work(client);
-  } finally {
-    await client.query('rollback').catch(() => undefined);
-    await client.end();
-  }
-}
-
-interface Refusal {
-  readonly code: string;
-  readonly message: string;
-  readonly detail: string | undefined;
-}
-
-/**
- * Assert that `work` is refused, and hand back what the database raised.
- *
- * A refusal case that only asserts "it threw" passes when the schema breaks in
- * a different way — a typo in a column name throws too.
- */
-async function refused(work: () => Promise<unknown>): Promise<Refusal> {
-  try {
-    await work();
-  } catch (cause) {
-    const error = cause as { code?: string; message?: string; detail?: string };
-    return {
-      code: error.code ?? '',
-      message: error.message ?? '',
-      detail: error.detail,
-    };
-  }
-  throw new Error('nothing was refused: the statement was permitted');
 }
 
 interface RecipeHealth {
@@ -335,16 +274,6 @@ function expectRunsAsOwner(security: FunctionSecurity, name: string): void {
     security.publicGrants,
     `${name} reads past RLS as its owner and must not be executable by PUBLIC`,
   ).toBe(0);
-}
-
-async function organizationId(client: Client, slug: string): Promise<string> {
-  const { rows } = await client.query<{ id: string }>(
-    'select id from organizations where slug = $1',
-    [slug],
-  );
-  const found = rows[0];
-  if (found === undefined) throw new Error(`seed fixture ${slug} is not in the database`);
-  return found.id;
 }
 
 /**
