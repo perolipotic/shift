@@ -6,9 +6,9 @@ import {
 } from '@shift/domain';
 import { queryOptions } from '@tanstack/react-query';
 
-import { durationValuesOf, minuteOfTime } from '@/features/hour-bands/services/list';
 import { RANGE_DASH, formatMinuteOfDay, isIsoDate, organizationIsoDate } from '@/lib/i18n/format';
 import { rampSlotOf, type RampSlot } from '@/features/shift-types/utils/ramp';
+import { durationValuesOf, minuteOfTime } from '@/utils/time';
 
 /**
  * The shift type list: one organization's shift types and their versioned
@@ -539,8 +539,6 @@ export function shiftTypeDisplayRowOf(
 }
 
 // --------------------------------------------------------------- durations
-
-export { durationValuesOf };
 
 /**
  * Which shape a duration reads in — `12 h`, `1 h 30 min`, `45 min` — with no

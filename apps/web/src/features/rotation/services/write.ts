@@ -1,6 +1,7 @@
 import {
   ROTATION_CHANGED_TODAY,
   ROTATION_EFFECTIVE_PAST,
+  ROTATION_EFFECTIVE_TOO_FAR,
   ROTATION_EMPTY,
   ROTATION_NO_TEAMS,
   ROTATION_SCHEDULED,
@@ -583,6 +584,7 @@ export function rotationWriteMessageKey(
   | 'rotation.builder.error.noTeams'
   | 'rotation.builder.error.scheduled'
   | 'rotation.builder.error.effectivePast'
+  | 'rotation.builder.error.effectiveTooFar'
   | 'rotation.builder.error.typeArchived'
   | 'rotation.builder.error.unchanged'
   | 'rotation.builder.error.changedToday'
@@ -597,6 +599,8 @@ export function rotationWriteMessageKey(
       return 'rotation.builder.error.scheduled';
     case ROTATION_EFFECTIVE_PAST:
       return 'rotation.builder.error.effectivePast';
+    case ROTATION_EFFECTIVE_TOO_FAR:
+      return 'rotation.builder.error.effectiveTooFar';
     case ROTATION_TYPE_ARCHIVED:
       return 'rotation.builder.error.typeArchived';
     case ROTATION_UNCHANGED:

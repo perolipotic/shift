@@ -1,14 +1,14 @@
 import type { ReactNode } from 'react';
 
 import { Badge } from '@/components/ui/badge';
-import { shownDate } from '@/features/members/services/list';
 import {
-  durationValuesOf,
   shiftTypeDurationMessageKey,
   type ShiftTimesShown,
   type ShiftTypeDisplayRow,
 } from '@/features/shift-types/services/list';
 import { t } from '@/lib/i18n';
+import { durationValuesOf } from '@/utils/time';
+import { shownDate } from '@/utils/text';
 
 function durationOf(times: ShiftTimesShown): string {
   return t(shiftTypeDurationMessageKey(times.durationMinutes), durationValuesOf(times.durationMinutes));

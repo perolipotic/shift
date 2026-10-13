@@ -12,7 +12,6 @@ import { RECHECK_CHANGED } from '@/features/conflicts/services/erasures';
 import {
   MEMBERS_LIST_KEY,
   MEMBERS_TABLE,
-  NO_TEXT,
   membersSurfaceStateOf,
   membersTodayOf,
   membersQueryOptions,
@@ -113,6 +112,7 @@ import {
   writableTeamsOf,
 } from '@/features/teams/services/list';
 import { firstEnabledOf, focusLater } from '@/utils/focus-later';
+import { NO_TEXT } from '@/utils/text';
 
 /**
  * What a card's erasure check stood on (story 5.5e): the member it is about,

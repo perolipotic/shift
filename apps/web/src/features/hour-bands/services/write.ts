@@ -1,11 +1,7 @@
 import { formatMinuteOfDay } from '@/lib/i18n/format';
-import {
-  hourBandById,
-  minuteOfTime,
-  type HourBandRow,
-  type HourBandsSurfaceState,
-} from '@/features/hour-bands/services/list';
+import { hourBandById, type HourBandRow, type HourBandsSurfaceState } from '@/features/hour-bands/services/list';
 import { enteredName } from '@/utils/name';
+import { minuteOfTime } from '@/utils/time';
 
 /**
  * Adding, editing and removing an hour band — every decision the two band

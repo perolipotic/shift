@@ -1,5 +1,5 @@
 import { compareText } from '@/lib/i18n/format';
-import { NO_TEXT, foldForSearch, foldedSearchOf } from '@/features/members/services/list';
+import { foldForSearch, foldedSearchOf } from '@/features/members/services/list';
 import type { TeamRow } from '@/features/teams/services/list';
 import {
   TEAM_ROSTER_FETCH_PAUSED,
@@ -10,6 +10,7 @@ import {
   type TeamRosterMember,
   type TeamRosterOutcome,
 } from '@/features/teams/services/roster';
+import { NO_TEXT } from '@/utils/text';
 
 /**
  * The member directory (story 7.17): who is on which team today, for a

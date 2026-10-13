@@ -21,9 +21,9 @@ import {
   type HourBandWriteTable,
 } from '@/features/hour-bands/services/write';
 import { claimedOrganizationOf } from '@/lib/supabase/claims';
-import { NO_TEXT } from '@/features/members/services/list';
 import { HOUR_BAND_WRITE_DEPENDENTS, refreshAfterWrite } from '@/features/teams/services/dependents';
 import { supabaseClient } from '@/lib/supabase/client';
+import { NO_TEXT } from '@/utils/text';
 
 /**
  * The hour band list's state, its one read and its add (story 2.1b): the add

@@ -12,13 +12,13 @@ import {
 } from '@/features/leave/services/leave-section';
 import type { MyLeaveRowsState } from '@/features/leave/services/my-leave';
 import {
-  NO_TEXT,
   foldForSearch,
   foldedSearchOf,
   memberStatusOf,
   type MemberListRow,
 } from '@/features/members/services/list';
 import { compareText } from '@/lib/i18n/format';
+import { NO_TEXT } from '@/utils/text';
 import type { SortControlDirection } from '@/utils/sort-control';
 
 /**

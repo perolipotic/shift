@@ -1,4 +1,3 @@
-import { minuteOfTime } from '@/features/hour-bands/services/list';
 import { formatMinuteOfDay, isIsoDate, nextIsoDate } from '@/lib/i18n/format';
 import {
   latestVersionOf,
@@ -9,6 +8,7 @@ import {
 } from '@/features/shift-types/services/list';
 import type { ShiftTypeVersion } from '@shift/domain';
 import { enteredName } from '@/utils/name';
+import { minuteOfTime } from '@/utils/time';
 
 /**
  * Adding, renaming, correcting the times of, and archiving a shift type —
