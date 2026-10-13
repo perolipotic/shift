@@ -15,7 +15,7 @@ import { PageActions, PageDescription, PageHeader, PageTitle } from '@/component
 import { HourBandAddDialog } from '@/features/hour-bands/components/hour-band-add-dialog';
 import { HourBandListSection } from '@/features/hour-bands/components/hour-band-list-section';
 import { useHourBandList } from '@/features/hour-bands/hooks/use-hour-band-list';
-import { hourBandsMessageKey } from '@/features/hour-bands/services/list';
+import { hourBandsMessageKey, hourBandsRetryMessageKey } from '@/features/hour-bands/services/list';
 import { t } from '@/lib/i18n';
 import { mayReadMembers } from '@/features/members/services/list';
 import { DESTINATIONS } from '@/features/navigation/utils/destinations';
@@ -84,7 +84,19 @@ export function OrganizacijaSatniPojasiScreen() {
         </CalloutAction>
       </Callout>
       {created ? <Notice role="status">{t('organization.hourBands.created')}</Notice> : null}
-      {refusal === null ? null : <Notice role="alert">{t(hourBandsMessageKey(refusal))}</Notice>}
+      {refusal === null ? null : (
+        <div className="grid min-w-0 gap-2">
+          <Notice role="alert">{t(hourBandsMessageKey(refusal))}</Notice>
+          <Button
+            className="h-11 w-full sm:w-auto sm:justify-self-start"
+            type="button"
+            variant="outline"
+            onClick={screen.retry}
+          >
+            {t(hourBandsRetryMessageKey(refusal))}
+          </Button>
+        </div>
+      )}
       <HourBandAddDialog screen={screen} />
       <HourBandListSection screen={screen} />
     </main>

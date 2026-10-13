@@ -20,6 +20,7 @@ import {
   ljudiViewOf,
   membersAddSearchOf,
   membersMessageKey,
+  membersRetryMessageKey,
   membersSearchOf,
   type LjudiSearch,
 } from '@/features/members/services/list';
@@ -143,6 +144,8 @@ function LjudiList() {
   const list = useMemberList(search, write);
   const create = useMemberCreate(search.dodaj === MEMBERS_ADD_OPEN, writeAdding);
   const { refusal, loading } = list;
+  // A RETRY ONLY FOR A READ THAT WAS UNAVAILABLE: a refusal needs a new sign-in.
+  const retryKey = refusal === null ? null : membersRetryMessageKey(refusal);
 
   return (
     <main
@@ -182,9 +185,21 @@ function LjudiList() {
           inside one would be exactly the element nobody can see. `role="alert"`
           announces it on insertion, and the controls point at it by id. */}
       {refusal === null ? null : (
-        <Notice id={MEMBERS_ERROR_ID} role="alert">
-          {t(membersMessageKey(refusal))}
-        </Notice>
+        <div className="grid min-w-0 gap-2">
+          <Notice id={MEMBERS_ERROR_ID} role="alert">
+            {t(membersMessageKey(refusal))}
+          </Notice>
+          {retryKey === null ? null : (
+            <Button
+              className="h-11 w-full sm:w-auto sm:justify-self-start"
+              type="button"
+              variant="outline"
+              onClick={list.retry}
+            >
+              {t(retryKey)}
+            </Button>
+          )}
+        </div>
       )}
       <MemberTable list={list} />
       <MemberAddDialog create={create} />

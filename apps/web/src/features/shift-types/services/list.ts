@@ -356,6 +356,18 @@ export function shiftTypesTodayOf(snapshot: ShiftTypesSnapshot, now: Date): stri
   return organizationIsoDate(now, snapshot.timeZone);
 }
 
+/**
+ * The organization's today as at a write, or `null` before the types are read.
+ *
+ * TAKEN AGAIN AT SUBMIT, as the rotation builder does: the render's today is
+ * the date the screen drew, and a screen left open across the organization's
+ * midnight would send yesterday as the minimum — which the database refuses,
+ * and which on an add leaves the type created without its times.
+ */
+export function shiftTypesSubmitTodayOf(snapshot: ShiftTypesSnapshot | null, now: Date = new Date()): string | null {
+  return snapshot === null ? null : shiftTypesTodayOf(snapshot, now);
+}
+
 // ------------------------------------------------------------- ramp slots
 
 /**
@@ -577,6 +589,15 @@ export function shiftTypesMessageKey(
   failure: ShiftTypesFailure,
 ): 'rotation.shiftTypes.error.unavailable' {
   if (failure === SHIFT_TYPES_UNAVAILABLE) return 'rotation.shiftTypes.error.unavailable';
+
+  const unhandled: never = failure;
+
+  return unhandled;
+}
+
+/** The retry beside a read failure's notice: an unavailable read is read again. Exhaustive. */
+export function shiftTypesRetryMessageKey(failure: ShiftTypesFailure): 'rotation.shiftTypes.error.retry' {
+  if (failure === SHIFT_TYPES_UNAVAILABLE) return 'rotation.shiftTypes.error.retry';
 
   const unhandled: never = failure;
 

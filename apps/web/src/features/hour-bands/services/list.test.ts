@@ -20,6 +20,7 @@ import {
   hourBandDisplayRowsOf,
   hourBandRowOf,
   hourBandsMessageKey,
+  hourBandsRetryMessageKey,
   hourBandsQueryOptions,
   hourBandsNoticeOf,
   hourBandsSurfaceStateOf,
@@ -585,5 +586,9 @@ describe('the surface state, driven through the one query definition', () => {
     expect(hourBandsMessageKey(HOUR_BANDS_UNAVAILABLE)).toBe(
       'organization.hourBands.error.unavailable',
     );
+  });
+
+  it('offers a retry beside the read failure', () => {
+    expect(hourBandsRetryMessageKey(HOUR_BANDS_UNAVAILABLE)).toBe('organization.hourBands.error.retry');
   });
 });

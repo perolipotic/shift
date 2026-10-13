@@ -108,7 +108,21 @@ export function MemberBasicsCard({ edit }: { readonly edit: MemberEdit }): React
           {/* OUTSIDE the gated branch: a read that produced no row renders no
               facts, so an explanation rendered inside them would be exactly
               the element nobody can see. */}
-          {readRefusal === null ? null : <Notice role="alert">{refusalText(readRefusal)}</Notice>}
+          {readRefusal === null ? null : (
+            <div className="grid min-w-0 gap-2">
+              <Notice role="alert">{refusalText(readRefusal)}</Notice>
+              {edit.readRetryable ? (
+                <Button
+                  className="h-11 w-full sm:w-auto sm:justify-self-start"
+                  type="button"
+                  variant="outline"
+                  onClick={edit.retryMembers}
+                >
+                  {t('ljudi.error.retry')}
+                </Button>
+              ) : null}
+            </div>
+          )}
           {partial === null ? null : <Notice role="alert">{refusalText(partial)}</Notice>}
           {/* A LANDED SAVE, said on the card its dialog closed back onto.
               `role="status"`: the assertive region belongs to a refusal. */}

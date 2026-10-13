@@ -118,6 +118,7 @@ import {
   ROTATION_STEPS_TABLE,
   reopensAfterSaveOf,
   rotationMessageKey,
+  rotationRetryMessageKey,
   rotationQueryOptions,
   rotationScheduledDateOf,
   rotationScheduledOf,
@@ -183,6 +184,7 @@ import {
   ROTATION_CANCEL_DEPENDENTS,
   ROTATION_SAVE_DEPENDENTS,
   refreshAfterWrite,
+  retryRead,
 } from '@/features/teams/services/dependents';
 import { supabaseClient } from '@/lib/supabase/client';
 
@@ -1770,7 +1772,21 @@ export function RotationSection({
           {renderWarnings(outcome.warnings)}
         </Notice>
       ) : null}
-      {refusal === null ? null : <Notice role="alert">{t(rotationMessageKey(refusal))}</Notice>}
+      {refusal === null ? null : (
+        <div className="grid min-w-0 gap-2">
+          <Notice role="alert">{t(rotationMessageKey(refusal))}</Notice>
+          <Button
+            className="h-11 w-full sm:w-auto sm:justify-self-start"
+            type="button"
+            variant="outline"
+            onClick={() => {
+              void retryRead(queryClient, ROTATION_KEY);
+            }}
+          >
+            {t(rotationRetryMessageKey(refusal))}
+          </Button>
+        </div>
+      )}
       {/* STORY 3.5c: the overrides a rotation change left pending, after the notices. */}
       <OverrideReview snapshot={snapshot} busy={pending} savedTimes={savedTimes} />
       {draft === null ? null : renderStepBar()}

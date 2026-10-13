@@ -24,6 +24,7 @@ import {
   type MemberListRow,
 } from '@/features/members/services/list';
 import { shownDeactivationConsequenceOf } from '@/features/members/services/deactivation-consequence';
+import { shownTeamMovePreviewOf } from '@/features/members/services/team-move-preview';
 import {
   memberErasureCheckOf,
   statusChangeOf,
@@ -50,6 +51,7 @@ import {
   chosenRole,
   enteredAllowance,
   memberFormRefusalOf,
+  memberReadRetryable,
   pickedTeamValue,
   teamOfferFor,
   teamPickHistory,
@@ -69,6 +71,7 @@ import {
   statusBlockKey,
   statusOfferOf,
   statusPreflightOf,
+  statusRefusalBeforeErasuresOf,
   statusStageOf,
   storedEmail,
   teamBlockKey,
@@ -79,6 +82,7 @@ import {
   type MemberEdits,
   type MemberSaveScope,
   type MemberFunctions,
+  type MemberWriteFailure,
   type MemberWriteRefusal,
   type ResetCredential,
   type StatusConfirmation,
@@ -92,6 +96,7 @@ import {
 import { dateMarkFor, dateMarked, type DateMark } from '@/features/members/utils/date-refusal';
 import {
   MEMBER_PAGE_HEADING_ID,
+  MEMBER_RESET_DIALOG_HEADING_ID,
   MEMBER_SIGN_IN_HEADING_ID,
   MEMBER_STATUS_HEADING_ID,
   MEMBER_TEAM_HEADING_ID,
@@ -108,6 +113,7 @@ import {
   MEMBER_SAVE_DEPENDENTS,
   NO_DEPENDENTS,
   refreshAfterWrite,
+  retryRead,
 } from '@/features/teams/services/dependents';
 import {
   TEAMS_LIST_KEY,
@@ -262,6 +268,8 @@ export function useMemberEdit(id: string) {
   );
   /** The date the status dialog holds, so its question names it as it is typed. Keyed to the member. */
   const [statusDay, setStatusDay] = useState<RaisedForMember<string> | null>(null);
+  /** The date the team dialog holds, so its *Što se mijenja* follows it as it is typed. Keyed to the member. */
+  const [teamDay, setTeamDay] = useState<RaisedForMember<string> | null>(null);
   /** The armed WITHDRAWAL of a scheduled change, carrying the name and the
    *  date it is about, so what is confirmed is exactly what is sent. */
   const [statusArmed, setStatusArmed] = useState<RaisedForMember<StatusConfirmation> | null>(
@@ -406,6 +414,7 @@ export function useMemberEdit(id: string) {
     setTeamOpen(null);
     setStatusOpen(null);
     setStatusDay(null);
+    setTeamDay(null);
   }, [id]);
   // THE DIALOG'S REFUSAL, and the read's own, which the basics card says.
   const refusal = raisedForMember(failure, id);
@@ -515,6 +524,16 @@ export function useMemberEdit(id: string) {
     (pickedTeam === TEAM_UNPICKED_VALUE || chosenTeam(pickedTeam, teamMoveOffer) !== undefined);
   // AN OUTSTANDING WRITE OUTLIVES ITS OFFER, as the confirmation's always did.
   const teamDialogOpen = teamOpening !== null && (teamStillOffered || teamPending);
+  const teamDayEntered = raisedForMember(teamDay, id) ?? NO_TEXT;
+  const teamDialogOffer = teamDialogOpen ? teamOpening.held.offer : null;
+  // DECISION 16's *ŠTO SE MIJENJA*: the last shift in the team left and the
+  // first in the team picked, from the date as typed, off the same calendar
+  // snapshot the status dialog's consequence reads — no request of its own.
+  // `null` until a team is picked on a valid date; it never gates the save.
+  const movePreview = useMemo(
+    () => shownTeamMovePreviewOf(calendarSnapshot, id, teamDialogOffer, pickedTeam, teamDayEntered, today),
+    [calendarSnapshot, id, teamDialogOffer, pickedTeam, teamDayEntered, today],
+  );
 
   // A DIALOG'S OFFER GONE ON A RE-READ (story 7.11). The member left the
   // list under the basics or the allowance dialog; or the change the team or
@@ -712,6 +731,7 @@ export function useMemberEdit(id: string) {
     setTeamUnchecked(null);
     setTeamDateMark(null);
     setTeamPick(null);
+    setTeamDay({ member: id, raised: teamMoveOffer.minimum });
     openings.current += 1;
     setTeamOpen({
       member: id,
@@ -730,7 +750,13 @@ export function useMemberEdit(id: string) {
     setTeamFailure(null);
     setTeamUnchecked(null);
     setTeamPick(null);
+    setTeamDay(null);
     focusTeamLanded();
+  }
+
+  /** The team dialog's date as it is typed, so its *Što se mijenja* follows it. */
+  function enterTeamDay(event: ChangeEvent<HTMLInputElement>): void {
+    setTeamDay({ member: id, raised: event.currentTarget.value });
   }
 
   /**
@@ -1168,11 +1194,13 @@ export function useMemberEdit(id: string) {
 
     if (day === undefined) return null;
 
+    // THE ORGANIZATION'S TODAY AS AT SUBMIT, as the rotation builder takes
+    // it: a screen left open across its midnight drew yesterday's minimum.
     const refusal = statusPreflightOf(offered.change, day, {
       member,
       members: organizationMembers,
       callerAuthUserId,
-      today: offered.today,
+      today: membersTodayOf(organizationMembers, new Date()) ?? offered.today,
     });
 
     setStatusSaved(null);
@@ -1275,6 +1303,9 @@ export function useMemberEdit(id: string) {
     setStatusUnchecked(null);
     setStatusPending(true);
 
+    // Taken again at submit, as `armStatus` does.
+    const on = membersTodayOf(organizationMembers, new Date()) ?? today;
+
     try {
       const change = statusChangeOf(member.id, confirmation);
 
@@ -1299,13 +1330,28 @@ export function useMemberEdit(id: string) {
         }
 
         if (check.rows.length > 0) {
+          // THE LAST-ADMIN RULE BEFORE THE DIALOG: otherwise the admin decides
+          // every row and only then meets the refusal.
+          const refused = statusRefusalBeforeErasuresOf(confirmation.change, confirmation.day, {
+            member,
+            members: organizationMembers,
+            callerAuthUserId,
+            today: on,
+          });
+
+          if (refused !== null) {
+            await refuseStatusChecked(member, refused);
+
+            return;
+          }
+
           statusErasures.show(check.rows, { member: member.id, confirmation, change });
 
           return;
         }
       }
 
-      await writeStatus(member, confirmation, organizationMembers, callerAuthUserId, today, 0);
+      await writeStatus(member, confirmation, organizationMembers, callerAuthUserId, on, 0);
     } catch (cause) {
       console.error(MEMBER_WRITE_UNAVAILABLE, cause);
       setStatusFailure({
@@ -1360,9 +1406,10 @@ export function useMemberEdit(id: string) {
 
   /**
    * A status change the database would refuse anyway, as the erasure check
-   * found it (story 5.5e): `refuseTeamChecked`'s twin.
+   * found it (story 5.5e), or the last-admin rule before its dialog:
+   * `refuseTeamChecked`'s twin.
    */
-  async function refuseStatusChecked(member: MemberListRow, code: MemberChangeRefusal): Promise<void> {
+  async function refuseStatusChecked(member: MemberListRow, code: MemberWriteFailure): Promise<void> {
     const refusal = { code, saved: false };
 
     setStatusFailure({ member: member.id, raised: refusal });
@@ -1399,7 +1446,9 @@ export function useMemberEdit(id: string) {
 
     try {
       const check = await memberErasureCheckOf(readErasures.readAndShare, change, onlineManager.isOnline());
-      const { member: current, today: on, members, caller } = latest.current;
+      const { member: current, members, caller } = latest.current;
+      // The organization's today as at this save, not as last drawn.
+      const on = membersTodayOf(members, new Date());
 
       if (current === null || current.id !== memberId) {
         statusErasures.drop();
@@ -1505,11 +1554,14 @@ export function useMemberEdit(id: string) {
       resetting.current = false;
       setResetPending(false);
       setArmed(null);
-      // FOCUS STAYS WITH THE MEMBER IT WAS ABOUT: the card's heading over a
-      // shown password, the button again over a refusal; nowhere once the
-      // route has moved on to another member.
+      // FOCUS STAYS WITH THE MEMBER IT WAS ABOUT: the shown password's dialog
+      // title, the button again over a refusal; nowhere once the route has
+      // moved on to another member.
       if (latest.current.member?.id === member.id) {
-        focusLater(landed ? [] : [() => resetOpener.current], byId(MEMBER_SIGN_IN_HEADING_ID));
+        focusLater(
+          landed ? [] : [() => resetOpener.current],
+          byId(landed ? MEMBER_RESET_DIALOG_HEADING_ID : MEMBER_SIGN_IN_HEADING_ID),
+        );
       }
     }
   }
@@ -1532,6 +1584,11 @@ export function useMemberEdit(id: string) {
     form,
     refusal,
     readRefusal,
+    /** Whether the read refusal offers its retry (an unavailable read only). */
+    readRetryable: memberReadRetryable(form.refusal),
+    retryMembers: () => {
+      void retryRead(queryClient, MEMBERS_LIST_KEY);
+    },
     confirmed: savedOn === BASICS_SAVE,
     allowanceConfirmed: savedOn === ALLOWANCE_SAVE,
     offersRank,
@@ -1603,6 +1660,9 @@ export function useMemberEdit(id: string) {
     offersPosition,
     positionsRefusal,
     teamsState,
+    retryTeams: () => {
+      void retryRead(queryClient, TEAMS_LIST_KEY);
+    },
     teamOffer,
     teamArmedFor,
     teamConfirmed,
@@ -1631,6 +1691,9 @@ export function useMemberEdit(id: string) {
       withdrawButton: teamWithdrawButton,
       saveButton: teamSaveButton,
       picker: teamPicker,
+      /** Decision 16's *Što se mijenja* for the team picked and the date typed, or `null`. */
+      preview: movePreview,
+      enterDay: enterTeamDay,
       open: openTeam,
       close: closeTeam,
       save: saveTeam,

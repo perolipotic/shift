@@ -1,10 +1,11 @@
 import { createRoute, redirect } from '@tanstack/react-router';
 
+import { Button } from '@/components/ui/button';
 import { Dialog, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Notice } from '@/components/ui/notice';
 import { TeamEditBody } from '@/features/teams/components/team-edit-body';
 import { useTeamEdit } from '@/features/teams/hooks/use-team-edit';
-import { teamHeadingMessageKey, teamsMessageKey } from '@/features/teams/services/list';
+import { teamHeadingMessageKey, teamsMessageKey, teamsRetryMessageKey } from '@/features/teams/services/list';
 import { teamSavedMessageKey, teamWriteMessageKey } from '@/features/teams/services/write';
 import { t } from '@/lib/i18n';
 import { mayReadMembers } from '@/features/members/services/list';
@@ -72,9 +73,19 @@ function TeamScreen({ id }: { readonly id: string }) {
           <DialogTitle id="team-edit-heading">{t(teamHeadingMessageKey(form.team))}</DialogTitle>
         </DialogHeader>
         {readRefusal === null ? null : (
-          <Notice role="alert">
-            {t(teamsMessageKey(readRefusal))}
-          </Notice>
+          <div className="grid min-w-0 gap-2">
+            <Notice role="alert">
+              {t(teamsMessageKey(readRefusal))}
+            </Notice>
+            <Button
+              className="h-11 w-full sm:w-auto sm:justify-self-start"
+              type="button"
+              variant="outline"
+              onClick={screen.retry}
+            >
+              {t(teamsRetryMessageKey(readRefusal))}
+            </Button>
+          </div>
         )}
         {refusal === null ? null : (
           <Notice id="team-form-error" role="alert">

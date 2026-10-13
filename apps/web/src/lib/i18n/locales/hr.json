@@ -647,7 +647,8 @@
     },
     "error": {
       "refused": "Popis osoba nije moguće prikazati. Odjavi se i prijavi ponovno.",
-      "unavailable": "Popis osoba trenutačno nije moguće učitati. Pokušaj ponovno."
+      "unavailable": "Popis osoba trenutačno nije moguće učitati. Pokušaj ponovno.",
+      "retry": "Pokušaj ponovno"
     },
     "page": {
       "heading": "Osoba",
@@ -752,6 +753,7 @@
       "scheduledInactive": "Osoba će biti neaktivna od {date}.",
       "scheduledActive": "Osoba će ponovno biti aktivna od {date}.",
       "date": "Vrijedi od",
+      "dateHint": "Najranije danas. Dani prije ostaju nepromijenjeni.",
       "deactivate": "Deaktiviraj osobu {name}",
       "reactivate": "Ponovno aktiviraj osobu {name}",
       "deactivateAction": "Deaktiviraj",
@@ -976,6 +978,7 @@
       "removed": "Pojas je uklonjen.",
       "error": {
         "unavailable": "Satne pojaseve trenutačno nije moguće učitati. Pokušaj ponovno.",
+        "retry": "Pokušaj ponovno",
         "nameEmpty": "Naziv pojasa ne može biti prazan.",
         "nameTaken": "Pojas s tim nazivom već postoji u organizaciji.",
         "startTaken": "Pojas s tim početkom već postoji u organizaciji. Odaberi drugi početak.",
@@ -1040,6 +1043,7 @@
       "archivedNote": "Ovaj tip smjene je arhiviran i ne može se mijenjati.",
       "error": {
         "unavailable": "Tipove smjena trenutačno nije moguće učitati. Pokušaj ponovno.",
+        "retry": "Pokušaj ponovno",
         "nameEmpty": "Naziv tipa smjene ne može biti prazan.",
         "nameTaken": "Tip smjene s tim nazivom već postoji u organizaciji.",
         "timeInvalid": "Početak i završetak moraju biti vremena dana u punim minutama, na primjer 07:00.",
@@ -1260,6 +1264,7 @@
       },
       "error": {
         "unavailable": "Rotaciju trenutačno nije moguće učitati. Pokušaj ponovno.",
+        "retry": "Pokušaj ponovno",
         "empty": "Uzorak mora imati barem jedan korak.",
         "noTeams": "Za rotaciju je potrebna barem jedna smjena u upotrebi.",
         "scheduled": "Promjena rotacije već je zakazana za kasniji datum, pa rotaciju sada nije moguće spremiti. Poništi zakazanu promjenu pa spremi ponovno.",
@@ -1327,6 +1332,7 @@
     "archivedNote": "Ova smjena je arhivirana i ne može se mijenjati.",
     "error": {
       "unavailable": "Popis smjena trenutačno nije moguće učitati. Pokušaj ponovno.",
+      "retry": "Pokušaj ponovno",
       "empty": "Naziv smjene ne može biti prazan.",
       "taken": "Smjena s tim nazivom već postoji u organizaciji.",
       "stale": "Smjena se u međuvremenu promijenila. Provjeri je i pokušaj ponovno.",
@@ -1354,6 +1360,11 @@
       "choose": "Odaberi smjenu",
       "currentChoice": "{team} · sadašnja",
       "date": "Vrijedi od",
+      "changes": "Što se mijenja",
+      "lastIn": "Zadnja u {team} · {weekday} {date} · {type} · {range}",
+      "lastInNoRange": "Zadnja u {team} · {weekday} {date} · {type}",
+      "firstIn": "Prva u {team} · {weekday} {date} · {type} · {range}",
+      "firstInNoRange": "Prva u {team} · {weekday} {date} · {type}",
       "move": "Promijeni smjenu osobe {name}",
       "change": "Promijeni",
       "dialogHeading": "Promijeni smjenu",

@@ -487,6 +487,15 @@ export function hourBandsMessageKey(
   return unhandled;
 }
 
+/** The retry beside a read failure's notice: an unavailable read is read again. Exhaustive. */
+export function hourBandsRetryMessageKey(failure: HourBandsFailure): 'organization.hourBands.error.retry' {
+  if (failure === HOUR_BANDS_UNAVAILABLE) return 'organization.hourBands.error.retry';
+
+  const unhandled: never = failure;
+
+  return unhandled;
+}
+
 // --------------------------------------------------------- surface state
 
 /**
