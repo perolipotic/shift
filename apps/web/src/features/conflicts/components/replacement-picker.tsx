@@ -2,7 +2,11 @@ import type { ReactNode, RefObject } from 'react';
 
 import { RadioGroup, RadioRow } from '@/components/ui/radio-group';
 import { outOptionOf, type RosterLineTranslate } from '@/features/calendar/utils/day-detail';
-import { candidateGroupMessageKey } from '@/features/calendar/utils/replacement-candidates';
+import {
+  candidateContinuousMessageKey,
+  candidateContinuousOf,
+  candidateGroupMessageKey,
+} from '@/features/calendar/utils/replacement-candidates';
 import {
   NO_CANDIDATE,
   RESOLUTION_CANDIDATES_HEADING_ID,
@@ -18,17 +22,27 @@ const LINE_WORDS: RosterLineTranslate = {
   line: (key, values) => t(key, values),
 };
 
+/** A candidate's line, then `· 24 h bez pauze` when the shift would make a longer continuous duty (D717). */
+function withContinuous(label: string, continuousMinutes: number | null): string {
+  const continuous = candidateContinuousOf(continuousMinutes);
+
+  if (continuous === null) return label;
+
+  return t(candidateContinuousMessageKey(), { line: label, hours: t(continuous.key, continuous.values) });
+}
+
 /**
  * "Tko odrađuje smjenu" (story 5.4c; UX-DR10): the candidates to put on the
  * absent member's shift, a SIBLING after the second card — the card is a
  * `<button>` and cannot hold controls — shown only while that card is chosen.
  * Its own radio group: one tab stop, the arrow keys move, nothing preselected.
  *
- * The groups (`slobodan`, `radi taj dan · 24 h bez pauze`, `na godišnjem taj
- * dan`) only inform: every candidate is selectable, none is disabled, styled
- * apart or recommended. Each line is `Ime · čin · položaj`, as the roster form
- * builds it (`outOptionOf`), and wraps rather than truncating. An empty group
- * is not drawn.
+ * The groups (`slobodan`, `radi taj dan`, `na godišnjem taj dan`) only
+ * inform: every candidate is selectable, none is disabled, styled apart or
+ * recommended. Each line is `Ime · čin · položaj`, as the roster form builds
+ * it (`outOptionOf`), then `· 24 h bez pauze` where the shift would make a
+ * longer continuous duty (D717), and wraps rather than truncating. An empty
+ * group is not drawn.
  */
 export function ReplacementPicker({
   view,
@@ -77,7 +91,10 @@ export function ReplacementPicker({
                     ref={candidate.id === firstId ? firstCandidate : undefined}
                     value={candidate.id}
                   >
-                    {outOptionOf(candidate, view.rankShown, view.positionShown, LINE_WORDS).label}
+                    {withContinuous(
+                      outOptionOf(candidate, view.rankShown, view.positionShown, LINE_WORDS).label,
+                      candidate.continuousMinutes,
+                    )}
                   </RadioRow>
                 ))}
               </div>

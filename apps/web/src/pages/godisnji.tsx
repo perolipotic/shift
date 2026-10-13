@@ -38,9 +38,11 @@ import { appLayoutRoute } from '@/pages/_app';
  * overview's records, and the database refuses it if it did (0034). An
  * unknown role is the unavailable notice, never the overview.
  *
- * The overview's search and sort live in the URL: `?trazi=&sort=`, the sort
- * one of `ime|smjena|pravo|iskoristeno|preostalo`, `-` for descending; a bad
- * value falls back to its default and is rewritten out of the URL. The path drops the diacritics the label
+ * The overview's search, chips and sort live in the URL:
+ * `?trazi=&smjena=&stanje=&sort=`, the sort one of
+ * `ime|smjena|pravo|iskoristeno|preostalo`, `-` for descending, the state one
+ * of `na-godisnjem|upisano|bez-upisa|u-minusu` (E884); a bad value falls back
+ * to its default and is rewritten out of the URL. The path drops the diacritics the label
  * carries: a URL segment is not a label, and `hr.json` is where the `š`
  * belongs.
  *

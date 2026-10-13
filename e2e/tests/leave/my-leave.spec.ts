@@ -313,6 +313,30 @@ test.describe("the admin's overview (story 7.15)", () => {
     await leavePage.overviewSearch.fill(member.name);
     await expect(leavePage.tableRow(member.name)).toBeVisible();
 
+    // E884: THE STANJE CHIP, in the URL. The member is on leave from today, so
+    // "Na godišnjem danas" keeps the row and "Bez upisanog godišnjeg" leaves nobody.
+    // The summary counts the one record from today on: its `one` form.
+    const oneRecord = /\{records, plural, one \{([^{}]*)\}/.exec(overview.summary)?.[1]?.replace('#', '1') ?? '';
+    expect(oneRecord).not.toBe('');
+    await expect(leavePage.filters.summary).toContainText(oneRecord);
+    await leavePage.stateChip.click();
+    await leavePage.stateOption('onLeave').click();
+    await expect(page).toHaveURL(/stanje=na-godisnjem/);
+    await expect(leavePage.stateChip).toHaveAccessibleName(leavePage.stateChipText('onLeave'));
+    await expect(leavePage.tableRow(member.name)).toBeVisible();
+    await leavePage.stateChip.click();
+    await leavePage.stateOption('unrecorded').click();
+    await expect(page).toHaveURL(/stanje=bez-upisa/);
+    await expect(leavePage.text(hr.filter.empty.filtered)).toBeVisible();
+    await expect(leavePage.tableRow(member.name)).toHaveCount(0);
+    // ITS WAY OUT clears the chips and the search, and focus goes to the search.
+    await leavePage.clearFiltersInPlace.click();
+    await expect(page).toHaveURL(/\/godisnji$/);
+    await expect(leavePage.overviewSearch).toHaveValue('');
+    await expect(leavePage.overviewSearch).toBeFocused();
+    await leavePage.overviewSearch.fill(member.name);
+    await expect(leavePage.tableRow(member.name)).toBeVisible();
+
     // THE ROW EQUALS THE MEMBER PAGE: its name opens it, and its card reads the same three figures.
     await leavePage.tableRow(member.name).getByRole('link', { name: member.name, exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/ljudi/${member.id}$`));

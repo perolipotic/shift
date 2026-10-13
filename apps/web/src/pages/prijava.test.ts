@@ -254,6 +254,8 @@ const GODISNJI_PAGE = join(srcRoot, ...LEAVE_SCREEN_PARTS.page);
 const GODISNJI: readonly string[] = Object.values(LEAVE_SCREEN_PARTS).map((parts) => join(srcRoot, ...parts));
 /** Story 5.2c's rules: the screen's two lines and its three tiles' labels. */
 const MY_LEAVE_KEYS = join(LEAVE_FEATURE, 'services', 'my-leave.ts');
+/** E884's rules: the overview's Stanje options and chip values, off `\w*MessageKey` unions. */
+const LEAVE_OVERVIEW_KEYS = join(LEAVE_FEATURE, 'services', 'leave-overview.ts');
 /** The conflicts feature, which holds the *Raspored* screen's parts (story 5.3b). */
 const CONFLICTS_FEATURE = join(srcRoot, 'features', 'conflicts');
 /** The *Raspored* screen's page, which only composes (story 5.3b). */
@@ -970,7 +972,11 @@ const SCREENS = [
   // pretragu* (5); and the page's own retry when the calendar cannot name
   // the viewer's role (6). The phone's `SortControl` is a shared component,
   // and every row's name is a `<Link>`; nothing on the overview writes.
-  { name: 'the Godišnji destination', file: GODISNJI, expectedFields: 1, expectedButtons: 5 },
+  // ONE MORE BUTTON SINCE E884: the search moved into the overview's filter
+  // bar (still the one field), whose chips are the shared
+  // `OptionFilterBar`'s, and the empty line the chips leave offers
+  // *Poništi filtre*.
+  { name: 'the Godišnji destination', file: GODISNJI, expectedFields: 1, expectedButtons: 6 },
   // STORY 5.3b. ONE on Raspored: the retry its unavailable alert offers. The
   // queue is read, never pressed: no `Riješi` and no bulk action. STILL ONE
   // SINCE STORY 5.4b: each row became a `<Link>` to its resolution screen,
@@ -2998,10 +3004,24 @@ const KEY_SOURCES = [
     // *Poništi pretragu*, the overview's unavailable line and retry, and the
     // five column names, the caption, *Bez smjene* and the unscheduled line,
     // written once in the table and once in the stacked rows.
+    //
+    // FIFTY SINCE E884: the Smjena chip's six, as Ljudi's (its text set and at
+    // every team, its ✕, its picker and heading, and an option's count), the
+    // pending team name, the Stanje chip's four (its text, ✕, picker and
+    // heading) and its options' count, and the empty line the chips leave
+    // with *Poništi filtre*.
     name: 'the Godišnji destination',
     file: GODISNJI,
     keys: translationKeys,
-    strings: 36,
+    strings: 50,
+  },
+  {
+    // E884: the Stanje chip's five options and the five values its text says,
+    // off `leaveOverviewStateMessageKey` and `leaveOverviewStateValueMessageKey`.
+    name: 'the Godišnji overview rules',
+    file: LEAVE_OVERVIEW_KEYS,
+    keys: messageKeyUnions,
+    strings: 10,
   },
   {
     // STORY 5.3b. NINE on Raspored: its own `nav.raspored` heading; the
@@ -3037,10 +3057,12 @@ const KEY_SOURCES = [
     // working in its strip, and the balance it gives back.
     // THIRTY-EIGHT SINCE STORY 5.5d: Spremi's hint while a replacement that
     // no longer applies holds the key, and its link to the calendar.
+    // FORTY SINCE D726: the third card's line naming the days a later start
+    // drops, and the line saying some of them are past.
     name: 'the conflict resolution screen',
     file: RESOLUTION,
     keys: translationKeys,
-    strings: 38,
+    strings: 40,
   },
   {
     // STORY 5.4b: the facts line with and without times, who else works or
@@ -3065,10 +3087,12 @@ const KEY_SOURCES = [
     // STORY 7.9: the three candidate group headings — free, working that day,
     // on leave that day — shared by the conflict screen's picker and the day
     // detail's roster dialog, off `candidateGroupMessageKey`.
+    // FOUR SINCE D717: a candidate's line with the continuous duty the shift
+    // would make, off `candidateContinuousMessageKey`.
     name: 'the replacement candidate groups',
     file: REPLACEMENT_CANDIDATE_KEYS,
     keys: messageKeyUnions,
-    strings: 3,
+    strings: 4,
   },
   {
     // STORY 5.4b: the write's three refusals — gone, denied, failed. FOUR
@@ -3334,10 +3358,14 @@ const KEY_SOURCES = [
     // ONE HUNDRED AND FIFTY-THREE SINCE THE DEFERRED-WORK SWEEP: the read
     // failure's retry, the status date's hint, the team dialog's *Što se
     // mijenja* heading (decision 16), and the reset dialog's close.
+    //
+    // ONE HUNDRED AND FIFTY-FIVE SINCE D723: the card's line when a hand-off
+    // from a conflict opened nothing, and the amend dialog's line when its
+    // od and do came from the conflict.
     name: 'the member edit form',
     file: MEMBER_EDIT,
     keys: translationKeys,
-    strings: 153,
+    strings: 155,
   },
   {
     // THIRTEEN on the member write path's rules: eleven `ljudi.form.error.*`
@@ -3688,7 +3716,9 @@ describe('the screen is read at all, so every sweep below means something', () =
     // SIXTY-NINE SINCE THE ROUTER-GUARDS FIX: the error screen (A148).
     //
     // SEVENTY SINCE THE DEFERRED-WORK SWEEP: decision 16's team move preview.
-    expect(KEY_SOURCES).toHaveLength(70);
+    //
+    // SEVENTY-ONE SINCE E884: the leave overview's rules, for its Stanje chip.
+    expect(KEY_SOURCES).toHaveLength(71);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"

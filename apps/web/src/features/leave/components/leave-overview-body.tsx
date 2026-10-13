@@ -1,32 +1,36 @@
-import { Search } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { InputGroup, InputGroupIcon } from '@/components/ui/input-group';
-import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { StackedSkeletonRow } from '@/components/ui/stacked-list';
+import { LeaveOverviewFilters } from '@/features/leave/components/leave-overview-filters';
 import { LeaveOverviewRows } from '@/features/leave/components/leave-overview-rows';
 import { LeaveOverviewTable } from '@/features/leave/components/leave-overview-table';
 import type { LeaveOverviewScreen } from '@/features/leave/hooks/use-leave-overview';
-import { OVERVIEW_EMPTY_SEARCH, OVERVIEW_LOADING, OVERVIEW_UNAVAILABLE } from '@/features/leave/services/leave-overview';
+import {
+  OVERVIEW_EMPTY_FILTERED,
+  OVERVIEW_EMPTY_SEARCH,
+  OVERVIEW_LOADING,
+  OVERVIEW_UNAVAILABLE,
+} from '@/features/leave/services/leave-overview';
 import { usePhone } from '@/hooks/viewport';
 import { t } from '@/lib/i18n';
 
 const SKELETON_ROWS = [0, 1, 2, 3];
 
 /**
- * The admin's *Godišnji* under its heading (story 7.15): *Traži osobu*, the
- * summary line, and the overview — a table from 640 px, stacked rows below
- * it. The skeleton while the reads are unanswered, one alert with a retry
- * when any read failed, and in place of the rows one line that states what is
- * true: nobody active today, or no name matching the search with *Poništi
- * pretragu*. Read-only: leave is recorded on the member page. What is drawn is
+ * The admin's *Godišnji* under its heading (story 7.15): *Traži osobu* and
+ * the Smjena and Stanje chips with the summary line (E884,
+ * `leave-overview-filters`), and the overview — a table from 640 px, stacked
+ * rows below it. The skeleton while the reads are unanswered, one alert with
+ * a retry when any read failed, and in place of the rows one line that states
+ * what is true: nobody active today, no name matching the search with
+ * *Poništi pretragu*, or nobody the chips leave with *Poništi filtre*.
+ * Read-only: leave is recorded on the member page. What is drawn is
  * `leaveOverviewOf`'s; this only puts it on screen.
  */
 export function LeaveOverviewBody({ screen }: { readonly screen: LeaveOverviewScreen }): ReactNode {
-  const { overview, search, searchField, changeSearch, clearSearch, pressColumn, retry } = screen;
+  const { overview, clearSearch, resetFilters, pressColumn, retry } = screen;
   // Story 7.6: which form the overview takes. The search and the sort live in
   // the URL, so crossing 640 px keeps both.
   const isPhone = usePhone();
@@ -64,7 +68,16 @@ export function LeaveOverviewBody({ screen }: { readonly screen: LeaveOverviewSc
 
     let empty: ReactNode;
 
-    if (overview.empty === OVERVIEW_EMPTY_SEARCH) {
+    if (overview.empty === OVERVIEW_EMPTY_FILTERED) {
+      empty = (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2">
+          <p className="text-base">{t('filter.empty.filtered')}</p>
+          <Button className="h-11" type="button" variant="outline" onClick={resetFilters}>
+            {t('filter.clear')}
+          </Button>
+        </div>
+      );
+    } else if (overview.empty === OVERVIEW_EMPTY_SEARCH) {
       empty = (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2">
           <p className="text-base">{t('godisnji.overview.noMatch')}</p>
@@ -79,13 +92,6 @@ export function LeaveOverviewBody({ screen }: { readonly screen: LeaveOverviewSc
 
     return (
       <div className="grid min-w-0 gap-3 pb-4">
-        <p className="px-4 text-sm text-muted-foreground tabular-nums">
-          {t('godisnji.overview.summary', {
-            count: overview.summary.shown,
-            used: overview.summary.usedDays,
-            allowance: overview.summary.allowanceDays,
-          })}
-        </p>
         {isPhone ? (
           <LeaveOverviewRows overview={overview} empty={empty} onPress={pressColumn} />
         ) : (
@@ -97,24 +103,8 @@ export function LeaveOverviewBody({ screen }: { readonly screen: LeaveOverviewSc
 
   return (
     <div className="grid min-w-0 gap-4">
-      <div className="grid min-w-0 px-4 pt-4 sm:max-w-sm">
-        <Label htmlFor="godisnji-overview-search" className="sr-only">
-          {t('godisnji.overview.search')}
-        </Label>
-        <InputGroup>
-          <InputGroupIcon>
-            <Search />
-          </InputGroupIcon>
-          <Input
-            id="godisnji-overview-search"
-            ref={searchField}
-            type="search"
-            className="h-11 w-full"
-            placeholder={t('godisnji.overview.search')}
-            value={search}
-            onChange={changeSearch}
-          />
-        </InputGroup>
+      <div className="grid min-w-0 px-4 pt-4">
+        <LeaveOverviewFilters screen={screen} />
       </div>
       {renderBody()}
     </div>
