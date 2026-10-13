@@ -19,7 +19,12 @@ regenerated types file, which would add a step to every migration.
   through, built from an injected source so both of that route's branches are
   executable without a browser — bound as `currentSession` under a time budget
   that rejects a read that never settles, and `resolvedSession`, the one
-  session read every guard shares (a rejection becomes `null`, logged).
+  session read every guard shares (a rejection becomes `null`, logged). The
+  client's options are spelled out (`CLIENT_OPTIONS`): the session persists
+  under the library's default storage key and refreshes itself, nothing is
+  read from the URL, and every request goes through `withRequestTimeout`, so
+  a request that is never answered is aborted after `REQUEST_TIMEOUT_MS`
+  (30 s) and ends in the caller's ordinary "unavailable" refusal.
 - `session-cache.ts` — the app-wide rule `main.tsx` installs: whenever the
   signed-in user id changes or becomes null (another tab, an expiry, a sign-in
   over a stale cache), the cache forgets the previous user so that mounted

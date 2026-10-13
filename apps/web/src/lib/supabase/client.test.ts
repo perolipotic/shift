@@ -1,7 +1,9 @@
-import type { Session } from '@supabase/supabase-js';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 
+import { TEAM_WRITE_UNAVAILABLE, createTeam } from '@/features/teams/services/write';
 import {
+  CLIENT_OPTIONS,
   SESSION_UNREADABLE,
   SESSION_UNRESOLVED,
   SUPABASE_ENVIRONMENT_MISSING,
@@ -13,6 +15,7 @@ import {
   resolvedSession,
   sessionReader,
   supabaseClient,
+  withRequestTimeout,
 } from '@/lib/supabase/client';
 
 /**
@@ -213,8 +216,18 @@ describe('the two names are wired to the two build-time members', () => {
 });
 
 describe('there is exactly one construction path', () => {
+  // THE REAL CLIENT BUILT BELOW starts the auth client's refresh ticker (in
+  // node it starts at construction, there being no page visibility to wait
+  // for). Stopped once the block is done, so the suite holds no live timer
+  // for the rest of the run (A250).
+  let built: SupabaseClient | undefined;
+
   afterEach(() => {
     vi.unstubAllEnvs();
+  });
+
+  afterAll(async () => {
+    await built?.auth.stopAutoRefresh();
   });
 
   it('exposes a single client accessor and no exported instance', () => {
@@ -232,7 +245,9 @@ describe('there is exactly one construction path', () => {
     vi.stubEnv(SUPABASE_URL_VARIABLE, 'http://127.0.0.1:54321');
     vi.stubEnv(SUPABASE_PUBLISHABLE_KEY_VARIABLE, 'sb_publishable_local');
 
-    expect(supabaseClient()).toBe(supabaseClient());
+    built = supabaseClient();
+
+    expect(supabaseClient()).toBe(built);
   });
 
   it('hands createClient the url first and the key second', async () => {
@@ -261,10 +276,91 @@ describe('there is exactly one construction path', () => {
     isolated.supabaseClient();
 
     expect(createClient).toHaveBeenCalledTimes(1);
-    expect(createClient).toHaveBeenCalledWith('http://127.0.0.1:54321', 'sb_publishable_local');
+    expect(createClient).toHaveBeenCalledWith(
+      'http://127.0.0.1:54321',
+      'sb_publishable_local',
+      isolated.CLIENT_OPTIONS,
+    );
 
     vi.doUnmock('@supabase/supabase-js');
     vi.resetModules();
+  });
+});
+
+describe('the auth options are spelled out, and sign nobody out (A250)', () => {
+  it('persists and refreshes the session, and reads nothing from the URL', () => {
+    expect(CLIENT_OPTIONS.auth).toEqual({
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: false,
+    });
+  });
+
+  it('keeps the default storage key, where every existing session lives', () => {
+    // A named key would be a new place to look, and everybody signed in today
+    // would be signed out once.
+    expect(CLIENT_OPTIONS.auth).not.toHaveProperty('storageKey');
+  });
+});
+
+describe('a request that never answers ends, and reads as unavailable (C520)', () => {
+  /** A `fetch` that never answers, and rejects only when its signal aborts. */
+  const silentFetch = (): typeof fetch => (_input, init) =>
+    new Promise((_resolve, reject) => {
+      const signal = init?.signal;
+
+      signal?.addEventListener('abort', () => {
+        reject(signal.reason);
+      });
+    });
+
+  it('gives every client request the same timeout', () => {
+    expect(CLIENT_OPTIONS.global.fetch).toBeTypeOf('function');
+  });
+
+  it('aborts a request once its time is up', async () => {
+    const timed = withRequestTimeout(20, silentFetch);
+
+    await expect(timed('http://127.0.0.1:9/rest/v1/teams')).rejects.toMatchObject({
+      name: 'TimeoutError',
+    });
+  });
+
+  it('passes an answer through untouched', async () => {
+    const answer = new Response('[]');
+    const timed = withRequestTimeout(20, () => () => Promise.resolve(answer));
+
+    expect(await timed('http://127.0.0.1:9/rest/v1/teams')).toBe(answer);
+  });
+
+  it("keeps the caller's own signal, so either one aborts", async () => {
+    const own = new AbortController();
+    const timed = withRequestTimeout(60_000, silentFetch);
+    const pending = timed('http://127.0.0.1:9/rest/v1/teams', { signal: own.signal });
+
+    own.abort(new Error('caller'));
+
+    await expect(pending).rejects.toThrow('caller');
+  });
+
+  it('ends a write that is never answered in the existing unavailable refusal', async () => {
+    // THE TRAP THIS CLOSES: an add dialog refuses dismissal while its save is
+    // in flight, and with no timeout a swallowed request kept it in flight
+    // forever. Through a REAL supabase-js client, so the claim covers the
+    // library's own mapping of a rejected fetch, not a stub of it.
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const client = createClient('http://127.0.0.1:9', 'sb_publishable_local', {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+      global: { fetch: withRequestTimeout(20, silentFetch) },
+    });
+
+    try {
+      expect(
+        await createTeam(client.from('teams'), '00000000-0000-4000-8000-000000000001', 'Prva'),
+      ).toEqual({ ok: false, code: TEAM_WRITE_UNAVAILABLE });
+    } finally {
+      logged.mockRestore();
+    }
   });
 });
 
