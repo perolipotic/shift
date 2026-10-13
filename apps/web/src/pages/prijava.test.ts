@@ -2421,10 +2421,12 @@ const KEY_SOURCES = [
     // FIFTEEN SINCE DESIGN REFRESH C: the lede, the add dialog's open button,
     // heading, close and cancel, and the table's heads (the name label again,
     // and actions).
+    // SIXTEEN SINCE THE STACKED ROWS (UX-DR17): the name label once more, on
+    // the phone's stacked row.
     name: 'the team list',
     file: TEAM_LIST,
     keys: translationKeys,
-    strings: 15,
+    strings: 16,
   },
   {
     // EIGHT on one team: the name label, Save, the archive offer, prompt,
@@ -2594,10 +2596,12 @@ const KEY_SOURCES = [
     // from, to, the duration label and actions). THIRTY-TWO with the add
     // dialog's computed end: its label, its pending text, the hint, and the
     // preview's duration label and midnight flag.
+    // THIRTY-SIX SINCE THE STACKED ROWS (UX-DR17): the phone's row labels its
+    // name, from, to and duration fields with the column heads' keys again.
     name: 'the hour band list',
     file: HOUR_BAND_LIST,
     keys: translationKeys,
-    strings: 32,
+    strings: 36,
   },
   {
     // TWELVE on one band: its heading, the two field labels, Save, the window
@@ -2731,8 +2735,10 @@ const KEY_SOURCES = [
     // "Odbaci promjene" and its hint, with and without the rotation in force.
     // EIGHTY-EIGHT SINCE STORY 7.18: the history's ten moved to its own
     // dialog, the next entry.
+    // NINETY SINCE THE STACKED OFFSETS (UX-DR17): the phone's row labels the
+    // team and the anchor's type with the column heads' keys again.
     keys: translationKeys,
-    strings: 88,
+    strings: 90,
   },
   {
     // STORY 7.18: the history behind a header button — the button and the
@@ -2740,10 +2746,13 @@ const KEY_SOURCES = [
     // the empty note, the five column heads, the save time and the team
     // count. The statuses and the unknown author come through
     // `@/features/rotation/services/history`.
+    // SIXTEEN SINCE THE STACKED ROWS (UX-DR17): the heading is read once now
+    // (eleven), and the phone's row labels its five fields with the column
+    // heads' keys again.
     name: 'the rotation history',
     file: ROTATION_HISTORY_DIALOG,
     keys: translationKeys,
-    strings: 12,
+    strings: 16,
   },
   {
     // STORY 3.5c: the review's heading, lede and count; a row's title, type,
@@ -6801,6 +6810,35 @@ describe('a table becomes stacked rows below 640 px (story 7.6)', () => {
     expect(opened, 'no value goes through StackedField').toBeGreaterThan(1);
     expect(labelled, 'a StackedField does not open with its column label').toBe(opened);
     expect(rows, 'a value is drawn outside StackedField').not.toMatch(/<dd\b|<dt\b|<dl\b/);
+  });
+
+  /**
+   * The 2026-10 deferred-work cleanup: four more tables stack, each in the
+   * same file as its table, so the `ROWS` sweeps (which refuse table markup)
+   * do not apply. What does: a named list, a label on every field, and one
+   * form at a time by `usePhone`. The rotation section is read for the first
+   * two only; its stepper hides steps by breakpoint class on purpose.
+   */
+  const INLINE_ROWS = [
+    join(srcRoot, 'features', 'hour-bands', 'components', 'hour-band-table.tsx'),
+    join(srcRoot, 'features', 'teams', 'components', 'team-table.tsx'),
+    ROTATION_HISTORY_DIALOG,
+    join(srcRoot, 'features', 'rotation', 'components', 'rotation-section.tsx'),
+  ];
+
+  it.each(INLINE_ROWS)('stacks %s below 640 px as a named list whose every value is labelled', (file) => {
+    const screen = source(file);
+    const opened = occurrences(screen, '<StackedField ') + occurrences(screen, '<StackedField\n');
+    const labelled = [...screen.matchAll(/<StackedField\s+label=\{/g)].length;
+
+    expect(screen).toMatch(/const isPhone = usePhone\(\);/);
+    expect(screen).toMatch(/<StackedList\b[^>]*aria-label=/);
+    expect(opened, 'no value goes through StackedField').toBeGreaterThan(0);
+    expect(labelled, 'a StackedField does not open with its column label').toBe(opened);
+  });
+
+  it.each(INLINE_ROWS.slice(0, 3))('never draws both forms in %s, one hidden by a class', (file) => {
+    expect(source(file)).not.toMatch(/max-sm:hidden|sm:hidden|hidden sm:/);
   });
 
   it.each(SWITCHES)('renders one form at a time in %s, by usePhone', (file) => {

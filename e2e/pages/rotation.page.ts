@@ -273,6 +273,11 @@ export class RotationPage extends BasePage {
     return this.page.getByLabel(fill(builder.offsetOf, { name: teamName }), { exact: true });
   }
 
+  /** The offsets as stacked rows below 640 px, named by their section's heading (UX-DR17). */
+  get offsetList(): Locator {
+    return this.page.getByRole('list', { name: builder.offsetsHeading, exact: true });
+  }
+
   get spreadButton(): Locator {
     return this.page.getByRole('button', { name: builder.spread, exact: true });
   }
@@ -385,6 +390,11 @@ export class RotationPage extends BasePage {
     await this.page.keyboard.press('Escape');
     await expect(this.historyDialog).toHaveCount(0);
     await expect(this.historyButton).toBeFocused();
+  }
+
+  /** The history as stacked rows below 640 px, named by its heading (UX-DR17). */
+  get historyList(): Locator {
+    return this.historyDialog.getByRole('list', { name: builder.history.heading, exact: true });
   }
 
   /** The history's row that holds `text`, while the history is open. */

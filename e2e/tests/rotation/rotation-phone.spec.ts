@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { archiveShiftType, holdRotation, type RotationHold } from '../../utils/database-helper.ts';
 import { ADMIN_STATE } from '../../utils/run-fixture.ts';
 import { fill, hr } from '../../utils/i18n.ts';
+import { expectNoInnerHorizontalScroll } from '../../utils/layout.ts';
 import { NEXT_LABELS, STEP_HEADINGS } from '../../utils/rotation.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
 
@@ -148,6 +149,14 @@ test.describe('at 390 px, on a touch phone', () => {
     const teamStep = rotationPage.offsetOf(teamName);
     await expect(teamStep).toBeVisible();
     await expect(teamStep).toHaveValue('0');
+    // THE OFFSETS ARE STACKED ROWS (UX-DR17), the picker inside its team's
+    // row, and nothing in the section scrolls sideways.
+    await expect(rotationPage.offsetList.getByRole('listitem').filter({ hasText: teamName })).toContainText(work);
+    await expect(rotationPage.offsetList.getByRole('listitem').filter({ has: teamStep })).toHaveCount(1);
+    await expect(
+      page.getByRole('table').filter({ has: page.getByRole('columnheader', { name: builder.columnOffset }) }),
+    ).toHaveCount(0);
+    await expectNoInnerHorizontalScroll(page);
 
     // STEP 4: the preview; Natrag, and no Dalje past the last step.
     await rotationPage.nextButton(NEXT_LABELS[2]).tap();
@@ -194,6 +203,14 @@ test.describe('at 390 px, on a touch phone', () => {
     // a phone; the outcome sits under the header.
     await rotationPage.saveButton.tap();
     await expect(rotationPage.text(builder.saved)).toBeVisible();
+
+    // THE HISTORY IS STACKED ROWS TOO (UX-DR17): the change just saved is a
+    // list item, there is no table, and nothing in the dialog scrolls sideways.
+    await rotationPage.openHistory();
+    await expect(rotationPage.historyList.getByRole('listitem').first()).toBeVisible();
+    await expect(rotationPage.historyDialog.getByRole('table')).toHaveCount(0);
+    await expectNoInnerHorizontalScroll(page, rotationPage.historyDialog);
+    await rotationPage.closeHistory();
 
     // THE PREFILL: a landed save re-opens the builder as the rotation now in
     // force, on the step it was saved from. Walked back through the bar, it
