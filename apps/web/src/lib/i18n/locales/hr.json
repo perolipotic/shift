@@ -1202,7 +1202,7 @@
       },
       "overrides": {
         "heading": "Izmjene za pregled",
-        "lede": "Promjena rotacije zahvatila je ove izmjene tipa smjene. Dok ih ne pregledaš, kalendar prikazuje tip smjene prema rotaciji.",
+        "lede": "Promjena rotacije zahvatila je ove izmjene tipa smjene i sastava. Dok ih ne pregledaš, kalendar prikazuje tip smjene i sastav prema rotaciji.",
         "count": "{count, plural, one {# izmjena čeka pregled.} few {# izmjene čekaju pregled.} other {# izmjena čeka pregled.}}",
         "unavailable": "Izmjene za pregled nije moguće prikazati. Osvježi stranicu.",
         "title": "{team} · {date}",
@@ -1212,12 +1212,19 @@
         "reason": "Razlog: {reason}",
         "author": "Autor: {name}",
         "unknownAuthor": "Nepoznata osoba",
+        "roster": {
+          "replaced": "Promjena sastava: {out} → {in}",
+          "added": "Promjena sastava: dolazi {name}",
+          "removed": "Promjena sastava: skida se {name}"
+        },
         "confirm": "Potvrdi",
         "amend": "Promijeni",
         "discard": "Odbaci",
         "amendDialog": {
           "title": "Promijeni izmjenu: {team} · {date}",
           "type": "Tip smjene",
+          "titleRoster": "Promijeni tko dolazi: {team} · {date}",
+          "member": "Dolazi",
           "reason": "Razlog",
           "save": "Spremi izmjenu",
           "saving": "Spremanje…",
@@ -1227,6 +1234,7 @@
         "discardDialog": {
           "prompt": "Odbaciti izmjenu za {team} · {date}? Vraća se {type} prema rotaciji.",
           "promptNoRotation": "Odbaciti izmjenu za {team} · {date}? Na taj dan nema rotacije.",
+          "promptRoster": "Odbaciti promjenu sastava za {team} · {date}? Sastav se vraća prema rotaciji.",
           "confirm": "Odbaci",
           "cancel": "Odustani od odbacivanja",
           "discarding": "Odbacivanje…"
@@ -1243,6 +1251,8 @@
           "changed": "Rotacija je u međuvremenu promijenjena. Prikaz je osvježen, pregledaj izmjenu ponovno.",
           "reason": "Upiši razlog, 1–200 znakova.",
           "sameAsProjected": "To je već tip smjene prema rotaciji.",
+          "sameMember": "Odaberi drugu osobu koja dolazi.",
+          "taken": "Ta osoba već je u promjeni za ovu smjenu. Prikaz je osvježen.",
           "failed": "Promjena nije uspjela. Pokušaj ponovno."
         },
         "erasures": {
@@ -1251,6 +1261,7 @@
           "ledeAmend": "{count, plural, one {Promijenjena izmjena uklanja uzrok # neriješenog konflikta.} few {Promijenjena izmjena uklanja uzrok # neriješena konflikta.} other {Promijenjena izmjena uklanja uzrok # neriješenih konflikata.}} Prije izmjene odluči za svaki.",
           "rowTitle": "{team} · {weekday} {date} · {type}",
           "rowFree": "{member} na godišnjem · nakon promjene: {team} taj dan slobodna",
+          "rowWithout": "{member} na godišnjem · nakon promjene: {team} taj dan bez {member}",
           "decision": "Odluka: {team} · {weekday} {date} · {type}",
           "confirm": "Potvrdi brisanje",
           "keep": "Zadrži",

@@ -1,6 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { readCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
+import { ROSTER_ARCHIVED, ROSTER_GONE, ROSTER_TAKEN } from '@/features/calendar/services/roster-erasures';
 import { CHECK_READY, CHECK_REFUSED, type ErasureReads } from '@/features/conflicts/services/erasure-check';
 import {
   OVERRIDE_CHANGE_AMEND,
@@ -20,14 +21,21 @@ import {
   DISPOSITION_GONE,
   DISPOSITION_REASON,
   DISPOSITION_SAME_AS_PROJECTED,
+  DISPOSITION_TAKEN,
   amendEntryOf,
   rowOffersOf,
   type PendingOverrideRow,
+  type PendingRosterOverrideRow,
 } from '@/features/rotation/services/override-disposition';
 import {
   reviewAmendChangeOf,
   reviewConfirmChangeOf,
+  reviewErasureCheckOf,
   reviewRefusalOf,
+  reviewRosterRefusalOf,
+  reviewedAmendChangeOf,
+  reviewedConfirmChangeOf,
+  rosterAmendOptionsOf,
   staleRefusalOf,
 } from '@/features/rotation/services/override-review-erasures';
 import {
@@ -38,6 +46,7 @@ import {
   calendarMemberRow,
   calendarOrganizationRow,
   calendarOverrideRow,
+  calendarRosterOverrideRow,
   calendarTableOf,
   memberMembershipRow,
   membersAnswerOf,
@@ -95,6 +104,7 @@ async function calendarOf(overrides: readonly Row[]): Promise<CalendarSnapshot> 
 /** The review's row of a pending override of Smjena A on 10.09 (projected Dan), as `pendingOverrideRowsOf` lists it. */
 function rowOf(id: string, shiftTypeId: string, governed = true): PendingOverrideRow {
   return {
+    layer: 'shiftType',
     id,
     teamId: A,
     teamName: 'Smjena A',
@@ -315,5 +325,163 @@ describe('Resolved', () => {
       kind: CHECK_READY,
       rows: [],
     });
+  });
+});
+
+// ------------------------------------------------------- the roster layer (0039)
+
+const ANA = '00000000-0000-4000-8000-0000000000c1';
+const B = 'pilot-smjena-b';
+
+/** The pilot calendar with Ana on Smjena B (Noć on 10.09) beside the viewer, and these roster overrides. */
+async function rosterCalendarOf(rosterOverrides: readonly Row[]): Promise<CalendarSnapshot> {
+  const source = calendarTableOf(
+    {
+      data: [
+        calendarOrganizationRow(PILOT, {
+          viewers: [viewerRow([membershipRow(A, SEEDED)], { role: 'admin' })],
+          versions: [memberMembershipRow(VIEWER_MEMBER, A, SEEDED), memberMembershipRow(ANA, B, SEEDED)],
+        }),
+      ],
+      error: null,
+      count: 1,
+    },
+    membersAnswerOf([calendarMemberRow(VIEWER_MEMBER, VIEWER_NAME), calendarMemberRow(ANA, 'Ana Anić')]),
+    overridesAnswerOf([]),
+    rosterOverridesAnswerOf(rosterOverrides),
+  );
+  const outcome = await readCalendar(source, source, viewerSession());
+
+  if (!outcome.ok) throw new Error(outcome.code);
+
+  return outcome.snapshot;
+}
+
+/** The review's row of a pending roster change of Smjena A on 10.09 taking the viewer off. */
+function rosterRowOf(id: string, memberInId: string | null = null): PendingRosterOverrideRow {
+  return {
+    layer: 'roster',
+    id,
+    teamId: A,
+    teamName: 'Smjena A',
+    isoDate: DATE,
+    date: '10.09.2026',
+    memberOutId: VIEWER_MEMBER,
+    memberOutName: VIEWER_NAME,
+    memberInId,
+    memberInName: null,
+    projectedTypeName: 'Dan',
+    reason: 'Bolovanje',
+    authorName: VIEWER_NAME,
+    governed: true,
+    governingSavedAt: '2026-09-01T08:00:00.123456+00:00',
+  };
+}
+
+const PENDING_TAKE_OFF = calendarRosterOverrideRow('take-off', A, DATE, VIEWER_MEMBER, null, { createdAt: BEFORE_VERSIONS });
+
+describe('the roster layer: confirm and amend erase (0039)', () => {
+  it("lists the conflict of the member on leave a pending take-off removes once confirmed, in the review's words", async () => {
+    const calendar = await rosterCalendarOf([PENDING_TAKE_OFF]);
+    const check = await reviewErasureCheckOf(readsOf(calendar), reviewedConfirmChangeOf(rosterRowOf('take-off')), true);
+
+    expect(check).toEqual({
+      kind: CHECK_READY,
+      rows: [expect.objectContaining({ memberId: VIEWER_MEMBER, date: DATE, teamId: A, teamWorks: true })],
+    });
+    if (check.kind !== CHECK_READY) throw new Error(check.kind);
+
+    const [row] = check.rows;
+
+    if (row === undefined) throw new Error('no row');
+
+    expect(t('rotation.builder.overrides.erasures.rowWithout', { member: row.memberName, team: row.teamName })).toBe(
+      `${VIEWER_NAME} na godišnjem · nakon promjene: Smjena A taj dan bez ${VIEWER_NAME}`,
+    );
+  });
+
+  it('lists it for an amend that puts someone else on in the same change', async () => {
+    const calendar = await rosterCalendarOf([PENDING_TAKE_OFF]);
+    const check = await reviewErasureCheckOf(
+      readsOf(calendar),
+      reviewedAmendChangeOf(rosterRowOf('take-off'), ANA),
+      true,
+    );
+
+    expect(check).toEqual({ kind: CHECK_READY, rows: [expect.objectContaining({ memberId: VIEWER_MEMBER })] });
+  });
+
+  it('lists nothing for a pending change that only puts a member on', async () => {
+    const calendar = await rosterCalendarOf([
+      calendarRosterOverrideRow('put-on', A, DATE, null, ANA, { createdAt: BEFORE_VERSIONS }),
+    ]);
+    const row: PendingRosterOverrideRow = { ...rosterRowOf('put-on', ANA), memberOutId: null, memberOutName: null };
+
+    expect(await reviewErasureCheckOf(readsOf(calendar), reviewedConfirmChangeOf(row), true)).toEqual({
+      kind: CHECK_READY,
+      rows: [],
+    });
+  });
+
+  it('refuses a change gone from the fresh calendar as the review says it, on the stale path', async () => {
+    const calendar = await rosterCalendarOf([]);
+    const check = await reviewErasureCheckOf(readsOf(calendar), reviewedConfirmChangeOf(rosterRowOf('take-off')), true);
+
+    expect(check).toEqual({ kind: CHECK_REFUSED, code: DISPOSITION_GONE });
+    expect(staleRefusalOf(DISPOSITION_GONE)).toBe(true);
+  });
+
+  it("maps the roster guard's refusals to the review's codes, every one stale", () => {
+    expect(([ROSTER_GONE, ROSTER_ARCHIVED, ROSTER_TAKEN] as const).map((code) => reviewRosterRefusalOf(code))).toEqual([
+      DISPOSITION_GONE,
+      DISPOSITION_ARCHIVED,
+      DISPOSITION_TAKEN,
+    ]);
+    expect(staleRefusalOf(DISPOSITION_TAKEN)).toBe(true);
+  });
+});
+
+describe("the roster amend's choice: the calendar's candidates (0039)", () => {
+  it('offers the members active that day and off its roster, in the three groups, never the member taken off', async () => {
+    const calendar = await rosterCalendarOf([PENDING_TAKE_OFF]);
+    const options = rosterAmendOptionsOf({ calendar, records: LEAVE_10, resolutions: [] }, rosterRowOf('take-off'));
+
+    // Ana works Smjena B's Noć on 10.09: offered, among those working.
+    expect(options).toEqual({
+      ok: true,
+      groups: [
+        { kind: 'free', options: [] },
+        { kind: 'working', options: [{ id: ANA, name: 'Ana Anić' }] },
+        { kind: 'onLeave', options: [] },
+      ],
+    });
+  });
+
+  it('refuses as the write would: gone from the fresh calendar, or its team archived', async () => {
+    const empty = await rosterCalendarOf([]);
+    const calendar = await rosterCalendarOf([PENDING_TAKE_OFF]);
+    const archived: CalendarSnapshot = {
+      ...calendar,
+      teams: calendar.teams.map((team) => (team.id === A ? { ...team, archived: true } : team)),
+    };
+
+    expect(rosterAmendOptionsOf({ calendar: empty, records: [], resolutions: [] }, rosterRowOf('take-off'))).toEqual({
+      ok: false,
+      code: DISPOSITION_GONE,
+    });
+    expect(rosterAmendOptionsOf({ calendar: archived, records: [], resolutions: [] }, rosterRowOf('take-off'))).toEqual({
+      ok: false,
+      code: DISPOSITION_ARCHIVED,
+    });
+  });
+
+  it('answers a failure, logged, when the leave cannot be trusted', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const calendar = await rosterCalendarOf([PENDING_TAKE_OFF]);
+
+    expect(
+      rosterAmendOptionsOf({ calendar, records: [{ member_id: 'stranger' }], resolutions: [] }, rosterRowOf('take-off')),
+    ).toEqual({ ok: false, code: DISPOSITION_FAILED });
+    expect(logged).toHaveBeenCalled();
   });
 });

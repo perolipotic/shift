@@ -89,7 +89,9 @@ import { HOUR_BANDS_COLUMNS, hourBandRowOf, type HourBandRow } from '@/features/
  * and the member put on, reason, time, and its author as a member id. A
  * third rpc beside the select, under the same key. Whether one applies, and
  * whether it is pending review, is the domain's (`rosterOn`,
- * `overrideStandingOf`).
+ * `overrideStandingOf`). Since 0039 it answers `confirmed_at` too, as the
+ * shift-type read does since 3.5c: the builder's review confirms a roster
+ * override a rotation change left pending.
  *
  * THE HOUR BANDS (story 4.1b). Every band of the organization, embedded
  * beside the shift types so *Sati* derives a member's hours from this same
@@ -230,6 +232,8 @@ export interface CalendarRosterOverride extends RosterOverride {
   readonly reason: string;
   /** An instant, as the database answers it; formatted in the organization's zone. */
   readonly createdAt: string;
+  /** When an admin last confirmed it after a rotation change (0039), as answered; `null` for never. */
+  readonly confirmedAt: string | null;
   readonly authorMemberId: string | null;
 }
 
@@ -628,10 +632,11 @@ function memberIdAt(row: Record<string, unknown>, column: string): string | null
  * array, a row that does not validate — no text id, a team the answer lacks,
  * a malformed date, a member neither text nor null, no member at all or one
  * member twice, a reason that is not text, a creation time that is not an
- * instant, or an author neither text nor null — one id twice, or a member
- * taken off or put on one team's date twice (0026's live keys). A member the
- * members read does not name is kept: the detail names them as nobody. Only
- * the eight columns are carried off a row.
+ * instant, a confirmation time neither an instant nor null (0039), or an
+ * author neither text nor null — one id twice, or a member taken off or put
+ * on one team's date twice (0026's live keys). A member the members read does
+ * not name is kept: the detail names them as nobody. Only the nine columns
+ * are carried off a row.
  */
 function rosterOverridesOf(answered: unknown, teamIds: ReadonlySet<string>): CalendarRosterOverride[] | null {
   if (!isRecord(answered) || answered['error'] !== null) return null;
@@ -652,6 +657,7 @@ function rosterOverridesOf(answered: unknown, teamIds: ReadonlySet<string>): Cal
     const memberInId = memberIdAt(row, 'member_in_id');
     const reason = row['reason'];
     const createdAt = textAt(row, 'created_at');
+    const confirmedAt = row['confirmed_at'];
     const authorMemberId = memberIdAt(row, 'author_member_id');
 
     if (id === null || teamId === null || !teamIds.has(teamId)) return null;
@@ -661,8 +667,19 @@ function rosterOverridesOf(answered: unknown, teamIds: ReadonlySet<string>): Cal
     // Any text, as for a shift-type override: its content is 0026's check alone.
     if (typeof reason !== 'string') return null;
     if (createdAt === null || instantMicrosOf(createdAt) === null) return null;
+    if (confirmedAt !== null && instantMicrosOf(confirmedAt) === null) return null;
 
-    overrides.push({ id, teamId, date, memberOutId, memberInId, reason, createdAt, authorMemberId });
+    overrides.push({
+      id,
+      teamId,
+      date,
+      memberOutId,
+      memberInId,
+      reason,
+      createdAt,
+      confirmedAt: confirmedAt as string | null,
+      authorMemberId,
+    });
   }
 
   if (new Set(overrides.map((override) => override.id)).size !== overrides.length) return null;

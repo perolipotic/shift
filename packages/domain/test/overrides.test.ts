@@ -410,4 +410,13 @@ describe('overrideStandingOf', () => {
       ),
     ).toThrow(/2026-09-14/);
   });
+
+  it('confirms a roster override as it confirms a shift-type one: confirmed after the change, it is in force (0039)', () => {
+    const stamps = stampsOf(PILOT_ROTATION_ASSIGNMENTS, true);
+    // A replacement written before the change, then one confirmed after it:
+    // the caller stamps `confirmedAt ?? createdAt`, as for the shift-type layer.
+    const waiting = { id: 'r1', teamId: alfa, date: '2026-09-14', writtenAt: WRITTEN_AT };
+    const confirmed = { id: 'r2', teamId: alfa, date: '2026-09-14', writtenAt: CHANGED_AT + 1 };
+    expect(overrideStandingOf(stamps, [waiting, confirmed])).toEqual({ inForce: [confirmed], pending: [waiting] });
+  });
 });

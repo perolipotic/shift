@@ -134,8 +134,9 @@ export interface RotationVersionStamp {
  * Any live override — a shift-type one (story 3.5a) or a roster one (story
  * 3.6a) — as the pending rule reads it: its identity, the team and date it
  * changes, and the instant it was written, as an integer instant (µs since the
- * epoch). A shift-type override's is its `confirmedAt` when an admin confirmed
- * it, else its `createdAt`; a roster override's is its `createdAt`.
+ * epoch): its `confirmedAt` when an admin confirmed it after a rotation
+ * change, else its `createdAt` — for a shift-type override (story 3.5c) and,
+ * since 0039, for a roster override alike.
  */
 export interface StampedOverride {
   readonly id: string;
@@ -175,7 +176,8 @@ function checkInstant(label: string, value: number): void {
  * the order of `overrides`.
  *
  * ONE RULE FOR BOTH LAYERS (story 3.6a): a roster override is pending by the
- * same rule, over its `createdAt`. How many overrides one team and date may
+ * same rule, over its `confirmedAt ?? createdAt` (0039), and is confirmed,
+ * amended or discarded in the same review. How many overrides one team and date may
  * carry is each layer's own precondition — one shift-type override
  * ({@link overridesByTeamAndDate}), and one roster override per member taken
  * off or put on — so it is checked by the callers of each layer, not here.

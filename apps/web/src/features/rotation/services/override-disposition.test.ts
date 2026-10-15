@@ -4,8 +4,32 @@ import { initLocalization, t } from '@/lib/i18n';
 import { readRotation, type RotationSnapshot } from '@/features/rotation/services/list';
 import {
   AMEND_OVERRIDE_FUNCTION,
+  AMEND_ROSTER_OVERRIDE_FUNCTION,
+  AMEND_TYPES,
   CONFIRM_OVERRIDE_FUNCTION,
+  CONFIRM_ROSTER_OVERRIDE_FUNCTION,
   DISCARD_OVERRIDE_FUNCTION,
+  DISCARD_ROSTER_OVERRIDE_FUNCTION,
+  DISPOSITION_SAME_MEMBER,
+  DISPOSITION_TAKEN,
+  REVIEW_ROSTER,
+  amendReviewed,
+  amendRosterOverride,
+  confirmReviewed,
+  confirmRosterOverride,
+  discardReviewed,
+  discardRosterOverride,
+  offeredIn,
+  pendingRosterRowsOf,
+  reviewAmendDefaultsOf,
+  reviewAmendEntryOf,
+  reviewOffersOf,
+  reviewRowsOf,
+  rosterAmendEntryOf,
+  rosterDispositionFailureOf,
+  shiftTypeAmendGroupsOf,
+  type PendingRosterOverrideRow,
+  type ReviewRpc,
   DISPOSITION_AMENDED,
   DISPOSITION_ARCHIVED,
   DISPOSITION_CHANGED,
@@ -41,8 +65,10 @@ import {
   UJ5,
   answerOf,
   assignmentRow,
+  memberIdOf,
   memberRow,
   overrideRow,
+  rosterOverrideRow,
   rotationTableOf,
   typeRow,
   type FixtureRows,
@@ -247,6 +273,7 @@ describe('the three calls', () => {
   }
 
   const governed: PendingOverrideRow = {
+    layer: 'shiftType',
     id: 'o1',
     teamId: 'pilot-smjena-a',
     teamName: 'Smjena A',
@@ -412,6 +439,7 @@ describe('the words', () => {
 
 describe('what the review offers and opens with', () => {
   const row: PendingOverrideRow = {
+    layer: 'shiftType',
     id: 'o1',
     teamId: 'pilot-smjena-a',
     teamName: 'Smjena A',
@@ -456,5 +484,283 @@ describe('what the review offers and opens with', () => {
     } finally {
       logged.mockRestore();
     }
+  });
+});
+
+// ------------------------------------------------------- the roster layer (0039)
+
+describe('which roster overrides wait for review (0039)', () => {
+  const SPARE = '00000000-0000-4000-8000-0000000000b1';
+  const MEMBER = '00000000-0000-4000-8000-0000000000b2';
+  const members = [memberRow(ADMIN, ADMIN_NAME), memberRow(MEMBER, 'Marko Horvat'), memberRow(SPARE, 'Petra Kovač')];
+
+  it.each(FIXTURES)('$fixture: pending on and after the change, in force before it, by the one rule', async ({ rows, first, pattern, offset }) => {
+    const snapshot = await snapshotOf({
+      ...withChange(rows, pattern, offset),
+      members,
+      rosterOverrides: [
+        rosterOverrideRow('r-before', first, EARLIER, memberIdOf(MEMBER), memberIdOf(SPARE)),
+        rosterOverrideRow('r-on', first, CHANGE, memberIdOf(MEMBER), null),
+        rosterOverrideRow('r-after', first, AFTER, null, memberIdOf(SPARE), { createdBy: SECOND_ADMIN }),
+      ],
+    });
+    const rosterRows = pendingRosterRowsOf(snapshot);
+
+    expect(rosterRows.map((row) => row.id)).toEqual(['r-on', 'r-after']);
+    expect(rosterRows[0]).toEqual({
+      layer: REVIEW_ROSTER,
+      id: 'r-on',
+      teamId: first,
+      teamName: snapshot.teams.find((team) => team.id === first)?.name,
+      isoDate: CHANGE,
+      date: '20.09.2026',
+      memberOutId: memberIdOf(MEMBER),
+      memberOutName: 'Marko Horvat',
+      memberInId: null,
+      memberInName: null,
+      projectedTypeName: expect.any(String) as string,
+      reason: 'Zamjena zbog bolovanja.',
+      authorName: ADMIN_NAME,
+      governed: true,
+      governingSavedAt: CHANGED_AT,
+    });
+    // An author the members embed does not name is nobody.
+    expect(rosterRows[1]?.authorName).toBeNull();
+    // Both layers in one review, and in the save's count.
+    expect(pendingOverrideCountOf(snapshot)).toBe(2);
+    // Confirmed after the change, it is in force.
+    const confirmed = await snapshotOf({
+      ...withChange(rows, pattern, offset),
+      members,
+      rosterOverrides: [
+        rosterOverrideRow('r-on', first, CHANGE, memberIdOf(MEMBER), null, { confirmedAt: '2026-09-16T08:00:00+00:00' }),
+      ],
+    });
+
+    expect(pendingRosterRowsOf(confirmed)).toEqual([]);
+  });
+
+  it('with no version on its date: pending, and only discarded', async () => {
+    const snapshot = await snapshotOf({
+      ...PILOT,
+      members,
+      rosterOverrides: [rosterOverrideRow('r1', 'pilot-smjena-a', '2019-12-31', memberIdOf(MEMBER), null)],
+    });
+    const [row] = pendingRosterRowsOf(snapshot);
+
+    expect(row).toMatchObject({ projectedTypeName: null, governed: false, governingSavedAt: null });
+    expect(row === undefined ? null : reviewOffersOf(row)).toEqual({ confirm: false, amend: false });
+  });
+
+  it('lists both layers in one review, by date, then team, then the shift-type row first', async () => {
+    const snapshot = await snapshotOf({
+      ...withChange(PILOT, 'pilot-rotation', 'pilot-step-2'),
+      members,
+      overrides: [overrideRow('o1', 'pilot-smjena-a', AFTER, 'pilot-noc')],
+      rosterOverrides: [
+        rosterOverrideRow('r1', 'pilot-smjena-a', AFTER, memberIdOf(MEMBER), null),
+        rosterOverrideRow('r0', 'pilot-smjena-b', CHANGE, memberIdOf(MEMBER), null),
+      ],
+    });
+
+    expect(reviewRowsOf(snapshot).map((row) => [row.layer, row.id])).toEqual([
+      ['roster', 'r0'],
+      ['shiftType', 'o1'],
+      ['roster', 'r1'],
+    ]);
+    expect(overrideReviewOf(snapshot)).toEqual({ ok: true, rows: reviewRowsOf(snapshot) });
+  });
+});
+
+describe("the roster amend's preflight and its defaults (0039)", () => {
+  const row: PendingRosterOverrideRow = {
+    layer: REVIEW_ROSTER,
+    id: 'r1',
+    teamId: 'pilot-smjena-a',
+    teamName: 'Smjena A',
+    isoDate: AFTER,
+    date: '21.09.2026',
+    memberOutId: 'm-out',
+    memberOutName: 'Marko Horvat',
+    memberInId: 'm-in',
+    memberInName: 'Petra Kovač',
+    projectedTypeName: 'Dan',
+    reason: 'Bolovanje',
+    authorName: null,
+    governed: true,
+    governingSavedAt: '2026-09-01T08:00:00.123456+00:00',
+  };
+  const groups = [
+    { kind: 'free', options: [] },
+    { kind: 'working', options: [{ id: 'm-other', name: 'Ivo Ivić' }] },
+    { kind: 'onLeave', options: [] },
+  ] as const;
+
+  it('refuses none, the member already put on or the one taken off, then a reason outside 1–200 characters', () => {
+    for (const member of ['', 'm-in', 'm-out']) {
+      expect(rosterAmendEntryOf(row, member, 'Zamjena'), member).toEqual({ ok: false, code: DISPOSITION_SAME_MEMBER });
+    }
+    expect(rosterAmendEntryOf(row, 'm-other', ' \t ')).toEqual({ ok: false, code: DISPOSITION_REASON });
+    expect(rosterAmendEntryOf(row, 'm-other', 'y'.repeat(201))).toEqual({ ok: false, code: DISPOSITION_REASON });
+    expect(rosterAmendEntryOf(row, 'm-other', '  Zamjena ')).toEqual({ ok: true, memberInId: 'm-other', reason: 'Zamjena' });
+    expect(reviewAmendEntryOf(row, 'm-other', 'Zamjena')).toEqual({ ok: true, choiceId: 'm-other', reason: 'Zamjena' });
+  });
+
+  it('opens on the first member offered and its own reason, and offers confirm and amend where a version governs', () => {
+    expect(reviewAmendDefaultsOf(row, groups)).toEqual({ choiceId: 'm-other', reason: 'Bolovanje' });
+    expect(reviewAmendDefaultsOf(row, [])).toEqual({ choiceId: undefined, reason: 'Bolovanje' });
+    expect(offeredIn(groups, 'm-other')).toBe(true);
+    expect(offeredIn(groups, 'm-in')).toBe(false);
+    expect(reviewOffersOf(row)).toEqual({ confirm: true, amend: true });
+  });
+
+  it("offers a shift-type row's types as one group", () => {
+    const options = [{ id: 'pilot-noc', name: 'Noć' }];
+
+    expect(
+      shiftTypeAmendGroupsOf({
+        layer: 'shiftType',
+        id: 'o1',
+        teamId: 'pilot-smjena-a',
+        teamName: 'Smjena A',
+        isoDate: AFTER,
+        date: '21.09.2026',
+        shiftTypeId: 'pilot-dan',
+        typeName: 'Dan',
+        projectedShiftTypeId: 'pilot-slobodno',
+        projectedTypeName: 'Slobodno',
+        reason: 'x',
+        authorName: null,
+        governed: true,
+        governingSavedAt: null,
+        options,
+      }),
+    ).toEqual([{ kind: AMEND_TYPES, options }]);
+  });
+});
+
+describe("the roster layer's three calls (0039)", () => {
+  function clientOf(answer: DispositionAnswer | Promise<never>) {
+    const calls: unknown[][] = [];
+    const client = {
+      rpc(fn: string, args: unknown) {
+        calls.push([fn, args]);
+
+        return answer instanceof Promise ? answer : Promise.resolve(answer);
+      },
+    } as unknown as ReviewRpc;
+
+    return { client, calls };
+  }
+
+  const governed: PendingRosterOverrideRow = {
+    layer: REVIEW_ROSTER,
+    id: 'r1',
+    teamId: 'pilot-smjena-a',
+    teamName: 'Smjena A',
+    isoDate: AFTER,
+    date: '21.09.2026',
+    memberOutId: 'm-out',
+    memberOutName: null,
+    memberInId: null,
+    memberInName: null,
+    projectedTypeName: 'Dan',
+    reason: 'x',
+    authorName: null,
+    governed: true,
+    governingSavedAt: '2026-09-01T08:00:00.123456+00:00',
+  };
+  const ungoverned: PendingRosterOverrideRow = { ...governed, projectedTypeName: null, governed: false, governingSavedAt: null };
+
+  it('confirm, amend and discard each call their one function, the confirm and amend with the token', async () => {
+    const ok = { error: null };
+    const confirm = clientOf(ok);
+    const amend = clientOf(ok);
+    const discard = clientOf(ok);
+
+    expect(await confirmRosterOverride(confirm.client, governed)).toEqual({ ok: true });
+    expect(await amendRosterOverride(amend.client, governed, 'm-in', '  Zamjena ')).toEqual({ ok: true });
+    expect(await discardRosterOverride(discard.client, ungoverned)).toEqual({ ok: true });
+    expect(confirm.calls).toEqual([
+      [CONFIRM_ROSTER_OVERRIDE_FUNCTION, { p_override_id: 'r1', p_governing_saved_at: '2026-09-01T08:00:00.123456+00:00' }],
+    ]);
+    expect(amend.calls).toEqual([
+      [
+        AMEND_ROSTER_OVERRIDE_FUNCTION,
+        {
+          p_override_id: 'r1',
+          p_member_in_id: 'm-in',
+          p_reason: 'Zamjena',
+          p_governing_saved_at: '2026-09-01T08:00:00.123456+00:00',
+        },
+      ],
+    ]);
+    expect(discard.calls).toEqual([[DISCARD_ROSTER_OVERRIDE_FUNCTION, { p_override_id: 'r1' }]]);
+    expect([CONFIRM_ROSTER_OVERRIDE_FUNCTION, AMEND_ROSTER_OVERRIDE_FUNCTION, DISCARD_ROSTER_OVERRIDE_FUNCTION]).toEqual([
+      'confirm_roster_override',
+      'amend_roster_override',
+      'remove_roster_override',
+    ]);
+  });
+
+  it("picks the row's own layer: a roster row never reaches a shift-type function", async () => {
+    const ok = { error: null };
+    const both = clientOf(ok);
+
+    await confirmReviewed(both.client, governed);
+    await amendReviewed(both.client, governed, 'm-in', 'Zamjena');
+    await discardReviewed(both.client, governed);
+    expect(both.calls.map(([fn]) => fn)).toEqual([
+      CONFIRM_ROSTER_OVERRIDE_FUNCTION,
+      AMEND_ROSTER_OVERRIDE_FUNCTION,
+      DISCARD_ROSTER_OVERRIDE_FUNCTION,
+    ]);
+  });
+
+  it('sends nothing for a refused amend entry, or a confirm or amend where no version governs the date', async () => {
+    const { client, calls } = clientOf({ error: null });
+
+    expect(await amendRosterOverride(client, governed, 'm-out', 'Zamjena')).toEqual({ ok: false, code: DISPOSITION_SAME_MEMBER });
+    expect(await amendRosterOverride(client, governed, 'm-in', '')).toEqual({ ok: false, code: DISPOSITION_REASON });
+    expect(await confirmRosterOverride(client, ungoverned)).toMatchObject({ ok: false });
+    expect(await amendRosterOverride(client, ungoverned, 'm-in', 'Zamjena')).toMatchObject({ ok: false });
+    expect(calls).toEqual([]);
+  });
+
+  it("maps every refusal of 0039's matrix to its code", async () => {
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      for (const [error, failure] of [
+        [{ code: '42501' }, DISPOSITION_DENIED],
+        [{ code: 'P0002' }, DISPOSITION_GONE],
+        [{ code: 'P0001', message: 'ROSTER_OVERRIDE_ARCHIVED' }, DISPOSITION_ARCHIVED],
+        [{ code: '23514', message: 'ROSTER_OVERRIDE_ARCHIVED' }, DISPOSITION_ARCHIVED],
+        [{ code: 'P0001', message: 'ROSTER_OVERRIDE_CHANGED' }, DISPOSITION_CHANGED],
+        // A shift-type override's message is no refusal of this layer.
+        [{ code: 'P0001', message: 'SHIFT_TYPE_OVERRIDE_CHANGED' }, DISPOSITION_FAILED],
+        [{ code: '23505' }, DISPOSITION_TAKEN],
+        [{ code: '23514' }, DISPOSITION_REASON],
+        [{ code: '23503' }, DISPOSITION_FAILED],
+      ] as const) {
+        expect(rosterDispositionFailureOf(error), JSON.stringify(error)).toBe(failure);
+        expect(await confirmRosterOverride(clientOf({ error }).client, governed)).toEqual({ ok: false, code: failure });
+      }
+    } finally {
+      quiet.mockRestore();
+    }
+  });
+
+  it("says the roster layer's refusals, its row and its discard in Croatian", () => {
+    expect(([DISPOSITION_SAME_MEMBER, DISPOSITION_TAKEN] as const).map((failure) => t(dispositionMessageKey(failure)))).toEqual([
+      'Odaberi drugu osobu koja dolazi.',
+      'Ta osoba već je u promjeni za ovu smjenu. Prikaz je osvježen.',
+    ]);
+    expect(t('rotation.builder.overrides.roster.replaced', { out: 'Marko Horvat', in: 'Petra Kovač' })).toBe(
+      'Promjena sastava: Marko Horvat → Petra Kovač',
+    );
+    expect(t('rotation.builder.overrides.discardDialog.promptRoster', { team: 'Smjena A', date: '21.09.2026' })).toBe(
+      'Odbaciti promjenu sastava za Smjena A · 21.09.2026? Sastav se vraća prema rotaciji.',
+    );
   });
 });

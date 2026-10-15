@@ -132,7 +132,7 @@ export function overrideStandingOfCalendar(snapshot: CalendarSnapshot): Override
   return standing;
 }
 
-/** One live roster override of the calendar with the instant it was written (story 3.6a). */
+/** One live roster override of the calendar with the instant it was written or last confirmed (story 3.6a, 0039). */
 export type StampedCalendarRosterOverride = CalendarRosterOverride & { readonly writtenAt: number };
 
 const ROSTER_STANDINGS = new WeakMap<CalendarSnapshot, OverrideStanding<StampedCalendarRosterOverride>>();
@@ -140,8 +140,9 @@ const ROSTER_STANDINGS = new WeakMap<CalendarSnapshot, OverrideStanding<StampedC
 /**
  * The snapshot's live roster overrides IN FORCE and those PENDING review
  * (story 3.6a): the twin of {@link overrideStandingOfCalendar}, over each
- * roster override's `createdAt` — it has no confirmation. Only `inForce`
- * reaches a cell, a day or a roster. Worked out once per snapshot.
+ * roster override's `confirmedAt ?? createdAt` — confirmed in the builder's
+ * review since 0039. Only `inForce` reaches a cell, a day or a roster.
+ * Worked out once per snapshot.
  *
  * @throws RangeError on any precondition of `overrideStandingOf`.
  */
@@ -154,7 +155,7 @@ export function rosterStandingOfCalendar(snapshot: CalendarSnapshot): OverrideSt
     snapshot.assignmentStamps,
     snapshot.rosterOverrides.map((override) => ({
       ...override,
-      writtenAt: instantMicrosOf(override.createdAt) ?? Number.NaN,
+      writtenAt: instantMicrosOf(override.confirmedAt ?? override.createdAt) ?? Number.NaN,
     })),
   );
 

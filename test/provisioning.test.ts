@@ -1731,6 +1731,10 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'amend_shift_type_override', argumentCount: 4 },
     // STORY 3.6b. The roster override's soft-remove, on 3.5b's attributes.
     { name: 'remove_roster_override', argumentCount: 1 },
+    // 0039. The roster override's confirmation and amend, on 3.5c's
+    // attributes, each with the token from the start.
+    { name: 'confirm_roster_override', argumentCount: 2 },
+    { name: 'amend_roster_override', argumentCount: 4 },
     // STORY 5.2a. The leave record's soft-remove and its atomic amend, on
     // 3.6b's and 3.5c's attributes.
     { name: 'remove_leave_record', argumentCount: 1 },
@@ -1767,6 +1771,10 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // rotation tables, past row level security, as 0035's re-check does.
     { name: 'refuse_override_on_archived', argumentCount: 0 },
     { name: 'refuse_archive_in_rotation', argumentCount: 0 },
+    // 0039. The refusal of a version onto a pattern with an archived type
+    // reads the caller, `rotation_steps` and `shift_types` past row level
+    // security, as 0036's do.
+    { name: 'refuse_assignment_on_archived_type', argumentCount: 0 },
   ];
 
   it.skipIf(noDatabase).each(ACCESS_CONTROL_FUNCTIONS)(
@@ -1836,6 +1844,9 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'rotation_assignments_in_view', argumentCount: 1, expected: ['authenticated'] },
     { name: 'rotation_steps_in_view', argumentCount: 1, expected: ['authenticated'] },
     { name: 'rotation_overrides_in_view', argumentCount: 1, expected: ['authenticated'] },
+    // 0039's pending roster overrides, and 0025's assignments re-created
+    // beside it, on the same terms.
+    { name: 'rotation_roster_overrides_in_view', argumentCount: 1, expected: ['authenticated'] },
     // STORY 1.8. The roster is called by a signed-in session over REST, and by
     // nobody else: an anonymous caller has no organization to scope it to.
     { name: 'team_roster', argumentCount: 1, expected: ['authenticated'] },
@@ -1854,6 +1865,9 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'amend_shift_type_override', argumentCount: 4, expected: ['authenticated'] },
     // STORY 3.6b. The roster override's removal, on 3.5b's removal's terms.
     { name: 'remove_roster_override', argumentCount: 1, expected: ['authenticated'] },
+    // 0039. The roster override's confirmation and amend, on 3.5c's terms.
+    { name: 'confirm_roster_override', argumentCount: 2, expected: ['authenticated'] },
+    { name: 'amend_roster_override', argumentCount: 4, expected: ['authenticated'] },
     // STORY 5.2a. The leave record's removal and amend, on 3.6b's terms.
     { name: 'remove_leave_record', argumentCount: 1, expected: ['authenticated'] },
     { name: 'amend_leave_record', argumentCount: 3, expected: ['authenticated'] },
@@ -1882,6 +1896,8 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // 0036's two trigger functions, on 0023's terms.
     { name: 'refuse_override_on_archived', argumentCount: 0, expected: [] },
     { name: 'refuse_archive_in_rotation', argumentCount: 0, expected: [] },
+    // 0039's trigger function, on 0023's terms.
+    { name: 'refuse_assignment_on_archived_type', argumentCount: 0, expected: [] },
     // STORY 5.4a's trigger function, on 0023's terms: its owner, and nobody else.
     { name: 'refuse_conflict_resolution_off_leave', argumentCount: 0, expected: [] },
     // 0024's name key, in `private`, which PostgREST does not expose. Every
@@ -1912,6 +1928,7 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'rotation_assignments_in_view', argumentCount: 1 },
     { name: 'rotation_steps_in_view', argumentCount: 1 },
     { name: 'rotation_overrides_in_view', argumentCount: 1 },
+    { name: 'rotation_roster_overrides_in_view', argumentCount: 1 },
     // 0023's TRUNCATE refusal reads nothing, so it has no reason to be a definer.
     { name: 'refuse_truncate', argumentCount: 0 },
     // 0024's name key reads nothing; it runs as whoever writes the name.

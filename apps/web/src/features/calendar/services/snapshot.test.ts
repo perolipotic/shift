@@ -831,7 +831,7 @@ describe('the read', () => {
     vi.restoreAllMocks();
   });
 
-  it('reads the live roster overrides, by team, date and id, and carries only their eight fields (story 3.6a)', async () => {
+  it('reads the live roster overrides, by team, date and id, and carries only their nine fields (story 3.6a, 0039)', async () => {
     const outcome = await read(
       tableOf(
         answerOf(PILOT),
@@ -840,7 +840,9 @@ describe('the read', () => {
         rosterOverridesAnswerOf([
           { ...calendarRosterOverrideRow('r3', 'pilot-smjena-b', '2026-09-03', 'm-out', null), created_by: 'never-carried' },
           calendarRosterOverrideRow('r2', 'pilot-smjena-a', '2026-09-14', null, 'm-in', { author: null }),
-          calendarRosterOverrideRow('r1', 'pilot-smjena-a', '2026-09-14', 'm-out', 'm-other'),
+          calendarRosterOverrideRow('r1', 'pilot-smjena-a', '2026-09-14', 'm-out', 'm-other', {
+            confirmedAt: '2026-09-20T08:00:00.123456+00:00',
+          }),
         ]),
       ),
     );
@@ -848,10 +850,12 @@ describe('the read', () => {
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
     const base = { reason: 'Zamjena zbog bolovanja.', createdAt: '2026-09-12T17:05:00+00:00' };
+    const confirmed = { confirmedAt: '2026-09-20T08:00:00.123456+00:00' };
+    const unconfirmed = { confirmedAt: null };
     expect(outcome.snapshot.rosterOverrides).toEqual([
-      { id: 'r1', teamId: 'pilot-smjena-a', date: '2026-09-14', memberOutId: 'm-out', memberInId: 'm-other', ...base, authorMemberId: VIEWER_MEMBER },
-      { id: 'r2', teamId: 'pilot-smjena-a', date: '2026-09-14', memberOutId: null, memberInId: 'm-in', ...base, authorMemberId: null },
-      { id: 'r3', teamId: 'pilot-smjena-b', date: '2026-09-03', memberOutId: 'm-out', memberInId: null, ...base, authorMemberId: VIEWER_MEMBER },
+      { id: 'r1', teamId: 'pilot-smjena-a', date: '2026-09-14', memberOutId: 'm-out', memberInId: 'm-other', ...base, ...confirmed, authorMemberId: VIEWER_MEMBER },
+      { id: 'r2', teamId: 'pilot-smjena-a', date: '2026-09-14', memberOutId: null, memberInId: 'm-in', ...base, ...unconfirmed, authorMemberId: null },
+      { id: 'r3', teamId: 'pilot-smjena-b', date: '2026-09-03', memberOutId: 'm-out', memberInId: null, ...base, ...unconfirmed, authorMemberId: VIEWER_MEMBER },
     ]);
   });
 
@@ -882,6 +886,9 @@ describe('the read', () => {
       // A reason that is not text, a time that is no instant, an author neither text nor null.
       rosterOverridesAnswerOf([{ ...good, reason: null }]),
       rosterOverridesAnswerOf([{ ...good, created_at: 'yesterday' }]),
+      // A confirmation time neither an instant nor null, or no confirmation column at all (0039).
+      rosterOverridesAnswerOf([{ ...good, confirmed_at: 'today' }]),
+      rosterOverridesAnswerOf([{ ...good, confirmed_at: undefined }]),
       rosterOverridesAnswerOf([{ ...good, author_member_id: 7 }]),
       // One id twice; one member taken off, or put on, one team's date twice.
       rosterOverridesAnswerOf([good, { ...good, member_out_id: 'm-other', member_in_id: null }]),

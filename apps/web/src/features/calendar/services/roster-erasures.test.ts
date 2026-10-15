@@ -3,6 +3,8 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
   PENDING_ROSTER_CHANGE_ID,
+  ROSTER_CHANGE_AMEND,
+  ROSTER_CHANGE_CONFIRM,
   ROSTER_CHANGE_REMOVAL,
   ROSTER_CHANGE_SAVE,
   rosterChangeSnapshotOf,
@@ -18,7 +20,7 @@ import {
   type ErasureReads,
 } from '@/features/conflicts/services/erasure-check';
 import { erasuresOf, isoInstantOf, latestInstantOf, type ErasureRow } from '@/features/conflicts/services/erasures';
-import { ROSTER_GONE, ROSTER_TAKEN } from '@/features/calendar/services/roster-write';
+import { ROSTER_ARCHIVED, ROSTER_GONE, ROSTER_TAKEN } from '@/features/calendar/services/roster-write';
 import { instantMicrosOf } from '@/features/rotation/services/list';
 import { initLocalization, t } from '@/lib/i18n';
 import {
@@ -212,6 +214,7 @@ describe('several erasures', () => {
       memberInId: null,
       reason: '',
       createdAt,
+      confirmedAt: null,
       authorMemberId: null,
     });
     const after: CalendarSnapshot = {
@@ -301,6 +304,94 @@ describe('Replace link', () => {
         resolutionOf(VIEWER_MEMBER, '2026-09-10', A, 'replace_member', 'replace'),
       ]),
     ).toEqual([]);
+  });
+});
+
+/** Written before the seeded rotation's save: a rotation change left it pending. */
+const BEFORE_THE_ROTATION = { createdAt: '2019-01-01T00:00:00+00:00' };
+
+describe("the builder review's confirm and amend (0039)", () => {
+  it('Confirm: a pending take-off of a member on leave puts it in force, so the conflict it erases is listed', async () => {
+    const snapshot = await calendarOf([
+      calendarRosterOverrideRow('took-off', A, '2026-09-10', VIEWER_MEMBER, null, BEFORE_THE_ROTATION),
+    ]);
+    const confirm: RosterChange = { kind: ROSTER_CHANGE_CONFIRM, overrideId: 'took-off' };
+    const applied = rosterChangeSnapshotOf(snapshot, confirm);
+
+    if (!applied.ok) throw new Error(applied.code);
+
+    // Pending before; confirmed newer than every instant, and in force after.
+    expect(rosterStandingOfCalendar(snapshot).pending.map((override) => override.id)).toEqual(['took-off']);
+    expect(rosterStandingOfCalendar(applied.after).inForce.map((override) => override.id)).toEqual(['took-off']);
+    expect(instantMicrosOf(applied.after.rosterOverrides[0]?.confirmedAt)).toBe(latestInstantOf(snapshot) + 1);
+    expect(applied.from).toBe('2026-09-10');
+    expect(rowsOf(snapshot, confirm, [recordOf('record-1', '2026-09-10', '2026-09-11')])).toEqual([
+      expect.objectContaining({ memberId: VIEWER_MEMBER, date: '2026-09-10', teamId: A, teamWorks: true }),
+    ]);
+  });
+
+  it('Amend: the change with the new member put on replaces it, newest, and the member on leave it takes off is listed', async () => {
+    const snapshot = await calendarOf([
+      calendarRosterOverrideRow('took-off', A, '2026-09-10', VIEWER_MEMBER, null, BEFORE_THE_ROTATION),
+    ]);
+    const amend: RosterChange = { kind: ROSTER_CHANGE_AMEND, overrideId: 'took-off', memberInId: ANA };
+    const applied = rosterChangeSnapshotOf(snapshot, amend);
+
+    if (!applied.ok) throw new Error(applied.code);
+
+    expect(applied.after.rosterOverrides).toEqual([
+      expect.objectContaining({
+        id: PENDING_ROSTER_CHANGE_ID,
+        teamId: A,
+        date: '2026-09-10',
+        memberOutId: VIEWER_MEMBER,
+        memberInId: ANA,
+        confirmedAt: null,
+      }),
+    ]);
+    expect(rosterStandingOfCalendar(applied.after).inForce.map((override) => override.id)).toEqual([PENDING_ROSTER_CHANGE_ID]);
+    expect(rowsOf(snapshot, amend, [recordOf('record-1', '2026-09-10', '2026-09-11')]).map((row) => row.memberId)).toEqual([
+      VIEWER_MEMBER,
+    ]);
+  });
+
+  it('erases nothing when the change confirmed only puts a member on', async () => {
+    const snapshot = await calendarOf([
+      calendarRosterOverrideRow('put-on', B, '2026-09-13', null, VIEWER_MEMBER, BEFORE_THE_ROTATION),
+    ]);
+
+    expect(
+      rowsOf(snapshot, { kind: ROSTER_CHANGE_CONFIRM, overrideId: 'put-on' }, [recordOf('record-1', '2026-09-13', '2026-09-14')]),
+    ).toEqual([]);
+  });
+
+  it('answers gone, archived or taken before deriving, as the definers would refuse', async () => {
+    const snapshot = await calendarOf([
+      calendarRosterOverrideRow('took-off', A, '2026-09-10', VIEWER_MEMBER, null, BEFORE_THE_ROTATION),
+      calendarRosterOverrideRow('ana-on', A, '2026-09-10', null, ANA),
+    ]);
+    const archived: CalendarSnapshot = {
+      ...snapshot,
+      teams: snapshot.teams.map((team) => (team.id === A ? { ...team, archived: true } : team)),
+    };
+
+    expect(rosterChangeSnapshotOf(snapshot, { kind: ROSTER_CHANGE_CONFIRM, overrideId: 'gone' })).toEqual({
+      ok: false,
+      code: ROSTER_GONE,
+    });
+    expect(rosterChangeSnapshotOf(snapshot, { kind: ROSTER_CHANGE_AMEND, overrideId: 'gone', memberInId: ANA })).toEqual({
+      ok: false,
+      code: ROSTER_GONE,
+    });
+    expect(rosterChangeSnapshotOf(archived, { kind: ROSTER_CHANGE_CONFIRM, overrideId: 'took-off' })).toEqual({
+      ok: false,
+      code: ROSTER_ARCHIVED,
+    });
+    // Another live change of the team and date already puts Ana on: 0026's live key.
+    expect(rosterChangeSnapshotOf(snapshot, { kind: ROSTER_CHANGE_AMEND, overrideId: 'took-off', memberInId: ANA })).toEqual({
+      ok: false,
+      code: ROSTER_TAKEN,
+    });
   });
 });
 

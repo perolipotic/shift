@@ -910,7 +910,8 @@ describe('the rotation modules write nothing they must not', () => {
       deletes += source.split('.delete(').length - 1;
       rpcs += source.split('.rpc(').length - 1;
       if (file !== 'services/write.ts') expect(source, file).not.toContain('.delete(');
-      // STORY 3.5c: the three disposition calls, in their one module alone.
+      // STORY 3.5c: the three disposition calls, in their one module alone,
+      // and since 0039 the roster layer's three beside them.
       if (file !== 'services/override-disposition.ts') expect(source, file).not.toContain('.rpc(');
       expect(source, file).not.toContain('.update(');
       expect(source, file).not.toContain('.upsert(');
@@ -918,8 +919,15 @@ describe('the rotation modules write nothing they must not', () => {
 
     const disposition = readFileSync(new URL('services/override-disposition.ts', directory), 'utf8');
 
-    expect(rpcs, 'a disposition call arrived outside confirm, amend and discard').toBe(3);
-    for (const name of ['confirmShiftTypeOverride', 'amendShiftTypeOverride', 'discardShiftTypeOverride']) {
+    expect(rpcs, 'a disposition call arrived outside confirm, amend and discard').toBe(6);
+    for (const name of [
+      'confirmShiftTypeOverride',
+      'amendShiftTypeOverride',
+      'discardShiftTypeOverride',
+      'confirmRosterOverride',
+      'amendRosterOverride',
+      'discardRosterOverride',
+    ]) {
       const body = new RegExp(`export async function ${name}\\([\\s\\S]*?\\n\\}`).exec(disposition)?.[0] ?? '';
 
       expect(body, `${name} does not make its one call`).toContain('client.rpc(');

@@ -627,19 +627,25 @@ export const KEY_SOURCES = [
     // the refusal when the check cannot be derived,
     // with its retry, and the landed disposition's count of the conflicts it
     // removed. The hook renders no string.
+    // FIFTY SINCE 0039: a pending roster override's row — its change, said
+    // as a replacement, an arrival or a removal, with an unknown member named
+    // as the unknown author is — its amend's title and member field, its
+    // discard's prompt, and its erasure row's "taj dan bez {member}" line.
     name: 'the rotation override review',
     file: ROTATION_OVERRIDE_REVIEW,
     keys: translationKeys,
-    strings: 42,
+    strings: 50,
   },
   {
     // STORY 3.5c: the six refusals of a disposition (an archived team or type
     // among them), 0035's seventh (the governing rotation version changed),
     // and the three things a landed one says — confirmed, amended, discarded.
+    // 0039 adds two roster refusals: the same arriving member, and one
+    // already put on by another live change.
     name: 'the rotation disposition rules',
     file: ROTATION_DISPOSITION_KEYS,
     keys: memberListKeys,
-    strings: 10,
+    strings: 12,
   },
   {
     // STORY 2.4: the four step names and Dalje's three labels, one per step

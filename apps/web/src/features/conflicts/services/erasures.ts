@@ -70,7 +70,7 @@ export function latestInstantOf(calendar: CalendarSnapshot): number {
   const instants: readonly (number | null)[] = [
     ...calendar.assignmentStamps.map((stamp) => stamp.createdAt),
     ...calendar.overrides.map((override) => instantMicrosOf(override.confirmedAt ?? override.createdAt)),
-    ...calendar.rosterOverrides.map((override) => instantMicrosOf(override.createdAt)),
+    ...calendar.rosterOverrides.map((override) => instantMicrosOf(override.confirmedAt ?? override.createdAt)),
   ];
 
   // A REDUCE, not a spread into `Math.max`: an organization's every override

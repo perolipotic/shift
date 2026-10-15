@@ -1353,6 +1353,18 @@ const SANCTIONED_SCREEN_KEYS = [
   'rotation.builder.overrides.refused.reason',
   'rotation.builder.overrides.refused.sameAsProjected',
   'rotation.builder.overrides.refused.failed',
+  // 0039: the roster layer of the same review — a row's change said as a
+  // replacement, an arrival or a removal, its amend's title and member
+  // field, its discard's prompt, and its two refusals (the same arriving
+  // member, and one another live change already puts on).
+  'rotation.builder.overrides.roster.replaced',
+  'rotation.builder.overrides.roster.added',
+  'rotation.builder.overrides.roster.removed',
+  'rotation.builder.overrides.amendDialog.titleRoster',
+  'rotation.builder.overrides.amendDialog.member',
+  'rotation.builder.overrides.discardDialog.promptRoster',
+  'rotation.builder.overrides.refused.sameMember',
+  'rotation.builder.overrides.refused.taken',
   // STORY 5.5a: the rotation save's erasure confirmation — a row's title and
   // its two second lines (the team free that day, or working without the
   // member), the toggles' group label, "Potvrdi brisanje" and "Zadrži", the
@@ -1476,6 +1488,8 @@ const SANCTIONED_SCREEN_KEYS = [
   // removed count are plurals, above.
   'rotation.builder.overrides.erasures.rowTitle',
   'rotation.builder.overrides.erasures.rowFree',
+  // 0039: a roster override's erasure row, "taj dan bez {member}".
+  'rotation.builder.overrides.erasures.rowWithout',
   'rotation.builder.overrides.erasures.decision',
   'rotation.builder.overrides.erasures.confirm',
   'rotation.builder.overrides.erasures.keep',

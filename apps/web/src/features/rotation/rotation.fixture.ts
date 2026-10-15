@@ -44,6 +44,8 @@ export interface FixtureRows {
   readonly members?: readonly Row[];
   /** The live shift-type overrides embed (story 3.5c); none when a fixture names none. */
   readonly overrides?: readonly Row[];
+  /** The pending roster overrides embed (0039); none when a fixture names none. */
+  readonly rosterOverrides?: readonly Row[];
   /** The hour bands the calendar embeds (story 4.1b); none when a fixture names none. */
   readonly bands?: readonly Row[];
 }
@@ -53,8 +55,18 @@ export function bandRow(id: string, name: string, startTime: string, organizatio
   return { organization_id: organization, id, name, start_time: startTime };
 }
 
-export function memberRow(authUserId: string, name: string, organization = ORGANIZATION): Row {
-  return { organization_id: organization, auth_user_id: authUserId, name };
+/** The `members.id` a fixture member gets unless one is named: derived from the auth user id. */
+export function memberIdOf(authUserId: string): string {
+  return `member-${authUserId}`;
+}
+
+export function memberRow(
+  authUserId: string,
+  name: string,
+  organization = ORGANIZATION,
+  memberId = memberIdOf(authUserId),
+): Row {
+  return { organization_id: organization, id: memberId, auth_user_id: authUserId, name };
 }
 
 export function teamRow(id: string, name: string, { archived = false, organization = ORGANIZATION } = {}): Row {
@@ -139,6 +151,36 @@ export function organizationRow(rows: FixtureRows, timezone = 'Europe/Zagreb'): 
     rotation_history: rows.history ?? rows.assignments,
     members: rows.members ?? [memberRow(ADMIN, ADMIN_NAME)],
     shift_type_overrides: rows.overrides ?? [],
+    roster_overrides: rows.rosterOverrides ?? [],
+  };
+}
+
+/** One pending roster override as the builder embeds it (0039). */
+export function rosterOverrideRow(
+  id: string,
+  teamId: string,
+  date: string,
+  memberOutId: string | null,
+  memberInId: string | null,
+  {
+    reason = 'Zamjena zbog bolovanja.',
+    createdBy = ADMIN,
+    createdAt = '2026-09-12T17:05:00+00:00',
+    confirmedAt = null as string | null,
+    organization = ORGANIZATION,
+  } = {},
+): Row {
+  return {
+    organization_id: organization,
+    id,
+    team_id: teamId,
+    date,
+    member_out_id: memberOutId,
+    member_in_id: memberInId,
+    reason,
+    created_by: createdBy,
+    created_at: createdAt,
+    confirmed_at: confirmedAt,
   };
 }
 
@@ -362,7 +404,12 @@ export function calendarRosterOverrideRow(
   date: string,
   memberOutId: unknown,
   memberInId: unknown,
-  options: { readonly reason?: unknown; readonly createdAt?: unknown; readonly author?: unknown } = {},
+  options: {
+    readonly reason?: unknown;
+    readonly createdAt?: unknown;
+    readonly confirmedAt?: unknown;
+    readonly author?: unknown;
+  } = {},
 ): Row {
   return {
     id,
@@ -372,6 +419,7 @@ export function calendarRosterOverrideRow(
     member_in_id: memberInId,
     reason: options.reason ?? 'Zamjena zbog bolovanja.',
     created_at: options.createdAt ?? '2026-09-12T17:05:00+00:00',
+    confirmed_at: options.confirmedAt ?? null,
     author_member_id: options.author === undefined ? VIEWER_MEMBER : options.author,
   };
 }

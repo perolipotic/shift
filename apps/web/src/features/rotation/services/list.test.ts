@@ -27,6 +27,7 @@ import {
   rotationSurfaceStateOf,
   rotationTeamsOf,
   rotationTodayOf,
+  rosterStandingOfSnapshot,
   writableRotationOf,
   type RotationAnswer,
   type RotationSnapshot,
@@ -44,8 +45,10 @@ import {
   UJ5,
   answerOf,
   assignmentRow,
+  memberIdOf,
   memberRow,
   overrideRow,
+  rosterOverrideRow,
   stepRow,
   teamRow,
   type FixtureRows,
@@ -204,7 +207,7 @@ describe('the attribution, read in the same snapshot (story 2.6)', () => {
     expect(ROTATION_COLUMNS).toContain(
       'rotation_history:rotation_assignments(organization_id,id,team_id,pattern_id,effective_from,created_by,created_at)',
     );
-    expect(ROTATION_COLUMNS).toContain('members(organization_id,auth_user_id,name)');
+    expect(ROTATION_COLUMNS).toContain('members(organization_id,id,auth_user_id,name)');
     // Names only: no role, email, rank or position reaches the builder.
     expect(ROTATION_COLUMNS).not.toMatch(/email|role|fire_rank|position\)/);
   });
@@ -228,7 +231,7 @@ describe('the attribution, read in the same snapshot (story 2.6)', () => {
     expect(Object.keys(snapshot.assignments[0] ?? {}).sort()).toEqual(
       ['anchorDate', 'effectiveFrom', 'offsetStepId', 'patternId', 'teamId'].sort(),
     );
-    expect(snapshot.authors).toEqual([{ authUserId: ADMIN, name: ADMIN_NAME }]);
+    expect(snapshot.authors).toEqual([{ memberId: memberIdOf(ADMIN), authUserId: ADMIN, name: ADMIN_NAME }]);
   });
 
   it('refuses a member of another tenant, a malformed member, and a version without its id, author or time', async () => {
@@ -242,6 +245,9 @@ describe('the attribution, read in the same snapshot (story 2.6)', () => {
       { ...PILOT, members: [memberRow(ADMIN, ADMIN_NAME), memberRow('stranger', 'Netko', OTHER_ORGANIZATION)] },
       { ...PILOT, members: [{ organization_id: ORGANIZATION, auth_user_id: '', name: 'Netko' }] },
       { ...PILOT, members: [memberRow(ADMIN, ADMIN_NAME), memberRow(ADMIN, 'Dvojnik')] },
+      // 0039: a member with no id, or two members sharing one.
+      { ...PILOT, members: [{ organization_id: ORGANIZATION, auth_user_id: ADMIN, name: ADMIN_NAME }] },
+      { ...PILOT, members: [memberRow(ADMIN, ADMIN_NAME), memberRow('other', 'Netko', ORGANIZATION, memberIdOf(ADMIN))] },
       withRow((row) => ({ ...row, id: null })),
       withRow((row) => ({ ...row, created_by: '' })),
       withRow((row) => ({ ...row, created_at: 'yesterday' })),
@@ -290,6 +296,7 @@ describe('the bounded read (0025)', () => {
       'rotation_assignments:rotation_assignments_in_view',
       'rotation_history:rotation_assignments',
       'shift_type_overrides:rotation_overrides_in_view',
+      'roster_overrides:rotation_roster_overrides_in_view',
     ]);
     // The unbounded embed carries the attribution alone: no offset, no anchor, and no step embed.
     const history = embeds.find((embed) => embed.startsWith('rotation_history:')) ?? '';
@@ -791,6 +798,109 @@ describe('the live overrides (story 3.5c)', () => {
       });
     }
     const { shift_type_overrides: _gone, ...noEmbed } = answerOf(PILOT).data![0] as Record<string, unknown>;
+
+    expect(await readRotation(tableOf({ data: [noEmbed], error: null, count: 1 }))).toEqual({
+      ok: false,
+      code: ROTATION_UNAVAILABLE,
+    });
+    vi.restoreAllMocks();
+  });
+
+  it('embeds the pending roster overrides (0039), carries them by team, date and id, and stamps a confirmation', async () => {
+    expect(ROTATION_COLUMNS).toContain(
+      'roster_overrides:rotation_roster_overrides_in_view(organization_id,id,team_id,date,member_out_id,member_in_id,reason,created_by,created_at,confirmed_at)',
+    );
+    const snapshot = await snapshotOf({
+      ...PILOT,
+      rosterOverrides: [
+        rosterOverrideRow('r2', 'pilot-smjena-b', '2026-09-03', 'm-out', null),
+        rosterOverrideRow('r1', 'pilot-smjena-a', '2026-09-14', null, 'm-in', { confirmedAt: '2026-09-20T08:00:00+00:00' }),
+      ],
+    });
+
+    expect(snapshot.rosterOverrides).toEqual([
+      {
+        id: 'r1',
+        teamId: 'pilot-smjena-a',
+        date: '2026-09-14',
+        memberOutId: null,
+        memberInId: 'm-in',
+        reason: 'Zamjena zbog bolovanja.',
+        createdBy: ADMIN,
+        createdAt: '2026-09-12T17:05:00+00:00',
+        confirmedAt: '2026-09-20T08:00:00+00:00',
+      },
+      {
+        id: 'r2',
+        teamId: 'pilot-smjena-b',
+        date: '2026-09-03',
+        memberOutId: 'm-out',
+        memberInId: null,
+        reason: 'Zamjena zbog bolovanja.',
+        createdBy: ADMIN,
+        createdAt: '2026-09-12T17:05:00+00:00',
+        confirmedAt: null,
+      },
+    ]);
+    // The seeded rotation predates both: in force, by the one rule.
+    expect(rosterStandingOfSnapshot(snapshot)).toEqual({
+      inForce: snapshot.rosterOverrides.map((override) => ({
+        ...override,
+        writtenAt: instantMicrosOf(override.confirmedAt ?? override.createdAt),
+      })),
+      pending: [],
+    });
+  });
+
+  it('holds a roster override pending under a version saved after it, and in force once confirmed after that (0039)', async () => {
+    const changed = '2026-09-25T10:00:00+00:00';
+    const rows = (confirmedAt: string | null): FixtureRows => ({
+      ...PILOT,
+      history: [
+        ...PILOT.assignments,
+        ...PILOT.assignments.map((row) => ({
+          ...row,
+          id: `${String(row['id'])}-changed`,
+          effective_from: '2026-09-10',
+          created_at: changed,
+        })),
+      ],
+      rosterOverrides: [rosterOverrideRow('r1', 'pilot-smjena-a', '2026-09-14', 'm-out', 'm-in', { confirmedAt })],
+    });
+
+    expect(rosterStandingOfSnapshot(await snapshotOf(rows(null))).pending.map((override) => override.id)).toEqual(['r1']);
+    expect(
+      rosterStandingOfSnapshot(await snapshotOf(rows('2026-09-25T10:00:00.000001+00:00'))).inForce.map(
+        (override) => override.id,
+      ),
+    ).toEqual(['r1']);
+  });
+
+  it('refuses a malformed, foreign or doubled roster override (0039)', async () => {
+    quiet();
+    const good = rosterOverrideRow('r1', 'pilot-smjena-a', '2026-09-14', 'm-out', 'm-in');
+
+    for (const rosterOverrides of [
+      [{ ...good, organization_id: OTHER_ORGANIZATION }],
+      [{ ...good, team_id: 'missing' }],
+      [{ ...good, date: '2026-02-30' }],
+      [{ ...good, member_out_id: null, member_in_id: null }],
+      [{ ...good, member_in_id: 'm-out' }],
+      [{ ...good, member_out_id: 7 }],
+      [{ ...good, reason: 7 }],
+      [{ ...good, created_by: null }],
+      [{ ...good, created_at: '2026-09-12' }],
+      [{ ...good, confirmed_at: 'yesterday' }],
+      [good, { ...good }],
+      [good, { ...good, id: 'r2', member_in_id: null }],
+      [good, { ...good, id: 'r2', member_out_id: null }],
+    ]) {
+      expect(await refusedOf({ ...PILOT, rosterOverrides }), JSON.stringify(rosterOverrides)).toEqual({
+        ok: false,
+        code: ROTATION_UNAVAILABLE,
+      });
+    }
+    const { roster_overrides: _gone, ...noEmbed } = answerOf(PILOT).data![0] as Record<string, unknown>;
 
     expect(await readRotation(tableOf({ data: [noEmbed], error: null, count: 1 }))).toEqual({
       ok: false,
