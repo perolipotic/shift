@@ -266,6 +266,14 @@ export const RESOLUTION_WRITE_KEYS = join(CONFLICTS_FEATURE, 'services', 'resolu
 export const MEMBER_EDIT: readonly string[] = [
   join(srcRoot, 'pages', 'ljudi.$id.tsx'),
   join(MEMBERS_FEATURE, 'hooks', 'use-member-edit.ts'),
+  // THE RETRO SPLIT (A16, A21): the page's reads stay in `use-member-edit`,
+  // each card's state and handlers are a hook of its own, and the screen they
+  // share is typed beside them.
+  join(MEMBERS_FEATURE, 'hooks', 'member-edit-context.ts'),
+  join(MEMBERS_FEATURE, 'hooks', 'use-member-basics.ts'),
+  join(MEMBERS_FEATURE, 'hooks', 'use-member-team.ts'),
+  join(MEMBERS_FEATURE, 'hooks', 'use-member-status.ts'),
+  join(MEMBERS_FEATURE, 'hooks', 'use-member-reset.ts'),
   join(MEMBERS_FEATURE, 'components', 'member-basics-card.tsx'),
   join(MEMBERS_FEATURE, 'components', 'member-team-card.tsx'),
   join(MEMBERS_FEATURE, 'components', 'member-status-card.tsx'),

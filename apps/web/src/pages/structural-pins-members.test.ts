@@ -2038,7 +2038,14 @@ describe('a team or membership write re-reads every screen that shows it, once i
    * wiring no node test can run: each write hands its own key and ITS list, and
    * the list only once the write landed — a refusal changed no row.
    */
-  const MEMBER_EDIT_HOOK = join(MEMBERS_FEATURE, 'hooks', 'use-member-edit.ts');
+  // The page's hook and, since the retro split (A16, A21), each card's own.
+  const MEMBER_EDIT_HOOK = [
+    join(MEMBERS_FEATURE, 'hooks', 'use-member-edit.ts'),
+    join(MEMBERS_FEATURE, 'hooks', 'use-member-basics.ts'),
+    join(MEMBERS_FEATURE, 'hooks', 'use-member-team.ts'),
+    join(MEMBERS_FEATURE, 'hooks', 'use-member-status.ts'),
+    join(MEMBERS_FEATURE, 'hooks', 'use-member-reset.ts'),
+  ];
   /** The keys the member edit screen itself reads: the only ones it may name. */
   const MEMBER_EDIT_OWN = ['MEMBERS_LIST_KEY', 'TEAMS_LIST_KEY', 'ORGANIZATION_SNAPSHOT_KEY'];
   const refreshesIn = (text: string): string[] =>
