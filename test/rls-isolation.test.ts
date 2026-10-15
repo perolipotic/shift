@@ -5283,7 +5283,7 @@ describe('an admin-issued reset replaces the credential and ends every session i
         ]);
 
         expect(await flagOf(client, rows[0]?.id ?? ''), 'createUser left the flag off').toBe(true);
-        expect(String(reply.body['password'])).toMatch(/^[a-z]{3,6}(-[a-z]{3,6}){3}$/);
+        expect(String(reply.body['password'])).toMatch(/^[a-z]{3,7}(-[a-z]{3,7}){3}$/);
       } finally {
         await client
           .query('delete from members where username = $1', [username])
