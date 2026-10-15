@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type MouseEvent } from 'react';
+import { useEffect, useEffectEvent, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type MouseEvent } from 'react';
 
 import { useCalendarSnapshot } from '@/features/calendar/hooks/use-calendar-snapshot';
 import { CALENDAR_KEY, calendarSurfaceStateOf } from '@/features/calendar/services/snapshot';
@@ -297,10 +297,11 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
   );
   // A SENT REMOVAL'S LINES stand on its confirmation until it closes or another opens.
   const removeGuard = confirming !== null && sentRemoveGuard !== null ? sentRemoveGuard : liveRemoveGuard;
+  // The query's own answer, which structural sharing keeps the same object
+  // while the records are unchanged, so the memos can follow it.
   const liveRecords = base.kind === LEAVE_READY ? base.input.records : null;
-  // WHAT THE MEMOS FOLLOW: the records' and the range's values, not the
-  // objects, which are new on every render.
-  const recordsKey = JSON.stringify(liveRecords);
+  // WHAT THE MEMOS FOLLOW: the range's values, not the preview, which is new
+  // on every render.
   const rangeFrom = opening !== null && preview?.kind === LEAVE_PREVIEW_READY ? preview.range.from : null;
   const rangeTo = opening !== null && preview?.kind === LEAVE_PREVIEW_READY ? preview.range.to : null;
   /** The calendar snapshot is being re-read — as every opening asks for — so the conflicts wait for it. */
@@ -318,7 +319,7 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
             calendarFetching,
           )
         : null,
-    [resolutionsRead, snapshot, memberId, recordsKey, opening, rangeFrom, rangeTo, calendarFetching],
+    [resolutionsRead, snapshot, memberId, liveRecords, opening, rangeFrom, rangeTo, calendarFetching],
   );
   /** What the open removal would clear (story 7.12); null while no confirmation is open. */
   const removeConflicts = useMemo<LeaveConflicts | null>(
@@ -333,7 +334,7 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
             calendarFetching,
           )
         : null,
-    [resolutionsRead, snapshot, memberId, recordsKey, confirming, calendarFetching],
+    [resolutionsRead, snapshot, memberId, liveRecords, confirming, calendarFetching],
   );
   /** The member's name as the calendar reads it, for the opener's accessible name and the dialog; null when not read. */
   // FROM THE MEMBER LIST first, which the card reads anyway; the calendar's otherwise.
@@ -352,10 +353,10 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
   /** Any leave write outstanding: every leave control waits for it. */
   const writePending = recordPending || amendPending || removePending;
   const formDisabled = base.kind !== LEAVE_READY || writePending || recordsState.refreshing;
-  /** The live records' ids, or null while the card is not ready. */
-  const liveIds = base.kind === LEAVE_READY ? base.rows.map((row) => row.record.id) : null;
-  /** What the effect below follows: the ids change, not the array's identity each render. */
-  const liveKey = JSON.stringify(liveIds);
+  /** The live records' ids as one key: the rows are new on every render, the ids are not. */
+  const liveKey = JSON.stringify(base.kind === LEAVE_READY ? base.rows.map((row) => row.record.id) : null);
+  /** The live records' ids, or null while the card is not ready: a new array only when the ids change. */
+  const liveIds = useMemo(() => JSON.parse(liveKey) as readonly string[] | null, [liveKey]);
 
   // A RECORD THAT LEFT THE LIST — removed or amended elsewhere, seen on a
   // re-read — closes its amend dialog and its confirmation, and so does a
@@ -393,7 +394,7 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
     if (confirming !== null && !removePending && (live === null || !live.includes(confirming.record.id))) {
       setConfirming(null);
     }
-  }, [liveKey, amendTarget, amendPending, confirming, removePending, opening, recordPending]);
+  }, [liveIds, amendTarget, amendPending, confirming, removePending, opening, recordPending]);
 
   const handoffReady = base.kind === LEAVE_READY && !recordsState.refreshing;
   const handoffKey = leaveHandoffKeyOf(handoff);
@@ -401,10 +402,11 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
   // THE HAND-OFF OPENS ONCE, the first time the rows are ready — after the
   // effect above, so its clearing never closes what this opens — and the
   // entry is then replaced without it, so a reload or Back never reopens it.
-  useEffect(() => {
-    if (handoffKey === null || handedOff.current === handoffKey || !handoffReady || base.kind !== LEAVE_READY) return;
-
-    handedOff.current = handoffKey;
+  // `handoff` and the rows are read when it opens, never followed: the
+  // objects are new on every render, so the effect follows their key and
+  // readiness instead.
+  const openHandoff = useEffectEvent((): void => {
+    if (base.kind !== LEAVE_READY) return;
 
     const handedOpening = leaveHandoffOpeningOf(handoff, memberId, base.rows);
 
@@ -431,9 +433,14 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
     } else {
       setConfirming(handedOpening.row);
     }
-    // `handoff` and the rows are read through their key and readiness: the
-    // objects are new on every render.
-  }, [handoffKey, handoffReady, liveKey, memberId]);
+  });
+
+  useEffect(() => {
+    if (handoffKey === null || handedOff.current === handoffKey || !handoffReady) return;
+
+    handedOff.current = handoffKey;
+    openHandoff();
+  }, [handoffKey, handoffReady, liveIds, memberId]);
 
   /** Clear everything the last write raised, before another is armed or sent. */
   function clearRaised(): void {

@@ -38,7 +38,7 @@ test('a new member sets their own password at the first sign-in, then signs in w
     await expect(people.statusWith(hr.ljudi.form.copied)).toBeVisible();
 
     issued = await adminPage.evaluate(() => navigator.clipboard.readText());
-    expect(issued).toMatch(/^[a-z]{3,6}(-[a-z]{3,6}){3}$/);
+    expect(issued).toMatch(/^[a-z]{3,7}(-[a-z]{3,7}){3}$/);
     await expect(people.issuedPassword).toHaveText(issued);
   } finally {
     await admin.close();
@@ -241,7 +241,7 @@ test('an admin reset shows four words with Kopiraj, and holds the next sign-in a
     await expect(people.resetDialog.getByRole('heading', { name: hr.ljudi.form.resetCredential })).toBeFocused();
     await expect(people.resetDialog.getByRole('status').filter({ hasText: hr.ljudi.form.resetIssued })).toBeVisible();
     await expect(people.resetDialog.getByText(hr.ljudi.form.resetCredentialOnce)).toBeVisible();
-    await expect(people.resetDialog.getByText(/^[a-z]{3,6}(-[a-z]{3,6}){3}$/)).toBeVisible();
+    await expect(people.resetDialog.getByText(/^[a-z]{3,7}(-[a-z]{3,7}){3}$/)).toBeVisible();
     // Escape never loses the one copy.
     await page.keyboard.press('Escape');
     await expect(people.resetDialog).toBeVisible();
@@ -249,7 +249,7 @@ test('an admin reset shows four words with Kopiraj, and holds the next sign-in a
     await expect(people.statusWith(hr.ljudi.form.copied)).toBeVisible();
 
     reset = await page.evaluate(() => navigator.clipboard.readText());
-    expect(reset).toMatch(/^[a-z]{3,6}(-[a-z]{3,6}){3}$/);
+    expect(reset).toMatch(/^[a-z]{3,7}(-[a-z]{3,7}){3}$/);
     // Sakrij lozinku closes it, and focus returns to the offer.
     await people.resetDismissButton.click();
     await expect(people.resetDialog).toHaveCount(0);

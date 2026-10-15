@@ -242,6 +242,7 @@ function OrganizationValue({ screen }: { readonly screen: SignInScreenState }): 
             defaultValue={organizationDefault}
             placeholder={t('auth.organization.placeholder')}
             onInput={organizationInput}
+            // eslint-disable-next-line jsx-a11y-x/no-autofocus -- the screen is this one form; focus opens on its first empty field (use-sign-in.ts).
             autoFocus={organizationFirst}
             aria-describedby={
               failure === null ? 'organization-hint' : 'sign-in-error organization-hint'

@@ -55,6 +55,7 @@ function Dialog({
   }, [open])
 
   return (
+    // eslint-disable-next-line jsx-a11y-x/no-noninteractive-element-interactions -- a native modal <dialog>; the keydown only cancels Escape (below).
     <dialog
       ref={element}
       // NOT DISMISSIBLE MEANS NO CLOSE REQUEST AT ALL. Chrome's CloseWatcher
@@ -131,12 +132,14 @@ function DialogHeader({
 const DialogTitle = React.forwardRef<
   HTMLHeadingElement,
   React.HTMLAttributes<HTMLHeadingElement>
->(({ className, ...props }, ref) => (
+>(({ className, children, ...props }, ref) => (
   <h2
     ref={ref}
     className={cn("font-heading text-lg font-bold leading-tight tracking-tight", className)}
     {...props}
-  />
+  >
+    {children}
+  </h2>
 ))
 DialogTitle.displayName = "DialogTitle"
 

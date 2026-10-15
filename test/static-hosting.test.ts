@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
  * HTTP 200. A redirect status would break client-side routing instead of
  * fixing it, which is the failure this asserts against.
  *
- * The two build-output assertions need a build. They use `it.skipIf` rather
+ * The build-output assertions need a build. They use `it.skipIf` rather
  * than an early `return`, so a clean checkout reports them as skipped instead
  * of reporting green having asserted nothing.
  */
@@ -162,5 +162,37 @@ describe('static host SPA fallback', () => {
 
     expect(emitted).toContain('index.html');
     expect(emitted.filter((entry) => !PERMITTED_DIST_ENTRIES.has(entry))).toEqual([]);
+  });
+});
+
+/**
+ * A source map holds the whole original source, comments included. The build
+ * keeps it for decoding a stack trace (`sourcemap: 'hidden'`), but no chunk
+ * points at it and the deploy deletes it before upload (DEPLOY.md §4).
+ */
+describe('source maps stay off the CDN', () => {
+  it('builds them hidden', () => {
+    const config = readFileSync(join(repoRoot, 'apps', 'web', 'vite.config.ts'), 'utf8');
+
+    expect(config).toMatch(/^\s*sourcemap: 'hidden',$/m);
+  });
+
+  it('deletes every map from the upload before the deploy publishes it', () => {
+    const action = readFileSync(join(repoRoot, '.github', 'actions', 'deploy', 'action.yml'), 'utf8');
+    const deleted = action.indexOf("find apps/web/dist -name '*.map' -type f -delete");
+    const published = action.indexOf('wrangler pages deploy apps/web/dist');
+
+    expect(deleted).toBeGreaterThan(-1);
+    expect(published).toBeGreaterThan(deleted);
+  });
+
+  it.skipIf(notBuilt)('no built chunk names its map', () => {
+    const assets = join(dist, 'assets');
+    const chunks = readdirSync(assets).filter((name) => /\.(js|css)$/.test(name));
+
+    expect(chunks.length, 'expected at least one built chunk').toBeGreaterThan(0);
+    for (const chunk of chunks) {
+      expect(readFileSync(join(assets, chunk), 'utf8'), chunk).not.toContain('sourceMappingURL');
+    }
   });
 });

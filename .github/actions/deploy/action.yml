@@ -101,8 +101,9 @@ runs:
         node scripts/ci/check-migrations.mjs "$RUNNER_TEMP/migrations.json"
 
     # site_url / additional_redirect_urls are the only per-environment values
-    # in config.toml. Rewritten in this runner's copy only; the committed file
-    # keeps its local values.
+    # in config.toml, and `[auth.rate_limit]` is local only, so it is dropped.
+    # Rewritten in this runner's copy only; the committed file keeps its local
+    # values.
     - name: Point [auth] URLs at this environment
       shell: bash
       env:
@@ -173,6 +174,13 @@ runs:
           echo "::error title=Secret in bundle::a key-shaped sb_secret_ value is in apps/web/dist"
           exit 1
         fi
+
+    # The build's source maps are `hidden` (vite.config.ts): no chunk names
+    # them, and they stay off the CDN, which would otherwise serve the whole
+    # original source to anyone who asks (DEPLOY.md §4).
+    - name: No source map is published
+      shell: bash
+      run: find apps/web/dist -name '*.map' -type f -delete
 
     # Direct Upload: the Pages project has no Git connection (DEPLOY.md §4), so
     # this is the only way anything is published, and it runs only after every

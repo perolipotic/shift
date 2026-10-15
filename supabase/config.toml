@@ -69,6 +69,19 @@ double_confirm_changes = true
 enable_signup = false
 enable_confirmations = false
 
+# LOCAL STACK ONLY. The E2E suite signs in from one address over and over
+# (wrong passwords, retries, `--repeat-each`), and a 429 there reads as
+# `auth.error.unavailable`, so a sign-in assertion would fail for the limit
+# rather than for the app. Raised from the CLI's defaults (30 and 150 per five
+# minutes): `sign_in_sign_ups` is the CLI's sign-in and sign-up limit, and
+# GoTrue counts every `/token` call, the password grant included, against
+# `token_refresh`. A deploy never sends this table: `scripts/ci/set-auth-urls.mjs`
+# drops it from the runner's copy before `config push`, so a hosted project
+# keeps the defaults (DEPLOY.md §8.6).
+[auth.rate_limit]
+sign_in_sign_ups = 1000
+token_refresh = 1000
+
 # AD-10: `organization_id` rides in a JWT claim, and this hook is the only thing
 # that puts it there. The function is created by
 # `supabase/migrations/0003_access_control.sql`, and the ordering matters in one

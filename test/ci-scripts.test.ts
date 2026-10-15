@@ -15,7 +15,7 @@ import {
   parseRequirements,
   problems,
 } from '../scripts/ci/require-config.mjs';
-import { rewriteAuthUrls, stripComment } from '../scripts/ci/set-auth-urls.mjs';
+import { rewriteAuthUrls, stripComment, withoutLocalRateLimits } from '../scripts/ci/set-auth-urls.mjs';
 import { LOCAL_APP_ORIGIN, renderEnvFiles } from '../scripts/ci/write-local-env.mjs';
 
 /**
@@ -183,11 +183,48 @@ describe('set-auth-urls: the runner copy of config.toml', () => {
     const file = scratchFile('config.toml', configToml);
 
     expect(run('set-auth-urls.mjs', [staging, file]).status).toBe(0);
-    expect(readFileSync(file, 'utf8')).toBe(rewriteAuthUrls(configToml, [staging]));
+    expect(readFileSync(file, 'utf8')).toBe(withoutLocalRateLimits(rewriteAuthUrls(configToml, [staging])));
 
     const refused = run('set-auth-urls.mjs', ['http://staging.shift.pages.dev', file]);
     expect(refused.status).not.toBe(0);
     expect(refused.stderr).toMatch(/must be https/);
+  });
+});
+
+describe('set-auth-urls: the local rate limits never reach a hosted project', () => {
+  it('raises the sign-in limits for the local stack', () => {
+    // A 429 in the E2E suite reads as `auth.error.unavailable`: the local
+    // limits sit far above what one run signs in.
+    const table = configToml.slice(configToml.indexOf('[auth.rate_limit]'));
+    expect(table).toMatch(/^sign_in_sign_ups = (\d+)$/m);
+    expect(table).toMatch(/^token_refresh = (\d+)$/m);
+    expect(Number(/^sign_in_sign_ups = (\d+)$/m.exec(table)?.[1])).toBeGreaterThanOrEqual(1000);
+    expect(Number(/^token_refresh = (\d+)$/m.exec(table)?.[1])).toBeGreaterThanOrEqual(1000);
+  });
+
+  it('drops the whole [auth.rate_limit] table and nothing else', () => {
+    const dropped = withoutLocalRateLimits(configToml);
+
+    expect(dropped).not.toContain('[auth.rate_limit]');
+    expect(dropped).not.toMatch(/^(sign_in_sign_ups|token_refresh)\s*=/m);
+    // Every other line survives, in order: the table was the only thing removed.
+    const before = configToml.split('\n');
+    const start = before.indexOf('[auth.rate_limit]');
+    const end = before.findIndex((line, index) => index > start && line.startsWith('['));
+    expect(dropped.split('\n')).toEqual([...before.slice(0, start), ...before.slice(end)]);
+    expect(dropped).toContain('[auth.hook.custom_access_token]');
+    expect(dropped).toContain('enable_signup = false');
+  });
+
+  it('ends the table at the next header', () => {
+    const toml = ['[auth.rate_limit]', 'token_refresh = 1000', '[auth.hook.x]', 'enabled = true', ''].join('\n');
+
+    expect(withoutLocalRateLimits(toml)).toBe(['[auth.hook.x]', 'enabled = true', ''].join('\n'));
+  });
+
+  it('refuses rather than guesses when the table is missing or repeated', () => {
+    expect(() => withoutLocalRateLimits('[auth]\nenabled = true\n')).toThrow(/found 0/);
+    expect(() => withoutLocalRateLimits('[auth.rate_limit]\n[auth.rate_limit]\n')).toThrow(/found 2/);
   });
 });
 

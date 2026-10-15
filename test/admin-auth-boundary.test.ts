@@ -103,7 +103,7 @@ import { WORDS } from '../supabase/functions/admin-auth/words.ts';
 
 /** What every issued credential looks like (story 7.8): four words of three
  *  to six lowercase letters, joined by hyphens. Written out, not derived. */
-const FOUR_WORDS = /^[a-z]{3,6}(-[a-z]{3,6}){3}$/;
+const FOUR_WORDS = /^[a-z]{3,7}(-[a-z]{3,7}){3}$/;
 
 /**
  * AD-16 / AD-17 — the privileged boundary refuses to act, and fails fast when
@@ -124,6 +124,39 @@ const UNLISTED_ORIGIN = 'https://attacker.example';
 function envFrom(overrides: Record<string, string | undefined> = {}) {
   const merged: Record<string, string | undefined> = { ...VALID_ENV, ...overrides };
   return (name: string): string | undefined => merged[name];
+}
+
+/** Whether one substitution, insertion or deletion turns `a` into `b`. */
+function oneEditApart(a: string, b: string): boolean {
+  if (a === b || Math.abs(a.length - b.length) > 1) return false;
+  if (a.length === b.length) return [...a].filter((letter, index) => letter !== b[index]).length === 1;
+
+  const [short, long] = a.length < b.length ? [a, b] : [b, a];
+  let index = 0;
+  while (index < short.length && short[index] === long[index]) index += 1;
+  return short.slice(index) === long.slice(index + 1);
+}
+
+/** A word without its final vowel: `riba` → `rib`, `brod` → `brod`. */
+function stemOf(word: string): string {
+  return word.replace(/[aeiou]$/, '');
+}
+
+/** The Croatian prefixes a word is built with: `po`+`tok`, `u`+`lov`, `iz`+`let`. */
+const WORD_PREFIXES = ['do', 'iz', 'na', 'nad', 'o', 'ob', 'od', 'po', 'pod', 'pre', 'pri', 'pro', 'raz', 's', 'sa', 'u', 'uz', 'za'];
+
+/**
+ * Whether `word` is `base` with an ending (it begins with `base`'s stem of
+ * three letters or more) or behind a prefix (`po` + `tok`).
+ */
+function derivedFrom(word: string, base: string): boolean {
+  const stem = stemOf(base);
+
+  if (stem.length >= 3 && word.length > stem.length && word.startsWith(stem)) return true;
+  return (
+    base.length >= 3 &&
+    WORD_PREFIXES.some((prefix) => word.startsWith(prefix) && stemOf(word.slice(prefix.length)) === stem)
+  );
 }
 
 function deps() {
@@ -430,6 +463,11 @@ describe('admin-auth: fails fast when misconfigured, and never falls back', () =
     ['project url absent', { SUPABASE_URL: undefined }, 'PROJECT_URL_MISSING'],
     ['project url is not a url', { SUPABASE_URL: 'not-a-url' }, 'PROJECT_URL_INVALID'],
     ['project url is not http(s)', { SUPABASE_URL: 'postgres://db.example:5432' }, 'PROJECT_URL_INVALID'],
+    // The SPA is the only caller: an empty allowlist would refuse every browser
+    // while `curl` still worked, so it is a misconfiguration, never a choice.
+    ['origin allowlist absent', { SHIFT_ALLOWED_ORIGINS: undefined }, 'ALLOWED_ORIGINS_MISSING'],
+    ['origin allowlist blank', { SHIFT_ALLOWED_ORIGINS: '  ' }, 'ALLOWED_ORIGINS_MISSING'],
+    ['origin allowlist only separators', { SHIFT_ALLOWED_ORIGINS: ' , ,' }, 'ALLOWED_ORIGINS_MISSING'],
   ])('reports %s as %s', (_label, overrides, code) => {
     const result = readConfiguration(envFrom(overrides));
 
@@ -874,10 +912,10 @@ describe('the password an admin hands over is generated, not typed', () => {
    * first sign-in.
    */
 
-  it('draws from a list of 2048 unique words of 3 to 6 letters, a to z only', () => {
+  it('draws from a list of 2048 unique words of 3 to 7 letters, a to z only', () => {
     expect(WORDS).toHaveLength(2048);
     expect(new Set(WORDS).size, 'a word appears twice, so it is twice as likely').toBe(WORDS.length);
-    for (const word of WORDS) expect(word, `${word} is not 3-6 letters a-z`).toMatch(/^[a-z]{3,6}$/);
+    for (const word of WORDS) expect(word, `${word} is not 3-7 letters a-z`).toMatch(/^[a-z]{3,7}$/);
   });
 
   it('holds no near-duplicates: no two words differ only by a final vowel', () => {
@@ -892,6 +930,53 @@ describe('the password an admin hands over is generated, not typed', () => {
       expect(earlier, `${word} and ${earlier ?? ''} are one word said twice`).toBeUndefined();
       stems.set(stem, word);
     }
+  });
+
+  it('holds no two words one letter apart, so no sound-alike is a valid word', () => {
+    // `kosa`/`koza`, `bas`/`pas`, `bal`/`val`: one letter misheard over a phone
+    // lands on another word in the list, and the credential fails with nothing
+    // to show which word was wrong. One substitution, insertion or deletion.
+    const near: string[] = [];
+
+    for (const [index, word] of WORDS.entries()) {
+      for (const other of WORDS.slice(index + 1)) {
+        if (oneEditApart(word, other)) near.push(`${word}/${other}`);
+      }
+    }
+
+    expect(near).toEqual([]);
+  });
+
+  it('holds no derivation: no word is another word with an ending or a prefix', () => {
+    // `riba`/`ribar`, `brod`/`brodar`, `tok`/`potok`: a listener who hears the
+    // root writes the root. A word may not begin with another word's stem (its
+    // final vowel dropped, three letters or more), nor be another word behind a
+    // Croatian prefix.
+    const derived: string[] = [];
+
+    for (const word of WORDS) {
+      for (const other of WORDS) {
+        if (other !== word && derivedFrom(other, word)) derived.push(`${word} → ${other}`);
+      }
+    }
+
+    expect(derived).toEqual([]);
+  });
+
+  it('tells a sound-alike and a derivation from a distinct pair', () => {
+    // The two checks above are only as good as these helpers.
+    expect(oneEditApart('kosa', 'koza')).toBe(true);
+    expect(oneEditApart('bas', 'pas')).toBe(true);
+    expect(oneEditApart('riba', 'ribar')).toBe(true);
+    expect(oneEditApart('kos', 'kosa')).toBe(true);
+    expect(oneEditApart('brod', 'brdo')).toBe(false);
+    expect(oneEditApart('kosa', 'kosa')).toBe(false);
+    expect(derivedFrom('brodar', 'brod')).toBe(true);
+    expect(derivedFrom('ribica', 'riba')).toBe(true);
+    expect(derivedFrom('potok', 'tok')).toBe(true);
+    expect(derivedFrom('ulov', 'lov')).toBe(true);
+    expect(derivedFrom('kompas', 'pas')).toBe(false);
+    expect(derivedFrom('brod', 'brodar')).toBe(false);
   });
 
   it('holds no word with a separator or a letter outside the plain alphabet', () => {

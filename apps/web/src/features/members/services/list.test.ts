@@ -75,7 +75,6 @@ import {
   membersSurfaceStateOf,
   narrowFrom,
   narrowMembers,
-  narrowingDependencies,
   nextSortState,
   readMembers,
   sortIndicatorOf,
@@ -1752,16 +1751,7 @@ describe('the things the surface can be showing, driven through the one query de
   });
 });
 
-describe('the narrowing declares its own inputs, so a memo cannot drop one', () => {
-  /**
-   * `eslint.config.js` registers no `react-hooks` plugin, so nothing lints a
-   * dependency array in `pages/ljudi.tsx`, and the screen is executed by
-   * nothing: dropping `sort` from a hand-written array left the suite green and
-   * eslint clean while the arrow flipped and the rows never moved. The screen
-   * derives the array from the same object it passes to `narrowFrom`, and this
-   * is what pins what that object contains.
-   */
-
+describe('the narrowing reads its inputs from one object', () => {
   const inputs: NarrowingInputs = {
     members: [member({ id: 'a' })],
     search: 'ana',
@@ -1772,34 +1762,7 @@ describe('the narrowing declares its own inputs, so a memo cannot drop one', () 
     today: TODAY,
   };
 
-  it('carries every input, and exactly the inputs the object declares', () => {
-    // COMPARED AGAINST THE OBJECT'S OWN KEYS, so a fifth input added to the
-    // narrowing and forgotten in the dependency list fails here rather than
-    // producing a table that quietly stops responding to it.
-    expect(narrowingDependencies(inputs)).toEqual(Object.values(inputs));
-    expect(narrowingDependencies(inputs)).toHaveLength(Object.keys(inputs).length);
-  });
-
-  it('names exactly the seven inputs, team and status among them', () => {
-    expect(Object.keys(inputs)).toEqual(['members', 'search', 'level', 'team', 'status', 'sort', 'today']);
-  });
-
-  it.each(['members', 'search', 'level', 'team', 'status', 'sort', 'today'])('changes when %s changes', (field) => {
-    const changed: NarrowingInputs = {
-      ...inputs,
-      ...(field === 'members' ? { members: [member({ id: 'b' })] } : {}),
-      ...(field === 'search' ? { search: 'boris' } : {}),
-      ...(field === 'level' ? { level: 'admin' as const } : {}),
-      ...(field === 'team' ? { team: NO_TEAM } : {}),
-      ...(field === 'status' ? { status: STATUS_ALL } : {}),
-      ...(field === 'sort' ? { sort: { key: LEAVE_COLUMN, direction: DESCENDING } } : {}),
-      ...(field === 'today' ? { today: '2026-09-24' } : {}),
-    };
-
-    expect(narrowingDependencies(changed)).not.toEqual(narrowingDependencies(inputs));
-  });
-
-  it('narrows from the same object the dependencies come from', () => {
+  it('narrows from every field of the object', () => {
     expect(narrowFrom(inputs)).toEqual(
       narrowMembers(
         inputs.members ?? [],

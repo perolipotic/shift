@@ -206,7 +206,9 @@ Repeat with `supabase/functions/.env.production` and `<production-ref>`. Every
 `SHIFT_ALLOWED_ORIGINS` is a comma-separated allowlist of exact origins. An
 origin not on it receives no `Access-Control-Allow-*` header at all, so the
 browser refuses the response — set it to the exact Pages hostname(s) for that
-environment.
+environment. It is required: unset, blank or only commas, the function refuses
+every request with `500 {"code":"ALLOWED_ORIGINS_MISSING"}` (§6), because the
+SPA is its only caller and a list that admits no browser is always a mistake.
 
 ---
 
@@ -278,6 +280,15 @@ The deploy job builds with `pnpm --filter "@shift/web..." build`. The `...` in
 no-op today and stops being one the moment `apps/web` imports `@shift/domain`,
 at which point the plain `--filter @shift/web` would deploy a bundle built
 against a stale or missing `packages/domain/dist`. Do not remove it.
+
+**Source maps never reach the CDN.** The build emits `dist/assets/*.js.map`
+with `sourcemap: 'hidden'` (`apps/web/vite.config.ts`): the maps exist, so a
+production stack trace can be decoded against the same build, but no chunk
+carries a `//# sourceMappingURL` comment. A map holds the whole original
+source, comments included, so the deploy job deletes every `*.map` in
+`apps/web/dist` before `wrangler pages deploy` (§8.1). A manual upload must do
+the same (§5.3). Keep a map you want for debugging out of the upload, never in
+it.
 
 Deep links need no configuration beyond what is committed:
 `apps/web/public/_redirects` contains `/*  /index.html  200`, so
@@ -454,7 +465,10 @@ failure and prints nothing at all.
 `config.toml` holds the local values, so **set them for the target environment
 before pushing** — either edit them for the push, or set them in the dashboard
 and confirm `config push` does not revert them. Whichever you choose, §6
-verifies the outcome rather than the intent.
+verifies the outcome rather than the intent. The `[auth.rate_limit]` table is
+local only too (raised for the E2E suite): remove it for the push. Running
+`node scripts/ci/set-auth-urls.mjs <origin>[,<origin>...]` does both, as the
+pipeline does, and `git checkout supabase/config.toml` puts the file back.
 
 > A `config push` failure is not cosmetic. Until it succeeds, that environment
 > accepts self-service signups. Treat it as a blocking step, not a follow-up.
@@ -516,6 +530,7 @@ promotion ends with a manual upload, built with that environment's values:
 VITE_SUPABASE_URL=https://<production-ref>.supabase.co \
 VITE_SUPABASE_PUBLISHABLE_KEY=<production sb_publishable_*> \
   pnpm --filter "@shift/web..." build
+find apps/web/dist -name '*.map' -type f -delete   # source maps stay off the CDN (§4)
 pnpm exec wrangler pages deploy apps/web/dist --project-name <project> --branch main
 # staging: the staging values, and --branch staging
 ```
@@ -562,7 +577,11 @@ curl -s -X POST https://<ref>.supabase.co/functions/v1/admin-auth \
 If the function returns `500 {"code":"SECRET_KEY_MISSING"}` or
 `500 {"code":"SECRET_KEY_INVALID"}`, its secrets are not set for that project.
 It never falls back to the publishable key. `500 {"code":"PROJECT_URL_INVALID"}`
-means `SUPABASE_URL` is not a parseable http(s) URL.
+means `SUPABASE_URL` is not a parseable http(s) URL, and
+`500 {"code":"ALLOWED_ORIGINS_MISSING"}` that `SHIFT_ALLOWED_ORIGINS` names no
+origin (§3). A browser sees none of these codes — with no allowlist it gets no
+CORS header — so read them with `curl`, or in the function's log, which names
+the code at startup.
 
 ### When a member write half-happened
 
@@ -1016,8 +1035,9 @@ same order, with nothing skipped:
    remote disagree, or if it recognises no migration at all
    (`scripts/ci/check-migrations.mjs`);
 5. rewrite `[auth] site_url` / `additional_redirect_urls` in the **runner's**
-   copy of `supabase/config.toml` to the normalized origins
-   (`scripts/ci/set-auth-urls.mjs`) — the committed file keeps its local values;
+   copy of `supabase/config.toml` to the normalized origins, and drop its
+   local-only `[auth.rate_limit]` table (`scripts/ci/set-auth-urls.mjs`) — the
+   committed file keeps its local values;
 6. `supabase config push` — after `db push`, always (§5.2b; what it sends: §8.6);
 7. `supabase secrets set --env-file` from a temporary file written by a heredoc
    and deleted when the step ends (`SHIFT_SECRET_KEY`, `SHIFT_PUBLISHABLE_KEY`,
@@ -1026,7 +1046,8 @@ same order, with nothing skipped:
 9. `pnpm --filter "@shift/web..." build` with that environment's `VITE_*`
    values, then a check that neither this environment's secret key nor any
    key-shaped `sb_secret_` value is in `apps/web/dist`;
-10. `wrangler pages deploy apps/web/dist --branch staging|main`.
+10. delete every `*.map` from `apps/web/dist`, so no source map is published (§4);
+11. `wrangler pages deploy apps/web/dist --branch staging|main`.
 
 ### 8.2 Configure it
 
@@ -1176,7 +1197,8 @@ dashboard for those settings is reverted on the next deploy.
 | `[auth.email]` `enable_signup = true`, `enable_confirmations = false`, `double_confirm_changes` | yes | the email/password provider on (sign-in needs it, §5.2a); no confirmation mail, since `.shift.invalid` addresses receive none | yes |
 | `[auth.sms]` `enable_signup = false` | yes | no phone signup | yes |
 | `[auth.hook.custom_access_token]` | yes | the hook on, calling the function `db push` just created (§5.2b) | yes, in this order only |
-| auth sections **absent** from the file (SMTP, rate limits, MFA, external providers, templates) | defaults | the CLI may send its defaults for them, reverting any dashboard change | acceptable today — none is configured in the dashboard. Before configuring one there, put it in `config.toml` instead (Ask First: it changes `config.toml`) |
+| `[auth.rate_limit]` `sign_in_sign_ups`, `token_refresh` | no — dropped from the runner's copy (§8.1 step 5) | the CLI's defaults, as if the table were absent | yes — the raised values are for the local E2E stack only |
+| auth sections **absent** from the file (SMTP, MFA, external providers, templates) and the rate limits once dropped | defaults | the CLI may send its defaults for them, reverting any dashboard change | acceptable today — none is configured in the dashboard. Before configuring one there, put it in `config.toml` instead (Ask First: it changes `config.toml`) |
 | `[edge_runtime]` | no | local only | — |
 | `[functions.admin-auth]` `verify_jwt = true` | by `functions deploy`, not `config push` | the gateway rejects a call without a JWT before the function runs | yes |
 

@@ -2378,19 +2378,9 @@ export function narrowMembers(
 }
 
 /**
- * Everything the narrowing depends on, in one object.
- *
- * WHY THIS EXISTS AT ALL: `pages/ljudi.tsx` memoizes the narrowing, and a
- * dependency dropped from that array is invisible here — `eslint.config.js`
- * registers no `react-hooks` plugin, so nothing lints the list, and the screen
- * is executed by no test. Removing `sort` left the suite green and eslint clean
- * while the arrow flipped and the rows never moved.
- *
- * Naming the inputs once, and DERIVING the dependency array from the same
- * object the call consumes, is what closes that: the two cannot disagree,
- * because there is only one of them. `features/members/services/list.test.ts` pins the array's
- * contents, so a field dropped from {@link narrowingDependencies} is a failing
- * test rather than a stale table.
+ * Everything the narrowing depends on, in one object. The screen memoizes the
+ * narrowing on these fields, and `react-hooks/exhaustive-deps` checks that
+ * list against what the call reads.
  */
 export interface NarrowingInputs {
   readonly members: readonly MemberListRow[] | null;
@@ -2403,19 +2393,6 @@ export interface NarrowingInputs {
   readonly sort: SortState;
   /** The organization's today, which the team column sorts by (story 1.7b). */
   readonly today: string | null;
-}
-
-/**
- * The memo's dependency array, derived from the inputs rather than written
- * beside them.
- *
- * Every field of {@link NarrowingInputs}, in declaration order, and the test
- * that pins it compares against the object's own keys — so a SEVENTH input added
- * to the narrowing and forgotten here fails rather than producing a table that
- * quietly stops responding to it.
- */
-export function narrowingDependencies(inputs: NarrowingInputs): readonly unknown[] {
-  return [inputs.members, inputs.search, inputs.level, inputs.team, inputs.status, inputs.sort, inputs.today];
 }
 
 /** The narrowing, from the same object the dependencies are derived from. */

@@ -404,13 +404,16 @@ export function RotationSection({
   // A STEP CHANGE MOVES FOCUS to the progress line, and scrolls it into view,
   // so a screen reader hears "Korak N od 4" and a finger starts at the top of
   // the new step. Only after a step change made here — never on a mount.
+  // The store's step, named apart: `stepper` is not a ref, its `current` is the step.
+  const currentStep = stepper.current;
+
   useEffect(() => {
     if (!stepMoved.current) return;
 
     stepMoved.current = false;
     progress.current?.focus({ preventScroll: true });
     progress.current?.scrollIntoView();
-  }, [stepper.current]);
+  }, [currentStep]);
 
   const answer = useQuery(rotationQueryOptions(() => supabaseClient().from(ROTATION_READ_TABLE)));
   const state = rotationSurfaceStateOf(answer);

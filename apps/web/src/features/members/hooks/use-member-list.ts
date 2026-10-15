@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { useEffect, useEffectEvent, useMemo, useRef, useState, type ChangeEvent } from 'react';
 
 import {
   ALL_TEAMS,
@@ -18,13 +18,11 @@ import {
   membersSurfaceStateOf,
   membersTodayOf,
   membersViewOf,
-  narrowingDependencies,
   nextSortState,
   teamToStore,
   type MemberColumnKey,
   type MembersFilters,
   type MembersSearch,
-  type NarrowingInputs,
 } from '@/features/members/services/list';
 import { retryRead } from '@/features/teams/services/dependents';
 import { supabaseClient } from '@/lib/supabase/client';
@@ -101,21 +99,20 @@ export function useMemberList(search: MembersSearch, navigate: MembersNavigate) 
   // status under `Status: aktivni` would be a false list (`svi` needs no today).
   const loading = state.loading || membersAwaitTodayOf(members, today, filters.status);
 
-  // ONE OBJECT, and the memo's dependencies are DERIVED from it rather than
-  // written beside it: `features/members/services/list.test.ts` pins what it contains.
-  const inputs: NarrowingInputs = {
-    members,
-    search: text,
-    level: filters.level,
-    team: filters.team,
-    status: filters.status,
-    sort: filters.sort,
-    today,
-  };
   // THE SUMMARY LINE COMES OUT OF THE SAME CALL, counting the very rows drawn.
+  // Every input is a dependency, which `react-hooks/exhaustive-deps` checks.
   const { summary, narrowed } = useMemo(
-    () => membersViewOf(inputs),
-    narrowingDependencies(inputs),
+    () =>
+      membersViewOf({
+        members,
+        search: text,
+        level: filters.level,
+        team: filters.team,
+        status: filters.status,
+        sort: filters.sort,
+        today,
+      }),
+    [members, text, filters.level, filters.team, filters.status, filters.sort, today],
   );
 
   // THE CONTROLS ARE DEAD WHILE THERE IS NOTHING TO NARROW: a live filter over
@@ -150,13 +147,16 @@ export function useMemberList(search: MembersSearch, navigate: MembersNavigate) 
     return key;
   }
 
-  // EVERY VALUE THE REPLACE READS IS A DEPENDENCY — `filters` (memoized on the
-  // search), `text`, `settledTeam` and `navigate` — so it never carries a
-  // stale box (no `react-hooks` lint rule would say so).
+  // The replace reads the filters and the box as they are when it runs, so it
+  // never carries a stale box; only the team settling sets it off.
+  const dropLeftTeam = useEffectEvent((): void => {
+    write({ ...filters, search: text, team: ALL_TEAMS }, true);
+  });
+
   useEffect(() => {
     if (settledTeam === filters.team) return;
-    write({ ...filters, search: text, team: ALL_TEAMS }, true);
-  }, [settledTeam, filters, text, navigate]);
+    dropLeftTeam();
+  }, [settledTeam, filters.team]);
 
   /** Write `next` to the URL as a new entry, and return the state it leaves. */
   function go(next: MembersFilters): string {

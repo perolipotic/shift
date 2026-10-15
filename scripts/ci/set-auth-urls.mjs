@@ -10,6 +10,10 @@
 // `additional_redirect_urls`. Every other line is left byte for byte as it was,
 // and the rewrite refuses rather than guesses when either key is not found
 // exactly once, on one line, inside the top-level `[auth]` table.
+//
+// It also drops the `[auth.rate_limit]` table, whose raised limits are for the
+// local E2E stack only: without it `config push` sends what it sent before the
+// table existed, the CLI's defaults.
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -126,6 +130,32 @@ export function rewriteAuthUrls(toml, origins) {
   return rewritten.join('\n');
 }
 
+/**
+ * Drops the `[auth.rate_limit]` table — its header and every line up to the
+ * next table — and refuses rather than guesses unless there is exactly one.
+ *
+ * @param {string} toml
+ * @returns {string}
+ */
+export function withoutLocalRateLimits(toml) {
+  let section = '';
+  let tables = 0;
+
+  const kept = toml.split('\n').filter((line) => {
+    const header = sectionOf(line);
+    if (header !== null) {
+      section = header;
+      if (header === 'auth.rate_limit') tables += 1;
+    }
+    return section !== 'auth.rate_limit';
+  });
+
+  if (tables !== 1) {
+    throw new Error(`[auth.rate_limit]: expected exactly one table, found ${String(tables)}`);
+  }
+  return kept.join('\n');
+}
+
 /** @param {readonly string[]} argv */
 function main(argv) {
   const [list, file = fileURLToPath(new URL('../../supabase/config.toml', import.meta.url))] = argv;
@@ -135,8 +165,9 @@ function main(argv) {
   }
 
   const origins = normalizeOrigins(list);
-  writeFileSync(file, rewriteAuthUrls(readFileSync(file, 'utf8'), origins));
+  writeFileSync(file, withoutLocalRateLimits(rewriteAuthUrls(readFileSync(file, 'utf8'), origins)));
   console.warn(`[auth] site_url = ${origins[0] ?? ''}; additional_redirect_urls = ${origins.join(', ')}`);
+  console.warn('[auth.rate_limit] dropped: the local limits are not pushed');
 }
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

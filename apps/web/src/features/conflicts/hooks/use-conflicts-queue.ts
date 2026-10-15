@@ -86,8 +86,9 @@ export function useConflictsQueue() {
     if (step.clear) {
       void navigate({ to: '/raspored', replace: true, state: (entry) => withoutResolutionSaved(entry) });
     }
-    // The line's own state is read, never followed: only a new location steps.
-  }, [state]);
+    // The line's own state is read, never followed: `stepped` lets only a new
+    // location step, so a change of `saved` alone returns at the guard.
+  }, [state, saved, navigate]);
 
   useEffect(() => {
     if (saved !== null) savedField.current?.focus();

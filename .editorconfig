@@ -1,0 +1,19 @@
+# The formatting the tree already keeps by hand, so an editor keeps it too.
+# There is no formatter: this sets whitespace only, and reformats nothing.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+# Two trailing spaces are a Markdown line break.
+[*.md]
+trim_trailing_whitespace = false
+
+# The vendored BMad skill scripts under `.claude/skills` follow PEP 8.
+[*.py]
+indent_size = 4

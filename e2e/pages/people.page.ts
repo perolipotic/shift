@@ -416,7 +416,7 @@ export class PeoplePage extends BasePage {
 
   /** The one-time password itself: four hyphen-joined words. */
   get issuedPassword(): Locator {
-    return this.page.getByText(/^[a-z]{3,6}(-[a-z]{3,6}){3}$/);
+    return this.page.getByText(/^[a-z]{3,7}(-[a-z]{3,7}){3}$/);
   }
 
   /** Opens the add dialog by its URL and issues the account; the dialog stays on its second step. */

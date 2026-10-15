@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { useEffect, useEffectEvent, useMemo, useRef, useState, type ChangeEvent } from 'react';
 
 import { useCalendarSnapshot } from '@/features/calendar/hooks/use-calendar-snapshot';
 import { CALENDAR_KEY, calendarSurfaceStateOf } from '@/features/calendar/services/snapshot';
@@ -199,9 +199,14 @@ export function useLeaveOverview(search: GodisnjiSearch, navigate: GodisnjiNavig
   }
 
   // A TEAM THAT LEFT THE OPTIONS LEAVES THE URL TOO, replacing the entry.
+  // The other filters and the box's text are read as they are, never followed.
+  const dropLeftTeam = useEffectEvent((): void => {
+    write({ ...filters, search: text.trim(), team: ALL_TEAMS }, true);
+  });
+
   useEffect(() => {
     if (appliedTeam === filters.team) return;
-    write({ ...filters, search: text.trim(), team: ALL_TEAMS }, true);
+    dropLeftTeam();
   }, [appliedTeam, filters.team]);
 
   function writeSearch(value: string): void {
