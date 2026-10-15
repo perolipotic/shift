@@ -486,15 +486,18 @@ export function compareText(first: string, second: string): number {
 /**
  * `1.234,50` — Croatian grouping and decimal separators.
  *
- * Two fraction digits by default, which is the binding shape for a decimal
- * figure: `hr`'s own default would render `1234.5` as `1.234,5`, and a column
- * of hours where some rows carry one decimal and some two is exactly the
- * wobble UX-DR40's tabular numerals exist to prevent. A count passes
- * `fractionDigits: 0` — or, far more often, is not formatted here at all but
- * rendered through an ICU `plural` message, because a bare number needs a noun
- * and the noun needs all three Croatian forms (L7).
+ * THE CALLER NAMES ITS FRACTION DIGITS, and there is no default. Fixed digits
+ * are the binding shape for a column: `hr`'s own default would render `1234.5`
+ * as `1.234,5`, and a column where some rows carry one decimal and some two is
+ * exactly the wobble UX-DR40's tabular numerals exist to prevent. But how many
+ * is the quantity's decision, not this module's: a count of days passes `0`,
+ * a half-day count would pass `1` (`12,5`). The old default of two was a money
+ * shape no column used, and an ICU `#` beside it would have printed the same
+ * value differently (deferred-work A78/A99). A count is more often not
+ * formatted here at all but rendered through an ICU `plural` message, because
+ * a bare number needs a noun and the noun needs all three Croatian forms (L7).
  */
-export function formatNumber(value: number, fractionDigits = 2): string {
+export function formatNumber(value: number, fractionDigits: number): string {
   const key = `${LOCALE}\u0000${fractionDigits}`;
   let formatter = numberFormatters.get(key);
 

@@ -478,8 +478,8 @@ describe("month and day names are CLDR verbatim and lowercase", () => {
 });
 
 describe('numbers use Croatian grouping and decimal separators', () => {
-  it('renders 1234.5 as 1.234,50', () => {
-    expect(formatNumber(1234.5)).toBe('1.234,50');
+  it('renders 1234.5 as 1.234,50 at two fraction digits', () => {
+    expect(formatNumber(1234.5, 2)).toBe('1.234,50');
     // Story 5.4b: names joined as Croatian prose.
     expect(formatList(['Ante Bilić', 'Frane Lozić', 'Karlo Jelić'])).toBe('Ante Bilić, Frane Lozić i Karlo Jelić');
     expect(formatList(['Ante Bilić'])).toBe('Ante Bilić');
@@ -487,6 +487,16 @@ describe('numbers use Croatian grouping and decimal separators', () => {
 
   it('renders a count without decimals when asked', () => {
     expect(formatNumber(1234, 0)).toBe('1.234');
+  });
+
+  it('holds the digits the caller names, so a column never wobbles', () => {
+    // A half-day count (Epic 13) picks one digit: every row the same width.
+    expect([12.5, 12, 3.25].map((value) => formatNumber(value, 1))).toEqual(['12,5', '12,0', '3,3']);
+  });
+
+  it('has no default fraction digits: the quantity decides', () => {
+    // A default of two was a money shape no column used (deferred-work A78).
+    expect(formatNumber.length).toBe(2);
   });
 });
 
