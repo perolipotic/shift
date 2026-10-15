@@ -109,10 +109,9 @@ import {
   unsavedDraftOf,
 } from '@/features/rotation/hooks/draft-store';
 import { useCancelErasureCheck, useErasureCheck } from '@/features/rotation/hooks/use-erasure-check';
-import { CHECK_REFUSED, CHECK_UNAVAILABLE } from '@/features/rotation/services/erasure-check';
+import { CHECK_READY, CHECK_REFUSED, CHECK_UNAVAILABLE } from '@/features/rotation/services/erasure-check';
 import { ErasureDialog } from '@/features/conflicts/components/erasure-dialog';
 import { useErasureConfirmation } from '@/features/conflicts/hooks/use-erasure-confirmation';
-import { RECHECK_CHANGED } from '@/features/conflicts/services/erasures';
 import {
   ROTATION_ASSIGNMENTS_TABLE,
   ROTATION_KEY,
@@ -677,26 +676,21 @@ export function RotationSection({
     try {
       const check = await checkErasures(checked, savedToday);
 
-      if (check.kind === CHECK_UNAVAILABLE) {
-        confirmation.drop();
-        setErasuresUnavailable(true);
-
-        return;
-      }
-
-      if (check.kind === CHECK_REFUSED) {
-        confirmation.close();
-        await write(check.rotation, checked, savedToday, 0);
-
-        return;
-      }
-
-      const fresh = { rotation: check.rotation, draft: check.draft, today: savedToday };
-
-      if (confirmation.recheck(shown, check.rows, fresh) === RECHECK_CHANGED) return;
-
-      confirmation.close();
-      await write(check.rotation, check.draft, savedToday, check.rows.length);
+      await confirmation.follow(shown, check, {
+        unavailable: () => {
+          confirmation.drop();
+          setErasuresUnavailable(true);
+        },
+        refused: async ({ rotation }) => {
+          confirmation.close();
+          await write(rotation, checked, savedToday, 0);
+        },
+        subjectOf: ({ rotation, draft: fresh }) => ({ rotation, draft: fresh, today: savedToday }),
+        write: async ({ rows }, fresh) => {
+          confirmation.close();
+          await write(fresh.rotation, fresh.draft, savedToday, rows.length);
+        },
+      });
     } catch (cause) {
       console.error(ROTATION_WRITE_UNAVAILABLE, cause);
       confirmation.drop();
@@ -883,29 +877,32 @@ export function RotationSection({
       }
 
       const check = await checkCancelErasures(confirmed, shownToday);
-
-      if (check.kind === CHECK_UNAVAILABLE) {
-        cancelErasures.drop();
-        setCancelUnchecked(confirmed);
-        setCancelArmed(confirmed);
-
-        return;
-      }
-
-      if (check.kind === CHECK_REFUSED || rolledOver(check.rotation)) {
-        // The fresh rotation's own refusal, or a day gone by: STALE, nothing deleted.
+      // The fresh rotation's own refusal, or a day gone by: STALE, nothing deleted.
+      const stale = async (): Promise<void> => {
         await settleCancel({ ok: false, code: ROTATION_CANCEL_STALE }, 0);
         cancelErasures.close();
+      };
 
-        return;
-      }
+      await cancelErasures.follow(shown, check, {
+        stopped: async (answered) => {
+          if (answered.kind !== CHECK_READY || !rolledOver(answered.rotation)) return false;
 
-      const fresh = { rotation: check.rotation, confirmed, today: shownToday };
+          await stale();
 
-      if (cancelErasures.recheck(shown, check.rows, fresh) === RECHECK_CHANGED) return;
-
-      await writeCancel(check.rotation, shownToday, confirmed, check.rows.length);
-      cancelErasures.close();
+          return true;
+        },
+        unavailable: () => {
+          cancelErasures.drop();
+          setCancelUnchecked(confirmed);
+          setCancelArmed(confirmed);
+        },
+        refused: stale,
+        subjectOf: ({ rotation }) => ({ rotation, confirmed, today: shownToday }),
+        write: async ({ rows }, fresh) => {
+          await writeCancel(fresh.rotation, shownToday, confirmed, rows.length);
+          cancelErasures.close();
+        },
+      });
     } catch (cause) {
       console.error(ROTATION_WRITE_UNAVAILABLE, cause);
       setCancelled({ ok: false, code: ROTATION_WRITE_UNAVAILABLE });

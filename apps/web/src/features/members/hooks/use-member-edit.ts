@@ -7,7 +7,6 @@ import { calendarSurfaceStateOf, type CalendarSnapshot } from '@/features/calend
 import { useErasureConfirmation, type ShownErasures } from '@/features/conflicts/hooks/use-erasure-confirmation';
 import { useErasureReads } from '@/features/conflicts/hooks/use-erasure-reads';
 import { CHECK_REFUSED, CHECK_UNAVAILABLE } from '@/features/conflicts/services/erasure-check';
-import { RECHECK_CHANGED } from '@/features/conflicts/services/erasures';
 
 import {
   MEMBERS_LIST_KEY,
@@ -1101,46 +1100,43 @@ export function useMemberEdit(id: string) {
         return;
       }
 
-      if (teamBlockKey(current) !== confirmation.history) {
-        teamErasures.drop();
-        setTeamFailure({ member: memberId, raised: { code: MEMBER_TEAM_STALE, saved: false } });
-        focusTeamRefused();
+      await teamErasures.follow(shown, check, {
+        stopped: () => {
+          if (teamBlockKey(current) === confirmation.history) return false;
 
-        return;
-      }
+          teamErasures.drop();
+          setTeamFailure({ member: memberId, raised: { code: MEMBER_TEAM_STALE, saved: false } });
+          focusTeamRefused();
 
-      if (check.kind === CHECK_UNAVAILABLE) {
-        teamErasures.drop();
-        // A WITHDRAWAL'S CONFIRMATION, armed again, refuses with the retry; a
-        // move's dialog is still open beneath and says it there.
-        if (confirmation.change === WITHDRAW) setTeamArmed({ member: memberId, raised: confirmation });
-        setTeamUnchecked({ member: memberId, raised: true });
-        focusLater([() => teamRetryButton.current], () =>
-          firstEnabledOf<HTMLElement>(() => teamSaveButton.current, () => teamWithdrawButton.current),
-        );
+          return true;
+        },
+        unavailable: () => {
+          teamErasures.drop();
+          // A WITHDRAWAL'S CONFIRMATION, armed again, refuses with the retry; a
+          // move's dialog is still open beneath and says it there.
+          if (confirmation.change === WITHDRAW) setTeamArmed({ member: memberId, raised: confirmation });
+          setTeamUnchecked({ member: memberId, raised: true });
+          focusLater([() => teamRetryButton.current], () =>
+            firstEnabledOf<HTMLElement>(() => teamSaveButton.current, () => teamWithdrawButton.current),
+          );
+        },
+        refused: async ({ code }) => {
+          teamErasures.drop();
+          await refuseTeamChecked(current, code);
+        },
+        write: async ({ rows }) => {
+          teamErasures.drop();
 
-        return;
-      }
+          if (teams === null || on === null) {
+            setTeamFailure({ member: memberId, raised: { code: MEMBER_WRITE_UNAVAILABLE, saved: false } });
+            focusTeamRefused();
 
-      if (check.kind === CHECK_REFUSED) {
-        teamErasures.drop();
-        await refuseTeamChecked(current, check.code);
+            return;
+          }
 
-        return;
-      }
-
-      if (teamErasures.recheck(shown, check.rows, shown.subject) === RECHECK_CHANGED) return;
-
-      teamErasures.drop();
-
-      if (teams === null || on === null) {
-        setTeamFailure({ member: memberId, raised: { code: MEMBER_WRITE_UNAVAILABLE, saved: false } });
-        focusTeamRefused();
-
-        return;
-      }
-
-      await writeTeam(current, confirmation, teams, on, check.rows.length);
+          await writeTeam(current, confirmation, teams, on, rows.length);
+        },
+      });
     } catch (cause) {
       console.error(MEMBER_WRITE_UNAVAILABLE, cause);
       teamErasures.drop();
@@ -1468,46 +1464,43 @@ export function useMemberEdit(id: string) {
         return;
       }
 
-      if (statusBlockKey(current) !== confirmation.history) {
-        statusErasures.drop();
-        setStatusFailure({ member: memberId, raised: { code: MEMBER_STATUS_STALE, saved: false } });
-        focusStatusRefused();
+      await statusErasures.follow(shown, check, {
+        stopped: () => {
+          if (statusBlockKey(current) === confirmation.history) return false;
 
-        return;
-      }
+          statusErasures.drop();
+          setStatusFailure({ member: memberId, raised: { code: MEMBER_STATUS_STALE, saved: false } });
+          focusStatusRefused();
 
-      if (check.kind === CHECK_UNAVAILABLE) {
-        statusErasures.drop();
-        // A WITHDRAWAL'S CONFIRMATION, armed again, refuses with the retry; a
-        // dialog's change is still open beneath and says it there.
-        if (confirmation.change === WITHDRAW) setStatusArmed({ member: memberId, raised: confirmation });
-        setStatusUnchecked({ member: memberId, raised: true });
-        focusLater([() => statusRetryButton.current], () =>
-          firstEnabledOf<HTMLElement>(() => statusSaveButton.current, () => statusWithdrawButton.current),
-        );
+          return true;
+        },
+        unavailable: () => {
+          statusErasures.drop();
+          // A WITHDRAWAL'S CONFIRMATION, armed again, refuses with the retry; a
+          // dialog's change is still open beneath and says it there.
+          if (confirmation.change === WITHDRAW) setStatusArmed({ member: memberId, raised: confirmation });
+          setStatusUnchecked({ member: memberId, raised: true });
+          focusLater([() => statusRetryButton.current], () =>
+            firstEnabledOf<HTMLElement>(() => statusSaveButton.current, () => statusWithdrawButton.current),
+          );
+        },
+        refused: async ({ code }) => {
+          statusErasures.drop();
+          await refuseStatusChecked(current, code);
+        },
+        write: async ({ rows }) => {
+          statusErasures.drop();
 
-        return;
-      }
+          if (caller === null || on === null) {
+            setStatusFailure({ member: memberId, raised: { code: MEMBER_WRITE_UNAVAILABLE, saved: false } });
+            focusStatusRefused();
 
-      if (check.kind === CHECK_REFUSED) {
-        statusErasures.drop();
-        await refuseStatusChecked(current, check.code);
+            return;
+          }
 
-        return;
-      }
-
-      if (statusErasures.recheck(shown, check.rows, shown.subject) === RECHECK_CHANGED) return;
-
-      statusErasures.drop();
-
-      if (caller === null || on === null) {
-        setStatusFailure({ member: memberId, raised: { code: MEMBER_WRITE_UNAVAILABLE, saved: false } });
-        focusStatusRefused();
-
-        return;
-      }
-
-      await writeStatus(current, confirmation, members, caller, on, check.rows.length);
+          await writeStatus(current, confirmation, members, caller, on, rows.length);
+        },
+      });
     } catch (cause) {
       console.error(MEMBER_WRITE_UNAVAILABLE, cause);
       statusErasures.drop();
