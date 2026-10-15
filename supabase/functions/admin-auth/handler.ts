@@ -181,7 +181,8 @@ export type ConfigurationErrorCode =
   | 'SECRET_KEY_MISSING'
   | 'SECRET_KEY_INVALID'
   | 'PUBLISHABLE_KEY_MISSING'
-  | 'PUBLISHABLE_KEY_INVALID';
+  | 'PUBLISHABLE_KEY_INVALID'
+  | 'ALLOWED_ORIGINS_MISSING';
 
 export interface HandlerDependencies {
   /** Constructs the secret-key client. Its only permitted use is `auth.admin.*`. */
@@ -215,6 +216,11 @@ function isHttpUrl(value: string): boolean {
  * publishable key, which would turn a privileged operation into a silent no-op.
  * The shape check is what catches the likeliest misconfiguration of all:
  * pasting the publishable key into the secret slot.
+ *
+ * An empty origin allowlist is refused too. The SPA is the function's only
+ * caller (AD-16), so a function no browser may read is never what was meant,
+ * and accepted it would start healthy, answer `curl` correctly, and fail in
+ * every browser as an opaque network error with no trace on the server.
  */
 export function readConfiguration(getEnv: EnvironmentSource): ConfigurationResult {
   // Trim first. A dashboard paste or a heredoc leaves a trailing newline, which
@@ -237,6 +243,8 @@ export function readConfiguration(getEnv: EnvironmentSource): ConfigurationResul
     .split(',')
     .map((origin) => origin.trim())
     .filter((origin) => origin.length > 0);
+
+  if (allowedOrigins.length === 0) return { ok: false, code: 'ALLOWED_ORIGINS_MISSING' };
 
   return { ok: true, configuration: { projectUrl, secretKey, publishableKey, allowedOrigins } };
 }

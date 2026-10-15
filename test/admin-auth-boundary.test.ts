@@ -429,6 +429,11 @@ describe('admin-auth: fails fast when misconfigured, and never falls back', () =
     ['project url absent', { SUPABASE_URL: undefined }, 'PROJECT_URL_MISSING'],
     ['project url is not a url', { SUPABASE_URL: 'not-a-url' }, 'PROJECT_URL_INVALID'],
     ['project url is not http(s)', { SUPABASE_URL: 'postgres://db.example:5432' }, 'PROJECT_URL_INVALID'],
+    // The SPA is the only caller: an empty allowlist would refuse every browser
+    // while `curl` still worked, so it is a misconfiguration, never a choice.
+    ['origin allowlist absent', { SHIFT_ALLOWED_ORIGINS: undefined }, 'ALLOWED_ORIGINS_MISSING'],
+    ['origin allowlist blank', { SHIFT_ALLOWED_ORIGINS: '  ' }, 'ALLOWED_ORIGINS_MISSING'],
+    ['origin allowlist only separators', { SHIFT_ALLOWED_ORIGINS: ' , ,' }, 'ALLOWED_ORIGINS_MISSING'],
   ])('reports %s as %s', (_label, overrides, code) => {
     const result = readConfiguration(envFrom(overrides));
 

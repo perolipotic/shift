@@ -694,8 +694,8 @@ const SOURCES = [
  * ENTIRE original source — every comment, every explanation of why a reserved
  * word is absent — so sweeping it would report a vocabulary offence for prose
  * and make the whole sweep unusable. What ships to a browser and renders is the
- * chunk. (That the map ships at all is a deploy question, recorded in
- * deferred-work.md.)
+ * chunk. (The map is built `hidden` and deleted before upload, so it never
+ * ships: DEPLOY.md §4.)
  */
 function chunkPaths(): string[] {
   const chunks = readdirSync(assets).filter((name) => name.endsWith('.js'));

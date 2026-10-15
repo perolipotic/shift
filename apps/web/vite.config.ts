@@ -23,7 +23,11 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    sourcemap: true,
+    // HIDDEN: the maps are built, so a production stack trace can still be
+    // decoded from the same build, but no chunk names its map, and the deploy
+    // deletes `*.map` before upload (DEPLOY.md §4): the CDN never serves the
+    // original sources and their comments.
+    sourcemap: 'hidden',
     // STORY 7.2. The Shift Figures files are ~1.3 KB each, under Vite's 4 KB
     // inline limit, so they would land in the CSS as data URIs and every
     // weight would ride along with the first stylesheet. As files, each is
