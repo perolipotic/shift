@@ -49,6 +49,27 @@ test('a wrong password is refused on the page, and every typed value is kept', a
   await expect(loginPage.passwordInput).toHaveValue(`${fixture.password}-wrong`);
 });
 
+test('an empty form is refused on the page in Croatian, never by a browser bubble (B298)', async ({ page, loginPage }) => {
+  let grants = 0;
+  const countGrants = (route: Route) => {
+    grants += 1;
+    return route.continue();
+  };
+  await page.route(isPasswordGrant, countGrants);
+
+  try {
+    await loginPage.goto();
+    await expect(loginPage.organizationInput).toHaveValue('');
+    // `noValidate`: the submit reaches the form's own refusal, not the browser's.
+    await loginPage.submitButton.click();
+    await expect(loginPage.alert).toHaveText(hr.auth.error.credentials);
+    await expect(loginPage.passwordInput).toBeFocused();
+    expect(grants, 'an empty form reached the service').toBe(0);
+  } finally {
+    await page.unroute(isPasswordGrant, countGrants);
+  }
+});
+
 test('a wrong organization gives the same message as a wrong password', async ({ page, loginPage, fixture }) => {
   // Well formed and unknown: the service is asked and refuses.
   await loginPage.submitSignIn('nepostoji', fixture.spare.username, fixture.password);

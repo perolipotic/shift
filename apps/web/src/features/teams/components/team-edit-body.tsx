@@ -47,6 +47,7 @@ export function TeamEditBody({ screen }: { readonly screen: TeamEditScreen }): R
         <form
           key={teamFormKey(team, renames)}
           method="post"
+          noValidate
           onSubmit={(event) => {
             void submit(event, team);
           }}

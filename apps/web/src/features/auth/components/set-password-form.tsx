@@ -49,6 +49,7 @@ export function SetPasswordForm({ screen }: { readonly screen: SetPasswordScreen
   return (
     <form
       method="post"
+      noValidate
       onSubmit={(event) => {
         void submit(event);
       }}

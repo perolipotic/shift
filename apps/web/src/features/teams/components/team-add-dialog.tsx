@@ -35,6 +35,7 @@ export function TeamAddDialog({ screen }: { readonly screen: TeamListScreen }): 
       </DialogHeader>
       <form
         method="post"
+        noValidate
         onSubmit={(event) => {
           void submit(event);
         }}

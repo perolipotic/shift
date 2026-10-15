@@ -47,6 +47,7 @@ function renderTimesForm(
     <form
       key={timesFormKey(type)}
       method="post"
+      noValidate
       onSubmit={(event) => {
         void saveTimes(event, type);
       }}

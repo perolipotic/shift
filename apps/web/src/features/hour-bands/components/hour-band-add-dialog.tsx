@@ -49,6 +49,7 @@ export function HourBandAddDialog({ screen }: { readonly screen: HourBandListScr
       </DialogHeader>
       <form
         method="post"
+        noValidate
         onSubmit={(event) => {
           void submit(event);
         }}

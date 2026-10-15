@@ -3,12 +3,16 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 
 import { MEMBERS_LIST_KEY, MEMBERS_PAGE_HEADING_ID } from '@/features/members/services/list';
 import {
+  MEMBER_ENTRY_EMAIL,
+  MEMBER_ENTRY_NAME,
+  MEMBER_ENTRY_USERNAME,
   MEMBER_WRITE_INVALID,
   MEMBER_WRITE_UNAVAILABLE,
   chosenRole,
   createFormStateOf,
   createMember,
   enteredAllowance,
+  memberEntryRefusalOf,
   storedEmail,
   suggestedUsername,
   type IssuedCredential,
@@ -202,6 +206,20 @@ export function useMemberCreate(adding: boolean, navigate: MemberAddNavigate) {
       (offersRank && rank === null) ||
       issuing.current
     ) {
+      return;
+    }
+
+    // THE FORM'S OWN REFUSALS (B298), in field order: the form is `noValidate`,
+    // so nothing in the browser's language stops an empty or malformed field.
+    const refused = memberEntryRefusalOf({ name: name.value, username: username.value, email: email.value });
+
+    if (refused !== null) {
+      const field = { [MEMBER_ENTRY_NAME]: name, [MEMBER_ENTRY_USERNAME]: username, [MEMBER_ENTRY_EMAIL]: email }[refused];
+
+      setFailure({ code: MEMBER_WRITE_INVALID, saved: false });
+      setInvalidField(field.id);
+      field.focus();
+
       return;
     }
 

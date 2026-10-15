@@ -161,6 +161,7 @@ export function MemberBasicsDialog({ edit }: { readonly edit: MemberEdit }): Rea
     pending,
     form,
     refusal,
+    invalidField,
     offersRank,
     submit,
     basicsDialog,
@@ -206,6 +207,7 @@ export function MemberBasicsDialog({ edit }: { readonly edit: MemberEdit }): Rea
     return (
       <form
         method="post"
+        noValidate
         onSubmit={(event) => {
           void submit(event);
         }}
@@ -220,6 +222,7 @@ export function MemberBasicsDialog({ edit }: { readonly edit: MemberEdit }): Rea
             <Input
               ref={nameField}
               id="member-name"
+              aria-invalid={invalidField === 'member-name'}
               name="name"
               type="text"
               required
@@ -241,6 +244,7 @@ export function MemberBasicsDialog({ edit }: { readonly edit: MemberEdit }): Rea
             <Input
               ref={usernameField}
               id="member-username"
+              aria-invalid={invalidField === 'member-username'}
               name="username"
               type="text"
               autoCapitalize="none"
@@ -262,6 +266,7 @@ export function MemberBasicsDialog({ edit }: { readonly edit: MemberEdit }): Rea
             <Input
               ref={emailField}
               id="member-email"
+              aria-invalid={invalidField === 'member-email'}
               name="email"
               type="email"
               autoCapitalize="none"

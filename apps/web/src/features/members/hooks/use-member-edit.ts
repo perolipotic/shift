@@ -27,6 +27,9 @@ import {
   type MemberChangeRefusal,
 } from '@/features/members/services/member-erasures';
 import {
+  MEMBER_ENTRY_EMAIL,
+  MEMBER_ENTRY_NAME,
+  MEMBER_ENTRY_USERNAME,
   MEMBER_STATUS_STALE,
   MEMBER_STATUS_TABLE,
   MEMBER_TEAM_STALE,
@@ -44,6 +47,7 @@ import {
   chosenTeam,
   chosenRole,
   enteredAllowance,
+  memberEntryRefusalOf,
   memberFormRefusalOf,
   memberReadRetryable,
   pickedTeamValue,
@@ -639,6 +643,25 @@ export function useMemberEdit(id: string) {
 
       edits = { leaveAllowanceDays };
     } else {
+      // THE FORM'S OWN REFUSALS (B298), in field order: the dialog is
+      // `noValidate`, so nothing in the browser's language stops them.
+      const fields = { [MEMBER_ENTRY_NAME]: name, [MEMBER_ENTRY_USERNAME]: username, [MEMBER_ENTRY_EMAIL]: email };
+      const refused = memberEntryRefusalOf({
+        name: name?.value ?? NO_TEXT,
+        username: username?.value ?? NO_TEXT,
+        email: email?.value ?? NO_TEXT,
+      });
+
+      if (refused !== null) {
+        const field = fields[refused];
+
+        setFailure({ member: member.id, raised: { code: MEMBER_WRITE_INVALID, saved: false } });
+        setInvalidField(field?.id ?? null);
+        field?.focus();
+
+        return;
+      }
+
       edits = {
         name: name?.value ?? NO_TEXT,
         email: storedEmail(email?.value ?? NO_TEXT),

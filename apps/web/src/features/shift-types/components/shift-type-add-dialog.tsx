@@ -92,6 +92,7 @@ export function ShiftTypeAddDialog({ screen }: { readonly screen: ShiftTypeListS
       </DialogHeader>
       <form
         method="post"
+        noValidate
         onSubmit={(event) => {
           void submit(event);
         }}

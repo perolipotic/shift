@@ -19,6 +19,30 @@ test('the member list shows the fixture members', async ({ peoplePage, fixture }
   }
 });
 
+test('the add dialog refuses an empty name and a malformed address itself, in Croatian, on the field (B298)', async ({
+  peoplePage,
+}) => {
+  await peoplePage.gotoNew();
+
+  // EMPTY: `noValidate`, so no browser bubble — the form's own refusal, on the name.
+  await peoplePage.addSubmitButton.click();
+  await expect(peoplePage.alert).toHaveText(hr.ljudi.form.error.invalid);
+  await expect(peoplePage.addNameInput).toBeFocused();
+  await expect(peoplePage.addNameInput).toHaveAttribute('aria-invalid', 'true');
+
+  // NOT AN ADDRESS: refused on the address, the name no longer marked.
+  await peoplePage.addNameInput.fill('Ana Marić');
+  await peoplePage.emailInput.fill('ana');
+  await peoplePage.addSubmitButton.click();
+  await expect(peoplePage.alert).toHaveText(hr.ljudi.form.error.invalid);
+  await expect(peoplePage.emailInput).toBeFocused();
+  await expect(peoplePage.emailInput).toHaveAttribute('aria-invalid', 'true');
+  await expect(peoplePage.addNameInput).toHaveAttribute('aria-invalid', 'false');
+  // Nothing was created: the form is still the form, every value kept.
+  await expect(peoplePage.issuedPassword).toHaveCount(0);
+  await expect(peoplePage.addNameInput).toHaveValue('Ana Marić');
+});
+
 test('Dodaj osobu opens a dialog on the list that ends with the password shown once (story 7.13b)', async ({
   page,
   peoplePage,
