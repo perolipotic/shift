@@ -574,7 +574,7 @@ export function AppChrome({ children }: AppChromeProps) {
    */
   function themeNames(): Record<ThemePreference, string> {
     // Three literal calls rather than one templated key: the key sweep in
-    // `prijava.test.ts` reads keys off the source and cannot see through a
+    // `pages/key-sweep.test.ts` reads keys off the source and cannot see through a
     // template.
     return {
       system: t('shell.theme.system'),

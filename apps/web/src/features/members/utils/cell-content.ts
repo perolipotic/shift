@@ -20,7 +20,7 @@ import {
  * this replaces. The previous version, in the screen, read `member.name`,
  * `member.email` and `member.leaveAllowanceDays` itself, and swapping two of
  * its branches rendered every address under `Ime` with the entire suite green.
- * `prijava.test.ts` pins every value this returns. The column now says what its cell HOLDS
+ * `pages/structural-pins-members.test.ts` pins every value this returns. The column now says what its cell HOLDS
  * (`@/features/members/services/list`, pinned there beside `sortValue`), and this function only
  * knows how to render each kind.
  *

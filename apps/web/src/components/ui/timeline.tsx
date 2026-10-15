@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils"
 //
 // Named parts rather than string props (`TimelineScale`, `TimelineBoundaries`,
 // `TimelineGap`), so a screen composes them without a literal the string sweep
-// in `prijava.test.ts` would have to exempt.
+// in `pages/literal-sweep.test.ts` would have to exempt.
 
 /** A labelled point along the bar. */
 export interface TimelineMark {

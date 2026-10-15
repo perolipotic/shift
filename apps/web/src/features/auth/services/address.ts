@@ -9,7 +9,7 @@
  * story 1.5 will build it again when it issues further credentials, so the
  * expression has one home and this is it.
  *
- * Why here rather than either obvious alternative: `prijava.test.ts` makes every
+ * Why here rather than either obvious alternative: `pages/literal-sweep.test.ts` makes every
  * non-import string literal in a screen an offence, so a `.tsx` cannot hold the
  * `'@'` or the domain; and `packages/domain` is pure by construction
  * (`eslint.config.js`, `packages/domain/test/purity.test.ts`), which is a rule

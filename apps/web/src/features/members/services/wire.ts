@@ -738,7 +738,7 @@ export function memberWriteMessageKey(
  * The message key one failure renders as.
  *
  * DERIVED FROM THE FUNCTION rather than declared beside it, which is what keeps
- * the union in the SIGNATURE where `prijava.test.ts` reads keys from: a named
+ * the union in the SIGNATURE where `pages/key-sweep.test.ts` reads keys from: a named
  * alias in the return position makes every one of these keys invisible to the
  * "every key declared is rendered" comparison, so `hr.json` would be free to
  * hold ten messages nothing renders.
@@ -753,7 +753,7 @@ export const PARTIAL_SAVE_KEY = 'ljudi.form.error.saved';
  * The space between two sentences in one alert.
  *
  * NAMED HERE because `pages/ljudi.$id.tsx` may hold no string literal of its
- * own — `prijava.test.ts` sweeps every screen for a literal that is neither a
+ * own — `pages/literal-sweep.test.ts` sweeps every screen for a literal that is neither a
  * `t()` key nor a structural attribute value, and a single space is still one.
  */
 export const MESSAGE_SEPARATOR = ' ';

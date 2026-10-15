@@ -959,7 +959,7 @@ describe('the deployed root resolves both ways and is never a blank page', () =>
 
   it('reads string literals past comments rather than through them', () => {
     // THE DETECTOR, SELF-TESTED on synthetic sources, the idiom
-    // `packages/domain/test/purity.test.ts` established and `prijava.test.ts`
+    // `packages/domain/test/purity.test.ts` established and `pages/sweep-detectors.test.ts`
     // follows: a reader that quietly stopped finding strings would make the
     // sweep above pass having proved nothing, and both of its vacuity guards
     // would still hold on a reader that found only the first literal.
@@ -1493,7 +1493,7 @@ describe('the signed-in layout guards every destination once, and is pathless', 
     // being true the moment the navigation chrome landed — and what this
     // assertion actually pins is neither: `matchRoutes` resolves a path from the
     // route id alone, so this says the route names `AppLayout` and says nothing
-    // about what `AppLayout` renders. `prijava.test.ts` owns that half, and owns
+    // about what `AppLayout` renders. `pages/structural-pins-shell.test.ts` owns that half, and owns
     // it in two assertions now, because reverting the layout to a bare outlet
     // passed this one unchanged.
     const registered = (appLayoutRoute.options as { component?: unknown }).component;

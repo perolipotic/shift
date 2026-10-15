@@ -20,7 +20,7 @@
  * THE CLASS LITERALS LIVE HERE rather than in the components, and that is two
  * decisions rather than one. Tailwind resolves utilities by scanning source
  * text, so `bg-brand-${key}` produces no CSS at all — the classes have to exist
- * as whole literals somewhere. And `apps/web/src/pages/prijava.test.ts`
+ * as whole literals somewhere. And `apps/web/src/pages/literal-sweep.test.ts`
  * refuses every string literal in a `.tsx` that is not a structural attribute,
  * so the somewhere is a `.ts` module. It is the same shape
  * `ORGANIZATION_LOGO_ACCEPT` takes for the file picker's `accept` hint.
@@ -56,7 +56,7 @@ export type BrandAccentKey = (typeof BRAND_ACCENT_KEYS)[number];
  *
  * A CONSTANT rather than an inline `''`, for the reason `NO_FILE_CHOSEN` is one:
  * the screen that renders the control may hold no string literal at all
- * (`prijava.test.ts`), so the empty string lives in the module that owns the
+ * (`pages/literal-sweep.test.ts`), so the empty string lives in the module that owns the
  * vocabulary. It maps to SQL `null`, which is what "no accent" actually is on
  * the row — there is no `'none'` key and there must not be one, because the
  * absence of an accent is not a fifth accent.
@@ -111,7 +111,7 @@ export interface BrandAccentAppearance {
  * HERE RATHER THAN IN THE COMPONENT, for the two reasons the class literals
  * above are: Tailwind resolves utilities by scanning source text, so a class
  * assembled from a variable produces no CSS at all, and
- * `apps/web/src/pages/prijava.test.ts` refuses every string literal in a
+ * `apps/web/src/pages/literal-sweep.test.ts` refuses every string literal in a
  * `.tsx` that is not sitting on a structural attribute.
  *
  * THE TYPE SCALE TRAVELS WITH THE BOX, which is the whole reason this is a pair
@@ -232,7 +232,7 @@ export function brandAccentAppearance(accent: string | null): BrandAccentAppeara
  * The return type is the literal union rather than `string`, so `t()` still
  * type-checks the key against `hr.json` (`lib/i18n/index.ts`) and a key deleted
  * from the resource file is a `pnpm typecheck` failure rather than a `⟦…⟧` on
- * screen. It is also what `prijava.test.ts` reads to count this module's keys.
+ * screen. It is also what `pages/key-sweep.test.ts` reads to count this module's keys.
  */
 export function accentMessageKey(
   accent: string | null,

@@ -3,8 +3,8 @@
  * table's parts since story 4.2, its export since story 4.3), on the calendar's
  * terms (`calendar-screen.fixture.ts`): a page that only composes, the hook
  * holding its one read, the components that draw it, and the month
- * navigation it shares with the calendar. `pages/prijava.test.ts` reads it as
- * source.
+ * navigation it shares with the calendar. The source guards in `pages/` read it
+ * as source.
  *
  * Paths are SEGMENTS under `apps/web/src`, so this module imports nothing.
  * The page is first: the "the page itself renders" check reads it.

@@ -1,8 +1,8 @@
 /**
  * THE DANAS SCREEN'S FILE SET, written once (story 6.1a), on *Godišnji*'s
  * terms (`leave-screen.fixture.ts`): a page that composes, the hook holding
- * its reads, and the components that draw it — the tiles since story 6.1b. `pages/prijava.test.ts`
- * reads it as source.
+ * its reads, and the components that draw it — the tiles since story 6.1b. The source guards
+ * in `pages/` read it as source.
  *
  * Paths are SEGMENTS under `apps/web/src`, so this module imports nothing.
  * The page is first: the "the page itself renders" check reads it.

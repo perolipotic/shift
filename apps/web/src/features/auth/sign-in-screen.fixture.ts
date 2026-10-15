@@ -4,7 +4,7 @@
  * The sign-in screen — one form on both `/prijava` and `/prijava/$slug` since
  * story 7.7 — is more than one file: a page that only composes, the hook
  * holding its refs, its state and its one exchange, and the form that draws
- * it. The sign-in suite (`pages/prijava.test.ts`) reads the set as one source,
+ * it. The source guards in `pages/` (`source-guards.fixture.ts`) read the set as one source,
  * and `test/localization-applied.test.ts` checks that its folder read holds
  * every part, so both build their paths from this.
  *

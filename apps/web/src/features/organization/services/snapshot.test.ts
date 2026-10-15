@@ -65,7 +65,7 @@ const srcRoot = fileURLToPath(new URL('../../..', import.meta.url));
  * one source; a claim about where something happens reads the file that must
  * hold it, so a needle in the wrong file cannot satisfy it.
  */
-// WRITTEN ONCE in `settings-screen.fixture.ts`, which `pages/prijava.test.ts`
+// WRITTEN ONCE in `settings-screen.fixture.ts`, which `pages/screens-sweep.test.ts`
 // reads too and holds to the feature folders with a completeness check.
 const HOOK = join(srcRoot, ...SETTINGS_SCREEN_PARTS.hook);
 const LOGO_CARD = join(srcRoot, ...SETTINGS_SCREEN_PARTS.logo);
@@ -465,7 +465,7 @@ describe('the member screens read the organization through one query definition'
     // B1'S REVIEW: the create screen read this key with no retry bound and no
     // stale bound while the edit screen set both — two policies on one cache
     // entry. The factory is the one place the policy is written; each hook is
-    // pinned in `pages/prijava.test.ts` to call it exactly once.
+    // pinned in `pages/structural-pins-members.test.ts` to call it exactly once.
     const options = organizationSnapshotQueryOptions(() =>
       answering({ data: [PILOT_ROW], error: null }),
     );
@@ -1233,7 +1233,7 @@ describe('the surface reads once, under one key', () => {
     // The voice rule, as markup — and since story 1.4c this file's half of it is
     // about the SCREEN and nothing else. The mark, its accessible name and its
     // fallback moved into `@/features/organization/components/lockup` when the chrome started
-    // drawing them too, and `pages/prijava.test.ts` owns that component's
+    // drawing them too, and `pages/structural-pins-shell.test.ts` owns that component's
     // internals: asserting them here as well was one claim written twice, in a
     // file whose subject is the snapshot module and the surface that reads it.
     //

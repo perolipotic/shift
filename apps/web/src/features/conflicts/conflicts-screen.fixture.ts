@@ -2,7 +2,7 @@
  * THE RASPORED SCREENS' FILE SETS, written once (stories 5.3b, 5.4b), on the
  * hour band screens' terms (`hour-band-screens.fixture.ts`): each a page that
  * only composes, the hook holding its reads and handlers, and the components
- * that draw it. `pages/prijava.test.ts` reads each set as one source.
+ * that draw it. The source guards in `pages/` read each set as one source.
  *
  * THE TWO SETS ARE DISJOINT: the conflicts queue (`/raspored`) and one
  * conflict's resolution screen (`/raspored/$memberId/$date/$teamId`). No part

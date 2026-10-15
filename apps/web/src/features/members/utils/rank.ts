@@ -56,7 +56,7 @@ export const UNKNOWN_RANK = 'UNKNOWN_RANK';
 /**
  * The value the rank control carries for "no rank", and the one the column
  * stores as `null`. A constant rather than an inline `''`, because the screens
- * may hold no string literal of their own (`prijava.test.ts`).
+ * may hold no string literal of their own (`pages/literal-sweep.test.ts`).
  */
 export const NO_RANK = '';
 
@@ -91,7 +91,7 @@ export function fireRankOf(value: string | null): RankCode | null | typeof UNKNO
  * "no rank", which would state something the row does not say.
  *
  * The return type is the literal union so `t()` type-checks every key against
- * `hr.json`, and it is what `prijava.test.ts` reads to count this module's
+ * `hr.json`, and it is what `pages/key-sweep.test.ts` reads to count this module's
  * keys.
  */
 export function rankMessageKey(

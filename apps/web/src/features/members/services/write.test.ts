@@ -559,7 +559,7 @@ describe('every failure becomes exactly one message, and no two share one', () =
     // branch returns — so a code omitted from the list below is a code whose
     // message is observed by neither the distinctness check nor the prefix
     // sweep, and pointing it at `ljudi.form.error.unavailable` leaves this file
-    // and `prijava.test.ts` completely green. That is the "collapse into the
+    // and `pages/structural-pins-members.test.ts` completely green. That is the "collapse into the
     // service-failure fallback" every one of those three files argues must
     // never happen, and it went unnoticed for exactly one story — the list was
     // hand-written and the reset's code was simply not added to it.
