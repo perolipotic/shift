@@ -6946,15 +6946,18 @@ describe('the keys rendered and the keys declared are the same set', () => {
     const declared = resourceKeys().filter((key) => key.startsWith('ljudi.'));
 
     expect(declared.length, 'no ljudi keys to sweep at all').toBeGreaterThan(0);
-    for (const key of declared) {
-      expect(owned, `${key} is declared in hr.json and written nowhere the readers look`).toContain(
-        key,
-      );
-      expect(
-        used(),
-        `${key} is written in the source but no reader here counts it — add its shape to memberListKeys`,
-      ).toContain(key);
-    }
+    // `used()` is read ONCE: called per key it re-read every owned file for
+    // each of the ~200 keys, and the case outgrew the 5 s budget.
+    const counted = new Set(used());
+
+    expect(
+      declared.filter((key) => !owned.includes(key)),
+      'declared in hr.json and written nowhere the readers look',
+    ).toEqual([]);
+    expect(
+      declared.filter((key) => !counted.has(key)),
+      'written in the source but no reader here counts it — add its shape to memberListKeys',
+    ).toEqual([]);
   });
 
   it('declares every key the two screens render', () => {
