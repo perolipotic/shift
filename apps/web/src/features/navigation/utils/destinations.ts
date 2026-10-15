@@ -61,8 +61,16 @@ export type NavigationKey = Extract<ParseKeys, `nav.${string}`>;
  */
 export type RegisteredPath = keyof RegisteredRouter['routesByPath'];
 
-/** One destination: the key that labels it, the path that reaches it, and the
- *  roles that may. */
+/**
+ * The two groups the navigation shows its destinations in: *Pregled*, the
+ * places a person works in, and *Postavke*, the configuration an admin sets up
+ * once and rarely revisits. The sidebar and the *Više* sheet draw the same two
+ * headings (`shell.moreGroup.*`) from this one field.
+ */
+export type DestinationGroup = 'overview' | 'settings';
+
+/** One destination: the key that labels it, the path that reaches it, the
+ *  roles that may, and the group it is shown under. */
 export interface Destination {
   /** The label's translation key. NEVER the label. */
   readonly key: NavigationKey;
@@ -70,6 +78,10 @@ export interface Destination {
   readonly path: RegisteredPath;
   /** Every role that reaches it. */
   readonly roles: readonly MemberRole[];
+  /** *Pregled* or *Postavke*. Only an admin-only destination may be a setting
+   *  (UX-DR31: a member has no configuration surface), which
+   *  `destinations.test.ts` asserts. */
+  readonly group: DestinationGroup;
 }
 
 const EVERYONE: readonly MemberRole[] = ['member_role', 'admin'];
@@ -100,18 +112,20 @@ const ADMIN_ONLY: readonly MemberRole[] = ['admin'];
  * entries that make it true, instead of being asserted away at each call site.
  */
 export const DESTINATIONS: readonly [Destination, ...Destination[]] = [
-  { key: 'nav.danas', path: '/danas', roles: EVERYONE },
-  { key: 'nav.kalendar', path: '/kalendar', roles: EVERYONE },
+  { key: 'nav.danas', path: '/danas', roles: EVERYONE, group: 'overview' },
+  { key: 'nav.kalendar', path: '/kalendar', roles: EVERYONE, group: 'overview' },
   // ONE entry, not two. The role decides what `Sati` shows, never whether a
   // second destination by the same name exists.
-  { key: 'nav.sati', path: '/sati', roles: EVERYONE },
-  { key: 'nav.godisnji', path: '/godisnji', roles: EVERYONE },
-  { key: 'nav.raspored', path: '/raspored', roles: ADMIN_ONLY },
+  { key: 'nav.sati', path: '/sati', roles: EVERYONE, group: 'overview' },
+  { key: 'nav.godisnji', path: '/godisnji', roles: EVERYONE, group: 'overview' },
+  // ADMIN-ONLY BUT NOT A SETTING: the conflicts an admin decides are daily
+  // work, so Raspored sits under *Pregled* with the places a person works in.
+  { key: 'nav.raspored', path: '/raspored', roles: ADMIN_ONLY, group: 'overview' },
   // ROLE-SCOPED TOO (story 7.17): the member list for an admin, the read-only
   // directory of who is on which team for a member.
-  { key: 'nav.ljudi', path: '/ljudi', roles: EVERYONE },
-  { key: 'nav.postavkeRotacije', path: '/postavke-rotacije', roles: ADMIN_ONLY },
-  { key: 'nav.organizacija', path: '/organizacija', roles: ADMIN_ONLY },
+  { key: 'nav.ljudi', path: '/ljudi', roles: EVERYONE, group: 'overview' },
+  { key: 'nav.postavkeRotacije', path: '/postavke-rotacije', roles: ADMIN_ONLY, group: 'settings' },
+  { key: 'nav.organizacija', path: '/organizacija', roles: ADMIN_ONLY, group: 'settings' },
 ];
 
 /** The destinations a role reaches, in binding order. */
@@ -170,40 +184,49 @@ export const PHONE_TABS: Readonly<Record<MemberRole, PhoneTabs>> = {
   admin: ['/danas', '/kalendar', '/raspored', '/ljudi'],
 };
 
+/** A list of destinations split into the two groups, each in binding order. */
+export interface GroupedDestinations {
+  /** The places a person works in (*Pregled*). */
+  readonly overview: readonly Destination[];
+  /** The configuration (*Postavke*). */
+  readonly settings: readonly Destination[];
+}
+
+/**
+ * Splits a list by `group`, keeping binding order inside each group. The
+ * sidebar groups a role's whole list with it, the *Više* sheet what is left
+ * after the tabs: one rule for both, so the two cannot disagree about where a
+ * destination belongs.
+ *
+ * A FIELD, NOT THE ROLES. The sheet once derived its groups from who reaches a
+ * row, which held while every admin-only row was configuration. The sidebar
+ * shows Raspored too, which is admin-only and daily work, so the group is
+ * stated on the entry and the role rule is a test instead.
+ */
+export function groupDestinations(list: readonly Destination[]): GroupedDestinations {
+  return {
+    overview: list.filter((destination) => destination.group === 'overview'),
+    settings: list.filter((destination) => destination.group === 'settings'),
+  };
+}
+
 /** What the phone shows: the four tabs, and the rest grouped for *Više*. */
 export interface PhoneNavigation {
   /** The bar's tabs, in binding order. */
   readonly tabs: readonly Destination[];
-  /** Everything else this role reaches, in binding order, split in two groups. */
-  readonly more: {
-    /** Destinations every role reaches (*Pregled*). */
-    readonly everyone: readonly Destination[];
-    /** Destinations not every role reaches: the admin-only ones (*Postavke*). */
-    readonly adminOnly: readonly Destination[];
-  };
+  /** Everything else this role reaches, in binding order, split in the two groups. */
+  readonly more: GroupedDestinations;
 }
-
-/** Every role, which is what "every role reaches it" is measured against. */
-const ALL_ROLES: readonly MemberRole[] = EVERYONE;
 
 /**
  * The phone layout for a role: its tabs, and the remaining destinations in
- * binding order, split by who reaches them. The groups come from `roles`, so
- * the table carries no `group` field that could disagree with it.
+ * binding order, grouped exactly as the sidebar groups them.
  */
 export function phoneNavigationFor(role: MemberRole): PhoneNavigation {
   const reached = destinationsFor(role);
   const tabPaths: readonly string[] = PHONE_TABS[role];
   const tabs = reached.filter((destination) => tabPaths.includes(destination.path));
   const rest = reached.filter((destination) => !tabPaths.includes(destination.path));
-  const isEveryones = (destination: Destination): boolean =>
-    ALL_ROLES.every((each) => destination.roles.includes(each));
 
-  return {
-    tabs,
-    more: {
-      everyone: rest.filter(isEveryones),
-      adminOnly: rest.filter((destination) => !isEveryones(destination)),
-    },
-  };
+  return { tabs, more: groupDestinations(rest) };
 }

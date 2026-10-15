@@ -6,6 +6,7 @@ import type { RotationPage } from '../../pages/rotation.page.ts';
 import { archiveShiftType, removeLeaveMemberInSql, seedLongNamedMember } from '../../utils/database-helper.ts';
 import { ADMIN_STATE, MEMBER_STATE, type Fixture } from '../../utils/run-fixture.ts';
 import { expectNoHorizontalScroll, expectNoInnerHorizontalScroll, expectTouchTargets } from '../../utils/layout.ts';
+import { fill, hr } from '../../utils/i18n.ts';
 import { NEXT_LABELS, STEP_HEADINGS } from '../../utils/rotation.ts';
 import { expect, firstBand, test, type PageObjects } from '../../utils/custom-fixtures.ts';
 
@@ -225,7 +226,7 @@ test.describe('as an admin at 390 px', () => {
   });
 });
 
-// STORY 7.6: below 640 px the Sati, Ljudi and shift-types tables are stacked
+// STORY 7.6: below 640 px the Sati, Ljudi, shift-types, hour-band and team tables are stacked
 // rows, so neither the page nor any element in it scrolls sideways — at the
 // narrowest phone and at the one the screens are designed against. Sati and
 // Ljudi each list a member of the test's own whose name holds one unbroken
@@ -264,6 +265,34 @@ for (const width of [320, 390]) {
       }
     });
 
+    // THE HOUR BANDS AND THE TEAMS STACK TOO (UX-DR17): each list is named by
+    // its card's heading, no table is drawn, and nothing scrolls sideways.
+    test('the hour bands are stacked rows, and nothing in them scrolls sideways', async ({
+      page,
+      hourBandsPage,
+      fixture,
+    }) => {
+      await hourBandsPage.goto();
+      const band = hourBandsPage.bandList.getByRole('listitem').filter({ hasText: firstBand(fixture).name });
+      await expect(band).toBeVisible();
+      await expect(band.getByRole('link')).toBeVisible();
+      await expect(hourBandsPage.tables).toHaveCount(0);
+      await expectNoHorizontalScroll(page);
+      await expectNoInnerHorizontalScroll(page);
+      await expectTouchTargets(page);
+    });
+
+    test('the teams are stacked rows, and nothing in them scrolls sideways', async ({ page, teamsPage, fixture }) => {
+      await teamsPage.goto();
+      const team = teamsPage.activeList.getByRole('listitem').filter({ hasText: fixture.team.name });
+      await expect(team).toBeVisible();
+      await expect(team.getByRole('link', { name: fill(hr.smjene.edit, { name: fixture.team.name }) })).toBeVisible();
+      await expect(teamsPage.tables).toHaveCount(0);
+      await expectNoHorizontalScroll(page);
+      await expectNoInnerHorizontalScroll(page);
+      await expectTouchTargets(page);
+    });
+
     test('the shift types step is stacked rows, and nothing in it scrolls sideways', async ({
       page,
       rotationPage,
@@ -278,9 +307,8 @@ for (const width of [320, 390]) {
         await rotationPage.addShiftType(name, ['19:00', '07:00']);
         await expect(rotationPage.shiftTypeList.getByRole('listitem').filter({ hasText: name })).toBeVisible();
         await expectNoHorizontalScroll(page);
-        // The types' own card: the rotation history below it is a table that
-        // keeps its scroller until it stacks too (`deferred-work.md`).
-        await expectNoInnerHorizontalScroll(page, rotationPage.shiftTypeList.locator('xpath=..'));
+        // The whole step: every table on it stacks below 640 px now.
+        await expectNoInnerHorizontalScroll(page);
         await expectTouchTargets(page);
       } finally {
         await archiveShiftType(fixture.slug, name);

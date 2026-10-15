@@ -14,6 +14,16 @@ export class HourBandsPage extends BasePage {
     return this.heading(bands.heading);
   }
 
+  /** The bands as stacked rows below 640 px, named by the card's heading (UX-DR17). */
+  get bandList(): Locator {
+    return this.page.getByRole('list', { name: bands.listHeading, exact: true });
+  }
+
+  /** Every table on the screen: none below 640 px, where the bands stack. */
+  get tables(): Locator {
+    return this.page.getByRole('table');
+  }
+
   /** A band's edit link in the list. */
   editLink(name: string): Locator {
     return this.editLinkNamed(bands.edit, name);

@@ -703,6 +703,20 @@ const SANCTIONED_SCREEN_KEYS = [
   'shell.moreGroup.adminOnly',
   'shell.moreGroup.display',
   'shell.identity',
+  // The 7.3 mockup's sheet copy (frames B and D): the current row's "Ovdje si",
+  // a one-line description per destination key (Epics 8.4, 10.3 and 14.2 add
+  // rows, so every destination has one), and the place *Više* names under its
+  // label where the destination's own label is too long for the cell.
+  'shell.moreHere',
+  'shell.description.danas',
+  'shell.description.kalendar',
+  'shell.description.sati',
+  'shell.description.godisnji',
+  'shell.description.raspored',
+  'shell.description.ljudi',
+  'shell.description.postavkeRotacije',
+  'shell.description.organizacija',
+  'shell.place.postavkeRotacije',
   // TWO refusals, and the partition is the point in one direction and the
   // collapse in the other. A role that cannot be read, one that reaches no row
   // and one this build does not recognise are three CODES
@@ -2157,6 +2171,19 @@ const CALENDAR_OVERRIDE_NAMESPACE = 'kalendar.detail.override.';
 const CALENDAR_TYPE_TERM_KEYS: readonly string[] = ['kalendar.detail.changes.empty', 'kalendar.detail.preview.type'];
 
 /**
+ * The *Više* sheet's line under Postavke rotacije (story 7.3, frame B): the
+ * rotation settings start with the Shift Types, so it says the term, on
+ * {@link CALENDAR_OVERRIDE_NAMESPACE}'s terms (`smjen` only inside it).
+ */
+const ROTATION_DESCRIPTION_KEY = 'shell.description.postavkeRotacije';
+
+/**
+ * The *Više* sheet's line under Ljudi: the directory lists people by Team, so
+ * it says the Team as the directory does, and never the Shift Type.
+ */
+const PEOPLE_DESCRIPTION_KEY = 'shell.description.ljudi';
+
+/**
  * The rotation builder's override review (story 3.5c): the admin amends an
  * override's SHIFT TYPE there, so it says the term — `Tip smjene` is the
  * amend's field — and, being the builder's, the TEAM too, as `smjena` (an
@@ -2191,7 +2218,8 @@ function teamTermOutOfTurn(key: string, message: string): boolean {
   if (
     key.startsWith(SHIFT_TYPE_NAMESPACE) ||
     key.startsWith(CALENDAR_OVERRIDE_NAMESPACE) ||
-    CALENDAR_TYPE_TERM_KEYS.includes(key)
+    CALENDAR_TYPE_TERM_KEYS.includes(key) ||
+    key === ROTATION_DESCRIPTION_KEY
   ) {
     return lowered.replace(SHIFT_TYPE_TERM, '').includes('smjen');
   }
@@ -2208,7 +2236,8 @@ function teamTermOutOfTurn(key: string, message: string): boolean {
     !key.startsWith(LEAVE_OVERVIEW_NAMESPACE) &&
     key !== LEAVE_REPLACEMENT_KEY &&
     key !== MEMBER_NO_TEAM_KEY &&
-    key !== DEACTIVATION_CONSEQUENCE_KEY
+    key !== DEACTIVATION_CONSEQUENCE_KEY &&
+    key !== PEOPLE_DESCRIPTION_KEY
   ) {
     return lowered.includes('smjen');
   }

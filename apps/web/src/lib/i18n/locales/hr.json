@@ -1330,6 +1330,20 @@
       "adminOnly": "Postavke",
       "display": "Prikaz"
     },
+    "moreHere": "Ovdje si",
+    "description": {
+      "danas": "Tko radi danas i što slijedi",
+      "kalendar": "Tko radi koji dan, po mjesecima",
+      "sati": "Sati svih osoba po mjesecu, izvoz u Excel",
+      "godisnji": "Godišnji odmori i stanja dana",
+      "raspored": "Konflikti koji čekaju odluku",
+      "ljudi": "Osobe i njihove smjene",
+      "postavkeRotacije": "Tipovi smjena, uzorak, pomaci",
+      "organizacija": "Naziv, godina godišnjeg, satni pojasevi"
+    },
+    "place": {
+      "postavkeRotacije": "Rotacija"
+    },
     "identity": "{role} · {organization}",
     "theme": {
       "label": "Tema",

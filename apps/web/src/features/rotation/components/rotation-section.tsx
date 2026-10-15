@@ -64,6 +64,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { StackedField, StackedFields, StackedList, StackedRow } from '@/components/ui/stacked-list';
+import { usePhone } from '@/hooks/viewport';
 import { t } from '@/lib/i18n';
 import {
   FOCUS_ADD,
@@ -298,6 +300,8 @@ export function RotationSection({
   const progress = useRef<HTMLParagraphElement>(null);
   const stepMoved = useRef(false);
   const [pending, setPending] = useState(false);
+  // Below 640 px the offsets table stacks (story 7.6's pattern).
+  const isPhone = usePhone();
   const [outcome, setOutcome] = useState<ShownSaveOutcome | null>(null);
   /**
    * How many overrides the landed save left pending (story 3.5c), captured
@@ -1090,6 +1094,8 @@ export function RotationSection({
     const rows = draftTeamRowsOf(snapshot, current);
     const teams = rotationTeamsOf(snapshot);
     const steps = draftStepRowsOf(snapshot, current);
+    // Read once: it titles the card and names the stacked list below 640 px.
+    const offsetsHeading = t('rotation.builder.offsetsHeading');
 
     return (
       <Card className="min-w-0">
@@ -1097,7 +1103,7 @@ export function RotationSection({
           <SectionNumber value={3} />
           <div className="grid min-w-0 gap-1.5">
             <CardTitle asChild>
-              <h2>{t('rotation.builder.offsetsHeading')}</h2>
+              <h2>{offsetsHeading}</h2>
             </CardTitle>
             <CardDescription>{t('rotation.builder.anchorNote')}</CardDescription>
           </div>
@@ -1167,7 +1173,29 @@ export function RotationSection({
             <p className="text-sm text-muted-foreground">{t('rotation.builder.offsetsEmpty')}</p>
           )}
         </CardContent>
-        {steps.length === 0 ? null : (
+        {steps.length === 0 ? null : isPhone ? (
+          // BELOW 640 px THE ROWS STACK (story 7.6's pattern, UX-DR17), named
+          // by the card's heading: the team, its step's picker at full width,
+          // and the type it works on the anchor. The picker is the table's
+          // own (`renderOffsetPicker`), so its label and id are one.
+          <StackedList aria-label={offsetsHeading} className="border-t">
+            {rows.map((row) => (
+              <StackedRow key={row.team.id}>
+                <StackedFields className="flex flex-wrap items-center justify-between gap-2">
+                  <StackedField label={t('rotation.builder.columnTeam')} labelHidden>
+                    <span className="font-semibold">{row.team.name}</span>
+                  </StackedField>
+                  {row.onAnchor === null ? null : (
+                    <StackedField label={t('rotation.builder.columnOnAnchor')} labelHidden>
+                      {renderChip(row.onAnchor)}
+                    </StackedField>
+                  )}
+                </StackedFields>
+                {renderOffsetPicker(current, row, steps)}
+              </StackedRow>
+            ))}
+          </StackedList>
+        ) : (
           <Table>
             <TableHeader>
               <TableRow>
@@ -1180,25 +1208,7 @@ export function RotationSection({
               {rows.map((row) => (
                 <TableRow key={row.team.id}>
                   <TableCell className="font-semibold">{row.team.name}</TableCell>
-                  <TableCell>
-                    <Label htmlFor={`rotation-offset-${row.team.id}`} className="sr-only">
-                      {t('rotation.builder.offsetOf', { name: row.team.name })}
-                    </Label>
-                    <Select
-                      id={`rotation-offset-${row.team.id}`}
-                      name="offset"
-                      value={String(row.index)}
-                      disabled={pending}
-                      onChange={chooseTeamStep(current, row.team.id)}
-                      className="h-11 min-w-32"
-                    >
-                      {steps.map((step) => (
-                        <option key={step.index} value={String(step.index)}>
-                          {t('rotation.builder.stepOption', { position: step.position, name: step.chip.name })}
-                        </option>
-                      ))}
-                    </Select>
-                  </TableCell>
+                  <TableCell>{renderOffsetPicker(current, row, steps)}</TableCell>
                   <TableCell>{row.onAnchor === null ? null : renderChip(row.onAnchor)}</TableCell>
                 </TableRow>
               ))}
@@ -1206,6 +1216,39 @@ export function RotationSection({
           </Table>
         )}
       </Card>
+    );
+  }
+
+  /**
+   * A team's step picker, in the offsets table and in its stacked rows alike:
+   * one label, one id, one control. Its name is the team's (`offsetOf`), so
+   * the picker reads the same in either form.
+   */
+  function renderOffsetPicker(
+    current: RotationDraft,
+    row: ReturnType<typeof draftTeamRowsOf>[number],
+    steps: ReturnType<typeof draftStepRowsOf>,
+  ): ReactNode {
+    return (
+      <>
+        <Label htmlFor={`rotation-offset-${row.team.id}`} className="sr-only">
+          {t('rotation.builder.offsetOf', { name: row.team.name })}
+        </Label>
+        <Select
+          id={`rotation-offset-${row.team.id}`}
+          name="offset"
+          value={String(row.index)}
+          disabled={pending}
+          onChange={chooseTeamStep(current, row.team.id)}
+          className="h-11 min-w-32"
+        >
+          {steps.map((step) => (
+            <option key={step.index} value={String(step.index)}>
+              {t('rotation.builder.stepOption', { position: step.position, name: step.chip.name })}
+            </option>
+          ))}
+        </Select>
+      </>
     );
   }
 

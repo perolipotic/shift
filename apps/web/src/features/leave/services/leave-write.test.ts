@@ -11,7 +11,6 @@ import {
   amendLeave,
   leaveChangeFailureOf,
   leaveInsertFailureOf,
-  isCalendarDate,
   leaveRangeOf,
   recordLeave,
   removeLeave,
@@ -22,6 +21,7 @@ import {
   type LeaveTable,
   type LeaveWriteAnswer,
 } from '@/features/leave/services/leave-write';
+import { isIsoDate } from '@/lib/i18n/format';
 
 /**
  * Story 5.1b's write, executed (AD-15): what the insert sends, every refusal
@@ -224,15 +224,15 @@ describe('recording leave (story 5.1b)', () => {
   });
 });
 
-describe('a calendar date', () => {
+describe('a calendar date, judged by the one validator leave shares (isIsoDate)', () => {
   it.each(['2026-09-10', '2028-02-29', '0001-01-01', '9999-12-31'])('accepts %s', (value) => {
-    expect(isCalendarDate(value)).toBe(true);
+    expect(isIsoDate(value)).toBe(true);
   });
 
   it.each(['2026-13-45', '2026-02-29', '2026-00-10', '2026-09-00', '2026-9-10', '10000-01-01', '', 'x', '2026-09-10 '])(
     'refuses %j',
     (value) => {
-      expect(isCalendarDate(value)).toBe(false);
+      expect(isIsoDate(value)).toBe(false);
     },
   );
 });

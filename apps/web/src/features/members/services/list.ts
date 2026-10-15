@@ -1,6 +1,7 @@
 import { queryOptions } from '@tanstack/react-query';
 
 import { initialsOf } from '@/utils/initials';
+import { searchTextOf, sortSearchFor, sortSearchOf } from '@/utils/search-params';
 import { compareText, formatIsoDayMonth, isIsoDate, organizationIsoDate } from '@/lib/i18n/format';
 import type { MemberRole } from '@/features/navigation/utils/destinations';
 import { MEMBER_ROLES, isAdministrator, type MemberRoleOutcome } from '@/features/navigation/services/role';
@@ -1789,32 +1790,18 @@ const SORT_SEARCH_VALUES: Readonly<Record<MemberColumnKey, string>> = {
   [STATUS_COLUMN]: 'status',
 };
 
-/** The prefix a descending sort carries in the URL. */
-const DESCENDING_PREFIX = '-';
-
 function levelOfSearch(value: unknown): LevelFilter {
   return MEMBER_ROLES.find((role) => LEVEL_SEARCH_VALUES[role] === value) ?? ALL_LEVELS;
 }
 
+/** `?sort=` through the shared reader (`@/utils/search-params`), in this list's column vocabulary. */
 function sortOfSearch(value: unknown): SortState {
-  if (typeof value !== 'string') return DEFAULT_SORT;
+  const sort = sortSearchOf(value);
+  const key = MEMBER_COLUMNS.find((column) => SORT_SEARCH_VALUES[column.key] === sort?.name)?.key;
 
-  const descending = value.startsWith(DESCENDING_PREFIX);
-  const name = descending ? value.slice(DESCENDING_PREFIX.length) : value;
-  const key = MEMBER_COLUMNS.find((column) => SORT_SEARCH_VALUES[column.key] === name)?.key;
-
-  return key === undefined ? DEFAULT_SORT : { key, direction: descending ? DESCENDING : ASCENDING };
-}
-
-/**
- * The URL's search text, trimmed: whitespace alone is no search, so
- * `?trazi=%20%20` opens at the defaults and offers no reset. A number too —
- * the router parses `?trazi=123` as JSON.
- */
-function searchOfText(text: unknown): string {
-  if (typeof text === 'number') return String(text);
-
-  return typeof text === 'string' ? text.trim() : NO_TEXT;
+  return sort === null || key === undefined
+    ? DEFAULT_SORT
+    : { key, direction: sort.descending ? DESCENDING : ASCENDING };
 }
 
 /**
@@ -1828,7 +1815,7 @@ export function membersFiltersOf(search: Readonly<Record<string, unknown>>): Mem
   const team = search['smjena'];
 
   return {
-    search: searchOfText(text),
+    search: searchTextOf(text),
     level: levelOfSearch(search['razina']),
     team: typeof team === 'string' && team !== NO_TEXT ? team : ALL_TEAMS,
     status: chooseStatus(search['status']),
@@ -1839,7 +1826,7 @@ export function membersFiltersOf(search: Readonly<Record<string, unknown>>): Mem
 /** The URL's search for `filters`: each value at its default is left out, so the defaults are `/ljudi`. */
 export function membersSearchFor(filters: MembersFilters): MembersSearch {
   const sorted = filters.sort.key !== DEFAULT_SORT.key || filters.sort.direction !== DEFAULT_SORT.direction;
-  const sort = `${filters.sort.direction === DESCENDING ? DESCENDING_PREFIX : NO_TEXT}${SORT_SEARCH_VALUES[filters.sort.key]}`;
+  const sort = sortSearchFor(SORT_SEARCH_VALUES[filters.sort.key], filters.sort.direction === DESCENDING);
 
   return {
     ...(filters.search === NO_TEXT ? {} : { trazi: filters.search }),

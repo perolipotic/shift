@@ -15,6 +15,10 @@ const SKELETON_ROWS = [0, 1, 2];
  */
 export function TeamListSection({ screen }: { readonly screen: TeamListScreen }): ReactNode {
   const { loading, split } = screen;
+  // Each heading is read once: it titles its card and, below 640 px, names
+  // the stacked list under it (story 7.6's pattern).
+  const activeHeading = t('smjene.activeHeading');
+  const archivedHeading = t('smjene.archivedCount', { count: split?.archived.length ?? 0 });
 
   return (
     <>
@@ -29,14 +33,14 @@ export function TeamListSection({ screen }: { readonly screen: TeamListScreen })
         <Card className="min-w-0">
           <CardHeader className="flex-row flex-wrap items-center gap-3">
             <CardTitle asChild>
-              <h2>{t('smjene.activeHeading')}</h2>
+              <h2>{activeHeading}</h2>
             </CardTitle>
             {/* STATED, AND STATED AT ZERO (UX-DR20). NOT a live region: only
                 confirmations announce, and a count announced on every refetch
                 is noise that buries them. */}
             <Badge variant="secondary">{t('smjene.count', { count: split.active.length })}</Badge>
           </CardHeader>
-          <TeamTable group={split.active} />
+          <TeamTable group={split.active} label={activeHeading} />
         </Card>
       )}
       {split === null ? null : (
@@ -45,10 +49,10 @@ export function TeamListSection({ screen }: { readonly screen: TeamListScreen })
             {/* The count IS the heading: `Arhivirano: 2 smjene`. A separate
                 `Arhivirano` above it would say the same word twice. */}
             <CardTitle asChild>
-              <h2>{t('smjene.archivedCount', { count: split.archived.length })}</h2>
+              <h2>{archivedHeading}</h2>
             </CardTitle>
           </CardHeader>
-          <TeamTable group={split.archived} />
+          <TeamTable group={split.archived} label={archivedHeading} />
         </Card>
       )}
     </>
