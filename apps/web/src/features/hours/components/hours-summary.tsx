@@ -4,10 +4,10 @@ import type { ReactNode } from 'react';
 import { StatTile, StatTileLabel, StatTileValue } from '@/components/ui/stat-tile';
 import { CONFLICT_GLYPH } from '@/features/calendar/utils/modifiers';
 import { ExplainButton } from '@/features/hours/components/hours-explanation';
+import { LeaveFigure } from '@/features/hours/components/hours-marks';
 import {
   HOURS_BANDS_HEADING_ID,
   figureIsEmpty,
-  leaveShownOf,
   type MyHoursView,
 } from '@/features/hours/services/my-hours';
 import { t } from '@/lib/i18n';
@@ -33,8 +33,6 @@ export function HoursSummary({
   readonly view: MyHoursView;
   readonly onExplain: (figure: HoursFigureCode) => void;
 }): ReactNode {
-  const leave = leaveShownOf(view.leave);
-
   return (
     <div className="flex min-w-0 flex-col gap-4 px-4 pb-4">
       <div className="grid min-w-0 grid-cols-1 gap-3 min-[360px]:grid-cols-2">
@@ -98,7 +96,7 @@ export function HoursSummary({
       <div className="flex min-h-11 min-w-0 items-center justify-between gap-3 border-t border-border pt-2">
         <span className="min-w-0 break-words font-medium">{t('sati.leave')}</span>
         <span className="flex shrink-0 items-center gap-1">
-          <span className="font-semibold tabular-nums">{t(leave.key, leave.values)}</span>
+          <span className="font-semibold tabular-nums"><LeaveFigure leave={view.leave} /></span>
           {view.leave === null ? null : (
             <ExplainButton
               figureName={t('sati.leave')}

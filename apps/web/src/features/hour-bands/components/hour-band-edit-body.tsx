@@ -70,6 +70,7 @@ function renderBand(screen: HourBandEditScreen, band: HourBandRow): ReactNode {
       <form
         key={hourBandFormKey(band, saves)}
         method="post"
+        noValidate
         onSubmit={(event) => {
           void submit(event, band);
         }}

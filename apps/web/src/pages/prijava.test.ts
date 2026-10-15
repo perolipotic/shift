@@ -2369,7 +2369,9 @@ const KEY_SOURCES = [
   // leave year, and the *Satni pojasi* card — its heading (the header link's
   // key written a second time), `Otvori` and its name, the bands' label, the
   // count and its value with the names, and the coverage's label and value.
-  { name: 'the organization settings surface', file: SETTINGS, keys: translationKeys, strings: 57 },
+  //
+  // FIFTY-EIGHT SINCE C500: the skeleton's loading words, visually hidden.
+  { name: 'the organization settings surface', file: SETTINGS, keys: translationKeys, strings: 58 },
   {
     // EIGHT on the member list since story 1.5b, up from five, and the number is
     // still small because most of what this screen says is read off a table
@@ -3047,10 +3049,16 @@ const KEY_SOURCES = [
     // ONE HUNDRED AND TEN SINCE THE DEFERRED-WORK SWEEP: the shared month
     // picker's phone sheet, its title and close (E792), and its footer, the
     // key hint and `Ovaj mjesec` (E795).
+    //
+    // ONE HUNDRED AND ELEVEN SINCE C587: the no-team mark moved out of the
+    // table and the stacked rows (two) into `hours-marks.tsx`, once, beside
+    // the two words a screen reader hears for an empty mark — `nema` for the
+    // leave and `bez smjene` for the team. The leave's glyph still comes off
+    // `leaveShownOf`, a key source.
     name: 'the Sati destination',
     file: SATI,
     keys: translationKeys,
-    strings: 110,
+    strings: 111,
   },
   {
     // STORY 5.2c. THREE on Godišnji: its own `nav.godisnji` heading, the
@@ -3953,6 +3961,22 @@ describe('the screen is read at all, so every sweep below means something', () =
       // control, the sortable heading and its glyphs — lives outside the feature.
       SATI.filter((file) => file !== SATI_PAGE && file.startsWith(HOURS_FEATURE)).sort(),
     );
+  });
+
+  it('draws every empty mark on Sati as one EmptyMark: the glyph hidden, a word spoken (C587)', () => {
+    const marks = join(srcRoot, ...HOURS_SCREEN_PARTS.marks);
+    const emptyMark = source(join(srcRoot, 'components', 'ui', 'empty-mark.tsx'));
+
+    // One design: the `—` hidden from readers, the word hidden from the eye.
+    expect(emptyMark).toMatch(/<span aria-hidden>\{glyph\}<\/span>/);
+    expect(emptyMark).toMatch(/<span className="sr-only">\{word\}<\/span>/);
+    // The leave's mark and the team's, each with its own spoken word.
+    expect(source(marks).match(/<EmptyMark glyph=\{[^}]+\} word=\{t\('[^']+'\)\} \/>/g)).toHaveLength(2);
+    // And nowhere else on the screen is either drawn as a bare glyph.
+    for (const file of SATI.filter((one) => one !== marks)) {
+      expect(source(file), `${file} draws the no-team mark bare`).not.toContain("t('sati.organization.noTeam')");
+      expect(source(file), `${file} draws the leave without its mark`).not.toMatch(/\bleaveShownOf\(/);
+    }
   });
 
   it('draws the month as one toolbar, shared by Kalendar and Sati (story 7.4)', () => {
@@ -7059,8 +7083,9 @@ describe('the keys rendered and the keys declared are the same set', () => {
       .map((file) => source(file))
       .join('\n');
     const declared = resourceKeys().filter((key) => key.startsWith('ljudi.'));
-
-    // Read once: every source is re-read and re-swept per call.
+    // READ ONCE, not once per key: `used()` reads every key source from disk,
+    // and asking it again for each of the hundreds of `ljudi.*` keys made this
+    // the slowest test in the file — slow enough to time out under load.
     const rendered = used();
 
     expect(declared.length, 'no ljudi keys to sweep at all').toBeGreaterThan(0);
@@ -7078,8 +7103,11 @@ describe('the keys rendered and the keys declared are the same set', () => {
   it('declares every key the two screens render', () => {
     // The same claim from the other side, and not redundant: `toEqual` on two
     // empty arrays would pass, so this pins both lists non-empty.
-    expect(used().length).toBeGreaterThan(0);
-    for (const key of used()) expect(resourceKeys()).toContain(key);
+    const rendered = used();
+    const resource = resourceKeys();
+
+    expect(rendered.length).toBeGreaterThan(0);
+    for (const key of rendered) expect(resource).toContain(key);
   });
 });
 
@@ -7576,8 +7604,66 @@ describe('every field on the settings surface carries an accessible name', () =>
 
     expect(gated, 'the screen renders no skeleton').toContain('animate-pulse');
     expect(gated, 'the skeleton is not conditioned on the read being pending').toMatch(
-      /isPending \? \(\s*<div aria-busy\b[\s\S]{0,80}?animate-pulse/,
+      /isPending \? \(\s*<div role="status" aria-busy\b[\s\S]{0,80}?animate-pulse/,
     );
+  });
+
+  it('says it is loading to a screen reader, not only with pulsing bars (C500)', () => {
+    const gated = componentFunction(source(SETTINGS_CARD), 'renderCards');
+
+    expect(gated, 'the skeleton is silent to a screen reader').toMatch(
+      /<div role="status" aria-busy[^>]*>\s*<span className="sr-only">\{t\('organization\.loading'\)\}<\/span>/,
+    );
+  });
+});
+
+describe('every form refuses in Croatian, never in the browser’s language (B298)', () => {
+  /**
+   * `required`, `min`, `max` and `type="email"` without `noValidate` stop a
+   * submit with a bubble in the browser's or the OS's language: the one class
+   * of user-facing text every string sweep in this file walks past. So EVERY
+   * form is `noValidate`, and the app's own preflight refuses — each in
+   * Croatian, from `hr.json`, on the field it names. Found by walking the
+   * source rather than listed, so a new form cannot escape the sweep.
+   */
+  const forms = readdirSync(srcRoot, { recursive: true, encoding: 'utf8' })
+    .filter((file) => file.endsWith('.tsx'))
+    .map((file) => join(srcRoot, file))
+    .filter((file) => /<form\b/.test(source(file)));
+
+  /** Each `<form>` opening tag: one line, or many closed by a line holding `>` alone. */
+  function formOpenings(text: string): string[] {
+    return [...text.matchAll(/<form\b(?:[^>\n]*>|[\s\S]*?\n\s*>)/g)].map((found) => found[0]);
+  }
+
+  it('finds the forms, so the sweep is not vacuous', () => {
+    expect(forms.length).toBeGreaterThanOrEqual(19);
+    expect(formOpenings('<form\n  method="post"\n  onSubmit={(event) => {}}\n>')).toHaveLength(1);
+    expect(formOpenings('<form\n  method="post"\n>')[0]).not.toMatch(/\bnoValidate\b/);
+  });
+
+  it.each(forms.map((file) => [file.slice(srcRoot.length + 1), file]))('%s: every <form> is noValidate', (_name, file) => {
+    const openings = formOpenings(source(file ?? ''));
+
+    expect(openings.length).toBeGreaterThan(0);
+    for (const opening of openings) {
+      expect(opening, 'a form left to the browser’s own validation bubbles').toMatch(/\bnoValidate\b/);
+    }
+  });
+
+  it('caps no reason by maxLength: the code-point preflight is the one limit (C485)', () => {
+    // `maxLength` counts UTF-16 units while the database counts code points,
+    // so it contradicted the preflight on an emoji-heavy reason. The NAME
+    // inputs keep theirs (`NAME_MAX_LENGTH`, 0036), beside their own
+    // too-long refusals.
+    const reasons = forms.flatMap((file) =>
+      [...source(file).matchAll(/<Input\b[\s\S]*?\/>/g)]
+        .map((found) => found[0])
+        .filter((input) => input.includes('name="reason"')),
+    );
+
+    expect(reasons, 'the three reason inputs are not found').toHaveLength(3);
+    for (const input of reasons) expect(input).not.toMatch(/\bmaxLength=/);
   });
 });
 
@@ -9636,7 +9722,8 @@ describe('the two member forms write through the seam and keep nothing back', ()
     {
       name: 'the member create form',
       file: MEMBER_CREATE,
-      marked: ['member-leave'],
+      // B298: the name, the username and the address, refused by the form itself.
+      marked: ['member-leave', 'member-name', 'member-username', 'member-email'],
       leaveId: "id=\"member-leave\"",
       leaveMark: "aria-invalid={invalidField === 'member-leave'}",
     },
@@ -9649,7 +9736,17 @@ describe('the two member forms write through the seam and keep nothing back', ()
       // STORY 7.11: the allowance's field is in its own dialog, its id named
       // once (`MEMBER_ALLOWANCE_FIELD_ID`, `member-leave`), so it is matched
       // by its constant rather than a literal.
-      marked: [null, 'member-leave-from', 'member-leave-to', 'member-status-date', 'member-team-date'],
+      // B298: the name, the username and the address, refused by the form itself.
+      marked: [
+        null,
+        'member-leave-from',
+        'member-leave-to',
+        'member-status-date',
+        'member-team-date',
+        'member-name',
+        'member-username',
+        'member-email',
+      ],
       leaveId: 'id={MEMBER_ALLOWANCE_FIELD_ID}',
       leaveMark: 'aria-invalid={invalidField === MEMBER_ALLOWANCE_FIELD_ID}',
     },
@@ -9669,6 +9766,11 @@ describe('the two member forms write through the seam and keep nothing back', ()
     );
     expect(handler, 'focus is not moved to the field the message is about').toMatch(
       /leaveAllowanceDays === null[\s\S]{0,400}?\.focus\(\)/,
+    );
+    // B298: the form is `noValidate`, so a blank name or username and a
+    // malformed address are refused here too, the field marked and focused.
+    expect(handler, 'the entered fields are not refused by the form itself').toMatch(
+      /memberEntryRefusalOf\([\s\S]{0,700}?setInvalidField\([\s\S]{0,80}?\.focus\(\)/,
     );
     // The mark is CLEARED before the next attempt, or a corrected field stays
     // announced as invalid for the rest of the session.

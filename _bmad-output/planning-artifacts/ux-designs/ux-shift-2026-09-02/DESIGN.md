@@ -33,19 +33,19 @@ colors:
   shift-slot-2-foreground-dark: '#DCE3EE'
   shift-slot-3: '#EFE7F7'          # slots 3-6 verified in both themes, test/theme-contrast.test.ts
   shift-slot-3-foreground: '#4B3168'
-  shift-slot-3-dark: '#2A2038'
+  shift-slot-3-dark: '#3C324C'
   shift-slot-3-foreground-dark: '#CBB4E8'
   shift-slot-4: '#FDF0DC'
   shift-slot-4-foreground: '#6E4A12'
-  shift-slot-4-dark: '#33280F'
+  shift-slot-4-dark: '#42361D'
   shift-slot-4-foreground-dark: '#E8C88A'
   shift-slot-5: '#E3F2EC'
   shift-slot-5-foreground: '#1D5644'
-  shift-slot-5-dark: '#16302A'
+  shift-slot-5-dark: '#243E38'
   shift-slot-5-foreground-dark: '#93CFB8'
   shift-slot-6: '#F1EEE6'
   shift-slot-6-foreground: '#5A5344'
-  shift-slot-6-dark: '#2A281F'
+  shift-slot-6-dark: '#3A382F'
   shift-slot-6-foreground-dark: '#CFC6AE'
   shift-nonworking: '#F0F3F6'
   shift-nonworking-foreground: '#8D9AA7'
@@ -58,10 +58,8 @@ colors:
   # ── Modifier signals ──────────────────────────────────────────────
   # System-defined and fixed. Never the sole carrier of meaning —
   # each pairs with a glyph and a fill treatment (see Components).
-  modifier-leave: 'rgba(33,96,63,0.16)'
-  modifier-leave-foreground: '#21603F'
-  modifier-leave-dark: 'rgba(132,204,167,0.15)'
-  modifier-leave-foreground-dark: '#84CCA7'
+  # Leave has no token: its hatch and glyph are drawn in the cell's own
+  # foreground (story 5.3c), so the old modifier-leave pair was retired.
   modifier-uncovered: 'rgba(160,110,20,0.22)'
   modifier-uncovered-foreground: '#7A5410'
   modifier-uncovered-dark: 'rgba(230,170,60,0.16)'
@@ -176,7 +174,7 @@ components:
     border: '2px inset {colors.modifier-overridden}'
     glyph: '✎'
   shift-cell-leave:
-    fill: 'repeating-linear-gradient(-45deg, {colors.modifier-leave} 0 4px, transparent 4px 8px)'
+    fill: 'repeating-linear-gradient(-45deg, color-mix(in oklch, currentColor 16%, transparent) 0 4px, transparent 4px 8px)'
     glyph: '◷'
   shift-cell-uncovered:
     fill: 'repeating-linear-gradient(45deg, {colors.modifier-uncovered} 0 4px, transparent 4px 8px)'
@@ -227,7 +225,7 @@ Two properties are not stylistic preferences but consequences of the product con
 
 **The working-shift ramp.** Working Shift Types are Organization data of arbitrary count, so colour is assigned to six ordered slots rather than to named shift types. An Organization's Shift Types take slots in creation order; the pilot's `Dan` takes slot 1 and `Noć` takes slot 2. In the light theme slot 1 reads light and cool, slot 2 dark and deep — a deliberate light/dark contrast that happens to suit a day/night organization without encoding one. Slots 3–6 are verified in both themes, `test/theme-contrast.test.ts` (story 2.2b pins that every slot the ramp can return has a measured light and dark pair). Beyond six Shift Types a slot repeats, and the always-visible label carries the distinction. **The always-visible label is the sole distinguisher between ramp slots** (decided 2026-10-13, deferred-work sweep): slots differ by hue, which colour-vision deficiency can erase, and light slot-1 (`#E4F0FA`) measures about 1.04:1 against the light non-working fill, so the D/N/S label every shift-cell carries (UX-DR7, UX-DR37) is what tells them apart, never the fill alone. No palette revision is planned for it.
 
-**The dark ramp has three lightness levels** (story 7.1). The non-working fill recedes below the card (`#0E1828`), *Noć*'s slot-2 rises to a light slate (`#2F3641`) and *Dan*'s slot-1 is a more saturated blue (`#00415D`, the lightest of the three), so a night shift never reads as a free day (1.46:1 and OKLab ΔE×100 12.3 between slot-2 and non-working, pinned in `test/theme-contrast.test.ts`). Slot-2 and non-working share a hue, so beyond lightness they are told apart by `shift-nonworking-border` — a 7 % white hairline in dark, transparent in light, drawn as a 1 px outline inside every non-working cell, chip and tile so it takes no layout space and survives the modifier rings — and by the always-visible label. *Dan* and *Noć* sit at similar lightness and differ by hue (about 24°) and by label.
+**The dark ramp has three lightness levels** (story 7.1). The non-working fill recedes below the card (`#0E1828`), *Noć*'s slot-2 rises to a light slate (`#2F3641`) and *Dan*'s slot-1 is a more saturated blue (`#00415D`, the lightest of the three), so a night shift never reads as a free day (1.46:1 and OKLab ΔE×100 12.3 between slot-2 and non-working, pinned in `test/theme-contrast.test.ts`). Slot-2 and non-working share a hue, so beyond lightness they are told apart by `shift-nonworking-border` — a 7 % white hairline in dark, transparent in light, drawn as a 1 px outline inside every non-working cell, chip and tile so it takes no layout space and survives the modifier rings — and by the always-visible label. *Dan* and *Noć* sit at similar lightness and differ by hue (about 24°) and by label. Dark slots 3–6 sit at the same working level (OKLCH L ≈ 0.34, hue and chroma kept; re-tuned 2026-10-15, deferred-work sweep), so every working slot clears the same floor against non-working — contrast ≥ 1.4:1 and OKLab ΔE×100 ≥ 10, measured for all six dark slots in `test/theme-contrast.test.ts`.
 
 **Modifier signals** — leave, uncovered, overridden, conflict — are system-defined and fixed forever. Leave and uncovered are hatch fills, overridden is an inset ring, conflict is an inset ring in the reserved hue. All four also carry a glyph.
 
@@ -302,7 +300,7 @@ A 12 px base radius (`--radius: 0.75rem`): cards `lg` (12 px), buttons and input
 | Component | Spec |
 |---|---|
 | **shift-cell** | Base fill from the assigned `shift-slot-N`; label always visible; time range shown when width allows. 30 px minimum height. |
-| **shift-cell modifiers** | Composable on any base: conflict = inset 2 px `destructive` + `⚠`; overridden = inset 2 px `modifier-overridden` + `✎`; leave = `modifier-leave` hatch + `◷`; uncovered = `modifier-uncovered` hatch + `◌`. A cell may carry more than one. Conflict and uncovered are drawn on an admin's calendar only. A member's calendar carries overridden, and leave on their own dates in *Moj raspored* (story 7.10). |
+| **shift-cell modifiers** | Composable on any base: conflict = inset 2 px `destructive` + `⚠`; overridden = inset 2 px `modifier-overridden` + `✎`; leave = −45° hatch + `◷`; uncovered = 45° hatch + `◌`, both drawn in the cell's own foreground at 16 % (story 5.3c), so no leave token exists (`modifier-uncovered` remains for the hour band bar). A cell may carry more than one. Conflict and uncovered are drawn on an admin's calendar only. A member's calendar carries overridden, and leave on their own dates in *Moj raspored* (story 7.10). |
 | **duty-block** | Card presenting consecutive working shifts with no interval between them as one duty: end time as the headline, span as metadata, a progress bar in `primary`, and one leg per constituent shift marked done / in progress / upcoming. As built (story 6.2; recorded 2026-10-13, deferred-work sweep): the total as the `muted-foreground` kicker, the headline `text-2xl` bold; the bar is 8 px, `rounded-full`, `primary` over `muted`, with the span's two ends and the progress in words (`14 h 10 min od 24 h`) under it in `text-xs` `muted-foreground`; each leg carries an icon beside its state word, and a `text-sm` `muted-foreground` note of whose shift it is — on a replacement the replaced member by name (`zamjena za {ime} ({smjena})`). |
 | **Admin Danas cards** | Story 6.3, recorded 2026-10-13 (deferred-work sweep). Four cards in this order: *Treba tebe* (the count always shown; above zero a `destructive` left edge and ⚠, at zero neutral with a check), *Pokrivenost danas* (one row per working team, `{present} od {total} članova`, ⚠ beside an unresolved absence, `✓ puna smjena`), *Odsutni danas* (the leave glyph `◷` per line), and *Ovaj tjedan* (the calendar's own shift-cells, team rows × seven days, with a legend). |
 | **resolution-option** | A conflict outcome. Card with a radio affordance, name, one-line effect, and a **consequence-strip**. No option is primary-styled and none is labelled recommended. Built on `RadioCard` (`components/ui/radio-group.tsx`, Radix radio group): unselected, a 1.5 px `input` border and an outlined dot; selected, a `primary` border plus a 2 px `primary` ring and a filled dot, and never a different fill (story 5.4b). |

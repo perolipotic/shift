@@ -50,6 +50,11 @@ Every screen (destination, form, placeholder or not-found) is built the same way
 - A form sits in a left-aligned `Card` with `max-w-lg` under the header.
 - A refusal and a confirmation are a `Notice` with `role="alert"` or
   `role="status"`. Inside a form screen or a card, the notice sits in the card.
+- Every `<form>` is `noValidate` (B298): `required`, `min`, `max` and
+  `type="email"` stay for their semantics, but the app's own preflight
+  refuses, in Croatian from `hr.json`, never a browser bubble in the OS's
+  language. No reason field carries `maxLength`: its preflight counts code
+  points as the database does (a name keeps `NAME_MAX_LENGTH`). `prijava.test.ts` sweeps both.
 - A select is the `Select` primitive (`ui/select.tsx`), a native `<select>`
   in the Input look with a chevron in place of the browser's arrow. A screen
   composes only `className="h-11"` for the 44 px floor, as on `Input`, and
@@ -67,6 +72,7 @@ Every screen (destination, form, placeholder or not-found) is built the same way
 | `PageDescription` (`ui/page-header.tsx`) | The one-sentence lede under the title. Wrap `PageTitle` and it in one `<div>` so they stay on the left. |
 | `Callout` (`ui/callout.tsx`) | An explanation box with an icon tile, a title, a sentence and an optional action. It explains; it never refuses or confirms (that is `Notice`). |
 | `IconTile` (`ui/icon-tile.tsx`) | A decorative rounded square holding one icon, beside words that carry the meaning. `light`/`dark` match the timeline's tones. |
+| `EmptyMark` (`ui/empty-mark.tsx`) | The one empty mark (C587): a figure or a name that is not there, as a glyph hidden from assistive technology and a visually hidden word, so a screen reader says `nema` or `bez smjene` rather than "dash". The screen passes both from `t()`. |
 | `StatTile` (`ui/stat-tile.tsx`) | A summary figure INSIDE a card, where `StatCard` would nest a card in a card. |
 | `InputGroup`, `InputGroupIcon`, `InputGroupAction` (`ui/input-group.tsx`) | A leading icon on an `Input` or a `Select`; the group adds the padding, so neither primitive changes. `InputGroupAction` holds a trailing 44 px button inside the field, such as the password's show/hide toggle; the screen names it and pads the input on the right. Never on `type="time"` or `type="date"`: the browser already draws its own clock or calendar button there, and a second icon reads as a duplicate. |
 | `Select` (`ui/select.tsx`) | The one select: native underneath, so `defaultValue`, `ref`, `FormData`, key-remounts and a phone's picker all keep working. The screen composes `h-11`. |

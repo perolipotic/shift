@@ -65,6 +65,7 @@ export function SignInForm({ screen }: { readonly screen: SignInScreenState }): 
   return (
     <form
       method="post"
+      noValidate
       onSubmit={(event) => {
         void submit(event);
       }}

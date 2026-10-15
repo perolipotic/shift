@@ -50,13 +50,18 @@ describe('a name is blank in one white-space class', () => {
   });
 });
 
-describe('the stored name is what it was before 0024', () => {
-  it('is `trim()`med, byte for byte', () => {
+describe('the stored name is trimmed in the class the key is (C549)', () => {
+  it('strips the class from both ends, and nothing else', () => {
     expect(enteredName('  Tim\t')).toBe('Tim');
-    // NEL is outside `trim`'s class: blank on its own, kept around a name.
-    expect(enteredName('Tim\u0085')).toBe('Tim\u0085');
+    // NEL and the information separators are outside `trim`'s class: stripped
+    // all the same, so the stored string is the one its key was taken from.
+    expect(enteredName('Tim\u0085')).toBe('Tim');
+    expect(enteredName('\u001CTim\u001F')).toBe('Tim');
+    expect(enteredName('Tim\u0085')).toBe(enteredName('Tim'));
     // Never normalized: a decomposed name is stored as it was typed.
     expect(enteredName('Noc\u0301')).toBe('Noc\u0301');
+    // Blank in the class is no name at all.
+    expect(enteredName('\u0085\u001C')).toBeNull();
   });
 });
 

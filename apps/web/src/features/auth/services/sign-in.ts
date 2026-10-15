@@ -142,7 +142,9 @@ export async function signIn(auth: PasswordAuth, credentials: Credentials): Prom
   const organization = organizationDestination(slug);
   const account = normalizeUsername(username);
 
-  if (organization === null || account === null) return { ok: false, code: SIGN_IN_REFUSED };
+  // AN EMPTY PASSWORD TOO (B298): the form is `noValidate`, so no browser
+  // bubble stops it, and no account has one — the same refusal, no request.
+  if (organization === null || account === null || password === '') return { ok: false, code: SIGN_IN_REFUSED };
 
   let answered;
 

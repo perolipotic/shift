@@ -778,18 +778,17 @@ describe('a working shift never reads as a free day (story 7.1)', () => {
    * sweep): the always-visible label is the sole distinguisher between ramp
    * slots, recorded in DESIGN.md § Colors, so this is not a value to nudge.
    *
-   * DARK SLOTS 3–6 ARE NOT ASSERTED EITHER. They predate the re-tune, the pilot
-   * uses none of them, and story 7.1 may change only the six approved dark
-   * values. Measured against dark non-working they fall short of these floors:
-   * slot-3 1.15:1 / ΔE×100 6.6, slot-4 1.23:1 / 10.8, slot-5 1.26:1 / 9.0,
-   * slot-6 1.21:1 / 8.5. Raising them is a design decision for a human.
+   * EVERY DARK SLOT IS ASSERTED. Story 7.1 re-tuned only slots 1–2, which left
+   * dark slots 3–6 short of these floors (slot-3 1.15:1 / ΔE×100 6.6, slot-4
+   * 1.23:1 / 10.8, slot-5 1.26:1 / 9.0, slot-6 1.21:1 / 8.5). The deferred-work
+   * sweep of 2026-10-15 raised them to Noć's working level (OKLCH L ≈ 0.34,
+   * hue and chroma kept), so no dark slot is excluded any more.
    */
   const MIN_RATIO = 1.4;
   const MIN_OKLAB_DELTA = 10;
   const oklabDelta = differenceEuclidean('oklab');
   const PAIRS: { theme: Theme; slot: string }[] = [
-    { theme: 'dark', slot: 'shift-slot-1' },
-    { theme: 'dark', slot: 'shift-slot-2' },
+    ...FILLS.filter((fill) => fill !== 'shift-nonworking').map((slot) => ({ theme: 'dark' as const, slot })),
     { theme: 'light', slot: 'shift-slot-2' },
   ];
 
@@ -944,18 +943,16 @@ describe('no curated accent is mistakable for any other signal either', () => {
    * Every signal an accent could be mistaken for, `destructive` excluded — it
    * has the stricter block above.
    *
-   * The two overlays are measured through their FOREGROUNDS as well as their
-   * fills, and the foreground is the one that matters: `--modifier-leave` and
-   * `--modifier-uncovered` are alpha tokens whose raw values are read by nobody,
-   * while their foregrounds are the opaque colours the glyph is actually drawn
-   * in. Measuring only the fills is how dark amber passed at ΔE 1.5 from the
-   * colour a person sees.
+   * The uncovered overlay is measured through its FOREGROUND as well as its
+   * fill, and the foreground is the one that matters: `--modifier-uncovered` is
+   * an alpha token whose raw value is read by nobody, while its foreground is
+   * the opaque colour the hour band flag is actually drawn in. Measuring only
+   * the fill is how dark amber passed at ΔE 1.5 from the colour a person sees.
+   * (Leave has no token since its hatch moved to the cell's own foreground.)
    */
   const SIGNALS = [
     'primary',
     'modifier-overridden',
-    'modifier-leave',
-    'modifier-leave-foreground',
     'modifier-uncovered',
     'modifier-uncovered-foreground',
   ] as const;

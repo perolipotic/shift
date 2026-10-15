@@ -14,7 +14,7 @@ import {
   type MemberTeamVersion,
   type MembersSurfaceState,
 } from '@/features/members/services/list';
-import { isBlankName } from '@/utils/name';
+import { isBlankName, trimName } from '@/utils/name';
 import {
   CREATE_USER_OPERATION,
   DEACTIVATE,
@@ -361,6 +361,44 @@ export function storedEmail(entered: string): string | null {
 }
 
 /**
+ * The HTML standard's own "valid e-mail address" (WHATWG, `input type=email`):
+ * what the browser's bubble used to check, now the app's (B298).
+ */
+const EMAIL_SHAPE =
+  /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
+
+/** Whether an entered address, trimmed, has the shape an `email` input accepts. */
+export function emailIsWellFormed(entered: string): boolean {
+  return EMAIL_SHAPE.test(entered.trim());
+}
+
+/** The member form fields refused before anything is sent ({@link memberEntryRefusalOf}). */
+export const MEMBER_ENTRY_NAME = 'name';
+export const MEMBER_ENTRY_USERNAME = 'username';
+export const MEMBER_ENTRY_EMAIL = 'email';
+export type MemberEntryField = typeof MEMBER_ENTRY_NAME | typeof MEMBER_ENTRY_USERNAME | typeof MEMBER_ENTRY_EMAIL;
+
+/**
+ * THE FORM'S OWN REFUSAL, in place of the browser's (B298). Every member form
+ * is `noValidate`, so no bubble in the browser's language stops an empty
+ * field: this does, in field order, and the screen says "Unesena vrijednost
+ * nije dopuštena." on the field it names. A blank name in `0024`'s class, a
+ * blank username, and an address that is not one — an empty address is
+ * "none", which is allowed. `null` when every field passes.
+ */
+export function memberEntryRefusalOf(entered: {
+  readonly name: string;
+  readonly username: string;
+  readonly email: string;
+}): MemberEntryField | null {
+  if (isBlankName(entered.name)) return MEMBER_ENTRY_NAME;
+  if (entered.username.trim() === '') return MEMBER_ENTRY_USERNAME;
+  if (storedEmail(entered.email) !== null && !emailIsWellFormed(entered.email)) return MEMBER_ENTRY_EMAIL;
+
+  return null;
+}
+
+/**
  * The username a create form proposes for `name` (story 7.13b):
  * `Petra Jurić` → `petra.juric`.
  *
@@ -545,7 +583,7 @@ export function storedUsernameOf(rows: readonly unknown[] | null, cached: string
  */
 export function memberPatchOf(edits: MemberEdits): Record<string, unknown> {
   return {
-    ...(edits.name === undefined ? {} : { name: edits.name.trim() }),
+    ...(edits.name === undefined ? {} : { name: trimName(edits.name) }),
     ...(edits.email === undefined ? {} : { email: edits.email }),
     ...(edits.role === undefined ? {} : { role: edits.role }),
     ...(edits.leaveAllowanceDays === undefined ? {} : { leave_allowance_days: edits.leaveAllowanceDays }),

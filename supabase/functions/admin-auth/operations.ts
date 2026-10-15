@@ -399,13 +399,20 @@ export const NAME_WHITESPACE =
 
 const NAME_WHITE = new Set(NAME_WHITESPACE);
 
-/** Whether a name is nothing but that white space. A linear scan, no regex. */
-export function isBlankName(value: string): boolean {
-  for (const character of value) {
-    if (!NAME_WHITE.has(character)) return false;
-  }
+/**
+ * A name without that white space around it — what is STORED (deferred-work
+ * C549), so `'Ana\u0085'` stores as `Ana`, the same string the web stores
+ * through `trimName` in `apps/web/src/utils/name.ts`; `''` is a blank name.
+ * Two index scans, no regex: every character of the class is one UTF-16 unit.
+ */
+export function trimName(value: string): string {
+  let start = 0;
+  let end = value.length;
 
-  return true;
+  while (start < end && NAME_WHITE.has(value.charAt(start))) start += 1;
+  while (end > start && NAME_WHITE.has(value.charAt(end - 1))) end -= 1;
+
+  return value.slice(start, end);
 }
 
 /**
@@ -540,8 +547,8 @@ export function createPayloadOf(body: unknown): PayloadOutcome<CreatePayload> {
 
   const organizationId = textAt(fields, 'organizationId');
   const rawName = fields['name'];
-  // STORED `trim()`med, as before; BLANK in `0024`'s class, as the check is.
-  const name = typeof rawName === 'string' && !isBlankName(rawName) ? rawName.trim() : '';
+  // STORED AND JUDGED BLANK in `0024`'s class, as the check is (C549).
+  const name = typeof rawName === 'string' ? trimName(rawName) : '';
   const rawEmail = fields['email'];
   const role = MEMBER_ROLES.find((known) => known === fields['role']);
   const leaveAllowanceDays = fields['leaveAllowanceDays'];

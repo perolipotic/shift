@@ -863,6 +863,8 @@ const SANCTIONED_SCREEN_KEYS = [
   // formats under its label. The aside that explained the settings left with
   // story 7.18: the page states its facts itself.
   'organization.lede',
+  // C500: what a screen reader hears while the settings are read.
+  'organization.loading',
   'organization.logoHint',
   'organization.hourBands.heading',
   'organization.hourBands.name',
@@ -1513,6 +1515,8 @@ const SANCTIONED_SCREEN_KEYS = [
   // The mark of an empty figure: a member's leave of 0 reads as an absence,
   // never as `0 h` (Epic 4 retro, R2).
   'sati.noFigure',
+  // C587: the word a screen reader hears in its place, the glyph hidden.
+  'sati.noFigureWord',
   'sati.error.unavailable',
   // STORY 4.2: an admin's organization table on *Sati* — its caption, its
   // column headings, the mark of a member on no team, and the line a month
@@ -1526,6 +1530,7 @@ const SANCTIONED_SCREEN_KEYS = [
   'sati.organization.total',
   'sati.organization.leave',
   'sati.organization.noTeam',
+  'sati.organization.noTeamWord',
   'sati.organization.emptyMonth',
   // STORY 4.3: the organization table's one export — its action, the label
   // it wears while the file is built, the line a failed build shows, and the

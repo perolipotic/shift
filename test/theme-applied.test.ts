@@ -134,6 +134,15 @@ describe('the built stylesheet consumes the tokens it defines', () => {
     { utility: 'bg-brand-blue', property: 'background-color', token: 'brand-blue' },
     { utility: 'border-brand-violet', property: 'border-color', token: 'brand-violet' },
     { utility: 'text-brand-amber-foreground', property: 'color', token: 'brand-amber-foreground' },
+    // The working-shift ramp (UX-DR3): every slot the shift-type chips paint,
+    // so a mapping typo surfaces here rather than as an unstyled cell.
+    ...[1, 2, 3, 4, 5, 6].map((slot) => ({
+      utility: `bg-shift-slot-${slot}`,
+      property: 'background-color',
+      token: `shift-slot-${slot}`,
+    })),
+    // One modifier text utility: the hour band bar's uncovered flag.
+    { utility: 'text-modifier-uncovered-foreground', property: 'color', token: 'modifier-uncovered-foreground' },
   ])('emits a $utility rule resolving to --$token', ({ utility, property, token }) => {
     const rule = new RegExp(`\\.${utility}\\s*\\{[^}]*${property}:\\s*var\\(--${token}\\)`).exec(
       builtCss(),

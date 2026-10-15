@@ -13,10 +13,11 @@
  * `\s`, because JavaScript's `\s` lacks those five and Postgres's named classes
  * follow the collation.
  *
- * THE STORED VALUE IS NOT THIS. {@link enteredName} still stores `value.trim()`,
- * byte for byte what every name surface stored before `0024`: only the verdict
- * "is anything left" uses the wider class. The key is for comparing, never for
- * writing.
+ * THE STORED VALUE IS TRIMMED IN THE SAME CLASS (deferred-work C549): {@link
+ * enteredName} stores {@link trimName}, so `'Ana\u0085'` stores as `Ana`, the
+ * same string as the name it is one key with. Before, it stored `value.trim()`,
+ * which keeps U+0085 and U+001C–001F. The key itself — NFC, lower-cased — is
+ * still for comparing, never for writing.
  */
 
 /**
@@ -71,11 +72,13 @@ export function nameKey(value: string): string {
 }
 
 /**
- * The name as it will be stored — `trim()`med, as before — or `null` when the
- * database would refuse it as blank.
+ * The name as it will be stored — trimmed in the class above ({@link trimName})
+ * — or `null` when the database would refuse it as blank.
  */
 export function enteredName(value: string): string | null {
-  return isBlankName(value) ? null : value.trim();
+  const trimmed = trimName(value);
+
+  return trimmed === '' ? null : trimmed;
 }
 
 /**

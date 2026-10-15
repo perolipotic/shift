@@ -51,6 +51,7 @@ function renderType(screen: ShiftTypeEditScreen, type: ShiftTypeRow): ReactNode 
         <form
           key={shiftTypeFormKey(type, saves)}
           method="post"
+          noValidate
           onSubmit={(event) => {
             void submit(event, type);
           }}

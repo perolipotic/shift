@@ -9,9 +9,32 @@ const kalendar = hr.kalendar;
 const sati = hr.sati;
 const organization = hr.sati.organization;
 
-/** A leave as *Sati* reads it (leave in days, 2026-10-10): `—` for none, else `3 dana`. */
+/**
+ * An empty leave as its element's text reads (C587): the `—` the eye sees,
+ * hidden from readers, then `nema`, the word only a screen reader hears.
+ */
+export const NO_LEAVE_TEXT = `${sati.noFigure}${sati.noFigureWord}`;
+
+/** A leave as its element's text reads it (leave in days, 2026-10-10): the empty mark for none, else `3 dana`. */
 export function leaveText(days: number): string {
-  return days === 0 ? sati.noFigure : plural(hr.count.days, days);
+  return days === 0 ? NO_LEAVE_TEXT : plural(hr.count.days, days);
+}
+
+/**
+ * A cell's text as the EYE reads it: an empty mark's spoken word (`.sr-only`,
+ * C587) left out, so a cell compares with the exported file, which holds the
+ * `—` alone.
+ */
+async function seenText(cell: Locator): Promise<string> {
+  const text = await cell.evaluate((element) => {
+    const copy = element.cloneNode(true) as Element;
+
+    for (const hidden of copy.querySelectorAll('.sr-only')) hidden.remove();
+
+    return copy.textContent;
+  });
+
+  return (text ?? '').trim();
 }
 
 /**
@@ -362,7 +385,7 @@ export class HoursPage extends BasePage {
             const cell = row.getByRole('cell').nth(index);
             const shown = bandLabels.has(label) ? this.bandCellHours(cell) : cell;
 
-            return ((await shown.textContent()) ?? '').trim();
+            return seenText(shown);
           }),
         ),
       ),
@@ -374,9 +397,9 @@ export class HoursPage extends BasePage {
    * spanning Member and Team, then one cell per figure column.
    */
   async organizationFooter(): Promise<string[]> {
-    const cells = await this.organizationTable.locator('tfoot').getByRole('row').getByRole('cell').allTextContents();
+    const cells = await this.organizationTable.locator('tfoot').getByRole('row').getByRole('cell').all();
 
-    return cells.map((text) => text.trim());
+    return Promise.all(cells.map(seenText));
   }
 
   /** The index of a heading among the table's headings, for reading its column. */
@@ -401,6 +424,6 @@ export class HoursPage extends BasePage {
     const index = await this.columnIndex(label);
     const rows = await this.organizationRows.all();
 
-    return Promise.all(rows.map(async (row) => ((await row.getByRole('cell').nth(index).textContent()) ?? '').trim()));
+    return Promise.all(rows.map((row) => seenText(row.getByRole('cell').nth(index))));
   }
 }

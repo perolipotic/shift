@@ -23,7 +23,7 @@ import {
   PASSWORD_FLAG_CLEARED as CLIENT_PASSWORD_FLAG_CLEARED,
   SET_PASSWORD_FUNCTION,
 } from '../apps/web/src/features/auth/services/set-password.ts';
-import { NAME_WHITESPACE as CLIENT_NAME_WHITESPACE } from '../apps/web/src/utils/name.ts';
+import { NAME_WHITESPACE as CLIENT_NAME_WHITESPACE, trimName as clientTrimName } from '../apps/web/src/utils/name.ts';
 import {
   ACCESS_UNREADABLE,
   ADMIN_ROLE,
@@ -77,6 +77,7 @@ import {
   createAttributes,
   createPayloadOf,
   NAME_WHITESPACE as FUNCTION_NAME_WHITESPACE,
+  trimName as functionTrimName,
   createUser,
   isUuid,
   membersRefusal,
@@ -3023,15 +3024,21 @@ describe('the member name is blank in the same class as the database (0024)', ()
     expect([...FUNCTION_NAME_WHITESPACE]).toHaveLength(30);
   });
 
-  it('keeps an ordinary name, and one with a NEL beside it, as trim() stores it', () => {
+  it('stores a name trimmed in that class, a NEL or a separator beside it included (C549)', () => {
     expect(createPayloadOf(creation({ name: '  Ana Marija ' }))).toMatchObject({
       ok: true,
       payload: { name: 'Ana Marija' },
     });
-    expect(createPayloadOf(creation({ name: 'Ana\u0085' }))).toMatchObject({
+    expect(createPayloadOf(creation({ name: '\u001CAna\u0085' }))).toMatchObject({
       ok: true,
-      payload: { name: 'Ana\u0085' },
+      payload: { name: 'Ana' },
     });
+  });
+
+  it('trims as the client does, character for character', () => {
+    for (const name of ['\u0085Ana Marija\u001F', '\u00A0\uFEFFTim\u3000', 'Noc\u0301 ', '\u0085']) {
+      expect(functionTrimName(name), JSON.stringify(name)).toBe(clientTrimName(name));
+    }
   });
 });
 

@@ -274,6 +274,8 @@ describe('the rows', () => {
     expect(shown(dora.total)).toBe('0 h');
     expect(dora.shiftCount).toBe(0);
     expect(t('sati.organization.noTeam')).toBe('—');
+    // C587: a screen reader hears a word, never "dash".
+    expect(t('sati.organization.noTeamWord')).toBe('bez smjene');
     for (const team of viewOf(pilot, NO_LEAVE_RECORDS).teams) {
       expect(viewOf(pilot, NO_LEAVE_RECORDS, { mjesec: MONTH, smjena: team.id }).rows.map((row) => row.memberId)).not.toContain(DORA);
     }

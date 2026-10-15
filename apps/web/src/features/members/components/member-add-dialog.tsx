@@ -189,6 +189,7 @@ export function MemberAddDialog({ create }: { readonly create: MemberCreate }): 
       <form
         key={formKey}
         method="post"
+        noValidate
         onSubmit={(event) => {
           void submit(event);
         }}
@@ -205,6 +206,7 @@ export function MemberAddDialog({ create }: { readonly create: MemberCreate }): 
             <Input
               ref={nameField}
               id="member-name"
+              aria-invalid={invalidField === 'member-name'}
               name="name"
               maxLength={NAME_MAX_LENGTH}
               type="text"
@@ -228,6 +230,7 @@ export function MemberAddDialog({ create }: { readonly create: MemberCreate }): 
             <Input
               ref={usernameField}
               id="member-username"
+              aria-invalid={invalidField === 'member-username'}
               name="username"
               type="text"
               autoCapitalize="none"
@@ -255,6 +258,7 @@ export function MemberAddDialog({ create }: { readonly create: MemberCreate }): 
             <Input
               ref={emailField}
               id="member-email"
+              aria-invalid={invalidField === 'member-email'}
               name="email"
               type="email"
               autoCapitalize="none"

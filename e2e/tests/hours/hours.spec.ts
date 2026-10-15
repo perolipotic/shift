@@ -26,7 +26,7 @@ import { expectNoHorizontalScroll, expectNoInnerHorizontalScroll } from '../../u
 import { chargedLeaveDates, chargedLeaveDays } from '../../utils/rotation.ts';
 import { hoursExportFileName, readXlsx, type XlsxCell } from '../../utils/xlsx.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
-import { HoursPage, leaveText } from '../../pages/hours.page.ts';
+import { HoursPage, NO_LEAVE_TEXT, leaveText } from '../../pages/hours.page.ts';
 import { sortControlName } from '../../pages/sort-control.ts';
 
 /**
@@ -356,6 +356,9 @@ test.describe('as a member', () => {
 
     // No leave exists before Epic 5: the figure reads empty, never `0 h`.
     await expect(hoursPage.figureIn(hoursPage.leaveRow, sati.noFigure)).toBeVisible();
+    // C587: the `—` is hidden from readers, who hear `nema` in its place.
+    await expect(hoursPage.figureIn(hoursPage.leaveRow, sati.noFigure)).toHaveAttribute('aria-hidden', 'true');
+    await expect(hoursPage.figureIn(hoursPage.leaveRow, sati.noFigureWord)).toHaveClass(/\bsr-only\b/);
     await expect(hoursPage.figureIn(hoursPage.leaveRow, hoursOf(0))).toHaveCount(0);
     // Every seeded shift has times, so no note says otherwise.
     await expect(hoursPage.untimedNote).toHaveCount(0);
@@ -521,7 +524,7 @@ test.describe('as an admin', () => {
     await expect(await hoursPage.cellIn(row, organization.total)).toHaveText(memberTotal);
     await expect(await hoursPage.cellIn(row, organization.shifts)).toHaveText(memberShifts);
     await expect(await hoursPage.cellIn(row, organization.team)).toHaveText(fixture.team.name);
-    await expect(await hoursPage.cellIn(row, organization.leave)).toHaveText(sati.noFigure);
+    await expect(await hoursPage.cellIn(row, organization.leave)).toHaveText(NO_LEAVE_TEXT);
     // ONE COLUMN PER BAND, the member's bands exactly, each cell the member's figures.
     await expect(hoursPage.columnHeaders).toHaveText([
       organization.member,
@@ -931,7 +934,7 @@ test.describe('the filters on a phone, as an admin', () => {
     }
     await expect(hoursPage.listValue(row, organization.total)).toHaveText(memberTotal);
     await expect(hoursPage.listLabel(row, organization.total)).toBeVisible();
-    await expect(hoursPage.listValue(row, organization.leave)).toHaveText(sati.noFigure);
+    await expect(hoursPage.listValue(row, organization.leave)).toHaveText(NO_LEAVE_TEXT);
     // EVERY FIXTURE BAND under its own visible label, with the member's own
     // hours and shifts for it.
     for (const band of fixture.bands) {
@@ -1061,7 +1064,7 @@ test.describe('the conflict count, as an admin', () => {
     const after = await row.textContent();
     expect(after, 'the row reads after the write').not.toBeNull();
     expect(after?.replace(/⚠\d+$/, '').replace(new RegExp(`${escapeRegExp(leaveDays)}$`), '')).toBe(
-      before?.replace(/0$/, '').replace(new RegExp(`${escapeRegExp(sati.noFigure)}$`), ''),
+      before?.replace(/0$/, '').replace(new RegExp(`${escapeRegExp(NO_LEAVE_TEXT)}$`), ''),
     );
     // Nobody else's count moves.
     await expect(await hoursPage.cellIn(hoursPage.organizationRow(fixture.member.name), organization.conflicts)).toHaveText('0');

@@ -3,12 +3,16 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 
 import { MEMBERS_LIST_KEY, MEMBERS_PAGE_HEADING_ID } from '@/features/members/services/list';
 import {
+  MEMBER_ENTRY_EMAIL,
+  MEMBER_ENTRY_NAME,
+  MEMBER_ENTRY_USERNAME,
   MEMBER_WRITE_INVALID,
   MEMBER_WRITE_UNAVAILABLE,
   chosenRole,
   createFormStateOf,
   createMember,
   enteredAllowance,
+  memberEntryRefusalOf,
   storedEmail,
   suggestedUsername,
   type IssuedCredential,
@@ -23,6 +27,7 @@ import {
 } from '@/features/organization/services/snapshot';
 import { supabaseClient } from '@/lib/supabase/client';
 import { focusLater } from '@/utils/focus-later';
+import { trimName } from '@/utils/name';
 import { NO_TEXT } from '@/utils/text';
 
 /**
@@ -204,6 +209,20 @@ export function useMemberCreate(adding: boolean, navigate: MemberAddNavigate) {
       return;
     }
 
+    // THE FORM'S OWN REFUSALS (B298), in field order: the form is `noValidate`,
+    // so nothing in the browser's language stops an empty or malformed field.
+    const refused = memberEntryRefusalOf({ name: name.value, username: username.value, email: email.value });
+
+    if (refused !== null) {
+      const field = { [MEMBER_ENTRY_NAME]: name, [MEMBER_ENTRY_USERNAME]: username, [MEMBER_ENTRY_EMAIL]: email }[refused];
+
+      setFailure({ code: MEMBER_WRITE_INVALID, saved: false });
+      setInvalidField(field.id);
+      field.focus();
+
+      return;
+    }
+
     const leaveAllowanceDays = enteredAllowance(leave.value);
 
     if (leaveAllowanceDays === null) {
@@ -249,7 +268,7 @@ export function useMemberCreate(adding: boolean, navigate: MemberAddNavigate) {
       // kept anyway: the one unrecoverable value in this system is shown before
       // anything else is awaited, so no later step can take it down.
       setCredential(outcome.credential);
-      setCreatedName(name.value.trim());
+      setCreatedName(trimName(name.value));
       // THE FORM AND ITS FOCUSED SUBMIT ARE GONE: focus moves to the line
       // that says what was created, never to the page body.
       focusLater([byId(MEMBER_ADD_CREATED_ID)], byId(MEMBER_ADD_DIALOG_HEADING_ID));

@@ -12,6 +12,9 @@ import {
   LEAVE_ALLOWANCE_MAX,
   MEMBER_ACCOUNT_STRANDED,
   MEMBER_CREATED,
+  MEMBER_ENTRY_EMAIL,
+  MEMBER_ENTRY_NAME,
+  MEMBER_ENTRY_USERNAME,
   MEMBER_NAME_TOO_LONG,
   MEMBER_PASSWORD_NOT_APPLIED,
   MEMBER_READ_REFUSED,
@@ -88,6 +91,8 @@ import {
   statusStageOf,
   statusTodayMessageKey,
   storedEmail,
+  emailIsWellFormed,
+  memberEntryRefusalOf,
   storedUsernameOf,
   usernameChanged,
   type FunctionsAnswer,
@@ -673,6 +678,29 @@ describe('what the form collected, as the database stores it', () => {
     expect(storedEmail('  ana@dvd.hr ')).toBe('ana@dvd.hr');
   });
 
+  it('refuses what the browser’s bubble used to, itself, in field order (B298)', () => {
+    const entered = { name: 'Ana Marić', username: 'ana.maric', email: '' };
+
+    // An empty address is "none", and allowed.
+    expect(memberEntryRefusalOf(entered)).toBeNull();
+    expect(memberEntryRefusalOf({ ...entered, email: ' ana@dvd.hr ' })).toBeNull();
+    expect(memberEntryRefusalOf({ ...entered, name: '\u0085 ' })).toBe(MEMBER_ENTRY_NAME);
+    expect(memberEntryRefusalOf({ ...entered, username: '  ' })).toBe(MEMBER_ENTRY_USERNAME);
+    expect(memberEntryRefusalOf({ ...entered, email: 'ana' })).toBe(MEMBER_ENTRY_EMAIL);
+    // In field order: the name before the username before the address.
+    expect(memberEntryRefusalOf({ name: '', username: '', email: 'x' })).toBe(MEMBER_ENTRY_NAME);
+    expect(memberEntryRefusalOf({ ...entered, username: '', email: 'x' })).toBe(MEMBER_ENTRY_USERNAME);
+  });
+
+  it('reads an address as the `email` input did', () => {
+    for (const good of ['ana@dvd.hr', 'ana.maric+smjena@dvd-kastel.hr', 'a@b', ' ana@dvd.hr ']) {
+      expect(emailIsWellFormed(good), good).toBe(true);
+    }
+    for (const bad of ['ana', 'ana@', '@dvd.hr', 'ana@@dvd.hr', 'ana @dvd.hr', 'ana@dvd..hr', 'ana@-dvd.hr']) {
+      expect(emailIsWellFormed(bad), bad).toBe(false);
+    }
+  });
+
   it('opens a new member at the level that grants the least', () => {
     // A default that fell out of array order would be `MEMBER_ROLES[0]`, which
     // is the ADMINISTERING level — and an admin issuing several hundred
@@ -1010,8 +1038,9 @@ describe('an edit reaches the privileged function only when the identity moves',
     const { table, calls } = tableThat({ data: [{ id: 'member-1' }], error: null });
     const { functions } = functionsThat(replied({ code: USERNAME_CHANGED }));
 
-    expect(await saveMember(table, functions, member(), edits({ name: ' Ana\u0085 ' }))).toEqual({ ok: true });
-    expect(calls[0]?.values['name']).toBe('Ana\u0085');
+    expect(await saveMember(table, functions, member(), edits({ name: ' Ana\u0085\u001C ' }))).toEqual({ ok: true });
+    // C549: stored trimmed in the key's class, so it is the same string as `Ana`.
+    expect(calls[0]?.values['name']).toBe('Ana');
   });
 
   it('calls the function once when the username moves, after the fields landed', async () => {

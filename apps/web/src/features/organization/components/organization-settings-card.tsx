@@ -56,11 +56,15 @@ export function OrganizationSettingsCard({
    * read that has already FAILED renders its message and no pulsing bars,
    * which would look like a slow read. Never a spinner (UX-DR40), and never a
    * card of empty facts: no dialog can be opened on a row nobody has read.
+   *
+   * NOT SILENT (C500): the bars say nothing to a screen reader, so the
+   * skeleton is a `status` carrying the loading words, visually hidden.
    */
   function renderCards(): ReactNode {
     if (organization === null) {
       return snapshot.isPending ? (
-        <div aria-busy className="grid w-full max-w-2xl animate-pulse gap-6">
+        <div role="status" aria-busy className="grid w-full max-w-2xl animate-pulse gap-6">
+          <span className="sr-only">{t('organization.loading')}</span>
           <div className="h-56 rounded-lg bg-muted" />
           <div className="h-40 rounded-lg bg-muted" />
           <div className="h-28 rounded-lg bg-muted" />
