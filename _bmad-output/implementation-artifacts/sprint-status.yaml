@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 10-10-2026 22:00
+last_updated: 10-15-2026 14:38
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -687,33 +687,33 @@ action_items:
     action: "Docs R3: DESIGN.md, EXPERIENCE.md and UX-DR9 match Epic 6 as built (replaced
       member, progress bar, admin Danas, UJ-2 on leave)"
     owner: "Dev"
-    status: open
+    status: done  # #194 (2026-10-13 deferred-work sweep)
     ref: "_bmad-output/implementation-artifacts/epic-5-6-7-retro-2026-10-09.md"
   - id: "epic-7-retro-item-12-test-c2-e2e-for-rijeseni-tab-resolve-see"
     epic: 7
     action: "Test C2: e2e for Rijeseni tab (resolve, see entry, remove replacement,
       back to Nerijeseni)"
     owner: "Dev (bmad-build)"
-    status: open
+    status: done  # #206 (2026-10-13 deferred-work sweep)
     ref: "_bmad-output/implementation-artifacts/epic-5-6-7-retro-2026-10-09.md"
   - id: "epic-7-retro-item-13-cleanup-a9-a10-a12-one-date-validator-sh"
     epic: 7
     action: "Cleanup A9/A10/A12: one date validator, shared dayAfter/datesFrom, shared
       URL sort/search parser"
     owner: "Dev (bmad-build)"
-    status: open
+    status: done  # #209 (2026-10-13 deferred-work sweep)
     ref: "_bmad-output/implementation-artifacts/epic-5-6-7-retro-2026-10-09.md"
   - id: "epic-7-retro-item-14-architecture-a4-a6-r1-decide-ad-13-wordi"
     epic: 7
     action: "Architecture A4/A6/R1: decide AD-13 wording, components t() rule, Danas
       coverage derivation"
     owner: "Perolipotic (Architect)"
-    status: open
+    status: done  # #194 (2026-10-13 deferred-work sweep)
     ref: "_bmad-output/implementation-artifacts/epic-5-6-7-retro-2026-10-09.md"
   - id: "epic-7-retro-item-15-deferred-refactor-a15-a16-a21-a22-one-de"
     epic: 7
     action: "Deferred refactor A15/A16/A21/A22: one deferred-work entry for shared
       erasure-confirm hook, god-module splits, prijava.test.ts split"
     owner: "Dev"
-    status: open
+    status: done  # #216 (2026-10-13 deferred-work sweep)
     ref: "_bmad-output/implementation-artifacts/epic-5-6-7-retro-2026-10-09.md"
