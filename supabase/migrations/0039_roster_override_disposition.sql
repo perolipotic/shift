@@ -50,6 +50,19 @@
 --         `rotation_overrides_in_view` embeds the shift-type ones, and
 --         `rotation_assignments_in_view` is re-created so a pending roster
 --         override's earlier date also moves its team's horizon.
+--   (vii) A ROTATION VERSION ONTO A PATTERN WITH AN ARCHIVED TYPE IS REFUSED.
+--         0016's step policy refuses a step of an archived type, and 0036
+--         re-reads that behind the lock, but an assignment could still name
+--         an EXISTING pattern one of whose steps' types was archived since:
+--         the builder never does (it saves a fresh pattern every time), a
+--         direct API insert could, and the version would project an archived
+--         type. `refuse_assignment_on_archived_type()` is a BEFORE INSERT ROW
+--         trigger on `rotation_assignments`, firing after 0035's statement
+--         lock and after the stale-admin re-check (trigger names order them),
+--         with fresh reads: 23514 `ROTATION_PATTERN_ARCHIVED_TYPE`. Anybody
+--         but an active admin is left to the policy's 42501, as 0036's named
+--         refusals are. THE GATE is 0023's: `authenticated`, a top-level
+--         statement; an owner or `service_role` insert is not refused here.
 --
 -- THE REFUSALS, as SQLSTATEs the browser maps, in this order:
 --
@@ -75,11 +88,12 @@
 -- default cannot attribute an UPDATE. SECURITY DEFINER, `search_path` emptied
 -- and every name qualified; RLS is enabled, not forced, so the owner is past
 -- it, and the scope is each function's own checks. No table grant and no
--- policy changes. No trigger.
+-- policy changes. One ordinary trigger, (vii); AD-3's one constraint trigger
+-- stays the only one.
 --
 -- IDEMPOTENT where it can be: `add column if not exists`, `drop ... if
--- exists` before each constraint and dropped function, `create or replace`
--- for the rest.
+-- exists` before each constraint, trigger and dropped function, `create or
+-- replace` for the rest.
 
 -- ------------------------------------------------------- (i) the confirmation
 
@@ -427,3 +441,58 @@ as $$
               )
      )
 $$;
+
+-- ------------------------------- (vii) no version onto an archived type's pattern
+
+create or replace function public.refuse_assignment_on_archived_type() returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  -- 0023's gate: a request session's own statement.
+  if pg_catalog.current_setting('role') <> 'authenticated' or pg_catalog.pg_trigger_depth() > 1 then
+    return new;
+  end if;
+
+  -- Anybody but an active admin of the row's organization is the policy's to
+  -- refuse, with its own 42501.
+  if not exists (
+    select 1
+      from public.current_member_access() as access
+     where access.organization_id = new.organization_id
+       and access.is_active
+       and access.member_role = 'admin'
+  ) then
+    return new;
+  end if;
+
+  if exists (
+    select 1
+      from public.rotation_steps step
+      join public.shift_types shift_type
+        on shift_type.organization_id = step.organization_id
+       and shift_type.id = step.shift_type_id
+     where step.organization_id = new.organization_id
+       and step.pattern_id = new.pattern_id
+       and shift_type.archived
+  ) then
+    raise exception using
+      errcode = 'check_violation',
+      message = 'ROTATION_PATTERN_ARCHIVED_TYPE';
+  end if;
+
+  return new;
+end;
+$$;
+
+revoke execute on function public.refuse_assignment_on_archived_type() from public;
+revoke execute on function public.refuse_assignment_on_archived_type() from anon;
+revoke execute on function public.refuse_assignment_on_archived_type() from authenticated;
+revoke execute on function public.refuse_assignment_on_archived_type() from service_role;
+
+drop trigger if exists rotation_assignments_refuse_write_while_archived_type on public.rotation_assignments;
+create trigger rotation_assignments_refuse_write_while_archived_type
+  before insert on public.rotation_assignments
+  for each row
+  execute function public.refuse_assignment_on_archived_type();

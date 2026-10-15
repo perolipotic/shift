@@ -16903,6 +16903,44 @@ describe('a pending roster override is confirmed or amended by an active admin a
     },
   );
 
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture version onto a pattern one of whose types is archived with 23514 ROTATION_PATTERN_ARCHIVED_TYPE, and admits it once the type is restored',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const types = await seededTypeIds(client, slug, organization);
+        const archivedType = types.at(-1)!;
+        const team = await addThrowawayTeam(client, organization, owner.authUserId);
+        const pattern = await ownerPattern(client, organization, owner.authUserId, [types[0]!, archivedType]);
+        const today = await organizationDay(client, organization);
+        const version = { organization, team: team.id, pattern: pattern.id, offsetStep: pattern.steps[0]!, anchor: today, from: today };
+
+        // Archived as the owner, past 0036's rotation rule, as a type a superseded pattern still names.
+        await client.query('update shift_types set archived = true where id = $1', [archivedType]);
+        await actAs(client, owner.authUserId, organization);
+        const refused = await refusedThenContinue(client, () => insertAssignment(client, version));
+        await actAsOwner(client);
+        // A member-role session meets the policy's own 42501, never the named refusal.
+        await actAs(client, self.authUserId, organization);
+        const asMember = await refusedThenContinue(client, () => insertAssignment(client, version));
+        await actAsOwner(client);
+        await client.query('update shift_types set archived = false where id = $1', [archivedType]);
+        await actAs(client, owner.authUserId, organization);
+        const admitted = await insertAssignment(client, version);
+        await actAsOwner(client);
+
+        expect(refused, `${slug}: a version onto an archived type's pattern`).toEqual({
+          code: '23514',
+          message: 'ROTATION_PATTERN_ARCHIVED_TYPE',
+        });
+        expect(asMember.code, `${slug}: a member reached the named refusal`).toBe('42501');
+        expect(admitted.rowCount, `${slug}: the restored type's pattern was refused`).toBe(1);
+      });
+    },
+  );
+
   it.skipIf(noApi).each([
     {
       name: 'confirm_roster_override',

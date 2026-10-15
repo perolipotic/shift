@@ -1329,6 +1329,51 @@ describe('an archive waits for a rotation write, and a rotation write for an arc
       expect(await second.outcome).toMatchObject({ ok: false, code: '23514', message: 'SHIFT_TYPE_IN_ROTATION' });
     });
   });
+
+  for (const t1Ends of ['commit', 'rollback'] as const) {
+    it.skipIf(noDatabase)(
+      t1Ends === 'commit'
+        ? 'refuses a version that waited while a type of its pattern was archived (0039)'
+        : 'admits the same version once the archive is rolled back (the control)',
+      async () => {
+        const { organization, a, b, team, rotation, from } = await fixture(async (client) => {
+          const organization = await addOrganization(client);
+          const a = await addAccount(client, organization, 'admin');
+          return {
+            organization,
+            a,
+            b: await addAccount(client, organization, 'admin'),
+            team: await addTeam(client, organization, a.authUserId),
+            rotation: await addPattern(client, organization, a.authUserId),
+            from: await organizationDay(client, organization, 3),
+          };
+        });
+
+        await race(async (t1, t2, observer) => {
+          // The pattern is assigned to nobody yet, so 0036 lets its type be archived.
+          await t1.query('begin');
+          await actAs(t1, a, organization);
+          expect((await t1.query('update shift_types set archived = true where id = $1', [rotation.type])).rowCount).toBe(1);
+
+          const pid = await backendPid(t2);
+          await t2.query('begin');
+          await actAs(t2, b, organization);
+          const second = pending(
+            insertAssignment(t2, { organization, team, pattern: rotation.pattern, step: rotation.steps[0], anchor: from, from }),
+          );
+          await waitUntilBlocked(observer, pid, organization, second);
+
+          await t1.query(t1Ends);
+
+          if (t1Ends === 'commit') {
+            expect(await second.outcome).toMatchObject({ ok: false, code: '23514', message: 'ROTATION_PATTERN_ARCHIVED_TYPE' });
+          } else {
+            expect(await second.outcome).toEqual({ ok: true, rowCount: 1 });
+          }
+        });
+      },
+    );
+  }
 });
 
 describe('every write verb 0023, 0035 and 0036 name waits on the lock', () => {
@@ -1436,7 +1481,8 @@ describe('every write verb 0023, 0035 and 0036 name waits on the lock', () => {
               'public.refuse_truncate()'::regprocedure,
               'public.refuse_write_by_stale_admin()'::regprocedure,
               'public.refuse_archive_in_rotation()'::regprocedure,
-              'public.refuse_override_on_archived()'::regprocedure
+              'public.refuse_override_on_archived()'::regprocedure,
+              'public.refuse_assignment_on_archived_type()'::regprocedure
             )
           order by 1, 2`,
       );
@@ -1453,6 +1499,9 @@ describe('every write verb 0023, 0035 and 0036 name waits on the lock', () => {
         // an active admin before the insert policy's WITH CHECK does.
         { table: 'roster_overrides', trigger: 'roster_overrides_refuse_write_while_archived', type: 1 | 2 | 4, columns: null },
         { table: 'rotation_assignments', trigger: 'rotation_assignments_refuse_write_by_stale_admin', type: 1 | 2 | 4 | 8, columns: null },
+        // 0039: a version onto a pattern with an archived type, ROW level and
+        // BEFORE, after the caller's re-check (trigger names order them).
+        { table: 'rotation_assignments', trigger: 'rotation_assignments_refuse_write_while_archived_type', type: 1 | 2 | 4, columns: null },
         { table: 'rotation_assignments', trigger: 'rotation_assignments_serialize_organization_writes', type: 2 | 4 | 8, columns: null },
         { table: 'rotation_steps', trigger: 'rotation_steps_refuse_write_by_stale_admin', type: 1 | 2 | 4 | 8, columns: null },
         { table: 'rotation_steps', trigger: 'rotation_steps_serialize_organization_writes', type: 2 | 4 | 8, columns: null },

@@ -1771,6 +1771,10 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // rotation tables, past row level security, as 0035's re-check does.
     { name: 'refuse_override_on_archived', argumentCount: 0 },
     { name: 'refuse_archive_in_rotation', argumentCount: 0 },
+    // 0039. The refusal of a version onto a pattern with an archived type
+    // reads the caller, `rotation_steps` and `shift_types` past row level
+    // security, as 0036's do.
+    { name: 'refuse_assignment_on_archived_type', argumentCount: 0 },
   ];
 
   it.skipIf(noDatabase).each(ACCESS_CONTROL_FUNCTIONS)(
@@ -1892,6 +1896,8 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // 0036's two trigger functions, on 0023's terms.
     { name: 'refuse_override_on_archived', argumentCount: 0, expected: [] },
     { name: 'refuse_archive_in_rotation', argumentCount: 0, expected: [] },
+    // 0039's trigger function, on 0023's terms.
+    { name: 'refuse_assignment_on_archived_type', argumentCount: 0, expected: [] },
     // STORY 5.4a's trigger function, on 0023's terms: its owner, and nobody else.
     { name: 'refuse_conflict_resolution_off_leave', argumentCount: 0, expected: [] },
     // 0024's name key, in `private`, which PostgREST does not expose. Every
