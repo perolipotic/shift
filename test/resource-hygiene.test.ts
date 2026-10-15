@@ -843,6 +843,8 @@ const SANCTIONED_SCREEN_KEYS = [
   // formats under its label. The aside that explained the settings left with
   // story 7.18: the page states its facts itself.
   'organization.lede',
+  // C500: what a screen reader hears while the settings are read.
+  'organization.loading',
   'organization.logoHint',
   'organization.hourBands.heading',
   'organization.hourBands.name',

@@ -913,6 +913,7 @@
   },
   "organization": {
     "lede": "Osnovni podaci o organizaciji i kako se prikazuje u aplikaciji.",
+    "loading": "Učitavanje postavki organizacije…",
     "profileHeading": "Profil",
     "timeHeading": "Vrijeme i godina",
     "change": "Promijeni",

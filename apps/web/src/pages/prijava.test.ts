@@ -2364,7 +2364,9 @@ const KEY_SOURCES = [
   // leave year, and the *Satni pojasi* card — its heading (the header link's
   // key written a second time), `Otvori` and its name, the bands' label, the
   // count and its value with the names, and the coverage's label and value.
-  { name: 'the organization settings surface', file: SETTINGS, keys: translationKeys, strings: 57 },
+  //
+  // FIFTY-EIGHT SINCE C500: the skeleton's loading words, visually hidden.
+  { name: 'the organization settings surface', file: SETTINGS, keys: translationKeys, strings: 58 },
   {
     // EIGHT on the member list since story 1.5b, up from five, and the number is
     // still small because most of what this screen says is read off a table
@@ -7510,7 +7512,15 @@ describe('every field on the settings surface carries an accessible name', () =>
 
     expect(gated, 'the screen renders no skeleton').toContain('animate-pulse');
     expect(gated, 'the skeleton is not conditioned on the read being pending').toMatch(
-      /isPending \? \(\s*<div aria-busy\b[\s\S]{0,80}?animate-pulse/,
+      /isPending \? \(\s*<div role="status" aria-busy\b[\s\S]{0,80}?animate-pulse/,
+    );
+  });
+
+  it('says it is loading to a screen reader, not only with pulsing bars (C500)', () => {
+    const gated = componentFunction(source(SETTINGS_CARD), 'renderCards');
+
+    expect(gated, 'the skeleton is silent to a screen reader').toMatch(
+      /<div role="status" aria-busy[^>]*>\s*<span className="sr-only">\{t\('organization\.loading'\)\}<\/span>/,
     );
   });
 });
