@@ -489,6 +489,35 @@ export class RotationPage extends BasePage {
     await dialog.getByRole('button', { name: builder.overrides.amendDialog.save, exact: true }).click();
   }
 
+  // ------------------------------- a pending roster override (0039)
+
+  /** A roster row's amend dialog, named by its title: who arrives on `teamName`'s shift on `date`. */
+  rosterAmendDialogOf(teamName: string, date: string): Locator {
+    return this.dialog(fill(builder.overrides.amendDialog.titleRoster, { team: teamName, date }));
+  }
+
+  /** The roster amend's `Dolazi` `Select`. */
+  amendMemberIn(dialog: Locator): Locator {
+    return dialog.getByLabel(builder.overrides.amendDialog.member, { exact: true });
+  }
+
+  /** The names the roster amend offers, in order, across its groups. */
+  async amendMemberNamesIn(dialog: Locator): Promise<string[]> {
+    return this.amendMemberIn(dialog).locator('option').allInnerTexts();
+  }
+
+  /** Chooses `memberName` to arrive and types `reason` in the roster amend, then saves. */
+  async amendRosterOverride(dialog: Locator, memberName: string, reason: string): Promise<void> {
+    await this.amendMemberIn(dialog).selectOption({ label: memberName });
+    await this.amendReasonIn(dialog).fill(reason);
+    await dialog.getByRole('button', { name: builder.overrides.amendDialog.save, exact: true }).click();
+  }
+
+  /** A roster row's discard confirmation, named by its prompt. */
+  rosterDiscardConfirmOf(teamName: string, date: string): Locator {
+    return this.dialog(fill(builder.overrides.discardDialog.promptRoster, { team: teamName, date }));
+  }
+
   // ------------------------------ override review erasure guard (story 5.5h)
 
   /**
