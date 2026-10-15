@@ -2,7 +2,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState, useSyncExternalStore } from 'react';
 
 import { useCalendarSnapshot } from '@/features/calendar/hooks/use-calendar-snapshot';
-import { CALENDAR_KEY, calendarSurfaceStateOf } from '@/features/calendar/services/snapshot';
+import { useSnapshotSkewRefresh } from '@/features/calendar/hooks/use-snapshot-skew-refresh';
+import { CALENDAR_FETCH_FETCHING, CALENDAR_KEY, calendarSurfaceStateOf } from '@/features/calendar/services/snapshot';
+import { snapshotSkewOf } from '@/features/calendar/services/snapshot-skew';
 import { cachedRoleOf } from '@/features/calendar/utils/skeleton';
 import { useReplacementLinkRefresh } from '@/features/conflicts/hooks/use-replacement-link-refresh';
 import {
@@ -81,6 +83,7 @@ export function useAdminToday() {
   const snapshot = calendarState.snapshot;
   const refusal = calendarState.refusal;
   const calendarLoading = calendarState.loading;
+  const snapshotFetching = calendar.fetchStatus === CALENDAR_FETCH_FETCHING;
 
   // STORY 5.5d, as the queue: a replacement naming an override the snapshot does not hold yet re-reads it once.
   useReplacementLinkRefresh(snapshot, resolutions.data);
@@ -93,6 +96,9 @@ export function useAdminToday() {
   const resolutionsIsError = resolutions.isError;
   const resolutionsIsPending = resolutions.isPending;
   const resolutionsFetchStatus = resolutions.fetchStatus;
+
+  // As the queue: a row naming a member or team the snapshot does not hold yet re-reads it once.
+  useSnapshotSkewRefresh(snapshotSkewOf(snapshot, rows, resolutionRows));
   // Derived once per answer and per minute, not on every render: the
   // collisions walk every record, and the week draws up to two months.
   const adminToday = useMemo(
@@ -107,6 +113,7 @@ export function useAdminToday() {
             isPending: resolutionsIsPending,
             fetchStatus: resolutionsFetchStatus,
           },
+          snapshotFetching,
         },
         now,
       ),
@@ -122,6 +129,7 @@ export function useAdminToday() {
       resolutionsIsError,
       resolutionsIsPending,
       resolutionsFetchStatus,
+      snapshotFetching,
       now,
     ],
   );

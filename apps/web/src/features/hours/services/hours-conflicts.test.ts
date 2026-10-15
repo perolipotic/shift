@@ -421,11 +421,22 @@ describe('the read', () => {
   it('is unavailable, logged, with no retry, when a row cannot be trusted', () => {
     const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    expect(ready(admin, [{ id: 'x', member_id: 'nobody', during: '[2026-09-10,2026-09-11)' }])).toEqual({
+    expect(ready(admin, [{ id: 'x', member_id: VIEWER_MEMBER, during: 'not a range' }])).toEqual({
       kind: HOURS_CONFLICTS_UNAVAILABLE,
       retryable: false,
     });
     expect(errors).toHaveBeenCalledWith(HOURS_CONFLICTS_UNAVAILABLE, expect.any(RangeError));
+  });
+
+  // E765: a row naming a member the cached snapshot does not hold yet is a
+  // skew between the reads, as the calendar's marks have it, not a break.
+  it('offers the retry, unlogged, for a leave row of a member newer than the snapshot, and loads while it is read again', () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const newer = [{ id: 'x', member_id: 'newer-member', during: '[2026-09-10,2026-09-11)' }];
+
+    expect(ready(admin, newer)).toEqual({ kind: HOURS_CONFLICTS_UNAVAILABLE, retryable: true });
+    expect(hoursConflictsStateOf(admin, settled(newer), settled([]), true)).toEqual({ kind: HOURS_CONFLICTS_LOADING });
+    expect(errors).not.toHaveBeenCalled();
   });
 
   it('is ready with the collisions once the rows are in', () => {
@@ -591,8 +602,20 @@ describe('resolutions (story 5.4a)', () => {
   });
 
   it.each([
-    ['an unknown team', [resolutionOf(VIEWER_MEMBER, '2026-09-11', 'no-such-team')]],
-    ['an unknown member', [resolutionOf('stranger', '2026-09-11', a)]],
+    ['a team newer than the snapshot', () => admin, [resolutionOf(VIEWER_MEMBER, '2026-09-11', 'newer-team')]],
+    ['a member newer than the snapshot', () => admin, [resolutionOf('newer-member', '2026-09-11', a)]],
+    ["a member's own resolution on a team newer than the snapshot", () => member, [resolutionOf(VIEWER_MEMBER, '2026-09-11', 'newer-team')]],
+  ])('offers the retry, unlogged, for %s, and loads while it is read again (E765)', (_name, viewer, rows) => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    expect(ready(viewer(), [WORKED], rows)).toEqual({ kind: HOURS_CONFLICTS_UNAVAILABLE, retryable: true });
+    expect(hoursConflictsStateOf(viewer(), settled([WORKED]), settled(rows), true)).toEqual({
+      kind: HOURS_CONFLICTS_LOADING,
+    });
+    expect(errors).not.toHaveBeenCalled();
+  });
+
+  it.each([
     ['two live rows of one key', [...resolved, resolutionOf(VIEWER_MEMBER, '2026-09-11', a, 'amend_leave')]],
   ])('is unavailable, logged, with no retry, for %s', (_name, rows) => {
     const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);

@@ -5,11 +5,11 @@ import {
   type CalendarReadFailure,
   type CalendarSnapshot,
 } from '@/features/calendar/services/snapshot';
+import { readsOrganizationLeave, unknownSnapshotIdsOf } from '@/features/calendar/services/snapshot-skew';
 import type { CalendarMarks } from '@/features/calendar/utils/month';
 import { resolutionsOf, unresolvedOf, type LeaveRowsAnswer } from '@/features/conflicts/services/conflicts-queue';
 import { acceptedUncoveredOf } from '@/features/conflicts/services/resolutions';
 import { leaveRecordsOf, organizationLeaveRecordsOf } from '@/features/leave/services/leave-list';
-import type { MemberRole } from '@/features/navigation/utils/destinations';
 
 /**
  * The calendar's conflict and leave marks (story 5.3c; UX-DR8, Q21), as a
@@ -40,18 +40,12 @@ import type { MemberRole } from '@/features/navigation/utils/destinations';
  * retry's press shows as the skeleton, not as the same alert standing still.
  *
  * ROWS NEWER THAN THE SNAPSHOT ARE A SKEW, NOT A BREAK (story 5.5d's edge
- * case). The leave and resolution reads can land after a member or team was
- * added and before the cached snapshot is read again; their rows then name an
- * id the snapshot does not hold yet. That is unavailable with the RETRY —
- * which re-reads the snapshot — and loading while the snapshot is being read
- * again (`useSnapshotSkewRefresh` re-reads it once by itself). The rows are
- * never dropped: a row the snapshot cannot place may still be a conflict on
- * the new member's or team's shift, and a month drawn without it would hide
- * it.
+ * case; `./snapshot-skew`, which *Raspored*, *Sati* and *Danas* share). Rows
+ * naming an id the snapshot does not hold yet are unavailable with the RETRY
+ * — which re-reads the snapshot — and loading while the snapshot is being
+ * read again (`useSnapshotSkewRefresh` re-reads it once by itself), never
+ * dropped: a month drawn without them could hide a conflict.
  */
-
-/** The role whose marks carry every collision and every member's leave. */
-const ADMIN_ROLE: MemberRole = 'admin';
 
 /** Still waiting on the leave read, or an admin's resolution read. */
 export const MARKS_LOADING = 'loading';
@@ -74,11 +68,6 @@ export type CalendarMarksState =
       readonly retryable: boolean;
     }
   | { readonly kind: typeof MARKS_READY; readonly marks: CalendarMarks };
-
-/** Whether the viewer's marks come from the organization's records — an admin — rather than their own. */
-export function readsOrganizationLeave(role: MemberRole): boolean {
-  return role === ADMIN_ROLE;
-}
 
 /**
  * The marks from the snapshot and the leave rows the viewer's role read, as
@@ -138,67 +127,6 @@ function readFailed(answer: LeaveRowsAnswer): boolean {
 /** Whether a failed read is being read again: a retry in flight. */
 function retrying(answer: LeaveRowsAnswer): boolean {
   return answer.isError && answer.fetchStatus === CALENDAR_FETCH_FETCHING;
-}
-
-/** The member a leave or resolution row names. */
-const MEMBER_COLUMN = 'member_id';
-/** The team a resolution row names. */
-const TEAM_COLUMN = 'team_id';
-
-/** The text at `column` of a row that is a record, or `null`: anything else is the parser's to refuse. */
-function idAt(row: unknown, column: string): string | null {
-  if (typeof row !== 'object' || row === null) return null;
-
-  const value = (row as Record<string, unknown>)[column];
-
-  return typeof value === 'string' ? value : null;
-}
-
-/**
- * The ids an admin's leave and resolution rows name that `snapshot` does not
- * hold — `member:<id>` and `team:<id>`, sorted and distinct — so a skew
- * between the reads is told apart from a row that cannot be trusted. A
- * member's own rows always name the viewer, so they name none.
- */
-export function unknownSnapshotIdsOf(
-  snapshot: CalendarSnapshot,
-  leaveRows: readonly unknown[] | undefined,
-  resolutionRows: readonly unknown[] | undefined,
-): readonly string[] {
-  if (!readsOrganizationLeave(snapshot.viewer.role)) return [];
-
-  const members = new Set(snapshot.members.map((member) => member.id));
-  const teams = new Set(snapshot.teams.map((team) => team.id));
-  const unknown = new Set<string>();
-
-  for (const row of [...(leaveRows ?? []), ...(resolutionRows ?? [])]) {
-    const memberId = idAt(row, MEMBER_COLUMN);
-
-    if (memberId !== null && !members.has(memberId)) unknown.add(`member:${memberId}`);
-  }
-
-  for (const row of resolutionRows ?? []) {
-    const teamId = idAt(row, TEAM_COLUMN);
-
-    if (teamId !== null && !teams.has(teamId)) unknown.add(`team:${teamId}`);
-  }
-
-  return [...unknown].sort();
-}
-
-/** No id the snapshot lacks: {@link snapshotSkewOf}'s answer when nothing needs reading again. */
-export const NO_SKEW = '';
-
-/**
- * {@link unknownSnapshotIdsOf} as one text — {@link NO_SKEW} for none or no
- * snapshot yet — so the re-read asks once for each distinct set.
- */
-export function snapshotSkewOf(
-  snapshot: CalendarSnapshot | null,
-  leaveRows: readonly unknown[] | undefined,
-  resolutionRows: readonly unknown[] | undefined,
-): string {
-  return snapshot === null ? NO_SKEW : unknownSnapshotIdsOf(snapshot, leaveRows, resolutionRows).join(' ');
 }
 
 /**

@@ -8,7 +8,7 @@ import {
 } from '@shift/domain';
 
 import type { CalendarSnapshot } from '@/features/calendar/services/snapshot';
-import { readsOrganizationLeave } from '@/features/calendar/services/marks';
+import { readsOrganizationLeave, unknownSnapshotIdsOf } from '@/features/calendar/services/snapshot-skew';
 import {
   collisionInputOf,
   resolutionsOf,
@@ -87,7 +87,8 @@ export type HoursConflictsState =
       readonly kind: typeof HOURS_CONFLICTS_UNAVAILABLE;
       /**
        * Whether reading again can change the answer: true for a read that
-       * failed or is paused offline; false for rows that cannot be trusted or
+       * failed or is paused offline, or rows naming a member or team the
+       * snapshot does not hold yet; false for rows that cannot be trusted or
        * a derivation the domain refused, which the same rows would repeat.
        */
       readonly retryable: boolean;
@@ -244,13 +245,17 @@ function readFailed(answer: LeaveRowsAnswer): boolean {
  * unchanged under the press — and while either is pending, a role-gated read
  * not yet enabled included; unavailable when either failed or is paused
  * offline — a failed refetch over cached rows included — or its rows are
- * refused; otherwise the unresolved collisions. A `RangeError` is logged and
- * is unavailable; nothing else is caught.
+ * refused; otherwise the unresolved collisions. Rows naming a member or team
+ * the snapshot does not hold yet (`unknownSnapshotIdsOf`, as the calendar's
+ * marks) are loading while `snapshotFetching` — the snapshot being read
+ * again — and otherwise unavailable WITH the retry. A `RangeError` is logged
+ * and is unavailable; nothing else is caught.
  */
 export function hoursConflictsStateOf(
   snapshot: CalendarSnapshot,
   answer: LeaveRowsAnswer,
   resolutions: LeaveRowsAnswer,
+  snapshotFetching = false,
 ): HoursConflictsState {
   const answers = [answer, resolutions];
 
@@ -259,6 +264,10 @@ export function hoursConflictsStateOf(
   if (answers.some(readFailed)) return { kind: HOURS_CONFLICTS_UNAVAILABLE, retryable: true };
 
   if (answer.data === undefined || resolutions.data === undefined) return { kind: HOURS_CONFLICTS_LOADING };
+
+  if (unknownSnapshotIdsOf(snapshot, answer.data, resolutions.data).length > 0) {
+    return snapshotFetching ? { kind: HOURS_CONFLICTS_LOADING } : { kind: HOURS_CONFLICTS_UNAVAILABLE, retryable: true };
+  }
 
   try {
     const { collisions, leaveRecords } = hoursLeaveOf(snapshot, answer.data, resolutions.data);

@@ -44,9 +44,8 @@ import {
   MARKS_READY,
   calendarMarksStateOf,
   calendarRefusalOf,
-  snapshotSkewOf,
-  readsOrganizationLeave,
 } from '@/features/calendar/services/marks';
+import { readsOrganizationLeave, snapshotSkewOf } from '@/features/calendar/services/snapshot-skew';
 import {
   CONFLICT_RESOLUTIONS_TABLE,
   ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
