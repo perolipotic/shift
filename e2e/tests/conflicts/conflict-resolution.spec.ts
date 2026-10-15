@@ -617,7 +617,7 @@ test('replaces the absent member by keyboard: the queue drops the conflict with 
   await expect(absentRow).toHaveCount(1);
   await expect(await hoursPage.cellIn(absentRow, sati.leave)).toHaveText(leaveOf(scenario));
   await expect.poll(() => shiftsOf(dinoRow)).toBe(dinoBefore + 1);
-  await expect(await hoursPage.cellIn(dinoRow, sati.leave)).toHaveText(hr.sati.noFigure);
+  await expect(await hoursPage.cellIn(dinoRow, sati.leave)).toHaveText(leaveText(0));
 });
 
 test('a replacement already put on the shift meanwhile is named and leaves the list, and a conflict resolved meanwhile or whose leave was removed is no longer open', async ({

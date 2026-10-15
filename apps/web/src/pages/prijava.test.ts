@@ -3017,10 +3017,16 @@ const KEY_SOURCES = [
     //
     // ONE HUNDRED AND SIX SINCE E909: the conflicts column sorts, so the
     // phone's sort control offers its heading too.
+    //
+    // ONE HUNDRED AND SEVEN SINCE C587: the no-team mark moved out of the
+    // table and the stacked rows (two) into `hours-marks.tsx`, once, beside
+    // the two words a screen reader hears for an empty mark — `nema` for the
+    // leave and `bez smjene` for the team. The leave's glyph still comes off
+    // `leaveShownOf`, a key source.
     name: 'the Sati destination',
     file: SATI,
     keys: translationKeys,
-    strings: 106,
+    strings: 107,
   },
   {
     // STORY 5.2c. THREE on Godišnji: its own `nav.godisnji` heading, the
@@ -3902,6 +3908,22 @@ describe('the screen is read at all, so every sweep below means something', () =
       // control, the sortable heading and its glyphs — lives outside the feature.
       SATI.filter((file) => file !== SATI_PAGE && file.startsWith(HOURS_FEATURE)).sort(),
     );
+  });
+
+  it('draws every empty mark on Sati as one EmptyMark: the glyph hidden, a word spoken (C587)', () => {
+    const marks = join(srcRoot, ...HOURS_SCREEN_PARTS.marks);
+    const emptyMark = source(join(srcRoot, 'components', 'ui', 'empty-mark.tsx'));
+
+    // One design: the `—` hidden from readers, the word hidden from the eye.
+    expect(emptyMark).toMatch(/<span aria-hidden>\{glyph\}<\/span>/);
+    expect(emptyMark).toMatch(/<span className="sr-only">\{word\}<\/span>/);
+    // The leave's mark and the team's, each with its own spoken word.
+    expect(source(marks).match(/<EmptyMark glyph=\{[^}]+\} word=\{t\('[^']+'\)\} \/>/g)).toHaveLength(2);
+    // And nowhere else on the screen is either drawn as a bare glyph.
+    for (const file of SATI.filter((one) => one !== marks)) {
+      expect(source(file), `${file} draws the no-team mark bare`).not.toContain("t('sati.organization.noTeam')");
+      expect(source(file), `${file} draws the leave without its mark`).not.toMatch(/\bleaveShownOf\(/);
+    }
   });
 
   it('draws the month as one toolbar, shared by Kalendar and Sati (story 7.4)', () => {

@@ -6,6 +6,7 @@ import type { FilterBarHandle } from '@/components/filter-bar';
 import { SortableHead } from '@/components/sortable-head';
 import { Table, TableBody, TableCaption, TableCell, TableFooter, TableHeader, TableRow } from '@/components/ui/table';
 import { ExplainButton } from '@/features/hours/components/hours-explanation';
+import { LeaveFigure, TeamName } from '@/features/hours/components/hours-marks';
 import { EmptyResult } from '@/features/hours/components/organization-hours-empty';
 import {
   SORT_CONFLICTS,
@@ -17,7 +18,7 @@ import {
   type HoursSearchChange,
   type HoursSortKey,
 } from '@/features/hours/services/hours-search';
-import { figureIsEmpty, leaveShownOf } from '@/features/hours/services/my-hours';
+import { figureIsEmpty } from '@/features/hours/services/my-hours';
 import {
   hoursAriaSortOf,
   hoursSortArrowOf,
@@ -79,8 +80,6 @@ export function OrganizationHoursTable({
   readonly onPress: (key: HoursSortKey) => void;
   readonly onExplain: (memberId: string, figure: HoursFigureCode) => void;
 }): ReactNode {
-  const footerLeave = leaveShownOf(view.footer?.leave ?? null);
-
   return (
     <div className="flex min-w-0 flex-col gap-3 pb-4">
       <Table>
@@ -102,8 +101,6 @@ export function OrganizationHoursTable({
         </TableHeader>
         <TableBody>
           {view.rows.map((row) => {
-            const leave = leaveShownOf(row.leave);
-
             return (
               <TableRow key={row.memberId}>
                 <TableCell className="whitespace-nowrap">
@@ -115,7 +112,7 @@ export function OrganizationHoursTable({
                     {row.name}
                   </Link>
                 </TableCell>
-                <TableCell className="whitespace-nowrap">{row.team?.name ?? t('sati.organization.noTeam')}</TableCell>
+                <TableCell className="whitespace-nowrap"><TeamName team={row.team} /></TableCell>
                 <TableCell className="whitespace-nowrap text-right tabular-nums">
                   {t('sati.shiftCount', { count: row.shiftCount })}
                 </TableCell>
@@ -154,7 +151,7 @@ export function OrganizationHoursTable({
                 </TableCell>
                 <TableCell className="whitespace-nowrap text-right tabular-nums">
                   <span className="flex items-center justify-end gap-1">
-                    {t(leave.key, leave.values)}
+                    <LeaveFigure leave={row.leave} />
                     {row.leave === null ? null : (
                       <ExplainButton
                         figureName={`${t('sati.organization.leave')}, ${row.name}`}
@@ -204,7 +201,7 @@ export function OrganizationHoursTable({
                 {t(view.footer.total.key, view.footer.total.values)}
               </TableCell>
               <TableCell className="whitespace-nowrap text-right tabular-nums">
-                {t(footerLeave.key, footerLeave.values)}
+                <LeaveFigure leave={view.footer.leave} />
               </TableCell>
               <TableCell className="whitespace-nowrap text-right tabular-nums">{view.footer.conflictCount}</TableCell>
             </TableRow>

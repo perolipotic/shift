@@ -142,6 +142,8 @@ describe("the viewer's month", () => {
     expect(hours.leaveMinutes).toBe(0);
     expect(view.leave).toBeNull();
     expect(t('sati.noFigure')).toBe('—');
+    // C587: a screen reader hears a word, never "dash".
+    expect(t('sati.noFigureWord')).toBe('nema');
     // No untimed shift, so no note.
     expect(view.untimedShiftCount).toBeNull();
   });

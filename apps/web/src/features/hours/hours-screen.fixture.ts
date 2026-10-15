@@ -21,6 +21,8 @@ export const HOURS_SCREEN_PARTS = {
   organizationRows: ['features', 'hours', 'components', 'organization-hours-rows.tsx'],
   // Story 7.6: what an empty result says, drawn by both forms.
   organizationEmpty: ['features', 'hours', 'components', 'organization-hours-empty.tsx'],
+  // Deferred-work C587: the empty marks (leave, no team), glyph and spoken word.
+  marks: ['features', 'hours', 'components', 'hours-marks.tsx'],
   // Story 7.14: the ⓘ beside a figure and the dialog of what composes it,
   // and the screen's hold on that dialog.
   explanation: ['features', 'hours', 'components', 'hours-explanation.tsx'],

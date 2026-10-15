@@ -7,6 +7,7 @@ import { SortControl } from '@/components/sort-control';
 import { StackedField, StackedFields, StackedList, StackedRow } from '@/components/ui/stacked-list';
 import { CONFLICT_GLYPH } from '@/features/calendar/utils/modifiers';
 import { ExplainButton } from '@/features/hours/components/hours-explanation';
+import { LeaveFigure, TeamName } from '@/features/hours/components/hours-marks';
 import { EmptyResult } from '@/features/hours/components/organization-hours-empty';
 import {
   SORT_CONFLICTS,
@@ -18,7 +19,7 @@ import {
   type HoursSearchChange,
   type HoursSortKey,
 } from '@/features/hours/services/hours-search';
-import { figureIsEmpty, leaveShownOf } from '@/features/hours/services/my-hours';
+import { figureIsEmpty } from '@/features/hours/services/my-hours';
 import { hoursSortDirectionArrowOf, type OrganizationHoursView } from '@/features/hours/services/organization-hours';
 import { t } from '@/lib/i18n';
 import type { SortControlColumn } from '@/utils/sort-control';
@@ -79,8 +80,6 @@ export function OrganizationHoursRows({
           className="border-y"
         >
           {view.rows.map((row) => {
-            const leave = leaveShownOf(row.leave);
-
             return (
               <StackedRow key={row.memberId}>
                 <div className="flex min-w-0 items-start justify-between gap-3">
@@ -95,7 +94,7 @@ export function OrganizationHoursRows({
                       </Link>
                     </StackedField>
                     <StackedField label={t('sati.organization.team')} labelHidden>
-                      {row.team?.name ?? t('sati.organization.noTeam')}
+                      <TeamName team={row.team} />
                     </StackedField>
                     <StackedField label={t('sati.organization.shifts')} labelHidden separated>
                       {t('sati.shiftCount', { count: row.shiftCount })}
@@ -140,7 +139,7 @@ export function OrganizationHoursRows({
                   ))}
                   <StackedField label={t('sati.organization.leave')} className="rounded-md bg-muted px-2 py-1.5">
                     <span className="flex items-center justify-between gap-1">
-                      <span className="font-semibold">{t(leave.key, leave.values)}</span>
+                      <span className="font-semibold"><LeaveFigure leave={row.leave} /></span>
                       {row.leave === null ? null : (
                         <ExplainButton
                           figureName={`${t('sati.organization.leave')}, ${row.name}`}
