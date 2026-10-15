@@ -635,6 +635,12 @@ export interface RosterInCandidate {
   readonly fireRank: string | null;
   /** The name of their own team on the date, which may work too; `null` for none. */
   readonly teamName: string | null;
+  /**
+   * Minutes on duty without a break if put on the shift, when longer than the
+   * shift (D717, `replacementCandidatesOf`); `null` otherwise, and while
+   * nobody is grouped.
+   */
+  readonly continuousMinutes: number | null;
 }
 
 /**
@@ -743,6 +749,7 @@ export function rosterOffersOf(
       name: member.name,
       fireRank: member.fireRank,
       teamName: own === null ? null : (teams.get(own.teamId) ?? null),
+      continuousMinutes: null,
     });
   }
 
@@ -775,16 +782,21 @@ function inGroupsOf(
   put: readonly RosterInCandidate[],
 ): Pick<RosterOffers, 'inGroups' | 'inUngrouped'> {
   const kindOf = new Map<string, CandidateGroupKind>();
+  const continuousOf = new Map<string, number | null>();
 
-  for (const group of replacementCandidatesOf(snapshot, leave, detail.teamId, detail.isoDate)) {
-    for (const candidate of group.candidates) kindOf.set(candidate.id, group.kind);
+  for (const group of replacementCandidatesOf(snapshot, leave, detail.teamId, detail.isoDate, detail.shiftTypeId)) {
+    for (const candidate of group.candidates) {
+      kindOf.set(candidate.id, group.kind);
+      continuousOf.set(candidate.id, candidate.continuousMinutes);
+    }
   }
 
   const groups = new Map<CandidateGroupKind, RosterInCandidate[]>();
   const unplaced: RosterInCandidate[] = [];
 
-  for (const candidate of put) {
-    const kind = kindOf.get(candidate.id);
+  for (const offered of put) {
+    const kind = kindOf.get(offered.id);
+    const candidate = { ...offered, continuousMinutes: continuousOf.get(offered.id) ?? null };
 
     if (kind === undefined) {
       console.error(`member ${candidate.id} is offered on ${detail.isoDate} but in no candidate group`);

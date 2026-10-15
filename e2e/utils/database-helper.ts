@@ -1077,6 +1077,27 @@ export async function seedExtraTeam(slug: string, name: string): Promise<{ reado
 }
 
 /**
+ * A team of the test's own on a SECOND seeded pattern, in force since
+ * `daysBefore` days ago, so the builder's prefill sees two patterns and opens
+ * on an empty draft. A team with no rotation no longer empties the prefill
+ * (it joins the others' pattern on step 1), so a spec that seeds one team and
+ * wants to build from nothing seeds this one beside it.
+ *
+ * CALL IT UNDER {@link holdRotation}; undo it with {@link removeSeededRotation}
+ * on `rotation`, then {@link removeTeamInSql} on `team`.
+ */
+export async function seedOtherPattern(
+  slug: string,
+  daysBefore = 0,
+): Promise<{ readonly team: { readonly id: string; readonly name: string }; readonly rotation: SeededRotation }> {
+  const suffix = randomBytes(3).toString('hex');
+  const team = await seedExtraTeam(slug, `Smjena ${suffix}`);
+  const rotation = await seedTeamRotation(slug, team.id, suffix, daysBefore);
+
+  return { team, rotation };
+}
+
+/**
  * Deletes a team {@link seedExtraTeam} wrote, once its rotation and every
  * roster override naming it are gone ({@link removeSeededRotation}). Safe to
  * call twice.

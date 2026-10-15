@@ -154,7 +154,7 @@ export class ConflictResolutionPage extends BasePage {
     return this.candidates.getByRole('radio', { name: new RegExp(`^${escapeRegExp(name)}( ·|$)`) });
   }
 
-  /** One candidate group, by its heading: `slobodan`, `radi taj dan · 24 h bez pauze` or `na godišnjem taj dan`. */
+  /** One candidate group, by its heading: `slobodan`, `radi taj dan` or `na godišnjem taj dan`. */
   candidateGroup(heading: string): Locator {
     return this.candidates.getByRole('group', { name: heading, exact: true });
   }

@@ -111,6 +111,11 @@ export class TeamsPage extends BasePage {
     await this.page.getByRole('button', { name: hr.smjene.add }).click();
   }
 
+  /** The failed list read's *Pokušaj ponovno*, which reads it again. */
+  get retryButton(): Locator {
+    return this.page.getByRole('button', { name: hr.smjene.error.retry, exact: true });
+  }
+
   /** Opens a team from the list. */
   async openTeam(teamName: string): Promise<void> {
     await this.editLink(teamName).click();

@@ -6,6 +6,8 @@ import {
   CANDIDATES_FREE,
   CANDIDATES_ON_LEAVE,
   CANDIDATES_WORKING,
+  candidateContinuousMessageKey,
+  candidateContinuousOf,
   candidateLeaveOf,
   replacementCandidatesOf,
   type CandidateGroup,
@@ -37,13 +39,16 @@ import {
 /**
  * Story 5.4c's replacement candidates, executed (AD-15): the spec's Groups
  * and Excluded rows over both fixtures. On 2026-09-10 the pilot's Smjena A
- * works Dan, B works Noć, and C and D are off. On the day UJ-5's rotation
- * starts, its A works Jutarnja, B Popodnevna and C Noćna.
+ * works Dan, B works Noć, and C and D are off — C coming off the Noć of the
+ * 9th at 07:00, as A's Dan starts. On the day UJ-5's rotation starts, its A
+ * works Jutarnja, B Popodnevna and C Noćna.
  */
 
 type Row = Record<string, unknown>;
 
 const DATE = '2026-09-10';
+/** A's shift on the date: Dan, 07:00–19:00. */
+const DAN = 'pilot-dan';
 
 const ANA = '00000000-0000-4000-8000-0000000000e1';
 const DINO = '00000000-0000-4000-8000-0000000000e2';
@@ -137,23 +142,23 @@ beforeAll(async () => {
 });
 
 describe('Groups: free, working that day, on leave — in that order, by name', () => {
-  it('puts Ana and Dino in slobodan, Ivo in radi taj dan, and Eva in na godišnjem', async () => {
-    const groups = replacementCandidatesOf(await snapshotOf(OVERRIDES), LEAVE, A, DATE);
+  it('puts Dino in slobodan, Ana (off a Noć that ends as Dan starts) and Ivo in radi taj dan, and Eva in na godišnjem', async () => {
+    const groups = replacementCandidatesOf(await snapshotOf(OVERRIDES), LEAVE, A, DATE, DAN);
 
     expect(groups.map((group) => group.kind)).toEqual([CANDIDATES_FREE, CANDIDATES_WORKING, CANDIDATES_ON_LEAVE]);
     expect(namesOf(groups)).toEqual({
-      [CANDIDATES_FREE]: ['Ana Babić', 'Dino Grgić'],
-      [CANDIDATES_WORKING]: ['Ivo Horvat'],
+      [CANDIDATES_FREE]: ['Dino Grgić'],
+      [CANDIDATES_WORKING]: ['Ana Babić', 'Ivo Horvat'],
       [CANDIDATES_ON_LEAVE]: ['Eva Šarić'],
     });
   });
 
   it('keeps an empty group, so the order never moves', async () => {
-    const groups = replacementCandidatesOf(await snapshotOf(OVERRIDES), [], A, DATE);
+    const groups = replacementCandidatesOf(await snapshotOf(OVERRIDES), [], A, DATE, DAN);
 
     expect(namesOf(groups)).toEqual({
-      [CANDIDATES_FREE]: ['Ana Babić', 'Dino Grgić', 'Eva Šarić'],
-      [CANDIDATES_WORKING]: ['Ivo Horvat'],
+      [CANDIDATES_FREE]: ['Dino Grgić', 'Eva Šarić'],
+      [CANDIDATES_WORKING]: ['Ana Babić', 'Ivo Horvat'],
       [CANDIDATES_ON_LEAVE]: [],
     });
   });
@@ -164,6 +169,7 @@ describe('Groups: free, working that day, on leave — in that order, by name', 
       LEAVE,
       A,
       DATE,
+      DAN,
     );
 
     expect(namesOf(groups)[CANDIDATES_WORKING]).toEqual(['Ana Babić', 'Ivo Horvat']);
@@ -175,18 +181,19 @@ describe('Groups: free, working that day, on leave — in that order, by name', 
       [...LEAVE, { memberId: IVO, from: DATE, to: DATE }],
       A,
       DATE,
+      DAN,
     );
 
     expect(namesOf(groups)).toEqual({
-      [CANDIDATES_FREE]: ['Ana Babić', 'Dino Grgić'],
-      [CANDIDATES_WORKING]: [],
+      [CANDIDATES_FREE]: ['Dino Grgić'],
+      [CANDIDATES_WORKING]: ['Ana Babić'],
       [CANDIDATES_ON_LEAVE]: ['Eva Šarić', 'Ivo Horvat'],
     });
   });
 
   it('reads each line as the roster form does: Ime · čin · položaj, where the organization uses them', async () => {
     const snapshot = await snapshotOf(OVERRIDES, true);
-    const groups = replacementCandidatesOf(snapshot, LEAVE, A, DATE);
+    const groups = replacementCandidatesOf(snapshot, LEAVE, A, DATE, DAN);
     const rankShown = ranksShown(snapshot);
     const positionShown = positionsShown(snapshot);
     const translate: RosterLineTranslate = { word: (key) => t(key), line: (key, values) => t(key, values) };
@@ -194,13 +201,78 @@ describe('Groups: free, working that day, on leave — in that order, by name', 
       group.candidates.map((one) => outOptionOf(one, rankShown, positionShown, translate).label),
     );
 
-    expect(lines).toEqual(['Ana Babić · vatrogasac', 'Dino Grgić', 'Ivo Horvat · vozač', 'Eva Šarić']);
+    expect(lines).toEqual(['Dino Grgić', 'Ana Babić · vatrogasac', 'Ivo Horvat · vozač', 'Eva Šarić']);
+  });
+});
+
+describe('the continuous duty (D717): the real figure, never a blanket 24 h', () => {
+  /** What a candidate's line adds, as the picker and the roster dialog word it. */
+  function candidateContinuousText(minutes: number | null): string {
+    const continuous = candidateContinuousOf(minutes);
+
+    return continuous === null
+      ? ''
+      : t(candidateContinuousMessageKey(), { line: '', hours: t(continuous.key, continuous.values) });
+  }
+
+  /** Each candidate's line ending, by name. */
+  function endingsOf(groups: readonly CandidateGroup[]): Record<string, string> {
+    return Object.fromEntries(
+      groups.flatMap((group) => group.candidates.map((one) => [one.name, candidateContinuousText(one.continuousMinutes)])),
+    );
+  }
+
+  it('Ana off the Noć of the 9th and Ivo on to the Noć of the 10th each make 24 h; Dino and Eva add nothing', async () => {
+    const groups = replacementCandidatesOf(await snapshotOf(OVERRIDES), LEAVE, A, DATE, DAN);
+
+    expect(endingsOf(groups)).toEqual({
+      'Dino Grgić': '',
+      'Ana Babić': ' · 24 h bez pauze',
+      'Ivo Horvat': ' · 24 h bez pauze',
+      'Eva Šarić': '',
+    });
+    expect(t('raspored.resolution.candidates.working')).toBe('radi taj dan');
+  });
+
+  it('a same-hours shift elsewhere (a double booking) works that day but claims no figure', async () => {
+    const groups = replacementCandidatesOf(
+      await snapshotOf([...OVERRIDES, calendarRosterOverrideRow('ro-dino', B, '2026-09-09', null, DINO)]),
+      LEAVE,
+      A,
+      '2026-09-09',
+      DAN,
+    );
+    const working = groups.find((group) => group.kind === CANDIDATES_WORKING)?.candidates ?? [];
+
+    // B works Dan on the 9th, as A's shift asked about here: Dino and Ivo overlap it.
+    expect(working.map((one) => [one.name, one.continuousMinutes])).toEqual(
+      expect.arrayContaining([
+        ['Dino Grgić', null],
+        ['Ivo Horvat', null],
+      ]),
+    );
+  });
+
+  it('without the shift\'s type nobody gets a figure, and the grouping is the shift-that-date rule', async () => {
+    const groups = replacementCandidatesOf(await snapshotOf(OVERRIDES), LEAVE, A, DATE, null);
+
+    expect(namesOf(groups)[CANDIDATES_WORKING]).toEqual(['Ivo Horvat']);
+    expect(groups.flatMap((group) => group.candidates).every((one) => one.continuousMinutes === null)).toBe(true);
+  });
+
+  it('words a duration with minutes, and nothing for none', () => {
+    expect(candidateContinuousOf(null)).toBeNull();
+    expect(candidateContinuousText(20 * 60 + 30)).toBe(' · 20 h 30 min bez pauze');
+    expect(t(candidateContinuousMessageKey(), { line: 'Ana Babić · vatrogasac', hours: '24 h' })).toBe(
+      'Ana Babić · vatrogasac · 24 h bez pauze',
+    );
+    expect(candidateContinuousText(null)).toBe('');
   });
 });
 
 describe('Excluded: the absent member, the roster, the already added and the inactive', () => {
   it('lists none of the viewer, Karlo, Niko (taken off), Mate (put on) or Luka (inactive)', async () => {
-    const groups = replacementCandidatesOf(await snapshotOf(OVERRIDES), LEAVE, A, DATE);
+    const groups = replacementCandidatesOf(await snapshotOf(OVERRIDES), LEAVE, A, DATE, DAN);
     const ids = groups.flatMap((group) => group.candidates.map((one) => one.id));
 
     for (const excluded of [VIEWER_MEMBER, KARLO, NIKO, MATE, LUKA]) expect(ids).not.toContain(excluded);
@@ -213,6 +285,7 @@ describe('Excluded: the absent member, the roster, the already added and the ina
       LEAVE,
       A,
       DATE,
+      DAN,
     );
 
     expect(namesOf(groups)[CANDIDATES_FREE]).toContain('Mate Rukavina');
@@ -251,19 +324,33 @@ describe('the second fixture', () => {
 
     if (!outcome.ok) throw new Error(outcome.code);
 
-    const groups = replacementCandidatesOf(outcome.snapshot, [{ memberId: VIEWER_MEMBER, from: SEEDED, to: SEEDED }], uj5A, SEEDED);
+    const groups = replacementCandidatesOf(
+      outcome.snapshot,
+      [{ memberId: VIEWER_MEMBER, from: SEEDED, to: SEEDED }],
+      uj5A,
+      SEEDED,
+      'uj5-jutarnja',
+    );
 
     expect(namesOf(groups)).toEqual({
       [CANDIDATES_FREE]: [],
       [CANDIDATES_WORKING]: ['Ana Babić', 'Ivo Horvat'],
       [CANDIDATES_ON_LEAVE]: [],
     });
-    // The next day C is off: Ana is free, and B works Noćna.
-    expect(namesOf(replacementCandidatesOf(outcome.snapshot, [], uj5A, '2020-01-02'))).toEqual({
+    // 8 h shifts: B's Popodnevna joins A's Jutarnja (16 h); C's Noćna starts hours later and joins nothing.
+    expect(groups[1]?.candidates.map((one) => [one.name, one.continuousMinutes])).toEqual([
+      ['Ana Babić', null],
+      ['Ivo Horvat', 16 * 60],
+    ]);
+    // The next day C is off: Ana is free, and B works Noćna, right after A's Popodnevna.
+    const next = replacementCandidatesOf(outcome.snapshot, [], uj5A, '2020-01-02', 'uj5-popodnevna');
+
+    expect(namesOf(next)).toEqual({
       [CANDIDATES_FREE]: ['Ana Babić'],
       [CANDIDATES_WORKING]: ['Ivo Horvat'],
       [CANDIDATES_ON_LEAVE]: [],
     });
+    expect(next[1]?.candidates[0]?.continuousMinutes).toBe(16 * 60);
   });
 });
 

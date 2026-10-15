@@ -1,14 +1,14 @@
 import type { ReactNode } from 'react';
 
 import { Badge } from '@/components/ui/badge';
-import { shownDate } from '@/features/members/services/list';
 import {
   NO_TIMES_SHOWN,
-  durationValuesOf,
   shiftTypeDurationMessageKey,
   type ShiftTypeDisplayRow,
 } from '@/features/shift-types/services/list';
 import { t } from '@/lib/i18n';
+import { durationValuesOf } from '@/utils/time';
+import { shownDate } from '@/utils/text';
 
 /**
  * What a type's times and duration SAY, written once (story 7.6) for both of

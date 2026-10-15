@@ -1135,6 +1135,8 @@ test('amends the leave by keyboard: card 3 opens the member page\'s amend form p
   await expect(peoplePage.leaveFromInput).toBeFocused();
   await expect(peoplePage.leaveFromInput).toHaveValue(start);
   await expect(peoplePage.leaveToInput).toHaveValue(last);
+  // The dialog says where od and do came from.
+  await expect(peoplePage.leaveDialog.getByRole('status').filter({ hasText: hr.ljudi.leaveRecord.handoffPrefilled })).toBeVisible();
   await expect(peoplePage.backToConflictsLink).toBeVisible();
 
   // A RELOAD reopens nothing — the opening has left the entry — and the way back stays.
@@ -1213,6 +1215,8 @@ test('a one-day record: card 3 says the leave is removed and Spremi opens its re
   await expect(peoplePage.text(hr.ljudi.leaveRecord.recordsEmpty)).toBeVisible();
   await expect(peoplePage.leaveRecordRows).toHaveCount(0);
   await expect(resolutionPage.dialog()).toHaveCount(0);
+  // A status line says why nothing opened.
+  await expect(peoplePage.statusWith(hr.ljudi.leaveRecord.handoffGone)).toBeVisible();
   await expect(peoplePage.backToConflictsLink).toBeVisible();
   expect(writes.count()).toBe(0);
 });

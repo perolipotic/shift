@@ -404,6 +404,16 @@ export class PeoplePage extends BasePage {
     return this.page.getByRole('button', { name: hr.ljudi.form.copy, exact: true });
   }
 
+  /** The dialog a landed reset shows its password in (story 7.8, E915). */
+  get resetDialog(): Locator {
+    return this.page.getByRole('dialog', { name: hr.ljudi.form.resetCredential });
+  }
+
+  /** That dialog's one way out besides its close control. */
+  get resetDismissButton(): Locator {
+    return this.resetDialog.getByRole('button', { name: hr.ljudi.form.resetDismiss, exact: true });
+  }
+
   /** The one-time password itself: four hyphen-joined words. */
   get issuedPassword(): Locator {
     return this.page.getByText(/^[a-z]{3,6}(-[a-z]{3,6}){3}$/);

@@ -16,7 +16,7 @@ import {
   type SeededLeaveMember,
   type SeededRotation,
 } from '../../utils/database-helper.ts';
-import { addDays, dayMonth, weekdayOf } from '../../utils/dates.ts';
+import { addDays, dayMonth, weekdayOf, weekdayShort } from '../../utils/dates.ts';
 import { fill, hr, icu, plural } from '../../utils/i18n.ts';
 import { expectNoHorizontalScroll, expectTouchTargets } from '../../utils/layout.ts';
 import { ADMIN_STATE } from '../../utils/run-fixture.ts';
@@ -561,4 +561,35 @@ test('a deactivation whose erasures cannot be checked is refused inside the stat
   await page.keyboard.press('Escape');
   await expect(peoplePage.statusDialog).toHaveCount(0);
   await expect(peoplePage.deactivateButton(person.name), 'focus is not back on the card\'s Deaktiviraj').toBeFocused();
+});
+
+test('the team dialog says what a move changes: the last shift in the team left, from the date as typed (decision 16)', async ({
+  page,
+  fixture,
+  peoplePage,
+}) => {
+  // No leave: nothing to erase, only the preview. The rotation runs from
+  // today `[Dan, Noć, Slobodno, Slobodno]` and the member is on it from today.
+  const { rotation, team, person } = await setUp(fixture.slug, null);
+  const [dan, noc] = rotation.steps;
+  const lastIn = (date: string, type: string, range: string): string =>
+    fill(membership.lastIn, { team: team.name, weekday: weekdayShort(date), date: dayMonth(date), type, range });
+
+  await peoplePage.gotoMember(person.id);
+  await peoplePage.moveButton(person.name).click();
+  await expect(peoplePage.teamDialog).toBeVisible();
+  // NOTHING PICKED, NOTHING SAID.
+  await expect(peoplePage.teamDialog).not.toContainText(membership.changes);
+
+  // The default date is tomorrow, so the last shift in the team left is today's Dan.
+  await peoplePage.teamSelect.selectOption({ label: fixture.team.name });
+  await expect(peoplePage.teamDialog).toContainText(membership.changes);
+  await expect(peoplePage.teamDialog).toContainText(lastIn(rotation.today, dan, '07:00–19:00'));
+
+  // FOLLOWS THE DATE AS TYPED: from today + 3 the last is tomorrow's Noć.
+  await peoplePage.dateInput.fill(addDays(rotation.today, 3));
+  await expect(peoplePage.teamDialog).toContainText(lastIn(addDays(rotation.today, 1), noc, '19:00–07:00'));
+
+  await page.keyboard.press('Escape');
+  await expect(peoplePage.teamDialog).toHaveCount(0);
 });

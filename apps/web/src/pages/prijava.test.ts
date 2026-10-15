@@ -254,6 +254,8 @@ const GODISNJI_PAGE = join(srcRoot, ...LEAVE_SCREEN_PARTS.page);
 const GODISNJI: readonly string[] = Object.values(LEAVE_SCREEN_PARTS).map((parts) => join(srcRoot, ...parts));
 /** Story 5.2c's rules: the screen's two lines and its three tiles' labels. */
 const MY_LEAVE_KEYS = join(LEAVE_FEATURE, 'services', 'my-leave.ts');
+/** E884's rules: the overview's Stanje options and chip values, off `\w*MessageKey` unions. */
+const LEAVE_OVERVIEW_KEYS = join(LEAVE_FEATURE, 'services', 'leave-overview.ts');
 /** The conflicts feature, which holds the *Raspored* screen's parts (story 5.3b). */
 const CONFLICTS_FEATURE = join(srcRoot, 'features', 'conflicts');
 /** The *Raspored* screen's page, which only composes (story 5.3b). */
@@ -576,6 +578,8 @@ const ACCENT_KEYS = join(srcRoot, 'features', 'organization', 'utils', 'accent.t
 const RANK_KEYS = join(srcRoot, 'features', 'members', 'utils', 'rank.ts');
 /** Story 7.11: the member page header's status badge, off one `\w*MessageKey` union. */
 const MEMBER_FACTS_KEYS = join(srcRoot, 'features', 'members', 'utils', 'member-facts.ts');
+/** Decision 16's *Što se mijenja*: the team dialog's two lines, each with or without a range. */
+const MEMBER_MOVE_PREVIEW_KEYS = join(srcRoot, 'features', 'members', 'services', 'team-move-preview.ts');
 /** Story 7.11: the member page's element ids, named once; no string a screen renders. */
 const MEMBER_ELEMENT_IDS = join(srcRoot, 'features', 'members', 'utils', 'element-ids.ts');
 
@@ -785,7 +789,8 @@ const SCREENS = [
   // Kalendar and Sati sets) and its summary line's `Poništi filtre`.
   // EIGHT with the option-chip bar's own `Filtri` (`option-filter-bar.tsx`,
   // read with the member list since it is only *Ljudi*'s).
-  { name: 'the member list', file: MEMBER_LIST, expectedFields: 1, expectedButtons: 7 },
+  // NINE SINCE THE DEFERRED-WORK SWEEP: the read failure's retry.
+  { name: 'the member list', file: MEMBER_LIST, expectedFields: 1, expectedButtons: 8 },
   // EIGHT on the create form: four `<Input>`s — name, username, address,
   // allowance — the level `<select>`, and three `<Button>`s, which are Save,
   // Cancel and the link back to the list. The count is what notices a SIXTH
@@ -853,7 +858,10 @@ const SCREENS = [
   // FORTY-SEVEN SINCE STORY 7.12: the leave card's od–do form moves into its
   // dialog — the same two fields and Spremi, its cancel now always drawn —
   // and the card's header gains *Upiši godišnji*.
-  { name: 'the member edit form', file: MEMBER_EDIT, expectedFields: 12, expectedButtons: 35 },
+  // FORTY-NINE SINCE THE DEFERRED-WORK SWEEP: the retries beside the member
+  // read's and the teams read's failures. The reset's password moved into a
+  // dialog with its `Sakrij lozinku`; its close is the shared header's.
+  { name: 'the member edit form', file: MEMBER_EDIT, expectedFields: 12, expectedButtons: 37 },
   // STORY 1.7a. FOUR on the team list: the link back to `Ljudi`, the one name
   // `<Input>`, the add `<Button>`, and ONE row link written once inside the map
   // over the teams — the same count at zero teams as at nine. SIX on one team:
@@ -863,8 +871,9 @@ const SCREENS = [
   // DESIGN REFRESH C: SIX on the team list, the add form in a dialog with the
   // button that opens it and its cancel; FIVE on one team, a dialog over the
   // list whose own close replaced the link back.
-  { name: 'the team list', file: TEAM_LIST, expectedFields: 1, expectedButtons: 5 },
-  { name: 'the team edit form', file: TEAM_EDIT, expectedFields: 1, expectedButtons: 4 },
+  // SEVEN AND SIX SINCE THE DEFERRED-WORK SWEEP: each read failure's retry.
+  { name: 'the team list', file: TEAM_LIST, expectedFields: 1, expectedButtons: 6 },
+  { name: 'the team edit form', file: TEAM_EDIT, expectedFields: 1, expectedButtons: 5 },
   // STORY 1.8. ONE on the roster: the link back to Danas, a `<Button asChild>`.
   // No field, no form and no write — the count is what notices one arriving.
   // ZERO on Danas: its one new control is the `<Link>` to the roster, which
@@ -963,7 +972,11 @@ const SCREENS = [
   // pretragu* (5); and the page's own retry when the calendar cannot name
   // the viewer's role (6). The phone's `SortControl` is a shared component,
   // and every row's name is a `<Link>`; nothing on the overview writes.
-  { name: 'the Godišnji destination', file: GODISNJI, expectedFields: 1, expectedButtons: 5 },
+  // ONE MORE BUTTON SINCE E884: the search moved into the overview's filter
+  // bar (still the one field), whose chips are the shared
+  // `OptionFilterBar`'s, and the empty line the chips leave offers
+  // *Poništi filtre*.
+  { name: 'the Godišnji destination', file: GODISNJI, expectedFields: 1, expectedButtons: 6 },
   // STORY 5.3b. ONE on Raspored: the retry its unavailable alert offers. The
   // queue is read, never pressed: no `Riješi` and no bulk action. STILL ONE
   // SINCE STORY 5.4b: each row became a `<Link>` to its resolution screen,
@@ -987,10 +1000,12 @@ const SCREENS = [
   // SEVEN ON THE LIST SINCE DESIGN REFRESH C: the add form moved into a
   // dialog, which brought the button that opens it and the dialog's own
   // cancel. The dialog's close button is `DialogHeader`'s, not the screen's.
-  { name: 'the hour band list', file: HOUR_BAND_LIST, expectedFields: 2, expectedButtons: 5 },
+  // EIGHT SINCE THE DEFERRED-WORK SWEEP: the read failure's retry.
+  { name: 'the hour band list', file: HOUR_BAND_LIST, expectedFields: 2, expectedButtons: 6 },
   // SIX ON ONE BAND SINCE DESIGN REFRESH C: the edit form is a dialog over the
   // list, and the link back gave way to the dialog's own close.
-  { name: 'the hour band edit form', file: HOUR_BAND_EDIT, expectedFields: 2, expectedButtons: 4 },
+  // SEVEN SINCE THE DEFERRED-WORK SWEEP: the read failure's retry.
+  { name: 'the hour band edit form', file: HOUR_BAND_EDIT, expectedFields: 2, expectedButtons: 5 },
   // STORY 2.2b. SIX on the shift type list: the name `<Input>`, the working /
   // non-working `<select>`, the start and end `<Input type="time">`s (a
   // non-working type is offered neither), the add `<Button>`, and ONE row link
@@ -1005,8 +1020,9 @@ const SCREENS = [
   // list whose own close replaced the link back.
   // NINE SINCE STORY 7.6: the stacked row's edit link below 640 px, the same
   // 44 px `<Button asChild>` link as the table's, written once inside the map.
-  { name: 'the shift type list', file: SHIFT_TYPE_LIST, expectedFields: 4, expectedButtons: 5 },
-  { name: 'the shift type edit form', file: SHIFT_TYPE_EDIT, expectedFields: 4, expectedButtons: 6 },
+  // TEN AND ELEVEN SINCE THE DEFERRED-WORK SWEEP: each read failure's retry.
+  { name: 'the shift type list', file: SHIFT_TYPE_LIST, expectedFields: 4, expectedButtons: 6 },
+  { name: 'the shift type edit form', file: SHIFT_TYPE_EDIT, expectedFields: 4, expectedButtons: 7 },
   // STORY 2.3b, AS RENEGOTIATED. SEVEN on the rotation builder, each written
   // once however many steps and teams there are: a step's drag handle and
   // remove (the move arrows are gone), the new step's `<select>` and the add,
@@ -1031,7 +1047,8 @@ const SCREENS = [
   // erasure dialog is a second shared `ErasureDialog`, counted below.
   // NINETEEN SINCE STORY 5.5c: the save bar's "Odbaci promjene". The save
   // moved from the header into the bar and is still written once.
-  { name: 'the rotation builder', file: ROTATION_SECTION, expectedFields: 5, expectedButtons: 14 },
+  // TWENTY SINCE THE DEFERRED-WORK SWEEP: the read failure's retry.
+  { name: 'the rotation builder', file: ROTATION_SECTION, expectedFields: 5, expectedButtons: 15 },
   // STORY 7.18. ONE on the rotation history: the header button that opens
   // it. The dialog's close is `DialogHeader`'s, and the table offers nothing.
   { name: 'the rotation history', file: ROTATION_HISTORY_DIALOG, expectedFields: 0, expectedButtons: 1 },
@@ -2440,11 +2457,12 @@ const KEY_SOURCES = [
     // FIVE over three unions, so read by `memberListKeys`, which reads every
     // union rather than the first: the row action (edit, or view for an
     // archived team), the one-team heading by the same rule, and the read
-    // failure. Zero rows is an answer here, not a refusal.
+    // failure. Zero rows is an answer here, not a refusal. SIX SINCE THE
+    // DEFERRED-WORK SWEEP: the read failure's retry.
     name: 'the team list rules',
     file: TEAM_LIST_KEYS,
     keys: memberListKeys,
-    strings: 5,
+    strings: 6,
   },
   {
     // NINE over two unions: seven refusals — the empty name, the taken name,
@@ -2610,10 +2628,11 @@ const KEY_SOURCES = [
   },
   {
     // FOUR over two unions: the duration's three shapes and the read failure.
+    // FIVE SINCE THE DEFERRED-WORK SWEEP: the read failure's retry.
     name: 'the hour band list rules',
     file: HOUR_BAND_LIST_KEYS,
     keys: memberListKeys,
-    strings: 4,
+    strings: 5,
   },
   {
     // ELEVEN over two unions: nine refusals — the blank name, the taken name,
@@ -2665,11 +2684,12 @@ const KEY_SOURCES = [
     strings: 23,
   },
   {
-    // The duration's three shapes, the read failure, and the two headings.
+    // The duration's three shapes, the read failure, and the two headings;
+    // since the deferred-work sweep, the read failure's retry.
     name: 'the shift type list rules',
     file: SHIFT_TYPE_LIST_KEYS,
     keys: memberListKeys,
-    strings: 6,
+    strings: 7,
   },
   {
     // The two kinds, the thirteen refusals and the five confirmations — the
@@ -2784,10 +2804,11 @@ const KEY_SOURCES = [
     // STORY 2.5: the six warning lines (gap, duplicate, and the rest gap
     // known, unknown, endless and endless unknown), the summary counting
     // them, a date's detail, and the list's and the run's separators.
+    // ELEVEN: a doubled type of a duplicate date, naming its teams.
     name: 'the rotation warning rules',
     file: ROTATION_WARNING_KEYS,
     keys: memberListKeys,
-    strings: 10,
+    strings: 11,
   },
   {
     // STORY 2.6: the history's three statuses, in words, and the unknown author.
@@ -2983,10 +3004,24 @@ const KEY_SOURCES = [
     // *Poništi pretragu*, the overview's unavailable line and retry, and the
     // five column names, the caption, *Bez smjene* and the unscheduled line,
     // written once in the table and once in the stacked rows.
+    //
+    // FIFTY SINCE E884: the Smjena chip's six, as Ljudi's (its text set and at
+    // every team, its ✕, its picker and heading, and an option's count), the
+    // pending team name, the Stanje chip's four (its text, ✕, picker and
+    // heading) and its options' count, and the empty line the chips leave
+    // with *Poništi filtre*.
     name: 'the Godišnji destination',
     file: GODISNJI,
     keys: translationKeys,
-    strings: 36,
+    strings: 50,
+  },
+  {
+    // E884: the Stanje chip's five options and the five values its text says,
+    // off `leaveOverviewStateMessageKey` and `leaveOverviewStateValueMessageKey`.
+    name: 'the Godišnji overview rules',
+    file: LEAVE_OVERVIEW_KEYS,
+    keys: messageKeyUnions,
+    strings: 10,
   },
   {
     // STORY 5.3b. NINE on Raspored: its own `nav.raspored` heading; the
@@ -3022,10 +3057,12 @@ const KEY_SOURCES = [
     // working in its strip, and the balance it gives back.
     // THIRTY-EIGHT SINCE STORY 5.5d: Spremi's hint while a replacement that
     // no longer applies holds the key, and its link to the calendar.
+    // FORTY SINCE D726: the third card's line naming the days a later start
+    // drops, and the line saying some of them are past.
     name: 'the conflict resolution screen',
     file: RESOLUTION,
     keys: translationKeys,
-    strings: 38,
+    strings: 40,
   },
   {
     // STORY 5.4b: the facts line with and without times, who else works or
@@ -3050,10 +3087,12 @@ const KEY_SOURCES = [
     // STORY 7.9: the three candidate group headings — free, working that day,
     // on leave that day — shared by the conflict screen's picker and the day
     // detail's roster dialog, off `candidateGroupMessageKey`.
+    // FOUR SINCE D717: a candidate's line with the continuous duty the shift
+    // would make, off `candidateContinuousMessageKey`.
     name: 'the replacement candidate groups',
     file: REPLACEMENT_CANDIDATE_KEYS,
     keys: messageKeyUnions,
-    strings: 3,
+    strings: 4,
   },
   {
     // STORY 5.4b: the write's three refusals — gone, denied, failed. FOUR
@@ -3176,22 +3215,22 @@ const KEY_SOURCES = [
     strings: 8,
   },
   {
-    // The read failure.
+    // The read failure, and its retry (deferred-work sweep).
     name: 'the rotation read rules',
     file: ROTATION_LIST_KEYS,
-    keys: messageKeyUnion,
-    strings: 1,
+    keys: messageKeyUnions,
+    strings: 2,
   },
   {
     // The eight refusals, the "nothing changed" note beside a failure after
     // the pattern, and the confirmation.
     // FIFTEEN SINCE STORY 2.6: the past effective date; the cancel's three
     // refusals (stale, and the save's refused and unavailable again) and its
-    // confirmation.
+    // confirmation. SIXTEEN: an effective date more than a year ahead.
     name: 'the rotation write rules',
     file: ROTATION_WRITE_KEYS,
     keys: memberWriteKeys,
-    strings: 15,
+    strings: 16,
   },
   {
     // THIRTEEN on the create form: its own heading, five field labels, the save
@@ -3316,10 +3355,17 @@ const KEY_SOURCES = [
     // new, their one group shape and unknown); and the removal's cleared
     // line or its unknown line — less the form's two legends and the row's amend-mode word they
     // replace.
+    // ONE HUNDRED AND FIFTY-THREE SINCE THE DEFERRED-WORK SWEEP: the read
+    // failure's retry, the status date's hint, the team dialog's *Što se
+    // mijenja* heading (decision 16), and the reset dialog's close.
+    //
+    // ONE HUNDRED AND FIFTY-FIVE SINCE D723: the card's line when a hand-off
+    // from a conflict opened nothing, and the amend dialog's line when its
+    // od and do came from the conflict.
     name: 'the member edit form',
     file: MEMBER_EDIT,
     keys: translationKeys,
-    strings: 149,
+    strings: 155,
   },
   {
     // THIRTEEN on the member write path's rules: eleven `ljudi.form.error.*`
@@ -3397,10 +3443,20 @@ const KEY_SOURCES = [
     // the summary line's two forms, the level picker's every-level option,
     // the status chip's three values and its three option names, and the team
     // options are now `Sve smjene` and `Bez smjene` beside their counts.
+    // THIRTY-ONE SINCE THE DEFERRED-WORK SWEEP: the read failure's retry.
     name: 'the member list rules',
     file: MEMBER_LIST_KEYS,
     keys: memberListKeys,
-    strings: 30,
+    strings: 31,
+  },
+  {
+    // DECISION 16, the deferred-work sweep: the team dialog's last shift in
+    // the team left and first in the team joined, each with or without the
+    // type's range (`moveShiftMessageKey`).
+    name: 'the team move preview rules',
+    file: MEMBER_MOVE_PREVIEW_KEYS,
+    keys: messageKeyUnions,
+    strings: 4,
   },
   {
     // ONE on the lockup: the accessible name it falls back to when the
@@ -3658,7 +3714,11 @@ describe('the screen is read at all, so every sweep below means something', () =
     // SIXTY-EIGHT SINCE STORY 7.17: the member directory.
     //
     // SIXTY-NINE SINCE THE ROUTER-GUARDS FIX: the error screen (A148).
-    expect(KEY_SOURCES).toHaveLength(69);
+    //
+    // SEVENTY SINCE THE DEFERRED-WORK SWEEP: decision 16's team move preview.
+    //
+    // SEVENTY-ONE SINCE E884: the leave overview's rules, for its Stanje chip.
+    expect(KEY_SOURCES).toHaveLength(71);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
@@ -3995,7 +4055,7 @@ describe('the screen is read at all, so every sweep below means something', () =
     // ONE DECLARATION PER HANDLER PER SET, because the extractors take the
     // first match in a joined set.
     for (const [set, hookFile, names] of [
-      [SHIFT_TYPE_LIST, SHIFT_TYPE_LIST_HOOK, ['submit', 'openAdding', 'chooseKind']],
+      [SHIFT_TYPE_LIST, SHIFT_TYPE_LIST_HOOK, ['submit', 'openAdding', 'closeAdding', 'chooseKind']],
       [
         SHIFT_TYPE_EDIT,
         SHIFT_TYPE_EDIT_HOOK,
@@ -4038,7 +4098,7 @@ describe('the screen is read at all, so every sweep below means something', () =
     },
   ];
   const SHIFT_TYPE_HANDLERS =
-    'submit|saveTimes|cancelTimes|archive|chooseKind|openAdding|refresh|close|clearOutcomes';
+    'submit|saveTimes|cancelTimes|archive|chooseKind|openAdding|closeAdding|refresh|close|clearOutcomes';
   const SHIFT_TYPE_WRITES = [
     'supabaseClient(',
     'createShiftType(',
