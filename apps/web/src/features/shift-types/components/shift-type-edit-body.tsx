@@ -14,6 +14,7 @@ import type { ShiftTypeEditScreen } from '@/features/shift-types/hooks/use-shift
 import type { ShiftTypeRow } from '@/features/shift-types/services/list';
 import { SHIFT_TYPE_NAME_FIELD, marksField, shiftTypeFormKey } from '@/features/shift-types/services/write';
 import { t } from '@/lib/i18n';
+import { NAME_MAX_LENGTH } from '@/utils/name';
 
 function renderType(screen: ShiftTypeEditScreen, type: ShiftTypeRow): ReactNode {
   const { row, timesFailure, archiveFailure, confirming, saves, submit, nameField, setSaved, failure, pending } =
@@ -62,6 +63,7 @@ function renderType(screen: ShiftTypeEditScreen, type: ShiftTypeRow): ReactNode 
               ref={nameField}
               id="shift-type-name"
               name="name"
+              maxLength={NAME_MAX_LENGTH}
               type="text"
               required
               defaultValue={type.name}

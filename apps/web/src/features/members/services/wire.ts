@@ -66,6 +66,8 @@ export const PASSWORD_RESET = 'PASSWORD_RESET';
 export const MEMBER_WRITE_REFUSED = 'MEMBER_WRITE_REFUSED';
 /** A shape on `members` refused a value: a not-null, a check, a range. */
 export const MEMBER_WRITE_INVALID = 'MEMBER_WRITE_INVALID';
+/** The name is longer than `0036`'s maximum (`members_name_length`). */
+export const MEMBER_NAME_TOO_LONG = 'MEMBER_NAME_TOO_LONG';
 /** That username is already issued in this organization, in some casing. */
 export const MEMBER_USERNAME_TAKEN = 'MEMBER_USERNAME_TAKEN';
 /** The username cannot be the local part of a sign-in address. */
@@ -392,6 +394,7 @@ export function teamCurrentMessageKey(
 export type MemberWriteFailure =
   | typeof MEMBER_WRITE_REFUSED
   | typeof MEMBER_WRITE_INVALID
+  | typeof MEMBER_NAME_TOO_LONG
   | typeof MEMBER_USERNAME_TAKEN
   | typeof MEMBER_USERNAME_INVALID
   | typeof MEMBER_UNKNOWN
@@ -574,6 +577,13 @@ export interface MemberWriteRefusal {
  * depending on whether the username happened to change in the same edit.
  */
 const INSUFFICIENT_PRIVILEGE = '42501';
+const CHECK_VIOLATION = '23514';
+/**
+ * `0036`'s name length check, as PostgreSQL quotes it in MESSAGE — never read
+ * out of `details`, which holds what was typed. Spelled here rather than
+ * imported from `@/utils/name`, because this module imports nothing.
+ */
+const NAME_LENGTH_CHECK = 'check constraint "members_name_length"';
 const VALUE_CLASSES = ['22', '23'];
 
 /** Whether a SQLSTATE says the row was wrong rather than the service. */
@@ -611,6 +621,11 @@ export function editFailureOf(error: PostgrestFailure): MemberWriteFailure {
     return ORGANIZATION_WOULD_HAVE_NO_ADMIN;
   }
   if (error.code === INSUFFICIENT_PRIVILEGE) return MEMBER_WRITE_REFUSED;
+  // THE ONE CHECK THAT NAMES ITS FIELD: a name over `0036`'s maximum, which
+  // the input's `maxLength` keeps out of a typed edit.
+  if (error.code === CHECK_VIOLATION && (error.message ?? '').includes(NAME_LENGTH_CHECK)) {
+    return MEMBER_NAME_TOO_LONG;
+  }
   // NO `23505` CASE, deliberately, and its absence is a finding rather than an
   // omission: this path's update writes `name`, `email`, `role` and
   // `leave_allowance_days` and NEVER `username`, so "that username is already
@@ -645,6 +660,7 @@ export function memberWriteMessageKey(
   | 'ljudi.error.refused'
   | 'ljudi.form.error.refused'
   | 'ljudi.form.error.invalid'
+  | 'ljudi.form.error.nameTooLong'
   | 'ljudi.form.error.usernameTaken'
   | 'ljudi.form.error.usernameInvalid'
   | 'ljudi.form.error.unknown'
@@ -674,6 +690,7 @@ export function memberWriteMessageKey(
   | 'ljudi.form.error.unavailable' {
   if (failure === MEMBER_WRITE_REFUSED) return 'ljudi.form.error.refused';
   if (failure === MEMBER_WRITE_INVALID) return 'ljudi.form.error.invalid';
+  if (failure === MEMBER_NAME_TOO_LONG) return 'ljudi.form.error.nameTooLong';
   if (failure === MEMBER_USERNAME_TAKEN) return 'ljudi.form.error.usernameTaken';
   if (failure === MEMBER_USERNAME_INVALID) return 'ljudi.form.error.usernameInvalid';
   if (failure === MEMBER_UNKNOWN) return 'ljudi.form.error.unknown';

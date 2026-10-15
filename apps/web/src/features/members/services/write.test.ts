@@ -15,6 +15,7 @@ import {
   MEMBER_ENTRY_EMAIL,
   MEMBER_ENTRY_NAME,
   MEMBER_ENTRY_USERNAME,
+  MEMBER_NAME_TOO_LONG,
   MEMBER_PASSWORD_NOT_APPLIED,
   MEMBER_READ_REFUSED,
   MEMBER_EDIT_COLUMNS,
@@ -406,6 +407,18 @@ describe('a PostgREST refusal means the same thing on both write paths', () => {
     expect(editFailureOf({ code })).toBe(failure);
   });
 
+  it('names a name over 0036\'s maximum, read from the message alone', () => {
+    expect(
+      editFailureOf({
+        code: '23514',
+        message: 'new row for relation "members" violates check constraint "members_name_length"',
+      }),
+    ).toBe(MEMBER_NAME_TOO_LONG);
+    // `details` holds what was typed, never a constraint.
+    expect(editFailureOf({ code: '23514', details: 'members_name_length' })).toBe(MEMBER_WRITE_INVALID);
+    expect(memberWriteMessageKey(MEMBER_NAME_TOO_LONG)).toBe('ljudi.form.error.nameTooLong');
+  });
+
   it('never claims a username is taken on the path that does not write one', () => {
     // `saveMember`'s update writes `name`, `email`, `role` and
     // `leave_allowance_days` and NEVER `username`, so "Ovo korisničko ime već
@@ -511,6 +524,7 @@ describe('every failure becomes exactly one message, and no two share one', () =
   const EVERY_FAILURE: readonly MemberWriteFailure[] = [
     MEMBER_WRITE_REFUSED,
     MEMBER_WRITE_INVALID,
+    MEMBER_NAME_TOO_LONG,
     MEMBER_USERNAME_TAKEN,
     MEMBER_USERNAME_INVALID,
     MEMBER_UNKNOWN,
@@ -577,6 +591,10 @@ describe('every failure becomes exactly one message, and no two share one', () =
     const mapped = new Set<MemberWriteFailure>([
       ...WIRE_CODES.map((code) => memberWriteFailureOf(code)),
       editFailureOf({ message: ORGANIZATION_WOULD_HAVE_NO_ADMIN }),
+      editFailureOf({
+        code: '23514',
+        message: 'new row for relation "members" violates check constraint "members_name_length"',
+      }),
       statusFailureOf({ code: '42501' }, DEACTIVATE, '2026-09-22', context),
       statusFailureOf({ code: '42501' }, DEACTIVATE, TODAY, {
         ...context,

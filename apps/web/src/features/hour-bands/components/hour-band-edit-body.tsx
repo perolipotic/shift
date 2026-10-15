@@ -18,6 +18,7 @@ import {
 } from '@/features/hour-bands/services/write';
 import { formatMinuteOfDay } from '@/lib/i18n/format';
 import { t } from '@/lib/i18n';
+import { NAME_MAX_LENGTH } from '@/utils/name';
 import { durationValuesOf } from '@/utils/time';
 
 /**
@@ -81,6 +82,7 @@ function renderBand(screen: HourBandEditScreen, band: HourBandRow): ReactNode {
             ref={nameField}
             id="hour-band-name"
             name="name"
+            maxLength={NAME_MAX_LENGTH}
             type="text"
             required
             defaultValue={band.name}

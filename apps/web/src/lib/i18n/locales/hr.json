@@ -332,6 +332,7 @@
           "reason": "Upiši razlog, 1–200 znakova.",
           "taken": "Taj je član već u promjeni za ovu smjenu. Osvježi prikaz.",
           "gone": "Promjena je već uklonjena.",
+          "archived": "Smjena je u međuvremenu arhivirana. Osvježi prikaz.",
           "notOffered": "Sastav ovog dana više se ne može mijenjati. Prikazan je dan kakav je sada.",
           "denied": "Ne možeš mijenjati sastav. Za to trebaš ovlasti administratora.",
           "failed": "Promjena nije uspjela. Pokušaj ponovno."
@@ -387,6 +388,7 @@
           "taken": "Za taj dan već postoji izmjena. Osvježi prikaz.",
           "notOffered": "Tip smjene ovog dana više se ne može mijenjati. Prikazan je dan kakav je sada.",
           "gone": "Izmjena je već uklonjena.",
+          "archived": "Smjena ili tip smjene je u međuvremenu arhiviran. Osvježi prikaz.",
           "denied": "Ne možeš mijenjati izmjene. Za to trebaš ovlasti administratora.",
           "failed": "Promjena nije uspjela. Pokušaj ponovno."
         },
@@ -737,6 +739,7 @@
       "error": {
         "refused": "Promjena nije spremljena. Odjavi se i prijavi ponovno.",
         "invalid": "Unesena vrijednost nije dopuštena.",
+        "nameTooLong": "Ime može imati najviše 100 znakova.",
         "usernameTaken": "Ovo korisničko ime već postoji u organizaciji.",
         "usernameInvalid": "Korisničko ime ne smije sadržavati razmak ili znak @.",
         "unknown": "Ova osoba više ne postoji u organizaciji.",
@@ -970,6 +973,7 @@
     "error": {
       "refused": "Ne možeš uređivati ovu organizaciju. Za izmjene trebaš ovlasti administratora.",
       "name": "Naziv ne može biti prazan.",
+      "nameTooLong": "Naziv može imati najviše 100 znakova.",
       "invalid": "Unesena vrijednost nije dopuštena.",
       "logoRefused": "Ne možeš promijeniti logotip organizacije. Za izmjene trebaš ovlasti administratora.",
       "logoUnreadable": "Logotip trenutačno nije moguće prikazati.",
@@ -1024,6 +1028,7 @@
         "unavailable": "Satne pojaseve trenutačno nije moguće učitati. Pokušaj ponovno.",
         "retry": "Pokušaj ponovno",
         "nameEmpty": "Naziv pojasa ne može biti prazan.",
+        "nameTooLong": "Naziv pojasa može imati najviše 100 znakova.",
         "nameTaken": "Pojas s tim nazivom već postoji u organizaciji.",
         "startTaken": "Pojas s tim početkom već postoji u organizaciji. Odaberi drugi početak.",
         "startInvalid": "Početak mora biti vrijeme dana u punim minutama, na primjer 07:00.",
@@ -1089,12 +1094,14 @@
         "unavailable": "Tipove smjena trenutačno nije moguće učitati. Pokušaj ponovno.",
         "retry": "Pokušaj ponovno",
         "nameEmpty": "Naziv tipa smjene ne može biti prazan.",
+        "nameTooLong": "Naziv tipa smjene može imati najviše 100 znakova.",
         "nameTaken": "Tip smjene s tim nazivom već postoji u organizaciji.",
         "timeInvalid": "Početak i završetak moraju biti vremena dana u punim minutama, na primjer 07:00.",
         "dateInvalid": "Datum ne smije biti raniji od ponuđenog.",
         "timesRefused": "Vremena nisu spremljena. Nova vremena moraju se razlikovati od dosadašnjih, a datum ne smije biti u prošlosti.",
         "timesUnchanged": "Vremena su ista kao dosadašnja. Unesi drugačiji početak ili završetak.",
         "changeScheduled": "Tip smjene nije moguće arhivirati dok je zakazana promjena vremena. Najprije poništi zakazanu promjenu.",
+        "inRotation": "Tip smjene nije moguće arhivirati dok ga koristi rotacija koja je na snazi ili zakazana.",
         "createdWithoutTimes": "Tip smjene je dodan, ali njegova vremena nisu spremljena. Otvori ga i postavi vremena.",
         "stale": "Tip smjene se u međuvremenu promijenio. Provjeri ga i pokušaj ponovno.",
         "refused": "Promjena nije spremljena. Odjavi se i prijavi ponovno.",
@@ -1395,13 +1402,15 @@
       "unavailable": "Popis smjena trenutačno nije moguće učitati. Pokušaj ponovno.",
       "retry": "Pokušaj ponovno",
       "empty": "Naziv smjene ne može biti prazan.",
+      "tooLong": "Naziv smjene može imati najviše 100 znakova.",
       "taken": "Smjena s tim nazivom već postoji u organizaciji.",
       "stale": "Smjena se u međuvremenu promijenila. Provjeri je i pokušaj ponovno.",
       "refused": "Promjena nije spremljena. Odjavi se i prijavi ponovno.",
       "invalid": "Unesena vrijednost nije dopuštena.",
       "saveUnavailable": "Spremanje trenutačno nije moguće. Pokušaj ponovno.",
       "unknown": "Ova smjena ne postoji u organizaciji.",
-      "inUse": "Smjenu nije moguće arhivirati dok je netko u njoj ili je u nju zakazan. Premjesti te osobe u drugu smjenu ili je arhiviraj kad u njoj više nikoga nema."
+      "inUse": "Smjenu nije moguće arhivirati dok je netko u njoj ili je u nju zakazan. Premjesti te osobe u drugu smjenu ili je arhiviraj kad u njoj više nikoga nema.",
+      "inRotation": "Smjenu nije moguće arhivirati dok ima rotaciju koja je na snazi ili zakazana."
     },
     "membership": {
       "column": "Smjena",

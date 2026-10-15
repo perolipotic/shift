@@ -1,6 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
+  OVERRIDE_ARCHIVED,
   OVERRIDE_DENIED,
   OVERRIDE_FAILED,
   OVERRIDE_GONE,
@@ -115,6 +116,17 @@ describe('setting a shift-type override (story 3.5b)', () => {
     expect(table.sent).toEqual([]);
   });
 
+  it('maps 0036\'s 23514 SHIFT_TYPE_OVERRIDE_ARCHIVED to archived, never to the reason or to denied', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const table = tableAnswering({ error: { code: '23514', message: 'SHIFT_TYPE_OVERRIDE_ARCHIVED' } });
+
+    expect(await setShiftTypeOverride(table, ORGANIZATION, DETAIL, 'pilot-noc', 'Zamjena')).toEqual({
+      ok: false,
+      code: OVERRIDE_ARCHIVED,
+    });
+    expect(overrideWriteFailureOf({ code: 'P0001', message: 'SHIFT_TYPE_OVERRIDE_ARCHIVED' })).toBe(OVERRIDE_FAILED);
+  });
+
   it.each([
     ['23514', OVERRIDE_REFUSED_REASON],
     ['23505', OVERRIDE_TAKEN],
@@ -180,6 +192,7 @@ describe('the refusals, as the dialog says them', () => {
     type: 'Odaberi tip smjene.',
     taken: 'Za taj dan već postoji izmjena. Osvježi prikaz.',
     gone: 'Izmjena je već uklonjena.',
+    archived: 'Smjena ili tip smjene je u međuvremenu arhiviran. Osvježi prikaz.',
     denied: 'Ne možeš mijenjati izmjene. Za to trebaš ovlasti administratora.',
     failed: 'Promjena nije uspjela. Pokušaj ponovno.',
   };

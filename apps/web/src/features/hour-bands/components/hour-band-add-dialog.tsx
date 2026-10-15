@@ -17,6 +17,7 @@ import {
   marksField,
 } from '@/features/hour-bands/services/write';
 import { t } from '@/lib/i18n';
+import { NAME_MAX_LENGTH } from '@/utils/name';
 import { durationValuesOf } from '@/utils/time';
 import { NO_TEXT } from '@/utils/text';
 
@@ -61,6 +62,7 @@ export function HourBandAddDialog({ screen }: { readonly screen: HourBandListScr
             ref={nameField}
             id="hour-band-new-name"
             name="name"
+            maxLength={NAME_MAX_LENGTH}
             type="text"
             required
             defaultValue={NO_TEXT}

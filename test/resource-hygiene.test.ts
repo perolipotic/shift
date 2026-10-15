@@ -395,6 +395,8 @@ const SANCTIONED_SCREEN_KEYS = [
   // so an anonymous caller learns nothing.
   'organization.error.refused',
   'organization.error.name',
+  // 0036: the one maximum name length, named.
+  'organization.error.nameTooLong',
   'organization.error.invalid',
   // FIVE MORE from story 1.4b, and the partition is the point again. The
   // storage layer refuses in five distinguishable ways — a refused write, a
@@ -578,6 +580,7 @@ const SANCTIONED_SCREEN_KEYS = [
   // they read anything out to anybody.
   'ljudi.form.error.refused',
   'ljudi.form.error.invalid',
+  'ljudi.form.error.nameTooLong',
   'ljudi.form.error.usernameTaken',
   'ljudi.form.error.usernameInvalid',
   'ljudi.form.error.unknown',
@@ -778,6 +781,7 @@ const SANCTIONED_SCREEN_KEYS = [
   'smjene.archivedNote',
   'smjene.error.unavailable',
   'smjene.error.empty',
+  'smjene.error.tooLong',
   'smjene.error.taken',
   'smjene.error.stale',
   'smjene.error.refused',
@@ -787,6 +791,8 @@ const SANCTIONED_SCREEN_KEYS = [
   // STORY 1.7b: an archive of a team somebody is on today, or is scheduled
   // onto, is refused and says so.
   'smjene.error.inUse',
+  // 0036: an archive of a team with a rotation in force or scheduled.
+  'smjene.error.inRotation',
   // STORY 1.7b: team membership on the member list and edit screens. Under
   // `smjene.membership.*` so the one namespace that may say the Team holds
   // them; "no team" is `Bez smjene`, positive words, never `Nema`.
@@ -906,6 +912,7 @@ const SANCTIONED_SCREEN_KEYS = [
   'organization.hourBands.removed',
   'organization.hourBands.error.unavailable',
   'organization.hourBands.error.nameEmpty',
+  'organization.hourBands.error.nameTooLong',
   'organization.hourBands.error.nameTaken',
   'organization.hourBands.error.startTaken',
   'organization.hourBands.error.startInvalid',
@@ -968,12 +975,15 @@ const SANCTIONED_SCREEN_KEYS = [
   'rotation.shiftTypes.archivedNote',
   'rotation.shiftTypes.error.unavailable',
   'rotation.shiftTypes.error.nameEmpty',
+  'rotation.shiftTypes.error.nameTooLong',
   'rotation.shiftTypes.error.nameTaken',
   'rotation.shiftTypes.error.timeInvalid',
   'rotation.shiftTypes.error.dateInvalid',
   'rotation.shiftTypes.error.timesRefused',
   'rotation.shiftTypes.error.timesUnchanged',
   'rotation.shiftTypes.error.changeScheduled',
+  // 0036: an archive of a type a rotation in force or scheduled steps through.
+  'rotation.shiftTypes.error.inRotation',
   'rotation.shiftTypes.error.createdWithoutTimes',
   'rotation.shiftTypes.error.stale',
   'rotation.shiftTypes.error.refused',
@@ -1288,6 +1298,8 @@ const SANCTIONED_SCREEN_KEYS = [
   'kalendar.detail.override.refused.sameAsProjected',
   'kalendar.detail.override.refused.taken',
   'kalendar.detail.override.refused.gone',
+  // 0036: a team or type archived while the day was open, named.
+  'kalendar.detail.override.refused.archived',
   'kalendar.detail.override.refused.denied',
   'kalendar.detail.override.refused.failed',
   // STORY 3.5b, after review: what a landed write says, in a `role="status"`
@@ -1413,6 +1425,8 @@ const SANCTIONED_SCREEN_KEYS = [
   'kalendar.detail.rosterChange.refused.reason',
   'kalendar.detail.rosterChange.refused.taken',
   'kalendar.detail.rosterChange.refused.gone',
+  // 0036: a team archived while the day was open, named.
+  'kalendar.detail.rosterChange.refused.archived',
   'kalendar.detail.rosterChange.refused.denied',
   'kalendar.detail.rosterChange.refused.failed',
   // EPIC 4 RETRO C2: the roster form's neutral hint for a member who already
@@ -2203,6 +2217,12 @@ const PEOPLE_DESCRIPTION_KEY = 'shell.description.ljudi';
  * `rotation.builder`'s to say.
  */
 const ROTATION_OVERRIDE_NAMESPACE = 'rotation.builder.overrides.';
+/**
+ * 0036: the day detail's refusal of an override whose team OR type was
+ * archived meanwhile names both, as `rotation.builder.overrides.refused.archived`
+ * does, so it reads under the builder's rule rather than the day detail's.
+ */
+const CALENDAR_OVERRIDE_ARCHIVED_KEY = 'kalendar.detail.override.refused.archived';
 
 /**
  * `Tip smjene` in the inflections of `tip` the copy can use — tip, tipa, tipu,
@@ -2221,7 +2241,7 @@ const SHIFT_TYPE_TERM = /(?<![\p{L}\p{N}])tip(?:a|u|om|ovi|ova|ove|ovima)?\s+smj
 function teamTermOutOfTurn(key: string, message: string): boolean {
   const lowered = message.toLowerCase();
 
-  if (key.startsWith(ROTATION_OVERRIDE_NAMESPACE)) {
+  if (key.startsWith(ROTATION_OVERRIDE_NAMESPACE) || key === CALENDAR_OVERRIDE_ARCHIVED_KEY) {
     // The term taken out, `smjen` may remain only as the Team's noun.
     return /smjen(?!a\b|e\b|u\b|om\b|ama\b)/.test(lowered.replace(SHIFT_TYPE_TERM, ''));
   }
@@ -2378,6 +2398,9 @@ describe('the messages obey the voice rules that bind every string', () => {
     //
     // AMENDED BY STORY 7.15: `godisnji.overview` names each member's Team
     // today, as the directory does, and never the Shift Type.
+    //
+    // AMENDED BY 0036, for one key: the day detail's archived refusal names
+    // the Team or the Shift Type, under the builder's overrides rule.
     const found = leafKeys(resource())
       .map((key) => ({ key, message: String(messageAt(key)) }))
       .filter(({ key, message }) => teamTermOutOfTurn(key, message));

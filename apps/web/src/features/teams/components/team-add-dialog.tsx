@@ -10,6 +10,7 @@ import { Notice } from '@/components/ui/notice';
 import type { TeamListScreen } from '@/features/teams/hooks/use-team-list';
 import { teamWriteMessageKey } from '@/features/teams/services/write';
 import { t } from '@/lib/i18n';
+import { NAME_MAX_LENGTH } from '@/utils/name';
 import { NO_TEXT } from '@/utils/text';
 
 /**
@@ -51,6 +52,7 @@ export function TeamAddDialog({ screen }: { readonly screen: TeamListScreen }): 
               ref={nameField}
               id="team-new-name"
               name="name"
+              maxLength={NAME_MAX_LENGTH}
               type="text"
               required
               defaultValue={NO_TEXT}

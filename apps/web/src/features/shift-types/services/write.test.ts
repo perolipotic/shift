@@ -19,9 +19,11 @@ import {
   SHIFT_TYPE_DATE_INVALID,
   SHIFT_TYPE_END_FIELD,
   SHIFT_TYPE_KINDS,
+  SHIFT_TYPE_IN_ROTATION,
   SHIFT_TYPE_NAME_EMPTY,
   SHIFT_TYPE_NAME_FIELD,
   SHIFT_TYPE_NAME_TAKEN,
+  SHIFT_TYPE_NAME_TOO_LONG,
   SHIFT_TYPE_NONWORKING,
   SHIFT_TYPE_RENAMED,
   SHIFT_TYPE_STALE,
@@ -238,6 +240,25 @@ describe('the failure map, by constraint name', () => {
     expect(archiveFailureOf({ code: '42501' }, true)).toBe(SHIFT_TYPE_CHANGE_SCHEDULED);
     expect(archiveFailureOf({ code: '42501' }, false)).toBe(SHIFT_TYPE_WRITE_REFUSED);
     expect(archiveFailureOf({ code: 'PGRST000' }, true)).toBe(SHIFT_TYPE_WRITE_UNAVAILABLE);
+  });
+
+  it('reads 0036\'s 23514 SHIFT_TYPE_IN_ROTATION on an archive as the rotation rule', () => {
+    expect(archiveFailureOf({ code: '23514', message: 'SHIFT_TYPE_IN_ROTATION' }, false)).toBe(SHIFT_TYPE_IN_ROTATION);
+    expect(archiveFailureOf({ code: '23514', message: 'SHIFT_TYPE_IN_ROTATION' }, true)).toBe(SHIFT_TYPE_IN_ROTATION);
+    expect(shiftTypeWriteFailureOf({ code: '23514', message: 'SHIFT_TYPE_IN_ROTATION' })).toBe(
+      SHIFT_TYPE_WRITE_INVALID,
+    );
+  });
+
+  it('reads 0036\'s name length check as too long, and marks the name for it', () => {
+    expect(
+      shiftTypeWriteFailureOf({
+        code: '23514',
+        message: 'new row for relation "shift_types" violates check constraint "shift_types_name_length"',
+      }),
+    ).toBe(SHIFT_TYPE_NAME_TOO_LONG);
+    expect(marksField(SHIFT_TYPE_NAME_TOO_LONG, SHIFT_TYPE_NAME_FIELD)).toBe(true);
+    expect(refusedFieldOf(SHIFT_TYPE_NAME_TOO_LONG, SHIFT_TYPE_DATE_FIELD)).toBe(SHIFT_TYPE_NAME_FIELD);
   });
 });
 
@@ -718,12 +739,14 @@ describe('fields, keys and messages', () => {
   it('gives every failure its own key', () => {
     const failures: ShiftTypeWriteFailure[] = [
       SHIFT_TYPE_NAME_EMPTY,
+      SHIFT_TYPE_NAME_TOO_LONG,
       SHIFT_TYPE_NAME_TAKEN,
       SHIFT_TYPE_TIME_INVALID,
       SHIFT_TYPE_DATE_INVALID,
       SHIFT_TYPE_TIMES_REFUSED,
       SHIFT_TYPE_TIMES_UNCHANGED,
       SHIFT_TYPE_CHANGE_SCHEDULED,
+      SHIFT_TYPE_IN_ROTATION,
       SHIFT_TYPE_CREATED_WITHOUT_TIMES,
       SHIFT_TYPE_STALE,
       SHIFT_TYPE_WRITE_REFUSED,

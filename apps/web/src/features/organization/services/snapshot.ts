@@ -370,6 +370,8 @@ function isLeaveYearEdit(write: OrganizationWrite): write is OrganizationLeaveYe
 export const ORGANIZATION_REFUSED = 'ORGANIZATION_REFUSED';
 /** The `private.name_key(name) <> ''` check (`0024`) refused the value. */
 export const ORGANIZATION_NAME_BLANK = 'ORGANIZATION_NAME_BLANK';
+/** The name is longer than `0036`'s maximum (`organizations_name_length`). */
+export const ORGANIZATION_NAME_TOO_LONG = 'ORGANIZATION_NAME_TOO_LONG';
 /** Some other shape on the table refused the value — a leave-year day out of range. */
 export const ORGANIZATION_INVALID = 'ORGANIZATION_INVALID';
 /** The service could not be reached, or answered with something that is not a row. */
@@ -378,6 +380,7 @@ export const ORGANIZATION_UNAVAILABLE = 'ORGANIZATION_UNAVAILABLE';
 export type OrganizationFailure =
   | typeof ORGANIZATION_REFUSED
   | typeof ORGANIZATION_NAME_BLANK
+  | typeof ORGANIZATION_NAME_TOO_LONG
   | typeof ORGANIZATION_INVALID
   | typeof ORGANIZATION_UNAVAILABLE;
 
@@ -470,6 +473,8 @@ const ONE_ROW = 1;
  */
 const CHECK_VIOLATION = '23514';
 const NAME_CHECK_CONSTRAINT = 'organizations_name_check';
+/** `0036`'s one maximum name length, on this table. */
+const NAME_LENGTH_CONSTRAINT = 'organizations_name_length';
 
 /**
  * Which control each column-level check on the table refuses for, by the
@@ -482,6 +487,7 @@ const NAME_CHECK_CONSTRAINT = 'organizations_name_check';
  */
 export const ORGANIZATION_CONSTRAINT_FIELDS: readonly (readonly [string, OrganizationField])[] = [
   [NAME_CHECK_CONSTRAINT, ORGANIZATION_NAME_FIELD],
+  [NAME_LENGTH_CONSTRAINT, ORGANIZATION_NAME_FIELD],
   ['organizations_leave_year_start_day_check', ORGANIZATION_LEAVE_DAY_FIELD],
   ['organizations_leave_year_start_month_check', ORGANIZATION_LEAVE_MONTH_FIELD],
   ['organizations_brand_accent_check', ORGANIZATION_ACCENT_FIELD],
@@ -636,9 +642,12 @@ export function organizationEditColumns(
 function failureOf(error: PostgrestFailure): OrganizationFailure {
   if (error.code !== CHECK_VIOLATION) return ORGANIZATION_UNAVAILABLE;
 
-  return violatedConstraintOf(error) === NAME_CHECK_CONSTRAINT
-    ? ORGANIZATION_NAME_BLANK
-    : ORGANIZATION_INVALID;
+  const violated = violatedConstraintOf(error);
+
+  if (violated === NAME_CHECK_CONSTRAINT) return ORGANIZATION_NAME_BLANK;
+  if (violated === NAME_LENGTH_CONSTRAINT) return ORGANIZATION_NAME_TOO_LONG;
+
+  return ORGANIZATION_INVALID;
 }
 
 /**

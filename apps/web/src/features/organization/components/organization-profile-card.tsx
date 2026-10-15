@@ -31,6 +31,7 @@ import {
 } from '@/features/organization/utils/element-ids';
 import type { OrganizationSnapshot } from '@/features/organization/services/snapshot';
 import { ORGANIZATION_NAME_FIELD } from '@/features/organization/services/snapshot';
+import { NAME_MAX_LENGTH } from '@/utils/name';
 
 /**
  * One fact with its own change: the fact on the left, `Promijeni` on the
@@ -168,6 +169,7 @@ function NameForm({
           <Input
             id={ORGANIZATION_NAME_FIELD_ID}
             name={ORGANIZATION_NAME_FIELD}
+            maxLength={NAME_MAX_LENGTH}
             type="text"
             required
             defaultValue={organization.name}

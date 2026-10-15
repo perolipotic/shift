@@ -30,6 +30,8 @@ import { minuteOfTime } from '@/utils/time';
 
 /** The name was empty once trimmed (client-side, or `hour_bands_name_not_blank`). */
 export const HOUR_BAND_NAME_EMPTY = 'HOUR_BAND_NAME_EMPTY';
+/** The name is longer than `0036`'s maximum (`hour_bands_name_length`). */
+export const HOUR_BAND_NAME_TOO_LONG = 'HOUR_BAND_NAME_TOO_LONG';
 /** Another band in this organization carries the name, ignoring case and padding. */
 export const HOUR_BAND_NAME_TAKEN = 'HOUR_BAND_NAME_TAKEN';
 /** Another band in this organization starts at the same minute. */
@@ -49,6 +51,7 @@ export const HOUR_BAND_UNKNOWN = 'HOUR_BAND_UNKNOWN';
 
 export type HourBandWriteFailure =
   | typeof HOUR_BAND_NAME_EMPTY
+  | typeof HOUR_BAND_NAME_TOO_LONG
   | typeof HOUR_BAND_NAME_TAKEN
   | typeof HOUR_BAND_START_TAKEN
   | typeof HOUR_BAND_START_INVALID
@@ -125,6 +128,7 @@ const VALUE_CLASSES = ['22', '23'];
 const START_UNIQUE = 'hour_bands_organization_id_start_time_key';
 const NAME_UNIQUE = 'hour_bands_organization_name_key';
 const NAME_CHECK = 'hour_bands_name_not_blank';
+const NAME_LENGTH_CHECK = 'hour_bands_name_length';
 const START_CHECKS = ['hour_bands_start_before_midnight', 'hour_bands_start_whole_minute'];
 
 /**
@@ -150,6 +154,7 @@ export function hourBandWriteFailureOf(error: HourBandWriteError): HourBandWrite
 
   if (error.code === CHECK_VIOLATION) {
     if (named.includes(NAME_CHECK)) return HOUR_BAND_NAME_EMPTY;
+    if (named.includes(NAME_LENGTH_CHECK)) return HOUR_BAND_NAME_TOO_LONG;
     if (START_CHECKS.some((check) => named.includes(check))) return HOUR_BAND_START_INVALID;
 
     return HOUR_BAND_WRITE_INVALID;
@@ -298,7 +303,7 @@ export function refusedFieldOf(failure: HourBandWriteFailure): HourBandField {
 /** Whether a refusal marks one field as the invalid one. */
 export function marksField(failure: HourBandWriteFailure | null, field: HourBandField): boolean {
   if (failure === null) return false;
-  if (failure === HOUR_BAND_NAME_EMPTY || failure === HOUR_BAND_NAME_TAKEN) {
+  if (failure === HOUR_BAND_NAME_EMPTY || failure === HOUR_BAND_NAME_TOO_LONG || failure === HOUR_BAND_NAME_TAKEN) {
     return field === HOUR_BAND_NAME_FIELD;
   }
   if (failure === HOUR_BAND_START_TAKEN || failure === HOUR_BAND_START_INVALID) {
@@ -315,6 +320,7 @@ export function hourBandWriteMessageKey(
   failure: HourBandWriteFailure,
 ):
   | 'organization.hourBands.error.nameEmpty'
+  | 'organization.hourBands.error.nameTooLong'
   | 'organization.hourBands.error.nameTaken'
   | 'organization.hourBands.error.startTaken'
   | 'organization.hourBands.error.startInvalid'
@@ -324,6 +330,7 @@ export function hourBandWriteMessageKey(
   | 'organization.hourBands.error.saveUnavailable'
   | 'organization.hourBands.error.unknown' {
   if (failure === HOUR_BAND_NAME_EMPTY) return 'organization.hourBands.error.nameEmpty';
+  if (failure === HOUR_BAND_NAME_TOO_LONG) return 'organization.hourBands.error.nameTooLong';
   if (failure === HOUR_BAND_NAME_TAKEN) return 'organization.hourBands.error.nameTaken';
   if (failure === HOUR_BAND_START_TAKEN) return 'organization.hourBands.error.startTaken';
   if (failure === HOUR_BAND_START_INVALID) return 'organization.hourBands.error.startInvalid';

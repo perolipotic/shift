@@ -80,3 +80,23 @@ export function enteredName(value: string): string | null {
 
   return trimmed === '' ? null : trimmed;
 }
+
+/**
+ * The longest name any name column stores: `0036`'s `<table>_name_length`
+ * checks on organizations, members, teams, hour bands and shift types, counted
+ * in code points (`char_length`). Every name input carries it as `maxLength`,
+ * which counts UTF-16 units — never more than code points — so a typed name
+ * can never exceed it; the database refuses what reaches it another way, and
+ * each write module reads that refusal by {@link namesLengthCheck}.
+ */
+export const NAME_MAX_LENGTH = 100;
+
+/**
+ * Whether a `23514` refusal's MESSAGE names one of `0036`'s name-length
+ * checks: PostgreSQL quotes the constraint, `violates check constraint
+ * "teams_name_length"`. Never `details`, which holds the values the person
+ * typed, so a typed name that spells a constraint cannot be read as one.
+ */
+export function namesLengthCheck(message: string | undefined): boolean {
+  return /check constraint "[a-z_]+_name_length"/.test(message ?? '');
+}

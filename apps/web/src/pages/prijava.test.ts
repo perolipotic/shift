@@ -2491,10 +2491,13 @@ const KEY_SOURCES = [
     //
     // TEN SINCE STORY 1.7b: the in-use refusal, an archive of a team somebody
     // is on today or is scheduled onto.
+    //
+    // TWELVE SINCE 0036: a name over the maximum, and an archive of a team with a
+    // rotation in force or scheduled.
     name: 'the team write rules',
     file: TEAM_WRITE_KEYS,
     keys: memberListKeys,
-    strings: 10,
+    strings: 12,
   },
   {
     // STORY 1.8. FOUR on the roster: the heading while there is no roster to
@@ -2667,10 +2670,12 @@ const KEY_SOURCES = [
     // the taken start, the invalid start, the stale screen, the outright
     // refusal, another invalid value, the service, and a band the list lacks —
     // and the two confirmations, an edit and a removal.
+    //
+    // TWELVE SINCE 0036: a name over the maximum.
     name: 'the hour band write rules',
     file: HOUR_BAND_WRITE_KEYS,
     keys: memberListKeys,
-    strings: 11,
+    strings: 12,
   },
   {
     // STORY 2.2b. On the shift type list: the destination's own heading, the
@@ -2722,10 +2727,13 @@ const KEY_SOURCES = [
   {
     // The two kinds, the thirteen refusals and the five confirmations — the
     // created one among them, rendered through `shiftTypeSavedMessageKey`.
+    //
+    // TWENTY-TWO SINCE 0036: a name over the maximum, and an archive of a type a
+    // rotation in force or scheduled steps through.
     name: 'the shift type write rules',
     file: SHIFT_TYPE_WRITE_KEYS,
     keys: memberListKeys,
-    strings: 20,
+    strings: 22,
   },
   {
     // STORY 2.3b. THIRTY-SIX on the builder since the renegotiation — the
@@ -3261,18 +3269,22 @@ const KEY_SOURCES = [
     // the two things a landed write says — saved, and removed. NINE SINCE
     // STORY 3.5c: a pending override removed from a day with no rotation.
     // TEN SINCE STORY 7.9: no type chosen in the type dialog, its own refusal.
+    //
+    // ELEVEN SINCE 0036: a team or type archived while the day was open.
     name: 'the calendar override write rules',
     file: CALENDAR_OVERRIDE_WRITE_KEYS,
     keys: messageKeyUnions,
-    strings: 10,
+    strings: 11,
   },
   {
     // STORY 3.6b: the six refusals of changing a roster or removing a
     // change, and the two things a landed write says — saved, and removed.
+    //
+    // NINE SINCE 0036: a team archived while the day was open.
     name: 'the calendar roster write rules',
     file: CALENDAR_ROSTER_WRITE_KEYS,
     keys: messageKeyUnions,
-    strings: 8,
+    strings: 9,
   },
   {
     // The read failure, and its retry (deferred-work sweep).
@@ -3477,10 +3489,12 @@ const KEY_SOURCES = [
     // SIXTY-FOUR SINCE STORY 7.13c: the deactivation's final button with its
     // date (`statusSubmitMessageKey`), and its consequence in numbers with and
     // without the month clause (`deactivationConsequenceMessageKey`).
+    //
+    // SIXTY-FIVE SINCE 0036: a name over the maximum.
     name: 'the member write rules',
     file: MEMBER_WRITE_KEYS,
     keys: memberWriteKeys,
-    strings: 64,
+    strings: 65,
   },
   {
     // ELEVEN on the member list's rules: four column headings, two permission
@@ -3588,10 +3602,12 @@ const KEY_SOURCES = [
     // shows exactly one message region, so a second mapping would need a
     // screen-side ternary choosing between them — the executed-by-nothing
     // branch this entry exists to abolish.
+    //
+    // TEN SINCE 0036: a name over the maximum.
     name: 'the organization failure-to-message mapping',
     file: ORGANIZATION_MESSAGE_KEYS,
     keys: messageKeyUnion,
-    strings: 9,
+    strings: 10,
   },
   // SIX literal keys on the chrome — the navigation landmark's name twice (one
   // per bar), the collapse's two state-dependent names, the exit and the retry —
@@ -7635,10 +7651,19 @@ describe('every form refuses in Croatian, never in the browser’s language (B29
     }
   });
 
-  it('caps no field by maxLength: the code-point preflight is the one limit (C485)', () => {
+  it('caps no reason by maxLength: the code-point preflight is the one limit (C485)', () => {
     // `maxLength` counts UTF-16 units while the database counts code points,
-    // so it contradicted the preflight on an emoji-heavy reason.
-    for (const file of forms) expect(source(file), file).not.toMatch(/\bmaxLength=/);
+    // so it contradicted the preflight on an emoji-heavy reason. The NAME
+    // inputs keep theirs (`NAME_MAX_LENGTH`, 0036), beside their own
+    // too-long refusals.
+    const reasons = forms.flatMap((file) =>
+      [...source(file).matchAll(/<Input\b[\s\S]*?\/>/g)]
+        .map((found) => found[0])
+        .filter((input) => input.includes('name="reason"')),
+    );
+
+    expect(reasons, 'the three reason inputs are not found').toHaveLength(3);
+    for (const input of reasons) expect(input).not.toMatch(/\bmaxLength=/);
   });
 });
 

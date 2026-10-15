@@ -53,8 +53,8 @@ Every screen (destination, form, placeholder or not-found) is built the same way
 - Every `<form>` is `noValidate` (B298): `required`, `min`, `max` and
   `type="email"` stay for their semantics, but the app's own preflight
   refuses, in Croatian from `hr.json`, never a browser bubble in the OS's
-  language. No field carries `maxLength`: the preflight counts code points as
-  the database does. `prijava.test.ts` sweeps both.
+  language. No reason field carries `maxLength`: its preflight counts code
+  points as the database does (a name keeps `NAME_MAX_LENGTH`). `prijava.test.ts` sweeps both.
 - A select is the `Select` primitive (`ui/select.tsx`), a native `<select>`
   in the Input look with a chevron in place of the browser's arrow. A screen
   composes only `className="h-11"` for the 44 px floor, as on `Input`, and

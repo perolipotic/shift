@@ -10,6 +10,7 @@ import {
   HOUR_BAND_NAME_EMPTY,
   HOUR_BAND_NAME_FIELD,
   HOUR_BAND_NAME_TAKEN,
+  HOUR_BAND_NAME_TOO_LONG,
   HOUR_BAND_REMOVED,
   HOUR_BAND_SAVED,
   HOUR_BAND_STALE,
@@ -216,6 +217,7 @@ describe('adding a band', () => {
     { name: 'a taken start', answer: uniqueOn('hour_bands_organization_id_start_time_key'), code: HOUR_BAND_START_TAKEN },
     { name: 'a taken name', answer: uniqueOn('hour_bands_organization_name_key'), code: HOUR_BAND_NAME_TAKEN },
     { name: 'a blank name', answer: checkOn('hour_bands_name_not_blank'), code: HOUR_BAND_NAME_EMPTY },
+    { name: 'a name over the maximum', answer: checkOn('hour_bands_name_length'), code: HOUR_BAND_NAME_TOO_LONG },
     { name: 'a start at 24:00', answer: checkOn('hour_bands_start_before_midnight'), code: HOUR_BAND_START_INVALID },
     { name: 'a start with seconds', answer: checkOn('hour_bands_start_whole_minute'), code: HOUR_BAND_START_INVALID },
   ])('names $name as its own refusal', async ({ answer, code }) => {
@@ -493,6 +495,7 @@ describe('the screen state', () => {
 describe('the messages', () => {
   const failures: HourBandWriteFailure[] = [
     HOUR_BAND_NAME_EMPTY,
+    HOUR_BAND_NAME_TOO_LONG,
     HOUR_BAND_NAME_TAKEN,
     HOUR_BAND_START_TAKEN,
     HOUR_BAND_START_INVALID,
