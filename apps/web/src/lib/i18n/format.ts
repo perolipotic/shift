@@ -277,7 +277,9 @@ function noonOf(isoDate: string): Date {
  * `Date` would roll it over to 3 March, so the round trip back to the same
  * string is what refuses it. `features/members/services/list.ts` reads status dates with this
  * and `features/members/services/write.ts` judges an entered date with it; a second validator
- * is how one of them admits a date the other refuses.
+ * is how one of them admits a date the other refuses. Leave judges its ranges
+ * with it too (`features/leave/services/leave-write.ts`, retro A9), and the
+ * shared date steps (`@/utils/dates`) are built on it.
  */
 export function isIsoDate(value: string): boolean {
   if (!ISO_DATE.test(value)) return false;

@@ -60,7 +60,9 @@ function renderCell(
  * while the date column stays at its left. Stacked corner over header over
  * date column over cells, and ISOLATED, so those layers never paint over the
  * phone's sticky bottom bar. In print the bound is lifted, so a printed month
- * is whole.
+ * is whole. On a phone's screen the bound is also the room between the
+ * sticky head and the bottom bar (`data-grid-bound`, `index.css`), so the
+ * team header is never under the head (deferred-work E816).
  *
  * THE MARGINS ARE THE SIZES: the date column is `w-28` and each cell's
  * `scroll-margin-left` is `28`; the header is `h-11` and each cell's
@@ -86,7 +88,10 @@ export function CalendarGrid({
       {/* The primitive's wrapper IS the one scroller (`table.tsx`); this only
           bounds its height, so the sticky header has something to stick in,
           and isolates the sticky layers' stacking from the page's. */}
-      <div className="isolate [&>div]:max-h-[70svh] print:[&>div]:max-h-none print:[&>div]:overflow-visible">
+      <div
+        data-grid-bound
+        className="isolate [&>div]:max-h-[70svh] print:[&>div]:max-h-none print:[&>div]:overflow-visible"
+      >
         <Table
           ref={screen.gridRef}
           role="grid"

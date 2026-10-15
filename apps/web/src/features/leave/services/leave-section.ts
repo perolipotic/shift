@@ -27,12 +27,11 @@ import {
   LEAVE_FAILED,
   LEAVE_GONE,
   LEAVE_OVERLAP,
-  isCalendarDate,
   type LeaveAmendOutcome,
   type LeaveChangeFailure,
   type LeaveWriteOutcome,
 } from '@/features/leave/services/leave-write';
-import { RANGE_DASH, compareText, formatIsoDate, nextIsoDate, previousIsoDate } from '@/lib/i18n/format';
+import { RANGE_DASH, compareText, formatIsoDate, isIsoDate, nextIsoDate, previousIsoDate } from '@/lib/i18n/format';
 
 /**
  * The member page's leave card (story 5.1c) as a pure view model, in a `.ts`
@@ -376,8 +375,8 @@ export function leavePreviewStateOf(
   to: string,
   amending: LeaveRecord | null = null,
 ): LeavePreviewState {
-  if (!isCalendarDate(from)) return { kind: LEAVE_PREVIEW_REASON, reason: LEAVE_RANGE_INCOMPLETE, field: LEAVE_FROM_FIELD };
-  if (!isCalendarDate(to)) return { kind: LEAVE_PREVIEW_REASON, reason: LEAVE_RANGE_INCOMPLETE, field: LEAVE_TO_FIELD };
+  if (!isIsoDate(from)) return { kind: LEAVE_PREVIEW_REASON, reason: LEAVE_RANGE_INCOMPLETE, field: LEAVE_FROM_FIELD };
+  if (!isIsoDate(to)) return { kind: LEAVE_PREVIEW_REASON, reason: LEAVE_RANGE_INCOMPLETE, field: LEAVE_TO_FIELD };
   if (amending !== null && from === amending.from && to === amending.to) {
     return { kind: LEAVE_PREVIEW_REASON, reason: LEAVE_RANGE_UNCHANGED, field: LEAVE_FROM_FIELD };
   }
@@ -897,7 +896,7 @@ function originOf(origin: unknown): LeaveHandoffOrigin | null {
 
   const { memberId, date, teamId } = origin as Record<string, unknown>;
 
-  if (!isText(memberId) || typeof date !== 'string' || !isCalendarDate(date) || !isText(teamId)) return null;
+  if (!isText(memberId) || typeof date !== 'string' || !isIsoDate(date) || !isText(teamId)) return null;
 
   return { memberId, date, teamId };
 }
@@ -926,7 +925,7 @@ export function leaveHandoffOf(state: unknown): LeaveHandoff | null {
 
   const { from: start, to: end } = range as Record<string, unknown>;
 
-  if (typeof start !== 'string' || typeof end !== 'string' || !isCalendarDate(start) || !isCalendarDate(end) || end < start) {
+  if (typeof start !== 'string' || typeof end !== 'string' || !isIsoDate(start) || !isIsoDate(end) || end < start) {
     return null;
   }
 

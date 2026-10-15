@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DESTINATIONS,
   destinationsFor,
+  groupDestinations,
   isCurrentDestination,
   PHONE_TABS,
   phoneNavigationFor,
@@ -222,17 +223,17 @@ describe('the table stores keys, never labels', () => {
     }
   });
 
-  it('carries nothing but keys, paths and role names', () => {
+  it('carries nothing but keys, paths, role names and group names', () => {
     // The complement, and the stronger claim: the assertion above only refuses
     // strings that are ALREADY in `hr.json`, so a label authored nowhere else
-    // would pass it. This allows three shapes and nothing more.
-    const roles: readonly string[] = ['member_role', 'admin'];
+    // would pass it. This allows four shapes and nothing more.
+    const names: readonly string[] = ['member_role', 'admin', 'overview', 'settings'];
 
     for (const destination of DESTINATIONS) {
       for (const value of stringsOf(destination)) {
         expect(
-          value.startsWith('nav.') || value.startsWith('/') || roles.includes(value),
-          `a destination carries ${value}, which is neither a key, a path nor a role`,
+          value.startsWith('nav.') || value.startsWith('/') || names.includes(value),
+          `a destination carries ${value}, which is neither a key, a path, a role nor a group`,
         ).toBe(true);
       }
     }
@@ -279,8 +280,8 @@ describe('the readers read what they claim to read', () => {
     // and a string nested under an object property. `{ meta: { label: 'Danas' } }`
     // is the exact entry the sweeps exist to refuse.
     expect(
-      stringsOf({ key: 'nav.danas', path: '/danas', roles: ['admin'] } as Destination).sort(),
-    ).toEqual(['/danas', 'admin', 'nav.danas']);
+      stringsOf({ key: 'nav.danas', path: '/danas', roles: ['admin'], group: 'overview' } as Destination).sort(),
+    ).toEqual(['/danas', 'admin', 'nav.danas', 'overview']);
     expect(stringsOf({ meta: { label: 'Danas' } })).toEqual(['Danas']);
     expect(stringsOf({ a: [{ b: ['deep'] }] })).toEqual(['deep']);
     expect(stringsOf({ n: 1, missing: null })).toEqual([]);
@@ -336,7 +337,7 @@ describe('the phone bar shows four tabs and puts the rest in Više (story 7.3)',
     const { tabs, more } = phoneNavigationFor(role);
     const keys = (list: readonly Destination[]) => list.map((destination) => destination.key);
 
-    return { tabs: keys(tabs), everyone: keys(more.everyone), adminOnly: keys(more.adminOnly) };
+    return { tabs: keys(tabs), overview: keys(more.overview), settings: keys(more.settings) };
   }
 
   it('gives the member role Danas, Kalendar, Sati and Godišnji as tabs, in order', () => {
@@ -384,8 +385,8 @@ describe('the phone bar shows four tabs and puts the rest in Više (story 7.3)',
   it.each<MemberRole>(['member_role', 'admin'])(
     'splits every destination %s reaches between the tabs and Više, once each, in binding order',
     (role) => {
-      const { tabs, everyone, adminOnly } = phoneKeysFor(role);
-      const more = [...everyone, ...adminOnly];
+      const { tabs, overview, settings } = phoneKeysFor(role);
+      const more = [...overview, ...settings];
       const all = keysFor(role);
 
       // No overlap, and nothing lost: tabs ∪ more is exactly the role's list.
@@ -399,14 +400,56 @@ describe('the phone bar shows four tabs and puts the rest in Više (story 7.3)',
   );
 
   it('gives the admin Sati and Godišnji under Pregled, and the settings under Postavke', () => {
-    expect(phoneKeysFor('admin').everyone).toEqual(['nav.sati', 'nav.godisnji']);
-    expect(phoneKeysFor('admin').adminOnly).toEqual(['nav.postavkeRotacije', 'nav.organizacija']);
+    expect(phoneKeysFor('admin').overview).toEqual(['nav.sati', 'nav.godisnji']);
+    expect(phoneKeysFor('admin').settings).toEqual(['nav.postavkeRotacije', 'nav.organizacija']);
   });
 
   it('gives the member Ljudi under Pregled in Više, and nothing under Postavke (story 7.17)', () => {
     // A member's four tabs are Danas, Kalendar, Sati and Godišnji; the
     // directory is their fifth destination, one press away in Više.
-    expect(phoneKeysFor('member_role').everyone).toEqual(['nav.ljudi']);
-    expect(phoneKeysFor('member_role').adminOnly).toEqual([]);
+    expect(phoneKeysFor('member_role').overview).toEqual(['nav.ljudi']);
+    expect(phoneKeysFor('member_role').settings).toEqual([]);
+  });
+});
+
+describe('the sidebar and the sheet share two groups, Pregled and Postavke', () => {
+  /** A list's groups as key sequences. */
+  function groupKeys(list: readonly Destination[]) {
+    const { overview, settings } = groupDestinations(list);
+    const keys = (group: readonly Destination[]) => group.map((destination) => destination.key);
+
+    return { overview: keys(overview), settings: keys(settings) };
+  }
+
+  it('gives the admin sidebar six places under Pregled and the two settings under Postavke', () => {
+    // Raspored is admin-only and still daily work: it stays under Pregled, in
+    // binding order, rather than joining the settings.
+    expect(groupKeys(destinationsFor('admin'))).toEqual({
+      overview: ['nav.danas', 'nav.kalendar', 'nav.sati', 'nav.godisnji', 'nav.raspored', 'nav.ljudi'],
+      settings: ['nav.postavkeRotacije', 'nav.organizacija'],
+    });
+  });
+
+  it('gives the member sidebar everything under Pregled and nothing under Postavke', () => {
+    expect(groupKeys(destinationsFor('member_role'))).toEqual({
+      overview: keysFor('member_role'),
+      settings: [],
+    });
+  });
+
+  it('makes only admin-only destinations settings (UX-DR31)', () => {
+    // A member has no configuration surface, so a setting a member reached
+    // would put a Postavke heading in a member's navigation.
+    for (const destination of DESTINATIONS.filter((each) => each.group === 'settings')) {
+      expect(destination.roles, `${destination.key} is a setting a member reaches`).toEqual(['admin']);
+    }
+  });
+
+  it('loses and repeats nothing when it splits a list', () => {
+    const { overview, settings } = groupKeys(DESTINATIONS);
+
+    expect([...overview, ...settings].sort()).toEqual(DESTINATIONS.map((each) => each.key).sort());
+    expect(overview.length).toBeGreaterThan(0);
+    expect(settings.length).toBeGreaterThan(0);
   });
 });

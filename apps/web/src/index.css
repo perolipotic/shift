@@ -478,11 +478,18 @@
    * its 1 px edge) — the space the content above it already clears with its
    * own `pb-[calc(4rem+1px+…)]` — so the page's scroll padding says the same:
    * a `scrollIntoView` (the calendar's focused cell) stops above the bar
-   * rather than under it. From 640 px up there is no bar. */
+   * rather than under it. From 640 px up there is no bar.
+   *
+   * The top clears the phone's sticky head of *Kalendar* and *Sati*
+   * (`StickyHead`, deferred-work E816) the same way, by what it covers in
+   * `--sticky-head` (the toolbar, and room for its one-line filter summary),
+   * which is unset (0) on every other screen. */
   html {
+    scroll-padding-top: var(--sticky-head, 0px);
     scroll-padding-bottom: calc(4rem + 1px + env(safe-area-inset-bottom, 0px));
 
     @media (min-width: 640px) {
+      scroll-padding-top: 0;
       scroll-padding-bottom: 0;
     }
   }
@@ -673,5 +680,24 @@
   @media (forced-colors: active) {
     border: 2px dotted CanvasText;
     border-inline-style: dashed;
+  }
+}
+
+/* DEFERRED-WORK E816: on a phone's screen the calendar grid's scroller fits
+ * in what is left below the sticky head (`--sticky-head`) with the page
+ * scrolled to its end, so its own sticky team header is never under the head:
+ * the viewport less the head, the bottom bar (4 rem + 1 px, in flow at the
+ * page's end) and the content's own clearance of it (the same again,
+ * `chrome.tsx`), the page's 1.5 rem below the Card and the Card's two 1 px
+ * borders. Never taller than the 70 svh it has everywhere; small viewport
+ * units, as that bound. UNLAYERED, so it wins over the wrapper's
+ * `[&>div]:max-h-[70svh]` utility, and SCREEN only, so print's lifted bound
+ * still wins on paper. */
+@media screen and (max-width: 639.98px) {
+  [data-grid-bound] > div {
+    max-height: min(
+      70svh,
+      calc(100svh - var(--sticky-head, 0px) - 2 * (4rem + 1px + env(safe-area-inset-bottom, 0px)) - 1.5rem - 2px)
+    );
   }
 }

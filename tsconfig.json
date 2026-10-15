@@ -21,8 +21,11 @@
     // `apps/web` module importing `@shift/domain` (`test/rls-isolation.test.ts`
     // drives `features/leave/services/leave-write.ts` over PostgREST) is
     // checked against the domain's source, never a stale or missing `dist`.
+    // `@/*` likewise: that module reads dates through `@/lib/i18n/format`, the
+    // one date validator, and the root vitest config maps the same alias.
     "paths": {
-      "@shift/domain": ["./packages/domain/src/index.ts"]
+      "@shift/domain": ["./packages/domain/src/index.ts"],
+      "@/*": ["./apps/web/src/*"]
     }
   },
   "//": "The workspace-root project. `pnpm -r` skips the root, so without this file `supabase/functions/**` — the only branching logic in the system — and every root test would be type-checked by nothing at all. `e2e/**` and `playwright.config.ts` have their own project (`e2e/tsconfig.json`, for the `dom` lib the page callbacks need), chained by the root `typecheck` script, and so do `smoke/**` and `playwright.smoke.config.ts` (`smoke/tsconfig.json`).",

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-import { FilterBar } from '@/components/filter-bar';
+import { FilterBar, activeFilterSummaryOf } from '@/components/filter-bar';
 import { calendarFilterBarOf } from '@/features/calendar/utils/filters';
 import type { CalendarFilterChange, CalendarMonth } from '@/features/calendar/utils/month';
 
@@ -23,4 +23,9 @@ export function CalendarFilters({
   if (shown.filter.teams.length === 0 && shown.filter.people.length === 0) return null;
 
   return <FilterBar model={calendarFilterBarOf(shown)} onChange={onFilter} />;
+}
+
+/** The active filters of *Sve smjene* as one line, or `null` with none on: the phone's sticky head repeats it (deferred-work E816). */
+export function calendarFilterSummaryOf(shown: CalendarMonth): string | null {
+  return activeFilterSummaryOf(calendarFilterBarOf(shown));
 }

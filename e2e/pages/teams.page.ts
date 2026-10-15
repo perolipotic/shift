@@ -12,6 +12,16 @@ export class TeamsPage extends BasePage {
     return this.editLinkNamed(hr.smjene.edit, teamName);
   }
 
+  /** The active teams as stacked rows below 640 px, named by their heading (UX-DR17). */
+  get activeList(): Locator {
+    return this.page.getByRole('list', { name: hr.smjene.activeHeading, exact: true });
+  }
+
+  /** Every table on the screen: none below 640 px, where the teams stack. */
+  get tables(): Locator {
+    return this.page.getByRole('table');
+  }
+
   /** The add dialog. */
   get addDialog(): Locator {
     return this.dialog(hr.smjene.addHeading);

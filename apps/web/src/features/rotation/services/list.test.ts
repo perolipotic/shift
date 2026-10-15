@@ -53,7 +53,8 @@ import {
 import { scheduledChangeOf } from '@/features/rotation/services/history';
 import { pendingOverrideCountOf, pendingOverrideRowsOf } from '@/features/rotation/services/override-disposition';
 import { cancelScheduledRotation, type RotationAssignmentDeleteTable } from '@/features/rotation/services/write';
-import { datesFrom, draftRefusalOf, prefillOf, withEffectiveFrom } from '@/features/rotation/utils/draft';
+import { draftRefusalOf, prefillOf, withEffectiveFrom } from '@/features/rotation/utils/draft';
+import { datesFrom } from '@/utils/dates';
 import { rotationWarningLinesOf, shownSaveOutcomeOf } from '@/features/rotation/utils/warnings';
 
 /**
