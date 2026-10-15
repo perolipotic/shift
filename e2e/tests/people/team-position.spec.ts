@@ -65,7 +65,7 @@ test('with positions in use, a member moved in as driver shows it on the roster,
 
   await teamsPage.goto();
   // Under the rotation's hold (`holdRotationForTeams`): a team added between
-  // a rotation spec's save and its reload would empty that spec's prefill.
+  // a rotation spec's save and its reload would change that spec's prefill.
   await holdRotationForTeams(async () => {
     // The add form is a dialog, opened from the header.
     await teamsPage.addTeam(teamName);

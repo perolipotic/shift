@@ -29,7 +29,7 @@ import {
   HOUR_BAND_LIST_PARTS,
   HOUR_BAND_SCREENS_EXEMPT,
 } from '@/features/hour-bands/hour-band-screens.fixture';
-import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
+import { ARROW_DOWN, ARROW_UP, MEMBERS_LIST_KEY } from '@/features/members/services/list';
 import { DESTINATIONS } from '@/features/navigation/utils/destinations';
 import {
   SETTINGS_SCREEN_EXEMPT,
@@ -46,6 +46,7 @@ import {
   TEAM_ROSTER_PARTS,
   TEAM_SCREENS_EXEMPT,
 } from '@/features/teams/team-screens.fixture';
+import { leafKeys } from '@/lib/i18n/resource-tree.fixture';
 
 /**
  * The sign-in path's screens, asserted at source level (story 1.1d, extended by
@@ -191,7 +192,8 @@ const MEMBER_LIST: readonly string[] = [
   join(srcRoot, 'components', 'option-filter-bar.tsx'),
   join(MEMBERS_FEATURE, 'components', 'cell-view.tsx'),
   join(MEMBERS_FEATURE, 'utils', 'cell-content.ts'),
-  join(MEMBERS_FEATURE, 'utils', 'sort-glyphs.ts'),
+  // Epic 4 retro D2: the one glyph record every sorted heading draws from.
+  join(srcRoot, 'components', 'sort-glyphs.ts'),
 ];
 
 /**
@@ -574,6 +576,8 @@ const ACCENT_KEYS = join(srcRoot, 'features', 'organization', 'utils', 'accent.t
 const RANK_KEYS = join(srcRoot, 'features', 'members', 'utils', 'rank.ts');
 /** Story 7.11: the member page header's status badge, off one `\w*MessageKey` union. */
 const MEMBER_FACTS_KEYS = join(srcRoot, 'features', 'members', 'utils', 'member-facts.ts');
+/** Decision 16's *Što se mijenja*: the team dialog's two lines, each with or without a range. */
+const MEMBER_MOVE_PREVIEW_KEYS = join(srcRoot, 'features', 'members', 'services', 'team-move-preview.ts');
 /** Story 7.11: the member page's element ids, named once; no string a screen renders. */
 const MEMBER_ELEMENT_IDS = join(srcRoot, 'features', 'members', 'utils', 'element-ids.ts');
 
@@ -682,26 +686,34 @@ const DESTINATION_SCREENS = PLACEHOLDER_SLUGS.map((slug) => ({
  * over a shortened list is a quieter pass than a failing assertion.
  */
 const SCREENS = [
-  // `expectedControls` is what stops the general tap-target sweep passing on an
-  // empty set: two of these screens carry no control at all today, so a loop
-  // with no count behind it read as coverage while asserting nothing on half
-  // its cases. A screen that gains a control fails here until the number moves,
-  // which is the moment somebody confirms the new control is measured.
+  // `expectedFields` and `expectedButtons` are what stop the general tap-target
+  // sweep passing on an empty set: two of these screens carry no control at all
+  // today, so a loop with no count behind it read as coverage while asserting
+  // nothing on half its cases. A screen that gains a control fails here until
+  // the number moves, which is the moment somebody confirms the new control is
+  // measured.
+  //
+  // TWO NUMBERS, NOT ONE TOTAL. A field is an `<Input>` or a `<Select>`, a
+  // button is a `<Button>`. They were one `expectedControls` sum until the
+  // test-sweeps cleanup, and a sum cannot notice what the comments below say it
+  // notices: a sixth field arriving in the same change as a removed button left
+  // the total unchanged. The totals the comments below narrate are the two
+  // numbers added together.
   // SEVEN SINCE STORY 7.7: three fields (organization, username, password)
   // and four buttons (`Promijeni`, the password toggle, `Prijava` and the
   // `Zaboravljena lozinka?` disclosure). The bare-`/prijava` prompt's two
   // controls went with it.
-  { name: 'the sign-in screen', file: SCREEN, expectedControls: 7 },
+  { name: 'the sign-in screen', file: SCREEN, expectedFields: 3, expectedButtons: 4 },
   // STORY 7.8. FIVE on the set-password step: the new password and its
   // repeat, the show/hide toggle, `Spremi i nastavi` and `Odjava`.
-  { name: 'the set-password screen', file: SET_PASSWORD_SCREEN, expectedControls: 5 },
-  { name: 'the not-found component', file: NOT_FOUND, expectedControls: 1 },
+  { name: 'the set-password screen', file: SET_PASSWORD_SCREEN, expectedFields: 2, expectedButtons: 3 },
+  { name: 'the not-found component', file: NOT_FOUND, expectedFields: 0, expectedButtons: 1 },
   // A148. ONE on the error screen: *Pokušaj ponovno*. It shows nothing of the
   // error itself, which the literal sweeps below hold it to.
-  { name: 'the error screen', file: ERROR_SCREEN, expectedControls: 1 },
+  { name: 'the error screen', file: ERROR_SCREEN, expectedFields: 0, expectedButtons: 1 },
   // A224. ZERO on the pending skeleton, which renders no string either, and is
   // swept so it stays that way.
-  { name: 'the pending skeleton', file: ROUTE_PENDING, expectedControls: 0 },
+  { name: 'the pending skeleton', file: ROUTE_PENDING, expectedFields: 0, expectedButtons: 0 },
   // EIGHT, and it was seven until story 1.4b: the settings surface carries five
   // fields — name, type, timezone and the leave year's month and day — plus a
   // save, a cancel, and now the logo's choose action. The number is what notices
@@ -739,7 +751,7 @@ const SCREENS = [
   // accent and the fire-rank setting are radio groups, which are not fields
   // anybody types in, and a slug, a zone or a locale control would still be
   // the count moving.
-  { name: 'the organization settings surface', file: SETTINGS, expectedControls: 11 },
+  { name: 'the organization settings surface', file: SETTINGS, expectedFields: 3, expectedButtons: 8 },
   // THREE on the member list, and the count is what keeps a fourth from
   // arriving unreviewed: the search field, the permission-level filter, and ONE
   // `<Button>` — the sort control, written once inside a map over
@@ -775,7 +787,8 @@ const SCREENS = [
   // Kalendar and Sati sets) and its summary line's `Poništi filtre`.
   // EIGHT with the option-chip bar's own `Filtri` (`option-filter-bar.tsx`,
   // read with the member list since it is only *Ljudi*'s).
-  { name: 'the member list', file: MEMBER_LIST, expectedControls: 8 },
+  // NINE SINCE THE DEFERRED-WORK SWEEP: the read failure's retry.
+  { name: 'the member list', file: MEMBER_LIST, expectedFields: 1, expectedButtons: 8 },
   // EIGHT on the create form: four `<Input>`s — name, username, address,
   // allowance — the level `<select>`, and three `<Button>`s, which are Save,
   // Cancel and the link back to the list. The count is what notices a SIXTH
@@ -792,7 +805,7 @@ const SCREENS = [
   // ELEVEN SINCE STORY 7.13b, a dialog in two steps: the link back to the list
   // is gone (the dialog's close is the primitive's own), and the second step
   // adds *Dodaj još jednu* and *Otvori stranicu osobe*.
-  { name: 'the member create form', file: MEMBER_CREATE, expectedControls: 11 },
+  { name: 'the member create form', file: MEMBER_CREATE, expectedFields: 6, expectedButtons: 5 },
   // TWELVE on the edit form: the same eight, plus the admin-issued reset's
   // FOUR `<Button>`s — the offer, the confirm and cancel that replace it, and
   // the dismiss on the shown credential. Four and not one, because the reset is
@@ -843,7 +856,10 @@ const SCREENS = [
   // FORTY-SEVEN SINCE STORY 7.12: the leave card's od–do form moves into its
   // dialog — the same two fields and Spremi, its cancel now always drawn —
   // and the card's header gains *Upiši godišnji*.
-  { name: 'the member edit form', file: MEMBER_EDIT, expectedControls: 47 },
+  // FORTY-NINE SINCE THE DEFERRED-WORK SWEEP: the retries beside the member
+  // read's and the teams read's failures. The reset's password moved into a
+  // dialog with its `Sakrij lozinku`; its close is the shared header's.
+  { name: 'the member edit form', file: MEMBER_EDIT, expectedFields: 12, expectedButtons: 37 },
   // STORY 1.7a. FOUR on the team list: the link back to `Ljudi`, the one name
   // `<Input>`, the add `<Button>`, and ONE row link written once inside the map
   // over the teams — the same count at zero teams as at nine. SIX on one team:
@@ -853,8 +869,9 @@ const SCREENS = [
   // DESIGN REFRESH C: SIX on the team list, the add form in a dialog with the
   // button that opens it and its cancel; FIVE on one team, a dialog over the
   // list whose own close replaced the link back.
-  { name: 'the team list', file: TEAM_LIST, expectedControls: 6 },
-  { name: 'the team edit form', file: TEAM_EDIT, expectedControls: 5 },
+  // SEVEN AND SIX SINCE THE DEFERRED-WORK SWEEP: each read failure's retry.
+  { name: 'the team list', file: TEAM_LIST, expectedFields: 1, expectedButtons: 6 },
+  { name: 'the team edit form', file: TEAM_EDIT, expectedFields: 1, expectedButtons: 5 },
   // STORY 1.8. ONE on the roster: the link back to Danas, a `<Button asChild>`.
   // No field, no form and no write — the count is what notices one arriving.
   // ZERO on Danas: its one new control is the `<Link>` to the roster, which
@@ -870,12 +887,12 @@ const SCREENS = [
   // its own, which reads the queue's three keys again. Every row of *Treba
   // tebe*, "Otvori konflikte" and each block's way to its list view is a
   // `<Link>`, which no detector reads.
-  { name: 'the team roster', file: TEAM_ROSTER, expectedControls: 1 },
+  { name: 'the team roster', file: TEAM_ROSTER, expectedFields: 0, expectedButtons: 1 },
   // STORY 7.17. THREE on the member directory: *Traži osobu*, the
   // unavailable notice's retry and *Poništi pretragu*. No line is a link and
   // nothing writes.
-  { name: 'the member directory', file: MEMBER_DIRECTORY, expectedControls: 3 },
-  { name: 'the Danas destination', file: DANAS, expectedControls: 2 },
+  { name: 'the member directory', file: MEMBER_DIRECTORY, expectedFields: 1, expectedButtons: 2 },
+  { name: 'the Danas destination', file: DANAS, expectedFields: 0, expectedButtons: 2 },
   // STORY 3.1. THREE on Kalendar: the previous month, `Ovaj mjesec` and the
   // next month. The grid is a table and offers nothing (day detail is 3.4).
   // STORY 3.2a: five — the previous and next months, `Ovaj mjesec`, and the
@@ -919,8 +936,8 @@ const SCREENS = [
   // sastav" and "Promijeni tip smjene" — each change dialog's cancel, and
   // "Riješi konflikt", a `<Button asChild>` over the link, written once
   // inside the map over the day's conflicts.
-  // FORTY SINCE DEFERRED-WORK E795: the month picker footer's `Ovaj mjesec`.
-  { name: 'the Kalendar destination', file: KALENDAR, expectedControls: 40 },
+  // THIRTY-FOUR BUTTONS SINCE DEFERRED-WORK E795: the month picker footer's `Ovaj mjesec`.
+  { name: 'the Kalendar destination', file: KALENDAR, expectedFields: 6, expectedButtons: 34 },
   // STORY 4.1b. THREE on Sati: the month navigation it shares with the
   // calendar — the previous month, `Ovaj mjesec` and the next month. The
   // figures are read, never pressed.
@@ -944,8 +961,8 @@ const SCREENS = [
   // table's `EmptyResult`, so its two ways out are not written twice.
   // TWENTY-THREE SINCE STORY 7.14: the ⓘ `Button` beside an hours figure,
   // written once in `ExplainButton` however many figures carry one.
-  // TWENTY-FOUR SINCE DEFERRED-WORK E795: the month picker footer's `Ovaj mjesec`.
-  { name: 'the Sati destination', file: SATI, expectedControls: 24 },
+  // TWENTY-THREE BUTTONS SINCE DEFERRED-WORK E795: the month picker footer's `Ovaj mjesec`.
+  { name: 'the Sati destination', file: SATI, expectedFields: 1, expectedButtons: 23 },
   // STORY 5.2c. ONE on Godišnji: the retry its unavailable alert offers. The
   // three figures are read, never pressed, and nothing here writes: a member
   // requests no leave (story 5.3 is conflicts, not requests).
@@ -955,12 +972,12 @@ const SCREENS = [
   // pretragu* (5); and the page's own retry when the calendar cannot name
   // the viewer's role (6). The phone's `SortControl` is a shared component,
   // and every row's name is a `<Link>`; nothing on the overview writes.
-  { name: 'the Godišnji destination', file: GODISNJI, expectedControls: 6 },
+  { name: 'the Godišnji destination', file: GODISNJI, expectedFields: 1, expectedButtons: 5 },
   // STORY 5.3b. ONE on Raspored: the retry its unavailable alert offers. The
   // queue is read, never pressed: no `Riješi` and no bulk action. STILL ONE
   // SINCE STORY 5.4b: each row became a `<Link>` to its resolution screen,
   // written once inside the map over the rows, which no detector reads.
-  { name: 'the Raspored destination', file: RASPORED, expectedControls: 1 },
+  { name: 'the Raspored destination', file: RASPORED, expectedFields: 0, expectedButtons: 1 },
   // STORY 5.4b. On one conflict's screen: the way back (written once, drawn
   // in every state and again under a refusal that the conflict is gone), ‹
   // and ›, Odustani and Spremi odluku, and the unavailable alert's retry. The
@@ -968,7 +985,7 @@ const SCREENS = [
   // bulk action exist, which is what the count keeps true.
   // STILL SIX SINCE STORY 5.4c: the second card and the candidate picker's
   // rows are radio items of their own groups, never a `<Button>`.
-  { name: 'the conflict resolution screen', file: RESOLUTION, expectedControls: 6 },
+  { name: 'the conflict resolution screen', file: RESOLUTION, expectedFields: 0, expectedButtons: 6 },
   // STORY 2.1b. FIVE on the band list: the link back to `Organizacija`, the
   // name `<Input>`, the start `<Input type="time">`, the add `<Button>`, and ONE
   // row link written once inside the map over the bands — the same count at
@@ -979,10 +996,12 @@ const SCREENS = [
   // SEVEN ON THE LIST SINCE DESIGN REFRESH C: the add form moved into a
   // dialog, which brought the button that opens it and the dialog's own
   // cancel. The dialog's close button is `DialogHeader`'s, not the screen's.
-  { name: 'the hour band list', file: HOUR_BAND_LIST, expectedControls: 7 },
+  // EIGHT SINCE THE DEFERRED-WORK SWEEP: the read failure's retry.
+  { name: 'the hour band list', file: HOUR_BAND_LIST, expectedFields: 2, expectedButtons: 6 },
   // SIX ON ONE BAND SINCE DESIGN REFRESH C: the edit form is a dialog over the
   // list, and the link back gave way to the dialog's own close.
-  { name: 'the hour band edit form', file: HOUR_BAND_EDIT, expectedControls: 6 },
+  // SEVEN SINCE THE DEFERRED-WORK SWEEP: the read failure's retry.
+  { name: 'the hour band edit form', file: HOUR_BAND_EDIT, expectedFields: 2, expectedButtons: 5 },
   // STORY 2.2b. SIX on the shift type list: the name `<Input>`, the working /
   // non-working `<select>`, the start and end `<Input type="time">`s (a
   // non-working type is offered neither), the add `<Button>`, and ONE row link
@@ -997,8 +1016,9 @@ const SCREENS = [
   // list whose own close replaced the link back.
   // NINE SINCE STORY 7.6: the stacked row's edit link below 640 px, the same
   // 44 px `<Button asChild>` link as the table's, written once inside the map.
-  { name: 'the shift type list', file: SHIFT_TYPE_LIST, expectedControls: 9 },
-  { name: 'the shift type edit form', file: SHIFT_TYPE_EDIT, expectedControls: 10 },
+  // TEN AND ELEVEN SINCE THE DEFERRED-WORK SWEEP: each read failure's retry.
+  { name: 'the shift type list', file: SHIFT_TYPE_LIST, expectedFields: 4, expectedButtons: 6 },
+  { name: 'the shift type edit form', file: SHIFT_TYPE_EDIT, expectedFields: 4, expectedButtons: 7 },
   // STORY 2.3b, AS RENEGOTIATED. SEVEN on the rotation builder, each written
   // once however many steps and teams there are: a step's drag handle and
   // remove (the move arrows are gone), the new step's `<select>` and the add,
@@ -1023,14 +1043,15 @@ const SCREENS = [
   // erasure dialog is a second shared `ErasureDialog`, counted below.
   // NINETEEN SINCE STORY 5.5c: the save bar's "Odbaci promjene". The save
   // moved from the header into the bar and is still written once.
-  { name: 'the rotation builder', file: ROTATION_SECTION, expectedControls: 19 },
+  // TWENTY SINCE THE DEFERRED-WORK SWEEP: the read failure's retry.
+  { name: 'the rotation builder', file: ROTATION_SECTION, expectedFields: 5, expectedButtons: 15 },
   // STORY 7.18. ONE on the rotation history: the header button that opens
   // it. The dialog's close is `DialogHeader`'s, and the table offers nothing.
-  { name: 'the rotation history', file: ROTATION_HISTORY_DIALOG, expectedControls: 1 },
+  { name: 'the rotation history', file: ROTATION_HISTORY_DIALOG, expectedFields: 0, expectedButtons: 1 },
   // STORY 5.5b. FOUR on the shared erasure confirmation, each written once
   // however many rows: a row's "Potvrdi brisanje" and "Zadrži", "Natrag na
   // uređivanje" and its own save.
-  { name: 'the erasure confirmation', file: ERASURE_DIALOG, expectedControls: 4 },
+  { name: 'the erasure confirmation', file: ERASURE_DIALOG, expectedFields: 0, expectedButtons: 4 },
   // STORY 3.5c. NINE on the override review, each written once however many
   // overrides are pending: a row's confirm, amend and discard; the amend's
   // type `<select>`, reason, cancel and save; and the discard's cancel and
@@ -1039,14 +1060,14 @@ const SCREENS = [
   // an amend would erase cannot be checked, written once and shown in the
   // review or inside the amend's dialog. Its erasure confirmation's controls
   // are the shared `ErasureDialog`'s, counted there.
-  { name: 'the rotation override review', file: ROTATION_OVERRIDE_REVIEW, expectedControls: 10 },
+  { name: 'the rotation override review', file: ROTATION_OVERRIDE_REVIEW, expectedFields: 2, expectedButtons: 8 },
   // ZERO on every remaining placeholder (four since story 2.2b built
   // `/postavke-rotacije`), and asserted rather than assumed: a placeholder is a
   // heading and nothing else, so the first control any of them grows is a
   // later story's work arriving without that story's review. The count is also
   // what keeps the tap-target sweep from reading as coverage on screens it
   // finds nothing to measure.
-  ...DESTINATION_SCREENS.map((destination) => ({ ...destination, expectedControls: 0 })),
+  ...DESTINATION_SCREENS.map((destination) => ({ ...destination, expectedFields: 0, expectedButtons: 0 })),
   // The layout renders no string of its own, and is swept anyway: it is a
   // `.tsx` under `pages/`, so the literal, bare-text and `destructive` sweeps
   // all apply to it, and being outside this list is exactly how a file becomes
@@ -1059,7 +1080,7 @@ const SCREENS = [
   // signed-in application offers lives in the entry below, which is where the
   // count moved to — the layout gaining one would mean the chrome had started
   // leaking back into the route module the guard lives in.
-  { name: 'the signed-in layout', file: LAYOUT, expectedControls: 0 },
+  { name: 'the signed-in layout', file: LAYOUT, expectedFields: 0, expectedButtons: 0 },
   // SIX on the chrome: the collapse (on the page since the sidebar redesign),
   // the theme's segmented pill (human decisions 2026-09-25/26), the profile
   // card that discloses the exit, the exit, the retry that makes the role
@@ -1072,18 +1093,35 @@ const SCREENS = [
   // this number is the six BUTTONS and nothing else. It is what notices a
   // seventh arriving: on a component that renders above every destination in the
   // application, a control nobody reviewed is a control on eight screens.
-  { name: 'the navigation chrome', file: CHROME, expectedControls: 6 },
+  { name: 'the navigation chrome', file: CHROME, expectedFields: 0, expectedButtons: 6 },
   // ZERO on the lockup, and it is a claim rather than an accident of what has
   // been built: nothing about an organization's logo is pressable. It is not a
   // link to the organization, not a menu trigger and not a home button — which
   // is also why it is exempt from UX-DR40's 44 px floor and may be 32 px inside
   // the phone bar, where nine real targets already compete for the width. The
   // first handler added here would make it a control nobody measured.
-  { name: 'the organization lockup', file: LOCKUP, expectedControls: 0 },
+  { name: 'the organization lockup', file: LOCKUP, expectedFields: 0, expectedButtons: 0 },
   // ZERO on the sign-in frame (visual refresh A): the brand panel is a product
   // name, a headline and a subline. A control here would be a sign-in
   // affordance outside the two frozen forms.
-  { name: 'the sign-in frame', file: AUTH_LAYOUT, expectedControls: 0 },
+  { name: 'the sign-in frame', file: AUTH_LAYOUT, expectedFields: 0, expectedButtons: 0 },
+];
+
+/**
+ * The route modules under `pages/` that are not screens, each for a stated
+ * reason. Everything else under `pages/` must be in a `SCREENS` file set, which
+ * the read-at-all block asserts off the disk.
+ */
+const PAGES_NOT_SCREENS = [
+  // `/` is redirect-only: it decides where a person belongs and renders
+  // nothing, so listing it would assert zero strings on a file with no JSX.
+  'index.tsx',
+  // STORY 7.13b: `/ljudi/novi` only redirects to *Ljudi*'s add dialog, which
+  // leads the member create set.
+  'ljudi.novi.tsx',
+  // The root route: an `<Outlet />` in a layout `div`, with no string and no
+  // control. `not-found.tsx`, which it registers, is its own entry.
+  '__root.tsx',
 ];
 
 /**
@@ -1713,15 +1751,9 @@ const STRUCTURAL_ATTRIBUTES = new Set([
   // `status`, `dialog` — and never renders. Nothing user-facing can hide in it,
   // which is the test every entry on this list has to pass.
   'role',
-  // ADDED by story 1.4a, and it is a loosening, so it is named rather than waved
-  // through: `variant` takes a value from `buttonVariants`' own closed set —
-  // `default`, `outline`, `secondary`, `ghost`, `link` — and selects a class
-  // list, never text. It passes the same test `role` passes: nothing
-  // user-facing can hide in it, because a value outside the set is a `tsc`
-  // error. Note the sixth member of that set is `destructive`, which is banned
-  // separately and by name in every screen, so widening here does not widen
-  // that.
-  'variant',
+  // `variant` is NOT here, though story 1.4a first put it here: it is exempt
+  // only on the primitives whose `variant` is a closed set (`VARIANT_COMPONENTS`
+  // below), because this set applies to every attribute on every element.
   // ADDED by the navigation chrome, and it is a loosening of a GLOBAL
   // allowlist — this set applies to every screen in the application, so it is
   // named and justified rather than waved through, exactly as `role` and
@@ -1760,7 +1792,7 @@ const STRUCTURAL_ATTRIBUTES = new Set([
   'aria-live',
   // ADDED by story 1.5a's member list, and it is a loosening of a GLOBAL
   // allowlist — this set applies to all fourteen swept screens — so it is named
-  // and justified rather than waved through, exactly as `role`, `variant`,
+  // and justified rather than waved through, exactly as `role`,
   // `aria-current` and `aria-controls` were.
   //
   // `aria-sort` takes its value from a CLOSED, NON-TEXTUAL vocabulary the ARIA
@@ -1818,6 +1850,37 @@ const STRUCTURAL_ATTRIBUTES = new Set([
   'aria-haspopup',
 ]);
 
+/**
+ * The primitives whose `variant` prop is structure, not content.
+ *
+ * Story 1.4a admitted `variant` for one button, on the argument that it takes a
+ * value from `buttonVariants`' own closed set — `default`, `outline`,
+ * `secondary`, `ghost`, `link` — and selects a class list, never text: a value
+ * outside the set is a `tsc` error. That argument is true of a COMPONENT, not
+ * of the attribute name, so the exemption is scoped to the components it was
+ * argued for rather than sitting on the global allowlist above, where it
+ * exempted `variant` on any future element whose prop is free text. `Badge`
+ * and `IconTile` are `cva` primitives in `components/ui` on the same terms.
+ * Note `buttonVariants`' sixth member is `destructive`, which is banned
+ * separately and by name in every screen, so this does not widen that.
+ */
+const VARIANT_COMPONENTS = new Set(['Button', 'Badge', 'IconTile']);
+
+/**
+ * The text with every `variant` attribute on a {@link VARIANT_COMPONENTS}
+ * element removed, quoted or braced. The element is the nearest opening tag
+ * before the attribute — an attribute value holding an arrow carries `>` but
+ * never `<`, so the nearest `<Name` is the tag it sits on.
+ */
+function withoutComponentVariants(text: string): string {
+  return text.replace(/\bvariant=(?:"[^"]*"|\{[^{}]*\})/g, (attribute, offset: number) => {
+    const tags = [...text.slice(0, offset).matchAll(/<([A-Za-z][\w.]*)/g)];
+    const tag = tags.at(-1)?.[1];
+
+    return tag !== undefined && VARIANT_COMPONENTS.has(tag) ? '' : attribute;
+  });
+}
+
 /** Content inside a template literal, with every `${…}` removed. */
 function templateStaticText(raw: string): string {
   return raw.replace(/\$\{[^}]*\}/g, '');
@@ -1847,18 +1910,38 @@ function templateStaticText(raw: string): string {
  * Without this the scan reads the literal as sitting under the name `undefined`
  * and reports an id as user-facing text.
  *
- * A WIDENING, so it is deliberately narrow: only the names already on the
- * allowlist, and only a container with no nested braces of its own. Every other
- * attribute keeps firing in every form, which the detector block below proves
- * on both polarities.
+ * A WIDENING, so it is deliberately narrow: only a container with no nested
+ * braces of its own, and only the names in {@link STRUCTURAL_EXPRESSION_ATTRIBUTES}
+ * — an explicit subset, NOT the whole allowlist. Generated from the whole set,
+ * every entry added to the allowlist for its quoted form was exempted in
+ * expression form too, with no review moment of its own. Every other attribute
+ * keeps firing in every form, which the detector block below proves on both
+ * polarities.
  */
+const STRUCTURAL_EXPRESSION_ATTRIBUTES = [
+  // Story 1.3b, the case this exists for: an id reference rendered only on
+  // failure, so the value has to be a branch.
+  'aria-describedby',
+  // Class lists chosen by state (the active row, the today cell). A class
+  // name renders nowhere; the theme sweeps own what it may say.
+  'className',
+  // A closed ARIA vocabulary chosen by state — `page` on the active
+  // destination, `step` on the rotation's current step — never a name.
+  'aria-current',
+  // `true` or `false`, chosen by whether the field's value was refused.
+  'aria-invalid',
+  // An input type chosen by state: the password toggle's `text`/`password`,
+  // and `date`. HTML's closed set, rendering nothing of its own.
+  'type',
+];
+
 const STRUCTURAL_EXPRESSION = new RegExp(
-  `\\b(?:${[...STRUCTURAL_ATTRIBUTES].join('|')})=\\{[^{}]*\\}`,
+  `\\b(?:${STRUCTURAL_EXPRESSION_ATTRIBUTES.join('|')})=\\{[^{}]*\\}`,
   'g',
 );
 
 function unsanctionedLiterals(text: string): string[] {
-  const withoutKeys = text.replace(/\bt\(\s*'[^']+'/g, 't(');
+  const withoutKeys = withoutComponentVariants(text).replace(/\bt\(\s*'[^']+'/g, 't(');
   const withoutStructural = withoutKeys.replace(STRUCTURAL_EXPRESSION, '');
   const withoutImports = withoutStructural.replace(/^\s*import[^;]+;/gm, '');
   const offenders: string[] = [];
@@ -1936,9 +2019,15 @@ function jsxTextWithContent(text: string): string[] {
  * else: source order was standing in for "the heading is the destination's own
  * label", and the two came apart the moment a screen rendered eight strings.
  * Whitespace-tolerant, because a long key puts the call on its own line.
+ *
+ * Read off the same neutralized text as {@link jsxTextWithContent}: the tag's
+ * `[^>]*` stops at the first `>`, so an `<h1>` carrying an arrow or a generic
+ * in an attribute read as no heading at all.
  */
 function headingKey(text: string): string | null {
-  return /<h1\b[^>]*>\s*\{t\('([^']+)'\)\}/.exec(text)?.[1] ?? null;
+  const neutralized = stripTypeArguments(text).replace(/=>/g, '__');
+
+  return /<h1\b[^>]*>\s*\{t\('([^']+)'\)\}/.exec(neutralized)?.[1] ?? null;
 }
 
 /** `htmlFor` values, in source order. */
@@ -1974,7 +2063,7 @@ function bareInputElements(text: string): string[] {
  *
  * Added by story 1.4c, and a FOURTH control detector rather than a widening of
  * the three, for the reason `linkElements` is a third: a native `<select>` is
- * not a `<Button>` and must not be counted as one — `expectedControls` on every
+ * not a `<Button>` and must not be counted as one — `expectedButtons` on every
  * other screen is a tight number, and folding a new element type into it would
  * loosen all of them to cover one file. What it shares with a button is the
  * only thing asserted through it: a person taps it, so UX-DR40's floor applies.
@@ -1996,8 +2085,8 @@ function buttonElements(text: string): string[] {
  *
  * Added because COUNTING the chrome's controls says nothing about WHERE they
  * are. Two bars render from the same two variables, and deleting `{exit}` from
- * one of them leaves the `<Link>` count at one, `expectedControls` at three, and
- * every responsive-class assertion untouched — a phone build with navigation and
+ * one of them leaves the `<Link>` count at one, the chrome's `expectedButtons`
+ * unchanged, and every responsive-class assertion untouched — a phone build with navigation and
  * no way to sign out, green. The only thing that notices is reading each bar's
  * contents, which is what this extracts.
  *
@@ -2084,7 +2173,7 @@ function ariaSortValues(text: string): string[] {
  *
  * Added by the navigation chrome, and it is a THIRD control detector rather than
  * a widening of the two above, deliberately. A router link is not a `<Button>`
- * and must not be counted as one — `expectedControls` on every other screen is a
+ * and must not be counted as one — `expectedButtons` on every other screen is a
  * tight number, and folding links into it would loosen all of them to cover one
  * file. What a link shares with a button is the only thing asserted through it:
  * a person taps it, so UX-DR40's floor applies.
@@ -2167,17 +2256,9 @@ function heightPx(className: string | null): number | null {
     return found.length === 0 ? null : Math.max(...found);
 }
 
-/** Every leaf key path in the resource file, dotted the way i18next resolves. */
+/** Every leaf key path in the resource file (the shared flattener). */
 function resourceKeys(): string[] {
-  const walk = (node: unknown, prefix: string): string[] => {
-    if (typeof node !== 'object' || node === null) return [prefix];
-
-    return Object.entries(node).flatMap(([key, value]) =>
-      walk(value, prefix === '' ? key : `${prefix}.${key}`),
-    );
-  };
-
-  return walk(JSON.parse(readFileSync(RESOURCE, 'utf8')), '');
+  return leafKeys(JSON.parse(readFileSync(RESOURCE, 'utf8')));
 }
 
 /**
@@ -2372,11 +2453,12 @@ const KEY_SOURCES = [
     // FIVE over three unions, so read by `memberListKeys`, which reads every
     // union rather than the first: the row action (edit, or view for an
     // archived team), the one-team heading by the same rule, and the read
-    // failure. Zero rows is an answer here, not a refusal.
+    // failure. Zero rows is an answer here, not a refusal. SIX SINCE THE
+    // DEFERRED-WORK SWEEP: the read failure's retry.
     name: 'the team list rules',
     file: TEAM_LIST_KEYS,
     keys: memberListKeys,
-    strings: 5,
+    strings: 6,
   },
   {
     // NINE over two unions: seven refusals — the empty name, the taken name,
@@ -2542,10 +2624,11 @@ const KEY_SOURCES = [
   },
   {
     // FOUR over two unions: the duration's three shapes and the read failure.
+    // FIVE SINCE THE DEFERRED-WORK SWEEP: the read failure's retry.
     name: 'the hour band list rules',
     file: HOUR_BAND_LIST_KEYS,
     keys: memberListKeys,
-    strings: 4,
+    strings: 5,
   },
   {
     // ELEVEN over two unions: nine refusals — the blank name, the taken name,
@@ -2597,11 +2680,12 @@ const KEY_SOURCES = [
     strings: 23,
   },
   {
-    // The duration's three shapes, the read failure, and the two headings.
+    // The duration's three shapes, the read failure, and the two headings;
+    // since the deferred-work sweep, the read failure's retry.
     name: 'the shift type list rules',
     file: SHIFT_TYPE_LIST_KEYS,
     keys: memberListKeys,
-    strings: 6,
+    strings: 7,
   },
   {
     // The two kinds, the thirteen refusals and the five confirmations — the
@@ -2697,12 +2781,12 @@ const KEY_SOURCES = [
   },
   {
     // STORY 3.5c: the six refusals of a disposition (an archived team or type
-    // among them) and the three things a landed one says — confirmed,
-    // amended, discarded.
+    // among them), 0035's seventh (the governing rotation version changed),
+    // and the three things a landed one says — confirmed, amended, discarded.
     name: 'the rotation disposition rules',
     file: ROTATION_DISPOSITION_KEYS,
     keys: memberListKeys,
-    strings: 9,
+    strings: 10,
   },
   {
     // STORY 2.4: the four step names and Dalje's three labels, one per step
@@ -2716,10 +2800,11 @@ const KEY_SOURCES = [
     // STORY 2.5: the six warning lines (gap, duplicate, and the rest gap
     // known, unknown, endless and endless unknown), the summary counting
     // them, a date's detail, and the list's and the run's separators.
+    // ELEVEN: a doubled type of a duplicate date, naming its teams.
     name: 'the rotation warning rules',
     file: ROTATION_WARNING_KEYS,
     keys: memberListKeys,
-    strings: 10,
+    strings: 11,
   },
   {
     // STORY 2.6: the history's three statuses, in words, and the unknown author.
@@ -2900,13 +2985,16 @@ const KEY_SOURCES = [
     // leave line pairs each shift's team and type, so the dialog renders the
     // line it is given.
     //
-    // ONE HUNDRED AND NINE SINCE THE DEFERRED-WORK SWEEP: the shared month
+    // ONE HUNDRED AND SIX SINCE E909: the conflicts column sorts, so the
+    // phone's sort control offers its heading too.
+    //
+    // ONE HUNDRED AND TEN SINCE THE DEFERRED-WORK SWEEP: the shared month
     // picker's phone sheet, its title and close (E792), and its footer, the
     // key hint and `Ovaj mjesec` (E795).
     name: 'the Sati destination',
     file: SATI,
     keys: translationKeys,
-    strings: 109,
+    strings: 110,
   },
   {
     // STORY 5.2c. THREE on Godišnji: its own `nav.godisnji` heading, the
@@ -3051,10 +3139,11 @@ const KEY_SOURCES = [
     // ELEVEN SINCE STORY 5.3d: the conflicts column's heading, the table's own.
     // STILL ELEVEN SINCE LEAVE IN DAYS: the leave column's heading names its
     // unit, days, in place of the table's own heading.
+    // TWELVE SINCE E922: the footer row's label, the table's own.
     name: 'the hours export rules',
     file: HOURS_EXPORT_KEYS,
     keys: (text: string) => [...translationKeys(text), ...messageKeyUnions(text)],
-    strings: 11,
+    strings: 12,
   },
   {
     // STORY 7.14: the figure's name — the total's and the leave's words —
@@ -3112,22 +3201,22 @@ const KEY_SOURCES = [
     strings: 8,
   },
   {
-    // The read failure.
+    // The read failure, and its retry (deferred-work sweep).
     name: 'the rotation read rules',
     file: ROTATION_LIST_KEYS,
-    keys: messageKeyUnion,
-    strings: 1,
+    keys: messageKeyUnions,
+    strings: 2,
   },
   {
     // The eight refusals, the "nothing changed" note beside a failure after
     // the pattern, and the confirmation.
     // FIFTEEN SINCE STORY 2.6: the past effective date; the cancel's three
     // refusals (stale, and the save's refused and unavailable again) and its
-    // confirmation.
+    // confirmation. SIXTEEN: an effective date more than a year ahead.
     name: 'the rotation write rules',
     file: ROTATION_WRITE_KEYS,
     keys: memberWriteKeys,
-    strings: 15,
+    strings: 16,
   },
   {
     // THIRTEEN on the create form: its own heading, five field labels, the save
@@ -3252,10 +3341,13 @@ const KEY_SOURCES = [
     // new, their one group shape and unknown); and the removal's cleared
     // line or its unknown line — less the form's two legends and the row's amend-mode word they
     // replace.
+    // ONE HUNDRED AND FIFTY-THREE SINCE THE DEFERRED-WORK SWEEP: the read
+    // failure's retry, the status date's hint, the team dialog's *Što se
+    // mijenja* heading (decision 16), and the reset dialog's close.
     name: 'the member edit form',
     file: MEMBER_EDIT,
     keys: translationKeys,
-    strings: 149,
+    strings: 153,
   },
   {
     // THIRTEEN on the member write path's rules: eleven `ljudi.form.error.*`
@@ -3333,10 +3425,20 @@ const KEY_SOURCES = [
     // the summary line's two forms, the level picker's every-level option,
     // the status chip's three values and its three option names, and the team
     // options are now `Sve smjene` and `Bez smjene` beside their counts.
+    // THIRTY-ONE SINCE THE DEFERRED-WORK SWEEP: the read failure's retry.
     name: 'the member list rules',
     file: MEMBER_LIST_KEYS,
     keys: memberListKeys,
-    strings: 30,
+    strings: 31,
+  },
+  {
+    // DECISION 16, the deferred-work sweep: the team dialog's last shift in
+    // the team left and first in the team joined, each with or without the
+    // type's range (`moveShiftMessageKey`).
+    name: 'the team move preview rules',
+    file: MEMBER_MOVE_PREVIEW_KEYS,
+    keys: messageKeyUnions,
+    strings: 4,
   },
   {
     // ONE on the lockup: the accessible name it falls back to when the
@@ -3457,7 +3559,7 @@ describe('the screen is read at all, so every sweep below means something', () =
   // else and both drive `it.each`: a removed row takes its cases with it, and
   // Vitest reports the shorter run as a pass. A row deleted without a reason
   // fails here until somebody moves the number, which is the moment the removal
-  // gets reviewed — the same bargain `expectedControls` strikes per screen.
+  // gets reviewed — the same bargain `expectedFields` and `expectedButtons` strike per screen.
   //
   // FOURTEEN screens: eight `.tsx` that render — the sign-in form, the
   // not-found component, the organization prompt, the settings surface, the
@@ -3594,7 +3696,9 @@ describe('the screen is read at all, so every sweep below means something', () =
     // SIXTY-EIGHT SINCE STORY 7.17: the member directory.
     //
     // SIXTY-NINE SINCE THE ROUTER-GUARDS FIX: the error screen (A148).
-    expect(KEY_SOURCES).toHaveLength(69);
+    //
+    // SEVENTY SINCE THE DEFERRED-WORK SWEEP: decision 16's team move preview.
+    expect(KEY_SOURCES).toHaveLength(70);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
@@ -3607,6 +3711,33 @@ describe('the screen is read at all, so every sweep below means something', () =
     if (typeof file !== 'string') {
       for (const part of file) expect(source(part).trim(), `${part} is empty`).not.toBe('');
       expect(source(file[0] ?? ''), 'the page itself renders nothing').toContain('return (');
+    }
+  });
+
+  it('sweeps every page, so a new route module cannot escape SCREENS', () => {
+    // `SCREENS` is a hand list, and its own comment names the hazard: a `.tsx`
+    // missing from it is swept by NOTHING. The feature folders got `readdirSync`
+    // completeness checks; this is the same check for `pages/`. Every page is
+    // either in a screen's file set or exempt below for a stated reason.
+    const swept = new Set(
+      SCREENS.flatMap(({ file }) => (typeof file === 'string' ? [file] : [...file])),
+    );
+    const exempt = new Set(
+      PAGES_NOT_SCREENS.map((name) => join(srcRoot, 'pages', name)),
+    );
+    const pages = readdirSync(join(srcRoot, 'pages'))
+      .filter((name) => name.endsWith('.tsx'))
+      .map((name) => join(srcRoot, 'pages', name));
+
+    expect(pages.length, 'no pages found at all').toBeGreaterThan(10);
+    for (const name of PAGES_NOT_SCREENS) {
+      expect(pages, `${name} is exempt but does not exist`).toContain(join(srcRoot, 'pages', name));
+      expect(swept.has(join(srcRoot, 'pages', name)), `${name} is exempt and swept`).toBe(false);
+    }
+    for (const page of pages) {
+      expect(swept.has(page) || exempt.has(page), `${page} is in no SCREENS entry and not exempt`).toBe(
+        true,
+      );
     }
   });
 
@@ -3715,10 +3846,9 @@ describe('the screen is read at all, so every sweep below means something', () =
       found.filter((file) => !exempt.has(file)).sort(),
       'the Sati file set and the feature folders disagree',
     ).toEqual(
-      SATI.filter(
-        (file) =>
-          file !== SATI_PAGE && file !== SHARED_MONTH_NAV && file !== SHARED_FILTER_BAR && file !== SHARED_SORT_CONTROL,
-      ).sort(),
+      // Every shared part — the month toolbar, the filter bar, the sort
+      // control, the sortable heading and its glyphs — lives outside the feature.
+      SATI.filter((file) => file !== SATI_PAGE && file.startsWith(HOURS_FEATURE)).sort(),
     );
   });
 
@@ -3813,7 +3943,8 @@ describe('the screen is read at all, so every sweep below means something', () =
     expect(
       found.filter((file) => !exempt.has(file)).sort(),
       'the Godišnji file set and the feature folders disagree',
-    ).toEqual(GODISNJI.filter((file) => file !== GODISNJI_PAGE).sort());
+      // The shared sortable heading and its glyphs live in `components/` (Epic 4 retro D2).
+    ).toEqual(GODISNJI.filter((file) => file !== GODISNJI_PAGE && file.startsWith(LEAVE_FEATURE)).sort());
   });
 
   it('sweeps every part of the Danas screen, so a new file cannot escape the set', () => {
@@ -3906,7 +4037,7 @@ describe('the screen is read at all, so every sweep below means something', () =
     // ONE DECLARATION PER HANDLER PER SET, because the extractors take the
     // first match in a joined set.
     for (const [set, hookFile, names] of [
-      [SHIFT_TYPE_LIST, SHIFT_TYPE_LIST_HOOK, ['submit', 'openAdding', 'chooseKind']],
+      [SHIFT_TYPE_LIST, SHIFT_TYPE_LIST_HOOK, ['submit', 'openAdding', 'closeAdding', 'chooseKind']],
       [
         SHIFT_TYPE_EDIT,
         SHIFT_TYPE_EDIT_HOOK,
@@ -3949,7 +4080,7 @@ describe('the screen is read at all, so every sweep below means something', () =
     },
   ];
   const SHIFT_TYPE_HANDLERS =
-    'submit|saveTimes|cancelTimes|archive|chooseKind|openAdding|refresh|close|clearOutcomes';
+    'submit|saveTimes|cancelTimes|archive|chooseKind|openAdding|closeAdding|refresh|close|clearOutcomes';
   const SHIFT_TYPE_WRITES = [
     'supabaseClient(',
     'createShiftType(',
@@ -4947,7 +5078,7 @@ describe('the chrome the layout wraps every destination in', () => {
   it('puts the destinations in both bars and the exit in both layouts, not merely somewhere', () => {
     // MUTATION-PROVEN GAP, and the demonstration is the reason this block exists
     // at all: deleting the exit from the phone layout alone left the `<Link>`
-    // count at one, `expectedControls` unchanged and every responsive-class
+    // count at one, `expectedButtons` unchanged and every responsive-class
     // assertion untouched — a phone build with navigation and no way to sign
     // out, on the device this story's whole argument is built around. Counting
     // controls says nothing about where they are.
@@ -5726,12 +5857,17 @@ describe('the member list computes nothing it renders', () => {
     // wrong way is worse than none because it contradicts a correct `aria-sort`
     // on the same element. A record keyed by the module's own names, asserted
     // pair by pair.
+    // SINCE THE EPIC 4 RETRO (D2) the record is the shared one, keyed by the
+    // direction's own names — `ARROW_UP` and `ARROW_DOWN` are `up` and `down`.
     const screen = source(MEMBER_LIST);
 
-    expect(screen, 'the sort glyphs are no longer a keyed record').toMatch(
-      /\[ARROW_UP\]:\s*ArrowUp/,
+    expect(ARROW_UP).toBe('up');
+    expect(ARROW_DOWN).toBe('down');
+    expect(screen, 'the sort glyphs are no longer a keyed record').toMatch(/\bup:\s*ArrowUp\b/);
+    expect(screen).toMatch(/\bdown:\s*ArrowDown\b/);
+    expect(screen, 'the member table no longer draws from the shared record').toMatch(
+      /SORT_DIRECTION_GLYPHS\[indicator\]/,
     );
-    expect(screen).toMatch(/\[ARROW_DOWN\]:\s*ArrowDown/);
     // And no ternary picking between the two, which is the shape that gets
     // inverted silently.
     expect(
@@ -6830,7 +6966,7 @@ describe('every control on the screen clears the 44 px tap-target floor', () => 
     expect(measured).toBeGreaterThanOrEqual(TARGET_FLOOR_PX);
   });
 
-  it.each(SCREENS)('clears the floor on every control in $name', ({ file, expectedControls }) => {
+  it.each(SCREENS)('clears the floor on every control in $name', ({ file, expectedFields, expectedButtons }) => {
     // The named assertions above are the mutation-proven ones and stay. This is
     // the general claim they cannot make: a control added to any screen later,
     // on any of the four, is measured without anyone remembering to add a case
@@ -6842,11 +6978,9 @@ describe('every control on the screen clears the 44 px tap-target floor', () => 
     // a control type known to one screen's own block and to nothing else is a
     // control type that escapes the floor and the count everywhere else, which
     // is exactly the state `<Link>` was in until the chrome brought it in.
-    const controls = [
-      ...inputElements(screen),
-      ...buttonElements(screen),
-      ...selectElements(screen),
-    ];
+    const fields = [...inputElements(screen), ...selectElements(screen)];
+    const buttons = buttonElements(screen);
+    const controls = [...fields, ...buttons];
 
     // NON-VACUITY. Without this the loop asserts nothing on a screen it finds
     // no controls on, and it already found none on two of the four — so half
@@ -6854,7 +6988,9 @@ describe('every control on the screen clears the 44 px tap-target floor', () => 
     // records the detectors' reach: they match self-closing `<Input />`,
     // `<Button` and `<select` only, so a raw `<button>` or a future primitive is
     // invisible here and the count is what would notice it disappearing.
-    expect(controls.length, `no control detected on ${file}`).toBe(expectedControls);
+    // Counted APART, so a field swapped for a button moves both numbers.
+    expect(fields.length, `the field count moved on ${file}`).toBe(expectedFields);
+    expect(buttons.length, `the button count moved on ${file}`).toBe(expectedButtons);
 
     for (const element of controls) {
       const measured = heightPx(attributeOf(element, 'className'));
@@ -8296,9 +8432,9 @@ describe('the lockup the chrome and the settings surface share', () => {
   });
 
   it('is not a control, and holds no handler that would make it one', () => {
-    // `expectedControls: 0` above says nothing was COUNTED; this says nothing
-    // is there. The lockup is 32 px in the phone bar, which is only defensible
-    // while it is not pressable — an `onClick` here would put a target 12 px
+    // `expectedFields: 0` and `expectedButtons: 0` above say nothing was
+    // COUNTED; this says nothing is there. The lockup is 32 px in the phone
+    // bar, which is only defensible while it is not pressable — an `onClick` here would put a target 12 px
     // under UX-DR40's floor on every signed-in screen in the application.
     const lockup = source(LOCKUP);
 
@@ -9705,6 +9841,16 @@ describe('the detectors find what they claim to find', () => {
     expect(unsanctionedLiterals("<p className={cn({ a: 'Danas' })} />")).toEqual(['Danas']);
   });
 
+  it('exempts the expression form only for the named subset, not the whole allowlist', () => {
+    // `role` is on the allowlist for its QUOTED form. Generated from the whole
+    // set, the expression matcher exempted it braced too, with no review of its
+    // own; the subset is what makes the next entry a second decision.
+    expect(STRUCTURAL_EXPRESSION_ATTRIBUTES.every((name) => STRUCTURAL_ATTRIBUTES.has(name))).toBe(true);
+    expect(STRUCTURAL_EXPRESSION_ATTRIBUTES).not.toContain('role');
+    expect(unsanctionedLiterals('<div role="alert" />')).toEqual([]);
+    expect(unsanctionedLiterals("<div role={f ? 'alert' : 'Zatvori'} />")).toEqual(['alert', 'Zatvori']);
+  });
+
   it('reports a template literal, which the quote-only class could not see', () => {
     expect(unsanctionedLiterals(withTemplate)).toEqual(['Prijava']);
   });
@@ -9830,6 +9976,20 @@ describe('the detectors find what they claim to find', () => {
       [],
     );
     expect(unsanctionedLiterals('<Button variant="outline" title="Spremi" />')).toEqual(['Spremi']);
+  });
+
+  it('allows a variant only on the primitives whose variant is a closed set', () => {
+    // Scoped to `VARIANT_COMPONENTS` rather than the global allowlist, so a
+    // `variant` on any other element is read like any other attribute.
+    expect(STRUCTURAL_ATTRIBUTES.has('variant')).toBe(false);
+    expect(unsanctionedLiterals("<Button variant={f ? 'outline' : 'ghost'} />")).toEqual([]);
+    expect(unsanctionedLiterals('<Badge variant="secondary">{t(\'a.b\')}</Badge>')).toEqual([]);
+    expect(unsanctionedLiterals('<Card variant="Spremi" />')).toEqual(['Spremi']);
+    // The nearest opening tag decides, so an arrow in an earlier attribute
+    // does not hand a later element the button's exemption.
+    expect(
+      unsanctionedLiterals('<Button onClick={() => go()} variant="ghost" /><Card variant="Danas" />'),
+    ).toEqual(['Danas']);
   });
 
   it('reads a message-key union off either mapping, not only the first one', () => {
@@ -10015,6 +10175,11 @@ describe('the detectors find what they claim to find', () => {
     ).toBe('nav.organizacija');
     expect(headingKey("<p>{t('nav.danas')}</p>")).toBeNull();
     expect(headingKey('const x = 1;')).toBeNull();
+    // The `[^>]*` trap: an arrow or a generic in an attribute holds a `>`.
+    expect(headingKey("<h1 onClick={() => go()}>{t('nav.danas')}</h1>")).toBe('nav.danas');
+    expect(headingKey("<h1 ref={useRef<HTMLHeadingElement>(null)}>{t('nav.sati')}</h1>")).toBe(
+      'nav.sati',
+    );
   });
 
   it('reads htmlFor values in source order and finds none where there are none', () => {

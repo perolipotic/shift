@@ -672,6 +672,8 @@ test.describe('the member page shows facts and each change opens one dialog', ()
     await peoplePage.editLink(name).click();
 
     await peoplePage.deactivateButton(name).click();
+    // *Vrijedi od*'s hint, which describes the date (E874).
+    await expect(peoplePage.statusDateInput).toHaveAccessibleDescription(hr.ljudi.status.dateHint);
     const minimum = await peoplePage.statusDateInput.getAttribute('min');
     if (minimum === null) throw new Error('E2E: the status date control has no minimum');
     const later = addDays(minimum, 3);

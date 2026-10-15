@@ -8,6 +8,7 @@ import {
   DISCARD_OVERRIDE_FUNCTION,
   DISPOSITION_AMENDED,
   DISPOSITION_ARCHIVED,
+  DISPOSITION_CHANGED,
   DISPOSITION_CONFIRMED,
   DISPOSITION_DENIED,
   DISPOSITION_DISCARDED,
@@ -160,6 +161,8 @@ describe('which overrides wait for review', () => {
       reason: 'Vježba.',
       authorName: ADMIN_NAME,
       governed: true,
+      // The confirmation's token: the change governing the date, as sent.
+      governingSavedAt: CHANGED_AT,
     });
     expect(projected).not.toBe('');
     // The amend offers every type not archived and not projected now, in creation order.
@@ -173,7 +176,14 @@ describe('which overrides wait for review', () => {
     const snapshot = await snapshotOf({ ...PILOT, overrides: [overrideRow('o1', 'pilot-smjena-a', '2019-12-31', 'pilot-noc')] });
 
     expect(pendingOverrideRowsOf(snapshot)).toEqual([
-      expect.objectContaining({ id: 'o1', projectedShiftTypeId: null, projectedTypeName: null, governed: false, options: [] }),
+      expect.objectContaining({
+        id: 'o1',
+        projectedShiftTypeId: null,
+        projectedTypeName: null,
+        governed: false,
+        governingSavedAt: null,
+        options: [],
+      }),
     ]);
   });
 
@@ -249,9 +259,17 @@ describe('the three calls', () => {
     reason: 'x',
     authorName: null,
     governed: true,
+    governingSavedAt: '2026-09-01T08:00:00.123456+00:00',
     options: [{ id: 'pilot-noc', name: 'Noć' }],
   };
-  const ungoverned: PendingOverrideRow = { ...governed, projectedShiftTypeId: null, projectedTypeName: null, governed: false, options: [] };
+  const ungoverned: PendingOverrideRow = {
+    ...governed,
+    projectedShiftTypeId: null,
+    projectedTypeName: null,
+    governed: false,
+    governingSavedAt: null,
+    options: [],
+  };
 
   it('confirm, amend and discard each call their one function with the override id', async () => {
     const ok = { error: null };
@@ -262,7 +280,9 @@ describe('the three calls', () => {
     expect(await confirmShiftTypeOverride(confirm.client, governed)).toEqual({ ok: true });
     expect(await amendShiftTypeOverride(amend.client, governed, 'pilot-noc', '  Zamjena ')).toEqual({ ok: true });
     expect(await discardShiftTypeOverride(discard.client, ungoverned)).toEqual({ ok: true });
-    expect(confirm.calls).toEqual([[CONFIRM_OVERRIDE_FUNCTION, { p_override_id: 'o1' }]]);
+    expect(confirm.calls, 'the confirmation lost its token').toEqual([
+      [CONFIRM_OVERRIDE_FUNCTION, { p_override_id: 'o1', p_governing_saved_at: '2026-09-01T08:00:00.123456+00:00' }],
+    ]);
     expect(amend.calls).toEqual([
       [AMEND_OVERRIDE_FUNCTION, { p_override_id: 'o1', p_shift_type_id: 'pilot-noc', p_reason: 'Zamjena' }],
     ]);
@@ -283,6 +303,7 @@ describe('the three calls', () => {
     });
     expect(await amendShiftTypeOverride(client, governed, 'pilot-noc', '  ')).toEqual({ ok: false, code: DISPOSITION_REASON });
     expect(await confirmShiftTypeOverride(client, ungoverned)).toMatchObject({ ok: false });
+    expect(await confirmShiftTypeOverride(client, { ...governed, governingSavedAt: null })).toMatchObject({ ok: false });
     expect(await amendShiftTypeOverride(client, ungoverned, 'pilot-noc', 'Zamjena')).toMatchObject({ ok: false });
     expect(calls).toEqual([]);
   });
@@ -302,6 +323,9 @@ describe('the three calls', () => {
         expect(dispositionFailureOf({ code }), code).toBe(failure);
         expect(dispositionFailureOf({ code: 'P0001', message: 'SHIFT_TYPE_OVERRIDE_ARCHIVED' })).toBe(
           DISPOSITION_ARCHIVED,
+        );
+        expect(dispositionFailureOf({ code: 'P0001', message: 'SHIFT_TYPE_OVERRIDE_CHANGED' })).toBe(
+          DISPOSITION_CHANGED,
         );
         expect(await discardShiftTypeOverride(clientOf({ error: { code } }).client, governed), code).toEqual({
           ok: false,
@@ -329,6 +353,7 @@ describe('the words', () => {
           DISPOSITION_DENIED,
           DISPOSITION_GONE,
           DISPOSITION_ARCHIVED,
+          DISPOSITION_CHANGED,
           DISPOSITION_REASON,
           DISPOSITION_SAME_AS_PROJECTED,
           DISPOSITION_FAILED,
@@ -340,6 +365,7 @@ describe('the words', () => {
       'Ne možeš mijenjati izmjene. Za to trebaš ovlasti administratora.',
       'Izmjena je već pregledana ili uklonjena. Prikaz je osvježen.',
       'Smjena ili tip smjene je arhiviran. Osvježi prikaz.',
+      'Rotacija je u međuvremenu promijenjena. Prikaz je osvježen, pregledaj izmjenu ponovno.',
       'Upiši razlog, 1–200 znakova.',
       'To je već tip smjene prema rotaciji.',
       'Promjena nije uspjela. Pokušaj ponovno.',
@@ -384,6 +410,7 @@ describe('what the review offers and opens with', () => {
     reason: 'Vježba.',
     authorName: null,
     governed: true,
+    governingSavedAt: '2026-09-01T08:00:00.123456+00:00',
     options: [
       { id: 'pilot-dan', name: 'Dan' },
       { id: 'pilot-noc', name: 'Noć' },

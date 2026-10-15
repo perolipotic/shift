@@ -13,6 +13,7 @@ import {
   type Destination,
   type MemberRole,
 } from '@/features/navigation/utils/destinations';
+import { leafKeys, leafMessages } from '@/lib/i18n/resource-tree.fixture';
 
 /**
  * The role-to-destination mapping, EXECUTED.
@@ -46,21 +47,14 @@ const RESOURCE = join(
   'hr.json',
 );
 
-/** Every leaf key path in the resource file, dotted the way i18next resolves. */
-function resourceKeys(node: unknown = JSON.parse(readFileSync(RESOURCE, 'utf8')), prefix = ''): string[] {
-  if (typeof node !== 'object' || node === null) return [prefix];
-
-  return Object.entries(node).flatMap(([key, value]) =>
-    resourceKeys(value, prefix === '' ? key : `${prefix}.${key}`),
-  );
+/** Every leaf key path in the resource file (the shared flattener). */
+function resourceKeys(node: unknown = JSON.parse(readFileSync(RESOURCE, 'utf8'))): string[] {
+  return leafKeys(node);
 }
 
 /** Every message in the resource file, however deeply nested. */
 function resourceMessages(node: unknown = JSON.parse(readFileSync(RESOURCE, 'utf8'))): string[] {
-  if (typeof node === 'string') return [node];
-  if (typeof node !== 'object' || node === null) return [];
-
-  return Object.values(node).flatMap((value) => resourceMessages(value));
+  return leafMessages(node);
 }
 
 /** The keys a role reaches, in the order the table binds them. */

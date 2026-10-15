@@ -5,7 +5,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { formatMinuteOfDay } from '@/lib/i18n/format';
-import { NO_TEXT } from '@/features/members/services/list';
 import type { ShiftTypeEditScreen } from '@/features/shift-types/hooks/use-shift-type-edit';
 import type { ShiftTimesShown, ShiftTypeDisplayRow, ShiftTypeRow } from '@/features/shift-types/services/list';
 import {
@@ -22,6 +21,7 @@ import {
   type TimesOffer,
 } from '@/features/shift-types/services/write';
 import { t } from '@/lib/i18n';
+import { NO_TEXT } from '@/utils/text';
 
 /** The times block's refusal, where the times were written. */
 export function ShiftTypeTimesRefusal({ timesFailure }: {

@@ -4,9 +4,10 @@ import { DialogDescription } from '@/components/ui/dialog';
 import type { CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { changeContextOf, type DayDetail } from '@/features/calendar/utils/day-detail';
 import { previewMemberNameOf, type ChangePreview, type TypeFact } from '@/features/calendar/utils/change-preview';
-import { durationMessageKey, durationValuesOf } from '@/features/hour-bands/services/list';
+import { durationMessageKey } from '@/features/hour-bands/services/list';
 import { t } from '@/lib/i18n';
 import { formatList } from '@/lib/i18n/format';
+import { durationValuesOf } from '@/utils/time';
 
 /** A type as the preview names it: `Noć 19:00–07:00`, the name alone for a type with no times, or no rotation. */
 function typeShown(type: TypeFact | null): string {

@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { stripCssComments } from './source-scan.ts';
+
 /**
  * Glyph coverage in the shipped faces (story 1.1b, UX-DR40; two faces since
  * visual refresh A).
@@ -185,7 +187,7 @@ describe('each face is actually bound to its stack', () => {
     // one rule must name all six levels (in any order, among any other
     // selectors) with the heading family anywhere in its body. Comments are
     // stripped first so a commented-out rule cannot satisfy it.
-    const rules = [...appCss().replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)];
+    const rules = [...stripCssComments(appCss()).matchAll(/([^{}]+)\{([^{}]*)\}/g)];
     const headingRule = rules.find(([, selectors = '', body = '']) => {
       const list = selectors.split(',').map((selector) => selector.trim());
 
@@ -216,7 +218,7 @@ describe('every digit is a DM Sans tabular figure (story 7.2, UX-DR40)', () => {
 
   /** Every `@font-face` body that names Shift Figures, comments stripped. */
   function figureRules(): string[] {
-    return [...appCss().replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/@font-face\s*\{([^{}]*)\}/g)]
+    return [...stripCssComments(appCss()).matchAll(/@font-face\s*\{([^{}]*)\}/g)]
       .map((match) => match[1] ?? '')
       .filter((body) => new RegExp(`font-family:\\s*'${FIGURES}'`).test(body));
   }

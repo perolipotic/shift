@@ -1,8 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 
-import { NO_TEXT } from '@/features/members/services/list';
-import { TEAM_CREATE_DEPENDENTS, refreshAfterWrite } from '@/features/teams/services/dependents';
+import { TEAM_CREATE_DEPENDENTS, refreshAfterWrite, retryRead } from '@/features/teams/services/dependents';
 import {
   TEAMS_LIST_KEY,
   TEAMS_TABLE,
@@ -20,6 +19,7 @@ import {
   type TeamWriteTable,
 } from '@/features/teams/services/write';
 import { supabaseClient } from '@/lib/supabase/client';
+import { NO_TEXT } from '@/utils/text';
 
 /**
  * The team list's state, its one read and its add (story 1.7a): the add
@@ -129,6 +129,11 @@ export function useTeamList() {
     }
   }
 
+  /** Read the list again, from the unavailable notice's retry. */
+  function retry(): void {
+    void retryRead(queryClient, TEAMS_LIST_KEY);
+  }
+
   return {
     nameField,
     pending,
@@ -140,6 +145,7 @@ export function useTeamList() {
     openAdding,
     submit,
     refusal,
+    retry,
     loading,
     split,
   };

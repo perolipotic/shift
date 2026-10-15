@@ -22,7 +22,7 @@ import { t } from '@/lib/i18n';
 import { formatIsoDayMonth, isIsoDate } from '@/lib/i18n/format';
 import type { MemberEdit } from '@/features/members/hooks/use-member-edit';
 import { memberErasureCopyOf } from '@/features/members/utils/erasure-copy';
-import { NO_TEXT, shownDate, type MemberListRow } from '@/features/members/services/list';
+import { type MemberListRow } from '@/features/members/services/list';
 import {
   DEACTIVATE,
   STATUS_ARMED,
@@ -43,6 +43,8 @@ import {
   type StatusOffer,
 } from '@/features/members/services/write';
 import {
+  MEMBER_STATUS_DATE_HINT_AND_ERROR,
+  MEMBER_STATUS_DATE_HINT_ID,
   MEMBER_STATUS_DIALOG_HEADING_ID,
   MEMBER_STATUS_ERROR_ID,
   MEMBER_STATUS_HEADING_ID,
@@ -51,6 +53,7 @@ import {
 } from '@/features/members/utils/element-ids';
 import { refusalText } from '@/features/members/utils/refusal-text';
 import { monthInMessageKey } from '@/utils/filter-bar';
+import { NO_TEXT, shownDate } from '@/utils/text';
 
 /**
  * The member page's *Status* card (story 1.6; facts and a dialog since story
@@ -216,7 +219,8 @@ function StatusUnchecked({ edit }: { readonly edit: MemberEdit }): ReactNode {
  * the erasure check, then the write. Not dismissible while that is in flight;
  * a refusal keeps it open, with the date focused when the refusal names it.
  *
- * THE DATE CONTROL IS DESCRIBED BY THE DIALOG'S OWN ALERT and by nothing else.
+ * THE DATE CONTROL IS DESCRIBED BY ITS HINT (`Najranije danas. …`) and by
+ * the dialog's own alert once there is one, and by nothing else.
  */
 export function MemberStatusDialog({ edit }: { readonly edit: MemberEdit }): ReactNode {
   const { form, dateField, statusRefusal, statusDateInvalid, statusPending, statusDialog } = edit;
@@ -289,10 +293,13 @@ export function MemberStatusDialog({ edit }: { readonly edit: MemberEdit }): Rea
             defaultValue={offered.minimum}
             readOnly={statusPending}
             onChange={statusDialog.enterDay}
-            aria-describedby={statusRefusal === null ? undefined : MEMBER_STATUS_ERROR_ID}
+            aria-describedby={statusRefusal === null ? MEMBER_STATUS_DATE_HINT_ID : MEMBER_STATUS_DATE_HINT_AND_ERROR}
             aria-invalid={statusDateInvalid}
             className="h-11"
           />
+          <p id={MEMBER_STATUS_DATE_HINT_ID} className="text-sm text-muted-foreground">
+            {t('ljudi.status.dateHint')}
+          </p>
         </div>
         {asked ? renderQuestion(offered) : null}
         {statusRefusal === null ? null : (
