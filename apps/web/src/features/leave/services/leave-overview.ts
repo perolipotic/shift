@@ -21,6 +21,7 @@ import {
   type TeamFilter,
 } from '@/features/members/services/list';
 import { compareText } from '@/lib/i18n/format';
+import { searchTextOf, sortSearchFor, sortSearchOf } from '@/utils/search-params';
 import { NO_TEXT } from '@/utils/text';
 import type { SortControlDirection } from '@/utils/sort-control';
 
@@ -124,9 +125,6 @@ export interface LeaveOverviewSort {
 /** The overview opens by name, ascending. */
 export const DEFAULT_OVERVIEW_SORT: LeaveOverviewSort = { key: OVERVIEW_SORT_NAME, direction: 'up' };
 
-/** The prefix a descending sort carries in the URL: `?sort=-preostalo`. */
-const DESCENDING_PREFIX = '-';
-
 /** Every state: the Stanje chip at its default. */
 export const OVERVIEW_STATE_ALL = 'sve';
 /** A live record covers the organization's today. */
@@ -168,21 +166,14 @@ export type GodisnjiSearch = {
   readonly sort?: string | undefined;
 };
 
+/** `?sort=` through the shared reader *Ljudi* uses (`@/utils/search-params`): `?sort=-preostalo`. */
 function sortOfSearch(value: unknown): LeaveOverviewSort {
-  if (typeof value !== 'string') return DEFAULT_OVERVIEW_SORT;
+  const sort = sortSearchOf(value);
+  const key = OVERVIEW_SORT_KEYS.find((candidate) => candidate === sort?.name);
 
-  const descending = value.startsWith(DESCENDING_PREFIX);
-  const name = descending ? value.slice(DESCENDING_PREFIX.length) : value;
-  const key = OVERVIEW_SORT_KEYS.find((candidate) => candidate === name);
-
-  return key === undefined ? DEFAULT_OVERVIEW_SORT : { key, direction: descending ? 'down' : 'up' };
-}
-
-/** The URL's search text, trimmed; a number too, which the router parses `?trazi=123` as. */
-function searchOfText(text: unknown): string {
-  if (typeof text === 'number') return String(text);
-
-  return typeof text === 'string' ? text.trim() : NO_TEXT;
+  return sort === null || key === undefined
+    ? DEFAULT_OVERVIEW_SORT
+    : { key, direction: sort.descending ? 'down' : 'up' };
 }
 
 /** A Stanje value as the URL writes it, or every state for anything else. */
@@ -199,7 +190,7 @@ export function leaveOverviewFiltersOf(search: Readonly<Record<string, unknown>>
   const team = search['smjena'];
 
   return {
-    search: searchOfText(search['trazi']),
+    search: searchTextOf(search['trazi']),
     sort: sortOfSearch(search['sort']),
     team: typeof team === 'string' && team !== NO_TEXT ? team : ALL_TEAMS,
     state: chooseLeaveOverviewState(search['stanje']),
@@ -210,7 +201,7 @@ export function leaveOverviewFiltersOf(search: Readonly<Record<string, unknown>>
 export function leaveOverviewSearchFor(filters: LeaveOverviewFilters): GodisnjiSearch {
   const sorted =
     filters.sort.key !== DEFAULT_OVERVIEW_SORT.key || filters.sort.direction !== DEFAULT_OVERVIEW_SORT.direction;
-  const sort = `${filters.sort.direction === 'down' ? DESCENDING_PREFIX : NO_TEXT}${filters.sort.key}`;
+  const sort = sortSearchFor(filters.sort.key, filters.sort.direction === 'down');
 
   return {
     ...(filters.search === NO_TEXT ? {} : { trazi: filters.search }),

@@ -63,6 +63,11 @@ export class OrganizationPage extends BasePage {
     return this.page.getByRole('region', { name: organization.timeHeading });
   }
 
+  /** *Satni pojasi*: the card of facts about the hour bands. */
+  get hourBandsRegion(): Locator {
+    return this.page.getByRole('region', { name: organization.hourBands.heading, exact: true });
+  }
+
   /** Every field mounted on the page outside a dialog's portal. */
   get mainFields(): Locator {
     return this.page.locator('main input, main select');

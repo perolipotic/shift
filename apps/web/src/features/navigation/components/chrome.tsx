@@ -13,7 +13,7 @@ import {
   User,
   type LucideIcon,
 } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 
 import { initialsOf } from '@/utils/initials';
 import { Avatar } from '@/components/ui/avatar';
@@ -22,10 +22,16 @@ import { Dialog, DialogHeader } from '@/components/ui/dialog';
 import { t } from '@/lib/i18n';
 import {
   destinationsFor,
+  groupDestinations,
   isCurrentDestination,
   phoneNavigationFor,
   type Destination,
+  type GroupedDestinations,
 } from '@/features/navigation/utils/destinations';
+import {
+  destinationDescriptionMessageKey,
+  destinationPlaceMessageKey,
+} from '@/features/navigation/utils/destination-copy';
 import { destinationIcon } from '@/features/navigation/utils/icons';
 import { useDismiss } from '@/hooks/dismiss';
 import { useCloseWhenWide } from '@/hooks/viewport';
@@ -202,6 +208,16 @@ export function AppChrome({ children }: AppChromeProps) {
   const [profileOpen, setProfileOpen] = useState(false);
   // The phone's *Više* sheet. Never persisted, like the collapse.
   const [moreOpen, setMoreOpen] = useState(false);
+  // Id prefixes for the sheet rows' name and description, and for the place
+  // *Više* names under its label; each row appends its path.
+  const rowNameId = useId();
+  const rowDescriptionId = useId();
+  const moreHereId = useId();
+  const moreLabelId = useId();
+  // The group headings' ids, one pair per place: the sidebar and the sheet
+  // are in the document at once.
+  const sidebarGroupIds = [useId(), useId()] as const;
+  const moreGroupIds = [useId(), useId()] as const;
   const profileRegion = useRef<HTMLDivElement>(null);
   const closeProfile = useCallback(() => setProfileOpen(false), []);
   const closeMoreWhenWide = useCallback(() => setMoreOpen(false), []);
@@ -282,12 +298,15 @@ export function AppChrome({ children }: AppChromeProps) {
   // The phone layout, read off the table like the sidebar's list. No role, no
   // tabs and an empty *Više* — which still opens, for the theme and Odjava.
   const phone = role === null ? null : phoneNavigationFor(role);
-  const more = phone === null ? { everyone: [], adminOnly: [] } : phone.more;
+  const more: GroupedDestinations = phone === null ? { overview: [], settings: [] } : phone.more;
   // *Više* is current while the page is one of the destinations it holds, so
-  // the bar always marks where the person is.
-  const moreCurrent = [...more.everyone, ...more.adminOnly].some((destination) =>
-    isCurrentDestination(pathname, destination.path),
-  );
+  // the bar always marks where the person is, and it names that place under
+  // its own label (frame D).
+  const moreHere =
+    [...more.overview, ...more.settings].find((destination) =>
+      isCurrentDestination(pathname, destination.path),
+    ) ?? null;
+  const moreCurrent = moreHere !== null;
 
   // A REFUSED PRESS IS ABOUT THE PRESS, and it stops being about anything the
   // moment the person moves on. Without this the alert followed them onto every
@@ -467,10 +486,20 @@ export function AppChrome({ children }: AppChromeProps) {
    * only behaviour: the collapsed rail's tooltip belongs to the sidebar, and a
    * sheet row closes the sheet when pressed, even when it is the current page
    * and so changes no pathname.
+   *
+   * A SHEET ROW SAYS MORE (frames B and D): a one-line description under the
+   * name, and "Ovdje si" on the current row, so the place is marked in words
+   * and not only by the pill. The name stays the link's accessible name
+   * (`aria-labelledby`), the description is its description, and the marker
+   * is hidden from assistive technology, which hears `aria-current` instead.
+   * Each sits in an inline-block, so the current row's underline stays on the
+   * name.
    */
   function renderLink(destination: Destination, place: Place): ReactNode {
     const Icon = destinationIcon(destination.key);
     const name = t(destination.key);
+    const current = isCurrentDestination(pathname, destination.path);
+    const row = place === PLACE.sheet;
 
     return (
       <Link
@@ -496,12 +525,39 @@ export function AppChrome({ children }: AppChromeProps) {
         // the first child route — see `isCurrentDestination`, which is in the
         // data module because it is a rule with two polarities worth running.
         aria-current={isCurrentDestination(pathname, destination.path) ? 'page' : undefined}
+        aria-labelledby={row ? rowNameId + destination.path : undefined}
+        aria-describedby={row ? rowDescriptionId + destination.path : undefined}
         title={place === PLACE.sidebar && !expanded ? name : undefined}
         onClick={place === PLACE.sheet ? closeMore : undefined}
         className="shell-entry flex h-11 min-w-0 shrink-0 items-center justify-center gap-2 rounded-md px-3 text-sm font-normal text-sidebar-foreground sm:justify-start"
       >
         <Icon aria-hidden className="size-4 shrink-0" />
-        <span className="max-w-full truncate group-data-[collapsed=true]/sidebar:sr-only">{name}</span>
+        {row ? (
+          <>
+            <span className="grid min-w-0 flex-1 text-left">
+              <span id={rowNameId + destination.path} className="truncate">
+                {name}
+              </span>
+              <span>
+                <span
+                  id={rowDescriptionId + destination.path}
+                  className="inline-block max-w-full truncate align-top text-xs font-normal opacity-80"
+                >
+                  {t(destinationDescriptionMessageKey(destination.key))}
+                </span>
+              </span>
+            </span>
+            {current ? (
+              <span aria-hidden className="shrink-0">
+                <span className="inline-block rounded-full border border-current px-2 text-xs font-semibold">
+                  {t('shell.moreHere')}
+                </span>
+              </span>
+            ) : null}
+          </>
+        ) : (
+          <span className="max-w-full truncate group-data-[collapsed=true]/sidebar:sr-only">{name}</span>
+        )}
       </Link>
     );
   }
@@ -647,6 +703,45 @@ export function AppChrome({ children }: AppChromeProps) {
   }
 
   /**
+   * The two groups with their headings, *Pregled* and *Postavke*, for the
+   * sidebar and the sheet alike, so both say the same two words over the same
+   * split (`groupDestinations`). `ids` are the place's two heading ids.
+   */
+  function labelledGroups(grouped: GroupedDestinations, ids: readonly [string, string]) {
+    return [
+      { id: ids[0], label: t('shell.moreGroup.everyone'), rows: grouped.overview },
+      { id: ids[1], label: t('shell.moreGroup.adminOnly'), rows: grouped.settings },
+    ];
+  }
+
+  /**
+   * The sidebar's destinations under the same two headings as the sheet
+   * (*Pregled*, *Postavke*). A group with no rows is not drawn, so a member's
+   * sidebar has *Pregled* alone. Collapsed, the labels stay for assistive
+   * technology and leave the rail to the icons. The skeleton and the empty
+   * failure state are `renderDestinations`'s, as before.
+   */
+  function renderSidebar(): ReactNode {
+    if (member.isPending || role === null) return renderDestinations([], PLACE.sidebar);
+
+    return labelledGroups(groupDestinations(destinationsFor(role)), sidebarGroupIds).map((group) =>
+      group.rows.length === 0 ? null : (
+        // A NAMED GROUP, NOT A HEADED SECTION: the sidebar sits beside every
+        // page, and a heading here would join each page's own outline.
+        <div key={group.id} role="group" aria-labelledby={group.id} className="flex flex-col gap-1">
+          <p
+            id={group.id}
+            className="px-3 pt-2 font-sans text-xs font-semibold uppercase tracking-wide text-sidebar-foreground/70 group-data-[collapsed=true]/sidebar:sr-only"
+          >
+            {group.label}
+          </p>
+          {renderDestinations(group.rows, PLACE.sidebar)}
+        </div>
+      ),
+    );
+  }
+
+  /**
    * The phone's *Više* sheet (story 7.3): who is signed in, the role's other
    * destinations in two groups, the theme and Odjava.
    *
@@ -674,10 +769,7 @@ export function AppChrome({ children }: AppChromeProps) {
       first !== null && second !== null
         ? t('shell.identity', { role: first, organization: second })
         : first;
-    const groups = [
-      { id: 'more-everyone', label: t('shell.moreGroup.everyone'), rows: more.everyone },
-      { id: 'more-admin-only', label: t('shell.moreGroup.adminOnly'), rows: more.adminOnly },
-    ];
+    const groups = labelledGroups(more, moreGroupIds);
 
     return (
       <Dialog
@@ -711,7 +803,11 @@ export function AppChrome({ children }: AppChromeProps) {
         </DialogHeader>
         {groups.map((group) =>
           group.rows.length === 0 ? null : (
-            <section key={group.id} aria-labelledby={group.id} className="grid gap-1 *:justify-start">
+            <section
+              key={group.id}
+              aria-labelledby={group.id}
+              className="grid gap-1 *:justify-start [&>a]:h-auto [&>a]:min-h-12 [&>a]:py-1"
+            >
               <h2 id={group.id} className="font-sans text-xs font-semibold uppercase tracking-wide text-sidebar-foreground/70">
                 {group.label}
               </h2>
@@ -785,7 +881,7 @@ export function AppChrome({ children }: AppChromeProps) {
   }
 
   const toggleName = expanded ? t('shell.menuHide') : t('shell.menuShow');
-  const destinations = renderDestinations(role === null ? [] : destinationsFor(role), PLACE.sidebar);
+  const destinations = renderSidebar();
   const tabs = renderDestinations(phone === null ? [] : phone.tabs, PLACE.tab);
   const moreName = t('shell.more');
 
@@ -895,10 +991,30 @@ export function AppChrome({ children }: AppChromeProps) {
               aria-haspopup="dialog"
               aria-expanded={moreOpen}
               aria-current={moreCurrent ? 'page' : undefined}
+              aria-labelledby={moreLabelId}
+              aria-describedby={moreHere === null ? undefined : moreHereId}
               onClick={() => setMoreOpen(true)}
             >
               <Ellipsis aria-hidden className="size-4 shrink-0" />
-              <span className="max-w-full truncate">{moreName}</span>
+              <span id={moreLabelId} className="max-w-full truncate">
+                {moreName}
+              </span>
+              {/* THE PLACE, under the label while *Više* is current (frame D),
+                  so the bar says where the person is and not only that it is
+                  somewhere in the sheet. Its description rather than its name
+                  (the name is the label alone, `aria-labelledby`), so the
+                  control is still called *Više*; an inline-block, so the
+                  current underline stays on the label. */}
+              {moreHere === null ? null : (
+                <span className="-mt-0.5 max-w-full leading-none">
+                  <span
+                    id={moreHereId}
+                    className="inline-block max-w-full truncate align-top text-[0.625rem] font-medium"
+                  >
+                    {t(destinationPlaceMessageKey(moreHere.key))}
+                  </span>
+                </span>
+              )}
             </Button>
           </nav>
         </div>

@@ -7,6 +7,9 @@ import {
   isSearchText,
   searchChangedTo,
   searchEntryOf,
+  searchTextOf,
+  sortSearchFor,
+  sortSearchOf,
 } from '@/utils/search-params';
 
 /**
@@ -64,5 +67,29 @@ describe('a change applied to a search', () => {
 
     expect(Object.keys(next)).toEqual(['a', 'b', 'c']);
     expect('b' in searchChangedTo<Search>(ORDER, { a: 'x' }, { c: 1 })).toBe(false);
+  });
+});
+
+describe('the list screens’ free text and sorted column (retro A12)', () => {
+  it('reads a sort as its column name and direction, and anything but text as no sort', () => {
+    expect(sortSearchOf('ime')).toEqual({ name: 'ime', descending: false });
+    expect(sortSearchOf('-ime')).toEqual({ name: 'ime', descending: true });
+    expect(sortSearchOf('')).toEqual({ name: '', descending: false });
+    expect(sortSearchOf(3)).toBeNull();
+    expect(sortSearchOf(undefined)).toBeNull();
+  });
+
+  it('writes a sort back the way it reads it', () => {
+    expect(sortSearchFor('ime', false)).toBe('ime');
+    expect(sortSearchFor('ime', true)).toBe('-ime');
+    expect(sortSearchOf(sortSearchFor('preostalo', true))).toEqual({ name: 'preostalo', descending: true });
+  });
+
+  it('trims the search text, keeps a number the router parsed, and reads anything else as none', () => {
+    expect(searchTextOf('  ana ')).toBe('ana');
+    expect(searchTextOf('   ')).toBe('');
+    expect(searchTextOf(123)).toBe('123');
+    expect(searchTextOf(null)).toBe('');
+    expect(searchTextOf(['a'])).toBe('');
   });
 });

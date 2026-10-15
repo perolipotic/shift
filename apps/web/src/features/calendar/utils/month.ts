@@ -39,6 +39,7 @@ import {
   formatIsoDayMonth,
   formatIsoMonthName,
   formatIsoWeekdayName,
+  isIsoDate,
   organizationIsoDate,
 } from '@/lib/i18n/format';
 import type { MemberRole } from '@/features/navigation/utils/destinations';
@@ -180,6 +181,16 @@ export { MONTH_SEARCH_PARAM, PERSON_SEARCH_PARAM, TEAM_SEARCH_PARAM };
 export const MODE_SEARCH_PARAM = 'prikaz';
 
 /**
+ * The search parameters that name the day open in the day detail:
+ * `?dan=2026-10-05&danSmjena=<team id>` (deferred-work E862). Both or
+ * neither: a day is a team on a date. In the URL, so Back from the conflict
+ * screen `Riješi konflikt` leads to reopens the day, and Back while it is
+ * open closes it.
+ */
+export const DAY_SEARCH_PARAM = 'dan';
+export const DAY_TEAM_SEARCH_PARAM = 'danSmjena';
+
+/**
  * What a screen key reads where no team or person is chosen: it cannot
  * collide with a chosen one, because {@link calendarSearchOf} drops an empty
  * `smjena` and `osoba`.
@@ -208,6 +219,16 @@ export interface CalendarSearch {
   readonly prikaz?: CalendarMode | undefined;
   readonly smjena?: string | undefined;
   readonly osoba?: string | undefined;
+  /** The open day's date, always with `danSmjena`. */
+  readonly dan?: string | undefined;
+  /** The open day's team, always with `dan`. */
+  readonly danSmjena?: string | undefined;
+}
+
+/** The day open in the detail, as the URL names it: a team on a date. */
+export interface CalendarOpenDay {
+  readonly teamId: string;
+  readonly date: string;
 }
 
 /**
@@ -219,11 +240,15 @@ export interface CalendarFilterChange {
   readonly osoba: string | null;
 }
 
-/** A change of the search: the month (`null`: the current one), the mode, or the filter. */
+/**
+ * A change of the search: the month (`null`: the current one), the mode, the
+ * filter, or the day open in the detail (`null`: none).
+ */
 export type CalendarSearchChange =
   | { readonly mjesec: string | null }
   | { readonly prikaz: CalendarMode }
-  | CalendarFilterChange;
+  | CalendarFilterChange
+  | { readonly dan: CalendarOpenDay | null };
 
 /** Whether a value is one of the two modes. */
 export function isCalendarMode(value: unknown): value is CalendarMode {
@@ -250,13 +275,37 @@ export function calendarModeOf(search: CalendarSearch, role: MemberRole, isPhone
  * the person (story 3.3b), and the filter keeps the month and the mode. `null`
  * drops a month (the current one), a team or a person. A mode, team or person
  * the viewer never chose is never written in.
+ *
+ * The open day is kept by a change of the day alone: any other change — the
+ * month, the mode, the filter — closes it, as it did while it lived in state.
  */
 export function calendarSearchTo(search: CalendarSearch, change: CalendarSearchChange): CalendarSearch {
-  return searchChangedTo(CALENDAR_SEARCH_ORDER, search, change);
+  const day =
+    'dan' in change
+      ? change.dan === null
+        ? { dan: null, danSmjena: null }
+        : { dan: change.dan.date, danSmjena: change.dan.teamId }
+      : null;
+
+  return searchChangedTo(CALENDAR_SEARCH_ORDER, search, day ?? { ...change, dan: null, danSmjena: null });
+}
+
+/** The day the search opens in the detail, or `null` for none. */
+export function calendarOpenDayOf(search: CalendarSearch): CalendarOpenDay | null {
+  return search.dan === undefined || search.danSmjena === undefined
+    ? null
+    : { teamId: search.danSmjena, date: search.dan };
 }
 
 /** The order the calendar writes its parameters in. */
-const CALENDAR_SEARCH_ORDER = [MONTH_SEARCH_PARAM, MODE_SEARCH_PARAM, TEAM_SEARCH_PARAM, PERSON_SEARCH_PARAM] as const;
+const CALENDAR_SEARCH_ORDER = [
+  MONTH_SEARCH_PARAM,
+  MODE_SEARCH_PARAM,
+  TEAM_SEARCH_PARAM,
+  PERSON_SEARCH_PARAM,
+  DAY_SEARCH_PARAM,
+  DAY_TEAM_SEARCH_PARAM,
+] as const;
 
 /** A cell's shape: at least 30 px high, the small radius, the label never truncated. */
 export const CALENDAR_CELL_CLASS =
@@ -303,18 +352,26 @@ export function isCalendarMonth(value: unknown): value is string {
  * whatever it names — an unknown or archived team, or an unknown or inactive
  * person, is ignored by {@link calendarMonthOf}, and stays in the URL until
  * the viewer chooses again.
+ *
+ * The open day is kept only whole: a real ISO date in `dan` AND a non-empty
+ * `danSmjena`; either alone, or a date that names no day, is dropped. A team
+ * the snapshot does not hold is the day detail's to close.
  */
 export function calendarSearchOf(search: Record<string, unknown>): CalendarSearch {
   const month = search[MONTH_SEARCH_PARAM];
   const mode = search[MODE_SEARCH_PARAM];
   const team = search[TEAM_SEARCH_PARAM];
   const person = search[PERSON_SEARCH_PARAM];
+  const day = search[DAY_SEARCH_PARAM];
+  const dayTeam = search[DAY_TEAM_SEARCH_PARAM];
+  const dayWhole = typeof day === 'string' && isIsoDate(day) && typeof dayTeam === 'string' && dayTeam !== '';
 
   return {
     ...searchEntryOf(MONTH_SEARCH_PARAM, month, isCalendarMonth),
     ...searchEntryOf(MODE_SEARCH_PARAM, mode, isCalendarMode),
     ...searchEntryOf(TEAM_SEARCH_PARAM, team, isSearchText),
     ...searchEntryOf(PERSON_SEARCH_PARAM, person, isSearchText),
+    ...(dayWhole ? { dan: day, danSmjena: dayTeam } : {}),
   };
 }
 
@@ -780,6 +837,12 @@ export interface CalendarMonth extends MonthHeader {
    * instead of the grid.
    */
   readonly person: CalendarPersonMonth | null;
+  /**
+   * The viewer's own team for the month ({@link monthTeamOf}), its name as
+   * stored, or `null` for none: what *Moj raspored*'s sentence names
+   * (deferred-work E822, `kalendar.ownNote` or `kalendar.ownNoteNoTeam`).
+   */
+  readonly ownTeamName: string | null;
 }
 
 /** The day list, or its own read failure — which the grid does not share. */
@@ -1195,6 +1258,7 @@ export function calendarMonthOf(
         ),
     })),
     days: dayListOutcomeOf(snapshot, snapshot.viewer, month, today, marks),
+    ownTeamName: ownTeamNameOf(snapshot, dates, teamNames),
     person:
       chosenOne === null
         ? null
@@ -1203,6 +1267,21 @@ export function calendarMonthOf(
             days: dayListOutcomeOf(snapshot, { ...chosenOne.member, memberId: chosenOne.member.id }, month, today, marks),
           },
   };
+}
+
+/**
+ * The viewer's team for the month's `dates`, by name, or `null` for none. A
+ * team the snapshot does not name is `null` too, never a thrown month: like
+ * the day list's own failure, it stays local, and the day list reports it.
+ */
+function ownTeamNameOf(
+  snapshot: CalendarSnapshot,
+  dates: readonly string[],
+  teamNames: ReadonlyMap<string, string>,
+): string | null {
+  const teamId = monthTeamOf(snapshot.viewer, dates);
+
+  return teamId === null ? null : (teamNames.get(teamId) ?? null);
 }
 
 /** A month to draw, or the calendar's one read failure. */

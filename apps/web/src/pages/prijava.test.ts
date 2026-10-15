@@ -943,7 +943,8 @@ const SCREENS = [
   // sastav" and "Promijeni tip smjene" — each change dialog's cancel, and
   // "Riješi konflikt", a `<Button asChild>` over the link, written once
   // inside the map over the day's conflicts.
-  { name: 'the Kalendar destination', file: KALENDAR, expectedFields: 6, expectedButtons: 33 },
+  // THIRTY-FOUR BUTTONS SINCE DEFERRED-WORK E795: the month picker footer's `Ovaj mjesec`.
+  { name: 'the Kalendar destination', file: KALENDAR, expectedFields: 6, expectedButtons: 34 },
   // STORY 4.1b. THREE on Sati: the month navigation it shares with the
   // calendar — the previous month, `Ovaj mjesec` and the next month. The
   // figures are read, never pressed.
@@ -967,7 +968,8 @@ const SCREENS = [
   // table's `EmptyResult`, so its two ways out are not written twice.
   // TWENTY-THREE SINCE STORY 7.14: the ⓘ `Button` beside an hours figure,
   // written once in `ExplainButton` however many figures carry one.
-  { name: 'the Sati destination', file: SATI, expectedFields: 1, expectedButtons: 22 },
+  // TWENTY-THREE BUTTONS SINCE DEFERRED-WORK E795: the month picker footer's `Ovaj mjesec`.
+  { name: 'the Sati destination', file: SATI, expectedFields: 1, expectedButtons: 23 },
   // STORY 5.2c. ONE on Godišnji: the retry its unavailable alert offers. The
   // three figures are read, never pressed, and nothing here writes: a member
   // requests no leave (story 5.3 is conflicts, not requests).
@@ -1535,6 +1537,9 @@ const ORGANIZATION_MESSAGE_KEYS = join(srcRoot, 'features', 'organization', 'uti
 
 /** The same shape again, for the chrome's role and sign-out failures. */
 const NAVIGATION_MESSAGE_KEYS = join(srcRoot, 'features', 'navigation', 'utils', 'messages.ts');
+
+/** The same shape for the *Više* sheet's copy per destination (story 7.3's mockup). */
+const DESTINATION_COPY_KEYS = join(srcRoot, 'features', 'navigation', 'utils', 'destination-copy.ts');
 
 /** UX-DR40's tap-target floor, in CSS pixels. */
 const TARGET_FLOOR_PX = 44;
@@ -2445,10 +2450,12 @@ const KEY_SOURCES = [
     // FIFTEEN SINCE DESIGN REFRESH C: the lede, the add dialog's open button,
     // heading, close and cancel, and the table's heads (the name label again,
     // and actions).
+    // SIXTEEN SINCE THE STACKED ROWS (UX-DR17): the name label once more, on
+    // the phone's stacked row.
     name: 'the team list',
     file: TEAM_LIST,
     keys: translationKeys,
-    strings: 15,
+    strings: 16,
   },
   {
     // EIGHT on one team: the name label, Save, the archive offer, prompt,
@@ -2629,10 +2636,12 @@ const KEY_SOURCES = [
     // from, to, the duration label and actions). THIRTY-TWO with the add
     // dialog's computed end: its label, its pending text, the hint, and the
     // preview's duration label and midnight flag.
+    // THIRTY-SIX SINCE THE STACKED ROWS (UX-DR17): the phone's row labels its
+    // name, from, to and duration fields with the column heads' keys again.
     name: 'the hour band list',
     file: HOUR_BAND_LIST,
     keys: translationKeys,
-    strings: 32,
+    strings: 36,
   },
   {
     // TWELVE on one band: its heading, the two field labels, Save, the window
@@ -2773,8 +2782,10 @@ const KEY_SOURCES = [
     // "Odbaci promjene" and its hint, with and without the rotation in force.
     // EIGHTY-EIGHT SINCE STORY 7.18: the history's ten moved to its own
     // dialog, the next entry.
+    // NINETY SINCE THE STACKED OFFSETS (UX-DR17): the phone's row labels the
+    // team and the anchor's type with the column heads' keys again.
     keys: translationKeys,
-    strings: 88,
+    strings: 90,
   },
   {
     // STORY 7.18: the history behind a header button — the button and the
@@ -2782,10 +2793,13 @@ const KEY_SOURCES = [
     // the empty note, the five column heads, the save time and the team
     // count. The statuses and the unknown author come through
     // `@/features/rotation/services/history`.
+    // SIXTEEN SINCE THE STACKED ROWS (UX-DR17): the heading is read once now
+    // (eleven), and the phone's row labels its five fields with the column
+    // heads' keys again.
     name: 'the rotation history',
     file: ROTATION_HISTORY_DIALOG,
     keys: translationKeys,
-    strings: 12,
+    strings: 16,
   },
   {
     // STORY 3.5c: the review's heading, lede and count; a row's title, type,
@@ -2936,7 +2950,11 @@ const KEY_SOURCES = [
     // ONE HUNDRED AND SIXTY-FIVE SINCE B449: an empty day, the viewer's empty
     // month and a person's say inactive or no team through `empty-day`'s
     // unions, counted there (three fewer).
-    strings: 165,
+    // ONE HUNDRED AND SEVENTY-ONE SINCE THE DEFERRED-WORK SWEEP: the month
+    // picker's phone sheet — its title and close (E792) — and its footer — the
+    // key hint and `Ovaj mjesec` (E795); and *Moj raspored*'s sentence, with
+    // the team and without (E822).
+    strings: 171,
   },
   {
     // B449: what an empty day or month says — inactive, or on no team — for
@@ -3025,10 +3043,14 @@ const KEY_SOURCES = [
     //
     // ONE HUNDRED AND SIX SINCE E909: the conflicts column sorts, so the
     // phone's sort control offers its heading too.
+    //
+    // ONE HUNDRED AND TEN SINCE THE DEFERRED-WORK SWEEP: the shared month
+    // picker's phone sheet, its title and close (E792), and its footer, the
+    // key hint and `Ovaj mjesec` (E795).
     name: 'the Sati destination',
     file: SATI,
     keys: translationKeys,
-    strings: 106,
+    strings: 110,
   },
   {
     // STORY 5.2c. THREE on Godišnji: its own `nav.godisnji` heading, the
@@ -3596,7 +3618,10 @@ const KEY_SOURCES = [
   // SEVENTEEN with story 7.3's *Više*: its name twice (the button's word and
   // the sheet's `aria-label`), the sheet's close, its three group headings
   // and the "role · organization" line under the person's name.
-  { name: 'the navigation chrome', file: CHROME, keys: translationKeys, strings: 17 },
+  // EIGHTEEN with the sheet's copy: the current row's "Ovdje si". The rows'
+  // descriptions and the place under *Više* come through the next entry but
+  // one.
+  { name: 'the navigation chrome', file: CHROME, keys: translationKeys, strings: 18 },
   {
     // TWO, for three role codes and one sign-out code. The collapse is the
     // decision `messages.test.ts` executes; what this count pins is that there
@@ -3606,6 +3631,14 @@ const KEY_SOURCES = [
     file: NAVIGATION_MESSAGE_KEYS,
     keys: messageKeyUnion,
     strings: 2,
+  },
+  {
+    // NINE over two unions: a description per destination key (eight), and
+    // the one place *Više* names by a shorter word than the label.
+    name: 'the destination copy mapping',
+    file: DESTINATION_COPY_KEYS,
+    keys: messageKeyUnions,
+    strings: 9,
   },
   // ONE each, exactly. The seven together are what make the set comparison
   // below hold once `hr.json` gained eight `nav.*` keys: a key declared and
@@ -3766,7 +3799,9 @@ describe('the screen is read at all, so every sweep below means something', () =
     // SEVENTY-ONE SINCE E884: the leave overview's rules, for its Stanje chip.
     //
     // SEVENTY-TWO SINCE B449: the calendar's empty-day words.
-    expect(KEY_SOURCES).toHaveLength(72);
+    //
+    // SEVENTY-THREE SINCE THE SHEET'S COPY: the destination copy mapping.
+    expect(KEY_SOURCES).toHaveLength(73);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
@@ -3933,8 +3968,10 @@ describe('the screen is read at all, so every sweep below means something', () =
     expect(ariaHaspopupValues(nav)).toEqual(['dialog']);
     expect(nav).toMatch(/ref=\{trigger\}[\s\S]{0,240}?aria-haspopup="dialog"\s+aria-expanded=\{open\}/);
     expect(nav).toMatch(/<Popover\s+id=\{pickerId\}[^>]*aria-label=\{t\('kalendar\.monthPicker'\)\}/);
-    // While open, the trigger names the picker it opened.
-    expect(nav).toMatch(/aria-controls=\{open \? pickerId : undefined\}/);
+    // While open, the trigger names the picker it opened: the Popover, or below
+    // 640 px the bottom sheet (deferred-work E792).
+    expect(nav).toMatch(/aria-controls=\{open \? \(isPhone \? sheetId : pickerId\) : undefined\}/);
+    expect(nav).toMatch(/<SheetDialog id=\{sheetId\}[^>]*open=\{open && isPhone\}/);
     // The picker belongs to the month it was opened on.
     expect(nav).toMatch(/const open = shownMonth !== null && openOn === shownMonth;/);
     // PgUp and PgDn on the group, by the pure rule, never page-wide.
@@ -5210,8 +5247,9 @@ describe('the chrome the layout wraps every destination in', () => {
     // same section rule the links use.
     expect(more, 'Više is never marked current').toContain("aria-current={moreCurrent ? 'page' : undefined}");
     expect(chrome, 'Više decides its own current state by hand').toMatch(
-      /const moreCurrent = [\s\S]{0,160}?isCurrentDestination\(pathname, destination\.path\)/,
+      /const moreHere =[\s\S]{0,160}?isCurrentDestination\(pathname, destination\.path\)/,
     );
+    expect(chrome).toContain('const moreCurrent = moreHere !== null;');
     // The SAME treatment as the link, by construction: both carry the one
     // `shell-entry` utility rather than two copies of its classes.
     expect(
@@ -5228,8 +5266,10 @@ describe('the chrome the layout wraps every destination in', () => {
     expect(sheet, 'the sheet renders its rows some other way').toContain(
       'renderLink(destination, PLACE.sheet)',
     );
-    expect(sheet).toContain('more.everyone');
-    expect(sheet).toContain('more.adminOnly');
+    expect(sheet).toContain('labelledGroups(more,');
+    expect(chrome, 'the sidebar does not group its destinations').toContain(
+      'labelledGroups(groupDestinations(destinationsFor(role)),',
+    );
     expect(chrome, 'the phone layout is not read off the table').toContain('phoneNavigationFor(role)');
   });
 
@@ -6906,6 +6946,35 @@ describe('a table becomes stacked rows below 640 px (story 7.6)', () => {
     expect(rows, 'a value is drawn outside StackedField').not.toMatch(/<dd\b|<dt\b|<dl\b/);
   });
 
+  /**
+   * The 2026-10 deferred-work cleanup: four more tables stack, each in the
+   * same file as its table, so the `ROWS` sweeps (which refuse table markup)
+   * do not apply. What does: a named list, a label on every field, and one
+   * form at a time by `usePhone`. The rotation section is read for the first
+   * two only; its stepper hides steps by breakpoint class on purpose.
+   */
+  const INLINE_ROWS = [
+    join(srcRoot, 'features', 'hour-bands', 'components', 'hour-band-table.tsx'),
+    join(srcRoot, 'features', 'teams', 'components', 'team-table.tsx'),
+    ROTATION_HISTORY_DIALOG,
+    join(srcRoot, 'features', 'rotation', 'components', 'rotation-section.tsx'),
+  ];
+
+  it.each(INLINE_ROWS)('stacks %s below 640 px as a named list whose every value is labelled', (file) => {
+    const screen = source(file);
+    const opened = occurrences(screen, '<StackedField ') + occurrences(screen, '<StackedField\n');
+    const labelled = [...screen.matchAll(/<StackedField\s+label=\{/g)].length;
+
+    expect(screen).toMatch(/const isPhone = usePhone\(\);/);
+    expect(screen).toMatch(/<StackedList\b[^>]*aria-label=/);
+    expect(opened, 'no value goes through StackedField').toBeGreaterThan(0);
+    expect(labelled, 'a StackedField does not open with its column label').toBe(opened);
+  });
+
+  it.each(INLINE_ROWS.slice(0, 3))('never draws both forms in %s, one hidden by a class', (file) => {
+    expect(source(file)).not.toMatch(/max-sm:hidden|sm:hidden|hidden sm:/);
+  });
+
   it.each(SWITCHES)('renders one form at a time in %s, by usePhone', (file) => {
     const screen = source(file);
 
@@ -6991,19 +7060,19 @@ describe('the keys rendered and the keys declared are the same set', () => {
       .join('\n');
     const declared = resourceKeys().filter((key) => key.startsWith('ljudi.'));
 
-    expect(declared.length, 'no ljudi keys to sweep at all').toBeGreaterThan(0);
-    // `used()` is read ONCE: called per key it re-read every owned file for
-    // each of the ~200 keys, and the case outgrew the 5 s budget.
-    const counted = new Set(used());
+    // Read once: every source is re-read and re-swept per call.
+    const rendered = used();
 
-    expect(
-      declared.filter((key) => !owned.includes(key)),
-      'declared in hr.json and written nowhere the readers look',
-    ).toEqual([]);
-    expect(
-      declared.filter((key) => !counted.has(key)),
-      'written in the source but no reader here counts it — add its shape to memberListKeys',
-    ).toEqual([]);
+    expect(declared.length, 'no ljudi keys to sweep at all').toBeGreaterThan(0);
+    for (const key of declared) {
+      expect(owned, `${key} is declared in hr.json and written nowhere the readers look`).toContain(
+        key,
+      );
+      expect(
+        rendered,
+        `${key} is written in the source but no reader here counts it — add its shape to memberListKeys`,
+      ).toContain(key);
+    }
   });
 
   it('declares every key the two screens render', () => {

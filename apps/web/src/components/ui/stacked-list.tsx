@@ -2,8 +2,9 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
-// A table's phone form (story 7.6): below 640 px the Sati, Ljudi and
-// shift-types tables render the SAME view model as a list of stacked rows, and
+// A table's phone form (story 7.6): below 640 px the Sati, Ljudi,
+// shift-types, leave-overview, hour-band, team, rotation-offset and
+// rotation-history tables render the SAME view model as a list of stacked rows, and
 // only one of the two forms is ever in the DOM. Restyling `table`/`tr`/`td`
 // with a `display` override would drop their roles in WebKit, so the honest
 // semantics for a card is a list: `StackedList` is a `ul` named by the
