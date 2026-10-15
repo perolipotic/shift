@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { enteredName, isBlankName, nameKey, trimName } from '@/utils/name';
+import { NAME_MAX_LENGTH, enteredName, isBlankName, nameKey, namesLengthCheck, trimName } from '@/utils/name';
 
 /**
  * The client half of `0024`'s `name_key`. The half that runs both over every
@@ -91,5 +91,24 @@ describe('trimming is linear in the input', () => {
     expect(trimName(`a${spaces}b`)).toBe(`a${spaces}b`);
     expect(trimName(`${spaces}a${spaces}b${spaces}`)).toBe(`a${spaces}b`);
     expect(isBlankName(spaces)).toBe(true);
+  });
+});
+
+describe('the one maximum name length (0036)', () => {
+  it('is 100 characters', () => {
+    expect(NAME_MAX_LENGTH).toBe(100);
+  });
+
+  it('recognises a length check by the constraint PostgreSQL quotes in the message', () => {
+    for (const table of ['organizations', 'members', 'teams', 'hour_bands', 'shift_types']) {
+      expect(
+        namesLengthCheck(`new row for relation "${table}" violates check constraint "${table}_name_length"`),
+        table,
+      ).toBe(true);
+    }
+    expect(namesLengthCheck('new row for relation "teams" violates check constraint "teams_name_not_blank"')).toBe(false);
+    // An unquoted mention, as a typed name in `details` would carry it, is not one.
+    expect(namesLengthCheck('Failing row contains (teams_name_length).')).toBe(false);
+    expect(namesLengthCheck(undefined)).toBe(false);
   });
 });

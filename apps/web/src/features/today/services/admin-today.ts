@@ -44,7 +44,8 @@ import {
   absenceOn,
   type Today,
 } from '@/features/today/services/today';
-import { formatIsoWeekdayShortName, formatMinuteOfDay, nextIsoDate, organizationWallClock } from '@/lib/i18n/format';
+import { formatIsoWeekdayShortName, formatMinuteOfDay, organizationWallClock } from '@/lib/i18n/format';
+import { datesFrom, dayAfter } from '@/utils/dates';
 
 /**
  * *Danas* for an admin (story 6.3): what needs them (*Treba tebe*), today's
@@ -367,24 +368,6 @@ export function adminTodayViewOf(
     absences: absencesOf(snapshot, records, today),
     week: weekOf(dates, months, today),
   };
-}
-
-/** `date` and the `count − 1` days after it. @throws RangeError at the end of the calendar. */
-function datesFrom(date: string, count: number): readonly string[] {
-  const dates = [date];
-
-  while (dates.length < count) dates.push(dayAfter(dates[dates.length - 1] ?? date));
-
-  return dates;
-}
-
-/** The day after `date`. @throws RangeError at the end of the calendar. */
-function dayAfter(date: string): string {
-  const next = nextIsoDate(date);
-
-  if (next === null) throw new RangeError(`the date ${date} has no next day`);
-
-  return next;
 }
 
 /**

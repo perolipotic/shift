@@ -20,6 +20,7 @@ import {
   shiftTypeWriteMessageKey,
 } from '@/features/shift-types/services/write';
 import { t } from '@/lib/i18n';
+import { NAME_MAX_LENGTH } from '@/utils/name';
 import { NO_TEXT } from '@/utils/text';
 
 /** The start and end, offered only for a working type. */
@@ -103,6 +104,7 @@ export function ShiftTypeAddDialog({ screen }: { readonly screen: ShiftTypeListS
             ref={nameField}
             id="shift-type-new-name"
             name="name"
+            maxLength={NAME_MAX_LENGTH}
             type="text"
             required
             defaultValue={NO_TEXT}

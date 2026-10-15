@@ -14,7 +14,8 @@ import {
  * member taken off only removes, one put on only adds, and both replace.
  * `created_by` and `created_at` come from their defaults, and the insert
  * policy admits an active admin of the claimed organization alone, on a team
- * that is not archived.
+ * that is not archived. A team archived while the day was open is named by
+ * `0036`'s trigger ({@link ROSTER_ARCHIVED}), not read as a lost permission.
  *
  * REMOVING IS 0027's DEFINER FUNCTION, `remove_roster_override`, which sets
  * `removed_by` and `removed_at` on the server: a soft-remove, never a delete,
@@ -34,6 +35,8 @@ export const REMOVE_ROSTER_OVERRIDE_FUNCTION = 'remove_roster_override';
 export const ROSTER_TAKEN = 'taken';
 /** The roster change is no longer live: removed already, or gone from reach (P0002). */
 export const ROSTER_GONE = 'gone';
+/** The team was archived meanwhile (`0036`'s 23514 `ROSTER_OVERRIDE_ARCHIVED`). */
+export const ROSTER_ARCHIVED = 'archived';
 /** The caller may not change rosters (42501). */
 export const ROSTER_DENIED = 'denied';
 /** Anything else, 23503 included: try again. */
@@ -44,6 +47,7 @@ export type RosterWriteFailure =
   | typeof ROSTER_REFUSED_REASON
   | typeof ROSTER_TAKEN
   | typeof ROSTER_GONE
+  | typeof ROSTER_ARCHIVED
   | typeof ROSTER_DENIED
   | typeof ROSTER_FAILED;
 
@@ -83,11 +87,15 @@ const UNIQUE_VIOLATION = '23505';
 const CHECK_VIOLATION = '23514';
 const NO_DATA_FOUND = 'P0002';
 
+/** The message `0036` names an archived team with. */
+const ARCHIVED_MESSAGE = 'ROSTER_OVERRIDE_ARCHIVED';
+
 /** 0026's two member checks, which a `23514` names in its message. */
 const MEMBER_CHECKS = ['roster_overrides_member_present', 'roster_overrides_members_distinct'] as const;
 
 /**
- * A refused INSERT, as this application's own failure. `23514` naming one of
+ * A refused INSERT, as this application's own failure. `23514` with `0036`'s
+ * message is an archived team ({@link ROSTER_ARCHIVED}). `23514` naming one of
  * 0026's member checks — no member, or one member on both sides, which the
  * preflight spares but the database decides — is {@link ROSTER_REFUSED_MEMBER};
  * any other `23514` is the reason's (the date's and the removal's checks are
@@ -97,6 +105,7 @@ const MEMBER_CHECKS = ['roster_overrides_member_present', 'roster_overrides_memb
  * everything unforeseen are {@link ROSTER_FAILED}.
  */
 export function rosterInsertFailureOf(error: RosterWriteError): RosterWriteFailure {
+  if (error.code === CHECK_VIOLATION && error.message === ARCHIVED_MESSAGE) return ROSTER_ARCHIVED;
   if (error.code === CHECK_VIOLATION) {
     const said = `${error.message ?? ''} ${error.details ?? ''}`;
 
@@ -212,12 +221,14 @@ export function rosterWriteMessageKey(
   | 'kalendar.detail.rosterChange.refused.reason'
   | 'kalendar.detail.rosterChange.refused.taken'
   | 'kalendar.detail.rosterChange.refused.gone'
+  | 'kalendar.detail.rosterChange.refused.archived'
   | 'kalendar.detail.rosterChange.refused.denied'
   | 'kalendar.detail.rosterChange.refused.failed' {
   if (failure === ROSTER_REFUSED_MEMBER) return 'kalendar.detail.rosterChange.refused.member';
   if (failure === ROSTER_REFUSED_REASON) return 'kalendar.detail.rosterChange.refused.reason';
   if (failure === ROSTER_TAKEN) return 'kalendar.detail.rosterChange.refused.taken';
   if (failure === ROSTER_GONE) return 'kalendar.detail.rosterChange.refused.gone';
+  if (failure === ROSTER_ARCHIVED) return 'kalendar.detail.rosterChange.refused.archived';
   if (failure === ROSTER_DENIED) return 'kalendar.detail.rosterChange.refused.denied';
   if (failure === ROSTER_FAILED) return 'kalendar.detail.rosterChange.refused.failed';
 

@@ -65,3 +65,46 @@ export function searchChangedTo<S extends object>(
 
   return next as S;
 }
+
+// ------------------------------------------------- free text and a sorted column
+
+/**
+ * THE LIST SCREENS' TWO SHARED PARAMETERS (retro A12): the free-text search
+ * `?trazi=` and the sorted column `?sort=`, read the same way on *Ljudi* and
+ * the leave overview. Each screen keeps its own column vocabulary and its own
+ * default; how the two parameters are spelled and read is decided here once.
+ */
+
+/** The prefix a descending sort carries in the URL: `?sort=-ime`. */
+const DESCENDING_SORT_PREFIX = '-';
+
+/** A `?sort=` value read apart: the column's URL name and whether it runs descending. */
+export interface SortSearch {
+  readonly name: string;
+  readonly descending: boolean;
+}
+
+/** `?sort=` as a column name and a direction, or `null` when it is no text. */
+export function sortSearchOf(value: unknown): SortSearch | null {
+  if (typeof value !== 'string') return null;
+
+  const descending = value.startsWith(DESCENDING_SORT_PREFIX);
+
+  return { name: descending ? value.slice(DESCENDING_SORT_PREFIX.length) : value, descending };
+}
+
+/** A column's URL name and direction written back as `?sort=`: `ime`, or `-ime` descending. */
+export function sortSearchFor(name: string, descending: boolean): string {
+  return descending ? `${DESCENDING_SORT_PREFIX}${name}` : name;
+}
+
+/**
+ * The URL's search text, trimmed: whitespace alone is no search, so
+ * `?trazi=%20%20` opens at the defaults and offers no reset. A number too —
+ * the router parses `?trazi=123` as JSON. Anything else is no search.
+ */
+export function searchTextOf(value: unknown): string {
+  if (typeof value === 'number') return String(value);
+
+  return typeof value === 'string' ? value.trim() : '';
+}

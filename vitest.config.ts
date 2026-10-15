@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url';
+
 import { defineConfig } from 'vitest/config';
 
 // AD-15: every rule is asserted without a browser, so the node environment is
@@ -8,6 +10,12 @@ import { defineConfig } from 'vitest/config';
 // the client tree, the static-host fallback, and the shape of the Supabase
 // scaffold. Package-local tests stay in their own package and run via `pnpm -r`.
 export default defineConfig({
+  // `apps/web`'s own alias, for the one root test that drives an `apps/web`
+  // module (`rls-isolation.test.ts` → `features/leave/services/leave-write.ts`,
+  // which reads dates through `@/lib/i18n/format`).
+  resolve: {
+    alias: { '@': fileURLToPath(new URL('./apps/web/src', import.meta.url)) },
+  },
   test: {
     environment: 'node',
     include: ['test/**/*.test.ts'],

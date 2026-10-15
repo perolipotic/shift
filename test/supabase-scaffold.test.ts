@@ -467,7 +467,7 @@ describe('the access-control migration', () => {
     ).toEqual([]);
   });
 
-  it('declares exactly the forty-five policies stories 1.3a, 1.4a, 1.4b, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a, 3.5a, 3.6a, 5.1b, 5.4a and 0025 reviewed, and no forty-sixth', () => {
+  it('declares exactly the forty-four policies stories 1.3a, 1.4a, 1.4b, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a, 3.5a, 3.6a, 5.1b, 5.4a, 0025 and 0036 reviewed, and no forty-fifth', () => {
     // EXTENDED BY STORY 1.4a, exactly as this comment asked: `0004_organization
     // _settings.sql` adds `organizations_update_by_own_active_admin`, built by
     // copying `members_update_by_own_active_admin`, and its name is added here
@@ -484,9 +484,17 @@ describe('the access-control migration', () => {
     // on *which* policies exist behind a gate a developer has to remember to
     // open: the scope guard above is happy with a sixth policy written
     // `using (true) to authenticated`, and so was everything else here.
-    const declared = (migrationStatements().match(/create policy (\S+)/gi) ?? [])
-      .map((match) => /create policy (\S+)/i.exec(match)?.[1] ?? match)
-      .sort();
+    // In migration order: a policy a later migration drops is no longer
+    // declared (0036 drops `members_delete_by_own_active_admin`), and one
+    // dropped and created again still is.
+    const declaredSet = new Set<string>();
+    for (const match of migrationStatements().matchAll(/(create|drop) policy (?:if exists )?(\S+)/gi)) {
+      const [, verb, name] = match;
+      if (name === undefined) continue;
+      if (verb?.toLowerCase() === 'create') declaredSet.add(name);
+      else declaredSet.delete(name);
+    }
+    const declared = [...declaredSet].sort();
 
     expect(declared, 'the declared policy set changed').toEqual([
       // STORY 5.4a, and TWO: an active admin inserts and reads; a member reads
@@ -515,7 +523,8 @@ describe('the access-control migration', () => {
       'member_status_versions_delete_scheduled_by_own_active_admin',
       'member_status_versions_insert_by_own_active_admin',
       'member_status_versions_select_own_organization',
-      'members_delete_by_own_active_admin',
+      // No delete policy since 0036: deactivation is the only removal path,
+      // and a session's delete matches no row.
       'members_insert_by_own_active_admin',
       'members_select_own_organization',
       'members_update_by_own_active_admin',

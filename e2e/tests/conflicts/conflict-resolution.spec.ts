@@ -675,11 +675,12 @@ test('fits the picker on a phone: no sideways scroll, and every candidate line w
   test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   const { team, seeded, today } = await scenarioOf(fixture.slug);
   // A name far wider than a phone, one unbroken word in it, so a line that
-  // truncated or pushed the page sideways would show.
+  // truncated or pushed the page sideways would show. Within 0036's 100
+  // characters, with the `Godišnji {suffix}` the helper puts first.
   const long = await replacementOf(
     fixture.slug,
     today,
-    'Ana-Marija Kovačević-Horvatinčić Zrinski-Frankopan Nepregledivodugoprezimekojesenemozeprelomitinarazmaku',
+    'Kovačević-Horvatinčić Nepregledivodugoprezimekojesenemozeprelomitinarazmaku',
   );
   await page.setViewportSize({ width: 390, height: 844 });
   await resolutionPage.gotoConflict(seeded.id, today, team.id);

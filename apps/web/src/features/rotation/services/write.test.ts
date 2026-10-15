@@ -13,7 +13,6 @@ import {
   ROTATION_SCHEDULED,
   ROTATION_TYPE_ARCHIVED,
   ROTATION_UNCHANGED,
-  datesFrom,
   emptyDraftOf,
   prefillOf,
   previewOf,
@@ -24,6 +23,7 @@ import {
   STEP_UP,
   type RotationDraft,
 } from '@/features/rotation/utils/draft';
+import { datesFrom } from '@/utils/dates';
 import { readRotation, rotationTeamsOf, teamAssignmentsOf, type RotationSnapshot } from '@/features/rotation/services/list';
 import {
   ORGANIZATION,

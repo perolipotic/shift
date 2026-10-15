@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 
 import { FIXTURES, connect, noDatabase } from './database.js';
 
-import { isBlankName, nameKey } from '../apps/web/src/utils/name.ts';
+import { NAME_MAX_LENGTH, isBlankName, nameKey } from '../apps/web/src/utils/name.ts';
 
 /**
  * `0024`: every name check strips all white space, and name uniqueness compares
@@ -545,5 +545,31 @@ describe('existing rows the new rules would refuse stop the migration (0024)', (
   // rules is proved by their loading under the 0024 constraints at all.
   it.skipIf(noDatabase)('runs clean over the data the constraints already admit', async () => {
     expect(await guardAfter([])).toBeNull();
+  });
+});
+
+describe('the database and the client share one maximum name length (0036)', () => {
+  it.skipIf(noDatabase)('checks every name column at the length the inputs carry as maxLength', async () => {
+    const client = await connect();
+    try {
+      const { rows } = await client.query<{ name: string; definition: string }>(
+        `select conname as name, pg_get_constraintdef(oid) as definition
+           from pg_constraint
+          where connamespace = 'public'::regnamespace and conname like '%\\_name\\_length'
+          order by conname`,
+      );
+      expect(rows.map((row) => row.name)).toEqual([
+        'hour_bands_name_length',
+        'members_name_length',
+        'organizations_name_length',
+        'shift_types_name_length',
+        'teams_name_length',
+      ]);
+      for (const row of rows) {
+        expect(row.definition, row.name).toBe(`CHECK ((char_length(name) <= ${String(NAME_MAX_LENGTH)}))`);
+      }
+    } finally {
+      await client.end();
+    }
   });
 });

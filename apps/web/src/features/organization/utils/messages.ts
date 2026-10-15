@@ -9,6 +9,7 @@ import {
 import {
   ORGANIZATION_INVALID,
   ORGANIZATION_NAME_BLANK,
+  ORGANIZATION_NAME_TOO_LONG,
   ORGANIZATION_REFUSED,
   ORGANIZATION_UNAVAILABLE,
   type OrganizationFailure,
@@ -58,6 +59,7 @@ export function organizationMessageKey(
 ):
   | 'organization.error.refused'
   | 'organization.error.name'
+  | 'organization.error.nameTooLong'
   | 'organization.error.invalid'
   | 'organization.error.logoRefused'
   | 'organization.error.logoUnreadable'
@@ -67,6 +69,7 @@ export function organizationMessageKey(
   | 'organization.error.unavailable' {
   if (failure === ORGANIZATION_REFUSED) return 'organization.error.refused';
   if (failure === ORGANIZATION_NAME_BLANK) return 'organization.error.name';
+  if (failure === ORGANIZATION_NAME_TOO_LONG) return 'organization.error.nameTooLong';
   if (failure === ORGANIZATION_INVALID) return 'organization.error.invalid';
   if (failure === LOGO_REFUSED) return 'organization.error.logoRefused';
   // A SEPARATE MESSAGE from the one above, and the separation is the whole

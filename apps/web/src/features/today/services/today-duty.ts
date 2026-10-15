@@ -21,7 +21,8 @@ import {
   type CalendarDayShift,
 } from '@/features/calendar/utils/month';
 import { durationMessageKey } from '@/features/hour-bands/services/list';
-import { formatMinuteOfDay, nextIsoDate, previousIsoDate, type WallClock } from '@/lib/i18n/format';
+import { formatMinuteOfDay, previousIsoDate, type WallClock } from '@/lib/i18n/format';
+import { dayAfter } from '@/utils/dates';
 import { durationValuesOf, type DurationValues } from '@/utils/time';
 
 /**
@@ -139,15 +140,6 @@ function dayBefore(date: string): string {
   if (previous === null) throw new RangeError(`the date ${date} has no previous day`);
 
   return previous;
-}
-
-/** The day after `date`. @throws RangeError at the end of the calendar. */
-function dayAfter(date: string): string {
-  const next = nextIsoDate(date);
-
-  if (next === null) throw new RangeError(`the date ${date} has no next day`);
-
-  return next;
 }
 
 /**

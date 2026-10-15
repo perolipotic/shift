@@ -1,5 +1,7 @@
 import type { LeaveRange } from '@shift/domain';
 
+import { isIsoDate, previousIsoDate } from '@/lib/i18n/format';
+
 /**
  * Recording a member's leave (story 5.1b), and amending or removing a record
  * (story 5.2a) — the leave feature's write module, in a `.ts` that renders
@@ -155,39 +157,14 @@ function rangeLiteralOf(from: string, to: string): string {
   return `[${from},${to}]`;
 }
 
-/** A `YYYY-MM-DD` date (a five-digit year where `years` allows it) as a UTC instant, or null. */
-function instantOf(value: string, years: RegExp): Date | null {
-  const parts = new RegExp(`^(${years.source})-(\\d{2})-(\\d{2})$`).exec(value);
-
-  if (parts === null) return null;
-
-  const [, year, month, day] = parts;
-  // `setUTCFullYear`, never `Date.UTC`: the latter reads years 0–99 as 1900–1999.
-  const instant = new Date(0);
-
-  instant.setUTCFullYear(Number(year), Number(month) - 1, Number(day));
-
-  return Number.isNaN(instant.valueOf()) ? null : instant;
-}
-
-/** An instant's UTC calendar date as `YYYY-MM-DD`, the year padded to four digits. */
-function isoDateOf(instant: Date): string {
-  return [
-    String(instant.getUTCFullYear()).padStart(4, '0'),
-    String(instant.getUTCMonth() + 1).padStart(2, '0'),
-    String(instant.getUTCDate()).padStart(2, '0'),
-  ].join('-');
-}
-
-const FOUR_DIGIT_YEAR = /\d{4}/;
-const FOUR_OR_FIVE_DIGIT_YEAR = /\d{4,5}/;
-
-/** Whether `value` is a real calendar date written `YYYY-MM-DD`: `2026-13-45` round-trips to another date and is not. */
-export function isCalendarDate(value: string): boolean {
-  const instant = instantOf(value, FOUR_DIGIT_YEAR);
-
-  return instant !== null && isoDateOf(instant) === value;
-}
+/**
+ * The exclusive upper bound Postgres stores after the last date a four-digit
+ * year names, and that last date. The one five-digit date a range can carry,
+ * so it is spelled out rather than parsed: every other bound is a calendar
+ * date `isIsoDate` judges, and the day before it is `previousIsoDate`'s.
+ */
+const BOUND_AFTER_LAST_DATE = '10000-01-01';
+const LAST_DATE = '9999-12-31';
 
 /**
  * A refused INSERT, as this application's own failure: `23P01` is 0028's
@@ -233,14 +210,10 @@ export function leaveRangeOf(during: unknown): LeaveRange | null {
 
   if (parts === null) return null;
 
-  const [, from = '', upperText = ''] = parts;
-  const upper = instantOf(upperText, FOUR_OR_FIVE_DIGIT_YEAR);
+  const [, from = '', upper = ''] = parts;
+  const to = upper === BOUND_AFTER_LAST_DATE ? LAST_DATE : previousIsoDate(upper);
 
-  if (!isCalendarDate(from) || upper === null || isoDateOf(upper) !== upperText) return null;
-
-  upper.setUTCDate(upper.getUTCDate() - 1);
-
-  const to = isoDateOf(upper);
+  if (!isIsoDate(from) || to === null) return null;
 
   return to < from ? null : { from, to };
 }
@@ -308,7 +281,7 @@ export async function recordLeave(
   from: string,
   to: string,
 ): Promise<LeaveWriteOutcome> {
-  if (!isCalendarDate(from) || !isCalendarDate(to)) {
+  if (!isIsoDate(from) || !isIsoDate(to)) {
     console.error(LEAVE_FAILED, 'not a calendar date');
 
     return { ok: false, code: LEAVE_FAILED };
@@ -435,7 +408,7 @@ export async function amendLeave(
   from: string,
   to: string,
 ): Promise<LeaveAmendOutcome> {
-  if (!isCalendarDate(from) || !isCalendarDate(to)) {
+  if (!isIsoDate(from) || !isIsoDate(to)) {
     console.error(LEAVE_FAILED, 'not a calendar date');
 
     return { ok: false, code: LEAVE_FAILED };

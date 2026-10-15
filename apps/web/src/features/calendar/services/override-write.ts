@@ -14,7 +14,9 @@ import {
  * SETTING IS 0019's PLAIN INSERT of the five facts; `created_by` and
  * `created_at` come from their defaults, and the insert policy admits an
  * active admin of the claimed organization alone, on a team and a type that
- * are not archived.
+ * are not archived. A team or type archived while the day was open is named
+ * by `0036`'s trigger ({@link OVERRIDE_ARCHIVED}), not read as a lost
+ * permission.
  *
  * REMOVING IS 0021's DEFINER FUNCTION, `remove_shift_type_override`, which
  * sets `removed_by` and `removed_at` on the server: a soft-remove, never a
@@ -34,6 +36,8 @@ export const REMOVE_OVERRIDE_FUNCTION = 'remove_shift_type_override';
 export const OVERRIDE_TAKEN = 'taken';
 /** The override is no longer live: removed already, or gone from reach (P0002). */
 export const OVERRIDE_GONE = 'gone';
+/** The team or the type was archived meanwhile (`0036`'s 23514 `SHIFT_TYPE_OVERRIDE_ARCHIVED`). */
+export const OVERRIDE_ARCHIVED = 'archived';
 /** The caller may not write overrides (42501). */
 export const OVERRIDE_DENIED = 'denied';
 /** Anything else, 23503 included: try again. */
@@ -45,6 +49,7 @@ export type OverrideWriteFailure =
   | typeof OVERRIDE_REFUSED_TYPE
   | typeof OVERRIDE_TAKEN
   | typeof OVERRIDE_GONE
+  | typeof OVERRIDE_ARCHIVED
   | typeof OVERRIDE_DENIED
   | typeof OVERRIDE_FAILED;
 
@@ -79,15 +84,19 @@ const INSUFFICIENT_PRIVILEGE = '42501';
 const UNIQUE_VIOLATION = '23505';
 const CHECK_VIOLATION = '23514';
 const NO_DATA_FOUND = 'P0002';
+/** The message `0036` names an archived team or type with. */
+const ARCHIVED_MESSAGE = 'SHIFT_TYPE_OVERRIDE_ARCHIVED';
 
 /**
- * A refusal of either write, as this application's own failure. `23514` IS
- * THE REASON, because 0019's only checks a session can trip are the reason's
+ * A refusal of either write, as this application's own failure. `23514` with
+ * `0036`'s message is an archived team or type; any other `23514` IS THE
+ * REASON, because 0019's only checks a session can trip are the reason's
  * (the date's and the removal's are never the browser's to break). `23505` is
  * the one live override per team and date. `23503` — a team or type of
  * another tenant — and everything unforeseen are {@link OVERRIDE_FAILED}.
  */
 export function overrideWriteFailureOf(error: OverrideWriteError): OverrideWriteFailure {
+  if (error.code === CHECK_VIOLATION && error.message === ARCHIVED_MESSAGE) return OVERRIDE_ARCHIVED;
   if (error.code === CHECK_VIOLATION) return OVERRIDE_REFUSED_REASON;
   if (error.code === UNIQUE_VIOLATION) return OVERRIDE_TAKEN;
   if (error.code === NO_DATA_FOUND) return OVERRIDE_GONE;
@@ -188,6 +197,7 @@ export function overrideWriteMessageKey(
   | 'kalendar.detail.override.refused.type'
   | 'kalendar.detail.override.refused.taken'
   | 'kalendar.detail.override.refused.gone'
+  | 'kalendar.detail.override.refused.archived'
   | 'kalendar.detail.override.refused.denied'
   | 'kalendar.detail.override.refused.failed' {
   if (failure === OVERRIDE_REFUSED_REASON) return 'kalendar.detail.override.refused.reason';
@@ -195,6 +205,7 @@ export function overrideWriteMessageKey(
   if (failure === OVERRIDE_REFUSED_TYPE) return 'kalendar.detail.override.refused.type';
   if (failure === OVERRIDE_TAKEN) return 'kalendar.detail.override.refused.taken';
   if (failure === OVERRIDE_GONE) return 'kalendar.detail.override.refused.gone';
+  if (failure === OVERRIDE_ARCHIVED) return 'kalendar.detail.override.refused.archived';
   if (failure === OVERRIDE_DENIED) return 'kalendar.detail.override.refused.denied';
   if (failure === OVERRIDE_FAILED) return 'kalendar.detail.override.refused.failed';
 

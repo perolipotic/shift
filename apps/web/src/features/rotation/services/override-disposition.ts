@@ -24,7 +24,8 @@ import {
  *     the date (0035), and a newer one saved meanwhile refuses it.
  *   * AMEND — 0022's `amend_shift_type_override`, which soft-removes it and
  *     inserts the new type and reason in one transaction. Not offered where no
- *     version governs the date.
+ *     version governs the date. It carries the same token as the
+ *     confirmation (0036).
  *   * DISCARD — 0021's `remove_shift_type_override`, the calendar's removal.
  *
  * Nothing here writes a rotation row, and nothing hard-deletes: every call is
@@ -291,7 +292,12 @@ export interface DispositionRpc {
   rpc(fn: typeof DISCARD_OVERRIDE_FUNCTION, args: { readonly p_override_id: string }): PromiseLike<DispositionAnswer>;
   rpc(
     fn: typeof AMEND_OVERRIDE_FUNCTION,
-    args: { readonly p_override_id: string; readonly p_shift_type_id: string; readonly p_reason: string },
+    args: {
+      readonly p_override_id: string;
+      readonly p_shift_type_id: string;
+      readonly p_reason: string;
+      readonly p_governing_saved_at: string | null;
+    },
   ): PromiseLike<DispositionAnswer>;
 }
 
@@ -303,20 +309,24 @@ const NO_DATA_FOUND = 'P0002';
 const RAISED = 'P0001';
 /** The message 0022 raises an archived team or type with; another P0001 is no refusal of ours. */
 const ARCHIVED_MESSAGE = 'SHIFT_TYPE_OVERRIDE_ARCHIVED';
-/** The message 0035 raises a confirmation whose governing version changed with. */
+/** The message 0035 raises a confirmation (and 0036 an amend) whose governing version changed with. */
 const CHANGED_MESSAGE = 'SHIFT_TYPE_OVERRIDE_CHANGED';
 
 /**
  * A refusal of a disposition as this application's own failure. `23514` IS
  * THE REASON, the only check of 0019's an amend can trip; `P0001` with 0022's
- * message is an archived team or type, and with 0035's a confirmation whose
- * governing version changed meanwhile; `23503` — a type of another tenant —
- * and everything unforeseen are {@link DISPOSITION_FAILED}.
+ * message is an archived team or type (as is `23514` with it, `0036`'s insert
+ * trigger, which the amend's own check pre-empts), and with 0035's a
+ * confirmation or amend whose governing version changed meanwhile; `23503` — a
+ * type of another tenant — and everything unforeseen are
+ * {@link DISPOSITION_FAILED}.
  */
 export function dispositionFailureOf(error: DispositionError): DispositionFailure {
   if (error.code === INSUFFICIENT_PRIVILEGE) return DISPOSITION_DENIED;
   if (error.code === NO_DATA_FOUND) return DISPOSITION_GONE;
-  if (error.code === RAISED && error.message === ARCHIVED_MESSAGE) return DISPOSITION_ARCHIVED;
+  if ((error.code === RAISED || error.code === CHECK_VIOLATION) && error.message === ARCHIVED_MESSAGE) {
+    return DISPOSITION_ARCHIVED;
+  }
   if (error.code === RAISED && error.message === CHANGED_MESSAGE) return DISPOSITION_CHANGED;
   if (error.code === CHECK_VIOLATION) return DISPOSITION_REASON;
 
@@ -371,7 +381,9 @@ export async function confirmShiftTypeOverride(client: DispositionRpc, row: Pend
 /**
  * Amend `row`'s override to `shiftTypeId` for `reason`, preflighted first
  * ({@link amendEntryOf}): a refused entry sends nothing. Refused without a
- * request where no version governs the date.
+ * request where no version governs the date. Like the confirmation, it carries
+ * the save time of the version the review showed governing (`0036`), and the
+ * database refuses it when that version is no longer the one.
  */
 export async function amendShiftTypeOverride(
   client: DispositionRpc,
@@ -379,17 +391,20 @@ export async function amendShiftTypeOverride(
   shiftTypeId: string,
   reason: string,
 ): Promise<DispositionOutcome> {
-  if (!rowOffersOf(row).amend) return { ok: false, code: DISPOSITION_FAILED };
+  if (!rowOffersOf(row).amend || row.governingSavedAt === null) return { ok: false, code: DISPOSITION_FAILED };
 
   const entry = amendEntryOf(row, shiftTypeId, reason);
 
   if (!entry.ok) return entry;
+
+  const governingSavedAt = row.governingSavedAt;
 
   return settled(() =>
     client.rpc(AMEND_OVERRIDE_FUNCTION, {
       p_override_id: row.id,
       p_shift_type_id: entry.shiftTypeId,
       p_reason: entry.reason,
+      p_governing_saved_at: governingSavedAt,
     }),
   );
 }

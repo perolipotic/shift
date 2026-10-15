@@ -435,6 +435,27 @@ test('the day detail states each unresolved conflict with its leave, links to it
   // "Riješi konflikt" goes to that conflict's decision screen.
   await calendarPage.resolveLinksIn(conflicts).click();
   await expect(page).toHaveURL(`/raspored/${member.id}/${date}/${team.id}`);
+
+  // DEFERRED-WORK E862: the open day is the URL's, so Back reopens it.
+  await page.goBack();
+  await expect(page).toHaveURL(new RegExp(`[?&]dan=${date}(&|$)`));
+  await expect(page).toHaveURL(new RegExp(`[?&]danSmjena=${team.id}(&|$)`));
+  const reopened = calendarPage.detailOf(team.name, date);
+  await expect(reopened).toBeVisible();
+  await expect(calendarPage.resolveLinksIn(calendarPage.conflictsIn(reopened))).toHaveCount(1);
+
+  // Closing it drops the day from the URL, in place: Back does not step into it again.
+  await page.keyboard.press('Escape');
+  await expect(reopened).toHaveCount(0);
+  await expect(page).not.toHaveURL(/[?&]dan=/);
+
+  // Back while a day is open closes it.
+  await (await calendarPage.cellOf(team.name, date)).click();
+  await expect(calendarPage.detailOf(team.name, date)).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`[?&]dan=${date}(&|$)`));
+  await page.goBack();
+  await expect(calendarPage.detailOf(team.name, date)).toHaveCount(0);
+  await expect(page).not.toHaveURL(/[?&]dan=/);
 });
 
 test('a failed resolutions read shows the unavailable alert and no month, and the retry brings the month back', async ({

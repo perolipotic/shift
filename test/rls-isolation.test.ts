@@ -1004,7 +1004,7 @@ describe('the access-control layer is present, so nothing below passes vacuously
         'member_status_versions_delete_scheduled_by_own_active_admin',
         'member_status_versions_insert_by_own_active_admin',
         'member_status_versions_select_own_organization',
-        'members_delete_by_own_active_admin',
+        // No delete policy since 0036: deactivation is the only removal path.
         'members_insert_by_own_active_admin',
         'members_select_own_organization',
         'members_update_by_own_active_admin',
@@ -1625,24 +1625,25 @@ describe('a direct API call permits an admin inside their own organization and n
   );
 
   it.skipIf(noApi).each(FIXTURES)(
-    'permits the $fixture admin to delete a member of their own organization',
+    'leaves the row present when the $fixture admin deletes a member of their own organization (0036)',
     async ({ slug, admin }) => {
-      // The positive control the delete refusal cannot do without. Row level
-      // security refuses a delete by failing USING, so a policy that is absent,
-      // inverted, or written against the wrong role produces the identical
-      // "HTTP 204 and the row is still there" this suite reads as a refusal.
-      // Without this case the whole delete half of Q2 can ship missing.
+      // NO SESSION DELETES A MEMBER. 0036 dropped the delete policy:
+      // deactivation is the only removal path, so a member's status, team and
+      // leave history outlive them. With no policy the delete matches no row,
+      // the same "HTTP 204 and the row is still there" as the cross-tenant
+      // case below; the policy list above asserts that none exists, so this
+      // is not a refusal read off a missing policy by accident.
       const token = await tokenFor(admin, slug);
       const client = await connect();
       try {
         const target = await addThrowawayMember(client, await organizationId(client, slug));
         const response = await rest(`members?id=eq.${target.id}`, { token, method: 'DELETE' });
 
-        expect(response.status, 'a permitted delete answers 204 with no body').toBe(204);
+        expect(response.status, 'a delete with no policy matches no row and raises nothing').toBe(204);
         expect(
           await memberById(client, target.id),
-          `the ${slug} admin could not delete a member of their own organization`,
-        ).toBeUndefined();
+          `the ${slug} admin deleted a member of their own organization`,
+        ).toBeDefined();
       } finally {
         await client.end();
       }
@@ -14897,7 +14898,12 @@ describe('a shift-type override is recorded by an admin alone and read by every 
           ['empty', ''],
           // White space that is not a space: tabs and line breaks alone.
           ['tabs and line breaks', '\t\n\r\t'],
+          // White space a collation can disagree on (0036): NBSP, which a `C`
+          // collation's `[[:space:]]` would keep, and U+FEFF, which ICU's does.
+          ['NBSP alone', '\u00a0\u00a0'],
+          ['U+FEFF alone', '\ufeff'],
           ['overlong', 'z'.repeat(201)],
+          ['overlong inside NBSP and U+FEFF', `\u00a0${'z'.repeat(201)}\ufeff`],
         ] as const) {
           codes[label] = (
             await refusedThenContinue(client, () =>
@@ -14905,16 +14911,23 @@ describe('a shift-type override is recorded by an admin alone and read by every 
             )
           ).code;
         }
-        codes['archived type'] = (
-          await refusedThenContinue(client, () =>
-            insertOverride(client, { organization, team, date: '2026-10-01', type: archivedType, reason: 'x' }),
-          )
-        ).code;
-        codes['archived team'] = (
-          await refusedThenContinue(client, () =>
-            insertOverride(client, { organization, team: archivedTeam, date: '2026-10-01', type, reason: 'x' }),
-          )
-        ).code;
+        // The trim is by code point: 200 characters inside the padding pass.
+        await insertOverride(client, {
+          organization,
+          team,
+          date: '2041-03-02',
+          type,
+          reason: `\ufeff${'z'.repeat(200)}\u00a0`,
+        });
+        // 0036: an archived team or type is named, not read as a lost permission.
+        const archivedTypeRefusal = await refusedThenContinue(client, () =>
+          insertOverride(client, { organization, team, date: '2026-10-01', type: archivedType, reason: 'x' }),
+        );
+        codes['archived type'] = `${archivedTypeRefusal.code} ${archivedTypeRefusal.message}`;
+        const archivedTeamRefusal = await refusedThenContinue(client, () =>
+          insertOverride(client, { organization, team: archivedTeam, date: '2026-10-01', type, reason: 'x' }),
+        );
+        codes['archived team'] = `${archivedTeamRefusal.code} ${archivedTeamRefusal.message}`;
         // No session names the attribution or the removal, updates or deletes.
         codes['forged author'] = (
           await refusedThenContinue(client, () =>
@@ -14941,9 +14954,12 @@ describe('a shift-type override is recorded by an admin alone and read by every 
           blank: '23514',
           empty: '23514',
           'tabs and line breaks': '23514',
+          'NBSP alone': '23514',
+          'U+FEFF alone': '23514',
           overlong: '23514',
-          'archived type': '42501',
-          'archived team': '42501',
+          'overlong inside NBSP and U+FEFF': '23514',
+          'archived type': '23514 SHIFT_TYPE_OVERRIDE_ARCHIVED',
+          'archived team': '23514 SHIFT_TYPE_OVERRIDE_ARCHIVED',
           'forged author': '42501',
           update: '42501',
           delete: '42501',
@@ -15249,38 +15265,57 @@ describe('a shift-type override is removed by an active admin alone, attributed 
  */
 
 /**
+ * The save time of the version governing override `id`'s date now, as the
+ * same session reads it, or `null` where none does or the session cannot read
+ * the override: the token 0035's confirmation and 0036's amend compare.
+ */
+async function governingTokenOf(client: Client, id: string): Promise<string | null> {
+  return (
+    (
+      await client.query<{ at: string | null }>(
+        `select (select a.created_at::text
+                   from rotation_assignments a
+                  where a.organization_id = o.organization_id
+                    and a.team_id = o.team_id
+                    and a.effective_from <= o.date
+                  order by a.effective_from desc
+                  limit 1) as at
+           from shift_type_overrides o
+          where o.id = $1`,
+        [id],
+      )
+    ).rows[0]?.at ?? null
+  );
+}
+
+/**
  * `confirm_shift_type_override(id, token)`, as whoever the connection
- * currently is. The token is the save time of the version governing the
- * override's date now, read by the same session, so it is right unless
- * `token` is given (0035). A session that cannot read the override sends
- * `null`, and is refused before the token is compared.
+ * currently is. The token is read by the same session
+ * ({@link governingTokenOf}), so it is right unless `token` is given (0035). A
+ * session that cannot read the override sends `null`, and is refused before
+ * the token is compared.
  */
 async function confirmOverride(client: Client, id: string, token?: string | null): Promise<void> {
-  const governing =
-    token !== undefined
-      ? token
-      : (
-          await client.query<{ at: string | null }>(
-            `select (select a.created_at::text
-                       from rotation_assignments a
-                      where a.organization_id = o.organization_id
-                        and a.team_id = o.team_id
-                        and a.effective_from <= o.date
-                      order by a.effective_from desc
-                      limit 1) as at
-               from shift_type_overrides o
-              where o.id = $1`,
-            [id],
-          )
-        ).rows[0]?.at ?? null;
+  const governing = token !== undefined ? token : await governingTokenOf(client, id);
   await client.query('select public.confirm_shift_type_override($1::uuid, $2::timestamptz)', [id, governing]);
 }
 
-/** `amend_shift_type_override(id, type, reason)`, as whoever the connection currently is; the new id. */
-async function amendOverride(client: Client, id: string, type: string, reason: string): Promise<string> {
+/**
+ * `amend_shift_type_override(id, type, reason, token)`, as whoever the
+ * connection currently is; the new id. The token is read as
+ * {@link confirmOverride} reads it unless `token` is given (0036).
+ */
+async function amendOverride(
+  client: Client,
+  id: string,
+  type: string,
+  reason: string,
+  token?: string | null,
+): Promise<string> {
+  const governing = token !== undefined ? token : await governingTokenOf(client, id);
   const { rows } = await client.query<{ id: string }>(
-    'select public.amend_shift_type_override($1::uuid, $2::uuid, $3)::text as id',
-    [id, type, reason],
+    'select public.amend_shift_type_override($1::uuid, $2::uuid, $3, $4::timestamptz)::text as id',
+    [id, type, reason, governing],
   );
   const replacement = rows[0]?.id;
   if (replacement === undefined) throw new Error('the amend returned no id');
@@ -15518,6 +15553,54 @@ describe('a pending override is confirmed or amended by an active admin alone, a
   );
 
   it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture amend whose governing version is not the one sent with P0001 SHIFT_TYPE_OVERRIDE_CHANGED (0036)',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const organization = owner.organizationId;
+        const team = await seededTeam(client, organization, 'Smjena A');
+        const type = await seededShiftType(client, organization, 'Slobodno');
+
+        await actAs(client, owner.authUserId, organization);
+        const id = await insertOverride(client, { organization, team, date: '2026-10-01', type, reason: 'x' });
+        await actAsOwner(client);
+        const before = await overrideRow(client, id);
+        const { rows: governing } = await client.query<{ at: string; later: string }>(
+          `select a.created_at::text as at, (a.created_at + interval '1 microsecond')::text as later
+             from rotation_assignments a
+            where a.team_id = $1 and a.effective_from <= '2026-10-01'
+            order by a.effective_from desc
+            limit 1`,
+          [team],
+        );
+        const at = governing[0]?.at ?? '';
+        expect(at, `${slug}: no version governs the date, so the token proves nothing`).not.toBe('');
+
+        await actAs(client, owner.authUserId, organization);
+        const cases = {
+          'a newer save': await refusedThenContinue(client, () =>
+            amendOverride(client, id, type, 'y', governing[0]?.later ?? ''),
+          ),
+          'none sent': await refusedThenContinue(client, () => amendOverride(client, id, type, 'y', null)),
+        };
+        await actAsOwner(client);
+
+        for (const [label, refusal] of Object.entries(cases)) {
+          expect(refusal, `${slug}: ${label}`).toEqual({ code: 'P0001', message: 'SHIFT_TYPE_OVERRIDE_CHANGED' });
+        }
+        expect(await overrideRow(client, id), `${slug}: a refused amend changed the row`).toEqual(before);
+
+        // The token the review read is admitted: the old row removed, a replacement live.
+        await actAs(client, owner.authUserId, organization);
+        const replacement = await amendOverride(client, id, type, 'y', at);
+        await actAsOwner(client);
+        expect((await overrideRow(client, id))?.['removed_by']).toBe(owner.authUserId);
+        expect((await overrideRow(client, replacement))?.['removed_at']).toBeNull();
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
     'refuses a $fixture member-role account, an inactive admin and a session with no claim with 42501, and changes nothing',
     async ({ slug, admin, member }) => {
       await inRolledBackTransaction(async (client) => {
@@ -15613,6 +15696,7 @@ describe('a pending override is confirmed or amended by an active admin alone, a
         p_override_id: '00000000-0000-4000-8000-000000000000',
         p_shift_type_id: '00000000-0000-4000-8000-000000000000',
         p_reason: 'x',
+        p_governing_saved_at: null,
       },
     },
   ])('refuses an anonymous caller $name', async ({ name, body }) => {
@@ -15629,7 +15713,10 @@ describe('a pending override is confirmed or amended by an active admin alone, a
       const nobody = '00000000-0000-4000-8000-000000000000';
       const calls = [
         { name: 'confirm_shift_type_override', body: { p_override_id: nobody, p_governing_saved_at: null } },
-        { name: 'amend_shift_type_override', body: { p_override_id: nobody, p_shift_type_id: nobody, p_reason: 'x' } },
+        {
+          name: 'amend_shift_type_override',
+          body: { p_override_id: nobody, p_shift_type_id: nobody, p_reason: 'x', p_governing_saved_at: null },
+        },
       ];
       for (const { name, body } of calls) {
         const asMember = await rest(`rpc/${name}`, { token: await tokenFor(member, slug), method: 'POST', body });
@@ -16067,11 +16154,14 @@ describe('a roster override is recorded by an admin alone and read by every memb
           ['blank', { reason: '  ' }],
           ['empty', { reason: '' }],
           ['tabs and line breaks', { reason: '\t\n\r\t' }],
+          ['NBSP alone', { reason: '\u00a0\u00a0' }],
+          ['U+FEFF alone', { reason: '\ufeff' }],
           ['overlong', { reason: 'z'.repeat(201) }],
           ['archived team', { team: archivedTeam }],
         ] as const) {
-          codes[label] = (await refusedThenContinue(client, () => insertRosterOverride(client, { ...valid, ...change })))
-            .code;
+          const refusal = await refusedThenContinue(client, () => insertRosterOverride(client, { ...valid, ...change }));
+          // 0036: an archived team is named, not read as a lost permission.
+          codes[label] = label === 'archived team' ? `${refusal.code} ${refusal.message}` : refusal.code;
         }
         codes['forged author'] = (
           await refusedThenContinue(client, () =>
@@ -16098,8 +16188,10 @@ describe('a roster override is recorded by an admin alone and read by every memb
           blank: '23514',
           empty: '23514',
           'tabs and line breaks': '23514',
+          'NBSP alone': '23514',
+          'U+FEFF alone': '23514',
           overlong: '23514',
-          'archived team': '42501',
+          'archived team': '23514 ROSTER_OVERRIDE_ARCHIVED',
           'forged author': '42501',
           update: '42501',
           delete: '42501',
@@ -19304,6 +19396,166 @@ describe('removing the override behind a replacement ends its resolution, and fr
           { date: '2042-09-12', kind: 'replace_member', link: linked?.id },
           { date: '2042-09-13', kind: 'accept_uncovered', link: null },
         ]);
+      });
+    },
+  );
+});
+
+// ------------------------------- 0036: archives in a rotation, names, refusals
+
+/**
+ * `0036`. Archiving a team with a rotation version in force or scheduled, or a
+ * type a pattern in force or scheduled steps through, is refused with a named
+ * 23514; a type only a superseded version's pattern names is not. A member-role
+ * caller's override on an archived team still hears the policy's 42501, and
+ * every name column refuses a 101st character. Each case runs in a rolled-back
+ * transaction.
+ */
+describe('an archive that would strand a rotation is refused by name (0036)', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    "refuses archiving a $fixture team with a rotation in force or scheduled, and admits one with none",
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const organization = owner.organizationId;
+        const type = await addThrowawayShiftType(client, organization, owner.authUserId);
+        const pattern = await ownerPattern(client, organization, owner.authUserId, [type]);
+        const inForce = (await addThrowawayTeam(client, organization, owner.authUserId)).id;
+        const scheduled = (await addThrowawayTeam(client, organization, owner.authUserId)).id;
+        const free = (await addThrowawayTeam(client, organization, owner.authUserId)).id;
+        const past = await organizationDay(client, organization, -10);
+        const later = await organizationDay(client, organization, 10);
+        const offsetStep = pattern.steps[0] ?? null;
+        await ownerAssignment(client, { organization, team: inForce, pattern: pattern.id, offsetStep, anchor: past, from: past, by: owner.authUserId });
+        await ownerAssignment(client, { organization, team: scheduled, pattern: pattern.id, offsetStep, anchor: later, from: later, by: owner.authUserId });
+
+        await actAs(client, owner.authUserId, organization);
+        const refusals: Record<string, Refusal> = {};
+        for (const [label, team] of [['in force', inForce], ['scheduled', scheduled]] as const) {
+          refusals[label] = await refusedThenContinue(client, () =>
+            client.query('update teams set archived = true where id = $1', [team]),
+          );
+        }
+        const admitted = await client.query('update teams set archived = true where id = $1', [free]);
+        await actAsOwner(client);
+
+        for (const [label, refusal] of Object.entries(refusals)) {
+          expect(refusal, `${slug}: ${label}`).toMatchObject({ code: '23514', message: 'TEAM_IN_ROTATION' });
+        }
+        expect(admitted.rowCount, `${slug}: a team with no rotation was not archived`).toBe(1);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses archiving a $fixture type a pattern in force or scheduled uses, and admits one only a superseded version names',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const organization = owner.organizationId;
+        const by = owner.authUserId;
+        const [current, upcoming, superseded, unassigned] = [
+          await addThrowawayShiftType(client, organization, by),
+          await addThrowawayShiftType(client, organization, by),
+          await addThrowawayShiftType(client, organization, by),
+          await addThrowawayShiftType(client, organization, by),
+        ];
+        const currentPattern = await ownerPattern(client, organization, by, [current]);
+        const upcomingPattern = await ownerPattern(client, organization, by, [upcoming]);
+        const supersededPattern = await ownerPattern(client, organization, by, [superseded]);
+        await ownerPattern(client, organization, by, [unassigned]);
+        const team = (await addThrowawayTeam(client, organization, by)).id;
+        const long = await organizationDay(client, organization, -20);
+        const past = await organizationDay(client, organization, -10);
+        const later = await organizationDay(client, organization, 10);
+        // Superseded, then in force, then scheduled: three versions of one team.
+        for (const [pattern, from] of [
+          [supersededPattern, long],
+          [currentPattern, past],
+          [upcomingPattern, later],
+        ] as const) {
+          await ownerAssignment(client, { organization, team, pattern: pattern.id, offsetStep: pattern.steps[0] ?? null, anchor: from, from, by });
+        }
+
+        await actAs(client, by, organization);
+        const archive = (type: string) => client.query('update shift_types set archived = true where id = $1', [type]);
+        const refusals: Record<string, Refusal> = {
+          'in force': await refusedThenContinue(client, () => archive(current)),
+          scheduled: await refusedThenContinue(client, () => archive(upcoming)),
+        };
+        const admitted = {
+          superseded: (await archive(superseded)).rowCount,
+          unassigned: (await archive(unassigned)).rowCount,
+        };
+        await actAsOwner(client);
+
+        for (const [label, refusal] of Object.entries(refusals)) {
+          expect(refusal, `${slug}: ${label}`).toMatchObject({ code: '23514', message: 'SHIFT_TYPE_IN_ROTATION' });
+        }
+        expect(admitted, slug).toEqual({ superseded: 1, unassigned: 1 });
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    "answers a $fixture member-role account's override on an archived team with the policy's 42501, never the archived name",
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const archivedTeam = (await addThrowawayTeam(client, organization, owner.authUserId, true)).id;
+        const type = await seededShiftType(client, organization, 'Slobodno');
+
+        await actAs(client, self.authUserId, organization);
+        const typeOverride = await refusedThenContinue(client, () =>
+          insertOverride(client, { organization, team: archivedTeam, date: '2026-10-01', type, reason: 'x' }),
+        );
+        const rosterOverride = await refusedThenContinue(client, () =>
+          insertRosterOverride(client, {
+            organization,
+            team: archivedTeam,
+            date: '2026-10-01',
+            out: null,
+            in: self.id,
+            reason: 'x',
+          }),
+        );
+        await actAsOwner(client);
+
+        expect(typeOverride.code, slug).toBe('42501');
+        expect(rosterOverride.code, slug).toBe('42501');
+      });
+    },
+  );
+});
+
+describe('every name is at most 100 characters (0036)', () => {
+  const NAMED = [
+    { table: 'organizations', constraint: 'organizations_name_length' },
+    { table: 'members', constraint: 'members_name_length' },
+    { table: 'teams', constraint: 'teams_name_length' },
+    { table: 'hour_bands', constraint: 'hour_bands_name_length' },
+    { table: 'shift_types', constraint: 'shift_types_name_length' },
+  ] as const;
+
+  it.skipIf(noDatabase).each(NAMED)(
+    'refuses a 101-character $table name with 23514 naming $constraint, and admits 100 counted in code points',
+    async ({ table, constraint }) => {
+      await inRolledBackTransaction(async (client) => {
+        const { rows } = await client.query<{ id: string }>(`select id from ${table} limit 1`);
+        const id = rows[0]?.id;
+        if (id === undefined) throw new Error(`no ${table} row to rename`);
+
+        // As the owner: the constraint binds every writer, not only a policy's.
+        const longest = await client.query(`update ${table} set name = $1 where id = $2`, ['🚒'.repeat(100), id]);
+        const refusal = await refusedThenContinue(client, () =>
+          client.query(`update ${table} set name = $1 where id = $2`, ['z'.repeat(101), id]),
+        );
+
+        expect(longest.rowCount, `${table}: 100 characters, 200 UTF-16 units`).toBe(1);
+        expect(refusal.code, table).toBe('23514');
+        expect(refusal.message, table).toContain(constraint);
       });
     },
   );

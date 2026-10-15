@@ -1,14 +1,18 @@
 import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useCallback, useEffect, useId, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode } from 'react';
 
+import { SheetDialog } from '@/components/filter-bar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Popover } from '@/components/ui/popover';
+import { usePhone } from '@/hooks/viewport';
 import { t } from '@/lib/i18n';
 import { focusLater } from '@/utils/focus-later';
 import {
   FIRST_YEAR,
   LAST_YEAR,
+  SHOWN_MONTH_SELECTOR,
   monthMovedBy,
   monthNameOf,
   monthShortNameOf,
@@ -49,6 +53,10 @@ export interface MonthNavMonth {
  * and the day list, and takes focus by it — the calendar's when a closed day
  * detail's opener is gone.
  *
+ * From 640 px the picker is the anchored `Popover`; below it, the filter
+ * bar's bottom sheet on the native `Dialog` (deferred-work E792), modal, with
+ * its title and close. Crossing 640 px closes either.
+ *
  * `onShow(null)` is the current month. The copy stays under `kalendar.*`,
  * where both screens' month navigation has always read it.
  */
@@ -70,10 +78,26 @@ export function MonthNav({
   const region = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const pickerId = useId();
+  const sheetId = useId();
+  const sheetTitleId = useId();
+  const sheet = useRef<HTMLDivElement>(null);
+  const isPhone = usePhone();
 
   useEffect(() => {
     setOpenOn((was) => (was === shownMonth ? was : null));
   }, [shownMonth]);
+
+  // A picker belongs to the width it opened at: crossing 640 px closes it.
+  useEffect(() => {
+    setOpenOn(null);
+  }, [isPhone]);
+
+  // THE SHEET'S FOCUS, after the Dialog's own effect has shown it (a child's
+  // effect runs first, while the dialog is still hidden): the shown month.
+  useEffect(() => {
+    if (!open || !isPhone) return;
+    sheet.current?.querySelector<HTMLElement>(SHOWN_MONTH_SELECTOR)?.focus();
+  }, [open, isPhone]);
 
   /**
    * Focus to the trigger — at once, so a key pressed right after a close
@@ -130,8 +154,18 @@ export function MonthNav({
   function closeOnLeave(event: FocusEvent<HTMLDivElement>): void {
     const to = event.relatedTarget;
 
-    if (open && to !== null && !event.currentTarget.contains(to)) setOpenOn(null);
+    if (open && !isPhone && to !== null && !event.currentTarget.contains(to)) setOpenOn(null);
   }
+
+  const picker = open ? (
+    <MonthPicker
+      month={month}
+      onPick={(picked) => {
+        close();
+        if (picked !== month.month) onShow(picked === month.current ? null : picked);
+      }}
+    />
+  ) : null;
 
   const triggerName = t('kalendar.chooseMonth', { month: month.monthName, year: month.year });
 
@@ -167,7 +201,7 @@ export function MonthNav({
             className="h-11 gap-1 px-2 sm:min-w-44 sm:gap-2 sm:px-3"
             aria-haspopup="dialog"
             aria-expanded={open}
-            aria-controls={open ? pickerId : undefined}
+            aria-controls={open ? (isPhone ? sheetId : pickerId) : undefined}
             aria-label={month.isCurrent ? `${triggerName}, ${t('kalendar.thisMonthLabel')}` : triggerName}
             onClick={() => {
               if (open) close();
@@ -196,21 +230,23 @@ export function MonthNav({
         </div>
         <Popover
           id={pickerId}
-          open={open}
+          open={open && !isPhone}
           onClose={close}
           region={region}
           aria-label={t('kalendar.monthPicker')}
           className="w-[17rem]"
         >
-          <MonthPicker
-            month={month}
-            onPick={(picked) => {
-              close();
-              if (picked !== month.month) onShow(picked === month.current ? null : picked);
-            }}
-          />
+          {isPhone ? null : picker}
         </Popover>
       </div>
+      <SheetDialog id={sheetId} titleId={sheetTitleId} open={open && isPhone} onClose={close}>
+        <DialogHeader closeLabel={t('kalendar.monthPickerClose')} onClose={close}>
+          <DialogTitle id={sheetTitleId}>{t('kalendar.monthPicker')}</DialogTitle>
+        </DialogHeader>
+        <div ref={sheet} className="min-w-0">
+          {isPhone ? picker : null}
+        </div>
+      </SheetDialog>
       {month.isCurrent ? null : (
         <Button
           type="button"
@@ -236,6 +272,9 @@ export function MonthNav({
  * filled and `aria-current`; the current month carries an inset ring and
  * "ovaj". Mounted only while open, so every opening starts from the month
  * shown.
+ *
+ * Its footer (deferred-work E795): the keys it moves by, from 640 px where
+ * there are keys to press, and `Ovaj mjesec`, which picks the current month.
  */
 function MonthPicker({
   month,
@@ -339,6 +378,19 @@ function MonthPicker({
             </Button>
           );
         })}
+      </div>
+      <div className="flex items-center justify-between gap-3 max-sm:justify-end">
+        <span className="text-xs text-muted-foreground max-sm:hidden">{t('kalendar.monthPickerKeys')}</span>
+        <Button
+          type="button"
+          variant="link"
+          className="h-11 px-0 text-xs"
+          onClick={() => {
+            onPick(month.current);
+          }}
+        >
+          {t('kalendar.current')}
+        </Button>
       </div>
     </div>
   );

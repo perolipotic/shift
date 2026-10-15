@@ -24,17 +24,19 @@ import { gridCellLabelsOf } from '@/features/calendar/utils/modifiers';
 import {
   calendarModeOf,
   calendarMonthOutcomeOf,
+  calendarOpenDayOf,
   calendarSearchTo,
   type CalendarFilterChange,
   type CalendarMode,
   type CalendarMonth,
+  type CalendarOpenDay,
   type CalendarSearch,
 } from '@/features/calendar/utils/month';
 import { translateCellLabel } from '@/features/calendar/utils/cell-label';
 import { dayConflictsOf, type DayConflict } from '@/features/calendar/utils/day-detail';
 import { candidateLeaveOf } from '@/features/calendar/utils/replacement-candidates';
 import { cachedRoleOf, calendarSkeletonShapeOf, earlyCalendarModeOf } from '@/features/calendar/utils/skeleton';
-import { dayDetailKeyOf, gridFocusKeyOf } from '@/features/calendar/utils/screen-keys';
+import { gridFocusKeyOf } from '@/features/calendar/utils/screen-keys';
 import { useCalendarSnapshot } from '@/features/calendar/hooks/use-calendar-snapshot';
 import { CALENDAR_FETCH_FETCHING, CALENDAR_KEY, calendarRetryStateOf } from '@/features/calendar/services/snapshot';
 import {
@@ -75,7 +77,9 @@ function noRoleOnServer(): null {
 
 /**
  * The calendar screen's state, its reads and its handlers (stories 3.1 to
- * 3.5a, 5.3c). `search` is the route's search; `go` navigates to another one.
+ * 3.5a, 5.3c). `search` is the route's search; `go` navigates to another one,
+ * replacing the history entry when asked (a day detail's close), and keeping
+ * the page's scroll for a day opening or closing.
  *
  * THE SCHEDULE IS ONE READ (AD-13) under `CALENDAR_KEY`, unwindowed, so
  * moving between months never reads again: every month is
@@ -105,7 +109,10 @@ function noRoleOnServer(): null {
  * as *Sati* does (`leaveKeys`, an admin's alone). Each is derived once per
  * answer; one that cannot be derived is none, logged.
  */
-export function useCalendarScreen(search: CalendarSearch, go: (next: CalendarSearch) => void) {
+export function useCalendarScreen(
+  search: CalendarSearch,
+  go: (next: CalendarSearch, options?: { readonly replace?: boolean; readonly keepScroll?: boolean }) => void,
+) {
   const answer = useCalendarSnapshot();
   // A failed read being read again is the skeleton, so the retry's press shows.
   const state = calendarRetryStateOf(answer);
@@ -259,11 +266,18 @@ export function useCalendarScreen(search: CalendarSearch, go: (next: CalendarSea
   const gridRef = useRef<HTMLTableElement>(null);
   // The cell a Space keydown armed.
   const armedRef = useRef<HTMLElement | null>(null);
-  // The key the grid's tab stop resets on, with the mode: any change closes
-  // the detail — browser Back while it is open included.
+  // THE OPEN DAY IS THE URL'S (deferred-work E862): opening pushes it, so
+  // Back closes it, and closing replaces it, so it leaves no open state to
+  // step back into. Any other change of the search drops it
+  // (`calendarSearchTo`), so a change of the month, mode or filter closes it.
+  const { dan, danSmjena } = search;
+  const opened = useMemo(() => calendarOpenDayOf({ dan, danSmjena }), [dan, danSmjena]);
   const { detail, openDay, closeDay, closedByBrowser } = useDayDetail(
     snapshot,
-    dayDetailKeyOf(shownGrid, mode),
+    opened,
+    (day: CalendarOpenDay | null) => {
+      go(calendarSearchTo(search, { dan: day }), { replace: day === null, keepScroll: true });
+    },
     gridRef,
   );
   // An admin's alone: a member is shown no conflict (their marks carry none
