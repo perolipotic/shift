@@ -2,7 +2,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
 import { useCalendarSnapshot } from '@/features/calendar/hooks/use-calendar-snapshot';
-import { CALENDAR_KEY, calendarSurfaceStateOf } from '@/features/calendar/services/snapshot';
+import { useSnapshotSkewRefresh } from '@/features/calendar/hooks/use-snapshot-skew-refresh';
+import { CALENDAR_FETCH_FETCHING, CALENDAR_KEY, calendarSurfaceStateOf } from '@/features/calendar/services/snapshot';
+import { snapshotSkewOf } from '@/features/calendar/services/snapshot-skew';
 import { calendarTodayOf } from '@/features/calendar/utils/month';
 import { useReplacementLinkRefresh } from '@/features/conflicts/hooks/use-replacement-link-refresh';
 import {
@@ -110,6 +112,10 @@ export function useToday() {
   const resolutionsIsError = resolutions.isError;
   const resolutionsIsPending = resolutions.isPending;
   const resolutionsFetchStatus = resolutions.fetchStatus;
+  const snapshotFetching = calendar.fetchStatus === CALENDAR_FETCH_FETCHING;
+
+  // As *Sati*: a resolution naming a team the snapshot does not hold yet re-reads it once.
+  useSnapshotSkewRefresh(snapshotSkewOf(hoursSnapshot, rows, resolutionsData));
   // Derived once per answer, not on every render: the collisions walk every record.
   const conflicts = useMemo(
     () =>
@@ -124,6 +130,7 @@ export function useToday() {
               isPending: resolutionsIsPending,
               fetchStatus: resolutionsFetchStatus,
             },
+            snapshotFetching,
           ),
     [
       hoursSnapshot,
@@ -135,6 +142,7 @@ export function useToday() {
       resolutionsIsError,
       resolutionsIsPending,
       resolutionsFetchStatus,
+      snapshotFetching,
     ],
   );
   const hoursToday = hoursSnapshot === null ? null : calendarTodayOf(hoursSnapshot, now);

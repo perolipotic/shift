@@ -6,6 +6,7 @@ import { Client } from 'pg';
 import { describe, expect, it } from 'vitest';
 
 import { inRolledBackTransaction, noDatabase, refused } from './database.js';
+import { stripSqlComments } from './source-scan.ts';
 
 /**
  * The pilot demo organization (`supabase/operator/demo-organization.sql`),
@@ -251,7 +252,7 @@ function rosterLine(name: string, rank: string, position: string): string {
 
 describe('the demo organization script', () => {
   it('is one do block, so `supabase db query` can send it as one statement', () => {
-    const statements = demoScript.replaceAll(/--[^\n]*/g, '').trim();
+    const statements = stripSqlComments(demoScript).trim();
 
     expect(statements.startsWith('do $$')).toBe(true);
     expect(statements.endsWith('$$;')).toBe(true);
@@ -259,7 +260,7 @@ describe('the demo organization script', () => {
   });
 
   it('guards the target: only local and staging are admitted, before any write', () => {
-    const statements = demoScript.replaceAll(/--[^\n]*/g, '');
+    const statements = stripSqlComments(demoScript);
 
     expect(statements).toMatch(
       /if demo_target is null or demo_target not in \('local', 'staging'\) then\s+raise exception using\s+errcode = 'raise_exception',\s+message = 'DEMO_TARGET_REFUSED'/,

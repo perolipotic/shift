@@ -11,7 +11,7 @@ const organization = hr.organization;
  * them.
  */
 export class OrganizationPage extends BasePage {
-  protected readonly path = '/organizacija';
+  readonly path = '/organizacija';
 
   /** *Profil*'s `Promijeni` for the name, which opens the name's dialog. */
   get nameOpener(): Locator {

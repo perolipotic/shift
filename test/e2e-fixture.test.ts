@@ -8,6 +8,8 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { connect, requireAdminAuth, requireStack } from '../e2e/utils/database-helper.ts';
 import { STALE_AFTER, literal, sweepStale, teardown } from '../e2e/utils/run-fixture.ts';
 
+import { noDatabase } from './database.js';
+
 /**
  * The E2E lifecycle's edge rows (`spec-e2e-smoke-suite.md`, I/O matrix): a
  * crashed run's organization is swept after an hour and a younger one is kept,
@@ -28,17 +30,6 @@ const PREFIX = `e2efixture${runTag}-`;
 /** Nothing listens on port 1, so a connection is refused at once. */
 const UNREACHABLE_DATABASE = 'postgresql://postgres:postgres@127.0.0.1:1/postgres';
 const UNREACHABLE_API = 'http://127.0.0.1:1';
-
-async function reachable(): Promise<boolean> {
-  try {
-    await requireStack();
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-const noDatabase = !(await reachable());
 
 async function insertOrganization(client: pg.Client, slug: string, age: string): Promise<string> {
   const { rows } = await client.query<{ id: string }>(

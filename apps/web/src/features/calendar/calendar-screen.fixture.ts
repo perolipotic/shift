@@ -85,6 +85,10 @@ export const CALENDAR_SCREEN_EXEMPT: readonly { readonly file: string; readonly 
     why: 'the conflict and leave marks (story 5.3c), derived from the two reads; renders nothing and declares no key, executed by marks.test.ts',
   },
   {
+    file: 'services/snapshot-skew.ts',
+    why: 'the rule telling rows newer than the snapshot from rows that cannot be trusted (story 5.5d), shared with Raspored, Sati and Danas; renders nothing and declares no key, executed by marks.test.ts',
+  },
+  {
     file: 'utils/month.ts',
     why: 'the month model, executed by month.test.ts; declares no key and is swept by the snapshot suite under its own counts',
   },

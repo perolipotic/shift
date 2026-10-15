@@ -7,7 +7,7 @@ const setPassword = hr.auth.setPassword;
 
 /** `/postavi-lozinku`: the first sign-in's set-password step (story 7.8). */
 export class SetPasswordPage extends BasePage {
-  protected readonly path = '/postavi-lozinku';
+  readonly path = '/postavi-lozinku';
 
   /** Postavi svoju lozinku, the step's h1. */
   get stepHeading(): Locator {

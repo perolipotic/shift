@@ -32,6 +32,11 @@ export interface PageObjects {
   readonly todayPage: TodayPage;
 }
 
+/** Every page object at once, for a spec that picks the screen at run time. */
+export interface PagesFixture {
+  readonly pages: PageObjects;
+}
+
 /**
  * Adds a team under the run's rotation hold, released as soon as the add
  * lands. The builder opens as the rotation in force only while EVERY active
@@ -45,11 +50,12 @@ export interface RotationHoldFixtures {
 }
 
 /**
- * `test` with the screens' page objects as test-scoped fixtures, and the run's
+ * `test` with the screens' page objects as test-scoped fixtures — one each,
+ * and all of them as `pages` — and the run's
  * fixture as a worker-scoped one: read on first use inside a test, never when
  * a spec file is loaded, so listing the suite needs no provisioned run.
  */
-export const test = base.extend<PageObjects & RotationHoldFixtures, { fixture: Fixture }>({
+export const test = base.extend<PageObjects & PagesFixture & RotationHoldFixtures, { fixture: Fixture }>({
   loginPage: async ({ page }, use) => {
     await use(new LoginPage(page));
   },
@@ -85,6 +91,39 @@ export const test = base.extend<PageObjects & RotationHoldFixtures, { fixture: F
   },
   todayPage: async ({ page }, use) => {
     await use(new TodayPage(page));
+  },
+  // The same objects the single fixtures hand out, gathered: never a second instance.
+  pages: async (
+    {
+      loginPage,
+      calendarPage,
+      conflictsPage,
+      resolutionPage,
+      peoplePage,
+      teamsPage,
+      organizationPage,
+      hourBandsPage,
+      hoursPage,
+      leavePage,
+      rotationPage,
+      todayPage,
+    },
+    use,
+  ) => {
+    await use({
+      loginPage,
+      calendarPage,
+      conflictsPage,
+      resolutionPage,
+      peoplePage,
+      teamsPage,
+      organizationPage,
+      hourBandsPage,
+      hoursPage,
+      leavePage,
+      rotationPage,
+      todayPage,
+    });
   },
   holdRotationForTeams: async ({ fixture }, use, testInfo) => {
     await use(async (add) => {

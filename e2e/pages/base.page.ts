@@ -11,8 +11,8 @@ import { fill, hr } from '../utils/i18n.ts';
  * makes stays in its spec (`e2e/README.md`).
  */
 export abstract class BasePage {
-  /** The screen's route, opened by `goto`. */
-  protected abstract readonly path: string;
+  /** The screen's route, opened by `goto`; a spec may build a deeper route on it. */
+  abstract readonly path: string;
 
   readonly page: Page;
 

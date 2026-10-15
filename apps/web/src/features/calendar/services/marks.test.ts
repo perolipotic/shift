@@ -8,10 +8,8 @@ import {
   calendarMarksOf,
   calendarMarksStateOf,
   calendarRefusalOf,
-  NO_SKEW,
-  snapshotSkewOf,
-  unknownSnapshotIdsOf,
 } from '@/features/calendar/services/marks';
+import { NO_SKEW, snapshotSkewOf, unknownSnapshotIdsOf } from '@/features/calendar/services/snapshot-skew';
 import { CALENDAR_UNAVAILABLE, readCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import {
   cellLabelOf,
@@ -632,10 +630,13 @@ describe('resolutions (story 5.4a)', () => {
     expect(snapshotSkewOf(null, [NEWER], undefined)).toBe(NO_SKEW);
   });
 
-  it("names none for a member's own rows, which are parsed against the viewer alone", async () => {
+  it("names no member for a member's own rows, which are parsed against the viewer alone, but a newer team of their resolutions", async () => {
     const member = await snapshotOf(PILOT, { role: 'member_role' });
 
     expect(unknownSnapshotIdsOf(member, [NEWER], undefined)).toEqual([]);
+    expect(unknownSnapshotIdsOf(member, [NEWER], [resolutionOf('newer-member', '2026-09-11', 'newer-team')])).toEqual([
+      'team:newer-team',
+    ]);
   });
 
   it('is unavailable with a retry when the resolutions read failed or is paused, and loading while it is pending', () => {

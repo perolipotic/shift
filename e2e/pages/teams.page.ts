@@ -5,7 +5,7 @@ import { BasePage } from './base.page.ts';
 
 /** `/ljudi/smjene` and `/ljudi/smjene/:id`, and a team's roster at `/smjene/:id`. */
 export class TeamsPage extends BasePage {
-  protected readonly path = '/ljudi/smjene';
+  readonly path = '/ljudi/smjene';
 
   /** A team's edit link in the list. */
   editLink(teamName: string): Locator {
@@ -131,9 +131,14 @@ export class TeamsPage extends BasePage {
     await this.editLink(teamName).click();
   }
 
+  /** A team's roster route. */
+  rosterPath(teamId: string): string {
+    return `/smjene/${teamId}`;
+  }
+
   /** Opens a team's roster. */
   async gotoRoster(teamId: string): Promise<void> {
-    await this.page.goto(`/smjene/${teamId}`);
+    await this.page.goto(this.rosterPath(teamId));
   }
 
   /** A link to a team's roster, by the team's name (Danas). */

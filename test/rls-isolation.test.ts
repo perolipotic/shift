@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,11 +9,14 @@ import {
   FIXTURES,
   connect,
   inRolledBackTransaction,
+  localApiEndpoint,
+  localSecretKey,
   noDatabase,
   organizationId,
   refused,
   type Refusal,
 } from './database.js';
+import { stripSqlComments } from './source-scan.ts';
 
 import {
   ACCESS_UNREADABLE,
@@ -128,66 +130,22 @@ import {
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 
 /**
- * The local API endpoint and the key needed to reach it, or `undefined`.
- *
- * Same derivation as `test/provisioning.test.ts:65-83`, and for the same
- * reasons: the publishable key is generated per stack, so hard-coding one would
- * both rot and put a key in a tracked file. Spawned once, here, never inside a
- * test.
+ * The local API endpoint and the key needed to reach it, or `undefined`: read
+ * once from `supabase status` (`./database.ts`), as `test/provisioning.test.ts`
+ * does, so no key is tracked.
  */
-const apiEndpoint: { readonly url: string; readonly key: string } | undefined = (() => {
-  if (noDatabase) return undefined;
-  try {
-    const status = execFileSync(
-      join(repoRoot, 'node_modules', '.bin', 'supabase'),
-      ['status', '-o', 'json'],
-      { cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
-    );
-    const parsed: unknown = JSON.parse(status);
-    if (typeof parsed !== 'object' || parsed === null) return undefined;
-    const fields = parsed as Record<string, unknown>;
-    const key = fields['PUBLISHABLE_KEY'] ?? fields['ANON_KEY'];
-    const url = fields['API_URL'] ?? 'http://127.0.0.1:54321';
-    if (typeof key !== 'string' || typeof url !== 'string') return undefined;
-    return { url, key };
-  } catch {
-    return undefined;
-  }
-})();
+const apiEndpoint = localApiEndpoint();
 
 /**
- * The SECRET key for the local stack, or `undefined`.
- *
- * Read from the same `supabase status -o json` the publishable key comes from,
- * and used by every block that drives GoTrue's ADMIN API the way `admin-auth`
- * drives it: the one that proves an issued account can sign in, and the four
- * that prove an admin-issued reset replaces the credential and ends the
- * sessions it had. It is a per-stack local value that never leaves this
- * machine — AD-17 confines the DEPLOYED secret to the Edge Function's
- * environment, and this reads the one `supabase start` just printed rather
- * than hard-coding anything.
- *
- * TWO SPELLINGS ARE READ because the CLI has used both, which is the same
- * reason the guard below insists this resolved: a third rename would leave
- * every case named above skipping silently while the run reported green.
+ * The SECRET key for the local stack, or `undefined` (`./database.ts`), used
+ * by every block that drives GoTrue's ADMIN API the way `admin-auth` drives
+ * it: the one that proves an issued account can sign in, and the four that
+ * prove an admin-issued reset replaces the credential and ends the sessions it
+ * had. Read under two spellings, which is the reason the guard below insists
+ * this resolved: a third rename would leave every case named above skipping
+ * silently while the run reported green.
  */
-const adminKey: string | undefined = (() => {
-  if (noDatabase) return undefined;
-  try {
-    const status = execFileSync(
-      join(repoRoot, 'node_modules', '.bin', 'supabase'),
-      ['status', '-o', 'json'],
-      { cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
-    );
-    const parsed: unknown = JSON.parse(status);
-    if (typeof parsed !== 'object' || parsed === null) return undefined;
-    const fields = parsed as Record<string, unknown>;
-    const key = fields['SECRET_KEY'] ?? fields['SERVICE_ROLE_KEY'];
-    return typeof key === 'string' && key.length > 0 ? key : undefined;
-  } catch {
-    return undefined;
-  }
-})();
+const adminKey = localSecretKey();
 
 /** Every case that leaves the database and speaks HTTP is gated on both. */
 const noApi = noDatabase || apiEndpoint === undefined;
@@ -19788,10 +19746,9 @@ describe('removing the override behind a replacement ends its resolution, and fr
     'backfills a $fixture replacement whose override was removed before 0033, copying the removal, and nothing else',
     async ({ slug, admin, member, bystander }) => {
       // 0033's backfill, executed as written against rows 0032's gap left behind.
-      const migration = readFileSync(
-        join(repoRoot, 'supabase', 'migrations', '0033_replacement_resolution_lifetime.sql'),
-        'utf8',
-      ).replaceAll(/--[^\n]*/g, '');
+      const migration = stripSqlComments(
+        readFileSync(join(repoRoot, 'supabase', 'migrations', '0033_replacement_resolution_lifetime.sql'), 'utf8'),
+      );
       const backfill = /update public\.conflict_resolutions c\s+set removed_by = o\.removed_by,[\s\S]*?;/.exec(migration)?.[0];
       expect(backfill, '0033 has no backfill').toBeDefined();
 

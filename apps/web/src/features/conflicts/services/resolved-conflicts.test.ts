@@ -297,6 +297,16 @@ describe('the reads', () => {
     );
   });
 
+  it('is unavailable, unlogged, for a resolution newer than the snapshot, and loading while it is read again (E765)', () => {
+    const calendar = { snapshot: pilot, loading: false, refusal: null } as never;
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const newer = { ...ready, calendar, resolutions: answer([resolutionOf('2026-09-11', 'newer-team', '2026-09-01T10:00:00Z')]) };
+
+    expect(resolvedConflictsOf(newer).kind).toBe(RESOLVED_UNAVAILABLE);
+    expect(resolvedConflictsOf({ ...newer, snapshotFetching: true }).kind).toBe(RESOLVED_LOADING);
+    expect(logged).not.toHaveBeenCalled();
+  });
+
   it("reads the members' auth id and name and nothing else, and fails on an error", async () => {
     const range = vi.fn().mockResolvedValueOnce({ data: ACTORS, error: null }).mockResolvedValueOnce({ data: null, error: { code: 'x' } });
     const order = vi.fn(() => ({ order, range }));

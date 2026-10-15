@@ -47,7 +47,7 @@ async function seenText(cell: Locator): Promise<string> {
  * message's retry.
  */
 export class HoursPage extends BasePage {
-  protected readonly path = '/sati';
+  readonly path = '/sati';
 
   /** The month's heading (h2). */
   monthHeading(name: string | RegExp): Locator {

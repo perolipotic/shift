@@ -15,27 +15,23 @@ import { expect, firstBand, test, type PageObjects } from '../../utils/custom-fi
  * phone, no screen scrolls sideways and every control is a 44 px target.
  *
  * Each screen names the element that proves it has finished loading, so the
- * measurement is of the rendered screen and not of its skeleton. Paths and
- * names that depend on the run are functions of the fixture, which is read
- * inside the test rather than when this file loads.
+ * measurement is of the rendered screen and not of its skeleton. Each path
+ * is built on its page object's own `path`; paths and names that depend on
+ * the run are functions of the fixture, which is read inside the test rather
+ * than when this file loads.
  */
 
 test.use({ viewport: { width: 320, height: 640 }, isMobile: true, hasTouch: true });
 
-/** The page objects a screen's ready element is read from. */
-type ScreenPages = Pick<
-  PageObjects,
-  'loginPage' | 'peoplePage' | 'teamsPage' | 'hourBandsPage' | 'organizationPage' | 'todayPage'
->;
-
 interface Screen {
   readonly title: string;
-  readonly path: (fixture: Fixture) => string;
-  readonly ready: (pages: ScreenPages, fixture: Fixture) => Locator;
+  /** The route, built on the page object's own `path`. */
+  readonly path: (pages: PageObjects, fixture: Fixture) => string;
+  readonly ready: (pages: PageObjects, fixture: Fixture) => Locator;
 }
 
-async function checkScreen(page: Page, pages: ScreenPages, fixture: Fixture, screen: Screen): Promise<void> {
-  await page.goto(screen.path(fixture));
+async function checkScreen(page: Page, pages: PageObjects, fixture: Fixture, screen: Screen): Promise<void> {
+  await page.goto(screen.path(pages, fixture));
   await expect(screen.ready(pages, fixture)).toBeVisible();
 
   await expectNoHorizontalScroll(page);
@@ -45,12 +41,12 @@ async function checkScreen(page: Page, pages: ScreenPages, fixture: Fixture, scr
 const signedOut: readonly Screen[] = [
   {
     title: 'sign-in without a slug',
-    path: () => '/prijava',
+    path: ({ loginPage }) => loginPage.path,
     ready: ({ loginPage }) => loginPage.organizationInput,
   },
   {
     title: 'sign-in from the DVD link',
-    path: (fixture) => `/prijava/${fixture.slug}`,
+    path: ({ loginPage }, fixture) => `${loginPage.path}/${fixture.slug}`,
     ready: ({ loginPage }) => loginPage.passwordInput,
   },
 ];
@@ -58,7 +54,7 @@ const signedOut: readonly Screen[] = [
 const asMember: readonly Screen[] = [
   {
     title: 'Danas',
-    path: () => '/danas',
+    path: ({ todayPage }) => todayPage.path,
     ready: ({ teamsPage }, fixture) => teamsPage.rosterLink(fixture.team.name),
   },
 ];
@@ -68,55 +64,45 @@ const asAdmin: readonly Screen[] = [
     // STORY 6.3: an admin's own Danas — Treba tebe, the coverage, the
     // absences and the week, whose grid scrolls inside its own region.
     title: 'Danas',
-    path: () => '/danas',
+    path: ({ todayPage }) => todayPage.path,
     ready: ({ todayPage }) => todayPage.openConflictsLink(),
   },
   {
     title: 'Ljudi',
-    path: () => '/ljudi',
+    path: ({ peoplePage }) => peoplePage.path,
     ready: ({ peoplePage }, fixture) => peoplePage.editLink(fixture.member.name),
   },
   {
     // STORY 7.13b: the add dialog on Ljudi, open by its URL.
     title: 'new member',
-    path: () => '/ljudi?dodaj=1',
+    path: ({ peoplePage }) => `${peoplePage.path}?dodaj=1`,
     ready: ({ peoplePage }) => peoplePage.addUsernameInput,
   },
   {
     title: 'teams',
-    path: () => '/ljudi/smjene',
+    path: ({ teamsPage }) => teamsPage.path,
     ready: ({ teamsPage }, fixture) => teamsPage.editLink(fixture.team.name),
   },
   {
     title: 'roster',
-    path: (fixture) => `/smjene/${fixture.team.id}`,
+    path: ({ teamsPage }, fixture) => teamsPage.rosterPath(fixture.team.id),
     ready: ({ teamsPage }, fixture) => teamsPage.rosterEntry(fixture.member.name),
   },
   {
     title: 'hour bands',
-    path: () => '/organizacija/satni-pojasi',
+    path: ({ hourBandsPage }) => hourBandsPage.path,
     ready: ({ hourBandsPage }, fixture) => hourBandsPage.editLink(firstBand(fixture).name),
   },
   {
     title: 'Organizacija',
-    path: () => '/organizacija',
+    path: ({ organizationPage }) => organizationPage.path,
     ready: ({ organizationPage }) => organizationPage.nameOpener,
   },
 ];
 
 test.describe('signed out', () => {
   for (const screen of signedOut) {
-    test(`${screen.title} fits 320 px`, async ({
-      page,
-      fixture,
-      loginPage,
-      peoplePage,
-      teamsPage,
-      hourBandsPage,
-      organizationPage,
-      todayPage,
-    }) => {
-      const pages = { loginPage, peoplePage, teamsPage, hourBandsPage, organizationPage, todayPage };
+    test(`${screen.title} fits 320 px`, async ({ page, fixture, pages }) => {
       await checkScreen(page, pages, fixture, screen);
     });
   }
@@ -126,17 +112,7 @@ test.describe('as a member', () => {
   test.use({ storageState: MEMBER_STATE });
 
   for (const screen of asMember) {
-    test(`${screen.title} fits 320 px`, async ({
-      page,
-      fixture,
-      loginPage,
-      peoplePage,
-      teamsPage,
-      hourBandsPage,
-      organizationPage,
-      todayPage,
-    }) => {
-      const pages = { loginPage, peoplePage, teamsPage, hourBandsPage, organizationPage, todayPage };
+    test(`${screen.title} fits 320 px`, async ({ page, fixture, pages }) => {
       await checkScreen(page, pages, fixture, screen);
     });
   }
@@ -146,17 +122,7 @@ test.describe('as an admin', () => {
   test.use({ storageState: ADMIN_STATE });
 
   for (const screen of asAdmin) {
-    test(`${screen.title} fits 320 px`, async ({
-      page,
-      fixture,
-      loginPage,
-      peoplePage,
-      teamsPage,
-      hourBandsPage,
-      organizationPage,
-      todayPage,
-    }) => {
-      const pages = { loginPage, peoplePage, teamsPage, hourBandsPage, organizationPage, todayPage };
+    test(`${screen.title} fits 320 px`, async ({ page, fixture, pages }) => {
       await checkScreen(page, pages, fixture, screen);
     });
   }

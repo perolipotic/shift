@@ -17,7 +17,7 @@ const cancelErasures = builder.cancelScheduled.erasures;
  * below 640 px, its four-step stepper.
  */
 export class RotationPage extends BasePage {
-  protected readonly path = '/postavke-rotacije';
+  readonly path = '/postavke-rotacije';
 
   /** A section's heading, at any level. */
   sectionHeading(name: string): Locator {

@@ -1159,15 +1159,13 @@ test.describe('the conflict count, as an admin', () => {
 
   test('a leave row that cannot be trusted shows the unavailable message with no retry', async ({ page, hoursPage }) => {
     // The real answer's headers (CORS and the count) kept; its rows replaced
-    // by one of a member the organization does not hold.
+    // by one that names no member at all.
     await page.route('**/rest/v1/leave_records*', async (route) => {
       const response = await route.fetch();
       await route.fulfill({
         response,
         headers: { ...response.headers(), 'content-range': '0-0/1' },
-        body: JSON.stringify([
-          { id: 'e2e-untrusted', member_id: '00000000-0000-4000-8000-00000000dead', during: '[2026-09-10,2026-09-11)' },
-        ]),
+        body: JSON.stringify([{ id: 'e2e-untrusted', member_id: null, during: '[2026-09-10,2026-09-11)' }]),
       });
     });
 
@@ -1176,6 +1174,30 @@ test.describe('the conflict count, as an admin', () => {
     await expect(hoursPage.organizationTable).toHaveCount(0);
     // Reading the same rows again would refuse them again: no retry is offered.
     await expect(hoursPage.retryButton).toHaveCount(0);
+  });
+
+  // E765: a row naming a member the snapshot does not hold (yet) is a skew
+  // between the reads, as on the calendar: the snapshot is read again once
+  // by itself, and while the member is still unknown the retry is offered.
+  test('a leave row of a member newer than the snapshot shows the unavailable message with the retry', async ({
+    page,
+    hoursPage,
+  }) => {
+    await page.route('**/rest/v1/leave_records*', async (route) => {
+      const response = await route.fetch();
+      await route.fulfill({
+        response,
+        headers: { ...response.headers(), 'content-range': '0-0/1' },
+        body: JSON.stringify([
+          { id: 'e2e-newer', member_id: '00000000-0000-4000-8000-00000000dead', during: '[2026-09-10,2026-09-11)' },
+        ]),
+      });
+    });
+
+    await hoursPage.goto();
+    await expect(hoursPage.unavailableAlert).toBeVisible();
+    await expect(hoursPage.organizationTable).toHaveCount(0);
+    await expect(hoursPage.retryButton).toBeVisible();
   });
 });
 
