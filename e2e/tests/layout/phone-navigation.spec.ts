@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import type { Locator } from '@playwright/test';
 
 import type { LoginPage } from '../../pages/login.page.ts';
 import { ADMIN_STATE, MEMBER_STATE } from '../../utils/run-fixture.ts';
@@ -58,10 +58,8 @@ async function cellBoxes(loginPage: LoginPage) {
 }
 
 /** How far the bar's own content is wider than the bar; 0 or less is no scroll. */
-async function navOverflow(page: Page): Promise<number> {
-  return page
-    .getByRole('navigation', { name: hr.shell.navigation })
-    .evaluate((nav) => nav.scrollWidth - nav.clientWidth);
+async function navOverflow(nav: Locator): Promise<number> {
+  return nav.evaluate((element) => element.scrollWidth - element.clientWidth);
 }
 
 for (const width of WIDTHS) {
@@ -85,7 +83,7 @@ for (const width of WIDTHS) {
         await expect(loginPage.moreButton).toBeVisible();
         await expect(loginPage.navigation.getByRole('button')).toHaveCount(1);
 
-        expect(await navOverflow(page), 'the bar scrolls sideways').toBeLessThanOrEqual(0);
+        expect(await navOverflow(loginPage.navigation), 'the bar scrolls sideways').toBeLessThanOrEqual(0);
 
         const boxes = await cellBoxes(loginPage);
         expect(boxes).toHaveLength(5);
@@ -276,7 +274,7 @@ test.describe('the I/O matrix at 390 px', () => {
       await page.goto('/danas');
 
       await expect(loginPage.alertWith(hr.shell.error.destinations)).toBeVisible();
-      await expect(page.getByRole('button', { name: hr.shell.retry, exact: true })).toBeVisible();
+      await expect(loginPage.shellRetryButton).toBeVisible();
       await expect(loginPage.navigation.getByRole('link')).toHaveCount(0);
 
       await loginPage.moreButton.click();
@@ -357,7 +355,7 @@ test.describe('closing the sheet at 390 px', () => {
     await page.setViewportSize({ width: 1024, height: 844 });
 
     await expect(loginPage.moreSheet).toBeHidden();
-    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(loginPage.dialog()).toHaveCount(0);
   });
 
   test('pressing the row of the page already open closes the sheet', async ({ page, loginPage }) => {
@@ -400,8 +398,8 @@ test.describe('at a desktop viewport, collapsed', () => {
     await page.goto('/danas');
     await expect(loginPage.heading(hr.nav.danas)).toBeVisible();
 
-    await page.getByRole('button', { name: hr.shell.menuHide, exact: true }).click();
-    await expect(page.getByRole('button', { name: hr.shell.menuShow, exact: true })).toBeVisible();
+    await loginPage.menuHideButton.click();
+    await expect(loginPage.menuShowButton).toBeVisible();
 
     await loginPage.profileButton(fixture.admin.name).click();
     await expect(loginPage.themeGroup).toBeVisible();

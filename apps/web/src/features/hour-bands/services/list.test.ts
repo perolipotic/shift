@@ -22,6 +22,7 @@ import {
   hourBandsRetryMessageKey,
   hourBandsQueryOptions,
   hourBandsNoticeOf,
+  hourBandsSummaryOf,
   hourBandsSurfaceStateOf,
   partitionBarOf,
   DAY_SCALE,
@@ -320,6 +321,21 @@ describe('the 24-hour bar', () => {
 
   it('flags the uncovered segment in words, not by colour', () => {
     expect(t('organization.hourBands.uncovered')).toBe('Nepokriveno');
+  });
+});
+
+describe("Organizacija's summary of the bands (deferred work from 7.18)", () => {
+  it('counts and names the bands in start order, and covers the day as the bar does', () => {
+    expect(hourBandsSummaryOf(PILOT)).toEqual({ count: 2, names: ['Dan', 'Noć'], coveredMinutes: 1440 });
+    expect(hourBandsSummaryOf(UJ5)).toEqual({ count: 3, names: ['Jutro', 'Popodne', 'Noć'], coveredMinutes: 1440 });
+    expect(hourBandsSummaryOf(UJ5).coveredMinutes).toBe(partitionBarOf(UJ5).coveredMinutes);
+    expect(t('organization.hourBandsBandsValue', { count: t('organization.hourBands.count', { count: 2 }), names: 'Dan i Noć' })).toBe(
+      '2 pojasa · Dan i Noć',
+    );
+  });
+
+  it('says zero bands as a count and no day covered', () => {
+    expect(hourBandsSummaryOf([])).toEqual({ count: 0, names: [], coveredMinutes: 0 });
   });
 });
 

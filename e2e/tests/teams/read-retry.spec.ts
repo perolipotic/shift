@@ -21,7 +21,7 @@ test('a failed team list read offers Pokušaj ponovno, which reads it again', as
   await teamsPage.goto();
 
   const alert = teamsPage.alertWith(hr.smjene.error.unavailable);
-  const retry = page.getByRole('button', { name: hr.smjene.error.retry, exact: true });
+  const retry = teamsPage.retryButton;
 
   await expect(alert).toBeVisible();
   await expect(retry).toBeVisible();
@@ -30,5 +30,5 @@ test('a failed team list read offers Pokušaj ponovno, which reads it again', as
   await retry.click();
   await expect(alert).toHaveCount(0);
   await expect(retry).toHaveCount(0);
-  await expect(page.getByText(fixture.team.name, { exact: true }).first()).toBeVisible();
+  await expect(teamsPage.text(fixture.team.name).first()).toBeVisible();
 });

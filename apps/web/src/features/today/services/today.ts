@@ -1,4 +1,4 @@
-import { DUTY_RUNNING, leaveCostOf, monthOf, type LeaveRange } from '@shift/domain';
+import { DUTY_RUNNING, activeOn, leaveCostOf, membershipOn, monthOf, type LeaveRange } from '@shift/domain';
 
 import type { CalendarSnapshot, CalendarSurfaceState } from '@/features/calendar/services/snapshot';
 import {
@@ -12,6 +12,7 @@ import {
   type CalendarMarks,
 } from '@/features/calendar/utils/month';
 import { leaveRecordsOf, type LeaveRecord } from '@/features/leave/services/leave-list';
+import type { MemberTeam } from '@/features/members/services/list';
 import {
   legKeyOf,
   runningFromYesterdayOf,
@@ -52,6 +53,10 @@ import { dayAfter } from '@/utils/dates';
  * carried-over shift ends, today is the free or the leave case again. A
  * viewer with no membership at all is unscheduled, and has no next shift
  * and no week.
+ *
+ * THE VIEWER'S TEAM TODAY ("Tvoja smjena ‹tim›") comes from the same
+ * snapshot — the viewer's membership history and the teams it names — so
+ * one fact on the screen has one read (AD-13); the today card states it.
  *
  * NEVER A GUESS. A read that failed or is paused offline is unavailable with
  * a retry; a row that cannot be trusted or any error the derivation throws
@@ -115,8 +120,10 @@ export type TodayCase =
   | { readonly kind: typeof CASE_WORKING; readonly shifts: readonly TodayShift[] }
   | {
       readonly kind: typeof CASE_FREE;
-      /** The non-working type and its team, or `null` for no shift (`Bez smjene`). */
+      /** The non-working type and its team, or `null` for no shift (`Bez smjene`, or `Neaktivno`). */
       readonly shift: TodayShift | null;
+      /** Inactive today (B449): no shift then says so, never "no team". */
+      readonly inactive: boolean;
     };
 
 /** A date as the screen states it: `četvrtak` and `01.10.2026`. */
@@ -150,6 +157,8 @@ export interface TodayView {
   /** Whether the next shift is the viewer's return from leave (`Vraćaš se`). */
   readonly returning: boolean;
   readonly week: readonly TodayWeekDay[];
+  /** The viewer's team today, `null` for none (`Bez smjene`): {@link ownTeamOf}. */
+  readonly ownTeam: MemberTeam | null;
 }
 
 export type Today =
@@ -276,6 +285,7 @@ export function todayViewOf(snapshot: CalendarSnapshot, rows: readonly unknown[]
         next: nextShiftOf(days, today, records, working, skip),
         returning: todayCase.kind === CASE_LEAVE,
         week: weekOf(days, today, records),
+        ownTeam: ownTeamOf(snapshot, today),
       },
     };
   } catch (cause) {
@@ -394,10 +404,31 @@ function dayLookupOf(snapshot: CalendarSnapshot, today: string, records: readonl
           weekday: weekdayOf(date),
           isToday: date === today,
           shifts: [],
+          inactive: !activeOn(viewer.statuses, date),
         }
       );
     },
   };
+}
+
+/**
+ * The viewer's team on `date` from the snapshot: their membership version in
+ * effect then (the domain's `membershipOn`, as the member list judges it),
+ * named from the snapshot's teams; `null` for no team.
+ *
+ * @throws RangeError on any precondition of `membershipOn`, or for a team the
+ *   snapshot does not carry.
+ */
+export function ownTeamOf(snapshot: CalendarSnapshot, date: string): MemberTeam | null {
+  const membership = membershipOn(snapshot.viewer.memberships, date);
+
+  if (membership === null) return null;
+
+  const team = snapshot.teams.find((candidate) => candidate.id === membership.teamId);
+
+  if (team === undefined) throw new RangeError(`the team ${membership.teamId} is not in the snapshot`);
+
+  return { id: team.id, name: team.name };
 }
 
 /** A day's shift as today states it, its team named; `fromYesterday` for a carried-over one. */
@@ -451,7 +482,7 @@ function todayCaseOf(
 
   const free = day.shifts[0];
 
-  return { kind: CASE_FREE, shift: free === undefined ? null : todayShiftOf(snapshot, free) };
+  return { kind: CASE_FREE, shift: free === undefined ? null : todayShiftOf(snapshot, free), inactive: day.inactive };
 }
 
 /** No leg to skip: today is no duty. */
@@ -545,4 +576,9 @@ export function todayMessageKey(
   const unhandled: never = kind;
 
   return unhandled;
+}
+
+/** The viewer's team today once the snapshot answers it — the admin subtitle's link — else `null`. */
+export function ownTeamShownOf(today: Today): MemberTeam | null {
+  return today.kind === TODAY_READY ? today.view.ownTeam : null;
 }

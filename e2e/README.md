@@ -38,7 +38,7 @@ naming `supabase start` or `supabase functions serve` if one is missing.
 ```text
 e2e/
 ├── pages/                # page objects: one class per screen, locators and actions
-│   ├── base.page.ts      # the shared chrome: navigation, the h1, status, alert, dialog, goto()
+│   ├── base.page.ts      # the shared chrome: navigation, the h1, main, status, alert, dialog, goto()
 │   └── <screen>.page.ts  # login, calendar, conflicts, people, teams, organization, hour-bands, hours, leave, rotation, today
 ├── tests/
 │   ├── auth.setup.ts     # the setup project: signs in and stores the sessions
@@ -66,8 +66,14 @@ organization (`readFixture`).
   claim a test makes stays in its spec, and an assertion helper is never a page
   method: it belongs in the spec or in `utils/layout.ts`.
 - Specs take page objects from their fixtures and never call `page.getBy…` or
-  `page.locator` themselves. A second browser context (a member's view in an
-  admin test) wraps its own page: `new TeamsPage(memberPage)`.
+  `page.locator` themselves. `pnpm lint` refuses it under `e2e/tests/**`
+  (`no-restricted-syntax` in `eslint.config.js`): on `page`, on a page
+  object's `.page`, and on a second context's `…Page`. Chaining from a locator
+  a page object returned stays allowed. A second browser context (a member's
+  view in an admin test) wraps its own page: `new TeamsPage(memberPage)`.
+- What every screen shares lives once in `BasePage`: the h1, `main`, the
+  status, alert and dialog, the shell's retry, and `editLinkNamed`, which each
+  list screen's `editLink` names in its own words.
 - Data that is not a locator stays in `utils/` (`uniqueMember`, the stepper's
   `STEP_*` and `NEXT_LABELS`, the calendar's `dayMonth` and `weekdayOf`).
 - Locators are by role or label. A page object may use a structural or

@@ -276,6 +276,14 @@ test.describe('as a member', () => {
     await expect(card).toBeVisible();
     await expect(card).toContainText(rotation.steps[2]);
     await expect(card).toContainText(fixture.team.name);
+    // E804: the card closes on "Tvoja smjena" and the one link to the team's
+    // roster, from the calendar snapshot — no separate card after the week.
+    await expect(card.getByText(hr.smjene.today.label, { exact: true })).toBeVisible();
+    await expect(card.getByRole('link', { name: fixture.team.name, exact: true })).toHaveAttribute(
+      'href',
+      `/smjene/${fixture.team.id}`,
+    );
+    await expect(todayPage.teamLink(fixture.team.name)).toHaveCount(1);
     await expect(todayPage.todayCard(danas.today.working)).toHaveCount(0);
     // STORY 6.3: the member's Danas is unchanged — no admin block.
     await expect(todayPage.needsYouCard).toHaveCount(0);
@@ -657,9 +665,9 @@ test.describe('as an admin', () => {
     await expect(todayPage.needsYouRowLinks).toHaveCount(0);
     await expect(todayPage.openConflictsLink(0)).toBeVisible();
     await expect(todayPage.absentCard).toContainText(admin.absent.none);
-    await expect(todayPage.page.getByText(new RegExp(`${escapeRegExp(admin.status.unscheduled)}$`))).toBeVisible();
+    await expect(todayPage.text(new RegExp(`${escapeRegExp(admin.status.unscheduled)}$`))).toBeVisible();
     // No "Tvoja smjena" card for an admin.
-    await expect(todayPage.page.getByText(hr.smjene.membership.none, { exact: true })).toHaveCount(0);
+    await expect(todayPage.text(hr.smjene.membership.none)).toHaveCount(0);
 
     await todayPage.openConflictsLink(0).click();
     await expect(page).toHaveURL(/\/raspored$/);
@@ -795,7 +803,7 @@ test.describe('as an admin', () => {
     await expect(todayPage.teamLink(team.name)).toHaveAttribute('href', `/smjene/${team.id}`);
     // No "Tvoja smjena" card: the subtitle's link is the only one to the team.
     await expect(todayPage.teamLink(team.name)).toHaveCount(1);
-    await expect(todayPage.page.getByText(hr.smjene.today.label, { exact: true })).toHaveCount(0);
+    await expect(todayPage.text(hr.smjene.today.label)).toHaveCount(0);
   });
 
   test('a failed leave read is one alert with no figure, and the retry brings Treba tebe back', async ({ page, todayPage }) => {

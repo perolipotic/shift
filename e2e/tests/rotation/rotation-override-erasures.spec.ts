@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import type { Locator } from '@playwright/test';
 
 import type { RotationPage } from '../../pages/rotation.page.ts';
+import { anyErasureTitleOf } from '../../pages/erasure-dialog.ts';
 import {
   holdRotation,
   removeLeaveMemberInSql,
@@ -20,7 +21,7 @@ import {
   type SeededRotation,
 } from '../../utils/database-helper.ts';
 import { addDays, dayMonth, fullDate, weekdayOf } from '../../utils/dates.ts';
-import { escapeRegExp, fill, hr, plural } from '../../utils/i18n.ts';
+import { fill, hr, plural } from '../../utils/i18n.ts';
 import { expectNoHorizontalScroll } from '../../utils/layout.ts';
 import { ADMIN_STATE } from '../../utils/run-fixture.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
@@ -81,8 +82,8 @@ test.afterEach(async () => {
   if (failures.length > 0) throw failures[0];
 });
 
-/** Every count of the confirmation's title: its words before the ICU count. */
-const anyErasureTitle = new RegExp(`^${escapeRegExp(/one \{([^#]*)#/.exec(erasures.title)?.[1] ?? 'E2E: no title')}`);
+/** Every count of the confirmation's title (`anyErasureTitleOf`). */
+const anyErasureTitle = anyErasureTitleOf(erasures.title);
 
 interface Setup {
   readonly rotation: SeededRotation;
@@ -212,7 +213,6 @@ test('confirming a pending Slobodno override over a member\'s leave waits for th
 });
 
 test('amending a pending override to Slobodno waits for the confirmation; going back restores what was entered', async ({
-  page,
   fixture,
   rotationPage,
   conflictsPage,
@@ -254,7 +254,7 @@ test('amending a pending override to Slobodno waits for the confirmation; going 
   const done = rotationPage.statusWith(overrides.done.amended);
   await expect(done).toBeVisible();
   await expect(done).toContainText(plural(erasures.removed, 1));
-  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(rotationPage.dialog()).toHaveCount(0);
   await expect(rotationPage.overrideReviewRow(team.name, fullDate(date))).toHaveCount(0);
 
   await conflictsPage.goto();
@@ -263,7 +263,6 @@ test('amending a pending override to Slobodno waits for the confirmation; going 
 });
 
 test('confirming a pending working override erases nothing and confirms in one click', async ({
-  page,
   fixture,
   rotationPage,
   conflictsPage,
@@ -278,7 +277,7 @@ test('confirming a pending working override erases nothing and confirms in one c
   await expect(done).toBeVisible();
   await expect(done).not.toContainText(plural(erasures.removed, 1));
   // No erasure confirmation of ANY count was shown.
-  await expect(page.getByRole('dialog', { name: anyErasureTitle })).toHaveCount(0);
+  await expect(rotationPage.dialog(anyErasureTitle)).toHaveCount(0);
   await expect(rotationPage.overrideReviewRow(team.name, fullDate(date))).toHaveCount(0);
 
   // The member still works that day, on leave: the conflict stands.
@@ -481,7 +480,6 @@ test('an amend whose erasures cannot be checked again at the dialog\'s save reop
 });
 
 test('an amend of an override removed meanwhile closes, says so in the review, and the row is gone', async ({
-  page,
   fixture,
   rotationPage,
 }) => {
@@ -498,7 +496,7 @@ test('an amend of an override removed meanwhile closes, says so in the review, a
 
   await expect(amend).toHaveCount(0);
   await expect(rotationPage.alertWith(overrides.refused.gone)).toBeVisible();
-  await expect(page.getByRole('dialog', { name: anyErasureTitle })).toHaveCount(0);
+  await expect(rotationPage.dialog(anyErasureTitle)).toHaveCount(0);
   await expect(rotationPage.overrideReviewRow(team.name, fullDate(date))).toHaveCount(0);
 });
 
@@ -523,7 +521,7 @@ test('discarding a pending override asks nothing about conflicts, as before', as
   await rotationPage.confirmDiscardIn(confirm).click();
 
   await expect(rotationPage.statusWith(overrides.done.discarded)).toBeVisible();
-  await expect(page.getByRole('dialog', { name: anyErasureTitle })).toHaveCount(0);
+  await expect(rotationPage.dialog(anyErasureTitle)).toHaveCount(0);
   await expect(rotationPage.overrideReviewRow(team.name, fullDate(date))).toHaveCount(0);
   expect(reads, 'the discard read the resolutions for a check').toEqual([]);
 

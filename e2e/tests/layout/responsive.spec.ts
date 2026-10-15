@@ -276,7 +276,7 @@ for (const width of [320, 390]) {
       const band = hourBandsPage.bandList.getByRole('listitem').filter({ hasText: firstBand(fixture).name });
       await expect(band).toBeVisible();
       await expect(band.getByRole('link')).toBeVisible();
-      await expect(page.getByRole('table')).toHaveCount(0);
+      await expect(hourBandsPage.tables).toHaveCount(0);
       await expectNoHorizontalScroll(page);
       await expectNoInnerHorizontalScroll(page);
       await expectTouchTargets(page);
@@ -287,7 +287,7 @@ for (const width of [320, 390]) {
       const team = teamsPage.activeList.getByRole('listitem').filter({ hasText: fixture.team.name });
       await expect(team).toBeVisible();
       await expect(team.getByRole('link', { name: fill(hr.smjene.edit, { name: fixture.team.name }) })).toBeVisible();
-      await expect(page.getByRole('table')).toHaveCount(0);
+      await expect(teamsPage.tables).toHaveCount(0);
       await expectNoHorizontalScroll(page);
       await expectNoInnerHorizontalScroll(page);
       await expectTouchTargets(page);

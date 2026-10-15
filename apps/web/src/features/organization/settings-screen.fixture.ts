@@ -27,6 +27,10 @@ export const SETTINGS_SCREEN_PARTS = {
   accent: ['features', 'organization', 'components', 'organization-accent-dialog.tsx'],
   time: ['features', 'organization', 'components', 'organization-time-card.tsx'],
   fireRanks: ['features', 'organization', 'components', 'organization-fire-ranks-card.tsx'],
+  // Deferred work from 7.18: the *Satni pojasi* facts card and the hook
+  // holding its one read of the bands.
+  hourBands: ['features', 'organization', 'components', 'organization-hour-bands-card.tsx'],
+  hourBandsHook: ['features', 'organization', 'hooks', 'use-organization-hour-bands.ts'],
   accentLabel: ['features', 'organization', 'utils', 'accent-label.ts'],
 } as const;
 

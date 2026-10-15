@@ -40,6 +40,11 @@ export class RotationPage extends BasePage {
     return this.addShiftTypeDialog.getByLabel(shiftTypes.name, { exact: true });
   }
 
+  /** The add dialog's kind (working or not). By label on the page, as `addShiftType` fills it. */
+  get addShiftTypeKind(): Locator {
+    return this.page.getByLabel(shiftTypes.kind, { exact: true });
+  }
+
   /** The add dialog's Odustani. */
   get addShiftTypeCancel(): Locator {
     return this.addShiftTypeDialog.getByRole('button', { name: shiftTypes.cancel, exact: true });
@@ -55,7 +60,7 @@ export class RotationPage extends BasePage {
     await this.shiftTypeOpenButton.click();
     await this.page.getByLabel(shiftTypes.name, { exact: true }).fill(name);
     if (times === null) {
-      await this.page.getByLabel(shiftTypes.kind, { exact: true }).selectOption({ label: shiftTypes.nonworking });
+      await this.addShiftTypeKind.selectOption({ label: shiftTypes.nonworking });
     } else {
       await this.page.getByLabel(shiftTypes.start, { exact: true }).fill(times[0]);
       await this.page.getByLabel(shiftTypes.end, { exact: true }).fill(times[1]);
@@ -232,11 +237,6 @@ export class RotationPage extends BasePage {
     await this.page.mouse.up();
   }
 
-  /** What dnd-kit's live region says — every word of it from `hr.json`. */
-  announced(message: string): Locator {
-    return this.text(message);
-  }
-
   /**
    * One macrotask in the page. dnd-kit's keyboard sensor starts listening for
    * the arrows in a `setTimeout` after the lift, so a key pressed before that
@@ -276,6 +276,13 @@ export class RotationPage extends BasePage {
   /** The offsets as stacked rows below 640 px, named by their section's heading (UX-DR17). */
   get offsetList(): Locator {
     return this.page.getByRole('list', { name: builder.offsetsHeading, exact: true });
+  }
+
+  /** The offsets table, by its step column's heading: absent below 640 px, where the offsets stack. */
+  get offsetTable(): Locator {
+    return this.page.getByRole('table').filter({
+      has: this.page.getByRole('columnheader', { name: builder.columnOffset, exact: true }),
+    });
   }
 
   get spreadButton(): Locator {

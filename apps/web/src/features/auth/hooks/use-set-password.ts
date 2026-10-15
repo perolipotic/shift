@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useNavigate, useRouter } from '@tanstack/react-router';
+import { useNavigate, useRouter, useSearch } from '@tanstack/react-router';
 import { useRef, useState, type FormEvent } from 'react';
 import { flushSync } from 'react-dom';
 
@@ -13,6 +13,7 @@ import {
   typedStateOf,
   type SetPasswordFailure,
 } from '@/features/auth/services/set-password';
+import { knownPathOf, returnTargetOf } from '@/features/auth/services/return-target';
 import { SIGN_OUT_FAILED, signOut, type SignOutFailure } from '@/features/auth/services/sign-out';
 import { supabaseClient } from '@/lib/supabase/client';
 
@@ -40,12 +41,15 @@ import { supabaseClient } from '@/lib/supabase/client';
  * ON SUCCESS the session has been refreshed without the flag. The router is
  * invalidated because `@/lib/supabase/session-cache` ignores a refresh that
  * keeps the user — so nothing else would re-run the guards — and the member
- * goes to `/`, which forwards them to their landing destination with no new
- * sign-in.
+ * goes where the link that brought them here pointed (`povratak`, E853), or
+ * to `/`, which forwards them to their landing destination, with no new
+ * sign-in. The target is validated exactly as the sign-in hook validates it.
  */
 export function useSetPassword() {
   const navigate = useNavigate();
   const router = useRouter();
+  // NOT STRICT, so no route id is spelt here, as in the sign-in hook.
+  const { povratak } = useSearch({ strict: false });
   const queryClient = useQueryClient();
   const passwordField = useRef<HTMLInputElement>(null);
   const repeatField = useRef<HTMLInputElement>(null);
@@ -143,7 +147,7 @@ export function useSetPassword() {
       passwordSaved.current = true;
       setSaved(true);
       await router.invalidate();
-      await navigate({ to: '/', replace: true });
+      await navigate({ href: returnTargetOf(povratak, knownPathOf(router)), replace: true });
     } catch (cause) {
       // The client throwing on a build with no environment, or a navigation
       // that rejected. Logged, never with the password.

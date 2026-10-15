@@ -5,6 +5,7 @@ import { returnSearchFor } from '@/features/auth/services/return-target';
 import { mustSetPassword } from '@/features/auth/services/set-password';
 import { rootRoute } from '@/pages/__root';
 import { resolvedSession } from '@/lib/supabase/client';
+import { sessionEnded } from '@/lib/supabase/session-cache';
 
 /**
  * The signed-in layout: one session guard for every destination.
@@ -104,6 +105,13 @@ export const appLayoutRoute = createRoute({
     // which IS the decision here: a session that cannot be read is not a
     // session, so the visitor is treated as signed out and fails CLOSED.
     const session = await resolvedSession(context.currentSession);
+    // TAKEN ON EVERY RUN, so the mark never outlives the guard run it was
+    // raised for: set when this run is the re-guard for a session that ended
+    // or changed hands outside this tab (`@/lib/supabase/session-cache`, C516),
+    // and then no redirect below carries the location — the next person to
+    // sign in on this device is not sent to the previous one's deep link.
+    const changedHands = sessionEnded.take();
+    const carried = changedHands ? {} : returnSearchFor(location.href);
 
     if (session !== null) {
       // THE FIRST SIGN-IN (story 7.8). A session admin-auth flagged — a new
@@ -112,7 +120,11 @@ export const appLayoutRoute = createRoute({
       // one check holds them all; `/postavi-lozinku` sits OUTSIDE this layout
       // or it would redirect to itself. The flag is read off the session the
       // guard already holds: who the person is, never what they may do.
-      if (mustSetPassword(session)) throw redirect({ to: '/postavi-lozinku' });
+      //
+      // The location travels with it (E853), in the same `povratak` the
+      // sign-in routes carry, so saving the password lands where the link
+      // pointed rather than on `/`.
+      if (mustSetPassword(session)) throw redirect({ to: '/postavi-lozinku', search: carried });
 
       return;
     }
@@ -124,8 +136,9 @@ export const appLayoutRoute = createRoute({
     // and the next hop dropped them — and the path never travelled at all.
     // Now the href rides `povratak` through both sign-in routes and the
     // sign-in hook returns there, through the validator in
-    // `@/features/auth/services/return-target`.
-    throw redirect({ to: '/prijava', search: returnSearchFor(location.href) });
+    // `@/features/auth/services/return-target` — unless this run is the
+    // re-guard for a session change, which carries nothing (above).
+    throw redirect({ to: '/prijava', search: carried });
   },
   component: AppLayout,
 });

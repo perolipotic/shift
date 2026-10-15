@@ -47,7 +47,7 @@ import {
 import { brandAccentAppearance } from '@/features/organization/utils/accent';
 import { OrganizationLockup } from '@/features/organization/components/lockup';
 import { useRenderableLogo } from '@/features/organization/hooks/logo-url';
-import { ORGANIZATION_TABLE, organizationSnapshotQueryOptions } from '@/features/organization/services/snapshot';
+import { organizationTable, organizationSnapshotQueryOptions } from '@/features/organization/services/snapshot';
 import { currentSession, supabaseClient } from '@/lib/supabase/client';
 import { SIGN_OUT_FAILED, signOut, type SignOutFailure } from '@/features/auth/services/sign-out';
 import {
@@ -263,7 +263,7 @@ export function AppChrome({ children }: AppChromeProps) {
   // their own branding has nothing to do about it, and the one `role="alert"`
   // here carries the two refusals that ARE actionable.
   const organizationRead = useQuery(
-    organizationSnapshotQueryOptions(() => supabaseClient().from(ORGANIZATION_TABLE)),
+    organizationSnapshotQueryOptions(organizationTable),
   );
 
   const organizationAnswer = organizationRead.data;

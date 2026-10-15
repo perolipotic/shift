@@ -365,6 +365,8 @@ const TODAY_DUTY_KEYS = join(TODAY_FEATURE, 'services', 'today-duty.ts');
 const TODAY_ADMIN_KEYS = join(TODAY_FEATURE, 'services', 'admin-today.ts');
 /** SINCE STORY 6.3: *Treba tebe*, the one Danas part sanctioned to draw `destructive`. */
 const NEEDS_YOU_CARD = join(srcRoot, ...TODAY_SCREEN_PARTS.needsYouCard);
+/** SINCE E804: the caller's team today and its one link to the roster, in the today card and the admin's subtitle. */
+const OWN_TEAM_LINE = join(srcRoot, ...TODAY_SCREEN_PARTS.ownTeamLine);
 const TEAM_ROSTER_KEYS = join(srcRoot, 'features', 'teams', 'services', 'roster.ts');
 
 /** The hour bands feature, which holds both hour band screens' parts. */
@@ -517,6 +519,8 @@ const CALENDAR_OVERRIDE_WRITE_KEYS = join(srcRoot, 'features', 'calendar', 'serv
 const CALENDAR_ROSTER_WRITE_KEYS = join(srcRoot, 'features', 'calendar', 'services', 'roster-write.ts');
 /** Story 3.2b's modifier vocabulary: the four marks' labels and a cell with no rotation. */
 const CALENDAR_MODIFIER_KEYS = join(srcRoot, 'features', 'calendar', 'utils', 'modifiers.ts');
+/** B449: what an empty day or month says, inactive or on no team; shared with *Danas*. */
+const CALENDAR_EMPTY_DAY_KEYS = join(srcRoot, 'features', 'calendar', 'utils', 'empty-day.ts');
 
 /**
  * The member write path's rules, as a `.ts` module that renders nothing.
@@ -753,7 +757,8 @@ const SCREENS = [
   // accent and the fire-rank setting are radio groups, which are not fields
   // anybody types in, and a slug, a zone or a locale control would still be
   // the count moving.
-  { name: 'the organization settings surface', file: SETTINGS, expectedFields: 3, expectedButtons: 8 },
+  // NINE BUTTONS since the *Satni pojasi* card's `Otvori` (deferred work from 7.18).
+  { name: 'the organization settings surface', file: SETTINGS, expectedFields: 3, expectedButtons: 9 },
   // THREE on the member list, and the count is what keeps a fourth from
   // arriving unreviewed: the search field, the permission-level filter, and ONE
   // `<Button>` — the sort control, written once inside a map over
@@ -2357,7 +2362,12 @@ const KEY_SOURCES = [
   // option names, the accent's stored label and the fire-rank status line
   // reach `t()` through their `MessageKey` modules. The aside left the page:
   // its title and body went with it.
-  { name: 'the organization settings surface', file: SETTINGS, keys: translationKeys, strings: 48 },
+  //
+  // FIFTY-SEVEN SINCE THE DEFERRED 7.18 WORK: the leave dialog's current
+  // leave year, and the *Satni pojasi* card — its heading (the header link's
+  // key written a second time), `Otvori` and its name, the bands' label, the
+  // count and its value with the names, and the coverage's label and value.
+  { name: 'the organization settings surface', file: SETTINGS, keys: translationKeys, strings: 57 },
   {
     // EIGHT on the member list since story 1.5b, up from five, and the number is
     // still small because most of what this screen says is read off a table
@@ -2553,10 +2563,14 @@ const KEY_SOURCES = [
     //
     // SIXTY SINCE THE LONE-NOĆ CARRY-OVER: a shift from yesterday still
     // running is marked `od jučer` on its row (one more).
+    //
+    // FIFTY-EIGHT SINCE B449: an empty day of the week and the today card's
+    // no-shift line say inactive or no team through `dayEmptyMessageKey`,
+    // counted in the calendar's `empty-day` (two fewer).
     name: 'the Danas destination',
     file: DANAS,
     keys: translationKeys,
-    strings: 60,
+    strings: 58,
   },
   {
     // STORY 6.1a: today's three cases, the next shift's two headings, and
@@ -2584,19 +2598,22 @@ const KEY_SOURCES = [
     // THIRTY-TWO SINCE THE STORY 6.3 REVIEW: a one-day absence's line and
     // tomorrow's, each with or without a team (four), and a working team's
     // staffing, full or nobody rostered (two).
+    //
+    // THIRTY-THREE SINCE E897: a working shift carried over from yesterday,
+    // marked `od jučer` in the subtitle as on the member's card.
     name: 'the Danas admin rules',
     file: TODAY_ADMIN_KEYS,
     keys: messageKeyUnions,
-    strings: 32,
+    strings: 33,
   },
   {
-    // FIVE over three unions: the roster's two refusals (unknown, and the
-    // service), the Danas line's two openings (the team label, or no team),
-    // and the own-row read's one refusal.
+    // FOUR over two unions: the roster's two refusals (unknown, and the
+    // service) and the Danas line's two openings (the team label, or no
+    // team). The own-row read's refusal left with Danas's own read (E804).
     name: 'the team roster rules',
     file: TEAM_ROSTER_KEYS,
     keys: memberListKeys,
-    strings: 5,
+    strings: 4,
   },
   {
     // STORY 2.1b. THIRTEEN on the band list: its heading, the link back
@@ -2919,7 +2936,20 @@ const KEY_SOURCES = [
     // each dialog's close now names its change. ONE HUNDRED AND SIXTY-EIGHT
     // SINCE ITS CODE REVIEW: the notice when the day stops offering the type
     // form with no override on it.
-    strings: 168,
+    //
+    // ONE HUNDRED AND SIXTY-FIVE SINCE B449: an empty day, the viewer's empty
+    // month and a person's say inactive or no team through `empty-day`'s
+    // unions, counted there (three fewer).
+    strings: 165,
+  },
+  {
+    // B449: what an empty day or month says — inactive, or on no team — for
+    // a day, the viewer's month and a chosen person's. `memberListKeys`, for
+    // the module's TWO unions.
+    name: 'the calendar empty-day words',
+    file: CALENDAR_EMPTY_DAY_KEYS,
+    keys: memberListKeys,
+    strings: 6,
   },
   {
     // STORY 3.2b: the four marks' labels and the no-rotation label a cell's
@@ -3742,8 +3772,10 @@ describe('the screen is read at all, so every sweep below means something', () =
     //
     // SEVENTY-ONE SINCE E884: the leave overview's rules, for its Stanje chip.
     //
-    // SEVENTY-TWO SINCE THE SHEET'S COPY: the destination copy mapping.
-    expect(KEY_SOURCES).toHaveLength(72);
+    // SEVENTY-TWO SINCE B449: the calendar's empty-day words.
+    //
+    // SEVENTY-THREE SINCE THE SHEET'S COPY: the destination copy mapping.
+    expect(KEY_SOURCES).toHaveLength(73);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
@@ -4716,7 +4748,7 @@ describe('the screen is read at all, so every sweep below means something', () =
    * what no part may hold is a handler, a ref, a form or an effect.
    */
   const ROSTER_WIRING = new RegExp(
-    `\\buseNavigate\\(|\\buseQueryClient\\(|[{,]\\s*(?:${TEAM_HANDLERS})\\s*:|\\bsupabaseClient\\b|\\bORGANIZATION_TABLE\\b|\\bTEAMS_TABLE\\b|\\.from\\(`,
+    `\\buseNavigate\\(|\\buseQueryClient\\(|[{,]\\s*(?:${TEAM_HANDLERS})\\s*:|\\bsupabaseClient\\b|\\borganizationTable\\b|\\bTEAMS_TABLE\\b|\\.from\\(`,
   );
 
   it('remounts the roster per route id, with its hook below the key', () => {
@@ -6560,8 +6592,20 @@ describe('the roster and the Danas line read once, show names only, and write no
       organizationReads: 0,
     },
   ];
+  /** The surfaces with a read of their own: Danas's line reads the calendar snapshot since E804. */
+  const READING_SURFACES = SURFACES.filter((surface) => surface.name !== 'the Danas destination');
 
-  it.each(SURFACES)('reads exactly once, under its one key, on $name', ({ file, hookFile, read, key, organizationReads }) => {
+  it('derives the Danas line from the calendar snapshot, with no read of its own (E804, AD-13)', () => {
+    for (const file of DANAS) {
+      const screen = source(file);
+
+      expect(screen, `${file} reads the own team again`).not.toContain('readOwnTeamToday(');
+      expect(screen, `${file} names the own-team key`).not.toContain('OWN_TEAM_KEY');
+    }
+    expect(source(TODAY_KEYS), 'the today view does not carry the own team').toContain('ownTeam: ownTeamOf(snapshot, today)');
+  });
+
+  it.each(READING_SURFACES)('reads exactly once, under its one key, on $name', ({ file, hookFile, read, key, organizationReads }) => {
     // AD-13. The roster's name, flag, count and names are one RPC's answer;
     // the Danas line is the caller's own row, derived in `@/features/teams/services/roster`.
     // SOURCE STRUCTURE B7: counted over the roster's whole set, so a read in
@@ -6618,13 +6662,15 @@ describe('the roster and the Danas line read once, show names only, and write no
   });
 
   it('links Danas to the roster of the team it names, and to nothing else', () => {
-    // The page alone, which draws the line; the week's link to the calendar
-    // is a card's (story 6.1a).
-    const screen = source(DANAS_PAGE);
+    // The line's own part, which draws the one link for the member's today
+    // card and the admin's subtitle alike (E804); the page draws none of its
+    // own, and the week's link to the calendar is a card's (story 6.1a).
+    const screen = source(OWN_TEAM_LINE);
 
+    expect(linkElements(source(DANAS_PAGE)), 'the page draws a link of its own').toHaveLength(0);
     expect(linkElements(screen)).toHaveLength(1);
     expect(screen).toContain('to="/smjene/$id"');
-    expect(screen).toContain('params={{ id: shown.team.id }}');
+    expect(screen).toContain('params={{ id: team.id }}');
     expect(heightPx(/className="([^"]*)"/.exec(linkElements(screen)[0] ?? '')?.[1] ?? null)).toBeGreaterThanOrEqual(44);
     // The roster's only way out is back to Danas: no other surface links in.
     // SOURCE STRUCTURE B7: over the whole set, and in the page, which draws it.

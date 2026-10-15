@@ -9,12 +9,17 @@ export class TeamsPage extends BasePage {
 
   /** A team's edit link in the list. */
   editLink(teamName: string): Locator {
-    return this.page.getByRole('link', { name: fill(hr.smjene.edit, { name: teamName }) });
+    return this.editLinkNamed(hr.smjene.edit, teamName);
   }
 
   /** The active teams as stacked rows below 640 px, named by their heading (UX-DR17). */
   get activeList(): Locator {
     return this.page.getByRole('list', { name: hr.smjene.activeHeading, exact: true });
+  }
+
+  /** Every table on the screen: none below 640 px, where the teams stack. */
+  get tables(): Locator {
+    return this.page.getByRole('table');
   }
 
   /** The add dialog. */
@@ -114,6 +119,11 @@ export class TeamsPage extends BasePage {
     await this.page.getByRole('button', { name: hr.smjene.open }).click();
     await this.page.getByLabel(hr.smjene.name, { exact: true }).fill(name);
     await this.page.getByRole('button', { name: hr.smjene.add }).click();
+  }
+
+  /** The failed list read's *Pokušaj ponovno*, which reads it again. */
+  get retryButton(): Locator {
+    return this.page.getByRole('button', { name: hr.smjene.error.retry, exact: true });
   }
 
   /** Opens a team from the list. */

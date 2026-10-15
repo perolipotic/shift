@@ -153,9 +153,7 @@ test.describe('at 390 px, on a touch phone', () => {
     // row, and nothing in the section scrolls sideways.
     await expect(rotationPage.offsetList.getByRole('listitem').filter({ hasText: teamName })).toContainText(work);
     await expect(rotationPage.offsetList.getByRole('listitem').filter({ has: teamStep })).toHaveCount(1);
-    await expect(
-      page.getByRole('table').filter({ has: page.getByRole('columnheader', { name: builder.columnOffset }) }),
-    ).toHaveCount(0);
+    await expect(rotationPage.offsetTable).toHaveCount(0);
     await expectNoInnerHorizontalScroll(page);
 
     // STEP 4: the preview; Natrag, and no Dalje past the last step.

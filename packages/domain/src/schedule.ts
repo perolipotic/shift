@@ -253,6 +253,12 @@ export interface MemberShift {
  */
 export interface MemberScheduleDay {
   readonly date: string;
+  /**
+   * Whether the member is active that day (`activeOn`): an inactive day has
+   * no own team's shift whatever their membership, and says so — inactive is
+   * a different reason from "no team" (UX-DR20).
+   */
+  readonly active: boolean;
   readonly shifts: readonly MemberShift[];
 }
 
@@ -322,7 +328,7 @@ export function memberScheduleOfMonth(input: MemberScheduleInput, month: string)
       }
     }
 
-    return { date, shifts };
+    return { date, active, shifts };
   });
 }
 
