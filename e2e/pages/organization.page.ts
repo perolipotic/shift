@@ -54,11 +54,6 @@ export class OrganizationPage extends BasePage {
   }
 
   /** *Vrijeme i godina*: the zone, locked, and the leave year. */
-  /** The Satni pojasi card: facts about the bands, and the way to their editor. */
-  get hourBandsRegion(): Locator {
-    return this.page.getByRole('region', { name: organization.hourBands.heading, exact: true });
-  }
-
   get timeRegion(): Locator {
     return this.page.getByRole('region', { name: organization.timeHeading });
   }
