@@ -19404,16 +19404,17 @@ describe('removing the override behind a replacement ends its resolution, and fr
 // ------------------------------- 0036: archives in a rotation, names, refusals
 
 /**
- * `0036`. Archiving a team with a rotation version in force or scheduled, or a
- * type a pattern in force or scheduled steps through, is refused with a named
- * 23514; a type only a superseded version's pattern names is not. A member-role
+ * `0036`, as `0037` left it. Archiving a type a pattern in force or scheduled
+ * steps through is refused with a named 23514; a type only a superseded
+ * version's pattern names is not. A team archives whatever its rotation:
+ * 0036's team rule is withdrawn, since no version ends a team's rotation. A member-role
  * caller's override on an archived team still hears the policy's 42501, and
  * every name column refuses a 101st character. Each case runs in a rolled-back
  * transaction.
  */
 describe('an archive that would strand a rotation is refused by name (0036)', () => {
   it.skipIf(noDatabase).each(FIXTURES)(
-    "refuses archiving a $fixture team with a rotation in force or scheduled, and admits one with none",
+    'admits archiving a $fixture team with a rotation in force or scheduled, as with none (0037)',
     async ({ slug, admin }) => {
       await inRolledBackTransaction(async (client) => {
         const owner = await memberByUsername(client, slug, admin);
@@ -19430,19 +19431,13 @@ describe('an archive that would strand a rotation is refused by name (0036)', ()
         await ownerAssignment(client, { organization, team: scheduled, pattern: pattern.id, offsetStep, anchor: later, from: later, by: owner.authUserId });
 
         await actAs(client, owner.authUserId, organization);
-        const refusals: Record<string, Refusal> = {};
-        for (const [label, team] of [['in force', inForce], ['scheduled', scheduled]] as const) {
-          refusals[label] = await refusedThenContinue(client, () =>
-            client.query('update teams set archived = true where id = $1', [team]),
-          );
+        const archived: Record<string, number | null> = {};
+        for (const [label, team] of [['in force', inForce], ['scheduled', scheduled], ['none', free]] as const) {
+          archived[label] = (await client.query('update teams set archived = true where id = $1', [team])).rowCount;
         }
-        const admitted = await client.query('update teams set archived = true where id = $1', [free]);
         await actAsOwner(client);
 
-        for (const [label, refusal] of Object.entries(refusals)) {
-          expect(refusal, `${slug}: ${label}`).toMatchObject({ code: '23514', message: 'TEAM_IN_ROTATION' });
-        }
-        expect(admitted.rowCount, `${slug}: a team with no rotation was not archived`).toBe(1);
+        expect(archived, slug).toEqual({ 'in force': 1, scheduled: 1, none: 1 });
       });
     },
   );

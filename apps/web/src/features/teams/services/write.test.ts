@@ -12,7 +12,6 @@ import {
   ARCHIVE_BUSY,
   ARCHIVE_IDLE,
   TEAM_ARCHIVED,
-  TEAM_IN_ROTATION,
   TEAM_IN_USE,
   TEAM_NAME_EMPTY,
   TEAM_NAME_TAKEN,
@@ -264,7 +263,6 @@ describe('a database refusal names its problem', () => {
       TEAM_UNKNOWN,
       TEAM_IN_USE,
       TEAM_NAME_TOO_LONG,
-      TEAM_IN_ROTATION,
     ];
     const keys = failures.map((failure) => teamWriteMessageKey(failure));
 
@@ -274,7 +272,6 @@ describe('a database refusal names its problem', () => {
     expect(teamWriteMessageKey(TEAM_STALE)).toBe('smjene.error.stale');
     expect(teamWriteMessageKey(TEAM_IN_USE)).toBe('smjene.error.inUse');
     expect(teamWriteMessageKey(TEAM_NAME_TOO_LONG)).toBe('smjene.error.tooLong');
-    expect(teamWriteMessageKey(TEAM_IN_ROTATION)).toBe('smjene.error.inRotation');
   });
 });
 
@@ -289,12 +286,6 @@ describe('an archive of a team somebody is on is refused by name (story 1.7b)', 
     expect(archiveFailureOf({})).toBe(TEAM_WRITE_UNAVAILABLE);
   });
 
-  it('reads 0036\'s 23514 TEAM_IN_ROTATION as the rotation rule, and only on an archive', () => {
-    expect(archiveFailureOf({ code: '23514', message: 'TEAM_IN_ROTATION' })).toBe(TEAM_IN_ROTATION);
-    // Another check on an archive is still the name's, as on any write.
-    expect(archiveFailureOf({ code: '23514', message: 'teams_name_not_blank' })).toBe(TEAM_NAME_EMPTY);
-    expect(teamWriteFailureOf({ code: '23514', message: 'TEAM_IN_ROTATION' })).toBe(TEAM_NAME_EMPTY);
-  });
 
   it('settles a refused archive as in use, and a refused rename as a plain refusal', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);

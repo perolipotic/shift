@@ -1409,8 +1409,7 @@
       "invalid": "Unesena vrijednost nije dopuštena.",
       "saveUnavailable": "Spremanje trenutačno nije moguće. Pokušaj ponovno.",
       "unknown": "Ova smjena ne postoji u organizaciji.",
-      "inUse": "Smjenu nije moguće arhivirati dok je netko u njoj ili je u nju zakazan. Premjesti te osobe u drugu smjenu ili je arhiviraj kad u njoj više nikoga nema.",
-      "inRotation": "Smjenu nije moguće arhivirati dok ima rotaciju koja je na snazi ili zakazana."
+      "inUse": "Smjenu nije moguće arhivirati dok je netko u njoj ili je u nju zakazan. Premjesti te osobe u drugu smjenu ili je arhiviraj kad u njoj više nikoga nema."
     },
     "membership": {
       "column": "Smjena",

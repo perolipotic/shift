@@ -1178,10 +1178,11 @@ describe('the remaining definers take the organization lock before their admin c
   }
 });
 
-describe('an archive waits for a rotation write, and a rotation write for an archive (0036)', () => {
-  it.skipIf(noDatabase)('refuses a team archive that waited while the team was given a rotation', async () => {
-    // The archive's trigger reads `rotation_assignments` after the lock and
-    // sees the committed version: 23514 `TEAM_IN_ROTATION`.
+describe('an archive waits for a rotation write, and a rotation write for an archive (0036, 0037)', () => {
+  it.skipIf(noDatabase)('lets a team archive that waited while the team was given a rotation land (0037)', async () => {
+    // 0037 withdrew 0036's team rule: no version ends a rotation, so it made a
+    // team that ever rotated unarchivable. The archive still waits on 0035's
+    // lock, and then lands.
     const { organization, a, b, team, rotation, from } = await fixture(async (client) => {
       const organization = await addOrganization(client);
       const a = await addAccount(client, organization, 'admin');
@@ -1219,7 +1220,7 @@ describe('an archive waits for a rotation write, and a rotation write for an arc
 
       await t1.query('commit');
 
-      expect(await second.outcome).toMatchObject({ ok: false, code: '23514', message: 'TEAM_IN_ROTATION' });
+      expect(await second.outcome).toEqual({ ok: true, rowCount: 1 });
     });
   });
 
@@ -1455,7 +1456,6 @@ describe('every write verb 0023, 0035 and 0036 name waits on the lock', () => {
         { table: 'team_membership_versions', trigger: 'team_membership_versions_refuse_write_by_stale_admin', type: 1 | 2 | 4 | 8 | 16, columns: null },
         { table: 'team_membership_versions', trigger: 'team_membership_versions_serialize_organization_writes', type: 2 | 4 | 8 | 16, columns: null },
         { table: 'teams', trigger: 'teams_refuse_write_by_stale_admin', type: 1 | 2 | 16, columns: ['archived'] },
-        { table: 'teams', trigger: 'teams_refuse_write_while_in_rotation', type: 1 | 2 | 16, columns: ['archived'] },
         { table: 'teams', trigger: 'teams_serialize_organization_writes', type: 2 | 16, columns: ['archived'] },
       ]);
     } finally {

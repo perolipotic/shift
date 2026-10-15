@@ -791,8 +791,6 @@ const SANCTIONED_SCREEN_KEYS = [
   // STORY 1.7b: an archive of a team somebody is on today, or is scheduled
   // onto, is refused and says so.
   'smjene.error.inUse',
-  // 0036: an archive of a team with a rotation in force or scheduled.
-  'smjene.error.inRotation',
   // STORY 1.7b: team membership on the member list and edit screens. Under
   // `smjene.membership.*` so the one namespace that may say the Team holds
   // them; "no team" is `Bez smjene`, positive words, never `Nema`.
