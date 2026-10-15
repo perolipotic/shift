@@ -1,4 +1,3 @@
-import { minuteOfTime } from '@/features/hour-bands/services/list';
 import { formatMinuteOfDay, isIsoDate, nextIsoDate } from '@/lib/i18n/format';
 import {
   latestVersionOf,
@@ -7,9 +6,11 @@ import {
   type ShiftTypeRow,
   type ShiftTypesSurfaceState,
 } from '@/features/shift-types/services/list';
+
 import { claimedOrganizationOf } from '@/features/teams/services/write';
 import type { ShiftTypeVersion } from '@shift/domain';
 import { enteredName } from '@/utils/name';
+import { minuteOfTime } from '@/utils/time';
 
 /**
  * The organization the caller's token names, or `null` — the claim reader

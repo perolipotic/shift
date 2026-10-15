@@ -5,12 +5,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Notice } from '@/components/ui/notice';
 import { t } from '@/lib/i18n';
+import { durationValuesOf } from '@/utils/time';
 import { formatList } from '@/lib/i18n/format';
-import {
-  durationMessageKey,
-  durationValuesOf,
-  hourBandsMessageKey,
-} from '@/features/hour-bands/services/list';
+import { durationMessageKey, hourBandsMessageKey } from '@/features/hour-bands/services/list';
 import { OrganizationFact } from '@/features/organization/components/organization-dialog';
 import type { OrganizationHourBands } from '@/features/organization/hooks/use-organization-hour-bands';
 import { ORGANIZATION_HOUR_BANDS_HEADING_ID } from '@/features/organization/utils/element-ids';

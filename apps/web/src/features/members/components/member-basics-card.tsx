@@ -11,7 +11,7 @@ import { Notice } from '@/components/ui/notice';
 import { Select } from '@/components/ui/select';
 import { t } from '@/lib/i18n';
 import type { MemberEdit } from '@/features/members/hooks/use-member-edit';
-import { NO_TEXT, memberLevelMessageKey, type MemberListRow } from '@/features/members/services/list';
+import { memberLevelMessageKey, type MemberListRow } from '@/features/members/services/list';
 import {
   MEMBER_BASICS_DIALOG_HEADING_ID,
   MEMBER_BASICS_HEADING_ID,
@@ -25,6 +25,7 @@ import {
 } from '@/features/members/utils/rank';
 import { refusalText } from '@/features/members/utils/refusal-text';
 import { MEMBER_ROLES } from '@/features/navigation/services/role';
+import { NO_TEXT } from '@/utils/text';
 
 /** One fact: its label above its value, so nothing breaks on a phone. */
 function Fact({ label, children }: { readonly label: string; readonly children: ReactNode }): ReactNode {
@@ -108,7 +109,21 @@ export function MemberBasicsCard({ edit }: { readonly edit: MemberEdit }): React
           {/* OUTSIDE the gated branch: a read that produced no row renders no
               facts, so an explanation rendered inside them would be exactly
               the element nobody can see. */}
-          {readRefusal === null ? null : <Notice role="alert">{refusalText(readRefusal)}</Notice>}
+          {readRefusal === null ? null : (
+            <div className="grid min-w-0 gap-2">
+              <Notice role="alert">{refusalText(readRefusal)}</Notice>
+              {edit.readRetryable ? (
+                <Button
+                  className="h-11 w-full sm:w-auto sm:justify-self-start"
+                  type="button"
+                  variant="outline"
+                  onClick={edit.retryMembers}
+                >
+                  {t('ljudi.error.retry')}
+                </Button>
+              ) : null}
+            </div>
+          )}
           {partial === null ? null : <Notice role="alert">{refusalText(partial)}</Notice>}
           {/* A LANDED SAVE, said on the card its dialog closed back onto.
               `role="status"`: the assertive region belongs to a refusal. */}

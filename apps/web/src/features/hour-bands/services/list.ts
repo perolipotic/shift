@@ -7,6 +7,7 @@ import {
 import { queryOptions } from '@tanstack/react-query';
 
 import { RANGE_DASH, formatMinuteOfDay } from '@/lib/i18n/format';
+import { durationValuesOf, minuteOfTime } from '@/utils/time';
 
 /**
  * The hour band list: one organization's bands, read once, and everything the
@@ -97,29 +98,6 @@ export interface HourBandRow extends HourBand {
 }
 
 const MINUTES_PER_HOUR = 60;
-const HOURS_PER_DAY = 24;
-
-/**
- * `HH:MM` or `HH:MM:SS` as a whole minute of the day, or `null`.
- *
- * Postgres returns a `time` as `07:00:00`; `<input type="time">` gives `07:00`.
- * Both are read by this one parser. A value with non-zero seconds is REFUSED
- * rather than truncated: `0012` stores whole minutes only, so such a value is
- * either a malformed answer or an input the database would refuse anyway.
- */
-export function minuteOfTime(value: string): number | null {
-  const matched = /^(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(value);
-
-  if (matched === null) return null;
-
-  const hours = Number(matched[1]);
-  const minutes = Number(matched[2]);
-  const seconds = matched[3] === undefined ? 0 : Number(matched[3]);
-
-  if (hours >= HOURS_PER_DAY || minutes >= MINUTES_PER_HOUR || seconds !== 0) return null;
-
-  return hours * MINUTES_PER_HOUR + minutes;
-}
 
 function textAt(row: Record<string, unknown>, column: string): string | null {
   const value = row[column];
@@ -235,24 +213,6 @@ export function hourBandById(bands: readonly HourBandRow[], id: string): HourBan
 }
 
 // ------------------------------------------------------------- durations
-
-/**
- * A duration split for display: `12 h`, `1 h 30 min`, `45 min`. The minutes
- * are the DOMAIN's `durationMinutes`, only divided for reading.
- */
-// A type alias rather than an interface: it is handed to `t()` as ICU values,
-// and only an alias is assignable to i18next's index-signature options type.
-export type DurationValues = {
-  readonly hours: number;
-  readonly minutes: number;
-};
-
-export function durationValuesOf(durationMinutes: number): DurationValues {
-  return {
-    hours: Math.floor(durationMinutes / MINUTES_PER_HOUR),
-    minutes: durationMinutes % MINUTES_PER_HOUR,
-  };
-}
 
 /**
  * Which shape a duration reads in. No plural: `h` and `min` are units, which is
@@ -505,6 +465,15 @@ export function hourBandsMessageKey(
   failure: HourBandsFailure,
 ): 'organization.hourBands.error.unavailable' {
   if (failure === HOUR_BANDS_UNAVAILABLE) return 'organization.hourBands.error.unavailable';
+
+  const unhandled: never = failure;
+
+  return unhandled;
+}
+
+/** The retry beside a read failure's notice: an unavailable read is read again. Exhaustive. */
+export function hourBandsRetryMessageKey(failure: HourBandsFailure): 'organization.hourBands.error.retry' {
+  if (failure === HOUR_BANDS_UNAVAILABLE) return 'organization.hourBands.error.retry';
 
   const unhandled: never = failure;
 

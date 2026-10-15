@@ -12,7 +12,7 @@
  *   - COVERAGE_GAP: a date on which a WORKING shift type that appears in the
  *     pattern has no team on it (human decision 2026-09-26, option b).
  *   - DUPLICATE_COVERAGE: a date on which two or more teams are on the same
- *     working type.
+ *     working type, with the teams on each doubled type.
  *   - REST_GAP: a run of two or more CYCLICALLY consecutive working steps in
  *     the pattern — the run wraps from the last step to the first (human
  *     decision 2026-09-26, option a). `minutes` is the sum of the run's
@@ -47,9 +47,17 @@ export interface CoverageGapWarning {
   readonly dates: readonly WarningDate[];
 }
 
+/**
+ * One date of a duplicate-coverage warning: `teamIds[i]` are the teams on
+ * `shiftTypeIds[i]`, in the order the assignments were given.
+ */
+export interface DuplicateWarningDate extends WarningDate {
+  readonly teamIds: readonly (readonly string[])[];
+}
+
 export interface DuplicateCoverageWarning {
   readonly code: typeof DUPLICATE_COVERAGE;
-  readonly dates: readonly WarningDate[];
+  readonly dates: readonly DuplicateWarningDate[];
 }
 
 export interface RestGapWarning {
@@ -116,17 +124,19 @@ export function rotationWarningsOf(input: RotationWarningInput): readonly Rotati
   ];
 
   const gaps: WarningDate[] = [];
-  const duplicates: WarningDate[] = [];
+  const duplicates: DuplicateWarningDate[] = [];
   for (const day of windowOf(date, ordered.length)) {
-    const teamsOn = new Map<string, number>();
+    const teamsOn = new Map<string, string[]>();
     for (const assignment of assignments) {
       const shiftTypeId = projectedShiftType(ordered, assignment, day);
-      teamsOn.set(shiftTypeId, (teamsOn.get(shiftTypeId) ?? 0) + 1);
+      teamsOn.set(shiftTypeId, [...(teamsOn.get(shiftTypeId) ?? []), assignment.teamId]);
     }
-    const uncovered = working.filter((id) => (teamsOn.get(id) ?? 0) === 0);
-    const doubled = working.filter((id) => (teamsOn.get(id) ?? 0) >= 2);
+    const uncovered = working.filter((id) => (teamsOn.get(id)?.length ?? 0) === 0);
+    const doubled = working.filter((id) => (teamsOn.get(id)?.length ?? 0) >= 2);
     if (uncovered.length > 0) gaps.push({ date: day, shiftTypeIds: uncovered });
-    if (doubled.length > 0) duplicates.push({ date: day, shiftTypeIds: doubled });
+    if (doubled.length > 0) {
+      duplicates.push({ date: day, shiftTypeIds: doubled, teamIds: doubled.map((id) => teamsOn.get(id) ?? []) });
+    }
   }
 
   const warnings: RotationWarning[] = [];

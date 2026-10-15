@@ -11,6 +11,7 @@ import {
   seedExtraTeam,
   seedLeaveMember,
   seedLeaveRecord,
+  seedOtherPattern,
   seedRosterOverride,
   seedTeamRotation,
   type RotationHold,
@@ -28,8 +29,8 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  *
  * Under the run's rotation hold, a team of the test's own gets the seeded
  * rotation from today (`[Dan, Noć, Slobodno, Slobodno]`) and a fresh member
- * on it; the fixture team keeps no rotation, so the builder opens on an empty
- * draft. Leave over today + 4 and + 5 — Dan and Noć — is two conflicts. The
+ * on it, and a second team of its own another seeded pattern, so the builder
+ * opens on an empty draft (mixed patterns). Leave over today + 4 and + 5 — Dan and Noć — is two conflicts. The
  * builder's change is the seed's own `Slobodno` alone, from tomorrow: every
  * team free every day, so both conflicts would go. Everything written —
  * the builder's change, the seed, the member with their leave, and the team —
@@ -43,6 +44,8 @@ const erasures = builder.erasures;
 
 let hold: RotationHold | null = null;
 let seed: SeededRotation | null = null;
+/** The second team's pattern ({@link seedOtherPattern}), removed with the seed. */
+let other: SeededRotation | null = null;
 let seededSince: string | null = null;
 /** The run's slug, the member and the team this file's test wrote, deleted afterwards. */
 let written: { readonly slug: string; members: string[]; teams: string[] } | null = null;
@@ -58,16 +61,20 @@ test.afterEach(async () => {
     }
   };
   const seeded = seed;
+  const second = other;
   const since = seededSince;
   const own = written;
 
   if (seeded !== null && since !== null) await attempt(() => removeRotationChangesOver(seeded, since));
+  if (second !== null && since !== null) await attempt(() => removeRotationChangesOver(second, since));
   // The seed first: it deletes every roster override, which names the member.
   if (seeded !== null) await attempt(() => removeSeededRotation(seeded));
+  if (second !== null) await attempt(() => removeSeededRotation(second));
   // Then the member, with their leave and resolutions, and only then the team their versions name.
   for (const id of own?.members ?? []) await attempt(() => removeLeaveMemberInSql(own?.slug ?? '', id));
   for (const id of own?.teams ?? []) await attempt(() => removeTeamInSql(own?.slug ?? '', id));
   seed = null;
+  other = null;
   seededSince = null;
   written = null;
   await attempt(async () => {
@@ -99,6 +106,9 @@ async function setUp(slug: string, from: number, to: number, memberTeam: string 
   own.teams.push(team.id);
   seed = await seedTeamRotation(slug, team.id, suffix);
   const rotation = seed;
+  const second = await seedOtherPattern(slug);
+  own.teams.push(second.team.id);
+  other = second.rotation;
   const person = await seedLeaveMember(slug, memberTeam ?? team.id, rotation.today, 20);
   own.members.push(person.id);
   await seedLeaveRecord(slug, person.id, addDays(rotation.today, from), addDays(rotation.today, to));

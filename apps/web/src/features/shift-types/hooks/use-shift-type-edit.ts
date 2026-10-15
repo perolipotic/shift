@@ -11,6 +11,7 @@ import {
   shiftTypeDisplayRowOf,
   shiftTypesQueryOptions,
   shiftTypesSurfaceStateOf,
+  shiftTypesSubmitTodayOf,
   shiftTypesTodayOf,
   type ShiftTypeRow,
 } from '@/features/shift-types/services/list';
@@ -38,6 +39,7 @@ import {
   type ShiftTypeWriteFailure,
   type ShiftTypeWriteTable,
 } from '@/features/shift-types/services/write';
+import { retryRead } from '@/features/teams/services/dependents';
 import { supabaseClient } from '@/lib/supabase/client';
 
 /**
@@ -171,8 +173,10 @@ export function useShiftTypeEdit(id: string) {
     const date = dateField.current;
     const start = startField.current;
     const end = endField.current;
+    // THE ORGANIZATION'S TODAY AS AT SUBMIT, never the one this screen drew.
+    const on = shiftTypesSubmitTodayOf(snapshot);
 
-    if (date === null || start === null || end === null || today === null || writing.current) {
+    if (date === null || start === null || end === null || on === null || writing.current) {
       return;
     }
 
@@ -186,7 +190,7 @@ export function useShiftTypeEdit(id: string) {
         supabaseClient().from(SHIFT_TYPE_VERSIONS_TABLE) as unknown as ShiftTypeVersionWriteTable,
         type,
         { date: date.value, start: start.value, end: end.value },
-        today,
+        on,
       );
 
       if (!outcome.ok) {
@@ -211,7 +215,9 @@ export function useShiftTypeEdit(id: string) {
 
   /** Cancel the scheduled correction; the correction is offered again after. */
   async function cancelTimes(type: ShiftTypeRow): Promise<void> {
-    if (today === null || writing.current) return;
+    const on = shiftTypesSubmitTodayOf(snapshot);
+
+    if (on === null || writing.current) return;
 
     writing.current = true;
     setArmed(false);
@@ -222,7 +228,7 @@ export function useShiftTypeEdit(id: string) {
       const outcome = await cancelScheduledTimes(
         supabaseClient().from(SHIFT_TYPE_VERSIONS_TABLE) as unknown as ShiftTypeVersionWriteTable,
         type,
-        today,
+        on,
       );
 
       const landed = outcome.ok ? SHIFT_TYPE_TIMES_CANCELLED : null;
@@ -249,7 +255,9 @@ export function useShiftTypeEdit(id: string) {
    * the write is outstanding, and is disarmed only in the `finally`.
    */
   async function archive(type: ShiftTypeRow): Promise<void> {
-    if (today === null || writing.current) return;
+    const on = shiftTypesSubmitTodayOf(snapshot);
+
+    if (on === null || writing.current) return;
 
     writing.current = true;
     clearOutcomes();
@@ -259,7 +267,7 @@ export function useShiftTypeEdit(id: string) {
       const outcome = await archiveShiftType(
         supabaseClient().from(SHIFT_TYPES_TABLE) as unknown as ShiftTypeWriteTable,
         type,
-        today,
+        on,
       );
       const landed = outcome.ok ? SHIFT_TYPE_ARCHIVED : null;
 
@@ -281,7 +289,13 @@ export function useShiftTypeEdit(id: string) {
     }
   }
 
+  /** Read the list again, from the unavailable notice's retry. */
+  function retry(): void {
+    void retryRead(queryClient, SHIFT_TYPES_LIST_KEY);
+  }
+
   return {
+    retry,
     nameField,
     dateField,
     startField,

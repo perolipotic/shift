@@ -439,7 +439,25 @@
       "used": "Iskorišteno",
       "balance": "Preostalo",
       "noTeam": "Bez smjene",
-      "summary": "Prikazano: {count, plural, one {# osoba} few {# osobe} other {# osoba}} · iskorišteno ukupno {used, plural, one {# dan} few {# dana} other {# dana}} od {allowance}",
+      "summary": "Prikazano: {count, plural, one {# osoba} few {# osobe} other {# osoba}} · {records, plural, one {upisan # godišnji} few {upisana # godišnja} other {upisano # godišnjih}} · iskorišteno ukupno {used, plural, one {# dan} few {# dana} other {# dana}} od {allowance}",
+      "stateChip": "Stanje: {value}",
+      "stateRemove": "Ukloni filtar stanje: {value}",
+      "statePicker": "Odaberi stanje",
+      "stateHeading": "Stanje",
+      "state": {
+        "all": "Sva stanja",
+        "onLeave": "Na godišnjem danas",
+        "recorded": "S upisanim godišnjim",
+        "unrecorded": "Bez upisanog godišnjeg",
+        "negative": "Preostalo u minusu"
+      },
+      "stateValue": {
+        "all": "sve",
+        "onLeave": "na godišnjem danas",
+        "recorded": "s upisanim godišnjim",
+        "unrecorded": "bez upisanog godišnjeg",
+        "negative": "preostalo u minusu"
+      },
       "noMatch": "Nijedna aktivna osoba nema to ime.",
       "clear": "Poništi pretragu",
       "none": "Danas nema nijedne aktivne osobe."
@@ -499,10 +517,13 @@
       "amendBodyEnds": "{name} radi {date}, a godišnji završava {newDate} Otvara izmjenu godišnjeg s tim datumom.",
       "amendBodyRemoves": "{name} radi {date}, a ovaj godišnji se briše. Otvara brisanje godišnjeg.",
       "amendWorks": "· {name} radi",
+      "amendDrops": "{count, plural, one {Godišnji se skraćuje i za # dan prije toga ({range}).} few {Godišnji se skraćuje i za # dana prije toga ({range}).} other {Godišnji se skraćuje i za # dana prije toga ({range}).}}",
+      "amendDropsPast": "Dio tih dana je već prošao: izmjena mijenja zapis i za njih.",
       "candidatesHeading": "Tko odrađuje smjenu",
       "candidates": {
         "free": "slobodan",
-        "working": "radi taj dan · 24 h bez pauze",
+        "working": "radi taj dan",
+        "continuous": "{line} · {hours} bez pauze",
         "onLeave": "na godišnjem taj dan"
       },
       "noCandidates": "Nema nikoga koga se može dodati na ovu smjenu.",
@@ -651,7 +672,8 @@
     },
     "error": {
       "refused": "Popis osoba nije moguće prikazati. Odjavi se i prijavi ponovno.",
-      "unavailable": "Popis osoba trenutačno nije moguće učitati. Pokušaj ponovno."
+      "unavailable": "Popis osoba trenutačno nije moguće učitati. Pokušaj ponovno.",
+      "retry": "Pokušaj ponovno"
     },
     "page": {
       "heading": "Osoba",
@@ -756,6 +778,7 @@
       "scheduledInactive": "Osoba će biti neaktivna od {date}.",
       "scheduledActive": "Osoba će ponovno biti aktivna od {date}.",
       "date": "Vrijedi od",
+      "dateHint": "Najranije danas. Dani prije ostaju nepromijenjeni.",
       "deactivate": "Deaktiviraj osobu {name}",
       "reactivate": "Ponovno aktiviraj osobu {name}",
       "deactivateAction": "Deaktiviraj",
@@ -851,6 +874,8 @@
       "removeDenied": "Ne možeš ukloniti godišnji odmor. Za to trebaš ovlasti administratora.",
       "removeFailed": "Godišnji odmor nije uklonjen. Pokušaj ponovno.",
       "gone": "Taj zapis godišnjeg odmora više ne postoji (uklonjen je ili izmijenjen).",
+      "handoffGone": "Godišnji odmor iz konflikta više ne postoji ili više ne pokriva taj datum, pa se ništa nije otvorilo.",
+      "handoffPrefilled": "Od i do su izračunati iz konflikta. Provjeri ih prije spremanja.",
       "replacementStays": "{name} ostaje na smjeni {team} · {date} kao zamjena. Ukloni zamjenu u kalendaru ako više ne treba.",
       "replacementsUnknown": "Ne mogu provjeriti zamjene za ove datume.",
       "conflictLine": "{weekday} {date} {type}",
@@ -990,6 +1015,7 @@
       "removed": "Pojas je uklonjen.",
       "error": {
         "unavailable": "Satne pojaseve trenutačno nije moguće učitati. Pokušaj ponovno.",
+        "retry": "Pokušaj ponovno",
         "nameEmpty": "Naziv pojasa ne može biti prazan.",
         "nameTaken": "Pojas s tim nazivom već postoji u organizaciji.",
         "startTaken": "Pojas s tim početkom već postoji u organizaciji. Odaberi drugi početak.",
@@ -1054,6 +1080,7 @@
       "archivedNote": "Ovaj tip smjene je arhiviran i ne može se mijenjati.",
       "error": {
         "unavailable": "Tipove smjena trenutačno nije moguće učitati. Pokušaj ponovno.",
+        "retry": "Pokušaj ponovno",
         "nameEmpty": "Naziv tipa smjene ne može biti prazan.",
         "nameTaken": "Tip smjene s tim nazivom već postoji u organizaciji.",
         "timeInvalid": "Početak i završetak moraju biti vremena dana u punim minutama, na primjer 07:00.",
@@ -1127,6 +1154,7 @@
         "coverageGap": "{count, plural, one {# dan} few {# dana} other {# dana}} u sljedećem ciklusu s radnim tipom na kojem nije nijedna smjena:",
         "duplicateCoverage": "{count, plural, one {# dan} few {# dana} other {# dana}} u sljedećem ciklusu s dvije ili više smjena na istom tipu:",
         "date": "{date}: {types}",
+        "doubledType": "{type} ({count, plural, one {# smjena} few {# smjene} other {# smjena}}: {teams})",
         "restGap": "{duration} rada bez slobodnog dana između ({types})",
         "restGapUnknown": "Rad bez slobodnog dana između ({types}), trajanje nepoznato",
         "restGapEndless": "Uzorak je bez slobodnog dana: {duration} rada u svakom ciklusu ({types})",
@@ -1275,10 +1303,12 @@
       },
       "error": {
         "unavailable": "Rotaciju trenutačno nije moguće učitati. Pokušaj ponovno.",
+        "retry": "Pokušaj ponovno",
         "empty": "Uzorak mora imati barem jedan korak.",
         "noTeams": "Za rotaciju je potrebna barem jedna smjena u upotrebi.",
         "scheduled": "Promjena rotacije već je zakazana za kasniji datum, pa rotaciju sada nije moguće spremiti. Poništi zakazanu promjenu pa spremi ponovno.",
         "effectivePast": "Rotacija ne može vrijediti od datuma prije današnjeg. Odaberi današnji ili kasniji datum.",
+        "effectiveTooFar": "Rotacija ne može vrijediti od datuma više od godinu dana unaprijed. Provjeri godinu u polju Vrijedi od.",
         "typeArchived": "Uzorak sadrži arhivirani tip. Ukloni taj korak ili ga zamijeni prije spremanja.",
         "unchanged": "Rotacija je ista kao dosadašnja. Promijeni uzorak, pomak ili referentni datum.",
         "changedToday": "Rotacija je danas već promijenjena. Sljedeća promjena moguća je od sutra.",
@@ -1342,6 +1372,7 @@
     "archivedNote": "Ova smjena je arhivirana i ne može se mijenjati.",
     "error": {
       "unavailable": "Popis smjena trenutačno nije moguće učitati. Pokušaj ponovno.",
+      "retry": "Pokušaj ponovno",
       "empty": "Naziv smjene ne može biti prazan.",
       "taken": "Smjena s tim nazivom već postoji u organizaciji.",
       "stale": "Smjena se u međuvremenu promijenila. Provjeri je i pokušaj ponovno.",
@@ -1369,6 +1400,11 @@
       "choose": "Odaberi smjenu",
       "currentChoice": "{team} · sadašnja",
       "date": "Vrijedi od",
+      "changes": "Što se mijenja",
+      "lastIn": "Zadnja u {team} · {weekday} {date} · {type} · {range}",
+      "lastInNoRange": "Zadnja u {team} · {weekday} {date} · {type}",
+      "firstIn": "Prva u {team} · {weekday} {date} · {type} · {range}",
+      "firstInNoRange": "Prva u {team} · {weekday} {date} · {type}",
       "move": "Promijeni smjenu osobe {name}",
       "change": "Promijeni",
       "dialogHeading": "Promijeni smjenu",

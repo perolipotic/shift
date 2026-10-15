@@ -79,6 +79,7 @@ import {
   figuresOf,
   focusAfterDropOf,
   focusAfterRemoveOf,
+  latestEffectiveFromOf,
   normalizedDraftOf,
   previewGridOf,
   spreadOfferedOf,
@@ -118,6 +119,7 @@ import {
   ROTATION_STEPS_TABLE,
   reopensAfterSaveOf,
   rotationMessageKey,
+  rotationRetryMessageKey,
   rotationQueryOptions,
   rotationScheduledDateOf,
   rotationScheduledOf,
@@ -178,13 +180,15 @@ import {
 import { savedPendingCountOf } from '@/features/rotation/services/override-disposition';
 import { ROTATION_SAVE_BAR_ID } from '@/features/rotation/utils/element-ids';
 import { OverrideReview } from '@/features/rotation/components/override-review';
-import { durationValuesOf, shiftTypeDurationMessageKey } from '@/features/shift-types/services/list';
+import { shiftTypeDurationMessageKey } from '@/features/shift-types/services/list';
 import {
   ROTATION_CANCEL_DEPENDENTS,
   ROTATION_SAVE_DEPENDENTS,
   refreshAfterWrite,
+  retryRead,
 } from '@/features/teams/services/dependents';
 import { supabaseClient } from '@/lib/supabase/client';
+import { durationValuesOf } from '@/utils/time';
 
 /**
  * The rotation builder (story 2.3b, UX-DR14, UX-DR15), rendered on
@@ -1122,6 +1126,7 @@ export function RotationSection({
                 type="date"
                 required
                 min={today ?? undefined}
+                max={(today === null ? null : latestEffectiveFromOf(today)) ?? undefined}
                 value={current.effectiveFrom}
                 disabled={pending}
                 onChange={chooseEffectiveFrom(current)}
@@ -1770,7 +1775,21 @@ export function RotationSection({
           {renderWarnings(outcome.warnings)}
         </Notice>
       ) : null}
-      {refusal === null ? null : <Notice role="alert">{t(rotationMessageKey(refusal))}</Notice>}
+      {refusal === null ? null : (
+        <div className="grid min-w-0 gap-2">
+          <Notice role="alert">{t(rotationMessageKey(refusal))}</Notice>
+          <Button
+            className="h-11 w-full sm:w-auto sm:justify-self-start"
+            type="button"
+            variant="outline"
+            onClick={() => {
+              void retryRead(queryClient, ROTATION_KEY);
+            }}
+          >
+            {t(rotationRetryMessageKey(refusal))}
+          </Button>
+        </div>
+      )}
       {/* STORY 3.5c: the overrides a rotation change left pending, after the notices. */}
       <OverrideReview snapshot={snapshot} busy={pending} savedTimes={savedTimes} />
       {draft === null ? null : renderStepBar()}

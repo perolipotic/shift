@@ -1,4 +1,4 @@
-import { collisionKeyOf, deriveShiftTimes, leaveBalanceOf, leaveCostOf, shiftTypeVersionOn, type Collision } from '@shift/domain';
+import { collisionKeyOf, daysBetween, deriveShiftTimes, leaveBalanceOf, leaveCostOf, shiftTypeVersionOn, type Collision } from '@shift/domain';
 
 import type { CalendarSnapshot, CalendarSurfaceState } from '@/features/calendar/services/snapshot';
 import { dayDetailOf } from '@/features/calendar/utils/day-detail';
@@ -18,7 +18,7 @@ import {
 } from '@/features/conflicts/services/conflicts-queue';
 import { heldByReplacement } from '@/features/conflicts/services/replacement-effect';
 import { ACCEPT_UNCOVERED, REPLACE_MEMBER } from '@/features/conflicts/services/resolutions';
-import { durationMessageKey, durationValuesOf, type DurationValues } from '@/features/hour-bands/services/list';
+import { durationMessageKey } from '@/features/hour-bands/services/list';
 import {
   organizationLeaveRecordsOf,
   type LeaveRecord,
@@ -45,7 +45,9 @@ import {
   type LeaveRecordsInput,
 } from '@/features/leave/services/leave-section';
 import { positionsShown, rosterPositionMessageKey } from '@/features/members/utils/position';
+import { previousIsoDate } from '@/lib/i18n/format';
 import { ranksShown, rosterRankMessageKey } from '@/features/members/utils/rank';
+import { durationValuesOf, type DurationValues } from '@/utils/time';
 
 /**
  * One conflict's resolution screen (story 5.4b; CAP-16, UX-DR10, UX-DR11,
@@ -215,6 +217,21 @@ export {
   type ResolutionAmendTarget,
 } from '@/features/leave/services/leave-section';
 
+/**
+ * The days before the conflict that rule A's later start drops (D726): the
+ * record's first day to the day before the conflict, which the third card
+ * names in one non-blocking line, and whether any of them is already past —
+ * the amend rewrites those too.
+ */
+export interface ResolutionAmendDropped {
+  /** How many calendar days are dropped before the conflict's date. */
+  readonly days: number;
+  /** `01.10.`, or `01.10.–02.10.` for more than one day. */
+  readonly rangeShown: string;
+  /** Whether the dropped run starts before today. */
+  readonly past: boolean;
+}
+
 /** The third card's figures (story 5.4d): the target, the date it names, and the balance once it is saved. */
 export interface ResolutionAmend {
   readonly target: ResolutionAmendTarget;
@@ -224,6 +241,33 @@ export interface ResolutionAmend {
   readonly balanceDays: number;
   /** What it gives back: the balance after it less the balance now. */
   readonly gainedDays: number;
+  /** The days before the conflict a later start drops; `null` when it drops none but the conflict's own. */
+  readonly dropped: ResolutionAmendDropped | null;
+}
+
+/**
+ * What rule A drops before the conflict's `date` (D726): under a later start
+ * every day from the record's `from` to `date − 1` goes with the conflict's
+ * own; an earlier end or a removal drops nothing before it. `today` says
+ * whether the run reaches into the past.
+ */
+export function resolutionAmendDroppedOf(
+  record: { readonly from: string; readonly to: string },
+  date: string,
+  target: ResolutionAmendTarget,
+  today: string,
+): ResolutionAmendDropped | null {
+  if (target.kind !== AMEND_STARTS || record.from >= date) return null;
+
+  const last = previousIsoDate(date);
+
+  if (last === null) return null;
+
+  return {
+    days: daysBetween(record.from, last) + 1,
+    rangeShown: record.from === last ? dayMonthOf(last) : `${dayMonthOf(record.from)}–${dayMonthOf(last)}`,
+    past: record.from < today,
+  };
 }
 
 /**
@@ -260,6 +304,7 @@ export function resolutionAmendOf(input: LeaveRecordsInput, record: LeaveRecord,
           : null,
     balanceDays: after,
     gainedDays: after - before,
+    dropped: resolutionAmendDroppedOf(record, date, target, input.today),
   };
 }
 
@@ -559,7 +604,7 @@ function resolutionScreenFrom(
     return one.name;
   });
   const minutes = shiftMinutesOf(snapshot, collision);
-  const candidates = replacementCandidatesOf(snapshot, records, collision.teamId, collision.date);
+  const candidates = replacementCandidatesOf(snapshot, records, collision.teamId, collision.date, collision.shiftTypeId);
   const range = leaveRangeValuesOf(record.record);
   const dateShown = detail.date;
   const typeName = detail.typeName ?? type.name;

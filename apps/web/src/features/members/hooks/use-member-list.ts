@@ -1,11 +1,11 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 
 import {
   ALL_TEAMS,
   DEFAULT_FILTERS,
+  MEMBERS_LIST_KEY,
   MEMBERS_TABLE,
-  NO_TEXT,
   chooseChip,
   membersAwaitTodayOf,
   memberChipChoiceOf,
@@ -26,7 +26,9 @@ import {
   type MembersSearch,
   type NarrowingInputs,
 } from '@/features/members/services/list';
+import { retryRead } from '@/features/teams/services/dependents';
 import { supabaseClient } from '@/lib/supabase/client';
+import { NO_TEXT } from '@/utils/text';
 
 /** How the hook writes the URL: the whole search, pushed, or replacing the entry. */
 export type MembersNavigate = (search: MembersSearch, options: { readonly replace: boolean }) => void;
@@ -77,7 +79,13 @@ export function useMemberList(search: MembersSearch, navigate: MembersNavigate) 
     pending.current = pending.current.slice(ours + 1);
   }, [filters.search]);
 
+  const queryClient = useQueryClient();
   const answer = useQuery(membersQueryOptions(() => supabaseClient().from(MEMBERS_TABLE)));
+
+  /** Read the list again, from the unavailable notice's retry. */
+  function retry(): void {
+    void retryRead(queryClient, MEMBERS_LIST_KEY);
+  }
 
   // EVERY STATE THIS SCREEN CAN BE IN, decided in `@/features/members/services/list`
   // and pinned by execution over real query results.
@@ -203,6 +211,7 @@ export function useMemberList(search: MembersSearch, navigate: MembersNavigate) 
     stateKey,
     searchField,
     refusal,
+    retry,
     loading,
     today,
     summary,

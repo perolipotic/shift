@@ -39,6 +39,7 @@ import {
   saveFocusOf,
   replacementOf,
   leaveDaysMessageKey,
+  resolutionAmendDroppedOf,
   resolutionOptionOf,
   refetchingAfterFailure,
   resolutionSavedMessageKey,
@@ -103,7 +104,10 @@ function teamOf(rows: FixtureRows, index: number): string {
 
 const A = teamOf(PILOT, 0);
 
-/** Dino on Smjena C, which is off on the 10th; Eva on Smjena B, which works Noć that day. */
+/**
+ * Dino on Smjena C, which is off on the 10th, coming off the Noć of the 9th
+ * as A's Dan starts; Eva on Smjena B, which works Noć that day.
+ */
 const DINO = '00000000-0000-4000-8000-0000000000d4';
 const EVA = '00000000-0000-4000-8000-0000000000d5';
 
@@ -586,18 +590,20 @@ describe('replacing the absent member (story 5.4c)', () => {
     others = await snapshotOf(false, PILOT, true);
   });
 
-  it('Groups: offers Dino as free and Eva as working that day, never the team itself', () => {
+  it('Groups: offers Dino (off a Noć that touches the Dan) and Eva as working that day, each 24 h without a break, never the team itself', () => {
     const view = viewOf(resolutionScreenOf(sourcesOf(others), paramsOn('2026-09-10'), NOW));
 
     expect(view.candidates.map((group) => [group.kind, group.candidates.map((one) => one.name)])).toEqual([
-      [CANDIDATES_FREE, ['Dino Grgić']],
-      [CANDIDATES_WORKING, ['Eva Šarić']],
+      [CANDIDATES_FREE, []],
+      [CANDIDATES_WORKING, ['Dino Grgić', 'Eva Šarić']],
       [CANDIDATES_ON_LEAVE, []],
     ]);
+    // D717: the real continuous duty, from the conflict's own shift type (Dan, 07:00–19:00).
+    expect(view.candidates[1]?.candidates.map((one) => one.continuousMinutes)).toEqual([24 * 60, 24 * 60]);
     expect(hasCandidates(view)).toBe(true);
     expect(hasCandidates(viewOf(resolutionScreenOf(sourcesOf(pilot), paramsOn('2026-09-10'), NOW)))).toBe(false);
     expect(t(candidateGroupMessageKey(CANDIDATES_FREE))).toBe('slobodan');
-    expect(t(candidateGroupMessageKey(CANDIDATES_WORKING))).toBe('radi taj dan · 24 h bez pauze');
+    expect(t(candidateGroupMessageKey(CANDIDATES_WORKING))).toBe('radi taj dan');
     expect(t(candidateGroupMessageKey(CANDIDATES_ON_LEAVE))).toBe('na godišnjem taj dan');
   });
 
@@ -607,7 +613,7 @@ describe('replacing the absent member (story 5.4c)', () => {
     );
 
     expect(view.candidates[2]?.candidates.map((one) => one.name)).toEqual(['Eva Šarić']);
-    expect(view.candidates[1]?.candidates).toEqual([]);
+    expect(view.candidates[1]?.candidates.map((one) => one.name)).toEqual(['Dino Grgić']);
   });
 
   it('Strip: "4 od 4 člana · Dino Grgić", "1 dan godišnjeg" and "16 dana preostalo · bez promjene"', () => {
@@ -759,6 +765,31 @@ describe('amending the leave (story 5.4d)', () => {
     // 10.09. and 11.09. are dropped, both working days.
     expect([view.amend.balanceDays, view.amend.gainedDays]).toEqual([18, 2]);
     expect(t('raspored.resolution.balanceGained', { count: 2 })).toBe('+2 dana');
+  });
+
+  it('Dropped (D726): a later start names the days before the conflict it drops, and says when some are past', () => {
+    // 10.09. goes with the conflict's 11.09.; today (01.09.) is before it.
+    expect(amendViewOn('2026-09-11').amend.dropped).toEqual({ days: 1, rangeShown: '10.09.', past: false });
+    expect(t('raspored.resolution.amendDrops', { count: 1, range: '10.09.' })).toBe(
+      'Godišnji se skraćuje i za 1 dan prije toga (10.09.).',
+    );
+    // The first day drops nothing before it; an earlier end or a removal drops nothing at all.
+    expect(amendViewOn('2026-09-10').amend.dropped).toBeNull();
+    expect(amendViewOn('2026-09-14').amend.dropped).toBeNull();
+
+    const record = { from: '2026-10-02', to: '2026-10-09' };
+    const target = amendTargetOf(record, '2026-10-06');
+
+    expect(resolutionAmendDroppedOf(record, '2026-10-06', target, '2026-10-04')).toEqual({
+      days: 4,
+      rangeShown: '02.10.–05.10.',
+      past: true,
+    });
+    expect(resolutionAmendDroppedOf(record, '2026-10-06', target, '2026-10-02')?.past).toBe(false);
+    expect(t('raspored.resolution.amendDrops', { count: 4, range: '02.10.–05.10.' })).toBe(
+      'Godišnji se skraćuje i za 4 dana prije toga (02.10.–05.10.).',
+    );
+    expect(t('raspored.resolution.amendDrops', { count: 5, range: '' })).toContain('5 dana');
   });
 
   it('Last day: "završava 13.09."', () => {

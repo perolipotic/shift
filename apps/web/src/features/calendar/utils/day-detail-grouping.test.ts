@@ -102,7 +102,7 @@ describe('the roster dialog\'s groups, when the grouping misbehaves (story 7.9)'
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     grouping.answer = () => [
       { kind: 'free', candidates: [] },
-      { kind: 'working', candidates: [{ id: VIEWER_MEMBER, name: VIEWER_NAME, fireRank: null, position: null }] },
+      { kind: 'working', candidates: [{ id: VIEWER_MEMBER, name: VIEWER_NAME, fireRank: null, position: null, continuousMinutes: null }] },
       { kind: 'onLeave', candidates: [] },
     ];
     const offers = rosterOffersOf(snapshot, dayDetailOf(snapshot, TEAM, WORKING), []);
@@ -114,5 +114,18 @@ describe('the roster dialog\'s groups, when the grouping misbehaves (story 7.9)'
     ]);
     expect(ids(offers.inUngrouped)).toEqual([DORA]);
     expect(error).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the continuous duty each member to put on carries (D717)', () => {
+  it('reads the shift\'s own type off the day: the viewer, off A\'s Dan as B\'s Noć starts, makes 24 h; Dora nothing', () => {
+    const offers = rosterOffersOf(snapshot, dayDetailOf(snapshot, TEAM, WORKING), []);
+    const working = offers.inGroups.find((group) => group.kind === 'working')?.candidates ?? [];
+    const free = offers.inGroups.find((group) => group.kind === 'free')?.candidates ?? [];
+
+    expect(working.map((one) => [one.id, one.continuousMinutes])).toEqual([[VIEWER_MEMBER, 24 * 60]]);
+    expect(free.map((one) => [one.id, one.continuousMinutes])).toEqual([[DORA, null]]);
+    // Not grouped while the leave is unread: no figure either.
+    expect(rosterOffersOf(snapshot, dayDetailOf(snapshot, TEAM, WORKING)).in.every((one) => one.continuousMinutes === null)).toBe(true);
   });
 });

@@ -22,7 +22,7 @@ import { Select } from '@/components/ui/select';
 import { t } from '@/lib/i18n';
 import type { MemberEdit } from '@/features/members/hooks/use-member-edit';
 import { memberErasureCopyOf } from '@/features/members/utils/erasure-copy';
-import { NO_TEXT, shownDate, type MemberListRow } from '@/features/members/services/list';
+import { type MemberListRow } from '@/features/members/services/list';
 import {
   NO_TEAM_VALUE,
   STATUS_ARMED,
@@ -47,7 +47,16 @@ import {
 } from '@/features/members/utils/element-ids';
 import { positionMessageKey, positionOptionsFor } from '@/features/members/utils/position';
 import { refusalText } from '@/features/members/utils/refusal-text';
-import { teamsMessageKey } from '@/features/teams/services/list';
+import {
+  MOVE_FIRST,
+  MOVE_LAST,
+  moveShiftMessageKey,
+  moveShiftValuesOf,
+  type MoveShift,
+  type MoveSide,
+} from '@/features/members/services/team-move-preview';
+import { teamsMessageKey, teamsRetryMessageKey } from '@/features/teams/services/list';
+import { NO_TEXT, shownDate } from '@/utils/text';
 
 /**
  * The member page's *Smjena* card (story 1.7b; facts and a dialog since story
@@ -119,9 +128,19 @@ export function MemberTeamCard({ edit }: { readonly edit: MemberEdit }): ReactNo
           </Notice>
         )}
         {teamsState.refusal === null ? null : (
-          <Notice role="alert">
-            {t(teamsMessageKey(teamsState.refusal))}
-          </Notice>
+          <div className="grid min-w-0 gap-2">
+            <Notice role="alert">
+              {t(teamsMessageKey(teamsState.refusal))}
+            </Notice>
+            <Button
+              className="h-11 w-full sm:w-auto sm:justify-self-start"
+              type="button"
+              variant="outline"
+              onClick={edit.retryTeams}
+            >
+              {t(teamsRetryMessageKey(teamsState.refusal))}
+            </Button>
+          </div>
         )}
         {/* THE CARD'S OWN REFUSAL — a withdrawal refused, or a dialog that
             closed because the record moved — while no dialog says it. */}
@@ -344,7 +363,31 @@ export function MemberTeamDialog({ edit }: { readonly edit: MemberEdit }): React
     );
   }
 
-  /** The dialog's form: the team, the position, the date, and one Spremi. */
+  /** One side of *Što se mijenja*: the last shift in the team left, or the first in the team joined. */
+  function renderMoveShift(side: MoveSide, shift: MoveShift | null): ReactNode {
+    return shift === null ? null : <span className="block">{t(moveShiftMessageKey(side, shift), moveShiftValuesOf(shift))}</span>;
+  }
+
+  /**
+   * Decision 16's *Što se mijenja*: the last shift in the team left and the
+   * first in the team picked, from the date as typed — or nothing until a
+   * team is picked on a valid date.
+   */
+  function renderPreview(): ReactNode {
+    const preview = teamDialog.preview;
+
+    if (preview === null) return null;
+
+    return (
+      <span className="grid gap-1 text-sm">
+        <span className="block font-medium">{t('smjene.membership.changes')}</span>
+        {renderMoveShift(MOVE_LAST, preview.last)}
+        {renderMoveShift(MOVE_FIRST, preview.first)}
+      </span>
+    );
+  }
+
+  /** The dialog's form: the team, the position, the date, *Što se mijenja*, and one Spremi. */
   function renderMove(offered: TeamOffer): ReactNode {
     if (offered.change !== TEAM_MOVE) return null;
 
@@ -370,11 +413,18 @@ export function MemberTeamDialog({ edit }: { readonly edit: MemberEdit }): React
             min={offered.minimum}
             defaultValue={offered.minimum}
             readOnly={teamPending}
+            onChange={teamDialog.enterDay}
             aria-describedby={teamRefusal === null ? undefined : MEMBER_TEAM_ERROR_ID}
             aria-invalid={teamDateInvalid}
             className="h-11"
           />
         </div>
+        {/* COMPUTED, as the status dialog's consequence is: a polite live
+            region, always there, so a line that arrives or changes with the
+            team or the date is announced. Neutral text: it never gates the save. */}
+        <output aria-live="polite" className="block">
+          {renderPreview()}
+        </output>
         {teamRefusal === null ? null : (
           <Notice id={MEMBER_TEAM_ERROR_ID} role="alert">
             {refusalText(teamRefusal)}

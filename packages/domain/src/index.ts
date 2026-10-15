@@ -123,6 +123,7 @@ export {
   rotationWarningsOf,
   type CoverageGapWarning,
   type DuplicateCoverageWarning,
+  type DuplicateWarningDate,
   type RestGapWarning,
   type RotationWarning,
   type RotationWarningInput,

@@ -10,7 +10,8 @@ import { formatIsoDate } from '@/lib/i18n/format';
 import { draftAssignmentOf, draftStepsOf, normalizedDraftOf, type RotationDraft } from '@/features/rotation/utils/draft';
 import { rotationTeamsOf, type RotationSnapshot } from '@/features/rotation/services/list';
 import type { RotationSaveOutcome } from '@/features/rotation/services/write';
-import { durationValuesOf, shiftTypeDurationMessageKey } from '@/features/shift-types/services/list';
+import { shiftTypeDurationMessageKey } from '@/features/shift-types/services/list';
+import { durationValuesOf } from '@/utils/time';
 
 /**
  * What saving a rotation will actually do, in words (story 2.5, CAP-10,
@@ -19,7 +20,7 @@ import { durationValuesOf, shiftTypeDurationMessageKey } from '@/features/shift-
  * THE WARNINGS ARE THE DOMAIN'S (AD-7). This module hands `rotationWarningsOf`
  * the rotation that was just saved — the draft's synthetic steps and one
  * assignment per active team, exactly as the preview projects them — and maps
- * each code it returns to a key and its values: type names by id, dates
+ * each code it returns to a key and its values: type and team names by id, dates
  * through `formatIsoDate`, the duration through the shift types' duration
  * keys, and every count as an ICU plural. It is the only place those keys are
  * chosen. Nothing here projects, walks a cycle or takes a modulo.
@@ -77,6 +78,11 @@ export function warningDateMessageKey(): 'rotation.builder.warnings.date' {
   return 'rotation.builder.warnings.date';
 }
 
+/** One doubled type of a duplicate-coverage date, with the teams on it. */
+export function doubledTypeMessageKey(): 'rotation.builder.warnings.doubledType' {
+  return 'rotation.builder.warnings.doubledType';
+}
+
 /** Types of one date are listed; the types of a run are chained in the order worked. */
 export const WARNING_LIST = 'list';
 export const WARNING_CHAIN = 'chain';
@@ -97,13 +103,14 @@ export type WarningTextKey =
   | ReturnType<typeof rotationWarningMessageKey>
   | ReturnType<typeof warningsSummaryMessageKey>
   | ReturnType<typeof warningDateMessageKey>
+  | ReturnType<typeof doubledTypeMessageKey>
   | ReturnType<typeof warningSeparatorMessageKey>
   | ReturnType<typeof shiftTypeDurationMessageKey>;
 
-/** Names joined by a separator key when the text is resolved. */
+/** Names, or nested texts, joined by a separator key when the text is resolved. */
 export interface WarningList {
   readonly join: WarningJoin;
-  readonly items: readonly string[];
+  readonly items: readonly (string | WarningText)[];
 }
 
 /** A key and its values; a value may be a list of names or a nested text (a duration). */
@@ -133,7 +140,9 @@ export function warningTextOf(text: WarningText, translate: WarningTranslate): s
     if (typeof value === 'string' || typeof value === 'number') {
       values[name] = value;
     } else if (isList(value)) {
-      values[name] = value.items.join(translate(warningSeparatorMessageKey(value.join), {}));
+      values[name] = value.items
+        .map((item) => (typeof item === 'string' ? item : warningTextOf(item, translate)))
+        .join(translate(warningSeparatorMessageKey(value.join), {}));
     } else {
       values[name] = warningTextOf(value, translate);
     }
@@ -171,6 +180,7 @@ export function rotationWarningLinesOf(
     date: savedOn,
   });
   const nameOf = new Map(snapshot.types.map((type) => [type.id, type.name]));
+  const teamNameOf = new Map(teams.map((team) => [team.id, team.name]));
   const namesOf = (ids: readonly string[], join: WarningJoin): WarningList => ({
     join,
     items: ids.map((id) => nameOf.get(id) ?? id),
@@ -197,6 +207,34 @@ export function rotationWarningLinesOf(
                 },
               },
         details: [],
+      };
+    }
+
+    if (warning.code === DUPLICATE_COVERAGE) {
+      // Each doubled type names the teams on it: "Dan (2 smjene: Smjena A, Smjena B)".
+      return {
+        text: { key, values: { count: warning.dates.length } },
+        details: warning.dates.map((one) => ({
+          key: warningDateMessageKey(),
+          values: {
+            date: formatIsoDate(one.date) ?? one.date,
+            types: {
+              join: WARNING_LIST,
+              items: one.shiftTypeIds.map((id, index) => {
+                const teamIds = one.teamIds[index] ?? [];
+
+                return {
+                  key: doubledTypeMessageKey(),
+                  values: {
+                    type: nameOf.get(id) ?? id,
+                    count: teamIds.length,
+                    teams: { join: WARNING_LIST, items: teamIds.map((teamId) => teamNameOf.get(teamId) ?? teamId) },
+                  },
+                };
+              }),
+            },
+          },
+        })),
       };
     }
 
