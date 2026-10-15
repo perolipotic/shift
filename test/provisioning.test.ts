@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,6 +9,7 @@ import {
   FIXTURES,
   connect,
   inRolledBackTransaction,
+  localApiEndpoint,
   noDatabase,
   organizationId,
   refused,
@@ -42,34 +42,11 @@ import {
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 
 /**
- * The local auth endpoint and the key needed to reach it, or `undefined`.
- *
- * Read at run time and never written down: the publishable key is generated
- * per stack, so hard-coding one would both rot and put a key in a tracked
- * file. `supabase status -o json` is the only source, and it is spawned once,
- * here, rather than inside a test. When it cannot be obtained — no CLI, stack
- * not running, JSON shape changed — the one case that needs it skips rather
- * than failing for a reason that is not about this story.
+ * The local auth endpoint and the key needed to reach it, or `undefined`: read
+ * once from `supabase status` (`./database.ts`), so the one case that needs it
+ * skips rather than failing when there is no running stack.
  */
-const authEndpoint: { readonly url: string; readonly key: string } | undefined = (() => {
-  if (noDatabase) return undefined;
-  try {
-    const status = execFileSync(join(repoRoot, 'node_modules', '.bin', 'supabase'), [
-      'status',
-      '-o',
-      'json',
-    ], { cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-    const parsed: unknown = JSON.parse(status);
-    if (typeof parsed !== 'object' || parsed === null) return undefined;
-    const fields = parsed as Record<string, unknown>;
-    const key = fields['PUBLISHABLE_KEY'] ?? fields['ANON_KEY'];
-    const url = fields['API_URL'] ?? 'http://127.0.0.1:54321';
-    if (typeof key !== 'string' || typeof url !== 'string') return undefined;
-    return { url, key };
-  } catch {
-    return undefined;
-  }
-})();
+const authEndpoint = localApiEndpoint();
 
 /**
  * GoTrue's password hashing cost. `gen_salt('bf')` alone is cost 6; GoTrue

@@ -33,6 +33,14 @@ export function stripScriptComments(source: string): string {
   return source.replace(BLOCK_COMMENT, '').replace(LINE_SLASH, '$1');
 }
 
+/**
+ * A SQL source with its comments removed: block comments, then `--` to end
+ * of line, keeping the character that preceded each `--`.
+ */
+export function stripSqlComments(source: string): string {
+  return source.replace(BLOCK_COMMENT, '').replace(LINE_DASH, '$1');
+}
+
 /** A stylesheet with its comments removed. CSS has block comments only. */
 export function stripCssComments(source: string): string {
   return source.replace(BLOCK_COMMENT, '');
