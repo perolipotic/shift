@@ -1384,8 +1384,9 @@ export async function removeRotationChangesOver(seeded: SeededRotation, since: s
  * those types ({@link seedShiftTypeOverride}), and every roster override of
  * the run organization ({@link seedRosterOverride}, written only under the
  * same hold) with every resolution linked to one (story 5.4c's replacements,
- * whose key does not cascade), in one transaction, so the run organization is
- * as it was. Safe to call twice.
+ * whose key does not cascade) and every resolution decided on one of the
+ * types (0038), in one transaction, so the run organization is as it was.
+ * Safe to call twice.
  */
 export async function removeSeededRotation(seeded: SeededRotation): Promise<void> {
   const client = await connect();
@@ -1401,6 +1402,11 @@ export async function removeSeededRotation(seeded: SeededRotation): Promise<void
     await client.query('delete from rotation_steps where organization_id = $1 and pattern_id = $2', scope);
     await client.query('delete from rotation_patterns where organization_id = $1 and id = $2', scope);
     const types = [seeded.organizationId, seeded.shiftTypeIds];
+    // Before the types: a decision keys to the type it was made on (0038), live or removed.
+    await client.query(
+      'delete from conflict_resolutions where organization_id = $1 and shift_type_id = any($2::uuid[])',
+      types,
+    );
     // Before the types: an override keys to its type (0019).
     await client.query(
       'delete from shift_type_overrides where organization_id = $1 and shift_type_id = any($2::uuid[])',

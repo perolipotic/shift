@@ -642,6 +642,18 @@ describe('accepted as leaveKeys is leave, not work (story 5.4b)', () => {
     expect(leaveShiftsOf(stateOf(admin, accepted).leaveKeys, ANA)).toEqual([]);
   });
 
+  it('0038: counts no hours by a decision made on another shift type, on the admin\'s and the member\'s path alike', () => {
+    // 10.09 is Dan today; the first decision was stored on Noć.
+    const stale = [{ ...resolutionOf(VIEWER_MEMBER, '2026-09-10', a), shift_type_id: 'pilot-noc' }];
+    const current = [{ ...resolutionOf(VIEWER_MEMBER, '2026-09-10', a), shift_type_id: 'pilot-dan' }];
+
+    expect(stateOf(admin, stale).leaveKeys).toEqual([]);
+    expect(stateOf(member, stale).acceptedKeys).toEqual([]);
+    expect(hoursLeaveKeysOf(member, stale)).toEqual([]);
+    expect(stateOf(admin, current).leaveKeys).toEqual([{ memberId: VIEWER_MEMBER, date: '2026-09-10', teamId: a }]);
+    expect(hoursLeaveKeysOf(member, current)).toEqual([{ memberId: VIEWER_MEMBER, date: '2026-09-10', teamId: a }]);
+  });
+
   it("moves the shift out of the admin's table, band, total and shift count −12 h / −1, and counts it only as its leave day", () => {
     const { collisions, leaveKeys, leaveRecords } = stateOf(admin, accepted);
     const before = rowOfMember(tableOf(admin, collisionsFrom(admin, [WORKED]), SEPTEMBER, [], NO_LEAVE_RECORDS), VIEWER_MEMBER);

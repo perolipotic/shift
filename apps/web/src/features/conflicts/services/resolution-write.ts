@@ -6,10 +6,14 @@ import { isIsoDate } from '@/lib/i18n/format';
  * as uncovered, inserted DIRECTLY into `conflict_resolutions` the way a leave
  * record is written (`recordLeave`), in a `.ts` that renders nothing (AD-15).
  *
- * FIVE COLUMNS, NOTHING ELSE. The organization, the conflict's key
- * `(member_id, date, team_id)` and the kind; `created_by` and `created_at`
+ * SIX COLUMNS, NOTHING ELSE. The organization, the conflict's key
+ * `(member_id, date, team_id)`, the kind, and the shift type the conflict is
+ * on as the screen derived it (0038), so the decision never re-applies to a
+ * different shift on the same key; `created_by` and `created_at`
  * come from 0031's defaults, which the client cannot forge. The collision is
- * never computed in the database: 0031 only refuses a resolution off leave.
+ * never computed in the database: 0031 only refuses a resolution off leave,
+ * and 0038 supersedes a live row of the key decided on another shift type,
+ * which no surface counts any more (`effectiveResolutionsOf`).
  *
  * THE REFUSALS (0031), as this application's own failures:
  *   - 23505 (the live key: already resolved) and P0002 (no live leave covers
@@ -79,13 +83,14 @@ export interface ResolutionWriteAnswer {
   readonly error: ResolutionWriteError | null;
 }
 
-/** The row inserted: 0031's five writable columns. */
+/** The row inserted: 0031's five writable columns, and 0038's shift type. */
 export interface ResolutionInsertRow {
   readonly organization_id: string;
   readonly member_id: string;
   readonly date: string;
   readonly team_id: string;
   readonly kind: typeof ACCEPT_UNCOVERED;
+  readonly shift_type_id: string;
 }
 
 /** The one call made on `conflict_resolutions`, named structurally so it can be stubbed. */
@@ -96,12 +101,13 @@ export interface ResolutionInsertTable {
 /** The table the write goes to (0031). */
 export const RESOLUTION_WRITE_TABLE = CONFLICT_RESOLUTIONS_TABLE;
 
-/** What is decided: the organization, and the conflict's key. */
+/** What is decided: the organization, the conflict's key, and the shift type it is on (0038). */
 export interface ResolutionTarget {
   readonly organizationId: string;
   readonly memberId: string;
   readonly date: string;
   readonly teamId: string;
+  readonly shiftTypeId: string;
 }
 
 /** The function a replacement is written through (0032). */
@@ -110,13 +116,14 @@ export const REPLACE_CONFLICT_MEMBER_FUNCTION = 'replace_conflict_member';
 /** 0032's message for a replacement already put on the shift, under 23505. */
 const REPLACEMENT_TAKEN_MESSAGE = 'CONFLICT_REPLACEMENT_TAKEN';
 
-/** The arguments 0032's function takes. */
+/** The arguments 0032's function takes, with 0038's shift type. */
 export interface ReplaceConflictMemberArgs {
   readonly p_member_id: string;
   readonly p_date: string;
   readonly p_team_id: string;
   readonly p_replacement_id: string;
   readonly p_reason: string;
+  readonly p_shift_type_id: string;
 }
 
 /** The one call a replacement makes, named structurally so it can be stubbed. */
@@ -181,6 +188,7 @@ export async function acceptUncovered(
         date: target.date,
         team_id: target.teamId,
         kind: ACCEPT_UNCOVERED,
+        shift_type_id: target.shiftTypeId,
       }),
     (error) => resolutionInsertFailureOf(error, held),
   );
@@ -206,6 +214,7 @@ export async function replaceMember(
         p_team_id: target.teamId,
         p_replacement_id: target.replacementId,
         p_reason: replacementReasonOf(target.reason),
+        p_shift_type_id: target.shiftTypeId,
       }),
     (error) => resolutionReplaceFailureOf(error, held),
   );

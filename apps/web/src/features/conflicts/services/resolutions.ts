@@ -44,13 +44,14 @@ export const CONFLICT_RESOLUTIONS_UNAVAILABLE = 'CONFLICT_RESOLUTIONS_UNAVAILABL
 
 /**
  * The columns the organization's read selects: the key, the kind, the
- * override a replacement names (0032; story 5.4e), and — for the *Riješeni*
+ * override a replacement names (0032; story 5.4e), the shift type the decision
+ * was made on (0038), and — for the *Riješeni*
  * tab alone (story 7.16; FR-48a) — who decided and when (`created_by`,
  * `created_at`; AD-11). Only an active admin reads this table (0031), and
  * {@link conflictResolutionsOf} ignores both. The member's own read has no
  * author.
  */
-export const CONFLICT_RESOLUTIONS_COLUMNS = 'member_id,date,team_id,kind,roster_override_id,created_by,created_at';
+export const CONFLICT_RESOLUTIONS_COLUMNS = 'member_id,date,team_id,kind,roster_override_id,shift_type_id,created_by,created_at';
 
 /** Five minutes, the bound the leave reads set; every leave write re-reads it. */
 export const CONFLICT_RESOLUTIONS_READ_STALE_MS = 300000;
@@ -87,16 +88,24 @@ const TEAM_COLUMN = 'team_id';
 const KIND_COLUMN = 'kind';
 const REMOVED_COLUMN = 'removed_at';
 const ROSTER_OVERRIDE_COLUMN = 'roster_override_id';
+const SHIFT_TYPE_COLUMN = 'shift_type_id';
 
 /**
- * One live resolution: the key it matches a collision on, its kind, and for a
+ * One live resolution: the key it matches a collision on, its kind, for a
  * `replace_member` the roster override it names (0032; story 5.5d) — `null`
  * for every other kind, and on a member's read from before 0033, which did not
- * answer the link.
+ * answer the link — and the shift type it was decided on (0038).
  */
 export interface ConflictResolution extends CollisionResolution {
   readonly kind: ConflictResolutionKind;
   readonly rosterOverrideId: string | null;
+  /**
+   * The shift type the schedule had for the key when the decision was made
+   * (0038); `null` for a row written before 0038, or read through a member's
+   * read from before it. A row whose type differs from the one the schedule
+   * has today decides nothing (`effectiveResolutionsOf`).
+   */
+  readonly shiftTypeId: string | null;
 }
 
 export interface ConflictResolutionsReadError {
@@ -266,8 +275,9 @@ export interface ConflictResolutionsParse {
 /**
  * The rows as resolutions, in the order given, or null when any row is not a
  * record, carries a member outside `memberIds` or a team outside `teamIds`, a
- * date that is no calendar `YYYY-MM-DD`, a kind 0031 does not admit, or a
- * link that is neither a non-empty text nor null, or when two rows share a
+ * date that is no calendar `YYYY-MM-DD`, a kind 0031 does not admit, a
+ * link or a shift type (0038; absent reads as null) that is neither a
+ * non-empty text nor null, or when two rows share a
  * key — which 0031's live key refuses. THE LINK MATCHES THE KIND (0032's
  * check): a `replace_member` row with no link — unless `linkOptional`, for a
  * member's read from before 0033 — or any other kind with one is an
@@ -305,7 +315,12 @@ export function conflictResolutionsOf(
     if (kind !== REPLACE_MEMBER && rosterOverrideId !== null) return null;
     if (kind === REPLACE_MEMBER && rosterOverrideId === null && !linkOptional) return null;
 
-    const resolution: ConflictResolution = { memberId, date, teamId, kind, rosterOverrideId };
+    const type = row[SHIFT_TYPE_COLUMN];
+    const shiftTypeId = type === undefined ? null : type;
+
+    if (shiftTypeId !== null && (typeof shiftTypeId !== 'string' || shiftTypeId === '')) return null;
+
+    const resolution: ConflictResolution = { memberId, date, teamId, kind, rosterOverrideId, shiftTypeId };
     const key = collisionKeyOf(resolution);
 
     if (keys.has(key)) return null;

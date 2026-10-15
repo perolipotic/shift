@@ -296,7 +296,13 @@ export function useConflictResolution(params: ResolutionParams) {
       return;
     }
 
-    const target = { organizationId: view.organizationId, memberId: params.memberId, date: params.date, teamId: params.teamId };
+    const target = {
+      organizationId: view.organizationId,
+      memberId: params.memberId,
+      date: params.date,
+      teamId: params.teamId,
+      shiftTypeId: view.shiftTypeId,
+    };
     const replacing = choice === OPTION_REPLACE_MEMBER && replacement !== null ? replacement : null;
 
     saving.current = true;

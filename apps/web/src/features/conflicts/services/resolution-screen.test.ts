@@ -337,6 +337,8 @@ describe('Strip: coverage, the day as leave and the balance', () => {
       }),
     ).toBe(`Odluka je spremljena: Dan · Smjena A · četvrtak 10.09.2026 · ${VIEWER_NAME}, prihvaćeno kao nepokriveno.`);
     expect(view.organizationId).toBe(pilot.organizationId);
+    // 0038: the decision is stored with the shift type it is on.
+    expect(view.shiftTypeId).toBe('pilot-dan');
   });
 });
 
@@ -711,6 +713,15 @@ describe('a replacement that no longer applies (story 5.5d)', () => {
       kind: RESOLUTION_MISSING,
       count: 2,
     });
+  });
+
+  it('0038: a replacement decided on another shift type is open again and holds nothing, so a new decision supersedes it', async () => {
+    const snapshot = await snapshotOf(false, PILOT, true, [DINO_PENDING]);
+    const stale = [{ ...resolutionOf(VIEWER_MEMBER, '2026-09-10', A, 'replace_member', 'ro-dino'), shift_type_id: 'pilot-noc' }];
+    const view = viewOf(resolutionScreenOf(sourcesOf(snapshot, [WORKED], stale), paramsOn('2026-09-10'), NOW));
+
+    expect([view.count, view.held, view.shiftTypeId]).toEqual([3, false, 'pilot-dan']);
+    expect(readyToSave(OPTION_ACCEPT_UNCOVERED, null, view.held)).toBe(true);
   });
 
   it('holds nothing on a conflict no live row names, nor on its neighbours', async () => {
