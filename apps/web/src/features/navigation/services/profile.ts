@@ -47,7 +47,7 @@ export async function readMemberName(
 /**
  * The words the profile card says under the name. The same two the member list
  * uses for the same fact, read from here so the chrome consumes a role without
- * branching on one (`prijava.test.ts` holds it to that).
+ * branching on one (`pages/structural-pins-shell.test.ts` holds it to that).
  */
 const ROLE_LABEL_KEYS: Record<MemberRole, 'ljudi.admin' | 'ljudi.member'> = {
   admin: 'ljudi.admin',

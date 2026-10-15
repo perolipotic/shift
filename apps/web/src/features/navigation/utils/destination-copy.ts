@@ -12,7 +12,7 @@ import type { NavigationKey } from '@/features/navigation/utils/destinations';
  * `pnpm typecheck` failure here until it has a description.
  *
  * The return types are written out as unions of literals, the shape the key
- * sweep in `prijava.test.ts` reads (`\w*MessageKey`), so every key here counts
+ * sweep in `pages/key-sweep.test.ts` reads (`\w*MessageKey`), so every key here counts
  * as rendered.
  */
 

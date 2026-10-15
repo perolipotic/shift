@@ -2,7 +2,7 @@
  * THE RASPORED SCREENS' FILE SETS, written once (stories 5.3b, 5.4b), on the
  * hour band screens' terms (`hour-band-screens.fixture.ts`): each a page that
  * only composes, the hook holding its reads and handlers, and the components
- * that draw it. `pages/prijava.test.ts` reads each set as one source.
+ * that draw it. The source guards in `pages/` read each set as one source.
  *
  * THE TWO SETS ARE DISJOINT: the conflicts queue (`/raspored`) and one
  * conflict's resolution screen (`/raspored/$memberId/$date/$teamId`). No part
@@ -65,12 +65,16 @@ export const CONFLICTS_SCREEN_EXEMPT: readonly { readonly file: string; readonly
     why: 'one never-throwing run of an erasure check over the three core reads (story 5.5b; the member page since 5.5e); renders nothing, executed by erasure-check.test.ts',
   },
   {
+    file: 'services/erasure-confirm.ts',
+    why: 'the erasure confirmation\'s own save in one order — stopped, unavailable, refused, the freshness rule, the write (retro A15) — followed by every guarded surface through the confirmation hook; renders nothing and declares no key, executed by erasure-confirm.test.ts',
+  },
+  {
     file: 'hooks/use-erasure-reads.ts',
     why: 'the three fresh reads every erasure check stands on (story 5.5b), used by the rotation builder, the calendar and the member page (5.5e); wiring only, swept by the sign-in suite',
   },
   {
     file: 'hooks/use-erasure-confirmation.ts',
-    why: 'the erasure confirmation state, decisions, freshness loop and focus (story 5.5b), shared by the rotation builder, the calendar and the member page (5.5e); renders nothing',
+    why: 'the erasure confirmation state, decisions, freshness loop, its save\'s one order (`follow`, retro A15) and focus (story 5.5b), shared by the rotation builder, the calendar and the member page (5.5e); renders nothing',
   },
   {
     file: 'components/erasure-dialog.tsx',

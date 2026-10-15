@@ -39,7 +39,6 @@ import {
   CHECK_UNAVAILABLE,
   type ErasureReads,
 } from '@/features/conflicts/services/erasure-check';
-import { RECHECK_CHANGED } from '@/features/conflicts/services/erasures';
 import {
   OVERRIDE_CHANGE_GONE,
   OVERRIDE_CHANGE_REMOVE,
@@ -687,62 +686,63 @@ export function useOverrideForm(
 
     try {
       const check = await checkErasures(change);
-
-      if (!stillOn(startedFor)) {
-        confirmation.drop();
-
-        return;
-      }
-
-      if (check.kind === CHECK_UNAVAILABLE) {
-        confirmation.drop();
-        if (checked.kind === OVERRIDE_CHANGE_SET) {
-          setUnchecked(OVERRIDE_CHANGE_SET);
-          focusAfterWrite(retryButton, typeField);
-
-          return;
-        }
-        // The reads failed, so nothing says the override left the day: its own
-        // confirmation, armed again, refuses with the retry. Only a re-read
-        // that no longer holds it says `gone` (the `lost` effect, or the retry's
-        // own refused check).
-        setUnchecked(OVERRIDE_CHANGE_REMOVE);
-        setConfirming(true);
-        focusAfterWrite(retryButton, removeCancel);
-
-        return;
-      }
-
-      // REFUSED ANYWAY: the write's own refusal, said as the write would say
-      // it, and the screen read again — nothing stale is written.
-      if (check.kind === CHECK_REFUSED) {
-        confirmation.drop();
-        if (checked.kind === OVERRIDE_CHANGE_REMOVE) await refuseRemoval(startedFor, writeFailureOf(check.code));
-        else await refuseSet(startedFor, writeFailureOf(check.code));
-
-        return;
-      }
-
       // THE PREFLIGHT AGAIN for a set, on the day as this check read it.
-      const fresh = checked.kind === OVERRIDE_CHANGE_SET ? freshEntryOf(checked.on, checked.entered) : null;
+      let fresh: ReturnType<typeof freshEntryOf> | null = null;
 
-      if (fresh !== null && !fresh.ok) {
-        confirmation.drop();
-        setFailure(fresh.code);
-        focusRefused(fresh.code);
+      await confirmation.follow(shown, check, {
+        stopped: () => {
+          if (stillOn(startedFor)) return false;
 
-        return;
-      }
+          confirmation.drop();
 
-      if (confirmation.recheck(shown, check.rows, checked) === RECHECK_CHANGED) return;
+          return true;
+        },
+        unavailable: () => {
+          confirmation.drop();
+          if (checked.kind === OVERRIDE_CHANGE_SET) {
+            setUnchecked(OVERRIDE_CHANGE_SET);
+            focusAfterWrite(retryButton, typeField);
 
-      confirmation.drop();
+            return;
+          }
+          // The reads failed, so nothing says the override left the day: its own
+          // confirmation, armed again, refuses with the retry. Only a re-read
+          // that no longer holds it says `gone` (the `lost` effect, or the retry's
+          // own refused check).
+          setUnchecked(OVERRIDE_CHANGE_REMOVE);
+          setConfirming(true);
+          focusAfterWrite(retryButton, removeCancel);
+        },
+        // REFUSED ANYWAY: the write's own refusal, said as the write would say
+        // it, and the screen read again — nothing stale is written.
+        refused: async ({ code }) => {
+          confirmation.drop();
+          if (checked.kind === OVERRIDE_CHANGE_REMOVE) await refuseRemoval(startedFor, writeFailureOf(code));
+          else await refuseSet(startedFor, writeFailureOf(code));
+        },
+        subjectOf: () => {
+          fresh = checked.kind === OVERRIDE_CHANGE_SET ? freshEntryOf(checked.on, checked.entered) : null;
 
-      if (checked.kind === OVERRIDE_CHANGE_REMOVE) {
-        await writeRemoval(startedFor, checked.change.overrideId, checked.projectedTypeName, false, check.rows.length);
-      } else {
-        await writeSet(fresh?.ok === true ? fresh.on : checked.on, startedFor, checked.entered, check.rows.length);
-      }
+          if (fresh !== null && !fresh.ok) {
+            confirmation.drop();
+            setFailure(fresh.code);
+            focusRefused(fresh.code);
+
+            return null;
+          }
+
+          return checked;
+        },
+        write: async ({ rows }) => {
+          confirmation.drop();
+
+          if (checked.kind === OVERRIDE_CHANGE_REMOVE) {
+            await writeRemoval(startedFor, checked.change.overrideId, checked.projectedTypeName, false, rows.length);
+          } else {
+            await writeSet(fresh?.ok === true ? fresh.on : checked.on, startedFor, checked.entered, rows.length);
+          }
+        },
+      });
     } catch (cause) {
       console.error(OVERRIDE_FAILED, cause);
       confirmation.drop();

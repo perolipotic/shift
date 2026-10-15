@@ -137,7 +137,7 @@ export function MemberTable({ list }: { readonly list: MemberList }): ReactNode 
           <TableBody>
             {/* TWO CONTAINERS rather than one ternary between them, and that is
                 a constraint of this repository rather than a style: the bare-JSX
-                sweep in `prijava.test.ts` reads every run between a `>` and the
+                sweep in `pages/literal-sweep.test.ts` reads every run between a `>` and the
                 next `<`, and the middle of a multi-line ternary is exactly such
                 a run with no braces in it. The skeleton and the rows are
                 mutually exclusive either way. */}

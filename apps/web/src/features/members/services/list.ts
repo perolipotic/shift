@@ -1196,7 +1196,7 @@ export function memberColumnOf(key: MemberColumnKey): MemberColumn {
  *
  * A FUNCTION FOR ONE FIELD READ, and it earns its line for the reason every
  * other function in this module does: `pages/ljudi.tsx` is executed by nothing
- * (AD-15), and `prijava.test.ts` refuses the screen reaching into a member row
+ * (AD-15), and `pages/structural-pins-members.test.ts` refuses the screen reaching into a member row
  * at all — because the last time it did, swapping two branches rendered every
  * address under `Ime` with the whole suite green. The row action interpolates a
  * member field into its accessible name, so WHICH field is a decision, and it
@@ -1487,7 +1487,7 @@ export type SortIndicator = typeof ARROW_UP | typeof ARROW_DOWN;
  *
  * `features/members/services/list.test.ts` pins this against {@link sortStateOf} for every column
  * and both directions, so the two can never drift apart. What the screen still
- * owns is which GLYPH each name draws, and `prijava.test.ts` pins that pairing
+ * owns is which GLYPH each name draws, and `pages/structural-pins-members.test.ts` pins that pairing
  * at source level, because no node test can see a rendered icon.
  */
 export function sortIndicatorOf(sort: SortState, column: MemberColumnKey): SortIndicator | null {

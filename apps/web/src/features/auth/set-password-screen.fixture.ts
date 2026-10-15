@@ -5,7 +5,7 @@
  * composes, the hook holding its refs, its state and its one exchange, and the
  * form that draws it. DISJOINT from `sign-in-screen.fixture.ts`'s set — the
  * two screens share the auth feature and no part — and read by
- * `pages/prijava.test.ts`, which walks the feature and requires every module
+ * `pages/screens-sweep.test.ts`, which walks the feature and requires every module
  * in it to belong to one set or be exempt for a stated reason.
  *
  * Paths are SEGMENTS under `apps/web/src`, joined by each suite against its own

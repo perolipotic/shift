@@ -421,7 +421,7 @@ const SOURCES = [
   // the file that owns `auth.error.credentials` and `auth.error.unavailable` is
   // a plain module: story 1.3b moved the failure-to-message pairing out of the
   // screen and into `sign-in.ts` precisely so a node test could execute it, and
-  // then added that file to `prijava.test.ts`'s KEY_SOURCES while leaving it
+  // then added that file to the source guards' `KEY_SOURCES` while leaving it
   // out of here. So the one file invented to hold message keys was swept for
   // keys and not for staleness — edit `signInMessageKey`, skip the build, and
   // every chunk sweep below reads output that predates the edit and passes.
@@ -596,6 +596,14 @@ const SOURCES = [
   join(webRoot, 'src', 'features', 'rotation', 'hooks', 'draft-store.ts'),
   join(webRoot, 'src', 'features', 'rotation', 'services', 'write.ts'),
   join(webRoot, 'src', 'features', 'rotation', 'components', 'rotation-section.tsx'),
+  // The epics 5–7 retro split (A21, A26): the builder's hook and the parts
+  // the section composes, which render its words.
+  join(webRoot, 'src', 'features', 'rotation', 'hooks', 'use-rotation-builder.ts'),
+  join(webRoot, 'src', 'features', 'rotation', 'components', 'rotation-notices.tsx'),
+  join(webRoot, 'src', 'features', 'rotation', 'components', 'rotation-stepper.tsx'),
+  join(webRoot, 'src', 'features', 'rotation', 'components', 'rotation-pattern-card.tsx'),
+  join(webRoot, 'src', 'features', 'rotation', 'components', 'rotation-preview-card.tsx'),
+  join(webRoot, 'src', 'features', 'rotation', 'components', 'rotation-save-bar.tsx'),
   // Story 2.4's phone stepper rules: the step names and Dalje's labels as
   // return-type unions, and the classes that hide a section below `sm`.
   join(webRoot, 'src', 'features', 'rotation', 'utils', 'stepper.ts'),
@@ -656,7 +664,7 @@ const SOURCES = [
   join(webRoot, 'src', 'features', 'conflicts', 'components', 'conflicts-list.tsx'),
   join(webRoot, 'src', 'features', 'conflicts', 'components', 'conflicts-skeleton.tsx'),
   join(webRoot, 'src', 'features', 'conflicts', 'services', 'conflicts-queue.ts'),
-  // Its tabs and the resolved list, which `prijava.test.ts` sweeps in the
+  // Its tabs and the resolved list, which the source guards in `pages/` sweep in the
   // same screen set.
   join(webRoot, 'src', 'features', 'conflicts', 'components', 'conflicts-tabs.tsx'),
   join(webRoot, 'src', 'features', 'conflicts', 'components', 'resolved-list.tsx'),
