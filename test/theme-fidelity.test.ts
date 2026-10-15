@@ -69,7 +69,7 @@ function tokens(): Map<string, string> {
   return cached;
 }
 
-/** The 24 base names, derived rather than hard-coded so a DESIGN.md rename
+/** The 22 base names, derived rather than hard-coded so a DESIGN.md rename
  *  changes the case list instead of silently skipping a token. */
 function tokenNames(): string[] {
   return [...new Set([...tokens().keys()].map((key) => key.replace(/-dark$/, '')))];
@@ -77,12 +77,12 @@ function tokenNames(): string[] {
 
 describe('DESIGN.md is readable and complete', () => {
   // Without this, an unparsed front matter would make every case below vacuous.
-  it('parses all 48 declared colour values', () => {
-    expect(tokens().size).toBe(48);
+  it('parses all 44 declared colour values', () => {
+    expect(tokens().size).toBe(44);
   });
 
-  it('yields the 24 token names the rest of the suite expects', () => {
-    expect(tokenNames()).toHaveLength(24);
+  it('yields the 22 token names the rest of the suite expects', () => {
+    expect(tokenNames()).toHaveLength(22);
   });
 });
 
@@ -140,10 +140,10 @@ describe('every shipped value round-trips to the hex DESIGN.md declares', () => 
     ).toBeLessThan(0.5);
   });
 
-  it.each(THEMES)('preserves alpha on the overlay modifiers and the non-working border in %s', (theme) => {
+  it.each(THEMES)('preserves alpha on the uncovered overlay and the non-working border in %s', (theme) => {
     // `shift-nonworking-border` (story 7.1) is alpha-only: transparent in
     // light, a 7% white hairline in dark. Dropped alpha would paint it opaque.
-    for (const token of ['modifier-leave', 'modifier-uncovered', 'shift-nonworking-border']) {
+    for (const token of ['modifier-uncovered', 'shift-nonworking-border']) {
       const declared = parse(tokens().get(designKey(theme, token)) ?? '');
       const shipped = parse(rawToken(theme, token) ?? '');
 

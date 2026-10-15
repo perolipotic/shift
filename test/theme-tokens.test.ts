@@ -44,15 +44,16 @@ describe('the token lists are the size everything else assumes', () => {
   // count and "28 base". Dropping a name would silently shrink every sweep that
   // consumes these lists while the suite stayed green.
   //
-  // THIRTY-TWO SINCE STORY 7.1 added `shift-nonworking-border` (thirty-one
+  // THIRTY SINCE the unused `modifier-leave` pair was retired (thirty-two after
+  // story 7.1 added `shift-nonworking-border`, thirty-one
   // since story 1.4c), and the count MOVED WITH the list rather than
   // after it: `BRAND_TOKENS` is built by expansion, so four accent names became
   // eight tokens, and a number left at 23 here would have failed loudly — which
   // is the point. `deferred-work.md:449` item (f) records the opposite failure
   // as the one to avoid: a hard-coded count that admits the new tokens without
   // anybody deciding to let them in leaves them swept by nothing.
-  it('has 32 brand tokens', () => {
-    expect(BRAND_TOKENS).toHaveLength(32);
+  it('has 30 brand tokens', () => {
+    expect(BRAND_TOKENS).toHaveLength(30);
   });
 
   it('has 28 shadcn base tokens', () => {
