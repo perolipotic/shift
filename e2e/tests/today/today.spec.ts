@@ -276,6 +276,14 @@ test.describe('as a member', () => {
     await expect(card).toBeVisible();
     await expect(card).toContainText(rotation.steps[2]);
     await expect(card).toContainText(fixture.team.name);
+    // E804: the card closes on "Tvoja smjena" and the one link to the team's
+    // roster, from the calendar snapshot — no separate card after the week.
+    await expect(card.getByText(hr.smjene.today.label, { exact: true })).toBeVisible();
+    await expect(card.getByRole('link', { name: fixture.team.name, exact: true })).toHaveAttribute(
+      'href',
+      `/smjene/${fixture.team.id}`,
+    );
+    await expect(todayPage.teamLink(fixture.team.name)).toHaveCount(1);
     await expect(todayPage.todayCard(danas.today.working)).toHaveCount(0);
     // STORY 6.3: the member's Danas is unchanged — no admin block.
     await expect(todayPage.needsYouCard).toHaveCount(0);

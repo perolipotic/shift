@@ -16,8 +16,8 @@ function leadOf(message: string): string {
  * card (one case as its heading), the next shift's card, the next seven days
  * and the unavailable alert's retry. Below the week, the hours and leave
  * tiles (story 6.1b), each a link to its detail view. On a 24 h duty, the
- * duty-block in today's card's place (story 6.2). The team line below them
- * is the roster's (`teams.page.ts`).
+ * duty-block in today's card's place (story 6.2). Today's card (or the
+ * duty-block) closes on the team line, "Tvoja smjena" and its roster link.
  *
  * For an admin (story 6.3): *Treba tebe* with its count, its rows (each a
  * link to its conflict) and "Otvori konflikte (n)"; *Pokrivenost danas*;
@@ -203,7 +203,7 @@ export class TodayPage extends BasePage {
     return this.weekGridTable.getByRole('rowheader');
   }
 
-  /** A team's name in the page, the link to its roster (the admin's subtitle). */
+  /** A team's name in the page, the link to its roster (the member's today card, or the admin's subtitle). */
   teamLink(name: string): Locator {
     return this.page.getByRole('main').getByRole('link', { name, exact: true });
   }

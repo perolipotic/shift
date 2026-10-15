@@ -66,9 +66,10 @@ function renderLeg(leg: TodayDutyLeg, index: number): ReactNode {
  * END as the headline — "do 07:00" — with the day and what remains, or when
  * it starts; once ended, when it ended. A progress bar in `primary`
  * announces how much is done in words, the span sits under it, and each
- * shift is one leg marked in words and by an icon. Nothing to tap.
+ * shift is one leg marked in words and by an icon. `children` close the
+ * card: *Danas* puts the viewer's team today there.
  */
-export function DutyBlock({ duty }: { readonly duty: TodayDuty }): ReactNode {
+export function DutyBlock({ duty, children }: { readonly duty: TodayDuty; readonly children?: ReactNode }): ReactNode {
   const headingId = useId();
   const progress = t('danas.duty.progress', {
     done: durationText(duty.elapsed),
@@ -117,6 +118,7 @@ export function DutyBlock({ duty }: { readonly duty: TodayDuty }): ReactNode {
           </p>
         </div>
         <ul className="grid gap-3">{duty.legs.map(renderLeg)}</ul>
+        {children}
       </section>
     </Card>
   );

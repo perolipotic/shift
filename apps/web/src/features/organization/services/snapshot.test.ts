@@ -19,7 +19,6 @@ import {
   ORGANIZATION_NAME_BLANK,
   ORGANIZATION_REFUSED,
   ORGANIZATION_SNAPSHOT_KEY,
-  ORGANIZATION_TABLE,
   ORGANIZATION_UNAVAILABLE,
   organizationEditColumns,
   organizationSnapshotOf,
@@ -75,6 +74,8 @@ const SCREEN: readonly string[] = Object.values(SETTINGS_SCREEN_PARTS).map((part
 /** Where the logo-or-mark decision lives since story 1.4c: one component, drawn
  *  by the settings surface AND by the navigation chrome. */
 const LOCKUP = join(srcRoot, 'features', 'organization', 'components', 'lockup.tsx');
+/** This module's own source, for the assertions about what it exports. */
+const SNAPSHOT_SOURCE = join(srcRoot, 'features', 'organization', 'services', 'snapshot.ts');
 /** The one signed-URL read behind every lockup, shared by both surfaces. */
 const LOGO_URL = join(srcRoot, 'features', 'organization', 'hooks', 'logo-url.ts');
 /** The boot: the localization gate and the mount, over the one query client. */
@@ -110,10 +111,6 @@ const PILOT_ROW = {
   id: '11111111-1111-4111-8111-111111111111',
   slug: 'dvd-kastel-novi',
   name: 'DVD Kaštel Novi',
-  short_name: 'DVD Kaštel Novi',
-  description: 'Dobrovoljno vatrogasno društvo.',
-  address: 'Trg braće Radić 1, Kaštel Novi',
-  contact_email: 'kontakt@dvd-kastel-novi.example.com',
   organization_type: 'Fire Department',
   timezone: 'Europe/Zagreb',
   locale: 'hr',
@@ -238,10 +235,6 @@ describe('one PostgREST row becomes the canonical snapshot', () => {
       id: PILOT_ROW.id,
       slug: 'dvd-kastel-novi',
       name: 'DVD Kaštel Novi',
-      shortName: 'DVD Kaštel Novi',
-      description: 'Dobrovoljno vatrogasno društvo.',
-      address: 'Trg braće Radić 1, Kaštel Novi',
-      contactEmail: 'kontakt@dvd-kastel-novi.example.com',
       organizationType: 'Fire Department',
       timezone: 'Europe/Zagreb',
       locale: 'hr',
@@ -265,27 +258,27 @@ describe('one PostgREST row becomes the canonical snapshot', () => {
     }
   });
 
-  it('admits the five nullable columns as null and no others', () => {
-    // `short_name`, `description`, `address` and `contact_email` are nullable on
-    // the table (`0002:73-81`), and `logo_path` joined them in `0005`;
-    // everything else is `not null`. A mapper that
+  it('admits the two nullable columns as null and no others', () => {
+    // `logo_path` (`0005`) and `brand_accent` are the nullable columns the
+    // snapshot selects; everything else it reads is `not null`. A mapper that
     // admitted a missing `timezone` would hand L8 an `undefined` zone, which
     // `Intl` resolves to the DEVICE's — the exact defect the required argument
     // in `format.ts` exists to make impossible.
-    const sparse = organizationSnapshotOf({
-      ...PILOT_ROW,
-      short_name: null,
-      description: null,
-      address: null,
-      contact_email: null,
-    });
+    const sparse = organizationSnapshotOf({ ...PILOT_ROW, logo_path: null, brand_accent: null });
 
-    expect(sparse?.shortName).toBeNull();
-    expect(sparse?.description).toBeNull();
-    expect(sparse?.address).toBeNull();
-    expect(sparse?.contactEmail).toBeNull();
     expect(sparse?.logoPath, 'a missing logo reference is not the same as no column').toBeNull();
     expect(sparse?.brandAccent, 'a missing accent is not the same as no column').toBeNull();
+  });
+
+  it('selects no column that nothing reads (B294)', () => {
+    // `short_name`, `description`, `address` and `contact_email` are nullable
+    // on the table (`0002:73-81`) and no surface renders them — the same "no
+    // reader, no column" test that keeps `created_at` out.
+    const columns = ORGANIZATION_COLUMNS.split(',');
+
+    for (const column of ['short_name', 'description', 'address', 'contact_email', 'created_at']) {
+      expect(columns, `the snapshot reads ${column} for no reader`).not.toContain(column);
+    }
   });
 
   it('carries the logo reference when there is one', () => {
@@ -744,14 +737,6 @@ describe('the update writes the edited fields and answers with the row', () => {
       { usesFireRanks: true, id: PILOT_ROW.id },
       // @ts-expect-error not the slug
       { usesFireRanks: true, slug: 'x' },
-      // @ts-expect-error not the short name
-      { usesFireRanks: true, shortName: 'x' },
-      // @ts-expect-error not the description
-      { usesFireRanks: true, description: 'x' },
-      // @ts-expect-error not the address
-      { usesFireRanks: true, address: 'x' },
-      // @ts-expect-error not the contact address
-      { usesFireRanks: true, contactEmail: 'x' },
       // @ts-expect-error not the locale
       { usesFireRanks: true, locale: 'x' },
       // @ts-expect-error not the type
@@ -1187,7 +1172,11 @@ describe('the surface reads once, under one key', () => {
     // still that the ROW is read once here and the derived read is one hook
     // call, so a third query on this screen is the AD-13 violation it always
     // was.
-    expect(occurrences(screen, 'useQuery('), 'the screen issues a second query').toBe(1);
+    // THE ONE OTHER QUERY is the *Satni pojasi* card's read of the bands
+    // (deferred work from 7.18): another table, through the band list's own
+    // query options and key, in its own hook — never a second organization read.
+    expect(occurrences(screen, 'useQuery('), 'the screen issues a third query').toBe(2);
+    expect(occurrences(screen, 'hourBandsQueryOptions('), 'the bands are read other than by their list').toBe(1);
     expect(occurrences(hook, 'useQuery('), 'the one query is not the hook\'s').toBe(1);
     expect(
       occurrences(screen, 'useRenderableLogo('),
@@ -1253,12 +1242,17 @@ describe('the surface reads once, under one key', () => {
     // The reads and writes are the HOOK's, so that is where they are required.
     for (const required of [
       "from '@/features/organization/services/snapshot'",
-      'supabaseClient().from(ORGANIZATION_TABLE)',
+      'organizationTable()',
       'updateOrganization(',
     ]) {
       expect(source(HOOK), `the settings screen no longer reaches ${required}`).toContain(required);
     }
-    expect(ORGANIZATION_TABLE).toBe('organizations');
+    // The hook builds no table call of its own (B302): `organizationTable()` is
+    // the one seam, and the relation name is not part of the module's surface.
+    expect(source(HOOK), 'the settings hook builds its own table call').not.toMatch(/supabaseClient\(\)\.from\(/);
+    expect(source(SNAPSHOT_SOURCE), 'the snapshot module exports the relation name').not.toMatch(
+      /export const ORGANIZATION_TABLE\b/,
+    );
     // The relation name is the snapshot module's, so a screen holding it as a
     // literal is a second place for it to drift.
     expect(screen, 'the screen names the relation itself').not.toContain("'organizations'");

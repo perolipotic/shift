@@ -4,12 +4,14 @@
  */
 
 /**
- * The three fact cards' headings, which name their regions and take focus
- * when a dialog's opener is gone.
+ * The fact cards' headings, which name their regions; the three with dialogs
+ * take focus when a dialog's opener is gone.
  */
 export const ORGANIZATION_PROFILE_HEADING_ID = 'organization-profile-heading';
 export const ORGANIZATION_TIME_HEADING_ID = 'organization-time-heading';
 export const ORGANIZATION_FIRE_RANKS_HEADING_ID = 'organization-fire-ranks-heading';
+/** The *Satni pojasi* facts card (deferred work from 7.18): a summary, and the way to the editor. */
+export const ORGANIZATION_HOUR_BANDS_HEADING_ID = 'organization-hour-bands-heading';
 
 /** The card each dialog closes back onto, by its heading. */
 export const ORGANIZATION_DIALOG_CARD_HEADING_IDS = {

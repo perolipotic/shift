@@ -15,7 +15,7 @@ import {
   ORGANIZATION_LEAVE_MONTH_FIELD,
   ORGANIZATION_NAME_FIELD,
   ORGANIZATION_SNAPSHOT_KEY,
-  ORGANIZATION_TABLE,
+  organizationTable,
   ORGANIZATION_UNAVAILABLE,
   readFailureOf,
   readOrganization,
@@ -160,7 +160,7 @@ export function useOrganizationSettings() {
   // change when that happens. The member screens only read a setting off it.
   const snapshot = useQuery({
     queryKey: ORGANIZATION_SNAPSHOT_KEY,
-    queryFn: () => readOrganization(supabaseClient().from(ORGANIZATION_TABLE)),
+    queryFn: () => readOrganization(organizationTable()),
   });
 
   const answered = snapshot.data;
@@ -304,7 +304,7 @@ export function useOrganizationSettings() {
 
     // ONLY THE NAME. What this dialog does not show is not sent, so a stale
     // cache cannot write another admin's change back (FR-7, FR-8).
-    await write(NAME_DIALOG, (row) => updateOrganization(supabaseClient().from(ORGANIZATION_TABLE), row.id, { name }));
+    await write(NAME_DIALOG, (row) => updateOrganization(organizationTable(), row.id, { name }));
   }
 
   /** The leave year's Spremi: its start's month and day, and nothing else. */
@@ -318,7 +318,7 @@ export function useOrganizationSettings() {
     const leaveYearStartDay = Number(entered.get(ORGANIZATION_LEAVE_DAY_FIELD));
 
     await write(LEAVE_YEAR_DIALOG, (row) =>
-      updateOrganization(supabaseClient().from(ORGANIZATION_TABLE), row.id, {
+      updateOrganization(organizationTable(), row.id, {
         leaveYearStartMonth,
         leaveYearStartDay,
       }),
@@ -335,7 +335,7 @@ export function useOrganizationSettings() {
     await write(LOGO_DIALOG, (row) =>
       replaceOrganizationLogo(
         supabaseClient().storage.from(ORGANIZATION_LOGO_BUCKET),
-        supabaseClient().from(ORGANIZATION_TABLE),
+        organizationTable(),
         row,
         file,
       ),
@@ -348,7 +348,7 @@ export function useOrganizationSettings() {
    */
   async function saveAccent(accent: BrandAccentKey | null): Promise<void> {
     await write(ACCENT_DIALOG, (row) =>
-      updateOrganization(supabaseClient().from(ORGANIZATION_TABLE), row.id, { brandAccent: accent }),
+      updateOrganization(organizationTable(), row.id, { brandAccent: accent }),
     );
   }
 
@@ -358,7 +358,7 @@ export function useOrganizationSettings() {
    */
   async function saveFireRanks(uses: boolean): Promise<void> {
     await write(FIRE_RANKS_DIALOG, (row) =>
-      updateOrganization(supabaseClient().from(ORGANIZATION_TABLE), row.id, { usesFireRanks: uses }),
+      updateOrganization(organizationTable(), row.id, { usesFireRanks: uses }),
     );
   }
 

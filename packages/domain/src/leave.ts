@@ -112,7 +112,7 @@ export interface LeavePreview extends LeaveBalance {
  * the only shift, holds no working shift, and costs nothing. Whether the
  * member is active is checked by the callers, not here.
  */
-export function isLeaveDay(day: MemberScheduleDay, workingShiftTypeIds: readonly string[]): boolean {
+export function isLeaveDay(day: Pick<MemberScheduleDay, 'date' | 'shifts'>, workingShiftTypeIds: readonly string[]): boolean {
   return day.shifts.some((shift) => shift.shiftTypeId !== null && workingShiftTypeIds.includes(shift.shiftTypeId));
 }
 

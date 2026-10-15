@@ -37,7 +37,7 @@ import {
 } from '@/features/members/services/list';
 import {
   ORGANIZATION_SNAPSHOT_KEY,
-  ORGANIZATION_TABLE,
+  organizationTable,
   organizationSnapshotQueryOptions,
 } from '@/features/organization/services/snapshot';
 import { useOrganizationToday } from '@/hooks/organization-today';
@@ -95,7 +95,7 @@ export function useLeaveOverview(search: GodisnjiSearch, navigate: GodisnjiNavig
     enabled: admin,
   });
   const organization = useQuery({
-    ...organizationSnapshotQueryOptions(() => supabaseClient().from(ORGANIZATION_TABLE)),
+    ...organizationSnapshotQueryOptions(organizationTable),
     enabled: admin,
   });
   const records = useQuery({
