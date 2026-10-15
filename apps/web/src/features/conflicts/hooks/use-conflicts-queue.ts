@@ -3,7 +3,9 @@ import { useLocation, useNavigate } from '@tanstack/react-router';
 import { useEffect, useRef, useState } from 'react';
 
 import { useCalendarSnapshot } from '@/features/calendar/hooks/use-calendar-snapshot';
-import { CALENDAR_KEY, calendarSurfaceStateOf } from '@/features/calendar/services/snapshot';
+import { useSnapshotSkewRefresh } from '@/features/calendar/hooks/use-snapshot-skew-refresh';
+import { CALENDAR_FETCH_FETCHING, CALENDAR_KEY, calendarSurfaceStateOf } from '@/features/calendar/services/snapshot';
+import { snapshotSkewOf } from '@/features/calendar/services/snapshot-skew';
 import { useReplacementLinkRefresh } from '@/features/conflicts/hooks/use-replacement-link-refresh';
 import { CONFLICTS_LOADING, conflictsQueueOf } from '@/features/conflicts/services/conflicts-queue';
 import {
@@ -121,11 +123,15 @@ export function useConflictsQueue() {
   );
 
   const calendarState = calendarSurfaceStateOf(calendar);
-  const resolved = resolvedConflictsOf({ calendar: calendarState, records, resolutions, actors });
+  const snapshotFetching = calendar.fetchStatus === CALENDAR_FETCH_FETCHING;
+  const resolved = resolvedConflictsOf({ calendar: calendarState, records, resolutions, actors, snapshotFetching });
+
+  // A leave or resolution row naming a member or team the snapshot does not hold yet re-reads it once.
+  useSnapshotSkewRefresh(snapshotSkewOf(calendarState.snapshot, records.data, resolutions.data));
 
   // The organization's today, moved at its midnight: a queue left open overnight drops yesterday's conflicts.
   const { now } = useOrganizationToday(calendarState.snapshot === null ? null : calendarState.snapshot.timeZone);
-  const queue = conflictsQueueOf({ calendar: calendarState, records, resolutions }, now);
+  const queue = conflictsQueueOf({ calendar: calendarState, records, resolutions, snapshotFetching }, now);
 
   /** Read again every read the queue stands on, from the unavailable alert's retry. */
   function retry(): void {

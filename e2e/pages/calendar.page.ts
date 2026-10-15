@@ -25,7 +25,7 @@ export interface GridPosition {
  * and the day detail.
  */
 export class CalendarPage extends BasePage {
-  protected readonly path = '/kalendar';
+  readonly path = '/kalendar';
 
   /** The month's heading (h2), or any h2 without a name. */
   monthHeading(name?: string | RegExp): Locator {

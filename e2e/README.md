@@ -80,8 +80,12 @@ organization (`readFixture`).
   ARIA-attribute selector (`thead th`, `tr[aria-current="date"]`,
   `[data-row][data-column]`, `option:checked`) only where no role or label
   reaches the element, and never a class or an id.
-- A new page fixture: add the page to the `PageObjects` type and to the
-  `base.extend` block in `utils/custom-fixtures.ts`.
+- A new page fixture: add the page to the `PageObjects` type, to the
+  `base.extend` block in `utils/custom-fixtures.ts`, and to its `pages`
+  fixture, which hands a spec that picks the screen at run time every page
+  object at once (`tests/layout/responsive.spec.ts`).
+- A page object's `path` is public, so a spec builds a deeper route on it
+  (`${loginPage.path}/${slug}`) rather than spelling the route again.
 
 ## Isolation
 

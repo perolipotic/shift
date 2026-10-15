@@ -155,12 +155,18 @@ export const FEATURE_PUBLIC = {
   // `calendarQueryOptions(...)`.
   // B449: *Danas*'s week and today card say an empty day the calendar's way —
   // inactive, or on no team (`empty-day`).
+  // E765: *Raspored*, *Sati* and *Danas* tell rows newer than the snapshot
+  // from rows that cannot be trusted, and re-read it once, by the marks' own
+  // rule (`snapshot-skew`, `use-snapshot-skew-refresh`); `readsOrganizationLeave`
+  // lives there too.
   calendar: [
     'components/calendar-cell', // today
     'hooks/use-calendar-snapshot', // conflicts, hours, leave, members, today
+    'hooks/use-snapshot-skew-refresh', // conflicts, hours, today
     'components/modifier-glyphs', // today
-    'services/marks', // hours, today
+    'services/marks', // today
     'services/snapshot', // conflicts, hours, leave, members, pages, teams, today
+    'services/snapshot-skew', // conflicts, hours, today
     'utils/day-detail', // conflicts
     'utils/empty-day', // today
     'utils/grid-keys', // today

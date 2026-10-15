@@ -1,6 +1,7 @@
 import { collisionKeyOf, collisionsOf, unresolvedCollisionsOf, type Collision, type CollisionInput } from '@shift/domain';
 
 import type { CalendarSnapshot, CalendarSurfaceState } from '@/features/calendar/services/snapshot';
+import { unknownSnapshotIdsOf } from '@/features/calendar/services/snapshot-skew';
 import { calendarTodayOf, memberScheduleInputOf, typeRangeOn } from '@/features/calendar/utils/month';
 import { organizationLeaveRecordsOf, type OrganizationLeaveRecord } from '@/features/leave/services/leave-list';
 import { leaveRangeValuesOf } from '@/features/leave/services/leave-section';
@@ -34,7 +35,10 @@ import { formatIsoDate } from '@/lib/i18n/format';
  * with another of the same member, a resolution row that cannot be trusted,
  * and any `RangeError` of the derivation refuse the whole queue, logged; no
  * row is drawn from data that cannot be trusted, and no count from
- * collisions not yet filtered by their resolutions.
+ * collisions not yet filtered by their resolutions. A row naming a member or
+ * team newer than the cached snapshot is a skew, not a break (story 5.5d, as
+ * the calendar's marks): the snapshot is read again, once, and the queue
+ * waits for it.
  */
 
 /** TanStack Query's name for a fetch it has not started (offline). */
@@ -300,13 +304,19 @@ export interface ConflictsQueueSources {
   readonly records: LeaveRowsAnswer;
   /** The organization's live resolution rows (story 5.4a). */
   readonly resolutions: LeaveRowsAnswer;
+  /** Whether the calendar snapshot is being read again: a skew then waits for it ({@link conflictsQueueOf}). */
+  readonly snapshotFetching?: boolean;
 }
 
 /**
  * What *Raspored* shows from its three reads at `now`: unavailable when any
  * read failed or is paused offline — first, so a failure is never hidden
  * behind another's skeleton — a failed refetch over cached data included;
- * loading while any is pending; otherwise the guarded queue.
+ * loading while any is pending; otherwise the guarded queue. Rows naming a
+ * member or team the snapshot does not hold yet (`unknownSnapshotIdsOf`) are
+ * a skew between the reads, not rows that cannot be trusted: loading while
+ * the snapshot is read again, otherwise unavailable — whose retry re-reads
+ * it — and never logged.
  */
 export function conflictsQueueOf(sources: ConflictsQueueSources, now: Date): ConflictsQueue {
   const { calendar, records, resolutions } = sources;
@@ -323,6 +333,10 @@ export function conflictsQueueOf(sources: ConflictsQueueSources, now: Date): Con
   const resolutionRows = resolutions.data;
 
   if (snapshot === null || rows === undefined || resolutionRows === undefined) return { kind: CONFLICTS_LOADING };
+
+  if (unknownSnapshotIdsOf(snapshot, rows, resolutionRows).length > 0) {
+    return sources.snapshotFetching === true ? { kind: CONFLICTS_LOADING } : { kind: CONFLICTS_UNAVAILABLE };
+  }
 
   const outcome = conflictsQueueOutcomeOf(snapshot, rows, resolutionRows, calendarTodayOf(snapshot, now));
 

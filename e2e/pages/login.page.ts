@@ -9,7 +9,7 @@ import { BasePage } from './base.page.ts';
  * is a field, prefilled from the last organization signed into on this device.
  */
 export class LoginPage extends BasePage {
-  protected readonly path = '/prijava';
+  readonly path = '/prijava';
 
   /** The sign-in form's h1. */
   get signInHeading(): Locator {

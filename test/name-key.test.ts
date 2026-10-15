@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -6,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { Client } from 'pg';
 import { describe, expect, it } from 'vitest';
 
-import { FIXTURES, connect, noDatabase } from './database.js';
+import { FIXTURES, connect, localApiEndpoint, noDatabase } from './database.js';
 
 import { NAME_MAX_LENGTH, isBlankName, nameKey } from '../apps/web/src/utils/name.ts';
 
@@ -28,24 +27,9 @@ const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 
 /**
  * The local API and its publishable key, or `undefined`: read from `supabase
- * status` once, as `test/rls-isolation.test.ts` does, so no key is tracked.
+ * status` once (`./database.ts`), so no key is tracked.
  */
-const apiEndpoint: { readonly url: string; readonly key: string } | undefined = (() => {
-  if (noDatabase) return undefined;
-  try {
-    const status = execFileSync(join(repoRoot, 'node_modules', '.bin', 'supabase'), ['status', '-o', 'json'], {
-      cwd: repoRoot,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    });
-    const fields = JSON.parse(status) as Record<string, unknown>;
-    const key = fields['PUBLISHABLE_KEY'] ?? fields['ANON_KEY'];
-    const url = fields['API_URL'] ?? 'http://127.0.0.1:54321';
-    return typeof key === 'string' && typeof url === 'string' ? { url, key } : undefined;
-  } catch {
-    return undefined;
-  }
-})();
+const apiEndpoint = localApiEndpoint();
 
 const noApi = noDatabase || apiEndpoint === undefined;
 

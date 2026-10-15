@@ -1,9 +1,10 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
-import { readsOrganizationLeave } from '@/features/calendar/services/marks';
 import { useCalendarSnapshot } from '@/features/calendar/hooks/use-calendar-snapshot';
-import { CALENDAR_KEY } from '@/features/calendar/services/snapshot';
+import { useSnapshotSkewRefresh } from '@/features/calendar/hooks/use-snapshot-skew-refresh';
+import { CALENDAR_FETCH_FETCHING, CALENDAR_KEY } from '@/features/calendar/services/snapshot';
+import { readsOrganizationLeave, snapshotSkewOf } from '@/features/calendar/services/snapshot-skew';
 import {
   CONFLICT_RESOLUTIONS_TABLE,
   MY_CONFLICT_RESOLUTIONS_KEY,
@@ -112,6 +113,10 @@ export function useHours(search: HoursSearch, go: (next: HoursSearch) => void) {
   const resolutionsIsError = resolutionsAnswer.isError;
   const resolutionsIsPending = resolutionsAnswer.isPending;
   const resolutionsFetchStatus = resolutionsAnswer.fetchStatus;
+  const snapshotFetching = answer.fetchStatus === CALENDAR_FETCH_FETCHING;
+
+  // As the calendar's marks: a row naming a member or team the snapshot does not hold yet re-reads it once.
+  useSnapshotSkewRefresh(snapshotSkewOf(snapshot, leaveData, resolutionsData));
   // Derived once per answer, not on every render: the collisions walk every record.
   const conflicts = useMemo(
     () =>
@@ -131,6 +136,7 @@ export function useHours(search: HoursSearch, go: (next: HoursSearch) => void) {
               isPending: resolutionsIsPending,
               fetchStatus: resolutionsFetchStatus,
             },
+            snapshotFetching,
           ),
     [
       snapshot,
@@ -142,6 +148,7 @@ export function useHours(search: HoursSearch, go: (next: HoursSearch) => void) {
       resolutionsIsError,
       resolutionsIsPending,
       resolutionsFetchStatus,
+      snapshotFetching,
     ],
   );
   // The organization's today, moved at its midnight (the `Ovaj mjesec` target included).

@@ -488,6 +488,21 @@ describe('the three reads', () => {
 
     expect(viewOf(pilot, rows, '2026-09-01')).toEqual(first);
   });
+
+  // E765, as the calendar's marks: rows newer than the cached snapshot are a
+  // skew between the reads, never logged as rows that cannot be trusted.
+  it.each([
+    ['a leave row of a newer member', [WORKED, rowOf('record-newer', '2026-09-01', '2026-09-03', 'newer-member')], []],
+    ['a resolution on a newer team', [WORKED], [resolutionOf(VIEWER_MEMBER, '2026-09-11', 'newer-team')]],
+    ['a resolution of a newer member', [WORKED], [resolutionOf('newer-member', '2026-09-11', teamOf(PILOT, 0))]],
+  ])('is unavailable, unlogged, for %s, and loading while the snapshot is read again', (_name, rows, resolutionRows) => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const sources = { calendar: { ...ready, snapshot: pilot }, records: answered(rows), resolutions: answered(resolutionRows) };
+
+    expect(conflictsQueueOf(sources, nowOn('2026-09-01'))).toEqual({ kind: CONFLICTS_UNAVAILABLE });
+    expect(conflictsQueueOf({ ...sources, snapshotFetching: true }, nowOn('2026-09-01'))).toEqual({ kind: CONFLICTS_LOADING });
+    expect(logged).not.toHaveBeenCalled();
+  });
 });
 
 /** A resolution row as `conflict_resolutions` answers it. */

@@ -13,7 +13,7 @@ const raspored = hr.raspored;
  * the decisions in force.
  */
 export class ConflictsPage extends BasePage {
-  protected readonly path = '/raspored';
+  readonly path = '/raspored';
 
   /** The count's heading (h2), for `count` conflicts. */
   countHeading(count: number): Locator {
@@ -94,7 +94,7 @@ const resolution = raspored.resolution;
  * story 5.4d, the third card, "Izmijeni godišnji odmor".
  */
 export class ConflictResolutionPage extends BasePage {
-  protected readonly path = '/raspored';
+  readonly path = '/raspored';
 
   /** Opens the screen of the conflict `(memberId, date, teamId)`. */
   async gotoConflict(memberId: string, date: string, teamId: string): Promise<void> {

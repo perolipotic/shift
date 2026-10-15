@@ -25,7 +25,7 @@ function leadOf(message: string): string {
  * cells are named in words — each block with its way to its list view.
  */
 export class TodayPage extends BasePage {
-  protected readonly path = '/danas';
+  readonly path = '/danas';
 
   /** A card, by the region its h2 names: today's case, the next shift, or the week. */
   card(heading: string | RegExp): Locator {

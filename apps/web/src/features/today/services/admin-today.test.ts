@@ -669,10 +669,20 @@ describe('the three reads', () => {
   it('a leave row that cannot be trusted is unavailable, and logged', () => {
     const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    expect(adminTodayOf(sourcesOf(pilot, [{ id: 'x', member_id: 'nobody', during: '[2026-10-01,2026-10-02)' }]), AT_1420)).toEqual({
+    expect(adminTodayOf(sourcesOf(pilot, [{ id: 'x', member_id: VIEWER_MEMBER, during: 'not a range' }]), AT_1420)).toEqual({
       kind: ADMIN_TODAY_UNAVAILABLE,
     });
     expect(logged).toHaveBeenCalled();
+  });
+
+  // E765, as the queue: a row newer than the cached snapshot is a skew between the reads.
+  it('a leave row of a member newer than the snapshot is unavailable, unlogged, and loading while it is read again', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const sources = sourcesOf(pilot, [{ id: 'x', member_id: 'newer-member', during: '[2026-10-01,2026-10-02)' }]);
+
+    expect(adminTodayOf(sources, AT_1420)).toEqual({ kind: ADMIN_TODAY_UNAVAILABLE });
+    expect(adminTodayOf({ ...sources, snapshotFetching: true }, AT_1420)).toEqual({ kind: ADMIN_TODAY_LOADING });
+    expect(logged).not.toHaveBeenCalled();
   });
 
   it('derives the same screen on every read and changes nothing it reads', () => {

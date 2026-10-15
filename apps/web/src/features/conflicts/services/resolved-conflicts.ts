@@ -2,6 +2,7 @@ import { queryOptions } from '@tanstack/react-query';
 import { collisionKeyOf, scheduledShiftTypeOn } from '@shift/domain';
 
 import type { CalendarSnapshot, CalendarSurfaceState } from '@/features/calendar/services/snapshot';
+import { unknownSnapshotIdsOf } from '@/features/calendar/services/snapshot-skew';
 import { overrideStandingOfCalendar, typeRangeOn, workingShiftTypeIdsOf } from '@/features/calendar/utils/month';
 import { liveResolutionsOf, queueReadFailed, type LeaveRowsAnswer } from '@/features/conflicts/services/conflicts-queue';
 import { effectiveResolutionsOf } from '@/features/conflicts/services/replacement-effect';
@@ -331,9 +332,16 @@ export interface ResolvedConflictsSources {
   readonly records: LeaveRowsAnswer;
   readonly resolutions: LeaveRowsAnswer;
   readonly actors: LeaveRowsAnswer;
+  /** Whether the calendar snapshot is being read again: a skew then waits for it, as the queue's. */
+  readonly snapshotFetching?: boolean;
 }
 
-/** What the tab shows: unavailable first, as the queue's, then loading, otherwise the guarded view. */
+/**
+ * What the tab shows: unavailable first, as the queue's, then loading,
+ * otherwise the guarded view. Rows naming a member or team the snapshot does
+ * not hold yet are the queue's skew: loading while the snapshot is read
+ * again, otherwise unavailable with its retry, never logged.
+ */
 export function resolvedConflictsOf(sources: ResolvedConflictsSources): ResolvedConflicts {
   const { calendar, records, resolutions, actors } = sources;
   const failed =
@@ -347,6 +355,10 @@ export function resolvedConflictsOf(sources: ResolvedConflictsSources): Resolved
 
   if (calendar.snapshot === null || records.data === undefined || resolutions.data === undefined || actors.data === undefined) {
     return { kind: RESOLVED_LOADING };
+  }
+
+  if (unknownSnapshotIdsOf(calendar.snapshot, records.data, resolutions.data).length > 0) {
+    return sources.snapshotFetching === true ? { kind: RESOLVED_LOADING } : { kind: RESOLVED_UNAVAILABLE };
   }
 
   const outcome = resolvedConflictsOutcomeOf(calendar.snapshot, records.data, resolutions.data, actors.data);

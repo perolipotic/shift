@@ -1,3 +1,7 @@
+import { execFileSync } from 'node:child_process';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { Client } from 'pg';
 
 /**
@@ -144,3 +148,65 @@ export const FIXTURES = [
     bystander: 'tomislav.juric',
   },
 ] as const;
+
+/** The repository root: where the Supabase CLI is installed and run from. */
+const repoRoot = fileURLToPath(new URL('..', import.meta.url));
+
+/** The API gateway's default when `supabase status` names none. */
+const DEFAULT_API_URL = 'http://127.0.0.1:54321';
+
+/** `supabase status -o json`'s fields, read once per suite, or `undefined`. */
+let statusFields: Record<string, unknown> | null | undefined;
+
+/**
+ * The local stack's `supabase status -o json`, spawned at most once per
+ * suite and never inside a test: the keys are generated per stack, so
+ * hard-coding one would both rot and put a key in a tracked file. `null` when
+ * there is no database, no CLI, no running stack or a JSON shape we do not
+ * know — the cases that need it then skip rather than fail for a reason that
+ * is not theirs. `provisioning`, `rls-isolation` and `name-key` each carried
+ * their own copy of this read.
+ */
+function supabaseStatus(): Record<string, unknown> | null {
+  if (statusFields !== undefined) return statusFields;
+  statusFields = null;
+  if (noDatabase) return statusFields;
+  try {
+    const status = execFileSync(join(repoRoot, 'node_modules', '.bin', 'supabase'), ['status', '-o', 'json'], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    const parsed: unknown = JSON.parse(status);
+    if (typeof parsed === 'object' && parsed !== null) statusFields = parsed as Record<string, unknown>;
+  } catch {
+    // No CLI or no running stack: every case that needs the API skips.
+  }
+  return statusFields;
+}
+
+/**
+ * The local API endpoint and its publishable key, or `undefined`. The key is
+ * read under either spelling the CLI has used.
+ */
+export function localApiEndpoint(): { readonly url: string; readonly key: string } | undefined {
+  const fields = supabaseStatus();
+  if (fields === null) return undefined;
+  const key = fields['PUBLISHABLE_KEY'] ?? fields['ANON_KEY'];
+  const url = fields['API_URL'] ?? DEFAULT_API_URL;
+  return typeof key === 'string' && typeof url === 'string' ? { url, key } : undefined;
+}
+
+/**
+ * The local stack's SECRET key, or `undefined`, for the cases that drive
+ * GoTrue's admin API. A per-stack local value that never leaves this machine
+ * (AD-17 confines the deployed secret to the Edge Function). Read under
+ * either spelling the CLI has used, which is why a caller asserts it resolved
+ * rather than letting a third rename skip its cases silently.
+ */
+export function localSecretKey(): string | undefined {
+  const fields = supabaseStatus();
+  if (fields === null) return undefined;
+  const key = fields['SECRET_KEY'] ?? fields['SERVICE_ROLE_KEY'];
+  return typeof key === 'string' && key.length > 0 ? key : undefined;
+}

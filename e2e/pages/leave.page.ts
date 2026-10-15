@@ -18,7 +18,7 @@ const overview = hr.godisnji.overview;
  * member active today as a table row from 640 px, a stacked row below it.
  */
 export class LeavePage extends BasePage {
-  protected readonly path = '/godisnji';
+  readonly path = '/godisnji';
 
   /** The tile a label heads: its label and its figure. */
   private tile(label: string): Locator {
