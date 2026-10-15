@@ -1105,6 +1105,9 @@ const SANCTIONED_SCREEN_KEYS = [
   'kalendar.thisMonthShort',
   'kalendar.previousYear',
   'kalendar.nextYear',
+  // DEFERRED-WORK E792, E795: the picker's phone sheet close, and its footer's key hint.
+  'kalendar.monthPickerClose',
+  'kalendar.monthPickerKeys',
   'kalendar.columnDate',
   'kalendar.noRotation',
   'kalendar.noTeams',
@@ -1116,6 +1119,9 @@ const SANCTIONED_SCREEN_KEYS = [
   'kalendar.mode.moj',
   'kalendar.mode.sve',
   'kalendar.noTeam',
+  // DEFERRED-WORK E822: *Moj raspored*'s sentence, with the team and without.
+  'kalendar.ownNote',
+  'kalendar.ownNoteNoTeam',
   'kalendar.day.noTeam',
   // STORY 3.2b: the modifier vocabulary — the legend's heading and the four
   // marks' labels, read in the legend and in every cell's label.
