@@ -45,14 +45,6 @@ export const TEAM_UNKNOWN = 'TEAM_UNKNOWN';
  * answering an ARCHIVE is this rule, not a lost permission.
  */
 export const TEAM_IN_USE = 'TEAM_IN_USE';
-/**
- * The team has a rotation in force or scheduled (`0036`).
- *
- * A BEFORE UPDATE trigger refuses the archive with `23514` and the message
- * `TEAM_IN_ROTATION`, before the policy's in-use rule is asked. No version
- * ends a rotation, so a team that has stood on one keeps it.
- */
-export const TEAM_IN_ROTATION = 'TEAM_IN_ROTATION';
 
 export type TeamWriteFailure =
   | typeof TEAM_NAME_EMPTY
@@ -63,8 +55,7 @@ export type TeamWriteFailure =
   | typeof TEAM_WRITE_INVALID
   | typeof TEAM_WRITE_UNAVAILABLE
   | typeof TEAM_UNKNOWN
-  | typeof TEAM_IN_USE
-  | typeof TEAM_IN_ROTATION;
+  | typeof TEAM_IN_USE;
 
 export type TeamWriteOutcome =
   | { readonly ok: true }
@@ -139,17 +130,12 @@ export function teamWriteFailureOf(error: TeamWriteError): TeamWriteFailure {
   return TEAM_WRITE_UNAVAILABLE;
 }
 
-/** The message `0036` refuses archiving a team in a rotation with. */
-const IN_ROTATION_MESSAGE = 'TEAM_IN_ROTATION';
-
 /**
  * An archive's refusal: `42501` is the in-use rule (see {@link TEAM_IN_USE}),
- * `23514` with `0036`'s message the rotation rule ({@link TEAM_IN_ROTATION}),
  * and everything else reads as any other team write does.
  */
 export function archiveFailureOf(error: TeamWriteError): TeamWriteFailure {
   if (error.code === INSUFFICIENT_PRIVILEGE) return TEAM_IN_USE;
-  if (error.code === CHECK_VIOLATION && error.message === IN_ROTATION_MESSAGE) return TEAM_IN_ROTATION;
 
   return teamWriteFailureOf(error);
 }
@@ -246,8 +232,7 @@ export function teamWriteMessageKey(
   | 'smjene.error.invalid'
   | 'smjene.error.saveUnavailable'
   | 'smjene.error.unknown'
-  | 'smjene.error.inUse'
-  | 'smjene.error.inRotation' {
+  | 'smjene.error.inUse' {
   if (failure === TEAM_NAME_EMPTY) return 'smjene.error.empty';
   if (failure === TEAM_NAME_TOO_LONG) return 'smjene.error.tooLong';
   if (failure === TEAM_NAME_TAKEN) return 'smjene.error.taken';
@@ -257,7 +242,6 @@ export function teamWriteMessageKey(
   if (failure === TEAM_WRITE_UNAVAILABLE) return 'smjene.error.saveUnavailable';
   if (failure === TEAM_UNKNOWN) return 'smjene.error.unknown';
   if (failure === TEAM_IN_USE) return 'smjene.error.inUse';
-  if (failure === TEAM_IN_ROTATION) return 'smjene.error.inRotation';
 
   const unhandled: never = failure;
 

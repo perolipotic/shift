@@ -2490,12 +2490,12 @@ const KEY_SOURCES = [
     // TEN SINCE STORY 1.7b: the in-use refusal, an archive of a team somebody
     // is on today or is scheduled onto.
     //
-    // TWELVE SINCE 0036: a name over the maximum, and an archive of a team with a
-    // rotation in force or scheduled.
+    // ELEVEN SINCE 0036: a name over the maximum. (0036's archive of a team
+    // in a rotation was withdrawn by 0037.)
     name: 'the team write rules',
     file: TEAM_WRITE_KEYS,
     keys: memberListKeys,
-    strings: 12,
+    strings: 11,
   },
   {
     // STORY 1.8. FOUR on the roster: the heading while there is no roster to
