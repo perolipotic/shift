@@ -23,9 +23,10 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * - Under forced colours every modifier treatment, the focused cell and the
  *   sticky header keep a visible outline or border, where the box-shadows and
  *   gradients they normally draw are dropped.
- * - On a phone the month toolbar and the filter chips (or *Moj raspored*'s
- *   sentence) are one sticky head at the top of the viewport, on *Kalendar*
- *   and *Sati*, and the grid's scroller fits below it (deferred-work E816).
+ * - On a phone the month toolbar is a sticky head at the top of the viewport,
+ *   on *Kalendar* and *Sati*, at most 160 px with its one-line filter summary
+ *   once the filter bar has scrolled under it, and the grid's scroller fits
+ *   below it (deferred-work E816).
  */
 
 /** Whether a request is the calendar's one read, not the chrome's branding read of the same table. */
@@ -433,10 +434,13 @@ async function inHead(locator: Locator): Promise<boolean> {
   });
 }
 
+/** The most the phone's head may take: the toolbar, and room for its one summary line. */
+const STICKY_HEAD_MAX = 160;
+
 test.describe("the phone's sticky head (deferred-work E816)", () => {
   test.use({ storageState: ADMIN_STATE, viewport: { width: 390, height: 844 } });
 
-  test('holds the month toolbar and the active chip at the top while the page scrolls to its end', async ({
+  test('holds the month toolbar alone, at most 160 px, and the team header stays clear of it at the page end', async ({
     page,
     calendarPage,
     fixture,
@@ -445,7 +449,9 @@ test.describe("the phone's sticky head (deferred-work E816)", () => {
     const chip = calendarPage.filters.removeTeam(fixture.team.name);
     await expect(chip).toBeVisible();
     await expect.poll(() => calendarPage.rowCount()).toBeGreaterThanOrEqual(28);
-    expect((await stickyHead(page)).sticky, 'the head is not sticky on a phone').toBe(true);
+    const natural = await stickyHead(page);
+    expect(natural.sticky, 'the head is not sticky on a phone').toBe(true);
+    expect(natural.bottom - natural.top, 'the sticky head is taller than its budget').toBeLessThanOrEqual(STICKY_HEAD_MAX);
 
     await page.evaluate(() => {
       window.scrollTo(0, document.documentElement.scrollHeight);
@@ -453,15 +459,54 @@ test.describe("the phone's sticky head (deferred-work E816)", () => {
     await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
 
     // At the top of the viewport (the Card's 1 px border above it at most),
-    // with the toolbar and the chip in it and on screen.
+    // with the toolbar in it and on screen; the chips are not in it.
     await expect.poll(async () => Math.abs((await stickyHead(page)).top)).toBeLessThanOrEqual(1 + ROUNDING);
     expect(await inHead(calendarPage.monthTrigger), 'the month toolbar scrolled away').toBe(true);
-    expect(await inHead(chip), 'the active chip scrolled away').toBe(true);
-    // The grid's own team header stays clear of it: the scroller fits below it.
+    expect(await inHead(chip), 'the chip bar is in the sticky head').toBe(false);
+    // The grid's own team header stays clear of it, and of its summary line's room.
     const header = await calendarPage.columnHeader(fixture.team.name).boundingBox();
     const head = await stickyHead(page);
     expect(header, 'the team header has no box').not.toBeNull();
     expect(header!.y, 'the sticky head covers the team header').toBeGreaterThanOrEqual(head.bottom - ROUNDING);
+    if (await calendarPage.stickySummary.isVisible()) {
+      const line = await calendarPage.stickySummary.boundingBox();
+      expect(header!.y, 'the summary line covers the team header').toBeGreaterThanOrEqual(line!.y + line!.height - ROUNDING);
+    }
+  });
+
+  test('says the active filters in one line once the filter bar has scrolled under it', async ({
+    page,
+    calendarPage,
+    fixture,
+  }) => {
+    // A person chosen: their day list is long and has no scroller of its own,
+    // so the page scrolls the filter bar well under the head.
+    await calendarPage.goto('?prikaz=sve');
+    await calendarPage.filters.filtriButton.click();
+    await calendarPage.filters.sheetPerson(fixture.member.name).click();
+    await calendarPage.filters.sheetShowAny.click();
+    const chip = calendarPage.filters.removePerson(fixture.member.name);
+    await expect(chip).toBeVisible();
+    await expect(calendarPage.stickySummary).toHaveCount(0);
+
+    await page.evaluate(() => {
+      window.scrollBy(0, 800);
+    });
+    await expect.poll(async () => Math.round((await stickyHead(page)).top)).toBe(0);
+    await expect(calendarPage.stickySummary).toBeVisible();
+    await expect(calendarPage.stickySummary).toContainText(fixture.member.name);
+    await expect(calendarPage.stickySummary).toHaveAttribute('aria-hidden', 'true');
+    // One line, under the toolbar, inside the budget.
+    const line = await calendarPage.stickySummary.boundingBox();
+    expect(line!.height, 'the summary is more than one line').toBeLessThanOrEqual(26);
+    expect(line!.y + line!.height, 'the head and its line pass the budget').toBeLessThanOrEqual(STICKY_HEAD_MAX + ROUNDING);
+    expect(await inHead(calendarPage.monthTrigger), 'the month toolbar scrolled away').toBe(true);
+
+    // Back up: the bar is in sight again, and the line goes.
+    await page.evaluate(() => {
+      window.scrollTo(0, 0);
+    });
+    await expect(calendarPage.stickySummary).toHaveCount(0);
   });
 
   test('is in flow from 640 px up', async ({ page, calendarPage }) => {
@@ -474,7 +519,9 @@ test.describe("the phone's sticky head (deferred-work E816)", () => {
   test('on Sati holds the month toolbar too', async ({ page, hoursPage }) => {
     await hoursPage.goto();
     await expect(hoursPage.monthTrigger).toBeVisible();
-    expect((await stickyHead(page)).sticky, 'the head is not sticky on a phone').toBe(true);
+    const head = await stickyHead(page);
+    expect(head.sticky, 'the head is not sticky on a phone').toBe(true);
+    expect(head.bottom - head.top, 'the sticky head is taller than its budget').toBeLessThanOrEqual(STICKY_HEAD_MAX);
     expect(await inHead(hoursPage.monthTrigger)).toBe(true);
   });
 });
@@ -499,13 +546,11 @@ test.describe('Moj raspored on a phone (deferred-work E816, E822)', () => {
   });
 
   test('says whose schedule it is, the team, and that the filters are Sve smjene’s, in the filters’ place', async ({
-    page,
     calendarPage,
   }) => {
     await calendarPage.goto('?prikaz=moj');
     await expect(calendarPage.dayList).toBeVisible();
-    const sentence = page.locator('[data-sticky-head] p');
-    await expect(sentence).toHaveText(
+    await expect(calendarPage.ownNote).toHaveText(
       new RegExp(`^Tvoj raspored · .+\\. Filtri vrijede za „${escapeRegExp(hr.kalendar.mode.sve)}”\\.$`),
     );
     await expect(calendarPage.filters.bar).toHaveCount(0);

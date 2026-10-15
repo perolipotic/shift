@@ -75,7 +75,7 @@ export function SatiScreen() {
         <Card className="min-w-0">
           <HoursBody
             toolbar={
-              <div className="flex min-w-0 flex-wrap items-center gap-3 px-4 py-4">
+              <div className="flex min-w-0 flex-wrap items-center gap-2 px-4 py-2 sm:gap-3 sm:py-4">
                 <MonthNav month={month} headingId={HOURS_MONTH_HEADING_ID} onShow={show} />
               </div>
             }

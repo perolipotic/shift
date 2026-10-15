@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Notice } from '@/components/ui/notice';
 import { PageHeader, PageTitle } from '@/components/ui/page-header';
-import { CalendarFilters } from '@/features/calendar/components/calendar-filters';
+import { CalendarFilters, calendarFilterSummaryOf } from '@/features/calendar/components/calendar-filters';
 import { CalendarModeSwitch } from '@/features/calendar/components/calendar-mode-switch';
 import { CalendarMonthBody } from '@/features/calendar/components/calendar-month-body';
 import { DayDetailDialog } from '@/features/calendar/components/day-detail-dialog';
@@ -59,9 +59,10 @@ import { appLayoutRoute } from '@/pages/_app';
  * sentence in their place: whose schedule it is, the viewer's team, and that
  * the filters belong to *Sve smjene* (deferred-work E822).
  *
- * ON A PHONE the toolbar and the filters (or that sentence) are one sticky
- * head under the top of the viewport while the month scrolls (`StickyHead`,
- * deferred-work E816).
+ * ON A PHONE the month toolbar is a sticky head at the top of the viewport
+ * while the month scrolls (`StickyHead`, deferred-work E816); the filter bar
+ * follows in flow, and once it has scrolled under the head, the head shows the
+ * active filters as one line.
  *
  * ONE DAY (story 3.4b): a grid cell — clicked, or Enter or Space on it — and a
  * day-list day on a team open a Dialog of that team on that date: facts only
@@ -103,6 +104,9 @@ export function KalendarScreen() {
     });
   });
   const { snapshot, loading, refusal, month, mode } = screen;
+  // The active filters as one line, for the phone's sticky head (deferred-work E816).
+  const filterSummary =
+    month === null || mode !== MODE_SVE ? null : calendarFilterSummaryOf(month);
   // *Moj raspored*'s one sentence in the filters' place (deferred-work E822).
   const ownNote =
     month === null || mode !== MODE_MOJ
@@ -143,18 +147,16 @@ export function KalendarScreen() {
       )}
       {refusal !== null ? null : (
         <Card className="min-w-0">
-          <StickyHead>
-            <div className="flex min-w-0 flex-wrap items-center gap-3 px-4 py-4">
+          <StickyHead summary={filterSummary}>
+            <div className="flex min-w-0 flex-wrap items-center gap-2 px-4 py-2 sm:gap-3 sm:py-4">
               <MonthNav month={month} headingId={MONTH_HEADING_ID} onShow={screen.show} />
               {mode === null ? null : <CalendarModeSwitch chosen={mode} onChoose={screen.choose} />}
             </div>
-            {month === null || mode !== MODE_SVE ? null : (
-              <CalendarFilters shown={month} onFilter={screen.filter} />
-            )}
-            {ownNote === null ? null : (
-              <p className="min-w-0 px-4 pb-4 text-sm text-muted-foreground">{ownNote}</p>
-            )}
           </StickyHead>
+          {month === null || mode !== MODE_SVE ? null : <CalendarFilters shown={month} onFilter={screen.filter} />}
+          {ownNote === null ? null : (
+            <p className="min-w-0 px-4 pb-4 pt-2 text-sm text-muted-foreground sm:pt-0">{ownNote}</p>
+          )}
           <CalendarMonthBody screen={screen} />
         </Card>
       )}

@@ -1,7 +1,7 @@
 import type { HoursFigureCode } from '@shift/domain';
 import { useRef, type ReactNode } from 'react';
 
-import type { FilterBarHandle } from '@/components/filter-bar';
+import { activeFilterSummaryOf, type FilterBarHandle } from '@/components/filter-bar';
 import { StickyHead } from '@/components/sticky-head';
 import { Button } from '@/components/ui/button';
 import { Notice } from '@/components/ui/notice';
@@ -56,8 +56,9 @@ export function HoursNotice({
  * `onExplain`; the screen holds the dialog, above this and every branch.
  *
  * `toolbar`, the screen's month navigation, heads every branch: on a phone it
- * and the organization's filter bar are one sticky head (`StickyHead`,
- * deferred-work E816), as on *Kalendar*.
+ * is a sticky head (`StickyHead`, deferred-work E816), as on *Kalendar*, and
+ * the organization's filter bar follows in flow, repeated in the head as one
+ * line once it has scrolled under it.
  */
 export function HoursBody({
   toolbar,
@@ -101,10 +102,8 @@ export function HoursBody({
   if (organization !== null) {
     return (
       <>
-        <StickyHead>
-          {toolbar}
-          <OrganizationHoursFilters view={organization} filtersRef={filtersRef} onChange={onChange} />
-        </StickyHead>
+        <StickyHead summary={activeFilterSummaryOf(organization.filters)}>{toolbar}</StickyHead>
+        <OrganizationHoursFilters view={organization} filtersRef={filtersRef} onChange={onChange} />
         {organizationName === null ? null : (
           <OrganizationHoursExport view={organization} organizationName={organizationName} />
         )}

@@ -83,6 +83,20 @@ export class CalendarPage extends BasePage {
     return this.monthPicker.getByRole('button', { name: new RegExp(`^${escapeRegExp(heading)}(?:, |$)`) });
   }
 
+  /**
+   * The phone's sticky head's one-line filter summary (deferred-work E816),
+   * drawn once the filter bar has scrolled under the head. `aria-hidden`, as
+   * the bar's own status line says it, so it is found by its mark.
+   */
+  get stickySummary(): Locator {
+    return this.page.locator('[data-sticky-summary]');
+  }
+
+  /** *Moj raspored*'s sentence in the filters' place (deferred-work E822). */
+  get ownNote(): Locator {
+    return this.page.getByRole('main').getByText(/^Tvoj raspored · /);
+  }
+
   /** The picker footer's `Ovaj mjesec` (deferred-work E795), which picks the current month. */
   get pickerCurrent(): Locator {
     return this.monthPicker.getByRole('button', { name: kalendar.current, exact: true });

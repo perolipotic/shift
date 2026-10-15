@@ -487,8 +487,9 @@
    * rather than under it. From 640 px up there is no bar.
    *
    * The top clears the phone's sticky head of *Kalendar* and *Sati*
-   * (`StickyHead`, deferred-work E816) the same way, by its live height in
-   * `--sticky-head`, which is unset (0) on every other screen. */
+   * (`StickyHead`, deferred-work E816) the same way, by what it covers in
+   * `--sticky-head` (the toolbar, and room for its one-line filter summary),
+   * which is unset (0) on every other screen. */
   html {
     scroll-padding-top: var(--sticky-head, 0px);
     scroll-padding-bottom: calc(4rem + 1px + env(safe-area-inset-bottom, 0px));

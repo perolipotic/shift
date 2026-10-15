@@ -27,7 +27,7 @@ test('Satni pojasi is a card of facts about the bands, and Otvori leads to their
   // Deferred work from 7.18: the count and names, the day covered, and the way in.
   await organizationPage.goto();
 
-  const card = page.getByRole('region', { name: organization.hourBands.heading, exact: true });
+  const card = organizationPage.hourBandsRegion;
   await expect(card).toBeVisible();
   await expect(card).toContainText(organization.hourBandsBands);
   await expect(card).toContainText(organization.hourBands.covered);
