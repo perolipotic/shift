@@ -86,6 +86,9 @@ export function pickerMonthAfter(key: string, month: string, modifiers: MonthKey
   return step === null ? null : monthMovedBy(month, step);
 }
 
+/** The month picker's shown month: the one button marked current, which an opening focuses. */
+export const SHOWN_MONTH_SELECTOR = '[aria-current="true"]';
+
 /** `year`'s twelve months, `YYYY-01` to `YYYY-12`, in grid order. */
 export function monthsOfYear(year: number): readonly string[] {
   return Array.from({ length: 12 }, (_, index) => monthAt(year * 12 + index));

@@ -1,4 +1,4 @@
-import { NOTHING_CHOSEN as NONE, type CalendarMode, type CalendarMonth } from '@/features/calendar/utils/month';
+import { NOTHING_CHOSEN as NONE, type CalendarMonth } from '@/features/calendar/utils/month';
 
 /**
  * What the grid's one tab stop is FORGOTTEN on: the month shown, the team
@@ -10,12 +10,4 @@ export function gridFocusKeyOf(month: CalendarMonth | null): string | null {
   return month === null
     ? null
     : `${month.month}|${month.filter.chosen ?? NONE}|${month.filter.person ?? NONE}`;
-}
-
-/**
- * What an open day detail (story 3.4b) CLOSES on: the grid's key and the mode.
- * Any change closes it — browser Back while it is open included.
- */
-export function dayDetailKeyOf(gridKey: string | null, mode: CalendarMode | null): string {
-  return `${gridKey ?? NONE}|${mode ?? NONE}`;
 }

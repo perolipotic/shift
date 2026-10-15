@@ -943,7 +943,8 @@ const SCREENS = [
   // sastav" and "Promijeni tip smjene" — each change dialog's cancel, and
   // "Riješi konflikt", a `<Button asChild>` over the link, written once
   // inside the map over the day's conflicts.
-  { name: 'the Kalendar destination', file: KALENDAR, expectedFields: 6, expectedButtons: 33 },
+  // THIRTY-FOUR BUTTONS SINCE DEFERRED-WORK E795: the month picker footer's `Ovaj mjesec`.
+  { name: 'the Kalendar destination', file: KALENDAR, expectedFields: 6, expectedButtons: 34 },
   // STORY 4.1b. THREE on Sati: the month navigation it shares with the
   // calendar — the previous month, `Ovaj mjesec` and the next month. The
   // figures are read, never pressed.
@@ -967,7 +968,8 @@ const SCREENS = [
   // table's `EmptyResult`, so its two ways out are not written twice.
   // TWENTY-THREE SINCE STORY 7.14: the ⓘ `Button` beside an hours figure,
   // written once in `ExplainButton` however many figures carry one.
-  { name: 'the Sati destination', file: SATI, expectedFields: 1, expectedButtons: 22 },
+  // TWENTY-THREE BUTTONS SINCE DEFERRED-WORK E795: the month picker footer's `Ovaj mjesec`.
+  { name: 'the Sati destination', file: SATI, expectedFields: 1, expectedButtons: 23 },
   // STORY 5.2c. ONE on Godišnji: the retry its unavailable alert offers. The
   // three figures are read, never pressed, and nothing here writes: a member
   // requests no leave (story 5.3 is conflicts, not requests).
@@ -2940,7 +2942,11 @@ const KEY_SOURCES = [
     // ONE HUNDRED AND SIXTY-FIVE SINCE B449: an empty day, the viewer's empty
     // month and a person's say inactive or no team through `empty-day`'s
     // unions, counted there (three fewer).
-    strings: 165,
+    // ONE HUNDRED AND SEVENTY-ONE SINCE THE DEFERRED-WORK SWEEP: the month
+    // picker's phone sheet — its title and close (E792) — and its footer — the
+    // key hint and `Ovaj mjesec` (E795); and *Moj raspored*'s sentence, with
+    // the team and without (E822).
+    strings: 171,
   },
   {
     // B449: what an empty day or month says — inactive, or on no team — for
@@ -3029,10 +3035,14 @@ const KEY_SOURCES = [
     //
     // ONE HUNDRED AND SIX SINCE E909: the conflicts column sorts, so the
     // phone's sort control offers its heading too.
+    //
+    // ONE HUNDRED AND TEN SINCE THE DEFERRED-WORK SWEEP: the shared month
+    // picker's phone sheet, its title and close (E792), and its footer, the
+    // key hint and `Ovaj mjesec` (E795).
     name: 'the Sati destination',
     file: SATI,
     keys: translationKeys,
-    strings: 106,
+    strings: 110,
   },
   {
     // STORY 5.2c. THREE on Godišnji: its own `nav.godisnji` heading, the
@@ -3942,8 +3952,10 @@ describe('the screen is read at all, so every sweep below means something', () =
     expect(ariaHaspopupValues(nav)).toEqual(['dialog']);
     expect(nav).toMatch(/ref=\{trigger\}[\s\S]{0,240}?aria-haspopup="dialog"\s+aria-expanded=\{open\}/);
     expect(nav).toMatch(/<Popover\s+id=\{pickerId\}[^>]*aria-label=\{t\('kalendar\.monthPicker'\)\}/);
-    // While open, the trigger names the picker it opened.
-    expect(nav).toMatch(/aria-controls=\{open \? pickerId : undefined\}/);
+    // While open, the trigger names the picker it opened: the Popover, or below
+    // 640 px the bottom sheet (deferred-work E792).
+    expect(nav).toMatch(/aria-controls=\{open \? \(isPhone \? sheetId : pickerId\) : undefined\}/);
+    expect(nav).toMatch(/<SheetDialog id=\{sheetId\}[^>]*open=\{open && isPhone\}/);
     // The picker belongs to the month it was opened on.
     expect(nav).toMatch(/const open = shownMonth !== null && openOn === shownMonth;/);
     // PgUp and PgDn on the group, by the pure rule, never page-wide.

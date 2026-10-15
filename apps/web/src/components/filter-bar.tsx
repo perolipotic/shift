@@ -256,6 +256,15 @@ export function FilterBar({
 }
 
 /**
+ * The bar's summary as one line of text while a filter is on, and `null`
+ * with none: what the phone's sticky head repeats once the bar has scrolled
+ * under it (`StickyHead`, deferred-work E816).
+ */
+export function activeFilterSummaryOf(model: FilterBarModel): string | null {
+  return hasActiveFilter(model) ? t(filterSummaryMessageKey(model.summary), filterSummaryValuesOf(model.summary)) : null;
+}
+
+/**
  * The summary line under a bar: what is shown, `role="status"`, ending in
  * `Poništi filtre` while there is something to clear.
  */
