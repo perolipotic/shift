@@ -1355,7 +1355,7 @@ describe('every organization table carries row level security, and only its revi
     }
   });
 
-  it.skipIf(noDatabase)('holds no privilege on conflict_resolutions but read and a five-column insert, and never update or delete (story 5.4a)', async () => {
+  it.skipIf(noDatabase)('holds no privilege on conflict_resolutions but read and a six-column insert, and never update or delete (story 5.4a, 0038)', async () => {
     // As 5.1b's: `authenticated` reads (narrowed by the policy to an active
     // admin's organization) and inserts the five facts; no session updates or
     // deletes one, names its attribution or its removal, or holds anything as
@@ -1377,6 +1377,9 @@ describe('every organization table carries row level security, and only its revi
         // 0032's definer function is the only way a `replace_member` row is
         // written.
         'roster_override_id',
+        // 0038: the shift type the decision was made on, which the direct
+        // `accept_uncovered` insert names.
+        'shift_type_id',
       ]);
       expect(held.tables).toEqual(['authenticated:SELECT']);
       expect(held.columns, 'the writable conflict resolution columns changed, or anon holds one').toEqual([
@@ -1384,6 +1387,7 @@ describe('every organization table carries row level security, and only its revi
         'authenticated:INSERT:kind',
         'authenticated:INSERT:member_id',
         'authenticated:INSERT:organization_id',
+        'authenticated:INSERT:shift_type_id',
         'authenticated:INSERT:team_id',
       ]);
     } finally {
@@ -1404,6 +1408,8 @@ describe('every organization table carries row level security, and only its revi
         'FOREIGN KEY (organization_id, member_id) REFERENCES members(organization_id, id)',
         // STORY 5.4c: a `replace_member` row names its tenant's override, never cascading.
         'FOREIGN KEY (organization_id, roster_override_id) REFERENCES roster_overrides(organization_id, id)',
+        // 0038: the shift type a decision was made on, its tenant's, never cascading.
+        'FOREIGN KEY (organization_id, shift_type_id) REFERENCES shift_types(organization_id, id)',
         'FOREIGN KEY (organization_id, team_id) REFERENCES teams(organization_id, id)',
       ]);
       const { rows: checks } = await client.query<{ definition: string }>(
@@ -1765,8 +1771,9 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'my_conflict_resolutions', argumentCount: 0 },
     // STORY 5.4c. The replacement's override and its linked resolution,
     // inserted in one transaction past both insert policies, which it
-    // re-checks itself, on 5.2a's amend's attributes.
-    { name: 'replace_conflict_member', argumentCount: 5 },
+    // re-checks itself, on 5.2a's amend's attributes. 0038 added the shift
+    // type, dropping the five-argument signature.
+    { name: 'replace_conflict_member', argumentCount: 6 },
     // STORY 5.4a. The born-on-leave trigger reads `leave_records` past row
     // level security and share-locks the row, as 0023's triggers read past it.
     { name: 'refuse_conflict_resolution_off_leave', argumentCount: 0 },
@@ -1880,8 +1887,8 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'leave_overview_records', argumentCount: 0, expected: ['authenticated'] },
     // STORY 5.4a. The member's own conflict resolutions, on 5.2c's terms.
     { name: 'my_conflict_resolutions', argumentCount: 0, expected: ['authenticated'] },
-    // STORY 5.4c. The replacement, on 5.2a's amend's terms.
-    { name: 'replace_conflict_member', argumentCount: 5, expected: ['authenticated'] },
+    // STORY 5.4c. The replacement, on 5.2a's amend's terms; six arguments since 0038.
+    { name: 'replace_conflict_member', argumentCount: 6, expected: ['authenticated'] },
     // The zero-admin trigger function. Nothing calls it by hand and Postgres
     // checks EXECUTE when the trigger is created, not when it fires, so it
     // needs no grantee at all: its owner, and nobody else (0020). The

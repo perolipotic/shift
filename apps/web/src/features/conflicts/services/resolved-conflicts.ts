@@ -18,14 +18,15 @@ import { formatDate, formatIsoDate, formatTime } from '@/lib/i18n/format';
  * drops its conflicts by (`resolutionsOf`'s funnel), so a conflict is in
  * exactly one of the two tabs — with its date, team, member, decision, the
  * acting admin and the instant it was recorded (`created_by`, `created_at`;
- * AD-11). No other change history is listed. The table does not store the
- * shift type (AD-4), so it is named from the team's schedule for that date as
- * it stands today (`scheduledShiftTypeOn`, as the replacement test reads it):
- * after a rotation change an old entry shows the current type. It is NOT
+ * AD-11). No other change history is listed. The shift type is the one the
+ * decision was made on, as stored with it (0038). A row from before 0038 has
+ * none, so it is named from the team's schedule for that date as it stands
+ * today (`scheduledShiftTypeOn`, as the replacement test reads it). Neither is
  * named from the collision, which also goes when the member is no longer on
  * the roster that day (a take-off override, a team move, deactivation) while
- * the shift itself stands. Only a team with no working shift that day has no
- * shift type. The leave records are read only so an untrustworthy row refuses
+ * the shift itself stands. A decision whose stored type is no longer the
+ * schedule's is not listed at all (`effectiveResolutionsOf`). Only an old row
+ * whose team has no working shift that day has no shift type. The leave records are read only so an untrustworthy row refuses
  * the tab as it refuses the queue. A resolution ends with its leave (0031's
  * lifetime rule), so a removed one is not listed.
  *
@@ -46,7 +47,11 @@ export interface ResolvedConflictRow {
   readonly dateShown: string;
   readonly teamName: string;
   readonly memberName: string;
-  /** The team's scheduled working shift type that date, as today's schedule has it; `null` when the team does not work that day. */
+  /**
+   * The shift type the decision was made on (0038); for an older row, the
+   * team's scheduled working shift type that date as today's schedule has it,
+   * `null` when the team does not work that day.
+   */
   readonly shiftTypeName: string | null;
   /** `19:00–07:00`, or `null` with no times in effect (or no shift type). */
   readonly times: string | null;
@@ -204,7 +209,9 @@ export function resolvedConflictsViewOf(
       resolution.teamId,
       resolution.date,
     );
-    const type = scheduled === null || !working.has(scheduled.shiftTypeId) ? undefined : types.get(scheduled.shiftTypeId);
+    const stored = resolution.shiftTypeId === null ? undefined : types.get(resolution.shiftTypeId);
+    const type =
+      stored ?? (scheduled === null || !working.has(scheduled.shiftTypeId) ? undefined : types.get(scheduled.shiftTypeId));
     const link =
       resolution.kind === REPLACE_MEMBER && resolution.rosterOverrideId !== null
         ? overrides.get(resolution.rosterOverrideId)

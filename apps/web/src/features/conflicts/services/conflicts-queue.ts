@@ -161,7 +161,8 @@ export function liveResolutionsOf(snapshot: CalendarSnapshot, rows: readonly unk
  * THE ONE FUNNEL resolutions become keys through (story 5.5d): the live rows
  * ({@link liveResolutionsOf}) less every `replace_member` whose linked
  * override no longer applies (`effectiveResolutionsOf`) — removed, pending
- * after a rotation save, or inert. The queue, the resolution screen, the
+ * after a rotation save, or inert — and every decision made on another shift
+ * type than its key has today (0038). The queue, the resolution screen, the
  * calendar's marks, the admin's *Sati* and the erasure guard's "before" all
  * read this, so a replacement that does not apply hides its conflict nowhere.
  *

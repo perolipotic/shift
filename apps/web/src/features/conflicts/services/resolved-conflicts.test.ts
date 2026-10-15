@@ -90,9 +90,24 @@ function resolutionOf(
   date: string,
   teamId: string,
   createdAt: string,
-  { kind = 'accept_uncovered', link = null as string | null, by = ADMIN_AUTH, memberId = VIEWER_MEMBER } = {},
+  {
+    kind = 'accept_uncovered',
+    link = null as string | null,
+    by = ADMIN_AUTH,
+    memberId = VIEWER_MEMBER,
+    type = undefined as string | null | undefined,
+  } = {},
 ): Row {
-  return { member_id: memberId, date, team_id: teamId, kind, roster_override_id: link, created_by: by, created_at: createdAt };
+  return {
+    member_id: memberId,
+    date,
+    team_id: teamId,
+    kind,
+    roster_override_id: link,
+    ...(type === undefined ? {} : { shift_type_id: type }),
+    created_by: by,
+    created_at: createdAt,
+  };
 }
 
 const ACTORS: readonly Row[] = [
@@ -176,6 +191,31 @@ describe('what an entry shows', () => {
     const [row] = viewOf(snapshot, [resolutionOf('2026-09-11', a, '2026-09-02T09:30:00+00:00')]).rows;
 
     expect(row).toMatchObject({ dateShown: '11.09.2026', shiftTypeName: 'Noć', times: '19:00–07:00' });
+  });
+});
+
+describe('the shift type a decision was made on (0038)', () => {
+  it('names the stored type, and today\'s type for a row from before 0038', () => {
+    const view = viewOf(pilot, [
+      resolutionOf('2026-09-11', a, '2026-09-02T09:30:00+00:00', { type: 'pilot-noc' }),
+      resolutionOf('2026-09-10', a, '2026-09-02T08:30:00+00:00', { type: null }),
+    ]);
+
+    expect(view.rows.map((row) => [row.dateShown, row.shiftTypeName, row.times])).toEqual([
+      ['11.09.2026', 'Noć', '19:00–07:00'],
+      ['10.09.2026', 'Dan', '07:00–19:00'],
+    ]);
+  });
+
+  it('does not list a decision made on another shift type: its conflict is back in the queue (dormant-key revival)', () => {
+    // 11.09 is Noć today; the decision was stored on Dan.
+    const rows = [resolutionOf('2026-09-11', a, '2026-09-02T09:30:00+00:00', { type: 'pilot-dan' })];
+    const queue = conflictsQueueOutcomeOf(pilot, [WORKED], rows, '2026-09-01');
+
+    if (!queue.ok) throw new Error(queue.code);
+
+    expect(viewOf(pilot, rows).rows).toEqual([]);
+    expect(queue.view.rows.map((row) => row.dateShown)).toEqual(['10.09.2026', '11.09.2026', '14.09.2026']);
   });
 });
 

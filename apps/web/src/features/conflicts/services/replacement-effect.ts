@@ -42,6 +42,15 @@ import { REPLACE_MEMBER, type ConflictResolution } from '@/features/conflicts/se
  * (0032 writes both from one key, so this is a broken row) is logged and does
  * not count: one bad row never makes a whole surface unavailable.
  *
+ * A DECISION MADE ON ANOTHER SHIFT DECIDES NOTHING (0038; deferred work,
+ * dormant-key revival). A resolution stores the shift type its key had when
+ * it was decided. When the team's schedule has another type (or none) on that
+ * date today, {@link effectiveResolutionsOf} drops it, of every kind, so a
+ * dormant decision never re-applies to a different shift. A new decision on
+ * the key supersedes it in the database (0038's trigger), so it never holds
+ * the key ({@link heldByReplacement}). A row with no stored type (before 0038)
+ * matches its key as before.
+ *
  * Nothing here computes a roster in the database (AD-4); the leave screen's
  * replacement guard (5.4e) asks the same question through
  * {@link replacementContextOf} and {@link replacementStandingIn}.
@@ -148,6 +157,28 @@ export function appliedReplacementOverrideOf(
   return standing.kind === REPLACEMENT_APPLIED ? standing.override : null;
 }
 
+/**
+ * Whether `resolution` was decided on a shift type other than the one its
+ * team's schedule has on its date today, or on a date the team does not work
+ * (0038). Never for a row with no stored type.
+ *
+ * @throws RangeError on any precondition of the domain's derivation.
+ */
+function decidedOnAnotherShiftIn(context: ReplacementContext, resolution: ConflictResolution): boolean {
+  if (resolution.shiftTypeId === null) return false;
+
+  const { snapshot } = context;
+  const scheduled = scheduledShiftTypeOn(
+    snapshot.assignments.filter((assignment) => assignment.teamId === resolution.teamId),
+    snapshot.steps,
+    context.typeInForce,
+    resolution.teamId,
+    resolution.date,
+  );
+
+  return scheduled?.shiftTypeId !== resolution.shiftTypeId;
+}
+
 /** Whether `resolution` still decides its conflict, in `context`: every kind but a replacement the snapshot holds unapplied. */
 function countsIn(context: ReplacementContext, resolution: ConflictResolution): boolean {
   if (resolution.kind !== REPLACE_MEMBER || resolution.rosterOverrideId === null) return true;
@@ -168,10 +199,12 @@ function countsIn(context: ReplacementContext, resolution: ConflictResolution): 
 }
 
 /**
- * The resolutions that still decide their conflict, in the order given:
- * every kind but `replace_member` as it is, and a `replace_member` unless the
+ * The resolutions that still decide their conflict, in the order given: none
+ * decided on another shift type than its key has today (0038), every other
+ * kind but `replace_member` as it is, and a `replace_member` unless the
  * snapshot holds its override pending or inert, or the link disagrees with it
- * (logged). A link the snapshot does not hold, and no link at all, count.
+ * (logged). A link the snapshot does not hold, and no link at all, count; so
+ * does a row with no stored type.
  *
  * @throws RangeError on any precondition of the domain's derivation.
  */
@@ -179,25 +212,32 @@ export function effectiveResolutionsOf<Resolution extends ConflictResolution>(
   snapshot: CalendarSnapshot,
   resolutions: readonly Resolution[],
 ): readonly Resolution[] {
-  if (!resolutions.some((resolution) => resolution.kind === REPLACE_MEMBER)) return resolutions;
+  if (!resolutions.some((resolution) => resolution.kind === REPLACE_MEMBER || resolution.shiftTypeId !== null)) {
+    return resolutions;
+  }
 
   const context = replacementContextOf(snapshot);
 
-  return resolutions.filter((resolution) => countsIn(context, resolution));
+  return resolutions.filter((resolution) => !decidedOnAnotherShiftIn(context, resolution) && countsIn(context, resolution));
 }
 
 /**
  * Whether `resolution` is a replacement the snapshot holds and does not
  * apply (story 5.5d): pending, inert or a broken link — what keeps a
  * conflict's key HELD while the conflict shows again. A link the snapshot
- * does not hold is unknown, never held.
+ * does not hold is unknown, never held; nor is a replacement decided on
+ * another shift type (0038), which a new decision supersedes.
  *
  * @throws RangeError on any precondition of the domain's derivation.
  */
 export function heldByReplacement(snapshot: CalendarSnapshot, resolution: ConflictResolution): boolean {
   if (resolution.kind !== REPLACE_MEMBER || resolution.rosterOverrideId === null) return false;
 
-  const standing = replacementStandingIn(replacementContextOf(snapshot), {
+  const context = replacementContextOf(snapshot);
+
+  if (decidedOnAnotherShiftIn(context, resolution)) return false;
+
+  const standing = replacementStandingIn(context, {
     teamId: resolution.teamId,
     date: resolution.date,
     rosterOverrideId: resolution.rosterOverrideId,

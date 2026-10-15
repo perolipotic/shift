@@ -372,6 +372,8 @@ export interface ResolutionView {
   readonly heldCalendar: CalendarSearch;
   /** The insert's columns: the organization and the key. */
   readonly organizationId: string;
+  /** The shift type the conflict is on, as derived: stored with the decision (0038). */
+  readonly shiftTypeId: string;
   /** What the queue's status line names once an acceptance lands; a replacement adds its name ({@link replacedSavedOf}). */
   readonly saved: Extract<ResolutionSaved, { readonly kind: typeof ACCEPT_UNCOVERED }>;
 }
@@ -649,6 +651,7 @@ function resolutionScreenFrom(
       held,
       heldCalendar: heldCalendarSearchOf(collision),
       organizationId: snapshot.organizationId,
+      shiftTypeId: collision.shiftTypeId,
       saved: { kind: ACCEPT_UNCOVERED, shiftTypeName: typeName, teamName: detail.teamName, dateShown, memberName: member.name },
     },
   };

@@ -18519,11 +18519,11 @@ describe('a conflict resolution is recorded by an active admin alone, one live p
     },
   );
 
-  it.skipIf(noDatabase)('my_conflict_resolutions returns exactly member_id, date, team_id, kind and, since 0033, roster_override_id', async () => {
+  it.skipIf(noDatabase)('my_conflict_resolutions returns exactly member_id, date, team_id, kind and, since 0033 and 0038, roster_override_id and shift_type_id', async () => {
     const client = await connect();
     try {
       const { fields } = await client.query('select * from public.my_conflict_resolutions() limit 0');
-      expect(fields.map((field) => field.name)).toEqual(['member_id', 'date', 'team_id', 'kind', 'roster_override_id']);
+      expect(fields.map((field) => field.name)).toEqual(['member_id', 'date', 'team_id', 'kind', 'roster_override_id', 'shift_type_id']);
     } finally {
       await client.end();
     }
@@ -19396,6 +19396,164 @@ describe('removing the override behind a replacement ends its resolution, and fr
           { date: '2042-09-12', kind: 'replace_member', link: linked?.id },
           { date: '2042-09-13', kind: 'accept_uncovered', link: null },
         ]);
+      });
+    },
+  );
+});
+
+/**
+ * 0038. A decision stores the shift type its key had when it was made. A new
+ * decision on the same key naming ANOTHER type supersedes the live one in the
+ * same statement (0031's trigger, re-created), attributed to the new
+ * decision's author, so a dormant decision the browser ignores never holds
+ * the key. A row or a new decision with no type supersedes nothing. Nothing
+ * here derives the schedule: only stored values are compared. Every case runs
+ * in a rolled-back transaction.
+ */
+
+/** Two shift types of the organization, in name order. */
+async function twoShiftTypesOf(client: Client, organization: string): Promise<[string, string]> {
+  const { rows } = await client.query<{ id: string }>(
+    'select id::text as id from shift_types where organization_id = $1 order by name, id limit 2',
+    [organization],
+  );
+  const [first, second] = rows;
+  if (first === undefined || second === undefined) throw new Error(`organization ${organization} has fewer than two shift types`);
+  return [first.id, second.id];
+}
+
+/** One `accept_uncovered` resolution naming its shift type, as whoever the connection currently is. */
+async function insertTypedResolution(
+  client: Client,
+  resolution: { organization: string; member: string; date: string; team: string; type: string | null },
+): Promise<string> {
+  const { rows } = await client.query<{ id: string }>(
+    `insert into conflict_resolutions (organization_id, member_id, date, team_id, kind, shift_type_id)
+     values ($1, $2, $3::date, $4, 'accept_uncovered', $5)
+     returning id::text as id`,
+    [resolution.organization, resolution.member, resolution.date, resolution.team, resolution.type],
+  );
+  const id = rows[0]?.id;
+  if (id === undefined) throw new Error('the resolution insert returned no id');
+  return id;
+}
+
+describe('a decision stores its shift type, and a decision on another type supersedes it (0038)', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'supersedes a live $fixture decision of another type, attributed to the new one, and refuses one of the same type or none (23505)',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const [team] = await twoTeamsOf(client, organization);
+        const [day, night] = await twoShiftTypesOf(client, organization);
+        const key = { organization, member: self.id, date: '2042-09-12', team };
+
+        await actAs(client, owner.authUserId, organization);
+        await leaveOver(client, organization, [self.id]);
+        const first = await insertTypedResolution(client, { ...key, type: day });
+        const codes = {
+          'same type': (await refusedThenContinue(client, () => insertTypedResolution(client, { ...key, type: day }))).code,
+          'no type': (await refusedThenContinue(client, () => insertTypedResolution(client, { ...key, type: null }))).code,
+        };
+        const second = await insertTypedResolution(client, { ...key, type: night });
+        // A row from before 0038 (no type) is never superseded.
+        await insertTypedResolution(client, { ...key, date: '2042-09-13', type: null });
+        const untyped = (
+          await refusedThenContinue(client, () => insertTypedResolution(client, { ...key, date: '2042-09-13', type: night }))
+        ).code;
+        await actAsOwner(client);
+
+        expect({ ...codes, untyped }, slug).toEqual({ 'same type': '23505', 'no type': '23505', untyped: '23505' });
+        const { rows } = await client.query<{ id: string; type: string; removedBy: string | null; live: boolean }>(
+          `select id::text as id, shift_type_id::text as type, removed_by::text as "removedBy", removed_at is null as live
+             from conflict_resolutions where member_id = $1 and date = '2042-09-12' order by removed_at is null, id`,
+          [self.id],
+        );
+        expect(rows, `${slug}: the old decision is not superseded by the new one`).toEqual([
+          { id: first, type: day, removedBy: owner.authUserId, live: false },
+          { id: second, type: night, removedBy: null, live: true },
+        ]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    "refuses another tenant's shift type on a $fixture decision (23503), and supersedes nothing for a refused caller",
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const [team] = await twoTeamsOf(client, organization);
+        const [day, night] = await twoShiftTypesOf(client, organization);
+        const { rows: foreign } = await client.query<{ id: string }>(
+          'select id::text as id from shift_types where organization_id <> $1 order by id limit 1',
+          [organization],
+        );
+        const foreignType = foreign[0]?.id;
+        if (foreignType === undefined) throw new Error('no other tenant has a shift type');
+        const key = { organization, member: self.id, date: '2042-09-12', team };
+
+        await actAs(client, owner.authUserId, organization);
+        await leaveOver(client, organization, [self.id]);
+        const first = await insertTypedResolution(client, { ...key, type: day });
+        const foreignCode = (
+          await refusedThenContinue(client, () => insertTypedResolution(client, { ...key, date: '2042-09-13', type: foreignType }))
+        ).code;
+        await actAs(client, self.authUserId, organization);
+        const memberCode = (await refusedThenContinue(client, () => insertTypedResolution(client, { ...key, type: night }))).code;
+        await actAsOwner(client);
+
+        expect({ foreignCode, memberCode }, slug).toEqual({ foreignCode: '23503', memberCode: '42501' });
+        const { rows } = await client.query<{ id: string; live: boolean }>(
+          'select id::text as id, removed_at is null as live from conflict_resolutions where member_id = $1',
+          [self.id],
+        );
+        expect(rows, `${slug}: a refused insert touched the live decision`).toEqual([{ id: first, live: true }]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'replaces a $fixture absent member over a decision of another type, refuses one over the same type, and gives the member the type',
+    async ({ slug, admin, member, bystander }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const replacement = await memberByUsername(client, slug, bystander);
+        const organization = owner.organizationId;
+        const [team] = await twoLiveTeamsOf(client, organization);
+        const [day, night] = await twoShiftTypesOf(client, organization);
+        const replaceTyped = (type: string) =>
+          client.query<{ id: string }>(
+            "select public.replace_conflict_member($1, '2042-09-12'::date, $2, $3, 'Zamjena za člana (godišnji)', $4)::text as id",
+            [self.id, team, replacement.id, type],
+          );
+
+        await actAs(client, owner.authUserId, organization);
+        await leaveOver(client, organization, [self.id]);
+        const first = await insertTypedResolution(client, { organization, member: self.id, date: '2042-09-12', team, type: day });
+        const same = await refusedThenContinue(client, () => replaceTyped(day));
+        const { rows: replaced } = await replaceTyped(night);
+        await actAs(client, self.authUserId, organization);
+        const { rows: own } = await client.query<{ date: string; kind: string; type: string | null }>(
+          'select date::text as date, kind, shift_type_id::text as type from public.my_conflict_resolutions()',
+        );
+        await actAsOwner(client);
+
+        expect([same.code, same.message], slug).toEqual(['23505', 'CONFLICT_RESOLUTION_EXISTS']);
+        const { rows } = await client.query<{ id: string; kind: string; type: string; live: boolean }>(
+          `select id::text as id, kind, shift_type_id::text as type, removed_at is null as live
+             from conflict_resolutions where member_id = $1 order by removed_at is null, id`,
+          [self.id],
+        );
+        expect(rows, `${slug}: the replacement did not supersede the decision of another type`).toEqual([
+          { id: first, kind: 'accept_uncovered', type: day, live: false },
+          { id: replaced[0]?.id, kind: 'replace_member', type: night, live: true },
+        ]);
+        expect(own, slug).toEqual([{ date: '2042-09-12', kind: 'replace_member', type: night }]);
       });
     },
   );

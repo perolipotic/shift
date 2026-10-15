@@ -16,6 +16,7 @@ import {
   seedMemberStatusVersions,
   seedRosterOverride,
   seedRotationChange,
+  seedShiftTypeOverride,
   seedTeamRotation,
   type RotationHold,
   type SeededRotation,
@@ -907,6 +908,46 @@ test('Riješeni: a replacement saved on the screen is listed with its decision, 
   await conflictsPage.unresolvedTab.click();
   await expect(conflictsPage.unresolvedTab).toHaveAttribute('aria-selected', 'true');
   await expect(conflictsPage.rowsOf(seeded.name)).toHaveCount(3);
+});
+
+test('Another shift (0038): a decision stays with the shift type it was made on; once the day becomes another shift the conflict is back in Neriješeni, gone from Riješeni, and deciding it again saves', async ({
+  page,
+  conflictsPage,
+  resolutionPage,
+  fixture,
+}) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
+  const { team, seeded, today } = await scenarioOf(fixture.slug);
+  if (seed === null) throw new Error('E2E: no seeded rotation');
+  const [day, night] = seed.steps;
+
+  // ACCEPTED ON TODAY'S DAN: the queue drops it, Riješeni names the type.
+  await resolutionPage.gotoConflict(seeded.id, today, team.id);
+  await resolutionPage.acceptOption.click();
+  await resolutionPage.saveButton.click();
+  await expect(page).toHaveURL('/raspored');
+  await expect(conflictsPage.rowsOf(seeded.name)).toHaveCount(2);
+  await conflictsPage.resolvedTab.click();
+  await expect(conflictsPage.resolvedEntriesOf(seeded.name)).toHaveCount(1);
+  await expect(conflictsPage.resolvedEntriesOf(seeded.name)).toContainText(day);
+
+  // THE DAY BECOMES NOĆ: the old decision was made on another shift, so it decides nothing.
+  await seedShiftTypeOverride(seed, team.id, today, 1, 'Zamjena smjene (E2E).');
+  await conflictsPage.goto();
+  await expect(conflictsPage.rowsOf(seeded.name)).toHaveCount(3);
+  await conflictsPage.resolvedTab.click();
+  await expect(conflictsPage.resolvedTab).toHaveAttribute('aria-selected', 'true');
+  await expect(conflictsPage.resolvedEntriesOf(seeded.name)).toHaveCount(0);
+
+  // DECIDED AGAIN on Noć: the new decision takes the key, never refused as already resolved.
+  await resolutionPage.gotoConflict(seeded.id, today, team.id);
+  await resolutionPage.acceptOption.click();
+  await resolutionPage.saveButton.click();
+  await expect(page).toHaveURL('/raspored');
+  await expect(conflictsPage.rowsOf(seeded.name)).toHaveCount(2);
+  await conflictsPage.resolvedTab.click();
+  await expect(conflictsPage.resolvedEntriesOf(seeded.name)).toHaveCount(1);
+  await expect(conflictsPage.resolvedEntriesOf(seeded.name)).toContainText(night);
 });
 
 test('Pending after rotation save: the conflict is listed again, Spremi waits with the hint linking to the calendar, and once the pending change is removed accepting saves', async ({

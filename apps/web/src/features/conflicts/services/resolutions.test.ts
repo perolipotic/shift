@@ -120,7 +120,7 @@ describe("the organization's read", () => {
       ['order', 'id', { ascending: true }],
       ['range', 0, LAST],
     ]);
-    expect(CONFLICT_RESOLUTIONS_COLUMNS).toBe('member_id,date,team_id,kind,roster_override_id,created_by,created_at');
+    expect(CONFLICT_RESOLUTIONS_COLUMNS).toBe('member_id,date,team_id,kind,roster_override_id,shift_type_id,created_by,created_at');
     expect(CONFLICT_RESOLUTIONS_COLUMNS).not.toMatch(/removed_by|removed_at/);
     expect(CONFLICT_RESOLUTIONS_TABLE).toBe('conflict_resolutions');
   });
@@ -239,8 +239,8 @@ describe("the viewer's own read", () => {
 describe('the parser', () => {
   it('parses every row into its key and kind, in the order given', () => {
     expect(conflictResolutionsOf([A, B], [MEMBER, OTHER], [TEAM, TEAM_B])).toEqual([
-      { memberId: MEMBER, date: '2026-09-12', teamId: TEAM, kind: 'accept_uncovered', rosterOverrideId: null },
-      { memberId: OTHER, date: '2026-09-10', teamId: TEAM_B, kind: 'replace_member', rosterOverrideId: 'override-b' },
+      { memberId: MEMBER, date: '2026-09-12', teamId: TEAM, kind: 'accept_uncovered', rosterOverrideId: null, shiftTypeId: null },
+      { memberId: OTHER, date: '2026-09-10', teamId: TEAM_B, kind: 'replace_member', rosterOverrideId: 'override-b', shiftTypeId: null },
     ]);
     expect(conflictResolutionsOf([], [MEMBER], [TEAM])).toEqual([]);
   });
@@ -249,7 +249,7 @@ describe('the parser', () => {
     const linkless = row(OTHER, '2026-09-10', TEAM_B, 'replace_member');
 
     expect(conflictResolutionsOf([linkless], [OTHER], [TEAM_B], { linkOptional: true })).toEqual([
-      { memberId: OTHER, date: '2026-09-10', teamId: TEAM_B, kind: 'replace_member', rosterOverrideId: null },
+      { memberId: OTHER, date: '2026-09-10', teamId: TEAM_B, kind: 'replace_member', rosterOverrideId: null, shiftTypeId: null },
     ]);
     expect(conflictResolutionsOf([linkless], [OTHER], [TEAM_B])).toBeNull();
     // A link on another kind is refused on either read.
@@ -267,9 +267,23 @@ describe('the parser', () => {
         [TEAM, TEAM_B],
       ),
     ).toEqual([
-      { memberId: OTHER, date: '2026-09-10', teamId: TEAM_B, kind: 'replace_member', rosterOverrideId: 'override-1' },
-      { memberId: MEMBER, date: '2026-09-12', teamId: TEAM, kind: 'accept_uncovered', rosterOverrideId: null },
+      { memberId: OTHER, date: '2026-09-10', teamId: TEAM_B, kind: 'replace_member', rosterOverrideId: 'override-1', shiftTypeId: null },
+      { memberId: MEMBER, date: '2026-09-12', teamId: TEAM, kind: 'accept_uncovered', rosterOverrideId: null, shiftTypeId: null },
     ]);
+  });
+
+  it('carries the shift type a decision was made on (0038), and reads a missing or null type as none', () => {
+    expect(
+      conflictResolutionsOf(
+        [
+          { ...A, shift_type_id: 'type-dan' },
+          { ...B, roster_override_id: 'override-1', shift_type_id: null },
+        ],
+        [MEMBER, OTHER],
+        [TEAM, TEAM_B],
+      )?.map((resolution) => resolution.shiftTypeId),
+    ).toEqual(['type-dan', null]);
+    expect(conflictResolutionsOf([A], [MEMBER], [TEAM])?.[0]?.shiftTypeId).toBeNull();
   });
 
   it('keeps two teams of one member and date apart', () => {
@@ -290,6 +304,8 @@ describe('the parser', () => {
     ['an empty link', [{ ...B, roster_override_id: '' }]],
     ['a replacement with no link (0032\'s check)', [{ ...B, roster_override_id: null }]],
     ['an acceptance with a link (0032\'s check)', [{ ...A, roster_override_id: 'override-a' }]],
+    ['a shift type that is not text (0038)', [{ ...A, shift_type_id: 7 }]],
+    ['an empty shift type (0038)', [{ ...A, shift_type_id: '' }]],
   ])('refuses the whole answer for %s', (_name, rows) => {
     expect(conflictResolutionsOf(rows, [MEMBER, OTHER], [TEAM, TEAM_B])).toBeNull();
   });
@@ -308,10 +324,10 @@ describe('the role-gated answer', () => {
 describe('the split by kind (story 5.4b)', () => {
   it('keeps the keys accepted as uncovered, in order, and no other kind', () => {
     const resolutions: readonly ConflictResolution[] = [
-      { memberId: 'm1', date: '2026-09-12', teamId: 't1', kind: ACCEPT_UNCOVERED, rosterOverrideId: null },
-      { memberId: 'm1', date: '2026-09-13', teamId: 't1', kind: 'replace_member' as const, rosterOverrideId: null },
-      { memberId: 'm2', date: '2026-09-11', teamId: 't2', kind: ACCEPT_UNCOVERED, rosterOverrideId: null },
-      { memberId: 'm2', date: '2026-09-14', teamId: 't2', kind: 'amend_leave' as const, rosterOverrideId: null },
+      { memberId: 'm1', date: '2026-09-12', teamId: 't1', kind: ACCEPT_UNCOVERED, rosterOverrideId: null, shiftTypeId: null },
+      { memberId: 'm1', date: '2026-09-13', teamId: 't1', kind: 'replace_member' as const, rosterOverrideId: null, shiftTypeId: null },
+      { memberId: 'm2', date: '2026-09-11', teamId: 't2', kind: ACCEPT_UNCOVERED, rosterOverrideId: null, shiftTypeId: null },
+      { memberId: 'm2', date: '2026-09-14', teamId: 't2', kind: 'amend_leave' as const, rosterOverrideId: null, shiftTypeId: null },
     ];
 
     expect(acceptedUncoveredOf(resolutions)).toEqual([
@@ -323,9 +339,9 @@ describe('the split by kind (story 5.4b)', () => {
 
   it('feeds the leave hours from the accepted and, since story 5.4c, the replaced, in order, never the amend kind', () => {
     const resolutions: readonly ConflictResolution[] = [
-      { memberId: 'm1', date: '2026-09-12', teamId: 't1', kind: ACCEPT_UNCOVERED, rosterOverrideId: null },
-      { memberId: 'm1', date: '2026-09-13', teamId: 't1', kind: REPLACE_MEMBER, rosterOverrideId: null },
-      { memberId: 'm2', date: '2026-09-14', teamId: 't2', kind: 'amend_leave' as const, rosterOverrideId: null },
+      { memberId: 'm1', date: '2026-09-12', teamId: 't1', kind: ACCEPT_UNCOVERED, rosterOverrideId: null, shiftTypeId: null },
+      { memberId: 'm1', date: '2026-09-13', teamId: 't1', kind: REPLACE_MEMBER, rosterOverrideId: null, shiftTypeId: null },
+      { memberId: 'm2', date: '2026-09-14', teamId: 't2', kind: 'amend_leave' as const, rosterOverrideId: null, shiftTypeId: null },
     ];
 
     expect(leaveHoursKeysOf(resolutions)).toEqual([

@@ -36,6 +36,7 @@ const TARGET = {
   memberId: 'member-1',
   date: '2026-10-02',
   teamId: 'team-1',
+  shiftTypeId: 'type-1',
 };
 
 function tableAnswering(answer: () => PromiseLike<ResolutionWriteAnswer>): {
@@ -65,12 +66,19 @@ afterEach(() => {
 });
 
 describe('accepting a conflict as uncovered', () => {
-  it('inserts the organization, the key and the kind, and nothing else, into conflict_resolutions', async () => {
+  it('inserts the organization, the key, the kind and the shift type, and nothing else, into conflict_resolutions', async () => {
     const { table, rows } = tableAnswering(() => Promise.resolve({ error: null }));
 
     await expect(acceptUncovered(table, TARGET)).resolves.toEqual({ ok: true });
     expect(rows).toEqual([
-      { organization_id: 'org-1', member_id: 'member-1', date: '2026-10-02', team_id: 'team-1', kind: 'accept_uncovered' },
+      {
+        organization_id: 'org-1',
+        member_id: 'member-1',
+        date: '2026-10-02',
+        team_id: 'team-1',
+        kind: 'accept_uncovered',
+        shift_type_id: 'type-1',
+      },
     ]);
     expect(RESOLUTION_WRITE_TABLE).toBe('conflict_resolutions');
   });
@@ -139,7 +147,7 @@ function rpcAnswering(answer: () => PromiseLike<ResolutionWriteAnswer>): {
 }
 
 describe('replacing the absent member (story 5.4c)', () => {
-  it('calls replace_conflict_member with the key, the replacement and the reason, and nothing else', async () => {
+  it('calls replace_conflict_member with the key, the replacement, the reason and the shift type, and nothing else', async () => {
     const { client, calls } = rpcAnswering(() => Promise.resolve({ error: null }));
 
     await expect(replaceMember(client, REPLACEMENT)).resolves.toEqual({ ok: true });
@@ -152,6 +160,7 @@ describe('replacing the absent member (story 5.4c)', () => {
           p_team_id: 'team-1',
           p_replacement_id: 'member-2',
           p_reason: 'Zamjena za Anu (godišnji)',
+          p_shift_type_id: 'type-1',
         },
       ],
     ]);

@@ -85,19 +85,26 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const replaced = (rosterOverrideId: string | null, date = '2026-09-10', teamId = TEAM_A): ConflictResolution => ({
+const replaced = (
+  rosterOverrideId: string | null,
+  date = '2026-09-10',
+  teamId = TEAM_A,
+  shiftTypeId: string | null = null,
+): ConflictResolution => ({
   memberId: VIEWER_MEMBER,
   date,
   teamId,
   kind: REPLACE_MEMBER,
   rosterOverrideId,
+  shiftTypeId,
 });
-const accepted = (date: string): ConflictResolution => ({
+const accepted = (date: string, shiftTypeId: string | null = null): ConflictResolution => ({
   memberId: VIEWER_MEMBER,
   date,
   teamId: TEAM_A,
   kind: ACCEPT_UNCOVERED,
   rosterOverrideId: null,
+  shiftTypeId,
 });
 
 describe('whether a replacement applies (story 5.5d)', () => {
@@ -195,5 +202,45 @@ describe('whether a replacement applies (story 5.5d)', () => {
     expect(effectiveResolutionsOf(snapshot, [replaced('ro-dino-10', '2026-09-11')])).toEqual([]);
     expect(logged).toHaveBeenCalledWith(REPLACEMENT_LINK_MISMATCH, 'ro-dino-10');
     expect(appliedReplacementOverrideOf(snapshot, { teamId: TEAM_B, date: '2026-09-10', rosterOverrideId: 'ro-dino-10' })).toBeNull();
+  });
+});
+
+describe('a decision made on another shift decides nothing (0038; dormant-key revival)', () => {
+  // Smjena A works Dan on the 10th and Noć on the 11th; the 12th is off.
+  it('keeps a decision whose stored type is the one the schedule has today, of every kind', async () => {
+    const snapshot = await snapshotOf([DINO_10]);
+    const resolutions = [accepted('2026-09-11', 'pilot-noc'), replaced('ro-dino-10', '2026-09-10', TEAM_A, 'pilot-dan')];
+
+    expect(effectiveResolutionsOf(snapshot, resolutions)).toEqual(resolutions);
+  });
+
+  it('drops a decision stored on another type, or on a day the team no longer works, keeping the rest in order', async () => {
+    const snapshot = await snapshotOf([]);
+    const first = accepted('2026-09-10', 'pilot-dan');
+    const last = accepted('2026-09-13');
+
+    expect(
+      effectiveResolutionsOf(snapshot, [first, accepted('2026-09-11', 'pilot-dan'), accepted('2026-09-12', 'pilot-noc'), last]),
+    ).toEqual([first, last]);
+  });
+
+  it('drops the old decision once a shift-type override puts another type on its key, and keeps a row with no stored type', async () => {
+    const changed = await snapshotOf([], null, [
+      calendarOverrideRow('type-noc-10', TEAM_A, '2026-09-10', 'pilot-noc', { createdAt: '2026-09-13T08:00:00+00:00' }),
+    ]);
+    const old = accepted('2026-09-10');
+
+    expect(effectiveResolutionsOf(changed, [accepted('2026-09-10', 'pilot-dan'), old])).toEqual([old]);
+    expect(effectiveResolutionsOf(changed, [accepted('2026-09-10', 'pilot-noc')])).toHaveLength(1);
+  });
+
+  it('never holds a key by a replacement decided on another type, which a new decision supersedes', async () => {
+    const pending = await snapshotOf([DINO_10_PENDING]);
+
+    expect(heldByReplacement(pending, replaced('ro-dino-10', '2026-09-10', TEAM_A, 'pilot-dan'))).toBe(true);
+    expect(heldByReplacement(pending, replaced('ro-dino-10', '2026-09-10', TEAM_A, 'pilot-noc'))).toBe(false);
+    expect(effectiveResolutionsOf(await snapshotOf([DINO_10]), [replaced('ro-dino-10', '2026-09-10', TEAM_A, 'pilot-noc')])).toEqual(
+      [],
+    );
   });
 });
