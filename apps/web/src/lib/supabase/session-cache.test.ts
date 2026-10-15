@@ -5,8 +5,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SESSION_UNRESOLVED } from '@/lib/supabase/client';
 import {
   resetOnSessionChange,
+  sessionEndMark,
   type AuthEventSource,
   type Defer,
+  type SessionEndMark,
 } from '@/lib/supabase/session-cache';
 
 /**
@@ -93,6 +95,7 @@ async function mountScreen(signedIn: string): Promise<Mounted> {
 
 interface Installed {
   readonly emit: Listener;
+  readonly ended: SessionEndMark;
   readonly invalidate: ReturnType<typeof vi.fn>;
   /** Runs what the rule deferred, as the next macrotask would. */
   readonly flush: () => void;
@@ -107,10 +110,16 @@ function install(cache: { clear(): void; resetQueries(): Promise<void> }): Insta
   const defer: Defer = (task) => {
     queued.push(task);
   };
-  const unsubscribe = resetOnSessionChange(() => auth.source, { cache, router: { invalidate } }, defer);
+  const ended = sessionEndMark();
+  const unsubscribe = resetOnSessionChange(
+    () => auth.source,
+    { cache, router: { invalidate }, ended },
+    defer,
+  );
 
   return {
     emit: auth.emit,
+    ended,
     invalidate,
     flush: () => {
       for (const task of queued.splice(0)) task();
@@ -263,6 +272,7 @@ describe('a session change resets every cached answer and re-runs the guards', (
     resetOnSessionChange(() => auth.source, {
       cache: { clear: () => undefined, resetQueries: () => Promise.resolve() },
       router: { invalidate },
+      ended: sessionEndMark(),
     });
     auth.emit('INITIAL_SESSION', sessionOf('member-a'));
     auth.emit('SIGNED_OUT', null);
@@ -283,6 +293,7 @@ describe('a session change resets every cached answer and re-runs the guards', (
         {
           cache: { clear: () => undefined, resetQueries: () => Promise.resolve() },
           router: { invalidate: () => Promise.reject(failure) },
+          ended: sessionEndMark(),
         },
         (task) => {
           task();
@@ -321,6 +332,7 @@ describe('a session change resets every cached answer and re-runs the guards', (
         {
           cache: { clear: vi.fn(), resetQueries: () => Promise.resolve() },
           router: { invalidate: () => Promise.resolve() },
+          ended: sessionEndMark(),
         },
       );
 
@@ -330,5 +342,63 @@ describe('a session change resets every cached answer and re-runs the guards', (
     } finally {
       logged.mockRestore();
     }
+  });
+});
+
+describe('a re-guard raised by a session change forgets the deep link (C516)', () => {
+  const NOTHING = { clear: () => undefined, resetQueries: () => Promise.resolve() };
+
+  it('marks a sign-out or an expiry elsewhere before the re-guard runs', () => {
+    const rule = install(NOTHING);
+    let markedWhenGuarded: boolean | undefined;
+
+    rule.invalidate.mockImplementation(() => {
+      markedWhenGuarded = rule.ended.take();
+
+      return Promise.resolve();
+    });
+    rule.emit('INITIAL_SESSION', sessionOf('member-a'));
+    rule.emit('SIGNED_OUT', null);
+    rule.flush();
+
+    expect(markedWhenGuarded, 'the guard the re-guard ran could not tell').toBe(true);
+  });
+
+  it('marks another account taking the tab over', () => {
+    const rule = install(NOTHING);
+
+    rule.emit('INITIAL_SESSION', sessionOf('member-a'));
+    rule.emit('SIGNED_IN', sessionOf('member-b'));
+
+    expect(rule.ended.take()).toBe(true);
+  });
+
+  it('leaves a token refresh, the first event and a re-announced user unmarked', () => {
+    const rule = install(NOTHING);
+
+    rule.emit('INITIAL_SESSION', sessionOf('member-a'));
+    rule.emit('TOKEN_REFRESHED', sessionOf('member-a'));
+    rule.emit('SIGNED_IN', sessionOf('member-a'));
+
+    expect(rule.ended.take()).toBe(false);
+  });
+
+  it('clears the mark on a sign-in, so a later bounce in the tab keeps its target', () => {
+    const rule = install(NOTHING);
+
+    rule.emit('INITIAL_SESSION', sessionOf('member-a'));
+    rule.emit('SIGNED_OUT', null);
+    rule.emit('SIGNED_IN', sessionOf('member-b'));
+
+    expect(rule.ended.take()).toBe(false);
+  });
+
+  it('is taken once: one change drops one target', () => {
+    const mark = sessionEndMark();
+
+    mark.mark();
+
+    expect(mark.take()).toBe(true);
+    expect(mark.take()).toBe(false);
   });
 });

@@ -1,14 +1,18 @@
 import { createRoute, redirect } from '@tanstack/react-router';
-import type { Session } from '@supabase/supabase-js';
 
 import { AuthLayout } from '@/components/layout/auth-layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { SetPasswordForm } from '@/features/auth/components/set-password-form';
 import { useSetPassword } from '@/features/auth/hooks/use-set-password';
-import { returnSearchFor } from '@/features/auth/services/return-target';
+import {
+  returnSearchFor,
+  returnSearchOf,
+  returnTargetOf,
+} from '@/features/auth/services/return-target';
 import { mustSetPassword } from '@/features/auth/services/set-password';
 import { t } from '@/lib/i18n';
-import { SESSION_UNRESOLVED } from '@/lib/supabase/client';
+import { resolvedSession } from '@/lib/supabase/client';
+import { sessionEnded } from '@/lib/supabase/session-cache';
 import { rootRoute } from '@/pages/__root';
 
 /**
@@ -48,27 +52,33 @@ export function SetPasswordScreen() {
 export const postaviLozinkuRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/postavi-lozinku',
-  beforeLoad: async ({ context, location }) => {
+  // THE RETURN TARGET the layout's guard carried here (E853): where the flagged
+  // session was going. Carried only; validated when it is followed.
+  validateSearch: returnSearchOf,
+  beforeLoad: async ({ context, location, search }) => {
     // FAIL CLOSED, as `pages/_app.tsx` does and for its reason: a session that
     // cannot be read is not a session, and this screen's save needs one.
-    let session: Session | null = null;
-
-    try {
-      session = await context.currentSession();
-    } catch (cause) {
-      console.error(SESSION_UNRESOLVED, cause);
-    }
+    const session = await resolvedSession(context.currentSession);
+    // Taken on every run, as the layout's guard takes it (C516).
+    const changedHands = sessionEnded.take();
 
     // NOBODY SIGNED IN: the sign-in form, carrying this location so a sign-in
-    // comes back here (and the layout's guard would send it here anyway).
+    // comes back here (and the layout's guard would send it here anyway) —
+    // unless the session ended outside this tab, when it carries nothing.
     if (session === null) {
-      throw redirect({ to: '/prijava', search: returnSearchFor(location.href) });
+      throw redirect({
+        to: '/prijava',
+        search: changedHands ? {} : returnSearchFor(location.href),
+      });
     }
 
-    // NOT HELD: there is nothing to set, so the step is `/`'s forward like any
-    // other visit — a bookmark of this URL must not be a second way to change
-    // a password.
-    if (!mustSetPassword(session)) throw redirect({ to: '/' });
+    // NOT HELD: there is nothing to set, so the step forwards like any other
+    // visit — to the carried target, or `/` — and a bookmark of this URL is
+    // not a second way to change a password. This is also the redirect a
+    // successful save meets when the hook re-runs the guards.
+    if (!mustSetPassword(session)) {
+      throw redirect({ href: returnTargetOf(search.povratak, context.isKnownPath) });
+    }
   },
   component: SetPasswordScreen,
 });

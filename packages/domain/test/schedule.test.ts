@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   adjacentMonth,
   datesOfMonth,
+  memberScheduleOfMonth,
   monthOf,
   projectedShiftTypeOn,
   type RotationAssignment,
@@ -11,6 +12,7 @@ import {
 import {
   PILOT_ROTATION_ASSIGNMENTS,
   PILOT_ROTATION_STEPS,
+  NO_ROSTER,
   PILOT_TEAMS,
   SEEDED_EFFECTIVE_FROM,
   UJ5_ROTATION_ASSIGNMENTS,
@@ -302,6 +304,43 @@ describe('memberScheduleOfMonth', () => {
         });
       }
     }
+  });
+
+  it('flags each day active or not, so an inactive day is not read as no team (B449)', () => {
+    const team = PILOT_TEAMS[0]!.id;
+    const input = {
+      memberId: 'fixture-member',
+      ...NO_ROSTER,
+      assignments: PILOT_ROTATION_ASSIGNMENTS,
+      steps: PILOT_ROTATION_STEPS,
+      overrides: [],
+    };
+    // On the team until the 10th, then on none; inactive from the 5th to the 19th.
+    const days = memberScheduleOfMonth(
+      {
+        ...input,
+        memberships: [
+          { teamId: team, position: null, effectiveFrom: SEEDED_EFFECTIVE_FROM },
+          { teamId: null, position: null, effectiveFrom: '2026-09-10' },
+        ],
+        statuses: [
+          { active: false, effectiveFrom: '2026-09-05' },
+          { active: true, effectiveFrom: '2026-09-20' },
+        ],
+      },
+      '2026-09',
+    );
+    const on = (date: string) => days.find((day) => day.date === date);
+
+    expect(on('2026-09-04')).toMatchObject({ active: true });
+    expect(on('2026-09-04')?.shifts).toHaveLength(1);
+    // Inactive while still on the team, and inactive once on none: both flagged, neither shifted.
+    expect(on('2026-09-05')).toEqual({ date: '2026-09-05', active: false, shifts: [] });
+    expect(on('2026-09-12')).toEqual({ date: '2026-09-12', active: false, shifts: [] });
+    // Active again on no team: no team, and active.
+    expect(on('2026-09-20')).toEqual({ date: '2026-09-20', active: true, shifts: [] });
+    // No status version at all is active, as `activeOn` judges it.
+    expect(memberScheduleOfMonth({ ...input, memberships: [], statuses: [] }, '2026-09').every((day) => day.active)).toBe(true);
   });
 
   it('throws a RangeError on a malformed or repeated status date', () => {

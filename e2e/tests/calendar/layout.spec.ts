@@ -549,7 +549,7 @@ test.describe('the calendar while its read is pending, on a phone, as a member',
 
     await calendarPage.goto();
     // The month's placeholder bars, not the month heading's.
-    const pulses = page.getByRole('main').locator('.animate-pulse[class~="h-[30px]"]');
+    const pulses = calendarPage.skeletonPulses;
     const { moj, sve } = calendarPage.modes();
 
     // No role yet: the grid's thirty rows of five (a date and four team

@@ -27,11 +27,10 @@ import {
 } from '@/features/members/services/list';
 import {
   ORGANIZATION_SNAPSHOT_KEY,
-  ORGANIZATION_TABLE,
+  organizationTable,
   organizationSnapshotQueryOptions,
 } from '@/features/organization/services/snapshot';
-import { OWN_TEAM_KEY } from '@/features/teams/services/roster';
-import { TODAY_LOADING, todayDateShownOf, todayOf } from '@/features/today/services/today';
+import { TODAY_LOADING, ownTeamShownOf, todayDateShownOf, todayOf } from '@/features/today/services/today';
 import { todayTilesOf } from '@/features/today/services/today-tiles';
 import { useMinuteTicker } from '@/hooks/minute-ticker';
 import { supabaseClient } from '@/lib/supabase/client';
@@ -74,7 +73,7 @@ export function useToday() {
   );
   const members = useQuery(membersQueryOptions(() => supabaseClient().from(MEMBERS_TABLE)));
   const organization = useQuery(
-    organizationSnapshotQueryOptions(() => supabaseClient().from(ORGANIZATION_TABLE)),
+    organizationSnapshotQueryOptions(organizationTable),
   );
   const calendarState = calendarSurfaceStateOf(calendar);
   const snapshot = calendarState.snapshot;
@@ -162,7 +161,7 @@ export function useToday() {
   );
   const tiles = todayTilesOf(hours, leave);
 
-  /** Read again every read the screen stands on, the team line's included, from the unavailable alert's retry. */
+  /** Read again every read the screen stands on, from the unavailable alert's retry. */
   function retry(): void {
     for (const queryKey of [
       CALENDAR_KEY,
@@ -170,7 +169,6 @@ export function useToday() {
       MY_CONFLICT_RESOLUTIONS_KEY,
       MEMBERS_LIST_KEY,
       ORGANIZATION_SNAPSHOT_KEY,
-      OWN_TEAM_KEY,
     ]) {
       void queryClient.invalidateQueries({ queryKey });
     }
@@ -180,6 +178,9 @@ export function useToday() {
     today,
     tiles,
     date: todayDateShownOf(today),
+    // E804: the admin subtitle's team link, from the same snapshot as the
+    // member's today card (AD-13).
+    ownTeam: ownTeamShownOf(today),
     // STORY 6.3: the role *Danas* picks its body by, once the snapshot names it.
     role: snapshot === null ? null : snapshot.viewer.role,
     loading: today.kind === TODAY_LOADING,

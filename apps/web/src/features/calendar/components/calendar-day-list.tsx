@@ -12,6 +12,7 @@ import type {
   CalendarDayListOutcome,
   CalendarPersonMonth,
 } from '@/features/calendar/utils/month';
+import { dayEmptyMessageKey, dayListEmptyMessageKey } from '@/features/calendar/utils/empty-day';
 import { translateCellLabel } from '@/features/calendar/utils/cell-label';
 import { calendarMessageKey, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { PERSON_HEADING_ID } from '@/features/calendar/utils/element-ids';
@@ -61,7 +62,7 @@ function renderDay(openDay: OpenDay, day: CalendarDay, labels: readonly (string 
         <span className="block text-xs font-normal text-muted-foreground">{day.weekday}</span>
       </span>
       {day.shifts.length === 0 ? (
-        <span className="text-sm text-muted-foreground">{t('kalendar.day.noTeam')}</span>
+        <span className="text-sm text-muted-foreground">{t(dayEmptyMessageKey(day))}</span>
       ) : (
         // STORY 3.6a: one row per shift — the member's own team's, then each
         // one a roster override put them on.
@@ -79,15 +80,15 @@ function renderDay(openDay: OpenDay, day: CalendarDay, labels: readonly (string 
 
 /**
  * A day list — the viewer's, or the person chosen — or its own failure, or
- * the explanation `noTeam` when there is no team all month, never an empty
- * list. The list is named by the month's heading, after the person's when
- * it is theirs.
+ * the explanation `empty` gives when there is no team all month, or the
+ * member is inactive all month (B449), never an empty list. The list is named
+ * by the month's heading, after the person's when it is theirs.
  */
 function renderDayList(
   snapshot: CalendarSnapshot | null,
   openDay: OpenDay,
   days: CalendarDayListOutcome,
-  noTeam: string,
+  empty: (inactive: boolean) => string,
   ofPerson: boolean,
 ): ReactNode {
   // The day list's own failure: the alert and no list. The grid is unaffected.
@@ -100,7 +101,7 @@ function renderDayList(
   }
 
   if (days.days === null) {
-    return <p className="px-4 pb-4 text-sm text-muted-foreground">{noTeam}</p>;
+    return <p className="px-4 pb-4 text-sm text-muted-foreground">{empty(days.inactive)}</p>;
   }
 
   // The button's name is the grid cell's full label: the date, the team,
@@ -129,8 +130,8 @@ export function CalendarDays({
   readonly days: CalendarDayListOutcome;
   readonly openDay: OpenDay;
 }): ReactNode {
-  // What is true, never an empty list: the viewer is on no team this month.
-  return renderDayList(snapshot, openDay, days, t('kalendar.noTeam'), false);
+  // What is true, never an empty list: the viewer is on no team, or inactive, this month.
+  return renderDayList(snapshot, openDay, days, (inactive) => t(dayListEmptyMessageKey(inactive, false)), false);
 }
 
 /** The person chosen in *Sve smjene* (story 3.3b): their name, then their day list. */
@@ -148,7 +149,13 @@ export function CalendarPerson({
       <h3 id={PERSON_HEADING_ID} className="px-4 pb-3 font-heading text-lg font-semibold">
         {person.name}
       </h3>
-      {renderDayList(snapshot, openDay, person.days, t('kalendar.person.noTeam', { name: person.name }), true)}
+      {renderDayList(
+        snapshot,
+        openDay,
+        person.days,
+        (inactive) => t(dayListEmptyMessageKey(inactive, true), { name: person.name }),
+        true,
+      )}
     </>
   );
 }

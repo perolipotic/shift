@@ -4,8 +4,10 @@ import { Button } from '@/components/ui/button';
 import { Notice } from '@/components/ui/notice';
 import { t } from '@/lib/i18n';
 import { OrganizationFireRanksCard } from '@/features/organization/components/organization-fire-ranks-card';
+import { OrganizationHourBandsCard } from '@/features/organization/components/organization-hour-bands-card';
 import { OrganizationProfileCard } from '@/features/organization/components/organization-profile-card';
 import { OrganizationTimeCard } from '@/features/organization/components/organization-time-card';
+import type { OrganizationHourBands } from '@/features/organization/hooks/use-organization-hour-bands';
 import type { OrganizationSettings } from '@/features/organization/hooks/use-organization-settings';
 import { ORGANIZATION_READ_RETRY_ID } from '@/features/organization/utils/element-ids';
 import { ORGANIZATION_ERROR_ID, organizationMessageKey } from '@/features/organization/utils/messages';
@@ -14,8 +16,9 @@ import { ORGANIZATION_ERROR_ID, organizationMessageKey } from '@/features/organi
  * The settings page's body (stories 1.4a-1.4c and member rank; facts and
  * dialogs since story 7.18): the read's message and retry, then three cards of
  * facts — *Profil*, *Vrijeme i godina* and *Vatrogasni činovi i položaji* —
- * each change behind its own dialog with one Spremi. No field is mounted on
- * the page.
+ * each change behind its own dialog with one Spremi, and a fourth, *Satni
+ * pojasi*, a summary of the hour bands with the way to their editor. No
+ * field is mounted on the page.
  *
  * WHAT IS DELIBERATELY NOT HERE:
  *
@@ -39,8 +42,10 @@ import { ORGANIZATION_ERROR_ID, organizationMessageKey } from '@/features/organi
  */
 export function OrganizationSettingsCard({
   settings,
+  hourBands,
 }: {
   readonly settings: OrganizationSettings;
+  readonly hourBands: OrganizationHourBands;
 }): ReactNode {
   const { snapshot, organization, readFailure, readRetry, readAttempts, retryRead } = settings;
 
@@ -68,6 +73,7 @@ export function OrganizationSettingsCard({
         <OrganizationProfileCard settings={settings} organization={organization} />
         <OrganizationTimeCard settings={settings} organization={organization} />
         <OrganizationFireRanksCard settings={settings} organization={organization} />
+        <OrganizationHourBandsCard hourBands={hourBands} />
       </>
     );
   }

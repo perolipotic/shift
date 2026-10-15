@@ -834,7 +834,6 @@ const SANCTIONED_SCREEN_KEYS = [
   'smjene.position.unknown',
   'smjene.roster.error.unavailable',
   'smjene.today.label',
-  'smjene.today.error.unavailable',
   // STORY 2.1b: the hour band editor, under `organization.hourBands` because
   // the bands are an organization setting reached from `Organizacija`. Only a
   // name and a start are entered; the window, duration and midnight flag are
@@ -1136,6 +1135,10 @@ const SANCTIONED_SCREEN_KEYS = [
   // STORY 3.3b: the note for a person on no team all month. The filter
   // itself moved to the shared `filter.*` namespace in story 7.5.
   'kalendar.person.noTeam',
+  // B449: an inactive day, month or person, never read as no team.
+  'kalendar.inactive',
+  'kalendar.day.inactive',
+  'kalendar.person.inactive',
   // STORY 7.5: the filter bar Kalendar and Sati share, which replaced the
   // calendar's one Select (3.3a/3.3b) and Sati's two (4.2): the bar's name,
   // `Filtri` with and without its count, a chip in each of its four states,
@@ -1821,6 +1824,8 @@ const SANCTIONED_SCREEN_KEYS = [
   'danas.admin.listSeparator',
   'danas.admin.status.working',
   'danas.admin.status.workingUntimed',
+  // E897: a working shift carried over from yesterday, marked as on the member's card.
+  'danas.admin.status.workingFromYesterday',
   'danas.admin.status.duty',
   'danas.admin.status.leave',
   'danas.admin.status.free',
@@ -1979,6 +1984,13 @@ const SANCTIONED_SCREEN_KEYS = [
   'organization.timezoneReason',
   'organization.leaveYear',
   'organization.leaveYearStartsOn',
+  // Deferred work from 7.18: the leave dialog's current leave year, and the
+  // *Satni pojasi* facts card's bands label, value and way to the editor.
+  'organization.leaveYearCurrent',
+  'organization.hourBandsBands',
+  'organization.hourBandsBandsValue',
+  'organization.hourBandsOpen',
+  'organization.hourBandsOpenLabel',
   'organization.fireRanksUse',
   'organization.fireRanksHint',
   'rotation.builder.history.close',

@@ -19,14 +19,25 @@ regenerated types file, which would add a step to every migration.
   through, built from an injected source so both of that route's branches are
   executable without a browser — bound as `currentSession` under a time budget
   that rejects a read that never settles, and `resolvedSession`, the one
-  session read every guard shares (a rejection becomes `null`, logged).
+  session read every guard shares (a rejection becomes `null`, logged). The
+  client's options are spelled out (`CLIENT_OPTIONS`): the session persists
+  under the library's default storage key and refreshes itself, nothing is
+  read from the URL, and every request goes through `withRequestTimeout`, so
+  a request that is never answered is aborted after `REQUEST_TIMEOUT_MS`
+  (30 s) and ends in the caller's ordinary "unavailable" refusal.
 - `session-cache.ts` — the app-wide rule `main.tsx` installs: whenever the
   signed-in user id changes or becomes null (another tab, an expiry, a sign-in
   over a stale cache), the cache forgets the previous user so that mounted
   screens see it (a reset on a switch, a clear on a sign-out or sign-in) and
   the router re-runs every guard (not on a sign-in, which the sign-in hook
-  navigates). A token refresh for the same user changes nothing.
+  navigates). A token refresh for the same user changes nothing. A sign-out,
+  expiry or account switch also sets `sessionEnded`, which the session guards
+  take on their next run, so that re-guard's redirect carries no `povratak`
+  and the next person to sign in is not sent to the previous one's deep link.
   `session-cache.test.ts` drives it with a real `QueryClient` and observer.
+- `claims.ts` — `claimedOrganizationOf`, the organization the session's own
+  access token claims, read without a query. Every admin write surface uses
+  it; the database pins the tenant again, so it is never trusted.
 
 - `features/auth/services/address.ts` — AD-12's synthesized sign-in address,
   `username@slug.shift.invalid`, and the DNS-label rule the `organizations`

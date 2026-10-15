@@ -16,6 +16,15 @@ export interface ErasureWords {
 }
 
 /**
+ * Every count of an erasure confirmation's ICU title: its words before the
+ * count (`one {Poništavanje briše #…}` → `^Poništavanje briše`), for a test
+ * that claims no confirmation of ANY count is open.
+ */
+export function anyErasureTitleOf(title: string): RegExp {
+  return new RegExp(`^${escapeRegExp(/one \{([^#]*)#/.exec(title)?.[1] ?? 'E2E: no title')}`);
+}
+
+/**
  * THE SHARED ERASURE CONFIRMATION'S LOCATORS (story 5.5b): the one
  * `ErasureDialog` the rotation builder and the calendar's roster changes both
  * render, each in its own words. Locators only, never an assertion

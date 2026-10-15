@@ -20,7 +20,6 @@ import {
   SHIFT_TYPE_WORKING,
   SHIFT_TYPE_WRITE_REFUSED,
   SHIFT_TYPE_WRITE_UNAVAILABLE,
-  claimedOrganizationOf,
   createShiftType,
   createdOutcomeOf,
   refusedFieldOf,
@@ -30,6 +29,7 @@ import {
   type ShiftTypeWriteFailure,
   type ShiftTypeWriteTable,
 } from '@/features/shift-types/services/write';
+import { claimedOrganizationOf } from '@/lib/supabase/claims';
 import { retryRead } from '@/features/teams/services/dependents';
 import { supabaseClient } from '@/lib/supabase/client';
 import { NO_TEXT } from '@/utils/text';

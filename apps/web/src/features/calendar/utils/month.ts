@@ -778,9 +778,15 @@ export interface CalendarDay {
   /**
    * The member's shifts that day, a row each: their own team's first, then
    * each one a roster override put them on (story 3.6a). Empty when they are
-   * on no team, or were taken off their team's shift (`kalendar.day.noTeam`).
+   * on no team, or were taken off their team's shift (`kalendar.day.noTeam`),
+   * or inactive that day (`@/features/calendar/utils/empty-day`).
    */
   readonly shifts: readonly CalendarDayShift[];
+  /**
+   * Inactive that day (`member_status_versions`, the domain's `active` flag):
+   * an empty day then says so, never "no team" (B449, UX-DR20).
+   */
+  readonly inactive: boolean;
 }
 
 /**
@@ -820,8 +826,8 @@ export interface CalendarMonth extends MonthHeader {
   readonly rows: readonly CalendarRow[];
   /**
    * The viewer's own day list, a day per date; `null` when they are on no
-   * team on any date of the month, so the screen shows `kalendar.noTeam` and
-   * never an empty list. A failure of the day list alone is
+   * team on any date of the month, so the screen shows `kalendar.noTeam` (or
+   * `kalendar.inactive`, inactive all month) and never an empty list. A failure of the day list alone is
    * `CALENDAR_UNAVAILABLE` here, and the grid still draws.
    */
   readonly days: CalendarDayListOutcome;
@@ -841,7 +847,17 @@ export interface CalendarMonth extends MonthHeader {
 
 /** The day list, or its own read failure — which the grid does not share. */
 export type CalendarDayListOutcome =
-  | { readonly ok: true; readonly days: readonly CalendarDay[] | null }
+  | {
+      readonly ok: true;
+      readonly days: readonly CalendarDay[] | null;
+      /**
+       * With no day list: whether that is because the member is inactive on
+       * every date of the month ({@link inactiveAllMonthOf}) rather than on no
+       * team — which explanation `@/features/calendar/utils/empty-day` picks.
+       * `false` whenever there is a list.
+       */
+      readonly inactive: boolean;
+    }
   | { readonly ok: false; readonly code: CalendarReadFailure };
 
 /** A formatter's answer, or a `RangeError` naming what it refused — never a silent blank. */
@@ -1048,6 +1064,7 @@ export function calendarDayListOf(
     dayMonth: dayMonthOf(day.date),
     weekday: weekdayOf(day.date),
     isToday: day.date === today,
+    inactive: !day.active,
     shifts: day.shifts.map((shift) => ({
       teamId: shift.teamId,
       cell: cellOf(
@@ -1076,12 +1093,26 @@ function dayListOutcomeOf(
   marks: CalendarMarks,
 ): CalendarDayListOutcome {
   try {
-    return { ok: true, days: calendarDayListOf(snapshot, history, month, today, marks) };
+    const days = calendarDayListOf(snapshot, history, month, today, marks);
+
+    return { ok: true, days, inactive: days === null && inactiveAllMonthOf(history, month) };
   } catch (cause) {
     console.error(CALENDAR_UNAVAILABLE, cause);
 
     return { ok: false, code: CALENDAR_UNAVAILABLE };
   }
+}
+
+/**
+ * Whether the member is inactive on every date of `month` (`activeOn`): the
+ * month's empty day list then says "not active", never "no team" (B449). A
+ * month partly inactive and otherwise on no team stays "no team"; its days
+ * say which is which.
+ *
+ * @throws RangeError on any precondition of `activeOn` or `datesOfMonth`.
+ */
+export function inactiveAllMonthOf(member: { readonly statuses: readonly StatusVersion[] }, month: string): boolean {
+  return datesOfMonth(month).every((date) => !activeOn(member.statuses, date));
 }
 
 /** The last of `dates` the member is active on (`activeOn`), or `null` for none. */

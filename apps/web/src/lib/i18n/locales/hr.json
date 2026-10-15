@@ -107,6 +107,7 @@
       "status": {
         "working": "Danas radiš {type} {range}",
         "workingUntimed": "Danas radiš {type}",
+        "workingFromYesterday": "Danas radiš {type} {range} od jučer",
         "duty": "Na dužnosti do {time}",
         "leave": "Danas si na godišnjem odmoru",
         "free": "Danas ne radiš",
@@ -250,8 +251,10 @@
     "noTeam": "Nisi član nijedne smjene.",
     "ownNote": "Tvoj raspored · {team}. Filtri vrijede za „Sve smjene”.",
     "ownNoteNoTeam": "Tvoj raspored · bez smjene. Filtri vrijede za „Sve smjene”.",
+    "inactive": "Ovaj mjesec tvoj status je neaktivan.",
     "day": {
-      "noTeam": "Bez smjene"
+      "noTeam": "Bez smjene",
+      "inactive": "Neaktivno"
     },
     "mode": {
       "label": "Prikaz kalendara",
@@ -259,7 +262,8 @@
       "sve": "Sve smjene"
     },
     "person": {
-      "noTeam": "{name} ovaj mjesec nije ni u jednoj smjeni."
+      "noTeam": "{name} ovaj mjesec nije ni u jednoj smjeni.",
+      "inactive": "Osoba {name} ovaj mjesec nije aktivna."
     },
     "legend": "Oznake",
     "retry": "Pokušaj ponovno",
@@ -934,6 +938,11 @@
     "timezoneReason": "Vremenska zona i jezik postavljaju se pri otvaranju organizacije i ne mijenjaju se ovdje.",
     "leaveYear": "Godina godišnjeg",
     "leaveYearStartsOn": "počinje {date}",
+    "leaveYearCurrent": "Tekuća godina godišnjeg: {from}–{to}",
+    "hourBandsBands": "Pojasi",
+    "hourBandsBandsValue": "{count} · {names}",
+    "hourBandsOpen": "Otvori",
+    "hourBandsOpenLabel": "Otvori satne pojaseve",
     "fireRanksUse": "Upotreba",
     "fireRanksHint": "Kad se ne koriste, činovi i položaji se nigdje ne prikazuju, a upisani ostaju spremljeni.",
     "leaveYearStart": "Početak godine godišnjeg odmora",
@@ -1447,10 +1456,7 @@
       }
     },
     "today": {
-      "label": "Tvoja smjena",
-      "error": {
-        "unavailable": "Tvoju smjenu trenutačno nije moguće učitati. Pokušaj ponovno."
-      }
+      "label": "Tvoja smjena"
     }
   },
   "sort": {

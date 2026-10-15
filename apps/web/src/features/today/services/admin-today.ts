@@ -751,6 +751,12 @@ export interface AdminStatusShift {
   /** `null` where no rotation is in effect. */
   readonly name: string | null;
   readonly range: string | null;
+  /**
+   * A shift that began yesterday and is still running (the C1 carry-over):
+   * the subtitle marks it `od jučer`, as the member's today card does, so
+   * the two never describe the same shift differently.
+   */
+  readonly fromYesterday: boolean;
 }
 
 /** The admin's own today, as the subtitle states it after the date. */
@@ -775,7 +781,7 @@ export function adminStatusOf(today: Today): AdminStatus | null {
 
   switch (todayCase.kind) {
     case CASE_WORKING:
-      return { kind: STATUS_WORKING, shifts: todayCase.shifts.map(({ name, range }) => ({ name, range })) };
+      return { kind: STATUS_WORKING, shifts: todayCase.shifts.map(({ name, range, fromYesterday }) => ({ name, range, fromYesterday })) };
     case CASE_DUTY:
       return { kind: STATUS_DUTY, until: todayCase.duty.end.time };
     case CASE_LEAVE:
@@ -815,11 +821,13 @@ export function adminStatusMessageKey(
   }
 }
 
-/** One working shift of the subtitle: with its range, or its name alone. */
+/** One working shift of the subtitle: with its range (marked `od jučer` when carried over), or its name alone. */
 export function adminStatusShiftMessageKey(
   shift: AdminStatusShift,
-): 'danas.admin.status.working' | 'danas.admin.status.workingUntimed' {
-  return shift.range === null ? 'danas.admin.status.workingUntimed' : 'danas.admin.status.working';
+): 'danas.admin.status.working' | 'danas.admin.status.workingUntimed' | 'danas.admin.status.workingFromYesterday' {
+  if (shift.range === null) return 'danas.admin.status.workingUntimed';
+
+  return shift.fromYesterday ? 'danas.admin.status.workingFromYesterday' : 'danas.admin.status.working';
 }
 
 /** A row's badge in words: past, or today. Exhaustive. */

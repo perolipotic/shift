@@ -431,7 +431,7 @@ test.describe('the month toolbar', () => {
 
     await calendarPage.monthTrigger.click();
     await expect(calendarPage.monthPicker).toBeVisible();
-    await page.getByRole('heading', { level: 1 }).click();
+    await calendarPage.anyHeading.click();
     await expect(calendarPage.monthPicker).toHaveCount(0);
     await expect(calendarPage.monthTrigger).toHaveAttribute('aria-expanded', 'false');
 
@@ -1782,7 +1782,7 @@ test.describe('an admin changes a shift roster at 1280 px', () => {
     await expect(calendarPage.rosterForm).toHaveCount(0);
     await expect(detail).toContainText(fill(kalendar.detail.off, { team: fixture.team.name }));
     await expect(calendarPage.alertIn(detail)).toHaveText(kalendar.detail.rosterChange.refused.notOffered);
-    await expect(page.locator('#kalendar-detail-heading')).toBeFocused();
+    await expect(calendarPage.detailTitleOf(fixture.team.name, rotation.today)).toBeFocused();
     await expect(calendarPage.rosterOpenerIn(detail)).toHaveCount(0);
   });
 });
@@ -2435,7 +2435,7 @@ test.describe('the filter bar while the month loads', () => {
     });
     await calendarPage.goto('?prikaz=sve');
 
-    await expect(page.locator('main[aria-busy="true"]')).toBeVisible();
+    await expect(calendarPage.busyMain).toBeVisible();
     await expect(calendarPage.anyGrid).toHaveCount(0);
     await expect(calendarPage.filters.bar).toHaveCount(0);
     await expect(calendarPage.filters.summary).toHaveCount(0);

@@ -53,6 +53,16 @@ export class OrganizationPage extends BasePage {
     return this.dialog(organization.fireRanks);
   }
 
+  /** *Vrijeme i godina*: the zone, locked, and the leave year. */
+  get timeRegion(): Locator {
+    return this.page.getByRole('region', { name: organization.timeHeading });
+  }
+
+  /** Every field mounted on the page outside a dialog's portal. */
+  get mainFields(): Locator {
+    return this.page.locator('main input, main select');
+  }
+
   /** The Spremi of the dialog `within`. */
   saveIn(within: Locator): Locator {
     return within.getByRole('button', { name: organization.save, exact: true });

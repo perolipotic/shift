@@ -14,9 +14,7 @@ import {
   TEAM_ROSTER_UNKNOWN,
   ownTeamLineMessageKey,
   ownTeamLineOf,
-  ownTeamMessageKey,
   ownTeamSnapshotOf,
-  ownTeamSurfaceStateOf,
   ownTeamTodayOf,
   readOwnTeamToday,
   readTeamRoster,
@@ -25,7 +23,6 @@ import {
   teamRosterNoticeOf,
   teamRosterSurfaceStateOf,
   type OwnTeamAnswer,
-  type OwnTeamOutcome,
   type OwnTeamTable,
   type TeamRosterAnswer,
   type TeamRosterOutcome,
@@ -406,46 +403,6 @@ describe('the caller\'s own team today', () => {
       'smjene.today.label',
     );
     expect(t('smjene.today.label')).toBe('Tvoja smjena');
-  });
-
-  it('draws the line for no version and for a no-team version alike', () => {
-    const now = new Date('2026-09-25T12:00:00Z');
-    const base = { isPending: false, isError: false, fetchStatus: 'idle' };
-    const none = { ok: true, snapshot: { teamVersions: [], timeZone: 'UTC' } } as const;
-    const left: OwnTeamOutcome = {
-      ok: true,
-      snapshot: {
-        teamVersions: [
-          { team: { id: 'a', name: 'Tim A' }, position: null, effectiveFrom: '2026-09-01' },
-          { team: null, position: null, effectiveFrom: '2026-09-20' },
-        ],
-        timeZone: 'UTC',
-      },
-    };
-
-    for (const outcome of [none, left]) {
-      expect(ownTeamSurfaceStateOf({ ...base, data: outcome }, now)).toEqual({
-        line: { team: null },
-        refusal: null,
-        loading: false,
-      });
-    }
-    expect(
-      ownTeamSurfaceStateOf({ ...base, data: { ok: false, code: OWN_TEAM_UNAVAILABLE } }, now),
-    ).toEqual({ line: null, refusal: OWN_TEAM_UNAVAILABLE, loading: false });
-    expect(
-      ownTeamSurfaceStateOf(
-        { isPending: true, isError: false, fetchStatus: TEAM_ROSTER_FETCH_PAUSED, data: undefined },
-        now,
-      ),
-    ).toEqual({ line: null, refusal: OWN_TEAM_UNAVAILABLE, loading: false });
-    expect(
-      ownTeamSurfaceStateOf(
-        { isPending: true, isError: false, fetchStatus: 'fetching', data: undefined },
-        now,
-      ),
-    ).toEqual({ line: null, refusal: null, loading: true });
-    expect(ownTeamMessageKey(OWN_TEAM_UNAVAILABLE)).toBe('smjene.today.error.unavailable');
   });
 
   it('refuses no session, an error, a rejection, zero or two rows, or a malformed row', async () => {

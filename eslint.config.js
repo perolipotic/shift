@@ -124,7 +124,7 @@ export const FEATURE_PUBLIC = {
   // set-password step through `mustSetPassword`, never a reading of its own.
   auth: [
     'services/address', // pages
-    'services/return-target', // pages
+    'services/return-target', // pages, router
     'services/set-password', // pages
     'services/sign-out', // navigation
   ],
@@ -151,6 +151,8 @@ export const FEATURE_PUBLIC = {
   // screen that reads `CALENDAR_KEY` observes it through `useCalendarSnapshot`
   // (or its options, for the erasure guard's fresh read), never a copied
   // `calendarQueryOptions(...)`.
+  // B449: *Danas*'s week and today card say an empty day the calendar's way —
+  // inactive, or on no team (`empty-day`).
   calendar: [
     'components/calendar-cell', // today
     'hooks/use-calendar-snapshot', // conflicts, hours, leave, members, today
@@ -158,6 +160,7 @@ export const FEATURE_PUBLIC = {
     'services/marks', // hours, today
     'services/snapshot', // conflicts, hours, leave, members, pages, teams, today
     'utils/day-detail', // conflicts
+    'utils/empty-day', // today
     'utils/grid-keys', // today
     'utils/modifiers', // conflicts, hours, today
     'utils/month', // conflicts, hours, leave, members, pages, today
@@ -207,7 +210,7 @@ export const FEATURE_PUBLIC = {
   'hour-bands': [
     // The generic time helpers (`minuteOfTime`, `durationValuesOf`)
     // moved to `utils/time`, so shift-types no longer reaches this module.
-    'services/list', // calendar, conflicts, hours, today, pages
+    'services/list', // calendar, conflicts, hours, organization, today, pages
     'services/write', // pages
   ],
   // Story 6.1b: *Danas*'s hours tile is *Sati*'s own surface for the
@@ -281,7 +284,7 @@ export const FEATURE_PUBLIC = {
     'services/dependents', // conflicts, hour-bands, leave, members
     'services/list', // calendar, members, rotation, pages
     'services/roster', // pages, today
-    'services/write', // calendar, hour-bands, rotation, shift-types, pages
+    'services/write', // pages
   ],
   // SINCE STORY 6.3: the *Danas* page picks the admin's body by role and states
   // the admin's own today in its subtitle, from the rules that executes.
@@ -742,6 +745,33 @@ export default [
     files: ['e2e/**/*.ts', 'smoke/**/*.ts'],
     languageOptions: {
       globals: { ...globals.node, ...globals.browser },
+    },
+  },
+
+  // ------------------------------------------- e2e: the page-object rule
+  // A spec never reaches the screen through a raw Playwright `Page`: every
+  // locator lives in its page object (`e2e/pages/*`, `e2e/README.md`). Refused
+  // are `getBy*` and `locator` called on `page`, on a page object's `.page`,
+  // and on a second context's `…Page` (`adminPage`). Chaining from a locator a
+  // page object returned (`detail.locator('form')`) stays allowed.
+  {
+    files: ['e2e/tests/**/*.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            "CallExpression[callee.property.name=/^(getBy[A-Z]\\w*|locator)$/][callee.object.name=/^(page|[a-z]\\w*Page)$/]",
+          message:
+            'A spec takes its locators from a page object (e2e/pages/*), never from the raw page. Add a getter or method to the screen\'s page object and use it here.',
+        },
+        {
+          selector:
+            "CallExpression[callee.property.name=/^(getBy[A-Z]\\w*|locator)$/][callee.object.property.name='page']",
+          message:
+            'A spec takes its locators from a page object (e2e/pages/*), never from its raw .page. Add a getter or method to the screen\'s page object and use it here.',
+        },
+      ],
     },
   },
 

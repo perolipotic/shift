@@ -354,6 +354,12 @@ export class CalendarPage extends BasePage {
 
   // --------------------------------------------------------- day detail
 
+  /** The day skeleton's pulses while the month loads: thirty rows of a date
+   *  and four team columns. By class, since a skeleton has no role or name. */
+  get skeletonPulses(): Locator {
+    return this.main.locator('.animate-pulse[class~="h-[30px]"]');
+  }
+
   /**
    * The day detail's Dialog, named by its title: the team and the date. Exact,
    * because the removal's confirmation (story 3.5b) names the same team and
@@ -361,6 +367,14 @@ export class CalendarPage extends BasePage {
    */
   detailOf(teamName: string, date: string): Locator {
     return this.page.getByRole('dialog', {
+      name: fill(kalendar.detail.title, { team: teamName, date: detailDate(date) }),
+      exact: true,
+    });
+  }
+
+  /** The day detail's title, the heading the Dialog is named by (focus lands on it). */
+  detailTitleOf(teamName: string, date: string): Locator {
+    return this.detailOf(teamName, date).getByRole('heading', {
       name: fill(kalendar.detail.title, { team: teamName, date: detailDate(date) }),
       exact: true,
     });

@@ -317,6 +317,26 @@ test('a signed-out deep link to Kalendar lands back on it, search and hash intac
   await expect(loginPage.heading(hr.nav.kalendar)).toBeVisible();
 });
 
+test('a signed-in visitor opening a sign-in link with a return target goes there (C512)', async ({
+  page,
+  loginPage,
+  fixture,
+}) => {
+  await loginPage.signIn(fixture.slug, fixture.spare.username, fixture.password);
+
+  // A second tab bounced to sign in while the first was signing in: once a
+  // session exists, the sign-in route forwards to the target, not to `/`.
+  await page.goto(`/prijava?povratak=${encodeURIComponent('/kalendar?mjesec=2031-02')}`);
+  await expect(page).toHaveURL('/kalendar?mjesec=2031-02');
+
+  await page.goto(`/prijava/${fixture.slug}?povratak=${encodeURIComponent('/kalendar')}`);
+  await expect(page).toHaveURL(/\/kalendar(\?|$)/);
+
+  // The same validator as the sign-in hook's: off the application is `/`.
+  await page.goto(`/prijava?povratak=${encodeURIComponent('//evil.example/kalendar')}`);
+  await expect(page).toHaveURL('/danas');
+});
+
 test('a return target that points off the application lands on Danas instead', async ({
   page,
   loginPage,

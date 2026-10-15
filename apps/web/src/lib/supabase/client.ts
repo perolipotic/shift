@@ -151,6 +151,80 @@ export const buildEnvironment: EnvironmentReader = (name) => {
   return undefined;
 };
 
+/**
+ * How long one request may take before it is abandoned (C520).
+ *
+ * The client had no timeout at all, so a write the network swallowed — a
+ * request that is sent and never answered — kept its dialog's save pending
+ * forever, and the add dialogs refuse dismissal while a save is in flight.
+ * Thirty seconds is far past any answer this backend gives on a working
+ * connection, and short enough that the person is not left waiting on nothing.
+ * The largest request this application sends, a 2 MiB organization logo,
+ * needs about 0.6 Mbit/s to finish inside it.
+ */
+export const REQUEST_TIMEOUT_MS = 30_000;
+
+/**
+ * `fetch`, but every request is aborted after `timeoutMs`.
+ *
+ * ONE PLACE FOR EVERY REQUEST: the client hands every PostgREST, auth, storage
+ * and function call to its `global.fetch`, so this covers each write without a
+ * signal threaded through any service. An aborted request REJECTS, and
+ * supabase-js already maps a rejected fetch to an error result (PostgREST) or a
+ * retryable fetch error (auth), which every service already reads as its
+ * existing "unavailable" refusal. No new code, no new copy.
+ *
+ * A caller's own signal is kept: the two are combined, so either one aborts.
+ * The base `fetch` is looked up at CALL time, never captured at import, so a
+ * test stub installed after this module loads is the one that runs.
+ */
+export function withRequestTimeout(
+  timeoutMs: number = REQUEST_TIMEOUT_MS,
+  base: () => typeof fetch = () => globalThis.fetch,
+): typeof fetch {
+  return (input, init) => {
+    const timeout = AbortSignal.timeout(timeoutMs);
+    const own = init?.signal;
+    // `AbortSignal.any` is newer than `AbortSignal.timeout`; where it is
+    // missing, the caller's own signal wins over the timeout rather than being
+    // dropped.
+    const signal =
+      own === undefined || own === null
+        ? timeout
+        : typeof AbortSignal.any === 'function'
+          ? AbortSignal.any([own, timeout])
+          : own;
+
+    return base()(input, { ...init, signal });
+  };
+}
+
+/**
+ * The client's options, SPELLED OUT (A250). Nothing changes for anyone signed
+ * in today: two values are the library's defaults, and the third turns off a
+ * path this application never used. The point is that the behaviour is now a
+ * decision on the page rather than an inheritance from the library.
+ *
+ *   - `persistSession: true` — the session survives a reload, in the
+ *     browser's local storage.
+ *   - `autoRefreshToken: true` — the client renews the token before expiry.
+ *   - `detectSessionInUrl: false` — nothing here signs in through a URL (no
+ *     OAuth, no magic link, no recovery link), so a fragment that looks like
+ *     a token is never read as one. The library's default is `true`, and it
+ *     only ever acted on a URL this application never produces.
+ *   - NO `storageKey`, deliberately: the default key (`sb-<ref>-auth-token`) is
+ *     where every existing session lives, and naming a new one would sign
+ *     everybody out once.
+ */
+export const CLIENT_OPTIONS = {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: false,
+  },
+  global: { fetch: withRequestTimeout() },
+} as const;
+
 let client: SupabaseClient | null = null;
 
 /** The one browser client. Constructed on first use, then reused. */
@@ -158,7 +232,7 @@ export function supabaseClient(): SupabaseClient {
   if (client === null) {
     const { url, publishableKey } = readSupabaseEnvironment(buildEnvironment);
 
-    client = createClient(url, publishableKey);
+    client = createClient(url, publishableKey, CLIENT_OPTIONS);
   }
 
   return client;

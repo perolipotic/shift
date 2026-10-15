@@ -17,6 +17,7 @@ test.use({ storageState: MEMBER_STATE, viewport: { width: 390, height: 844 }, is
 test('a member opens Ljudi from Više and sees their team first, marked, with nothing but names', async ({
   page,
   loginPage,
+  peoplePage,
   fixture,
 }) => {
   await page.goto('/danas');
@@ -30,55 +31,56 @@ test('a member opens Ljudi from Više and sees their team first, marked, with no
   await expect(loginPage.text(hr.ljudi.directory.lede)).toBeVisible();
 
   // THE CALLER'S TEAM FIRST, marked in words, with the caller in it.
-  const groups = page.getByRole('main').getByRole('region');
-  const own = page.getByRole('main').getByRole('region', { name: fixture.team.name, exact: true });
+  const groups = peoplePage.directoryGroups;
+  const own = peoplePage.directoryGroup(fixture.team.name);
   await expect(groups.first()).toHaveAccessibleName(fixture.team.name);
   await expect(own.getByText(hr.ljudi.directory.own, { exact: true })).toBeVisible();
   await expect(own.getByText(fixture.member.name)).toBeVisible();
 
   // READ-ONLY AND NARROW: no add action, no link from a line, no address, no
   // username, no allowance.
-  await expect(page.getByRole('button', { name: hr.ljudi.form.add })).toHaveCount(0);
-  await expect(page.getByRole('main').getByRole('link')).toHaveCount(0);
-  await expect(page.getByRole('main')).not.toContainText('@');
-  await expect(page.getByRole('main')).not.toContainText(hr.ljudi.leave);
-  await expect(page.getByRole('main')).not.toContainText(fixture.member.username);
+  await expect(peoplePage.anyAddButton).toHaveCount(0);
+  await expect(peoplePage.mainLinks).toHaveCount(0);
+  await expect(peoplePage.main).not.toContainText('@');
+  await expect(peoplePage.main).not.toContainText(hr.ljudi.leave);
+  await expect(peoplePage.main).not.toContainText(fixture.member.username);
   await expectNoHorizontalScroll(page);
 });
 
 test('the search narrows by name in the URL, and a search with no hit offers to clear it', async ({
   page,
-  loginPage,
+  peoplePage,
   fixture,
 }) => {
   await page.goto('/ljudi');
-  const own = page.getByRole('main').getByRole('region', { name: fixture.team.name, exact: true });
+  const own = peoplePage.directoryGroup(fixture.team.name);
   await expect(own).toBeVisible();
 
-  const search = page.getByRole('searchbox', { name: hr.ljudi.directory.search });
+  const search = peoplePage.directorySearch;
   await search.fill(fixture.member.name);
   await expect(page).toHaveURL(/[?&]trazi=/);
   await expect(own.getByText(fixture.member.name)).toBeVisible();
 
   await search.fill('zzzz-nitko');
-  await expect(loginPage.text(hr.ljudi.directory.noMatch)).toBeVisible();
-  await expect(page.getByRole('main').getByRole('region')).toHaveCount(0);
+  await expect(peoplePage.text(hr.ljudi.directory.noMatch)).toBeVisible();
+  await expect(peoplePage.directoryGroups).toHaveCount(0);
 
-  await page.getByRole('button', { name: hr.ljudi.directory.clear, exact: true }).click();
+  await peoplePage.directoryClear.click();
   await expect(own).toBeVisible();
   await expect(search).toHaveValue('');
   await expect(search).toBeFocused();
 });
 
-test('the add dialog never opens for a member, even by its URL', async ({ page, fixture }) => {
+test('the add dialog never opens for a member, even by its URL', async ({ page, peoplePage, fixture }) => {
   await page.goto('/ljudi?dodaj=1');
 
-  await expect(page.getByRole('main').getByRole('region', { name: fixture.team.name, exact: true })).toBeVisible();
-  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(peoplePage.directoryGroup(fixture.team.name)).toBeVisible();
+  await expect(peoplePage.dialog()).toHaveCount(0);
 });
 
 test('a failed roster read is one notice with no team, and the retry brings the directory back', async ({
   page,
+  peoplePage,
   fixture,
 }) => {
   const roster = (url: URL) => url.pathname.endsWith('/rest/v1/rpc/team_roster');
@@ -96,13 +98,13 @@ test('a failed roster read is one notice with no team, and the retry brings the 
 
   await page.goto('/ljudi');
 
-  await expect(page.getByRole('alert').filter({ hasText: hr.ljudi.directory.unavailable })).toBeVisible();
-  await expect(page.getByRole('main').getByRole('region')).toHaveCount(0);
+  await expect(peoplePage.alertWith(hr.ljudi.directory.unavailable)).toBeVisible();
+  await expect(peoplePage.directoryGroups).toHaveCount(0);
 
-  await page.getByRole('button', { name: hr.ljudi.directory.retry, exact: true }).click();
+  await peoplePage.directoryRetry.click();
 
-  await expect(page.getByRole('main').getByRole('region', { name: fixture.team.name, exact: true })).toBeVisible();
-  await expect(page.getByRole('alert').filter({ hasText: hr.ljudi.directory.unavailable })).toHaveCount(0);
+  await expect(peoplePage.directoryGroup(fixture.team.name)).toBeVisible();
+  await expect(peoplePage.alertWith(hr.ljudi.directory.unavailable)).toHaveCount(0);
 });
 
 test.describe('at a desktop viewport', () => {

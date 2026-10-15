@@ -16,7 +16,7 @@ export class HourBandsPage extends BasePage {
 
   /** A band's edit link in the list. */
   editLink(name: string): Locator {
-    return this.page.getByRole('link', { name: fill(bands.edit, { name }) });
+    return this.editLinkNamed(bands.edit, name);
   }
 
   /** Opens the add dialog, from the explainer. */

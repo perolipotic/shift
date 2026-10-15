@@ -6,6 +6,7 @@ import { PageActions, PageDescription, PageHeader, PageTitle } from '@/component
 import { t } from '@/lib/i18n';
 import { requireAdmin } from '@/features/navigation/services/admin-guard';
 import { OrganizationSettingsCard } from '@/features/organization/components/organization-settings-card';
+import { useOrganizationHourBands } from '@/features/organization/hooks/use-organization-hour-bands';
 import { useOrganizationSettings } from '@/features/organization/hooks/use-organization-settings';
 import { appLayoutRoute } from '@/pages/_app';
 
@@ -13,8 +14,9 @@ import { appLayoutRoute } from '@/pages/_app';
  * `Organizacija` — the organization settings surface (stories 1.4a-1.4c,
  * member rank; a page of facts with a dialog per change since story 7.18).
  * This file composes the screen: the header and the fact cards. Its state,
- * its one read and its five writes, with the rationale for each, are
- * `useOrganizationSettings`; what the page deliberately does not offer is
+ * its organization read and its five writes, with the rationale for each, are
+ * `useOrganizationSettings`; the *Satni pojasi* card's read of the bands is
+ * `useOrganizationHourBands`; what the page deliberately does not offer is
  * `OrganizationSettingsCard`'s.
  *
  * ADMIN ONLY (UX-DR32). The WRITES are enforced by the DATABASE:
@@ -33,6 +35,7 @@ import { appLayoutRoute } from '@/pages/_app';
 
 export function OrganizacijaScreen() {
   const settings = useOrganizationSettings();
+  const hourBands = useOrganizationHourBands();
 
   return (
     <main className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6">
@@ -62,7 +65,7 @@ export function OrganizacijaScreen() {
           </Button>
         </PageActions>
       </PageHeader>
-      <OrganizationSettingsCard settings={settings} />
+      <OrganizationSettingsCard settings={settings} hourBands={hourBands} />
     </main>
   );
 }

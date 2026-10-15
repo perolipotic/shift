@@ -101,6 +101,10 @@ export const CALENDAR_SCREEN_EXEMPT: readonly { readonly file: string; readonly 
     why: 'the change dialogs\' *Što se mijenja* (story 7.9), codes and operands from the "after" snapshots; renders nothing and declares no key, executed by change-preview.test.ts',
   },
   {
+    file: 'utils/empty-day.ts',
+    why: 'what an empty day or month says, inactive or on no team (B449); a key source of its own in the sign-in suite, shared with Danas, so in the set its strings would count twice',
+  },
+  {
     file: 'utils/modifiers.ts',
     why: 'the mark vocabulary; a key source of its own in the sign-in suite, so in the set its strings would count twice',
   },

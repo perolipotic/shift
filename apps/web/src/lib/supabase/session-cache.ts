@@ -46,6 +46,19 @@ import { SESSION_UNRESOLVED } from '@/lib/supabase/client';
  *     user, so there is no mounted screen to reset, and a reset would refetch
  *     the sign-in screen's own reads under the person typing.
  *
+ * A RE-GUARD RAISED BY A SESSION CHANGE FORGETS THE DEEP LINK (C516). The
+ * guard that bounces a signed-out tab to `/prijava` carries the location in
+ * `povratak`, so the next sign-in returns there. When the bounce is the
+ * re-guard for a sign-out or expiry ELSEWHERE, or for another account taking
+ * the tab over, the next person to sign in on a shared device is very likely
+ * not the one who opened that location, and following it would hand them the
+ * previous person's place. So both changes MARK {@link sessionEnded} before the
+ * re-guard, and the session guards (`pages/_app.tsx`,
+ * `pages/postavi-lozinku.tsx`) take the mark on their next run and carry no
+ * `povratak` when they redirect. A sign-in clears the mark, and a bounce the
+ * tab raises itself — a navigation that finds the session already gone — keeps
+ * its target as before.
+ *
  * WHAT DOES NOTHING:
  *
  *   - the FIRST event (`INITIAL_SESSION`) only records who is signed in. The
@@ -83,6 +96,46 @@ export interface GuardedRouter {
   invalidate(): Promise<void>;
 }
 
+/**
+ * Whether the session changed under the tab since a session guard last ran.
+ * Set by {@link resetOnSessionChange}, taken by the guards.
+ */
+export interface SessionEndMark {
+  /** The session ended or changed hands: the next guard drops the deep link. */
+  mark(): void;
+  /** A sign-in: whatever the previous session left marked is moot. */
+  clear(): void;
+  /** Whether the mark was set, clearing it — so one change drops one target. */
+  take(): boolean;
+}
+
+/** A fresh mark, unset. */
+export function sessionEndMark(): SessionEndMark {
+  let marked = false;
+
+  return {
+    mark: () => {
+      marked = true;
+    },
+    clear: () => {
+      marked = false;
+    },
+    take: () => {
+      const was = marked;
+
+      marked = false;
+
+      return was;
+    },
+  };
+}
+
+/**
+ * The page's one mark: `main.tsx` hands it to {@link resetOnSessionChange},
+ * and the session guards take it.
+ */
+export const sessionEnded = sessionEndMark();
+
 /** Runs a task after the current one, so an in-flight navigation starts first. */
 export type Defer = (task: () => void) => void;
 
@@ -96,10 +149,14 @@ const nextMacrotask: Defer = (task) => {
  */
 export function resetOnSessionChange(
   source: () => AuthEventSource,
-  targets: { readonly cache: SessionCache; readonly router: GuardedRouter },
+  targets: {
+    readonly cache: SessionCache;
+    readonly router: GuardedRouter;
+    readonly ended: SessionEndMark;
+  },
   defer: Defer = nextMacrotask,
 ): () => void {
-  const { cache, router } = targets;
+  const { cache, router, ended } = targets;
   // `undefined` until the first event: "nobody seen yet" is a different fact
   // from "seen, and signed out".
   let seen: string | null | undefined;
@@ -122,10 +179,14 @@ export function resetOnSessionChange(
       if (previous === undefined || user === previous) return;
 
       if (previous === null) {
+        ended.clear();
         cache.clear();
 
         return;
       }
+
+      // Marked BEFORE the re-guard is scheduled, so the guard it runs sees it.
+      ended.mark();
 
       if (user === null) {
         cache.clear();

@@ -19,6 +19,7 @@ import {
   chosenPersonOf,
   chosenTeamOf,
   defaultModeOf,
+  inactiveAllMonthOf,
   isCalendarMonth,
   monthShownOf,
   monthTeamOf,
@@ -28,6 +29,7 @@ import {
   type CalendarDay,
   type CalendarMonth,
 } from '@/features/calendar/utils/month';
+import { dayEmptyMessageKey, dayListEmptyMessageKey } from '@/features/calendar/utils/empty-day';
 import { cellLabelOf, gridCellLabelsOf, legendOf, type CellLabelTranslate } from '@/features/calendar/utils/modifiers';
 import { CALENDAR_UNAVAILABLE, readCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { initLocalization, t } from '@/lib/i18n';
@@ -1153,8 +1155,11 @@ describe('the person filter (story 3.3b)', () => {
       name: 'Toni Bezsmjene',
       teamId: null,
       teamName: null,
-      days: { ok: true, days: null },
+      days: { ok: true, days: null, inactive: false },
     });
+    expect(t(dayListEmptyMessageKey(false, true), { name: 'Toni Bezsmjene' })).toBe(
+      'Toni Bezsmjene ovaj mjesec nije ni u jednoj smjeni.',
+    );
   });
 
   it('ignores an unknown or inactive id: the grid, or the smjena team', () => {
@@ -1405,8 +1410,8 @@ describe('the roster as at a date (story 3.4a)', () => {
     expect(month.rows).toEqual(plain.rows);
   });
 
-  it('draws the days a member is inactive as no team, and the rest as their team', () => {
-    // Matrix: inactive on date — the day list says no team.
+  it('draws the days a member is inactive as inactive, never no team, and the rest as their team', () => {
+    // Matrix: inactive on date — no shift, and the day says inactive (B449).
     const month = calendarMonthOf(snapshot, { mjesec: '2026-09' }, TODAY);
     const days = daysOf(month)!;
     const column = month.columns.findIndex((team) => team.id === 'pilot-smjena-a');
@@ -1416,7 +1421,10 @@ describe('the roster as at a date (story 3.4a)', () => {
 
       expect(soleTeamOf(day), day.date).toBe(inactive ? null : 'pilot-smjena-a');
       expect(soleCellOf(day), day.date).toEqual(inactive ? null : month.rows[index]!.cells[column]);
+      expect(day.inactive, day.date).toBe(inactive);
+      if (inactive) expect(t(dayEmptyMessageKey(day)), day.date).toBe('Neaktivno');
     }
+    expect(t(dayEmptyMessageKey({ inactive: false }))).toBe('Bez smjene');
     const returned = calendarMonthOf(snapshot, { mjesec: '2026-09', osoba: RETURNED }, TODAY).person;
 
     if (returned === null || !returned.days.ok) throw new Error('no day list');
@@ -1425,13 +1433,28 @@ describe('the roster as at a date (story 3.4a)', () => {
     );
   });
 
-  it('says a member inactive all month has no team, through kalendar.noTeam', async () => {
+  it('says a member inactive all month is not active, never on no team (B449)', async () => {
     // AC2: an empty state that says what is true, never a blank schedule.
     const inactive = await snapshotOf(PILOT, { statuses: [statusRow(VIEWER_MEMBER, false, '2026-08-01')] });
 
-    expect(calendarMonthOf(inactive, { mjesec: '2026-09' }, TODAY).days).toEqual({ ok: true, days: null });
-    expect(calendarMonthOf(pilot, { mjesec: '2019-12' }, TODAY).days).toEqual({ ok: true, days: null });
-    expect(t('kalendar.noTeam')).toBe('Nisi član nijedne smjene.');
+    expect(calendarMonthOf(inactive, { mjesec: '2026-09' }, TODAY).days).toEqual({ ok: true, days: null, inactive: true });
+    expect(t(dayListEmptyMessageKey(true, false))).toBe('Ovaj mjesec tvoj status je neaktivan.');
+    // Before any membership, active: no team, as before.
+    expect(calendarMonthOf(pilot, { mjesec: '2019-12' }, TODAY).days).toEqual({ ok: true, days: null, inactive: false });
+    expect(t(dayListEmptyMessageKey(false, false))).toBe('Nisi član nijedne smjene.');
+    expect(t(dayListEmptyMessageKey(true, true), { name: 'Ana Horvat' })).toBe('Osoba Ana Horvat ovaj mjesec nije aktivna.');
+  });
+
+  it('is inactive all month only when inactive on every date', () => {
+    const statuses = [
+      { active: false, effectiveFrom: '2026-09-05' },
+      { active: true, effectiveFrom: '2026-10-02' },
+    ];
+
+    expect(inactiveAllMonthOf({ statuses }, '2026-08')).toBe(false);
+    expect(inactiveAllMonthOf({ statuses }, '2026-09')).toBe(false);
+    expect(inactiveAllMonthOf({ statuses: [{ active: false, effectiveFrom: '2026-09-01' }] }, '2026-09')).toBe(true);
+    expect(inactiveAllMonthOf({ statuses: [] }, '2026-09')).toBe(false);
   });
 
   it("derives a team's roster on a date from the snapshot, members deactivated since included", () => {

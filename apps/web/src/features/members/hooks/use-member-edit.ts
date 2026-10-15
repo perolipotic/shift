@@ -98,7 +98,7 @@ import {
 import { rankEditOf, ranksShownIn } from '@/features/members/utils/rank';
 import {
   ORGANIZATION_SNAPSHOT_KEY,
-  ORGANIZATION_TABLE,
+  organizationTable,
   organizationSnapshotQueryOptions,
 } from '@/features/organization/services/snapshot';
 import { currentSession, supabaseClient } from '@/lib/supabase/client';
@@ -335,7 +335,7 @@ export function useMemberEdit(id: string) {
   // own factory and cache policy. Until it arrives the control is absent and
   // the save leaves the stored rank alone.
   const organization = useQuery(
-    organizationSnapshotQueryOptions(() => supabaseClient().from(ORGANIZATION_TABLE)),
+    organizationSnapshotQueryOptions(organizationTable),
   );
   const offersRank = ranksShownIn(organization.data);
   // TEAM POSITION: the same setting — on, off, pending or failed. Until it is

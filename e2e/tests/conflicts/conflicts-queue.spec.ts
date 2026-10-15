@@ -242,7 +242,7 @@ test('a resolved conflict leaves the queue and its count, and comes back unresol
 
   // REMOVE THEN RE-RECORD in the app: the removal ended the resolution with its leave.
   await peoplePage.navigationLink(hr.nav.ljudi, { exact: true }).click();
-  await peoplePage.listedMember(seeded.name).click();
+  await peoplePage.editLink(seeded.name).click();
   await expect(peoplePage.leaveHeading).toBeVisible();
   await peoplePage.removeLeaveButton(worked.from, worked.to).click();
   const confirm = peoplePage.dialog();
@@ -294,7 +294,7 @@ test('an amend that takes a resolved date out of the range ends that resolution 
   // AMEND SHRINK in the app: today–+1. Today stays covered, +4 leaves the range.
   const amended = { from: today, to: isoDaysAfter(today, 1) };
   await peoplePage.navigationLink(hr.nav.ljudi, { exact: true }).click();
-  await peoplePage.listedMember(seeded.name).click();
+  await peoplePage.editLink(seeded.name).click();
   await expect(peoplePage.leaveHeading).toBeVisible();
   await peoplePage.amendLeaveButton(worked.from, worked.to).click();
   await expect(peoplePage.leaveAmendDialog(worked.from, worked.to)).toBeVisible();

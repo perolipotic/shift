@@ -1429,7 +1429,6 @@ const AUTHORED_VOCABULARY = [
   // to the caller about their own team, and the first to send them back to
   // Danas by name.
   'Tvoja',
-  'Tvoju',
   'Vrati',
   'arhivirana',
   'smjeni',

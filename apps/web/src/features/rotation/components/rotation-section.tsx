@@ -143,7 +143,6 @@ import {
   ROTATION_WRITE_REFUSED,
   ROTATION_WRITE_UNAVAILABLE,
   cancelScheduledRotation,
-  claimedOrganizationOf,
   rotationCancelMessageKey,
   rotationPartialMessageKey,
   rotationWriteMessageKey,
@@ -153,6 +152,7 @@ import {
   type RotationInsertTable,
   type RotationPatternTable,
 } from '@/features/rotation/services/write';
+import { claimedOrganizationOf } from '@/lib/supabase/claims';
 import {
   STEPPER_STEPS,
   STEP_CURRENT,

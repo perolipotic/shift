@@ -53,7 +53,7 @@ import {
   type OverrideSetChange,
 } from '@/features/conflicts/services/override-erasures';
 import { OVERRIDE_WRITE_DEPENDENTS, refreshAfterWrite } from '@/features/teams/services/dependents';
-import { claimedOrganizationOf } from '@/features/teams/services/write';
+import { claimedOrganizationOf } from '@/lib/supabase/claims';
 import { supabaseClient } from '@/lib/supabase/client';
 import { firstEnabledOf, focusLater } from '@/utils/focus-later';
 

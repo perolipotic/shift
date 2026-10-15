@@ -289,7 +289,6 @@ test.describe('from 640 px up', () => {
   });
 
   test('a refused save, then Odbaci promjene: the refusal is gone with the draft', async ({
-    page,
     fixture,
     rotationPage,
   }) => {
@@ -303,10 +302,10 @@ test.describe('from 640 px up', () => {
     await expect(rotationPage.discardButton).toBeVisible();
 
     await rotationPage.saveButton.click();
-    await expect(page.getByRole('alert')).toHaveCount(1);
+    await expect(rotationPage.alert).toHaveCount(1);
 
     await rotationPage.discardButton.click();
-    await expect(page.getByRole('alert')).toHaveCount(0);
+    await expect(rotationPage.alert).toHaveCount(0);
     await expect(rotationPage.saveButton).toBeFocused();
   });
 
@@ -331,7 +330,7 @@ test.describe('from 640 px up', () => {
       stall.answer();
     }
     // REFUSED, nothing written: the draft is kept, and the discard is back.
-    await expect(page.getByRole('alert')).toHaveCount(1);
+    await expect(rotationPage.alert).toHaveCount(1);
     await expect(rotationPage.discardButton).toBeEnabled();
     await expect(rotationPage.steps).toHaveCount(1);
     await page.unroute(stall.matches, stall.handler);
@@ -370,7 +369,7 @@ test.describe('just above 640 px, where the tab bar is gone', () => {
     await rotationPage.addStep(rotation.steps[0]);
     await scrollToTop(page);
     // No phone tab bar from 640 px up: one navigation landmark, the aside's.
-    await expect(page.getByRole('navigation', { name: hr.shell.navigation })).toHaveCount(1);
+    await expect(rotationPage.navigation).toHaveCount(1);
     await expectStickyAtBottom(page, rotationPage);
     await expect(rotationPage.discardButton).toBeInViewport();
     await expectNoHorizontalScroll(page);

@@ -16,8 +16,8 @@
  * no environment — and it is also what keeps this module free of JSX so the node
  * suite collects it at all. The interfaces below are structural and narrow on
  * purpose: they name the two calls used and the two fields the mapping reads, so
- * `supabaseClient().from(ORGANIZATION_TABLE)` satisfies them and a stub does not
- * have to impersonate the rest of PostgREST.
+ * {@link organizationTable}'s answer satisfies them and a stub does not have to
+ * impersonate the rest of PostgREST.
  *
  * WHAT A REFUSAL LOOKS LIKE HERE IS NOT A THROW. Row level security refuses an
  * update by failing USING, which means the statement matches no row and
@@ -34,9 +34,23 @@
 import { queryOptions } from '@tanstack/react-query';
 
 import type { BrandAccentKey } from '@/features/organization/utils/accent';
+import { supabaseClient } from '@/lib/supabase/client';
 
 /** The relation the surface reads and writes. Named here so no screen holds it. */
-export const ORGANIZATION_TABLE = 'organizations';
+const ORGANIZATION_TABLE = 'organizations';
+
+/**
+ * The live table, for a hook to hand to {@link readOrganization},
+ * {@link updateOrganization} or {@link organizationSnapshotQueryOptions}.
+ *
+ * The one place the relation name meets the client, so no hook builds its own
+ * `.from(…)` and the constant stays this module's. Called inside a query or
+ * write function, never at render: `supabaseClient()` raising
+ * `SUPABASE_ENVIRONMENT_MISSING` has to happen where a failure is answered.
+ */
+export function organizationTable() {
+  return supabaseClient().from(ORGANIZATION_TABLE);
+}
 
 /**
  * The single query key every figure on the settings surface comes from.
@@ -76,6 +90,9 @@ export const ORGANIZATION_READ_STALE_MS = 300000;
  *
  * `created_at` is not here. It is the one `timestamptz` the conventions permit
  * and nothing renders it, so selecting it would be a column read for no reader.
+ * The same test keeps out `short_name`, `description`, `address` and
+ * `contact_email`: no surface renders them and no write offers them, so they
+ * join the list only when a reader does (an export header, say).
  *
  * `brand_accent` joined in story 1.4c and is the second column of that kind: it
  * holds a KEY — one of four curated words, or null — and never a colour, so the
@@ -95,7 +112,7 @@ export const ORGANIZATION_READ_STALE_MS = 300000;
  * shows or offers a rank already reads this one snapshot under this one key.
  */
 export const ORGANIZATION_COLUMNS =
-  'id,slug,name,short_name,description,address,contact_email,organization_type,timezone,locale,leave_year_start_month,leave_year_start_day,logo_path,brand_accent,uses_fire_ranks';
+  'id,slug,name,organization_type,timezone,locale,leave_year_start_month,leave_year_start_day,logo_path,brand_accent,uses_fire_ranks';
 
 /**
  * The organization, as everything downstream sees it.
@@ -108,10 +125,6 @@ export interface OrganizationSnapshot {
   readonly id: string;
   readonly slug: string;
   readonly name: string;
-  readonly shortName: string | null;
-  readonly description: string | null;
-  readonly address: string | null;
-  readonly contactEmail: string | null;
   readonly organizationType: string;
   readonly timezone: string;
   readonly locale: string;
@@ -264,10 +277,6 @@ export interface OrganizationFireRanksEdit {
    */
   readonly id?: never;
   readonly slug?: never;
-  readonly shortName?: never;
-  readonly description?: never;
-  readonly address?: never;
-  readonly contactEmail?: never;
   readonly locale?: never;
   readonly name?: never;
   readonly organizationType?: never;
@@ -538,10 +547,6 @@ export function organizationSnapshotOf(row: unknown): OrganizationSnapshot | nul
     id,
     slug,
     name,
-    shortName: textAt(fields, 'short_name'),
-    description: textAt(fields, 'description'),
-    address: textAt(fields, 'address'),
-    contactEmail: textAt(fields, 'contact_email'),
     organizationType,
     timezone,
     locale,
