@@ -439,7 +439,25 @@
       "used": "Iskorišteno",
       "balance": "Preostalo",
       "noTeam": "Bez smjene",
-      "summary": "Prikazano: {count, plural, one {# osoba} few {# osobe} other {# osoba}} · iskorišteno ukupno {used, plural, one {# dan} few {# dana} other {# dana}} od {allowance}",
+      "summary": "Prikazano: {count, plural, one {# osoba} few {# osobe} other {# osoba}} · {records, plural, one {upisan # godišnji} few {upisana # godišnja} other {upisano # godišnjih}} · iskorišteno ukupno {used, plural, one {# dan} few {# dana} other {# dana}} od {allowance}",
+      "stateChip": "Stanje: {value}",
+      "stateRemove": "Ukloni filtar stanje: {value}",
+      "statePicker": "Odaberi stanje",
+      "stateHeading": "Stanje",
+      "state": {
+        "all": "Sva stanja",
+        "onLeave": "Na godišnjem danas",
+        "recorded": "S upisanim godišnjim",
+        "unrecorded": "Bez upisanog godišnjeg",
+        "negative": "Preostalo u minusu"
+      },
+      "stateValue": {
+        "all": "sve",
+        "onLeave": "na godišnjem danas",
+        "recorded": "s upisanim godišnjim",
+        "unrecorded": "bez upisanog godišnjeg",
+        "negative": "preostalo u minusu"
+      },
       "noMatch": "Nijedna aktivna osoba nema to ime.",
       "clear": "Poništi pretragu",
       "none": "Danas nema nijedne aktivne osobe."
@@ -499,10 +517,13 @@
       "amendBodyEnds": "{name} radi {date}, a godišnji završava {newDate} Otvara izmjenu godišnjeg s tim datumom.",
       "amendBodyRemoves": "{name} radi {date}, a ovaj godišnji se briše. Otvara brisanje godišnjeg.",
       "amendWorks": "· {name} radi",
+      "amendDrops": "{count, plural, one {Godišnji se skraćuje i za # dan prije toga ({range}).} few {Godišnji se skraćuje i za # dana prije toga ({range}).} other {Godišnji se skraćuje i za # dana prije toga ({range}).}}",
+      "amendDropsPast": "Dio tih dana je već prošao: izmjena mijenja zapis i za njih.",
       "candidatesHeading": "Tko odrađuje smjenu",
       "candidates": {
         "free": "slobodan",
-        "working": "radi taj dan · 24 h bez pauze",
+        "working": "radi taj dan",
+        "continuous": "{line} · {hours} bez pauze",
         "onLeave": "na godišnjem taj dan"
       },
       "noCandidates": "Nema nikoga koga se može dodati na ovu smjenu.",
@@ -853,6 +874,8 @@
       "removeDenied": "Ne možeš ukloniti godišnji odmor. Za to trebaš ovlasti administratora.",
       "removeFailed": "Godišnji odmor nije uklonjen. Pokušaj ponovno.",
       "gone": "Taj zapis godišnjeg odmora više ne postoji (uklonjen je ili izmijenjen).",
+      "handoffGone": "Godišnji odmor iz konflikta više ne postoji ili više ne pokriva taj datum, pa se ništa nije otvorilo.",
+      "handoffPrefilled": "Od i do su izračunati iz konflikta. Provjeri ih prije spremanja.",
       "replacementStays": "{name} ostaje na smjeni {team} · {date} kao zamjena. Ukloni zamjenu u kalendaru ako više ne treba.",
       "replacementsUnknown": "Ne mogu provjeriti zamjene za ove datume.",
       "conflictLine": "{weekday} {date} {type}",

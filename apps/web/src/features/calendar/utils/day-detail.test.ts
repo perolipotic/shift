@@ -927,8 +927,8 @@ describe('an admin adds, removes or replaces someone on a shift (story 3.6b)', (
     ]);
     // Lana's own team works Dan that day: offered; whether it overlaps is `rosterOverlapOf`'s to warn of.
     expect(offers.in).toEqual([
-      { id: DORA, name: 'Dora', fireRank: null, teamName: null },
-      { id: VIEWER_MEMBER, name: VIEWER_NAME, fireRank: null, teamName: 'Smjena A' },
+      { id: DORA, name: 'Dora', fireRank: null, teamName: null, continuousMinutes: null },
+      { id: VIEWER_MEMBER, name: VIEWER_NAME, fireRank: null, teamName: 'Smjena A', continuousMinutes: null },
     ]);
   });
 
@@ -1163,7 +1163,7 @@ describe('an admin adds, removes or replaces someone on a shift (story 3.6b)', (
     expect(put(false)).toEqual(['Dora · bez smjene', `${VIEWER_NAME} · Smjena A`]);
     expect(outOptionOf(offers.out[0]!, true, true, words).id).toBe(ANA);
     // A member put on with a rank: Ime · čin · smjena, and the rank alone is gated.
-    const ranked = { id: DORA, name: 'Dora', fireRank: 'nco', teamName: 'Smjena C' };
+    const ranked = { id: DORA, name: 'Dora', fireRank: 'nco', teamName: 'Smjena C', continuousMinutes: null };
 
     expect(inOptionOf(ranked, true, noTeam, words).label).toBe(
       t('smjene.roster.withRankAndPosition', { name: 'Dora', rank: t('ljudi.rank.nco'), position: 'Smjena C' }),

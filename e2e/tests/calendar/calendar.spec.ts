@@ -1575,7 +1575,7 @@ test.describe('an admin changes a shift roster at 1280 px', () => {
     await expect(hint).toHaveCount(1);
     await expect(hint).toBeEmpty();
     await expect(put).toHaveAccessibleDescription('');
-    // STORY 7.9: she works that day, so she is under "radi taj dan · 24 h bez pauze" — informing, never blocking.
+    // STORY 7.9: she works that day, so she is under "radi taj dan" — informing, never blocking.
     const working = calendarPage.rosterInGroupIn(form, 'working');
     await expect(working).toHaveAttribute('label', hr.raspored.resolution.candidates.working);
     await expect(calendarPage.memberOptionIn(working, fixture.member.name)).toHaveCount(1);
