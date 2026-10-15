@@ -23,7 +23,7 @@ const LEAVE_DIALOG = new RegExp(
  *  7.13b, `?dodaj=1`) and a member's page — facts, each change in its own
  *  dialog (story 7.11) — with its team membership. */
 export class PeoplePage extends BasePage {
-  protected readonly path = '/ljudi';
+  readonly path = '/ljudi';
 
   // ------------------------------------------------- a member's directory
 
@@ -201,7 +201,7 @@ export class PeoplePage extends BasePage {
 
   /** Opens the add dialog by its URL, `/ljudi?dodaj=1`, and waits for it. */
   async gotoNew(): Promise<void> {
-    await this.page.goto('/ljudi?dodaj=1');
+    await this.goto('?dodaj=1');
     await expect(this.addDialog).toBeVisible();
   }
 
@@ -554,7 +554,7 @@ export class PeoplePage extends BasePage {
 
   /** Opens a member's edit screen by id. */
   async gotoMember(id: string): Promise<void> {
-    await this.page.goto(`/ljudi/${id}`);
+    await this.page.goto(`${this.path}/${id}`);
   }
 
   /** "Natrag na konflikte", shown while the member page was reached from a conflict (story 5.4d). */

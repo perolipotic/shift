@@ -7,7 +7,7 @@ const bands = hr.organization.hourBands;
 
 /** `/organizacija/satni-pojasi`: the hour band list and its add and edit dialogs. */
 export class HourBandsPage extends BasePage {
-  protected readonly path = '/organizacija/satni-pojasi';
+  readonly path = '/organizacija/satni-pojasi';
 
   /** The list's h1. */
   get listHeading(): Locator {
