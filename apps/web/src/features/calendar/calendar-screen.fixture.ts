@@ -3,7 +3,7 @@
  *
  * `/kalendar` is more than one file: a page that only composes, the hooks
  * holding its read, its state and its handlers, the components that draw it,
- * and two helpers. Two suites read it as source — `pages/prijava.test.ts` and
+ * and two helpers. Two suites read it as source — the source guards in `pages/` and
  * `features/calendar/services/snapshot.test.ts` — and two hand-written copies
  * of the list would be two answers to "what is the screen". Both build their
  * paths from this.

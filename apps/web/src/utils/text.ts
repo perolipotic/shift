@@ -9,7 +9,7 @@ import { formatIsoDate } from '@/lib/i18n/format';
 /**
  * The empty string, NAMED.
  *
- * `pages/ljudi.tsx` may hold no string literal of its own — `prijava.test.ts`
+ * `pages/ljudi.tsx` may hold no string literal of its own — `pages/literal-sweep.test.ts`
  * sweeps every screen for a literal that is neither a `t()` key nor a
  * structural attribute value, and an empty one is still one. Two things on that
  * surface are nothing at all: the search a freshly opened list carries, and the

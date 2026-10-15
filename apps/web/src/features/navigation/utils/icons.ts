@@ -31,7 +31,7 @@ import type { NavigationKey } from '@/features/navigation/utils/destinations';
  *
  * A `.ts` MODULE AND NOT PART OF THE CHROME, and the reason is mechanical rather
  * than tidy: the map is keyed by `nav.*` key, which means writing eight quoted
- * key literals — and `pages/prijava.test.ts` sweeps every `.tsx` under
+ * key literals — and `pages/literal-sweep.test.ts` sweeps every `.tsx` under
  * `apps/web/src` for exactly that, a string literal that is neither a `t()`
  * argument nor a structural attribute. Keeping the keys out of the component is
  * what lets the chrome stay inside that sweep rather than be excused from it.

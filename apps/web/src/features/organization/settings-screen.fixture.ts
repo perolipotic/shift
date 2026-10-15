@@ -3,7 +3,7 @@
  *
  * `/organizacija` is more than one file: a page that only composes, the hook
  * holding its read and its five writes, the components that draw it, and one
- * helper. Two suites read it as source — `pages/prijava.test.ts` and
+ * helper. Two suites read it as source — the source guards in `pages/` and
  * `features/organization/services/snapshot.test.ts` — and two hand-written
  * copies of the list would be two answers to "what is the screen". Both build
  * their paths from this.

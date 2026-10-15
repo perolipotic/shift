@@ -4,7 +4,6 @@ import { useEffect, useEffectEvent, useRef, useState, type FormEvent } from 'rea
 import { useErasureConfirmation } from '@/features/conflicts/hooks/use-erasure-confirmation';
 import { useErasureReads } from '@/features/conflicts/hooks/use-erasure-reads';
 import { CHECK_REFUSED, CHECK_UNAVAILABLE } from '@/features/conflicts/services/erasure-check';
-import { RECHECK_CHANGED } from '@/features/conflicts/services/erasures';
 import {
   overrideErasureCheckOf,
   type OverrideAmendChange,
@@ -599,54 +598,50 @@ export function useOverrideReview({
     try {
       const check = await checkErasures(checked.change);
 
-      if (superseded(started)) return;
+      await confirmation.follow(shown, check, {
+        stopped: () => superseded(started),
+        unavailable: () => {
+          settle();
+          if (reopen === null) {
+            setUnchecked({ kind: DISPOSITION_CONFIRMED, row: checked.row });
+            focusAfterWrite(retryButton);
+          } else if (reopenAmend(reopen.row, reopen.entered)) {
+            setUnchecked({ kind: DISPOSITION_AMENDED });
+            focusAfterWrite(retryButton, typeField);
+          }
+        },
+        refused: async ({ code }) => {
+          await refuse(reviewRefusalOf(code), reopen, started, settle);
+        },
+        // The write runs with the dialog still shown, busy; `settle` closes it.
+        write: async ({ rows }) => {
+          if (checked.kind === DISPOSITION_AMENDED) {
+            const { row, entered } = checked;
 
-      if (check.kind === CHECK_UNAVAILABLE) {
-        settle();
-        if (reopen === null) {
-          setUnchecked({ kind: DISPOSITION_CONFIRMED, row: checked.row });
-          focusAfterWrite(retryButton);
-        } else if (reopenAmend(reopen.row, reopen.entered)) {
-          setUnchecked({ kind: DISPOSITION_AMENDED });
-          focusAfterWrite(retryButton, typeField);
-        }
+            await writeDisposition(
+              DISPOSITION_AMENDED,
+              (client) => amendShiftTypeOverride(client, row, entered.shiftTypeId, entered.reason),
+              rows.length,
+              true,
+              reopen,
+              started,
+              settle,
+            );
+          } else {
+            const { row } = checked;
 
-        return;
-      }
-
-      if (check.kind === CHECK_REFUSED) {
-        await refuse(reviewRefusalOf(check.code), reopen, started, settle);
-
-        return;
-      }
-
-      if (confirmation.recheck(shown, check.rows, checked) === RECHECK_CHANGED) return;
-
-      if (checked.kind === DISPOSITION_AMENDED) {
-        const { row, entered } = checked;
-
-        await writeDisposition(
-          DISPOSITION_AMENDED,
-          (client) => amendShiftTypeOverride(client, row, entered.shiftTypeId, entered.reason),
-          check.rows.length,
-          true,
-          reopen,
-          started,
-          settle,
-        );
-      } else {
-        const { row } = checked;
-
-        await writeDisposition(
-          DISPOSITION_CONFIRMED,
-          (client) => confirmShiftTypeOverride(client, row),
-          check.rows.length,
-          false,
-          null,
-          started,
-          settle,
-        );
-      }
+            await writeDisposition(
+              DISPOSITION_CONFIRMED,
+              (client) => confirmShiftTypeOverride(client, row),
+              rows.length,
+              false,
+              null,
+              started,
+              settle,
+            );
+          }
+        },
+      });
     } catch (cause) {
       console.error(DISPOSITION_FAILED, cause);
       if (superseded(started)) return;

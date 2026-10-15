@@ -2,7 +2,7 @@
  * THE GODIŠNJI SCREEN'S FILE SET, written once (story 5.2c), on the *Sati*
  * screen's terms (`hours-screen.fixture.ts`): a page that only composes, the
  * hook holding its reads, and the components that draw it.
- * `pages/prijava.test.ts` reads it as source.
+ * The source guards in `pages/` read it as source.
  *
  * Paths are SEGMENTS under `apps/web/src`, so this module imports nothing.
  * The page is first: the "the page itself renders" check reads it.
@@ -60,11 +60,11 @@ export const LEAVE_SCREEN_EXEMPT: readonly { readonly file: string; readonly why
   },
   {
     file: 'hooks/use-member-leave.ts',
-    why: "the admin card's hook, a part of the member edit screen's set in pages/prijava.test.ts",
+    why: "the admin card's hook, a part of the member edit screen's set in pages/source-guards.fixture.ts",
   },
   {
     file: 'components/member-leave-card.tsx',
-    why: "the admin card on the member page, a part of the member edit screen's set in pages/prijava.test.ts",
+    why: "the admin card on the member page, a part of the member edit screen's set in pages/source-guards.fixture.ts",
   },
   {
     file: 'components/member-leave-records.tsx',

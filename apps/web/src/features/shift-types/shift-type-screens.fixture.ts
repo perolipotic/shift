@@ -3,8 +3,8 @@
  *
  * `/postavke-rotacije` and `/postavke-rotacije/tipovi-smjena/$id` are more
  * than one file each: a page that only composes, the hook holding its read,
- * its state and its handlers, and the components that draw it. The sign-in
- * suite (`pages/prijava.test.ts`) reads each set as one source, and
+ * its state and its handlers, and the components that draw it. The source
+ * guards in `pages/` (`source-guards.fixture.ts`) read each set as one source, and
  * `test/localization-applied.test.ts` checks that its folder read holds every
  * part, so both build their paths from this.
  *

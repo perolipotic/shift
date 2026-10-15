@@ -41,8 +41,7 @@ import { DAY_DETAIL_HEADING_ID } from '@/features/calendar/utils/element-ids';
 import type { CandidateLeave } from '@/features/calendar/utils/replacement-candidates';
 import { useErasureConfirmation } from '@/features/conflicts/hooks/use-erasure-confirmation';
 import { useErasureReads } from '@/features/conflicts/hooks/use-erasure-reads';
-import { CHECK_READY, CHECK_REFUSED, CHECK_UNAVAILABLE } from '@/features/conflicts/services/erasure-check';
-import { RECHECK_CHANGED } from '@/features/conflicts/services/erasures';
+import { CHECK_READY, CHECK_UNAVAILABLE } from '@/features/conflicts/services/erasure-check';
 import { ROSTER_WRITE_DEPENDENTS, refreshAfterWrite } from '@/features/teams/services/dependents';
 import { claimedOrganizationOf } from '@/lib/supabase/claims';
 import { supabaseClient } from '@/lib/supabase/client';
@@ -606,61 +605,58 @@ export function useRosterForm(
     try {
       const check = await checkErasures(change);
 
-      if (!stillOn(startedFor)) {
-        confirmation.drop();
+      await confirmation.follow(shown, check, {
+        stopped: () => {
+          if (stillOn(startedFor)) return false;
 
-        return;
-      }
+          confirmation.drop();
 
-      if (check.kind === CHECK_UNAVAILABLE) {
-        confirmation.drop();
-        if (change.kind === ROSTER_CHANGE_SAVE) {
-          setUnchecked(ROSTER_CHANGE_SAVE);
-          focusAfterWrite(() => retryButton.current, first);
+          return true;
+        },
+        unavailable: () => {
+          confirmation.drop();
+          if (change.kind === ROSTER_CHANGE_SAVE) {
+            setUnchecked(ROSTER_CHANGE_SAVE);
+            focusAfterWrite(() => retryButton.current, first);
 
-          return;
-        }
-        // THE CHANGE LEFT THE DAY meanwhile: there is nothing to retry.
-        if (rosterRemovalTargetOf(shownDetail.current, change.overrideId) === null) {
-          setRemoveFailure(ROSTER_GONE);
-          focusAfterWrite(first);
+            return;
+          }
+          // THE CHANGE LEFT THE DAY meanwhile: there is nothing to retry.
+          if (rosterRemovalTargetOf(shownDetail.current, change.overrideId) === null) {
+            setRemoveFailure(ROSTER_GONE);
+            focusAfterWrite(first);
 
-          return;
-        }
-        // Its own confirmation, armed again, refuses with the retry.
-        setUnchecked(ROSTER_CHANGE_REMOVAL);
-        setConfirming(change.overrideId);
-        focusAfterWrite(() => retryButton.current, cancelShown);
+            return;
+          }
+          // Its own confirmation, armed again, refuses with the retry.
+          setUnchecked(ROSTER_CHANGE_REMOVAL);
+          setConfirming(change.overrideId);
+          focusAfterWrite(() => retryButton.current, cancelShown);
+        },
+        // REFUSED ANYWAY: the write's own refusal, said as the write would say
+        // it, and the screen read again — nothing stale is written.
+        refused: async ({ code }) => {
+          confirmation.drop();
+          await invalidate();
+          if (!stillOn(startedFor)) return;
+          if (change.kind === ROSTER_CHANGE_REMOVAL) {
+            setRemoveFailure(code);
+            focusAfterWrite(actionOf(change.overrideId), first);
+          } else {
+            setFailure(code);
+            focusRefused(code);
+          }
+        },
+        write: async ({ rows }) => {
+          confirmation.drop();
 
-        return;
-      }
-
-      // REFUSED ANYWAY: the write's own refusal, said as the write would say
-      // it, and the screen read again — nothing stale is written.
-      if (check.kind === CHECK_REFUSED) {
-        confirmation.drop();
-        await invalidate();
-        if (!stillOn(startedFor)) return;
-        if (change.kind === ROSTER_CHANGE_REMOVAL) {
-          setRemoveFailure(check.code);
-          focusAfterWrite(actionOf(change.overrideId), first);
-        } else {
-          setFailure(check.code);
-          focusRefused(check.code);
-        }
-
-        return;
-      }
-
-      if (confirmation.recheck(shown, check.rows, checked) === RECHECK_CHANGED) return;
-
-      confirmation.drop();
-
-      if (checked.kind === ROSTER_CHANGE_REMOVAL) {
-        await writeRemoval(startedFor, checked.change.overrideId, false, check.rows.length);
-      } else {
-        await writeSave(checked.on, startedFor, checked.entered, check.rows.length);
-      }
+          if (checked.kind === ROSTER_CHANGE_REMOVAL) {
+            await writeRemoval(startedFor, checked.change.overrideId, false, rows.length);
+          } else {
+            await writeSave(checked.on, startedFor, checked.entered, rows.length);
+          }
+        },
+      });
     } catch (cause) {
       console.error(ROSTER_FAILED, cause);
       confirmation.drop();

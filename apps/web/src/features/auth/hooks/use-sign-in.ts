@@ -33,7 +33,7 @@ import { supabaseClient } from '@/lib/supabase/client';
  * that is the shape UX-DR34's "a refused save keeps every entered value" asks
  * for: uncontrolled inputs keep what was typed because nothing re-renders them
  * away. It also keeps every string in the screen's parts a `t()` key —
- * `prijava.test.ts` makes any other literal an offence, and reading the form's
+ * `pages/literal-sweep.test.ts` makes any other literal an offence, and reading the form's
  * `elements.namedItem('username')` would be one.
  *
  * THE RETURN TARGET COMES IN ON THE URL. The signed-out redirect put the
@@ -56,7 +56,7 @@ import { supabaseClient } from '@/lib/supabase/client';
 export function useSignIn(slug: string | undefined) {
   const navigate = useNavigate();
   const router = useRouter();
-  // NOT STRICT, so no route id is spelt here (`prijava.test.ts` refuses the
+  // NOT STRICT, so no route id is spelt here (`pages/literal-sweep.test.ts` refuses the
   // literal): this hook runs on both `/prijava` and `/prijava/$slug`, and both
   // shape `povratak` through the same `validateSearch`.
   const { povratak } = useSearch({ strict: false });

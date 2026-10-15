@@ -617,7 +617,7 @@ describe('the six columns are one table, so a heading and its sort key cannot dr
     // announce every address in the organization to anybody moving through the
     // table with a screen reader, and a tenth of the rows carry none — so a
     // tenth of the actions would be named nothing at all. `pages/ljudi.tsx`
-    // may not reach into a member row (`prijava.test.ts`), so the decision is
+    // may not reach into a member row (`pages/structural-pins-members.test.ts`), so the decision is
     // here and this is what executes it.
     const one = member({ id: 'm', name: 'Ana Kovač', email: 'ana@dvd.hr' });
 
@@ -1948,7 +1948,7 @@ describe('an answer that is not an answer is a code, never a throw', () => {
 describe('the read is bounded, because it is the most expensive one here', () => {
   it('declares a cache floor rather than re-reading on every window focus', () => {
     // Several hundred rows AND an exact count, which costs the database a second
-    // pass over the same index. `prijava.test.ts` pins that the screen actually
+    // pass over the same index. `pages/structural-pins-members.test.ts` pins that the screen actually
     // passes it.
     expect(MEMBERS_READ_STALE_MS).toBeGreaterThan(0);
   });

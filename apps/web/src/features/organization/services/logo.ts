@@ -69,7 +69,7 @@ export const ORGANIZATION_LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp']
  * would either offer a type the upload then refuses, or hide one the bucket
  * accepts — and both are invisible in a diff because neither is an error
  * anywhere. It is also what keeps the literal out of the screen, where
- * `prijava.test.ts` forbids every string that is not a structural attribute.
+ * `pages/literal-sweep.test.ts` forbids every string that is not a structural attribute.
  */
 export const ORGANIZATION_LOGO_ACCEPT = ORGANIZATION_LOGO_TYPES.join(',');
 
@@ -80,7 +80,7 @@ export const ORGANIZATION_LOGO_ACCEPT = ORGANIZATION_LOGO_TYPES.join(',');
  * `change` event when the SAME file is chosen twice in a row, so without the
  * reset "try again with the same file after a refusal" silently does nothing —
  * the one retry a person is most likely to attempt. The screen it belongs to
- * may hold no string literal at all (`prijava.test.ts`), so the empty string
+ * may hold no string literal at all (`pages/literal-sweep.test.ts`), so the empty string
  * lives in the module that owns the upload.
  */
 export const NO_FILE_CHOSEN = '';

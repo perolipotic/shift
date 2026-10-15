@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 
 import {
+  followErasureCheck,
+  type ConfirmableCheck,
+  type ErasureConfirmSteps,
+} from '@/features/conflicts/services/erasure-confirm';
+import {
   RECHECK_CHANGED,
   erasureKeptOf,
   erasuresConfirmedOf,
@@ -31,6 +36,10 @@ export interface ShownErasures<Subject> {
  * - {@link recheck} applies a re-derivation: the same conflicts as shown (or
  *   none any more) `proceed`; a changed list is shown again, undecided, with
  *   its `changed` line.
+ * - {@link follow} is the confirmation's own save once its fresh check has
+ *   answered: the one order of `@/features/conflicts/services/erasure-confirm`
+ *   (stopped, unavailable, refused, the freshness rule, the write), each
+ *   step the surface's own. The surface holds the latch around it.
  * - {@link close} ("Natrag na uređivanje", Escape, the backdrop) returns
  *   focus to `returnFocusTo` once `busy` is over; {@link drop} closes without
  *   it, for a path that moves focus itself.
@@ -84,6 +93,19 @@ export function useErasureConfirmation<Subject>(busy: boolean, returnFocusTo: ()
     return outcome;
   }
 
+  /**
+   * The save of the list `decided`, once its fresh `check` has answered:
+   * followed through `steps` in the one order, the list judged against
+   * `decided` and shown again when it changed.
+   */
+  function follow<Check extends ConfirmableCheck>(
+    decided: ShownErasures<Subject>,
+    check: Check,
+    steps: ErasureConfirmSteps<Check, Subject>,
+  ): Promise<void> {
+    return followErasureCheck(check, decided.subject, (rows, subject) => recheck(decided, rows, subject), steps);
+  }
+
   /** Closes the confirmation; focus goes back to what opened it. */
   function close(): void {
     returnFocus.current = true;
@@ -110,6 +132,7 @@ export function useErasureConfirmation<Subject>(busy: boolean, returnFocusTo: ()
     kept: shown !== null && erasureKeptOf(shown.rows, decisions),
     show,
     recheck,
+    follow,
     close,
     drop,
     decide,
