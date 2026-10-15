@@ -1,4 +1,4 @@
-import { ROSTER_GONE, ROSTER_TAKEN } from '@/features/calendar/services/roster-write';
+import { ROSTER_ARCHIVED, ROSTER_GONE, ROSTER_TAKEN } from '@/features/calendar/services/roster-write';
 import type { CalendarRosterOverride, CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import {
   CHECK_READY,
@@ -30,12 +30,27 @@ import {
  * change, written NEWER than every instant the snapshot holds, so it is in
  * force wherever a real insert would be (`overrideStandingOf`); a removal
  * filters the override out by id. The diff runs from the change's date on.
+ *
+ * THE BUILDER'S REVIEW (0039) adds two more writes of a roster override a
+ * rotation change left pending, on 5.5f's terms for the shift-type layer: a
+ * CONFIRM gives it a `confirmedAt` newer than every instant, which re-anchors
+ * it to the version in force; an AMEND soft-removes it and inserts one with
+ * the same team, date and member taken off, the new member put on, and a
+ * `createdAt` newer than every instant. Either is refused before deriving
+ * when the override is no longer live ({@link ROSTER_GONE}) or its team is
+ * archived ({@link ROSTER_ARCHIVED}), and an amend when another live
+ * override of the team and date already puts the new member on
+ * ({@link ROSTER_TAKEN}, 0026's live key).
  */
 
 /** The kind of a roster change saved from the day detail's form (an insert, 0026). */
 export const ROSTER_CHANGE_SAVE = 'save';
 /** The kind of a live roster change removed, by id (`remove_roster_override`, 0027). */
 export const ROSTER_CHANGE_REMOVAL = 'removal';
+/** The kind of a pending roster change confirmed in the builder's review (`confirm_roster_override`, 0039). */
+export const ROSTER_CHANGE_CONFIRM = 'confirm';
+/** The kind of a pending roster change amended to another arriving member (`amend_roster_override`, 0039). */
+export const ROSTER_CHANGE_AMEND = 'amend';
 
 /**
  * A roster change saved: the team and date of the day open, and the members
@@ -57,7 +72,20 @@ export interface RosterRemovalChange {
   readonly overrideId: string;
 }
 
-export type RosterChange = RosterSaveChange | RosterRemovalChange;
+/** A live roster change confirmed: its id alone. */
+export interface RosterConfirmChange {
+  readonly kind: typeof ROSTER_CHANGE_CONFIRM;
+  readonly overrideId: string;
+}
+
+/** A live roster change amended: its id, and the member it now puts on. */
+export interface RosterAmendChange {
+  readonly kind: typeof ROSTER_CHANGE_AMEND;
+  readonly overrideId: string;
+  readonly memberInId: string;
+}
+
+export type RosterChange = RosterSaveChange | RosterRemovalChange | RosterConfirmChange | RosterAmendChange;
 
 /** Which of the two writes a roster change is. */
 export type RosterChangeKind = RosterChange['kind'];
@@ -66,7 +94,7 @@ export type RosterChangeKind = RosterChange['kind'];
 export const PENDING_ROSTER_CHANGE_ID = 'pending-roster-change';
 
 /** Why the database would refuse the write anyway: the write's own refusal code. */
-export type RosterChangeRefusal = typeof ROSTER_GONE | typeof ROSTER_TAKEN;
+export type RosterChangeRefusal = typeof ROSTER_GONE | typeof ROSTER_TAKEN | typeof ROSTER_ARCHIVED;
 
 export type RosterChangeApplied =
   | { readonly ok: true; readonly after: CalendarSnapshot; readonly from: string }
@@ -100,6 +128,10 @@ function liveKeyTaken(overrides: readonly CalendarRosterOverride[], change: Rost
  *   instant `isoInstantOf` can write (never for a snapshot the read admitted).
  */
 export function rosterChangeSnapshotOf(calendar: CalendarSnapshot, change: RosterChange): RosterChangeApplied {
+  if (change.kind === ROSTER_CHANGE_CONFIRM || change.kind === ROSTER_CHANGE_AMEND) {
+    return reviewedSnapshotOf(calendar, change);
+  }
+
   if (change.kind === ROSTER_CHANGE_REMOVAL) {
     const removed = calendar.rosterOverrides.find((override) => override.id === change.overrideId);
 
@@ -122,10 +154,55 @@ export function rosterChangeSnapshotOf(calendar: CalendarSnapshot, change: Roste
     memberInId: change.memberInId,
     reason: '',
     createdAt: isoInstantOf(latestInstantOf(calendar) + 1),
+    confirmedAt: null,
     authorMemberId: null,
   };
 
   return { ok: true, after: { ...calendar, rosterOverrides: [...calendar.rosterOverrides, added] }, from: change.date };
+}
+
+/**
+ * The builder review's two writes (0039): a confirm stamps the override
+ * newest; an amend replaces it with a newest one putting `memberInId` on.
+ */
+function reviewedSnapshotOf(
+  calendar: CalendarSnapshot,
+  change: RosterConfirmChange | RosterAmendChange,
+): RosterChangeApplied {
+  const changed = calendar.rosterOverrides.find((override) => override.id === change.overrideId);
+
+  if (changed === undefined) return { ok: false, code: ROSTER_GONE };
+  if (calendar.teams.some((team) => team.id === changed.teamId && team.archived)) {
+    return { ok: false, code: ROSTER_ARCHIVED };
+  }
+
+  const others = calendar.rosterOverrides.filter((override) => override.id !== changed.id);
+
+  if (
+    change.kind === ROSTER_CHANGE_AMEND &&
+    others.some(
+      (override) =>
+        override.teamId === changed.teamId && override.date === changed.date && override.memberInId === change.memberInId,
+    )
+  ) {
+    return { ok: false, code: ROSTER_TAKEN };
+  }
+
+  const newest = isoInstantOf(latestInstantOf(calendar) + 1);
+  const written: CalendarRosterOverride =
+    change.kind === ROSTER_CHANGE_CONFIRM
+      ? { ...changed, confirmedAt: newest }
+      : {
+          ...changed,
+          id: PENDING_ROSTER_CHANGE_ID,
+          memberInId: change.memberInId,
+          reason: '',
+          createdAt: newest,
+          confirmedAt: null,
+          authorMemberId: null,
+        };
+
+  return { ok: true, after: { ...calendar, rosterOverrides: [...others, written] }, from: changed.date };
 }
 
 export type RosterErasureCheck =

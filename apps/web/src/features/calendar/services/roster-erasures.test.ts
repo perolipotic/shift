@@ -212,6 +212,7 @@ describe('several erasures', () => {
       memberInId: null,
       reason: '',
       createdAt,
+      confirmedAt: null,
       authorMemberId: null,
     });
     const after: CalendarSnapshot = {

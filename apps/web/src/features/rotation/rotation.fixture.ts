@@ -362,7 +362,12 @@ export function calendarRosterOverrideRow(
   date: string,
   memberOutId: unknown,
   memberInId: unknown,
-  options: { readonly reason?: unknown; readonly createdAt?: unknown; readonly author?: unknown } = {},
+  options: {
+    readonly reason?: unknown;
+    readonly createdAt?: unknown;
+    readonly confirmedAt?: unknown;
+    readonly author?: unknown;
+  } = {},
 ): Row {
   return {
     id,
@@ -372,6 +377,7 @@ export function calendarRosterOverrideRow(
     member_in_id: memberInId,
     reason: options.reason ?? 'Zamjena zbog bolovanja.',
     created_at: options.createdAt ?? '2026-09-12T17:05:00+00:00',
+    confirmed_at: options.confirmedAt ?? null,
     author_member_id: options.author === undefined ? VIEWER_MEMBER : options.author,
   };
 }
