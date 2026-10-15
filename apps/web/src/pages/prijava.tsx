@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { SignInForm } from '@/features/auth/components/sign-in-form';
 import { useSignIn } from '@/features/auth/hooks/use-sign-in';
 import { organizationDestination } from '@/features/auth/services/address';
-import { returnSearchOf } from '@/features/auth/services/return-target';
+import { returnSearchOf, returnTargetOf } from '@/features/auth/services/return-target';
 import { t } from '@/lib/i18n';
 import { resolvedSession } from '@/lib/supabase/client';
 import { rootRoute } from '@/pages/__root';
@@ -105,7 +105,7 @@ export const prijavaRoute = createRoute({
   // the first slug's uncontrolled fields, `Promijeni` state and focus. Keyed
   // on the slug, the screen mounts afresh and opens as the new link says.
   remountDeps: ({ params }) => params.slug,
-  beforeLoad: async ({ context, params }) => {
+  beforeLoad: async ({ context, params, search }) => {
     // `search: true` keeps the return target on the way to bare `/prijava`, so a
     // malformed segment costs the visitor the slug and never the destination.
     if (organizationDestination(params.slug) === null) {
@@ -119,7 +119,12 @@ export const prijavaRoute = createRoute({
     // both sign-in routes fail OPEN.
     if ((await resolvedSession(context.currentSession)) === null) return;
 
-    throw redirect({ to: '/' });
+    // WHERE THE VISITOR WAS GOING, not `/` (C512). A signed-in person who opens
+    // a sign-in link carrying `povratak` — a second tab bounced while the first
+    // was signing in, a bookmark of the bounce — is sent where it points, through
+    // the same validator the sign-in hook follows it with; with no target, or
+    // one that is not a same-app path, that is `/`.
+    throw redirect({ href: returnTargetOf(search.povratak, context.isKnownPath) });
   },
   component: SignInScreen,
 });
@@ -136,18 +141,19 @@ export const prijavaBareRoute = createRoute({
   path: '/prijava',
   // The return target the signed-out redirect carries, and nothing else.
   validateSearch: returnSearchOf,
-  // A SIGNED-IN VISITOR GOES TO `/`, for the reason recorded on
-  // `/prijava/$slug`: on a shared device the person reading the form may not
-  // be the person signed in.
+  // A SIGNED-IN VISITOR GOES WHERE `povratak` POINTS, or to `/`, for the
+  // reasons recorded on `/prijava/$slug`: on a shared device the person
+  // reading the form may not be the person signed in, and the target is
+  // followed through the same validator the sign-in hook uses.
   //
   // FAIL OPEN, the opposite of `pages/_app.tsx` and for the reason recorded
   // there too: an unreadable session must render the form, because redirecting
   // on a failed read would put the one path that can repair a session behind
   // the session working.
-  beforeLoad: async ({ context }) => {
+  beforeLoad: async ({ context, search }) => {
     if ((await resolvedSession(context.currentSession)) === null) return;
 
-    throw redirect({ to: '/' });
+    throw redirect({ href: returnTargetOf(search.povratak, context.isKnownPath) });
   },
   component: SignInScreen,
 });

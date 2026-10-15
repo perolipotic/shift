@@ -12,6 +12,9 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * it and reaches nothing but the set-password step until they save their own.
  */
 
+/** The step, with or without the return target the layout carries to it (E853). */
+const STEP = /\/postavi-lozinku(\?povratak=[^&#]*)?$/;
+
 test('a new member sets their own password at the first sign-in, then signs in with it', async ({
   browser,
   fixture,
@@ -51,12 +54,13 @@ test('a new member sets their own password at the first sign-in, then signs in w
     const chosen = `${username}-vlastita`;
 
     await login.submitSignIn(fixture.slug, username, issued);
-    await expect(page).toHaveURL('/postavi-lozinku');
+    await expect(page).toHaveURL(STEP);
     await expect(step.stepHeading).toBeVisible();
 
-    // A GUARDED DESTINATION, typed: it lands back on the step.
+    // A GUARDED DESTINATION, typed: it lands back on the step, carrying where
+    // it was going (E853).
     await page.goto('/kalendar');
-    await expect(page).toHaveURL('/postavi-lozinku');
+    await expect(page).toHaveURL(`/postavi-lozinku?povratak=${encodeURIComponent('/kalendar')}`);
 
     // THE MISMATCH IS REFUSED ON THE PAGE, with no request.
     let updates = 0;
@@ -68,10 +72,10 @@ test('a new member sets their own password at the first sign-in, then signs in w
     await expect(step.repeatInput).toBeFocused();
     expect(updates, 'a mismatch reached the service').toBe(0);
 
-    // SAVED: the member continues to their landing surface, still signed in.
+    // SAVED: the member continues where the typed link pointed, still signed in.
     await step.save(chosen);
-    await expect(page).toHaveURL('/danas');
-    await expect(step.heading(hr.nav.danas)).toBeVisible();
+    await expect(page).toHaveURL('/kalendar');
+    await expect(step.heading(hr.nav.kalendar)).toBeVisible();
 
     // AND THE STEP IS GONE: the URL alone sends them on.
     await page.goto('/postavi-lozinku');
@@ -108,11 +112,43 @@ test('the step offers Odjava, which ends the session', async ({ browser, fixture
     const step = new SetPasswordPage(page);
 
     await new LoginPage(page).submitSignIn(fixture.slug, username, issued);
-    await expect(page).toHaveURL('/postavi-lozinku');
+    await expect(page).toHaveURL(STEP);
     await step.signOutButton.click();
     await expect(page).toHaveURL(/\/prijava/);
     await page.goto('/postavi-lozinku');
     await expect(page).toHaveURL(/\/prijava\?povratak=/);
+  } finally {
+    await member.close();
+  }
+});
+
+test('a flagged member who opened a deep link lands on it after setting their password (E853)', async ({
+  browser,
+  fixture,
+}) => {
+  test.slow();
+  const { username, password } = await issued(browser, 'Duboka Poveznica');
+  const member = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+
+  try {
+    const page = await member.newPage();
+    const login = new LoginPage(page);
+    const step = new SetPasswordPage(page);
+    const deepLink = '/kalendar?mjesec=2031-02#tjedan';
+
+    // SIGNED OUT, the link bounces to sign-in carrying itself…
+    await page.goto(deepLink);
+    await expect(page).toHaveURL(`/prijava?povratak=${encodeURIComponent(deepLink)}`);
+    await login.continueSignIn(fixture.slug, username, password);
+
+    // …the flagged session is held at the step, still carrying it…
+    await expect(page).toHaveURL(`/postavi-lozinku?povratak=${encodeURIComponent(deepLink)}`);
+    await expect(step.stepHeading).toBeVisible();
+
+    // …and saving lands on the link, search and hash intact.
+    await step.save(`${username}-vlastita`);
+    await expect(page).toHaveURL(deepLink);
+    await expect(step.heading(hr.nav.kalendar)).toBeVisible();
   } finally {
     await member.close();
   }
@@ -165,7 +201,7 @@ test('a clear that fails after the password landed retries only the clear', asyn
     });
 
     await new LoginPage(page).submitSignIn(fixture.slug, username, password);
-    await expect(page).toHaveURL('/postavi-lozinku');
+    await expect(page).toHaveURL(STEP);
 
     await step.save(chosen);
     await expect(step.alertWith(hr.auth.setPassword.error.notContinued)).toBeVisible();
@@ -229,7 +265,7 @@ test('an admin reset shows four words with Kopiraj, and holds the next sign-in a
     const page = await member.newPage();
 
     await new LoginPage(page).submitSignIn(fixture.slug, username, reset);
-    await expect(page).toHaveURL('/postavi-lozinku');
+    await expect(page).toHaveURL(STEP);
   } finally {
     await member.close();
   }

@@ -24,6 +24,7 @@ import { RoutePending } from '@/pages/pending';
 import { satiRoute } from '@/pages/sati';
 import { smjenaRoute } from '@/pages/smjene.$id';
 import { routeMemberRole } from '@/features/navigation/services/role';
+import { knownPathOf } from '@/features/auth/services/return-target';
 import { currentSession } from '@/lib/supabase/client';
 
 /**
@@ -119,10 +120,20 @@ const routeTree = rootRoute.addChildren([
 export const ROUTE_PENDING_MS = 1000;
 
 /**
+ * Whether the tree has a screen for a pathname, asked of the router below at
+ * call time. A function declaration with its return type spelled out, so the
+ * router's own type does not depend on itself.
+ */
+function isKnownPath(pathname: string): boolean {
+  return knownPathOf(router)(pathname);
+}
+
+/**
  * The router, and the one place the session reader is bound into the context.
  *
- * `currentSession` and `currentMemberRole` are the whole of the router context
- * (`__root.tsx`). Both are declared outside the route modules so `/`'s decision
+ * `currentSession`, `currentMemberRole` and `isKnownPath` are the whole of the
+ * router context (`__root.tsx`); the third (C512, E853) lets a guard validate a
+ * return target against this tree, which no page can import. Both are declared outside the route modules so `/`'s decision
  * and `/ljudi`'s guard stay assertable from the node suite: `router.test.ts`
  * calls each `beforeLoad` with a context of its own and gets both branches,
  * which is impossible if a route reaches for the client itself.
@@ -152,7 +163,7 @@ export const ROUTE_PENDING_MS = 1000;
  */
 export const router = createRouter({
   routeTree,
-  context: { currentSession, currentMemberRole: routeMemberRole },
+  context: { currentSession, currentMemberRole: routeMemberRole, isKnownPath },
   defaultPendingComponent: RoutePending,
   defaultPendingMs: ROUTE_PENDING_MS,
 });

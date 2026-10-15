@@ -124,7 +124,7 @@ export const FEATURE_PUBLIC = {
   // set-password step through `mustSetPassword`, never a reading of its own.
   auth: [
     'services/address', // pages
-    'services/return-target', // pages
+    'services/return-target', // pages, router
     'services/set-password', // pages
     'services/sign-out', // navigation
   ],
@@ -284,7 +284,7 @@ export const FEATURE_PUBLIC = {
     'services/dependents', // conflicts, hour-bands, leave, members
     'services/list', // calendar, members, rotation, pages
     'services/roster', // pages, today
-    'services/write', // calendar, hour-bands, rotation, shift-types, pages
+    'services/write', // pages
   ],
   // SINCE STORY 6.3: the *Danas* page picks the admin's body by role and states
   // the admin's own today in its subtitle, from the rules that executes.

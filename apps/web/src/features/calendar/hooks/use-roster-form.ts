@@ -44,7 +44,7 @@ import { useErasureReads } from '@/features/conflicts/hooks/use-erasure-reads';
 import { CHECK_READY, CHECK_REFUSED, CHECK_UNAVAILABLE } from '@/features/conflicts/services/erasure-check';
 import { RECHECK_CHANGED } from '@/features/conflicts/services/erasures';
 import { ROSTER_WRITE_DEPENDENTS, refreshAfterWrite } from '@/features/teams/services/dependents';
-import { claimedOrganizationOf } from '@/features/teams/services/write';
+import { claimedOrganizationOf } from '@/lib/supabase/claims';
 import { supabaseClient } from '@/lib/supabase/client';
 import { focusLater } from '@/utils/focus-later';
 

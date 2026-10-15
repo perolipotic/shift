@@ -6,7 +6,7 @@ import { initLocalization } from '@/lib/i18n';
 import { queryClient } from '@/lib/query-client';
 import { bootLocalization } from '@/lib/i18n/boot';
 import { supabaseClient } from '@/lib/supabase/client';
-import { resetOnSessionChange } from '@/lib/supabase/session-cache';
+import { resetOnSessionChange, sessionEnded } from '@/lib/supabase/session-cache';
 import { router } from '@/router';
 
 import '@/index.css';
@@ -25,7 +25,7 @@ if (rootElement === null) {
 // this covers every change no click here makes. The three transitions, and why
 // a token refresh changes nothing, are `@/lib/supabase/session-cache`, which
 // the node suite executes.
-resetOnSessionChange(() => supabaseClient().auth, { cache: queryClient, router });
+resetOnSessionChange(() => supabaseClient().auth, { cache: queryClient, router, ended: sessionEnded });
 
 // Initialization is awaited before the first render (story 1.1c). Resources are
 // bundled, so this resolves in a microtask rather than over the network — but
