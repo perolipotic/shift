@@ -15,7 +15,6 @@ import {
 } from '@/features/calendar/services/override-write';
 import {
   OVERRIDE_NO_TYPE,
-  OVERRIDE_REASON_MAX,
   OVERRIDE_REFUSED_REASON,
   overrideRemovalTargetOf,
   type DayDetail,
@@ -126,7 +125,6 @@ export function OverrideSetForm({
           name="reason"
           type="text"
           required
-          maxLength={OVERRIDE_REASON_MAX}
           autoComplete="off"
           readOnly={pending}
           aria-invalid={reasonRefused}

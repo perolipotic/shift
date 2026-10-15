@@ -23,6 +23,7 @@ import {
 } from '@/features/organization/services/snapshot';
 import { supabaseClient } from '@/lib/supabase/client';
 import { focusLater } from '@/utils/focus-later';
+import { trimName } from '@/utils/name';
 import { NO_TEXT } from '@/utils/text';
 
 /**
@@ -249,7 +250,7 @@ export function useMemberCreate(adding: boolean, navigate: MemberAddNavigate) {
       // kept anyway: the one unrecoverable value in this system is shown before
       // anything else is awaited, so no later step can take it down.
       setCredential(outcome.credential);
-      setCreatedName(name.value.trim());
+      setCreatedName(trimName(name.value));
       // THE FORM AND ITS FOCUSED SUBMIT ARE GONE: focus moves to the line
       // that says what was created, never to the page body.
       focusLater([byId(MEMBER_ADD_CREATED_ID)], byId(MEMBER_ADD_DIALOG_HEADING_ID));

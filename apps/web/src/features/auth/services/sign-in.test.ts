@@ -215,6 +215,24 @@ describe('three different refusals are one answer', () => {
     expect(called, 'a malformed slug still reached the auth service').toBe(false);
   });
 
+  it.each([
+    { field: 'username', credentials: { ...CREDENTIALS, username: '' } },
+    { field: 'password', credentials: { ...CREDENTIALS, password: '' } },
+    { field: 'organization', credentials: { ...CREDENTIALS, slug: '' } },
+  ])('refuses an empty $field without asking the service (B298: the form is noValidate)', async ({ credentials }) => {
+    let called = false;
+    const auth: PasswordAuth = {
+      signInWithPassword: () => {
+        called = true;
+
+        return Promise.resolve({ data: { session: null }, error: null });
+      },
+    };
+
+    expect(await signIn(auth, credentials)).toEqual({ ok: false, code: SIGN_IN_REFUSED });
+    expect(called, 'an empty field still reached the auth service').toBe(false);
+  });
+
   it('maps an answer carrying neither an error nor a session to a refusal', async () => {
     // Not a shape GoTrue produces; mapped rather than trusted, because `ok:
     // true` with nothing behind it lands on `/` and redirects straight back.

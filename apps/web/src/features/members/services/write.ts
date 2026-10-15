@@ -14,7 +14,7 @@ import {
   type MemberTeamVersion,
   type MembersSurfaceState,
 } from '@/features/members/services/list';
-import { isBlankName } from '@/utils/name';
+import { isBlankName, trimName } from '@/utils/name';
 import {
   CREATE_USER_OPERATION,
   DEACTIVATE,
@@ -545,7 +545,7 @@ export function storedUsernameOf(rows: readonly unknown[] | null, cached: string
  */
 export function memberPatchOf(edits: MemberEdits): Record<string, unknown> {
   return {
-    ...(edits.name === undefined ? {} : { name: edits.name.trim() }),
+    ...(edits.name === undefined ? {} : { name: trimName(edits.name) }),
     ...(edits.email === undefined ? {} : { email: edits.email }),
     ...(edits.role === undefined ? {} : { role: edits.role }),
     ...(edits.leaveAllowanceDays === undefined ? {} : { leave_allowance_days: edits.leaveAllowanceDays }),

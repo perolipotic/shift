@@ -23,7 +23,6 @@ import {
   DISPOSITION_CONFIRMED,
   DISPOSITION_DISCARDED,
   DISPOSITION_REASON,
-  DISPOSITION_REASON_MAX,
   amendDefaultsOf,
   dispositionDoneMessageKey,
   dispositionMessageKey,
@@ -248,7 +247,6 @@ export function OverrideReview({
               type="text"
               required
               defaultValue={defaults.reason}
-              maxLength={DISPOSITION_REASON_MAX}
               autoComplete="off"
               readOnly={pending}
               aria-invalid={reasonRefused}

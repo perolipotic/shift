@@ -12,7 +12,6 @@ import { ROSTER_CHANGE_REMOVAL, ROSTER_CHANGE_SAVE } from '@/features/calendar/s
 import { rosterDoneMessageKey, rosterWriteMessageKey } from '@/features/calendar/services/roster-write';
 import type { CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import {
-  OVERRIDE_REASON_MAX,
   ROSTER_ADDED,
   ROSTER_NOBODY,
   ROSTER_REFUSED_REASON,
@@ -232,7 +231,6 @@ export function RosterSetForm({
           name="reason"
           type="text"
           required
-          maxLength={OVERRIDE_REASON_MAX}
           autoComplete="off"
           readOnly={pending}
           aria-invalid={reasonRefused}

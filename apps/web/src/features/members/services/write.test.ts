@@ -992,8 +992,9 @@ describe('an edit reaches the privileged function only when the identity moves',
     const { table, calls } = tableThat({ data: [{ id: 'member-1' }], error: null });
     const { functions } = functionsThat(replied({ code: USERNAME_CHANGED }));
 
-    expect(await saveMember(table, functions, member(), edits({ name: ' Ana\u0085 ' }))).toEqual({ ok: true });
-    expect(calls[0]?.values['name']).toBe('Ana\u0085');
+    expect(await saveMember(table, functions, member(), edits({ name: ' Ana\u0085\u001C ' }))).toEqual({ ok: true });
+    // C549: stored trimmed in the key's class, so it is the same string as `Ana`.
+    expect(calls[0]?.values['name']).toBe('Ana');
   });
 
   it('calls the function once when the username moves, after the fields landed', async () => {
