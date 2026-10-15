@@ -170,7 +170,11 @@ export const FEATURE_PUBLIC = {
     // Story 5.4c: the replacement candidates, grouped once, for the conflict
     // screen's second card (and story 7.9's roster dialog). Story 7.9: their
     // group headings (`candidateGroupMessageKey`) live beside them.
-    'utils/replacement-candidates', // conflicts
+    'utils/replacement-candidates', // conflicts, rotation
+    // 0039: the roster change's erasure "after", confirm and amend included,
+    // for the rotation builder's review of a pending roster override, as the
+    // shift-type one's lives in `conflicts`. Its refusal codes come with it.
+    'services/roster-erasures', // rotation
   ],
   // Story 5.3c: the calendar's marks derive every collision through
   // *Raspored*'s own recipe (`collisionInputOf`), never a second one. Story

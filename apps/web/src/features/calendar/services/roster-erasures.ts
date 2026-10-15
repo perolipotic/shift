@@ -93,6 +93,9 @@ export type RosterChangeKind = RosterChange['kind'];
 /** The id the "after" snapshot gives a change not yet saved: never a database id. */
 export const PENDING_ROSTER_CHANGE_ID = 'pending-roster-change';
 
+/** The write's own refusal codes this guard answers, for a surface outside the calendar (0039). */
+export { ROSTER_ARCHIVED, ROSTER_GONE, ROSTER_TAKEN };
+
 /** Why the database would refuse the write anyway: the write's own refusal code. */
 export type RosterChangeRefusal = typeof ROSTER_GONE | typeof ROSTER_TAKEN | typeof ROSTER_ARCHIVED;
 

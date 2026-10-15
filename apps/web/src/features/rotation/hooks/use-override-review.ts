@@ -4,12 +4,6 @@ import { useEffect, useEffectEvent, useRef, useState, type FormEvent } from 'rea
 import { useErasureConfirmation } from '@/features/conflicts/hooks/use-erasure-confirmation';
 import { useErasureReads } from '@/features/conflicts/hooks/use-erasure-reads';
 import { CHECK_REFUSED, CHECK_UNAVAILABLE } from '@/features/conflicts/services/erasure-check';
-import {
-  overrideErasureCheckOf,
-  type OverrideAmendChange,
-  type OverrideChange,
-  type OverrideConfirmChange,
-} from '@/features/conflicts/services/override-erasures';
 import { ROTATION_KEY, type RotationSnapshot } from '@/features/rotation/services/list';
 import {
   DISPOSITION_AMENDED,
@@ -19,59 +13,79 @@ import {
   DISPOSITION_FAILED,
   DISPOSITION_GONE,
   DISPOSITION_REASON,
-  amendDefaultsOf,
-  amendEntryOf,
-  amendShiftTypeOverride,
-  confirmShiftTypeOverride,
-  discardShiftTypeOverride,
+  REVIEW_SHIFT_TYPE,
+  amendReviewed,
+  confirmReviewed,
+  discardReviewed,
+  offeredIn,
   overrideReviewOf,
-  rowOffersOf,
+  reviewAmendDefaultsOf,
+  reviewAmendEntryOf,
+  reviewOffersOf,
+  shiftTypeAmendGroupsOf,
+  type AmendOptionGroup,
   type DispositionDone,
   type DispositionFailure,
   type DispositionOutcome,
-  type DispositionRpc,
-  type PendingOverrideRow,
+  type ReviewRow,
+  type ReviewRpc,
 } from '@/features/rotation/services/override-disposition';
 import {
-  reviewAmendChangeOf,
-  reviewConfirmChangeOf,
-  reviewRefusalOf,
+  reviewErasureCheckOf,
+  reviewedAmendChangeOf,
+  reviewedConfirmChangeOf,
+  rosterAmendOptionsOf,
   staleRefusalOf,
+  type ReviewChange,
 } from '@/features/rotation/services/override-review-erasures';
 import { ROTATION_SAVE_DEPENDENTS, refreshAfterWrite } from '@/features/teams/services/dependents';
 import { supabaseClient } from '@/lib/supabase/client';
 import { firstEnabledOf, focusLater } from '@/utils/focus-later';
 
-/** What the amend's two fields held when it was submitted: restored when the admin goes back to it. */
+/**
+ * What the amend's two fields held when it was submitted: the type, or for a
+ * roster override the member to put on (0039), and the reason. Restored when
+ * the admin goes back to it.
+ */
 export interface AmendEntered {
-  readonly shiftTypeId: string;
+  readonly choiceId: string;
   readonly reason: string;
 }
 
-/** The dialog open over the review: an amend (with what was entered, when reopened) or a discard of one row. */
+/**
+ * The dialog open over the review: an amend (with what it offers and, when
+ * reopened, what was entered) or a discard of one row.
+ */
 export type Armed =
-  | { readonly kind: typeof DISPOSITION_AMENDED; readonly row: PendingOverrideRow; readonly entered?: AmendEntered }
-  | { readonly kind: typeof DISPOSITION_DISCARDED; readonly row: PendingOverrideRow };
+  | {
+      readonly kind: typeof DISPOSITION_AMENDED;
+      readonly row: ReviewRow;
+      readonly groups: readonly AmendOptionGroup[];
+      readonly entered?: AmendEntered;
+    }
+  | { readonly kind: typeof DISPOSITION_DISCARDED; readonly row: ReviewRow };
 
 /** What a confirm's or an amend's erasure check stood on: the write writes exactly this. */
 export type CheckedDisposition =
-  | { readonly kind: typeof DISPOSITION_CONFIRMED; readonly row: PendingOverrideRow; readonly change: OverrideConfirmChange }
+  | { readonly kind: typeof DISPOSITION_CONFIRMED; readonly row: ReviewRow; readonly change: ReviewChange }
   | {
       readonly kind: typeof DISPOSITION_AMENDED;
-      readonly row: PendingOverrideRow;
-      readonly change: OverrideAmendChange;
+      readonly row: ReviewRow;
+      readonly change: ReviewChange;
       readonly entered: AmendEntered;
+      readonly groups: readonly AmendOptionGroup[];
     };
 
-/** An amend the erasure check stood on, as it would be opened again: its row and what was entered. */
+/** An amend the erasure check stood on, as it would be opened again: its row, what it offered and what was entered. */
 interface CheckedAmend {
-  readonly row: PendingOverrideRow;
+  readonly row: ReviewRow;
   readonly entered: AmendEntered;
+  readonly groups: readonly AmendOptionGroup[];
 }
 
 /** Which write could not check what it would erase: a confirm (said in the review) or an amend (in its dialog). */
 export type ReviewUnchecked =
-  | { readonly kind: typeof DISPOSITION_CONFIRMED; readonly row: PendingOverrideRow }
+  | { readonly kind: typeof DISPOSITION_CONFIRMED; readonly row: ReviewRow }
   | { readonly kind: typeof DISPOSITION_AMENDED };
 
 /**
@@ -126,6 +140,13 @@ export type ReviewUnchecked =
  * (`ROTATION_SAVE_DEPENDENTS`) — so a conflict it erased leaves the queue on
  * the next read. A discard and every refusal re-read `ROTATION_KEY` alone.
  * Neutral throughout: never `destructive` and never the accent.
+ *
+ * BOTH LAYERS (0039): a roster override a rotation change left pending is a
+ * row of the same review, confirmed, amended or discarded by the same
+ * handlers; each row's `layer` picks its calls, its preflight and its check.
+ * Its amend changes WHO ARRIVES: opening it reads the calendar, the leave and
+ * the resolutions afresh (the check's own reads) under the latch, and offers
+ * the calendar's candidates for that shift.
  */
 export function useOverrideReview({
   snapshot,
@@ -215,7 +236,7 @@ export function useOverrideReview({
   }
 
   /** The current row of `id`, or `undefined` once it has left the review. */
-  function rowNow(id: string): PendingOverrideRow | undefined {
+  function rowNow(id: string): ReviewRow | undefined {
     return rowsNow.current.find((row) => row.id === id);
   }
 
@@ -270,9 +291,9 @@ export function useOverrideReview({
     }
   }
 
-  /** The erasure check of `change`, over fresh reads (story 5.5h). */
-  function checkErasures(change: OverrideChange) {
-    return overrideErasureCheckOf(readErasures.readAndShare, change, onlineManager.isOnline());
+  /** The erasure check of `change`, over fresh reads (story 5.5h), by its layer's guard. */
+  function checkErasures(change: ReviewChange) {
+    return reviewErasureCheckOf(readErasures.readAndShare, change, onlineManager.isOnline());
   }
 
   /** The stale path, said in the review: whatever is open closes, and focus goes to the refusal. */
@@ -291,7 +312,7 @@ export function useOverrideReview({
    * falls back to the amend's defaults, the reason kept, and says `archived`
    * in the dialog. Answers whether the amend is open.
    */
-  function reopenAmend(row: PendingOverrideRow, entered: AmendEntered): boolean {
+  function reopenAmend(row: ReviewRow, entered: AmendEntered, groups: readonly AmendOptionGroup[]): boolean {
     const current = rowNow(row.id);
 
     if (current === undefined) {
@@ -300,13 +321,18 @@ export function useOverrideReview({
       return false;
     }
 
-    if (!current.options.some((option) => option.id === entered.shiftTypeId)) {
-      const defaults = amendDefaultsOf(current);
+    // A shift-type row's types are its own, read again; a roster row's
+    // members are those its amend was opened with.
+    const offered = current.layer === REVIEW_SHIFT_TYPE ? shiftTypeAmendGroupsOf(current) : groups;
+
+    if (!offeredIn(offered, entered.choiceId)) {
+      const defaults = reviewAmendDefaultsOf(current, offered);
 
       setArmed({
         kind: DISPOSITION_AMENDED,
         row: current,
-        entered: { shiftTypeId: defaults.shiftTypeId ?? '', reason: entered.reason },
+        groups: offered,
+        entered: { choiceId: defaults.choiceId ?? '', reason: entered.reason },
       });
       setFailure(DISPOSITION_ARCHIVED);
       focusAfterWrite(typeField);
@@ -314,7 +340,7 @@ export function useOverrideReview({
       return false;
     }
 
-    setArmed({ kind: DISPOSITION_AMENDED, row: current, entered });
+    setArmed({ kind: DISPOSITION_AMENDED, row: current, groups: offered, entered });
 
     return true;
   }
@@ -344,7 +370,7 @@ export function useOverrideReview({
     settle();
 
     if (reopen !== null) {
-      if (!reopenAmend(reopen.row, reopen.entered)) return;
+      if (!reopenAmend(reopen.row, reopen.entered, reopen.groups)) return;
       setFailure(code);
       focusRefused(code);
 
@@ -367,14 +393,14 @@ export function useOverrideReview({
    */
   async function writeDisposition(
     kind: DispositionDone,
-    call: (client: DispositionRpc) => Promise<DispositionOutcome>,
+    call: (client: ReviewRpc) => Promise<DispositionOutcome>,
     count: number,
     inDialog: boolean,
     reopen: CheckedAmend | null,
     started: number,
     settle: () => void = () => undefined,
   ): Promise<void> {
-    const outcome = await call(supabaseClient() as unknown as DispositionRpc);
+    const outcome = await call(supabaseClient() as unknown as ReviewRpc);
 
     if (outcome.ok) {
       // DISCARD IS UNGUARDED AND UNCHANGED: it re-reads the rotation alone.
@@ -400,7 +426,7 @@ export function useOverrideReview({
     }
 
     settle();
-    if (reopen !== null && !reopenAmend(reopen.row, reopen.entered)) return;
+    if (reopen !== null && !reopenAmend(reopen.row, reopen.entered, reopen.groups)) return;
     setFailure(outcome.code);
     focusAfterWrite(
       outcome.code === DISPOSITION_REASON ? reasonField : kind === DISPOSITION_AMENDED ? typeField : discardCancel,
@@ -425,13 +451,13 @@ export function useOverrideReview({
   }
 
   /** The discard, unguarded (human, 2026-10-05): one call, settled as before. */
-  async function discard(row: PendingOverrideRow): Promise<void> {
+  async function discard(row: ReviewRow): Promise<void> {
     const started = begin();
 
     if (started === null) return;
 
     try {
-      await writeDisposition(DISPOSITION_DISCARDED, (client) => discardShiftTypeOverride(client, row), 0, true, null, started);
+      await writeDisposition(DISPOSITION_DISCARDED, (client) => discardReviewed(client, row), 0, true, null, started);
     } catch (cause) {
       console.error(DISPOSITION_FAILED, cause);
       if (superseded(started)) return;
@@ -451,20 +477,20 @@ export function useOverrideReview({
    * request; a check that cannot be derived refuses in the review, with a
    * retry.
    */
-  async function confirm(row: PendingOverrideRow): Promise<void> {
+  async function confirm(row: ReviewRow): Promise<void> {
     const started = begin();
 
     if (started === null) return;
 
     try {
       // THE GOVERNED REFUSAL FIRST: the write refuses it without a request, as it always did.
-      if (!rowOffersOf(row).confirm) {
-        await writeDisposition(DISPOSITION_CONFIRMED, (client) => confirmShiftTypeOverride(client, row), 0, false, null, started);
+      if (!reviewOffersOf(row).confirm) {
+        await writeDisposition(DISPOSITION_CONFIRMED, (client) => confirmReviewed(client, row), 0, false, null, started);
 
         return;
       }
 
-      const change = reviewConfirmChangeOf(row);
+      const change = reviewedConfirmChangeOf(row);
       const check = await checkErasures(change);
 
       if (superseded(started)) return;
@@ -477,7 +503,7 @@ export function useOverrideReview({
       }
 
       if (check.kind === CHECK_REFUSED) {
-        await refuse(reviewRefusalOf(check.code), null, started);
+        await refuse(check.code, null, started);
 
         return;
       }
@@ -489,7 +515,7 @@ export function useOverrideReview({
         return;
       }
 
-      await writeDisposition(DISPOSITION_CONFIRMED, (client) => confirmShiftTypeOverride(client, row), 0, false, null, started);
+      await writeDisposition(DISPOSITION_CONFIRMED, (client) => confirmReviewed(client, row), 0, false, null, started);
     } catch (cause) {
       console.error(DISPOSITION_FAILED, cause);
       if (superseded(started)) return;
@@ -507,23 +533,23 @@ export function useOverrideReview({
    * check, then the write, under ONE latch. Some erased: the amend's dialog
    * closes with what was entered kept, and the erasure confirmation opens.
    */
-  async function amend(row: PendingOverrideRow, entered: AmendEntered): Promise<void> {
+  async function amend(row: ReviewRow, entered: AmendEntered, groups: readonly AmendOptionGroup[]): Promise<void> {
     const started = begin();
 
     if (started === null) return;
 
-    const reopen: CheckedAmend = { row, entered };
-    const write = (client: DispositionRpc) => amendShiftTypeOverride(client, row, entered.shiftTypeId, entered.reason);
+    const reopen: CheckedAmend = { row, entered, groups };
+    const write = (client: ReviewRpc) => amendReviewed(client, row, entered.choiceId, entered.reason);
 
     try {
       // THE GOVERNED REFUSAL FIRST, then the preflight: the write refuses either without a request.
-      if (!rowOffersOf(row).amend) {
+      if (!reviewOffersOf(row).amend) {
         await writeDisposition(DISPOSITION_AMENDED, write, 0, true, reopen, started);
 
         return;
       }
 
-      const entry = amendEntryOf(row, entered.shiftTypeId, entered.reason);
+      const entry = reviewAmendEntryOf(row, entered.choiceId, entered.reason);
 
       if (!entry.ok) {
         setFailure(entry.code);
@@ -532,7 +558,7 @@ export function useOverrideReview({
         return;
       }
 
-      const change = reviewAmendChangeOf(row, entry.shiftTypeId);
+      const change = reviewedAmendChangeOf(row, entry.choiceId);
       const check = await checkErasures(change);
 
       if (superseded(started)) return;
@@ -545,7 +571,7 @@ export function useOverrideReview({
       }
 
       if (check.kind === CHECK_REFUSED) {
-        await refuse(reviewRefusalOf(check.code), reopen, started);
+        await refuse(check.code, reopen, started);
 
         return;
       }
@@ -554,7 +580,7 @@ export function useOverrideReview({
         setArmed(null);
         // An amend's way back is its own dialog, reopened, never a row's control.
         openedFrom.current = () => null;
-        confirmation.show(check.rows, { kind: DISPOSITION_AMENDED, row, change, entered });
+        confirmation.show(check.rows, { kind: DISPOSITION_AMENDED, row, change, entered, groups });
 
         return;
       }
@@ -586,7 +612,9 @@ export function useOverrideReview({
 
     const checked = shown.subject;
     const reopen: CheckedAmend | null =
-      checked.kind === DISPOSITION_AMENDED ? { row: checked.row, entered: checked.entered } : null;
+      checked.kind === DISPOSITION_AMENDED
+        ? { row: checked.row, entered: checked.entered, groups: checked.groups }
+        : null;
     const started = generation.current;
     const settle = () => {
       confirmation.drop();
@@ -605,13 +633,13 @@ export function useOverrideReview({
           if (reopen === null) {
             setUnchecked({ kind: DISPOSITION_CONFIRMED, row: checked.row });
             focusAfterWrite(retryButton);
-          } else if (reopenAmend(reopen.row, reopen.entered)) {
+          } else if (reopenAmend(reopen.row, reopen.entered, reopen.groups)) {
             setUnchecked({ kind: DISPOSITION_AMENDED });
             focusAfterWrite(retryButton, typeField);
           }
         },
         refused: async ({ code }) => {
-          await refuse(reviewRefusalOf(code), reopen, started, settle);
+          await refuse(code, reopen, started, settle);
         },
         // The write runs with the dialog still shown, busy; `settle` closes it.
         write: async ({ rows }) => {
@@ -620,7 +648,7 @@ export function useOverrideReview({
 
             await writeDisposition(
               DISPOSITION_AMENDED,
-              (client) => amendShiftTypeOverride(client, row, entered.shiftTypeId, entered.reason),
+              (client) => amendReviewed(client, row, entered.choiceId, entered.reason),
               rows.length,
               true,
               reopen,
@@ -632,7 +660,7 @@ export function useOverrideReview({
 
             await writeDisposition(
               DISPOSITION_CONFIRMED,
-              (client) => confirmShiftTypeOverride(client, row),
+              (client) => confirmReviewed(client, row),
               rows.length,
               false,
               null,
@@ -665,7 +693,7 @@ export function useOverrideReview({
 
     if (subject?.kind === DISPOSITION_AMENDED) {
       dropErasures();
-      if (reopenAmend(subject.row, subject.entered)) focusAfterWrite(typeField);
+      if (reopenAmend(subject.row, subject.entered, subject.groups)) focusAfterWrite(typeField);
 
       return;
     }
@@ -685,6 +713,47 @@ export function useOverrideReview({
     setArmed(next);
   }
 
+  /**
+   * Opens the amend over `row`. A shift-type row offers its own types at once.
+   * A roster row (0039) offers whom to put on: the calendar, the leave and the
+   * resolutions are read afresh — the reads its check stands on — under the
+   * latch, and an override that has left them, or a team archived meanwhile,
+   * takes the stale path instead; a read that fails says so in the review.
+   */
+  async function armAmend(row: ReviewRow): Promise<void> {
+    if (row.layer === REVIEW_SHIFT_TYPE) {
+      arm({ kind: DISPOSITION_AMENDED, row, groups: shiftTypeAmendGroupsOf(row) });
+
+      return;
+    }
+
+    const started = begin();
+
+    if (started === null) return;
+
+    try {
+      const options = rosterAmendOptionsOf(await readErasures.readAndShare(), row);
+
+      if (superseded(started)) return;
+
+      if (!options.ok) {
+        await refuse(options.code, null, started);
+
+        return;
+      }
+
+      setArmed({ kind: DISPOSITION_AMENDED, row, groups: options.groups });
+    } catch (cause) {
+      console.error(DISPOSITION_FAILED, cause);
+      if (superseded(started)) return;
+      setRefusal(DISPOSITION_FAILED);
+      focusAfterWrite(refusalNotice, heading);
+    } finally {
+      writing.current = false;
+      setPending(false);
+    }
+  }
+
   function disarm(): void {
     if (writing.current) return;
 
@@ -699,15 +768,15 @@ export function useOverrideReview({
     const type = typeField.current;
     const reason = reasonField.current;
 
-    return type === null || reason === null ? null : { shiftTypeId: type.value, reason: reason.value };
+    return type === null || reason === null ? null : { choiceId: type.value, reason: reason.value };
   }
 
-  function submitAmend(event: FormEvent<HTMLFormElement>, row: PendingOverrideRow): void {
+  function submitAmend(event: FormEvent<HTMLFormElement>, row: ReviewRow, groups: readonly AmendOptionGroup[]): void {
     event.preventDefault();
 
     const entered = enteredNow();
 
-    if (entered !== null) void amend(row, entered);
+    if (entered !== null) void amend(row, entered, groups);
   }
 
   /** A field of the amend changed: a refusal to check what was entered before no longer stands. */
@@ -742,7 +811,7 @@ export function useOverrideReview({
 
     const entered = enteredNow();
 
-    if (armed?.kind === DISPOSITION_AMENDED && entered !== null) void amend(armed.row, entered);
+    if (armed?.kind === DISPOSITION_AMENDED && entered !== null) void amend(armed.row, entered, armed.groups);
   }
 
   return {
@@ -768,6 +837,7 @@ export function useOverrideReview({
     confirm,
     discard,
     arm,
+    armAmend,
     disarm,
     submitAmend,
     clearUnchecked,

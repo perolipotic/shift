@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { Select } from '@/components/ui/select';
+import { candidateGroupMessageKey } from '@/features/calendar/utils/replacement-candidates';
 import { ErasureDialog } from '@/features/conflicts/components/erasure-dialog';
 import type { ErasureRow } from '@/features/conflicts/services/erasures';
 import { t } from '@/lib/i18n';
@@ -19,15 +20,21 @@ import {
 } from '@/features/rotation/hooks/use-override-review';
 import type { RotationSnapshot } from '@/features/rotation/services/list';
 import {
+  AMEND_TYPES,
   DISPOSITION_AMENDED,
   DISPOSITION_CONFIRMED,
   DISPOSITION_DISCARDED,
   DISPOSITION_REASON,
-  amendDefaultsOf,
+  REVIEW_SHIFT_TYPE,
   dispositionDoneMessageKey,
   dispositionMessageKey,
-  rowOffersOf,
-  type PendingOverrideRow,
+  offeredIn,
+  reviewAmendDefaultsOf,
+  reviewOffersOf,
+  type AmendOptionGroup,
+  type DispositionTypeOption,
+  type PendingRosterOverrideRow,
+  type ReviewRow,
 } from '@/features/rotation/services/override-disposition';
 import {
   OVERRIDE_AMEND_ERROR_ID,
@@ -43,8 +50,10 @@ import {
 
 /**
  * IZMJENE ZA PREGLED (story 3.5c; CAP-9): every override a rotation change
- * left pending, for the admin to confirm, amend or discard. Placed after the
- * builder's notices, and absent while nothing is pending.
+ * left pending, for the admin to confirm, amend or discard — a shift-type
+ * override, and since 0039 a roster override, whose amend changes who
+ * arrives. Placed after the builder's notices, and absent while nothing is
+ * pending.
  *
  * A RENDERER (story 5.5h): every state, every call and every rule is
  * `@/features/rotation/hooks/use-override-review`'s, and through it
@@ -91,6 +100,7 @@ export function OverrideReview({
     confirm,
     discard,
     arm,
+    armAmend,
     disarm,
     submitAmend,
     clearUnchecked,
@@ -121,13 +131,29 @@ export function OverrideReview({
     );
   }
 
-  function renderRow(row: PendingOverrideRow): ReactNode {
-    const offers = rowOffersOf(row);
+  /** What a roster row changes, in the day detail's own terms: who is taken off, who arrives, or both. */
+  function rosterChangeOf(row: PendingRosterOverrideRow): string {
+    const nobody = t('rotation.builder.overrides.unknownAuthor');
+    const out = row.memberOutId === null ? null : (row.memberOutName ?? nobody);
+    const arriving = row.memberInId === null ? null : (row.memberInName ?? nobody);
+
+    if (out !== null && arriving !== null) return t('rotation.builder.overrides.roster.replaced', { out, in: arriving });
+    if (arriving !== null) return t('rotation.builder.overrides.roster.added', { name: arriving });
+
+    return t('rotation.builder.overrides.roster.removed', { name: out ?? nobody });
+  }
+
+  function renderRow(row: ReviewRow): ReactNode {
+    const offers = reviewOffersOf(row);
 
     return (
       <li key={row.id} className="grid min-w-0 gap-2 rounded-md border p-3 text-sm">
         <p className="font-semibold">{t('rotation.builder.overrides.title', { team: row.teamName, date: row.date })}</p>
-        <p>{t('rotation.builder.overrides.type', { type: row.typeName })}</p>
+        <p className="break-words">
+          {row.layer === REVIEW_SHIFT_TYPE
+            ? t('rotation.builder.overrides.type', { type: row.typeName })
+            : rosterChangeOf(row)}
+        </p>
         <p>
           {row.projectedTypeName === null
             ? t('rotation.builder.overrides.noRotation')
@@ -161,7 +187,7 @@ export function OverrideReview({
               variant="outline"
               disabled={disabled}
               onClick={() => {
-                arm({ kind: DISPOSITION_AMENDED, row });
+                void armAmend(row);
               }}
             >
               {t('rotation.builder.overrides.amend')}
@@ -183,17 +209,42 @@ export function OverrideReview({
     );
   }
 
-  /** The amend: a type and a reason, in a Dialog that cannot be dismissed while it saves. */
-  function renderAmend(row: PendingOverrideRow, entered: AmendEntered | undefined): ReactNode {
+  /** One choice of the amend: a type, or a member to put on. */
+  function renderOption(option: DispositionTypeOption): ReactNode {
+    return (
+      <option key={option.id} value={option.id}>
+        {option.name}
+      </option>
+    );
+  }
+
+  /** One group of the amend's choices: a shift-type amend's types as they are, a roster amend's members under their group's label. */
+  function renderOptionGroup(group: AmendOptionGroup): ReactNode {
+    if (group.kind === AMEND_TYPES) return group.options.map(renderOption);
+    if (group.options.length === 0) return null;
+
+    return (
+      <optgroup key={group.kind} data-kind={group.kind} label={t(candidateGroupMessageKey(group.kind))}>
+        {group.options.map(renderOption)}
+      </optgroup>
+    );
+  }
+
+  /**
+   * The amend: a type — or for a roster override, who arrives, in the
+   * calendar's candidate groups (0039) — and a reason, in a Dialog that
+   * cannot be dismissed while it saves.
+   */
+  function renderAmend(row: ReviewRow, groups: readonly AmendOptionGroup[], entered: AmendEntered | undefined): ReactNode {
     const reasonRefused = failure === DISPOSITION_REASON;
     const typeRefused = failure !== null && !reasonRefused;
     // What was entered, when the amend is opened again (story 5.5h) and its
-    // type is still offered; else the override's own type when it may be
-    // chosen, and its own reason.
+    // choice is still offered; else the override's own type when it may be
+    // chosen (the first member offered, for a roster override), and its own
+    // reason.
     const defaults =
-      entered !== undefined && row.options.some((option) => option.id === entered.shiftTypeId)
-        ? entered
-        : amendDefaultsOf(row);
+      entered !== undefined && offeredIn(groups, entered.choiceId) ? entered : reviewAmendDefaultsOf(row, groups);
+    const roster = row.layer !== REVIEW_SHIFT_TYPE;
 
     return (
       <Dialog
@@ -206,36 +257,36 @@ export function OverrideReview({
       >
         <DialogHeader closeLabel={t('rotation.builder.overrides.amendDialog.close')} onClose={disarm}>
           <DialogTitle id={OVERRIDE_AMEND_TITLE_ID}>
-            {t('rotation.builder.overrides.amendDialog.title', { team: row.teamName, date: row.date })}
+            {roster
+              ? t('rotation.builder.overrides.amendDialog.titleRoster', { team: row.teamName, date: row.date })
+              : t('rotation.builder.overrides.amendDialog.title', { team: row.teamName, date: row.date })}
           </DialogTitle>
         </DialogHeader>
         <form
           method="post"
           noValidate
           onSubmit={(event) => {
-            submitAmend(event, row);
+            submitAmend(event, row, groups);
           }}
           // STORY 5.5h: a field changed, so the refusal to check what was entered before no longer stands.
           onChange={clearUnchecked}
           className="grid gap-4"
         >
           <div className="grid gap-2">
-            <Label htmlFor={OVERRIDE_AMEND_TYPE_ID}>{t('rotation.builder.overrides.amendDialog.type')}</Label>
+            <Label htmlFor={OVERRIDE_AMEND_TYPE_ID}>
+              {roster ? t('rotation.builder.overrides.amendDialog.member') : t('rotation.builder.overrides.amendDialog.type')}
+            </Label>
             <Select
               ref={typeField}
               id={OVERRIDE_AMEND_TYPE_ID}
               name="type"
-              defaultValue={defaults.shiftTypeId}
+              defaultValue={defaults.choiceId}
               disabled={pending}
               aria-invalid={typeRefused}
               aria-describedby={typeRefused ? OVERRIDE_AMEND_ERROR_ID : undefined}
               className="h-11"
             >
-              {row.options.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.name}
-                </option>
-              ))}
+              {groups.map(renderOptionGroup)}
             </Select>
           </div>
           <div className="grid gap-2">
@@ -277,11 +328,13 @@ export function OverrideReview({
   }
 
   /** The discard: one neutral confirmation naming the team, the date and the type restored. */
-  function renderDiscard(row: PendingOverrideRow): ReactNode {
+  function renderDiscard(row: ReviewRow): ReactNode {
     return (
       <ConfirmDialog busy={pending} onCancel={disarm} aria-labelledby={OVERRIDE_DISCARD_PROMPT_ID}>
         <p id={OVERRIDE_DISCARD_PROMPT_ID} className="text-sm font-medium">
-          {row.projectedTypeName === null
+          {row.layer !== REVIEW_SHIFT_TYPE
+            ? t('rotation.builder.overrides.discardDialog.promptRoster', { team: row.teamName, date: row.date })
+            : row.projectedTypeName === null
             ? t('rotation.builder.overrides.discardDialog.promptNoRotation', { team: row.teamName, date: row.date })
             : t('rotation.builder.overrides.discardDialog.prompt', {
                 team: row.teamName,
@@ -327,7 +380,9 @@ export function OverrideReview({
   function renderArmed(): ReactNode {
     if (armed === null) return null;
 
-    return armed.kind === DISPOSITION_AMENDED ? renderAmend(armed.row, armed.entered) : renderDiscard(armed.row);
+    return armed.kind === DISPOSITION_AMENDED
+      ? renderAmend(armed.row, armed.groups, armed.entered)
+      : renderDiscard(armed.row);
   }
 
   const notices = (
@@ -398,7 +453,8 @@ export function OverrideReview({
  * THE REVIEW'S ERASURE CONFIRMATION (story 5.5h): the shared `ErasureDialog`
  * in the review's words, opened by a confirm or an amend that would erase a
  * pending conflict. One row per conflict — "{member} na godišnjem · nakon
- * promjene: {team} taj dan slobodna" — and its own save, "Potvrdi" or
+ * promjene: {team} taj dan slobodna", or for a roster override (0039) "…
+ * {team} taj dan bez {member}" — and its own save, "Potvrdi" or
  * "Spremi izmjenu", `aria-disabled` until every row is confirmed. Its rows
  * scroll inside it.
  */
@@ -410,6 +466,7 @@ function ReviewErasureConfirm({ state }: { readonly state: OverrideReviewState }
 
   const { rows } = shown;
   const amending = shown.subject.kind === DISPOSITION_AMENDED;
+  const roster = shown.subject.row.layer !== REVIEW_SHIFT_TYPE;
   const partsOf = (row: ErasureRow) => ({
     team: row.teamName,
     weekday: row.weekday,
@@ -434,9 +491,12 @@ function ReviewErasureConfirm({ state }: { readonly state: OverrideReviewState }
           : t('rotation.builder.overrides.erasures.ledeConfirm', { count: rows.length }),
         changed: t('rotation.builder.overrides.erasures.changed'),
         rowTitle: (row) => t('rotation.builder.overrides.erasures.rowTitle', partsOf(row)),
-        // ALWAYS "TAJ DAN SLOBODNA": a shift-type override never changes who is rostered.
+        // A shift-type override never changes who is rostered: "taj dan slobodna".
+        // A roster override never makes the team free: "taj dan bez {member}".
         rowDetail: (row) =>
-          t('rotation.builder.overrides.erasures.rowFree', { member: row.memberName, team: row.teamName }),
+          roster
+            ? t('rotation.builder.overrides.erasures.rowWithout', { member: row.memberName, team: row.teamName })
+            : t('rotation.builder.overrides.erasures.rowFree', { member: row.memberName, team: row.teamName }),
         decision: (row) => t('rotation.builder.overrides.erasures.decision', partsOf(row)),
         confirm: t('rotation.builder.overrides.erasures.confirm'),
         keep: t('rotation.builder.overrides.erasures.keep'),

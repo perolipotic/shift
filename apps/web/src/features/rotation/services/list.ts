@@ -49,7 +49,9 @@ import { TEAMS_COLUMNS, splitTeams, teamRowOf, type TeamRow } from '@/features/t
  * computed relationship and filtered to the live ones again, so the builder
  * can list those a rotation change left pending. Only those: the builder
  * reads no override in force. The table is an active admin's alone (0019), as
- * the builder is.
+ * the builder is. THE PENDING ROSTER OVERRIDES ride along the same way since
+ * 0039, through `rotation_roster_overrides_in_view`, which answers live rows
+ * alone (0026's table is an active admin's alone too).
  *
  * `select` AND ITS ONE FILTER, AND NOTHING ELSE. Writing is
  * `@/features/rotation/services/write`, and the dispositions are
@@ -76,6 +78,11 @@ export const ROTATION_KEY = ['rotation'] as const;
 export const ROTATION_ASSIGNMENTS_IN_VIEW = 'rotation_assignments_in_view';
 export const ROTATION_STEPS_IN_VIEW = 'rotation_steps_in_view';
 export const ROTATION_OVERRIDES_IN_VIEW = 'rotation_overrides_in_view';
+/** `0039`'s computed relationship: the pending live roster overrides. */
+export const ROTATION_ROSTER_OVERRIDES_IN_VIEW = 'rotation_roster_overrides_in_view';
+
+/** The alias the pending roster overrides arrive under. */
+export const ROTATION_ROSTER_OVERRIDES_EMBED = 'roster_overrides';
 
 /** The alias every version's attribution arrives under, unbounded (2.6's history, 3.5c's stamps). */
 export const ROTATION_HISTORY_EMBED = 'rotation_history';
@@ -102,11 +109,14 @@ export const ROTATION_COLUMNS =
   `${ROTATION_HISTORY_EMBED}:rotation_assignments(organization_id,id,team_id,pattern_id,effective_from,created_by,created_at),` +
   // STORY 2.6: who saved each change. `created_by` is an auth user id with no
   // key to `members`, so the names are joined here, on the client; an active
-  // admin reads every member of the organization (0011).
-  'members(organization_id,auth_user_id,name),' +
+  // admin reads every member of the organization (0011). The member id names
+  // whom a pending roster override takes off or puts on (0039).
+  'members(organization_id,id,auth_user_id,name),' +
   // STORY 3.5c: the PENDING overrides (`0025`), for the review a rotation
   // change leaves; the builder reads no override in force.
-  `shift_type_overrides:${ROTATION_OVERRIDES_IN_VIEW}(organization_id,id,team_id,date,shift_type_id,reason,created_by,created_at,confirmed_at)`;
+  `shift_type_overrides:${ROTATION_OVERRIDES_IN_VIEW}(organization_id,id,team_id,date,shift_type_id,reason,created_by,created_at,confirmed_at),` +
+  // 0039: the PENDING roster overrides, live ones alone, for the same review.
+  `${ROTATION_ROSTER_OVERRIDES_EMBED}:${ROTATION_ROSTER_OVERRIDES_IN_VIEW}(organization_id,id,team_id,date,member_out_id,member_in_id,reason,created_by,created_at,confirmed_at)`;
 
 /** The embedded column the overrides embed is filtered by: live ones only (`removed_at is null`). */
 export const ROTATION_OVERRIDES_LIVE_COLUMN = 'shift_type_overrides.removed_at';
@@ -197,6 +207,30 @@ export interface RotationSnapshot {
    * overrides in force are not read: nothing in the builder uses them.
    */
   readonly overrides: readonly RotationOverride[];
+  /**
+   * Every live roster override a rotation change left PENDING (0039, on
+   * `0025`'s bound), by team, date and id. The ones in force are not read.
+   */
+  readonly rosterOverrides: readonly RotationRosterOverride[];
+}
+
+/**
+ * One live roster override as the builder reviews it (0039): on `date`,
+ * `memberOutId` taken off the shift of `teamId` and `memberInId` put on —
+ * either `null`, never both — its author by auth user id, and when it was
+ * written and last confirmed, as sent.
+ */
+export interface RotationRosterOverride {
+  readonly id: string;
+  readonly teamId: string;
+  readonly date: string;
+  readonly memberOutId: string | null;
+  readonly memberInId: string | null;
+  readonly reason: string;
+  readonly createdBy: string;
+  readonly createdAt: string;
+  /** `null` until an admin confirms it. */
+  readonly confirmedAt: string | null;
 }
 
 /**
@@ -228,8 +262,10 @@ export interface RotationHistoryRecord {
   readonly createdAt: string;
 }
 
-/** One member, as the history names an author. */
+/** One member, as the history names an author and a roster override names whom it changes. */
 export interface RotationAuthor {
+  /** `members.id`: what a roster override names (0039). */
+  readonly memberId: string;
   readonly authUserId: string;
   readonly name: string;
 }
@@ -353,6 +389,54 @@ export function rotationOverrideOf(row: unknown, organizationId: string): Rotati
   return { id, teamId, date, shiftTypeId, reason, createdBy, createdAt, confirmedAt: confirmedAt as string | null };
 }
 
+/** A member id as a roster override names it: text, or `null`; `undefined` for neither. */
+function memberIdAt(row: Record<string, unknown>, column: string): string | null | undefined {
+  const value = row[column];
+
+  if (value === null) return null;
+
+  return typeof value === 'string' && value !== '' ? value : undefined;
+}
+
+/**
+ * One embedded live roster override (0039), validated field by field, or
+ * `null` (another tenant included): no member at all, or one member twice, is
+ * no row 0026 admits.
+ */
+export function rotationRosterOverrideOf(row: unknown, organizationId: string): RotationRosterOverride | null {
+  if (!isRecord(row) || textAt(row, 'organization_id') !== organizationId) return null;
+
+  const id = textAt(row, 'id');
+  const teamId = textAt(row, 'team_id');
+  const date = textAt(row, 'date');
+  const memberOutId = memberIdAt(row, 'member_out_id');
+  const memberInId = memberIdAt(row, 'member_in_id');
+  const reason = row['reason'];
+  const createdBy = textAt(row, 'created_by');
+  const createdAt = textAt(row, 'created_at');
+  const confirmedAt = row['confirmed_at'];
+
+  if (id === null || teamId === null || createdBy === null) return null;
+  if (date === null || !isIsoDate(date)) return null;
+  if (memberOutId === undefined || memberInId === undefined || memberOutId === memberInId) return null;
+  // Any text: what a reason may hold is 0026's check alone.
+  if (typeof reason !== 'string') return null;
+  if (createdAt === null || instantMicrosOf(createdAt) === null) return null;
+  if (confirmedAt !== null && instantMicrosOf(confirmedAt) === null) return null;
+
+  return {
+    id,
+    teamId,
+    date,
+    memberOutId,
+    memberInId,
+    reason,
+    createdBy,
+    createdAt,
+    confirmedAt: confirmedAt as string | null,
+  };
+}
+
 /**
  * One embedded assignment's attribution, validated field by field, or `null`
  * (another tenant included). It needs the attribution columns alone — the
@@ -381,10 +465,11 @@ export function rotationHistoryRecordOf(row: unknown, organizationId: string): R
 export function rotationAuthorOf(row: unknown, organizationId: string): RotationAuthor | null {
   if (!isRecord(row) || textAt(row, 'organization_id') !== organizationId) return null;
 
+  const memberId = textAt(row, 'id');
   const authUserId = textAt(row, 'auth_user_id');
   const name = textAt(row, 'name');
 
-  return authUserId === null || name === null ? null : { authUserId, name };
+  return memberId === null || authUserId === null || name === null ? null : { memberId, authUserId, name };
 }
 
 function unavailable(detail: unknown): RotationOutcome {
@@ -443,6 +528,7 @@ export async function readRotation(table: RotationTable): Promise<RotationOutcom
   const historyRows = embedded(organization, ROTATION_HISTORY_EMBED);
   const memberRows = embedded(organization, 'members');
   const overrideRows = embedded(organization, 'shift_type_overrides');
+  const rosterRows = embedded(organization, ROTATION_ROSTER_OVERRIDES_EMBED);
 
   if (organizationId === null || timeZone === null) return unavailable('organization');
   if (
@@ -452,7 +538,8 @@ export async function readRotation(table: RotationTable): Promise<RotationOutcom
     assignmentRows === null ||
     historyRows === null ||
     memberRows === null ||
-    overrideRows === null
+    overrideRows === null ||
+    rosterRows === null
   ) {
     return unavailable('organization');
   }
@@ -530,6 +617,16 @@ export async function readRotation(table: RotationTable): Promise<RotationOutcom
     overrides.push(override);
   }
 
+  const rosterOverrides: RotationRosterOverride[] = [];
+
+  for (const row of rosterRows) {
+    const override = rotationRosterOverrideOf(row, organizationId);
+
+    if (override === null) return unavailable('roster override');
+
+    rosterOverrides.push(override);
+  }
+
   const teamIds = new Set(teams.map((team) => team.id));
   const typeIds = new Set(types.map((type) => type.id));
   const stepById = new Map(steps.map((step) => [step.id, step]));
@@ -542,6 +639,17 @@ export async function readRotation(table: RotationTable): Promise<RotationOutcom
   if (new Set(overrides.map((override) => override.id)).size !== overrides.length) return unavailable('ids');
   if (new Set(overrides.map((override) => `${override.teamId}:${override.date}`)).size !== overrides.length) {
     return unavailable('override');
+  }
+  // 0026's live keys: one id once, and one member taken off, or put on, one
+  // team's date once.
+  if (rosterOverrides.some((override) => !teamIds.has(override.teamId))) return unavailable('roster override');
+  if (new Set(rosterOverrides.map((override) => override.id)).size !== rosterOverrides.length) return unavailable('ids');
+  for (const side of ['memberOutId', 'memberInId'] as const) {
+    const keyed = rosterOverrides.filter((override) => override[side] !== null);
+
+    if (new Set(keyed.map((override) => `${override.teamId}:${override.date}:${String(override[side])}`)).size !== keyed.length) {
+      return unavailable('roster override');
+    }
   }
   if (steps.some((step) => !typeIds.has(step.shiftTypeId))) return unavailable('step type');
   if (new Set(steps.map((step) => `${step.patternId}:${String(step.position)}`)).size !== steps.length) {
@@ -584,15 +692,29 @@ export async function readRotation(table: RotationTable): Promise<RotationOutcom
     }
   }
   if (new Set(authors.map((author) => author.authUserId)).size !== authors.length) return unavailable('ids');
+  if (new Set(authors.map((author) => author.memberId)).size !== authors.length) return unavailable('ids');
 
   types.sort(compareCreation);
   overrides.sort((left, right) =>
     left.teamId === right.teamId ? (left.date < right.date ? -1 : 1) : left.teamId < right.teamId ? -1 : 1,
   );
+  rosterOverrides.sort((left, right) =>
+    left.teamId !== right.teamId
+      ? left.teamId < right.teamId
+        ? -1
+        : 1
+      : left.date !== right.date
+        ? left.date < right.date
+          ? -1
+          : 1
+        : left.id < right.id
+          ? -1
+          : 1,
+  );
 
   return {
     ok: true,
-    snapshot: { organizationId, timeZone, teams, types, steps, assignments, history, authors, overrides },
+    snapshot: { organizationId, timeZone, teams, types, steps, assignments, history, authors, overrides, rosterOverrides },
   };
 }
 
@@ -699,6 +821,29 @@ export function overrideStandingOfSnapshot(
   // One live override per team and date is the shift-type layer's own
   // precondition (story 3.6a moved it out of the shared pending rule).
   overridesByTeamAndDate(overrides);
+
+  return overrideStandingOf(stamps, overrides);
+}
+
+/**
+ * Every live roster override IN FORCE and every one PENDING the admin's
+ * disposition (0039): the twin of {@link overrideStandingOfSnapshot} over the
+ * same stamps and each roster override's `confirmedAt ?? createdAt`. How many
+ * roster overrides one team and date may carry is checked by the read (0026's
+ * live keys), not here.
+ */
+export function rosterStandingOfSnapshot(
+  snapshot: RotationSnapshot,
+): OverrideStanding<RotationRosterOverride & { readonly writtenAt: number }> {
+  const stamps = snapshot.history.map((record) => ({
+    teamId: record.teamId,
+    effectiveFrom: record.effectiveFrom,
+    createdAt: instantMicrosOf(record.createdAt) ?? Number.NaN,
+  }));
+  const overrides = snapshot.rosterOverrides.map((override) => ({
+    ...override,
+    writtenAt: instantMicrosOf(override.confirmedAt ?? override.createdAt) ?? Number.NaN,
+  }));
 
   return overrideStandingOf(stamps, overrides);
 }

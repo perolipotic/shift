@@ -1061,11 +1061,13 @@ describe('the access-control layer is present, so nothing below passes vacuously
           where pronamespace = 'public'::regnamespace
             and proname in (
               'amend_leave_record',
+              'amend_roster_override',
               'amend_shift_type_override',
               'calendar_members',
               'calendar_people',
               'calendar_roster_overrides',
               'calendar_shift_type_overrides',
+              'confirm_roster_override',
               'confirm_shift_type_override',
               'current_member_access',
               'custom_access_token_hook',
@@ -1088,6 +1090,7 @@ describe('the access-control layer is present, so nothing below passes vacuously
               'rotation_assignments_in_view',
               'rotation_overrides_in_view',
               'rotation_pattern_in_use',
+              'rotation_roster_overrides_in_view',
               'rotation_steps_in_view',
               'shift_type_latest_version',
               'shift_type_times_on',
@@ -1105,6 +1108,9 @@ describe('the access-control layer is present, so nothing below passes vacuously
         // insert the replacement range in one transaction, attributed to the
         // caller, copied from 3.5c's.
         'amend_leave_record',
+        // 0039: the roster override's atomic amend of who arrives, copied
+        // from 3.5c's.
+        'amend_roster_override',
         // STORY 3.5c: the atomic amend — soft-remove and insert in one
         // transaction, both attributed to the caller.
         'amend_shift_type_override',
@@ -1118,6 +1124,9 @@ describe('the access-control layer is present, so nothing below passes vacuously
         // STORY 3.5a: the one every member reads the live overrides through,
         // with the author as a member id.
         'calendar_shift_type_overrides',
+        // 0039: an active admin's attributed confirmation of a roster override
+        // a rotation change left pending.
+        'confirm_roster_override',
         // STORY 3.5c: an active admin's attributed confirmation of an override
         // a rotation change left pending.
         'confirm_shift_type_override',
@@ -1162,6 +1171,8 @@ describe('the access-control layer is present, so nothing below passes vacuously
         'rotation_assignments_in_view',
         'rotation_overrides_in_view',
         'rotation_pattern_in_use',
+        // 0039: the builder's pending roster overrides, beside 0025's.
+        'rotation_roster_overrides_in_view',
         'rotation_steps_in_view',
         // STORY 2.2a: the two readers the version and archive policies call.
         'shift_type_latest_version',
@@ -14543,7 +14554,7 @@ describe('the builder read embeds what is in force from the horizon on (0025)', 
         const token = await tokenFor(username, slug);
         // The builder's own shape: the overrides aliased, and filtered by the alias.
         const rows = await restRows(
-          'organizations?select=id,rotation_steps:rotation_steps_in_view(id),rotation_assignments:rotation_assignments_in_view(id),rotation_history:rotation_assignments(id),shift_type_overrides:rotation_overrides_in_view(id)&shift_type_overrides.removed_at=is.null',
+          'organizations?select=id,rotation_steps:rotation_steps_in_view(id),rotation_assignments:rotation_assignments_in_view(id),rotation_history:rotation_assignments(id),shift_type_overrides:rotation_overrides_in_view(id),roster_overrides:rotation_roster_overrides_in_view(id)&shift_type_overrides.removed_at=is.null',
           { token },
         );
 
@@ -14552,6 +14563,8 @@ describe('the builder read embeds what is in force from the horizon on (0025)', 
         expect((rows[0]?.['rotation_assignments'] as unknown[]).length, username).toBe(seededRotationOf(slug).teams.length);
         expect((rows[0]?.['rotation_history'] as unknown[]).length, username).toBe(seededRotationOf(slug).teams.length);
         expect(rows[0]?.['shift_type_overrides'], username).toEqual([]);
+        // 0039: the seeded roster overrides are in force, so none is pending.
+        expect(rows[0]?.['roster_overrides'], username).toEqual([]);
       }
     },
     20_000,
@@ -15852,6 +15865,8 @@ describe('a roster override is recorded by an admin alone and read by every memb
             'member_in_id',
             'reason',
             'created_at',
+            // 0039: when an admin last confirmed it after a rotation change.
+            'confirmed_at',
             'author_member_id',
           ]);
           expect(
@@ -16255,6 +16270,8 @@ describe('a roster override is recorded by an admin alone and read by every memb
         for (const row of rows) {
           expect(Object.keys(row).sort(), `${slug}/${reader}: another shape`).toEqual([
             'author_member_id',
+            // 0039: when an admin last confirmed it after a rotation change.
+            'confirmed_at',
             'created_at',
             'date',
             'id',
@@ -16510,6 +16527,465 @@ describe('a roster override is removed by an active admin alone, attributed on t
       });
       expect(asAdmin.ok, `${slug}: an unknown roster override was removed`).toBe(false);
       expect((await restRefusal(asAdmin)).code).toBe('P0002');
+    },
+    20_000,
+  );
+});
+
+// ------------------------- 0039: disposition of a pending roster override
+
+/**
+ * 0039. After a rotation change an admin confirms a roster override through
+ * `confirm_roster_override()`, or amends who arrives through
+ * `amend_roster_override()`, which soft-removes the live row and inserts its
+ * replacement — the same team, date and member taken off — in one
+ * transaction, re-linking a `replace_member` resolution to it; discarding is
+ * 3.6b's removal. Both take the organization lock, carry the governing
+ * version's save time, attribute on the server, and refuse every other
+ * caller. Every SQL case runs in a rolled-back transaction; the REST cases
+ * name an id no roster override has, and so write nothing.
+ */
+
+/** The save time of the version governing roster override `id`'s date now, as the session reads it, or `null`. */
+async function rosterGoverningTokenOf(client: Client, id: string): Promise<string | null> {
+  return (
+    (
+      await client.query<{ at: string | null }>(
+        `select (select a.created_at::text
+                   from rotation_assignments a
+                  where a.organization_id = o.organization_id
+                    and a.team_id = o.team_id
+                    and a.effective_from <= o.date
+                  order by a.effective_from desc
+                  limit 1) as at
+           from roster_overrides o
+          where o.id = $1`,
+        [id],
+      )
+    ).rows[0]?.at ?? null
+  );
+}
+
+/** `confirm_roster_override(id, token)`, as whoever the connection is; the token read by the same session unless given. */
+async function confirmRosterOverride(client: Client, id: string, token?: string | null): Promise<void> {
+  const governing = token !== undefined ? token : await rosterGoverningTokenOf(client, id);
+  await client.query('select public.confirm_roster_override($1::uuid, $2::timestamptz)', [id, governing]);
+}
+
+/** `amend_roster_override(id, member_in, reason, token)`, as whoever the connection is; the new id. */
+async function amendRosterOverride(
+  client: Client,
+  id: string,
+  memberIn: string | null,
+  reason: string,
+  token?: string | null,
+): Promise<string> {
+  const governing = token !== undefined ? token : await rosterGoverningTokenOf(client, id);
+  const { rows } = await client.query<{ id: string }>(
+    'select public.amend_roster_override($1::uuid, $2::uuid, $3, $4::timestamptz)::text as id',
+    [id, memberIn, reason, governing],
+  );
+  const replacement = rows[0]?.id;
+  if (replacement === undefined) throw new Error('the roster amend returned no id');
+  return replacement;
+}
+
+describe('a pending roster override is confirmed or amended by an active admin alone, attributed on the server (0039)', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'confirms a $fixture roster override as its admin: attributed, read back as confirmed_at, nothing else changed, schedule rows byte-identical',
+    async ({ slug, admin, member, bystander }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const other = await memberByUsername(client, slug, bystander);
+        const organization = owner.organizationId;
+        const team = await seededTeam(client, organization, 'Smjena A');
+        const before = await scheduleRulesFingerprint(client);
+
+        await actAs(client, owner.authUserId, organization);
+        const id = await insertRosterOverride(client, {
+          organization,
+          team,
+          date: '2026-10-01',
+          out: self.id,
+          in: other.id,
+          reason: 'Zamjena',
+        });
+        await actAsOwner(client);
+        const live = await rosterOverrideRow(client, id);
+
+        await actAs(client, owner.authUserId, organization);
+        await confirmRosterOverride(client, id);
+        await actAsOwner(client);
+        await actAs(client, self.authUserId, organization);
+        const { rows: read } = await client.query<{ id: string; confirmed: boolean }>(
+          `select id::text as id, confirmed_at is not null as confirmed from public.calendar_roster_overrides()`,
+        );
+        await actAsOwner(client);
+
+        const confirmed = await rosterOverrideRow(client, id);
+        expect(live?.['confirmed_at'], `${slug}: a fresh roster override is confirmed`).toBeNull();
+        expect(confirmed?.['confirmed_by'], `${slug}: the confirmation is not attributed to its caller`).toBe(
+          owner.authUserId,
+        );
+        expect(confirmed?.['confirmed_at']).not.toBeNull();
+        const { confirmed_by: _liveBy, confirmed_at: _liveAt, ...liveRest } = live ?? {};
+        const { confirmed_by: _by, confirmed_at: _at, ...confirmedRest } = confirmed ?? {};
+        expect(confirmedRest, `${slug}: a confirmation changed more than confirmed_by and confirmed_at`).toEqual(liveRest);
+        expect(read.find((row) => row.id === id), `${slug}: the member read lost confirmed_at`).toEqual({
+          id,
+          confirmed: true,
+        });
+        expect(await scheduleRulesFingerprint(client), `${slug}: a confirmation touched a schedule row`).toBe(before);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'amends who arrives on a $fixture roster override: the old row removed, one live replacement with the same member taken off, its resolution re-linked',
+    async ({ slug, admin, member, bystander }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const other = await memberByUsername(client, slug, bystander);
+        const organization = owner.organizationId;
+        const team = await seededTeam(client, organization, 'Smjena A');
+        const date = '2042-10-01';
+        const before = await scheduleRulesFingerprint(client);
+
+        await actAs(client, owner.authUserId, organization);
+        // A replacement of the member on leave by the bystander (5.4c's shape: an arrival alone).
+        const first = await insertRosterOverride(client, { organization, team, date, out: null, in: other.id, reason: 'x' });
+        await actAsOwner(client);
+        await insertLeave(client, { organization, member: self.id, during: `[${date},${date}]`, by: owner.authUserId });
+        const { rows: linked } = await client.query<{ id: string }>(
+          `insert into conflict_resolutions (organization_id, member_id, date, team_id, kind, created_by, roster_override_id)
+           values ($1, $2, $3::date, $4, 'replace_member', $5, $6)
+           returning id::text as id`,
+          [organization, self.id, date, team, owner.authUserId, first],
+        );
+
+        await actAs(client, owner.authUserId, organization);
+        const second = await amendRosterOverride(client, first, owner.id, '  Druga zamjena  ');
+        const read = await calendarRosterOverridesOf(client);
+        await actAsOwner(client);
+
+        const removed = await rosterOverrideRow(client, first);
+        const replacement = await rosterOverrideRow(client, second);
+        expect(second, `${slug}: the amend returned the old id`).not.toBe(first);
+        expect(removed?.['removed_by'], `${slug}: the old row is not removed by the caller`).toBe(owner.authUserId);
+        expect(replacement, `${slug}: the replacement is not the new fact, attributed by default`).toMatchObject({
+          organization_id: organization,
+          team_id: team,
+          date,
+          member_out_id: null,
+          member_in_id: owner.id,
+          reason: '  Druga zamjena  ',
+          created_by: owner.authUserId,
+          removed_by: null,
+          removed_at: null,
+          confirmed_by: null,
+          confirmed_at: null,
+        });
+        expect(read.map((row) => row['id'])).toContain(second);
+        expect(read.map((row) => row['id'])).not.toContain(first);
+        const { rows: resolution } = await client.query<{ link: string; live: boolean }>(
+          `select roster_override_id::text as link, removed_at is null as live from conflict_resolutions where id = $1`,
+          [linked[0]?.id],
+        );
+        expect(resolution, `${slug}: the decision did not follow the amended change`).toEqual([{ link: second, live: true }]);
+        expect(await scheduleRulesFingerprint(client), `${slug}: an amend touched a schedule row`).toBe(before);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(CROSS_TENANT)(
+    "refuses a $fixture amend with a blank reason or the member taken off (23514), a $otherFixture member (23503), or a member another live change already puts on (23505), and the old row stays live",
+    async ({ slug, admin, member, otherSlug }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const other = await memberByUsername(
+          client,
+          slug,
+          FIXTURES.find((entry) => entry.slug === slug)?.bystander ?? '',
+        );
+        const organization = owner.organizationId;
+        const foreign = await memberByUsername(
+          client,
+          otherSlug,
+          FIXTURES.find((entry) => entry.slug === otherSlug)?.admin ?? '',
+        );
+        const team = await seededTeam(client, organization, 'Smjena A');
+        const date = '2026-10-01';
+
+        await actAs(client, owner.authUserId, organization);
+        const id = await insertRosterOverride(client, { organization, team, date, out: self.id, in: null, reason: 'x' });
+        await insertRosterOverride(client, { organization, team, date, out: null, in: other.id, reason: 'x' });
+        await actAsOwner(client);
+        const before = await rosterOverrideRow(client, id);
+
+        await actAs(client, owner.authUserId, organization);
+        const blank = await refusedThenContinue(client, () => amendRosterOverride(client, id, owner.id, ' \t\n '));
+        const same = await refusedThenContinue(client, () => amendRosterOverride(client, id, self.id, 'Zamjena'));
+        const foreignMember = await refusedThenContinue(client, () => amendRosterOverride(client, id, foreign.id, 'Zamjena'));
+        const taken = await refusedThenContinue(client, () => amendRosterOverride(client, id, other.id, 'Zamjena'));
+        await actAsOwner(client);
+
+        expect(blank.code, `${slug}: a blank reason was admitted`).toBe('23514');
+        expect(same.code, `${slug}: the member taken off was put on`).toBe('23514');
+        expect(foreignMember.code, `${slug}: a member of ${otherSlug} was admitted`).toBe('23503');
+        expect(taken.code, `${slug}: a member put on twice was admitted`).toBe('23505');
+        expect(await rosterOverrideRow(client, id), `${slug}: a refused amend removed the old row`).toEqual(before);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture confirm or amend on an archived team (P0001 ROSTER_OVERRIDE_ARCHIVED) or under another governing version (P0001 ROSTER_OVERRIDE_CHANGED)',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const team = await seededTeam(client, organization, 'Smjena A');
+
+        await actAs(client, owner.authUserId, organization);
+        const id = await insertRosterOverride(client, { organization, team, date: '2026-10-01', out: self.id, in: null, reason: 'x' });
+        const at = (await rosterGoverningTokenOf(client, id)) ?? '';
+        await actAsOwner(client);
+        expect(at, `${slug}: no version governs the date, so the token proves nothing`).not.toBe('');
+        const before = await rosterOverrideRow(client, id);
+        const { rows: later } = await client.query<{ at: string }>(
+          `select ($1::timestamptz + interval '1 microsecond')::text as at`,
+          [at],
+        );
+
+        await client.query('update teams set archived = true where id = $1', [team]);
+        await actAs(client, owner.authUserId, organization);
+        const archived = {
+          confirm: await refusedThenContinue(client, () => confirmRosterOverride(client, id, at)),
+          amend: await refusedThenContinue(client, () => amendRosterOverride(client, id, owner.id, 'y', at)),
+        };
+        await actAsOwner(client);
+        await client.query('update teams set archived = false where id = $1', [team]);
+
+        await actAs(client, owner.authUserId, organization);
+        const changed = {
+          'a newer save': await refusedThenContinue(client, () => confirmRosterOverride(client, id, later[0]?.at ?? '')),
+          'none sent': await refusedThenContinue(client, () => confirmRosterOverride(client, id, null)),
+          'an amend under a newer save': await refusedThenContinue(client, () =>
+            amendRosterOverride(client, id, owner.id, 'y', later[0]?.at ?? ''),
+          ),
+        };
+        await actAsOwner(client);
+
+        for (const [label, refusal] of Object.entries(archived)) {
+          expect(refusal, `${slug}: ${label}`).toEqual({ code: 'P0001', message: 'ROSTER_OVERRIDE_ARCHIVED' });
+        }
+        for (const [label, refusal] of Object.entries(changed)) {
+          expect(refusal, `${slug}: ${label}`).toEqual({ code: 'P0001', message: 'ROSTER_OVERRIDE_CHANGED' });
+        }
+        expect(await rosterOverrideRow(client, id), `${slug}: a refused disposition changed the row`).toEqual(before);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture member-role account, an inactive admin and a session with no claim with 42501, and changes nothing',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const other = await addThrowawayAdmin(client, organization);
+        const team = await seededTeam(client, organization, 'Smjena A');
+
+        await actAs(client, owner.authUserId, organization);
+        const id = await insertRosterOverride(client, { organization, team, date: '2026-10-01', out: self.id, in: null, reason: 'x' });
+        await actAsOwner(client);
+        await ownerVersion(client, {
+          organization,
+          member: other.id,
+          active: false,
+          from: await organizationDay(client, organization),
+          by: owner.authUserId,
+        });
+        const before = await rosterOverrideRow(client, id);
+
+        for (const { label, user, claim } of [
+          { label: 'a member-role account', user: self.authUserId, claim: organization as string | null },
+          { label: 'an inactive admin', user: other.authUserId, claim: organization as string | null },
+          { label: 'a session with no claim', user: owner.authUserId, claim: null },
+        ]) {
+          await actAs(client, user, claim);
+          const confirm = await refusedThenContinue(client, () => confirmRosterOverride(client, id, null));
+          const amend = await refusedThenContinue(client, () => amendRosterOverride(client, id, owner.id, 'Zamjena', null));
+          await actAsOwner(client);
+          expect(confirm.code, `${slug}: ${label} confirmed a roster override`).toBe('42501');
+          expect(amend.code, `${slug}: ${label} amended a roster override`).toBe('42501');
+        }
+        expect(await rosterOverrideRow(client, id), `${slug}: a refused disposition changed the row`).toEqual(before);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(CROSS_TENANT)(
+    'never lets a $fixture admin confirm or amend a $otherFixture roster override, or a removed one of its own',
+    async ({ slug, admin, member, otherSlug }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const foreignOwner = await memberByUsername(
+          client,
+          otherSlug,
+          FIXTURES.find((entry) => entry.slug === otherSlug)?.admin ?? '',
+        );
+        const { rows: foreign } = await client.query<{ id: string }>(
+          'select id::text as id from roster_overrides where organization_id = $1 and removed_at is null',
+          [foreignOwner.organizationId],
+        );
+        const target = foreign[0]?.id ?? '';
+        expect(target, `${otherSlug} has no live roster override`).not.toBe('');
+        const team = await seededTeam(client, organization, 'Smjena A');
+        const before = await rosterOverrideRow(client, target);
+
+        await actAs(client, owner.authUserId, organization);
+        const gone = await insertRosterOverride(client, { organization, team, date: '2026-10-01', out: self.id, in: null, reason: 'x' });
+        await removeRosterOverride(client, gone);
+        const results = {
+          foreignConfirm: await refusedThenContinue(client, () => confirmRosterOverride(client, target, null)),
+          foreignAmend: await refusedThenContinue(client, () => amendRosterOverride(client, target, owner.id, 'Zamjena', null)),
+          removedConfirm: await refusedThenContinue(client, () => confirmRosterOverride(client, gone, null)),
+          removedAmend: await refusedThenContinue(client, () => amendRosterOverride(client, gone, owner.id, 'Zamjena', null)),
+        };
+        await actAsOwner(client);
+
+        for (const [label, refusal] of Object.entries(results)) {
+          expect(refusal.code, `${slug}: ${label}`).toBe('P0002');
+        }
+        expect(await rosterOverrideRow(client, target), `${slug}: ${otherSlug}'s roster override changed`).toEqual(before);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'embeds the $fixture pending roster overrides alone in the builder read, and moves its team horizon to the earliest one',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const viewer = await memberByUsername(client, slug, member);
+        const own = owner.organizationId;
+        const types = await seededTypeIds(client, slug, own);
+        const today = await organizationDay(client, own);
+        const team = await addThrowawayTeam(client, own, owner.authUserId);
+        const labels = ['older', 'newer'] as const;
+        const pattern = {} as Record<(typeof labels)[number], { readonly id: string; readonly steps: readonly string[] }>;
+        for (const label of labels) {
+          pattern[label] = await ownerPattern(client, own, owner.authUserId, [types[0]!, types.at(-1)!]);
+        }
+        for (const [label, days] of [['older', -400], ['newer', -20]] as const) {
+          await ownerAssignment(client, {
+            organization: own,
+            team: team.id,
+            pattern: pattern[label].id,
+            offsetStep: pattern[label].steps[0]!,
+            anchor: SEEDED_ANCHOR_DATE,
+            from: await dayPlus(client, today, days),
+            by: owner.authUserId,
+          });
+        }
+        const roster = async (days: number, stamps: { created: string; confirmed?: string }): Promise<string> => {
+          const { rows } = await client.query<{ id: string }>(
+            `insert into roster_overrides
+               (organization_id, team_id, date, member_out_id, reason, created_by, created_at, confirmed_by, confirmed_at)
+             values ($1, $2, $3::date, $4, 'rls-isolation-test roster override', $5::uuid, now() + $6::interval,
+                     case when $7::interval is null then null else $5::uuid end, now() + $7::interval)
+             returning id`,
+            [own, team.id, await dayPlus(client, today, days), viewer.id, owner.authUserId, stamps.created, stamps.confirmed ?? null],
+          );
+          const id = rows[0]?.id;
+          if (id === undefined) throw new Error('roster_overrides insert returned no row');
+          return id;
+        };
+        // Written a year before the newer version was saved: pending, and its
+        // date (before the newer version) keeps the older version in view.
+        const pendingPast = await roster(-25, { created: '-1 year' });
+        // Confirmed after the newer version: in force, read by nobody here.
+        await roster(-24, { created: '-1 year', confirmed: '1 minute' });
+        const name = new Map(labels.map((label) => [pattern[label].id, label]));
+        const read = async () => {
+          const { rows: kept } = await client.query<{ patternId: string }>(
+            `select a.pattern_id as "patternId"
+               from organizations o, public.rotation_assignments_in_view(o) as a
+              where o.id = $1 and a.team_id = $2`,
+            [own, team.id],
+          );
+          const { rows: overrides } = await client.query<{ id: string }>(
+            `select v.id
+               from organizations o, public.rotation_roster_overrides_in_view(o) as v
+              where o.id = $1 and v.team_id = $2`,
+            [own, team.id],
+          );
+          return { kept: kept.map((row) => name.get(row.patternId)).sort(), overrides: overrides.map((row) => row.id) };
+        };
+
+        await actAs(client, owner.authUserId, own);
+        const asAdmin = await read();
+        await actAsOwner(client);
+        await actAs(client, viewer.authUserId, own);
+        const asMember = await read();
+        await actAsOwner(client);
+
+        expect(asAdmin).toEqual({ kept: ['newer', 'older'], overrides: [pendingPast] });
+        // The member reads no roster override, so the horizon is yesterday.
+        expect(asMember).toEqual({ kept: ['newer'], overrides: [] });
+      });
+    },
+  );
+
+  it.skipIf(noApi).each([
+    {
+      name: 'confirm_roster_override',
+      body: { p_override_id: '00000000-0000-4000-8000-000000000000', p_governing_saved_at: null },
+    },
+    {
+      name: 'amend_roster_override',
+      body: {
+        p_override_id: '00000000-0000-4000-8000-000000000000',
+        p_member_in_id: '00000000-0000-4000-8000-000000000000',
+        p_reason: 'x',
+        p_governing_saved_at: null,
+      },
+    },
+  ])('refuses an anonymous caller $name', async ({ name, body }) => {
+    const response = await rest(`rpc/${name}`, { method: 'POST', body });
+    expect(response.status, `an anonymous caller reached ${name}`).toBe(401);
+    const refusal = await restRefusal(response);
+    expect(refusal.code, 'a privilege refusal is 42501').toBe('42501');
+    expect(refusal.message).toBe(`permission denied for function ${name}`);
+  });
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'answers the $fixture roster confirm and amend over PostgREST: 42501 to a member, P0002 to an admin naming no live roster override',
+    async ({ slug, admin, member }) => {
+      const nobody = '00000000-0000-4000-8000-000000000000';
+      for (const { name, body } of [
+        { name: 'confirm_roster_override', body: { p_override_id: nobody, p_governing_saved_at: null } },
+        {
+          name: 'amend_roster_override',
+          body: { p_override_id: nobody, p_member_in_id: nobody, p_reason: 'x', p_governing_saved_at: null },
+        },
+      ]) {
+        const asMember = await rest(`rpc/${name}`, { token: await tokenFor(member, slug), method: 'POST', body });
+        expect(asMember.ok, `${slug}: a member-role account reached ${name}`).toBe(false);
+        expect((await restRefusal(asMember)).code).toBe('42501');
+
+        const asAdmin = await rest(`rpc/${name}`, { token: await tokenFor(admin, slug), method: 'POST', body });
+        expect(asAdmin.ok, `${slug}: ${name} reached an unknown roster override`).toBe(false);
+        expect((await restRefusal(asAdmin)).code).toBe('P0002');
+      }
     },
     20_000,
   );

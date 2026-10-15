@@ -1146,6 +1146,17 @@ describe('the remaining definers take the organization lock before their admin c
       sql: `select public.replace_conflict_member($1::uuid, current_date, $1::uuid, gen_random_uuid(), 'x')`,
       message: 'CONFLICT_REPLACEMENT_REFUSED',
     },
+    // 0039: the roster override's confirmation and amend, behind the same lock.
+    {
+      fn: 'confirm_roster_override',
+      sql: 'select public.confirm_roster_override($1::uuid, null)',
+      message: 'ROSTER_OVERRIDE_CONFIRMATION_REFUSED',
+    },
+    {
+      fn: 'amend_roster_override',
+      sql: `select public.amend_roster_override($1::uuid, $1::uuid, 'x', null)`,
+      message: 'ROSTER_OVERRIDE_AMEND_REFUSED',
+    },
   ] as const;
 
   for (const { fn, sql, message } of CALLS) {
