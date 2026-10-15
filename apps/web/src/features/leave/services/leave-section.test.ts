@@ -32,6 +32,7 @@ import {
   leaveFormFailureOf,
   leaveHandoffKeyOf,
   leaveHandoffOf,
+  leaveHandoffMissed,
   leaveHandoffOpeningOf,
   leaveHandoffOriginOf,
   leaveInYearChargeOf,
@@ -852,6 +853,15 @@ describe('the hand-off from a conflict (story 5.4d)', () => {
   it('Changed elsewhere: opens nothing once the record no longer covers the conflict\'s date', () => {
     expect(leaveHandoffOpeningOf(AMEND, VIEWER_MEMBER, rowsOf([{ id: WORKED.id, from: '2026-09-11', to: '2026-09-14' }]))).toBeNull();
     expect(leaveHandoffOpeningOf(REMOVE, VIEWER_MEMBER, rowsOf([{ id: WORKED.id, from: '2026-09-01', to: '2026-09-09' }]))).toBeNull();
+  });
+
+  it('Missed: says so only for a hand-off about this member that opened nothing', () => {
+    const rows = rowsOf([WORKED]);
+
+    expect(leaveHandoffMissed(AMEND, VIEWER_MEMBER, leaveHandoffOpeningOf(AMEND, VIEWER_MEMBER, rowsOf([])))).toBe(true);
+    expect(leaveHandoffMissed(AMEND, VIEWER_MEMBER, leaveHandoffOpeningOf(AMEND, VIEWER_MEMBER, rows))).toBe(false);
+    expect(leaveHandoffMissed(AMEND, 'someone-else', null)).toBe(false);
+    expect(leaveHandoffMissed(null, VIEWER_MEMBER, null)).toBe(false);
   });
 });
 

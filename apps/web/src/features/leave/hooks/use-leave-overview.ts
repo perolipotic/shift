@@ -11,15 +11,23 @@ import {
 import {
   GODISNJI_OVERVIEW,
   OVERVIEW_LOADING,
+  OVERVIEW_READY,
+  chooseLeaveOverviewChip,
+  clearedLeaveOverviewFilters,
+  godisnjiSearchKeyOf,
   godisnjiViewOf,
+  leaveOverviewChipChoiceOf,
+  leaveOverviewChipRemovalOf,
   leaveOverviewFiltersOf,
   leaveOverviewFromRows,
   leaveOverviewRowsOf,
   leaveOverviewSearchFor,
   nextLeaveOverviewSort,
   type GodisnjiSearch,
+  type LeaveOverviewFilters,
   type LeaveOverviewSortKey,
 } from '@/features/leave/services/leave-overview';
+import { ALL_TEAMS } from '@/features/members/services/list';
 import { myLeaveRowsStateOf } from '@/features/leave/services/my-leave';
 import {
   MEMBERS_LIST_KEY,
@@ -59,6 +67,11 @@ export type GodisnjiNavigate = (next: GodisnjiSearch, options: { readonly replac
  * THE SEARCH IS THE URL'S `?trazi=`: typing replaces the entry, as the member
  * directory's does; the box keeps what was typed and follows the URL when it
  * changes from elsewhere. A heading press pushes `?sort=`.
+ *
+ * THE CHIPS (E884) are `?smjena=` and `?stanje=`: a pick, a ✕ and
+ * `Poništi filtre` each push an entry, and return the state they leave as
+ * one key, which the option-chip bar waits on to move focus — *Ljudi*'s
+ * pattern. A team the rows no longer offer is replaced out of the URL.
  */
 export function useLeaveOverview(search: GodisnjiSearch, navigate: GodisnjiNavigate) {
   const queryClient = useQueryClient();
@@ -158,7 +171,11 @@ export function useLeaveOverview(search: GodisnjiSearch, navigate: GodisnjiNavig
   );
   const { search: query, sort } = filters;
   // The box's own text, so the rows follow every keystroke before the URL does.
-  const overview = leaveOverviewFromRows(rows, { search: text, sort });
+  const overview = leaveOverviewFromRows(rows, { ...filters, search: text });
+  /** The state the URL holds, as one key: the filter bar waits for it to move focus. */
+  const stateKey = godisnjiSearchKeyOf(search);
+  /** The team the rows were narrowed by once they are ready; before that the URL's. */
+  const appliedTeam = overview.kind === OVERVIEW_READY ? overview.team : filters.team;
 
   /** Read again every read the overview stands on, from the unavailable notice's retry. */
   function retry(): void {
@@ -168,10 +185,29 @@ export function useLeaveOverview(search: GodisnjiSearch, navigate: GodisnjiNavig
     }
   }
 
+  /**
+   * Write `next` to the URL, and return the state it leaves. A change that
+   * leaves the URL as it is navigates nowhere, so it pushes no duplicate entry.
+   */
+  function write(next: LeaveOverviewFilters, replace: boolean): string {
+    const written = leaveOverviewSearchFor(next);
+    const key = godisnjiSearchKeyOf(written);
+
+    if (key !== stateKey) navigate(written, { replace });
+
+    return key;
+  }
+
+  // A TEAM THAT LEFT THE OPTIONS LEAVES THE URL TOO, replacing the entry.
+  useEffect(() => {
+    if (appliedTeam === filters.team) return;
+    write({ ...filters, search: text.trim(), team: ALL_TEAMS }, true);
+  }, [appliedTeam, filters.team]);
+
   function writeSearch(value: string): void {
     typed.current = value;
     setText(value);
-    navigate(leaveOverviewSearchFor({ search: value.trim(), sort }), { replace: true });
+    write({ ...filters, search: value.trim() }, true);
   }
 
   function changeSearch(event: ChangeEvent<HTMLInputElement>): void {
@@ -185,7 +221,36 @@ export function useLeaveOverview(search: GodisnjiSearch, navigate: GodisnjiNavig
   }
 
   function pressColumn(key: LeaveOverviewSortKey): void {
-    navigate(leaveOverviewSearchFor({ search: query, sort: nextLeaveOverviewSort(sort, key) }), { replace: false });
+    write({ ...filters, search: query, sort: nextLeaveOverviewSort(sort, key) }, false);
+  }
+
+  /** A chip's pick: the URL changes, and the state it leaves is returned. */
+  function pickChip(key: string, id: string): string {
+    const chip = chooseLeaveOverviewChip(key);
+    const teams = overview.kind === OVERVIEW_READY ? overview.teams : [];
+
+    return chip === null ? stateKey : write(leaveOverviewChipChoiceOf({ ...filters, search: query }, chip, id, teams), false);
+  }
+
+  /** A chip's ✕. */
+  function removeChip(key: string): string {
+    const chip = chooseLeaveOverviewChip(key);
+
+    return chip === null ? stateKey : write(leaveOverviewChipRemovalOf({ ...filters, search: query }, chip), false);
+  }
+
+  // THE SEARCH AND BOTH CHIPS BACK TO THEIR DEFAULTS, the sort kept, in one
+  // entry. The phone sheet's `Poništi`: focus stays in the sheet.
+  function clearFilters(): void {
+    typed.current = NO_TEXT;
+    setText(NO_TEXT);
+    write(clearedLeaveOverviewFilters(filters), false);
+  }
+
+  // `Poništi filtre` under the chips, and the empty line's: the same, and focus to the search.
+  function resetFilters(): void {
+    clearFilters();
+    searchField.current?.focus();
   }
 
   return {
@@ -193,10 +258,17 @@ export function useLeaveOverview(search: GodisnjiSearch, navigate: GodisnjiNavig
     overview,
     loading: admin && overview.kind === OVERVIEW_LOADING,
     search: text,
+    filters,
+    team: appliedTeam,
+    stateKey,
     searchField,
     changeSearch,
     clearSearch,
     pressColumn,
+    pickChip,
+    removeChip,
+    clearFilters,
+    resetFilters,
     retry,
   };
 }

@@ -11,6 +11,7 @@ import {
   shiftTypesQueryOptions,
   shiftTypesNoticeOf,
   shiftTypesSurfaceStateOf,
+  shiftTypesSubmitTodayOf,
   shiftTypesTodayOf,
 } from '@/features/shift-types/services/list';
 import {
@@ -29,6 +30,7 @@ import {
   type ShiftTypeWriteTable,
 } from '@/features/shift-types/services/write';
 import { claimedOrganizationOf } from '@/lib/supabase/claims';
+import { retryRead } from '@/features/teams/services/dependents';
 import { supabaseClient } from '@/lib/supabase/client';
 import { NO_TEXT } from '@/utils/text';
 
@@ -133,7 +135,8 @@ export function useShiftTypeList() {
           start: startField.current?.value ?? NO_TEXT,
           end: endField.current?.value ?? NO_TEXT,
         },
-        today,
+        // Taken again at submit, never the today this screen drew.
+        shiftTypesSubmitTodayOf(snapshot),
       );
 
       // WHAT HAPPENS NEXT IS `createdOutcomeOf`'s, executed by the node
@@ -182,7 +185,13 @@ export function useShiftTypeList() {
     }
   }
 
+  /** Read the list again, from the unavailable notice's retry. */
+  function retry(): void {
+    void retryRead(queryClient, SHIFT_TYPES_LIST_KEY);
+  }
+
   return {
+    retry,
     nameField,
     kindField,
     startField,

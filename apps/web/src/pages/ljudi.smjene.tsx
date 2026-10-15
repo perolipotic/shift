@@ -7,7 +7,7 @@ import { PageActions, PageDescription, PageHeader, PageTitle } from '@/component
 import { TeamAddDialog } from '@/features/teams/components/team-add-dialog';
 import { TeamListSection } from '@/features/teams/components/team-list-section';
 import { useTeamList } from '@/features/teams/hooks/use-team-list';
-import { teamsMessageKey } from '@/features/teams/services/list';
+import { teamsMessageKey, teamsRetryMessageKey } from '@/features/teams/services/list';
 import { t } from '@/lib/i18n';
 import { requireAdmin } from '@/features/navigation/services/admin-guard';
 import { appLayoutRoute } from '@/pages/_app';
@@ -64,9 +64,19 @@ export function LjudiSmjeneScreen() {
       </PageHeader>
       {created ? <Notice role="status">{t('smjene.created')}</Notice> : null}
       {refusal === null ? null : (
-        <Notice role="alert">
-          {t(teamsMessageKey(refusal))}
-        </Notice>
+        <div className="grid min-w-0 gap-2">
+          <Notice role="alert">
+            {t(teamsMessageKey(refusal))}
+          </Notice>
+          <Button
+            className="h-11 w-full sm:w-auto sm:justify-self-start"
+            type="button"
+            variant="outline"
+            onClick={screen.retry}
+          >
+            {t(teamsRetryMessageKey(refusal))}
+          </Button>
+        </div>
       )}
       <TeamAddDialog screen={screen} />
       <TeamListSection screen={screen} />

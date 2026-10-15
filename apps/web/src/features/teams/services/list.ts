@@ -232,6 +232,15 @@ export function teamsMessageKey(failure: TeamsFailure): 'smjene.error.unavailabl
   return unhandled;
 }
 
+/** The retry beside a read failure's notice: an unavailable read is read again. Exhaustive. */
+export function teamsRetryMessageKey(failure: TeamsFailure): 'smjene.error.retry' {
+  if (failure === TEAMS_UNAVAILABLE) return 'smjene.error.retry';
+
+  const unhandled: never = failure;
+
+  return unhandled;
+}
+
 /**
  * The one query definition every screen reading {@link TEAMS_LIST_KEY} uses.
  *

@@ -235,14 +235,26 @@ test('an admin reset shows four words with Kopiraj, and holds the next sign-in a
     await people.editLink(name).click();
     await people.resetButton(name).click();
     await people.resetConfirmButton(name).click();
-    await expect(people.statusWith(hr.ljudi.form.resetIssued)).toBeVisible();
-    await expect(people.text(hr.ljudi.form.resetCredentialOnce)).toBeVisible();
-    await expect(people.issuedPassword).toBeVisible();
+    // IN A DIALOG (E915), as the add dialog's second step shows a new member's,
+    // with focus on its title.
+    await expect(people.resetDialog).toBeVisible();
+    await expect(people.resetDialog.getByRole('heading', { name: hr.ljudi.form.resetCredential })).toBeFocused();
+    await expect(people.resetDialog.getByRole('status').filter({ hasText: hr.ljudi.form.resetIssued })).toBeVisible();
+    await expect(people.resetDialog.getByText(hr.ljudi.form.resetCredentialOnce)).toBeVisible();
+    await expect(people.resetDialog.getByText(/^[a-z]{3,6}(-[a-z]{3,6}){3}$/)).toBeVisible();
+    // Escape never loses the one copy.
+    await page.keyboard.press('Escape');
+    await expect(people.resetDialog).toBeVisible();
     await people.copyButton.click();
     await expect(people.statusWith(hr.ljudi.form.copied)).toBeVisible();
 
     reset = await page.evaluate(() => navigator.clipboard.readText());
     expect(reset).toMatch(/^[a-z]{3,6}(-[a-z]{3,6}){3}$/);
+    // Sakrij lozinku closes it, and focus returns to the offer.
+    await people.resetDismissButton.click();
+    await expect(people.resetDialog).toHaveCount(0);
+    await expect(people.issuedPassword).toHaveCount(0);
+    await expect(people.resetButton(name)).toBeFocused();
   } finally {
     await admin.close();
   }
