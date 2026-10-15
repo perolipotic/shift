@@ -181,9 +181,9 @@ test.describe('at a desktop viewport', () => {
     await page.goto('/danas');
     await expect(loginPage.heading(hr.nav.danas)).toBeVisible();
 
-    const overview = loginPage.navigation.getByRole('region', { name: hr.shell.moreGroup.everyone, exact: true });
-    const settings = loginPage.navigation.getByRole('region', { name: hr.shell.moreGroup.adminOnly, exact: true });
-    await expect(overview.getByRole('heading', { name: hr.shell.moreGroup.everyone })).toBeVisible();
+    const overview = loginPage.navigation.getByRole('group', { name: hr.shell.moreGroup.everyone, exact: true });
+    const settings = loginPage.navigation.getByRole('group', { name: hr.shell.moreGroup.adminOnly, exact: true });
+    await expect(overview.getByText(hr.shell.moreGroup.everyone, { exact: true })).toBeVisible();
     await expect(overview.getByRole('link')).toHaveText([
       hr.nav.danas,
       hr.nav.kalendar,
@@ -192,7 +192,7 @@ test.describe('at a desktop viewport', () => {
       hr.nav.raspored,
       hr.nav.ljudi,
     ]);
-    await expect(settings.getByRole('heading', { name: hr.shell.moreGroup.adminOnly })).toBeVisible();
+    await expect(settings.getByText(hr.shell.moreGroup.adminOnly, { exact: true })).toBeVisible();
     await expect(settings.getByRole('link')).toHaveText([hr.nav.postavkeRotacije, hr.nav.organizacija]);
     // The sidebar rows carry no description; that is the sheet's.
     await expect(loginPage.navigation.getByText(hr.shell.description.sati)).toHaveCount(0);
@@ -381,7 +381,7 @@ test.describe('a member at a desktop viewport', () => {
     await page.goto('/danas');
     await expect(loginPage.heading(hr.nav.danas)).toBeVisible();
 
-    const overview = loginPage.navigation.getByRole('region', { name: hr.shell.moreGroup.everyone, exact: true });
+    const overview = loginPage.navigation.getByRole('group', { name: hr.shell.moreGroup.everyone, exact: true });
     await expect(overview.getByRole('link')).toHaveText([
       hr.nav.danas,
       hr.nav.kalendar,
@@ -389,7 +389,7 @@ test.describe('a member at a desktop viewport', () => {
       hr.nav.godisnji,
       hr.nav.ljudi,
     ]);
-    await expect(loginPage.navigation.getByRole('heading', { name: hr.shell.moreGroup.adminOnly })).toHaveCount(0);
+    await expect(loginPage.navigation.getByText(hr.shell.moreGroup.adminOnly, { exact: true })).toHaveCount(0);
   });
 });
 

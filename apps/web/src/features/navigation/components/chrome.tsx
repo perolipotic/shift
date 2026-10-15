@@ -717,7 +717,7 @@ export function AppChrome({ children }: AppChromeProps) {
   /**
    * The sidebar's destinations under the same two headings as the sheet
    * (*Pregled*, *Postavke*). A group with no rows is not drawn, so a member's
-   * sidebar has *Pregled* alone. Collapsed, the headings stay for assistive
+   * sidebar has *Pregled* alone. Collapsed, the labels stay for assistive
    * technology and leave the rail to the icons. The skeleton and the empty
    * failure state are `renderDestinations`'s, as before.
    */
@@ -726,15 +726,17 @@ export function AppChrome({ children }: AppChromeProps) {
 
     return labelledGroups(groupDestinations(destinationsFor(role)), sidebarGroupIds).map((group) =>
       group.rows.length === 0 ? null : (
-        <section key={group.id} aria-labelledby={group.id} className="flex flex-col gap-1">
-          <h2
+        // A NAMED GROUP, NOT A HEADED SECTION: the sidebar sits beside every
+        // page, and a heading here would join each page's own outline.
+        <div key={group.id} role="group" aria-labelledby={group.id} className="flex flex-col gap-1">
+          <p
             id={group.id}
             className="px-3 pt-2 font-sans text-xs font-semibold uppercase tracking-wide text-sidebar-foreground/70 group-data-[collapsed=true]/sidebar:sr-only"
           >
             {group.label}
-          </h2>
+          </p>
           {renderDestinations(group.rows, PLACE.sidebar)}
-        </section>
+        </div>
       ),
     );
   }
