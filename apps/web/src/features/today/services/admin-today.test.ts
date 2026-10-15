@@ -694,7 +694,7 @@ describe('the subtitle', () => {
     const snapshot = await snapshotOf({ viewerTeam: A });
     const status = adminStatusOf(todayViewOf(snapshot, [], AT_1420));
 
-    expect(status).toEqual({ kind: STATUS_WORKING, shifts: [{ name: 'Noć', range: '19:00–07:00' }] });
+    expect(status).toEqual({ kind: STATUS_WORKING, shifts: [{ name: 'Noć', range: '19:00–07:00', fromYesterday: false }] });
 
     if (status?.kind !== STATUS_WORKING) throw new Error('not working');
 
@@ -708,12 +708,14 @@ describe('the subtitle', () => {
     );
   });
 
-  it('a lone Noć from yesterday still running: Danas radiš Noć 19:00–07:00, and coverage unchanged', async () => {
+  it('a lone Noć from yesterday still running: Danas radiš Noć 19:00–07:00 od jučer, and coverage unchanged', async () => {
     const snapshot = await snapshotOf({ viewerTeam: A });
     const at = zagreb('2026-10-02', '03:00');
     const status = adminStatusOf(todayViewOf(snapshot, [], at));
 
-    expect(status).toEqual({ kind: STATUS_WORKING, shifts: [{ name: 'Noć', range: '19:00–07:00' }] });
+    // Marked as the member's today card marks it (E897), so the two surfaces
+    // never describe the same carried shift differently.
+    expect(status).toEqual({ kind: STATUS_WORKING, shifts: [{ name: 'Noć', range: '19:00–07:00', fromYesterday: true }] });
 
     if (status?.kind !== STATUS_WORKING) throw new Error('not working');
 
@@ -721,7 +723,10 @@ describe('the subtitle', () => {
 
     if (shift === undefined) throw new Error('no shift');
 
-    expect(t(adminStatusShiftMessageKey(shift), { type: shift.name, range: shift.range })).toBe('Danas radiš Noć 19:00–07:00');
+    expect(adminStatusShiftMessageKey(shift)).toBe('danas.admin.status.workingFromYesterday');
+    expect(t(adminStatusShiftMessageKey(shift), { type: shift.name, range: shift.range })).toBe(
+      'Danas radiš Noć 19:00–07:00 od jučer',
+    );
 
     // Coverage is today's teams alone, as for an admin on no team: A's Noć of 01.10. is not in it.
     const { coverage } = viewOf(snapshot, [], [], at);
@@ -761,7 +766,7 @@ describe('the subtitle', () => {
     expect(t(adminStatusMessageKey(STATUS_FREE))).toBe('Danas ne radiš');
     expect(t(adminStatusMessageKey(STATUS_LEAVE))).toBe('Danas si na godišnjem odmoru');
     expect(t(adminStatusMessageKey(STATUS_DUTY), { time: '07:00' })).toBe('Na dužnosti do 07:00');
-    expect(adminStatusShiftMessageKey({ name: 'Noć', range: null })).toBe('danas.admin.status.workingUntimed');
+    expect(adminStatusShiftMessageKey({ name: 'Noć', range: null, fromYesterday: false })).toBe('danas.admin.status.workingUntimed');
   });
 
   it('states nothing while the case is loading or unavailable', () => {

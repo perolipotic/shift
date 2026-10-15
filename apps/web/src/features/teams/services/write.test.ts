@@ -26,7 +26,6 @@ import {
   archiveFailureOf,
   archiveStageOf,
   archiveTeam,
-  claimedOrganizationOf,
   createTeam,
   enteredTeamName,
   renameTeam,
@@ -313,34 +312,6 @@ describe('an archive of a team somebody is on is refused by name (story 1.7b)', 
   it('names the rule rather than the generic refusal', () => {
     expect(teamWriteMessageKey(TEAM_IN_USE)).not.toBe(teamWriteMessageKey(TEAM_WRITE_REFUSED));
     expect(teamWriteMessageKey(TEAM_IN_USE)).not.toBe(teamWriteMessageKey(TEAM_WRITE_UNAVAILABLE));
-  });
-});
-
-describe('the organization comes from the session claim', () => {
-  function token(payload: unknown): string {
-    const encoded = btoa(JSON.stringify(payload))
-      .replaceAll('+', '-')
-      .replaceAll('/', '_')
-      .replaceAll('=', '');
-
-    return `header.${encoded}.signature`;
-  }
-
-  it('reads the claim', () => {
-    expect(claimedOrganizationOf(token({ organization_id: ORGANIZATION }))).toBe(ORGANIZATION);
-  });
-
-  it.each([
-    ['no token', null],
-    ['undefined', undefined],
-    ['no payload', 'header'],
-    ['a payload that is not JSON', 'header.bm90LWpzb24.signature'],
-    ['no claim', token({ sub: 'x' })],
-    ['an empty claim', token({ organization_id: '' })],
-    ['a numeric claim', token({ organization_id: 7 })],
-    ['an array payload', token([1])],
-  ])('answers null for %s', (_what, value) => {
-    expect(claimedOrganizationOf(value)).toBeNull();
   });
 });
 

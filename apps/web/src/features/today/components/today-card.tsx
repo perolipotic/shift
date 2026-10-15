@@ -1,7 +1,10 @@
 import { useId, type ReactNode } from 'react';
 
 import { Card } from '@/components/ui/card';
+import type { MemberTeam } from '@/features/members/services/list';
+import { dayEmptyMessageKey } from '@/features/calendar/utils/empty-day';
 import { DutyBlock } from '@/features/today/components/duty-block';
+import { OwnTeamLine } from '@/features/today/components/own-team-line';
 import {
   CASE_DUTY,
   CASE_LEAVE,
@@ -48,9 +51,10 @@ function renderDetail(todayCase: Exclude<TodayCase, { readonly kind: typeof CASE
     return <ul className="grid gap-2">{todayCase.shifts.map(renderShift)}</ul>;
   }
 
-  // What is true, never an empty area: the free day's type and team, or no shift.
+  // What is true, never an empty area: the free day's type and team, or no
+  // shift — on no team, or inactive (B449).
   return todayCase.shift === null ? (
-    <p className="text-muted-foreground">{t('kalendar.day.noTeam')}</p>
+    <p className="text-muted-foreground">{t(dayEmptyMessageKey(todayCase))}</p>
   ) : (
     <ul className="grid gap-2">{renderShift(todayCase.shift, 0)}</ul>
   );
@@ -59,13 +63,24 @@ function renderDetail(todayCase: Exclude<TodayCase, { readonly kind: typeof CASE
 /**
  * Today in words (story 6.1a): exactly one case as the card's heading — on
  * leave, working or free — and what it rests on beneath it; on a duty, the
- * duty-block in its place (story 6.2). Nothing to tap.
+ * duty-block in its place (story 6.2). Last, the viewer's team today and its
+ * one link, the card's only thing to tap.
  */
-export function TodayCard({ todayCase }: { readonly todayCase: TodayCase }): ReactNode {
+export function TodayCard({
+  todayCase,
+  ownTeam,
+}: {
+  readonly todayCase: TodayCase;
+  readonly ownTeam: MemberTeam | null;
+}): ReactNode {
   const headingId = useId();
 
   if (todayCase.kind === CASE_DUTY) {
-    return <DutyBlock duty={todayCase.duty} />;
+    return (
+      <DutyBlock duty={todayCase.duty}>
+        <OwnTeamLine team={ownTeam} />
+      </DutyBlock>
+    );
   }
 
   return (
@@ -75,6 +90,7 @@ export function TodayCard({ todayCase }: { readonly todayCase: TodayCase }): Rea
           {t(todayCaseMessageKey(todayCase.kind))}
         </h2>
         {renderDetail(todayCase)}
+        <OwnTeamLine team={ownTeam} />
       </section>
     </Card>
   );

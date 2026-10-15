@@ -10,8 +10,15 @@
  * redirects did before this module, the parameters lived for one hop and the
  * PATH never travelled at all, so `/kalendar?tim=2#tjedan` came back as `/`.
  *
+ * FOLLOWED IN FOUR PLACES, all through {@link returnTargetOf}: the sign-in
+ * hook after a password is accepted; both sign-in routes' guards when the
+ * visitor is already signed in (C512); and the set-password step, which the
+ * layout's guard reaches with the target too, on its save and on its guard
+ * once the flag is gone (E853). A re-guard raised by a session change elsewhere
+ * carries no target at all (`@/lib/supabase/session-cache`, C516).
+ *
  * VALIDATED ON THE WAY OUT, never trusted on the way in. The parameter is part
- * of a URL anybody can write, so it is an open-redirect vector unless the one
+ * of a URL anybody can write, so it is an open-redirect vector unless every
  * place that follows it refuses everything that is not a same-app path:
  * {@link returnTargetOf} admits a relative path that resolves to this origin,
  * contains no backslash or control character, and names a route the tree

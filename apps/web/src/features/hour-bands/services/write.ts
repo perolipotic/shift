@@ -1,16 +1,7 @@
 import { formatMinuteOfDay } from '@/lib/i18n/format';
 import { hourBandById, type HourBandRow, type HourBandsSurfaceState } from '@/features/hour-bands/services/list';
-import { claimedOrganizationOf } from '@/features/teams/services/write';
 import { enteredName } from '@/utils/name';
 import { minuteOfTime } from '@/utils/time';
-
-/**
- * The organization the caller's token names, or `null`. ONE PARSER: the claim
- * reader `@/features/teams/services/write` already holds and tests, re-exported so the band
- * screens import every write rule from one module. Not trusted — `0012`'s
- * insert policy pins the tenant again.
- */
-export { claimedOrganizationOf };
 
 /**
  * Adding, editing and removing an hour band — every decision the two band

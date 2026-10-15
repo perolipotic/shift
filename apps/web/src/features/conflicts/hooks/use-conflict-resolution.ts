@@ -62,7 +62,7 @@ import {
 } from '@/features/members/services/list';
 import {
   ORGANIZATION_SNAPSHOT_KEY,
-  ORGANIZATION_TABLE,
+  organizationTable,
   organizationSnapshotQueryOptions,
 } from '@/features/organization/services/snapshot';
 import {
@@ -170,7 +170,7 @@ export function useConflictResolution(params: ResolutionParams) {
     ),
   );
   const members = useQuery(membersQueryOptions(() => supabaseClient().from(MEMBERS_TABLE)));
-  const organization = useQuery(organizationSnapshotQueryOptions(() => supabaseClient().from(ORGANIZATION_TABLE)));
+  const organization = useQuery(organizationSnapshotQueryOptions(organizationTable));
 
   // STORY 5.5d: a replacement naming an override the snapshot does not hold yet re-reads it once.
   useReplacementLinkRefresh(calendarSurfaceStateOf(calendar).snapshot, resolutions.data);

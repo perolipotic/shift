@@ -12,6 +12,8 @@ export const TODAY_SCREEN_PARTS = {
   hook: ['features', 'today', 'hooks', 'use-today.ts'],
   body: ['features', 'today', 'components', 'today-body.tsx'],
   todayCard: ['features', 'today', 'components', 'today-card.tsx'],
+  // The caller's team today, closing the today card, and its one link (E804).
+  ownTeamLine: ['features', 'today', 'components', 'own-team-line.tsx'],
   nextShiftCard: ['features', 'today', 'components', 'next-shift-card.tsx'],
   weekList: ['features', 'today', 'components', 'week-list.tsx'],
   skeleton: ['features', 'today', 'components', 'today-skeleton.tsx'],

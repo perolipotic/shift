@@ -24,7 +24,6 @@ import {
   REMOVE_ARMED,
   REMOVE_BUSY,
   REMOVE_IDLE,
-  claimedOrganizationOf,
   createHourBand,
   enteredHourBandName,
   enteredHourBandStart,
@@ -414,18 +413,6 @@ describe('where a refusal leaves focus', () => {
     expect(marksField(HOUR_BAND_NAME_TAKEN, HOUR_BAND_NAME_FIELD)).toBe(true);
     expect(marksField(HOUR_BAND_NAME_TAKEN, HOUR_BAND_START_FIELD)).toBe(false);
     expect(marksField(HOUR_BAND_STALE, HOUR_BAND_NAME_FIELD)).toBe(false);
-  });
-});
-
-describe('the organization claim', () => {
-  const token = (payload: unknown): string =>
-    `x.${btoa(JSON.stringify(payload)).replaceAll('+', '-').replaceAll('/', '_')}.y`;
-
-  it('reads the organization from the token, and nothing from a malformed one', () => {
-    expect(claimedOrganizationOf(token({ organization_id: ORGANIZATION }))).toBe(ORGANIZATION);
-    expect(claimedOrganizationOf(token({ organization_id: '' }))).toBeNull();
-    expect(claimedOrganizationOf('nonsense')).toBeNull();
-    expect(claimedOrganizationOf(null)).toBeNull();
   });
 });
 

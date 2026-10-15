@@ -13,14 +13,6 @@ import {
   type RotationDraft,
 } from '@/features/rotation/utils/draft';
 import { rotationScheduledDateOf, rotationTeamsOf, type RotationSnapshot } from '@/features/rotation/services/list';
-import { claimedOrganizationOf } from '@/features/teams/services/write';
-
-/**
- * The organization the caller's token names, or `null` — the claim reader
- * `@/features/teams/services/write` holds and tests. Not trusted: `0016`'s insert policies pin
- * the tenant again.
- */
-export { claimedOrganizationOf };
 
 /**
  * Saving the rotation — every decision the builder's save makes, in a `.ts`

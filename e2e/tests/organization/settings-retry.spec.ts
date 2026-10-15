@@ -24,7 +24,7 @@ test('a failed read offers a retry: a second failure is announced again, and a s
   await organizationPage.goto();
 
   const alert = organizationPage.alertWith(hr.organization.error.unavailable);
-  const retry = page.getByRole('button', { name: hr.shell.retry, exact: true });
+  const retry = organizationPage.shellRetryButton;
 
   await expect(alert).toBeVisible();
   await expect(retry).toBeVisible();
@@ -35,7 +35,7 @@ test('a failed read offers a retry: a second failure is announced again, and a s
     element.setAttribute('data-e2e-first-alert', '');
   });
   await retry.click();
-  await expect(page.locator('[data-e2e-first-alert]')).toHaveCount(0);
+  await expect(organizationPage.markedWith('data-e2e-first-alert')).toHaveCount(0);
   await expect(alert).toBeVisible();
 
   // A retry that succeeds unmounts the button; focus goes to the first change
