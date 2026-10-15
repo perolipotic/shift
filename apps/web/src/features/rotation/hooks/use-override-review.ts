@@ -1,5 +1,5 @@
 import { onlineManager, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useEffectEvent, useRef, useState, type FormEvent } from 'react';
 
 import { useErasureConfirmation } from '@/features/conflicts/hooks/use-erasure-confirmation';
 import { useErasureReads } from '@/features/conflicts/hooks/use-erasure-reads';
@@ -182,6 +182,12 @@ export function useOverrideReview({
     rowsNow.current = rows;
   });
 
+  // Only a save matters below: `confirmation.drop` is a new function each
+  // render, so it is called, never followed.
+  const dropConfirmation = useEffectEvent((): void => {
+    confirmation.drop();
+  });
+
   // THE BUILDER SAVED: what the review said and what it had open belong to
   // before it. A write in flight finds the generation changed and settles nothing.
   useEffect(() => {
@@ -194,9 +200,8 @@ export function useOverrideReview({
     setFailure(null);
     setErased(0);
     setUnchecked(null);
-    confirmation.drop();
+    dropConfirmation();
     if (!writing.current) setArmed(null);
-    // Only a save matters here: `confirmation.drop` is a new function each render.
   }, [savedTimes]);
 
   /** Whether the review moved on since `started`: a builder save, or the dialog closed from outside. */

@@ -67,6 +67,7 @@ export function SetPasswordForm({ screen }: { readonly screen: SetPasswordScreen
             type={passwordShown ? 'text' : 'password'}
             autoComplete="new-password"
             required
+            // eslint-disable-next-line jsx-a11y-x/no-autofocus -- the screen is this one form, and this is its first field.
             autoFocus
             readOnly={saved}
             onInput={fieldsInput}

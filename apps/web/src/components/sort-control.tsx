@@ -173,7 +173,7 @@ function SortOptions<K extends string>({
   }
 
   return (
-    <div className="grid gap-0.5" onKeyDown={moveOnKey}>
+    <div role="presentation" className="grid gap-0.5" onKeyDown={moveOnKey}>
       {columns.map((column, index) => (
         <Button
           key={column.key}

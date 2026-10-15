@@ -326,7 +326,7 @@ function Chip({
       {chip.key === FILTER_TEAM ? (
         <TeamOptions model={model} onPick={onPick} />
       ) : (
-        <PersonOptions model={model} onPick={onPick} autoFocus />
+        <PersonOptions model={model} onPick={onPick} focusOnOpen />
       )}
     </ChipFrame>
   );
@@ -452,18 +452,18 @@ export interface PickerOption {
 /**
  * A picker's list: `Button`s with `aria-pressed` on the chosen one, one tab
  * stop that ↑ ↓ Home End move (as the month picker's grid), and a heading
- * above each group. Opening focuses the chosen option when `autoFocus`.
+ * above each group. Opening focuses the chosen option when `focusOnOpen`.
  */
 export function OptionList({
   options,
   chosen,
-  autoFocus,
+  focusOnOpen,
   onPick,
   enterRef,
 }: {
   readonly options: readonly PickerOption[];
   readonly chosen: string | null;
-  readonly autoFocus: boolean;
+  readonly focusOnOpen: boolean;
   readonly onPick: (id: string | null) => void;
   /** Set to what focuses the list's tab stop: ↓ from the Osoba search. */
   readonly enterRef?: RefObject<(() => void) | null>;
@@ -480,7 +480,7 @@ export function OptionList({
   const cursorIndex = options.findIndex((option) => option.id === cursor);
   const at = cursorIndex === -1 ? chosenIndex : cursorIndex;
   // On opening only: the chosen option takes focus, as the month picker's month does.
-  const opened = useRef(autoFocus);
+  const opened = useRef(focusOnOpen);
 
   useEffect(() => {
     if (!opened.current) return;
@@ -510,7 +510,7 @@ export function OptionList({
   }
 
   return (
-    <div className="grid max-h-72 gap-0.5 overflow-y-auto" onKeyDown={moveOnKey}>
+    <div role="presentation" className="grid max-h-72 gap-0.5 overflow-y-auto" onKeyDown={moveOnKey}>
       {options.map((option, index) => (
         <div key={option.id ?? ALL_TEAMS_OPTION} className="grid">
           {option.group === null ? null : (
@@ -561,7 +561,7 @@ function TeamOptions({
     })),
   ];
 
-  return <OptionList options={options} chosen={model.team} autoFocus onPick={onPick} />;
+  return <OptionList options={options} chosen={model.team} focusOnOpen onPick={onPick} />;
 }
 
 /**
@@ -572,18 +572,18 @@ function TeamOptions({
 function PersonOptions({
   model,
   onPick,
-  autoFocus = false,
+  focusOnOpen = false,
 }: {
   readonly model: FilterBarModel;
   readonly onPick: (id: string | null) => void;
-  readonly autoFocus?: boolean;
+  readonly focusOnOpen?: boolean;
 }): ReactNode {
   const [query, setQuery] = useState(NO_SEARCH);
   const searchId = useId();
   const enter = useRef<(() => void) | null>(null);
   const search = useRef<HTMLInputElement>(null);
   // On opening only: the search takes focus.
-  const opened = useRef(autoFocus);
+  const opened = useRef(focusOnOpen);
 
   useEffect(() => {
     if (!opened.current) return;
@@ -627,7 +627,7 @@ function PersonOptions({
       <p className="text-xs text-muted-foreground tabular-nums" aria-live="polite">
         {t('filter.matches', { shown: matching.length, total: model.people.length })}
       </p>
-      <OptionList options={options} chosen={model.person} autoFocus={false} onPick={onPick} enterRef={enter} />
+      <OptionList options={options} chosen={model.person} focusOnOpen={false} onPick={onPick} enterRef={enter} />
     </div>
   );
 }

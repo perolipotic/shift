@@ -141,6 +141,7 @@ export function MonthNav({
         {t('kalendar.monthHeading', { month: month.monthName, year: month.year })}
       </h2>
       <div ref={region} className="relative" onBlur={closeOnLeave}>
+        {/* eslint-disable-next-line jsx-a11y-x/no-noninteractive-element-interactions -- the keydown only catches PgUp/PgDn bubbling from the group's buttons. */}
         <div
           role="group"
           aria-label={t('kalendar.month')}
@@ -312,7 +313,7 @@ function MonthPicker({
           <ChevronRight aria-hidden />
         </Button>
       </div>
-      <div className="grid grid-cols-4 gap-1.5" onKeyDown={moveOnKey}>
+      <div role="presentation" className="grid grid-cols-4 gap-1.5" onKeyDown={moveOnKey}>
         {months.map((candidate, index) => {
           const shown = candidate === month.month;
           const current = candidate === month.current;

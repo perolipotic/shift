@@ -289,7 +289,7 @@ export function useOverrideForm(
     setUnchecked(null);
     setRemoveFailure(OVERRIDE_GONE);
     focusAfterWrite(removeAction, typeField);
-  });
+  }, [lost]);
 
   // THE DAY NO LONGER OFFERS THE FORM (story 7.9): its dialog closes, never
   // to reopen by itself; the day detail says why (`OverrideSetRefusal`) — the
@@ -303,7 +303,7 @@ export function useOverrideForm(
     if (failure === null && override === null) setFormLost(true);
     else setFailure((said) => said ?? OVERRIDE_TAKEN);
     focusAfterWrite(removeAction);
-  });
+  }, [formGone, failure, override]);
 
   async function invalidate(): Promise<void> {
     try {

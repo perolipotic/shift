@@ -276,7 +276,7 @@ export function useRosterForm(
    */
   function focusAfterWrite(...targets: readonly (() => HTMLElement | null)[]): void {
     // The opener last (story 7.9): a target inside the closed dialog is gone.
-    focusLater([...targets, opener], () => document.getElementById(DAY_DETAIL_HEADING_ID));
+    focusLater([...targets, () => openButton.current], () => document.getElementById(DAY_DETAIL_HEADING_ID));
   }
 
   const first = () => outField.current;
@@ -293,7 +293,7 @@ export function useRosterForm(
     setConfirming(null);
     setRemoveFailure(ROSTER_GONE);
     focusAfterWrite(first);
-  });
+  }, [lost]);
 
   // THE DAY NO LONGER OFFERS THE FORM (story 7.9) — another admin made it a
   // day off, or the team was archived: the dialog closes, never to reopen by
@@ -303,7 +303,7 @@ export function useRosterForm(
     setChanging(false);
     setFormLost(true);
     focusAfterWrite();
-  });
+  }, [formGone]);
 
   async function invalidate(): Promise<void> {
     try {

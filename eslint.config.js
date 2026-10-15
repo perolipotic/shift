@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 
 import js from '@eslint/js';
 import babelParser from '@babel/eslint-parser';
+import jsxA11y from 'eslint-plugin-jsx-a11y-x';
+import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
 
 /**
@@ -701,6 +703,29 @@ export default [
     languageOptions: {
       globals: globals.browser,
     },
+  },
+
+  // ------------------------------------------------ React: hooks and a11y
+  // Syntactic rule sets, so they need no type information. Only the two
+  // classic hooks rules: the React Compiler rules in `react-hooks`'
+  // `recommended` assume the compiler, which this app does not run. Both are
+  // errors, because `pnpm lint` passes on warnings. `jsx-a11y-x` is the
+  // es-tooling fork of `eslint-plugin-jsx-a11y`, whose peer range stops at
+  // ESLint 9; the fork declares ESLint 10 and keeps the same rule set. Its
+  // config's `languageOptions` are dropped: the Babel parser above already
+  // parses JSX.
+  {
+    files: ['apps/web/src/**/*.{ts,tsx}'],
+    plugins: { 'react-hooks': reactHooks },
+    rules: {
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'error',
+    },
+  },
+  {
+    files: ['apps/web/src/**/*.tsx'],
+    plugins: jsxA11y.configs.recommended.plugins,
+    rules: jsxA11y.configs.recommended.rules,
   },
 
   // ------------------------------------------------ feature boundaries

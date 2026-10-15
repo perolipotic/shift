@@ -213,7 +213,7 @@ export function OptionFilterBar({
                   group: null,
                 }))}
                 chosen={chip.chosen}
-                autoFocus
+                focusOnOpen
                 onPick={(id) => {
                   setOpen(null);
                   if (id !== null) focusOnceShown(onPick(chip.key, id), chip.key);
