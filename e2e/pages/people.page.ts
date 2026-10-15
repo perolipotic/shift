@@ -25,6 +25,43 @@ const LEAVE_DIALOG = new RegExp(
 export class PeoplePage extends BasePage {
   protected readonly path = '/ljudi';
 
+  // ------------------------------------------------- a member's directory
+
+  /** The directory's team groups (story 7.17), each a region named by its team. */
+  get directoryGroups(): Locator {
+    return this.main.getByRole('region');
+  }
+
+  /** One team's group, by the team's name. */
+  directoryGroup(teamName: string): Locator {
+    return this.main.getByRole('region', { name: teamName, exact: true });
+  }
+
+  /** The directory's name search. */
+  get directorySearch(): Locator {
+    return this.page.getByRole('searchbox', { name: hr.ljudi.directory.search });
+  }
+
+  /** The no-hit line's way out: clears the search. */
+  get directoryClear(): Locator {
+    return this.page.getByRole('button', { name: hr.ljudi.directory.clear, exact: true });
+  }
+
+  /** The failed read's retry. */
+  get directoryRetry(): Locator {
+    return this.page.getByRole('button', { name: hr.ljudi.directory.retry, exact: true });
+  }
+
+  /** Every *Dodaj osobu* anywhere, by a part of its name: none for a member. */
+  get anyAddButton(): Locator {
+    return this.page.getByRole('button', { name: hr.ljudi.form.add });
+  }
+
+  /** Every link in the main landmark: none on a member's read-only directory. */
+  get mainLinks(): Locator {
+    return this.main.getByRole('link');
+  }
+
   // ----------------------------------------------------------- the list
 
   /** The member list's table. */
@@ -32,14 +69,15 @@ export class PeoplePage extends BasePage {
     return this.page.getByRole('table', { name: hr.ljudi.caption });
   }
 
-  /** A member's edit link in the list's table. */
-  listedMember(name: string): Locator {
-    return this.table.getByRole('link', { name: fill(hr.ljudi.form.edit, { name }) });
+  /** A member's edit link: the list's table, or the stacked rows on a phone. */
+  editLink(name: string): Locator {
+    return this.editLinkNamed(hr.ljudi.form.edit, name);
   }
 
-  /** A member's edit link anywhere on the screen. */
-  editLink(name: string): Locator {
-    return this.page.getByRole('link', { name: fill(hr.ljudi.form.edit, { name }) });
+  /** Every `<select>` on the list outside any dialog: the closed add dialog's
+   *  own stay mounted (story 7.13b), and are its fields, not the list's. */
+  get listSelects(): Locator {
+    return this.page.locator('main select:not(dialog *)');
   }
 
   /** *Dodaj osobu* in the list's header: a button that opens the add dialog (story 7.13b). */
@@ -51,7 +89,7 @@ export class PeoplePage extends BasePage {
   memberRow(name: string): Locator {
     return this.table
       .getByRole('row')
-      .filter({ has: this.page.getByRole('link', { name: fill(hr.ljudi.form.edit, { name }) }) });
+      .filter({ has: this.editLink(name) });
   }
 
   /** The member list as stacked rows below 640 px (story 7.6), named by the table's caption. */
@@ -66,7 +104,7 @@ export class PeoplePage extends BasePage {
 
   /** A member's stacked row: the one holding their link, named as the table's edit link. */
   listRow(name: string): Locator {
-    return this.listRows.filter({ has: this.page.getByRole('link', { name: fill(hr.ljudi.form.edit, { name }) }) });
+    return this.listRows.filter({ has: this.editLink(name) });
   }
 
   /** A stacked row's label (`dt`), matched whole. */

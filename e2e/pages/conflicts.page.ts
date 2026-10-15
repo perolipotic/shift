@@ -9,7 +9,8 @@ const raspored = hr.raspored;
  * `/raspored`: the conflicts queue (story 5.3b) — its count, always shown,
  * a row per unresolved conflict (upcoming soonest first, then past most
  * recent first), the empty sentence, or, in their place, the failure with its
- * retry.
+ * retry. Since story 7.16, two tabs: *Neriješeni*, the queue, and *Riješeni*,
+ * the decisions in force.
  */
 export class ConflictsPage extends BasePage {
   protected readonly path = '/raspored';
@@ -22,6 +23,29 @@ export class ConflictsPage extends BasePage {
   /** The count's heading, whatever it counts. */
   get anyCountHeading(): Locator {
     return this.page.getByRole('heading', { level: 2 });
+  }
+
+  // ------------------------------------------------- the tabs (story 7.16)
+  // Their names live here alone: story 9.1 renames them.
+
+  /** *Neriješeni*, the default tab; it carries the queue's count once read. */
+  get unresolvedTab(): Locator {
+    return this.page.getByRole('tab', { name: new RegExp(`^${escapeRegExp(raspored.tabs.unresolved)}( · \\d+)?$`) });
+  }
+
+  /** *Riješeni*, the decisions in force. */
+  get resolvedTab(): Locator {
+    return this.page.getByRole('tab', { name: raspored.tabs.resolved, exact: true });
+  }
+
+  /** Every entry of *Riješeni*, newest decision first: the open tab's list items. */
+  get resolvedEntries(): Locator {
+    return this.page.getByRole('tabpanel').getByRole('listitem');
+  }
+
+  /** The *Riješeni* entries of one member, by name. */
+  resolvedEntriesOf(memberName: string): Locator {
+    return this.resolvedEntries.filter({ hasText: memberName });
   }
 
   /** The queue's list: the one list inside the section its count names. */
@@ -145,14 +169,14 @@ export class ConflictResolutionPage extends BasePage {
     return this.page.getByRole('button', { name: new RegExp(`^(${resolution.save}|${resolution.saving})$`) });
   }
 
+  /** The held hint's link to the calendar, where the pending change is removed. */
+  get heldActionLink(): Locator {
+    return this.page.getByRole('link', { name: resolution.heldAction, exact: true });
+  }
+
   /** Odustani, back to the queue. */
   get cancelLink(): Locator {
     return this.page.getByRole('link', { name: resolution.cancel, exact: true });
-  }
-
-  /** A message on the screen, matched whole. */
-  line(message: string): Locator {
-    return this.page.getByText(message, { exact: true });
   }
 
   /** The line a conflict no longer open states. */

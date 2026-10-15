@@ -745,6 +745,33 @@ export default [
     },
   },
 
+  // ------------------------------------------- e2e: the page-object rule
+  // A spec never reaches the screen through a raw Playwright `Page`: every
+  // locator lives in its page object (`e2e/pages/*`, `e2e/README.md`). Refused
+  // are `getBy*` and `locator` called on `page`, on a page object's `.page`,
+  // and on a second context's `…Page` (`adminPage`). Chaining from a locator a
+  // page object returned (`detail.locator('form')`) stays allowed.
+  {
+    files: ['e2e/tests/**/*.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            "CallExpression[callee.property.name=/^(getBy[A-Z]\\w*|locator)$/][callee.object.name=/^(page|[a-z]\\w*Page)$/]",
+          message:
+            'A spec takes its locators from a page object (e2e/pages/*), never from the raw page. Add a getter or method to the screen\'s page object and use it here.',
+        },
+        {
+          selector:
+            "CallExpression[callee.property.name=/^(getBy[A-Z]\\w*|locator)$/][callee.object.property.name='page']",
+          message:
+            'A spec takes its locators from a page object (e2e/pages/*), never from its raw .page. Add a getter or method to the screen\'s page object and use it here.',
+        },
+      ],
+    },
+  },
+
   // ------------------------------------------- Deno: the one Edge Function
   {
     files: ['supabase/functions/**/*.ts'],

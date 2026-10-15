@@ -12,16 +12,15 @@ const organization = hr.organization;
  * shared, so these tests open and close dialogs and read what they show.
  */
 test('the page states its facts, with the zone locked and the reason said, and no field on the page', async ({
-  page,
   organizationPage,
 }) => {
   await organizationPage.goto();
 
   await expect(organizationPage.nameOpener).toBeVisible();
-  await expect(page.locator('main form')).toHaveCount(0);
-  await expect(page.locator('main input, main select')).toHaveCount(0);
+  await expect(organizationPage.mainForms).toHaveCount(0);
+  await expect(organizationPage.mainFields).toHaveCount(0);
   await expect(organizationPage.text(organization.timezoneReason)).toBeVisible();
-  await expect(page.getByRole('region', { name: organization.timeHeading })).toContainText(organization.timezoneLocked);
+  await expect(organizationPage.timeRegion).toContainText(organization.timezoneLocked);
 });
 
 test('every change opens its own dialog with one Spremi, and each way out returns focus to its button', async ({

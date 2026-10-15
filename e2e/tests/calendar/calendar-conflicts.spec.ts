@@ -140,7 +140,7 @@ test('the admin records leave and opens Kalendar: the conflicts and the hatch ar
   /** The member's page, reached in the app alone: Ljudi, then their row. */
   async function openMember(): Promise<void> {
     await peoplePage.navigationLink(hr.nav.ljudi, { exact: true }).click();
-    await peoplePage.listedMember(member.name).click();
+    await peoplePage.editLink(member.name).click();
     await expect(peoplePage.leaveHeading).toBeVisible();
   }
 

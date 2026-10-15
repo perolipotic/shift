@@ -84,12 +84,12 @@ async function keyboardMove(
 
   await handle.focus();
   await keyboard.press('Space');
-  await expect(rotationPage.announced(fill(builder.drag.lifted, { position: String(from) }))).toBeAttached();
+  await expect(rotationPage.text(fill(builder.drag.lifted, { position: String(from) }))).toBeAttached();
   await rotationPage.afterPendingTimers();
   await keyboard.press(arrow);
-  await expect(rotationPage.announced(fill(builder.drag.over, positions))).toBeAttached();
+  await expect(rotationPage.text(fill(builder.drag.over, positions))).toBeAttached();
   await keyboard.press('Space');
-  await expect(rotationPage.announced(fill(builder.drag.dropped, positions))).toBeAttached();
+  await expect(rotationPage.text(fill(builder.drag.dropped, positions))).toBeAttached();
 }
 
 test('an admin builds a rotation, sees its figures and cycle, saves it, and it opens as the rotation in force', async ({
@@ -157,12 +157,12 @@ test('an admin builds a rotation, sees its figures and cycle, saves it, and it o
   // Escape cancels a lifted step: nothing moves.
   await handle(1).focus();
   await page.keyboard.press('Space');
-  await expect(rotationPage.announced(fill(builder.drag.lifted, { position: '1' }))).toBeAttached();
+  await expect(rotationPage.text(fill(builder.drag.lifted, { position: '1' }))).toBeAttached();
   await rotationPage.afterPendingTimers();
   await page.keyboard.press('ArrowDown');
-  await expect(rotationPage.announced(fill(builder.drag.over, { from: '1', to: '2' }))).toBeAttached();
+  await expect(rotationPage.text(fill(builder.drag.over, { from: '1', to: '2' }))).toBeAttached();
   await page.keyboard.press('Escape');
-  await expect(rotationPage.announced(fill(builder.drag.cancelled, { position: '1' }))).toBeAttached();
+  await expect(rotationPage.text(fill(builder.drag.cancelled, { position: '1' }))).toBeAttached();
   for (const [index, name] of [b, off, a].entries()) await expect(steps.nth(index)).toContainText(name);
 
   // Step 2 removed → [B, A]. Anchored today, the team works A today, B tomorrow.
@@ -572,7 +572,7 @@ test('the shift type add dialog cannot be dismissed while its create is in fligh
     try {
       await rotationPage.shiftTypeOpenButton.click();
       await rotationPage.addShiftTypeName.fill(name);
-      await page.getByLabel(shiftTypes.kind, { exact: true }).selectOption({ label: shiftTypes.nonworking });
+      await rotationPage.addShiftTypeKind.selectOption({ label: shiftTypes.nonworking });
       await rotationPage.addShiftTypeDialog.getByRole('button', { name: shiftTypes.add, exact: true }).click();
       await hold.inFlight;
 

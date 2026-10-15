@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import type { Locator } from '@playwright/test';
 
 import type { CalendarPage } from '../../pages/calendar.page.ts';
+import { anyErasureTitleOf } from '../../pages/erasure-dialog.ts';
 import {
   holdRotation,
   removeLeaveMemberInSql,
@@ -20,7 +21,7 @@ import {
   type SeededRotation,
 } from '../../utils/database-helper.ts';
 import { addDays, dayMonth, weekdayOf } from '../../utils/dates.ts';
-import { escapeRegExp, fill, hr, plural } from '../../utils/i18n.ts';
+import { fill, hr, plural } from '../../utils/i18n.ts';
 import { expectNoHorizontalScroll } from '../../utils/layout.ts';
 import { ADMIN_STATE } from '../../utils/run-fixture.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
@@ -81,8 +82,8 @@ function gridMonthOf(date: string): string {
   return `?prikaz=sve&mjesec=${date.slice(0, 7)}`;
 }
 
-/** Every count of the confirmation's title: its words before the ICU count. */
-const anyErasureTitle = new RegExp(`^${escapeRegExp(/one \{([^#]*)#/.exec(erasures.title)?.[1] ?? 'E2E: no title')}`);
+/** Every count of the confirmation's title (`anyErasureTitleOf`). */
+const anyErasureTitle = anyErasureTitleOf(erasures.title);
 
 interface Setup {
   readonly rotation: SeededRotation;
@@ -233,7 +234,6 @@ test('removing an override that put a member on leave on the roster goes through
 });
 
 test('removing the override behind a replacement asks nothing, and its conflict comes back to the queue (story 5.5d)', async ({
-  page,
   fixture,
   calendarPage,
   conflictsPage,
@@ -259,7 +259,7 @@ test('removing the override behind a replacement asks nothing, and its conflict 
 
   // Nothing is erased by the removal: no confirmation of any count, and it lands.
   await expect(calendarPage.statusIn(detail)).toHaveText(rosterChange.removedDone);
-  await expect(page.getByRole('dialog', { name: anyErasureTitle })).toHaveCount(0);
+  await expect(calendarPage.dialog(anyErasureTitle)).toHaveCount(0);
   await expect(block).toHaveCount(0);
 
   // The replacement no longer covers the shift: the conflict is open again.
@@ -267,7 +267,7 @@ test('removing the override behind a replacement asks nothing, and its conflict 
   await expect(conflictsPage.rowsOf(person.name)).toHaveCount(1);
 });
 
-test('a roster change that erases nothing saves in one click', async ({ page, fixture, calendarPage, conflictsPage }) => {
+test('a roster change that erases nothing saves in one click', async ({ fixture, calendarPage, conflictsPage }) => {
   test.slow();
   // Today is a Dan too, and the member is not on leave then.
   const { team, person } = await setUp(fixture.slug);
@@ -278,7 +278,7 @@ test('a roster change that erases nothing saves in one click', async ({ page, fi
 
   await expect(calendarPage.statusIn(detail)).toHaveText(rosterChange.saved);
   // No erasure confirmation of ANY count was shown.
-  await expect(page.getByRole('dialog', { name: anyErasureTitle })).toHaveCount(0);
+  await expect(calendarPage.dialog(anyErasureTitle)).toHaveCount(0);
 
   // The conflict on today + 4 stands.
   await conflictsPage.goto();

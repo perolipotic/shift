@@ -723,7 +723,7 @@ test.describe('as an admin', () => {
     await expect(page).toHaveURL(/[?&]smjena=/);
     await hoursPage.filters.choosePerson(fixture.admin.name);
     await expect(page).toHaveURL(/[?&]osoba=/);
-    await expect(hoursPage.organizationRows.filter({ has: page.getByRole('link') })).toHaveCount(0);
+    await expect(hoursPage.linkedOrganizationRows).toHaveCount(0);
     await expect(hoursPage.exportButton).toBeDisabled();
     // STORY 7.5: what is true, never "no results" — the team name undeclined.
     const when = { person: fixture.admin.name, team: fixture.team.name, monthIn, year: month.slice(0, 4) };
@@ -740,7 +740,7 @@ test.describe('as an admin', () => {
     // STORY 7.6: on a phone the same filters show no list, only the two
     // sentences and the two ways out — `Poništi filtre` beside the summary's.
     await page.setViewportSize({ width: 390, height: 844 });
-    const main = page.getByRole('main');
+    const main = hoursPage.main;
     await expect(main.getByText(fill(hr.filter.empty.notInTeam, when), { exact: true })).toBeVisible();
     await expect(main.getByText(fill(hr.filter.empty.noTeam, when), { exact: true })).toBeVisible();
     await expect(hoursPage.organizationList).toHaveCount(0);
@@ -1038,7 +1038,7 @@ test.describe('the conflict count, as an admin', () => {
 
     // RECORD THE WORKED EXAMPLE on the member's page, reached in the app alone.
     await peoplePage.navigationLink(hr.nav.ljudi, { exact: true }).click();
-    await peoplePage.listedMember(member.name).click();
+    await peoplePage.editLink(member.name).click();
     await expect(peoplePage.leaveHeading).toBeVisible();
     await peoplePage.enterLeave(today, isoDaysAfter(today, 4));
     await peoplePage.saveLeaveButton.click();

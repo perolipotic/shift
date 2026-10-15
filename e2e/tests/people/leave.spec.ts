@@ -236,7 +236,7 @@ test('the cost shows before saving, a save updates the figures, and an overlap i
   await expect(peoplePage.leaveFigure(leave.used)).toHaveText(plural(days, 0));
   await expect(peoplePage.leaveFigure(leave.balance)).toHaveText(plural(days, 20));
   // NO FORM ON THE PAGE (story 7.12): the fields live only in the dialog.
-  await expect(peoplePage.page.locator('main form')).toHaveCount(0);
+  await expect(peoplePage.mainForms).toHaveCount(0);
   // The opener's name names the member (story 7.12).
   await expect(peoplePage.recordLeaveButton).toHaveAccessibleName(fill(leave.recordName, { name: member.name }));
   await peoplePage.recordLeaveButton.click();
