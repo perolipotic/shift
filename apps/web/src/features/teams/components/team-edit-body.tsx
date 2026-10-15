@@ -15,6 +15,7 @@ import type { TeamEditScreen } from '@/features/teams/hooks/use-team-edit';
 import type { TeamRow } from '@/features/teams/services/list';
 import { teamFormKey } from '@/features/teams/services/write';
 import { t } from '@/lib/i18n';
+import { NAME_MAX_LENGTH } from '@/utils/name';
 
 /**
  * The dialog's body: the team's rename form and its archive, an archived
@@ -62,6 +63,7 @@ export function TeamEditBody({ screen }: { readonly screen: TeamEditScreen }): R
                 ref={nameField}
                 id="team-name"
                 name="name"
+                maxLength={NAME_MAX_LENGTH}
                 type="text"
                 required
                 defaultValue={team.name}

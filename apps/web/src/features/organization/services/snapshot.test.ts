@@ -17,6 +17,7 @@ import {
   ORGANIZATION_NAME_FIELD,
   ORGANIZATION_READ_STALE_MS,
   ORGANIZATION_NAME_BLANK,
+  ORGANIZATION_NAME_TOO_LONG,
   ORGANIZATION_REFUSED,
   ORGANIZATION_SNAPSHOT_KEY,
   ORGANIZATION_UNAVAILABLE,
@@ -208,6 +209,15 @@ const BLANK_NAME: PostgrestAnswer = {
     code: '23514',
     message:
       'new row for relation "organizations" violates check constraint "organizations_name_check"',
+    details: 'Failing row contains (…).',
+  },
+};
+const NAME_TOO_LONG: PostgrestAnswer = {
+  data: null,
+  error: {
+    code: '23514',
+    message:
+      'new row for relation "organizations" violates check constraint "organizations_name_length"',
     details: 'Failing row contains (…).',
   },
 };
@@ -865,6 +875,14 @@ describe('the update writes the edited fields and answers with the row', () => {
     });
   });
 
+  it('names the field when 0036\'s length check refuses the value', async () => {
+    expect(await updateOrganization(answering(NAME_TOO_LONG), PILOT_ROW.id, EDITS)).toEqual({
+      ok: false,
+      code: ORGANIZATION_NAME_TOO_LONG,
+      field: ORGANIZATION_NAME_FIELD,
+    });
+  });
+
   it('keeps the general message for some other shape, and marks the control it names', async () => {
     // A leave-year day of 30 is refused by `between 1 and 28`. Reporting it as a
     // blank name would be actionable and wrong, which is worse than general —
@@ -1048,10 +1066,14 @@ describe('a check violation is attributed to the control its constraint names', 
     ).toBeNull();
   });
 
-  it('maps four constraints to four distinct controls', () => {
-    expect(new Set(ORGANIZATION_CONSTRAINT_FIELDS.map(([, field]) => field)).size).toBe(
-      ORGANIZATION_CONSTRAINT_FIELDS.length,
-    );
+  it('maps five constraints to four distinct controls, the name\'s two checks to the name', () => {
+    // 0036 added the name's length check beside its blank check; both mark
+    // the one name control, and every other constraint a control of its own.
+    expect(ORGANIZATION_CONSTRAINT_FIELDS).toHaveLength(5);
+    expect(new Set(ORGANIZATION_CONSTRAINT_FIELDS.map(([, field]) => field)).size).toBe(4);
+    expect(
+      ORGANIZATION_CONSTRAINT_FIELDS.filter(([, field]) => field === ORGANIZATION_NAME_FIELD).map(([name]) => name),
+    ).toEqual(['organizations_name_check', 'organizations_name_length']);
   });
 });
 
@@ -1084,6 +1106,7 @@ describe('a failed read offers a retry only where trying again can help', () => 
   const OTHERS: OrganizationFailure[] = [
     ORGANIZATION_REFUSED,
     ORGANIZATION_NAME_BLANK,
+    ORGANIZATION_NAME_TOO_LONG,
     ORGANIZATION_INVALID,
   ];
 
@@ -1099,6 +1122,7 @@ describe('every failure code has its own message key', () => {
   const CODES: OrganizationFailure[] = [
     ORGANIZATION_REFUSED,
     ORGANIZATION_NAME_BLANK,
+    ORGANIZATION_NAME_TOO_LONG,
     ORGANIZATION_INVALID,
     ORGANIZATION_UNAVAILABLE,
   ];
@@ -1107,7 +1131,7 @@ describe('every failure code has its own message key', () => {
     expect(organizationMessageKey(code)).toMatch(/^organization\.error\./);
   });
 
-  it('maps the four codes to four distinct keys', () => {
+  it('maps the five codes to five distinct keys', () => {
     // The mutation a per-code loop cannot see: a mapping that returned one key
     // for everything satisfies every case above while a refused save and an
     // outage say the same thing.
@@ -1119,6 +1143,7 @@ describe('every failure code has its own message key', () => {
     // because a `.tsx` is collected by nothing.
     expect(organizationMessageKey(ORGANIZATION_REFUSED)).toBe('organization.error.refused');
     expect(organizationMessageKey(ORGANIZATION_NAME_BLANK)).toBe('organization.error.name');
+    expect(organizationMessageKey(ORGANIZATION_NAME_TOO_LONG)).toBe('organization.error.nameTooLong');
     expect(organizationMessageKey(ORGANIZATION_INVALID)).toBe('organization.error.invalid');
     expect(organizationMessageKey(ORGANIZATION_UNAVAILABLE)).toBe(
       'organization.error.unavailable',

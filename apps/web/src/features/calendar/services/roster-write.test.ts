@@ -2,6 +2,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
   REMOVE_ROSTER_OVERRIDE_FUNCTION,
+  ROSTER_ARCHIVED,
   ROSTER_DENIED,
   ROSTER_FAILED,
   ROSTER_GONE,
@@ -166,6 +167,16 @@ describe('changing a shift roster (story 3.6b)', () => {
     ).toBe(ROSTER_REFUSED_REASON);
   });
 
+  it('maps 0036\'s 23514 ROSTER_OVERRIDE_ARCHIVED to archived, never to the reason or to denied', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const table = tableAnswering({ error: { code: '23514', message: 'ROSTER_OVERRIDE_ARCHIVED' } });
+
+    expect(await setRosterOverride(table, ORGANIZATION, DETAIL, 'ana', 'boris', 'Zamjena')).toEqual({
+      ok: false,
+      code: ROSTER_ARCHIVED,
+    });
+  });
+
   it('reads a thrown call or a malformed answer as failed', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
@@ -225,6 +236,7 @@ describe('the roster refusals and notices, as the dialog says them', () => {
     reason: 'Upiši razlog, 1–200 znakova.',
     taken: 'Taj je član već u promjeni za ovu smjenu. Osvježi prikaz.',
     gone: 'Promjena je već uklonjena.',
+    archived: 'Smjena je u međuvremenu arhivirana. Osvježi prikaz.',
     denied: 'Ne možeš mijenjati sastav. Za to trebaš ovlasti administratora.',
     failed: 'Promjena nije uspjela. Pokušaj ponovno.',
   };
