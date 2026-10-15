@@ -9,6 +9,9 @@ import {
   GODISNJI_OWN,
   GODISNJI_UNAVAILABLE,
   LEAVE_OVERVIEW_UNAVAILABLE,
+  OVERVIEW_CHIP_STATE,
+  OVERVIEW_CHIP_TEAM,
+  OVERVIEW_EMPTY_FILTERED,
   OVERVIEW_EMPTY_NONE,
   OVERVIEW_EMPTY_SEARCH,
   OVERVIEW_LOADING,
@@ -18,16 +21,30 @@ import {
   OVERVIEW_SORT_NAME,
   OVERVIEW_SORT_TEAM,
   OVERVIEW_SORT_USED,
+  OVERVIEW_STATES,
+  OVERVIEW_STATE_ALL,
+  OVERVIEW_STATE_NEGATIVE,
+  OVERVIEW_STATE_ON_LEAVE,
+  OVERVIEW_STATE_RECORDED,
+  OVERVIEW_STATE_UNRECORDED,
   OVERVIEW_UNAVAILABLE,
+  chooseLeaveOverviewChip,
+  clearedLeaveOverviewFilters,
+  godisnjiSearchKeyOf,
   godisnjiSearchOf,
   godisnjiSearchRewriteOf,
   godisnjiViewOf,
   leaveOverviewAriaSortOf,
+  leaveOverviewChipChoiceOf,
+  leaveOverviewChipRemovalOf,
   leaveOverviewFiltersOf,
+  leaveOverviewNarrowed,
   leaveOverviewOf,
   leaveOverviewRowsOf,
   leaveOverviewSearchFor,
   leaveOverviewSortArrowOf,
+  leaveOverviewStateMessageKey,
+  leaveOverviewStateValueMessageKey,
   nextLeaveOverviewSort,
   sortedLeaveOverviewRows,
   type LeaveOverview,
@@ -40,7 +57,8 @@ import {
   memberLeaveBaseOf,
   type LeaveOrganizationSource,
 } from '@/features/leave/services/leave-section';
-import type { MemberListRow } from '@/features/members/services/list';
+import { ALL_TEAMS, NO_TEAM, type MemberListRow } from '@/features/members/services/list';
+import { initLocalization, t } from '@/lib/i18n';
 import { nextIsoDate } from '@/lib/i18n/format';
 import {
   PILOT,
@@ -182,7 +200,12 @@ function sourcesOf(snapshot: CalendarSnapshot, overrides: Partial<LeaveOverviewS
   };
 }
 
-const NO_FILTERS: LeaveOverviewFilters = { search: '', sort: DEFAULT_OVERVIEW_SORT };
+const NO_FILTERS: LeaveOverviewFilters = {
+  search: '',
+  sort: DEFAULT_OVERVIEW_SORT,
+  team: ALL_TEAMS,
+  state: OVERVIEW_STATE_ALL,
+};
 
 function readyOf(overview: LeaveOverview): Extract<LeaveOverview, { kind: typeof OVERVIEW_READY }> {
   if (overview.kind !== OVERVIEW_READY) throw new Error(`not ready: ${overview.kind}`);
@@ -194,6 +217,7 @@ let pilot: CalendarSnapshot;
 let uj5: CalendarSnapshot;
 
 beforeAll(async () => {
+  await initLocalization();
   pilot = await snapshotOf(PILOT);
   uj5 = await snapshotOf(UJ5);
 });
@@ -428,7 +452,7 @@ describe('the states', () => {
 
     expect(overview.rows).toEqual([]);
     expect(overview.empty).toBe(OVERVIEW_EMPTY_NONE);
-    expect(overview.summary).toEqual({ shown: 0, usedDays: 0, allowanceDays: 0 });
+    expect(overview.summary).toEqual({ shown: 0, records: 0, usedDays: 0, allowanceDays: 0 });
   });
 });
 
@@ -440,7 +464,7 @@ describe('the search and the summary', () => {
     expect(cedo.rows.map((row) => row.name)).toEqual(['Čedo Čačić']);
     expect(none.rows).toEqual([]);
     expect(none.empty).toBe(OVERVIEW_EMPTY_SEARCH);
-    expect(none.summary).toEqual({ shown: 0, usedDays: 0, allowanceDays: 0 });
+    expect(none.summary).toEqual({ shown: 0, records: 0, usedDays: 0, allowanceDays: 0 });
   });
 
   it('treats a box holding only whitespace as no search, as the trimmed URL does', () => {
@@ -458,16 +482,148 @@ describe('the search and the summary', () => {
 
     expect(overview.summary).toEqual({
       shown: 4,
+      // Ana's record of February 2027 is the one ending today or later.
+      records: 1,
       usedDays: scheduled.reduce((sum, row) => sum + (row.figures?.usedDays ?? 0), 0),
       allowanceDays: 22 + 25 + 20,
     });
+  });
+
+  it('words the summary in all three forms, the records stated at zero (E884)', () => {
+    const line = (count: number, records: number) =>
+      t('godisnji.overview.summary', { count, records, used: 8, allowance: 340 });
+
+    expect(line(17, 3)).toBe('Prikazano: 17 osoba · upisana 3 godišnja · iskorišteno ukupno 8 dana od 340');
+    expect(line(1, 1)).toBe('Prikazano: 1 osoba · upisan 1 godišnji · iskorišteno ukupno 8 dana od 340');
+    expect(line(2, 0)).toBe('Prikazano: 2 osobe · upisano 0 godišnjih · iskorišteno ukupno 8 dana od 340');
+  });
+});
+
+describe('the Smjena and Stanje chips (E884)', () => {
+  /** Today (26.09.) Čedo is on leave until 30.09., and Lana over her allowance: a balance below zero. */
+  const CHIP_ROWS = [
+    ...ROWS,
+    rpcRow('r7', CEDO, '2026-09-25', '2026-10-01'),
+    rpcRow('r8', VIEWER_MEMBER, '2026-01-05', '2026-03-02'),
+  ];
+  const overviewOf = (filters: Partial<LeaveOverviewFilters>) =>
+    readyOf(leaveOverviewOf(sourcesOf(pilot, { records: { rows: CHIP_ROWS, loading: false } }), { ...NO_FILTERS, ...filters }, NOW));
+  const ids = (overview: ReturnType<typeof overviewOf>) => overview.rows.map((row) => row.memberId);
+  const teamA = teamOf(PILOT, 0);
+  const teamB = teamOf(PILOT, 1);
+
+  it('derives each row\'s state from its records at today', () => {
+    const rows = Object.fromEntries(overviewOf({}).rows.map((row) => [row.memberId, row]));
+
+    expect([rows[CEDO]?.onLeaveToday, rows[CEDO]?.upcomingRecords]).toEqual([true, 1]);
+    expect([rows[ANA]?.onLeaveToday, rows[ANA]?.upcomingRecords]).toEqual([false, 1]);
+    expect([rows[DORA]?.onLeaveToday, rows[DORA]?.upcomingRecords]).toEqual([false, 0]);
+    expect(rows[VIEWER_MEMBER]?.figures?.balanceDays).toBeLessThan(0);
+  });
+
+  it('narrows by state, counting each option under the search and the team', () => {
+    expect(ids(overviewOf({ state: OVERVIEW_STATE_ON_LEAVE }))).toEqual([CEDO]);
+    expect(ids(overviewOf({ state: OVERVIEW_STATE_RECORDED }))).toEqual([ANA, CEDO]);
+    expect(ids(overviewOf({ state: OVERVIEW_STATE_UNRECORDED }))).toEqual([DORA, VIEWER_MEMBER]);
+    expect(ids(overviewOf({ state: OVERVIEW_STATE_NEGATIVE }))).toEqual([VIEWER_MEMBER]);
+    expect(overviewOf({}).states).toEqual({
+      [OVERVIEW_STATE_ALL]: 4,
+      [OVERVIEW_STATE_ON_LEAVE]: 1,
+      [OVERVIEW_STATE_RECORDED]: 2,
+      [OVERVIEW_STATE_UNRECORDED]: 2,
+      [OVERVIEW_STATE_NEGATIVE]: 1,
+    });
+    // Under Smjena A (the viewer and Čedo): the counts follow.
+    expect(overviewOf({ team: teamA }).states[OVERVIEW_STATE_RECORDED]).toBe(1);
+  });
+
+  it('narrows by team today, offering every team, each team by name and no team, counted under the other chip', () => {
+    const all = overviewOf({});
+
+    expect(all.teams.map((option) => [option.value, option.team, option.count])).toEqual([
+      [ALL_TEAMS, null, 4],
+      [teamA, 'Smjena A', 2],
+      [teamB, 'Smjena B', 1],
+      [NO_TEAM, null, 1],
+    ]);
+    expect(ids(overviewOf({ team: teamA }))).toEqual([CEDO, VIEWER_MEMBER]);
+    expect(ids(overviewOf({ team: NO_TEAM }))).toEqual([DORA]);
+    // An option never vanishes under the other chip: it reads 0.
+    expect(overviewOf({ state: OVERVIEW_STATE_ON_LEAVE }).teams.map((option) => option.count)).toEqual([1, 1, 0, 0]);
+    // A team that is no longer an option narrows nothing, and says it applied every team.
+    const stale = overviewOf({ team: 'gone-team' });
+
+    expect(stale.team).toBe(ALL_TEAMS);
+    expect(stale.rows).toHaveLength(4);
+  });
+
+  it('says the chips left nobody, apart from a search that matched nobody, and sums only what they leave', () => {
+    const filtered = overviewOf({ team: teamB, state: OVERVIEW_STATE_ON_LEAVE });
+
+    expect(filtered.rows).toEqual([]);
+    expect(filtered.empty).toBe(OVERVIEW_EMPTY_FILTERED);
+    expect(overviewOf({ search: 'zzz' }).empty).toBe(OVERVIEW_EMPTY_SEARCH);
+    expect(overviewOf({ team: teamA }).summary).toMatchObject({ shown: 2, records: 1 });
+  });
+
+  it('reads and writes ?smjena= and ?stanje=, falling back on a bad value and leaving the defaults out', () => {
+    expect(leaveOverviewFiltersOf({ smjena: teamA, stanje: 'u-minusu' })).toMatchObject({
+      team: teamA,
+      state: OVERVIEW_STATE_NEGATIVE,
+    });
+    expect(leaveOverviewFiltersOf({ smjena: '', stanje: 'xyz' })).toMatchObject({ team: ALL_TEAMS, state: OVERVIEW_STATE_ALL });
+    expect(leaveOverviewSearchFor({ ...NO_FILTERS, team: NO_TEAM, state: OVERVIEW_STATE_ON_LEAVE })).toEqual({
+      smjena: NO_TEAM,
+      stanje: 'na-godisnjem',
+    });
+    expect(leaveOverviewSearchFor(NO_FILTERS)).toEqual({});
+    expect(godisnjiSearchRewriteOf({ stanje: 'sve' })).toEqual({});
+    expect(godisnjiSearchRewriteOf({ stanje: 'upisano', smjena: teamA })).toBeNull();
+    expect(godisnjiSearchKeyOf({ trazi: 'a|b' })).not.toBe(godisnjiSearchKeyOf({ trazi: 'a', smjena: 'b' }));
+  });
+
+  it('picks, removes and clears the chips: a team only from the options, the sort kept by a clear', () => {
+    const { teams } = overviewOf({});
+
+    expect(chooseLeaveOverviewChip(OVERVIEW_CHIP_TEAM)).toBe(OVERVIEW_CHIP_TEAM);
+    expect(chooseLeaveOverviewChip('level')).toBeNull();
+    expect(leaveOverviewChipChoiceOf(NO_FILTERS, OVERVIEW_CHIP_TEAM, teamB, teams).team).toBe(teamB);
+    expect(leaveOverviewChipChoiceOf(NO_FILTERS, OVERVIEW_CHIP_TEAM, 'stale', teams).team).toBe(ALL_TEAMS);
+    expect(leaveOverviewChipChoiceOf(NO_FILTERS, OVERVIEW_CHIP_STATE, 'upisano', teams).state).toBe(OVERVIEW_STATE_RECORDED);
+    expect(leaveOverviewChipChoiceOf(NO_FILTERS, OVERVIEW_CHIP_STATE, 'xyz', teams).state).toBe(OVERVIEW_STATE_ALL);
+
+    const set: LeaveOverviewFilters = {
+      search: 'ana',
+      team: teamA,
+      state: OVERVIEW_STATE_NEGATIVE,
+      sort: { key: OVERVIEW_SORT_BALANCE, direction: 'down' },
+    };
+
+    expect(leaveOverviewChipRemovalOf(set, OVERVIEW_CHIP_TEAM)).toEqual({ ...set, team: ALL_TEAMS });
+    expect(leaveOverviewChipRemovalOf(set, OVERVIEW_CHIP_STATE)).toEqual({ ...set, state: OVERVIEW_STATE_ALL });
+    expect(clearedLeaveOverviewFilters(set)).toEqual({ ...NO_FILTERS, sort: set.sort });
+    expect(leaveOverviewNarrowed(set)).toBe(true);
+    expect(leaveOverviewNarrowed(NO_FILTERS)).toBe(false);
+  });
+
+  it('words every state for its picker and its chip', () => {
+    expect(OVERVIEW_STATES.map((state) => t(leaveOverviewStateMessageKey(state)))).toEqual([
+      'Sva stanja',
+      'Na godišnjem danas',
+      'S upisanim godišnjim',
+      'Bez upisanog godišnjeg',
+      'Preostalo u minusu',
+    ]);
+    expect(t('godisnji.overview.stateChip', { value: t(leaveOverviewStateValueMessageKey(OVERVIEW_STATE_ALL)) })).toBe(
+      'Stanje: sve',
+    );
   });
 });
 
 describe('the sort and the URL', () => {
   it('orders by every column, with a row that has no value last in either direction', () => {
     const order = (key: (typeof DEFAULT_OVERVIEW_SORT)['key'], direction: 'up' | 'down') =>
-      readyOf(leaveOverviewOf(sourcesOf(pilot), { search: '', sort: { key, direction } }, NOW)).rows.map(
+      readyOf(leaveOverviewOf(sourcesOf(pilot), { ...NO_FILTERS, sort: { key, direction } }, NOW)).rows.map(
         (row) => row.memberId,
       );
 
@@ -492,6 +648,8 @@ describe('the sort and the URL', () => {
       team: null,
       allowanceDays: 20,
       figures: { usedDays: 2, balanceDays: 18 },
+      onLeaveToday: false,
+      upcomingRecords: 0,
     });
     const rows = [row('b', 'Ana Anić'), row('c', 'Bruno Bić'), row('a', 'Ana Anić')];
 
@@ -504,16 +662,17 @@ describe('the sort and the URL', () => {
   });
 
   it('reads ?trazi= and ?sort=, falling back to the defaults on a bad value', () => {
-    expect(leaveOverviewFiltersOf({})).toEqual({ search: '', sort: DEFAULT_OVERVIEW_SORT });
+    expect(leaveOverviewFiltersOf({})).toEqual(NO_FILTERS);
     expect(leaveOverviewFiltersOf({ sort: 'xyz' }).sort).toEqual({ key: 'ime', direction: 'up' });
     expect(leaveOverviewFiltersOf({ sort: '-preostalo', trazi: '  ana ' })).toEqual({
+      ...NO_FILTERS,
       search: 'ana',
       sort: { key: 'preostalo', direction: 'down' },
     });
-    expect(leaveOverviewFiltersOf({ trazi: 123, sort: 4 })).toEqual({ search: '123', sort: DEFAULT_OVERVIEW_SORT });
+    expect(leaveOverviewFiltersOf({ trazi: 123, sort: 4 })).toEqual({ ...NO_FILTERS, search: '123' });
     expect(godisnjiSearchOf({ sort: 'ime', trazi: '' })).toEqual({});
     expect(godisnjiSearchOf({ sort: '-ime', other: 'x' })).toEqual({ sort: '-ime' });
-    expect(leaveOverviewSearchFor({ search: 'ana', sort: { key: 'iskoristeno', direction: 'up' } })).toEqual({
+    expect(leaveOverviewSearchFor({ ...NO_FILTERS, search: 'ana', sort: { key: 'iskoristeno', direction: 'up' } })).toEqual({
       trazi: 'ana',
       sort: 'iskoristeno',
     });

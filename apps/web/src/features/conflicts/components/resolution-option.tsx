@@ -135,7 +135,9 @@ export function ReplaceMemberOption({
  * ends earlier, or the record is removed — and the strip in the same three
  * terms: the coverage one higher with the absent member working, their hours
  * as work, and the balance once those days are given back. The date is a
- * computation, never a recommendation: nothing marks it apart.
+ * computation, never a recommendation: nothing marks it apart. A later start
+ * that drops days before the conflict names them in one more line, and says
+ * when some are already past (D726) — a note, never a gate.
  */
 export function AmendLeaveOption({ view }: { readonly view: ResolutionView }): ReactNode {
   const amend = view.amend;
@@ -173,6 +175,12 @@ export function AmendLeaveOption({ view }: { readonly view: ResolutionView }): R
           // A removal names no new date, and its sentence has no place for one.
           newDate: amend.dateShown ?? undefined,
         })}
+        {amend.dropped === null ? null : (
+          <span className="mt-1 block">
+            {t('raspored.resolution.amendDrops', { count: amend.dropped.days, range: amend.dropped.rangeShown })}
+            {amend.dropped.past ? ` ${t('raspored.resolution.amendDropsPast')}` : null}
+          </span>
+        )}
       </span>
     </RadioCard>
   );

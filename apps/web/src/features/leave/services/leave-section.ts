@@ -977,3 +977,17 @@ export function leaveHandoffOpeningOf(
     ? { kind: LEAVE_REMOVE_ACTION, row }
     : { kind: LEAVE_AMEND_ACTION, row, range: target.range };
 }
+
+/**
+ * Whether the card says a hand-off opened nothing: it was about this member,
+ * yet {@link leaveHandoffOpeningOf} found no opening — the record is gone or
+ * no longer covers the conflict's date. No hand-off, or one about another
+ * member, says nothing.
+ */
+export function leaveHandoffMissed(
+  handoff: LeaveHandoff | null,
+  memberId: string,
+  opening: LeaveHandoffOpening | null,
+): boolean {
+  return handoff !== null && handoff.origin.memberId === memberId && opening === null;
+}

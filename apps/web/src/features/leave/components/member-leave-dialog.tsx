@@ -255,6 +255,8 @@ export function MemberLeaveDialog({ leave }: { readonly leave: MemberLeave }): R
         className="grid min-w-0 gap-4"
         onSubmit={(event) => void (amend ? leave.amend(event) : leave.save(event))}
       >
+        {/* REACHED FROM A CONFLICT (story 5.4d): od and do are the rule's, not the record's. */}
+        {shown.handed ? <Notice role="status">{t('ljudi.leaveRecord.handoffPrefilled')}</Notice> : null}
         {/* DISABLED WHILE A SAVE IS OUTSTANDING, the fields included. */}
         <fieldset disabled={formDisabled} aria-busy={pending} className="grid min-w-0 gap-4">
           <div className="grid min-w-0 gap-4 sm:grid-cols-2">
