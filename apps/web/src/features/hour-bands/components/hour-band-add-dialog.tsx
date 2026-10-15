@@ -9,16 +9,17 @@ import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { OutputField } from '@/components/ui/output-field';
 import type { HourBandListScreen } from '@/features/hour-bands/hooks/use-hour-band-list';
-import { durationMessageKey, durationValuesOf } from '@/features/hour-bands/services/list';
+import { durationMessageKey } from '@/features/hour-bands/services/list';
 import {
   HOUR_BAND_NAME_FIELD,
   HOUR_BAND_START_FIELD,
   hourBandWriteMessageKey,
   marksField,
 } from '@/features/hour-bands/services/write';
-import { NO_TEXT } from '@/features/members/services/list';
 import { t } from '@/lib/i18n';
 import { NAME_MAX_LENGTH } from '@/utils/name';
+import { durationValuesOf } from '@/utils/time';
+import { NO_TEXT } from '@/utils/text';
 
 /**
  * THE ADD FORM IS A DIALOG (design refresh C), opened from the explainer. The

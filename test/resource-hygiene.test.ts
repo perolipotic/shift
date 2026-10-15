@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { leafKeys, leafMessages } from '../apps/web/src/lib/i18n/resource-tree.fixture.ts';
+
 /**
  * `hr.json` is the artifact story 1.1d multiplies, and nothing guarded it.
  *
@@ -87,6 +89,8 @@ const SANCTIONED_PLURAL_KEYS = [
   'rotation.builder.warnings.summary',
   'rotation.builder.warnings.coverageGap',
   'rotation.builder.warnings.duplicateCoverage',
+  // A doubled type counts the teams on it, then names them.
+  'rotation.builder.warnings.doubledType',
   // STORY 2.6: how many teams one saved change binds, in the history —
   // `1 smjena`, `2 smjene`, `5 smjena`. The builder's namespace may say the Team.
   'rotation.builder.history.teamCount',
@@ -198,6 +202,9 @@ const SANCTIONED_PLURAL_KEYS = [
   'raspored.resolution.balance',
   // STORY 5.4d: what the third card gives back to the balance, `+1 dan`.
   'raspored.resolution.balanceGained',
+  // D726: the days before the conflict a later start drops, named on the
+  // third card — `za 1 dan`, `za 2 dana`, `za 5 dana`.
+  'raspored.resolution.amendDrops',
   // LEAVE IN DAYS (2026-10-10): the first two cards' leave term, the day
   // the decision charges (`1 dan godišnjeg`), where it said hours.
   'raspored.resolution.daysAsLeave',
@@ -1083,6 +1090,7 @@ const SANCTIONED_SCREEN_KEYS = [
   'rotation.builder.error.scheduled',
   // STORY 2.6: an effective date before today.
   'rotation.builder.error.effectivePast',
+  'rotation.builder.error.effectiveTooFar',
   'rotation.builder.error.typeArchived',
   'rotation.builder.error.unchanged',
   'rotation.builder.error.changedToday',
@@ -1597,6 +1605,10 @@ const SANCTIONED_SCREEN_KEYS = [
   'ljudi.leaveRecord.removeDenied',
   'ljudi.leaveRecord.removeFailed',
   'ljudi.leaveRecord.gone',
+  // D723: a hand-off from a conflict that opened nothing, said on the card,
+  // and the amend dialog's line when its od and do came from the conflict.
+  'ljudi.leaveRecord.handoffGone',
+  'ljudi.leaveRecord.handoffPrefilled',
   // THE 5.2b REVIEW: the removal prompt's form for a record not wholly in the
   // current leave year, naming the in-year part too, and the row's marker
   // while it is in amend mode.
@@ -1632,6 +1644,22 @@ const SANCTIONED_SCREEN_KEYS = [
   'godisnji.overview.noMatch',
   'godisnji.overview.clear',
   'godisnji.overview.none',
+  // E884: the overview's Stanje chip — its text, ✕, picker and heading, its
+  // five options and the five values its text says.
+  'godisnji.overview.stateChip',
+  'godisnji.overview.stateRemove',
+  'godisnji.overview.statePicker',
+  'godisnji.overview.stateHeading',
+  'godisnji.overview.state.all',
+  'godisnji.overview.state.onLeave',
+  'godisnji.overview.state.recorded',
+  'godisnji.overview.state.unrecorded',
+  'godisnji.overview.state.negative',
+  'godisnji.overview.stateValue.all',
+  'godisnji.overview.stateValue.onLeave',
+  'godisnji.overview.stateValue.recorded',
+  'godisnji.overview.stateValue.unrecorded',
+  'godisnji.overview.stateValue.negative',
   // STORY 5.3b: *Raspored*, the conflicts queue — the true sentence an empty
   // queue states, the words a past row carries beside its dashed border, a
   // row's member and team, its shift type (with its times, or a type with
@@ -1705,6 +1733,8 @@ const SANCTIONED_SCREEN_KEYS = [
   'raspored.resolution.candidates.free',
   'raspored.resolution.candidates.working',
   'raspored.resolution.candidates.onLeave',
+  // D717: a candidate's line with the real continuous duty the shift would make.
+  'raspored.resolution.candidates.continuous',
   'raspored.resolution.noCandidates',
   'raspored.resolution.replacementShown',
   'raspored.resolution.hintChooseReplacement',
@@ -1719,6 +1749,8 @@ const SANCTIONED_SCREEN_KEYS = [
   'raspored.resolution.amendBodyEnds',
   'raspored.resolution.amendBodyRemoves',
   'raspored.resolution.amendWorks',
+  // D726: that some of the days a later start drops are already past.
+  'raspored.resolution.amendDropsPast',
   'raspored.resolution.hoursAsWork',
   'raspored.resolution.hintAmend',
   'raspored.resolution.hintAmendRemove',
@@ -1958,6 +1990,22 @@ const SANCTIONED_SCREEN_KEYS = [
   'organization.fireRanksUse',
   'organization.fireRanksHint',
   'rotation.builder.history.close',
+  // DEFERRED-WORK SWEEP (members polish): the retry beside each admin list's
+  // and edit screen's read failure, and the hint under the status dialog's date.
+  'ljudi.error.retry',
+  'smjene.error.retry',
+  'organization.hourBands.error.retry',
+  'rotation.shiftTypes.error.retry',
+  'rotation.builder.error.retry',
+  'ljudi.status.dateHint',
+  // DECISION 16: the team dialog's *Što se mijenja* — its heading, and the
+  // last shift in the team left and the first in the team joined, each with
+  // or without the type's range.
+  'smjene.membership.changes',
+  'smjene.membership.lastIn',
+  'smjene.membership.lastInNoRange',
+  'smjene.membership.firstIn',
+  'smjene.membership.firstInNoRange',
 ];
 
 /** Everything the resource file is permitted to hold, together. */
@@ -2191,14 +2239,6 @@ function resource(): Record<string, unknown> {
   return JSON.parse(readFileSync(RESOURCE, 'utf8')) as Record<string, unknown>;
 }
 
-/** Every leaf key path, dotted the way i18next resolves them. */
-function leafKeys(node: unknown, prefix = ''): string[] {
-  if (typeof node !== 'object' || node === null) return [prefix];
-
-  return Object.entries(node).flatMap(([key, value]) =>
-    leafKeys(value, prefix === '' ? key : `${prefix}.${key}`),
-  );
-}
 
 /** One message by its dotted key path. */
 function messageAt(key: string): unknown {
@@ -2207,18 +2247,9 @@ function messageAt(key: string): unknown {
     .reduce<unknown>((node, part) => (node as Record<string, unknown>)?.[part], resource());
 }
 
+/** Every message, however deeply nested (the shared flattener). */
 function messages(): string[] {
-  const found: string[] = [];
-  const walk = (node: unknown): void => {
-    if (typeof node === 'string') {
-      found.push(node);
-      return;
-    }
-    if (typeof node === 'object' && node !== null) Object.values(node).forEach(walk);
-  };
-  walk(resource());
-
-  return found;
+  return leafMessages(resource());
 }
 
 describe('the resource file holds only what this story sanctions', () => {

@@ -712,6 +712,15 @@ export function rotationMessageKey(failure: RotationReadFailure): 'rotation.buil
   return unhandled;
 }
 
+/** The retry beside a read failure's notice: an unavailable read is read again. Exhaustive. */
+export function rotationRetryMessageKey(failure: RotationReadFailure): 'rotation.builder.error.retry' {
+  if (failure === ROTATION_UNAVAILABLE) return 'rotation.builder.error.retry';
+
+  const unhandled: never = failure;
+
+  return unhandled;
+}
+
 // --------------------------------------------------------- surface state
 
 /**

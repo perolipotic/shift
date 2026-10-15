@@ -1,11 +1,14 @@
 import {
   activeOn,
+  dutiesOf,
   memberScheduleOfMonth,
   membershipOn,
   monthOf,
   rosterOn,
   shiftRoster,
+  type DutyLeg,
   type LeaveRange,
+  type MemberScheduleDay,
 } from '@shift/domain';
 
 import type { CalendarSnapshot } from '@/features/calendar/services/snapshot';
@@ -13,8 +16,12 @@ import type { RosterOutCandidate } from '@/features/calendar/utils/day-detail';
 import {
   memberScheduleInputOf,
   rosterStandingOfCalendar,
+  shiftLegOn,
   workingShiftTypeIdsOf,
 } from '@/features/calendar/utils/month';
+import { durationMessageKey } from '@/features/hour-bands/services/list';
+import { nextIsoDate, previousIsoDate } from '@/lib/i18n/format';
+import { durationValuesOf, type DurationValues } from '@/utils/time';
 
 /**
  * WHO MAY BE PUT ON ONE TEAM'S SHIFT ON ONE DATE, grouped (story 5.4c; reused
@@ -37,9 +44,19 @@ import {
  *   - {@link CANDIDATES_FREE}: no working shift that date and not on leave;
  *   - {@link CANDIDATES_WORKING}: a working shift that date, on any team —
  *     `memberScheduleOfMonth`'s answer through `memberScheduleInputOf`, the
- *     shifts *Sati* counts, overrides in force included;
+ *     shifts *Sati* counts, overrides in force included — or a shift on an
+ *     adjacent date that touches this one (a Noć ending as it starts);
  *   - {@link CANDIDATES_ON_LEAVE}: live leave covers the date. This takes
  *     precedence over the other two.
+ *
+ * THE CONTINUOUS DUTY (D717): each candidate not on leave carries how long
+ * they would be on duty without a break if put on this shift —
+ * `continuousMinutes`, the duty (story 6.2, the domain's `dutiesOf` over the
+ * calendar's one leg recipe `shiftLegOn`) that the shift joins among their
+ * own working shifts within {@link CONTINUOUS_WINDOW_DAYS} days either side —
+ * or `null` when the shift would join nothing: it is then just the shift
+ * itself. A shift that overlaps one of theirs (a double booking) joins no
+ * duty, as the domain rules, so it claims no figure either.
  *
  * A GROUP ONLY INFORMS. Every candidate is offered; nothing here blocks,
  * disables, recommends or orders by rank, position or group beyond the
@@ -51,7 +68,7 @@ import {
 
 /** Not working that date and not on leave. */
 export const CANDIDATES_FREE = 'free';
-/** Working a shift that date, on any team: 24 h without a break. */
+/** Working a shift that date, on any team, or one that touches this shift. */
 export const CANDIDATES_WORKING = 'working';
 /** On leave that date. */
 export const CANDIDATES_ON_LEAVE = 'onLeave';
@@ -61,8 +78,25 @@ export const CANDIDATE_GROUPS = [CANDIDATES_FREE, CANDIDATES_WORKING, CANDIDATES
 
 export type CandidateGroupKind = (typeof CANDIDATE_GROUPS)[number];
 
-/** One candidate: as a roster line reads them (`outOptionOf`), their position in their own team that date. */
-export type ReplacementCandidate = RosterOutCandidate;
+/**
+ * How far either side of the date a candidate's own shifts are read for the
+ * duty the shift would join: three days holds a chain of 24 h shifts on each
+ * side, longer than any rotation the pilot runs.
+ */
+export const CONTINUOUS_WINDOW_DAYS = 3;
+
+/**
+ * One candidate: as a roster line reads them (`outOptionOf`), their position
+ * in their own team that date, and the continuous duty the shift would make.
+ */
+export interface ReplacementCandidate extends RosterOutCandidate {
+  /**
+   * Minutes on duty without a break if put on the shift, when that runs
+   * longer than the shift itself; `null` when the shift joins none of their
+   * shifts, for a member on leave, or when the shift has no times that date.
+   */
+  readonly continuousMinutes: number | null;
+}
 
 /** One group of candidates; an empty group is kept, so the order is fixed. */
 export interface CandidateGroup {
@@ -98,6 +132,7 @@ export function replacementCandidatesOf(
   leave: readonly CandidateLeave[],
   teamId: string,
   date: string,
+  shiftTypeId: string | null,
 ): readonly CandidateGroup[] {
   const excluded = new Set<string>();
 
@@ -113,7 +148,8 @@ export function replacementCandidatesOf(
     leave.filter((record) => record.from <= date && date <= record.to).map((record) => record.memberId),
   );
   const working = new Set(workingShiftTypeIdsOf(snapshot));
-  const month = monthOf(date);
+  const shiftLeg = shiftTypeId === null ? null : shiftLegOn(snapshot, shiftTypeId, date);
+  const window = windowOf(date);
   const groups: Record<CandidateGroupKind, ReplacementCandidate[]> = {
     [CANDIDATES_FREE]: [],
     [CANDIDATES_WORKING]: [],
@@ -123,7 +159,7 @@ export function replacementCandidatesOf(
   for (const member of snapshot.members) {
     if (excluded.has(member.id) || !activeOn(member.statuses, date)) continue;
 
-    const candidate: ReplacementCandidate = {
+    const line: RosterOutCandidate = {
       id: member.id,
       name: member.name,
       fireRank: member.fireRank,
@@ -131,20 +167,104 @@ export function replacementCandidatesOf(
     };
 
     if (onLeave.has(member.id)) {
-      groups[CANDIDATES_ON_LEAVE].push(candidate);
+      groups[CANDIDATES_ON_LEAVE].push({ ...line, continuousMinutes: null });
       continue;
     }
 
-    const day = memberScheduleOfMonth(
-      memberScheduleInputOf(snapshot, { memberId: member.id, memberships: member.memberships, statuses: member.statuses }),
-      month,
-    ).find((one) => one.date === date);
-    const works = day?.shifts.some((shift) => shift.shiftTypeId !== null && working.has(shift.shiftTypeId)) ?? false;
+    const input = memberScheduleInputOf(snapshot, {
+      memberId: member.id,
+      memberships: member.memberships,
+      statuses: member.statuses,
+    });
+    const months = new Map<string, readonly MemberScheduleDay[]>();
+    const scheduleOf = (one: string): readonly MemberScheduleDay[] => {
+      let known = months.get(one);
 
-    groups[works ? CANDIDATES_WORKING : CANDIDATES_FREE].push(candidate);
+      if (known === undefined) {
+        known = memberScheduleOfMonth(input, one);
+        months.set(one, known);
+      }
+
+      return known;
+    };
+    const workingOn = (one: string) =>
+      (scheduleOf(monthOf(one)).find((day) => day.date === one)?.shifts ?? []).filter(
+        (shift) => shift.shiftTypeId !== null && working.has(shift.shiftTypeId),
+      );
+    const works = workingOn(date).length > 0;
+    const continuousMinutes =
+      shiftLeg === null ? null : continuousMinutesOf(snapshot, shiftLeg, window, workingOn);
+
+    groups[works || continuousMinutes !== null ? CANDIDATES_WORKING : CANDIDATES_FREE].push({
+      ...line,
+      continuousMinutes,
+    });
   }
 
   return CANDIDATE_GROUPS.map((kind) => ({ kind, candidates: groups[kind] }));
+}
+
+/** `date` and the {@link CONTINUOUS_WINDOW_DAYS} days either side, in order; fewer at the calendar's ends. */
+function windowOf(date: string): readonly string[] {
+  const before: string[] = [];
+  const after: string[] = [];
+  let back: string | null = date;
+  let ahead: string | null = date;
+
+  for (let step = 0; step < CONTINUOUS_WINDOW_DAYS; step += 1) {
+    back = back === null ? null : previousIsoDate(back);
+    ahead = ahead === null ? null : nextIsoDate(ahead);
+    if (back !== null) before.unshift(back);
+    if (ahead !== null) after.push(ahead);
+  }
+
+  return [...before, date, ...after];
+}
+
+/**
+ * The minutes of the duty `shiftLeg` would join among a candidate's own
+ * working shifts on `window`'s dates (`dutiesOf`), or `null` when it joins
+ * none — then the shift is all there is.
+ *
+ * @throws RangeError on any precondition of `shiftLegOn` or `dutiesOf`.
+ */
+function continuousMinutesOf(
+  snapshot: CalendarSnapshot,
+  shiftLeg: DutyLeg,
+  window: readonly string[],
+  workingOn: (date: string) => readonly { readonly shiftTypeId: string | null }[],
+): number | null {
+  const legs: DutyLeg[] = [shiftLeg];
+
+  for (const one of window) {
+    for (const shift of workingOn(one)) {
+      if (shift.shiftTypeId === null) continue;
+
+      const leg = shiftLegOn(snapshot, shift.shiftTypeId, one);
+
+      if (leg !== null) legs.push(leg);
+    }
+  }
+
+  return dutiesOf(legs).find((duty) => duty.legs.includes(shiftLeg))?.totalMinutes ?? null;
+}
+
+/**
+ * A candidate's continuous duty as its line adds it — `· 24 h bez pauze`,
+ * {@link candidateContinuousMessageKey} over the duration's key and values —
+ * or `null`, which adds nothing (D717).
+ */
+export function candidateContinuousOf(
+  continuousMinutes: number | null,
+): { readonly key: ReturnType<typeof durationMessageKey>; readonly values: DurationValues } | null {
+  if (continuousMinutes === null) return null;
+
+  return { key: durationMessageKey(continuousMinutes), values: durationValuesOf(continuousMinutes) };
+}
+
+/** A candidate's line with their continuous duty after it: `{line} · {hours} bez pauze`. */
+export function candidateContinuousMessageKey(): 'raspored.resolution.candidates.continuous' {
+  return 'raspored.resolution.candidates.continuous';
 }
 
 /** A candidate group's heading, by its kind. Exhaustive. */

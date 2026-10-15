@@ -39,7 +39,8 @@ import {
  * `count.days`, so `−2 dana` reads as a number.
  *
  * Reached from a conflict (story 5.4d), `handoff` opens the amend dialog with
- * the computed range, or the record's removal confirmation, once.
+ * the computed range, or the record's removal confirmation, once; when its
+ * record is gone or no longer covers the date, a status line says nothing opened.
  *
  * `allowanceAction` (story 7.11) is *Promijeni pravo*, which the page hands in
  * as a slot beside *Pravo* — the allowance is a member's field and its dialog
@@ -55,7 +56,7 @@ export function MemberLeaveCard({
   readonly allowanceAction?: ReactNode;
 }): ReactNode {
   const leave = useMemberLeave(memberId, handoff);
-  const { base, leaveSaved, leaveAmended, amendedReplacements, formDisabled, memberName, recordDialog } = leave;
+  const { base, leaveSaved, leaveAmended, handoffMissed, amendedReplacements, formDisabled, memberName, recordDialog } = leave;
 
   if (base.kind === LEAVE_ABSENT) return null;
 
@@ -119,8 +120,16 @@ export function MemberLeaveCard({
     return <dd className="text-lg font-bold tabular-nums">{t('count.days', { count: days })}</dd>;
   }
 
-  /** What the last landed save or amend left the card saying; its dialog has closed. */
+  /** What the last landed save or amend left the card saying; its dialog has closed. Or a hand-off that opened nothing. */
   function renderStatus(): ReactNode {
+    if (handoffMissed) {
+      return (
+        <Notice ref={leave.noticeField} role="status" tabIndex={-1}>
+          {t('ljudi.leaveRecord.handoffGone')}
+        </Notice>
+      );
+    }
+
     if (leaveAmended !== null) {
       return (
         <Notice ref={leave.noticeField} role="status" tabIndex={-1}>

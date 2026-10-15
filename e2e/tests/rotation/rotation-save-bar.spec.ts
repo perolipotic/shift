@@ -8,6 +8,7 @@ import {
   removeSeededRotation,
   removeTeamInSql,
   seedExtraTeam,
+  seedOtherPattern,
   seedTeamRotation,
   type RotationHold,
   type SeededRotation,
@@ -24,9 +25,9 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * and "Odbaci promjene" in reach.
  *
  * Under the run's rotation hold, a team of the test's own gets the seeded
- * rotation from three days ago — the version in force today — and the
- * fixture team keeps none, so the builder opens on an empty draft (mixed
- * patterns). Nothing here writes a rotation: every draft is local, a save
+ * rotation from three days ago — the version in force today — and a second
+ * team of its own another seeded pattern, so the builder opens on an empty
+ * draft (mixed patterns). Nothing here writes a rotation: every draft is local, a save
  * that reaches the write is stalled and then answered with a failure, and
  * "Odbaci promjene" forgets the draft. The seed and the team are removed in
  * the `afterEach`.
@@ -40,6 +41,8 @@ const IN_FORCE_DAYS_BEFORE = 3;
 
 let hold: RotationHold | null = null;
 let seed: SeededRotation | null = null;
+/** The second team's pattern ({@link seedOtherPattern}), removed with the seed. */
+let other: SeededRotation | null = null;
 let written: { readonly slug: string; teams: string[] } | null = null;
 
 test.afterEach(async () => {
@@ -53,11 +56,14 @@ test.afterEach(async () => {
     }
   };
   const seeded = seed;
+  const second = other;
   const own = written;
 
   if (seeded !== null) await attempt(() => removeSeededRotation(seeded));
+  if (second !== null) await attempt(() => removeSeededRotation(second));
   for (const id of own?.teams ?? []) await attempt(() => removeTeamInSql(own?.slug ?? '', id));
   seed = null;
+  other = null;
   written = null;
   await attempt(async () => {
     await hold?.release();
@@ -66,7 +72,10 @@ test.afterEach(async () => {
   if (failures.length > 0) throw failures[0];
 });
 
-/** The hold, and a team of the test's own on the seeded rotation, in force since three days ago. */
+/**
+ * The hold, and a team of the test's own on the seeded rotation, in force
+ * since three days ago — beside a second on another pattern, so the prefill is empty.
+ */
 async function setUp(slug: string): Promise<SeededRotation> {
   hold = holdRotation(slug);
   await hold.ready;
@@ -76,6 +85,9 @@ async function setUp(slug: string): Promise<SeededRotation> {
   const team = await seedExtraTeam(slug, `Smjena ${suffix}`);
   own.teams.push(team.id);
   seed = await seedTeamRotation(slug, team.id, suffix, IN_FORCE_DAYS_BEFORE);
+  const second = await seedOtherPattern(slug, IN_FORCE_DAYS_BEFORE);
+  own.teams.push(second.team.id);
+  other = second.rotation;
 
   return seed;
 }

@@ -32,6 +32,7 @@ import {
   HOUR_BAND_WRITE_DEPENDENTS,
   NO_DEPENDENTS,
   refreshAfterWrite,
+  retryRead,
 } from '@/features/teams/services/dependents';
 import { formatMinuteOfDay } from '@/lib/i18n/format';
 import { supabaseClient } from '@/lib/supabase/client';
@@ -196,7 +197,13 @@ export function useHourBandEdit(id: string) {
     }
   }
 
+  /** Read the list again, from the unavailable notice's retry. */
+  function retry(): void {
+    void retryRead(queryClient, HOUR_BANDS_LIST_KEY);
+  }
+
   return {
+    retry,
     nameField,
     startField,
     closeButton,

@@ -12,7 +12,7 @@ import { Select } from '@/components/ui/select';
 import { t } from '@/lib/i18n';
 import { CredentialLine } from '@/features/members/components/credential-line';
 import type { MemberCreate } from '@/features/members/hooks/use-member-create';
-import { NO_TEXT, memberLevelMessageKey } from '@/features/members/services/list';
+import { memberLevelMessageKey } from '@/features/members/services/list';
 import {
   DEFAULT_MEMBER_ROLE,
   LEAVE_ALLOWANCE_MAX,
@@ -34,6 +34,7 @@ import {
 import { refusalText } from '@/features/members/utils/refusal-text';
 import { MEMBER_ROLES } from '@/features/navigation/services/role';
 import { NAME_MAX_LENGTH } from '@/utils/name';
+import { NO_TEXT } from '@/utils/text';
 
 /** `0002:145` — the column is `smallint not null check (>= 0)`, so the control
  *  cannot express a negative, a fraction of a day, or a number the column

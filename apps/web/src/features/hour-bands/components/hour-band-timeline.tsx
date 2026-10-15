@@ -17,11 +17,11 @@ import {
 import {
   DAY_SCALE,
   durationMessageKey,
-  durationValuesOf,
   type HourBandDisplayRow,
   type PartitionBar,
 } from '@/features/hour-bands/services/list';
 import { t } from '@/lib/i18n';
+import { durationValuesOf } from '@/utils/time';
 
 /**
  * The 24-hour bar, its legend and its text equivalent.

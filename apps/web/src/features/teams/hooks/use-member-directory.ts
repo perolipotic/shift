@@ -1,7 +1,6 @@
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 
-import { NO_TEXT } from '@/features/members/services/list';
 import { positionsShown } from '@/features/members/utils/position';
 import { ranksShown } from '@/features/members/utils/rank';
 import {
@@ -31,6 +30,7 @@ import {
   type TeamRosterRpc,
 } from '@/features/teams/services/roster';
 import { currentSession, supabaseClient } from '@/lib/supabase/client';
+import { NO_TEXT } from '@/utils/text';
 
 /** How the hook writes the search to the URL: `?trazi=`, replacing the entry. */
 export type DirectoryNavigate = (search: string) => void;

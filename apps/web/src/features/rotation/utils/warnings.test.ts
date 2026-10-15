@@ -94,8 +94,8 @@ describe('rotationWarningLinesOf — the pilot', () => {
       ],
       [
         '2 dana u sljedećem ciklusu s dvije ili više smjena na istom tipu:',
-        '26.09.2026: Dan',
-        '27.09.2026: Noć',
+        '26.09.2026: Dan (2 smjene: Smjena A, Smjena B)',
+        '27.09.2026: Noć (2 smjene: Smjena A, Smjena B)',
       ],
       ['24 h rada bez slobodnog dana između (Dan → Noć)'],
     ]);
@@ -166,6 +166,20 @@ describe('the counts use all three plural forms', () => {
 
     expect(warningTextOf(gapText, translate)).toBe(gap);
     expect(warningTextOf(summaryText, translate)).toBe(summary);
+  });
+
+  it.each([
+    [1, 'Dan (1 smjena: A)'],
+    [2, 'Dan (2 smjene: A)'],
+    [5, 'Dan (5 smjena: A)'],
+    [21, 'Dan (21 smjena: A)'],
+  ])('a doubled type counts its teams: %i', (count, text) => {
+    const doubled = {
+      key: 'rotation.builder.warnings.doubledType',
+      values: { type: 'Dan', count, teams: { join: WARNING_LIST, items: ['A'] } },
+    } as const;
+
+    expect(warningTextOf(doubled, translate)).toBe(text);
   });
 
   it('joins a list with commas and a run with arrows', () => {

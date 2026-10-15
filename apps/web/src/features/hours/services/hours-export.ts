@@ -1,6 +1,13 @@
+import { MINUTES_PER_DAY } from '@shift/domain';
+
 import { durationMessageKey } from '@/features/hour-bands/services/list';
-import type { OrganizationHoursRow, OrganizationHoursView } from '@/features/hours/services/organization-hours';
 import { leaveIsEmpty } from '@/features/hours/services/my-hours';
+import {
+  bandMinutesOf,
+  type HoursFooter,
+  type OrganizationHoursRow,
+  type OrganizationHoursView,
+} from '@/features/hours/services/organization-hours';
 import { t } from '@/lib/i18n';
 import { formatIsoMonthName } from '@/lib/i18n/format';
 
@@ -15,7 +22,7 @@ import { formatIsoMonthName } from '@/lib/i18n/format';
  * knows the writer, and it only maps these cells onto it.
  *
  * NO HOUR IS COMPUTED HERE (AD-3, AD-7). Every figure is the domain's minutes
- * on `row.hours`, divided by 1440 — a spreadsheet duration, a fraction of a
+ * on `row.hours`, divided by the domain's `MINUTES_PER_DAY` — a spreadsheet duration, a fraction of a
  * day — never a parsed display string. Each hours cell carries the shape the
  * screen reads it in, by the screen's own rule (`durationMessageKey`), which
  * `./xlsx` turns into a number format: `192 h`, `12 h 30 min`, `30 min`, as on
@@ -26,6 +33,13 @@ import { formatIsoMonthName } from '@/lib/i18n/format';
  * leave days, the domain's count, written as a number. Its heading names the
  * unit, as a number format cannot inflect `dan/dana`. No day is an empty
  * cell, as the screen draws it `—`. No leave hour is written anywhere.
+ *
+ * THE FOOTER IS THE SCREEN'S (FR-42a; E922): under the rows, *Ukupno za
+ * prikazane osobe* and each column's total over the rows shown —
+ * `view.footer`, the same sums the table draws — its hours as durations and
+ * its counts as numbers, so a column still reads and sums as one. Its label
+ * stands in the Member column; the Team column, which the screen's label
+ * spans, is empty.
  */
 
 /** Whole hours: the screen's `192 h`. */
@@ -53,14 +67,14 @@ export function hoursShapeOf(minutes: number): HoursShape {
 /** A cell of the sheet: text as it reads, or a figure as a number. */
 export type HoursExportCell =
   | { readonly kind: 'text'; readonly value: string }
-  /** A duration: `minutes / 1440`, a fraction of a day, read in the screen's shape. */
+  /** A duration: `minutes / MINUTES_PER_DAY`, a fraction of a day, read in the screen's shape. */
   | { readonly kind: 'hours'; readonly value: number; readonly shape: HoursShape }
   /** A count: shifts worked or in unresolved conflict, or leave days. */
   | { readonly kind: 'count'; readonly value: number }
   /** No figure: a leave of no day, which the screen draws `—` and the file leaves blank. */
   | { readonly kind: 'empty' };
 
-/** The sheet, ready for a writer: one header row, then one row per table row. */
+/** The sheet, ready for a writer: one header row, one row per table row, and the footer. */
 export interface HoursExport {
   readonly fileName: string;
   readonly sheetName: string;
@@ -68,13 +82,12 @@ export interface HoursExport {
   readonly columns: readonly string[];
   /** One row per `view.rows` entry, in order; each as long as `columns`. */
   readonly rows: readonly (readonly HoursExportCell[])[];
+  /** The footer row, as long as `columns`: the totals of the rows shown, or `null` with no row. */
+  readonly footer: readonly HoursExportCell[] | null;
 }
 
 /** The file's extension: a format, not copy. */
 const HOURS_EXPORT_EXTENSION = '.xlsx';
-
-/** Minutes in a day: a spreadsheet stores a duration as a fraction of one. */
-const MINUTES_PER_DAY = 1440;
 
 /** The longest the organization's part of a file name may be. */
 export const FILE_NAME_ORGANIZATION_MAX = 100;
@@ -114,37 +127,46 @@ function hours(minutes: number): HoursExportCell {
   return { kind: 'hours', value: durationOf(minutes), shape: hoursShapeOf(minutes) };
 }
 
+/** Leave days as the screen draws them: none is blank (`—`), else the count. */
+function leaveDays(days: number): HoursExportCell {
+  return leaveIsEmpty(days) ? { kind: 'empty' } : { kind: 'count', value: days };
+}
+
 /**
- * One table row as cells, the bands in `bandIds` order.
- *
- * @throws RangeError for a band the row's hours do not carry.
+ * One table row as cells, the bands in `bandIds` order — each band's minutes
+ * read by the table's own rule (`bandMinutesOf`), so the file and the screen
+ * cannot read a band differently.
  */
 function cellsOf(row: OrganizationHoursRow, bandIds: readonly string[]): readonly HoursExportCell[] {
-  const bands = bandIds.map((bandId) => {
-    const band = row.hours.bands.find((one) => one.bandId === bandId);
-
-    if (band === undefined) throw new RangeError(`band ${bandId} is not in the row of ${row.memberId}`);
-
-    return hours(band.minutes);
-  });
-
   return [
     text(row.name),
     text(row.team === null ? t('sati.organization.noTeam') : row.team.name),
     { kind: 'count', value: row.shiftCount },
-    ...bands,
+    ...bandIds.map((bandId) => hours(bandMinutesOf(row, bandId))),
     hours(row.hours.totalMinutes),
-    leaveIsEmpty(row.leaveDays) ? { kind: 'empty' } : { kind: 'count', value: row.leaveDays },
+    leaveDays(row.leaveDays),
     // Story 5.3d: the state is the column and the number, 0 included — never a colour.
     { kind: 'count', value: row.conflictCount },
+  ];
+}
+
+/** The footer as cells, in the columns' order: the label, an empty Team cell, then each total. */
+function footerCellsOf(footer: HoursFooter): readonly HoursExportCell[] {
+  return [
+    text(t('sati.organization.footer')),
+    { kind: 'empty' },
+    { kind: 'count', value: footer.shiftCount },
+    ...footer.bands.map((band) => hours(band.minutes)),
+    hours(footer.totalMinutes),
+    leaveDays(footer.leaveDays),
+    { kind: 'count', value: footer.conflictCount },
   ];
 }
 
 /**
  * The sheet `view` stands for, `organizationName` the snapshot's.
  *
- * @throws RangeError for a month the locale layer cannot name, or a band a
- *   row lacks.
+ * @throws RangeError for a month the locale layer cannot name.
  */
 export function hoursExportOf(view: OrganizationHoursView, organizationName: string): HoursExport {
   const month = formatIsoMonthName(`${view.header.month}-01`);
@@ -172,6 +194,7 @@ export function hoursExportOf(view: OrganizationHoursView, organizationName: str
       t('sati.organization.conflicts'),
     ],
     rows: view.rows.map((row) => cellsOf(row, bandIds)),
+    footer: view.footer === null ? null : footerCellsOf(view.footer),
   };
 }
 

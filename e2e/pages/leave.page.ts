@@ -1,7 +1,8 @@
 import type { Locator } from '@playwright/test';
 
-import { hr } from '../utils/i18n.ts';
+import { escapeRegExp, fill, hr } from '../utils/i18n.ts';
 import { BasePage } from './base.page.ts';
+import { FilterBarParts } from './filter-bar.ts';
 import { sortControlIn, sortOptionIn, sortPickerIn } from './sort-control.ts';
 
 const godisnji = hr.godisnji;
@@ -64,6 +65,35 @@ export class LeavePage extends BasePage {
   /** *Traži osobu*. */
   get overviewSearch(): Locator {
     return this.page.getByRole('searchbox', { name: overview.search, exact: true });
+  }
+
+  /** The overview's filter bar (E884): the chips' group, the summary, `Poništi filtre`. */
+  get filters(): FilterBarParts {
+    return new FilterBarParts(this.page);
+  }
+
+  /** The Stanje chip, whatever it reads. */
+  get stateChip(): Locator {
+    return this.filters.bar.getByRole('button', {
+      name: new RegExp(`^${escapeRegExp(overview.stateChip.replace('{value}', ''))}`),
+    });
+  }
+
+  /** The Stanje chip's text for a value: `Stanje: na godišnjem danas`. */
+  stateChipText(value: keyof typeof overview.stateValue): string {
+    return fill(overview.stateChip, { value: overview.stateValue[value] });
+  }
+
+  /** A state option in the Stanje chip's picker (from 640 px): its label, then its person count. */
+  stateOption(value: keyof typeof overview.state): Locator {
+    return this.page
+      .getByRole('dialog', { name: overview.statePicker, exact: true })
+      .getByRole('button', { name: new RegExp(`^${escapeRegExp(overview.state[value])}\\s*\\d`) });
+  }
+
+  /** `Poništi filtre` in place of the rows when the chips leave nobody: the last one, after the summary's. */
+  get clearFiltersInPlace(): Locator {
+    return this.page.getByRole('button', { name: hr.filter.clear, exact: true }).last();
   }
 
   /** *Poništi pretragu*, in place of the rows when the search matches nobody. */

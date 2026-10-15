@@ -1,12 +1,8 @@
 import { formatMinuteOfDay } from '@/lib/i18n/format';
-import {
-  hourBandById,
-  minuteOfTime,
-  type HourBandRow,
-  type HourBandsSurfaceState,
-} from '@/features/hour-bands/services/list';
+import { hourBandById, type HourBandRow, type HourBandsSurfaceState } from '@/features/hour-bands/services/list';
 import { claimedOrganizationOf } from '@/features/teams/services/write';
 import { enteredName } from '@/utils/name';
+import { minuteOfTime } from '@/utils/time';
 
 /**
  * The organization the caller's token names, or `null`. ONE PARSER: the claim

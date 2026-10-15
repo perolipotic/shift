@@ -591,16 +591,6 @@ function namesAValue(code: string | undefined): boolean {
   return code !== undefined && VALUE_CLASSES.includes(code.slice(0, 2));
 }
 
-/** As much of a PostgREST error as this module reads. */
-export interface PostgrestFailure {
-  // `| undefined` on every member, for the reason `features/members/services/list.ts`'s identical
-  // interface records: `exactOptionalPropertyTypes` is on and postgrest-js
-  // declares these as present-and-possibly-undefined.
-  readonly code?: string | undefined;
-  readonly message?: string | undefined;
-  readonly details?: string | undefined;
-}
-
 /**
  * A PostgREST refusal on `members`, as this application's own failure.
  *
@@ -767,22 +757,6 @@ export const PARTIAL_SAVE_KEY = 'ljudi.form.error.saved';
  * `t()` key nor a structural attribute value, and a single space is still one.
  */
 export const MESSAGE_SEPARATOR = ' ';
-
-/** An edit that failed, and whether anything was written before it did. */
-export interface MemberWriteRefusal {
-  readonly code: MemberWriteFailure;
-  /**
-   * Whether the ordinary fields reached the database before the failure.
-   *
-   * THE PARTIAL SAVE. The four fields are written before the username moves, so
-   * a refused rename leaves name, address, level and allowance genuinely in the
-   * database and the sign-in identity genuinely unchanged. A flat failure is not
-   * wrong about the username and is silent about the rest — and the admin's next
-   * move, reopening the form, shows them the new values with nothing to explain
-   * why the username is not among them. Human decision 2026-09-18.
-   */
-  readonly saved: boolean;
-}
 
 /**
  * What one refused edit says, as one or two keys.
