@@ -596,6 +596,14 @@ const SOURCES = [
   join(webRoot, 'src', 'features', 'rotation', 'hooks', 'draft-store.ts'),
   join(webRoot, 'src', 'features', 'rotation', 'services', 'write.ts'),
   join(webRoot, 'src', 'features', 'rotation', 'components', 'rotation-section.tsx'),
+  // The epics 5–7 retro split (A21, A26): the builder's hook and the parts
+  // the section composes, which render its words.
+  join(webRoot, 'src', 'features', 'rotation', 'hooks', 'use-rotation-builder.ts'),
+  join(webRoot, 'src', 'features', 'rotation', 'components', 'rotation-notices.tsx'),
+  join(webRoot, 'src', 'features', 'rotation', 'components', 'rotation-stepper.tsx'),
+  join(webRoot, 'src', 'features', 'rotation', 'components', 'rotation-pattern-card.tsx'),
+  join(webRoot, 'src', 'features', 'rotation', 'components', 'rotation-preview-card.tsx'),
+  join(webRoot, 'src', 'features', 'rotation', 'components', 'rotation-save-bar.tsx'),
   // Story 2.4's phone stepper rules: the step names and Dalje's labels as
   // return-type unions, and the classes that hide a section below `sm`.
   join(webRoot, 'src', 'features', 'rotation', 'utils', 'stepper.ts'),

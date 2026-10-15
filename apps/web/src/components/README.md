@@ -88,7 +88,7 @@ Every screen (destination, form, placeholder or not-found) is built the same way
 
 A list the person reorders uses `@dnd-kit` (`core` + `sortable`), never native
 HTML5 drag-and-drop, which is unreliable on touch. The rotation builder's steps
-(`features/rotation/components/rotation-section.tsx`) are the reference:
+(`features/rotation/components/rotation-pattern-card.tsx`) are the reference:
 
 - Each item is one row that never wraps. Only a ghost `Button` handle
   (`GripVertical`, `h-11 w-11`, `touch-none`) activates the drag

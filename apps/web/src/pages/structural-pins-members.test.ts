@@ -666,7 +666,7 @@ describe('the member list reads once, under one key', () => {
     for (const file of [
       ROTATION_LIST_KEYS,
       ROTATION_WRITE_KEYS,
-      ROTATION_SECTION,
+      ...ROTATION_SECTION,
       ROTATION_HISTORY_DIALOG,
       join(srcRoot, 'features', 'rotation', 'utils', 'draft.ts'),
       ROTATION_STEPPER_KEYS,
@@ -688,7 +688,7 @@ describe('the member list reads once, under one key', () => {
     // STORY 2.4: one DOM tree at every width. A section that is not the
     // current step is hidden below `sm` by a class; nothing measures the
     // window, so a resize across 640 px has no state to reconcile.
-    for (const file of [ROTATION_SECTION, ROTATION_STEPPER_KEYS, join(srcRoot, 'features', 'rotation', 'hooks', 'draft-store.ts')]) {
+    for (const file of [...ROTATION_SECTION, ROTATION_STEPPER_KEYS, join(srcRoot, 'features', 'rotation', 'hooks', 'draft-store.ts')]) {
       expect(codeOnly(readFileSync(file, 'utf8')), `${file} reads the width in script`).not.toMatch(
         /matchMedia|innerWidth|outerWidth|clientWidth|ResizeObserver|screen\.width/,
       );

@@ -422,7 +422,18 @@ export const SHIFT_TYPE_WRITE_KEYS = join(srcRoot, 'features', 'shift-types', 's
  * of its own — the shift type screens are pinned to one query — so it is named
  * here by hand. `@/features/rotation/utils/draft` declares no key.
  */
-export const ROTATION_SECTION = join(srcRoot, 'features', 'rotation', 'components', 'rotation-section.tsx');
+export const ROTATION_SECTION: readonly string[] = [
+  join(srcRoot, 'features', 'rotation', 'components', 'rotation-section.tsx'),
+  // THE RETRO SPLIT (A21, A26): the builder's state, read and handlers are
+  // its hook's, and its sections, notices, stepper and save bar are parts
+  // the section composes. One builder, read as one set.
+  join(srcRoot, 'features', 'rotation', 'hooks', 'use-rotation-builder.ts'),
+  join(srcRoot, 'features', 'rotation', 'components', 'rotation-notices.tsx'),
+  join(srcRoot, 'features', 'rotation', 'components', 'rotation-stepper.tsx'),
+  join(srcRoot, 'features', 'rotation', 'components', 'rotation-pattern-card.tsx'),
+  join(srcRoot, 'features', 'rotation', 'components', 'rotation-preview-card.tsx'),
+  join(srcRoot, 'features', 'rotation', 'components', 'rotation-save-bar.tsx'),
+];
 
 /**
  * Story 7.18: `Povijest rotacije` left the builder's page for a dialog behind
