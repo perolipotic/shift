@@ -1382,6 +1382,10 @@
       "signOut": "Odjava trenutačno nije moguća. Pokušaj ponovno."
     }
   },
+  "update": {
+    "available": "Dostupna je nova verzija.",
+    "refresh": "Osvježi"
+  },
   "smjene": {
     "heading": "Smjene",
     "lede": "Ekipe koje rade zajedno. Osoba je u jednoj smjeni, od datuma koji joj je zadan.",

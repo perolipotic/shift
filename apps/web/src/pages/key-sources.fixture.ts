@@ -78,6 +78,7 @@ import {
   TODAY_DUTY_KEYS,
   TODAY_KEYS,
   translationKeys,
+  UPDATE_NOTICE,
 } from './source-guards.fixture';
 
 // `KEY_SOURCES`, shared by the source guards in this folder: every module that can put
@@ -112,6 +113,8 @@ export const KEY_SOURCES = [
   { name: 'the not-found component', file: NOT_FOUND, keys: translationKeys, strings: 2 },
   // A148. THREE on the error screen: the heading, the lede and the retry.
   { name: 'the error screen', file: ERROR_SCREEN, keys: translationKeys, strings: 3 },
+  // STORY 8.1. TWO on the update notice: the message and *Osvježi*.
+  { name: 'the update notice', file: UPDATE_NOTICE, keys: translationKeys, strings: 2 },
   // THREE on the sign-in frame (visual refresh A): the brand panel's product
   // name, headline and subline, written once and rendered around both steps,
   // so neither step's own count moved.

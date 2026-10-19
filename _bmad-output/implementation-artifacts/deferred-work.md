@@ -941,3 +941,12 @@
 - source_spec: deferred-work sweep 2026-10-13
   summary: The seven erasure-confirm call sites still each keep their own latch, pending flag, `catch`/`finally` and fresh check around the shared order. #216 moved the order itself (stopped, unavailable, refused, freshness, write) into `followErasureCheck` (`features/conflicts/services/erasure-confirm.ts`), but the source guards pin the latch and pending handling per handler, so they stayed. Folding them into the shared hook means moving those guards with them.
   evidence: Left by #216 (retro R15 / A15). Call sites: the rotation save and cancel, the calendar roster and override forms, the member team and status cards, and the override review.
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-1-the-app-is-installable.md`
+  summary: There is no minimum-version check or forced update. A precached client whose member ignores *Dostupna je nova verzija.* keeps running against a backend whose schema or RPCs a later deploy changed, until the member taps *Osvježi* or closes every tab.
+  evidence: Review of 8.1 (Blind Hunter, Edge Case Hunter). `registerType: 'prompt'` keeps the old worker in control on a plain reload, so a stale client can outlive the deploy that broke it. Needs a build or schema version the client can compare against.
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-1-the-app-is-installable.md`
+  summary: No automated test renders `UpdateNotice`'s waiting branch or clicks *Osvježi*. Both are covered only by the spec's manual check in `vite preview`, and by the pure decision helper's node test.
+  evidence: Review of 8.1 (Verification Gap). AD-15 bans jsdom and `.tsx` tests, and render tests are deferred project-wide. A Playwright test against `vite preview` that serves a second build would cover it.
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-1-the-app-is-installable.md`
+  summary: `Notice role="status"` is mounted together with its text (the update notice, and the existing save confirmations), so some screen readers skip the announcement. An always-present live region that receives the text would announce it reliably.
+  evidence: Review of 8.1 (Blind Hunter, Edge Case Hunter). This is the app-wide `Notice` pattern, not something 8.1 introduced. `components/ui/notice.tsx`, `update-notice.tsx`, `organization-time-card.tsx:78`.

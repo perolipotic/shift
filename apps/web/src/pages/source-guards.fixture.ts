@@ -574,6 +574,13 @@ export const CHROME = join(srcRoot, 'features', 'navigation', 'components', 'chr
 export const LOCKUP = join(srcRoot, 'features', 'organization', 'components', 'lockup.tsx');
 
 /**
+ * The update notice (story 8.1): a `.tsx` that is not a route, mounted by the
+ * root shell above every route, sign-in included. Swept like the chrome, for
+ * the chrome's reason.
+ */
+export const UPDATE_NOTICE = join(srcRoot, 'components', 'update-notice.tsx');
+
+/**
  * The sign-in steps' shared frame (visual refresh A): the brand panel both
  * sign-in screens render around their card. Not a route, and swept anyway for
  * the reason the chrome and the lockup are — it renders strings.
@@ -681,6 +688,8 @@ export const SCREENS = [
   // A224. ZERO on the pending skeleton, which renders no string either, and is
   // swept so it stays that way.
   { name: 'the pending skeleton', file: ROUTE_PENDING, expectedFields: 0, expectedButtons: 0 },
+  // STORY 8.1. ONE on the update notice: *Osvježi*.
+  { name: 'the update notice', file: UPDATE_NOTICE, expectedFields: 0, expectedButtons: 1 },
   // EIGHT, and it was seven until story 1.4b: the settings surface carries five
   // fields — name, type, timezone and the leave year's month and day — plus a
   // save, a cancel, and now the logo's choose action. The number is what notices

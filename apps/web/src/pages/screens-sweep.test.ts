@@ -190,7 +190,8 @@ const PAGES_NOT_SCREENS = [
   // leads the member create set.
   'ljudi.novi.tsx',
   // The root route: an `<Outlet />` in a layout `div`, with no string and no
-  // control. `not-found.tsx`, which it registers, is its own entry.
+  // control. `not-found.tsx`, which it registers, is its own entry, and so is
+  // the update notice it mounts (story 8.1).
   '__root.tsx',
 ];
 
@@ -288,7 +289,8 @@ describe('the screen is read at all, so every sweep below means something', () =
     // TWENTY-NINE SINCE STORY 7.17: the member directory.
     // THIRTY-ONE SINCE THE ROUTER-GUARDS FIX: the error screen (A148) and the
     // pending skeleton (A224).
-    expect(SCREENS).toHaveLength(31);
+    // THIRTY-TWO SINCE STORY 8.1: the update notice.
+    expect(SCREENS).toHaveLength(32);
     //
     // FORTY-NINE SINCE STORY 3.6b: `@/features/calendar/services/roster-write`.
     //
@@ -344,7 +346,9 @@ describe('the screen is read at all, so every sweep below means something', () =
     // SEVENTY-TWO SINCE B449: the calendar's empty-day words.
     //
     // SEVENTY-THREE SINCE THE SHEET'S COPY: the destination copy mapping.
-    expect(KEY_SOURCES).toHaveLength(73);
+    //
+    // SEVENTY-FOUR SINCE STORY 8.1: the update notice.
+    expect(KEY_SOURCES).toHaveLength(74);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"

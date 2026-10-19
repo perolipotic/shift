@@ -9,7 +9,11 @@
          only the pre-script default; `lib/i18n/document-language.ts` rewrites
          it from the active locale. The two theme colours are `--background` in
          each theme (`index.css`), as hex because the browser chrome reads
-         them, not the page. -->
+         them, not the page. The manifest link is not written here:
+         `vite-plugin-pwa` generates `site.webmanifest` and injects its link
+         into the built page (story 8.1, `vite.config.ts`), so a manual one
+         would be a duplicate. iOS reads no manifest icon, so the home-screen
+         icon is linked explicitly. -->
     <meta
       name="description"
       content="Planiranje dežurstava, odsustava i pokrivenosti za dobrovoljna vatrogasna društva."
@@ -17,7 +21,7 @@
     <meta name="theme-color" content="#f8fafc" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#0d1829" media="(prefers-color-scheme: dark)" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="manifest" href="/site.webmanifest" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon-180x180.png" />
     <!-- The theme, resolved before the first paint. `data-theme` on <html> is
          always `light` or `dark`; `index.css` hangs the dark tokens on it. The
          preference (`system`, `light`, `dark`) lives in localStorage under
