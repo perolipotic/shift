@@ -23,6 +23,11 @@ export default defineConfig({
       '@shift/domain': fileURLToPath(
         new URL('../../packages/domain/src/index.ts', import.meta.url),
       ),
+      // STORY 8.1. The PWA plugin's virtual module exists only in a Vite
+      // build that runs `VitePWA`; the suite stands in a worker-free fixture.
+      'virtual:pwa-register/react': fileURLToPath(
+        new URL('./src/lib/pwa/register.fixture.ts', import.meta.url),
+      ),
     },
   },
   test: {

@@ -1,14 +1,18 @@
 import { Outlet, createRootRouteWithContext } from '@tanstack/react-router';
 import type { Session } from '@supabase/supabase-js';
 
+import { UpdateNotice } from '@/components/update-notice';
 import type { MemberRoleReader } from '@/features/navigation/services/role';
 import { ErrorScreen } from '@/pages/error';
 import { NotFoundScreen } from '@/pages/not-found';
 
 /**
- * The application shell: structure only.
+ * The application shell: structure, plus the update notice.
  *
- * It stays text-free, and deliberately so. The two-layout / one-architecture
+ * Its only words are the update notice's (story 8.1): `UpdateNotice` sits above
+ * the outlet because a new version concerns every route, sign-in included, and
+ * it renders nothing until a waiting version exists. Otherwise the shell stays
+ * text-free, and deliberately so. The two-layout / one-architecture
  * navigation (bottom tabs on mobile, sidebar on desktop) needs a role-keyed
  * destination table and nine `nav.*` labels, and its destinations are
  * role-dependent — so it is its own spec rather than part of this one, and the
@@ -76,6 +80,7 @@ export interface AppRouterContext {
 function AppShell() {
   return (
     <div className="flex min-h-dvh flex-col">
+      <UpdateNotice />
       <Outlet />
     </div>
   );

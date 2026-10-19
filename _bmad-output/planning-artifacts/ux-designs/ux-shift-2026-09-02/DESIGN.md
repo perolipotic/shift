@@ -254,7 +254,7 @@ Tailwind's spacing scale, no overrides. Controls a person presses keep the 44 px
 
 - The page is `mx-auto w-full max-w-5xl` with `p-6`, and the `PageHeader` comes first. The title sits top-left and the actions sit at the right, stacking under the title on a phone. Nothing is centred in the viewport.
 - Content follows: a table inside a `Card`, a `StatCard` row (2 columns on a phone, 4 from `lg`), or a form in a left-aligned `Card` with `max-w-lg`.
-- A refusal and a confirmation are one `Notice` primitive in the Input look: a 1.5 px `input` border on the card colour. `role="alert"` draws a warning icon and `role="status"` a check, so the two differ by shape as well as by words. On a form screen or a card the notice sits in the card. Native `<select>`s use the Input look too, and `components/README.md` spells that class string.
+- A refusal and a confirmation are one `Notice` primitive in the Input look: a 1.5 px `input` border on the card colour. `role="alert"` draws a warning icon and `role="status"` a check, so the two differ by shape as well as by words. On a form screen or a card the notice sits in the card. The update notice (story 8.1) is the one app-level `Notice`: `role="status"` with an *Osvježi* `Button` beside it, above the outlet on every route. Native `<select>`s use the Input look too, and `components/README.md` spells that class string.
 - People's names are shown with an `Avatar` (never a team's), and a permission level or an inactive marker is shown as a `Badge`. A name cell wraps rather than widening its column.
 
 ## Elevation & Depth

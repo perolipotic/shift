@@ -7,8 +7,8 @@ paradigm: 'Asserted-facts store with a pure derivation core — the database hol
 scope: 'The whole Shift platform: rotation engine, schedule projection, hours, leave, conflicts, tenancy, and the responsive web client.'
 status: final
 created: '2026-09-02'
-updated: '2026-09-02'
-binds: [CAP-1, CAP-2, CAP-3, CAP-4, CAP-5, CAP-6, CAP-7, CAP-8, CAP-9, CAP-10, CAP-11, CAP-12, CAP-13, CAP-14, CAP-15, CAP-16, CAP-17]
+updated: '2026-10-19'
+binds: [CAP-1, CAP-2, CAP-3, CAP-4, CAP-5, CAP-6, CAP-7, CAP-8, CAP-9, CAP-10, CAP-11, CAP-12, CAP-13, CAP-14, CAP-15, CAP-16, CAP-17, CAP-18]
 sources:
   - ../../../specs/spec-shift/SPEC.md
   - ../../../specs/spec-shift/engine-rules.md
@@ -141,7 +141,7 @@ The derivation lives in one pure package that cannot reach for data. The store e
 
 - **Binds:** all; quality-requirements Q13
 - **Prevents:** a server tier reappearing incrementally and reopening Q8.
-- **Rule:** The frontend is a static SPA build. No SSR and no application server. Exactly one Edge Function exists — the privileged auth boundary of AD-16 — and a second one amends this AD.
+- **Rule:** The frontend is a static SPA build. No SSR and no application server. Exactly one Edge Function exists — the privileged auth boundary of AD-16 — and a second one amends this AD. The installable PWA (CAP-18, story 8.1) adds client-side pieces only: a manifest and a service worker generated at build time by `vite-plugin-pwa`. The worker precaches the app shell, has no runtime caching of Supabase or any other cross-origin request, and activates a new version only when the member taps *Osvježi*.
 
 ### AD-15 — Every rule is asserted without a browser, against two fixtures
 
@@ -230,6 +230,7 @@ Verified against the npm registry and vendor documentation on 2026-09-02.
 | Vitest | current, node environment |
 | PostgreSQL | Supabase-managed |
 | XLSX writer (client-side, lazy-loaded; `apps/web` only): `write-excel-file` | 4.1.1 |
+| PWA plugin (build-time manifest and `generateSW` service worker; `apps/web` only): `vite-plugin-pwa`, with `workbox-window` | 2.0.0, with 7.4.1 (verified 2026-10-19) |
 
 ## Structural Seed
 
@@ -349,6 +350,7 @@ shift/
 | CAP-15 Annual leave | `leave_records`, `domain/leave` | AD-3, AD-13 |
 | CAP-16 Conflicts resolved explicitly | `conflict_resolutions`, `domain/collisions` | AD-4, AD-5, AD-11 |
 | CAP-17 Role-appropriate landing surfaces | dashboard surfaces | AD-13 |
+| CAP-18 Installable, reads offline | the static build's manifest and service worker; offline reads also rest on AD-13's offline amendment, pending story 8.2 | AD-14 |
 
 ## Deferred
 
@@ -358,5 +360,6 @@ shift/
 - **Conflict-resolution history.** Resolutions are current-state rows. **Revisit when** someone needs to see a resolution that was later superseded.
 - **Realtime.** No subscriptions; surfaces refetch. **Revisit when** two admins working the same conflict queue becomes a real scenario rather than a hypothetical.
 - **Typed linting.** TypeScript 7 has no stable programmatic API until 7.1. **Revisit at** 7.1, or sooner if typed lint rules are wanted — fallback is pinning TypeScript 5.x, which nothing else in this spine depends on.
+- **Organization-specific PWA manifest.** The manifest is one static file named "Shift" (human decision 2026-10-19) with the product icon; no organization's name or logo is in it. **Revisit when** an organization wants its own name or logo on the home screen — the manifest then has to be served per organization, which a static build cannot do from one file.
 - **Storage-level policy detail** for branding assets beyond Q4's ownership rule. **Revisit when** the upload surface is built.
 - **Claim-code identity**, the fully server-free alternative to AD-16: an admin issues a one-time code, the member signs up, and the exchange is an ordinary RLS-governed write linking their auth user to a pre-created member row — an unlinked account reads nothing, so open signup is harmless. Rejected because it reworks CAP-1 and CAP-4. One of its reasons no longer holds: since story 7.8 the member chooses their own password at the first sign-in (the admin-issued one is a one-time, four-word credential), so "moves password choice to the member" is now true of AD-16 as well. The account is still issued by an admin, so CAP-1 and CAP-4 are unchanged. **Revisit if** the AD-16 function ever needs to be removed, or if it starts accreting responsibilities its rule forbids.

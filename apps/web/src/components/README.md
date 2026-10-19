@@ -25,7 +25,8 @@ No component contains a user-facing literal. A `ui/` primitive never calls
 A shared chrome component whose words are the same on every screen that uses
 it owns those strings and may call `t()` with its own keys: `filter-bar.tsx`
 and `option-filter-bar.tsx` (`filter.*`), `sort-control.tsx` (`sort.*`),
-`month-nav.tsx` and `layout/auth-layout.tsx`. What differs per screen — a
+`month-nav.tsx`, `layout/auth-layout.tsx` and `update-notice.tsx` (`update.*`,
+story 8.1: the root shell's *Osvježi* notice for a waiting service worker). What differs per screen — a
 column's label, an option's name, a count's noun — is still passed in
 (2026-10-13, deferred-work sweep; epics 5–7 retro A4).
 

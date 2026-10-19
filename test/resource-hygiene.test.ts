@@ -2055,6 +2055,10 @@ const SANCTIONED_SCREEN_KEYS = [
   'smjene.membership.lastInNoRange',
   'smjene.membership.firstIn',
   'smjene.membership.firstInNoRange',
+  // STORY 8.1: the update notice in the root shell — a new version is ready,
+  // and *Osvježi* is the member's tap that applies it.
+  'update.available',
+  'update.refresh',
 ];
 
 /** Everything the resource file is permitted to hold, together. */

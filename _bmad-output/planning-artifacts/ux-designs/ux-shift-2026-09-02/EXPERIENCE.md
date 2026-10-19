@@ -191,6 +191,8 @@ Behavioural. Visual contrast requirements are in `DESIGN.md`.
   - **Hour bands, teams, rotation offsets, rotation history** (the 2026-10 deferred-work cleanup): a band is its tile and name over the window `19:00–07:00` and the duration with *Prelazi ponoć*; a team is its tile and name; an offset is the team with the type it works on the anchor, over the step's picker at full width; a history entry is the effective date and the status over who saved it, when, and how many teams it binds. Each keeps its 44 px edit or view link.
   - The calendar, week and rotation-preview grids still scroll inside their own box.
 - Every administrative task completes on a phone. Rotation configuration is the hardest case and the one to test first.
+- **Installable PWA** (story 8.1). The app installs from Chrome on Android and Safari on iOS as **Shift**, opens without browser chrome (`standalone`) and starts at `/`. The manifest carries no organization's name or logo. A service worker keeps the app shell, never organization data.
+- **A new version waits for the member** (story 8.1). When a new version is ready, a `Notice role="status"` above every route, sign-in included, reads *Dostupna je nova verzija.* with an *Osvježi* button beside it. The member keeps working; the page reloads once, only when they tap *Osvježi*. An ignored notice changes nothing, and the version applies on the next tap or once every tab is closed. Nothing ever reloads by itself.
 
 ## Key Flows
 
