@@ -57,6 +57,10 @@ export const TODAY_SCREEN_EXEMPT: readonly { readonly file: string; readonly why
     why: "today's 24 h duty (story 6.2): the window, the legs and their notes, and the duty-block's lines; a key source of its own, executed by today.test.ts",
   },
   {
+    file: 'services/surface-keys.ts',
+    why: "Danas's reads as one snapshot (story 8.2), the keys its offline freshness is decided over; renders nothing and declares no key, executed by the calendar's surface-keys.test.ts",
+  },
+  {
     file: 'services/admin-today.ts',
     why: "an admin's Danas (story 6.3): the queue's gating, Treba tebe, the coverage, the absences, the week and the subtitle's status; a key source of its own, executed by admin-today.test.ts",
   },

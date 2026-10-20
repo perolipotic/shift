@@ -19,16 +19,36 @@ import { t } from '@/lib/i18n';
  * what it answered cannot be trusted. `adminTodayOf` decides which; this only
  * draws it, and holds its own reads (`useAdminToday`), so the page only picks
  * the body. While its reads are pending it tells the page (`onBusy`), whose
- * `main` is `aria-busy` then too.
+ * `main` is `aria-busy` then too; while it is unavailable it tells the page
+ * too (`onUnavailable`, story 8.2), which then shows no as-of note above it.
  */
-export function AdminTodayBody({ onBusy }: { readonly onBusy: (busy: boolean) => void }): ReactNode {
+export function AdminTodayBody({
+  onBusy,
+  onUnavailable,
+}: {
+  readonly onBusy: (busy: boolean) => void;
+  readonly onUnavailable: (unavailable: boolean) => void;
+}): ReactNode {
   const { adminToday, retry } = useAdminToday();
   const busy = adminToday.kind === ADMIN_TODAY_LOADING;
+  const unavailable = adminToday.kind === ADMIN_TODAY_UNAVAILABLE;
 
   // The page's `main` is busy while these reads are, too.
   useEffect(() => {
     onBusy(busy);
   }, [busy, onBusy]);
+
+  // No note above an alert: nothing cached is drawn under it. Reset when the
+  // body unmounts — the role changed — so a member's page never inherits it.
+  useEffect(() => {
+    onUnavailable(unavailable);
+  }, [unavailable, onUnavailable]);
+  useEffect(
+    () => () => {
+      onUnavailable(false);
+    },
+    [onUnavailable],
+  );
 
   if (adminToday.kind === ADMIN_TODAY_LOADING) return <AdminTodaySkeleton />;
 

@@ -1386,6 +1386,9 @@
     "available": "Dostupna je nova verzija.",
     "refresh": "Osvježi"
   },
+  "offline": {
+    "asOf": "Bez veze · stanje od {date} {time}"
+  },
   "smjene": {
     "heading": "Smjene",
     "lede": "Ekipe koje rade zajedno. Osoba je u jednoj smjeni, od datuma koji joj je zadan.",

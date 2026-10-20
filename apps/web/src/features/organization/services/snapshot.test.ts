@@ -1355,8 +1355,10 @@ describe('the query cache is wired into the application, not merely installed', 
     // stale cache shows the previous viewer's answers until each refetch.
     const entry = source(ENTRY);
 
-    expect(entry, 'main.tsx does not clear the cache on a session change').toContain(
-      'resetOnSessionChange(() => supabaseClient().auth, { cache: queryClient, router, ended: sessionEnded })',
+    // Since story 8.2 the device's kept copy is handed in too, so a session
+    // change deletes it with the cache.
+    expect(entry, 'main.tsx does not clear the cache on a session change').toMatch(
+      /resetOnSessionChange\(\(\) => supabaseClient\(\)\.auth, \{\s*cache: queryClient,\s*router,\s*ended: sessionEnded,\s*device: pageDeviceSnapshot,\s*offlineUser: offlineSessionUser,\s*\}\)/,
     );
     expect(occurrences(entry, 'resetOnSessionChange(')).toBe(1);
   });

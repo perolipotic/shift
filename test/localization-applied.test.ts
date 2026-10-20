@@ -1645,12 +1645,33 @@ function occurrences(haystack: string, needle: string): number {
  *  component name in the build (`DanasScreen`, `PostavkeRotacijeScreen`), so
  *  the boundary is what keeps those from counting. `\p{L}` rather than `\w`,
  *  because `\w` is ASCII-only and would misplace a boundary around every
- *  diacritic these words carry (č, ž…). */
+ *  diacritic these words carry (č, ž…).
+ *
+ *  A MINIFIED IDENTIFIER IS NOT COPY, but only in an identifier's own
+ *  position. The minifier names functions and components with short
+ *  capitalised identifiers, and story 8.2's builds named one `Ime`. Exempt are
+ *  exactly: a definition or call (`function Ime(e)`, `await Ime(…)` — the word
+ *  straight before `(`), an assignment (`,Ime=…`, never `==`), and a JSX
+ *  element type (`jsx)(Ime,{…})`). A word beside `:`, `.`, `,` or a quote is
+ *  counted, so copy in a template or a concatenation is still caught. Both
+ *  counts below go through this, so it is symmetric. */
 function wordOccurrences(haystack: string, needle: string): number {
   const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'gu');
+  let count = 0;
 
-  return (haystack.match(pattern) ?? []).length;
+  for (const found of haystack.matchAll(pattern)) {
+    const before = haystack.slice(Math.max(0, found.index - 6), found.index);
+    const after = haystack.slice(found.index + needle.length, found.index + needle.length + 2);
+    const identifier =
+      after.startsWith('(') ||
+      (after.startsWith('=') && !after.startsWith('==')) ||
+      (/jsxs?\)\($/.test(before) && after.startsWith(','));
+
+    if (!identifier) count += 1;
+  }
+
+  return count;
 }
 
 /**
@@ -1797,6 +1818,9 @@ describe('the resource file is the only user-facing Croatian in the build', () =
     expect(wordOccurrences('Prijava, Prijava.', 'Prijava')).toBe(2);
     expect(wordOccurrences('Korisničko ime', 'Korisničko')).toBe(1);
     expect(wordOccurrences('abc', 'X')).toBe(0);
+    expect(wordOccurrences('function Ime(e){} await Ime(x); jsx)(Ime,{a}); var a=1,Ime=2; "Ime (obavezno)"', 'Ime')).toBe(1);
+    // Copy beside code punctuation still counts: a template, a concatenation, a label.
+    expect(wordOccurrences('`${a}Ime:` + "Ime," + x.Ime + (Ime, prezime) + Ime==b', 'Ime')).toBe(5);
   });
 
   it('keeps the title and the boot fallback as the only literals in the HTML', () => {

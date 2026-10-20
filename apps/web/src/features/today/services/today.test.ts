@@ -1,7 +1,8 @@
 import { leaveCostOf } from '@shift/domain';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { readCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
+import { calendarSurfaceStateOf, readCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
+import { snapshotAnswerOf, snapshotFreshnessOf, type FreshnessClock, type ReadAnswer } from '@/lib/offline/freshness';
 import { NO_MARKS, calendarDayListOf, memberScheduleInputOf, type CalendarMarks } from '@/features/calendar/utils/month';
 import { MODIFIER_LEAVE } from '@/features/calendar/utils/modifiers';
 import {
@@ -463,6 +464,54 @@ describe('the reads', () => {
     expect(todayOf({ calendar: { snapshot: pilot, refusal: null, loading: false }, records: ROWS }, noonOf('2026-10-01')).kind).toBe(
       TODAY_READY,
     );
+  });
+
+  describe('offline and restored, through the surface\'s freshness (story 8.2)', () => {
+    const READ_AT = 1_000;
+    /** The calendar as the cache holds it: the snapshot, its refetch paused offline. */
+    const calendarPaused = { data: pilot as CalendarSnapshot | undefined, dataUpdatedAt: READ_AT, isError: false, isPending: false, fetchStatus: 'paused' };
+    const rowsPaused = { ...ROWS, dataUpdatedAt: READ_AT, fetchStatus: 'paused' };
+    const sourcesOf = (
+      calendar: ReadAnswer<CalendarSnapshot>,
+      records: ReadAnswer<readonly unknown[]>,
+      clock: FreshnessClock,
+    ) => {
+      const freshness = snapshotFreshnessOf([calendar, records], clock.freshAfter, clock.online);
+
+      return {
+        calendar: calendarSurfaceStateOf(snapshotAnswerOf(calendar, freshness, clock)),
+        records: snapshotAnswerOf(records, freshness, clock),
+      };
+    };
+
+    it('offline, whole: today is drawn from the device', () => {
+      const clock = { online: false, freshAfter: READ_AT + 1 };
+
+      expect(todayOf(sourcesOf({ ...calendarPaused, data: pilot }, rowsPaused, clock), noonOf('2026-10-01')).kind).toBe(TODAY_READY);
+    });
+
+    it('offline, partial: unavailable with the retry, never today beside a missing read', () => {
+      const clock = { online: false, freshAfter: READ_AT + 1 };
+      const missing = { ...rowsPaused, data: undefined, isPending: true, dataUpdatedAt: 0 };
+
+      expect(todayOf(sourcesOf({ ...calendarPaused, data: pilot }, missing, clock), noonOf('2026-10-01'))).toEqual({
+        kind: TODAY_UNAVAILABLE,
+        retryable: true,
+      });
+    });
+
+    it('online, restored: the skeleton until both reads are newer than freshAfter', () => {
+      const clock = { online: true, freshAfter: READ_AT + 1 };
+      const refetching = { ...calendarPaused, data: pilot, fetchStatus: 'fetching' };
+
+      expect(todayOf(sourcesOf(refetching, { ...rowsPaused, fetchStatus: 'fetching' }, clock), noonOf('2026-10-01'))).toEqual({
+        kind: TODAY_LOADING,
+      });
+      // One read in: still the skeleton, never a figure beside an old one.
+      expect(
+        todayOf(sourcesOf({ ...refetching, dataUpdatedAt: READ_AT + 5, fetchStatus: 'idle' }, { ...rowsPaused, fetchStatus: 'fetching' }, clock), noonOf('2026-10-01')),
+      ).toEqual({ kind: TODAY_LOADING });
+    });
   });
 
   it("is unavailable without a retry, logged, for another member's row or one that does not parse", () => {

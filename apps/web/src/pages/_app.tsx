@@ -4,6 +4,7 @@ import { AppChrome } from '@/features/navigation/components/chrome';
 import { returnSearchFor } from '@/features/auth/services/return-target';
 import { mustSetPassword } from '@/features/auth/services/set-password';
 import { rootRoute } from '@/pages/__root';
+import { readsOffline } from '@/lib/offline/readable-paths';
 import { resolvedSession } from '@/lib/supabase/client';
 import { sessionEnded } from '@/lib/supabase/session-cache';
 
@@ -104,7 +105,17 @@ export const appLayoutRoute = createRoute({
     // shared read logs `SESSION_UNRESOLVED` with the cause and answers `null`,
     // which IS the decision here: a session that cannot be read is not a
     // session, so the visitor is treated as signed out and fails CLOSED.
-    const session = await resolvedSession(context.currentSession);
+    //
+    // OFFLINE-READABLE DESTINATIONS read the session FOR READING (story 8.2,
+    // human decision 2026-10-20 a): offline, an expired token that cannot be
+    // refreshed is not a sign-out, so *Danas* and *Kalendar* still open on the
+    // device's snapshot (`@/lib/supabase/offline-session`). Every other
+    // destination reads the live session alone, as before.
+    const reader =
+      readsOffline(location.pathname) && context.sessionForReads !== undefined
+        ? context.sessionForReads
+        : context.currentSession;
+    const session = await resolvedSession(reader);
     // TAKEN ON EVERY RUN, so the mark never outlives the guard run it was
     // raised for: set when this run is the re-guard for a session that ended
     // or changed hands outside this tab (`@/lib/supabase/session-cache`, C516),

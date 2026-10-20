@@ -581,6 +581,13 @@ export const LOCKUP = join(srcRoot, 'features', 'organization', 'components', 'l
 export const UPDATE_NOTICE = join(srcRoot, 'components', 'update-notice.tsx');
 
 /**
+ * The as-of note (story 8.2): a `.tsx` that is not a route, shared by *Danas*
+ * and *Kalendar* under their headings while a snapshot is drawn offline.
+ * Swept on its own, as the update notice is, so its one string counts once.
+ */
+export const OFFLINE_NOTE = join(srcRoot, 'components', 'offline-note.tsx');
+
+/**
  * The sign-in steps' shared frame (visual refresh A): the brand panel both
  * sign-in screens render around their card. Not a route, and swept anyway for
  * the reason the chrome and the lockup are — it renders strings.
@@ -690,6 +697,8 @@ export const SCREENS = [
   { name: 'the pending skeleton', file: ROUTE_PENDING, expectedFields: 0, expectedButtons: 0 },
   // STORY 8.1. ONE on the update notice: *Osvježi*.
   { name: 'the update notice', file: UPDATE_NOTICE, expectedFields: 0, expectedButtons: 1 },
+  // STORY 8.2. ZERO on the as-of note: a status, no control.
+  { name: 'the as-of note', file: OFFLINE_NOTE, expectedFields: 0, expectedButtons: 0 },
   // EIGHT, and it was seven until story 1.4b: the settings surface carries five
   // fields — name, type, timezone and the leave year's month and day — plus a
   // save, a cancel, and now the logo's choose action. The number is what notices
@@ -1442,8 +1451,10 @@ export const STRUCTURAL_ATTRIBUTES = new Set([
  * and `IconTile` are `cva` primitives in `components/ui` on the same terms.
  * Note `buttonVariants`' sixth member is `destructive`, which is banned
  * separately and by name in every screen, so this does not widen that.
+ * `Notice` joined in story 8.2: its `variant` is the closed set `offline`,
+ * which picks the WifiOff icon of the as-of note and no text.
  */
-const VARIANT_COMPONENTS = new Set(['Button', 'Badge', 'IconTile']);
+const VARIANT_COMPONENTS = new Set(['Button', 'Badge', 'IconTile', 'Notice']);
 
 /**
  * The text with every `variant` attribute on a {@link VARIANT_COMPONENTS}

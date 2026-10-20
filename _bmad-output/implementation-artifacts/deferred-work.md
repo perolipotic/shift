@@ -950,3 +950,21 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-8-1-the-app-is-installable.md`
   summary: `Notice role="status"` is mounted together with its text (the update notice, and the existing save confirmations), so some screen readers skip the announcement. An always-present live region that receives the text would announce it reliably.
   evidence: Review of 8.1 (Blind Hunter, Edge Case Hunter). This is the app-wide `Notice` pattern, not something 8.1 introduced. `components/ui/notice.tsx`, `update-notice.tsx`, `organization-time-card.tsx:78`.
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-2-surfaces-read-offline.md`
+  summary: Story 8.2b. Bring offline reads to every other surface: Sati, Za odluku/Raspored, Godišnji, Ljudi, the member page, Organizacija, Smjene, Satni pojasi, Postavke rotacije, Timovi and Imenik. Each module's `paused → unavailable` rule moves onto 8.2's freshness helper, its keys join the persisted allowlist, and `requireAdmin` (`routeMemberRole`'s fresh `fetchQuery`) has to serve the cached role offline instead of pausing.
+  evidence: Human decision 2026-10-19 (1b). Epic 8.2 AC1 ("a surface was read online … renders its last snapshot whole") is narrowed to Danas and Kalendar in spec 8.2's Epic AC Deviations. 17 state modules still treat `fetchStatus === 'paused'` as unavailable (counted 2026-10-20: 18 non-test modules carry the rule, and `features/today/services/today.ts` is Danas's, routed through the freshness rule in 8.2; e.g. `features/hours/services/hours-conflicts.ts:72`, `features/members/services/list.ts:163`). The calendar's `snapshot.ts` and `marks.ts` are among the 17: Kalendar reaches them through `snapshotAnswerOf`, while every other surface still reads them raw.
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-2-surfaces-read-offline.md`
+  summary: After an online reload, the chrome's persisted reads (`organization`, `member-name`, `member-role`) draw restored names before their refetch lands, because only Danas and Kalendar go through the freshness rule. Move the chrome onto it together with 8.2b.
+  evidence: Review of 8.2 (Epic AC Auditor). `restoreForSession` invalidates with `refetchType: 'none'`, and the chrome renders `useQuery` data directly.
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-2-surfaces-read-offline.md`
+  summary: On a weak connection where `navigator.onLine` is true but requests time out, reads fail and the surface shows unavailable even though a whole cached snapshot exists. Decide whether a failed online read over a complete device snapshot should fall back to the labelled snapshot.
+  evidence: Review of 8.2 (Blind Hunter). `snapshotFreshnessOf` enters the offline branch only when `onlineManager` reports offline.
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-2-surfaces-read-offline.md`
+  summary: Two tabs persist their own cache subsets to the same IndexedDB key, so the last tab to write can overwrite a fuller snapshot.
+  evidence: Review of 8.2 (Edge Case Hunter). `lib/offline/persistence.ts`, one key per device and no merge.
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-2-surfaces-read-offline.md`
+  summary: No browser test covers an offline cold start (reload offline → restore from IndexedDB → note), the online-restore skeleton, or user B seeing none of user A's data. e2e runs on the dev server, which has no service worker, so an offline reload cannot load the shell. This needs a Playwright project against `vite preview`.
+  evidence: Review of 8.2 (Verification Gap, Blind Hunter). These are covered only by node tests with injected storage and the spec's scripted manual check.
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-2-surfaces-read-offline.md`
+  summary: An accepted risk for Q24: organization leave records and the members list stay unencrypted in IndexedDB for up to 30 days on a device that never reopens the app, or whose session was revoked on the server. Removal happens on sign-out or at the next start. Decide whether that is acceptable, or whether the lifetime should be shorter or the data encrypted.
+  evidence: Review of 8.2 (Blind Hunter). `maxAge` is 30 days (decision 3a), and removal runs only in the app.

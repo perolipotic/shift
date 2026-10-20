@@ -8,6 +8,7 @@ import {
   sessionEndMark,
   type AuthEventSource,
   type Defer,
+  type KeptSnapshot,
   type SessionEndMark,
 } from '@/lib/supabase/session-cache';
 
@@ -93,8 +94,33 @@ async function mountScreen(signedIn: string): Promise<Mounted> {
   return mounted;
 }
 
+/** The device's kept copy (story 8.2), as a log of what the rule asked of it. */
+interface StubDevice extends KeptSnapshot {
+  readonly calls: string[];
+}
+
+function keptSnapshot(restored: string | null = null, calls: string[] = []): StubDevice {
+  let owner = restored;
+
+  return {
+    calls,
+    owner: () => owner,
+    persistFor: (userId) => {
+      owner = userId;
+      calls.push(`persist ${userId}`);
+    },
+    forget: () => {
+      owner = null;
+      calls.push('forget');
+
+      return Promise.resolve();
+    },
+  };
+}
+
 interface Installed {
   readonly emit: Listener;
+  readonly device: StubDevice;
   readonly ended: SessionEndMark;
   readonly invalidate: ReturnType<typeof vi.fn>;
   /** Runs what the rule deferred, as the next macrotask would. */
@@ -103,7 +129,14 @@ interface Installed {
   readonly unsubscribe: () => void;
 }
 
-function install(cache: { clear(): void; resetQueries(): Promise<void> }): Installed {
+/** No stored session: online, or none on the device. */
+const NOBODY_STORED = (): Promise<string | null> => Promise.resolve(null);
+
+function install(
+  cache: { clear(): void; resetQueries(): Promise<void> },
+  device: StubDevice = keptSnapshot(),
+  offlineUser: () => Promise<string | null> = NOBODY_STORED,
+): Installed {
   const auth = stubAuth();
   const invalidate = vi.fn(() => Promise.resolve());
   const queued: (() => void)[] = [];
@@ -113,12 +146,13 @@ function install(cache: { clear(): void; resetQueries(): Promise<void> }): Insta
   const ended = sessionEndMark();
   const unsubscribe = resetOnSessionChange(
     () => auth.source,
-    { cache, router: { invalidate }, ended },
+    { cache, router: { invalidate }, ended, device, offlineUser },
     defer,
   );
 
   return {
     emit: auth.emit,
+    device,
     ended,
     invalidate,
     flush: () => {
@@ -154,6 +188,11 @@ describe('a session change resets every cached answer and re-runs the guards', (
       await vi.waitFor(() => {
         expect(screen.observer.getCurrentResult().data).toBe('calendar of member-b');
       });
+      // The guards ran for the restored user: they run again, with no deep link.
+      expect(rule.invalidate).not.toHaveBeenCalled();
+      rule.flush();
+      expect(rule.invalidate).toHaveBeenCalledTimes(1);
+      expect(rule.ended.take()).toBe(true);
     } finally {
       screen.stop();
     }
@@ -273,6 +312,8 @@ describe('a session change resets every cached answer and re-runs the guards', (
       cache: { clear: () => undefined, resetQueries: () => Promise.resolve() },
       router: { invalidate },
       ended: sessionEndMark(),
+      device: keptSnapshot(),
+      offlineUser: NOBODY_STORED,
     });
     auth.emit('INITIAL_SESSION', sessionOf('member-a'));
     auth.emit('SIGNED_OUT', null);
@@ -294,6 +335,8 @@ describe('a session change resets every cached answer and re-runs the guards', (
           cache: { clear: () => undefined, resetQueries: () => Promise.resolve() },
           router: { invalidate: () => Promise.reject(failure) },
           ended: sessionEndMark(),
+          device: keptSnapshot(),
+          offlineUser: NOBODY_STORED,
         },
         (task) => {
           task();
@@ -333,6 +376,8 @@ describe('a session change resets every cached answer and re-runs the guards', (
           cache: { clear: vi.fn(), resetQueries: () => Promise.resolve() },
           router: { invalidate: () => Promise.resolve() },
           ended: sessionEndMark(),
+          device: keptSnapshot(),
+          offlineUser: NOBODY_STORED,
         },
       );
 
@@ -400,5 +445,172 @@ describe('a re-guard raised by a session change forgets the deep link (C516)', (
 
     expect(mark.take()).toBe(true);
     expect(mark.take()).toBe(false);
+  });
+});
+
+describe('the device\'s kept copy follows the user (story 8.2)', () => {
+  /** A cache that logs into the device's log, so the order is one list. */
+  function loggingCache(calls: string[]) {
+    return {
+      clear: () => {
+        calls.push('clear');
+      },
+      resetQueries: () => {
+        calls.push('reset');
+
+        return Promise.resolve();
+      },
+    };
+  }
+
+  it('deletes the copy on a sign-out, BEFORE the cache is cleared, and keeps nothing after', () => {
+    const device = keptSnapshot('member-a');
+    const rule = install(loggingCache(device.calls), device);
+
+    rule.emit('INITIAL_SESSION', sessionOf('member-a'));
+    device.calls.length = 0;
+    rule.emit('SIGNED_OUT', null);
+
+    expect(device.calls).toEqual(['forget', 'clear']);
+    expect(device.owner()).toBeNull();
+  });
+
+  it('deletes the previous user\'s copy when another takes the tab over, then keeps it for them', () => {
+    const device = keptSnapshot('member-a');
+    const rule = install(loggingCache(device.calls), device);
+
+    rule.emit('INITIAL_SESSION', sessionOf('member-a'));
+    device.calls.length = 0;
+    rule.emit('SIGNED_IN', sessionOf('member-b'));
+
+    expect(device.calls).toEqual(['forget', 'reset', 'persist member-b']);
+    expect(device.owner()).toBe('member-b');
+  });
+
+  it('keeps the cache for whoever signs in, with nothing to delete', () => {
+    const device = keptSnapshot();
+    const rule = install(loggingCache(device.calls), device);
+
+    rule.emit('INITIAL_SESSION', null);
+    rule.emit('SIGNED_IN', sessionOf('member-a'));
+
+    expect(device.calls).toEqual(['clear', 'persist member-a']);
+  });
+
+  it('changes nothing on a token refresh or a re-announced user', () => {
+    const device = keptSnapshot('member-a');
+    const rule = install(loggingCache(device.calls), device);
+
+    rule.emit('INITIAL_SESSION', sessionOf('member-a'));
+    device.calls.length = 0;
+    rule.emit('TOKEN_REFRESHED', sessionOf('member-a'));
+    rule.emit('SIGNED_IN', sessionOf('member-a'));
+
+    expect(device.calls).toEqual([]);
+  });
+
+  it('keeps what main.tsx restored when the first event names the same user', () => {
+    const device = keptSnapshot('member-a');
+    const rule = install(loggingCache(device.calls), device);
+
+    rule.emit('INITIAL_SESSION', sessionOf('member-a'));
+
+    expect(device.calls).toEqual(['persist member-a']);
+  });
+
+  it('drops a copy restored for somebody else, and a mounted screen stops showing it', async () => {
+    // The session changed between `main.tsx`'s restore and the first event.
+    const screen = await mountScreen('member-a');
+    const device = keptSnapshot('member-a');
+    const rule = install(screen.client, device);
+
+    try {
+      screen.signedIn = 'member-b';
+      rule.emit('INITIAL_SESSION', sessionOf('member-b'));
+
+      expect(device.calls).toEqual(['forget', 'persist member-b']);
+      expect(screen.observer.getCurrentResult().data, 'the restored user\'s answer is still drawn').not.toBe(
+        'calendar of member-a',
+      );
+      await vi.waitFor(() => {
+        expect(screen.observer.getCurrentResult().data).toBe('calendar of member-b');
+      });
+    } finally {
+      screen.stop();
+    }
+  });
+
+  it('drops a copy restored for a session that is gone by the first event', async () => {
+    const device = keptSnapshot('member-a');
+    const rule = install(loggingCache(device.calls), device);
+
+    rule.emit('INITIAL_SESSION', null);
+
+    await vi.waitFor(() => {
+      expect(device.calls).toEqual(['forget', 'clear']);
+    });
+    expect(device.owner()).toBeNull();
+    // The tab is on a destination the restored user opened: the guards run again.
+    rule.flush();
+    expect(rule.invalidate).toHaveBeenCalledTimes(1);
+    expect(rule.ended.take()).toBe(true);
+  });
+
+  it('offline with an expired token, a null first event over the stored user keeps the copy and the cache', async () => {
+    // auth-js announces INITIAL_SESSION as `null` when the refresh fails
+    // retryably, and keeps the session in storage (human decision 2026-10-20 a).
+    const device = keptSnapshot('member-a');
+    const rule = install(loggingCache(device.calls), device, () => Promise.resolve('member-a'));
+
+    rule.emit('INITIAL_SESSION', null);
+    await new Promise((done) => setTimeout(done, 5));
+
+    expect(device.calls, 'an unresolved session was read as a sign-out').toEqual([]);
+    expect(device.owner()).toBe('member-a');
+
+    // On reconnect the refresh lands for the same user: nothing changes.
+    rule.emit('TOKEN_REFRESHED', sessionOf('member-a'));
+    rule.flush();
+    expect(device.calls).toEqual([]);
+    expect(rule.invalidate).not.toHaveBeenCalled();
+
+    // A refresh that fails for good signs out: the copy goes, as always.
+    rule.emit('SIGNED_OUT', null);
+    expect(device.calls).toEqual(['forget', 'clear']);
+  });
+
+  it('a real sign-out arriving before the stored-user check answers wins', async () => {
+    const device = keptSnapshot('member-a');
+    let answer: (user: string | null) => void = () => undefined;
+    const rule = install(
+      loggingCache(device.calls),
+      device,
+      () =>
+        new Promise((done) => {
+          answer = done;
+        }),
+    );
+
+    rule.emit('INITIAL_SESSION', null);
+    rule.emit('SIGNED_OUT', null);
+    expect(device.calls).toEqual(['forget', 'clear']);
+    answer('member-a');
+    await new Promise((done) => setTimeout(done, 5));
+
+    expect(device.calls, 'the late check acted again').toEqual(['forget', 'clear']);
+  });
+
+  it('a stored user who is somebody else keeps nothing of the restored one', async () => {
+    const device = keptSnapshot('member-a');
+    const rule = install(loggingCache(device.calls), device, () => Promise.resolve('member-b'));
+
+    rule.emit('INITIAL_SESSION', null);
+
+    await vi.waitFor(() => {
+      expect(device.calls).toEqual(['forget', 'clear']);
+    });
+    rule.flush();
+    expect(rule.invalidate).toHaveBeenCalledTimes(1);
+    expect(rule.ended.take()).toBe(true);
   });
 });

@@ -62,9 +62,25 @@ import { dayAfter } from '@/utils/dates';
  * a retry; a row that cannot be trusted or any error the derivation throws
  * is unavailable without one, logged. Codes, data and formatted dates only;
  * the components translate.
+ *
+ * OFFLINE, THE WHOLE SNAPSHOT OR NOTHING (story 8.2). The hooks hand this
+ * module every read through the surface's freshness
+ * (`@/lib/offline/freshness`'s `snapshotAnswerOf`): offline with every read
+ * cached, each arrives settled, so today is drawn from the device under the
+ * page's as-of note — and so, just after a reconnect, until every read is
+ * fresh; offline with any read missing or failed, each arrives FAILED, so the
+ * `isError` branch below is the unavailable state it always was; online after
+ * the app's start, a read older than the session's network arrives pending —
+ * the skeleton.
  */
 
-/** TanStack Query's name for a fetch it has not started (offline). */
+/**
+ * TanStack Query's name for a fetch it has not started (offline). Since story
+ * 8.2 *Danas*'s hooks hand no paused read here: a whole offline snapshot
+ * arrives settled, and a partial one arrives FAILED, which takes the
+ * `isError` branch, not this one. Kept so a read handed in raw is still
+ * refused rather than drawn without its as-of time.
+ */
 const FETCH_PAUSED = 'paused';
 
 /** How far ahead the next working shift is looked for, in days. */

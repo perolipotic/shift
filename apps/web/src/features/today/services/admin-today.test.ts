@@ -1,6 +1,18 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { readCalendar, type CalendarSnapshot, type CalendarSurfaceState } from '@/features/calendar/services/snapshot';
+import {
+  calendarSurfaceStateOf,
+  readCalendar,
+  type CalendarSnapshot,
+  type CalendarSurfaceState,
+} from '@/features/calendar/services/snapshot';
+import {
+  FRESHNESS_OFFLINE,
+  snapshotAnswerOf,
+  snapshotFreshnessOf,
+  type FreshnessClock,
+  type ReadAnswer,
+} from '@/lib/offline/freshness';
 import {
   CONFLICTS_READY,
   conflictsQueueOf,
@@ -663,6 +675,72 @@ describe('the three reads', () => {
     });
     expect(adminTodayOf({ ...sourcesOf(pilot, []), resolutions: failed }, AT_1420)).toEqual({
       kind: ADMIN_TODAY_UNAVAILABLE,
+    });
+  });
+
+  describe('offline and restored, through the surface\'s freshness (story 8.2)', () => {
+    const READ_AT = 1_000;
+    /** The three reads as the cache holds them, each refetch paused offline. */
+    const pausedOf = <Data>(data: Data | undefined) => ({
+      data,
+      dataUpdatedAt: data === undefined ? 0 : READ_AT,
+      isError: false,
+      isPending: data === undefined,
+      fetchStatus: 'paused',
+    });
+    const shownOf = (
+      calendar: ReadAnswer<CalendarSnapshot>,
+      records: ReadAnswer<readonly unknown[]>,
+      resolutions: ReadAnswer<readonly unknown[]>,
+      clock: FreshnessClock,
+    ) => {
+      const freshness = snapshotFreshnessOf([calendar, records, resolutions], clock.freshAfter, clock.online, clock.reconnected);
+      const answerOf = <Data,>(answer: ReadAnswer<Data>) => snapshotAnswerOf(answer, freshness, clock);
+      const mappedCalendar = answerOf(calendar);
+
+      return {
+        freshness,
+        today: adminTodayOf(
+          {
+            calendar: calendarSurfaceStateOf(mappedCalendar),
+            records: answerOf(records),
+            resolutions: answerOf(resolutions),
+            snapshotFetching: mappedCalendar.fetchStatus === 'fetching',
+          },
+          AT_1420,
+        ),
+      };
+    };
+
+    it('offline, whole: the admin\'s Danas is drawn from the device, the same view as online', () => {
+      const clock = { online: false, freshAfter: READ_AT + 1 };
+      const { freshness, today } = shownOf(pausedOf(pilot), pausedOf([]), pausedOf([]), clock);
+
+      expect(freshness).toEqual({ kind: FRESHNESS_OFFLINE, asOf: READ_AT });
+      expect(today.kind).toBe(ADMIN_TODAY_READY);
+      if (today.kind === ADMIN_TODAY_READY) expect(today.view).toEqual(viewOf(pilot, []));
+    });
+
+    it('offline, partial: unavailable, never Treba tebe beside a missing read', () => {
+      const clock = { online: false, freshAfter: READ_AT + 1 };
+
+      expect(shownOf(pausedOf(pilot), pausedOf([]), pausedOf<readonly unknown[]>(undefined), clock).today).toEqual({
+        kind: ADMIN_TODAY_UNAVAILABLE,
+      });
+    });
+
+    it('online, restored: the skeleton until every read is newer than freshAfter', () => {
+      const clock = { online: true, freshAfter: READ_AT + 1 };
+      const refetching = <Data,>(data: Data) => ({ ...pausedOf(data), fetchStatus: 'fetching' });
+
+      expect(shownOf(refetching(pilot), refetching([]), refetching([]), clock).today).toEqual({ kind: ADMIN_TODAY_LOADING });
+    });
+
+    it('reconnected, whole: the cached view stays until every read is fresh', () => {
+      const clock = { online: true, freshAfter: READ_AT + 1, reconnected: true };
+      const refetching = <Data,>(data: Data) => ({ ...pausedOf(data), fetchStatus: 'fetching' });
+
+      expect(shownOf(refetching(pilot), refetching([]), refetching([]), clock).today.kind).toBe(ADMIN_TODAY_READY);
     });
   });
 

@@ -2059,6 +2059,9 @@ const SANCTIONED_SCREEN_KEYS = [
   // and *Osvježi* is the member's tap that applies it.
   'update.available',
   'update.refresh',
+  // STORY 8.2: the as-of note under Danas's and Kalendar's headings while
+  // their whole snapshot is drawn offline from the device.
+  'offline.asOf',
 ];
 
 /** Everything the resource file is permitted to hold, together. */

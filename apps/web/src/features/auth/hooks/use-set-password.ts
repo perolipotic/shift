@@ -15,6 +15,7 @@ import {
 } from '@/features/auth/services/set-password';
 import { knownPathOf, returnTargetOf } from '@/features/auth/services/return-target';
 import { SIGN_OUT_FAILED, signOut, type SignOutFailure } from '@/features/auth/services/sign-out';
+import { forgetDeviceSnapshot } from '@/lib/offline/device-snapshot';
 import { supabaseClient } from '@/lib/supabase/client';
 
 /**
@@ -183,8 +184,12 @@ export function useSetPassword() {
         return;
       }
 
-      // Nothing this session read outlives it, as the chrome's exit does.
+      // Nothing this session read outlives it, as the chrome's exit does —
+      // the device's kept snapshot included (story 8.2): started first, so the
+      // clear saves nothing, and awaited before the navigation.
+      const forgetting = forgetDeviceSnapshot();
       queryClient.clear();
+      await forgetting;
       await navigate({ to: '/prijava' });
     } catch (cause) {
       console.error(SIGN_OUT_FAILED, cause);

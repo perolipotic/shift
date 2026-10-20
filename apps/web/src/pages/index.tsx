@@ -81,7 +81,11 @@ export const indexRoute = createRoute({
     // not a session, so the visitor goes to the sign-in path like any other
     // signed-out visitor. Reading it as a session would forward a signed-out
     // person into the layout, whose own guard would send them back out again.
-    const session = await resolvedSession(context.currentSession);
+    //
+    // FOR READING (story 8.2): `/` only forwards to *Danas*, which reads
+    // offline, and it is the installed app's start URL — so an offline start
+    // with an expired token reaches the snapshot rather than the sign-in form.
+    const session = await resolvedSession(context.sessionForReads ?? context.currentSession);
 
     // ONE FURTHER HOP on the ordinary paths, and they end here. Both sign-in
     // routes send a signed-in visitor to `/`, and this line sends them on to a
