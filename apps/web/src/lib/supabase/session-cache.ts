@@ -59,11 +59,27 @@ import { SESSION_UNRESOLVED } from '@/lib/supabase/client';
  * tab raises itself — a navigation that finds the session already gone — keeps
  * its target as before.
  *
+ * THE DEVICE'S COPY FOLLOWS THE SAME CHANGES (story 8.2). The cache is
+ * also kept in IndexedDB for offline reading (`@/lib/offline/persistence`),
+ * tagged with its owner. A user who signs out or is replaced has that copy
+ * DELETED, before the cache is cleared or reset, so nothing of theirs is
+ * saved again; a user who signs in, or takes the tab over, has the cache
+ * kept for them from then on.
+ *
+ * THE FIRST EVENT (`INITIAL_SESSION`) RECONCILES. The cache is no longer new
+ * with the page: `main.tsx` restored the device's copy before the first
+ * render, for the local session's user alone. So the first event checks that
+ * user against the one the copy was restored for. The same user — the
+ * ordinary case — changes nothing but keeping the cache for them. Anybody
+ * else (the session changed between the restore and the event) deletes the
+ * copy and drops what it restored: reset for another user, so a mounted
+ * screen refetches as them; cleared for a CONFIRMED nobody, whom the guards
+ * send to `/prijava`. A `null` that is only an unresolved session offline —
+ * an expired token auth-js cannot refresh — is not a nobody (story 8.2,
+ * human decision 2026-10-20 a; `reconcile` below).
+ *
  * WHAT DOES NOTHING:
  *
- *   - the FIRST event (`INITIAL_SESSION`) only records who is signed in. The
- *     cache is new with the page, so anything in it was read for that same
- *     session.
  *   - a token refresh, or a `SIGNED_IN` that re-announces the same user (the
  *     client emits one when a tab regains focus), keeps the id, so the cache
  *     and the routes stay as they are.
@@ -89,6 +105,16 @@ export interface AuthEventSource {
 export interface SessionCache {
   clear(): void;
   resetQueries(): Promise<void>;
+}
+
+/** As much of the device snapshot (`@/lib/offline/persistence`) as following the user needs. */
+export interface KeptSnapshot {
+  /** Whose cache is kept on the device, or `null` for nobody. */
+  owner(): string | null;
+  /** Keeps the cache for `userId` from now on. */
+  persistFor(userId: string): void;
+  /** Stops keeping the cache and deletes the device's copy. Never rejects. */
+  forget(): Promise<void>;
 }
 
 /** As much of the router as re-running every guard needs. */
@@ -153,13 +179,91 @@ export function resetOnSessionChange(
     readonly cache: SessionCache;
     readonly router: GuardedRouter;
     readonly ended: SessionEndMark;
+    readonly device: KeptSnapshot;
+    /**
+     * The user a `null` first event still is for reading — offline, the
+     * stored session's — or `null` (`@/lib/supabase/offline-session`).
+     * Never rejects.
+     */
+    readonly offlineUser: () => Promise<string | null>;
   },
   defer: Defer = nextMacrotask,
 ): () => void {
-  const { cache, router, ended } = targets;
+  const { cache, router, ended, device, offlineUser } = targets;
   // `undefined` until the first event: "nobody seen yet" is a different fact
   // from "seen, and signed out".
   let seen: string | null | undefined;
+
+  // Counts the events, so a first-event check that answers late knows
+  // whether a later event has decided since.
+  let events = 0;
+
+  /**
+   * Deletes the device's copy, then runs `then` IN THE SAME TASK: the delete
+   * is asynchronous, but `forget` stops saving and drops the owner before it
+   * returns its promise, so nothing of the previous user is written between
+   * the two, and the mounted screens see the cache change at once. The
+   * delete itself completes with the clear's task queue (`forget` never
+   * rejects).
+   */
+  const forgetThen = (then: () => void): void => {
+    const forgetting = device.forget();
+
+    then();
+    void forgetting;
+  };
+
+  /**
+   * THE FIRST EVENT against what `main.tsx` restored. The same user, or a copy
+   * restored for nobody, keeps the cache, kept from now on for that user.
+   * Somebody else drops it: reset, so a mounted screen refetches as them.
+   *
+   * NOBODY, OVER A RESTORED COPY, IS ASKED AGAIN (story 8.2, human decision
+   * 2026-10-20 a): offline with an expired token, auth-js announces the first
+   * event as `null` while it keeps the session in storage. If the stored
+   * session is the restored user's, the copy and the cache stay, and that
+   * user is the one SEEN, so a refresh on reconnect changes nothing and a
+   * real sign-out then deletes the copy as always. Otherwise — no stored
+   * session, online, another user — the copy is deleted and the cache
+   * cleared, as for any confirmed nobody.
+   */
+  const reconcile = (user: string | null): void => {
+    const restored = device.owner();
+
+    if (user !== null) {
+      if (restored !== null && restored !== user) {
+        // The copy was another user's: the guards ran for them, so they run again.
+        ended.mark();
+        forgetThen(() => {
+          void cache.resetQueries();
+        });
+        reguard();
+      }
+
+      device.persistFor(user);
+
+      return;
+    }
+
+    if (restored === null) return;
+
+    // Provisionally still the restored user: a later event is judged against them.
+    seen = restored;
+    const asked = events;
+
+    void offlineUser().then((stored) => {
+      if (events !== asked || stored === restored) return;
+
+      // A confirmed nobody, or somebody else: the restored user's session
+      // has ended under the tab, which the guards must see.
+      seen = null;
+      ended.mark();
+      forgetThen(() => {
+        cache.clear();
+      });
+      reguard();
+    });
+  };
 
   const reguard = (): void => {
     defer(() => {
@@ -175,25 +279,43 @@ export function resetOnSessionChange(
       const previous = seen;
 
       seen = user;
+      events += 1;
 
-      if (previous === undefined || user === previous) return;
-
-      if (previous === null) {
-        ended.clear();
-        cache.clear();
+      if (previous === undefined) {
+        reconcile(user);
 
         return;
       }
 
-      // Marked BEFORE the re-guard is scheduled, so the guard it runs sees it.
-      ended.mark();
+      if (user === previous) return;
 
+      // A USER TO NOBODY. Marked BEFORE the re-guard is scheduled, so the
+      // guard it runs sees it; the copy is deleted BEFORE the clear.
       if (user === null) {
-        cache.clear();
-      } else {
-        void cache.resetQueries();
+        ended.mark();
+        forgetThen(() => {
+          cache.clear();
+        });
+        reguard();
+
+        return;
       }
 
+      // NOBODY TO A USER: a sign-in.
+      if (previous === null) {
+        ended.clear();
+        cache.clear();
+        device.persistFor(user);
+
+        return;
+      }
+
+      // ONE USER TO ANOTHER.
+      ended.mark();
+      forgetThen(() => {
+        void cache.resetQueries();
+      });
+      device.persistFor(user);
       reguard();
     });
 

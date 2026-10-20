@@ -1,6 +1,7 @@
 import { createRoute } from '@tanstack/react-router';
 import { useState, type ReactNode } from 'react';
 
+import { OfflineNote } from '@/components/offline-note';
 import { PageDescription, PageHeader, PageTitle } from '@/components/ui/page-header';
 import { t } from '@/lib/i18n';
 import { appLayoutRoute } from '@/pages/_app';
@@ -45,6 +46,10 @@ import {
  * read): the viewer's membership history, judged at the organization's today.
  * The member directory keeps its own `OWN_TEAM_KEY` read.
  *
+ * STORY 8.2: offline, the whole cached snapshot is drawn under the as-of
+ * note (`OfflineNote`, under the heading), its time the oldest of every read
+ * the page stands on — an admin's body's included (`useToday`'s freshness).
+ *
  * No literal — every string resolves through `t()` (L1/L2).
  *
  * The session guard is NOT here. It is registered once on the pathless `_app`
@@ -52,10 +57,12 @@ import {
  * redirected before the component is ever asked for.
  */
 export function DanasScreen() {
-  const { today, tiles, date, ownTeam, role: snapshotRole, loading: todayLoading, retry } = useToday();
+  const { today, tiles, date, ownTeam, role: snapshotRole, loading: todayLoading, offline, retry } = useToday();
   const admin = showsAdminToday(useTodayRole(snapshotRole));
   // Whether the admin body's own reads are pending: `main` is busy then too.
   const [adminBusy, setAdminBusy] = useState(false);
+  // Whether the admin body shows its alert: then no as-of note stands above it.
+  const [adminUnavailable, setAdminUnavailable] = useState(false);
   /** The admin's own today in words: each shift worked, the duty's end, leave, free, or no team. */
   function statusText(status: AdminStatus): string {
     if (status.kind === STATUS_WORKING) {
@@ -119,9 +126,10 @@ export function DanasScreen() {
         </PageTitle>
         {renderDateLine()}
       </PageHeader>
+      <OfflineNote offline={admin && adminUnavailable ? null : offline} />
       {admin ? (
         <div className="grid w-full min-w-0 max-w-3xl grid-cols-1 gap-4">
-          <AdminTodayBody onBusy={setAdminBusy} />
+          <AdminTodayBody onBusy={setAdminBusy} onUnavailable={setAdminUnavailable} />
         </div>
       ) : (
         <div className="grid w-full min-w-0 max-w-lg gap-4">

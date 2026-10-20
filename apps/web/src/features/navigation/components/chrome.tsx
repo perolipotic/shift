@@ -48,6 +48,7 @@ import { brandAccentAppearance } from '@/features/organization/utils/accent';
 import { OrganizationLockup } from '@/features/organization/components/lockup';
 import { useRenderableLogo } from '@/features/organization/hooks/logo-url';
 import { organizationTable, organizationSnapshotQueryOptions } from '@/features/organization/services/snapshot';
+import { forgetDeviceSnapshot } from '@/lib/offline/device-snapshot';
 import { currentSession, supabaseClient } from '@/lib/supabase/client';
 import { SIGN_OUT_FAILED, signOut, type SignOutFailure } from '@/features/auth/services/sign-out';
 import {
@@ -408,7 +409,15 @@ export function AppChrome({ children }: AppChromeProps) {
       // user: this one is synchronous with the navigation below. The rule's
       // own router invalidation is deferred past this navigation, so it only
       // re-checks the `/prijava` the tab is already heading to.
+      //
+      // AND THE DEVICE'S COPY GOES TOO (story 8.2): the snapshot kept in
+      // IndexedDB for offline reading is deleted, and nothing is kept again
+      // until the next sign-in. Started first, so the clear below saves
+      // nothing, and AWAITED before the navigation, so the sign-in form never
+      // renders over a copy still on the device (`forget` never rejects).
+      const forgetting = forgetDeviceSnapshot();
       queryClient.clear();
+      await forgetting;
 
       // BARE `/prijava`, discarding a slug this component never had. The
       // organization's slug lives on the `organizations` row, and nothing in the

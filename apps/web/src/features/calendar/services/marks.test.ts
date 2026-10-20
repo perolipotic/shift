@@ -10,6 +10,7 @@ import {
   calendarRefusalOf,
 } from '@/features/calendar/services/marks';
 import { NO_SKEW, snapshotSkewOf, unknownSnapshotIdsOf } from '@/features/calendar/services/snapshot-skew';
+import { snapshotAnswerOf, snapshotFreshnessOf } from '@/lib/offline/freshness';
 import { CALENDAR_UNAVAILABLE, readCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import {
   cellLabelOf,
@@ -607,6 +608,23 @@ describe('resolutions (story 5.4a)', () => {
         retryable: true,
       });
       expect(calendarMarksStateOf(pilot, answered([WORKED]), answered([row]), true)).toEqual({ kind: MARKS_LOADING });
+    }
+  });
+
+  it('offline (story 8.2), is unavailable with the retry, never a skeleton that waits for a re-read that cannot run', () => {
+    // The skew re-read invalidates the snapshot, and offline that refetch is
+    // PAUSED over the cached answer. Seen through the surface's freshness, the
+    // whole snapshot is settled, so no read is in flight and the skew settles
+    // on the alert and its retry.
+    const paused = { data: pilot, dataUpdatedAt: 1, isError: false, isPending: false, fetchStatus: 'paused' };
+    const clock = { online: false, freshAfter: 2 };
+    const freshness = snapshotFreshnessOf([paused, { ...answered([WORKED]), dataUpdatedAt: 1 }], clock.freshAfter, clock.online);
+    const calendar = snapshotAnswerOf(paused, freshness, clock);
+
+    for (const row of [resolutionOf(VIEWER_MEMBER, '2026-09-11', 'newer-team'), resolutionOf('newer-member', '2026-09-11', a)]) {
+      expect(
+        calendarMarksStateOf(pilot, answered([WORKED]), answered([row]), calendar.fetchStatus === 'fetching'),
+      ).toEqual({ kind: MARKS_UNAVAILABLE, retryable: true });
     }
   });
 

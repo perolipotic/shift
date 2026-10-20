@@ -32,9 +32,19 @@ import {
   organizationTable,
   organizationSnapshotQueryOptions,
 } from '@/features/organization/services/snapshot';
-import { TODAY_LOADING, ownTeamShownOf, todayDateShownOf, todayOf } from '@/features/today/services/today';
+import { useTodayRole } from '@/features/today/hooks/use-admin-today';
+import { todaySurfaceKeysOf } from '@/features/today/services/surface-keys';
+import {
+  TODAY_LOADING,
+  TODAY_UNAVAILABLE,
+  ownTeamShownOf,
+  todayDateShownOf,
+  todayOf,
+} from '@/features/today/services/today';
 import { todayTilesOf } from '@/features/today/services/today-tiles';
 import { useMinuteTicker } from '@/hooks/minute-ticker';
+import { FRESHNESS_OFFLINE } from '@/lib/offline/freshness';
+import { useSnapshotFreshness } from '@/lib/offline/use-snapshot-freshness';
 import { supabaseClient } from '@/lib/supabase/client';
 
 /** *Sati*'s default search: the organization's current month, nothing else. */
@@ -60,23 +70,49 @@ const CURRENT_MONTH: HoursSearch = {};
  * `myLeaveOf` over its four reads: the member list under `MEMBERS_LIST_KEY`,
  * the organization snapshot under `ORGANIZATION_SNAPSHOT_KEY`, the calendar
  * and the own leave. No organization-wide leave or resolution read.
+ *
+ * ONE SNAPSHOT, ONLINE OR NOT (story 8.2). Every read is seen through the
+ * surface's freshness (`useSnapshotFreshness` over `todaySurfaceKeysOf`, an
+ * admin's body's keys included): online, a read older than this session's
+ * network is never drawn as fresh — the skeleton after the app's start, the
+ * whole cached snapshot under the as-of note after a reconnect — and
+ * offline, the whole cached snapshot is drawn under the note (`offline`), or
+ * nothing is.
  */
 export function useToday() {
   const queryClient = useQueryClient();
   const now = useMinuteTicker();
-  const calendar = useCalendarSnapshot();
-  const records = useQuery(
+  const calendarRead = useCalendarSnapshot();
+  const recordsRead = useQuery(
     // Named structurally, as *Godišnji*'s read is.
     myLeaveRecordsQueryOptions(() => supabaseClient() as unknown as MyLeaveRecordsRpc),
   );
-  const resolutions = useQuery(
+  const resolutionsRead = useQuery(
     // Named structurally, as *Sati*'s read is.
     myConflictResolutionsQueryOptions(() => supabaseClient() as unknown as MyConflictResolutionsRpc),
   );
-  const members = useQuery(membersQueryOptions(() => supabaseClient().from(MEMBERS_TABLE)));
-  const organization = useQuery(
+  const membersRead = useQuery(membersQueryOptions(() => supabaseClient().from(MEMBERS_TABLE)));
+  const organizationRead = useQuery(
     organizationSnapshotQueryOptions(organizationTable),
   );
+  // THE ROLE THE PAGE PICKS ITS BODY BY (`role` below, through
+  // `useTodayRole` in `DanasScreen`) is the role the keys follow, so an
+  // admin's body's reads are always among them. Read off the cached snapshot
+  // as it stands, never a figure drawn.
+  const snapshotRole = calendarRead.data === undefined ? null : calendarRead.data.viewer.role;
+  const pageRole = useTodayRole(snapshotRole);
+  const { freshness, answerOf } = useSnapshotFreshness(todaySurfaceKeysOf(pageRole), [
+    [CALENDAR_KEY, calendarRead],
+    [MY_LEAVE_RECORDS_KEY, recordsRead],
+    [MY_CONFLICT_RESOLUTIONS_KEY, resolutionsRead],
+    [MEMBERS_LIST_KEY, membersRead],
+    [ORGANIZATION_SNAPSHOT_KEY, organizationRead],
+  ]);
+  const calendar = answerOf(calendarRead);
+  const records = answerOf(recordsRead);
+  const resolutions = answerOf(resolutionsRead);
+  const members = answerOf(membersRead);
+  const organization = answerOf(organizationRead);
   const calendarState = calendarSurfaceStateOf(calendar);
   const snapshot = calendarState.snapshot;
   const refusal = calendarState.refusal;
@@ -189,9 +225,18 @@ export function useToday() {
     // E804: the admin subtitle's team link, from the same snapshot as the
     // member's today card (AD-13).
     ownTeam: ownTeamShownOf(today),
-    // STORY 6.3: the role *Danas* picks its body by, once the snapshot names it.
-    role: snapshot === null ? null : snapshot.viewer.role,
+    // STORY 6.3: the role *Danas* picks its body by, once the snapshot names
+    // it — since story 8.2 the cached snapshot's, the same role the keys
+    // follow, so the admin body is mounted exactly when its reads are decided
+    // over. A role picks a body; it draws no figure.
+    role: snapshotRole,
     loading: today.kind === TODAY_LOADING,
+    // STORY 8.2: the as-of note's time and zone while the whole snapshot is drawn offline.
+    // None above an unavailable today, as *Kalendar* shows none beside a refusal.
+    offline:
+      freshness.kind === FRESHNESS_OFFLINE && snapshot !== null && today.kind !== TODAY_UNAVAILABLE
+        ? { asOf: freshness.asOf, timeZone: snapshot.timeZone }
+        : null,
     retry,
   };
 }

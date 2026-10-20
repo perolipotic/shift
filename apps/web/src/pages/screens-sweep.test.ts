@@ -290,7 +290,8 @@ describe('the screen is read at all, so every sweep below means something', () =
     // THIRTY-ONE SINCE THE ROUTER-GUARDS FIX: the error screen (A148) and the
     // pending skeleton (A224).
     // THIRTY-TWO SINCE STORY 8.1: the update notice.
-    expect(SCREENS).toHaveLength(32);
+    // THIRTY-THREE SINCE STORY 8.2: the as-of note.
+    expect(SCREENS).toHaveLength(33);
     //
     // FORTY-NINE SINCE STORY 3.6b: `@/features/calendar/services/roster-write`.
     //
@@ -348,7 +349,9 @@ describe('the screen is read at all, so every sweep below means something', () =
     // SEVENTY-THREE SINCE THE SHEET'S COPY: the destination copy mapping.
     //
     // SEVENTY-FOUR SINCE STORY 8.1: the update notice.
-    expect(KEY_SOURCES).toHaveLength(74);
+    //
+    // SEVENTY-FIVE SINCE STORY 8.2: the as-of note.
+    expect(KEY_SOURCES).toHaveLength(75);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"

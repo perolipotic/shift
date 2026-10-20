@@ -26,7 +26,9 @@ A shared chrome component whose words are the same on every screen that uses
 it owns those strings and may call `t()` with its own keys: `filter-bar.tsx`
 and `option-filter-bar.tsx` (`filter.*`), `sort-control.tsx` (`sort.*`),
 `month-nav.tsx`, `layout/auth-layout.tsx` and `update-notice.tsx` (`update.*`,
-story 8.1: the root shell's *Osvježi* notice for a waiting service worker). What differs per screen — a
+story 8.1: the root shell's *Osvježi* notice for a waiting service worker),
+and `offline-note.tsx` (`offline.asOf`, story 8.2: the as-of note *Danas* and
+*Kalendar* show over a snapshot drawn offline). What differs per screen — a
 column's label, an option's name, a count's noun — is still passed in
 (2026-10-13, deferred-work sweep; epics 5–7 retro A4).
 
@@ -82,7 +84,7 @@ Every screen (destination, form, placeholder or not-found) is built the same way
 | `Dialog` and parts (`ui/dialog.tsx`) | The one modal, on the native `<dialog>` and `showModal()`: focus trap, Escape, backdrop click and focus return come from the browser. Closed means hidden, not unmounted, so uncontrolled fields keep their values. A confirmation replaces the form inside the same dialog. `ConfirmDialog` is a confirmation on its own: open while the screen renders it, so an "armed" state becomes a modal without changing, and not dismissible while `busy`. |
 | `SectionNumber` (`ui/section-number.tsx`) | A numbered section's badge beside its `CardTitle` (`/postavke-rotacije`, sections 1–4). Takes `value`, renders the figure in the primary tint, and is hidden from assistive technology: the heading beside it carries the meaning. |
 | `RadioGroup`, `RadioCard`, `RadioRow` (`ui/radio-group.tsx`) | Radix's radio group (story 5.4b): one tab stop, arrows move, Space selects. `RadioCard` is a whole card as the radio — a dot, the words, and an optional full-width `footer` — unselected in the `input` border, selected with a `primary` border, ring and filled dot, never a new fill. `RadioRow` (story 5.4c) is one line of a pick list — the dot and words that wrap, at least 44 px tall — selected with a `primary` border alone. The screen labels the group. |
-| `Notice` (`ui/notice.tsx`) | The one refusal and confirmation box, in the Input look. The `role` is the variant: `alert` draws a warning icon and `status` a check, so the two differ by shape as well as by words. Every other attribute (`id`, `ref`, `tabIndex`, `aria-*`) passes through to its `<p>`. |
+| `Notice` (`ui/notice.tsx`) | The one refusal and confirmation box, in the Input look. The `role` is the variant: `alert` draws a warning icon and `status` a check, so the two differ by shape as well as by words. One more shape since story 8.2: `role="status" variant="offline"` draws a WifiOff icon, for the as-of note over a snapshot drawn offline. Every other attribute (`id`, `ref`, `tabIndex`, `aria-*`) passes through to its `<p>`. |
 | `StackedList`, `StackedRow`, `StackedFields`, `StackedField`, `StackedSkeletonRow` (`ui/stacked-list.tsx`) | A table's phone form (story 7.6): a `ul` named by the table's caption, an `li` per row, and a `dl` pairing every value with its column's own label — visible, or `sr-only` (`labelHidden`) where the row's position carries it. The screen switches on `usePhone()` and renders one form only; nothing in it scrolls sideways. `sort-control.tsx` beside it is the phone's `Poredano:` control, shared by *Sati* and *Ljudi*. |
 
 ## Reordering a list (story 2.3b)

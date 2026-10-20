@@ -1006,8 +1006,16 @@ export interface CalendarSurfaceState {
  * One query result as what the calendar shows: answered, loading, failed, or
  * paused offline. A FAILURE SHOWS NO GRID, a failed refetch over a cached
  * answer included: a month drawn from rows the database may no longer hold
- * would be read as the schedule. OFFLINE IS UNAVAILABLE whether or not an
- * answer is cached: a paused refetch over a cached snapshot is a refusal too.
+ * would be read as the schedule.
+ *
+ * A PAUSED READ, ON ITS OWN, IS UNAVAILABLE whether or not an answer is
+ * cached, because this answer alone cannot say when its snapshot is from.
+ * Since story 8.2 a surface that CAN say — *Danas* and *Kalendar* — first
+ * sees each read through its freshness (`@/lib/offline/freshness`): offline,
+ * a whole cached snapshot reaches this function settled, and is drawn under
+ * the as-of note; online, a read older than the session's network reaches it
+ * pending, and is the skeleton. Every other surface keeps the refusal until
+ * it moves to the same rule (8.2b).
  */
 export function calendarSurfaceStateOf(answer: CalendarQueryAnswer): CalendarSurfaceState {
   const paused = answer.fetchStatus === CALENDAR_FETCH_PAUSED;

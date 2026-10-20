@@ -39,6 +39,7 @@ import { cachedRoleOf, calendarSkeletonShapeOf, earlyCalendarModeOf } from '@/fe
 import { gridFocusKeyOf } from '@/features/calendar/utils/screen-keys';
 import { useCalendarSnapshot } from '@/features/calendar/hooks/use-calendar-snapshot';
 import { CALENDAR_FETCH_FETCHING, CALENDAR_KEY, calendarRetryStateOf } from '@/features/calendar/services/snapshot';
+import { calendarSurfaceKeysOf } from '@/features/calendar/services/surface-keys';
 import {
   MARKS_LOADING,
   MARKS_READY,
@@ -64,6 +65,8 @@ import {
 import { useReplacementLinkRefresh } from '@/features/conflicts/hooks/use-replacement-link-refresh';
 import { hoursLeaveKeysOf } from '@/features/hours/services/hours-conflicts';
 import { MEMBER_ROLE_KEY } from '@/features/navigation/services/role';
+import { FRESHNESS_OFFLINE } from '@/lib/offline/freshness';
+import { useSnapshotFreshness } from '@/lib/offline/use-snapshot-freshness';
 import { supabaseClient } from '@/lib/supabase/client';
 
 /** No conflicts on the open day, and no decided-leave keys: frozen, so a memo's answer stays the same object. */
@@ -107,40 +110,69 @@ function noRoleOnServer(): null {
  * (`candidateLeave`), and the decided-leave keys its previews count hours with
  * as *Sati* does (`leaveKeys`, an admin's alone). Each is derived once per
  * answer; one that cannot be derived is none, logged.
+ *
+ * ONE SNAPSHOT, ONLINE OR NOT (story 8.2). Every read is seen through the
+ * month's freshness (`useSnapshotFreshness` over `calendarSurfaceKeysOf`):
+ * online, a read older than this session's network is never drawn as fresh
+ * — the skeleton after the app's start; after a reconnect the whole cached
+ * month stays under the as-of note until every read is fresh, so an open day
+ * stays open; offline, the whole cached month is drawn under the note
+ * (`offline`), or the unavailable state is. A skew offline cannot be
+ * read again, so it is that unavailable state, never a waiting skeleton.
  */
 export function useCalendarScreen(
   search: CalendarSearch,
   go: (next: CalendarSearch, options?: { readonly replace?: boolean; readonly keepScroll?: boolean }) => void,
 ) {
-  const answer = useCalendarSnapshot();
-  // A failed read being read again is the skeleton, so the retry's press shows.
-  const state = calendarRetryStateOf(answer);
-  const { snapshot } = state;
-  const role = snapshot === null ? null : snapshot.viewer.role;
+  const answerRead = useCalendarSnapshot();
+  // THE ROLE THE READS ARE CHOSEN BY is the cached snapshot's as it stands — a
+  // role, never a figure drawn — so the leave and resolution reads start with
+  // the snapshot's own refetch, and the month's keys (`calendarSurfaceKeysOf`,
+  // story 8.2) are exactly the reads enabled.
+  const readsRole = answerRead.data === undefined ? null : answerRead.data.viewer.role;
+  const readsAdmin = readsRole !== null && readsOrganizationLeave(readsRole);
   const organizationLeave = useQuery({
     // Named structurally, as *Raspored*'s read is.
     ...organizationLeaveRecordsQueryOptions(
       () => supabaseClient().from(LEAVE_RECORDS_TABLE) as unknown as OrganizationLeaveRecordsTable,
     ),
-    enabled: role !== null && readsOrganizationLeave(role),
+    enabled: readsAdmin,
   });
   const ownLeave = useQuery({
     // Named structurally, as *Godišnji*'s read is.
     ...myLeaveRecordsQueryOptions(() => supabaseClient() as unknown as MyLeaveRecordsRpc),
-    enabled: role !== null && !readsOrganizationLeave(role),
+    enabled: readsRole !== null && !readsAdmin,
   });
   // An admin's alone: a member is shown no conflict.
-  const readsResolutions = role !== null && readsOrganizationLeave(role);
-  const resolutions = useQuery({
+  const resolutionsRead = useQuery({
     // Named structurally, as *Raspored*'s read is.
     ...organizationConflictResolutionsQueryOptions(
       () => supabaseClient().from(CONFLICT_RESOLUTIONS_TABLE) as unknown as OrganizationConflictResolutionsTable,
     ),
-    enabled: readsResolutions,
+    enabled: readsAdmin,
   });
+  // STORY 8.2: the month's reads are one snapshot, decided from these very
+  // observer results (`useSnapshotFreshness`); a read off the month's keys —
+  // the other role's leave, a member's disabled resolutions — passes raw.
+  const { freshness, answerFor } = useSnapshotFreshness(calendarSurfaceKeysOf(readsRole), [
+    [CALENDAR_KEY, answerRead],
+    [ORGANIZATION_LEAVE_RECORDS_KEY, organizationLeave],
+    [MY_LEAVE_RECORDS_KEY, ownLeave],
+    [ORGANIZATION_CONFLICT_RESOLUTIONS_KEY, resolutionsRead],
+  ]);
+  const answer = answerFor(CALENDAR_KEY, answerRead);
+  // A failed read being read again is the skeleton, so the retry's press shows.
+  const state = calendarRetryStateOf(answer);
+  const { snapshot } = state;
+  const role = snapshot === null ? null : snapshot.viewer.role;
+  const readsResolutions = role !== null && readsOrganizationLeave(role);
+  const resolutions = answerFor(ORGANIZATION_CONFLICT_RESOLUTIONS_KEY, resolutionsRead);
   // STORY 5.5d: a replacement naming an override the snapshot does not hold yet re-reads it once.
   useReplacementLinkRefresh(snapshot, readsResolutions ? resolutions.data : undefined);
-  const leaveAnswer = role !== null && readsOrganizationLeave(role) ? organizationLeave : ownLeave;
+  const leaveAnswer =
+    role !== null && readsOrganizationLeave(role)
+      ? answerFor(ORGANIZATION_LEAVE_RECORDS_KEY, organizationLeave)
+      : answerFor(MY_LEAVE_RECORDS_KEY, ownLeave);
   const leaveData = leaveAnswer.data;
   const leaveIsError = leaveAnswer.isError;
   const leaveIsPending = leaveAnswer.isPending;
@@ -414,6 +446,12 @@ export function useCalendarScreen(
     loading,
     refusal,
     retryable,
+    // STORY 8.2: the as-of note's time and zone while the whole month is drawn
+    // offline; none beside a refusal, where nothing is drawn.
+    offline:
+      freshness.kind === FRESHNESS_OFFLINE && snapshot !== null && refusal === null
+        ? { asOf: freshness.asOf, timeZone: snapshot.timeZone }
+        : null,
     month,
     mode,
     skeleton,

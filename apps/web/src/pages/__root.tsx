@@ -42,6 +42,14 @@ export interface AppRouterContext {
    *  own storage rather than held here, so nothing has to be kept in step. */
   readonly currentSession: () => Promise<Session | null>;
   /**
+   * The session FOR READING (story 8.2, human decision 2026-10-20 a): the
+   * live one, or — offline, when it is unresolved because the expired token
+   * cannot be refreshed — the one Supabase still keeps in storage
+   * (`@/lib/supabase/offline-session`). Read only by the guards of the
+   * offline-readable destinations; absent, they read `currentSession`.
+   */
+  readonly sessionForReads?: () => Promise<Session | null>;
+  /**
    * The signed-in member's own permission level, or a code — story 1.5a.
    *
    * THE SECOND MEMBER, and it arrives for the reason the first one did rather

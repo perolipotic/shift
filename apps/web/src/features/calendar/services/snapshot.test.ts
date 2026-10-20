@@ -36,6 +36,14 @@ import {
 } from '@/features/calendar/services/snapshot';
 import { CALENDAR_SCREEN_PARTS } from '@/features/calendar/calendar-screen.fixture';
 import {
+  FRESHNESS_FRESH,
+  FRESHNESS_LOADING,
+  FRESHNESS_OFFLINE,
+  FRESHNESS_UNAVAILABLE,
+  snapshotAnswerOf,
+  snapshotFreshnessOf,
+} from '@/lib/offline/freshness';
+import {
   FIXTURE_ORGANIZATION_NAME,
   OTHER_ORGANIZATION,
   PILOT,
@@ -1070,15 +1078,24 @@ describe('the surface state, driven through the one query definition', () => {
     expect(calendarSurfaceStateOf(result).refusal).toBe(CALENDAR_UNAVAILABLE);
   });
 
-  it('counts offline as unavailable rather than pulsing', () => {
+  it('counts a first read paused offline as unavailable rather than pulsing, under the freshness rule too', () => {
     onlineManager.setOnline(false);
     const result = observe(() => answeringInTurn(good)).getCurrentResult();
+    const clock = { online: false, freshAfter: 0 };
+    const freshness = snapshotFreshnessOf([result], clock.freshAfter, clock.online);
 
     expect(result.fetchStatus).toBe(CALENDAR_FETCH_PAUSED);
     expect(calendarSurfaceStateOf(result)).toEqual({ snapshot: null, refusal: CALENDAR_UNAVAILABLE, loading: false });
+    // Nothing is cached: offline partial, the same refusal.
+    expect(freshness).toEqual({ kind: FRESHNESS_UNAVAILABLE });
+    expect(calendarSurfaceStateOf(snapshotAnswerOf(result, freshness, clock))).toEqual({
+      snapshot: null,
+      refusal: CALENDAR_UNAVAILABLE,
+      loading: false,
+    });
   });
 
-  it('counts offline as unavailable over a cached answer too, and draws no stale grid', async () => {
+  it('draws a cached answer whole offline only through the freshness rule (story 8.2)', async () => {
     const table = answeringInTurn(good);
     const observer = observe(() => table);
 
@@ -1089,9 +1106,44 @@ describe('the surface state, driven through the one query definition', () => {
       expect(observer.getCurrentResult().fetchStatus).toBe(CALENDAR_FETCH_PAUSED);
     });
     const result = observer.getCurrentResult();
+    const clock = { online: false, freshAfter: result.dataUpdatedAt + 1 };
+    const freshness = snapshotFreshnessOf([result], clock.freshAfter, clock.online);
 
     expect(result.data).toEqual(pilot);
+    // ON ITS OWN the paused refetch is still refused: the rule every surface
+    // not yet on story 8.2 keeps (8.2b), which has no as-of note to draw.
     expect(calendarSurfaceStateOf(result)).toEqual({ snapshot: null, refusal: CALENDAR_UNAVAILABLE, loading: false });
+    // Through the freshness rule, *Danas* and *Kalendar* draw it whole, as of when it was read.
+    expect(freshness).toEqual({ kind: FRESHNESS_OFFLINE, asOf: result.dataUpdatedAt });
+    expect(calendarRetryStateOf(snapshotAnswerOf(result, freshness, clock))).toEqual({
+      snapshot: pilot,
+      refusal: null,
+      loading: false,
+    });
+  });
+
+  it('never draws an answer read before freshAfter while online: the skeleton until the refetch lands (story 8.2)', async () => {
+    const table = answeringInTurn(good);
+    const observer = observe(() => table);
+    const old = await settled(observer);
+    // As after a reconnect, or a restore: the answer predates freshAfter.
+    const clock = { online: true, freshAfter: old.dataUpdatedAt + 1 };
+    const freshness = snapshotFreshnessOf([old], clock.freshAfter, clock.online);
+
+    expect(freshness).toEqual({ kind: FRESHNESS_LOADING });
+    expect(calendarRetryStateOf(snapshotAnswerOf(old, freshness, clock))).toEqual({
+      snapshot: null,
+      refusal: null,
+      loading: true,
+    });
+
+    await new Promise((done) => setTimeout(done, 2));
+    await client.invalidateQueries({ queryKey: CALENDAR_KEY });
+    const fresh = await settled(observer);
+    const after = snapshotFreshnessOf([fresh], clock.freshAfter, clock.online);
+
+    expect(after).toEqual({ kind: FRESHNESS_FRESH });
+    expect(calendarRetryStateOf(snapshotAnswerOf(fresh, after, clock)).snapshot).toEqual(pilot);
   });
 
   it('recovers: after a failed read, a good answer brings the grid back', async () => {

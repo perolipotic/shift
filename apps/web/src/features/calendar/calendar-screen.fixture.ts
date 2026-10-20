@@ -89,6 +89,10 @@ export const CALENDAR_SCREEN_EXEMPT: readonly { readonly file: string; readonly 
     why: 'the rule telling rows newer than the snapshot from rows that cannot be trusted (story 5.5d), shared with Raspored, Sati and Danas; renders nothing and declares no key, executed by marks.test.ts',
   },
   {
+    file: 'services/surface-keys.ts',
+    why: "the month's reads as one snapshot (story 8.2), the keys its offline freshness is decided over; renders nothing and declares no key, executed by surface-keys.test.ts",
+  },
+  {
     file: 'utils/month.ts',
     why: 'the month model, executed by month.test.ts; declares no key and is swept by the snapshot suite under its own counts',
   },

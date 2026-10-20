@@ -26,6 +26,7 @@ import { smjenaRoute } from '@/pages/smjene.$id';
 import { routeMemberRole } from '@/features/navigation/services/role';
 import { knownPathOf } from '@/features/auth/services/return-target';
 import { currentSession } from '@/lib/supabase/client';
+import { currentSessionForReads } from '@/lib/supabase/offline-session';
 
 /**
  * The eight destinations, all of them nested under the pathless `_app` layout.
@@ -155,6 +156,11 @@ function isKnownPath(pathname: string): boolean {
  * asserts the behaviour; this file only has to name it, and `router.test.ts`
  * pins that naming by identity.
  *
+ * `sessionForReads` joined in story 8.2 (human decision 2026-10-20 a): the
+ * guards of the destinations that read offline (*Danas*, *Kalendar*) and `/`,
+ * which only forwards to *Danas*, read through it, so an offline start with
+ * an expired token reads the snapshot instead of bouncing to sign in.
+ *
  * It is called on every resolution of `/` rather than read once into a value.
  * The session is established by `signInWithPassword` inside the client, and the
  * navigation to `/` happens immediately after — a snapshot taken at boot would
@@ -163,7 +169,7 @@ function isKnownPath(pathname: string): boolean {
  */
 export const router = createRouter({
   routeTree,
-  context: { currentSession, currentMemberRole: routeMemberRole, isKnownPath },
+  context: { currentSession, sessionForReads: currentSessionForReads, currentMemberRole: routeMemberRole, isKnownPath },
   defaultPendingComponent: RoutePending,
   defaultPendingMs: ROUTE_PENDING_MS,
 });

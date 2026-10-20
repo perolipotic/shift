@@ -1,5 +1,5 @@
 import * as React from "react"
-import { CircleAlert, CircleCheck } from "lucide-react"
+import { CircleAlert, CircleCheck, WifiOff } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
@@ -14,6 +14,11 @@ import { cn } from "@/lib/utils"
 // icon is decorative and hidden from assistive technology with the bare
 // boolean `aria-hidden`; the role announces the message.
 //
+// ONE MORE SHAPE, STORY 8.2: the OFFLINE variant is a `role="status"` with a
+// WifiOff icon — the as-of note over a snapshot drawn from the device. It is a
+// status, not a refusal, and the crossed-out signal tells it from a
+// confirmation's check. Only a status can be offline, which the type enforces.
+//
 // A `<p>` with every other attribute passed through, so the `id`, `ref`,
 // `tabIndex` and `aria-*` wiring screens depend on keeps working unchanged.
 
@@ -22,13 +27,15 @@ const NOTICE_ICONS = {
   status: CircleCheck,
 } as const
 
-export interface NoticeProps extends React.HTMLAttributes<HTMLParagraphElement> {
-  role: keyof typeof NOTICE_ICONS
-}
+export type NoticeProps = React.HTMLAttributes<HTMLParagraphElement> &
+  (
+    | { role: "alert"; variant?: never }
+    | { role: "status"; variant?: "offline" }
+  )
 
 const Notice = React.forwardRef<HTMLParagraphElement, NoticeProps>(
-  ({ className, role, children, ...props }, ref) => {
-    const Icon = NOTICE_ICONS[role]
+  ({ className, role, variant, children, ...props }, ref) => {
+    const Icon = variant === "offline" ? WifiOff : NOTICE_ICONS[role]
     return (
       <p
         ref={ref}

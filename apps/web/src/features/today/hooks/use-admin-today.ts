@@ -22,7 +22,9 @@ import {
 import { MEMBER_ROLE_KEY } from '@/features/navigation/services/role';
 import type { MemberRole } from '@/features/navigation/utils/destinations';
 import { adminTodayOf } from '@/features/today/services/admin-today';
+import { todaySurfaceKeysOf } from '@/features/today/services/surface-keys';
 import { useMinuteTicker } from '@/hooks/minute-ticker';
+import { useSnapshotFreshness } from '@/lib/offline/use-snapshot-freshness';
 import { supabaseClient } from '@/lib/supabase/client';
 
 /** No role while rendering on a server: there is no cache to read. */
@@ -63,22 +65,38 @@ export function useTodayRole(snapshotRole: MemberRole | null): MemberRole | null
  *
  * NOT `useConflictsQueue`, which steps the router's state for *Raspored*'s
  * status line.
+ *
+ * ONE SNAPSHOT WITH THE PAGE'S HEADER (story 8.2): every read is seen
+ * through *Danas*'s freshness over the same keys `useToday` asks with
+ * (`todaySurfaceKeysOf`, by the same role), each read decided from this
+ * hook's own observer where it has one, so the body and the header decide
+ * as one.
  */
 export function useAdminToday() {
   const queryClient = useQueryClient();
   const now = useMinuteTicker();
-  const calendar = useCalendarSnapshot();
-  const records = useQuery(
+  const calendarRead = useCalendarSnapshot();
+  const recordsRead = useQuery(
     // Named structurally, as the queue's read is.
     organizationLeaveRecordsQueryOptions(
       () => supabaseClient().from(LEAVE_RECORDS_TABLE) as unknown as OrganizationLeaveRecordsTable,
     ),
   );
-  const resolutions = useQuery(
+  const resolutionsRead = useQuery(
     organizationConflictResolutionsQueryOptions(
       () => supabaseClient().from(CONFLICT_RESOLUTIONS_TABLE) as unknown as OrganizationConflictResolutionsTable,
     ),
   );
+  // The page's role, as `useToday` reads it: an admin's, while this body is mounted.
+  const pageRole = useTodayRole(calendarRead.data === undefined ? null : calendarRead.data.viewer.role);
+  const { answerOf } = useSnapshotFreshness(todaySurfaceKeysOf(pageRole), [
+    [CALENDAR_KEY, calendarRead],
+    [ORGANIZATION_LEAVE_RECORDS_KEY, recordsRead],
+    [ORGANIZATION_CONFLICT_RESOLUTIONS_KEY, resolutionsRead],
+  ]);
+  const calendar = answerOf(calendarRead);
+  const records = answerOf(recordsRead);
+  const resolutions = answerOf(resolutionsRead);
   const calendarState = calendarSurfaceStateOf(calendar);
   const snapshot = calendarState.snapshot;
   const refusal = calendarState.refusal;

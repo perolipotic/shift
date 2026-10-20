@@ -1,6 +1,7 @@
 import type { Locator, Page } from '@playwright/test';
 
 import { fill, hr } from '../utils/i18n.ts';
+import { offlineNoteOf } from '../utils/offline.ts';
 
 /**
  * The chrome every screen shares: the navigation, the page's h1, the page-wide
@@ -109,6 +110,15 @@ export abstract class BasePage {
   /** The status line that holds `text`. */
   statusWith(text: string): Locator {
     return this.status.filter({ hasText: text });
+  }
+
+  /**
+   * The as-of note (story 8.2): `Bez veze · stanje od 10.10.2026 14:32`, the
+   * status under the heading while a surface draws its snapshot offline.
+   * Shared by *Danas* and *Kalendar* (`e2e/utils/offline.ts`).
+   */
+  get offlineNote(): Locator {
+    return offlineNoteOf(this.page);
   }
 
   /** The page's alert (a refusal or a failure). */

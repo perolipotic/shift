@@ -27,6 +27,8 @@ import { currentSession, SESSION_UNRESOLVED } from '@/lib/supabase/client';
 import { sessionEnded } from '@/lib/supabase/session-cache';
 import { SESSION } from '@/lib/supabase/session.fixture';
 import { AppLayout, appLayoutRoute } from '@/pages/_app';
+import { OFFLINE_READABLE_PATHS } from '@/lib/offline/readable-paths';
+import { currentSessionForReads } from '@/lib/supabase/offline-session';
 import { DanasScreen, danasRoute } from '@/pages/danas';
 import { GodisnjiScreen, godisnjiRoute } from '@/pages/godisnji';
 import { indexRoute } from '@/pages/index';
@@ -768,6 +770,42 @@ describe('the deployed root resolves both ways and is never a blank page', () =>
 
     return null;
   }
+
+  describe('offline with an expired token (story 8.2): / forwards on the session for reading', () => {
+    async function rootWith(context: Partial<AppRouterContext>): Promise<unknown> {
+      const run = (indexRoute.options as unknown as { beforeLoad?: BeforeLoad }).beforeLoad;
+
+      try {
+        await run?.({
+          location: ROOT_LINK,
+          context: {
+            currentSession: () => Promise.resolve(null),
+            currentMemberRole: REFUSES_ROLE,
+            isKnownPath: KNOWN_PATH,
+            ...context,
+          },
+        });
+      } catch (thrown) {
+        return thrown;
+      }
+
+      return null;
+    }
+
+    it('goes to Danas, not to sign in, when only the session for reading answers', async () => {
+      const thrown = await rootWith({ sessionForReads: () => Promise.resolve(SESSION) });
+
+      expect(isRedirect(thrown)).toBe(true);
+      expect((thrown as { options: { to?: string } }).options.to).toBe('/danas');
+    });
+
+    it('still goes to sign in without a session for reading', async () => {
+      const thrown = await rootWith({});
+
+      expect(isRedirect(thrown)).toBe(true);
+      expect((thrown as { options: { to?: string } }).options.to).toBe('/prijava');
+    });
+  });
 
   it('throws a redirect from / while signed out, rather than rendering it', async () => {
     const thrown = await beforeLoad(null);
@@ -1513,6 +1551,52 @@ describe('the signed-in layout guards every destination once, and is pathless', 
     // it, so a guard quietly returning a value is a different thing from a
     // guard letting the visitor through, and this pins which one ships.
     expect(await beforeLoad(() => Promise.resolve(SESSION))).toEqual({ returned: undefined });
+  });
+
+  describe('offline reading with an expired token (story 8.2, human decision 2026-10-20 a)', () => {
+    /** The guard at `pathname`, with a live reader that finds nobody and a reader for reads that finds `forReads`. */
+    async function guardedAt(pathname: string, forReads: Session | null): Promise<Outcome> {
+      try {
+        return {
+          returned: await guard()({
+            location: { href: pathname, pathname } as { href: string },
+            context: {
+              currentSession: () => Promise.resolve(null),
+              sessionForReads: () => Promise.resolve(forReads),
+              currentMemberRole: REFUSES_ROLE,
+              isKnownPath: KNOWN_PATH,
+            },
+          }),
+        };
+      } catch (thrown) {
+        return { thrown };
+      }
+    }
+
+    it('admits Danas and Kalendar on the session for reading', async () => {
+      for (const path of ['/danas', '/kalendar']) {
+        expect(await guardedAt(path, SESSION), path).toEqual({ returned: undefined });
+        expect(OFFLINE_READABLE_PATHS.has(path)).toBe(true);
+      }
+    });
+
+    it('reads a trailing slash as the same destination', async () => {
+      expect(await guardedAt('/kalendar/', SESSION)).toEqual({ returned: undefined });
+    });
+
+    it('reads the live session alone for every other destination', async () => {
+      expect(isRedirect(thrownBy(await guardedAt('/sati', SESSION)))).toBe(true);
+    });
+
+    it('still redirects when the session for reading is nobody too', async () => {
+      expect(isRedirect(thrownBy(await guardedAt('/danas', null)))).toBe(true);
+    });
+
+    it('is bound into the router\'s context by identity', () => {
+      const context = (router.options as { context?: { sessionForReads?: unknown } }).context;
+
+      expect(context?.sessionForReads).toBe(currentSessionForReads);
+    });
   });
 
   it('says nothing to the console on the way through', async () => {

@@ -4,6 +4,7 @@ import { MonthNav } from '@/components/month-nav';
 import { StickyHead } from '@/components/sticky-head';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { OfflineNote } from '@/components/offline-note';
 import { Notice } from '@/components/ui/notice';
 import { PageHeader, PageTitle } from '@/components/ui/page-header';
 import { CalendarFilters, calendarFilterSummaryOf } from '@/features/calendar/components/calendar-filters';
@@ -89,6 +90,10 @@ import { appLayoutRoute } from '@/pages/_app';
  * failed shows the one alert with a retry — a deterministic refusal shows the
  * alert alone — never a month without its marks.
  *
+ * OFFLINE (story 8.2): a month read online is drawn whole from the device
+ * under the as-of note (`OfflineNote`, under the heading), its time the
+ * oldest of the month's reads; with any read missing, the one alert instead.
+ *
  * The session guard is NOT here. It is registered once on the pathless `_app`
  * layout this route nests under.
  */
@@ -130,6 +135,7 @@ export function KalendarScreen() {
           <h1>{t('nav.kalendar')}</h1>
         </PageTitle>
       </PageHeader>
+      <OfflineNote offline={screen.offline} />
       {refusal === null ? null : (
         <div className="grid min-w-0 gap-2">
           <Notice role="alert">{t(calendarMessageKey(refusal))}</Notice>
