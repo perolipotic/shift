@@ -43,7 +43,7 @@ import {
 } from '@/features/today/services/today';
 import { todayTilesOf } from '@/features/today/services/today-tiles';
 import { useMinuteTicker } from '@/hooks/minute-ticker';
-import { FRESHNESS_OFFLINE } from '@/lib/offline/freshness';
+import { FRESHNESS_OFFLINE, ZONE_FROM_CALENDAR } from '@/lib/offline/freshness';
 import { useSnapshotFreshness } from '@/lib/offline/use-snapshot-freshness';
 import { supabaseClient } from '@/lib/supabase/client';
 
@@ -101,13 +101,17 @@ export function useToday() {
   // as it stands, never a figure drawn.
   const snapshotRole = calendarRead.data === undefined ? null : calendarRead.data.viewer.role;
   const pageRole = useTodayRole(snapshotRole);
-  const { freshness, answerOf } = useSnapshotFreshness(todaySurfaceKeysOf(pageRole), [
-    [CALENDAR_KEY, calendarRead],
-    [MY_LEAVE_RECORDS_KEY, recordsRead],
-    [MY_CONFLICT_RESOLUTIONS_KEY, resolutionsRead],
-    [MEMBERS_LIST_KEY, membersRead],
-    [ORGANIZATION_SNAPSHOT_KEY, organizationRead],
-  ]);
+  const { freshness, answerOf } = useSnapshotFreshness(
+    todaySurfaceKeysOf(pageRole),
+    [
+      [CALENDAR_KEY, calendarRead],
+      [MY_LEAVE_RECORDS_KEY, recordsRead],
+      [MY_CONFLICT_RESOLUTIONS_KEY, resolutionsRead],
+      [MEMBERS_LIST_KEY, membersRead],
+      [ORGANIZATION_SNAPSHOT_KEY, organizationRead],
+    ],
+    ZONE_FROM_CALENDAR,
+  );
   const calendar = answerOf(calendarRead);
   const records = answerOf(recordsRead);
   const resolutions = answerOf(resolutionsRead);

@@ -24,7 +24,7 @@ import {
   type HoursSearchChange,
   type HoursSortKey,
 } from '@/features/hours/services/hours-search';
-import { hoursSnapshotStateOf } from '@/features/hours/services/my-hours';
+import { HOURS_UNAVAILABLE, hoursSnapshotStateOf } from '@/features/hours/services/my-hours';
 import {
   hoursSearchBaseOf,
   hoursPageIsOwn,
@@ -41,7 +41,10 @@ import {
   type MyLeaveRecordsRpc,
   type OrganizationLeaveRecordsTable,
 } from '@/features/leave/services/leave-list';
+import { hoursSurfaceKeysOf } from '@/features/hours/services/surface-keys';
 import { useOrganizationToday } from '@/hooks/organization-today';
+import { ZONE_FROM_CALENDAR, offlineNoteOf } from '@/lib/offline/freshness';
+import { useSnapshotFreshness } from '@/lib/offline/use-snapshot-freshness';
 import { supabaseClient } from '@/lib/supabase/client';
 
 /**
@@ -70,42 +73,74 @@ import { supabaseClient } from '@/lib/supabase/client';
  * admin reads the organization's under `ORGANIZATION_CONFLICT_RESOLUTIONS_KEY`,
  * a member their own under `MY_CONFLICT_RESOLUTIONS_KEY` — never both. Every
  * leave write names both keys too, and the retry reads them again.
+ *
+ * ONE SNAPSHOT, ONLINE OR NOT (story 8.2b), *Danas*'s: every read is seen
+ * through *Sati*'s freshness (`useSnapshotFreshness` over
+ * `hoursSurfaceKeysOf`: exactly the reads above for the role, each one a key
+ * *Danas* reads for the same role too). Online, a read older than this
+ * session's network is never drawn as fresh — the skeleton after the app's start, the whole cached
+ * snapshot under the as-of note after a reconnect; offline, the whole cached
+ * snapshot is drawn under the note (`offline`), or the unavailable state is.
  */
 export function useHours(search: HoursSearch, go: (next: HoursSearch) => void) {
-  const answer = useCalendarSnapshot();
-  const { snapshot, refusal, loading } = hoursSnapshotStateOf(answer);
-  const role = snapshot === null ? null : snapshot.viewer.role;
+  const answerRead = useCalendarSnapshot();
+  // THE ROLE THE READS ARE CHOSEN BY is the cached snapshot's as it stands — a
+  // role, never a figure drawn — so the role's reads start with the
+  // snapshot's own refetch, and the keys (`hoursSurfaceKeysOf`, story 8.2b)
+  // are exactly the reads enabled.
+  const readsRole = answerRead.data === undefined ? null : answerRead.data.viewer.role;
+  const readsAdmin = readsRole !== null && readsOrganizationLeave(readsRole);
   const organizationLeave = useQuery({
     // Named structurally, as the calendar's marks read it.
     ...organizationLeaveRecordsQueryOptions(
       () => supabaseClient().from(LEAVE_RECORDS_TABLE) as unknown as OrganizationLeaveRecordsTable,
     ),
-    enabled: role !== null && readsOrganizationLeave(role),
+    enabled: readsAdmin,
   });
   const ownLeave = useQuery({
     // Named structurally, as *Godišnji*'s read is.
     ...myLeaveRecordsQueryOptions(() => supabaseClient() as unknown as MyLeaveRecordsRpc),
-    enabled: role !== null && !readsOrganizationLeave(role),
+    enabled: readsRole !== null && !readsAdmin,
   });
   const organizationResolutions = useQuery({
     ...organizationConflictResolutionsQueryOptions(
       () => supabaseClient().from(CONFLICT_RESOLUTIONS_TABLE) as unknown as OrganizationConflictResolutionsTable,
     ),
-    enabled: role !== null && readsOrganizationLeave(role),
+    enabled: readsAdmin,
   });
   const ownResolutions = useQuery({
     ...myConflictResolutionsQueryOptions(() => supabaseClient() as unknown as MyConflictResolutionsRpc),
-    enabled: role !== null && !readsOrganizationLeave(role),
+    enabled: readsRole !== null && !readsAdmin,
   });
-  const leaveAnswer = role !== null && readsOrganizationLeave(role) ? organizationLeave : ownLeave;
+  // STORY 8.2b: every read is seen through *Sati*'s freshness, decided from
+  // these very observer results; a read off the keys — the other role's
+  // disabled reads — passes raw.
+  const { freshness, answerFor } = useSnapshotFreshness(
+    hoursSurfaceKeysOf(readsRole),
+    [
+      [CALENDAR_KEY, answerRead],
+      [MY_LEAVE_RECORDS_KEY, ownLeave],
+      [MY_CONFLICT_RESOLUTIONS_KEY, ownResolutions],
+      [ORGANIZATION_LEAVE_RECORDS_KEY, organizationLeave],
+      [ORGANIZATION_CONFLICT_RESOLUTIONS_KEY, organizationResolutions],
+    ],
+    ZONE_FROM_CALENDAR,
+  );
+  const answer = answerFor(CALENDAR_KEY, answerRead);
+  const { snapshot, refusal, loading } = hoursSnapshotStateOf(answer);
+  const role = snapshot === null ? null : snapshot.viewer.role;
+  const leaveAnswer =
+    role !== null && readsOrganizationLeave(role)
+      ? answerFor(ORGANIZATION_LEAVE_RECORDS_KEY, organizationLeave)
+      : answerFor(MY_LEAVE_RECORDS_KEY, ownLeave);
   const leaveData = leaveAnswer.data;
   const leaveIsError = leaveAnswer.isError;
   const leaveIsPending = leaveAnswer.isPending;
   const leaveFetchStatus = leaveAnswer.fetchStatus;
   const resolutionsAnswer = conflictResolutionsAnswerOf(
     role !== null && readsOrganizationLeave(role),
-    organizationResolutions,
-    ownResolutions,
+    answerFor(ORGANIZATION_CONFLICT_RESOLUTIONS_KEY, organizationResolutions),
+    answerFor(MY_CONFLICT_RESOLUTIONS_KEY, ownResolutions),
   );
   const resolutionsData = resolutionsAnswer.data;
   // STORY 5.5d: a replacement naming an override the snapshot does not hold yet re-reads it once.
@@ -113,6 +148,8 @@ export function useHours(search: HoursSearch, go: (next: HoursSearch) => void) {
   const resolutionsIsError = resolutionsAnswer.isError;
   const resolutionsIsPending = resolutionsAnswer.isPending;
   const resolutionsFetchStatus = resolutionsAnswer.fetchStatus;
+  // FROM THE ANSWER AS SEEN (story 8.2b): offline it is never fetching, so a
+  // skew there is the unavailable state, never a waiting skeleton.
   const snapshotFetching = answer.fetchStatus === CALENDAR_FETCH_FETCHING;
 
   // As the calendar's marks: a row naming a member or team the snapshot does not hold yet re-reads it once.
@@ -221,5 +258,22 @@ export function useHours(search: HoursSearch, go: (next: HoursSearch) => void) {
     );
   }
 
-  return { ...surface, organizationName, own, explain, retry, show, change, pressColumn };
+  return {
+    ...surface,
+    organizationName,
+    own,
+    explain,
+    retry,
+    show,
+    change,
+    pressColumn,
+    // STORY 8.2b: the as-of note's time and zone while the whole snapshot is
+    // drawn offline — over a month the domain refuses too — and none above
+    // the unavailable state, where nothing is drawn.
+    offline: offlineNoteOf(
+      freshness,
+      snapshot === null ? null : snapshot.timeZone,
+      surface.refusal === HOURS_UNAVAILABLE,
+    ),
+  };
 }

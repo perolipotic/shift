@@ -43,6 +43,7 @@ import {
   memberActiveOn,
   memberLatestVersion,
   memberStatusOf,
+  membersTimeZoneOf,
   membersTodayOf,
   UNSORTED,
   cellClassNameOf,
@@ -2133,6 +2134,12 @@ describe('status as at a date, read off the embedded versions (story 1.6)', () =
     expect(membersTodayOf([member({ id: 'm', timeZone: 'Etc/UTC' })], now)).toBe('2026-09-22');
     expect(membersTodayOf(null, now)).toBeNull();
     expect(membersTodayOf([], now)).toBeNull();
+  });
+
+  it("states the as-of note in the organization's zone the read embeds, and none before it (story 8.2b)", () => {
+    expect(membersTimeZoneOf([member({ id: 'm', timeZone: 'Europe/Zagreb' })])).toBe('Europe/Zagreb');
+    expect(membersTimeZoneOf(null)).toBeNull();
+    expect(membersTimeZoneOf([])).toBeNull();
   });
 
   it('refuses a row whose organization zone did not arrive', () => {

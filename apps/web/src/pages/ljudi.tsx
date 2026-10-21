@@ -2,6 +2,7 @@ import { Link, createRoute, redirect, useNavigate } from '@tanstack/react-router
 import { Plus, UsersRound } from 'lucide-react';
 import { useCallback } from 'react';
 
+import { OfflineNote } from '@/components/offline-note';
 import { Button } from '@/components/ui/button';
 import { Notice } from '@/components/ui/notice';
 import { PageActions, PageDescription, PageHeader, PageTitle } from '@/components/ui/page-header';
@@ -66,6 +67,13 @@ import { NO_TEXT } from '@/utils/text';
  * own `members` row and the `team_roster` read). What it settles is an IA
  * question — which content a level reaches. A level that cannot be read is
  * still forwarded to the first destination, as before the directory existed.
+ * OFFLINE (story 8.2b) the guard answers from the level cached on the device,
+ * and with none it forwards to the first destination at once, never pending
+ * (`cachedMemberRole`).
+ *
+ * STORY 8.2b: offline, the list or the directory is drawn whole from the
+ * device's snapshot under the as-of note (`OfflineNote`, under the heading),
+ * or its unavailable state is.
  */
 
 /** Where a refused session is sent: the FIRST destination, in binding order,
@@ -111,6 +119,7 @@ function LjudiDirectory() {
           <PageDescription>{t('ljudi.directory.lede')}</PageDescription>
         </div>
       </PageHeader>
+      <OfflineNote offline={screen.offline} />
       <MemberDirectory screen={screen} />
     </main>
   );
@@ -180,6 +189,7 @@ function LjudiList() {
           </Button>
         </PageActions>
       </PageHeader>
+      <OfflineNote offline={list.offline} />
       {/* OUTSIDE the answered branch, and conditional on both sides: a read that
           produced no row never renders a table, so an explanation rendered
           inside one would be exactly the element nobody can see. `role="alert"`

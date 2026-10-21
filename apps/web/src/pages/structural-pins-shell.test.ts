@@ -533,11 +533,12 @@ describe('the chrome the layout wraps every destination in', () => {
     // is written to make impossible.
     const chrome = source(CHROME);
 
-    expect(chrome, 'the errored query state is read nowhere').toContain('member.isError');
+    // Read off the answer as the chrome may draw it (story 8.2b, `chromeAnswerOf`).
+    expect(chrome, 'the errored query state is read nowhere').toContain('memberShown.isError');
     expect(
       chrome,
       'an errored query produces no failure code, so it renders as an empty bar',
-    ).toMatch(/member\.isError[\s\S]{0,120}?MEMBER_ROLE_UNAVAILABLE/);
+    ).toMatch(/memberShown\.isError[\s\S]{0,120}?MEMBER_ROLE_UNAVAILABLE/);
   });
 
   it('gives the failed read something to press, since nothing retries it', () => {

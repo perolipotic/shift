@@ -5,6 +5,7 @@ import {
   ALL_TEAMS,
   DEFAULT_FILTERS,
   MEMBERS_LIST_KEY,
+  MEMBERS_UNAVAILABLE,
   MEMBERS_TABLE,
   chooseChip,
   membersAwaitTodayOf,
@@ -16,6 +17,7 @@ import {
   membersSearchFor,
   membersSearchKeyOf,
   membersSurfaceStateOf,
+  membersTimeZoneOf,
   membersTodayOf,
   membersViewOf,
   nextSortState,
@@ -24,7 +26,10 @@ import {
   type MembersFilters,
   type MembersSearch,
 } from '@/features/members/services/list';
+import { MEMBERS_TABLE_SURFACE_KEYS } from '@/features/members/services/surface-keys';
 import { retryRead } from '@/features/teams/services/dependents';
+import { ZONE_NOT_NEEDED, offlineNoteOf, zoneFromReads } from '@/lib/offline/freshness';
+import { useSnapshotFreshness } from '@/lib/offline/use-snapshot-freshness';
 import { supabaseClient } from '@/lib/supabase/client';
 import { NO_TEXT } from '@/utils/text';
 
@@ -78,7 +83,23 @@ export function useMemberList(search: MembersSearch, navigate: MembersNavigate) 
   }, [filters.search]);
 
   const queryClient = useQueryClient();
-  const answer = useQuery(membersQueryOptions(() => supabaseClient().from(MEMBERS_TABLE)));
+  const answerRead = useQuery(membersQueryOptions(() => supabaseClient().from(MEMBERS_TABLE)));
+  // STORY 8.2b: the list is one snapshot, decided from this very observer
+  // result (`MEMBERS_TABLE_SURFACE_KEYS`): online, a list older than this
+  // session's network is never drawn as fresh; offline, the cached list is
+  // drawn under the as-of note (`offline`), or the unavailable state is.
+  // THE NOTE'S ZONE is the organization's the list itself carries; with no row
+  // to read it from — an empty list included — the list is unavailable
+  // offline, never drawn without its note. A refusal the read resolved with
+  // is drawn as its own message, never a snapshot: it needs no zone.
+  const answered = answerRead.data;
+  const timeZone = membersTimeZoneOf(answered !== undefined && answered.ok ? answered.members : null);
+  const { freshness, answerOf } = useSnapshotFreshness(
+    MEMBERS_TABLE_SURFACE_KEYS,
+    [[MEMBERS_LIST_KEY, answerRead]],
+    answered !== undefined && !answered.ok ? ZONE_NOT_NEEDED : zoneFromReads(timeZone),
+  );
+  const answer = answerOf(answerRead);
 
   /** Read the list again, from the unavailable notice's retry. */
   function retry(): void {
@@ -90,7 +111,9 @@ export function useMemberList(search: MembersSearch, navigate: MembersNavigate) 
   const state = membersSurfaceStateOf(answer);
   const { members } = state;
   // THE LIST'S NOTICE: the refusal, or the unavailable message beside rows a
-  // refetch paused offline over, which is never a refusal.
+  // refetch paused offline over, which is never a refusal. Under the
+  // freshness (story 8.2b) a paused refetch is never seen: the as-of note
+  // stands where that message stood.
   const refusal = membersNoticeOf(state);
   // THE ORGANIZATION'S TODAY, for the status column (story 7.13), from the zone
   // the same one read embeds — `null` until it has settled, which states nobody's.
@@ -223,6 +246,10 @@ export function useMemberList(search: MembersSearch, navigate: MembersNavigate) 
     clearFilters,
     resetFilters,
     pressColumn,
+    // STORY 8.2b: the as-of note's time and zone while the cached list is drawn
+    // offline, in the organization's zone the same read embeds; none beside a
+    // refusal, where no row is drawn.
+    offline: offlineNoteOf(freshness, timeZone, refusal === MEMBERS_UNAVAILABLE),
   };
 }
 

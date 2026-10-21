@@ -2,6 +2,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { parseSync } from '@babel/core';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -756,6 +757,17 @@ function allChunks(): string {
     .join('\n');
 }
 
+/** The copy of every built chunk (`literalContentsOf`), parsed once for every word the sweep counts. */
+let builtCopy: string | null = null;
+
+function chunkCopy(): string {
+  builtCopy ??= chunkPaths()
+    .map((path) => literalContentsOf(readFileSync(path, 'utf8')))
+    .join('\n');
+
+  return builtCopy;
+}
+
 /**
  * Freshness, asserted before content.
  *
@@ -862,8 +874,9 @@ describe('the build being read reflects the current localization source', () => 
     // Ten since source structure B6, twelve since B7: the roster's hook and
     // component; thirteen since the list-refresh fix: the write dependents;
     // seventeen since story 7.17: the roster lines, and the member directory's
-    // rules, hook and component.
-    expect(parts, 'the teams feature grew or lost a module').toHaveLength(17);
+    // rules, hook and component; eighteen since story 8.2b: the directory's
+    // and the roster's offline surface keys.
+    expect(parts, 'the teams feature grew or lost a module').toHaveLength(18);
     for (const page of TEAM_PAGES) expect(SOURCES, `${page} is not in SOURCES`).toContain(page);
     expect([...parts].sort(), 'the feature holds a module no set and no rule list names').toEqual(
       [...TEAMS_SOURCES_REQUIRED].sort(),
@@ -1647,31 +1660,17 @@ function occurrences(haystack: string, needle: string): number {
  *  because `\w` is ASCII-only and would misplace a boundary around every
  *  diacritic these words carry (č, ž…).
  *
- *  A MINIFIED IDENTIFIER IS NOT COPY, but only in an identifier's own
- *  position. The minifier names functions and components with short
- *  capitalised identifiers, and story 8.2's builds named one `Ime`. Exempt are
- *  exactly: a definition or call (`function Ime(e)`, `await Ime(…)` — the word
- *  straight before `(`), an assignment (`,Ime=…`, never `==`), and a JSX
- *  element type (`jsx)(Ime,{…})`). A word beside `:`, `.`, `,` or a quote is
- *  counted, so copy in a template or a concatenation is still caught. Both
- *  counts below go through this, so it is symmetric. */
+ *  Counted over COPY ONLY in the build (`literalContentsOf`, story 8.2b):
+ *  the minifier names functions and components with short capitalised
+ *  identifiers, and builds have named one `Ime` — a word this sweep counts.
+ *  An identifier is never copy, so the build's side is read as the contents
+ *  of its string and template literals alone, and no identifier can collide
+ *  with a counted word whatever the minifier picks. */
 function wordOccurrences(haystack: string, needle: string): number {
   const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'gu');
-  let count = 0;
 
-  for (const found of haystack.matchAll(pattern)) {
-    const before = haystack.slice(Math.max(0, found.index - 6), found.index);
-    const after = haystack.slice(found.index + needle.length, found.index + needle.length + 2);
-    const identifier =
-      after.startsWith('(') ||
-      (after.startsWith('=') && !after.startsWith('==')) ||
-      (/jsxs?\)\($/.test(before) && after.startsWith(','));
-
-    if (!identifier) count += 1;
-  }
-
-  return count;
+  return (haystack.match(pattern) ?? []).length;
 }
 
 /**
@@ -1696,39 +1695,114 @@ function withoutRouteSegments(chunk: string): string {
  * rather than as copy. Story 3.3a's `?smjena=<team id>` is the first: the
  * calendar's search object carries it as a property (`search.smjena`,
  * `{smjena:…}`), the `in` check that tells a team change from the others, and
- * the one constant naming it. Removed in THOSE shapes only — a property access,
- * an object key, the constant's assignment and the `in` operand — so a bare
- * `smjena` literal rendered as copy (a JSX child, an attribute value) still
- * counts.
+ * the one constant naming it. Since story 8.2b the sweep reads only the
+ * chunk's literals (`literalContentsOf`), so a property access and an
+ * identifier key are never read at all; a literal NAMING a parameter is left
+ * out in the code shapes only — an object key, a member property, the
+ * constant's value, an assignment, and the `in` operand — so a bare `smjena`
+ * literal rendered as copy (a JSX child, an attribute value) still counts.
  */
 // STORY 3.3b: `?osoba=<member id>`, in the same shapes, and one more — the
 // filter Select's person value prefix, the whole literal `osoba:` and nothing
 // else, wherever the minifier inlines it. No copy is ever exactly that.
 const SEARCH_PARAMETERS = ['smjena', 'osoba'];
 
-function withoutSearchParameters(chunk: string): string {
-  return SEARCH_PARAMETERS.reduce(
-    (text, parameter) =>
-      text.replace(
-        new RegExp(
-          [
-            // A property access: `search.smjena`.
-            `\\.${parameter}(?![\\p{L}\\p{N}])`,
-            // An object key: `{smjena:…}`, `,smjena:…`.
-            `(?<=[{,])${parameter}(?=:)`,
-            // The constant's assignment, in any quote a minifier picks.
-            `(?<==)(["'\`])${parameter}\\1(?=[,;])`,
-            // The `in` operand, in any quote.
-            `(["'\`])${parameter}\\2\\s*(?=in\\b)`,
-            // The person filter's option value prefix, in any quote.
-            `(["'\`])${parameter}:\\3`,
-          ].join('|'),
-          'gu',
-        ),
-        '',
-      ),
-    chunk,
+/** AST keys that hold positions and comments, never code: skipped by the walk. */
+const NOT_CODE = new Set(['loc', 'start', 'end', 'extra', 'leadingComments', 'trailingComments', 'innerComments']);
+
+/** An AST node, as far as the walk reads it. */
+interface AstNode {
+  readonly type: string;
+  readonly [key: string]: unknown;
+}
+
+function isNode(value: unknown): value is AstNode {
+  return typeof value === 'object' && value !== null && typeof (value as { type?: unknown }).type === 'string';
+}
+
+/** The nodes whose `key` names a member — an object's or a class's — never copy, whatever it says. */
+const KEYED = new Set([
+  'ObjectProperty',
+  'ObjectMethod',
+  'ClassProperty',
+  'ClassMethod',
+  'ClassAccessorProperty',
+  'ClassPrivateProperty',
+]);
+
+/** A literal's whole text: a string's value, or a template's with no expression in it. */
+function wholeTextOf(node: AstNode): string | null {
+  if (node.type === 'StringLiteral') return node['value'] as string;
+  if (node.type !== 'TemplateLiteral' || (node['expressions'] as unknown[]).length > 0) return null;
+
+  const [quasi] = node['quasis'] as { value: { cooked?: string | null; raw: string } }[];
+
+  return quasi === undefined ? null : (quasi.value.cooked ?? quasi.value.raw);
+}
+
+/**
+ * Whether the literal `node`, under `parent` at `key`, is CODE rather than
+ * copy: an object's or a class's member key (never copy, whatever it says),
+ * or a literal
+ * naming a search parameter in one of the code shapes above.
+ */
+function codeLiteral(node: AstNode, parent: AstNode | null, key: string): boolean {
+  if (parent === null) return false;
+  if (KEYED.has(parent.type) && key === 'key' && parent['computed'] !== true) return true;
+
+  const text = wholeTextOf(node);
+
+  if (text === null) return false;
+  if (SEARCH_PARAMETERS.some((parameter) => text === `${parameter}:`)) return true;
+  if (!SEARCH_PARAMETERS.includes(text)) return false;
+
+  return (
+    (parent.type === 'VariableDeclarator' && key === 'init') ||
+    (parent.type === 'AssignmentExpression' && key === 'right') ||
+    ((parent.type === 'MemberExpression' || parent.type === 'OptionalMemberExpression') && key === 'property') ||
+    (KEYED.has(parent.type) && key === 'key') ||
+    (parent.type === 'BinaryExpression' && parent['operator'] === 'in' && key === 'left')
   );
+}
+
+/**
+ * The COPY of `js`: the contents of every string and template literal, one
+ * per line, less the literals that are code (`codeLiteral`). Parsed rather
+ * than scanned, so a regular expression or a division can never be taken for
+ * a quote. JSX text compiles to a literal, and the resource file bundled as
+ * data is literals too, so copy is never lost; an identifier — a minified
+ * `Ime` — is never in it (story 8.2b).
+ */
+function literalContentsOf(js: string): string {
+  const parsed = parseSync(js, { sourceType: 'module', configFile: false, babelrc: false });
+
+  // NEVER AN EMPTY READ: a chunk that parsed to nothing would hold no copy, and every count would pass.
+  if (parsed === null) throw new Error('BUILT_CHUNK_UNPARSED');
+  const program = parsed.program;
+  const contents: string[] = [];
+  const walk = (node: unknown, parent: AstNode | null, key: string): void => {
+    if (Array.isArray(node)) {
+      for (const child of node) walk(child, parent, key);
+
+      return;
+    }
+    if (!isNode(node)) return;
+
+    const literal = node.type === 'StringLiteral' || node.type === 'TemplateLiteral';
+
+    if (literal && codeLiteral(node, parent, key)) return;
+    if (node.type === 'StringLiteral') contents.push(node['value'] as string);
+    if (node.type === 'TemplateElement') {
+      const value = node['value'] as { cooked?: string | null; raw: string };
+
+      contents.push(value.cooked ?? value.raw);
+    }
+    for (const [childKey, child] of Object.entries(node)) if (!NOT_CODE.has(childKey)) walk(child, node, childKey);
+  };
+
+  walk(program, null, '');
+
+  return contents.join('\n');
 }
 
 function resourceSource(): string {
@@ -1750,7 +1824,7 @@ describe('the resource file is the only user-facing Croatian in the build', () =
   });
 
   it.skipIf(notBuilt).each(AUTHORED_VOCABULARY)('ships %s only from the resource file', (word) => {
-    const inChunk = wordOccurrences(withoutSearchParameters(withoutRouteSegments(allChunks())), word);
+    const inChunk = wordOccurrences(withoutRouteSegments(chunkCopy()), word);
     const inResource = wordOccurrences(resourceSource(), word);
 
     // Both directions matter. Above the resource count means a component
@@ -1818,9 +1892,34 @@ describe('the resource file is the only user-facing Croatian in the build', () =
     expect(wordOccurrences('Prijava, Prijava.', 'Prijava')).toBe(2);
     expect(wordOccurrences('Korisničko ime', 'Korisničko')).toBe(1);
     expect(wordOccurrences('abc', 'X')).toBe(0);
-    expect(wordOccurrences('function Ime(e){} await Ime(x); jsx)(Ime,{a}); var a=1,Ime=2; "Ime (obavezno)"', 'Ime')).toBe(1);
-    // Copy beside code punctuation still counts: a template, a concatenation, a label.
-    expect(wordOccurrences('`${a}Ime:` + "Ime," + x.Ime + (Ime, prezime) + Ime==b', 'Ime')).toBe(5);
+  });
+
+  it('reads only the copy of a built chunk, so a minified identifier never counts (story 8.2b)', () => {
+    // Detector self-test for `literalContentsOf`: copy in a string, a template
+    // or JSX text counts; a bare identifier `Ime` — a definition, a call, an
+    // argument, a JSX element type, a property — never does.
+    const chunk =
+      'function Ime(e){return e} await Ime(x); Cme(n,t,Ime); jsx(Ime,{a}); var a=1; o.Ime; ' +
+      'const l="Ime (obavezno)", m=`${a}Ime:`, j=jsx("p",{children:"Ime"}); const r=/Ime/g, d=a/Ime/b; ' +
+      'const k={"Ime":1};';
+    const copy = literalContentsOf(chunk);
+
+    expect(wordOccurrences(copy, 'Ime'), 'the string, the template and the JSX text').toBe(3);
+    expect(copy).toContain('Ime (obavezno)');
+    expect(wordOccurrences(literalContentsOf('function Ime(){} Cme(n,t,Ime); f(Ime);'), 'Ime')).toBe(0);
+  });
+
+  it('leaves a search parameter out in its code shapes only, and counts it as copy', () => {
+    const code =
+      'const P="smjena"; let q; q=`osoba`; s["smjena"]; const o={"smjena":1}; if("smjena" in n){} const v="osoba:";';
+
+    expect(wordOccurrences(literalContentsOf(code), 'smjena')).toBe(0);
+    expect(wordOccurrences(literalContentsOf(code), 'osoba')).toBe(0);
+    expect(wordOccurrences(literalContentsOf('jsx("p",{children:"smjena"}); f(`osoba`);'), 'smjena')).toBe(1);
+    expect(wordOccurrences(literalContentsOf('f(`osoba`);'), 'osoba')).toBe(1);
+    // An optional member access, and a class's member keys, are code too.
+    expect(wordOccurrences(literalContentsOf('s?.["smjena"]; class C { "smjena" = 1; "osoba"() {} }'), 'smjena')).toBe(0);
+    expect(wordOccurrences(literalContentsOf('class C { "Ime" = "Ime"; static "Ime"() {} }'), 'Ime')).toBe(1);
   });
 
   it('keeps the title and the boot fallback as the only literals in the HTML', () => {

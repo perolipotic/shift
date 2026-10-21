@@ -108,7 +108,9 @@ export const appLayoutRoute = createRoute({
     //
     // OFFLINE-READABLE DESTINATIONS read the session FOR READING (story 8.2,
     // human decision 2026-10-20 a): offline, an expired token that cannot be
-    // refreshed is not a sign-out, so *Danas* and *Kalendar* still open on the
+    // refreshed is not a sign-out, so the destinations that read offline
+    // (`OFFLINE_READABLE_PATHS`, route patterns: *Danas*, *Kalendar*, *Sati*,
+    // *Godišnji*, *Ljudi* and a team's roster, story 8.2b) still open on the
     // device's snapshot (`@/lib/supabase/offline-session`). Every other
     // destination reads the live session alone, as before.
     const reader =

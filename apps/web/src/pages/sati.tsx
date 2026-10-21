@@ -2,6 +2,7 @@ import { createRoute, redirect, useNavigate } from '@tanstack/react-router';
 
 import { MonthNav } from '@/components/month-nav';
 import { Card } from '@/components/ui/card';
+import { OfflineNote } from '@/components/offline-note';
 import { PageHeader, PageTitle } from '@/components/ui/page-header';
 import { HoursBody, HoursNotice } from '@/features/hours/components/hours-body';
 import { HoursExplanationDialog } from '@/features/hours/components/hours-explanation';
@@ -42,13 +43,18 @@ import { appLayoutRoute } from '@/pages/_app';
  * THE TITLE (story 7.14): a member's page is *Moji sati*, their own month; an
  * admin's, and the page before the read names the viewer, is *Sati*.
  *
+ * STORY 8.2b: offline, the whole cached snapshot is drawn under the as-of
+ * note (`OfflineNote`, under the heading), its time the oldest of every read
+ * *Sati* stands on — a subset of *Danas*'s reads for the same role, so a
+ * *Danas* read online is what *Sati* reads offline (`useHours`).
+ *
  * The session guard is NOT here. It is registered once on the pathless `_app`
  * layout this route nests under.
  */
 export function SatiScreen() {
   const search = satiRoute.useSearch();
   const navigate = useNavigate({ from: satiRoute.fullPath });
-  const { view, organization, organizationName, own, explain, month, navShown, refusal, retryable, loading, retry, show, change, pressColumn } =
+  const { view, organization, organizationName, own, explain, month, navShown, refusal, retryable, loading, offline, retry, show, change, pressColumn } =
     useHours(search, (next) => {
       void navigate({ search: next });
     });
@@ -71,6 +77,7 @@ export function SatiScreen() {
           </PageTitle>
         )}
       </PageHeader>
+      <OfflineNote offline={offline} />
       {navShown ? (
         <Card className="min-w-0">
           <HoursBody

@@ -1,5 +1,6 @@
 import { Link, createRoute } from '@tanstack/react-router';
 
+import { OfflineNote } from '@/components/offline-note';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { PageActions, PageHeader, PageTitle } from '@/components/ui/page-header';
@@ -33,6 +34,9 @@ import { appLayoutRoute } from '@/pages/_app';
  * derivations are `useTeamRoster`; the members are
  * `@/features/teams/components/team-roster`; every rule is in
  * `@/features/teams/services/roster`, which the node suite executes.
+ *
+ * STORY 8.2b: offline, the cached roster is drawn under the as-of note
+ * (`OfflineNote`, under the heading), its time the older of the two reads.
  */
 
 export function SmjenaScreen() {
@@ -57,6 +61,7 @@ function RosterScreen({ id }: { readonly id: string }) {
           </Button>
         </PageActions>
       </PageHeader>
+      <OfflineNote offline={screen.offline} />
       <Card className="w-full min-w-0 max-w-lg">
         <CardContent className="grid gap-6">
           {refusal === null ? null : (

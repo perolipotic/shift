@@ -32,9 +32,9 @@
  */
 
 /** TanStack Query's name for a fetch in flight. */
-const FETCH_FETCHING = 'fetching';
+export const FETCH_FETCHING = 'fetching';
 /** TanStack Query's name for no fetch at all. */
-const FETCH_IDLE = 'idle';
+export const FETCH_IDLE = 'idle';
 
 /** Every read is from this session's network: the surface renders as it always has. */
 export const FRESHNESS_FRESH = 'fresh';
@@ -67,7 +67,7 @@ export interface SnapshotRead {
 }
 
 /** Whether a read failed and is not being read again. */
-function failed(read: SnapshotRead): boolean {
+export function failed(read: Pick<SnapshotRead, 'isError' | 'fetchStatus'>): boolean {
   return read.isError && read.fetchStatus !== FETCH_FETCHING;
 }
 
@@ -106,6 +106,72 @@ export function snapshotFreshnessOf(
   }
 
   return { kind: FRESHNESS_FRESH };
+}
+
+/** The note's zone is the calendar snapshot's: it comes with the snapshot, which is never drawn without it. */
+export const NOTE_ZONE_CALENDAR = 'calendar';
+/** The note's zone is resolved from the surface's reads (the organization snapshot, or a zone a read carries). */
+export const NOTE_ZONE_READS = 'reads';
+/** No note is needed: nothing cached is drawn as figures (a read that resolved with its own refusal). */
+export const NOTE_ZONE_NONE = 'none';
+
+/**
+ * Where a surface's as-of note takes its zone from (story 8.2b): the calendar
+ * snapshot, the surface's reads — `zone` the one resolved, `null` for none —
+ * or nowhere, because what is drawn is a refusal rather than a snapshot.
+ */
+export type NoteZone =
+  | { readonly from: typeof NOTE_ZONE_CALENDAR }
+  | { readonly from: typeof NOTE_ZONE_READS; readonly zone: string | null }
+  | { readonly from: typeof NOTE_ZONE_NONE };
+
+/** The calendar-sourced zone, for the surfaces that read the calendar snapshot. */
+export const ZONE_FROM_CALENDAR: NoteZone = { from: NOTE_ZONE_CALENDAR };
+/** No zone needed: a refusal is drawn, never a snapshot. */
+export const ZONE_NOT_NEEDED: NoteZone = { from: NOTE_ZONE_NONE };
+
+/** The zone resolved from a surface's reads, `null` for none. */
+export function zoneFromReads(zone: string | null): NoteZone {
+  return { from: NOTE_ZONE_READS, zone };
+}
+
+/**
+ * The surface's state once its note's zone is known (story 8.2b): a cached
+ * snapshot is never drawn without its note, and the note states its time only
+ * in the organization's zone. So the whole snapshot whose zone comes from its
+ * reads and resolved to NONE is the unavailable state; a calendar-sourced
+ * zone (it comes with the snapshot) and a surface that needs none leave the
+ * state as it is, as does every state but the whole cached snapshot.
+ */
+export function notedFreshnessOf(freshness: SnapshotFreshness, noteZone: NoteZone): SnapshotFreshness {
+  return freshness.kind === FRESHNESS_OFFLINE && noteZone.from === NOTE_ZONE_READS && noteZone.zone === null
+    ? { kind: FRESHNESS_UNAVAILABLE }
+    : freshness;
+}
+
+/** What the as-of note states: when the drawn snapshot is from, and the organization's zone to state it in. */
+export interface OfflineNoteFacts {
+  /** The oldest read's `dataUpdatedAt`, in epoch milliseconds. */
+  readonly asOf: number;
+  readonly timeZone: string;
+}
+
+/**
+ * THE ONE GATE FOR THE AS-OF NOTE (story 8.2b): whenever the surface draws
+ * its whole cached snapshot (`offline`) and is not in its own unavailable
+ * state — whatever else it renders: an empty list, no team, a search with no
+ * match, a refusal of one month — the note stands, in `timeZone`. With no
+ * zone, none (and `notedFreshnessOf` has made such a surface unavailable
+ * already, unless it draws a refusal rather than a snapshot).
+ */
+export function offlineNoteOf(
+  freshness: SnapshotFreshness,
+  timeZone: string | null,
+  unavailable: boolean,
+): OfflineNoteFacts | null {
+  return freshness.kind === FRESHNESS_OFFLINE && !unavailable && timeZone !== null
+    ? { asOf: freshness.asOf, timeZone }
+    : null;
 }
 
 /** A query result as the existing surface derivations read it. */

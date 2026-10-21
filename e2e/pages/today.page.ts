@@ -208,6 +208,11 @@ export class TodayPage extends BasePage {
     return this.page.getByRole('main').getByRole('link', { name, exact: true });
   }
 
+  /** Every link in the page to a team's roster (`/smjene/<id>`), whichever team it names. */
+  get rosterLinks(): Locator {
+    return this.page.getByRole('main').locator('a[href^="/smjene/"]');
+  }
+
   /** The week's way to the calendar. */
   get weekLink(): Locator {
     return this.weekCard.getByRole('link', { name: admin.week.link, exact: true });

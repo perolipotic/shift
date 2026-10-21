@@ -10,7 +10,8 @@ import { persistQueryClientSubscribe, type PersistedClient } from '@tanstack/rea
  * for how long.
  *
  * WHAT IS KEPT. Only a query that SUCCEEDED, whose key is exactly one of
- * {@link PERSISTED_KEY_ROOTS}: the reads *Danas* and *Kalendar* stand on, and
+ * {@link PERSISTED_KEY_ROOTS}, or one of {@link PERSISTED_PARAMETERISED_KEY_ROOTS}
+ * with one string id: the reads the offline-readable surfaces stand on, and
  * the chrome's role, name and account id they need around them. A longer key
  * under an allowed root is a different read and is never kept: the erasure
  * guard's fresh reads (`[...key, 'erasure-check']`) and the organization's
@@ -84,7 +85,11 @@ export const DEVICE_SNAPSHOT_THROTTLE_MS = 1000;
  *   - `members` — `MEMBERS_LIST_KEY`, *Danas*'s leave tile;
  *   - `organization` — `ORGANIZATION_SNAPSHOT_KEY`, the leave year;
  *   - `member-role`, `member-name` — the chrome's role and name;
- *   - `session-subject` — `SESSION_SUBJECT_KEY`, the caller's account id.
+ *   - `session-subject` — `SESSION_SUBJECT_KEY`, the caller's account id;
+ *   - `leave-overview-records` — `LEAVE_OVERVIEW_RECORDS_KEY`, *Godišnji*'s
+ *     admin overview (story 8.2b);
+ *   - `teams`, `own-team` — `TEAMS_LIST_KEY` and `OWN_TEAM_KEY`, the member
+ *     directory's team list and the caller's own team (story 8.2b).
  */
 export const PERSISTED_KEY_ROOTS: readonly string[] = [
   'calendar',
@@ -97,20 +102,58 @@ export const PERSISTED_KEY_ROOTS: readonly string[] = [
   'member-role',
   'member-name',
   'session-subject',
+  'leave-overview-records',
+  'teams',
+  'own-team',
 ];
 
+/**
+ * The PARAMETERISED keys that are kept (story 8.2b), each only in the exact
+ * shape `[root, id]` with a NON-EMPTY string id, as the feature's own key
+ * function spells it:
+ *
+ *   - `team-roster` — `TEAM_ROSTER_KEY(id)`, one team's roster, read by
+ *     `/smjene/$id` and by the member directory for every active team.
+ *
+ * (`leave-records`, one member's live leave, joins with story 8.2c, which
+ * brings the member page that reads it offline.) A longer key under one of
+ * them, or a second segment that is not a non-empty string, is a different
+ * read and is never kept.
+ */
+export const PERSISTED_PARAMETERISED_KEY_ROOTS: readonly string[] = ['team-roster'];
+
+/**
+ * The key part the erasure guard appends to a screen's key for its own fresh
+ * reads (`ERASURE_CHECK_KEY_PART` in `@/features/conflicts/hooks/use-erasure-reads`;
+ * `persistence.test.ts` pins the two equal). Spelled here rather than
+ * imported, so this module keeps no import of a feature's hook. Never kept,
+ * in any position: a check's read is a fresh read for one dialog, not a
+ * surface's snapshot.
+ */
+export const ERASURE_CHECK_KEY_PART = 'erasure-check';
+
 const KEPT = new Set(PERSISTED_KEY_ROOTS);
+const KEPT_PARAMETERISED = new Set(PERSISTED_PARAMETERISED_KEY_ROOTS);
 
 /** Whether an answer is a read's own failure, resolved rather than thrown (`{ ok: false }`). */
 function resolvedFailure(data: unknown): boolean {
   return typeof data === 'object' && data !== null && (data as { ok?: unknown }).ok === false;
 }
 
-/** Whether a query key is one of the kept ones: exactly an allowed one-segment key, never a longer one under it. */
+/**
+ * Whether a query key is one of the kept ones: EXACTLY an allowed one-segment
+ * key, or an allowed parameterised root with one string id — never a longer
+ * key under either, and never a key naming the erasure check.
+ */
 export function persistsKey(queryKey: QueryKey): boolean {
   const [root, ...rest] = queryKey;
 
-  return rest.length === 0 && typeof root === 'string' && KEPT.has(root);
+  if (typeof root !== 'string' || queryKey.includes(ERASURE_CHECK_KEY_PART)) return false;
+  if (rest.length === 0) return KEPT.has(root);
+
+  const [id] = rest;
+
+  return rest.length === 1 && typeof id === 'string' && id !== '' && KEPT_PARAMETERISED.has(root);
 }
 
 /** Whether a query is kept on the device: succeeded, a kept key, and not its own failure. */
