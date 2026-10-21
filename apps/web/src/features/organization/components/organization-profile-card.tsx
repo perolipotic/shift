@@ -76,7 +76,7 @@ export function OrganizationProfileCard({
   readonly settings: OrganizationSettings;
   readonly organization: OrganizationSnapshot;
 }): ReactNode {
-  const { logo, snapshot, openers, open, saved } = settings;
+  const { logo, answered, openers, open, saved } = settings;
 
   return (
     <>
@@ -117,7 +117,7 @@ export function OrganizationProfileCard({
                 organization={organization}
                 logoUrl={logo.url}
                 onUnrenderable={logo.onUnrenderable}
-                pending={snapshot.isPending}
+                pending={answered.isPending}
                 compact
               />
               <span>{organization.logoPath === null ? t('organization.logoMark') : t('organization.logoImage')}</span>

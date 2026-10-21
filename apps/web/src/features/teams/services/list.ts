@@ -325,6 +325,11 @@ export function teamsSurfaceStateOf(answer: TeamsQueryAnswer): TeamsSurfaceState
  * What a LIST screen announces: the refusal, or over rows a refetch paused
  * offline, the unavailable message beside them — without it old rows look
  * current while nothing can reach the database. Edit forms read `refusal`.
+ *
+ * THE PAUSED BRANCH IS THE RAW-READ SAFETY NET, not dead code (story 8.2d):
+ * *Ljudi/smjene* hands this the answer as its freshness answers it, which is
+ * never paused, so there the as-of note stands instead. A raw read handed in
+ * still gets the message, as the old `*StateOf` modules keep their paused rule.
  */
 export function teamsNoticeOf(state: TeamsSurfaceState): TeamsFailure | null {
   return state.refusal ?? (state.paused ? TEAMS_UNAVAILABLE : null);

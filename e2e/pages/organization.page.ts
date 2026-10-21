@@ -63,6 +63,16 @@ export class OrganizationPage extends BasePage {
     return this.page.getByRole('region', { name: organization.hourBands.heading, exact: true });
   }
 
+  /** *Satni pojasi*'s fact of how much of the day the bands cover: the card drawn, not its skeleton. */
+  get hourBandsCovered(): Locator {
+    return this.hourBandsRegion.getByText(organization.hourBands.covered, { exact: true });
+  }
+
+  /** The header's way to the hour band editor, a client-side link (story 2.1b). */
+  get hourBandsLink(): Locator {
+    return this.main.getByRole('link', { name: organization.hourBands.heading, exact: true });
+  }
+
   /** Every field mounted on the page outside a dialog's portal. */
   get mainFields(): Locator {
     return this.page.locator('main input, main select');

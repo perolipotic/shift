@@ -1,6 +1,7 @@
 import { Link, createRoute } from '@tanstack/react-router';
 import { Building2, Info, Plus } from 'lucide-react';
 
+import { OfflineNote } from '@/components/offline-note';
 import { Button } from '@/components/ui/button';
 import {
   Callout,
@@ -62,6 +63,9 @@ export function OrganizacijaSatniPojasiScreen() {
           </Button>
         </PageActions>
       </PageHeader>
+      {/* STORY 8.2d: the as-of note while the cached bands are drawn offline;
+          the editor's dialog over them adds none. */}
+      <OfflineNote offline={screen.offline} />
       <Callout>
         <CalloutBody>
           <IconTile variant="primary">
@@ -83,14 +87,17 @@ export function OrganizacijaSatniPojasiScreen() {
       {refusal === null ? null : (
         <div className="grid min-w-0 gap-2">
           <Notice role="alert">{t(hourBandsMessageKey(refusal))}</Notice>
-          <Button
-            className="h-11 w-full sm:w-auto sm:justify-self-start"
-            type="button"
-            variant="outline"
-            onClick={screen.retry}
-          >
-            {t(hourBandsRetryMessageKey(refusal))}
-          </Button>
+          {/* STORY 8.2d: no read retry offline; it comes back with the connection. */}
+          {screen.retryable ? (
+            <Button
+              className="h-11 w-full sm:w-auto sm:justify-self-start"
+              type="button"
+              variant="outline"
+              onClick={screen.retry}
+            >
+              {t(hourBandsRetryMessageKey(refusal))}
+            </Button>
+          ) : null}
         </div>
       )}
       <HourBandAddDialog screen={screen} />

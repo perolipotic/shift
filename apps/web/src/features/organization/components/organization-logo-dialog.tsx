@@ -58,7 +58,7 @@ function LogoForm({
   readonly settings: OrganizationSettings;
   readonly organization: OrganizationSnapshot;
 }): ReactNode {
-  const { logo, snapshot, pending, failure, saveLogo } = settings;
+  const { logo, answered, pending, failure, saveLogo } = settings;
   const picker = useRef<HTMLInputElement>(null);
   const [chosen, setChosen] = useState<File | null>(null);
 
@@ -76,7 +76,7 @@ function LogoForm({
           organization={organization}
           logoUrl={logo.url}
           onUnrenderable={logo.onUnrenderable}
-          pending={snapshot.isPending}
+          pending={answered.isPending}
           compact={false}
         />
         <input

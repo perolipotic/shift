@@ -1,7 +1,8 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 
-import { ROTATION_KEY } from '@/features/rotation/services/list';
+import { ROTATION_KEY, type RotationSnapshot } from '@/features/rotation/services/list';
+import { ROTATION_SURFACE_KEYS, rotationSurfaceTimeZoneOf } from '@/features/rotation/services/surface-keys';
 import {
   SHIFT_TYPES_LIST_KEY,
   SHIFT_TYPES_READ_TABLE,
@@ -31,6 +32,8 @@ import {
 } from '@/features/shift-types/services/write';
 import { claimedOrganizationOf } from '@/lib/supabase/claims';
 import { retryRead } from '@/features/teams/services/dependents';
+import { zoneFromReads } from '@/lib/offline/freshness';
+import { useSnapshotFreshness } from '@/lib/offline/use-snapshot-freshness';
 import { supabaseClient } from '@/lib/supabase/client';
 import { NO_TEXT } from '@/utils/text';
 
@@ -81,9 +84,29 @@ export function useShiftTypeList() {
     if (!creating.current) setAdding(false);
   }
 
-  const answer = useQuery(
+  const answerRead = useQuery(
     shiftTypesQueryOptions(() => supabaseClient().from(SHIFT_TYPES_READ_TABLE)),
   );
+  // STORY 8.2d: the shift types are one snapshot with the rotation builder's
+  // (`ROTATION_SURFACE_KEYS`), decided here from this observer and, for the
+  // builder's read, from the cache — so the page is drawn whole under one
+  // note or is unavailable as one. THE ZONE is the one either snapshot
+  // embeds. The page's as-of note is the builder's, under the page
+  // heading; this list adds none.
+  const timeZone = rotationSurfaceTimeZoneOf(
+    answerRead.data,
+    queryClient.getQueryData<RotationSnapshot>(ROTATION_KEY),
+  );
+  const { clock, answerOf } = useSnapshotFreshness(
+    ROTATION_SURFACE_KEYS,
+    [[SHIFT_TYPES_LIST_KEY, answerRead]],
+    zoneFromReads(timeZone),
+  );
+  const answer = answerOf(answerRead);
+  // NO READ RETRY OFFLINE (story 8.2d, decision 2a): `retryable` is the
+  // connection's, so offline the message stays without its retry, and the
+  // retry comes back with the connection.
+  const retryable = clock.online;
 
   const state = shiftTypesSurfaceStateOf(answer);
   const { snapshot, loading } = state;
@@ -192,6 +215,7 @@ export function useShiftTypeList() {
 
   return {
     retry,
+    retryable,
     nameField,
     kindField,
     startField,

@@ -1,6 +1,7 @@
 import { Link, createRoute } from '@tanstack/react-router';
 import { Plus, UsersRound } from 'lucide-react';
 
+import { OfflineNote } from '@/components/offline-note';
 import { Button } from '@/components/ui/button';
 import { Notice } from '@/components/ui/notice';
 import { PageActions, PageDescription, PageHeader, PageTitle } from '@/components/ui/page-header';
@@ -31,6 +32,10 @@ import { appLayoutRoute } from '@/pages/_app';
  * `@/features/teams/components`; every rule is in
  * `@/features/teams/services/list` and `@/features/teams/services/write`,
  * which the node suite executes.
+ *
+ * STORY 8.2d: offline, the list is drawn from the device's snapshot under the
+ * as-of note, or the unavailable message is — with no read retry until the
+ * connection is back.
  */
 
 export function LjudiSmjeneScreen() {
@@ -62,20 +67,26 @@ export function LjudiSmjeneScreen() {
           </Button>
         </PageActions>
       </PageHeader>
+      {/* STORY 8.2d: the as-of note while the cached list is drawn offline;
+          the editor's dialog over it adds none. */}
+      <OfflineNote offline={screen.offline} />
       {created ? <Notice role="status">{t('smjene.created')}</Notice> : null}
       {refusal === null ? null : (
         <div className="grid min-w-0 gap-2">
           <Notice role="alert">
             {t(teamsMessageKey(refusal))}
           </Notice>
-          <Button
-            className="h-11 w-full sm:w-auto sm:justify-self-start"
-            type="button"
-            variant="outline"
-            onClick={screen.retry}
-          >
-            {t(teamsRetryMessageKey(refusal))}
-          </Button>
+          {/* STORY 8.2d: no read retry offline; it comes back with the connection. */}
+          {screen.retryable ? (
+            <Button
+              className="h-11 w-full sm:w-auto sm:justify-self-start"
+              type="button"
+              variant="outline"
+              onClick={screen.retry}
+            >
+              {t(teamsRetryMessageKey(refusal))}
+            </Button>
+          ) : null}
         </div>
       )}
       <TeamAddDialog screen={screen} />

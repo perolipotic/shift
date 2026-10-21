@@ -663,6 +663,13 @@ describe('the surface state, driven through the one query definition', () => {
 
     expect(state).toEqual({ snapshot: pilot, refusal: null, loading: false });
     expect(writableRotationOf(state)).toEqual(pilot);
+    expect(writableRotationOf(state, false)).toEqual(pilot);
+  });
+
+  it('builds no save from the cached snapshot drawn offline or just after a reconnect (story 8.2d)', async () => {
+    const state = rotationSurfaceStateOf(await settled(observe(() => answeringInTurn(good))));
+
+    expect(writableRotationOf(state, true)).toBeNull();
   });
 
   it('retries an unavailable first read once, then shows the message and no rows', async () => {

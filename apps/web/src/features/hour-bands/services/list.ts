@@ -553,7 +553,15 @@ export function hourBandsSurfaceStateOf(answer: HourBandsQueryAnswer): HourBands
   return { bands, refusal: null, loading: answer.isPending, paused: pausedFetch };
 }
 
-/** What the LIST screen announces, by {@link teamsNoticeOf}'s rule. */
+/**
+ * What the LIST screen announces, by {@link teamsNoticeOf}'s rule.
+ *
+ * THE PAUSED BRANCH IS THE RAW-READ SAFETY NET, not dead code (story 8.2d):
+ * the band screens and *Organizacija*'s card hand this the answer as their
+ * surface's freshness answers it, which is never paused, so there the as-of
+ * note stands instead. A raw read handed in still says the kept rows cannot
+ * reach the database, as the old `*StateOf` modules keep their paused rule.
+ */
 export function hourBandsNoticeOf(state: HourBandsSurfaceState): HourBandsFailure | null {
   return state.refusal ?? (state.paused ? HOUR_BANDS_UNAVAILABLE : null);
 }

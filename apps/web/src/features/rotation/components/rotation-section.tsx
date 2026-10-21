@@ -1,6 +1,7 @@
 import { Info, Rows3 } from 'lucide-react';
 import type { ReactNode } from 'react';
 
+import { OfflineNote } from '@/components/offline-note';
 import { Button } from '@/components/ui/button';
 import { Callout, CalloutBody, CalloutDescription, CalloutTitle } from '@/components/ui/callout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -321,6 +322,10 @@ export function RotationSection({
           <RotationHistoryDialog rows={rotationHistoryOf(snapshot, today)} />
         )}
       </PageHeader>
+      {/* STORY 8.2d: the page's one as-of note — the shift types decide with
+          the builder and add none — while the whole cached snapshot is drawn
+          offline. */}
+      <OfflineNote offline={builder.offline} />
       {/* THE SAVE'S NOTE AND OUTCOME, right under the header; the save itself
           is in the bar at the end (story 5.5c). */}
       <p className="-mt-3 text-sm text-muted-foreground">{t('rotation.builder.saveNote')}</p>

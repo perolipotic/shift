@@ -11,6 +11,7 @@ import {
   hourBandsSurfaceStateOf,
   partitionBarOf,
 } from '@/features/hour-bands/services/list';
+import { HOUR_BANDS_SURFACE_KEYS, hourBandsTimeZoneOf } from '@/features/hour-bands/services/surface-keys';
 import {
   HOUR_BAND_START_FIELD,
   HOUR_BAND_WRITE_REFUSED,
@@ -20,8 +21,11 @@ import {
   type HourBandWriteFailure,
   type HourBandWriteTable,
 } from '@/features/hour-bands/services/write';
-import { claimedOrganizationOf } from '@/lib/supabase/claims';
+import { ORGANIZATION_SNAPSHOT_KEY, type OrganizationOutcome } from '@/features/organization/services/snapshot';
 import { HOUR_BAND_WRITE_DEPENDENTS, refreshAfterWrite, retryRead } from '@/features/teams/services/dependents';
+import { offlineNoteOf, zoneFromReads } from '@/lib/offline/freshness';
+import { useSnapshotFreshness } from '@/lib/offline/use-snapshot-freshness';
+import { claimedOrganizationOf } from '@/lib/supabase/claims';
 import { supabaseClient } from '@/lib/supabase/client';
 import { NO_TEXT } from '@/utils/text';
 
@@ -57,13 +61,35 @@ export function useHourBandList() {
     if (adding) nameField.current?.focus();
   }, [adding]);
 
-  const answer = useQuery(hourBandsQueryOptions(() => supabaseClient().from(HOUR_BANDS_TABLE)));
+  const answerRead = useQuery(hourBandsQueryOptions(() => supabaseClient().from(HOUR_BANDS_TABLE)));
+  // STORY 8.2d: the bands are one snapshot with the organization
+  // (`HOUR_BANDS_SURFACE_KEYS`): online, bands older than this session's
+  // network are never drawn as fresh; offline, the cached bands are drawn
+  // under the as-of note (`offline`), or the unavailable state is. THE NOTE'S
+  // ZONE is the organization's, read from the cache — the rows carry none,
+  // and a second `useQuery` here would be a second read on this screen.
+  const timeZone = hourBandsTimeZoneOf(
+    queryClient.getQueryData<OrganizationOutcome>(ORGANIZATION_SNAPSHOT_KEY),
+  );
+  const { freshness, clock, answerOf } = useSnapshotFreshness(
+    HOUR_BANDS_SURFACE_KEYS,
+    [[HOUR_BANDS_LIST_KEY, answerRead]],
+    zoneFromReads(timeZone),
+  );
+  const answer = answerOf(answerRead);
 
   const state = hourBandsSurfaceStateOf(answer);
   const { bands, loading } = state;
   // THE LIST'S NOTICE: the refusal, or the unavailable message beside rows a
-  // refetch paused offline over, which is never a refusal (an edit form keeps them).
+  // refetch paused offline over, which is never a refusal (an edit form keeps
+  // them). Under the freshness (story 8.2d) a paused refetch is never seen.
   const refusal = hourBandsNoticeOf(state);
+  // STORY 8.2d: the as-of note, while the cached bands are drawn offline.
+  const offline = offlineNoteOf(freshness, timeZone, refusal !== null);
+  // NO READ RETRY OFFLINE (story 8.2d, decision 2a): `retryable` is the
+  // connection's, so offline the message stays without its retry, and the
+  // retry comes back with the connection.
+  const retryable = clock.online;
   const rows = bands === null ? null : hourBandDisplayRowsOf(bands);
   const bar = bands === null ? null : partitionBarOf(bands);
   const preview = bands === null ? null : hourBandPreviewOf(bands, typedStart, null);
@@ -145,6 +171,8 @@ export function useHourBandList() {
 
   return {
     retry,
+    retryable,
+    offline,
     nameField,
     startField,
     pending,

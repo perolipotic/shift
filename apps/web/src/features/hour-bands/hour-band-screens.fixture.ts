@@ -56,4 +56,8 @@ export const HOUR_BAND_SCREENS_EXEMPT: readonly { readonly file: string; readonl
     file: 'services/write.ts',
     why: 'the three writes, the refusals and the confirmations; a key source of its own in the sign-in suite, executed by write.test.ts',
   },
+  {
+    file: 'services/surface-keys.ts',
+    why: "Satni pojasi's reads as one snapshot (story 8.2d), the keys its offline freshness is decided over and its note's zone; renders nothing and declares no key, executed by surface-keys.test.ts",
+  },
 ];

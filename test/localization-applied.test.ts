@@ -221,13 +221,13 @@ const HOUR_BAND_PAGES = [HOUR_BAND_LIST_PARTS.page, HOUR_BAND_EDIT_PARTS.page].m
   join(webRoot, 'src', ...parts),
 );
 
-/** The rule modules beside the two sets' parts. */
-const HOUR_BANDS_RULE_MODULES = ['services/list.ts', 'services/write.ts'];
+/** The rule modules beside the two sets' parts (story 8.2d adds the surface's keys). */
+const HOUR_BANDS_RULE_MODULES = ['services/list.ts', 'services/surface-keys.ts', 'services/write.ts'];
 
 /**
  * What `hourBandsScreenParts()` must hold: every part of both hour band
  * screens' file sets outside `pages/` (`hour-band-screens.fixture.ts`), and
- * the two rule modules beside them. A folder read that silently lost one of
+ * the rule modules beside them. A folder read that silently lost one of
  * these would drop it from `SOURCES` with the freshness guard still green.
  */
 const HOUR_BANDS_SOURCES_REQUIRED = [
@@ -891,7 +891,7 @@ describe('the build being read reflects the current localization source', () => 
     const parts = hourBandsScreenParts();
 
     // THE EXACT COUNT, read off the disk and derived from the fixture: every
-    // part of both sets outside `pages/`, and the two rule modules.
+    // part of both sets outside `pages/`, and the rule modules.
     expect(parts, 'the hour bands feature grew or lost a module').toHaveLength(
       Object.keys(HOUR_BAND_LIST_PARTS).length +
         Object.keys(HOUR_BAND_EDIT_PARTS).length -

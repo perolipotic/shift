@@ -10,6 +10,7 @@ import {
   hourBandsSurfaceStateOf,
   type HourBandRow,
 } from '@/features/hour-bands/services/list';
+import { HOUR_BANDS_SURFACE_KEYS, hourBandsTimeZoneOf } from '@/features/hour-bands/services/surface-keys';
 import {
   HOUR_BAND_REMOVED,
   HOUR_BAND_SAVED,
@@ -34,7 +35,10 @@ import {
   refreshAfterWrite,
   retryRead,
 } from '@/features/teams/services/dependents';
+import { ORGANIZATION_SNAPSHOT_KEY, type OrganizationOutcome } from '@/features/organization/services/snapshot';
 import { formatMinuteOfDay } from '@/lib/i18n/format';
+import { zoneFromReads } from '@/lib/offline/freshness';
+import { useSnapshotFreshness } from '@/lib/offline/use-snapshot-freshness';
 import { supabaseClient } from '@/lib/supabase/client';
 
 /**
@@ -75,7 +79,24 @@ export function useHourBandEdit(id: string) {
   /** The start as typed since the form last mounted, or `null` for the stored one. */
   const [typedStart, setTypedStart] = useState<string | null>(null);
 
-  const answer = useQuery(hourBandsQueryOptions(() => supabaseClient().from(HOUR_BANDS_TABLE)));
+  const answerRead = useQuery(hourBandsQueryOptions(() => supabaseClient().from(HOUR_BANDS_TABLE)));
+  // STORY 8.2d: the same one snapshot the list behind the dialog decides
+  // (`HOUR_BANDS_SURFACE_KEYS`), so the form and the list are drawn from the
+  // cached bands together, or are unavailable together. The as-of note is
+  // the list's, under its heading; the dialog adds none.
+  const timeZone = hourBandsTimeZoneOf(
+    queryClient.getQueryData<OrganizationOutcome>(ORGANIZATION_SNAPSHOT_KEY),
+  );
+  const { clock, answerOf } = useSnapshotFreshness(
+    HOUR_BANDS_SURFACE_KEYS,
+    [[HOUR_BANDS_LIST_KEY, answerRead]],
+    zoneFromReads(timeZone),
+  );
+  const answer = answerOf(answerRead);
+  // NO READ RETRY OFFLINE (story 8.2d, decision 2a): `retryable` is the
+  // connection's, so offline the message stays without its retry, and the
+  // retry comes back with the connection.
+  const retryable = clock.online;
 
   const readState = hourBandsSurfaceStateOf(answer);
   const { bands, refusal: readRefusal, loading } = readState;
@@ -204,6 +225,7 @@ export function useHourBandEdit(id: string) {
 
   return {
     retry,
+    retryable,
     nameField,
     startField,
     closeButton,

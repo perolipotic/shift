@@ -1,6 +1,7 @@
 import { Link, createRoute } from '@tanstack/react-router';
 import { Clock3 } from 'lucide-react';
 
+import { OfflineNote } from '@/components/offline-note';
 import { Button } from '@/components/ui/button';
 import { PageActions, PageDescription, PageHeader, PageTitle } from '@/components/ui/page-header';
 import { t } from '@/lib/i18n';
@@ -65,6 +66,9 @@ export function OrganizacijaScreen() {
           </Button>
         </PageActions>
       </PageHeader>
+      {/* STORY 8.2d: the page's one as-of note while the cached cards are
+          drawn offline; the hour bands card decides with them and adds none. */}
+      <OfflineNote offline={settings.offline} />
       <OrganizationSettingsCard settings={settings} hourBands={hourBands} />
     </main>
   );

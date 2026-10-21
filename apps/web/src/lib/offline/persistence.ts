@@ -91,7 +91,11 @@ export const DEVICE_SNAPSHOT_THROTTLE_MS = 1000;
  *   - `teams`, `own-team` — `TEAMS_LIST_KEY` and `OWN_TEAM_KEY`, the member
  *     directory's team list and the caller's own team (story 8.2b);
  *   - `acting-admin-names` — `ACTING_ADMINS_KEY`, the names of whoever
- *     decided, on *Raspored*'s *Riješeni* tab (story 8.2c).
+ *     decided, on *Raspored*'s *Riješeni* tab (story 8.2c);
+ *   - `hourBands` — `HOUR_BANDS_LIST_KEY`, *Satni pojasi* and *Organizacija*'s
+ *     hour band card (story 8.2d);
+ *   - `shiftTypes`, `rotation` — `SHIFT_TYPES_LIST_KEY` and `ROTATION_KEY`,
+ *     *Postavke rotacije*'s shift types and rotation builder (story 8.2d).
  */
 export const PERSISTED_KEY_ROOTS: readonly string[] = [
   'calendar',
@@ -108,6 +112,9 @@ export const PERSISTED_KEY_ROOTS: readonly string[] = [
   'teams',
   'own-team',
   'acting-admin-names',
+  'hourBands',
+  'shiftTypes',
+  'rotation',
 ];
 
 /**
