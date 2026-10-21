@@ -834,7 +834,7 @@ describe('the screen is read at all, so every sweep below means something', () =
     for (const file of exempt) expect(walked, `${file} is exempt and does not exist`).toContain(file);
     // THE EXACT EXEMPTIONS, so a new one is a reviewed change to this test.
     expect([...exempt].sort(), 'the hour band exemptions changed').toEqual(
-      ['hour-band-screens.fixture.ts', 'services/list.ts', 'services/write.ts']
+      ['hour-band-screens.fixture.ts', 'services/list.ts', 'services/surface-keys.ts', 'services/write.ts']
         .map((file) => join(HOUR_BAND_FEATURE, ...file.split('/')))
         .sort(),
     );

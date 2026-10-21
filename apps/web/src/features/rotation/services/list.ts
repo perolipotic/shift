@@ -940,7 +940,13 @@ export function reopensAfterSaveOf(status: string | undefined): boolean {
  * The snapshot a SAVE may be built from: the surface's, but only while the
  * read is healthy — rows kept beside a failed refetch may no longer be what
  * the database holds, as `writableTeamsOf` argues.
+ *
+ * NEVER FROM THE DEVICE'S COPY (story 8.2d): while the builder draws its
+ * cached snapshot (`fromCache` — offline, or just reconnected before the
+ * refetch lands), nothing is writable either, and a save is refused with the
+ * existing unavailable outcome rather than built from rows that may no
+ * longer be what the database holds.
  */
-export function writableRotationOf(state: RotationSurfaceState): RotationSnapshot | null {
-  return state.refusal === null ? state.snapshot : null;
+export function writableRotationOf(state: RotationSurfaceState, fromCache = false): RotationSnapshot | null {
+  return state.refusal === null && !fromCache ? state.snapshot : null;
 }

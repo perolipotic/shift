@@ -26,6 +26,12 @@ import {
   type OrganizationSnapshot,
 } from '@/features/organization/services/snapshot';
 import {
+  ORGANIZATION_SURFACE_KEYS,
+  organizationNoteZoneOf,
+  organizationRefusalOf,
+  organizationSurfaceTimeZoneOf,
+} from '@/features/organization/services/surface-keys';
+import {
   ORGANIZATION_DIALOG_CARD_HEADING_IDS,
   ORGANIZATION_DIALOG_SAVE_ID,
   ORGANIZATION_LEAVE_DAY_FIELD_ID,
@@ -43,6 +49,8 @@ import {
   type OrganizationDialog,
 } from '@/features/organization/utils/dialogs';
 import { ORGANIZATION_ERROR_ID, offersReadRetry } from '@/features/organization/utils/messages';
+import { offlineNoteOf } from '@/lib/offline/freshness';
+import { useSnapshotFreshness } from '@/lib/offline/use-snapshot-freshness';
 import { supabaseClient } from '@/lib/supabase/client';
 import { focusLater } from '@/utils/focus-later';
 
@@ -163,15 +171,45 @@ export function useOrganizationSettings() {
     queryFn: () => readOrganization(organizationTable()),
   });
 
-  const answered = snapshot.data;
-  const organization = answered !== undefined && answered.ok ? answered.snapshot : null;
-  // A READ THAT THREW is a failed read too (`readFailureOf`): the query
-  // function builds the client before `readOrganization` can catch anything,
-  // so `SUPABASE_ENVIRONMENT_MISSING` arrives as a query error with no data.
-  const readFailure = readFailureOf(snapshot);
+  // STORY 8.2d: the page is one snapshot with the hour bands card
+  // (`ORGANIZATION_SURFACE_KEYS`), decided here from this observer and, for
+  // the bands, from the cache — `useOrganizationHourBands` decides over the
+  // same set. Online, a row older than this session's network is never drawn
+  // as fresh (the skeleton); offline, the cached cards are drawn under the
+  // as-of note (`offline`), or the unavailable message is — never an endless
+  // skeleton. A refusal the read resolved with is drawn as its own message,
+  // with no note (`organizationNoteZoneOf`).
+  // THE FETCH-FLAG RULE (`@/lib/offline/use-snapshot-freshness`): everything
+  // drawn derives from `answered`; `snapshot` keeps `isFetching` and
+  // `refetch`, the retry's.
+  // ONE ZONE SOURCE for the freshness and the note: the row as this observer
+  // holds it. (The answered read cannot be it — it is derived from the
+  // freshness — and wherever the note is drawn, the answered row IS this one.)
+  const timeZone = organizationSurfaceTimeZoneOf(snapshot.data);
+  const { freshness, clock, answerOf } = useSnapshotFreshness(
+    ORGANIZATION_SURFACE_KEYS,
+    [[ORGANIZATION_SNAPSHOT_KEY, snapshot]],
+    organizationNoteZoneOf(snapshot.data),
+  );
+  const answered = answerOf(snapshot);
+  const outcome = answered.data;
+  const organization = outcome !== undefined && outcome.ok ? outcome.snapshot : null;
+  // A RESOLVED REFUSAL FIRST (story 8.2d): the row's read answered with its
+  // own refusal (`ORGANIZATION_REFUSED`, say) is drawn as that message, with
+  // no note — offline too, even with the hour bands never read, where the
+  // freshness alone would say unavailable. Otherwise a READ THAT THREW is a
+  // failed read too (`readFailureOf`): the query function builds the client
+  // before `readOrganization` can catch anything, so
+  // `SUPABASE_ENVIRONMENT_MISSING` arrives as a query error with no data.
+  const readFailure = organizationRefusalOf(snapshot.data) ?? readFailureOf(answered);
   // THE READ'S OWN RETRY. A failed read draws no facts and so no dialog: this
-  // is the control that can act on the message's "try again".
-  const readRetry = organization === null && readFailure !== null && offersReadRetry(readFailure);
+  // is the control that can act on the message's "try again". NOT OFFLINE
+  // (story 8.2d, decision 2a): the message stays, and the retry comes back
+  // with the connection.
+  const readRetry = clock.online && organization === null && readFailure !== null && offersReadRetry(readFailure);
+  // STORY 8.2d: the as-of note, under the page heading, while the cached
+  // cards are drawn offline; none beside the read's message.
+  const offline = offlineNoteOf(freshness, timeZone, readFailure !== null);
   // DERIVED, never independent (AD-13), and SHARED with the navigation chrome:
   // the signed URL is keyed under the snapshot's key and never fetched when
   // there is no logo.
@@ -386,6 +424,8 @@ export function useOrganizationSettings() {
 
   return {
     snapshot,
+    answered,
+    offline,
     organization,
     readFailure,
     readRetry,

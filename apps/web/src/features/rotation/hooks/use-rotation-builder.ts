@@ -30,6 +30,7 @@ import {
   type RotationSnapshot,
 } from '@/features/rotation/services/list';
 import { savedPendingCountOf } from '@/features/rotation/services/override-disposition';
+import { ROTATION_SURFACE_KEYS, rotationSurfaceTimeZoneOf } from '@/features/rotation/services/surface-keys';
 import {
   ROTATION_CANCEL_STALE,
   ROTATION_WRITE_REFUSED,
@@ -66,11 +67,14 @@ import {
   type RotationWarningLine,
   type ShownSaveOutcome,
 } from '@/features/rotation/utils/warnings';
+import { SHIFT_TYPES_LIST_KEY, type ShiftTypesSnapshot } from '@/features/shift-types/services/list';
 import {
   ROTATION_CANCEL_DEPENDENTS,
   ROTATION_SAVE_DEPENDENTS,
   refreshAfterWrite,
 } from '@/features/teams/services/dependents';
+import { FRESHNESS_OFFLINE, offlineNoteOf, zoneFromReads } from '@/lib/offline/freshness';
+import { useSnapshotFreshness } from '@/lib/offline/use-snapshot-freshness';
 import { claimedOrganizationOf } from '@/lib/supabase/claims';
 import { supabaseClient } from '@/lib/supabase/client';
 
@@ -228,9 +232,37 @@ export function useRotationBuilder() {
     progress.current?.scrollIntoView();
   }, [currentStep]);
 
-  const answer = useQuery(rotationQueryOptions(() => supabaseClient().from(ROTATION_READ_TABLE)));
+  const answerRead = useQuery(rotationQueryOptions(() => supabaseClient().from(ROTATION_READ_TABLE)));
+  // STORY 8.2d: the builder is one snapshot with the shift types beside it
+  // (`ROTATION_SURFACE_KEYS`), decided here from this observer and, for the
+  // shift types' read, from the cache. Online, a rotation older than this
+  // session's network is never drawn as fresh; offline, the cached rotation
+  // is drawn under the page's one as-of note (`offline`), or the unavailable
+  // state is — a paused refetch over cached rows is never drawn unlabelled.
+  // THE ZONE is the one either snapshot embeds.
+  const timeZone = rotationSurfaceTimeZoneOf(
+    queryClient.getQueryData<ShiftTypesSnapshot>(SHIFT_TYPES_LIST_KEY),
+    answerRead.data,
+  );
+  const { freshness, clock, answerOf } = useSnapshotFreshness(
+    ROTATION_SURFACE_KEYS,
+    [[ROTATION_KEY, answerRead]],
+    zoneFromReads(timeZone),
+  );
+  const answer = answerOf(answerRead);
   const state = rotationSurfaceStateOf(answer);
   const { snapshot, refusal } = state;
+  // STORY 8.2d: the page's one as-of note, under its heading, while the whole
+  // cached snapshot is drawn offline; none beside the unavailable message.
+  const offline = offlineNoteOf(freshness, timeZone, refusal !== null);
+  // NO READ RETRY OFFLINE (story 8.2d, decision 2a): `retryable` is the
+  // connection's, so offline the message stays without its retry, and the
+  // retry comes back with the connection.
+  const retryable = clock.online;
+  // NOTHING IS WRITTEN FROM THE DEVICE'S COPY (story 8.2d): while the cached
+  // snapshot is drawn — offline, or just reconnected before the refetch lands
+  // — a save or a cancel is refused with the existing unavailable outcome.
+  const fromCache = freshness.kind === FRESHNESS_OFFLINE;
   const today = snapshot === null ? null : rotationTodayOf(snapshot, new Date());
   const draft = snapshot === null || today === null ? null : shownDraftOf(stored, snapshot, today);
   // With no draft only section 1 exists: laid out as step 1, and no stepper.
@@ -386,7 +418,7 @@ export function useRotationBuilder() {
    * refuses the save with a retry. Nothing is saved unchecked.
    */
   async function requestSave(): Promise<void> {
-    const writable = writableRotationOf(state);
+    const writable = writableRotationOf(state, fromCache);
 
     if (draft === null || saving.current) return;
 
@@ -575,7 +607,7 @@ export function useRotationBuilder() {
    * open with its refusal and a retry. Nothing is deleted unchecked.
    */
   async function cancelScheduled(confirmed: string): Promise<void> {
-    const writable = writableRotationOf(state);
+    const writable = writableRotationOf(state, fromCache);
 
     if (saving.current) return;
 
@@ -767,6 +799,8 @@ export function useRotationBuilder() {
     state,
     snapshot,
     refusal,
+    offline,
+    retryable,
     today,
     draft,
     shown,

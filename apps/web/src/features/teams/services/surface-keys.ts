@@ -25,6 +25,15 @@ export function teamRosterSurfaceKeysOf(id: string): readonly QueryKey[] {
   return [TEAM_ROSTER_KEY(id), ORGANIZATION_SNAPSHOT_KEY];
 }
 
+/**
+ * *Ljudi/smjene* `/ljudi/smjene` and its editor `/ljudi/smjene/$id` as one
+ * snapshot (story 8.2d): the team list, and the organization snapshot the
+ * as-of note takes its zone from (the rows carry none). Both hooks read this
+ * set. Neither observes the organization (the chrome always does), so it is
+ * decided from the cache, never a second `useQuery` on a team screen.
+ */
+export const TEAM_LIST_SURFACE_KEYS: readonly QueryKey[] = [TEAMS_LIST_KEY, ORGANIZATION_SNAPSHOT_KEY];
+
 /** The organization read as far as its zone goes: its own outcome, or nothing yet. */
 type OrganizationZoneAnswer = { readonly ok: true; readonly snapshot: { readonly timezone: string } } | { readonly ok: false };
 /** The own-team read as far as its zone goes. */
@@ -39,6 +48,16 @@ type OwnTeamZoneAnswer = { readonly ok: true; readonly snapshot: { readonly time
  */
 export function teamRosterTimeZoneOf(organization: OrganizationZoneAnswer | undefined): string | null {
   return organization !== undefined && organization.ok ? organization.snapshot.timezone : null;
+}
+
+/**
+ * The zone *Ljudi/smjene*'s as-of note states its time in (story 8.2d): the
+ * organization snapshot's, by the roster's rule — the team list carries no
+ * zone either — with `null` for none, and the list is then unavailable
+ * offline rather than drawn without its note.
+ */
+export function teamListTimeZoneOf(organization: OrganizationZoneAnswer | undefined): string | null {
+  return teamRosterTimeZoneOf(organization);
 }
 
 /**

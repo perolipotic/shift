@@ -80,14 +80,17 @@ function HourBandScreen({ id }: { readonly id: string }) {
         {readRefusal === null ? null : (
           <div className="grid min-w-0 gap-2">
             <Notice role="alert">{t(hourBandsMessageKey(readRefusal))}</Notice>
-            <Button
-              className="h-11 w-full sm:w-auto sm:justify-self-start"
-              type="button"
-              variant="outline"
-              onClick={screen.retry}
-            >
-              {t(hourBandsRetryMessageKey(readRefusal))}
-            </Button>
+            {/* STORY 8.2d: no read retry offline; it comes back with the connection. */}
+            {screen.retryable ? (
+              <Button
+                className="h-11 w-full sm:w-auto sm:justify-self-start"
+                type="button"
+                variant="outline"
+                onClick={screen.retry}
+              >
+                {t(hourBandsRetryMessageKey(readRefusal))}
+              </Button>
+            ) : null}
           </div>
         )}
         {refusal === null ? null : (

@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CALENDAR_KEY } from '@/features/calendar/services/snapshot';
 import { ERASURE_CHECK_KEY_PART as FEATURE_ERASURE_CHECK_KEY_PART } from '@/features/conflicts/hooks/use-erasure-reads';
 import { ACTING_ADMINS_KEY } from '@/features/conflicts/services/resolved-conflicts';
+import { HOUR_BANDS_LIST_KEY } from '@/features/hour-bands/services/list';
 import {
   MY_CONFLICT_RESOLUTIONS_KEY,
   ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
@@ -20,6 +21,8 @@ import { MEMBER_NAME_KEY } from '@/features/navigation/services/profile';
 import { MEMBER_ROLE_KEY } from '@/features/navigation/services/role';
 import { ORGANIZATION_SNAPSHOT_KEY } from '@/features/organization/services/snapshot';
 import { organizationLogoKey } from '@/features/organization/services/logo';
+import { ROTATION_KEY } from '@/features/rotation/services/list';
+import { SHIFT_TYPES_LIST_KEY } from '@/features/shift-types/services/list';
 import { TEAMS_LIST_KEY } from '@/features/teams/services/list';
 import { OWN_TEAM_KEY, TEAM_ROSTER_KEY } from '@/features/teams/services/roster';
 import { queryClient } from '@/lib/query-client';
@@ -94,6 +97,12 @@ async function savedBy(owner: string, storage: ReturnType<typeof memoryStorage>)
   });
 }
 
+/**
+ * A one-segment key off the list. Story 8.2d kept the last real ones
+ * (`hourBands`, `shiftTypes`, `rotation`), so the example is made up.
+ */
+const UNLISTED_KEY = ['unlisted'] as const;
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -118,6 +127,9 @@ describe('what is kept on the device', () => {
         TEAMS_LIST_KEY,
         OWN_TEAM_KEY,
         ACTING_ADMINS_KEY,
+        HOUR_BANDS_LIST_KEY,
+        SHIFT_TYPES_LIST_KEY,
+        ROTATION_KEY,
       ].map((key) => {
         expect(key).toHaveLength(1);
 
@@ -163,7 +175,7 @@ describe('what is kept on the device', () => {
   it('never keeps the erasure guard\'s fresh reads, the logo URL, or a key off the list', () => {
     expect(persistsQuery({ queryKey: [...CALENDAR_KEY, ERASURE_CHECK_KEY_PART], state: success() } as never)).toBe(false);
     expect(persistsQuery({ queryKey: organizationLogoKey('org/logo'), state: success() } as never)).toBe(false);
-    expect(persistsQuery({ queryKey: ['shiftTypes'], state: success() } as never)).toBe(false);
+    expect(persistsQuery({ queryKey: UNLISTED_KEY, state: success() } as never)).toBe(false);
   });
 
   it('never keeps a failed or pending read, or a read that resolved with its own failure', () => {
@@ -181,7 +193,7 @@ describe('what is kept on the device', () => {
 
     await device.restoreForSession('member-a');
     await page.fetchQuery({ queryKey: CALENDAR_KEY, queryFn: () => Promise.resolve({ of: 'a' }) });
-    await page.fetchQuery({ queryKey: ['shiftTypes'], queryFn: () => Promise.resolve([]) });
+    await page.fetchQuery({ queryKey: UNLISTED_KEY, queryFn: () => Promise.resolve([]) });
     await page
       .fetchQuery({ queryKey: MEMBERS_LIST_KEY, queryFn: () => Promise.reject(new Error('UNAVAILABLE')) })
       .catch(() => undefined);
@@ -218,7 +230,7 @@ describe('a kept snapshot is restored for its owner alone', () => {
     for (const root of PERSISTED_PARAMETERISED_KEY_ROOTS) {
       expect(queryClient.getQueryDefaults([root, 'id']).gcTime, root).toBe(DEVICE_SNAPSHOT_GC_TIME_MS);
     }
-    expect(queryClient.getQueryDefaults(['shiftTypes']).gcTime).toBeUndefined();
+    expect(queryClient.getQueryDefaults([...UNLISTED_KEY]).gcTime).toBeUndefined();
 
     const storage = memoryStorage();
 

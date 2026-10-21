@@ -4,8 +4,10 @@ import { ORGANIZATION_SNAPSHOT_KEY } from '@/features/organization/services/snap
 import { TEAMS_LIST_KEY } from '@/features/teams/services/list';
 import { OWN_TEAM_KEY, TEAM_ROSTER_KEY } from '@/features/teams/services/roster';
 import {
+  TEAM_LIST_SURFACE_KEYS,
   directorySurfaceKeysOf,
   directoryTimeZoneOf,
+  teamListTimeZoneOf,
   teamRosterSurfaceKeysOf,
   teamRosterTimeZoneOf,
 } from '@/features/teams/services/surface-keys';
@@ -42,6 +44,16 @@ describe("a team roster's keys", () => {
   });
 });
 
+describe("Ljudi/smjene's keys (story 8.2d)", () => {
+  it('are the team list and the organization', () => {
+    expect(TEAM_LIST_SURFACE_KEYS).toEqual([TEAMS_LIST_KEY, ORGANIZATION_SNAPSHOT_KEY]);
+  });
+
+  it('are all kept on the device', () => {
+    for (const key of TEAM_LIST_SURFACE_KEYS) expect(persistsKey(key), text(key)).toBe(true);
+  });
+});
+
 describe("the note's zone", () => {
   const organization = { ok: true, snapshot: { timezone: 'Europe/Zagreb' } } as const;
   const own = { ok: true, snapshot: { timeZone: 'Europe/Vienna' } } as const;
@@ -51,6 +63,12 @@ describe("the note's zone", () => {
     expect(teamRosterTimeZoneOf(organization)).toBe('Europe/Zagreb');
     expect(teamRosterTimeZoneOf(failed)).toBeNull();
     expect(teamRosterTimeZoneOf(undefined)).toBeNull();
+  });
+
+  it("is the organization snapshot's for Ljudi/smjene, and none without it (story 8.2d)", () => {
+    expect(teamListTimeZoneOf(organization)).toBe('Europe/Zagreb');
+    expect(teamListTimeZoneOf(failed)).toBeNull();
+    expect(teamListTimeZoneOf(undefined)).toBeNull();
   });
 
   it("is the organization snapshot's for the directory, then the own team's, and none without either", () => {

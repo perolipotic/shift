@@ -69,6 +69,26 @@ export class RotationPage extends BasePage {
     await expect(this.text(shiftTypes.created)).toBeVisible();
   }
 
+  /** The shift types' unavailable message (story 8.2d's offline checks). */
+  get shiftTypesUnavailable(): Locator {
+    return this.alertWith(shiftTypes.error.unavailable);
+  }
+
+  /** The shift types' own read retry, by its own label. */
+  get shiftTypesRetryButton(): Locator {
+    return this.page.getByRole('button', { name: shiftTypes.error.retry, exact: true });
+  }
+
+  /** The builder's unavailable message, for its own read. */
+  get rotationUnavailable(): Locator {
+    return this.alertWith(builder.error.unavailable);
+  }
+
+  /** The builder's own read retry, by its own label. */
+  get rotationRetryButton(): Locator {
+    return this.page.getByRole('button', { name: builder.error.retry, exact: true });
+  }
+
   /** A type's edit link, which opens its dialog over the builder. */
   shiftTypeEditLink(name: string): Locator {
     return this.page.getByRole('link', { name: fill(shiftTypes.edit, { name }) });

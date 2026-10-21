@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useRef, useState, type FormEvent } from 'react';
 
+import { ORGANIZATION_SNAPSHOT_KEY, type OrganizationOutcome } from '@/features/organization/services/snapshot';
 import {
   NO_DEPENDENTS,
   TEAM_CHANGE_DEPENDENTS,
@@ -15,6 +16,7 @@ import {
   teamsSurfaceStateOf,
   type TeamRow,
 } from '@/features/teams/services/list';
+import { TEAM_LIST_SURFACE_KEYS, teamListTimeZoneOf } from '@/features/teams/services/surface-keys';
 import {
   ARCHIVE_ARMED,
   ARCHIVE_BUSY,
@@ -30,6 +32,8 @@ import {
   type TeamWriteFailure,
   type TeamWriteTable,
 } from '@/features/teams/services/write';
+import { zoneFromReads } from '@/lib/offline/freshness';
+import { useSnapshotFreshness } from '@/lib/offline/use-snapshot-freshness';
 import { supabaseClient } from '@/lib/supabase/client';
 
 /**
@@ -64,7 +68,24 @@ export function useTeamEdit(id: string) {
   /** Landed renames; the form key counts them, never the name. */
   const [renames, setRenames] = useState(0);
 
-  const answer = useQuery(teamsQueryOptions(() => supabaseClient().from(TEAMS_TABLE)));
+  const answerRead = useQuery(teamsQueryOptions(() => supabaseClient().from(TEAMS_TABLE)));
+  // STORY 8.2d: the same one snapshot the list behind the dialog decides
+  // (`TEAM_LIST_SURFACE_KEYS`), so the form and the list are drawn from the
+  // cached rows together, or are unavailable together. The as-of note is the
+  // list's, under its heading; the dialog adds none.
+  const timeZone = teamListTimeZoneOf(
+    queryClient.getQueryData<OrganizationOutcome>(ORGANIZATION_SNAPSHOT_KEY),
+  );
+  const { clock, answerOf } = useSnapshotFreshness(
+    TEAM_LIST_SURFACE_KEYS,
+    [[TEAMS_LIST_KEY, answerRead]],
+    zoneFromReads(timeZone),
+  );
+  const answer = answerOf(answerRead);
+  // NO READ RETRY OFFLINE (story 8.2d, decision 2a): `retryable` is the
+  // connection's, so offline the message stays without its retry, and the
+  // retry comes back with the connection.
+  const retryable = clock.online;
 
   const readState = teamsSurfaceStateOf(answer);
   const { refusal: readRefusal, loading } = readState;
@@ -195,6 +216,7 @@ export function useTeamEdit(id: string) {
     renames,
     readRefusal,
     retry,
+    retryable,
     loading,
     form,
     refusal,

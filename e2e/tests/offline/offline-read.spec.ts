@@ -44,6 +44,17 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * never read is unavailable offline as a whole, with no note; a real open
  * conflict (the conflicts specs' seeded rotation) opens offline ready, under
  * one note, from Raspored's row.
+ *
+ * Story 8.2d: the settings surfaces read offline the same way. An admin reads
+ * *Ljudi/smjene*, *Organizacija*, *Satni pojasi* and *Postavke rotacije*
+ * online; offline, each opens under one note, with no *Pokušaj ponovno* —
+ * the editor's dialog over *Satni pojasi* too — and reconnecting removes the
+ * note; a team's and a shift type's editor over the cached lists hold their
+ * values, with no alert. An *Organizacija* never read online is unavailable
+ * offline, with no read retry and no note, never an endless skeleton; its
+ * cards come back with the connection. A *Postavke rotacije* never read, or
+ * with only its shift types cached, is unavailable as a whole, both sections,
+ * with no retry and no note.
  */
 
 test.describe('offline reading, as a member', () => {
@@ -440,5 +451,197 @@ test.describe("offline reading of the admin's work surfaces (story 8.2c)", () =>
       if (rotation !== null) await removeSeededRotation(rotation).catch(() => undefined);
       await hold.release();
     }
+  });
+});
+
+test.describe('offline reading of the settings surfaces (story 8.2d)', () => {
+  test.use({ storageState: ADMIN_STATE });
+
+  test('each settings surface read online opens offline under one note, with no read retry, its editors too, and the note goes on reconnect', async ({
+    page,
+    fixture,
+    todayPage,
+    peoplePage,
+    teamsPage,
+    organizationPage,
+    hourBandsPage,
+    rotationPage,
+  }) => {
+    const band = fixture.bands[0];
+    // A type of this test's own, so the shift type editor has one to open.
+    const type = `Odmor ${randomBytes(3).toString('hex')}`;
+
+    expect(band, 'the fixture has an hour band').toBeDefined();
+    if (band === undefined) return;
+
+    await todayPage.goto();
+    await expect(todayPage.needsYouCard).toBeVisible();
+
+    // Online, each surface once, by client-side navigation.
+    await peoplePage.navigationLink(hr.nav.ljudi, { exact: true }).click();
+    await expect(peoplePage.table).toBeVisible();
+    await peoplePage.teamsLink.click();
+    await expect(teamsPage.editLink(fixture.team.name)).toBeVisible();
+    await expect(teamsPage.busyMain).toHaveCount(0);
+
+    await organizationPage.navigationLink(hr.nav.organizacija, { exact: true }).click();
+    await expect(organizationPage.timeRegion).toBeVisible();
+    await expect(organizationPage.hourBandsCovered).toBeVisible();
+    await expect(organizationPage.offlineNote, 'a fresh surface carries no note').toHaveCount(0);
+
+    await organizationPage.hourBandsLink.click();
+    await expect(hourBandsPage.editLink(band.name)).toBeVisible();
+    await expect(hourBandsPage.busyMain).toHaveCount(0);
+
+    await rotationPage.navigationLink(hr.nav.postavkeRotacije, { exact: true }).click();
+    // The history button stands once the builder's own snapshot has landed.
+    await expect(rotationPage.historyButton).toBeVisible();
+    await rotationPage.addShiftType(type, null);
+    await expect(rotationPage.shiftTypeEditLink(type)).toBeVisible();
+    await expect(rotationPage.historyButton).toBeVisible();
+    await expect(rotationPage.busyMain).toHaveCount(0);
+    await expect(rotationPage.offlineNote, 'a fresh surface carries no note').toHaveCount(0);
+
+    await page.context().setOffline(true);
+    // Postavke rotacije: the shift types and the builder under ONE note.
+    await expect(rotationPage.offlineNote, 'the open page shows exactly one note').toHaveCount(1);
+    await expect(rotationPage.historyButton).toBeVisible();
+    await expect(rotationPage.shiftTypesRetryButton).toHaveCount(0);
+    await expect(rotationPage.rotationRetryButton).toHaveCount(0);
+    // The shift type editor over the cached list: its form holds the name, no alert, no retry.
+    await rotationPage.shiftTypeEditLink(type).click();
+    await expect(rotationPage.shiftTypeNameTextbox).toHaveValue(type);
+    await expect(rotationPage.shiftTypeEditDialog.getByRole('alert')).toHaveCount(0);
+    await expect(rotationPage.shiftTypesRetryButton).toHaveCount(0);
+    await rotationPage.shiftTypeCloseButton.click();
+    await expect(page).toHaveURL('/postavke-rotacije');
+
+    await peoplePage.navigationLink(hr.nav.ljudi, { exact: true }).click();
+    await expect(peoplePage.table).toBeVisible();
+    await peoplePage.teamsLink.click();
+    await expect(teamsPage.heading(hr.smjene.heading, { exact: true })).toBeVisible();
+    await expect(teamsPage.offlineNote).toHaveCount(1);
+    await expect(teamsPage.editLink(fixture.team.name)).toBeVisible();
+    await expect(teamsPage.retryButton).toHaveCount(0);
+    // The team editor over the cached list: its form holds the name, no alert, no retry.
+    await teamsPage.editLink(fixture.team.name).click();
+    await expect(teamsPage.editNameInput).toHaveValue(fixture.team.name);
+    await expect(teamsPage.editDialog.getByRole('alert')).toHaveCount(0);
+    await expect(teamsPage.retryButton).toHaveCount(0);
+    await teamsPage.closeButton.click();
+    await expect(page).toHaveURL('/ljudi/smjene');
+
+    await organizationPage.navigationLink(hr.nav.organizacija, { exact: true }).click();
+    await expect(organizationPage.heading(hr.nav.organizacija, { exact: true })).toBeVisible();
+    await expect(organizationPage.offlineNote).toHaveCount(1);
+    await expect(organizationPage.timeRegion).toBeVisible();
+    await expect(organizationPage.hourBandsCovered).toBeVisible();
+    await expect(organizationPage.shellRetryButton).toHaveCount(0);
+
+    await organizationPage.hourBandsLink.click();
+    await expect(hourBandsPage.listHeading).toBeVisible();
+    await expect(hourBandsPage.offlineNote).toHaveCount(1);
+    await expect(hourBandsPage.editLink(band.name)).toBeVisible();
+    await expect(hourBandsPage.shellRetryButton).toHaveCount(0);
+    // The editor's dialog over the list: drawn from the same snapshot, with no read retry.
+    await hourBandsPage.editLink(band.name).click();
+    await expect(hourBandsPage.editDialogName).toHaveValue(band.name);
+    await expect(hourBandsPage.editDialog.getByRole('alert')).toHaveCount(0);
+    await expect(hourBandsPage.shellRetryButton).toHaveCount(0);
+    await hourBandsPage.editDialogClose.click();
+    await expect(hourBandsPage.editDialog).toHaveCount(0);
+
+    await rotationPage.navigationLink(hr.nav.postavkeRotacije, { exact: true }).click();
+    await expect(rotationPage.offlineNote).toHaveCount(1);
+    await expect(rotationPage.historyButton).toBeVisible();
+
+    await page.context().setOffline(false);
+    await expect(rotationPage.offlineNote).toHaveCount(0);
+    await expect(rotationPage.historyButton).toBeVisible();
+  });
+
+  test('an Organizacija never read online is unavailable offline with no read retry and no note, and both come back with the connection', async ({
+    page,
+    todayPage,
+    organizationPage,
+  }) => {
+    // THE PRECONDITION: nothing in this session reads the hour bands before
+    // the connection drops, so they are not in the cache.
+    const bandReads: string[] = [];
+
+    page.on('request', (request) => {
+      if (new URL(request.url()).pathname.endsWith('/rest/v1/hour_bands')) bandReads.push(request.url());
+    });
+
+    await todayPage.goto();
+    await expect(todayPage.needsYouCard).toBeVisible();
+    await expect(todayPage.busyMain).toHaveCount(0);
+    await expect(organizationPage.hourBandsRegion, 'the bands card never rendered').toHaveCount(0);
+    expect(bandReads, 'the hour bands were read before the connection dropped').toEqual([]);
+
+    await page.context().setOffline(true);
+    // The organization row is cached (the chrome reads it), the hour bands never were.
+    await organizationPage.navigationLink(hr.nav.organizacija, { exact: true }).click();
+    await expect(organizationPage.heading(hr.nav.organizacija, { exact: true })).toBeVisible();
+    await expect(organizationPage.alertWith(hr.organization.error.unavailable)).toBeVisible();
+    await expect(organizationPage.shellRetryButton).toHaveCount(0);
+    await expect(organizationPage.offlineNote).toHaveCount(0);
+    await expect(organizationPage.statusWith(hr.organization.loading), 'never an endless skeleton').toHaveCount(0);
+    await expect(organizationPage.timeRegion).toHaveCount(0);
+
+    await page.context().setOffline(false);
+    await expect(organizationPage.timeRegion).toBeVisible();
+    await expect(organizationPage.hourBandsCovered).toBeVisible();
+    await expect(organizationPage.offlineNote).toHaveCount(0);
+  });
+
+  test('a Postavke rotacije never read online is unavailable offline, both sections, with no read retry and no note', async ({
+    page,
+    todayPage,
+    rotationPage,
+  }) => {
+    await todayPage.goto();
+    await expect(todayPage.needsYouCard).toBeVisible();
+    await expect(todayPage.busyMain).toHaveCount(0);
+
+    await page.context().setOffline(true);
+    await rotationPage.navigationLink(hr.nav.postavkeRotacije, { exact: true }).click();
+    await expect(rotationPage.heading(hr.nav.postavkeRotacije, { exact: true })).toBeVisible();
+    await expect(rotationPage.shiftTypesUnavailable).toBeVisible();
+    await expect(rotationPage.rotationUnavailable).toBeVisible();
+    await expect(rotationPage.shiftTypesRetryButton).toHaveCount(0);
+    await expect(rotationPage.rotationRetryButton).toHaveCount(0);
+    await expect(rotationPage.offlineNote).toHaveCount(0);
+  });
+
+  test('a Postavke rotacije with only its shift types cached is unavailable offline as a whole, with no note', async ({
+    page,
+    todayPage,
+    rotationPage,
+  }) => {
+    // The builder's own read fails online (a service error, not an aborted
+    // socket), so only the shift types are cached when the connection drops.
+    // Both reads start at `organizations`; the builder's embeds its rotation views.
+    await page.route(
+      (url) => url.pathname.endsWith('/rest/v1/organizations') && url.search.includes('rotation_assignments_in_view'),
+      (route) =>
+        route.fulfill({ status: 400, contentType: 'application/json', body: '{"code":"E2E","message":"unavailable"}' }),
+    );
+
+    await todayPage.goto();
+    await expect(todayPage.needsYouCard).toBeVisible();
+    await rotationPage.navigationLink(hr.nav.postavkeRotacije, { exact: true }).click();
+    // Online, a failed read is the whole surface's unavailable state, with its retry.
+    await expect(rotationPage.rotationUnavailable).toBeVisible();
+    await expect(rotationPage.rotationRetryButton).toBeVisible();
+    await expect(rotationPage.historyButton).toHaveCount(0);
+
+    await page.context().setOffline(true);
+    await expect(rotationPage.shiftTypesUnavailable).toBeVisible();
+    await expect(rotationPage.rotationUnavailable).toBeVisible();
+    await expect(rotationPage.shiftTypesRetryButton).toHaveCount(0);
+    await expect(rotationPage.rotationRetryButton).toHaveCount(0);
+    await expect(rotationPage.offlineNote).toHaveCount(0);
+    await expect(rotationPage.historyButton).toHaveCount(0);
   });
 });

@@ -639,10 +639,17 @@ describe('the accent control offers a curated set and nothing else', () => {
       'offersReadRetry(readFailure)',
     );
     // A THROWN read is a failed read: the refusal and the retry both read
-    // `readFailureOf(snapshot)` (executed in `snapshot.test.ts`).
+    // `readFailureOf(answered)` (executed in `snapshot.test.ts`) — the read as
+    // the page's freshness answers it (story 8.2d), so offline with nothing
+    // cached it is the unavailable message, never an endless skeleton — after
+    // a refusal the read RESOLVED with, which is drawn as its own message
+    // whatever the freshness says (`organizationRefusalOf`, executed in
+    // `surface-keys.test.ts`).
     expect(hook, 'a read that threw is not treated as a failed read').toContain(
-      'const readFailure = readFailureOf(snapshot);',
+      'const readFailure = organizationRefusalOf(snapshot.data) ?? readFailureOf(answered);',
     );
+    // STORY 8.2d, decision 2a: no read retry offline.
+    expect(hook, 'the read retry is offered offline').toMatch(/const readRetry = clock\.online && /);
     // AFTER THE RETRY: the answer is committed through `flushSync`, then a
     // success focuses the first change on the page (the button just
     // unmounted) and every attempt re-keys the alert.

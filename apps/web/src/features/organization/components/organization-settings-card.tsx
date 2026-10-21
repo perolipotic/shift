@@ -47,14 +47,16 @@ export function OrganizationSettingsCard({
   readonly settings: OrganizationSettings;
   readonly hourBands: OrganizationHourBands;
 }): ReactNode {
-  const { snapshot, organization, readFailure, readRetry, readAttempts, retryRead } = settings;
+  const { snapshot, answered, organization, readFailure, readRetry, readAttempts, retryRead } = settings;
 
   /**
    * The cards, a skeleton in their shape, or nothing at all.
    *
-   * A SKELETON ONLY WHILE THE READ IS PENDING, never merely "no snapshot": a
-   * read that has already FAILED renders its message and no pulsing bars,
-   * which would look like a slow read. Never a spinner (UX-DR40), and never a
+   * A SKELETON ONLY WHILE THE READ IS PENDING, as answered (story 8.2d) — so
+   * offline it is the unavailable message, never an endless skeleton — and
+   * never merely "no snapshot": a read that has already FAILED, or resolved
+   * with its own refusal, renders its message and no pulsing bars, which
+   * would look like a slow read. Never a spinner (UX-DR40), and never a
    * card of empty facts: no dialog can be opened on a row nobody has read.
    *
    * NOT SILENT (C500): the bars say nothing to a screen reader, so the
@@ -62,7 +64,7 @@ export function OrganizationSettingsCard({
    */
   function renderCards(): ReactNode {
     if (organization === null) {
-      return snapshot.isPending ? (
+      return readFailure === null && answered.isPending ? (
         <div role="status" aria-busy className="grid w-full max-w-2xl animate-pulse gap-6">
           <span className="sr-only">{t('organization.loading')}</span>
           <div className="h-56 rounded-lg bg-muted" />

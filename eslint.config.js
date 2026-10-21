@@ -288,8 +288,11 @@ export const FEATURE_PUBLIC = {
     'services/snapshot', // conflicts, leave, members, navigation, teams, today
     'utils/accent', // navigation
   ],
+  // Story 8.2d: `services/surface-keys` is *Postavke rotacije*'s one key set,
+  // which the shift type hooks decide their offline freshness over with the builder.
   rotation: [
     'services/list', // calendar, shift-types, teams
+    'services/surface-keys', // shift-types
   ],
   'shift-types': [
     'services/list', // calendar, rotation, pages

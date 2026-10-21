@@ -38,6 +38,7 @@ export function RotationNotices({ builder }: { readonly builder: RotationBuilder
   const queryClient = useQueryClient();
   const {
     refusal,
+    retryable,
     pending,
     outcome,
     scheduled,
@@ -351,16 +352,19 @@ export function RotationNotices({ builder }: { readonly builder: RotationBuilder
       {refusal === null ? null : (
         <div className="grid min-w-0 gap-2">
           <Notice role="alert">{t(rotationMessageKey(refusal))}</Notice>
-          <Button
-            className="h-11 w-full sm:w-auto sm:justify-self-start"
-            type="button"
-            variant="outline"
-            onClick={() => {
-              void retryRead(queryClient, ROTATION_KEY);
-            }}
-          >
-            {t(rotationRetryMessageKey(refusal))}
-          </Button>
+          {/* STORY 8.2d: no read retry offline; it comes back with the connection. */}
+          {retryable ? (
+            <Button
+              className="h-11 w-full sm:w-auto sm:justify-self-start"
+              type="button"
+              variant="outline"
+              onClick={() => {
+                void retryRead(queryClient, ROTATION_KEY);
+              }}
+            >
+              {t(rotationRetryMessageKey(refusal))}
+            </Button>
+          ) : null}
         </div>
       )}
     </>

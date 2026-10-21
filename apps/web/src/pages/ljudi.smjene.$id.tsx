@@ -73,14 +73,17 @@ function TeamScreen({ id }: { readonly id: string }) {
             <Notice role="alert">
               {t(teamsMessageKey(readRefusal))}
             </Notice>
-            <Button
-              className="h-11 w-full sm:w-auto sm:justify-self-start"
-              type="button"
-              variant="outline"
-              onClick={screen.retry}
-            >
-              {t(teamsRetryMessageKey(readRefusal))}
-            </Button>
+            {/* STORY 8.2d: no read retry offline; it comes back with the connection. */}
+            {screen.retryable ? (
+              <Button
+                className="h-11 w-full sm:w-auto sm:justify-self-start"
+                type="button"
+                variant="outline"
+                onClick={screen.retry}
+              >
+                {t(teamsRetryMessageKey(readRefusal))}
+              </Button>
+            ) : null}
           </div>
         )}
         {refusal === null ? null : (
