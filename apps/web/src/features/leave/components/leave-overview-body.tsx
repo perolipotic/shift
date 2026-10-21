@@ -15,6 +15,7 @@ import {
 } from '@/features/leave/services/leave-overview';
 import { usePhone } from '@/hooks/viewport';
 import { t } from '@/lib/i18n';
+import { keepFocusOnAlert } from '@/utils/retry-focus';
 
 const SKELETON_ROWS = [0, 1, 2, 3];
 
@@ -30,7 +31,7 @@ const SKELETON_ROWS = [0, 1, 2, 3];
  * `leaveOverviewOf`'s; this only puts it on screen.
  */
 export function LeaveOverviewBody({ screen }: { readonly screen: LeaveOverviewScreen }): ReactNode {
-  const { overview, clearSearch, resetFilters, pressColumn, retry } = screen;
+  const { overview, clearSearch, resetFilters, pressColumn, retryable, retry } = screen;
   // Story 7.6: which form the overview takes. The search and the sort live in
   // the URL, so crossing 640 px keeps both.
   const isPhone = usePhone();
@@ -59,9 +60,17 @@ export function LeaveOverviewBody({ screen }: { readonly screen: LeaveOverviewSc
       return (
         <div className="grid min-w-0 gap-2 px-4 pb-4">
           <Notice role="alert">{t('godisnji.unavailable')}</Notice>
-          <Button className="h-11 w-full sm:w-auto sm:justify-self-start" type="button" variant="outline" onClick={retry}>
-            {t('godisnji.retry')}
-          </Button>
+          {retryable ? (
+            <Button
+              ref={keepFocusOnAlert}
+              className="h-11 w-full sm:w-auto sm:justify-self-start"
+              type="button"
+              variant="outline"
+              onClick={retry}
+            >
+              {t('godisnji.retry')}
+            </Button>
+          ) : null}
         </div>
       );
     }

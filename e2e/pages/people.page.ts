@@ -52,6 +52,16 @@ export class PeoplePage extends BasePage {
     return this.page.getByRole('button', { name: hr.ljudi.directory.retry, exact: true });
   }
 
+  /** The member list's read retry: the table's, or the member page's basics card's. */
+  get membersRetry(): Locator {
+    return this.page.getByRole('button', { name: hr.ljudi.error.retry, exact: true });
+  }
+
+  /** The teams read's retry, on the member page's team card. */
+  get teamsRetry(): Locator {
+    return this.page.getByRole('button', { name: hr.smjene.error.retry, exact: true });
+  }
+
   /** Every *Dodaj osobu* anywhere, by a part of its name: none for a member. */
   get anyAddButton(): Locator {
     return this.page.getByRole('button', { name: hr.ljudi.form.add });

@@ -178,6 +178,13 @@ const SATI_PAGE = join(srcRoot, ...HOURS_SCREEN_PARTS.page);
 const MEMBER_ELEMENT_IDS = join(srcRoot, 'features', 'members', 'utils', 'element-ids.ts');
 
 /**
+ * STORY 8.2e: the read retry's ref callback (`utils/retry-focus.ts`), a
+ * stateless module function rather than a hook-created ref. It holds nothing,
+ * so there is no ref to create once in a hook; the ref sweeps skip it.
+ */
+const MODULE_REF_CALLBACKS: ReadonlySet<string> = new Set(['keepFocusOnAlert']);
+
+/**
  * The route modules under `pages/` that are not screens, each for a stated
  * reason. Everything else under `pages/` must be in a `SCREENS` file set, which
  * the read-at-all block asserts off the disk.
@@ -766,7 +773,8 @@ describe('the screen is read at all, so every sweep below means something', () =
   });
 
   it.each(SHIFT_TYPE_SETS)('creates every attached ref once, in the hook, on $name', ({ set, hookFile }) => {
-    const attached = [...source(set).matchAll(/\bref=\{(\w+)\}/g)].map((found) => found[1] ?? '');
+    const attached = [...source(set).matchAll(/\bref=\{(\w+)\}/g)].map((found) => found[1] ?? '')
+      .filter((name) => !MODULE_REF_CALLBACKS.has(name));
 
     expect(attached.length, 'no ref is attached at all').toBeGreaterThan(3);
     for (const name of new Set(attached)) {
@@ -926,7 +934,8 @@ describe('the screen is read at all, so every sweep below means something', () =
   it.each(HOUR_BAND_SETS)('creates every attached ref once, in the hook, on $name', ({ set, hookFile }) => {
     // `closeRef` as well as `ref`: the edit dialog's close takes the focus a
     // landed removal leaves behind through `DialogHeader`'s `closeRef`.
-    const attached = [...source(set).matchAll(/\b(?:ref|closeRef)=\{([^}]*)\}/g)].map((found) => found[1] ?? '');
+    const attached = [...source(set).matchAll(/\b(?:ref|closeRef)=\{([^}]*)\}/g)].map((found) => found[1] ?? '')
+      .filter((name) => !MODULE_REF_CALLBACKS.has(name));
 
     expect(attached.length, 'no ref is attached at all').toBeGreaterThan(1);
     // A BARE NAME, so it resolves to a hook-created `const`; `screen.x` would not.
@@ -1146,7 +1155,8 @@ describe('the screen is read at all, so every sweep below means something', () =
   it.each(TEAM_SETS)('creates every attached ref once, in the hook, on $name', ({ set, hookFile }) => {
     // `ref` and ANY `*Ref` prop, so a ref handed on through a primitive's own
     // prop (`closeRef`, as the hour band dialog does) is read too.
-    const attached = [...source(set).matchAll(/\b(?:ref|\w+Ref)=\{([^}]*)\}/g)].map((found) => found[1] ?? '');
+    const attached = [...source(set).matchAll(/\b(?:ref|\w+Ref)=\{([^}]*)\}/g)].map((found) => found[1] ?? '')
+      .filter((name) => !MODULE_REF_CALLBACKS.has(name));
 
     expect(attached.length, 'no ref is attached at all').toBeGreaterThan(0);
     // A BARE NAME, so it resolves to a hook-created `const`; `screen.x` would not.

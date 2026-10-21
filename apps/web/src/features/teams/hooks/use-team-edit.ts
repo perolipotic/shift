@@ -82,13 +82,14 @@ export function useTeamEdit(id: string) {
     zoneFromReads(timeZone),
   );
   const answer = answerOf(answerRead);
-  // NO READ RETRY OFFLINE (story 8.2d, decision 2a): `retryable` is the
-  // connection's, so offline the message stays without its retry, and the
-  // retry comes back with the connection.
-  const retryable = clock.online;
 
   const readState = teamsSurfaceStateOf(answer);
   const { refusal: readRefusal, loading } = readState;
+  // NO READ RETRY OFFLINE (story 8.2d, decision 2a): `retryable` means "show
+  // the read retry now" (story 8.2e) — the read's message is up, and the
+  // connection is: offline the message stays without its retry, and the
+  // retry comes back with the connection.
+  const retryable = clock.online && readRefusal !== null;
   // A read failure hides the form, decided in `teamFormStateOf` from the state.
   const form = teamFormStateOf(readState, id);
   const refusal = failure ?? form.refusal;

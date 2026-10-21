@@ -11,6 +11,7 @@ import { WeekGrid } from '@/features/today/components/week-grid';
 import { useAdminToday } from '@/features/today/hooks/use-admin-today';
 import { ADMIN_TODAY_LOADING, ADMIN_TODAY_UNAVAILABLE } from '@/features/today/services/admin-today';
 import { t } from '@/lib/i18n';
+import { keepFocusOnAlert } from '@/utils/retry-focus';
 
 /**
  * *Danas* for an admin (story 6.3), in this order: *Treba tebe*, *Pokrivenost
@@ -29,7 +30,7 @@ export function AdminTodayBody({
   readonly onBusy: (busy: boolean) => void;
   readonly onUnavailable: (unavailable: boolean) => void;
 }): ReactNode {
-  const { adminToday, retry } = useAdminToday();
+  const { adminToday, retryable, retry } = useAdminToday();
   const busy = adminToday.kind === ADMIN_TODAY_LOADING;
   const unavailable = adminToday.kind === ADMIN_TODAY_UNAVAILABLE;
 
@@ -56,9 +57,17 @@ export function AdminTodayBody({
     return (
       <Card className="grid min-w-0 gap-2 p-4 sm:p-6">
         <Notice role="alert">{t('danas.admin.unavailable')}</Notice>
-        <Button className="h-11 w-full sm:w-auto sm:justify-self-start" type="button" variant="outline" onClick={retry}>
-          {t('danas.retry')}
-        </Button>
+        {retryable ? (
+          <Button
+            ref={keepFocusOnAlert}
+            className="h-11 w-full sm:w-auto sm:justify-self-start"
+            type="button"
+            variant="outline"
+            onClick={retry}
+          >
+            {t('danas.retry')}
+          </Button>
+        ) : null}
       </Card>
     );
   }

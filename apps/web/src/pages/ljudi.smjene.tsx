@@ -12,6 +12,7 @@ import { teamsMessageKey, teamsRetryMessageKey } from '@/features/teams/services
 import { t } from '@/lib/i18n';
 import { requireAdmin } from '@/features/navigation/services/admin-guard';
 import { appLayoutRoute } from '@/pages/_app';
+import { keepFocusOnAlert } from '@/utils/retry-focus';
 
 /**
  * `/ljudi/smjene` — the organization's teams (story 1.7a).
@@ -76,9 +77,11 @@ export function LjudiSmjeneScreen() {
           <Notice role="alert">
             {t(teamsMessageKey(refusal))}
           </Notice>
-          {/* STORY 8.2d: no read retry offline; it comes back with the connection. */}
+          {/* STORY 8.2d: no read retry offline; it comes back with the connection.
+              If this retry has focus when it goes, `keepFocusOnAlert` moves focus to the alert. */}
           {screen.retryable ? (
             <Button
+              ref={keepFocusOnAlert}
               className="h-11 w-full sm:w-auto sm:justify-self-start"
               type="button"
               variant="outline"

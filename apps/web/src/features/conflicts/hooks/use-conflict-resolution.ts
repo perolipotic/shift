@@ -187,7 +187,7 @@ export function useConflictResolution(params: ResolutionParams) {
   // snapshot is drawn under the as-of note (`offline`), or the unavailable
   // state is. Every derivation below — `members.paused` and
   // `refetchingAfterFailure` included — reads the ANSWERED reads, never the raw.
-  const { freshness, answerOf } = useSnapshotFreshness(
+  const { freshness, clock, answerOf } = useSnapshotFreshness(
     RESOLUTION_SURFACE_KEYS,
     [
       [CALENDAR_KEY, calendarRead],
@@ -439,6 +439,10 @@ export function useConflictResolution(params: ResolutionParams) {
     failure,
     save,
     go,
+    // STORY 8.2e: "show the read retry now" — the surface is in its
+    // retryable unavailable state, and online: offline its re-read would
+    // pause until the connection returns.
+    retryable: clock.online && screen.kind === RESOLUTION_UNAVAILABLE,
     retry,
   };
 }

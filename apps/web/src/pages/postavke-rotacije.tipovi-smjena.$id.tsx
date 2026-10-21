@@ -15,6 +15,7 @@ import {
   shiftTypesRetryMessageKey,
 } from '@/features/shift-types/services/list';
 import { shiftTypeSavedMessageKey, shiftTypeWriteMessageKey } from '@/features/shift-types/services/write';
+import { keepFocusOnAlert } from '@/utils/retry-focus';
 
 /**
  * `/postavke-rotacije/tipovi-smjena/$id` — one shift type: rename it, correct
@@ -78,9 +79,11 @@ function ShiftTypeScreen({ id }: { readonly id: string }) {
         {readRefusal === null ? null : (
           <div className="grid min-w-0 gap-2">
             <Notice role="alert">{t(shiftTypesMessageKey(readRefusal))}</Notice>
-            {/* STORY 8.2d: no read retry offline; it comes back with the connection. */}
+            {/* STORY 8.2d: no read retry offline; it comes back with the connection.
+                If this retry has focus when it goes, `keepFocusOnAlert` moves focus to the alert. */}
             {screen.retryable ? (
               <Button
+                ref={keepFocusOnAlert}
                 className="h-11 w-full sm:w-auto sm:justify-self-start"
                 type="button"
                 variant="outline"

@@ -37,6 +37,7 @@ import {
   leaveInvalidFieldOf,
   leavePreviewStateOf,
   leaveSavedOf,
+  LEAVE_UNAVAILABLE,
   memberLeaveBaseOf,
   REPLACEMENTS_UNKNOWN,
   replacementGuardOf,
@@ -261,7 +262,7 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
   // from these very observer results and, for the page's other reads, from the
   // cache — so the card and the page are drawn whole or unavailable as one.
   // The page's as-of note is `useMemberEdit`'s: the card adds none.
-  const { answerOf } = useSnapshotFreshness(
+  const { clock, answerOf } = useSnapshotFreshness(
     memberPageSurfaceKeysOf(memberId),
     [
       [MEMBERS_LIST_KEY, membersRead],
@@ -897,6 +898,10 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
     removeConflicts,
     memberName,
     change,
+    // STORY 8.2e: "show the read retry now" — the surface is in its
+    // retryable unavailable state, and online: offline its re-read would
+    // pause until the connection returns.
+    retryable: clock.online && base.kind === LEAVE_UNAVAILABLE,
     retry,
     save,
     amend,

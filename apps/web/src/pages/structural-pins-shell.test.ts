@@ -555,8 +555,15 @@ describe('the chrome the layout wraps every destination in', () => {
     // Offered for the ROLE failure only: a refused sign-out already has its
     // retry in the exit itself, re-enabled by the handler's `finally`.
     expect(chrome, 'the retry is offered for a failure it cannot help').toMatch(
-      /roleFailure === null \?/,
+      /const roleRetryable = clock\.online && roleFailure !== null;/,
     );
+    // STORY 8.2e: no read retry offline — its re-read would pause until the
+    // connection returns — and focus moves to the alert if it had it.
+    expect(chrome, 'the retry is not gated on its flag').toMatch(/\{roleRetryable \? \(\s*<Button\b/);
+    const retry = buttonElements(chrome).find((element) => element.includes('onClick={retryDestinations}'));
+
+    expect(retry, 'no retry button to read').toBeDefined();
+    expect(retry, 'the retry does not hand its focus to the alert').toContain('ref={keepFocusOnAlert}');
   });
 
   it('moves focus to the refusal and clears it on the next destination', () => {
@@ -972,5 +979,74 @@ describe('the lockup is rendered once, in the sidebar, and never inside a landma
       chrome,
       'the organization read feeds the alert region, which is about the role and the exit',
     ).not.toMatch(/organizationMessageKey\(/);
+  });
+});
+
+describe('no read retry offline, on any surface (story 8.2e)', () => {
+  // ONE MEANING FOR THE FLAG: each hook's retry flag is "show the read retry
+  // now" — online, and the surface in its retryable unavailable state. Offline
+  // the re-read would pause until the connection returns, so a press would do
+  // nothing visible.
+  const HOOK_FLAGS: readonly (readonly [string, RegExp])[] = [
+    ['features/today/hooks/use-today.ts', /retryable: clock\.online && today\.kind === TODAY_UNAVAILABLE/],
+    ['features/today/hooks/use-admin-today.ts', /const retryable = clock\.online && adminToday\.kind === ADMIN_TODAY_UNAVAILABLE;/],
+    ['features/calendar/hooks/use-calendar-screen.ts', /const retryable = clock\.online && refusalRetryable;/],
+    ['features/hours/hooks/use-hours.ts', /retryable: clock\.online && surface\.retryable,/],
+    ['features/leave/hooks/use-my-leave.ts', /retryable: clock\.online && leave\.kind === MY_LEAVE_UNAVAILABLE,/],
+    ['features/leave/hooks/use-leave-overview.ts', /retryable: clock\.online && \(/],
+    ['features/members/hooks/use-member-list.ts', /retryable: clock\.online && refusal !== null/],
+    ['features/teams/hooks/use-member-directory.ts', /retryable: clock\.online && directory\.kind === DIRECTORY_UNAVAILABLE,/],
+    ['features/conflicts/hooks/use-conflicts-queue.ts', /retryable:\s*clock\.online &&/],
+    ['features/conflicts/hooks/use-conflict-resolution.ts', /retryable: clock\.online && screen\.kind === RESOLUTION_UNAVAILABLE,/],
+    ['features/members/hooks/use-member-edit.ts', /readRetryable: clock\.online && /],
+    ['features/members/hooks/use-member-edit.ts', /teamsRetryable: clock\.online && teamsState\.refusal !== null,/],
+    ['features/leave/hooks/use-member-leave.ts', /retryable: clock\.online && base\.kind === LEAVE_UNAVAILABLE,/],
+    ['features/navigation/components/chrome.tsx', /const roleRetryable = clock\.online && roleFailure !== null;/],
+  ];
+
+  it.each(HOOK_FLAGS)('gates the read retry on the connection in %s', (file, flag) => {
+    expect(source(join(srcRoot, file)), 'the read retry is offered offline').toMatch(flag);
+  });
+
+  // EVERY READ-RETRY BUTTON hands its focus to its alert when it goes.
+  const RETRY_BUTTONS: readonly (readonly [string, string])[] = [
+    ['features/today/components/today-body.tsx', 'onClick={onRetry}'],
+    ['features/today/components/admin-today-body.tsx', 'onClick={retry}'],
+    ['pages/kalendar.tsx', 'onClick={screen.retry}'],
+    ['features/hours/components/hours-body.tsx', 'onClick={onRetry}'],
+    ['features/leave/components/my-leave-body.tsx', 'onClick={onRetry}'],
+    ['features/leave/components/leave-overview-body.tsx', 'onClick={retry}'],
+    ['pages/godisnji.tsx', 'onClick={screen.retry}'],
+    ['pages/ljudi.tsx', 'onClick={list.retry}'],
+    ['features/teams/components/member-directory.tsx', 'onClick={retry}'],
+    ['features/conflicts/components/conflicts-body.tsx', 'onClick={onRetry}'],
+    ['features/conflicts/components/conflict-resolution-body.tsx', 'onClick={retry}'],
+    ['features/members/components/member-basics-card.tsx', 'onClick={edit.retryMembers}'],
+    ['features/members/components/member-team-card.tsx', 'onClick={edit.retryTeams}'],
+    ['features/leave/components/member-leave-card.tsx', 'onClick={leave.retry}'],
+    ['features/navigation/components/chrome.tsx', 'onClick={retryDestinations}'],
+    ['features/organization/components/organization-settings-card.tsx', 'onClick={retryRead}'],
+    ['features/shift-types/components/shift-type-list-section.tsx', 'onClick={screen.retry}'],
+    ['pages/postavke-rotacije.tipovi-smjena.$id.tsx', 'onClick={screen.retry}'],
+    ['pages/organizacija.satni-pojasi.tsx', 'onClick={screen.retry}'],
+    ['pages/organizacija.satni-pojasi.$id.tsx', 'onClick={screen.retry}'],
+    ['pages/ljudi.smjene.tsx', 'onClick={screen.retry}'],
+    ['pages/ljudi.smjene.$id.tsx', 'onClick={screen.retry}'],
+  ];
+
+  it.each(RETRY_BUTTONS)('hands the read retry\'s focus to its alert in %s', (file, press) => {
+    const buttons = buttonElements(source(join(srcRoot, file))).filter((element) => element.includes(press));
+
+    expect(buttons.length, 'no read retry button to read').toBeGreaterThan(0);
+    for (const button of buttons) {
+      expect(button, 'the read retry does not hand its focus to the alert').toContain('ref={keepFocusOnAlert}');
+    }
+  });
+
+  it('hands the builder read retry\'s focus to its alert', () => {
+    // Its press is an inline arrow, which the opening-tag reader cuts at `=>`.
+    expect(source(join(srcRoot, 'features/rotation/components/rotation-notices.tsx'))).toMatch(
+      /\{retryable \? \([\s\S]{0,240}?<Button\s+ref=\{keepFocusOnAlert\}[\s\S]{0,240}?retryRead\(queryClient, ROTATION_KEY\)/,
+    );
   });
 });

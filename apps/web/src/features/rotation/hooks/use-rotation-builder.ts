@@ -252,13 +252,14 @@ export function useRotationBuilder() {
   const answer = answerOf(answerRead);
   const state = rotationSurfaceStateOf(answer);
   const { snapshot, refusal } = state;
+  // NO READ RETRY OFFLINE (story 8.2d, decision 2a): `retryable` means "show
+  // the read retry now" (story 8.2e) — the read's message is up, and the
+  // connection is: offline the message stays without its retry, and the
+  // retry comes back with the connection.
+  const retryable = clock.online && refusal !== null;
   // STORY 8.2d: the page's one as-of note, under its heading, while the whole
   // cached snapshot is drawn offline; none beside the unavailable message.
   const offline = offlineNoteOf(freshness, timeZone, refusal !== null);
-  // NO READ RETRY OFFLINE (story 8.2d, decision 2a): `retryable` is the
-  // connection's, so offline the message stays without its retry, and the
-  // retry comes back with the connection.
-  const retryable = clock.online;
   // NOTHING IS WRITTEN FROM THE DEVICE'S COPY (story 8.2d): while the cached
   // snapshot is drawn — offline, or just reconnected before the refetch lands
   // — a save or a cancel is refused with the existing unavailable outcome.

@@ -17,6 +17,7 @@ import {
   membersSearchFor,
   membersSearchKeyOf,
   membersSurfaceStateOf,
+  membersRetryMessageKey,
   membersTimeZoneOf,
   membersTodayOf,
   membersViewOf,
@@ -94,7 +95,7 @@ export function useMemberList(search: MembersSearch, navigate: MembersNavigate) 
   // is drawn as its own message, never a snapshot: it needs no zone.
   const answered = answerRead.data;
   const timeZone = membersTimeZoneOf(answered !== undefined && answered.ok ? answered.members : null);
-  const { freshness, answerOf } = useSnapshotFreshness(
+  const { freshness, clock, answerOf } = useSnapshotFreshness(
     MEMBERS_TABLE_SURFACE_KEYS,
     [[MEMBERS_LIST_KEY, answerRead]],
     answered !== undefined && !answered.ok ? ZONE_NOT_NEEDED : zoneFromReads(timeZone),
@@ -234,6 +235,11 @@ export function useMemberList(search: MembersSearch, navigate: MembersNavigate) 
     stateKey,
     searchField,
     refusal,
+    // STORY 8.2e: "show the read retry now" — the surface is in its
+    // retryable unavailable state, and online: offline its re-read would
+    // pause until the connection returns.
+    // A refusal that needs a new sign-in offers none.
+    retryable: clock.online && refusal !== null && membersRetryMessageKey(refusal) !== null,
     retry,
     loading,
     today,

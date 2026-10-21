@@ -110,6 +110,11 @@ export class ConflictResolutionPage extends BasePage {
     await this.page.goto(`${this.path}/${memberId}/${date}/${teamId}`);
   }
 
+  /** The unavailable alert's read retry. */
+  get retryButton(): Locator {
+    return this.page.getByRole('button', { name: resolution.retry, exact: true });
+  }
+
   /** The way back to the queue, with its count (`Raspored · 3 neriješena`) or plainly. */
   get backLink(): Locator {
     return this.page.getByRole('main').getByRole('link', { name: new RegExp(`^(Raspored · |${resolution.backToQueue})`) });

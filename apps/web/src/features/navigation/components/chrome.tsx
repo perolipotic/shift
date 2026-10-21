@@ -58,6 +58,7 @@ import {
   useThemePreference,
   type ThemePreference,
 } from '@/lib/theme';
+import { keepFocusOnAlert } from '@/utils/retry-focus';
 
 /**
  * The navigation chrome: two layouts, one architecture (the navigation shell,
@@ -241,14 +242,14 @@ export function AppChrome({ children }: AppChromeProps) {
     queryFn: currentMemberRole,
   });
   // STORY 8.2b: EACH READ DECIDES ITS OWN FRESHNESS (`chromeAnswerOf`, human
-  // decision 2026-10-20, 2a). Online after the app's start, a value restored
-  // from the device is not drawn until it is read again — the navigation
-  // waits for the role as on a cold start; offline, the cached value is
-  // drawn — and with no role cached, its unavailable notice and retry; and
-  // one read missing never takes another down. No as-of note here:
-  // the surface under the chrome states its own.
+  // decision 2026-10-20, 2a), and one read missing never takes another down.
+  // Online after the app's start, a value restored from the device is not
+  // drawn until it is read again: the navigation waits for the role as on a
+  // cold start. Offline, the cached value is drawn; with no role cached, the
+  // role's unavailable notice shows, with no retry (story 8.2e). No as-of
+  // note here: the surface under the chrome states its own.
   const clock = useFreshnessClock();
-  // The role is REQUIRED: offline with none cached it is failed, so its notice and retry show.
+  // The role is REQUIRED: offline with none cached it is failed, so its notice shows.
   const memberShown = chromeAnswerOf(member, clock, { required: true });
 
   const memberNameRead = useQuery({
@@ -305,6 +306,9 @@ export function AppChrome({ children }: AppChromeProps) {
       : memberShown.isError
         ? MEMBER_ROLE_UNAVAILABLE
         : null;
+  // STORY 8.2e: the role's read retry, never offline — its re-read would
+  // pause until the connection returns. Online it returns.
+  const roleRetryable = clock.online && roleFailure !== null;
   // The sign-out's failure WINS over the read's: if a press has just been
   // refused, that is the thing the person is waiting to hear about, and the role
   // read's failure is still on screen as the absent destinations.
@@ -867,8 +871,9 @@ export function AppChrome({ children }: AppChromeProps) {
         <p ref={alertRegion} role="alert" tabIndex={-1} className="text-sm font-medium">
           {t(navigationMessageKey(refusal))}
         </p>
-        {roleFailure === null ? null : (
+        {roleRetryable ? (
           <Button
+            ref={keepFocusOnAlert}
             className="h-11 shrink-0 px-4"
             type="button"
             variant="outline"
@@ -876,7 +881,7 @@ export function AppChrome({ children }: AppChromeProps) {
           >
             {t('shell.retry')}
           </Button>
-        )}
+        ) : null}
       </div>
     );
   }

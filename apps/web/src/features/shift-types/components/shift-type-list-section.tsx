@@ -11,6 +11,7 @@ import type { ShiftTypeListScreen } from '@/features/shift-types/hooks/use-shift
 import { shiftTypesMessageKey, shiftTypesRetryMessageKey } from '@/features/shift-types/services/list';
 import { shiftTypeSavedMessageKey, shiftTypeWriteMessageKey } from '@/features/shift-types/services/write';
 import { t } from '@/lib/i18n';
+import { keepFocusOnAlert } from '@/utils/retry-focus';
 
 const SKELETON_ROWS = [0, 1, 2];
 
@@ -36,9 +37,11 @@ export function ShiftTypeListSection({ screen }: { readonly screen: ShiftTypeLis
       {refusal === null ? null : (
         <div className="grid min-w-0 gap-2">
           <Notice role="alert">{t(shiftTypesMessageKey(refusal))}</Notice>
-          {/* STORY 8.2d: no read retry offline; it comes back with the connection. */}
+          {/* STORY 8.2d: no read retry offline; it comes back with the connection.
+              If this retry has focus when it goes, `keepFocusOnAlert` moves focus to the alert. */}
           {screen.retryable ? (
             <Button
+              ref={keepFocusOnAlert}
               className="h-11 w-full sm:w-auto sm:justify-self-start"
               type="button"
               variant="outline"

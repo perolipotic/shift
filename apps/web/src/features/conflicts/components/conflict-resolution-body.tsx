@@ -41,6 +41,7 @@ import {
 import { rosterLineOf } from '@/features/members/utils/position';
 import { formatList } from '@/lib/i18n/format';
 import { t } from '@/lib/i18n';
+import { keepFocusOnAlert } from '@/utils/retry-focus';
 import { initialsOf } from '@/utils/initials';
 
 /** The way back to the queue, always rendered: with the count once it is known. */
@@ -254,7 +255,7 @@ function ResolutionReady({ state, view }: { readonly state: ConflictResolutionSt
  * back is drawn in every state.
  */
 export function ConflictResolutionBody({ state }: { readonly state: ConflictResolutionState }): ReactNode {
-  const { screen, retry, failure } = state;
+  const { screen, retryable, retry, failure } = state;
 
   if (screen.kind === RESOLUTION_LOADING || screen.kind === RESOLUTION_UNAVAILABLE || screen.kind === RESOLUTION_MISSING) {
     return (
@@ -280,9 +281,17 @@ export function ConflictResolutionBody({ state }: { readonly state: ConflictReso
         {screen.kind === RESOLUTION_UNAVAILABLE ? (
           <div className="grid min-w-0 gap-2">
             <Notice role="alert">{t('raspored.resolution.unavailable')}</Notice>
-            <Button className="h-11 w-full sm:w-auto sm:justify-self-start" type="button" variant="outline" onClick={retry}>
-              {t('raspored.resolution.retry')}
-            </Button>
+            {retryable ? (
+              <Button
+                ref={keepFocusOnAlert}
+                className="h-11 w-full sm:w-auto sm:justify-self-start"
+                type="button"
+                variant="outline"
+                onClick={retry}
+              >
+                {t('raspored.resolution.retry')}
+              </Button>
+            ) : null}
           </div>
         ) : null}
       </>

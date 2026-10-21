@@ -84,12 +84,13 @@ export function useHourBandList() {
   // refetch paused offline over, which is never a refusal (an edit form keeps
   // them). Under the freshness (story 8.2d) a paused refetch is never seen.
   const refusal = hourBandsNoticeOf(state);
+  // NO READ RETRY OFFLINE (story 8.2d, decision 2a): `retryable` means "show
+  // the read retry now" (story 8.2e) — the read's message is up, and the
+  // connection is: offline the message stays without its retry, and the
+  // retry comes back with the connection.
+  const retryable = clock.online && refusal !== null;
   // STORY 8.2d: the as-of note, while the cached bands are drawn offline.
   const offline = offlineNoteOf(freshness, timeZone, refusal !== null);
-  // NO READ RETRY OFFLINE (story 8.2d, decision 2a): `retryable` is the
-  // connection's, so offline the message stays without its retry, and the
-  // retry comes back with the connection.
-  const retryable = clock.online;
   const rows = bands === null ? null : hourBandDisplayRowsOf(bands);
   const bar = bands === null ? null : partitionBarOf(bands);
   const preview = bands === null ? null : hourBandPreviewOf(bands, typedStart, null);

@@ -133,7 +133,7 @@ export function useMemberEdit(id: string) {
   // unavailable as one. Online, a read older than this session's network is
   // never drawn as fresh; offline, the whole cached snapshot is drawn under
   // the as-of note (`offline`, the page's one), or the unavailable state is.
-  const { freshness, answerOf } = useSnapshotFreshness(
+  const { freshness, clock, answerOf } = useSnapshotFreshness(
     memberPageSurfaceKeysOf(id),
     [
       [MEMBERS_LIST_KEY, membersRead],
@@ -209,8 +209,12 @@ export function useMemberEdit(id: string) {
     // The member write: the basics and the allowance dialogs.
     ...basics,
     form,
-    /** Whether the read refusal offers its retry (an unavailable read only). */
-    readRetryable: memberReadRetryable(form.refusal),
+    /**
+     * Whether the read refusal offers its retry: an unavailable read only, and
+     * never offline (story 8.2e) — the re-read would pause until the
+     * connection returns. Online it returns.
+     */
+    readRetryable: clock.online && memberReadRetryable(form.refusal),
     retryMembers: () => {
       void retryRead(queryClient, MEMBERS_LIST_KEY);
     },
@@ -225,6 +229,8 @@ export function useMemberEdit(id: string) {
     offersPosition,
     positionsRefusal,
     teamsState,
+    /** Whether to show the teams read's retry now: its refusal, online (story 8.2e). */
+    teamsRetryable: clock.online && teamsState.refusal !== null,
     retryTeams: () => {
       void retryRead(queryClient, TEAMS_LIST_KEY);
     },

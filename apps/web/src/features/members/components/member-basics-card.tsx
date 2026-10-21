@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { Select } from '@/components/ui/select';
 import { t } from '@/lib/i18n';
+import { keepFocusOnAlert } from '@/utils/retry-focus';
 import type { MemberEdit } from '@/features/members/hooks/use-member-edit';
 import { memberLevelMessageKey, type MemberListRow } from '@/features/members/services/list';
 import {
@@ -115,6 +116,7 @@ export function MemberBasicsCard({ edit }: { readonly edit: MemberEdit }): React
               <Notice role="alert">{refusalText(readRefusal)}</Notice>
               {edit.readRetryable ? (
                 <Button
+                  ref={keepFocusOnAlert}
                   className="h-11 w-full sm:w-auto sm:justify-self-start"
                   type="button"
                   variant="outline"
