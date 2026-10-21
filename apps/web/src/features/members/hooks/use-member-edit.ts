@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 
 import { useCalendarSnapshot } from '@/features/calendar/hooks/use-calendar-snapshot';
-import { calendarSurfaceStateOf } from '@/features/calendar/services/snapshot';
+import { CALENDAR_KEY, calendarSurfaceStateOf } from '@/features/calendar/services/snapshot';
 import { useErasureReads } from '@/features/conflicts/hooks/use-erasure-reads';
 import type { MemberScreen } from '@/features/members/hooks/member-edit-context';
 import { useMemberBasics } from '@/features/members/hooks/use-member-basics';
@@ -25,8 +25,13 @@ import {
   teamPositionsSettingOf,
   readSessionSubject,
 } from '@/features/members/services/write';
+import { memberPageSurfaceKeysOf } from '@/features/members/services/surface-keys';
 import { ranksShownIn } from '@/features/members/utils/rank';
-import { organizationTable, organizationSnapshotQueryOptions } from '@/features/organization/services/snapshot';
+import {
+  ORGANIZATION_SNAPSHOT_KEY,
+  organizationTable,
+  organizationSnapshotQueryOptions,
+} from '@/features/organization/services/snapshot';
 import { retryRead } from '@/features/teams/services/dependents';
 import {
   TEAMS_LIST_KEY,
@@ -36,6 +41,8 @@ import {
   teamsSurfaceStateOf,
   writableTeamsOf,
 } from '@/features/teams/services/list';
+import { ZONE_FROM_CALENDAR, offlineNoteOf } from '@/lib/offline/freshness';
+import { useSnapshotFreshness } from '@/lib/offline/use-snapshot-freshness';
 import { currentSession, supabaseClient } from '@/lib/supabase/client';
 
 /**
@@ -81,6 +88,11 @@ import { currentSession, supabaseClient } from '@/lib/supabase/client';
  * erasure check and the write. Withdrawing a scheduled change keeps its card
  * button and its confirmation. Every rule any of them applies is a pure
  * function in `@/features/members/services/write`, where a test runs it.
+ *
+ * ONE SNAPSHOT WITH THE LEAVE CARD (story 8.2c): every read is seen through
+ * the page's freshness over `memberPageSurfaceKeysOf`, the same set
+ * `useMemberLeave` decides over, as *Danas*'s body and header decide as one.
+ * The erasure guard's fresh reads stay outside it: they decide a write only.
  */
 export function useMemberEdit(id: string) {
   const queryClient = useQueryClient();
@@ -90,36 +102,59 @@ export function useMemberEdit(id: string) {
   // and status cards.
   const readErasures = useErasureReads();
 
-  const answer = useQuery(membersQueryOptions(() => supabaseClient().from(MEMBERS_TABLE)));
+  const membersRead = useQuery(membersQueryOptions(() => supabaseClient().from(MEMBERS_TABLE)));
   // THE CALENDAR SNAPSHOT, observed through its one binding — the leave
   // card's own (`@/features/leave/hooks/use-member-leave`) — for the
   // deactivation's consequence.
-  const calendar = useCalendarSnapshot();
+  const calendarRead = useCalendarSnapshot();
 
   // MEMBER RANK. Whether the rank control is offered, read from the one
   // organization snapshot under its shared key (AD-13), through the chrome's
   // own factory and cache policy. Until it arrives the control is absent and
   // the save leaves the stored rank alone.
-  const organization = useQuery(
+  const organizationRead = useQuery(
     organizationSnapshotQueryOptions(organizationTable),
   );
+
+  // THE CALLER'S OWN ACCOUNT, so the status block is never offered on it.
+  const subjectRead = useQuery({
+    queryKey: SESSION_SUBJECT_KEY,
+    queryFn: () => readSessionSubject(currentSession),
+    refetchOnWindowFocus: false,
+  });
+
+  // THE TEAMS THE PICKER OFFERS, under the team screens' own key (AD-13).
+  const teamsRead = useQuery(teamsQueryOptions(() => supabaseClient().from(TEAMS_TABLE)));
+
+  // STORY 8.2c: the page is ONE snapshot over the union of this hook's reads
+  // and the leave card's (`memberPageSurfaceKeysOf`), decided here from these
+  // very observer results and, for the leave card's own two, from the cache —
+  // the card decides over the same set, so the page is drawn whole or is
+  // unavailable as one. Online, a read older than this session's network is
+  // never drawn as fresh; offline, the whole cached snapshot is drawn under
+  // the as-of note (`offline`, the page's one), or the unavailable state is.
+  const { freshness, answerOf } = useSnapshotFreshness(
+    memberPageSurfaceKeysOf(id),
+    [
+      [MEMBERS_LIST_KEY, membersRead],
+      [CALENDAR_KEY, calendarRead],
+      [ORGANIZATION_SNAPSHOT_KEY, organizationRead],
+      [SESSION_SUBJECT_KEY, subjectRead],
+      [TEAMS_LIST_KEY, teamsRead],
+    ],
+    ZONE_FROM_CALENDAR,
+  );
+  const answer = answerOf(membersRead);
+  const calendar = answerOf(calendarRead);
+  const organization = answerOf(organizationRead);
   const offersRank = ranksShownIn(organization.data);
   // TEAM POSITION: the same setting — on, off, pending or failed. Until it is
   // KNOWN no move is offered, so no position is ever sent on a guess.
   const positionsSetting = teamPositionsSettingOf(organization);
   const offersPosition = teamPositionsOn(positionsSetting);
   const positionsRefusal = teamPositionsRefusalOf(positionsSetting);
-
-  // THE CALLER'S OWN ACCOUNT, so the status block is never offered on it.
-  const subject = useQuery({
-    queryKey: SESSION_SUBJECT_KEY,
-    queryFn: () => readSessionSubject(currentSession),
-    refetchOnWindowFocus: false,
-  });
-  const callerAuthUserId = subject.data ?? null;
-
-  // THE TEAMS THE PICKER OFFERS, under the team screens' own key (AD-13).
-  const teamsAnswer = useQuery(teamsQueryOptions(() => supabaseClient().from(TEAMS_TABLE)));
+  const callerAuthUserId = answerOf(subjectRead).data ?? null;
+  const teamsAnswer = answerOf(teamsRead);
   const teamsState = teamsSurfaceStateOf(teamsAnswer);
   // WRITABLE, not merely drawable: a failed refetch keeps the cached teams, and
   // the picker and team actions are withheld on it as they were before.
@@ -148,6 +183,7 @@ export function useMemberEdit(id: string) {
     latest.current = { member: form.member, today, teams: allTeams, members: organizationMembers, caller: callerAuthUserId };
   });
 
+  const calendarSnapshot = calendarSurfaceStateOf(calendar).snapshot;
   const screen: MemberScreen = {
     id,
     openings,
@@ -160,7 +196,7 @@ export function useMemberEdit(id: string) {
     offersRank,
     positionsSetting,
     offersPosition,
-    calendarSnapshot: calendarSurfaceStateOf(calendar).snapshot,
+    calendarSnapshot,
     latest,
     readErasures,
   };
@@ -192,6 +228,14 @@ export function useMemberEdit(id: string) {
     retryTeams: () => {
       void retryRead(queryClient, TEAMS_LIST_KEY);
     },
+    // STORY 8.2c: the page's one as-of note, under its heading — the calendar
+    // snapshot's zone — while the whole cached snapshot is drawn offline; none
+    // above the member read's unavailable state, where no card is drawn.
+    offline: offlineNoteOf(
+      freshness,
+      calendarSnapshot === null ? null : calendarSnapshot.timeZone,
+      memberReadRetryable(form.refusal),
+    ),
   };
 }
 

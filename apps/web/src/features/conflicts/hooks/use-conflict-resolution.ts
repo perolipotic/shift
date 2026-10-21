@@ -10,6 +10,7 @@ import {
   OPTION_REPLACE_MEMBER,
   RESOLUTION_LOADING,
   RESOLUTION_READY,
+  RESOLUTION_UNAVAILABLE,
   SAVE_FOCUS_CANDIDATES,
   SAVE_FOCUS_CHOICE,
   amendHandoffOf,
@@ -47,6 +48,7 @@ import {
   organizationConflictResolutionsQueryOptions,
   type OrganizationConflictResolutionsTable,
 } from '@/features/conflicts/services/resolutions';
+import { RESOLUTION_SURFACE_KEYS } from '@/features/conflicts/services/surface-keys';
 import {
   LEAVE_RECORDS_TABLE,
   ORGANIZATION_LEAVE_RECORDS_KEY,
@@ -74,6 +76,8 @@ import {
   NO_DEPENDENTS,
   refreshAfterWrite,
 } from '@/features/teams/services/dependents';
+import { ZONE_FROM_CALENDAR, offlineNoteOf } from '@/lib/offline/freshness';
+import { useSnapshotFreshness } from '@/lib/offline/use-snapshot-freshness';
 import { supabaseClient } from '@/lib/supabase/client';
 
 /**
@@ -124,6 +128,12 @@ import { supabaseClient } from '@/lib/supabase/client';
  * its removal, in router state (`amendHandoffOf`) — no pending, no write and
  * nothing held. The member page's own amend or removal does the write, and
  * the conflict clears by derivation once it lands.
+ *
+ * ONE SNAPSHOT, ONLINE OR NOT (story 8.2c): the five reads are seen through
+ * the page's freshness (`RESOLUTION_SURFACE_KEYS`), the recipe of story 8.2,
+ * and `resolutionScreenOf` derives from the answered reads. Offline the whole
+ * cached snapshot is drawn under the as-of note; a save then fails as any
+ * write without a connection does (8.3 states it before the press).
  */
 export function useConflictResolution(params: ResolutionParams) {
   const queryClient = useQueryClient();
@@ -157,27 +167,50 @@ export function useConflictResolution(params: ResolutionParams) {
     };
   }, []);
 
-  const calendar = useCalendarSnapshot();
-  const records = useQuery(
+  const calendarRead = useCalendarSnapshot();
+  const recordsRead = useQuery(
     // Named structurally, as the queue's read is.
     organizationLeaveRecordsQueryOptions(
       () => supabaseClient().from(LEAVE_RECORDS_TABLE) as unknown as OrganizationLeaveRecordsTable,
     ),
   );
-  const resolutions = useQuery(
+  const resolutionsRead = useQuery(
     organizationConflictResolutionsQueryOptions(
       () => supabaseClient().from(CONFLICT_RESOLUTIONS_TABLE) as unknown as OrganizationConflictResolutionsTable,
     ),
   );
-  const members = useQuery(membersQueryOptions(() => supabaseClient().from(MEMBERS_TABLE)));
-  const organization = useQuery(organizationSnapshotQueryOptions(organizationTable));
+  const membersRead = useQuery(membersQueryOptions(() => supabaseClient().from(MEMBERS_TABLE)));
+  const organizationRead = useQuery(organizationSnapshotQueryOptions(organizationTable));
+  // STORY 8.2c: the five reads are one snapshot (`RESOLUTION_SURFACE_KEYS`),
+  // decided from these very observer results: online, a read older than this
+  // session's network is never drawn as fresh; offline, the whole cached
+  // snapshot is drawn under the as-of note (`offline`), or the unavailable
+  // state is. Every derivation below — `members.paused` and
+  // `refetchingAfterFailure` included — reads the ANSWERED reads, never the raw.
+  const { freshness, answerOf } = useSnapshotFreshness(
+    RESOLUTION_SURFACE_KEYS,
+    [
+      [CALENDAR_KEY, calendarRead],
+      [ORGANIZATION_LEAVE_RECORDS_KEY, recordsRead],
+      [ORGANIZATION_CONFLICT_RESOLUTIONS_KEY, resolutionsRead],
+      [MEMBERS_LIST_KEY, membersRead],
+      [ORGANIZATION_SNAPSHOT_KEY, organizationRead],
+    ],
+    ZONE_FROM_CALENDAR,
+  );
+  const calendar = answerOf(calendarRead);
+  const records = answerOf(recordsRead);
+  const resolutions = answerOf(resolutionsRead);
+  const members = answerOf(membersRead);
+  const organization = answerOf(organizationRead);
+  const calendarState = calendarSurfaceStateOf(calendar);
 
   // STORY 5.5d: a replacement naming an override the snapshot does not hold yet re-reads it once.
-  useReplacementLinkRefresh(calendarSurfaceStateOf(calendar).snapshot, resolutions.data);
+  useReplacementLinkRefresh(calendarState.snapshot, resolutions.data);
 
   const derived = resolutionScreenOf(
     {
-      calendar: calendarSurfaceStateOf(calendar),
+      calendar: calendarState,
       records,
       resolutions,
       members: membersSurfaceStateOf(members),
@@ -380,6 +413,19 @@ export function useConflictResolution(params: ResolutionParams) {
   return {
     screen,
     loading: screen.kind === RESOLUTION_LOADING,
+    // STORY 8.2c: the as-of note's time and zone — the calendar snapshot's —
+    // while the whole cached snapshot is drawn offline; none above the
+    // unavailable state, and none over a landed save's view, which is what
+    // the write just saved rather than the snapshot. Saving offline still
+    // fails through the write's own failure (8.3 refuses it up front).
+    offline:
+      landed === null
+        ? offlineNoteOf(
+            freshness,
+            calendarState.snapshot === null ? null : calendarState.snapshot.timeZone,
+            screen.kind === RESOLUTION_UNAVAILABLE,
+          )
+        : null,
     firstOption,
     firstCandidate,
     replaceOption,

@@ -241,10 +241,10 @@ describe('feature boundaries', () => {
       const [fromPage] = await report(importing(WIRE), IN_PAGES);
 
       expect(fromFeature?.message).toBe(
-        'Feature boundaries: `services/wire` is not a public module of the members feature for the teams feature. Import it from one of members\'s public modules (FEATURE_PUBLIC in eslint.config.js: `services/list`, `utils/position`, `utils/rank`), or add a module there deliberately.',
+        'Feature boundaries: `services/wire` is not a public module of the members feature for the teams feature. Import it from one of members\'s public modules (FEATURE_PUBLIC in eslint.config.js: `services/list`, `services/surface-keys`, `utils/position`, `utils/rank`), or add a module there deliberately.',
       );
       expect(fromPage?.message).toBe(
-        'Feature boundaries: `services/wire` is not a public module of the members feature. Import it from one of members\'s public modules (FEATURE_PUBLIC in eslint.config.js: `services/list`, `utils/position`, `utils/rank`), from its components/ or hooks/, or add a module there deliberately.',
+        'Feature boundaries: `services/wire` is not a public module of the members feature. Import it from one of members\'s public modules (FEATURE_PUBLIC in eslint.config.js: `services/list`, `services/surface-keys`, `utils/position`, `utils/rank`), from its components/ or hooks/, or add a module there deliberately.',
       );
     });
 

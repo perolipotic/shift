@@ -25,6 +25,10 @@ import { appLayoutRoute } from '@/pages/_app';
  * ADMIN ONLY, with the admin guard `/raspored` carries;
  * `router.test.ts` drives it. A member who types this URL is forwarded as
  * from `/raspored`. Not a destination: the `Raspored` tab lights for it.
+ *
+ * STORY 8.2c: offline, the five cached reads are drawn whole under the as-of
+ * note — under the heading the body draws in each of its states — or the
+ * unavailable state is. Saving still refuses through the write's own failure.
  */
 
 function ResolutionScreen({ params }: { readonly params: Parameters<typeof useConflictResolution>[0] }) {

@@ -57,6 +57,129 @@ describe('focus after a write waits for its target to be drawn', () => {
     expect(clock.pending).toBe(0);
   });
 
+  it('waits for a control a disabled fieldset still holds, as the DOM\'s :disabled says', () => {
+    const focused: string[] = [];
+    const clock = frames();
+    let inDisabledFieldset = true;
+    const field = {
+      ...element('from', focused),
+      matches: (selector: string) => selector === ':disabled' && inDisabledFieldset,
+    };
+
+    focusLater([() => field], () => element('alert', focused), clock.schedule);
+    clock.step();
+    expect(focused).toEqual([]);
+
+    inDisabledFieldset = false;
+    clock.step();
+    expect(focused).toEqual(['from']);
+  });
+
+  it('focuses again on the next frame when focus did not take, as behind a modal dialog still closing', () => {
+    const focused: string[] = [];
+    const clock = frames();
+    const document = { activeElement: null as unknown };
+    let inert = true;
+    const button = {
+      ...element('edit', focused),
+      ownerDocument: document,
+      focus(): void {
+        focused.push('edit');
+        if (!inert) document.activeElement = button;
+      },
+    };
+
+    focusLater([() => button], () => element('heading', focused), clock.schedule);
+    clock.step();
+    expect(focused).toEqual(['edit']);
+    expect(clock.pending, 'not taken: the wait goes on').toBe(1);
+
+    inert = false;
+    clock.step();
+    expect(focused).toEqual(['edit', 'edit']);
+    expect(document.activeElement).toBe(button);
+    expect(clock.pending).toBe(0);
+  });
+
+  it('focuses the fallback when focus never took by the last frame', () => {
+    const focused: string[] = [];
+    const clock = frames();
+    const document = { activeElement: null as unknown, body: {} };
+    const button = { ...element('edit', focused), ownerDocument: document };
+
+    focusLater([() => button], () => element('heading', focused), clock.schedule, 3);
+    clock.step();
+    clock.step();
+    clock.step();
+    expect(focused).toEqual(['edit', 'edit', 'edit', 'heading']);
+    expect(clock.pending).toBe(0);
+  });
+
+  it('counts focus delegated to an element inside the target as taken', () => {
+    const focused: string[] = [];
+    const clock = frames();
+    const inner = {};
+    const document = { activeElement: null as unknown };
+    const card = {
+      ...element('card', focused),
+      ownerDocument: document,
+      contains: (other: unknown) => other === inner,
+      focus(): void {
+        focused.push('card');
+        document.activeElement = inner;
+      },
+    };
+
+    focusLater([() => card], () => element('heading', focused), clock.schedule);
+    clock.step();
+    expect(focused).toEqual(['card']);
+    expect(clock.pending, 'taken: no retry').toBe(0);
+  });
+
+  it('stops retrying once somebody else has moved focus to another element', () => {
+    const focused: string[] = [];
+    const clock = frames();
+    const body = {};
+    const document = { activeElement: body as unknown, body };
+    const button = { ...element('edit', focused), ownerDocument: document };
+
+    focusLater([() => button], () => element('heading', focused), clock.schedule);
+    clock.step();
+    expect(focused).toEqual(['edit']);
+    expect(clock.pending).toBe(1);
+
+    // The user tabs to a link meanwhile.
+    document.activeElement = { name: 'link' };
+    clock.step();
+    expect(focused, 'no second try, and no fallback').toEqual(['edit']);
+    expect(clock.pending).toBe(0);
+  });
+
+  it('keeps retrying while focus merely rests on the body', () => {
+    const focused: string[] = [];
+    const clock = frames();
+    const body = {};
+    const document = { activeElement: { name: 'opener' } as unknown, body };
+    let inert = true;
+    const button = {
+      ...element('edit', focused),
+      ownerDocument: document,
+      focus(): void {
+        focused.push('edit');
+        if (!inert) document.activeElement = button;
+      },
+    };
+
+    focusLater([() => button], () => element('heading', focused), clock.schedule);
+    clock.step();
+    // The modal dialog closes and focus falls to the body: not somebody else's move.
+    document.activeElement = body;
+    inert = false;
+    clock.step();
+    expect(focused).toEqual(['edit', 'edit']);
+    expect(document.activeElement).toBe(button);
+  });
+
   it('takes the first ready target in order, skipping a detached or disabled one', () => {
     const focused: string[] = [];
     const clock = frames();

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { CALENDAR_KEY } from '@/features/calendar/services/snapshot';
 import { ERASURE_CHECK_KEY_PART as FEATURE_ERASURE_CHECK_KEY_PART } from '@/features/conflicts/hooks/use-erasure-reads';
+import { ACTING_ADMINS_KEY } from '@/features/conflicts/services/resolved-conflicts';
 import {
   MY_CONFLICT_RESOLUTIONS_KEY,
   ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
@@ -116,19 +117,27 @@ describe('what is kept on the device', () => {
         LEAVE_OVERVIEW_RECORDS_KEY,
         TEAMS_LIST_KEY,
         OWN_TEAM_KEY,
+        ACTING_ADMINS_KEY,
       ].map((key) => {
         expect(key).toHaveLength(1);
 
         return key[0];
       }),
     );
-    expect(PERSISTED_PARAMETERISED_KEY_ROOTS).toEqual([TEAM_ROSTER_KEY('t')[0]]);
+    expect(PERSISTED_PARAMETERISED_KEY_ROOTS).toEqual([TEAM_ROSTER_KEY('t')[0], LEAVE_RECORDS_KEY('m')[0]]);
   });
 
-  it('keeps a parameterised read only in the exact shape [root, string id] (story 8.2b)', () => {
+  it('keeps a parameterised read only in the exact shape [root, string id] (stories 8.2b, 8.2c)', () => {
     expect(persistsQuery({ queryKey: TEAM_ROSTER_KEY('team-1'), state: success() } as never)).toBe(true);
-    // `leave-records` waits for story 8.2c, which reads it offline.
-    expect(persistsQuery({ queryKey: LEAVE_RECORDS_KEY('member-1'), state: success() } as never)).toBe(false);
+    // Story 8.2c: one member's leave, read by the member page.
+    expect(persistsQuery({ queryKey: LEAVE_RECORDS_KEY('member-1'), state: success() } as never)).toBe(true);
+    expect(persistsKey(LEAVE_RECORDS_KEY(''))).toBe(false);
+    expect(persistsKey([...LEAVE_RECORDS_KEY('member-1'), 'more'])).toBe(false);
+    expect(persistsKey([...LEAVE_RECORDS_KEY('member-1'), ERASURE_CHECK_KEY_PART])).toBe(false);
+    expect(persistsKey([LEAVE_RECORDS_KEY('m')[0], ERASURE_CHECK_KEY_PART])).toBe(false);
+    expect(persistsKey([LEAVE_RECORDS_KEY('m')[0]])).toBe(false);
+    // A one-segment root takes no id.
+    expect(persistsKey([...ACTING_ADMINS_KEY, 'admin-1'])).toBe(false);
     expect(persistsKey(TEAM_ROSTER_KEY(''))).toBe(false);
     expect(persistsKey([...TEAM_ROSTER_KEY('team-1'), 'more'])).toBe(false);
     expect(persistsKey([TEAM_ROSTER_KEY('t')[0], 7])).toBe(false);

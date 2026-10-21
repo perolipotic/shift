@@ -1,5 +1,6 @@
 import { createRoute } from '@tanstack/react-router';
 
+import { OfflineNote } from '@/components/offline-note';
 import { Card } from '@/components/ui/card';
 import { PageHeader, PageTitle } from '@/components/ui/page-header';
 import { ConflictsBody } from '@/features/conflicts/components/conflicts-body';
@@ -26,10 +27,14 @@ import { appLayoutRoute } from '@/pages/_app';
  * The session guard is NOT here. It is registered once on the pathless `_app`
  * layout this route nests under, so a signed-out visitor opening this URL is
  * redirected before the component is ever asked for.
+ *
+ * STORY 8.2c: offline, the queue — and *Riješeni*, once read online — is
+ * drawn whole from the device's snapshot under the as-of note (`OfflineNote`,
+ * under the heading, on both tabs), or its unavailable state is.
  */
 
 export function RasporedScreen() {
-  const { queue, resolved, tab, setTab, saved, savedField, loading, retry } = useConflictsQueue();
+  const { queue, resolved, tab, setTab, saved, savedField, loading, retry, offline } = useConflictsQueue();
 
   return (
     <main className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6" aria-busy={loading}>
@@ -38,6 +43,7 @@ export function RasporedScreen() {
           <h1>{t('nav.raspored')}</h1>
         </PageTitle>
       </PageHeader>
+      <OfflineNote offline={offline} />
       <Card className="min-w-0 p-4">
         <ConflictsBody queue={queue} resolved={resolved} tab={tab} onTab={setTab} saved={saved} savedField={savedField} onRetry={retry} />
       </Card>

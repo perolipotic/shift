@@ -260,10 +260,14 @@ export const FEATURE_PUBLIC = {
     'services/my-leave', // today
   ],
   // Story 6.1b: *Danas*'s leave tile reads the viewer's allowance, as *Godišnji* does.
+  // Story 8.2c: `services/surface-keys` is PUBLIC — the member page's one key
+  // set (`memberPageSurfaceKeysOf`), which any feature drawing a part of that
+  // page decides its offline freshness over; the leave card is its consumer today.
   members: [
     // `NO_TEXT` and `shownDate` live in `utils/text`, shared by every feature
     // without reaching into this one.
     'services/list', // conflicts, leave, teams, today, pages
+    'services/surface-keys', // leave (public: the member page's key set)
     'utils/position', // calendar, conflicts, teams
     'utils/rank', // calendar, conflicts, organization, teams
   ],

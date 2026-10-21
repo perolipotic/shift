@@ -64,12 +64,15 @@ import {
   membersQueryOptions,
   membersSurfaceStateOf,
 } from '@/features/members/services/list';
+import { memberPageSurfaceKeysOf } from '@/features/members/services/surface-keys';
 import {
   ORGANIZATION_SNAPSHOT_KEY,
   organizationTable,
   organizationSnapshotQueryOptions,
 } from '@/features/organization/services/snapshot';
 import { LEAVE_WRITE_DEPENDENTS, NO_DEPENDENTS, refreshAfterWrite } from '@/features/teams/services/dependents';
+import { ZONE_FROM_CALENDAR } from '@/lib/offline/freshness';
+import { useSnapshotFreshness } from '@/lib/offline/use-snapshot-freshness';
 import { supabaseClient } from '@/lib/supabase/client';
 import { focusLater } from '@/utils/focus-later';
 
@@ -95,7 +98,10 @@ export interface LeaveDialogOpening {
  * THE READS, each under its own key and shared with the screens that own it
  * (AD-13): the member list (the allowance), the organization snapshot (the
  * leave year), the calendar snapshot (the schedule and today) and the
- * member's live leave records.
+ * member's live leave records. Since story 8.2c they are seen through the
+ * member page's one freshness (`memberPageSurfaceKeysOf`), shared with
+ * `useMemberEdit`, so offline the card is drawn from the cached snapshot or
+ * the whole page is unavailable.
  *
  * THE DIALOGS (story 7.12, the member page's pattern from 7.11). The od–do
  * fields live only in a dialog: `recordDialog` (*Upiši godišnji* in the
@@ -231,12 +237,12 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
   /** The hand-off already looked at once the rows were ready, by its identity: each opens once. */
   const handedOff = useRef<string | null>(null);
 
-  const members = useQuery(membersQueryOptions(() => supabaseClient().from(MEMBERS_TABLE)));
-  const organization = useQuery(
+  const membersRead = useQuery(membersQueryOptions(() => supabaseClient().from(MEMBERS_TABLE)));
+  const organizationRead = useQuery(
     organizationSnapshotQueryOptions(organizationTable),
   );
-  const calendar = useCalendarSnapshot();
-  const records = useQuery(
+  const calendarRead = useCalendarSnapshot();
+  const recordsRead = useQuery(
     leaveRecordsQueryOptions(
       // Named structurally, as the calendar's `rpc` is: checking supabase-js's
       // builder against the interface instantiates too deep for the compiler.
@@ -244,12 +250,33 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
       memberId,
     ),
   );
-  const resolutions = useQuery(
+  const resolutionsRead = useQuery(
     organizationConflictResolutionsQueryOptions(
       // Named structurally, as the queue's read is.
       () => supabaseClient().from(CONFLICT_RESOLUTIONS_TABLE) as unknown as OrganizationConflictResolutionsTable,
     ),
   );
+  // STORY 8.2c: the card is part of the member page's ONE snapshot — the same
+  // keys `useMemberEdit` decides over (`memberPageSurfaceKeysOf`), decided here
+  // from these very observer results and, for the page's other reads, from the
+  // cache — so the card and the page are drawn whole or unavailable as one.
+  // The page's as-of note is `useMemberEdit`'s: the card adds none.
+  const { answerOf } = useSnapshotFreshness(
+    memberPageSurfaceKeysOf(memberId),
+    [
+      [MEMBERS_LIST_KEY, membersRead],
+      [ORGANIZATION_SNAPSHOT_KEY, organizationRead],
+      [CALENDAR_KEY, calendarRead],
+      [LEAVE_RECORDS_KEY(memberId), recordsRead],
+      [ORGANIZATION_CONFLICT_RESOLUTIONS_KEY, resolutionsRead],
+    ],
+    ZONE_FROM_CALENDAR,
+  );
+  const members = answerOf(membersRead);
+  const organization = answerOf(organizationRead);
+  const calendar = answerOf(calendarRead);
+  const records = answerOf(recordsRead);
+  const resolutions = answerOf(resolutionsRead);
 
   const recordsState = leaveRecordsStateOf(records);
   const calendarState = calendarSurfaceStateOf(calendar);
@@ -276,24 +303,24 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
   const amendTo = amendTarget !== null && preview?.kind === LEAVE_PREVIEW_READY ? preview.range.to : null;
   const { isPending: resolutionsPending, isError: resolutionsFailed, fetchStatus: resolutionsFetch, data: resolutionRows } =
     resolutions;
-  const resolutionsRead = useMemo(
+  const resolutionsAnswer = useMemo(
     () => ({ isPending: resolutionsPending, isError: resolutionsFailed, fetchStatus: resolutionsFetch, data: resolutionRows }),
     [resolutionsPending, resolutionsFailed, resolutionsFetch, resolutionRows],
   );
   const amendGuard = useMemo(
     () =>
       snapshot !== null && amendTarget !== null && amendFrom !== null && amendTo !== null
-        ? replacementGuardOf(resolutionsRead, snapshot, memberId, amendTarget, { from: amendFrom, to: amendTo })
+        ? replacementGuardOf(resolutionsAnswer, snapshot, memberId, amendTarget, { from: amendFrom, to: amendTo })
         : null,
-    [resolutionsRead, snapshot, memberId, amendTarget, amendFrom, amendTo],
+    [resolutionsAnswer, snapshot, memberId, amendTarget, amendFrom, amendTo],
   );
   /** What the confirmed removal would leave rostered (story 5.4e), or null while no confirmation is open. */
   const liveRemoveGuard = useMemo(
     () =>
       snapshot !== null && confirming !== null
-        ? replacementGuardOf(resolutionsRead, snapshot, memberId, confirming.record, null)
+        ? replacementGuardOf(resolutionsAnswer, snapshot, memberId, confirming.record, null)
         : null,
-    [resolutionsRead, snapshot, memberId, confirming],
+    [resolutionsAnswer, snapshot, memberId, confirming],
   );
   // A SENT REMOVAL'S LINES stand on its confirmation until it closes or another opens.
   const removeGuard = confirming !== null && sentRemoveGuard !== null ? sentRemoveGuard : liveRemoveGuard;
@@ -305,13 +332,16 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
   const rangeFrom = opening !== null && preview?.kind === LEAVE_PREVIEW_READY ? preview.range.from : null;
   const rangeTo = opening !== null && preview?.kind === LEAVE_PREVIEW_READY ? preview.range.to : null;
   /** The calendar snapshot is being re-read — as every opening asks for — so the conflicts wait for it. */
-  const calendarFetching = calendar.isFetching;
+  // THE RAW OBSERVER'S, not the answer as seen (story 8.2c, the fetch-flag
+  // rule in `@/lib/offline/use-snapshot-freshness`): whether a re-read is in
+  // flight — a reconnect's included, under the cached snapshot — never draws a figure.
+  const calendarFetching = calendarRead.isFetching;
   /** What the ready range in the open dialog would create, clear and keep (story 7.12); null while none is ready. */
   const conflicts = useMemo<LeaveConflicts | null>(
     () =>
       snapshot !== null && liveRecords !== null && opening !== null && rangeFrom !== null && rangeTo !== null
         ? leaveConflictsOf(
-            resolutionsRead,
+            resolutionsAnswer,
             snapshot,
             memberId,
             liveRecords,
@@ -319,14 +349,14 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
             calendarFetching,
           )
         : null,
-    [resolutionsRead, snapshot, memberId, liveRecords, opening, rangeFrom, rangeTo, calendarFetching],
+    [resolutionsAnswer, snapshot, memberId, liveRecords, opening, rangeFrom, rangeTo, calendarFetching],
   );
   /** What the open removal would clear (story 7.12); null while no confirmation is open. */
   const removeConflicts = useMemo<LeaveConflicts | null>(
     () =>
       snapshot !== null && liveRecords !== null && confirming !== null
         ? leaveConflictsOf(
-            resolutionsRead,
+            resolutionsAnswer,
             snapshot,
             memberId,
             liveRecords,
@@ -334,7 +364,7 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
             calendarFetching,
           )
         : null,
-    [resolutionsRead, snapshot, memberId, liveRecords, confirming, calendarFetching],
+    [resolutionsAnswer, snapshot, memberId, liveRecords, confirming, calendarFetching],
   );
   /** The member's name as the calendar reads it, for the opener's accessible name and the dialog; null when not read. */
   // FROM THE MEMBER LIST first, which the card reads anyway; the calendar's otherwise.
@@ -343,7 +373,7 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
     snapshot?.members.find((member) => member.id === memberId)?.name ??
     null;
   /** Either read the guard stands on is being re-read: a capture now would be of rows about to be replaced. */
-  const guardFetching = resolutions.isFetching || calendar.isFetching;
+  const guardFetching = resolutionsRead.isFetching || calendarRead.isFetching;
 
   /** The guard to send a write with: unknown while a read it stands on is still fetching. */
   function capturedGuard(guard: ReplacementGuard | null): ReplacementGuard | null {

@@ -7,7 +7,7 @@ import { useSnapshotSkewRefresh } from '@/features/calendar/hooks/use-snapshot-s
 import { CALENDAR_FETCH_FETCHING, CALENDAR_KEY, calendarSurfaceStateOf } from '@/features/calendar/services/snapshot';
 import { snapshotSkewOf } from '@/features/calendar/services/snapshot-skew';
 import { useReplacementLinkRefresh } from '@/features/conflicts/hooks/use-replacement-link-refresh';
-import { CONFLICTS_LOADING, conflictsQueueOf } from '@/features/conflicts/services/conflicts-queue';
+import { CONFLICTS_LOADING, CONFLICTS_UNAVAILABLE, conflictsQueueOf } from '@/features/conflicts/services/conflicts-queue';
 import {
   resolutionSavedOf,
   resolutionSavedStepOf,
@@ -17,6 +17,7 @@ import {
 import {
   ACTING_ADMINS_KEY,
   ACTING_ADMINS_TABLE,
+  RESOLVED_UNAVAILABLE,
   TAB_RESOLVED,
   TAB_UNRESOLVED,
   actingAdminsQueryOptions,
@@ -30,6 +31,7 @@ import {
   organizationConflictResolutionsQueryOptions,
   type OrganizationConflictResolutionsTable,
 } from '@/features/conflicts/services/resolutions';
+import { rasporedSurfaceKeysOf } from '@/features/conflicts/services/surface-keys';
 import {
   LEAVE_RECORDS_TABLE,
   ORGANIZATION_LEAVE_RECORDS_KEY,
@@ -37,6 +39,8 @@ import {
   type OrganizationLeaveRecordsTable,
 } from '@/features/leave/services/leave-list';
 import { useOrganizationToday } from '@/hooks/organization-today';
+import { ZONE_FROM_CALENDAR, offlineNoteOf } from '@/lib/offline/freshness';
+import { useSnapshotFreshness } from '@/lib/offline/use-snapshot-freshness';
 import { supabaseClient } from '@/lib/supabase/client';
 
 /**
@@ -96,34 +100,60 @@ export function useConflictsQueue() {
     if (saved !== null) savedField.current?.focus();
   }, [saved]);
 
-  const calendar = useCalendarSnapshot();
-  const records = useQuery(
+  const calendarRead = useCalendarSnapshot();
+  const recordsRead = useQuery(
     // Named structurally, as the member card's read is.
     organizationLeaveRecordsQueryOptions(
       () => supabaseClient().from(LEAVE_RECORDS_TABLE) as unknown as OrganizationLeaveRecordsTable,
     ),
   );
 
-  const resolutions = useQuery(
+  const resolutionsRead = useQuery(
     organizationConflictResolutionsQueryOptions(
       () => supabaseClient().from(CONFLICT_RESOLUTIONS_TABLE) as unknown as OrganizationConflictResolutionsTable,
     ),
   );
 
-  // STORY 5.5d: a replacement naming an override the snapshot does not hold yet re-reads it once.
-  useReplacementLinkRefresh(calendarSurfaceStateOf(calendar).snapshot, resolutions.data);
-
   // THE *RIJEŠENI* TAB (story 7.16) reads the same three, plus the names of
   // whoever decided, and only once the tab is open.
-  const actors = useQuery(
+  const actorsRead = useQuery(
     actingAdminsQueryOptions(
       () => supabaseClient().from(ACTING_ADMINS_TABLE) as unknown as ActingAdminsTable,
       tab === TAB_RESOLVED,
     ),
   );
 
+  // STORY 8.2c: the queue is one snapshot, decided from these very observer
+  // results over the open tab's keys (`rasporedSurfaceKeysOf`): online, a read
+  // older than this session's network is never drawn as fresh; offline, the
+  // whole cached snapshot is drawn under the as-of note (`offline`), or the
+  // unavailable state is. The names join the keys on *Riješeni* alone, so on
+  // *Neriješeni* they pass raw (`answerFor`) and never decide the queue.
+  const { freshness, answerOf, answerFor } = useSnapshotFreshness(
+    rasporedSurfaceKeysOf(tab),
+    [
+      [CALENDAR_KEY, calendarRead],
+      [ORGANIZATION_LEAVE_RECORDS_KEY, recordsRead],
+      [ORGANIZATION_CONFLICT_RESOLUTIONS_KEY, resolutionsRead],
+      [ACTING_ADMINS_KEY, actorsRead],
+    ],
+    ZONE_FROM_CALENDAR,
+  );
+  const calendar = answerOf(calendarRead);
+  const records = answerOf(recordsRead);
+  const resolutions = answerOf(resolutionsRead);
+  const actors = answerFor(ACTING_ADMINS_KEY, actorsRead);
+
   const calendarState = calendarSurfaceStateOf(calendar);
-  const snapshotFetching = calendar.fetchStatus === CALENDAR_FETCH_FETCHING;
+
+  // STORY 5.5d: a replacement naming an override the snapshot does not hold yet re-reads it once.
+  useReplacementLinkRefresh(calendarState.snapshot, resolutions.data);
+
+  // FROM THE RAW OBSERVER (story 8.2c, the fetch-flag rule in
+  // `@/lib/offline/use-snapshot-freshness`): a skew waits as loading while the
+  // snapshot is really being read again — a reconnect's refetch included —
+  // and offline, where the read is paused, it is the unavailable state.
+  const snapshotFetching = calendarRead.fetchStatus === CALENDAR_FETCH_FETCHING;
   const resolved = resolvedConflictsOf({ calendar: calendarState, records, resolutions, actors, snapshotFetching });
 
   // A leave or resolution row naming a member or team the snapshot does not hold yet re-reads it once.
@@ -132,6 +162,14 @@ export function useConflictsQueue() {
   // The organization's today, moved at its midnight: a queue left open overnight drops yesterday's conflicts.
   const { now } = useOrganizationToday(calendarState.snapshot === null ? null : calendarState.snapshot.timeZone);
   const queue = conflictsQueueOf({ calendar: calendarState, records, resolutions, snapshotFetching }, now);
+  // STORY 8.2c: the as-of note's time and zone — the calendar snapshot's —
+  // while the whole cached snapshot is drawn offline, under the heading on
+  // both tabs; none above the open tab's unavailable state, where nothing is drawn.
+  const offline = offlineNoteOf(
+    freshness,
+    calendarState.snapshot === null ? null : calendarState.snapshot.timeZone,
+    tab === TAB_RESOLVED ? resolved.kind === RESOLVED_UNAVAILABLE : queue.kind === CONFLICTS_UNAVAILABLE,
+  );
 
   /** Read again every read the queue stands on, from the unavailable alert's retry. */
   function retry(): void {
@@ -140,5 +178,5 @@ export function useConflictsQueue() {
     }
   }
 
-  return { queue, resolved, tab, setTab, saved, savedField, loading: queue.kind === CONFLICTS_LOADING, retry };
+  return { queue, resolved, tab, setTab, saved, savedField, loading: queue.kind === CONFLICTS_LOADING, retry, offline };
 }

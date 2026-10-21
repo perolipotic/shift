@@ -27,7 +27,12 @@ import { currentSession, SESSION_UNRESOLVED } from '@/lib/supabase/client';
 import { sessionEnded } from '@/lib/supabase/session-cache';
 import { SESSION } from '@/lib/supabase/session.fixture';
 import { AppLayout, appLayoutRoute } from '@/pages/_app';
-import { OFFLINE_READABLE_PATHS, readsOffline } from '@/lib/offline/readable-paths';
+import {
+  OFFLINE_READABLE_PATHS,
+  OFFLINE_UNREADABLE_SIBLINGS,
+  readsOffline,
+  readsOfflineAmong,
+} from '@/lib/offline/readable-paths';
 import { currentSessionForReads } from '@/lib/supabase/offline-session';
 import { DanasScreen, danasRoute } from '@/pages/danas';
 import { GodisnjiScreen, godisnjiRoute } from '@/pages/godisnji';
@@ -1573,10 +1578,31 @@ describe('the signed-in layout guards every destination once, and is pathless', 
       }
     }
 
-    it('admits every offline-readable destination on the session for reading (stories 8.2, 8.2b)', async () => {
+    it('admits every offline-readable destination on the session for reading (stories 8.2, 8.2b, 8.2c)', async () => {
       // `/` is its own route's guard (`pages/index.tsx`), always on the session for reading.
-      expect(OFFLINE_READABLE_PATHS).toEqual(['/', '/danas', '/kalendar', '/sati', '/godisnji', '/ljudi', '/smjene/$id']);
-      for (const path of ['/danas', '/kalendar', '/sati', '/godisnji', '/ljudi', '/smjene/team-1']) {
+      expect(OFFLINE_READABLE_PATHS).toEqual([
+        '/',
+        '/danas',
+        '/kalendar',
+        '/sati',
+        '/godisnji',
+        '/ljudi',
+        '/smjene/$id',
+        '/raspored',
+        '/raspored/$memberId/$date/$teamId',
+        '/ljudi/$id',
+      ]);
+      for (const path of [
+        '/danas',
+        '/kalendar',
+        '/sati',
+        '/godisnji',
+        '/ljudi',
+        '/smjene/team-1',
+        '/raspored',
+        '/raspored/member-1/2026-10-21/team-1',
+        '/ljudi/member-1',
+      ]) {
         expect(await guardedAt(path, SESSION), path).toEqual({ returned: undefined });
         expect(readsOffline(path), path).toBe(true);
       }
@@ -1586,15 +1612,27 @@ describe('the signed-in layout guards every destination once, and is pathless', 
     it('reads a trailing slash as the same destination', async () => {
       expect(await guardedAt('/kalendar/', SESSION)).toEqual({ returned: undefined });
       expect(await guardedAt('/smjene/team-1/', SESSION)).toEqual({ returned: undefined });
+      expect(await guardedAt('/ljudi/member-1/', SESSION)).toEqual({ returned: undefined });
+      expect(readsOffline('/ljudi/member-1/')).toBe(true);
+      expect(readsOffline('/raspored/')).toBe(true);
+      expect(readsOffline('/raspored/member-1/2026-10-21/team-1/')).toBe(true);
+      expect(await guardedAt('/raspored/member-1/2026-10-21/team-1/', SESSION)).toEqual({ returned: undefined });
     });
 
     it('reads the live session alone for every other destination', async () => {
-      // An admin-only destination that is not listed, and paths longer than a pattern.
-      expect(isRedirect(thrownBy(await guardedAt('/raspored', SESSION)))).toBe(true);
+      // An admin-only destination that is not listed (story 8.2d's), static
+      // siblings of a pattern, and paths longer or shorter than a pattern.
+      expect(isRedirect(thrownBy(await guardedAt('/organizacija', SESSION)))).toBe(true);
       expect(isRedirect(thrownBy(await guardedAt('/ljudi/smjene', SESSION)))).toBe(true);
+      expect(isRedirect(thrownBy(await guardedAt('/ljudi/novi', SESSION)))).toBe(true);
       expect(isRedirect(thrownBy(await guardedAt('/smjene', SESSION)))).toBe(true);
       expect(readsOffline('/ljudi/novi')).toBe(false);
+      expect(readsOffline('/ljudi/smjene')).toBe(false);
+      expect(readsOffline('/Ljudi/Novi/')).toBe(false);
+      expect(readsOffline('/ljudi/smjene/team-1')).toBe(false);
       expect(readsOffline('/smjene/team-1/x')).toBe(false);
+      expect(readsOffline('/raspored/member-1/2026-10-21')).toBe(false);
+      expect(readsOffline('/raspored/member-1/2026-10-21/team-1/x')).toBe(false);
     });
 
     it('matches a path in any case, as the router does', async () => {
@@ -1615,6 +1653,48 @@ describe('the signed-in layout guards every destination once, and is pathless', 
       const under = Object.keys(router.routesByPath).filter((path) => path.startsWith('/smjene/'));
 
       expect(under).toEqual(['/smjene/$id']);
+    });
+
+    it('never reads a static route registered beside a pattern\'s $ segment (story 8.2c)', () => {
+      // A registered route a pattern's `$` would take, but which the router
+      // matches as its own static screen: the same depth, the same static
+      // segments, and a static segment where the pattern has a parameter.
+      // A route listed itself is readable by its own listing, never a sibling to exclude.
+      const routes = Object.keys(router.routesByPath).filter(
+        (path) => path !== '/' && !OFFLINE_READABLE_PATHS.includes(path),
+      );
+      const parts = (path: string): readonly string[] => path.split('/').filter((segment) => segment !== '');
+      const siblings = OFFLINE_READABLE_PATHS.flatMap((pattern) => {
+        const wanted = parts(pattern);
+
+        return routes.filter((route) => {
+          const given = parts(route);
+
+          return (
+            route !== pattern &&
+            given.length === wanted.length &&
+            wanted.some((segment, index) => segment.startsWith('$') && !given[index]?.startsWith('$')) &&
+            wanted.every((segment, index) => segment.startsWith('$') || segment === given[index])
+          );
+        });
+      });
+
+      expect([...siblings].sort()).toEqual([...OFFLINE_UNREADABLE_SIBLINGS].sort());
+      expect(siblings).toEqual(expect.arrayContaining(['/ljudi/novi', '/ljudi/smjene']));
+      for (const sibling of siblings) expect(readsOffline(sibling), sibling).toBe(false);
+    });
+
+    it('reads a static sibling once it is listed itself, which wins over the exclusion (ready for 8.2d)', () => {
+      // A hypothetical 8.2d list: `/ljudi/smjene` listed, and still (by mistake) a sibling.
+      const readable = [...OFFLINE_READABLE_PATHS, '/ljudi/smjene'];
+
+      expect(readsOfflineAmong('/ljudi/smjene', readable, OFFLINE_UNREADABLE_SIBLINGS)).toBe(true);
+      expect(readsOfflineAmong('/ljudi/smjene/', readable, OFFLINE_UNREADABLE_SIBLINGS)).toBe(true);
+      // The other sibling is still excluded, and `$` still reads a member.
+      expect(readsOfflineAmong('/ljudi/novi', readable, OFFLINE_UNREADABLE_SIBLINGS)).toBe(false);
+      expect(readsOfflineAmong('/ljudi/member-1', readable, OFFLINE_UNREADABLE_SIBLINGS)).toBe(true);
+      // As shipped, unlisted, it is not.
+      expect(readsOffline('/ljudi/smjene')).toBe(false);
     });
 
     it('still redirects when the session for reading is nobody too', async () => {
