@@ -1,4 +1,4 @@
-import type { QueryClient } from '@tanstack/react-query';
+import { onlineManager, type QueryClient } from '@tanstack/react-query';
 import type { Session } from '@supabase/supabase-js';
 
 import type { MemberRole } from '@/features/navigation/utils/destinations';
@@ -379,7 +379,7 @@ export interface MemberRoleReadOptions {
 export type MemberRoleReader = (options?: MemberRoleReadOptions) => Promise<MemberRoleOutcome>;
 
 /** As much of the query cache as the guards' reader uses. */
-export type MemberRoleCache = Pick<QueryClient, 'fetchQuery' | 'ensureQueryData'>;
+export type MemberRoleCache = Pick<QueryClient, 'fetchQuery' | 'ensureQueryData' | 'getQueryData'>;
 
 /**
  * The role reader for route guards, served through the chrome's cache entry
@@ -396,15 +396,33 @@ export type MemberRoleCache = Pick<QueryClient, 'fetchQuery' | 'ensureQueryData'
  * role per keystroke, and a transient failure mid-typing forwarded the admin
  * away. A route that stays serves the entry already cached under
  * {@link MEMBER_ROLE_KEY} (`ensureQueryData`), and reads only if there is none.
+ *
+ * OFFLINE, NO READ AT ALL (story 8.2b), as `isOnline` reports it: a fetch with
+ * no connection PAUSES until one returns, and a guard waiting on it left the
+ * route pending for good. So offline, the level is the one cached under
+ * {@link MEMBER_ROLE_KEY} — kept on the device with the rest of the snapshot —
+ * when it is a level (`ok`), and otherwise `MEMBER_ROLE_UNAVAILABLE` at once,
+ * which no guard admits: it fails closed, never pending. Online, nothing
+ * changes.
  */
 export function cachedMemberRole(
   cache: MemberRoleCache,
   read: () => Promise<MemberRoleOutcome>,
+  isOnline: () => boolean,
 ): MemberRoleReader {
-  return (options) =>
-    options?.reuse === true
+  return (options) => {
+    if (!isOnline()) {
+      const cached = cache.getQueryData<MemberRoleOutcome>(MEMBER_ROLE_KEY);
+
+      return Promise.resolve(
+        cached !== undefined && cached.ok ? cached : { ok: false, code: MEMBER_ROLE_UNAVAILABLE },
+      );
+    }
+
+    return options?.reuse === true
       ? cache.ensureQueryData({ queryKey: MEMBER_ROLE_KEY, queryFn: read })
       : cache.fetchQuery({ queryKey: MEMBER_ROLE_KEY, queryFn: read });
+  };
 }
 
 /**
@@ -417,4 +435,6 @@ export function cachedMemberRole(
  * refused every admin. A named export is something a test can pin by identity,
  * and `router.test.ts` does.
  */
-export const routeMemberRole: MemberRoleReader = cachedMemberRole(queryClient, currentMemberRole);
+export const routeMemberRole: MemberRoleReader = cachedMemberRole(queryClient, currentMemberRole, () =>
+  onlineManager.isOnline(),
+);

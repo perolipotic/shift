@@ -1026,6 +1026,8 @@ describe('the screen is read at all, so every sweep below means something', () =
         'services/write.ts',
         'services/roster.ts',
         'services/dependents.ts',
+        // STORY 8.2b: the directory's and the roster's keys as one snapshot each.
+        'services/surface-keys.ts',
         // STORY 7.17: the directory's rules, and its two parts, which are the
         // sign-in suite's MEMBER_DIRECTORY set rather than a team screen's.
         'services/directory.ts',

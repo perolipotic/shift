@@ -11,6 +11,7 @@ import {
 } from '@/features/organization/services/snapshot';
 import {
   DIRECTORY_LOADING,
+  DIRECTORY_UNAVAILABLE,
   DIRECTORY_READ_LOADING,
   directoryReadOf,
   directoryRetryOf,
@@ -18,7 +19,7 @@ import {
   ownTeamIdReadOf,
   type DirectoryRead,
 } from '@/features/teams/services/directory';
-import { TEAMS_TABLE, splitTeams, teamsQueryOptions } from '@/features/teams/services/list';
+import { TEAMS_LIST_KEY, TEAMS_TABLE, splitTeams, teamsQueryOptions } from '@/features/teams/services/list';
 import {
   OWN_TEAM_KEY,
   OWN_TEAM_TABLE,
@@ -29,6 +30,9 @@ import {
   type TeamRosterOutcome,
   type TeamRosterRpc,
 } from '@/features/teams/services/roster';
+import { directorySurfaceKeysOf, directoryTimeZoneOf } from '@/features/teams/services/surface-keys';
+import { offlineNoteOf, zoneFromReads } from '@/lib/offline/freshness';
+import { useSnapshotFreshness, type ObservedRead } from '@/lib/offline/use-snapshot-freshness';
 import { currentSession, supabaseClient } from '@/lib/supabase/client';
 import { NO_TEXT } from '@/utils/text';
 
@@ -68,6 +72,10 @@ export function useMemberDirectory(search: string, navigate: DirectoryNavigate) 
   }, [search]);
 
   const teams = useQuery(teamsQueryOptions(() => supabaseClient().from(TEAMS_TABLE)));
+  // THE ACTIVE TEAMS OF THE CACHED LIST as it stands — which rosters to read,
+  // never a figure drawn — so the rosters are read with the list's own
+  // refetch, and the keys (`directorySurfaceKeysOf`, story 8.2b) are exactly
+  // the reads made.
   const active = teams.data === undefined ? [] : splitTeams(teams.data).active;
   const rosters = useQueries({
     queries: active.map((team) => ({
@@ -91,23 +99,46 @@ export function useMemberDirectory(search: string, navigate: DirectoryNavigate) 
     staleTime: ORGANIZATION_READ_STALE_MS,
   });
 
+  // STORY 8.2b: the directory's reads are one snapshot, decided from these
+  // very observer results: online, a read older than this session's network
+  // is never drawn as fresh; offline, the whole cached directory is drawn
+  // under the as-of note (`offline`), or — a team's roster never read
+  // included — the unavailable state is.
+  // THE NOTE'S ZONE: the organization snapshot's, or the own-team read's; with
+  // neither, the directory is unavailable offline, never drawn without its note.
+  const timeZone = directoryTimeZoneOf(organization.data, own.data);
+  const { freshness, answerOf } = useSnapshotFreshness(
+    directorySurfaceKeysOf(active.map((team) => team.id)),
+    [
+      [TEAMS_LIST_KEY, teams],
+      [OWN_TEAM_KEY, own],
+      [ORGANIZATION_SNAPSHOT_KEY, organization],
+      ...active.flatMap((team, index): ObservedRead[] => {
+        const answer = rosters[index];
+
+        return answer === undefined ? [] : [[TEAM_ROSTER_KEY(team.id), answer]];
+      }),
+    ],
+    zoneFromReads(timeZone),
+  );
   const rosterList = active.map(
     (_team, index): DirectoryRead<TeamRosterOutcome> => {
       const answer = rosters[index];
 
-      return answer === undefined ? { state: DIRECTORY_READ_LOADING } : directoryReadOf(answer);
+      return answer === undefined ? { state: DIRECTORY_READ_LOADING } : directoryReadOf(answerOf(answer));
     },
   );
   const rosterReads = new Map<string, DirectoryRead<TeamRosterOutcome>>(
     active.map((team, index) => [team.id, rosterList[index] ?? { state: DIRECTORY_READ_LOADING }]),
   );
-  const teamsRead = directoryReadOf(teams);
-  const ownRead = ownTeamIdReadOf(directoryReadOf(own), new Date());
+  const teamsRead = directoryReadOf(answerOf(teams));
+  const ownAnswer = answerOf(own);
+  const ownRead = ownTeamIdReadOf(directoryReadOf(ownAnswer), new Date());
   const directory = memberDirectoryOf(teamsRead, rosterReads, ownRead, text);
+  const organizationData = answerOf(organization).data;
   // THE RANK AND POSITION beside a name, as the roster shows them: until the
   // snapshot arrives, or if it fails, names only.
-  const snapshot =
-    organization.data !== undefined && organization.data.ok ? organization.data.snapshot : null;
+  const snapshot = organizationData !== undefined && organizationData.ok ? organizationData.snapshot : null;
 
   /** Read again every read the directory counts as failed — and only those (`directoryRetryOf`). */
   function retry(): void {
@@ -140,6 +171,10 @@ export function useMemberDirectory(search: string, navigate: DirectoryNavigate) 
     directory,
     // `main` is busy while the directory waits for a read.
     loading: directory.kind === DIRECTORY_LOADING,
+    // STORY 8.2b: the as-of note's time and zone while the whole directory is
+    // drawn offline; none above the unavailable state, where nothing is drawn.
+    // Whatever the directory draws — groups, none, no match — but its unavailable state.
+    offline: offlineNoteOf(freshness, timeZone, directory.kind === DIRECTORY_UNAVAILABLE),
     search: text,
     searchField,
     changeSearch,

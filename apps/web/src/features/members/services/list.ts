@@ -546,6 +546,15 @@ export function membersTodayOf(members: readonly MemberListRow[] | null, now: Da
 }
 
 /**
+ * The organization's zone, read off the list itself as {@link membersTodayOf}
+ * reads it, or `null` while there is no row: what the list's as-of note states
+ * its time in offline (story 8.2b), with no second read.
+ */
+export function membersTimeZoneOf(members: readonly MemberListRow[] | null): string | null {
+  return members?.[0]?.timeZone ?? null;
+}
+
+/**
  * Whether a member is active on EVERY date from `day` onward: active on it,
  * and no deactivation dated after it. The reading `0008`'s never-zero-admins
  * rule makes (`member_active_from`), so the surface names the last-admin

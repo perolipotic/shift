@@ -1,9 +1,12 @@
+import { QueryClient } from '@tanstack/react-query';
 import { isRedirect } from '@tanstack/react-router';
 import { describe, expect, it, vi } from 'vitest';
 
 import { guardMemberRole, requireAdmin } from '@/features/navigation/services/admin-guard';
 import {
+  MEMBER_ROLE_KEY,
   MEMBER_ROLE_UNAVAILABLE,
+  cachedMemberRole,
   type MemberRoleOutcome,
   type MemberRoleReadOptions,
 } from '@/features/navigation/services/role';
@@ -77,5 +80,45 @@ describe('the shared admin guard', () => {
       to: DESTINATIONS[0].path,
       replace: true,
     });
+  });
+});
+
+describe('the shared admin guard offline (story 8.2b)', () => {
+  /** A read that never settles: the network a paused fetch waits for. */
+  const NEVER = () => new Promise<MemberRoleOutcome>(() => undefined);
+
+  it('opens the route on the level cached on the device, with no read', async () => {
+    const cache = new QueryClient();
+
+    cache.setQueryData(MEMBER_ROLE_KEY, ADMIN);
+
+    await expect(
+      requireAdmin({ cause: 'enter', context: { currentMemberRole: cachedMemberRole(cache, NEVER, () => false) } }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('fails closed at once with no level cached, to the first destination, never an endless pending', async () => {
+    // FAKE TIMERS, NONE ADVANCED: a guard that waited on a timer — a time
+    // budget, a retry delay — would never settle here, and the test would time out.
+    vi.useFakeTimers();
+
+    try {
+      const thrown = await requireAdmin({
+        cause: 'enter',
+        context: { currentMemberRole: cachedMemberRole(new QueryClient(), NEVER, () => false) },
+      }).then(
+        () => null,
+        (caught: unknown) => caught,
+      );
+
+      expect(vi.getTimerCount(), 'the guard scheduled a timer').toBe(0);
+      expect(isRedirect(thrown)).toBe(true);
+      expect((thrown as { options: { to?: string; replace?: boolean } }).options).toMatchObject({
+        to: DESTINATIONS[0].path,
+        replace: true,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

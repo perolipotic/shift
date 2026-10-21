@@ -1,6 +1,7 @@
 import { createRoute, redirect, useNavigate } from '@tanstack/react-router';
 import { useCallback } from 'react';
 
+import { OfflineNote } from '@/components/offline-note';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Notice } from '@/components/ui/notice';
@@ -46,6 +47,10 @@ import { appLayoutRoute } from '@/pages/_app';
  * carries: a URL segment is not a label, and `hr.json` is where the `š`
  * belongs.
  *
+ * STORY 8.2b: offline, the whole cached snapshot — the overview's, or a
+ * member's own figures' — is drawn under the as-of note (`OfflineNote`, under
+ * the heading), its time the oldest of the reads it stands on.
+ *
  * The session guard is NOT here. It is registered once on the pathless `_app`
  * layout this route nests under, so a signed-out visitor opening this URL is
  * redirected before the component is ever asked for.
@@ -79,6 +84,7 @@ export function GodisnjiScreen() {
           {screen.view === GODISNJI_OVERVIEW ? <PageDescription>{t('godisnji.overview.lede')}</PageDescription> : null}
         </div>
       </PageHeader>
+      <OfflineNote offline={screen.offline} />
       {screen.view === GODISNJI_OVERVIEW ? (
         <Card className="min-w-0">
           <LeaveOverviewBody screen={screen} />
@@ -108,7 +114,7 @@ export function GodisnjiScreen() {
 
 /** A member-role session's *Godišnji*: their own three figures, as since story 5.2c. */
 function GodisnjiOwn() {
-  const { leave, loading, retry } = useMyLeave();
+  const { leave, loading, offline, retry } = useMyLeave();
 
   return (
     <main className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6" aria-busy={loading}>
@@ -117,6 +123,7 @@ function GodisnjiOwn() {
           <h1>{t('nav.godisnji')}</h1>
         </PageTitle>
       </PageHeader>
+      <OfflineNote offline={offline} />
       <Card className="min-w-0 p-4">
         <MyLeaveBody leave={leave} onRetry={retry} />
       </Card>

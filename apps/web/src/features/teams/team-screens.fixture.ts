@@ -90,4 +90,8 @@ export const TEAM_SCREENS_EXEMPT: readonly { readonly file: string; readonly why
     file: 'services/dependents.ts',
     why: 'the reads a team or membership write makes stale, and the one re-read over them; renders nothing, executed by dependents.test.ts',
   },
+  {
+    file: 'services/surface-keys.ts',
+    why: "the directory's and a team roster's reads as one snapshot each (story 8.2b), the keys their offline freshness is decided over; renders nothing and declares no key, executed by surface-keys.test.ts",
+  },
 ];

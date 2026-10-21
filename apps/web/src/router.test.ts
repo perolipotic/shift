@@ -27,7 +27,7 @@ import { currentSession, SESSION_UNRESOLVED } from '@/lib/supabase/client';
 import { sessionEnded } from '@/lib/supabase/session-cache';
 import { SESSION } from '@/lib/supabase/session.fixture';
 import { AppLayout, appLayoutRoute } from '@/pages/_app';
-import { OFFLINE_READABLE_PATHS } from '@/lib/offline/readable-paths';
+import { OFFLINE_READABLE_PATHS, readsOffline } from '@/lib/offline/readable-paths';
 import { currentSessionForReads } from '@/lib/supabase/offline-session';
 import { DanasScreen, danasRoute } from '@/pages/danas';
 import { GodisnjiScreen, godisnjiRoute } from '@/pages/godisnji';
@@ -1573,19 +1573,48 @@ describe('the signed-in layout guards every destination once, and is pathless', 
       }
     }
 
-    it('admits Danas and Kalendar on the session for reading', async () => {
-      for (const path of ['/danas', '/kalendar']) {
+    it('admits every offline-readable destination on the session for reading (stories 8.2, 8.2b)', async () => {
+      // `/` is its own route's guard (`pages/index.tsx`), always on the session for reading.
+      expect(OFFLINE_READABLE_PATHS).toEqual(['/', '/danas', '/kalendar', '/sati', '/godisnji', '/ljudi', '/smjene/$id']);
+      for (const path of ['/danas', '/kalendar', '/sati', '/godisnji', '/ljudi', '/smjene/team-1']) {
         expect(await guardedAt(path, SESSION), path).toEqual({ returned: undefined });
-        expect(OFFLINE_READABLE_PATHS.has(path)).toBe(true);
+        expect(readsOffline(path), path).toBe(true);
       }
+      expect(readsOffline('/')).toBe(true);
     });
 
     it('reads a trailing slash as the same destination', async () => {
       expect(await guardedAt('/kalendar/', SESSION)).toEqual({ returned: undefined });
+      expect(await guardedAt('/smjene/team-1/', SESSION)).toEqual({ returned: undefined });
     });
 
     it('reads the live session alone for every other destination', async () => {
-      expect(isRedirect(thrownBy(await guardedAt('/sati', SESSION)))).toBe(true);
+      // An admin-only destination that is not listed, and paths longer than a pattern.
+      expect(isRedirect(thrownBy(await guardedAt('/raspored', SESSION)))).toBe(true);
+      expect(isRedirect(thrownBy(await guardedAt('/ljudi/smjene', SESSION)))).toBe(true);
+      expect(isRedirect(thrownBy(await guardedAt('/smjene', SESSION)))).toBe(true);
+      expect(readsOffline('/ljudi/novi')).toBe(false);
+      expect(readsOffline('/smjene/team-1/x')).toBe(false);
+    });
+
+    it('matches a path in any case, as the router does', async () => {
+      expect(readsOffline('/Sati')).toBe(true);
+      expect(readsOffline('/SMJENE/team-1')).toBe(true);
+      expect(await guardedAt('/Sati', SESSION)).toEqual({ returned: undefined });
+    });
+
+    it('reads no path with an empty segment', async () => {
+      expect(readsOffline('//danas')).toBe(false);
+      expect(readsOffline('/smjene//team-1')).toBe(false);
+      expect(isRedirect(thrownBy(await guardedAt('//danas', SESSION)))).toBe(true);
+    });
+
+    it('matches /smjene/<x> to the roster route alone: no static route sits beside it', () => {
+      // A static sibling (`/smjene/nova`) would need excluding from the pattern;
+      // this pins that the roster is the only route under `/smjene/`.
+      const under = Object.keys(router.routesByPath).filter((path) => path.startsWith('/smjene/'));
+
+      expect(under).toEqual(['/smjene/$id']);
     });
 
     it('still redirects when the session for reading is nobody too', async () => {

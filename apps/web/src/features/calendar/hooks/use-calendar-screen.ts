@@ -65,7 +65,7 @@ import {
 import { useReplacementLinkRefresh } from '@/features/conflicts/hooks/use-replacement-link-refresh';
 import { hoursLeaveKeysOf } from '@/features/hours/services/hours-conflicts';
 import { MEMBER_ROLE_KEY } from '@/features/navigation/services/role';
-import { FRESHNESS_OFFLINE } from '@/lib/offline/freshness';
+import { FRESHNESS_OFFLINE, ZONE_FROM_CALENDAR } from '@/lib/offline/freshness';
 import { useSnapshotFreshness } from '@/lib/offline/use-snapshot-freshness';
 import { supabaseClient } from '@/lib/supabase/client';
 
@@ -154,12 +154,16 @@ export function useCalendarScreen(
   // STORY 8.2: the month's reads are one snapshot, decided from these very
   // observer results (`useSnapshotFreshness`); a read off the month's keys —
   // the other role's leave, a member's disabled resolutions — passes raw.
-  const { freshness, answerFor } = useSnapshotFreshness(calendarSurfaceKeysOf(readsRole), [
-    [CALENDAR_KEY, answerRead],
-    [ORGANIZATION_LEAVE_RECORDS_KEY, organizationLeave],
-    [MY_LEAVE_RECORDS_KEY, ownLeave],
-    [ORGANIZATION_CONFLICT_RESOLUTIONS_KEY, resolutionsRead],
-  ]);
+  const { freshness, answerFor } = useSnapshotFreshness(
+    calendarSurfaceKeysOf(readsRole),
+    [
+      [CALENDAR_KEY, answerRead],
+      [ORGANIZATION_LEAVE_RECORDS_KEY, organizationLeave],
+      [MY_LEAVE_RECORDS_KEY, ownLeave],
+      [ORGANIZATION_CONFLICT_RESOLUTIONS_KEY, resolutionsRead],
+    ],
+    ZONE_FROM_CALENDAR,
+  );
   const answer = answerFor(CALENDAR_KEY, answerRead);
   // A failed read being read again is the skeleton, so the retry's press shows.
   const state = calendarRetryStateOf(answer);

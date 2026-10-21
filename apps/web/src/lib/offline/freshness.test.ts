@@ -6,8 +6,13 @@ import {
   FRESHNESS_OFFLINE,
   FRESHNESS_UNAVAILABLE,
   freshnessTracker,
+  ZONE_FROM_CALENDAR,
+  ZONE_NOT_NEEDED,
+  notedFreshnessOf,
+  offlineNoteOf,
   snapshotAnswerOf,
   snapshotFreshnessOf,
+  zoneFromReads,
   type OnlineSource,
   type ReadAnswer,
 } from '@/lib/offline/freshness';
@@ -107,6 +112,43 @@ describe('a surface decides from all of its reads together', () => {
   it('app start: a restored cache is the skeleton however whole it is — only a reconnect keeps it drawn', () => {
     expect(snapshotFreshnessOf([read(BEFORE), read(BEFORE + 1)], STARTED, true, false)).toEqual({ kind: FRESHNESS_LOADING });
     expect(snapshotFreshnessOf([read(BEFORE), read(BEFORE + 1)], STARTED, true)).toEqual({ kind: FRESHNESS_LOADING });
+  });
+});
+
+describe('a cached snapshot is never drawn without its note (story 8.2b)', () => {
+  const cached = { kind: FRESHNESS_OFFLINE, asOf: 5 } as const;
+
+  it('makes the whole snapshot unavailable offline when its reads resolved no zone', () => {
+    expect(notedFreshnessOf(cached, zoneFromReads(null))).toEqual({ kind: FRESHNESS_UNAVAILABLE });
+  });
+
+  it('draws the snapshot under its note when its reads resolved a zone', () => {
+    expect(notedFreshnessOf(cached, zoneFromReads('Europe/Zagreb'))).toEqual(cached);
+  });
+
+  it('draws the snapshot when its zone comes with the calendar snapshot, or none is needed', () => {
+    expect(notedFreshnessOf(cached, ZONE_FROM_CALENDAR)).toEqual(cached);
+    expect(notedFreshnessOf(cached, ZONE_NOT_NEEDED)).toEqual(cached);
+  });
+
+  it('changes no other state, whatever the zone', () => {
+    for (const kind of [FRESHNESS_FRESH, FRESHNESS_LOADING, FRESHNESS_UNAVAILABLE] as const) {
+      expect(notedFreshnessOf({ kind }, zoneFromReads(null))).toEqual({ kind });
+    }
+  });
+});
+
+describe('the as-of note stands whenever the cached snapshot is drawn (story 8.2b)', () => {
+  const cached = { kind: FRESHNESS_OFFLINE, asOf: 5 } as const;
+
+  it('states the time in the zone while the surface is not unavailable, whatever else it renders', () => {
+    expect(offlineNoteOf(cached, 'Europe/Zagreb', false)).toEqual({ asOf: 5, timeZone: 'Europe/Zagreb' });
+  });
+
+  it('stands nowhere above the unavailable state, with no zone, or on a fresh surface', () => {
+    expect(offlineNoteOf(cached, 'Europe/Zagreb', true)).toBeNull();
+    expect(offlineNoteOf(cached, null, false)).toBeNull();
+    expect(offlineNoteOf({ kind: FRESHNESS_FRESH }, 'Europe/Zagreb', false)).toBeNull();
   });
 });
 

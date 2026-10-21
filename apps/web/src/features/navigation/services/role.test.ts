@@ -369,11 +369,58 @@ describe('the one admin predicate every admin guard decides by (B393)', () => {
 
 describe('the route guards read the level through the chrome\'s cache entry (E878)', () => {
   const ADMIN: MemberRoleOutcome = { ok: true, role: 'admin' };
+  const ONLINE = () => true;
+  const OFFLINE = () => false;
+
+  describe('offline (story 8.2b)', () => {
+    it('answers the cached level with no read, whether or not the route stays', async () => {
+      const cache = new QueryClient();
+      const read = vi.fn(() => Promise.resolve(ADMIN));
+
+      cache.setQueryData(MEMBER_ROLE_KEY, ADMIN);
+      const reader = cachedMemberRole(cache, read, OFFLINE);
+
+      expect(await reader()).toEqual(ADMIN);
+      expect(await reader({ reuse: true })).toEqual(ADMIN);
+      expect(read).not.toHaveBeenCalled();
+    });
+
+    it('fails closed at once with nothing cached, and never pauses on a read', async () => {
+      const cache = new QueryClient();
+      const read = vi.fn(() => new Promise<MemberRoleOutcome>(() => undefined));
+
+      expect(await cachedMemberRole(cache, read, OFFLINE)()).toEqual({ ok: false, code: MEMBER_ROLE_UNAVAILABLE });
+      expect(read).not.toHaveBeenCalled();
+    });
+
+    it('fails closed over a cached refusal: only a level is served', async () => {
+      const cache = new QueryClient();
+
+      cache.setQueryData(MEMBER_ROLE_KEY, { ok: false, code: MEMBER_ROLE_REFUSED });
+
+      expect(await cachedMemberRole(cache, vi.fn(), OFFLINE)({ reuse: true })).toEqual({
+        ok: false,
+        code: MEMBER_ROLE_UNAVAILABLE,
+      });
+    });
+
+    it('reads as before once online again', async () => {
+      const cache = new QueryClient();
+      let online = false;
+      const read = vi.fn(() => Promise.resolve(ADMIN));
+      const reader = cachedMemberRole(cache, read, () => online);
+
+      expect(await reader()).toEqual({ ok: false, code: MEMBER_ROLE_UNAVAILABLE });
+      online = true;
+      expect(await reader()).toEqual(ADMIN);
+      expect(read).toHaveBeenCalledTimes(1);
+    });
+  });
 
   it('reads fresh on every entry, and writes the answer where the chrome reads it', async () => {
     const cache = new QueryClient();
     const read = vi.fn(() => Promise.resolve(ADMIN));
-    const reader = cachedMemberRole(cache, read);
+    const reader = cachedMemberRole(cache, read, ONLINE);
 
     expect(await reader()).toEqual(ADMIN);
     expect(await reader({ reuse: false })).toEqual(ADMIN);
@@ -385,7 +432,7 @@ describe('the route guards read the level through the chrome\'s cache entry (E87
   it('serves the cached answer while the route stays, with no read', async () => {
     const cache = new QueryClient();
     const read = vi.fn(() => Promise.resolve(ADMIN));
-    const reader = cachedMemberRole(cache, read);
+    const reader = cachedMemberRole(cache, read, ONLINE);
 
     await reader();
     // A keystroke in the search: three runs, no further read.
@@ -399,7 +446,7 @@ describe('the route guards read the level through the chrome\'s cache entry (E87
     const cache = new QueryClient();
     const read = vi.fn(() => Promise.resolve(ADMIN));
 
-    expect(await cachedMemberRole(cache, read)({ reuse: true })).toEqual(ADMIN);
+    expect(await cachedMemberRole(cache, read, ONLINE)({ reuse: true })).toEqual(ADMIN);
     expect(read).toHaveBeenCalledTimes(1);
   });
 
@@ -414,7 +461,7 @@ describe('the route guards read the level through the chrome\'s cache entry (E87
         }),
     );
     const chrome = cache.fetchQuery({ queryKey: MEMBER_ROLE_KEY, queryFn: read });
-    const guard = cachedMemberRole(cache, read)();
+    const guard = cachedMemberRole(cache, read, ONLINE)();
 
     answer(ADMIN);
     expect(await Promise.all([chrome, guard])).toEqual([ADMIN, ADMIN]);
@@ -423,7 +470,7 @@ describe('the route guards read the level through the chrome\'s cache entry (E87
 
   it('rejects when the read rejects, so the guard fails closed', async () => {
     const cache = new QueryClient();
-    const reader = cachedMemberRole(cache, () => Promise.reject(new Error('READ_TIMED_OUT')));
+    const reader = cachedMemberRole(cache, () => Promise.reject(new Error('READ_TIMED_OUT')), ONLINE);
 
     await expect(reader()).rejects.toThrow('READ_TIMED_OUT');
   });

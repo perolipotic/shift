@@ -48,6 +48,8 @@ import { brandAccentAppearance } from '@/features/organization/utils/accent';
 import { OrganizationLockup } from '@/features/organization/components/lockup';
 import { useRenderableLogo } from '@/features/organization/hooks/logo-url';
 import { organizationTable, organizationSnapshotQueryOptions } from '@/features/organization/services/snapshot';
+import { chromeAnswerOf } from '@/features/navigation/services/chrome-freshness';
+import { useFreshnessClock } from '@/lib/offline/use-snapshot-freshness';
 import { forgetDeviceSnapshot } from '@/lib/offline/device-snapshot';
 import { currentSession, supabaseClient } from '@/lib/supabase/client';
 import { SIGN_OUT_FAILED, signOut, type SignOutFailure } from '@/features/auth/services/sign-out';
@@ -238,12 +240,22 @@ export function AppChrome({ children }: AppChromeProps) {
     queryKey: MEMBER_ROLE_KEY,
     queryFn: currentMemberRole,
   });
+  // STORY 8.2b: EACH READ DECIDES ITS OWN FRESHNESS (`chromeAnswerOf`, human
+  // decision 2026-10-20, 2a). Online after the app's start, a value restored
+  // from the device is not drawn until it is read again — the navigation
+  // waits for the role as on a cold start; offline, the cached value is
+  // drawn — and with no role cached, its unavailable notice and retry; and
+  // one read missing never takes another down. No as-of note here:
+  // the surface under the chrome states its own.
+  const clock = useFreshnessClock();
+  // The role is REQUIRED: offline with none cached it is failed, so its notice and retry show.
+  const memberShown = chromeAnswerOf(member, clock, { required: true });
 
   const memberNameRead = useQuery({
     queryKey: MEMBER_NAME_KEY,
     queryFn: () => readMemberName(supabaseClient().from(MEMBERS_TABLE), currentSession),
   });
-  const memberName = memberNameRead.data ?? null;
+  const memberName = chromeAnswerOf(memberNameRead, clock).data ?? null;
 
   // THE SAME KEY `/organizacija` READS UNDER, which is what makes this one cache
   // entry rather than a second snapshot — see the header.
@@ -266,8 +278,9 @@ export function AppChrome({ children }: AppChromeProps) {
   const organizationRead = useQuery(
     organizationSnapshotQueryOptions(organizationTable),
   );
+  const organizationShown = chromeAnswerOf(organizationRead, clock);
 
-  const organizationAnswer = organizationRead.data;
+  const organizationAnswer = organizationShown.data;
   const organization =
     organizationAnswer !== undefined && organizationAnswer.ok ? organizationAnswer.snapshot : null;
   // ONE HOOK, SHARED WITH THE SETTINGS SURFACE. Two copies of this were two
@@ -277,7 +290,7 @@ export function AppChrome({ children }: AppChromeProps) {
   const logo = useRenderableLogo(organization === null ? null : organization.logoPath);
   const accent = brandAccentAppearance(organization === null ? null : organization.brandAccent);
 
-  const answered = member.data;
+  const answered = memberShown.data;
   const role = answered !== undefined && answered.ok ? answered.role : null;
   // THREE OUTCOMES, and `isError` is the third. `readMemberRole` folds every
   // failure it knows about into `{ ok: false, code }`, which `useQuery` sees as
@@ -289,7 +302,7 @@ export function AppChrome({ children }: AppChromeProps) {
   const roleFailure: MemberRoleFailure | null =
     answered !== undefined && !answered.ok
       ? answered.code
-      : member.isError
+      : memberShown.isError
         ? MEMBER_ROLE_UNAVAILABLE
         : null;
   // The sign-out's failure WINS over the read's: if a press has just been
@@ -470,7 +483,7 @@ export function AppChrome({ children }: AppChromeProps) {
    * skeleton spans the four tab cells, and *Više* stays beside it.
    */
   function renderDestinations(list: readonly Destination[], place: Place): ReactNode {
-    if (member.isPending) {
+    if (memberShown.isPending) {
       return (
         <div
           className={
@@ -731,7 +744,7 @@ export function AppChrome({ children }: AppChromeProps) {
    * failure state are `renderDestinations`'s, as before.
    */
   function renderSidebar(): ReactNode {
-    if (member.isPending || role === null) return renderDestinations([], PLACE.sidebar);
+    if (memberShown.isPending || role === null) return renderDestinations([], PLACE.sidebar);
 
     return labelledGroups(groupDestinations(destinationsFor(role)), sidebarGroupIds).map((group) =>
       group.rows.length === 0 ? null : (
@@ -883,7 +896,7 @@ export function AppChrome({ children }: AppChromeProps) {
         organization={organization}
         logoUrl={logo.url}
         onUnrenderable={logo.onUnrenderable}
-        pending={organizationRead.isPending}
+        pending={organizationShown.isPending}
         compact
       />
     );

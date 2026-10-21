@@ -3,6 +3,7 @@ import { useEffect, useEffectEvent, useMemo, useRef, useState, type ChangeEvent 
 
 import { useCalendarSnapshot } from '@/features/calendar/hooks/use-calendar-snapshot';
 import { CALENDAR_KEY, calendarSurfaceStateOf } from '@/features/calendar/services/snapshot';
+import { readsOrganizationLeave } from '@/features/calendar/services/snapshot-skew';
 import {
   LEAVE_OVERVIEW_RECORDS_KEY,
   leaveOverviewRecordsQueryOptions,
@@ -12,6 +13,7 @@ import {
   GODISNJI_OVERVIEW,
   OVERVIEW_LOADING,
   OVERVIEW_READY,
+  OVERVIEW_UNAVAILABLE,
   chooseLeaveOverviewChip,
   clearedLeaveOverviewFilters,
   godisnjiSearchKeyOf,
@@ -29,6 +31,7 @@ import {
 } from '@/features/leave/services/leave-overview';
 import { ALL_TEAMS } from '@/features/members/services/list';
 import { myLeaveRowsStateOf } from '@/features/leave/services/my-leave';
+import { godisnjiSurfaceKeysOf } from '@/features/leave/services/surface-keys';
 import {
   MEMBERS_LIST_KEY,
   MEMBERS_TABLE,
@@ -41,6 +44,8 @@ import {
   organizationSnapshotQueryOptions,
 } from '@/features/organization/services/snapshot';
 import { useOrganizationToday } from '@/hooks/organization-today';
+import { ZONE_FROM_CALENDAR, offlineNoteOf } from '@/lib/offline/freshness';
+import { useSnapshotFreshness } from '@/lib/offline/use-snapshot-freshness';
 import { supabaseClient } from '@/lib/supabase/client';
 import { NO_TEXT } from '@/utils/text';
 
@@ -53,9 +58,16 @@ export type GodisnjiNavigate = (next: GodisnjiSearch, options: { readonly replac
  * node suite executes.
  *
  * THE ROLE IS THE CALENDAR SNAPSHOT'S (`snapshot.viewer.role`), as *Sati*
- * reads it — no `beforeLoad` read of its own. Until the snapshot names an
- * admin, NO overview read is made: a member's session never calls
- * `leave_overview_records()`, which would refuse it anyway (0034).
+ * reads it — no `beforeLoad` read of its own. Until the snapshot — the cached
+ * one included, since story 8.2b — names an admin, NO overview read is made: a
+ * member's session never calls `leave_overview_records()`, which would refuse
+ * it anyway (0034).
+ *
+ * ONE SNAPSHOT, ONLINE OR NOT (story 8.2b): every read is seen through the
+ * overview's freshness (`useSnapshotFreshness` over `godisnjiSurfaceKeysOf`).
+ * Online, a read older than this session's network is never drawn as fresh;
+ * offline, the whole cached overview is drawn under the as-of note
+ * (`offline`), or the unavailable state is.
  *
  * THE READS, each under its own key and shared with the screens that own it
  * (AD-13): the calendar snapshot, the member list (the allowances and who is
@@ -86,23 +98,47 @@ export function useLeaveOverview(search: GodisnjiSearch, navigate: GodisnjiNavig
     setText(filters.search);
   }, [filters.search]);
 
-  const calendar = useCalendarSnapshot();
+  const calendarRead = useCalendarSnapshot();
+  // THE ROLE THE READS ARE CHOSEN BY is the cached snapshot's as it stands — a
+  // role, never a figure drawn — so the overview's reads start with the
+  // snapshot's own refetch, and the keys (`godisnjiSurfaceKeysOf`, story 8.2b)
+  // are exactly the reads enabled.
+  const readsRole = calendarRead.data === undefined ? null : calendarRead.data.viewer.role;
+  const readsAdmin = readsRole !== null && readsOrganizationLeave(readsRole);
+  const membersRead = useQuery({
+    ...membersQueryOptions(() => supabaseClient().from(MEMBERS_TABLE)),
+    enabled: readsAdmin,
+  });
+  const organizationRead = useQuery({
+    ...organizationSnapshotQueryOptions(organizationTable),
+    enabled: readsAdmin,
+  });
+  const recordsRead = useQuery({
+    // Named structurally, as the viewer's own read is.
+    ...leaveOverviewRecordsQueryOptions(() => supabaseClient() as unknown as LeaveOverviewRecordsRpc),
+    enabled: readsAdmin,
+  });
+  // STORY 8.2b: the overview's four reads are one snapshot, decided from these
+  // very observer results. For anybody but an admin the gate decides over the
+  // calendar snapshot alone: a member's own figures are `useMyLeave`'s, with
+  // their own freshness, and the disabled reads here pass raw.
+  const { freshness, answerFor } = useSnapshotFreshness(
+    godisnjiSurfaceKeysOf(readsAdmin ? readsRole : null),
+    [
+      [CALENDAR_KEY, calendarRead],
+      [MEMBERS_LIST_KEY, membersRead],
+      [ORGANIZATION_SNAPSHOT_KEY, organizationRead],
+      [LEAVE_OVERVIEW_RECORDS_KEY, recordsRead],
+    ],
+    ZONE_FROM_CALENDAR,
+  );
+  const calendar = answerFor(CALENDAR_KEY, calendarRead);
+  const members = answerFor(MEMBERS_LIST_KEY, membersRead);
+  const organization = answerFor(ORGANIZATION_SNAPSHOT_KEY, organizationRead);
+  const records = answerFor(LEAVE_OVERVIEW_RECORDS_KEY, recordsRead);
   const calendarState = calendarSurfaceStateOf(calendar);
   const view = godisnjiViewOf(calendarState);
   const admin = view === GODISNJI_OVERVIEW;
-  const members = useQuery({
-    ...membersQueryOptions(() => supabaseClient().from(MEMBERS_TABLE)),
-    enabled: admin,
-  });
-  const organization = useQuery({
-    ...organizationSnapshotQueryOptions(organizationTable),
-    enabled: admin,
-  });
-  const records = useQuery({
-    // Named structurally, as the viewer's own read is.
-    ...leaveOverviewRecordsQueryOptions(() => supabaseClient() as unknown as LeaveOverviewRecordsRpc),
-    enabled: admin,
-  });
 
   const { data: membersData, isError: membersFailed, isPending: membersPending, fetchStatus: membersFetch } = members;
   const { data: calendarData, isError: calendarFailed, isPending: calendarPending, fetchStatus: calendarFetch } =
@@ -261,6 +297,16 @@ export function useLeaveOverview(search: GodisnjiSearch, navigate: GodisnjiNavig
   return {
     view,
     overview,
+    // STORY 8.2b: the as-of note's time and zone while the whole overview is
+    // drawn offline; none above the unavailable state, where nothing is drawn.
+    // Only the overview's: a member's own figures carry their own note (`useMyLeave`).
+    offline: admin
+      ? offlineNoteOf(
+          freshness,
+          calendarState.snapshot === null ? null : calendarState.snapshot.timeZone,
+          overview.kind === OVERVIEW_UNAVAILABLE,
+        )
+      : null,
     loading: admin && overview.kind === OVERVIEW_LOADING,
     search: text,
     filters,

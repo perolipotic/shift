@@ -2,18 +2,25 @@ import { QueryClient } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { CALENDAR_KEY } from '@/features/calendar/services/snapshot';
-import { ERASURE_CHECK_KEY_PART } from '@/features/conflicts/hooks/use-erasure-reads';
+import { ERASURE_CHECK_KEY_PART as FEATURE_ERASURE_CHECK_KEY_PART } from '@/features/conflicts/hooks/use-erasure-reads';
 import {
   MY_CONFLICT_RESOLUTIONS_KEY,
   ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
 } from '@/features/conflicts/services/resolutions';
-import { MY_LEAVE_RECORDS_KEY, ORGANIZATION_LEAVE_RECORDS_KEY } from '@/features/leave/services/leave-list';
+import {
+  LEAVE_OVERVIEW_RECORDS_KEY,
+  LEAVE_RECORDS_KEY,
+  MY_LEAVE_RECORDS_KEY,
+  ORGANIZATION_LEAVE_RECORDS_KEY,
+} from '@/features/leave/services/leave-list';
 import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
 import { SESSION_SUBJECT_KEY } from '@/features/members/services/write';
 import { MEMBER_NAME_KEY } from '@/features/navigation/services/profile';
 import { MEMBER_ROLE_KEY } from '@/features/navigation/services/role';
 import { ORGANIZATION_SNAPSHOT_KEY } from '@/features/organization/services/snapshot';
 import { organizationLogoKey } from '@/features/organization/services/logo';
+import { TEAMS_LIST_KEY } from '@/features/teams/services/list';
+import { OWN_TEAM_KEY, TEAM_ROSTER_KEY } from '@/features/teams/services/roster';
 import { queryClient } from '@/lib/query-client';
 import {
   DEVICE_SNAPSHOT_FAILED,
@@ -22,8 +29,11 @@ import {
   DEVICE_SNAPSHOT_MAX_AGE_MS,
   DEVICE_SNAPSHOT_FORGET_TIMED_OUT,
   DEVICE_SNAPSHOT_RESTORE_TIMED_OUT,
+  ERASURE_CHECK_KEY_PART,
   PERSISTED_KEY_ROOTS,
+  PERSISTED_PARAMETERISED_KEY_ROOTS,
   deviceSnapshot,
+  persistsKey,
   persistsQuery,
   type SnapshotStorage,
 } from '@/lib/offline/persistence';
@@ -103,12 +113,36 @@ describe('what is kept on the device', () => {
         MEMBER_ROLE_KEY,
         MEMBER_NAME_KEY,
         SESSION_SUBJECT_KEY,
+        LEAVE_OVERVIEW_RECORDS_KEY,
+        TEAMS_LIST_KEY,
+        OWN_TEAM_KEY,
       ].map((key) => {
         expect(key).toHaveLength(1);
 
         return key[0];
       }),
     );
+    expect(PERSISTED_PARAMETERISED_KEY_ROOTS).toEqual([TEAM_ROSTER_KEY('t')[0]]);
+  });
+
+  it('keeps a parameterised read only in the exact shape [root, string id] (story 8.2b)', () => {
+    expect(persistsQuery({ queryKey: TEAM_ROSTER_KEY('team-1'), state: success() } as never)).toBe(true);
+    // `leave-records` waits for story 8.2c, which reads it offline.
+    expect(persistsQuery({ queryKey: LEAVE_RECORDS_KEY('member-1'), state: success() } as never)).toBe(false);
+    expect(persistsKey(TEAM_ROSTER_KEY(''))).toBe(false);
+    expect(persistsKey([...TEAM_ROSTER_KEY('team-1'), 'more'])).toBe(false);
+    expect(persistsKey([TEAM_ROSTER_KEY('t')[0], 7])).toBe(false);
+    expect(persistsKey([TEAM_ROSTER_KEY('t')[0]])).toBe(false);
+    expect(persistsKey([...TEAM_ROSTER_KEY('team-1'), ERASURE_CHECK_KEY_PART])).toBe(false);
+    expect(persistsKey([TEAM_ROSTER_KEY('t')[0], ERASURE_CHECK_KEY_PART])).toBe(false);
+    // A one-segment root takes no id.
+    expect(persistsKey([...TEAMS_LIST_KEY, 'team-1'])).toBe(false);
+  });
+
+  it('never keeps the erasure check, by the feature\'s own key part', () => {
+    expect(ERASURE_CHECK_KEY_PART).toBe(FEATURE_ERASURE_CHECK_KEY_PART);
+    expect(persistsKey(['calendar', 'erasure-check'])).toBe(false);
+    expect(persistsKey([...CALENDAR_KEY, ERASURE_CHECK_KEY_PART])).toBe(false);
   });
 
   it('keeps a successful read under an allowed key', () => {
@@ -171,6 +205,9 @@ describe('a kept snapshot is restored for its owner alone', () => {
     expect(queryClient.getDefaultOptions().queries?.gcTime).toBeUndefined();
     for (const root of PERSISTED_KEY_ROOTS) {
       expect(queryClient.getQueryDefaults([root]).gcTime, root).toBe(DEVICE_SNAPSHOT_GC_TIME_MS);
+    }
+    for (const root of PERSISTED_PARAMETERISED_KEY_ROOTS) {
+      expect(queryClient.getQueryDefaults([root, 'id']).gcTime, root).toBe(DEVICE_SNAPSHOT_GC_TIME_MS);
     }
     expect(queryClient.getQueryDefaults(['shiftTypes']).gcTime).toBeUndefined();
 

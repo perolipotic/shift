@@ -78,4 +78,8 @@ export const LEAVE_SCREEN_EXEMPT: readonly { readonly file: string; readonly why
     file: 'services/leave-conflicts.ts',
     why: "the admin dialog's conflict preview (story 7.12); codes and operands only, executed by leave-conflicts.test.ts",
   },
+  {
+    file: 'services/surface-keys.ts',
+    why: "Godišnji's reads as one snapshot (story 8.2b), the keys its offline freshness is decided over; renders nothing and declares no key, executed by surface-keys.test.ts",
+  },
 ];

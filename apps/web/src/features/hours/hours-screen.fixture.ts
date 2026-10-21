@@ -78,4 +78,8 @@ export const HOURS_SCREEN_EXEMPT: readonly { readonly file: string; readonly why
     file: 'services/xlsx.ts',
     why: 'the only module that knows the lazily loaded XLSX writer (story 4.3); maps cells and renders nothing',
   },
+  {
+    file: 'services/surface-keys.ts',
+    why: "Sati's reads as one snapshot (story 8.2b), the keys its offline freshness is decided over; renders nothing and declares no key, executed by surface-keys.test.ts",
+  },
 ];

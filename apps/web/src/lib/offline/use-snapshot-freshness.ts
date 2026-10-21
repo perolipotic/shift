@@ -3,9 +3,11 @@ import { useState, useSyncExternalStore } from 'react';
 
 import { appFreshness } from '@/lib/offline/app-freshness';
 import {
+  notedFreshnessOf,
   snapshotAnswerOf,
   snapshotFreshnessOf,
   type FreshnessClock,
+  type NoteZone,
   type ReadAnswer,
   type SnapshotFreshness,
   type SnapshotRead,
@@ -56,6 +58,15 @@ function cachedSignatureOf(client: QueryClient, keys: readonly QueryKey[]): stri
 const SERVER_CLOCK: FreshnessClock = { online: true, freshAfter: 0, reconnected: false };
 
 /**
+ * The page's freshness clock, re-rendering when it changes: for a read that
+ * decides its freshness alone (the chrome's, story 8.2b) rather than as one
+ * of a surface's.
+ */
+export function useFreshnessClock(): FreshnessClock {
+  return useSyncExternalStore(appFreshness.subscribe, appFreshness.current, () => SERVER_CLOCK);
+}
+
+/**
  * The freshness of a surface that reads `keys` (story 8.2), WIRING ONLY: the
  * rule is `snapshotFreshnessOf`'s, re-derived on every render.
  *
@@ -66,13 +77,20 @@ const SERVER_CLOCK: FreshnessClock = { online: true, freshAfter: 0, reconnected:
  * the same screen (*Danas*'s admin body and its header each observe some of
  * the other's) is decided from the cache's entry, and this hook re-renders
  * when that entry or the clock changes.
+ *
+ * `noteZone` (story 8.2b) is where the surface's as-of note takes its zone
+ * from: the calendar snapshot (`ZONE_FROM_CALENDAR`), its reads as they stand
+ * (`zoneFromReads`, `null` for none — the cached snapshot is then
+ * unavailable offline rather than drawn without its note), or nowhere
+ * (`ZONE_NOT_NEEDED`, a refusal drawn). The rule is `notedFreshnessOf`'s.
  */
 export function useSnapshotFreshness(
   keys: readonly QueryKey[],
-  observed: readonly ObservedRead[] = [],
+  observed: readonly ObservedRead[],
+  noteZone: NoteZone,
 ): SurfaceFreshness {
   const client = useQueryClient();
-  const clock = useSyncExternalStore(appFreshness.subscribe, appFreshness.current, () => SERVER_CLOCK);
+  const clock = useFreshnessClock();
   const byHash = new Map(observed.map(([key, read]) => [hashKey(key), read]));
   const unobserved = keys.filter((key) => !byHash.has(hashKey(key)));
   const [cacheStore] = useState(() => ({
@@ -87,7 +105,11 @@ export function useSnapshotFreshness(
   );
 
   const reads = keys.map((key) => byHash.get(hashKey(key)) ?? cachedReadOf(client, key));
-  const freshness = snapshotFreshnessOf(reads, clock.freshAfter, clock.online, clock.reconnected);
+  // The note's zone decides too (story 8.2b): with none resolved, the cached snapshot is unavailable offline.
+  const freshness = notedFreshnessOf(
+    snapshotFreshnessOf(reads, clock.freshAfter, clock.online, clock.reconnected),
+    noteZone,
+  );
   const surface = new Set(keys.map((key) => hashKey(key)));
 
   return {
