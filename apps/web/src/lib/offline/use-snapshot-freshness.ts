@@ -83,6 +83,17 @@ export function useFreshnessClock(): FreshnessClock {
  * (`zoneFromReads`, `null` for none — the cached snapshot is then
  * unavailable offline rather than drawn without its note), or nowhere
  * (`ZONE_NOT_NEEDED`, a refusal drawn). The rule is `notedFreshnessOf`'s.
+ *
+ * FIGURES FROM THE ANSWERED READS, FETCH FLAGS FROM THE RAW OBSERVER (story
+ * 8.2c; referenced from `use-conflicts-queue` and `use-member-leave` as "the
+ * fetch-flag rule"). Everything a surface DRAWS — rows, figures, a refusal,
+ * the unavailable state — derives from `answerOf`/`answerFor`. Whether a
+ * re-read is IN FLIGHT — a skew waiting for the snapshot, a guard captured as
+ * unknown while its rows are about to change — is the raw observer's
+ * `isFetching`/`fetchStatus`: the answered read is idle over the cached
+ * snapshot after a reconnect, so it would hide a refetch that is under way.
+ * Offline the raw observer is `paused`, never fetching, so the flag is false
+ * there as well.
  */
 export function useSnapshotFreshness(
   keys: readonly QueryKey[],

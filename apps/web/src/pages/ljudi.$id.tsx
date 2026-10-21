@@ -1,6 +1,7 @@
 import { Link, createRoute, useLocation } from '@tanstack/react-router';
 import { ArrowLeft } from 'lucide-react';
 
+import { OfflineNote } from '@/components/offline-note';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
 import { t } from '@/lib/i18n';
@@ -26,6 +27,10 @@ import { appLayoutRoute } from '@/pages/_app';
  * and every rule is `@/features/members/services/write`'s.
  *
  * THIS IS NOT A DESTINATION. The way back to the list is a link that says so.
+ *
+ * STORY 8.2c: offline, the page is drawn whole from the device's snapshot —
+ * the member edit's reads and the leave card's as one — under ONE as-of note
+ * (`OfflineNote`, under the heading), or the whole page is unavailable.
  */
 
 export function LjudiMemberScreen() {
@@ -70,6 +75,8 @@ export function LjudiMemberScreen() {
           <MemberPageTitle edit={edit} />
         </div>
       </PageHeader>
+      {/* STORY 8.2c: the page's one as-of note — the leave card decides with it and adds none. */}
+      <OfflineNote offline={edit.offline} />
       {/* FACT CARDS, EACH CHANGE IN ITS OWN DIALOG (story 7.11). A card is
           drawn only around a block that renders, so none stands empty — the
           status card renders nothing on one's own row, for instance. */}

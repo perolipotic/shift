@@ -96,4 +96,8 @@ export const CONFLICTS_SCREEN_EXEMPT: readonly { readonly file: string; readonly
     file: 'services/resolution-write.ts',
     why: 'the two resolution writes (stories 5.4b, 5.4c) and their refusals; a key source of its own, executed by resolution-write.test.ts',
   },
+  {
+    file: 'services/surface-keys.ts',
+    why: "Raspored's and the resolution page's reads as one snapshot each (story 8.2c), the keys their offline freshness is decided over; renders nothing and declares no key, executed by surface-keys.test.ts",
+  },
 ];

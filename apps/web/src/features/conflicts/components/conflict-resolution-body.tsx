@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { ReactNode } from 'react';
 
+import { OfflineNote } from '@/components/offline-note';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -167,6 +168,8 @@ function ResolutionReady({ state, view }: { readonly state: ConflictResolutionSt
         </div>
         <ConflictNav view={view} pending={pending} onGo={go} />
       </PageHeader>
+      {/* STORY 8.2c: the as-of note, under the heading, while the cached snapshot is drawn offline. */}
+      <OfflineNote offline={state.offline} />
       <ResolutionFacts view={view} />
       <section className="grid min-w-0 gap-3" aria-labelledby={RESOLUTION_CHOICE_HEADING_ID}>
         <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
@@ -264,6 +267,7 @@ export function ConflictResolutionBody({ state }: { readonly state: ConflictReso
             </PageTitle>
           </div>
         </PageHeader>
+        <OfflineNote offline={state.offline} />
         {screen.kind === RESOLUTION_LOADING ? <ResolutionSkeleton /> : null}
         {/* A save refused as no longer open keeps saying so once the re-read takes the conflict away. */}
         {/* Refused as held, and the re-read finds the key decided by an effective resolution: the gone line (story 5.5d). */}

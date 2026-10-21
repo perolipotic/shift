@@ -43,6 +43,15 @@ export class ConflictsPage extends BasePage {
     return this.page.getByRole('tabpanel').getByRole('listitem');
   }
 
+  /**
+   * *Riješeni* drawn: its count heading, which stands only once the tab's
+   * reads have landed — the names of whoever decided among them — zero
+   * included (story 8.2c's offline test waits on it).
+   */
+  get resolvedCount(): Locator {
+    return this.page.getByRole('tabpanel').getByRole('heading', { level: 2 });
+  }
+
   /** The *Riješeni* entries of one member, by name. */
   resolvedEntriesOf(memberName: string): Locator {
     return this.resolvedEntries.filter({ hasText: memberName });

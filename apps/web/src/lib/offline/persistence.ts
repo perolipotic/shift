@@ -89,7 +89,9 @@ export const DEVICE_SNAPSHOT_THROTTLE_MS = 1000;
  *   - `leave-overview-records` — `LEAVE_OVERVIEW_RECORDS_KEY`, *Godišnji*'s
  *     admin overview (story 8.2b);
  *   - `teams`, `own-team` — `TEAMS_LIST_KEY` and `OWN_TEAM_KEY`, the member
- *     directory's team list and the caller's own team (story 8.2b).
+ *     directory's team list and the caller's own team (story 8.2b);
+ *   - `acting-admin-names` — `ACTING_ADMINS_KEY`, the names of whoever
+ *     decided, on *Raspored*'s *Riješeni* tab (story 8.2c).
  */
 export const PERSISTED_KEY_ROOTS: readonly string[] = [
   'calendar',
@@ -105,6 +107,7 @@ export const PERSISTED_KEY_ROOTS: readonly string[] = [
   'leave-overview-records',
   'teams',
   'own-team',
+  'acting-admin-names',
 ];
 
 /**
@@ -113,14 +116,14 @@ export const PERSISTED_KEY_ROOTS: readonly string[] = [
  * function spells it:
  *
  *   - `team-roster` — `TEAM_ROSTER_KEY(id)`, one team's roster, read by
- *     `/smjene/$id` and by the member directory for every active team.
+ *     `/smjene/$id` and by the member directory for every active team;
+ *   - `leave-records` — `LEAVE_RECORDS_KEY(id)`, one member's live leave,
+ *     read by the member page `/ljudi/$id` (story 8.2c).
  *
- * (`leave-records`, one member's live leave, joins with story 8.2c, which
- * brings the member page that reads it offline.) A longer key under one of
- * them, or a second segment that is not a non-empty string, is a different
- * read and is never kept.
+ * A longer key under one of them, or a second segment that is not a
+ * non-empty string, is a different read and is never kept.
  */
-export const PERSISTED_PARAMETERISED_KEY_ROOTS: readonly string[] = ['team-roster'];
+export const PERSISTED_PARAMETERISED_KEY_ROOTS: readonly string[] = ['team-roster', 'leave-records'];
 
 /**
  * The key part the erasure guard appends to a screen's key for its own fresh
