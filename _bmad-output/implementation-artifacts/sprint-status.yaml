@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 10-21-2026 14:57
+last_updated: 10-21-2026 15:37
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -567,7 +567,7 @@ development_status:
   8-1-the-app-is-installable: done
   8-2-surfaces-read-offline: done
   8-2b-member-surfaces-read-offline: done
-  8-2c-admin-surfaces-read-offline: review
+  8-2c-admin-surfaces-read-offline: done
   8-2d-settings-surfaces-read-offline: backlog
   8-3-offline-writes-are-refused-and-sign-out-clears-the-device: backlog
   8-4-install-from-vise: backlog
