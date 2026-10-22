@@ -1,5 +1,5 @@
 import { Check, TriangleAlert } from 'lucide-react';
-import type { ReactNode, RefObject } from 'react';
+import type { ReactNode, Ref, RefObject } from 'react';
 
 import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Button } from '@/components/ui/button';
@@ -60,6 +60,7 @@ export function ErasureDialog({
   notes,
   scrollRows = false,
   gate,
+  saveButton,
   onDecide,
   onBack,
   onSave,
@@ -85,17 +86,22 @@ export function ErasureDialog({
   /**
    * The surface's write gate (story 8.3a), REQUIRED so no caller forgets it:
    * offline, the save is `aria-disabled`, names the offline write note and
-   * does nothing. `null` only on the settings surfaces whose writes are
-   * gated in 8.3b (the rotation's save and cancel, the override review).
+   * does nothing. Every caller passes one since story 8.3b.
    */
-  readonly gate: WriteGate | null;
+  readonly gate: WriteGate;
+  /**
+   * The save's element (story 8.3b): where focus goes back when the
+   * connection drops while its re-check is out, and the dialog stays open
+   * under the gate.
+   */
+  readonly saveButton?: Ref<HTMLButtonElement>;
   readonly onDecide: (key: string, decision: ErasureDecision) => void;
   readonly onBack: () => void;
   readonly onSave: () => void;
 }): ReactNode {
   const confirmed = erasuresConfirmedOf(rows, decisions);
   const kept = erasureKeptOf(rows, decisions);
-  const offline = gate !== null && !gate.online;
+  const offline = !gate.online;
   const blocked = !confirmed || busy || offline;
   const ids = erasureDialogIdsOf(id);
   const keptHint = kept ? ids.kept : undefined;
@@ -174,7 +180,7 @@ export function ErasureDialog({
           {copy.kept}
         </p>
       ) : null}
-      {gate === null ? null : <OfflineWriteNote gate={gate} />}
+      <OfflineWriteNote gate={gate} />
       <DialogFooter>
         <Button className="h-11" type="button" variant="outline" disabled={busy} onClick={onBack}>
           {copy.back}
@@ -182,10 +188,11 @@ export function ErasureDialog({
         {/* `aria-disabled` rather than `disabled`, so it stays in the tab
             order and its hint is read; a press while blocked does nothing. */}
         <Button
+          ref={saveButton}
           className="h-11 aria-disabled:opacity-50"
           type="button"
           aria-disabled={blocked}
-          aria-describedby={gate === null ? keptHint : gate.describedBy(keptHint)}
+          aria-describedby={gate.describedBy(keptHint)}
           aria-busy={busy}
           onClick={() => {
             if (!blocked) onSave();

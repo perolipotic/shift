@@ -75,8 +75,10 @@ import {
 } from '@/features/teams/services/dependents';
 import { FRESHNESS_OFFLINE, offlineNoteOf, zoneFromReads } from '@/lib/offline/freshness';
 import { useSnapshotFreshness } from '@/lib/offline/use-snapshot-freshness';
+import { writesOnline } from '@/lib/offline/use-write-gate';
 import { claimedOrganizationOf } from '@/lib/supabase/claims';
 import { supabaseClient } from '@/lib/supabase/client';
+import { focusLater } from '@/utils/focus-later';
 
 /**
  * The rotation builder's state, its one read and every handler (stories
@@ -178,6 +180,21 @@ export function useRotationBuilder() {
   const [cancelErasedCount, setCancelErasedCount] = useState(0);
   /** The cancel confirmation's retry, which takes focus when the check cannot be derived. */
   const cancelRetryButton = useRef<HTMLButtonElement>(null);
+  /** The cancel confirmation's own confirm (story 8.3b): focus returns to it when the connection drops mid-check. */
+  const cancelConfirmButton = useRef<HTMLButtonElement>(null);
+  /** The save's erasure dialog's save (story 8.3b), for the same. */
+  const erasuresSaveButton = useRef<HTMLButtonElement>(null);
+  /** The cancel's erasure dialog's save (story 8.3b), for the same. */
+  const cancelErasuresSaveButton = useRef<HTMLButtonElement>(null);
+
+  /**
+   * STORY 8.3b: the connection dropped while a check or a write was out. The
+   * gate's note says why — no refusal — and focus goes back to the control
+   * that was pressed once its write no longer disables it, never to the body.
+   */
+  function focusBack(pressed: { readonly current: HTMLElement | null }): void {
+    focusLater([() => pressed.current, () => saveButton.current], () => saveButton.current);
+  }
 
   // A CHECK THAT CANNOT BE DERIVED: focus on its retry, so it is announced and in reach.
   useEffect(() => {
@@ -373,6 +390,15 @@ export function useRotationBuilder() {
       today,
     );
 
+    // STORY 8.3b: THE CONNECTION DROPPED before anything was written — the
+    // gate's note says why, not the unavailable refusal. A failure AFTER the
+    // pattern was written is still said: part of the save landed.
+    if (!saved.ok && saved.code === ROTATION_WRITE_UNAVAILABLE && !saved.afterPattern && !writesOnline()) {
+      focusBack(saveButton);
+
+      return;
+    }
+
     // A REFUSED SAVE KEEPS THE DRAFT: nothing below touches it on that path.
     // A LANDED ONE CARRIES ITS WARNINGS (story 2.5), from the draft just
     // saved and the date its versions apply from (story 2.6) — before the
@@ -422,6 +448,8 @@ export function useRotationBuilder() {
     const writable = writableRotationOf(state, fromCache);
 
     if (draft === null || saving.current) return;
+    // STORY 8.3b: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
 
     saving.current = true;
     setOutcome(null);
@@ -449,6 +477,12 @@ export function useRotationBuilder() {
       const check = await checkErasures(draft, today);
 
       if (check.kind === CHECK_UNAVAILABLE) {
+        // STORY 8.3b: the connection dropped while the check was out — the offline gate says why, not the unchecked refusal.
+        if (!writesOnline()) {
+          focusBack(saveButton);
+
+          return;
+        }
         setErasuresUnavailable(true);
 
         return;
@@ -469,6 +503,12 @@ export function useRotationBuilder() {
       confirmation.show(check.rows, { rotation: check.rotation, draft: check.draft, today });
     } catch (cause) {
       console.error(ROTATION_WRITE_UNAVAILABLE, cause);
+      // STORY 8.3b: offline now, the gate's note says why; no refusal.
+      if (!writesOnline()) {
+        focusBack(saveButton);
+
+        return;
+      }
       setOutcome({ ok: false, code: ROTATION_WRITE_UNAVAILABLE, afterPattern: false });
     } finally {
       saving.current = false;
@@ -487,6 +527,8 @@ export function useRotationBuilder() {
    */
   async function confirmErasures(shown: NonNullable<typeof erasures>): Promise<void> {
     if (saving.current || !confirmation.confirmed) return;
+    // STORY 8.3b: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
 
     const { draft: checked, today: savedToday } = shown.subject;
 
@@ -498,6 +540,12 @@ export function useRotationBuilder() {
 
       await confirmation.follow(shown, check, {
         unavailable: () => {
+          // STORY 8.3b: offline, the confirmation stays open under the gate.
+          if (!writesOnline()) {
+            focusBack(erasuresSaveButton);
+
+            return;
+          }
           confirmation.drop();
           setErasuresUnavailable(true);
         },
@@ -514,6 +562,12 @@ export function useRotationBuilder() {
     } catch (cause) {
       console.error(ROTATION_WRITE_UNAVAILABLE, cause);
       confirmation.drop();
+      // STORY 8.3b: offline now, the gate's note says why; no refusal.
+      if (!writesOnline()) {
+        focusBack(saveButton);
+
+        return;
+      }
       setOutcome({ ok: false, code: ROTATION_WRITE_UNAVAILABLE, afterPattern: false });
     } finally {
       saving.current = false;
@@ -611,10 +665,15 @@ export function useRotationBuilder() {
     const writable = writableRotationOf(state, fromCache);
 
     if (saving.current) return;
+    // STORY 8.3b: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
 
     // Disarmed when this settles, except while it asks for a retry; the
     // refusal stays mounted until then, so focus stays in the confirmation.
     let unchecked = false;
+    // STORY 8.3b: the connection dropped while the check was out — the
+    // confirmation stays open under the gate, with no unchecked refusal.
+    let droppedOffline = false;
 
     saving.current = true;
     setCancelled(null);
@@ -639,6 +698,12 @@ export function useRotationBuilder() {
       const check = await checkCancelErasures(confirmed, today);
 
       if (check.kind === CHECK_UNAVAILABLE) {
+        if (!writesOnline()) {
+          droppedOffline = true;
+          focusBack(cancelConfirmButton);
+
+          return;
+        }
         unchecked = true;
 
         return;
@@ -653,12 +718,19 @@ export function useRotationBuilder() {
       cancelErasures.show(check.rows, { rotation: check.rotation, confirmed, today });
     } catch (cause) {
       console.error(ROTATION_WRITE_UNAVAILABLE, cause);
+      // STORY 8.3b: offline now, the confirmation stays open under the gate; no refusal.
+      if (!writesOnline()) {
+        droppedOffline = true;
+        focusBack(cancelConfirmButton);
+
+        return;
+      }
       setCancelled({ ok: false, code: ROTATION_WRITE_UNAVAILABLE });
     } finally {
       saving.current = false;
       setPending(false);
       setCancelUnchecked(unchecked ? confirmed : null);
-      if (!unchecked) setCancelArmed(null);
+      if (!unchecked && !droppedOffline) setCancelArmed(null);
     }
   }
 
@@ -681,6 +753,8 @@ export function useRotationBuilder() {
    */
   async function confirmCancelErasures(shown: NonNullable<typeof cancelErasures.shown>): Promise<void> {
     if (saving.current || !cancelErasures.confirmed) return;
+    // STORY 8.3b: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
 
     const { confirmed, today: shownToday, rotation: shownRotation } = shown.subject;
     const rolledOver = (rotation: RotationSnapshot): boolean => rotationTodayOf(rotation, new Date()) !== shownToday;
@@ -712,6 +786,12 @@ export function useRotationBuilder() {
           return true;
         },
         unavailable: () => {
+          // STORY 8.3b: offline, the dialog stays open under the gate.
+          if (!writesOnline()) {
+            focusBack(cancelErasuresSaveButton);
+
+            return;
+          }
           cancelErasures.drop();
           setCancelUnchecked(confirmed);
           setCancelArmed(confirmed);
@@ -725,6 +805,12 @@ export function useRotationBuilder() {
       });
     } catch (cause) {
       console.error(ROTATION_WRITE_UNAVAILABLE, cause);
+      // STORY 8.3b: offline now, the dialog stays open under the gate; no refusal.
+      if (!writesOnline()) {
+        focusBack(cancelErasuresSaveButton);
+
+        return;
+      }
       setCancelled({ ok: false, code: ROTATION_WRITE_UNAVAILABLE });
       cancelErasures.close();
     } finally {
@@ -831,6 +917,9 @@ export function useRotationBuilder() {
     retryButton,
     cancelOfferButton,
     cancelRetryButton,
+    cancelConfirmButton,
+    erasuresSaveButton,
+    cancelErasuresSaveButton,
     cancelConfirmation,
     change,
     discard,

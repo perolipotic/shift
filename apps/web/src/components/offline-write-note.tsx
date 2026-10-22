@@ -13,15 +13,18 @@ import type { WriteGate } from '@/lib/offline/use-write-gate';
 export function OfflineWriteNote({
   gate,
   signIn = false,
+  className,
 }: {
   readonly gate: WriteGate;
   /** The sign-in submit's wording rather than the save's. */
   readonly signIn?: boolean;
+  /** Where the note sits in its row or card (story 8.3b), applied only when it is drawn. */
+  readonly className?: string;
 }) {
   if (gate.online) return null;
 
   return (
-    <Notice id={gate.noteId} role="status" variant="offline">
+    <Notice id={gate.noteId} role="status" variant="offline" className={className}>
       {signIn ? t('offline.signInNeedsConnection') : t('offline.needsConnection')}
     </Notice>
   );

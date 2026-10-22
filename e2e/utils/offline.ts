@@ -17,6 +17,33 @@ export function offlineWriteNoteIn(scope: Page | Locator): Locator {
   return scope.getByRole('status').filter({ hasText: hr.offline.needsConnection });
 }
 
+/** The prefix of every offline write note's id (`useWriteGate`'s `offline-write-{useId}`). */
+const OFFLINE_WRITE_NOTE_ID_PREFIX = 'offline-write-';
+
+/**
+ * A CSS string's escape for an attribute value in double quotes — the
+ * equivalent of `CSS.escape` for this use, which Node does not have: a
+ * backslash and a double quote are escaped, and a line break is written as
+ * its code point.
+ */
+function cssStringOf(value: string): string {
+  return value.replace(/["\\]/g, '\\$&').replace(/\n/g, '\\a ');
+}
+
+/**
+ * The offline write note `control` names in its `aria-describedby` (story
+ * 8.3b), where a screen draws more than one: the description is split on
+ * whitespace and the id with the note's prefix picked. Throws when the
+ * control names no such note — the caller asserts the gate first.
+ */
+export async function offlineWriteNoteNamedBy(page: Page, control: Locator): Promise<Locator> {
+  const ids = ((await control.getAttribute('aria-describedby')) ?? '').split(/\s+/);
+  const id = ids.find((each) => each.startsWith(OFFLINE_WRITE_NOTE_ID_PREFIX));
+  if (id === undefined) throw new Error('E2E: the control names no offline write note');
+
+  return offlineWriteNoteIn(page).and(page.locator(`[id="${cssStringOf(id)}"]`));
+}
+
 /** The sign-in's offline note (story 8.3a): *Za prijavu je potrebna veza.* */
 export function offlineSignInNoteOf(page: Page): Locator {
   return page.getByRole('status').filter({ hasText: hr.offline.signInNeedsConnection });

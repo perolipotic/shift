@@ -25,6 +25,7 @@ import { ORGANIZATION_SNAPSHOT_KEY, type OrganizationOutcome } from '@/features/
 import { HOUR_BAND_WRITE_DEPENDENTS, refreshAfterWrite, retryRead } from '@/features/teams/services/dependents';
 import { offlineNoteOf, zoneFromReads } from '@/lib/offline/freshness';
 import { useSnapshotFreshness } from '@/lib/offline/use-snapshot-freshness';
+import { droppedOffline, writesOnline } from '@/lib/offline/use-write-gate';
 import { claimedOrganizationOf } from '@/lib/supabase/claims';
 import { supabaseClient } from '@/lib/supabase/client';
 import { NO_TEXT } from '@/utils/text';
@@ -108,6 +109,8 @@ export function useHourBandList() {
     const start = startField.current;
 
     if (name === null || start === null || creating.current) return;
+    // STORY 8.3b: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
 
     creating.current = true;
     setFailure(null);
@@ -135,6 +138,12 @@ export function useHourBandList() {
       // A REFUSED SAVE KEEPS THE ENTERED VALUES: both fields are uncontrolled
       // and nothing here clears them on this path (UX-DR34). Focus goes to the
       // field the refusal is about.
+      if (!outcome.ok && droppedOffline(outcome.code, HOUR_BAND_WRITE_UNAVAILABLE)) {
+        name.focus();
+
+        return;
+      }
+
       if (!outcome.ok) {
         setFailure(outcome.code);
         (refusedFieldOf(outcome.code) === HOUR_BAND_START_FIELD ? start : name).focus();
@@ -158,6 +167,12 @@ export function useHourBandList() {
       }
     } catch (cause) {
       console.error(HOUR_BAND_WRITE_UNAVAILABLE, cause);
+      // STORY 8.3b: offline now, the gate's note says why, not the write refusal.
+      if (!writesOnline()) {
+        name.focus();
+
+        return;
+      }
       setFailure(HOUR_BAND_WRITE_UNAVAILABLE);
     } finally {
       creating.current = false;

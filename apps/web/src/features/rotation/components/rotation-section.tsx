@@ -35,6 +35,7 @@ import {
 import { stepGroupClassOf, stepSectionClassOf } from '@/features/rotation/utils/stepper';
 import { usePhone } from '@/hooks/viewport';
 import { t } from '@/lib/i18n';
+import { useWriteGate } from '@/lib/offline/use-write-gate';
 
 /**
  * The rotation builder (story 2.3b, UX-DR14, UX-DR15), rendered on
@@ -123,6 +124,9 @@ export function RotationSection({
   readonly shiftTypes: ReactNode;
 }) {
   const builder = useRotationBuilder();
+  // STORY 8.3b: the save's write gate, one for the save bar's *Spremi rotaciju*
+  // and the unchecked save's retry, so the page draws one note for both.
+  const saveGate = useWriteGate();
   const {
     state,
     snapshot,
@@ -329,7 +333,7 @@ export function RotationSection({
       {/* THE SAVE'S NOTE AND OUTCOME, right under the header; the save itself
           is in the bar at the end (story 5.5c). */}
       <p className="-mt-3 text-sm text-muted-foreground">{t('rotation.builder.saveNote')}</p>
-      <RotationNotices builder={builder} />
+      <RotationNotices builder={builder} saveGate={saveGate} />
       {/* STORY 3.5c: the overrides a rotation change left pending, after the notices. */}
       <OverrideReview snapshot={snapshot} busy={pending} savedTimes={savedTimes} />
       {draft === null ? null : <RotationStepBar builder={builder} />}
@@ -356,7 +360,7 @@ export function RotationSection({
         </div>
       )}
       {draft === null ? null : <RotationStepActions builder={builder} />}
-      {draft === null ? null : <RotationSaveBar builder={builder} current={draft} />}
+      {draft === null ? null : <RotationSaveBar builder={builder} current={draft} gate={saveGate} />}
     </>
   );
 }

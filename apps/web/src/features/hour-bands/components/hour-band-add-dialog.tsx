@@ -1,6 +1,7 @@
 import { MoveRight } from 'lucide-react';
 import type { ReactNode } from 'react';
 
+import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -17,6 +18,7 @@ import {
   marksField,
 } from '@/features/hour-bands/services/write';
 import { t } from '@/lib/i18n';
+import { useWriteGate } from '@/lib/offline/use-write-gate';
 import { NAME_MAX_LENGTH } from '@/utils/name';
 import { durationValuesOf } from '@/utils/time';
 import { NO_TEXT } from '@/utils/text';
@@ -29,6 +31,8 @@ import { NO_TEXT } from '@/utils/text';
 export function HourBandAddDialog({ screen }: { readonly screen: HourBandListScreen }): ReactNode {
   const { adding, setAdding, submit, nameField, startField, setCreated, setTypedStart, failure, preview, pending } =
     screen;
+  // STORY 8.3b: offline, the add is gated and the note says why.
+  const gate = useWriteGate();
 
   return (
     // NOT DISMISSIBLE WHILE A CREATE IS IN FLIGHT: Escape, the backdrop, the
@@ -52,6 +56,10 @@ export function HourBandAddDialog({ screen }: { readonly screen: HourBandListScr
         method="post"
         noValidate
         onSubmit={(event) => {
+          if (!gate.online) {
+            event.preventDefault();
+            return;
+          }
           void submit(event);
         }}
         className="grid gap-5"
@@ -128,6 +136,7 @@ export function HourBandAddDialog({ screen }: { readonly screen: HourBandListScr
             {t(hourBandWriteMessageKey(failure))}
           </Notice>
         )}
+        <OfflineWriteNote gate={gate} />
         <DialogFooter>
           <Button
             className="h-11"
@@ -140,7 +149,14 @@ export function HourBandAddDialog({ screen }: { readonly screen: HourBandListScr
           >
             {t('organization.hourBands.cancel')}
           </Button>
-          <Button className="h-11" type="submit" disabled={pending} aria-busy={pending}>
+          <Button
+            className="h-11 aria-disabled:opacity-50"
+            type="submit"
+            disabled={pending}
+            aria-disabled={gate.disabled}
+            aria-describedby={gate.describedBy()}
+            aria-busy={pending}
+          >
             {t('organization.hourBands.add')}
           </Button>
         </DialogFooter>

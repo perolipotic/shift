@@ -14,6 +14,7 @@ import {
   type ShiftTypeWriteFailure,
 } from '@/features/shift-types/services/write';
 import { t } from '@/lib/i18n';
+import type { WriteGate } from '@/lib/offline/use-write-gate';
 
 /** The archive's refusal, announced inside the archive block. */
 export function ShiftTypeArchiveRefusal({
@@ -80,11 +81,14 @@ export function ShiftTypeArchive({
 export function ShiftTypeArchiveConfirm({
   screen,
   type,
+  gate,
 }: {
   readonly screen: ShiftTypeEditScreen;
   readonly type: ShiftTypeRow;
+  /** The dialog's write gate (story 8.3b): the confirm names the dialog's one note. */
+  readonly gate: WriteGate;
 }): ReactNode {
-  const { stage, setArmed, archive } = screen;
+  const { stage, setArmed, archive, archiveConfirm } = screen;
   const busy = stage === ARCHIVE_BUSY;
 
   return (
@@ -105,11 +109,15 @@ export function ShiftTypeArchiveConfirm({
           <span className="truncate">{t('rotation.shiftTypes.archiveCancel')}</span>
         </Button>
         <Button
-          className="h-11"
+          ref={archiveConfirm}
+          className="h-11 aria-disabled:opacity-50"
           type="button"
           disabled={busy}
+          aria-disabled={gate.disabled}
+          aria-describedby={gate.describedBy()}
           aria-busy={busy}
           onClick={() => {
+            if (!gate.online) return;
             void archive(type);
           }}
         >

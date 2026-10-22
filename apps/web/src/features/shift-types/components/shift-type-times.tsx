@@ -21,6 +21,7 @@ import {
   type TimesOffer,
 } from '@/features/shift-types/services/write';
 import { t } from '@/lib/i18n';
+import type { WriteGate } from '@/lib/offline/use-write-gate';
 import { NO_TEXT } from '@/utils/text';
 
 /** The times block's refusal, where the times were written. */
@@ -40,6 +41,7 @@ function renderTimesForm(
   type: ShiftTypeRow,
   offer: Exclude<TimesOffer, { readonly kind: typeof TIMES_CANCEL }>,
   current: ShiftTimesShown | null,
+  gate: WriteGate,
 ): ReactNode {
   const { saveTimes, dateField, startField, endField, setSaved, timesFailure, pending } = screen;
 
@@ -49,6 +51,10 @@ function renderTimesForm(
       method="post"
       noValidate
       onSubmit={(event) => {
+        if (!gate.online) {
+          event.preventDefault();
+          return;
+        }
         void saveTimes(event, type);
       }}
       className="grid gap-4"
@@ -109,7 +115,14 @@ function renderTimesForm(
       </div>
       <p className="text-xs text-muted-foreground">{t('rotation.shiftTypes.timesNote')}</p>
       <div className="flex justify-end">
-        <Button className="h-11" type="submit" disabled={pending} aria-busy={pending}>
+        <Button
+          className="h-11 aria-disabled:opacity-50"
+          type="submit"
+          disabled={pending}
+          aria-disabled={gate.disabled}
+          aria-describedby={gate.describedBy()}
+          aria-busy={pending}
+        >
           <span className="truncate">
             {offer.kind === TIMES_SET
               ? t('rotation.shiftTypes.timesSet')
@@ -126,12 +139,15 @@ export function ShiftTypeTimes({
   screen,
   type,
   shown,
+  gate,
 }: {
   readonly screen: ShiftTypeEditScreen;
   readonly type: ShiftTypeRow;
   readonly shown: ShiftTypeDisplayRow;
+  /** The dialog's write gate (story 8.3b): the times save and the cancel of scheduled times name its one note. */
+  readonly gate: WriteGate;
 }): ReactNode {
-  const { today, timesFailure, pending, cancelTimes } = screen;
+  const { today, timesFailure, pending, cancelTimes, cancelTimesButton } = screen;
 
   if (today === null) return null;
 
@@ -145,19 +161,23 @@ export function ShiftTypeTimes({
       <ShiftTypeTimesRefusal timesFailure={timesFailure} />
       {offer.kind === TIMES_CANCEL ? (
         <Button
-          className="h-11 w-full"
+          ref={cancelTimesButton}
+          className="h-11 w-full aria-disabled:opacity-50"
           type="button"
           variant="outline"
           disabled={pending}
+          aria-disabled={gate.disabled}
+          aria-describedby={gate.describedBy()}
           aria-busy={pending}
           onClick={() => {
+            if (!gate.online) return;
             void cancelTimes(type);
           }}
         >
           <span className="truncate">{t('rotation.shiftTypes.cancelScheduled')}</span>
         </Button>
       ) : (
-        renderTimesForm(screen, type, offer, shown.times)
+        renderTimesForm(screen, type, offer, shown.times, gate)
       )}
     </section>
   );

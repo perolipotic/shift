@@ -470,7 +470,7 @@ export function RosterRemoveConfirm({
   /** The override form's write is in flight. */
   readonly busy: boolean;
 }): ReactNode {
-  const { target, pending, removeFailure, removeCancel, cancelRemove, removeChange } = form;
+  const { target, pending, removeFailure, removeCancel, removeConfirm, cancelRemove, removeChange } = form;
   const gate = useWriteGate();
 
   if (target === null) return null;
@@ -504,6 +504,7 @@ export function RosterRemoveConfirm({
           {t('kalendar.detail.rosterChange.remove.cancel')}
         </Button>
         <Button
+          ref={removeConfirm}
           className="h-11 aria-disabled:opacity-50"
           type="button"
           disabled={pending || busy}
@@ -542,7 +543,7 @@ export function RosterErasureConfirm({
   /** The override form's write is in flight. */
   readonly busy: boolean;
 }): ReactNode {
-  const { erasures, pending, confirmErasures } = form;
+  const { erasures, pending, confirmErasures, erasuresSaveButton } = form;
   const shown = erasures.shown;
   const gate = useWriteGate();
 
@@ -559,6 +560,7 @@ export function RosterErasureConfirm({
 
   return (
     <ErasureDialog
+      saveButton={erasuresSaveButton}
       id={ROSTER_ERASURES_ID}
       rows={rows}
       changed={shown.changed}

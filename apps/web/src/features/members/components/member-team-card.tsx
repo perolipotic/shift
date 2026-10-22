@@ -21,7 +21,6 @@ import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { Select } from '@/components/ui/select';
 import { t } from '@/lib/i18n';
-import { useWriteGate, type WriteGate } from '@/lib/offline/use-write-gate';
 import { keepFocusOnAlert } from '@/utils/retry-focus';
 import type { MemberEdit } from '@/features/members/hooks/use-member-edit';
 import { memberErasureCopyOf } from '@/features/members/utils/erasure-copy';
@@ -59,6 +58,7 @@ import {
   type MoveSide,
 } from '@/features/members/services/team-move-preview';
 import { teamsMessageKey, teamsRetryMessageKey } from '@/features/teams/services/list';
+import { useWriteGate, type WriteGate } from '@/lib/offline/use-write-gate';
 import { NO_TEXT, shownDate } from '@/utils/text';
 
 /**
@@ -521,7 +521,7 @@ export function MemberTeamDialog({ edit }: { readonly edit: MemberEdit }): React
  * backdrop cancel except while the write is outstanding.
  */
 function MemberTeamWithdrawal({ edit }: { readonly edit: MemberEdit }): ReactNode {
-  const { teamArmedFor, teamStage, setTeamArmed, confirmTeam } = edit;
+  const { teamArmedFor, teamStage, setTeamArmed, confirmTeam, teamWithdrawConfirm } = edit;
   const gate = useWriteGate();
 
   if (teamArmedFor === null || teamArmedFor.change !== WITHDRAW) return null;
@@ -555,6 +555,7 @@ function MemberTeamWithdrawal({ edit }: { readonly edit: MemberEdit }): ReactNod
           {t('smjene.membership.cancel')}
         </Button>
         <Button
+          ref={teamWithdrawConfirm}
           className="h-11 aria-disabled:opacity-50"
           type="button"
           disabled={busy || teamStage !== STATUS_ARMED}
@@ -582,7 +583,7 @@ function MemberTeamWithdrawal({ edit }: { readonly edit: MemberEdit }): ReactNod
  * until every row is confirmed. The rows scroll inside it.
  */
 function MemberTeamErasures({ edit }: { readonly edit: MemberEdit }): ReactNode {
-  const { form, teamErasures, teamPending, confirmTeamErasures } = edit;
+  const { form, teamErasures, teamPending, confirmTeamErasures, teamErasuresSave } = edit;
   const shown = teamErasures.shown;
   const gate = useWriteGate();
 
@@ -592,6 +593,7 @@ function MemberTeamErasures({ edit }: { readonly edit: MemberEdit }): ReactNode 
 
   return (
     <ErasureDialog
+      saveButton={teamErasuresSave}
       id="member-team-erasures"
       rows={shown.rows}
       changed={shown.changed}

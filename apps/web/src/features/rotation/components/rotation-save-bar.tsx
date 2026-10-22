@@ -1,5 +1,6 @@
 import { Save } from 'lucide-react';
 
+import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Button } from '@/components/ui/button';
 import type { RotationBuilder } from '@/features/rotation/hooks/use-rotation-builder';
 import { saveBarHintOf } from '@/features/rotation/services/history';
@@ -7,6 +8,7 @@ import type { RotationDraft } from '@/features/rotation/utils/draft';
 import { ROTATION_SAVE_BAR_ID } from '@/features/rotation/utils/element-ids';
 import { saveBarClassOf } from '@/features/rotation/utils/stepper';
 import { t } from '@/lib/i18n';
+import type { WriteGate } from '@/lib/offline/use-write-gate';
 
 /**
  * THE SAVE BAR (story 5.5c, mockup `setup-1.html` §2): the builder's last
@@ -25,9 +27,15 @@ import { t } from '@/lib/i18n';
 export function RotationSaveBar({
   builder,
   current,
+  gate,
 }: {
   readonly builder: RotationBuilder;
   readonly current: RotationDraft;
+  /**
+   * The save's write gate (story 8.3b), shared with the unchecked save's
+   * retry in `RotationNotices`, so the page draws one note for both, here.
+   */
+  readonly gate: WriteGate;
 }) {
   const { snapshot, today, unsaved, pending, discard, saveButton, requestSave } = builder;
   const hint =
@@ -56,6 +64,10 @@ export function RotationSaveBar({
                 inForceFrom: hint.inForceLabel,
               })}
       </p>
+      {/* STORY 8.3b: offline, the save is gated before its erasure check
+          starts, and the note says why — a row of its own in the bar's
+          wrapping flex. */}
+      <OfflineWriteNote gate={gate} className="min-w-0 basis-full" />
       <div className="flex flex-wrap gap-3 sm:ml-auto">
         {/* An outline, never the alarm variant: it drops only a local draft. */}
         {unsaved ? (
@@ -66,11 +78,14 @@ export function RotationSaveBar({
         {/* THE ONE SAVE, moved here from the header (story 5.5c), every rule kept. */}
         <Button
           ref={saveButton}
-          className="h-11"
+          className="h-11 aria-disabled:opacity-50"
           type="button"
           disabled={pending}
+          aria-disabled={gate.disabled}
+          aria-describedby={gate.describedBy()}
           aria-busy={pending}
           onClick={() => {
+            if (!gate.online) return;
             void requestSave();
           }}
         >

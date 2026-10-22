@@ -52,10 +52,10 @@ import {
   type OverrideSetChange,
 } from '@/features/conflicts/services/override-erasures';
 import { OVERRIDE_WRITE_DEPENDENTS, refreshAfterWrite } from '@/features/teams/services/dependents';
+import { writesOnline } from '@/lib/offline/use-write-gate';
 import { claimedOrganizationOf } from '@/lib/supabase/claims';
 import { supabaseClient } from '@/lib/supabase/client';
 import { firstEnabledOf, focusLater } from '@/utils/focus-later';
-import { writesOnline } from '@/lib/offline/use-write-gate';
 
 /**
  * THE ADMIN'S OVERRIDE FORM (story 3.5b): setting a shift-type override on
@@ -177,6 +177,9 @@ export function useOverrideForm(
   const reasonField = useRef<HTMLInputElement>(null);
   const removeAction = useRef<HTMLButtonElement>(null);
   const removeCancel = useRef<HTMLButtonElement>(null);
+  /** The removal's own confirm and the erasure confirmation's save (story 8.3b): where focus returns when the connection drops mid-check. */
+  const removeConfirm = useRef<HTMLButtonElement>(null);
+  const erasuresSaveButton = useRef<HTMLButtonElement>(null);
   /** The form's own save, where focus returns when its erasure confirmation closes. */
   const saveButton = useRef<HTMLButtonElement>(null);
   /** The refusal's retry, which takes focus when the check cannot be derived. */
@@ -489,7 +492,12 @@ export function useOverrideForm(
 
         if (check.kind === CHECK_UNAVAILABLE) {
           // STORY 8.3a: the connection dropped while the check was out — the offline gate says why, not the unchecked refusal.
-          if (!writesOnline()) return;
+          // Focus goes back to the save once its write no longer disables it (story 8.3b).
+          if (!writesOnline()) {
+            focusAfterWrite(saveButton);
+
+            return;
+          }
           setUnchecked(OVERRIDE_CHANGE_SET);
           focusAfterWrite(retryButton, typeField);
 
@@ -642,7 +650,12 @@ export function useOverrideForm(
 
       if (check.kind === CHECK_UNAVAILABLE) {
         // STORY 8.3a: the connection dropped while the check was out — the offline gate says why, not the unchecked refusal.
-        if (!writesOnline()) return;
+        // Focus goes back to the removal's confirm once its write no longer disables it (story 8.3b).
+        if (!writesOnline()) {
+          focusAfterWrite(removeConfirm, removeCancel);
+
+          return;
+        }
         setUnchecked(OVERRIDE_CHANGE_REMOVE);
         focusAfterWrite(retryButton, removeCancel);
 
@@ -709,8 +722,12 @@ export function useOverrideForm(
           return true;
         },
         unavailable: () => {
-          // STORY 8.3a: offline, the confirmation stays open under the gate.
-          if (!writesOnline()) return;
+          // STORY 8.3a: offline, the confirmation stays open under the gate, focus on its save (story 8.3b).
+          if (!writesOnline()) {
+            focusAfterWrite(erasuresSaveButton);
+
+            return;
+          }
           confirmation.drop();
           if (checked.kind === OVERRIDE_CHANGE_SET) {
             setUnchecked(OVERRIDE_CHANGE_SET);
@@ -837,6 +854,8 @@ export function useOverrideForm(
     remove,
     saveButton,
     retryButton,
+    removeConfirm,
+    erasuresSaveButton,
     unchecked,
     retry,
     clearUnchecked,

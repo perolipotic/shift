@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 
+import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,9 +15,10 @@ import type { ShiftTypeEditScreen } from '@/features/shift-types/hooks/use-shift
 import type { ShiftTypeRow } from '@/features/shift-types/services/list';
 import { SHIFT_TYPE_NAME_FIELD, marksField, shiftTypeFormKey } from '@/features/shift-types/services/write';
 import { t } from '@/lib/i18n';
+import { useWriteGate, type WriteGate } from '@/lib/offline/use-write-gate';
 import { NAME_MAX_LENGTH } from '@/utils/name';
 
-function renderType(screen: ShiftTypeEditScreen, type: ShiftTypeRow): ReactNode {
+function renderType(screen: ShiftTypeEditScreen, type: ShiftTypeRow, gate: WriteGate): ReactNode {
   const { row, timesFailure, archiveFailure, confirming, saves, submit, nameField, setSaved, failure, pending } =
     screen;
   const shown = row;
@@ -53,6 +55,10 @@ function renderType(screen: ShiftTypeEditScreen, type: ShiftTypeRow): ReactNode 
           method="post"
           noValidate
           onSubmit={(event) => {
+            if (!gate.online) {
+              event.preventDefault();
+              return;
+            }
             void submit(event, type);
           }}
           className="grid gap-2"
@@ -75,17 +81,29 @@ function renderType(screen: ShiftTypeEditScreen, type: ShiftTypeRow): ReactNode 
               aria-describedby={failure === null ? undefined : 'shift-type-form-error'}
               className="h-11 min-w-0 flex-1"
             />
-            <Button className="h-11" type="submit" variant="outline" disabled={pending} aria-busy={pending}>
+            <Button
+              className="h-11 aria-disabled:opacity-50"
+              type="submit"
+              variant="outline"
+              disabled={pending}
+              aria-disabled={gate.disabled}
+              aria-describedby={gate.describedBy()}
+              aria-busy={pending}
+            >
               {t('rotation.shiftTypes.save')}
             </Button>
           </div>
         </form>
-        <ShiftTypeTimes screen={screen} type={type} shown={shown} />
+        <ShiftTypeTimes screen={screen} type={type} shown={shown} gate={gate} />
         <div className="border-t pt-5">
           <ShiftTypeArchive screen={screen} type={type} />
         </div>
       </div>
-      {confirming ? <ShiftTypeArchiveConfirm screen={screen} type={type} /> : null}
+      {confirming ? <ShiftTypeArchiveConfirm screen={screen} type={type} gate={gate} /> : null}
+      {/* STORY 8.3b: THE DIALOG'S ONE NOTE, at its foot and outside the block
+          the archive's confirmation hides, named by every gated control here:
+          the rename, the times and their cancel, and the archive's confirm. */}
+      <OfflineWriteNote gate={gate} />
     </>
   );
 }
@@ -93,8 +111,10 @@ function renderType(screen: ShiftTypeEditScreen, type: ShiftTypeRow): ReactNode 
 /** The dialog's body: the type's facts and its three blocks, or the skeleton while it is read. */
 export function ShiftTypeEditBody({ screen }: { readonly screen: ShiftTypeEditScreen }): ReactNode {
   const { form, loading } = screen;
+  // STORY 8.3b: one gate for the whole dialog, and one note at its foot.
+  const gate = useWriteGate();
 
-  if (form.type !== null) return renderType(screen, form.type);
+  if (form.type !== null) return renderType(screen, form.type, gate);
 
   return loading ? <div className="h-11 w-full animate-pulse rounded-md bg-muted" /> : null;
 }

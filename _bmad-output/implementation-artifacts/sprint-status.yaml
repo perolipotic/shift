@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 10-22-2026 21:44
+last_updated: 10-22-2026 23:05
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -570,8 +570,8 @@ development_status:
   8-2c-admin-surfaces-read-offline: done
   8-2d-settings-surfaces-read-offline: done
   8-2e-no-read-retry-offline: done
-  8-3a-offline-writes-refused-and-sign-out-clears: review
-  8-3b-settings-writes-refused-offline: backlog
+  8-3a-offline-writes-refused-and-sign-out-clears: done
+  8-3b-settings-writes-refused-offline: review
   8-4-install-from-vise: backlog
   epic-8-retrospective: optional
 

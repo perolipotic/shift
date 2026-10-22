@@ -43,7 +43,9 @@ import {
 import { retryRead } from '@/features/teams/services/dependents';
 import { zoneFromReads } from '@/lib/offline/freshness';
 import { useSnapshotFreshness } from '@/lib/offline/use-snapshot-freshness';
+import { droppedOffline, writesOnline } from '@/lib/offline/use-write-gate';
 import { supabaseClient } from '@/lib/supabase/client';
+import { focusLater } from '@/utils/focus-later';
 
 /**
  * One shift type's state, its one read and its four writes (story 2.2b):
@@ -71,6 +73,9 @@ export function useShiftTypeEdit(id: string) {
   const endField = useRef<HTMLInputElement>(null);
   /** The confirmation, where focus goes when the pressed control unmounts. */
   const confirmation = useRef<HTMLParagraphElement>(null);
+  /** The cancel of scheduled times and the archive's confirm (story 8.3b): focus returns to them when the connection drops under their write. */
+  const cancelTimesButton = useRef<HTMLButtonElement>(null);
+  const archiveConfirm = useRef<HTMLButtonElement>(null);
   const writing = useRef(false);
   const [pending, setPending] = useState(false);
   const [armed, setArmed] = useState(false);
@@ -153,6 +158,8 @@ export function useShiftTypeEdit(id: string) {
     const name = nameField.current;
 
     if (name === null || writing.current) return;
+    // STORY 8.3b: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
 
     writing.current = true;
     // A rename is a different decision from the archive it may interrupt.
@@ -167,6 +174,13 @@ export function useShiftTypeEdit(id: string) {
         name.value,
       );
 
+      // STORY 8.3b: the connection dropped under the write — the gate's note says why, not the write refusal.
+      if (!outcome.ok && droppedOffline(outcome.code, SHIFT_TYPE_WRITE_UNAVAILABLE)) {
+        name.focus();
+
+        return;
+      }
+
       if (!outcome.ok) {
         setFailure(outcome.code);
         name.focus();
@@ -179,6 +193,12 @@ export function useShiftTypeEdit(id: string) {
       setSaves((current) => savesAfter(current, outcome));
     } catch (cause) {
       console.error(SHIFT_TYPE_WRITE_UNAVAILABLE, cause);
+      // STORY 8.3b: offline now, the gate's note says why, not the write refusal.
+      if (!writesOnline()) {
+        name.focus();
+
+        return;
+      }
       setFailure(SHIFT_TYPE_WRITE_UNAVAILABLE);
     } finally {
       writing.current = false;
@@ -203,6 +223,8 @@ export function useShiftTypeEdit(id: string) {
     if (date === null || start === null || end === null || on === null || writing.current) {
       return;
     }
+    // STORY 8.3b: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
 
     writing.current = true;
     setArmed(false);
@@ -217,6 +239,13 @@ export function useShiftTypeEdit(id: string) {
         on,
       );
 
+      // STORY 8.3b: the connection dropped under the write — the gate's note says why, not the write refusal.
+      if (!outcome.ok && droppedOffline(outcome.code, SHIFT_TYPE_WRITE_UNAVAILABLE)) {
+        date.focus();
+
+        return;
+      }
+
       if (!outcome.ok) {
         setTimesFailure(outcome.code);
 
@@ -230,6 +259,12 @@ export function useShiftTypeEdit(id: string) {
       await refresh();
     } catch (cause) {
       console.error(SHIFT_TYPE_WRITE_UNAVAILABLE, cause);
+      // STORY 8.3b: offline now, the gate's note says why, not the write refusal.
+      if (!writesOnline()) {
+        date.focus();
+
+        return;
+      }
       setTimesFailure(SHIFT_TYPE_WRITE_UNAVAILABLE);
     } finally {
       writing.current = false;
@@ -242,6 +277,8 @@ export function useShiftTypeEdit(id: string) {
     const on = shiftTypesSubmitTodayOf(snapshot);
 
     if (on === null || writing.current) return;
+    // STORY 8.3b: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
 
     writing.current = true;
     setArmed(false);
@@ -255,6 +292,13 @@ export function useShiftTypeEdit(id: string) {
         on,
       );
 
+      // STORY 8.3b: the connection dropped under the write — the gate's note says why, not the write refusal.
+      if (!outcome.ok && droppedOffline(outcome.code, SHIFT_TYPE_WRITE_UNAVAILABLE)) {
+        focusLater([() => cancelTimesButton.current], () => nameField.current);
+
+        return;
+      }
+
       const landed = outcome.ok ? SHIFT_TYPE_TIMES_CANCELLED : null;
 
       if (!outcome.ok) setTimesFailure(outcome.code);
@@ -267,6 +311,12 @@ export function useShiftTypeEdit(id: string) {
       if (focusesConfirmation(landed)) confirmation.current?.focus();
     } catch (cause) {
       console.error(SHIFT_TYPE_WRITE_UNAVAILABLE, cause);
+      // STORY 8.3b: offline now, the gate's note says why, not the write refusal.
+      if (!writesOnline()) {
+        focusLater([() => cancelTimesButton.current], () => nameField.current);
+
+        return;
+      }
       setTimesFailure(SHIFT_TYPE_WRITE_UNAVAILABLE);
     } finally {
       writing.current = false;
@@ -282,6 +332,11 @@ export function useShiftTypeEdit(id: string) {
     const on = shiftTypesSubmitTodayOf(snapshot);
 
     if (on === null || writing.current) return;
+    // STORY 8.3b: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
+
+    // STORY 8.3b: the connection dropped under the archive — its confirmation stays armed.
+    let keepArmed = false;
 
     writing.current = true;
     clearOutcomes();
@@ -293,6 +348,14 @@ export function useShiftTypeEdit(id: string) {
         type,
         on,
       );
+      // STORY 8.3b: the connection dropped under the write — the gate's note says why, not the write refusal.
+      if (!outcome.ok && droppedOffline(outcome.code, SHIFT_TYPE_WRITE_UNAVAILABLE)) {
+        keepArmed = true;
+        focusLater([() => archiveConfirm.current], () => nameField.current);
+
+        return;
+      }
+
       const landed = outcome.ok ? SHIFT_TYPE_ARCHIVED : null;
 
       if (!outcome.ok) setArchiveFailure(outcome.code);
@@ -305,11 +368,18 @@ export function useShiftTypeEdit(id: string) {
       if (focusesConfirmation(landed)) confirmation.current?.focus();
     } catch (cause) {
       console.error(SHIFT_TYPE_WRITE_UNAVAILABLE, cause);
+      // STORY 8.3b: offline now, the gate's note says why, not the write refusal.
+      if (!writesOnline()) {
+        keepArmed = true;
+        focusLater([() => archiveConfirm.current], () => nameField.current);
+
+        return;
+      }
       setArchiveFailure(SHIFT_TYPE_WRITE_UNAVAILABLE);
     } finally {
       writing.current = false;
       setPending(false);
-      setArmed(false);
+      if (!keepArmed) setArmed(false);
     }
   }
 
@@ -326,6 +396,8 @@ export function useShiftTypeEdit(id: string) {
     startField,
     endField,
     confirmation,
+    cancelTimesButton,
+    archiveConfirm,
     pending,
     setArmed,
     failure,

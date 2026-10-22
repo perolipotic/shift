@@ -374,7 +374,7 @@ export function OverrideRemoveConfirm({
   /** The roster form's write is in flight (story 3.6b). */
   readonly busy: boolean;
 }): ReactNode {
-  const { confirming, pending, removeFailure, removeCancel, cancelRemove, remove } = form;
+  const { confirming, pending, removeFailure, removeCancel, removeConfirm, cancelRemove, remove } = form;
   const override = overrideRemovalTargetOf(detail);
   const gate = useWriteGate();
 
@@ -411,6 +411,7 @@ export function OverrideRemoveConfirm({
           {t('kalendar.detail.override.remove.cancel')}
         </Button>
         <Button
+          ref={removeConfirm}
           className="h-11 aria-disabled:opacity-50"
           type="button"
           disabled={pending || busy}
@@ -447,7 +448,7 @@ export function OverrideErasureConfirm({
   /** The roster form's write is in flight (story 3.6b). */
   readonly busy: boolean;
 }): ReactNode {
-  const { erasures, pending, confirmOverrideErasures } = form;
+  const { erasures, pending, confirmOverrideErasures, erasuresSaveButton } = form;
   const shown = erasures.shown;
   const gate = useWriteGate();
 
@@ -464,6 +465,7 @@ export function OverrideErasureConfirm({
 
   return (
     <ErasureDialog
+      saveButton={erasuresSaveButton}
       id={OVERRIDE_ERASURES_ID}
       rows={rows}
       changed={shown.changed}

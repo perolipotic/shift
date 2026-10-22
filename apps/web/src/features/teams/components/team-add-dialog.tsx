@@ -1,6 +1,7 @@
 import { Users } from 'lucide-react';
 import type { ReactNode } from 'react';
 
+import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -10,6 +11,7 @@ import { Notice } from '@/components/ui/notice';
 import type { TeamListScreen } from '@/features/teams/hooks/use-team-list';
 import { teamWriteMessageKey } from '@/features/teams/services/write';
 import { t } from '@/lib/i18n';
+import { useWriteGate } from '@/lib/offline/use-write-gate';
 import { NAME_MAX_LENGTH } from '@/utils/name';
 import { NO_TEXT } from '@/utils/text';
 
@@ -20,6 +22,8 @@ import { NO_TEXT } from '@/utils/text';
  */
 export function TeamAddDialog({ screen }: { readonly screen: TeamListScreen }): ReactNode {
   const { adding, setAdding, submit, nameField, setCreated, failure, pending } = screen;
+  // STORY 8.3b: offline, the add is gated and the note says why.
+  const gate = useWriteGate();
 
   return (
     // NOT DISMISSIBLE WHILE A CREATE IS IN FLIGHT: Escape, the backdrop, the
@@ -38,6 +42,10 @@ export function TeamAddDialog({ screen }: { readonly screen: TeamListScreen }): 
         method="post"
         noValidate
         onSubmit={(event) => {
+          if (!gate.online) {
+            event.preventDefault();
+            return;
+          }
           void submit(event);
         }}
         className="grid gap-5"
@@ -73,6 +81,7 @@ export function TeamAddDialog({ screen }: { readonly screen: TeamListScreen }): 
             {t(teamWriteMessageKey(failure))}
           </Notice>
         )}
+        <OfflineWriteNote gate={gate} />
         <DialogFooter>
           <Button
             className="h-11"
@@ -85,7 +94,14 @@ export function TeamAddDialog({ screen }: { readonly screen: TeamListScreen }): 
           >
             {t('smjene.cancel')}
           </Button>
-          <Button className="h-11" type="submit" disabled={pending} aria-busy={pending}>
+          <Button
+            className="h-11 aria-disabled:opacity-50"
+            type="submit"
+            disabled={pending}
+            aria-disabled={gate.disabled}
+            aria-describedby={gate.describedBy()}
+            aria-busy={pending}
+          >
             {t('smjene.add')}
           </Button>
         </DialogFooter>

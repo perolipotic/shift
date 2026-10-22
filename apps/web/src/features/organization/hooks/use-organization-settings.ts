@@ -51,6 +51,7 @@ import {
 import { ORGANIZATION_ERROR_ID, offersReadRetry } from '@/features/organization/utils/messages';
 import { offlineNoteOf } from '@/lib/offline/freshness';
 import { useSnapshotFreshness } from '@/lib/offline/use-snapshot-freshness';
+import { droppedOffline, writesOnline } from '@/lib/offline/use-write-gate';
 import { supabaseClient } from '@/lib/supabase/client';
 import { focusLater } from '@/utils/focus-later';
 
@@ -268,6 +269,11 @@ export function useOrganizationSettings() {
     focusLater([byId(retry), byId(ORGANIZATION_DIALOG_SAVE_ID)], cardHeading(dialog));
   }
 
+  /** Focus back on the dialog's Spremi once its write no longer disables it (story 8.3b). */
+  function focusSaveAgain(dialog: OrganizationDialog): void {
+    focusLater([byId(ORGANIZATION_DIALOG_SAVE_ID)], cardHeading(dialog));
+  }
+
   /**
    * Runs one dialog's write, the same way for all five. A refusal keeps the
    * dialog open and focuses the control it names; a landed write closes it,
@@ -278,6 +284,8 @@ export function useOrganizationSettings() {
     send: (row: OrganizationSnapshot) => Promise<DialogOutcome>,
   ): Promise<void> {
     if (organization === null || saving.current) return;
+    // STORY 8.3b: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
 
     saving.current = true;
     setFailure(null);
@@ -289,6 +297,14 @@ export function useOrganizationSettings() {
 
     try {
       const outcome = await send(organization);
+
+      // STORY 8.3b: the connection dropped under the write — the gate's
+      // note says why, not the unavailable refusal; the dialog stays open.
+      if (!outcome.ok && droppedOffline(outcome.code, unavailable)) {
+        focusSaveAgain(dialog);
+
+        return;
+      }
 
       if (!outcome.ok) {
         const field = outcome.field ?? null;
@@ -319,6 +335,12 @@ export function useOrganizationSettings() {
       // `SUPABASE_ENVIRONMENT_MISSING` on a build with no environment. Logged
       // as well as surfaced.
       console.error(unavailable, cause);
+      // STORY 8.3b: offline now, the gate's note says why.
+      if (!writesOnline()) {
+        focusSaveAgain(dialog);
+
+        return;
+      }
       setFailure(unavailable);
       focusRefused(dialog, undefined);
     } finally {
