@@ -14,6 +14,7 @@ import {
 import { MEMBER_RESET_DIALOG_HEADING_ID, MEMBER_SIGN_IN_HEADING_ID } from '@/features/members/utils/element-ids';
 import { supabaseClient } from '@/lib/supabase/client';
 import { focusLater } from '@/utils/focus-later';
+import { writesOnline } from '@/lib/offline/use-write-gate';
 
 /**
  * The member page's sign-in card (stories 1.5b, 7.8; split out of
@@ -62,6 +63,8 @@ export function useMemberReset(screen: MemberScreen) {
     const member = form.member;
 
     if (member === null || resetting.current) return;
+    // STORY 8.3a: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
 
     resetting.current = true;
     // The reset's own answer replaces whatever it last said.

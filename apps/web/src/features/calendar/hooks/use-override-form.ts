@@ -55,6 +55,7 @@ import { OVERRIDE_WRITE_DEPENDENTS, refreshAfterWrite } from '@/features/teams/s
 import { claimedOrganizationOf } from '@/lib/supabase/claims';
 import { supabaseClient } from '@/lib/supabase/client';
 import { firstEnabledOf, focusLater } from '@/utils/focus-later';
+import { writesOnline } from '@/lib/offline/use-write-gate';
 
 /**
  * THE ADMIN'S OVERRIDE FORM (story 3.5b): setting a shift-type override on
@@ -456,6 +457,8 @@ export function useOverrideForm(
     const reason = reasonField.current;
 
     if (detail === null || type === null || reason === null || writing.current) return;
+    // STORY 8.3a: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
 
     const startedFor = day;
     const on = detail;
@@ -485,6 +488,8 @@ export function useOverrideForm(
         if (!stillOn(startedFor)) return;
 
         if (check.kind === CHECK_UNAVAILABLE) {
+          // STORY 8.3a: the connection dropped while the check was out — the offline gate says why, not the unchecked refusal.
+          if (!writesOnline()) return;
           setUnchecked(OVERRIDE_CHANGE_SET);
           focusAfterWrite(retryButton, typeField);
 
@@ -613,6 +618,8 @@ export function useOverrideForm(
    */
   async function remove(): Promise<void> {
     if (override === null || writing.current) return;
+    // STORY 8.3a: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
 
     const startedFor = day;
     const id = override.id;
@@ -634,6 +641,8 @@ export function useOverrideForm(
       if (!stillOn(startedFor)) return;
 
       if (check.kind === CHECK_UNAVAILABLE) {
+        // STORY 8.3a: the connection dropped while the check was out — the offline gate says why, not the unchecked refusal.
+        if (!writesOnline()) return;
         setUnchecked(OVERRIDE_CHANGE_REMOVE);
         focusAfterWrite(retryButton, removeCancel);
 
@@ -677,6 +686,8 @@ export function useOverrideForm(
    */
   async function confirmOverrideErasures(shown: NonNullable<typeof confirmation.shown>): Promise<void> {
     if (writing.current || !confirmation.confirmed) return;
+    // STORY 8.3a: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
 
     const checked = shown.subject;
     const { change, startedFor } = checked;
@@ -698,6 +709,8 @@ export function useOverrideForm(
           return true;
         },
         unavailable: () => {
+          // STORY 8.3a: offline, the confirmation stays open under the gate.
+          if (!writesOnline()) return;
           confirmation.drop();
           if (checked.kind === OVERRIDE_CHANGE_SET) {
             setUnchecked(OVERRIDE_CHANGE_SET);

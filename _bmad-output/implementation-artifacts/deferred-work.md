@@ -948,7 +948,7 @@
   summary: No automated test renders `UpdateNotice`'s waiting branch or clicks *Osvježi*. Both are covered only by the spec's manual check in `vite preview`, and by the pure decision helper's node test.
   evidence: Review of 8.1 (Verification Gap). AD-15 bans jsdom and `.tsx` tests, and render tests are deferred project-wide. A Playwright test against `vite preview` that serves a second build would cover it.
 - source_spec: `_bmad-output/implementation-artifacts/spec-8-1-the-app-is-installable.md`
-  summary: `Notice role="status"` is mounted together with its text (the update notice, and the existing save confirmations), so some screen readers skip the announcement. An always-present live region that receives the text would announce it reliably.
+  summary: `Notice role="status"` is mounted together with its text (the update notice, and the existing save confirmations), so some screen readers skip the announcement. An always-present live region that receives the text would announce it reliably. Story 8.3a adds one more: the offline write note (`OfflineWriteNote`, `role=status`) mounts already filled when the connection drops and may not be announced; a gated control still names it in its `aria-describedby`, so it is read on focus.
   evidence: Review of 8.1 (Blind Hunter, Edge Case Hunter). This is the app-wide `Notice` pattern, not something 8.1 introduced. `components/ui/notice.tsx`, `update-notice.tsx`, `organization-time-card.tsx:78`.
 - source_spec: `_bmad-output/implementation-artifacts/spec-8-2-surfaces-read-offline.md`
   summary: SUPERSEDED by the 8.2b entry below (2026-10-21). Story 8.2b. Bring offline reads to every other surface, move each module's `paused → unavailable` rule onto 8.2's freshness helper, persist their keys, and have `requireAdmin` serve the cached role offline.
@@ -957,7 +957,7 @@
   summary: RESOLVED by 8.2b — the chrome's role, name and organization each decide their freshness alone (`features/navigation/services/chrome-freshness.ts`, human decision 2026-10-20, 2a): a restored value is not drawn online until it is read again, offline the cached value is drawn, and one missing read fails no other. Original: After an online reload, the chrome's persisted reads (`organization`, `member-name`, `member-role`) draw restored names before their refetch lands, because only Danas and Kalendar go through the freshness rule. Move the chrome onto it together with 8.2b.
   evidence: Review of 8.2 (Epic AC Auditor). `restoreForSession` invalidates with `refetchType: 'none'`, and the chrome renders `useQuery` data directly.
 - source_spec: `_bmad-output/implementation-artifacts/spec-8-2-surfaces-read-offline.md`
-  summary: On a weak connection where `navigator.onLine` is true but requests time out, reads fail and the surface shows unavailable even though a whole cached snapshot exists. Decide whether a failed online read over a complete device snapshot should fall back to the labelled snapshot.
+  summary: On a weak connection where `navigator.onLine` is true but requests time out, reads fail and the surface shows unavailable even though a whole cached snapshot exists. Decide whether a failed online read over a complete device snapshot should fall back to the labelled snapshot. Story 8.3a adds the write side, lie-fi: `navigator.onLine` is true but nothing gets through, so the write gate stays open and writes go out and fail through the generic write error.
   evidence: Review of 8.2 (Blind Hunter). `snapshotFreshnessOf` enters the offline branch only when `onlineManager` reports offline.
 - source_spec: `_bmad-output/implementation-artifacts/spec-8-2-surfaces-read-offline.md`
   summary: Two tabs persist their own cache subsets to the same IndexedDB key, so the last tab to write can overwrite a fuller snapshot.
@@ -997,3 +997,11 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-8-2e-no-read-retry-offline.md`
   summary: A note, not a defect: `keepFocusOnAlert` waits on `requestAnimationFrame` (through `focusLater`), which browsers pause in a hidden tab. A retry that loses its button while the tab is hidden hands focus to its alert only once the tab is visible again, within the 30-frame budget counted from then.
   evidence: Review of 8.2e.
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-3a-offline-writes-refused-and-sign-out-clears.md`
+  summary: Story 8.3b. Gate the settings surfaces' write controls offline with 8.3a's `useWriteGate` and `OfflineWriteNote` (`aria-disabled`, a stated reason, nothing sent, erasure checks never started):
+  - Organizacija: the name, leave-year, logo, accent and fire-ranks dialogs;
+  - Satni pojasi: add, edit and remove;
+  - Postavke rotacije: shift type add, rename, times, cancel scheduled times and archive; the rotation builder save and cancel scheduled; the override review confirm, amend and discard;
+  - the `ErasureDialog` callers on these surfaces — the rotation save's and cancel's (`rotation-notices.tsx`) and the override review's (`override-review.tsx`) — pass `gate={null}` today: `gate` is required since the 8.3a review, and each passes the surface's `useWriteGate()` in 8.3b;
+  - Ljudi/smjene: add, rename and archive.
+  evidence: Human decision 2026-10-22 (1a), which split 8.3. The 8.3a spec's Epic AC Deviations narrow AC1. Site list from the 8.3 investigation.

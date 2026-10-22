@@ -3,10 +3,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   SIGN_OUT_DEVICE_ONLY,
   SIGN_OUT_FAILED,
+  SIGN_OUT_LOCAL,
+  SIGN_OUT_LOCAL_UNAVAILABLE,
+  SIGN_OUT_OFFLINE,
   signOut,
   type SessionAuth,
   type SignOutFailureShape,
 } from '@/features/auth/services/sign-out';
+import type { LocalFallback } from '@/lib/supabase/local-sign-out';
 
 /**
  * The exit's outcomes, executed (the navigation shell, part B).
@@ -218,5 +222,171 @@ describe('a refused revocation that cleared the device is a device-only sign-out
     expect(JSON.stringify(await signOut(throwing('cleared')))).toBe(
       JSON.stringify(await signOut(answering(null))),
     );
+  });
+});
+
+describe('a sign-out the global revocation cannot finish falls back to a local one (story 8.3a)', () => {
+  const KEY = 'sb-127-auth-token';
+
+  /**
+   * auth-js 2.113.0 as it behaves offline with an expired token: the session
+   * cannot be loaded (its refresh fails retryably), so every `signOut` —
+   * global or local — answers that error and keeps the session, until the
+   * stored session is dropped; then a local `signOut` finds none and succeeds.
+   */
+  function expiredOffline(): { auth: SessionAuth; fallback: (online: boolean) => LocalFallback; scopes: string[]; removed: string[] } {
+    const stored = new Map<string, string>([[KEY, '{"access_token":"t"}']]);
+    const scopes: string[] = [];
+    const removed: string[] = [];
+    const retryable = { name: 'AuthRetryableFetchError', status: 0, message: 'Failed to fetch' };
+    const auth: SessionAuth = {
+      signOut: (options) => {
+        scopes.push(options?.scope ?? 'global');
+
+        return Promise.resolve({ error: stored.has(KEY) ? retryable : null });
+      },
+      getSession: () =>
+        Promise.resolve(
+          stored.has(KEY)
+            ? { data: { session: null }, error: retryable }
+            : { data: { session: null }, error: null },
+        ),
+    };
+    const fallback = (online: boolean): LocalFallback => ({
+      online: () => online,
+      store: () => ({
+        storageKey: KEY,
+        storage: {
+          removeItem: (key) => {
+            removed.push(key);
+            stored.delete(key);
+          },
+        },
+      }),
+    });
+
+    return { auth, fallback, scopes, removed };
+  }
+
+  it('signs out locally after a retryable failure that kept the session', async () => {
+    const { auth, fallback, scopes, removed } = expiredOffline();
+
+    expect(await signOut(auth, fallback(true))).toEqual({ ok: true });
+    expect(scopes).toEqual(['global', 'local']);
+    expect(removed).toEqual([KEY, `${KEY}-code-verifier`, `${KEY}-user`]);
+    // ONE LOG: the warning, never an error before it.
+    expect(warned).toHaveBeenCalledTimes(1);
+    expect(warned).toHaveBeenCalledWith(SIGN_OUT_LOCAL, expect.objectContaining({ status: 0 }));
+    expect(silenced).not.toHaveBeenCalled();
+  });
+
+  it('offline, signs out locally at once, with no global revocation attempted', async () => {
+    const { auth, fallback, scopes, removed } = expiredOffline();
+
+    expect(await signOut(auth, fallback(false))).toEqual({ ok: true });
+    expect(scopes).toEqual(['local']);
+    expect(removed).toEqual([KEY, `${KEY}-code-verifier`, `${KEY}-user`]);
+    expect(warned).toHaveBeenCalledTimes(1);
+    expect(warned).toHaveBeenCalledWith(SIGN_OUT_LOCAL, SIGN_OUT_OFFLINE);
+    expect(silenced).not.toHaveBeenCalled();
+  });
+
+  it('signs out locally after a rejected call (the request never landed)', async () => {
+    const { fallback, scopes } = expiredOffline();
+    let held = true;
+    const auth: SessionAuth = {
+      signOut: (options) => {
+        scopes.push(options?.scope ?? 'global');
+        if (options?.scope !== 'local') return Promise.reject(new TypeError('Failed to fetch'));
+        held = false;
+
+        return Promise.resolve({ error: null });
+      },
+      getSession: () => Promise.resolve({ data: { session: held ? { access_token: 't' } : null }, error: null }),
+    };
+
+    expect(await signOut(auth, fallback(true))).toEqual({ ok: true });
+    expect(scopes).toEqual(['global', 'local']);
+  });
+
+  it('keeps the failure for a refusal that is not retryable: the fallback is for the network', async () => {
+    const { fallback, scopes } = expiredOffline();
+    const refused = { name: 'AuthApiError', status: 500, message: 'boom' };
+    const auth: SessionAuth = {
+      signOut: (options) => {
+        scopes.push(options?.scope ?? 'global');
+
+        return Promise.resolve({ error: refused });
+      },
+      getSession: device('held'),
+    };
+
+    expect(await signOut(auth, fallback(true))).toEqual({ ok: false, code: SIGN_OUT_FAILED });
+    expect(scopes).toEqual(['global']);
+  });
+
+  it('fails when the device still holds a session after the local sign-out', async () => {
+    const auth: SessionAuth = {
+      signOut: () => Promise.resolve({ error: { name: 'AuthRetryableFetchError', message: 'Failed to fetch' } }),
+      getSession: device('held'),
+    };
+    const fallback: LocalFallback = {
+      online: () => true,
+      store: () => ({ storageKey: KEY, storage: { removeItem: () => undefined } }),
+    };
+
+    expect(await signOut(auth, fallback)).toEqual({ ok: false, code: SIGN_OUT_FAILED });
+  });
+
+  it.each([502, 503, 504])(
+    'online, keeps the failure code for a %i the server answered: only a transport failure goes local',
+    async (status) => {
+      const { fallback, scopes, removed } = expiredOffline();
+      const auth: SessionAuth = {
+        signOut: (options) => {
+          scopes.push(options?.scope ?? 'global');
+
+          return Promise.resolve({ error: { name: 'AuthRetryableFetchError', status, message: 'Bad gateway' } });
+        },
+        getSession: device('held'),
+      };
+
+      expect(await signOut(auth, fallback(true))).toEqual({ ok: false, code: SIGN_OUT_FAILED });
+      expect(scopes).toEqual(['global']);
+      expect(removed).toEqual([]);
+    },
+  );
+
+  it('never waits on a local sign-out held up past its budget: the removal is the outcome', async () => {
+    const { fallback, removed } = expiredOffline();
+    const auth: SessionAuth = {
+      // A refresh lock the local call would wait on: it never settles.
+      signOut: (options) =>
+        options?.scope === 'local' ? new Promise(() => undefined) : Promise.reject(new TypeError('Failed to fetch')),
+      getSession: device('held'),
+    };
+
+    expect(await signOut(auth, { ...fallback(false), budgetMs: 20 })).toEqual({ ok: true });
+    expect(removed).toEqual([KEY, `${KEY}-code-verifier`, `${KEY}-user`]);
+  });
+
+  it.each([
+    { row: 'no key', store: { storage: { removeItem: () => undefined } } },
+    { row: 'an empty key', store: { storageKey: '', storage: { removeItem: () => undefined } } },
+    { row: 'no removeItem', store: { storageKey: KEY, storage: {} } },
+    { row: 'no storage', store: { storageKey: KEY } },
+  ])('fails with its own logged code when the client storage has $row', async ({ store }) => {
+    const { auth } = expiredOffline();
+    const fallback = { online: () => false, store: () => store } as unknown as LocalFallback;
+
+    expect(await signOut(auth, fallback)).toEqual({ ok: false, code: SIGN_OUT_FAILED });
+    expect(silenced).toHaveBeenCalledWith(SIGN_OUT_LOCAL_UNAVAILABLE, SIGN_OUT_OFFLINE);
+    expect(warned).not.toHaveBeenCalled();
+  });
+
+  it('without a fallback, a retryable failure stays the one failure code, as before', async () => {
+    const { auth } = expiredOffline();
+
+    expect(await signOut(auth)).toEqual({ ok: false, code: SIGN_OUT_FAILED });
   });
 });

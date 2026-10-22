@@ -1,3 +1,5 @@
+import type { LocalFallback, LocalSessionStore } from '@/lib/supabase/local-sign-out';
+
 /**
  * The exit: a session ended, or one stable code out (the navigation shell, part B).
  *
@@ -47,6 +49,23 @@
  *     person where they are, rather than navigating them to a sign-in screen a
  *     still-valid session would bounce straight back off.
  *
+ * THE LOCAL FALLBACK (story 8.3a, human decision 2026-10-22, 2a). Offline
+ * with an expired access token, auth-js 2.113.0's `_signOut` cannot load the
+ * session — its refresh fails RETRYABLY — and returns that error with the
+ * session KEPT in storage, so "Odjava" said it was not possible and left the
+ * device copy behind. Given a {@link LocalFallback}, a sign-out that leaves a
+ * session behind because of a TRANSPORT failure — the fetch never landed; a
+ * 502/503/504 online is an answer and keeps the failure code — or one asked
+ * while the page is offline, where no revocation can reach the server and the
+ * refresh would only be waited out, becomes a LOCAL one: the stored session,
+ * its PKCE verifier and its user copy are removed under the client's own key,
+ * then `signOut({ scope: 'local' })` runs on the empty session, which removes
+ * what is left and announces `SIGNED_OUT`. That call and the device's answer
+ * are bounded ({@link LOCAL_SIGN_OUT_BUDGET_MS}), so a refresh lock never
+ * holds Odjava up; past the budget the removal is the outcome. Like the
+ * device-only success it leaves the refresh token alive on the server until
+ * it expires, and it is logged once, as {@link SIGN_OUT_LOCAL}, a warning.
+ *
  * Codes, never messages (the conventions): `{ code }` out of here, translated
  * only at the edge — `@/features/navigation/utils/messages` is that edge, because the chrome
  * is the one surface that shows this and it shows exactly one message region.
@@ -60,6 +79,18 @@ export const SIGN_OUT_FAILED = 'SIGN_OUT_FAILED';
  * never heard) the revocation. The caller sees an ordinary success.
  */
 export const SIGN_OUT_DEVICE_ONLY = 'SIGN_OUT_DEVICE_ONLY';
+
+/**
+ * Logged, never returned: the global sign-out could not run (offline, or a
+ * retryable failure), so the device signed out locally (story 8.3a).
+ */
+export const SIGN_OUT_LOCAL = 'SIGN_OUT_LOCAL';
+
+/** The cause {@link SIGN_OUT_LOCAL} carries when the page was offline at the press. */
+export const SIGN_OUT_OFFLINE = 'offline';
+
+/** Logged: the local fallback could not read the client's storage, so the session may still be held. */
+export const SIGN_OUT_LOCAL_UNAVAILABLE = 'SIGN_OUT_LOCAL_UNAVAILABLE';
 
 export type SignOutFailure = typeof SIGN_OUT_FAILED;
 
@@ -82,12 +113,69 @@ export interface SignOutFailureShape {
 
 /** The two calls this module makes, named structurally so they can be stubbed. */
 export interface SessionAuth {
-  signOut(): Promise<{ error: SignOutFailureShape | null }>;
+  /** Called bare for the global revocation, and with `scope: 'local'` by the fallback alone. */
+  signOut(options?: { scope?: 'global' | 'local' | 'others' }): Promise<{ error: SignOutFailureShape | null }>;
   /** Asked only after a failure: whether this device still holds a session. */
   getSession(): Promise<{
     data: { session: unknown };
     error: SignOutFailureShape | null;
   }>;
+}
+
+/**
+ * A failure that never reached the server (story 8.3a review): the fetch was
+ * rejected, which auth-js reports as an `AuthRetryableFetchError` with status
+ * 0. A 502/503/504 is retryable too, but the server ANSWERED: online, that
+ * keeps the one failure code rather than signing out locally.
+ */
+function transportFailure(error: SignOutFailureShape): boolean {
+  return error.name === 'AuthRetryableFetchError' && (error.status === 0 || error.status === undefined);
+}
+
+/** The local sign-out's own budget: a refresh lock it would wait on never holds Odjava up. */
+export const LOCAL_SIGN_OUT_BUDGET_MS = 2_000;
+
+/** Answered when a bounded call ran past its budget. */
+const TIMED_OUT = Symbol('timed out');
+
+/** `run()` within `budgetMs`, or {@link TIMED_OUT}; a rejection comes back as the rejection. */
+async function within<T>(run: () => Promise<T>, budgetMs: number): Promise<T | typeof TIMED_OUT> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    return await Promise.race([
+      run(),
+      new Promise<typeof TIMED_OUT>((resolve) => {
+        timer = setTimeout(() => {
+          resolve(TIMED_OUT);
+        }, budgetMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * The client's storage, checked AT RUNTIME (story 8.3a review): it is read
+ * through a cast, so a client whose shape moved would otherwise fail here
+ * with no clear code. `null` when it is not a string key and a `removeItem`.
+ */
+function storeOf(fallback: LocalFallback): LocalSessionStore | null {
+  try {
+    const store: unknown = fallback.store();
+
+    if (typeof store !== 'object' || store === null) return null;
+
+    const { storageKey, storage } = store as Partial<LocalSessionStore>;
+
+    if (typeof storageKey !== 'string' || storageKey === '') return null;
+    if (typeof storage !== 'object' || storage === null || typeof storage.removeItem !== 'function') return null;
+
+    return { storageKey, storage };
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -105,13 +193,73 @@ async function signedOutHere(auth: SessionAuth): Promise<boolean> {
   }
 }
 
-/** A failure, or the device-only success when this device no longer holds the session. */
-async function settledFailure(auth: SessionAuth, cause: unknown): Promise<SignOutOutcome> {
+/**
+ * The local sign-out (story 8.3a): the stored session the client could not
+ * load is dropped — with its PKCE verifier and its user copy — so
+ * `signOut({ scope: 'local' })` finds none and removes whatever is left,
+ * announcing `SIGNED_OUT`. That call, and the device's answer after it, are
+ * bounded by {@link LOCAL_SIGN_OUT_BUDGET_MS}: past it, the stored session's
+ * removal IS the outcome. ONE LOG per sign-out: a warning on the success, an
+ * error on the failure, never both.
+ */
+async function localSignOut(auth: SessionAuth, fallback: LocalFallback, cause: unknown): Promise<SignOutOutcome> {
+  const store = storeOf(fallback);
+
+  if (store === null) {
+    console.error(SIGN_OUT_LOCAL_UNAVAILABLE, cause);
+
+    return { ok: false, code: SIGN_OUT_FAILED };
+  }
+
+  const { storageKey, storage } = store;
+
+  try {
+    for (const key of [storageKey, `${storageKey}-code-verifier`, `${storageKey}-user`]) await storage.removeItem(key);
+  } catch (failure) {
+    console.error(SIGN_OUT_FAILED, failure);
+
+    return { ok: false, code: SIGN_OUT_FAILED };
+  }
+
+  const budget = fallback.budgetMs ?? LOCAL_SIGN_OUT_BUDGET_MS;
+  const ended = await within(async () => {
+    try {
+      await auth.signOut({ scope: 'local' });
+    } catch {
+      // Settled by the device's answer below.
+    }
+
+    return signedOutHere(auth);
+  }, budget);
+
+  if (ended === false) {
+    console.error(SIGN_OUT_FAILED, cause);
+
+    return { ok: false, code: SIGN_OUT_FAILED };
+  }
+
+  console.warn(SIGN_OUT_LOCAL, cause);
+
+  return { ok: true };
+}
+
+/**
+ * A failure, or the device-only success when this device no longer holds the
+ * session — or, given a fallback and a `transport` failure, a local sign-out.
+ */
+async function settledFailure(
+  auth: SessionAuth,
+  cause: unknown,
+  fallback?: LocalFallback,
+  transport = false,
+): Promise<SignOutOutcome> {
   if (await signedOutHere(auth)) {
     console.warn(SIGN_OUT_DEVICE_ONLY, cause);
 
     return { ok: true };
   }
+
+  if (fallback !== undefined && transport) return localSignOut(auth, fallback, cause);
 
   console.error(SIGN_OUT_FAILED, cause);
 
@@ -130,7 +278,11 @@ async function settledFailure(auth: SessionAuth, cause: unknown): Promise<SignOu
  * device is asked whether it still holds a session — so the caller has exactly
  * two branches and both are written.
  */
-export async function signOut(auth: SessionAuth): Promise<SignOutOutcome> {
+export async function signOut(auth: SessionAuth, fallback?: LocalFallback): Promise<SignOutOutcome> {
+  // OFFLINE, LOCAL AT ONCE (story 8.3a): no revocation can reach the server,
+  // and with an expired token the client would only wait out its refresh.
+  if (fallback !== undefined && !fallback.online()) return localSignOut(auth, fallback, SIGN_OUT_OFFLINE);
+
   let answered;
 
   try {
@@ -143,7 +295,8 @@ export async function signOut(auth: SessionAuth): Promise<SignOutOutcome> {
     // one cause in the console, and the caller's catch keeps the two failures it
     // can actually see: a client that threw before this was reached, and a
     // navigation that rejected after it succeeded.
-    return settledFailure(auth, cause);
+    // A REJECTED CALL is a transport failure: the request never landed.
+    return settledFailure(auth, cause, fallback, true);
   }
 
   // `error: null` IS THE SUCCESS, and there is nothing else to read: GoTrue
@@ -156,7 +309,9 @@ export async function signOut(auth: SessionAuth): Promise<SignOutOutcome> {
   // One message reaches the person — there is one thing to do — but "GoTrue
   // refused the token" and "the gateway returned 502" are different things to
   // fix, and the code alone cannot tell them apart.
-  if (answered.error !== null) return settledFailure(auth, answered.error);
+  if (answered.error !== null) {
+    return settledFailure(auth, answered.error, fallback, transportFailure(answered.error));
+  }
 
   return { ok: true };
 }

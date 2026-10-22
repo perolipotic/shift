@@ -1,6 +1,7 @@
 import { Check, TriangleAlert } from 'lucide-react';
 import type { ReactNode, RefObject } from 'react';
 
+import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog, DialogFooter } from '@/components/ui/dialog';
 import {
@@ -13,6 +14,7 @@ import {
   type ErasureDecisions,
   type ErasureRow,
 } from '@/features/conflicts/services/erasures';
+import type { WriteGate } from '@/lib/offline/use-write-gate';
 
 /** Every word the dialog shows, resolved by the surface's own `t()`: the dialog holds no key. */
 export interface ErasureDialogCopy {
@@ -57,6 +59,7 @@ export function ErasureDialog({
   saveIcon,
   notes,
   scrollRows = false,
+  gate,
   onDecide,
   onBack,
   onSave,
@@ -79,14 +82,23 @@ export function ErasureDialog({
    * changes, whose layouts stay as they were.
    */
   readonly scrollRows?: boolean;
+  /**
+   * The surface's write gate (story 8.3a), REQUIRED so no caller forgets it:
+   * offline, the save is `aria-disabled`, names the offline write note and
+   * does nothing. `null` only on the settings surfaces whose writes are
+   * gated in 8.3b (the rotation's save and cancel, the override review).
+   */
+  readonly gate: WriteGate | null;
   readonly onDecide: (key: string, decision: ErasureDecision) => void;
   readonly onBack: () => void;
   readonly onSave: () => void;
 }): ReactNode {
   const confirmed = erasuresConfirmedOf(rows, decisions);
   const kept = erasureKeptOf(rows, decisions);
-  const blocked = !confirmed || busy;
+  const offline = gate !== null && !gate.online;
+  const blocked = !confirmed || busy || offline;
   const ids = erasureDialogIdsOf(id);
+  const keptHint = kept ? ids.kept : undefined;
 
   return (
     <ConfirmDialog busy={busy} onCancel={onBack} aria-labelledby={ids.title} aria-describedby={ids.lede} className="max-w-2xl">
@@ -162,6 +174,7 @@ export function ErasureDialog({
           {copy.kept}
         </p>
       ) : null}
+      {gate === null ? null : <OfflineWriteNote gate={gate} />}
       <DialogFooter>
         <Button className="h-11" type="button" variant="outline" disabled={busy} onClick={onBack}>
           {copy.back}
@@ -172,7 +185,7 @@ export function ErasureDialog({
           className="h-11 aria-disabled:opacity-50"
           type="button"
           aria-disabled={blocked}
-          aria-describedby={kept ? ids.kept : undefined}
+          aria-describedby={gate === null ? keptHint : gate.describedBy(keptHint)}
           aria-busy={busy}
           onClick={() => {
             if (!blocked) onSave();

@@ -1,5 +1,6 @@
 import { useEffect, type ReactNode, type SyntheticEvent } from 'react';
 
+import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog, Dialog, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -39,6 +40,7 @@ import { candidateGroupMessageKey, type CandidateGroupKind } from '@/features/ca
 import { ErasureDialog } from '@/features/conflicts/components/erasure-dialog';
 import type { ErasureRow } from '@/features/conflicts/services/erasures';
 import { t } from '@/lib/i18n';
+import { useWriteGate, type WriteGate } from '@/lib/offline/use-write-gate';
 
 /** A member a roster change names, or `unknownAuthor` for one the snapshot does not hold. */
 export function memberNameShown(name: string | null): string {
@@ -120,6 +122,8 @@ export function RosterSetForm({
   } = form;
   const reasonRefused = failure === ROSTER_REFUSED_REASON;
   const memberRefused = failure !== null && !reasonRefused;
+  // STORY 8.3a: offline the save is gated before its erasure check starts.
+  const gate = useWriteGate();
   // EPIC 4 RETRO C2: every mount starts from what the "Dolazi" `Select`
   // shows, and an unmounted form chooses nobody, so the hint never outlives
   // it — nor, since story 7.9, the preview, which "Skida se" feeds too.
@@ -145,6 +149,10 @@ export function RosterSetForm({
       method="post"
       noValidate
       onSubmit={(event) => {
+        if (!gate.online) {
+          event.preventDefault();
+          return;
+        }
         void saveRoster(event);
       }}
       // STORY 5.5b: a field changed, so the refusal to check what was entered before no longer stands.
@@ -245,18 +253,20 @@ export function RosterSetForm({
         </Notice>
       )}
       {/* STORY 5.5b: a save that could not check what it would erase saved nothing. */}
-      {unchecked === ROSTER_CHANGE_SAVE ? <RosterUnchecked form={form} busy={busy} /> : null}
+      {unchecked === ROSTER_CHANGE_SAVE ? <RosterUnchecked form={form} busy={busy} gate={gate} /> : null}
+      <OfflineWriteNote gate={gate} />
       <DialogFooter>
         <Button className="h-11" type="button" variant="outline" disabled={pending} onClick={closeChange}>
           {t('kalendar.detail.rosterChange.set.cancel')}
         </Button>
         <Button
           ref={saveButton}
-          className="h-11"
+          className="h-11 aria-disabled:opacity-50"
           type="submit"
           disabled={pending || busy}
+          aria-disabled={gate.disabled}
           aria-busy={pending}
-          aria-describedby={describedByOf(preview === null ? null : ROSTER_PREVIEW_ID)}
+          aria-describedby={gate.describedBy(describedByOf(preview === null ? null : ROSTER_PREVIEW_ID))}
         >
           {pending ? t('kalendar.detail.rosterChange.set.saving') : t('kalendar.detail.rosterChange.set.save')}
         </Button>
@@ -392,7 +402,16 @@ export function RosterRemoveRefusal({ form }: { readonly form: RosterFormState }
  * A write that could not check what it would erase (story 5.5b), so it wrote
  * nothing: said with a retry, which asks the same write again.
  */
-function RosterUnchecked({ form, busy }: { readonly form: RosterFormState; readonly busy: boolean }): ReactNode {
+function RosterUnchecked({
+  form,
+  busy,
+  gate,
+}: {
+  readonly form: RosterFormState;
+  readonly busy: boolean;
+  /** The save's or the removal's write gate (story 8.3a): the retry is that write again. */
+  readonly gate: WriteGate;
+}): ReactNode {
   const { pending, retryButton, retry } = form;
 
   return (
@@ -400,11 +419,16 @@ function RosterUnchecked({ form, busy }: { readonly form: RosterFormState; reado
       {t('kalendar.detail.rosterChange.erasures.unavailable')}
       <Button
         ref={retryButton}
-        className="mt-3 flex h-11"
+        className="mt-3 flex h-11 aria-disabled:opacity-50"
         type="button"
         variant="outline"
         disabled={pending || busy}
-        onClick={retry}
+        aria-disabled={gate.disabled}
+        aria-describedby={gate.describedBy()}
+        onClick={() => {
+          if (!gate.online) return;
+          retry();
+        }}
       >
         {t('kalendar.detail.rosterChange.erasures.retry')}
       </Button>
@@ -447,6 +471,7 @@ export function RosterRemoveConfirm({
   readonly busy: boolean;
 }): ReactNode {
   const { target, pending, removeFailure, removeCancel, cancelRemove, removeChange } = form;
+  const gate = useWriteGate();
 
   if (target === null) return null;
 
@@ -465,7 +490,8 @@ export function RosterRemoveConfirm({
         </Notice>
       )}
       {/* STORY 5.5b: a removal that could not check what it would erase removed nothing. */}
-      {form.unchecked === ROSTER_CHANGE_REMOVAL ? <RosterUnchecked form={form} busy={busy} /> : null}
+      {form.unchecked === ROSTER_CHANGE_REMOVAL ? <RosterUnchecked form={form} busy={busy} gate={gate} /> : null}
+      <OfflineWriteNote gate={gate} />
       <DialogFooter>
         <Button
           ref={removeCancel}
@@ -478,12 +504,14 @@ export function RosterRemoveConfirm({
           {t('kalendar.detail.rosterChange.remove.cancel')}
         </Button>
         <Button
-          className="h-11"
+          className="h-11 aria-disabled:opacity-50"
           type="button"
           disabled={pending || busy}
+          aria-disabled={gate.disabled}
           aria-busy={pending}
-          aria-describedby={removeFailure === null ? undefined : ROSTER_REMOVE_ERROR_ID}
+          aria-describedby={gate.describedBy(removeFailure === null ? null : ROSTER_REMOVE_ERROR_ID)}
           onClick={() => {
+            if (!gate.online) return;
             void removeChange();
           }}
         >
@@ -516,6 +544,7 @@ export function RosterErasureConfirm({
 }): ReactNode {
   const { erasures, pending, confirmErasures } = form;
   const shown = erasures.shown;
+  const gate = useWriteGate();
 
   if (shown === null) return null;
 
@@ -560,6 +589,7 @@ export function RosterErasureConfirm({
             ? t('kalendar.detail.rosterChange.remove.confirm')
             : t('kalendar.detail.rosterChange.set.save'),
       }}
+      gate={gate}
       onDecide={erasures.decide}
       onBack={erasures.close}
       onSave={() => {

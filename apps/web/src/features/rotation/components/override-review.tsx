@@ -476,6 +476,8 @@ function ReviewErasureConfirm({ state }: { readonly state: OverrideReviewState }
 
   return (
     <ErasureDialog
+      // NOT GATED YET: the settings surfaces' writes are story 8.3b's (`deferred-work.md`).
+      gate={null}
       id={OVERRIDE_REVIEW_ERASURES_ID}
       rows={rows}
       changed={shown.changed}

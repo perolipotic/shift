@@ -3,6 +3,7 @@ import { Fragment, type ReactNode, type SyntheticEvent } from 'react';
 
 import { ErasureDialog } from '@/features/conflicts/components/erasure-dialog';
 
+import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Button } from '@/components/ui/button';
 import { Callout, CalloutBody } from '@/components/ui/callout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -20,6 +21,7 @@ import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { Select } from '@/components/ui/select';
 import { t } from '@/lib/i18n';
+import { useWriteGate, type WriteGate } from '@/lib/offline/use-write-gate';
 import { keepFocusOnAlert } from '@/utils/retry-focus';
 import type { MemberEdit } from '@/features/members/hooks/use-member-edit';
 import { memberErasureCopyOf } from '@/features/members/utils/erasure-copy';
@@ -225,7 +227,7 @@ export function MemberTeamCard({ edit }: { readonly edit: MemberEdit }): ReactNo
 }
 
 /** "Pokušaj ponovno", when what the change would erase could not be checked (story 5.5e). */
-function TeamUnchecked({ edit }: { readonly edit: MemberEdit }): ReactNode {
+function TeamUnchecked({ edit, gate }: { readonly edit: MemberEdit; readonly gate: WriteGate }): ReactNode {
   const { teamUnchecked, teamRetryButton, teamPending, retryTeam } = edit;
 
   if (!teamUnchecked) return null;
@@ -236,11 +238,17 @@ function TeamUnchecked({ edit }: { readonly edit: MemberEdit }): ReactNode {
       {t('ljudi.erasures.unavailable')}
       <Button
         ref={teamRetryButton}
-        className="mt-3 flex h-11"
+        className="mt-3 flex h-11 aria-disabled:opacity-50"
         type="button"
         variant="outline"
         disabled={teamPending}
-        onClick={retryTeam}
+        // STORY 8.3a: the retry is the same change again, gated with it.
+        aria-disabled={gate.disabled}
+        aria-describedby={gate.describedBy()}
+        onClick={() => {
+          if (!gate.online) return;
+          retryTeam();
+        }}
       >
         {t('ljudi.erasures.retry')}
       </Button>
@@ -275,6 +283,8 @@ export function MemberTeamDialog({ edit }: { readonly edit: MemberEdit }): React
     teamDialog,
   } = edit;
   const opening = teamDialog.opening;
+  // STORY 8.3a: offline, Spremi is gated before its erasure check starts.
+  const gate = useWriteGate();
   // THE OFFER THE DIALOG WAS OPENED ON: a re-read never remounts its controls.
   const move = opening?.held.offer ?? null;
 
@@ -400,6 +410,10 @@ export function MemberTeamDialog({ edit }: { readonly edit: MemberEdit }): React
         method="post"
         noValidate
         onSubmit={(event) => {
+          if (!gate.online) {
+            event.preventDefault();
+            return;
+          }
           void teamDialog.save(event);
         }}
         className="grid gap-5"
@@ -434,16 +448,19 @@ export function MemberTeamDialog({ edit }: { readonly edit: MemberEdit }): React
             {refusalText(teamRefusal)}
           </Notice>
         )}
-        <TeamUnchecked edit={edit} />
+        <TeamUnchecked edit={edit} gate={gate} />
+        <OfflineWriteNote gate={gate} />
         <DialogFooter>
           <Button className="h-11" type="button" variant="outline" disabled={teamPending} onClick={teamDialog.close}>
             {t('smjene.membership.cancel')}
           </Button>
           <Button
             ref={teamDialog.saveButton}
-            className="h-11"
+            className="h-11 aria-disabled:opacity-50"
             type="submit"
             disabled={teamPending}
+            aria-disabled={gate.disabled}
+            aria-describedby={gate.describedBy()}
             aria-busy={teamPending}
           >
             {t('smjene.membership.save')}
@@ -505,6 +522,7 @@ export function MemberTeamDialog({ edit }: { readonly edit: MemberEdit }): React
  */
 function MemberTeamWithdrawal({ edit }: { readonly edit: MemberEdit }): ReactNode {
   const { teamArmedFor, teamStage, setTeamArmed, confirmTeam } = edit;
+  const gate = useWriteGate();
 
   if (teamArmedFor === null || teamArmedFor.change !== WITHDRAW) return null;
 
@@ -522,7 +540,8 @@ function MemberTeamWithdrawal({ edit }: { readonly edit: MemberEdit }): ReactNod
       <p id="member-team-prompt" className="text-sm font-medium">
         {t('smjene.membership.withdrawPrompt', { name: armedName, date: shownDate(teamArmedFor.day) })}
       </p>
-      <TeamUnchecked edit={edit} />
+      <TeamUnchecked edit={edit} gate={gate} />
+      <OfflineWriteNote gate={gate} />
       <DialogFooter>
         <Button
           className="h-11"
@@ -536,11 +555,16 @@ function MemberTeamWithdrawal({ edit }: { readonly edit: MemberEdit }): ReactNod
           {t('smjene.membership.cancel')}
         </Button>
         <Button
-          className="h-11"
+          className="h-11 aria-disabled:opacity-50"
           type="button"
           disabled={busy || teamStage !== STATUS_ARMED}
+          aria-disabled={gate.disabled}
+          aria-describedby={gate.describedBy()}
           aria-busy={busy}
-          onClick={confirmTeam}
+          onClick={() => {
+            if (!gate.online) return;
+            confirmTeam();
+          }}
         >
           {t(teamConfirmMessageKey(WITHDRAW), { name: armedName })}
         </Button>
@@ -560,6 +584,7 @@ function MemberTeamWithdrawal({ edit }: { readonly edit: MemberEdit }): ReactNod
 function MemberTeamErasures({ edit }: { readonly edit: MemberEdit }): ReactNode {
   const { form, teamErasures, teamPending, confirmTeamErasures } = edit;
   const shown = teamErasures.shown;
+  const gate = useWriteGate();
 
   if (shown === null || form.member === null || shown.subject.member !== form.member.id) return null;
 
@@ -578,6 +603,7 @@ function MemberTeamErasures({ edit }: { readonly edit: MemberEdit }): ReactNode 
         t(teamConfirmMessageKey(confirmation.change), { name: confirmation.name }),
       )}
       scrollRows
+      gate={gate}
       onDecide={teamErasures.decide}
       onBack={teamErasures.close}
       onSave={() => {

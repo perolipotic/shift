@@ -29,6 +29,7 @@ import { supabaseClient } from '@/lib/supabase/client';
 import { focusLater } from '@/utils/focus-later';
 import { trimName } from '@/utils/name';
 import { NO_TEXT } from '@/utils/text';
+import { writesOnline } from '@/lib/offline/use-write-gate';
 
 /**
  * How the page opens and closes the dialog: `true` pushes `?dodaj=1`, `false`
@@ -208,6 +209,9 @@ export function useMemberCreate(adding: boolean, navigate: MemberAddNavigate) {
     ) {
       return;
     }
+
+    // STORY 8.3a: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
 
     // THE FORM'S OWN REFUSALS (B298), in field order: the form is `noValidate`,
     // so nothing in the browser's language stops an empty or malformed field.

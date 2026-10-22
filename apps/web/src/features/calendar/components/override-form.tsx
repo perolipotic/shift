@@ -1,5 +1,6 @@
 import { useEffect, type ReactNode, type SyntheticEvent } from 'react';
 
+import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog, Dialog, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -36,6 +37,7 @@ import { ErasureDialog } from '@/features/conflicts/components/erasure-dialog';
 import type { ErasureRow } from '@/features/conflicts/services/erasures';
 import { OVERRIDE_CHANGE_REMOVE, OVERRIDE_CHANGE_SET } from '@/features/conflicts/services/override-erasures';
 import { t } from '@/lib/i18n';
+import { useWriteGate, type WriteGate } from '@/lib/offline/use-write-gate';
 
 /**
  * SETTING AN OVERRIDE (story 3.5b) — its own dialog since story 7.9 — for an
@@ -71,6 +73,8 @@ export function OverrideSetForm({
   } = form;
   const reasonRefused = failure === OVERRIDE_REFUSED_REASON;
   const typeRefused = failure !== null && !reasonRefused;
+  // STORY 8.3a: offline the save is gated before its erasure check starts.
+  const gate = useWriteGate();
 
   // STORY 7.9: every mount starts the preview from what the `Select` shows,
   // and an unmounted form chooses nothing, so the preview never outlives it.
@@ -87,6 +91,10 @@ export function OverrideSetForm({
       method="post"
       noValidate
       onSubmit={(event) => {
+        if (!gate.online) {
+          event.preventDefault();
+          return;
+        }
         void submit(event);
       }}
       // STORY 5.5f: a field changed, so the refusal to check what was entered before no longer stands.
@@ -139,18 +147,20 @@ export function OverrideSetForm({
         </Notice>
       )}
       {/* STORY 5.5f: a set that could not check what it would erase saved nothing. */}
-      {unchecked === OVERRIDE_CHANGE_SET ? <OverrideUnchecked form={form} busy={busy} /> : null}
+      {unchecked === OVERRIDE_CHANGE_SET ? <OverrideUnchecked form={form} busy={busy} gate={gate} /> : null}
+      <OfflineWriteNote gate={gate} />
       <DialogFooter>
         <Button className="h-11" type="button" variant="outline" disabled={pending} onClick={closeChange}>
           {t('kalendar.detail.override.set.cancel')}
         </Button>
         <Button
           ref={saveButton}
-          className="h-11"
+          className="h-11 aria-disabled:opacity-50"
           type="submit"
           disabled={pending || busy}
+          aria-disabled={gate.disabled}
           aria-busy={pending}
-          aria-describedby={describedByOf(preview === null ? null : OVERRIDE_PREVIEW_ID)}
+          aria-describedby={gate.describedBy(describedByOf(preview === null ? null : OVERRIDE_PREVIEW_ID))}
         >
           {pending ? t('kalendar.detail.override.set.saving') : t('kalendar.detail.override.set.save')}
         </Button>
@@ -286,7 +296,16 @@ export function OverrideSetRefusal({ form }: { readonly form: OverrideFormState 
  * A write that could not check what it would erase (story 5.5f), so it wrote
  * nothing: said with a retry, which asks the same write again.
  */
-function OverrideUnchecked({ form, busy }: { readonly form: OverrideFormState; readonly busy: boolean }): ReactNode {
+function OverrideUnchecked({
+  form,
+  busy,
+  gate,
+}: {
+  readonly form: OverrideFormState;
+  readonly busy: boolean;
+  /** The set's or the removal's write gate (story 8.3a): the retry is that write again. */
+  readonly gate: WriteGate;
+}): ReactNode {
   const { pending, retryButton, retry } = form;
 
   return (
@@ -294,11 +313,16 @@ function OverrideUnchecked({ form, busy }: { readonly form: OverrideFormState; r
       {t('kalendar.detail.override.erasures.unavailable')}
       <Button
         ref={retryButton}
-        className="mt-3 flex h-11"
+        className="mt-3 flex h-11 aria-disabled:opacity-50"
         type="button"
         variant="outline"
         disabled={pending || busy}
-        onClick={retry}
+        aria-disabled={gate.disabled}
+        aria-describedby={gate.describedBy()}
+        onClick={() => {
+          if (!gate.online) return;
+          retry();
+        }}
       >
         {t('kalendar.detail.override.erasures.retry')}
       </Button>
@@ -352,6 +376,7 @@ export function OverrideRemoveConfirm({
 }): ReactNode {
   const { confirming, pending, removeFailure, removeCancel, cancelRemove, remove } = form;
   const override = overrideRemovalTargetOf(detail);
+  const gate = useWriteGate();
 
   if (!confirming || detail === null || override === null) return null;
 
@@ -372,7 +397,8 @@ export function OverrideRemoveConfirm({
         </Notice>
       )}
       {/* STORY 5.5f: a removal that could not check what it would erase removed nothing. */}
-      {form.unchecked === OVERRIDE_CHANGE_REMOVE ? <OverrideUnchecked form={form} busy={busy} /> : null}
+      {form.unchecked === OVERRIDE_CHANGE_REMOVE ? <OverrideUnchecked form={form} busy={busy} gate={gate} /> : null}
+      <OfflineWriteNote gate={gate} />
       <DialogFooter>
         <Button
           ref={removeCancel}
@@ -385,11 +411,14 @@ export function OverrideRemoveConfirm({
           {t('kalendar.detail.override.remove.cancel')}
         </Button>
         <Button
-          className="h-11"
+          className="h-11 aria-disabled:opacity-50"
           type="button"
           disabled={pending || busy}
+          aria-disabled={gate.disabled}
           aria-busy={pending}
+          aria-describedby={gate.describedBy()}
           onClick={() => {
+            if (!gate.online) return;
             void remove();
           }}
         >
@@ -420,6 +449,7 @@ export function OverrideErasureConfirm({
 }): ReactNode {
   const { erasures, pending, confirmOverrideErasures } = form;
   const shown = erasures.shown;
+  const gate = useWriteGate();
 
   if (shown === null) return null;
 
@@ -464,6 +494,7 @@ export function OverrideErasureConfirm({
           : t('kalendar.detail.override.erasures.kept'),
         save: removal ? t('kalendar.detail.override.remove.confirm') : t('kalendar.detail.override.set.save'),
       }}
+      gate={gate}
       onDecide={erasures.decide}
       onBack={erasures.close}
       onSave={() => {

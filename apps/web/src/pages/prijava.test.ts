@@ -821,8 +821,10 @@ describe('all three sign-in fields carry an accessible name', () => {
 
   it('never disables the submit button, only marks it', () => {
     // `disabled` on the button somebody has just pressed drops keyboard focus
-    // to `<body>`. Nothing on the form carries it.
-    expect(source(SIGN_IN_FORM)).not.toMatch(/(?<![\w-])disabled[=\s>{]/);
+    // to `<body>`. Nothing on the form carries it. STORY 8.3a: the write
+    // gate's `gate.disabled` is a VALUE read into `aria-disabled`, never the
+    // attribute, so a member access is not one.
+    expect(source(SIGN_IN_FORM)).not.toMatch(/(?<![\w.-])disabled[=\s>{]/);
   });
 
   it('keeps the phone keyboard out of an admin-issued username', () => {
@@ -1358,7 +1360,9 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     expect(button, 'the submit button is disabled natively, which drops focus').not.toMatch(
       /\sdisabled=/,
     );
-    expect(button, 'the pending state is not stated').toContain('aria-disabled={pending}');
+    // STORY 8.3a: offline it is `aria-disabled` too, and names the offline note.
+    expect(button, 'the pending state is not stated').toContain('aria-disabled={gate.disabled || pending}');
+    expect(button, 'the offline gate does not name its note').toContain('aria-describedby={gate.describedBy()}');
     expect(button, 'the pending state is not stated as busy').toContain('aria-busy={pending}');
     expect(source(SIGN_IN_FORM), 'the button does not say it is signing in').toContain(
       "{pending ? t('auth.pending') : t('auth.submit')}",

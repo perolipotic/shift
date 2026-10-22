@@ -1,6 +1,7 @@
 import { AtSign, Mail, Medal, ShieldCheck, User } from 'lucide-react';
 import { Fragment, type ReactNode, type SyntheticEvent } from 'react';
 
+import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -10,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { Select } from '@/components/ui/select';
 import { t } from '@/lib/i18n';
+import { useWriteGate } from '@/lib/offline/use-write-gate';
 import { keepFocusOnAlert } from '@/utils/retry-focus';
 import type { MemberEdit } from '@/features/members/hooks/use-member-edit';
 import { memberLevelMessageKey, type MemberListRow } from '@/features/members/services/list';
@@ -170,6 +172,8 @@ export function MemberBasicsDialog({ edit }: { readonly edit: MemberEdit }): Rea
     basicsDialog,
   } = edit;
   const opening = basicsDialog.opening;
+  // STORY 8.3a: offline, the save is gated and the note says why.
+  const gate = useWriteGate();
 
   /**
    * The rank control, offered only while the organization uses ranks.
@@ -212,6 +216,10 @@ export function MemberBasicsDialog({ edit }: { readonly edit: MemberEdit }): Rea
         method="post"
         noValidate
         onSubmit={(event) => {
+          if (!gate.online) {
+            event.preventDefault();
+            return;
+          }
           void submit(event);
         }}
         className="grid gap-5"
@@ -313,11 +321,19 @@ export function MemberBasicsDialog({ edit }: { readonly edit: MemberEdit }): Rea
             {refusalText(refusal)}
           </Notice>
         )}
+        <OfflineWriteNote gate={gate} />
         <DialogFooter>
           <Button className="h-11" type="button" variant="outline" disabled={pending} onClick={basicsDialog.close}>
             {t('ljudi.form.cancel')}
           </Button>
-          <Button className="h-11" type="submit" disabled={pending} aria-busy={pending}>
+          <Button
+            className="h-11 aria-disabled:opacity-50"
+            type="submit"
+            disabled={pending}
+            aria-disabled={gate.disabled}
+            aria-describedby={gate.describedBy()}
+            aria-busy={pending}
+          >
             {t('ljudi.form.save')}
           </Button>
         </DialogFooter>

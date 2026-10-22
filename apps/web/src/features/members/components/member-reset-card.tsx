@@ -1,11 +1,13 @@
 import type { ReactNode } from 'react';
 
+import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ConfirmDialog, Dialog, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Notice } from '@/components/ui/notice';
 import { CredentialLine } from '@/features/members/components/credential-line';
 import { t } from '@/lib/i18n';
+import { useWriteGate } from '@/lib/offline/use-write-gate';
 import type { MemberEdit } from '@/features/members/hooks/use-member-edit';
 import type { MemberListRow } from '@/features/members/services/list';
 import {
@@ -35,6 +37,8 @@ import { refusalText } from '@/features/members/utils/refusal-text';
 export function MemberResetCard({ edit }: { readonly edit: MemberEdit }): ReactNode {
   const { form, armedFor, credential, stage, resetRefusal, resetOpener, focusResetOpener, setArmed, setIssued, issue } =
     edit;
+  // STORY 8.3a: offline, the confirm is gated and the note says why.
+  const gate = useWriteGate();
 
   /**
    * The card, at whichever of its four stages the reset is.
@@ -138,6 +142,7 @@ export function MemberResetCard({ edit }: { readonly edit: MemberEdit }): ReactN
         <p id="member-reset-prompt" className="text-sm font-medium">
           {t('ljudi.form.resetPrompt', { name })}
         </p>
+        <OfflineWriteNote gate={gate} />
         <DialogFooter>
           <Button
             className="h-11"
@@ -152,11 +157,14 @@ export function MemberResetCard({ edit }: { readonly edit: MemberEdit }): ReactN
             {t('ljudi.form.resetCancel')}
           </Button>
           <Button
-            className="h-11"
+            className="h-11 aria-disabled:opacity-50"
             type="button"
             disabled={busy}
+            aria-disabled={gate.disabled}
+            aria-describedby={gate.describedBy()}
             aria-busy={busy}
             onClick={() => {
+              if (!gate.online) return;
               void issue();
             }}
           >

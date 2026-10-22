@@ -1,6 +1,7 @@
 import { Pencil, Trash2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 
+import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog, DialogFooter } from '@/components/ui/dialog';
 import { Notice } from '@/components/ui/notice';
@@ -23,6 +24,7 @@ import {
   type ReplacementGuard,
 } from '@/features/leave/services/leave-section';
 import { t } from '@/lib/i18n';
+import { useWriteGate } from '@/lib/offline/use-write-gate';
 
 /**
  * THE REPLACEMENT GUARD'S LINES (story 5.4e): one line per replacement an
@@ -206,6 +208,8 @@ export function MemberLeaveRecords({ leave }: { readonly leave: MemberLeave }): 
 export function MemberLeaveRemoveConfirm({ leave }: { readonly leave: MemberLeave }): ReactNode {
   const { confirming, removePending, removeFailure, removeCancel, cancelRemove, formDisabled, removeGuard, removeConflicts } =
     leave;
+  // STORY 8.3a: offline, the removal is gated and the note says why.
+  const gate = useWriteGate();
 
   if (confirming === null) return null;
 
@@ -254,6 +258,7 @@ export function MemberLeaveRemoveConfirm({ leave }: { readonly leave: MemberLeav
       {/* STORY 5.4e: a note beside the confirm, never a gate. */}
       <LeaveReplacementLines guard={removeGuard} id={LEAVE_REMOVE_REPLACEMENTS_ID} />
       {failure === null ? null : <Notice role="alert">{t(leaveRefusalMessageKey(failure))}</Notice>}
+      <OfflineWriteNote gate={gate} />
       <DialogFooter>
         <Button
           ref={removeCancel}
@@ -266,11 +271,14 @@ export function MemberLeaveRemoveConfirm({ leave }: { readonly leave: MemberLeav
           {t('ljudi.leaveRecord.removeCancel')}
         </Button>
         <Button
-          className="h-11"
+          className="h-11 aria-disabled:opacity-50"
           type="button"
           disabled={formDisabled}
+          aria-disabled={gate.disabled}
+          aria-describedby={gate.describedBy()}
           aria-busy={removePending}
           onClick={() => {
+            if (!gate.online) return;
             void leave.remove();
           }}
         >

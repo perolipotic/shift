@@ -1,6 +1,7 @@
 import { CalendarDays } from 'lucide-react';
 import { Fragment, type ReactNode, type SyntheticEvent } from 'react';
 
+import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -8,6 +9,7 @@ import { InputGroup, InputGroupIcon } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { t } from '@/lib/i18n';
+import { useWriteGate } from '@/lib/offline/use-write-gate';
 import type { MemberEdit } from '@/features/members/hooks/use-member-edit';
 import type { MemberListRow } from '@/features/members/services/list';
 import { LEAVE_ALLOWANCE_MAX } from '@/features/members/services/write';
@@ -66,6 +68,8 @@ export function MemberAllowanceDialog({ edit }: { readonly edit: MemberEdit }): 
   const { form, leaveField, pending, invalidField, refusal, submit, allowanceDialog } = edit;
   const member = form.member;
   const opening = allowanceDialog.opening;
+  // STORY 8.3a: offline, the save is gated and the note says why.
+  const gate = useWriteGate();
 
   /** The dialog's form: the allowance, its refusal, and one Spremi. */
   function renderForm(shown: MemberListRow): ReactNode {
@@ -74,6 +78,10 @@ export function MemberAllowanceDialog({ edit }: { readonly edit: MemberEdit }): 
         method="post"
         noValidate
         onSubmit={(event) => {
+          if (!gate.online) {
+            event.preventDefault();
+            return;
+          }
           void submit(event);
         }}
         className="grid gap-5"
@@ -107,11 +115,19 @@ export function MemberAllowanceDialog({ edit }: { readonly edit: MemberEdit }): 
             {refusalText(refusal)}
           </Notice>
         )}
+        <OfflineWriteNote gate={gate} />
         <DialogFooter>
           <Button className="h-11" type="button" variant="outline" disabled={pending} onClick={allowanceDialog.close}>
             {t('ljudi.form.cancel')}
           </Button>
-          <Button className="h-11" type="submit" disabled={pending} aria-busy={pending}>
+          <Button
+            className="h-11 aria-disabled:opacity-50"
+            type="submit"
+            disabled={pending}
+            aria-disabled={gate.disabled}
+            aria-describedby={gate.describedBy()}
+            aria-busy={pending}
+          >
             {t('ljudi.form.save')}
           </Button>
         </DialogFooter>

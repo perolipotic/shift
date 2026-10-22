@@ -3,6 +3,7 @@ import { Fragment, type ReactNode, type SyntheticEvent } from 'react';
 
 import { ErasureDialog } from '@/features/conflicts/components/erasure-dialog';
 
+import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Button } from '@/components/ui/button';
 import { Callout, CalloutBody } from '@/components/ui/callout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -19,6 +20,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { t } from '@/lib/i18n';
+import { useWriteGate, type WriteGate } from '@/lib/offline/use-write-gate';
 import { formatIsoDayMonth, isIsoDate } from '@/lib/i18n/format';
 import type { MemberEdit } from '@/features/members/hooks/use-member-edit';
 import { memberErasureCopyOf } from '@/features/members/utils/erasure-copy';
@@ -186,7 +188,7 @@ export function MemberStatusCard({ edit }: { readonly edit: MemberEdit }): React
 }
 
 /** "Pokušaj ponovno", when what the change would erase could not be checked (story 5.5e). */
-function StatusUnchecked({ edit }: { readonly edit: MemberEdit }): ReactNode {
+function StatusUnchecked({ edit, gate }: { readonly edit: MemberEdit; readonly gate: WriteGate }): ReactNode {
   const { statusUnchecked, statusRetryButton, statusPending, retryStatus } = edit;
 
   if (!statusUnchecked) return null;
@@ -197,11 +199,17 @@ function StatusUnchecked({ edit }: { readonly edit: MemberEdit }): ReactNode {
       {t('ljudi.erasures.unavailable')}
       <Button
         ref={statusRetryButton}
-        className="mt-3 flex h-11"
+        className="mt-3 flex h-11 aria-disabled:opacity-50"
         type="button"
         variant="outline"
         disabled={statusPending}
-        onClick={retryStatus}
+        // STORY 8.3a: the retry is the same change again, gated with it.
+        aria-disabled={gate.disabled}
+        aria-describedby={gate.describedBy()}
+        onClick={() => {
+          if (!gate.online) return;
+          retryStatus();
+        }}
       >
         {t('ljudi.erasures.retry')}
       </Button>
@@ -225,6 +233,8 @@ function StatusUnchecked({ edit }: { readonly edit: MemberEdit }): ReactNode {
 export function MemberStatusDialog({ edit }: { readonly edit: MemberEdit }): ReactNode {
   const { form, dateField, statusRefusal, statusDateInvalid, statusPending, statusDialog } = edit;
   const opening = statusDialog.opening;
+  // STORY 8.3a: offline, the final button is gated before its erasure check starts.
+  const gate = useWriteGate();
   // THE CHANGE THE DIALOG WAS OPENED ON: it stays, busy, while its write is out.
   const action = opening?.held.offer ?? null;
   const name = form.member?.name ?? opening?.held.name ?? NO_TEXT;
@@ -277,6 +287,10 @@ export function MemberStatusDialog({ edit }: { readonly edit: MemberEdit }): Rea
         method="post"
         noValidate
         onSubmit={(event) => {
+          if (!gate.online) {
+            event.preventDefault();
+            return;
+          }
           void statusDialog.save(event);
         }}
         className="grid gap-5"
@@ -307,16 +321,19 @@ export function MemberStatusDialog({ edit }: { readonly edit: MemberEdit }): Rea
             {refusalText(statusRefusal)}
           </Notice>
         )}
-        <StatusUnchecked edit={edit} />
+        <StatusUnchecked edit={edit} gate={gate} />
+        <OfflineWriteNote gate={gate} />
         <DialogFooter>
           <Button className="h-11" type="button" variant="outline" disabled={statusPending} onClick={statusDialog.close}>
             {t('ljudi.status.cancel')}
           </Button>
           <Button
             ref={statusDialog.saveButton}
-            className="h-11"
+            className="h-11 aria-disabled:opacity-50"
             type="submit"
             disabled={statusPending}
+            aria-disabled={gate.disabled}
+            aria-describedby={gate.describedBy()}
             aria-busy={statusPending}
           >
             {t(statusSubmitMessageKey(offered.change, dayMonth !== null), { date: dayMonth ?? NO_TEXT })}
@@ -363,6 +380,7 @@ export function MemberStatusDialog({ edit }: { readonly edit: MemberEdit }): Rea
  */
 function MemberStatusWithdrawal({ edit }: { readonly edit: MemberEdit }): ReactNode {
   const { offer, statusArmedFor, statusStage, setStatusArmed, confirmStatus } = edit;
+  const gate = useWriteGate();
 
   if (statusArmedFor === null || statusArmedFor.change !== WITHDRAW || offer === null) return null;
 
@@ -383,7 +401,8 @@ function MemberStatusWithdrawal({ edit }: { readonly edit: MemberEdit }): ReactN
           date: shownDate(statusArmedFor.day),
         })}
       </p>
-      <StatusUnchecked edit={edit} />
+      <StatusUnchecked edit={edit} gate={gate} />
+      <OfflineWriteNote gate={gate} />
       <DialogFooter>
         <Button
           className="h-11"
@@ -397,11 +416,16 @@ function MemberStatusWithdrawal({ edit }: { readonly edit: MemberEdit }): ReactN
           {t('ljudi.status.cancel')}
         </Button>
         <Button
-          className="h-11"
+          className="h-11 aria-disabled:opacity-50"
           type="button"
           disabled={busy || statusStage !== STATUS_ARMED}
+          aria-disabled={gate.disabled}
+          aria-describedby={gate.describedBy()}
           aria-busy={busy}
-          onClick={confirmStatus}
+          onClick={() => {
+            if (!gate.online) return;
+            confirmStatus();
+          }}
         >
           {t(statusConfirmMessageKey(WITHDRAW), { name: armedName })}
         </Button>
@@ -419,6 +443,7 @@ function MemberStatusWithdrawal({ edit }: { readonly edit: MemberEdit }): ReactN
 function MemberStatusErasures({ edit }: { readonly edit: MemberEdit }): ReactNode {
   const { form, statusErasures, statusPending, confirmStatusErasures } = edit;
   const shown = statusErasures.shown;
+  const gate = useWriteGate();
 
   if (shown === null || form.member === null || shown.subject.member !== form.member.id) return null;
 
@@ -437,6 +462,7 @@ function MemberStatusErasures({ edit }: { readonly edit: MemberEdit }): ReactNod
         t(statusConfirmMessageKey(confirmation.change), { name: confirmation.name }),
       )}
       scrollRows
+      gate={gate}
       onDecide={statusErasures.decide}
       onBack={statusErasures.close}
       onSave={() => {

@@ -17,6 +17,8 @@ import { knownPathOf, returnTargetOf } from '@/features/auth/services/return-tar
 import { SIGN_OUT_FAILED, signOut, type SignOutFailure } from '@/features/auth/services/sign-out';
 import { forgetDeviceSnapshot } from '@/lib/offline/device-snapshot';
 import { supabaseClient } from '@/lib/supabase/client';
+import { pageSignOutFallback } from '@/lib/supabase/local-sign-out';
+import { writesOnline } from '@/lib/offline/use-write-gate';
 
 /**
  * The set-password step's state and its one exchange (story 7.8): the two
@@ -101,6 +103,8 @@ export function useSetPassword() {
 
     // NOR WHILE SIGNING OUT: the two exchanges never overlap.
     if (password === null || repeat === null || exchanging.current || leaving.current) return;
+    // STORY 8.3a: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
 
     // Checked only while there is a password left to save: after step 1
     // landed, the retry has nothing of the fields to judge.
@@ -176,7 +180,7 @@ export function useSetPassword() {
     setSignOutFailure(null);
 
     try {
-      const outcome = await signOut(supabaseClient().auth);
+      const outcome = await signOut(supabaseClient().auth, pageSignOutFallback);
 
       if (!outcome.ok) {
         setSignOutFailure(outcome.code);
