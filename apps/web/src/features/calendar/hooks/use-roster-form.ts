@@ -46,6 +46,7 @@ import { ROSTER_WRITE_DEPENDENTS, refreshAfterWrite } from '@/features/teams/ser
 import { claimedOrganizationOf } from '@/lib/supabase/claims';
 import { supabaseClient } from '@/lib/supabase/client';
 import { focusLater } from '@/utils/focus-later';
+import { writesOnline } from '@/lib/offline/use-write-gate';
 
 /**
  * THE ADMIN'S ROSTER FORM (story 3.6b): taking a member off the open day's
@@ -405,6 +406,8 @@ export function useRosterForm(
     const reason = rosterReasonField.current;
 
     if (detail === null || out === null || put === null || reason === null || writing.current) return;
+    // STORY 8.3a: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
 
     const startedFor = day;
     const on = detail;
@@ -435,6 +438,8 @@ export function useRosterForm(
         if (!stillOn(startedFor)) return;
 
         if (check.kind === CHECK_UNAVAILABLE) {
+          // STORY 8.3a: the connection dropped while the check was out — the offline gate says why, not the unchecked refusal.
+          if (!writesOnline()) return;
           setUnchecked(ROSTER_CHANGE_SAVE);
           focusAfterWrite(() => retryButton.current, first);
 
@@ -538,6 +543,8 @@ export function useRosterForm(
    */
   async function removeChange(): Promise<void> {
     if (target === null || writing.current) return;
+    // STORY 8.3a: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
 
     const startedFor = day;
     const id = target.change.id;
@@ -558,6 +565,8 @@ export function useRosterForm(
       if (!stillOn(startedFor)) return;
 
       if (check.kind === CHECK_UNAVAILABLE) {
+        // STORY 8.3a: the connection dropped while the check was out — the offline gate says why, not the unchecked refusal.
+        if (!writesOnline()) return;
         setUnchecked(ROSTER_CHANGE_REMOVAL);
         focusAfterWrite(() => retryButton.current, cancelShown);
 
@@ -595,6 +604,8 @@ export function useRosterForm(
    */
   async function confirmErasures(shown: NonNullable<typeof confirmation.shown>): Promise<void> {
     if (writing.current || !confirmation.confirmed) return;
+    // STORY 8.3a: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
 
     const checked = shown.subject;
     const { change, startedFor } = checked;
@@ -614,6 +625,8 @@ export function useRosterForm(
           return true;
         },
         unavailable: () => {
+          // STORY 8.3a: offline, the confirmation stays open under the gate.
+          if (!writesOnline()) return;
           confirmation.drop();
           if (change.kind === ROSTER_CHANGE_SAVE) {
             setUnchecked(ROSTER_CHANGE_SAVE);

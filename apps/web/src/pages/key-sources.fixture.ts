@@ -80,6 +80,7 @@ import {
   translationKeys,
   UPDATE_NOTICE,
   OFFLINE_NOTE,
+  OFFLINE_WRITE_NOTE,
 } from './source-guards.fixture';
 
 // `KEY_SOURCES`, shared by the source guards in this folder: every module that can put
@@ -118,6 +119,8 @@ export const KEY_SOURCES = [
   { name: 'the update notice', file: UPDATE_NOTICE, keys: translationKeys, strings: 2 },
   // STORY 8.2. ONE on the as-of note: *Bez veze · stanje od …*.
   { name: 'the as-of note', file: OFFLINE_NOTE, keys: translationKeys, strings: 1 },
+  // STORY 8.3a. TWO on the offline write note: the save's and the sign-in's.
+  { name: 'the offline write note', file: OFFLINE_WRITE_NOTE, keys: translationKeys, strings: 2 },
   // THREE on the sign-in frame (visual refresh A): the brand panel's product
   // name, headline and subline, written once and rendered around both steps,
   // so neither step's own count moved.

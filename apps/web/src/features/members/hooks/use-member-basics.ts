@@ -29,6 +29,7 @@ import { MEMBER_SAVE_DEPENDENTS, NO_DEPENDENTS, refreshAfterWrite } from '@/feat
 import { supabaseClient } from '@/lib/supabase/client';
 import { focusLater } from '@/utils/focus-later';
 import { NO_TEXT } from '@/utils/text';
+import { writesOnline } from '@/lib/offline/use-write-gate';
 
 /**
  * The member page's basics card and the allowance's dialog (stories 1.5b,
@@ -154,6 +155,9 @@ export function useMemberBasics(screen: MemberScreen) {
     ) {
       return;
     }
+
+    // STORY 8.3a: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
 
     let edits: MemberEdits;
 

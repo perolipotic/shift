@@ -79,6 +79,7 @@ import {
 import { ZONE_FROM_CALENDAR, offlineNoteOf } from '@/lib/offline/freshness';
 import { useSnapshotFreshness } from '@/lib/offline/use-snapshot-freshness';
 import { supabaseClient } from '@/lib/supabase/client';
+import { writesOnline } from '@/lib/offline/use-write-gate';
 
 /**
  * One conflict's resolution screen (story 5.4b): its five reads, the choice
@@ -294,6 +295,8 @@ export function useConflictResolution(params: ResolutionParams) {
   async function save(replacementReasonOf: (memberName: string) => string): Promise<void> {
     // HELD (story 5.5d): the key is a replacement's until it is removed in the calendar; saving would fail.
     if (screen.kind === RESOLUTION_READY && screen.view.held) return;
+    // STORY 8.3a: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
 
     const focus = saveFocusOf(choice, replacement?.id ?? null, candidatesExist);
 

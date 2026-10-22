@@ -52,6 +52,7 @@ import { chromeAnswerOf } from '@/features/navigation/services/chrome-freshness'
 import { useFreshnessClock } from '@/lib/offline/use-snapshot-freshness';
 import { forgetDeviceSnapshot } from '@/lib/offline/device-snapshot';
 import { currentSession, supabaseClient } from '@/lib/supabase/client';
+import { pageSignOutFallback } from '@/lib/supabase/local-sign-out';
 import { SIGN_OUT_FAILED, signOut, type SignOutFailure } from '@/features/auth/services/sign-out';
 import {
   THEME_PREFERENCES,
@@ -391,7 +392,7 @@ export function AppChrome({ children }: AppChromeProps) {
     let revoked = false;
 
     try {
-      const outcome = await signOut(supabaseClient().auth);
+      const outcome = await signOut(supabaseClient().auth, pageSignOutFallback);
 
       if (!outcome.ok) {
         // THE SESSION SURVIVED, so nothing navigates and nothing is cleared.

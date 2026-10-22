@@ -588,6 +588,13 @@ export const UPDATE_NOTICE = join(srcRoot, 'components', 'update-notice.tsx');
 export const OFFLINE_NOTE = join(srcRoot, 'components', 'offline-note.tsx');
 
 /**
+ * The offline write note (story 8.3a): a `.tsx` that is not a route, drawn
+ * beside every gated write control while offline. Swept on its own, as the
+ * as-of note is, so its two strings count once.
+ */
+export const OFFLINE_WRITE_NOTE = join(srcRoot, 'components', 'offline-write-note.tsx');
+
+/**
  * The sign-in steps' shared frame (visual refresh A): the brand panel both
  * sign-in screens render around their card. Not a route, and swept anyway for
  * the reason the chrome and the lockup are — it renders strings.
@@ -699,6 +706,8 @@ export const SCREENS = [
   { name: 'the update notice', file: UPDATE_NOTICE, expectedFields: 0, expectedButtons: 1 },
   // STORY 8.2. ZERO on the as-of note: a status, no control.
   { name: 'the as-of note', file: OFFLINE_NOTE, expectedFields: 0, expectedButtons: 0 },
+  // STORY 8.3a. ZERO on the offline write note: a status, no control.
+  { name: 'the offline write note', file: OFFLINE_WRITE_NOTE, expectedFields: 0, expectedButtons: 0 },
   // EIGHT, and it was seven until story 1.4b: the settings surface carries five
   // fields — name, type, timezone and the leave year's month and day — plus a
   // save, a cancel, and now the logo's choose action. The number is what notices

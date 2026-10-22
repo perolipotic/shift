@@ -1,6 +1,7 @@
 import { Check, Eye, EyeOff, Lock, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 
+import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { InputGroup, InputGroupAction, InputGroupIcon } from '@/components/ui/input-group';
@@ -9,6 +10,7 @@ import { Notice } from '@/components/ui/notice';
 import type { SetPasswordScreenState } from '@/features/auth/hooks/use-set-password';
 import { ruleStateMessageKey, setPasswordMessageKey } from '@/features/auth/services/set-password';
 import { t } from '@/lib/i18n';
+import { useWriteGate } from '@/lib/offline/use-write-gate';
 
 /**
  * The set-password form (story 7.8): the new password with the 7.7 show/hide
@@ -45,12 +47,18 @@ export function SetPasswordForm({ screen }: { readonly screen: SetPasswordScreen
     submit,
     leave,
   } = screen;
+  // STORY 8.3a: offline, the save is gated and the note says why; Odjava is not.
+  const gate = useWriteGate();
 
   return (
     <form
       method="post"
       noValidate
       onSubmit={(event) => {
+        if (!gate.online) {
+          event.preventDefault();
+          return;
+        }
         void submit(event);
       }}
       className="grid gap-6"
@@ -133,11 +141,13 @@ export function SetPasswordForm({ screen }: { readonly screen: SetPasswordScreen
       {signOutFailure === null ? null : (
         <Notice role="alert">{t('auth.setPassword.error.signOut')}</Notice>
       )}
+      <OfflineWriteNote gate={gate} />
       <div className="grid gap-4">
         <Button
           className="h-11 w-full aria-disabled:opacity-50"
           type="submit"
-          aria-disabled={pending}
+          aria-disabled={gate.disabled || pending}
+          aria-describedby={gate.describedBy()}
           aria-busy={pending}
         >
           {pending ? t('auth.setPassword.pending') : t('auth.setPassword.submit')}

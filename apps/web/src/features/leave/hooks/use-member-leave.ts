@@ -76,6 +76,7 @@ import { ZONE_FROM_CALENDAR } from '@/lib/offline/freshness';
 import { useSnapshotFreshness } from '@/lib/offline/use-snapshot-freshness';
 import { supabaseClient } from '@/lib/supabase/client';
 import { focusLater } from '@/utils/focus-later';
+import { writesOnline } from '@/lib/offline/use-write-gate';
 
 /**
  * One opening of a leave dialog (story 7.12; the member page's
@@ -626,6 +627,8 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
     event.preventDefault();
 
     if (base.kind !== LEAVE_READY || preview === null || recording.current) return;
+    // STORY 8.3a: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
 
     clearRaised();
 
@@ -719,6 +722,8 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
     event.preventDefault();
 
     if (base.kind !== LEAVE_READY || preview === null || amendTarget === null || amending.current) return;
+    // STORY 8.3a: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
 
     clearRaised();
 
@@ -821,6 +826,8 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
    */
   async function remove(): Promise<void> {
     if (confirming === null || removing.current || base.kind !== LEAVE_READY || recordsState.refreshing) return;
+    // STORY 8.3a: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
 
     const target = confirming;
     // BEFORE THE WRITE, which removes the resolutions these lines come from.

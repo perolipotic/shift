@@ -11,6 +11,7 @@ import {
   type SignInFailure,
 } from '@/features/auth/services/sign-in';
 import { supabaseClient } from '@/lib/supabase/client';
+import { writesOnline } from '@/lib/offline/use-write-gate';
 
 /**
  * The sign-in screen's state and its one exchange (story 1.1d, wired by 1.3b,
@@ -129,6 +130,9 @@ export function useSignIn(slug: string | undefined) {
     if (username === null || password === null || organization === undefined || exchanging.current) {
       return;
     }
+
+    // STORY 8.3a: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
 
     // RE-MASKED FIRST, committed before anything else: a refusal then never
     // focuses a password shown as plain text, and a credential manager sees a

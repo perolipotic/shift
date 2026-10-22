@@ -1387,7 +1387,9 @@
     "refresh": "Osvježi"
   },
   "offline": {
-    "asOf": "Bez veze · stanje od {date} {time}"
+    "asOf": "Bez veze · stanje od {date} {time}",
+    "needsConnection": "Za ovo je potrebna veza.",
+    "signInNeedsConnection": "Za prijavu je potrebna veza."
   },
   "smjene": {
     "heading": "Smjene",

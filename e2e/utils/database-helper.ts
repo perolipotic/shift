@@ -437,6 +437,53 @@ export async function promoteToAdminInSql(slug: string, memberId: string): Promi
   }
 }
 
+/**
+ * Holds a member {@link seedLeaveMember} wrote at the first sign-in's
+ * set-password step (story 8.3a's offline spec): their auth user carries
+ * `must_set_password`, as an account the admin just issued does. REFUSES any
+ * member whose username is not one {@link seedLeaveMember} writes.
+ */
+export async function holdAtSetPasswordInSql(slug: string, memberId: string): Promise<void> {
+  const client = await connect();
+  try {
+    const { rowCount } = await client.query(
+      `update auth.users u
+          set raw_app_meta_data = coalesce(u.raw_app_meta_data, '{}'::jsonb) || '{"must_set_password": true}'::jsonb
+         from members m join organizations o on o.id = m.organization_id
+        where m.auth_user_id = u.id and o.slug = $1 and m.id = $2 and m.username like $3`,
+      [slug, memberId, `${LEAVE_MEMBER_USERNAME_PREFIX}%`],
+    );
+    if (rowCount !== 1) throw new Error(`E2E: ${memberId} is not a member seedLeaveMember wrote in ${slug}`);
+  } finally {
+    await client.end();
+  }
+}
+
+/** The username prefix of the members story 8.3a's offline spec may have created through *Dodaj osobu*. */
+export const OFFLINE_MEMBER_USERNAME_PREFIX = 'e2e.bez.veze.';
+
+/**
+ * Removes a member a test tried to create through *Dodaj osobu* offline, by
+ * username, if one exists — it must not, and this is the cleanup for when it
+ * did. Deletes the auth user, from which the member row cascades. REFUSES any
+ * username outside {@link OFFLINE_MEMBER_USERNAME_PREFIX}.
+ */
+export async function removeOfflineMemberInSql(slug: string, username: string): Promise<void> {
+  if (!username.startsWith(OFFLINE_MEMBER_USERNAME_PREFIX)) {
+    throw new Error(`E2E: refusing to delete ${username}, not a member the offline spec names`);
+  }
+  const client = await connect();
+  try {
+    await client.query(
+      `delete from auth.users u using members m, organizations o
+        where m.auth_user_id = u.id and o.id = m.organization_id and o.slug = $1 and m.username = $2`,
+      [slug, username],
+    );
+  } finally {
+    await client.end();
+  }
+}
+
 /** Where the run organization's leave year begins (story 5.1c): a month 1–12 and a day 1–28. */
 export async function leaveYearStartOf(slug: string): Promise<{ readonly month: number; readonly day: number }> {
   const client = await connect();

@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { OfflineNote } from '@/components/offline-note';
+import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -41,6 +42,7 @@ import {
 import { rosterLineOf } from '@/features/members/utils/position';
 import { formatList } from '@/lib/i18n/format';
 import { t } from '@/lib/i18n';
+import { useWriteGate } from '@/lib/offline/use-write-gate';
 import { keepFocusOnAlert } from '@/utils/retry-focus';
 import { initialsOf } from '@/utils/initials';
 
@@ -154,6 +156,8 @@ function ResolutionReady({ state, view }: { readonly state: ConflictResolutionSt
   const waiting = !readyToSave(choice, pickedId, view.held);
   const held = heldHintPartsOf((action) => t('raspored.resolution.heldHint', { action }));
   const gone = failure === RESOLUTION_GONE;
+  // STORY 8.3a: offline, Spremi is gated and the note says why.
+  const gate = useWriteGate();
 
   return (
     <>
@@ -206,6 +210,7 @@ function ResolutionReady({ state, view }: { readonly state: ConflictResolutionSt
         {/* A held refusal whose re-read finds the key free again says nothing: saving again may land (story 5.5d). */}
         {failure === null || (failure === RESOLUTION_HELD && !view.held) ? null : <FailureNotice failure={failure} taken={taken} />}
         {/* GONE: nothing left to save, and the header's way back is the one way on. */}
+        {gone ? null : <OfflineWriteNote gate={gate} />}
         {gone ? null : (
           <div className="flex min-w-0 flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center">
             {view.held ? (
@@ -232,9 +237,10 @@ function ResolutionReady({ state, view }: { readonly state: ConflictResolutionSt
             <Button
               type="button"
               className="h-11 w-full sm:w-auto aria-disabled:opacity-50"
-              aria-disabled={waiting || pending}
-              aria-describedby={RESOLUTION_SAVE_HINT_ID}
+              aria-disabled={gate.disabled || waiting || pending}
+              aria-describedby={gate.describedBy(RESOLUTION_SAVE_HINT_ID)}
               onClick={() => {
+                if (!gate.online) return;
                 void save((member) => t('raspored.resolution.replaceReason', { member }));
               }}
             >

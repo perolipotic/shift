@@ -1,6 +1,7 @@
 import { Building2, Eye, EyeOff, KeyRound, Lock, User } from 'lucide-react';
 import type { ReactNode } from 'react';
 
+import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Button } from '@/components/ui/button';
 import { Callout, CalloutBody, CalloutDescription, CalloutTitle } from '@/components/ui/callout';
 import { IconTile } from '@/components/ui/icon-tile';
@@ -11,6 +12,7 @@ import { Notice } from '@/components/ui/notice';
 import type { SignInScreenState } from '@/features/auth/hooks/use-sign-in';
 import { signInMessageKey } from '@/features/auth/services/sign-in';
 import { t } from '@/lib/i18n';
+import { useWriteGate } from '@/lib/offline/use-write-gate';
 
 /**
  * The sign-in form (story 7.7): three values — the organization, the username
@@ -55,6 +57,8 @@ export function SignInForm({ screen }: { readonly screen: SignInScreenState }): 
     toggleForgot,
     submit,
   } = screen;
+  // STORY 8.3a: offline, Prijava is gated and the note says why.
+  const gate = useWriteGate();
   // Every `aria-describedby` that names the refusal is CONDITIONAL, because the
   // element it names exists only while there is a failure. A reference to an
   // absent id is not an error, it is simply ignored — which is worse: the
@@ -67,6 +71,10 @@ export function SignInForm({ screen }: { readonly screen: SignInScreenState }): 
       method="post"
       noValidate
       onSubmit={(event) => {
+        if (!gate.online) {
+          event.preventDefault();
+          return;
+        }
         void submit(event);
       }}
       className="grid gap-6"
@@ -145,6 +153,7 @@ export function SignInForm({ screen }: { readonly screen: SignInScreenState }): 
           {t(signInMessageKey(failure))}
         </Notice>
       )}
+      <OfflineWriteNote gate={gate} signIn />
       <div className="grid gap-4">
         {/* `aria-disabled`, NEVER `disabled`, while the exchange is in
             flight. `disabled` on the button somebody has just pressed takes
@@ -155,7 +164,8 @@ export function SignInForm({ screen }: { readonly screen: SignInScreenState }): 
         <Button
           className="h-11 w-full aria-disabled:opacity-50"
           type="submit"
-          aria-disabled={pending}
+          aria-disabled={gate.disabled || pending}
+          aria-describedby={gate.describedBy()}
           aria-busy={pending}
         >
           {pending ? t('auth.pending') : t('auth.submit')}

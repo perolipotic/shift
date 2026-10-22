@@ -183,6 +183,8 @@ export function RotationNotices({ builder }: { readonly builder: RotationBuilder
 
     return (
       <ErasureDialog
+        // NOT GATED YET: the settings surfaces' writes are story 8.3b's (`deferred-work.md`).
+        gate={null}
         id="rotation-erasures"
         rows={rows}
         changed={shown.changed}
@@ -235,6 +237,8 @@ export function RotationNotices({ builder }: { readonly builder: RotationBuilder
 
     return (
       <ErasureDialog
+        // NOT GATED YET: the settings surfaces' writes are story 8.3b's (`deferred-work.md`).
+        gate={null}
         id="rotation-cancel-erasures"
         rows={rows}
         changed={shown.changed}

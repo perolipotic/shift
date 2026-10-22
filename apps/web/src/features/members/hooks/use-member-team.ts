@@ -54,6 +54,7 @@ import { TEAMS_LIST_KEY } from '@/features/teams/services/list';
 import { supabaseClient } from '@/lib/supabase/client';
 import { firstEnabledOf, focusLater } from '@/utils/focus-later';
 import { NO_TEXT } from '@/utils/text';
+import { writesOnline } from '@/lib/offline/use-write-gate';
 
 /**
  * The member page's *Smjena* card (stories 1.7b, 5.5e, 7.11; split out of
@@ -415,6 +416,8 @@ export function useMemberTeam(screen: MemberScreen) {
    */
   async function changeTeam(member: MemberListRow, confirmation: TeamConfirmation): Promise<void> {
     if (teaming.current) return;
+    // STORY 8.3a: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
 
     if (allTeams === null || today === null) {
       setTeamFailure({ member: member.id, raised: { code: MEMBER_TEAM_STALE, saved: false } });
@@ -441,6 +444,8 @@ export function useMemberTeam(screen: MemberScreen) {
 
         if (check.kind === CHECK_UNAVAILABLE) {
           disarm = false;
+          // STORY 8.3a: the connection dropped while the check was out — the offline gate says why, not the unchecked refusal.
+          if (!writesOnline()) return;
           setTeamUnchecked({ member: member.id, raised: true });
           focusLater([() => teamRetryButton.current], () =>
             firstEnabledOf<HTMLElement>(() => teamSaveButton.current, () => teamWithdrawButton.current),
@@ -488,6 +493,8 @@ export function useMemberTeam(screen: MemberScreen) {
     const member = form.member;
 
     if (member === null || teamOpening === null || !teamStillOffered || teaming.current) return;
+    // STORY 8.3a: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
 
     // THE OFFER THE DIALOG SHOWS, the one its pick was made against.
     const confirmation = armTeam(member, teamOpening.held.offer);
@@ -552,6 +559,8 @@ export function useMemberTeam(screen: MemberScreen) {
    */
   async function confirmTeamErasures(shown: ShownErasures<CheckedMemberChange<TeamConfirmation>>): Promise<void> {
     if (teaming.current || !teamErasures.confirmed) return;
+    // STORY 8.3a: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
 
     const { member: memberId, confirmation, change } = shown.subject;
     const before = latest.current;
@@ -586,6 +595,8 @@ export function useMemberTeam(screen: MemberScreen) {
           return true;
         },
         unavailable: () => {
+          // STORY 8.3a: offline, the confirmation stays open under the gate.
+          if (!writesOnline()) return;
           teamErasures.drop();
           // A WITHDRAWAL'S CONFIRMATION, armed again, refuses with the retry; a
           // move's dialog is still open beneath and says it there.

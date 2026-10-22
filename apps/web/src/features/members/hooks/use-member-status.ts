@@ -40,6 +40,7 @@ import { MEMBERSHIP_WRITE_DEPENDENTS, NO_DEPENDENTS, refreshAfterWrite } from '@
 import { supabaseClient } from '@/lib/supabase/client';
 import { firstEnabledOf, focusLater } from '@/utils/focus-later';
 import { NO_TEXT } from '@/utils/text';
+import { writesOnline } from '@/lib/offline/use-write-gate';
 
 /**
  * The member page's status card (stories 1.6, 5.5e, 7.11, 7.13c; split out
@@ -329,6 +330,8 @@ export function useMemberStatus(screen: MemberScreen) {
    */
   async function changeStatus(member: MemberListRow, confirmation: StatusConfirmation): Promise<void> {
     if (callerAuthUserId === null || today === null || statusing.current) return;
+    // STORY 8.3a: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
 
     // Disarmed when this settles, except while it asks for a retry.
     let disarm = true;
@@ -351,6 +354,8 @@ export function useMemberStatus(screen: MemberScreen) {
 
         if (check.kind === CHECK_UNAVAILABLE) {
           disarm = false;
+          // STORY 8.3a: the connection dropped while the check was out — the offline gate says why, not the unchecked refusal.
+          if (!writesOnline()) return;
           setStatusUnchecked({ member: member.id, raised: true });
           focusLater([() => statusRetryButton.current], () =>
             firstEnabledOf<HTMLElement>(() => statusSaveButton.current, () => statusWithdrawButton.current),
@@ -414,6 +419,8 @@ export function useMemberStatus(screen: MemberScreen) {
     const member = form.member;
 
     if (member === null || statusOffer === null || !statusStillOffered || statusing.current) return;
+    // STORY 8.3a: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
 
     const confirmation = armStatus(member, statusOffer);
 
@@ -468,6 +475,8 @@ export function useMemberStatus(screen: MemberScreen) {
     shown: ShownErasures<CheckedMemberChange<StatusConfirmation>>,
   ): Promise<void> {
     if (statusing.current || !statusErasures.confirmed) return;
+    // STORY 8.3a: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
 
     const { member: memberId, confirmation, change } = shown.subject;
     const before = latest.current;
@@ -504,6 +513,8 @@ export function useMemberStatus(screen: MemberScreen) {
           return true;
         },
         unavailable: () => {
+          // STORY 8.3a: offline, the confirmation stays open under the gate.
+          if (!writesOnline()) return;
           statusErasures.drop();
           // A WITHDRAWAL'S CONFIRMATION, armed again, refuses with the retry; a
           // dialog's change is still open beneath and says it there.

@@ -1,5 +1,6 @@
 import { Fragment, type ReactNode, type SyntheticEvent } from 'react';
 
+import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -32,6 +33,7 @@ import {
   leaveRefusalValuesOf,
 } from '@/features/leave/services/leave-section';
 import { t } from '@/lib/i18n';
+import { useWriteGate } from '@/lib/offline/use-write-gate';
 import { formatList } from '@/lib/i18n/format';
 
 /** A conflict as the dialog names it: `pon 21.12. Dan`. */
@@ -149,6 +151,8 @@ export function MemberLeaveDialog({ leave }: { readonly leave: MemberLeave }): R
   const pending = recordPending || amendPending;
   /** What the dialog says went wrong: never that an amended record is gone, which the list says. */
   const leaveFailure = leaveFormFailureOf(leave.leaveFailure);
+  // STORY 8.3a: offline, the record's or the amendment's save is gated and the note says why.
+  const gate = useWriteGate();
 
   /** Either dialog's close: its own hook handler, which refuses while a write is in flight. */
   function close(): void {
@@ -253,7 +257,13 @@ export function MemberLeaveDialog({ leave }: { readonly leave: MemberLeave }): R
       <form
         noValidate
         className="grid min-w-0 gap-4"
-        onSubmit={(event) => void (amend ? leave.amend(event) : leave.save(event))}
+        onSubmit={(event) => {
+          if (!gate.online) {
+            event.preventDefault();
+            return;
+          }
+          void (amend ? leave.amend(event) : leave.save(event));
+        }}
       >
         {/* REACHED FROM A CONFLICT (story 5.4d): od and do are the rule's, not the record's. */}
         {shown.handed ? <Notice role="status">{t('ljudi.leaveRecord.handoffPrefilled')}</Notice> : null}
@@ -296,11 +306,19 @@ export function MemberLeaveDialog({ leave }: { readonly leave: MemberLeave }): R
           </div>
         </fieldset>
         {renderAlert()}
+        <OfflineWriteNote gate={gate} />
         <DialogFooter>
           <Button className="h-11" type="button" variant="outline" disabled={pending} onClick={close}>
             {amend ? t('ljudi.leaveRecord.amendCancel') : t('ljudi.leaveRecord.cancel')}
           </Button>
-          <Button className="h-11" type="submit" disabled={formDisabled} aria-busy={pending}>
+          <Button
+            className="h-11 aria-disabled:opacity-50"
+            type="submit"
+            disabled={formDisabled}
+            aria-disabled={gate.disabled}
+            aria-describedby={gate.describedBy()}
+            aria-busy={pending}
+          >
             {amend ? t('ljudi.leaveRecord.amendSave') : t('ljudi.leaveRecord.save')}
           </Button>
         </DialogFooter>
