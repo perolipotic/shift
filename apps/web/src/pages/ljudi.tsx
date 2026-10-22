@@ -29,6 +29,7 @@ import { MemberDirectory } from '@/features/teams/components/member-directory';
 import { useMemberDirectory, type DirectoryNavigate } from '@/features/teams/hooks/use-member-directory';
 import { guardMemberRole } from '@/features/navigation/services/admin-guard';
 import { appLayoutRoute } from '@/pages/_app';
+import { keepFocusOnAlert } from '@/utils/retry-focus';
 import { NO_TEXT } from '@/utils/text';
 
 /**
@@ -153,8 +154,9 @@ function LjudiList() {
   const list = useMemberList(search, write);
   const create = useMemberCreate(search.dodaj === MEMBERS_ADD_OPEN, writeAdding);
   const { refusal, loading } = list;
-  // A RETRY ONLY FOR A READ THAT WAS UNAVAILABLE: a refusal needs a new sign-in.
-  const retryKey = refusal === null ? null : membersRetryMessageKey(refusal);
+  // A RETRY ONLY FOR A READ THAT WAS UNAVAILABLE, and only online (the hook's
+  // `retryable`, story 8.2e): a refusal needs a new sign-in.
+  const retryKey = list.retryable && refusal !== null ? membersRetryMessageKey(refusal) : null;
 
   return (
     <main
@@ -201,6 +203,7 @@ function LjudiList() {
           </Notice>
           {retryKey === null ? null : (
             <Button
+              ref={keepFocusOnAlert}
               className="h-11 w-full sm:w-auto sm:justify-self-start"
               type="button"
               variant="outline"

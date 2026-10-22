@@ -11,6 +11,7 @@ import type { OrganizationHourBands } from '@/features/organization/hooks/use-or
 import type { OrganizationSettings } from '@/features/organization/hooks/use-organization-settings';
 import { ORGANIZATION_READ_RETRY_ID } from '@/features/organization/utils/element-ids';
 import { ORGANIZATION_ERROR_ID, organizationMessageKey } from '@/features/organization/utils/messages';
+import { keepFocusOnAlert } from '@/utils/retry-focus';
 
 /**
  * The settings page's body (stories 1.4a-1.4c and member rank; facts and
@@ -92,27 +93,33 @@ export function OrganizationSettingsCard({
           READ'S ATTEMPTS: a retry that fails again remounts the region, which
           is what makes `role="alert"` announce it again. */}
       {readFailure === null ? null : (
-        <Notice id={ORGANIZATION_ERROR_ID} role="alert" key={readAttempts} tabIndex={-1} className="max-w-2xl outline-none">
-          {t(organizationMessageKey(readFailure))}
-        </Notice>
+        // ONE WRAPPER FOR THE MESSAGE AND ITS RETRY (story 8.2e), so the
+        // retry's parent holds this alert alone: if the retry has focus when
+        // it goes, `keepFocusOnAlert` moves focus to the alert.
+        <div className="grid min-w-0 gap-2">
+          <Notice id={ORGANIZATION_ERROR_ID} role="alert" key={readAttempts} tabIndex={-1} className="max-w-2xl outline-none">
+            {t(organizationMessageKey(readFailure))}
+          </Notice>
+          {/* THE READ'S RETRY, beside the message that asks for one.
+              `aria-disabled` rather than `disabled` while the read is in flight,
+              so the person who pressed it keeps their place. */}
+          {readRetry ? (
+            <Button
+              ref={keepFocusOnAlert}
+              id={ORGANIZATION_READ_RETRY_ID}
+              className="h-11 w-full aria-disabled:opacity-50 sm:w-auto sm:justify-self-start"
+              type="button"
+              variant="outline"
+              aria-disabled={snapshot.isFetching}
+              aria-busy={snapshot.isFetching}
+              aria-describedby={ORGANIZATION_ERROR_ID}
+              onClick={retryRead}
+            >
+              {t('shell.retry')}
+            </Button>
+          ) : null}
+        </div>
       )}
-      {/* THE READ'S RETRY, beside the message that asks for one.
-          `aria-disabled` rather than `disabled` while the read is in flight,
-          so the person who pressed it keeps their place. */}
-      {readRetry ? (
-        <Button
-          id={ORGANIZATION_READ_RETRY_ID}
-          className="h-11 w-full aria-disabled:opacity-50 sm:w-auto sm:justify-self-start"
-          type="button"
-          variant="outline"
-          aria-disabled={snapshot.isFetching}
-          aria-busy={snapshot.isFetching}
-          aria-describedby={ORGANIZATION_ERROR_ID}
-          onClick={retryRead}
-        >
-          {t('shell.retry')}
-        </Button>
-      ) : null}
       {renderCards()}
     </div>
   );

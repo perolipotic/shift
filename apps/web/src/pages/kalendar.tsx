@@ -24,6 +24,7 @@ import {
 import { calendarMessageKey } from '@/features/calendar/services/snapshot';
 import { t } from '@/lib/i18n';
 import { appLayoutRoute } from '@/pages/_app';
+import { keepFocusOnAlert } from '@/utils/retry-focus';
 
 /**
  * `Kalendar` — one month, every active team (story 3.1). This file composes
@@ -141,6 +142,7 @@ export function KalendarScreen() {
           <Notice role="alert">{t(calendarMessageKey(refusal))}</Notice>
           {screen.retryable ? (
             <Button
+              ref={keepFocusOnAlert}
               className="h-11 w-full sm:w-auto sm:justify-self-start"
               type="button"
               variant="outline"

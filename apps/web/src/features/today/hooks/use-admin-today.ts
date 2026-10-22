@@ -21,7 +21,7 @@ import {
 } from '@/features/leave/services/leave-list';
 import { MEMBER_ROLE_KEY } from '@/features/navigation/services/role';
 import type { MemberRole } from '@/features/navigation/utils/destinations';
-import { adminTodayOf } from '@/features/today/services/admin-today';
+import { ADMIN_TODAY_UNAVAILABLE, adminTodayOf } from '@/features/today/services/admin-today';
 import { todaySurfaceKeysOf } from '@/features/today/services/surface-keys';
 import { useMinuteTicker } from '@/hooks/minute-ticker';
 import { ZONE_FROM_CALENDAR } from '@/lib/offline/freshness';
@@ -90,7 +90,7 @@ export function useAdminToday() {
   );
   // The page's role, as `useToday` reads it: an admin's, while this body is mounted.
   const pageRole = useTodayRole(calendarRead.data === undefined ? null : calendarRead.data.viewer.role);
-  const { answerOf } = useSnapshotFreshness(
+  const { clock, answerOf } = useSnapshotFreshness(
     todaySurfaceKeysOf(pageRole),
     [
       [CALENDAR_KEY, calendarRead],
@@ -164,5 +164,9 @@ export function useAdminToday() {
     }
   }
 
-  return { adminToday, retry };
+  // STORY 8.2e: the unavailable alert's read retry, never offline — its
+  // re-read would pause until the connection returns. Online it returns.
+  const retryable = clock.online && adminToday.kind === ADMIN_TODAY_UNAVAILABLE;
+
+  return { adminToday, retryable, retry };
 }

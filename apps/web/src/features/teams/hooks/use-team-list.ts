@@ -85,14 +85,15 @@ export function useTeamList() {
   // them). Under the freshness (story 8.2d) a paused refetch is never seen:
   // the as-of note stands where that message stood.
   const refusal = teamsNoticeOf(state);
+  // NO READ RETRY OFFLINE (story 8.2d, decision 2a): `retryable` means "show
+  // the read retry now" (story 8.2e) — the read's message is up, and the
+  // connection is: offline the message stays without its retry, and the
+  // retry comes back with the connection.
+  const retryable = clock.online && refusal !== null;
   const split = teams === null ? null : splitTeams(teams);
   // STORY 8.2d: the as-of note, while the cached list is drawn offline; none
   // beside the unavailable message.
   const offline = offlineNoteOf(freshness, timeZone, refusal !== null);
-  // NO READ RETRY OFFLINE (story 8.2d, decision 2a): `retryable` is the
-  // connection's, so offline the message stays without its retry, and the
-  // retry comes back with the connection.
-  const retryable = clock.online;
 
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();

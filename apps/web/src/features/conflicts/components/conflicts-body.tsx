@@ -24,6 +24,7 @@ import {
 import { resolutionSavedMessageKey, type ResolutionSaved } from '@/features/conflicts/services/resolution-screen';
 import { REPLACE_MEMBER } from '@/features/conflicts/services/resolutions';
 import { t } from '@/lib/i18n';
+import { keepFocusOnAlert } from '@/utils/retry-focus';
 
 /**
  * What *Raspored* shows under its heading (story 5.3b): the skeleton while
@@ -52,7 +53,8 @@ export function ConflictsBody({
   readonly onTab: (tab: ConflictsTab) => void;
   readonly saved: ResolutionSaved | null;
   readonly savedField: RefObject<HTMLParagraphElement | null>;
-  readonly onRetry: () => void;
+  /** The unavailable alert's read retry, or `null` for none: never offline (story 8.2e). */
+  readonly onRetry: (() => void) | null;
 }): ReactNode {
   return (
     <div className="flex min-w-0 flex-col gap-3">
@@ -80,7 +82,13 @@ export function ConflictsBody({
 }
 
 /** The *Riješeni* tab's own state: the skeleton, the alert with its retry, or the list. */
-function ResolvedState({ resolved, onRetry }: { readonly resolved: ResolvedConflicts; readonly onRetry: () => void }): ReactNode {
+function ResolvedState({
+  resolved,
+  onRetry,
+}: {
+  readonly resolved: ResolvedConflicts;
+  readonly onRetry: (() => void) | null;
+}): ReactNode {
   if (resolved.kind === RESOLVED_LOADING) return <ConflictsSkeleton />;
 
   if (resolved.kind === RESOLVED_UNAVAILABLE) {
@@ -90,19 +98,34 @@ function ResolvedState({ resolved, onRetry }: { readonly resolved: ResolvedConfl
   return <ResolvedList view={resolved.view} />;
 }
 
-function UnavailableAlert({ onRetry }: { readonly onRetry: () => void }): ReactNode {
+/** Both tabs' unavailable alert, with its read retry when `onRetry` is given. */
+function UnavailableAlert({ onRetry }: { readonly onRetry: (() => void) | null }): ReactNode {
   return (
     <div className="grid min-w-0 gap-2">
       <Notice role="alert">{t('raspored.unavailable')}</Notice>
-      <Button className="h-11 w-full sm:w-auto sm:justify-self-start" type="button" variant="outline" onClick={onRetry}>
-        {t('raspored.retry')}
-      </Button>
+      {onRetry === null ? null : (
+        <Button
+          ref={keepFocusOnAlert}
+          className="h-11 w-full sm:w-auto sm:justify-self-start"
+          type="button"
+          variant="outline"
+          onClick={onRetry}
+        >
+          {t('raspored.retry')}
+        </Button>
+      )}
     </div>
   );
 }
 
 /** The queue's own state: the skeleton, the alert with its retry, or the list. */
-function ConflictsQueueState({ queue, onRetry }: { readonly queue: ConflictsQueue; readonly onRetry: () => void }): ReactNode {
+function ConflictsQueueState({
+  queue,
+  onRetry,
+}: {
+  readonly queue: ConflictsQueue;
+  readonly onRetry: (() => void) | null;
+}): ReactNode {
   if (queue.kind === CONFLICTS_LOADING) return <ConflictsSkeleton />;
 
   if (queue.kind === CONFLICTS_UNAVAILABLE) {

@@ -57,7 +57,7 @@ import {
  * redirected before the component is ever asked for.
  */
 export function DanasScreen() {
-  const { today, tiles, date, ownTeam, role: snapshotRole, loading: todayLoading, offline, retry } = useToday();
+  const { today, tiles, date, ownTeam, role: snapshotRole, loading: todayLoading, offline, retryable, retry } = useToday();
   const admin = showsAdminToday(useTodayRole(snapshotRole));
   // Whether the admin body's own reads are pending: `main` is busy then too.
   const [adminBusy, setAdminBusy] = useState(false);
@@ -133,7 +133,7 @@ export function DanasScreen() {
         </div>
       ) : (
         <div className="grid w-full min-w-0 max-w-lg gap-4">
-          <TodayBody today={today} tiles={tiles} onRetry={retry} />
+          <TodayBody today={today} tiles={tiles} retryable={retryable} onRetry={retry} />
         </div>
       )}
     </main>

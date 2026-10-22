@@ -115,7 +115,7 @@ export function useHours(search: HoursSearch, go: (next: HoursSearch) => void) {
   // STORY 8.2b: every read is seen through *Sati*'s freshness, decided from
   // these very observer results; a read off the keys — the other role's
   // disabled reads — passes raw.
-  const { freshness, answerFor } = useSnapshotFreshness(
+  const { freshness, clock, answerFor } = useSnapshotFreshness(
     hoursSurfaceKeysOf(readsRole),
     [
       [CALENDAR_KEY, answerRead],
@@ -260,6 +260,9 @@ export function useHours(search: HoursSearch, go: (next: HoursSearch) => void) {
 
   return {
     ...surface,
+    // STORY 8.2e: the unavailable message's read retry, never offline — its
+    // re-read would pause until the connection returns. Online it returns.
+    retryable: clock.online && surface.retryable,
     organizationName,
     own,
     explain,

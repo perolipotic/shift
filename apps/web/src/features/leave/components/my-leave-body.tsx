@@ -12,6 +12,7 @@ import {
   type MyLeave,
 } from '@/features/leave/services/my-leave';
 import { t } from '@/lib/i18n';
+import { keepFocusOnAlert } from '@/utils/retry-focus';
 
 /**
  * What *Godišnji* shows under its heading (story 5.2c): the skeleton while
@@ -20,16 +21,33 @@ import { t } from '@/lib/i18n';
  * been on a team — a fact, so no retry and no figure — and otherwise the three
  * figures. `myLeaveOf` decides which; this only draws it.
  */
-export function MyLeaveBody({ leave, onRetry }: { readonly leave: MyLeave; readonly onRetry: () => void }): ReactNode {
+export function MyLeaveBody({
+  leave,
+  retryable,
+  onRetry,
+}: {
+  readonly leave: MyLeave;
+  /** Whether to show the read retry now: the unavailable state, online (story 8.2e). */
+  readonly retryable: boolean;
+  readonly onRetry: () => void;
+}): ReactNode {
   if (leave.kind === MY_LEAVE_LOADING) return <MyLeaveSkeleton />;
 
   if (leave.kind === MY_LEAVE_UNAVAILABLE) {
     return (
       <div className="grid min-w-0 gap-2">
         <Notice role="alert">{t(myLeaveMessageKey(leave.kind))}</Notice>
-        <Button className="h-11 w-full sm:w-auto sm:justify-self-start" type="button" variant="outline" onClick={onRetry}>
-          {t('godisnji.retry')}
-        </Button>
+        {retryable ? (
+          <Button
+            ref={keepFocusOnAlert}
+            className="h-11 w-full sm:w-auto sm:justify-self-start"
+            type="button"
+            variant="outline"
+            onClick={onRetry}
+          >
+            {t('godisnji.retry')}
+          </Button>
+        ) : null}
       </div>
     );
   }

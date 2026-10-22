@@ -129,7 +129,7 @@ export function useConflictsQueue() {
   // whole cached snapshot is drawn under the as-of note (`offline`), or the
   // unavailable state is. The names join the keys on *Riješeni* alone, so on
   // *Neriješeni* they pass raw (`answerFor`) and never decide the queue.
-  const { freshness, answerOf, answerFor } = useSnapshotFreshness(
+  const { freshness, clock, answerOf, answerFor } = useSnapshotFreshness(
     rasporedSurfaceKeysOf(tab),
     [
       [CALENDAR_KEY, calendarRead],
@@ -178,5 +178,22 @@ export function useConflictsQueue() {
     }
   }
 
-  return { queue, resolved, tab, setTab, saved, savedField, loading: queue.kind === CONFLICTS_LOADING, retry, offline };
+  return {
+    queue,
+    resolved,
+    tab,
+    setTab,
+    saved,
+    savedField,
+    loading: queue.kind === CONFLICTS_LOADING,
+    // STORY 8.2e: "show the read retry now" — the surface is in its
+    // retryable unavailable state, and online: offline its re-read would
+    // pause until the connection returns.
+    // The open tab's.
+    retryable:
+      clock.online &&
+      (tab === TAB_RESOLVED ? resolved.kind === RESOLVED_UNAVAILABLE : queue.kind === CONFLICTS_UNAVAILABLE),
+    retry,
+    offline,
+  };
 }

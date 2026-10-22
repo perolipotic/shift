@@ -107,7 +107,7 @@ export function useMemberDirectory(search: string, navigate: DirectoryNavigate) 
   // THE NOTE'S ZONE: the organization snapshot's, or the own-team read's; with
   // neither, the directory is unavailable offline, never drawn without its note.
   const timeZone = directoryTimeZoneOf(organization.data, own.data);
-  const { freshness, answerOf } = useSnapshotFreshness(
+  const { freshness, clock, answerOf } = useSnapshotFreshness(
     directorySurfaceKeysOf(active.map((team) => team.id)),
     [
       [TEAMS_LIST_KEY, teams],
@@ -179,6 +179,10 @@ export function useMemberDirectory(search: string, navigate: DirectoryNavigate) 
     searchField,
     changeSearch,
     clearSearch,
+    // STORY 8.2e: "show the read retry now" — the surface is in its
+    // retryable unavailable state, and online: offline its re-read would
+    // pause until the connection returns.
+    retryable: clock.online && directory.kind === DIRECTORY_UNAVAILABLE,
     retry,
     shown: ranksShown(snapshot),
     positionShown: positionsShown(snapshot),

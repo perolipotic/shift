@@ -18,6 +18,7 @@ import {
 } from '@/features/today/services/today';
 import type { TodayTiles } from '@/features/today/services/today-tiles';
 import { t } from '@/lib/i18n';
+import { keepFocusOnAlert } from '@/utils/retry-focus';
 
 /**
  * What *Danas* shows a member (story 6.1a), in phone priority order: the skeleton while the reads are unanswered; one alert, with a retry
@@ -32,10 +33,13 @@ import { t } from '@/lib/i18n';
 export function TodayBody({
   today,
   tiles,
+  retryable,
   onRetry,
 }: {
   readonly today: Today;
   readonly tiles: TodayTiles;
+  /** Whether the unavailable alert offers its read retry: where reading again can help, and never offline (story 8.2e). */
+  readonly retryable: boolean;
   readonly onRetry: () => void;
 }): ReactNode {
   if (today.kind === TODAY_LOADING) return <TodaySkeleton />;
@@ -44,8 +48,14 @@ export function TodayBody({
     return (
       <Card className="grid min-w-0 gap-2 p-4 sm:p-6">
         <Notice role="alert">{t(todayMessageKey(today.kind))}</Notice>
-        {today.retryable ? (
-          <Button className="h-11 w-full sm:w-auto sm:justify-self-start" type="button" variant="outline" onClick={onRetry}>
+        {retryable ? (
+          <Button
+            ref={keepFocusOnAlert}
+            className="h-11 w-full sm:w-auto sm:justify-self-start"
+            type="button"
+            variant="outline"
+            onClick={onRetry}
+          >
             {t('danas.retry')}
           </Button>
         ) : null}

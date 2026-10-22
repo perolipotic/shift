@@ -12,6 +12,7 @@ import { t } from '@/lib/i18n';
 import { requireAdmin } from '@/features/navigation/services/admin-guard';
 import { appLayoutRoute } from '@/pages/_app';
 import { OrganizacijaSatniPojasiScreen } from '@/pages/organizacija.satni-pojasi';
+import { keepFocusOnAlert } from '@/utils/retry-focus';
 
 /**
  * `/organizacija/satni-pojasi/$id` — edit one hour band's name or start, or
@@ -80,9 +81,11 @@ function HourBandScreen({ id }: { readonly id: string }) {
         {readRefusal === null ? null : (
           <div className="grid min-w-0 gap-2">
             <Notice role="alert">{t(hourBandsMessageKey(readRefusal))}</Notice>
-            {/* STORY 8.2d: no read retry offline; it comes back with the connection. */}
+            {/* STORY 8.2d: no read retry offline; it comes back with the connection.
+                If this retry has focus when it goes, `keepFocusOnAlert` moves focus to the alert. */}
             {screen.retryable ? (
               <Button
+                ref={keepFocusOnAlert}
                 className="h-11 w-full sm:w-auto sm:justify-self-start"
                 type="button"
                 variant="outline"

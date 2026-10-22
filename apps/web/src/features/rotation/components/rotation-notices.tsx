@@ -25,6 +25,7 @@ import {
 } from '@/features/rotation/utils/warnings';
 import { retryRead } from '@/features/teams/services/dependents';
 import { t } from '@/lib/i18n';
+import { keepFocusOnAlert } from '@/utils/retry-focus';
 
 /**
  * The builder's notices, right under its header (stories 2.3b–2.6, 5.5a,
@@ -352,9 +353,11 @@ export function RotationNotices({ builder }: { readonly builder: RotationBuilder
       {refusal === null ? null : (
         <div className="grid min-w-0 gap-2">
           <Notice role="alert">{t(rotationMessageKey(refusal))}</Notice>
-          {/* STORY 8.2d: no read retry offline; it comes back with the connection. */}
+          {/* STORY 8.2d: no read retry offline; it comes back with the connection.
+              If this retry has focus when it goes, `keepFocusOnAlert` moves focus to the alert. */}
           {retryable ? (
             <Button
+              ref={keepFocusOnAlert}
               className="h-11 w-full sm:w-auto sm:justify-self-start"
               type="button"
               variant="outline"

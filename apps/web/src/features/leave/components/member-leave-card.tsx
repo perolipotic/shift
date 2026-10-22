@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Notice } from '@/components/ui/notice';
 import { t } from '@/lib/i18n';
+import { keepFocusOnAlert } from '@/utils/retry-focus';
 import { useMemberLeave } from '@/features/leave/hooks/use-member-leave';
 import { MemberLeaveDialog } from '@/features/leave/components/member-leave-dialog';
 import {
@@ -77,8 +78,14 @@ export function MemberLeaveCard({
       return (
         <div className="grid min-w-0 gap-2">
           <Notice role="alert">{t(leaveBaseMessageKey(base.kind))}</Notice>
-          {base.kind === LEAVE_UNAVAILABLE ? (
-            <Button className="h-11 w-full sm:w-auto sm:justify-self-start" type="button" variant="outline" onClick={leave.retry}>
+          {leave.retryable ? (
+            <Button
+              ref={keepFocusOnAlert}
+              className="h-11 w-full sm:w-auto sm:justify-self-start"
+              type="button"
+              variant="outline"
+              onClick={leave.retry}
+            >
               {t('ljudi.leaveRecord.retry')}
             </Button>
           ) : null}

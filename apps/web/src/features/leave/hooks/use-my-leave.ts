@@ -58,7 +58,7 @@ export function useMyLeave() {
   // STORY 8.2b: the four reads are one snapshot, decided from these very
   // observer results over *Godišnji*'s member keys — this hook draws a
   // member's own figures alone, whatever the snapshot names.
-  const { freshness, answerFor } = useSnapshotFreshness(
+  const { freshness, clock, answerFor } = useSnapshotFreshness(
     GODISNJI_MEMBER_SURFACE_KEYS,
     [
       [CALENDAR_KEY, calendarRead],
@@ -101,6 +101,10 @@ export function useMyLeave() {
       calendarState.snapshot === null ? null : calendarState.snapshot.timeZone,
       leave.kind === MY_LEAVE_UNAVAILABLE,
     ),
+    // STORY 8.2e: "show the read retry now" — the surface is in its
+    // retryable unavailable state, and online: offline its re-read would
+    // pause until the connection returns.
+    retryable: clock.online && leave.kind === MY_LEAVE_UNAVAILABLE,
     retry,
   };
 }

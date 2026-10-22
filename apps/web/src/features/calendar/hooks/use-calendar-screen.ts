@@ -154,7 +154,7 @@ export function useCalendarScreen(
   // STORY 8.2: the month's reads are one snapshot, decided from these very
   // observer results (`useSnapshotFreshness`); a read off the month's keys —
   // the other role's leave, a member's disabled resolutions — passes raw.
-  const { freshness, answerFor } = useSnapshotFreshness(
+  const { freshness, clock, answerFor } = useSnapshotFreshness(
     calendarSurfaceKeysOf(readsRole),
     [
       [CALENDAR_KEY, answerRead],
@@ -261,12 +261,16 @@ export function useCalendarScreen(
         : calendarMonthOutcomeOf(snapshot, { mjesec, smjena, osoba }, today, marks),
     [snapshot, mjesec, smjena, osoba, today, marks],
   );
-  // A retry only where reading again can help: a failed or paused read.
-  const { refusal, retryable } = calendarRefusalOf(
+  // A retry only where reading again can help: a failed read (the refusal's
+  // own `retryable`) — and, below, only online.
+  const { refusal, retryable: refusalRetryable } = calendarRefusalOf(
     state.refusal,
     marksState,
     outcome !== null && !outcome.ok ? outcome.code : null,
   );
+  // STORY 8.2e: "show the read retry now" — never offline, where the re-read
+  // would pause until the connection returns. Online it returns.
+  const retryable = clock.online && refusalRetryable;
   const month = outcome !== null && outcome.ok ? outcome.month : null;
   // READ LIVE: crossing 640 px changes the default mode while no `prikaz` is chosen.
   const isPhone = usePhone();

@@ -11,6 +11,7 @@ import {
 } from '@/features/leave/services/leave-list';
 import {
   GODISNJI_OVERVIEW,
+  GODISNJI_UNAVAILABLE,
   OVERVIEW_LOADING,
   OVERVIEW_READY,
   OVERVIEW_UNAVAILABLE,
@@ -122,7 +123,7 @@ export function useLeaveOverview(search: GodisnjiSearch, navigate: GodisnjiNavig
   // very observer results. For anybody but an admin the gate decides over the
   // calendar snapshot alone: a member's own figures are `useMyLeave`'s, with
   // their own freshness, and the disabled reads here pass raw.
-  const { freshness, answerFor } = useSnapshotFreshness(
+  const { freshness, clock, answerFor } = useSnapshotFreshness(
     godisnjiSurfaceKeysOf(readsAdmin ? readsRole : null),
     [
       [CALENDAR_KEY, calendarRead],
@@ -320,6 +321,11 @@ export function useLeaveOverview(search: GodisnjiSearch, navigate: GodisnjiNavig
     removeChip,
     clearFilters,
     resetFilters,
+    // STORY 8.2e: "show the read retry now" — the surface is in its
+    // retryable unavailable state, and online: offline its re-read would
+    // pause until the connection returns.
+    // The overview's own unavailable state, or the page's fallback (`GODISNJI_UNAVAILABLE`).
+    retryable: clock.online && (admin ? overview.kind === OVERVIEW_UNAVAILABLE : view === GODISNJI_UNAVAILABLE),
     retry,
   };
 }

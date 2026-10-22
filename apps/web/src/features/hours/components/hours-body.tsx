@@ -16,11 +16,12 @@ import { hoursMessageKey, type HoursFailure, type MyHoursView } from '@/features
 import type { OrganizationHoursView } from '@/features/hours/services/organization-hours';
 import { usePhone } from '@/hooks/viewport';
 import { t } from '@/lib/i18n';
+import { keepFocusOnAlert } from '@/utils/retry-focus';
 
 /**
  * The one message *Sati* shows, or nothing — with its retry when `onRetry` is
- * given: a read that failed or is paused offline (`retryable`, story 5.3d),
- * never a refusal reading again would repeat.
+ * given: a read that failed (`retryable`, story 5.3d), never a refusal
+ * reading again would repeat, and never offline (story 8.2e).
  */
 export function HoursNotice({
   refusal,
@@ -37,7 +38,13 @@ export function HoursNotice({
     <div className="grid min-w-0 gap-2">
       <Notice role="alert">{t(hoursMessageKey(refusal))}</Notice>
       {onRetry === null ? null : (
-        <Button className="h-11 w-full sm:w-auto sm:justify-self-start" type="button" variant="outline" onClick={onRetry}>
+        <Button
+          ref={keepFocusOnAlert}
+          className="h-11 w-full sm:w-auto sm:justify-self-start"
+          type="button"
+          variant="outline"
+          onClick={onRetry}
+        >
           {t('sati.retry')}
         </Button>
       )}

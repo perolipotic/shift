@@ -17,6 +17,7 @@ import {
   type DirectoryGroup,
 } from '@/features/teams/services/directory';
 import { t } from '@/lib/i18n';
+import { keepFocusOnAlert } from '@/utils/retry-focus';
 
 const SKELETON_GROUPS = [0, 1];
 const SKELETON_ROWS = [0, 1, 2];
@@ -34,7 +35,7 @@ const SKELETON_ROWS = [0, 1, 2];
  * indentation, so the sign-in suite's scoped extraction reads each one.
  */
 export function MemberDirectory({ screen }: { readonly screen: MemberDirectoryScreen }): ReactNode {
-  const { directory, search, searchField, changeSearch, clearSearch, retry, shown, positionShown } = screen;
+  const { directory, search, searchField, changeSearch, clearSearch, retryable, retry, shown, positionShown } = screen;
 
   function renderGroup(group: DirectoryGroup): ReactNode {
     const headingId = directoryHeadingIdOf(group);
@@ -78,9 +79,17 @@ export function MemberDirectory({ screen }: { readonly screen: MemberDirectorySc
       return (
         <Card className="grid min-w-0 gap-2 p-4 sm:p-6">
           <Notice role="alert">{t('ljudi.directory.unavailable')}</Notice>
-          <Button className="h-11 w-full sm:w-auto sm:justify-self-start" type="button" variant="outline" onClick={retry}>
-            {t('ljudi.directory.retry')}
-          </Button>
+          {retryable ? (
+            <Button
+              ref={keepFocusOnAlert}
+              className="h-11 w-full sm:w-auto sm:justify-self-start"
+              type="button"
+              variant="outline"
+              onClick={retry}
+            >
+              {t('ljudi.directory.retry')}
+            </Button>
+          ) : null}
         </Card>
       );
     }

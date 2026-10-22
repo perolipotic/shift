@@ -11,6 +11,7 @@ import { t } from '@/lib/i18n';
 import { requireAdmin } from '@/features/navigation/services/admin-guard';
 import { appLayoutRoute } from '@/pages/_app';
 import { LjudiSmjeneScreen } from '@/pages/ljudi.smjene';
+import { keepFocusOnAlert } from '@/utils/retry-focus';
 
 /**
  * `/ljudi/smjene/$id` — rename or archive one team, or view an archived one
@@ -73,9 +74,11 @@ function TeamScreen({ id }: { readonly id: string }) {
             <Notice role="alert">
               {t(teamsMessageKey(readRefusal))}
             </Notice>
-            {/* STORY 8.2d: no read retry offline; it comes back with the connection. */}
+            {/* STORY 8.2d: no read retry offline; it comes back with the connection.
+                If this retry has focus when it goes, `keepFocusOnAlert` moves focus to the alert. */}
             {screen.retryable ? (
               <Button
+                ref={keepFocusOnAlert}
                 className="h-11 w-full sm:w-auto sm:justify-self-start"
                 type="button"
                 variant="outline"

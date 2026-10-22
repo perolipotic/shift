@@ -55,6 +55,15 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * cards come back with the connection. A *Postavke rotacije* never read, or
  * with only its shift types cached, is unavailable as a whole, both sections,
  * with no retry and no note.
+ *
+ * Story 8.2e: no surface offers *Pokušaj ponovno* offline — its re-read would
+ * pause until the connection returns. A member's *Danas*, *Kalendar*, *Sati*
+ * and *Godišnji* never read online are unavailable offline with no retry, and
+ * so are an admin's *Ljudi* table and *Godišnji* overview; an admin *Danas*, a
+ * resolution page and the chrome's role notice whose read failed online offer
+ * the retry online and none offline. A retry that had focus when the
+ * connection dropped (*Kalendar*, the organization card) hands it to its
+ * alert, and online the retry is back.
  */
 
 test.describe('offline reading, as a member', () => {
@@ -320,7 +329,9 @@ test.describe("offline reading of the admin's work surfaces (story 8.2c)", () =>
     await expect(conflictsPage.offlineNote, 'the queue read online is drawn under the note').toHaveCount(1);
     await conflictsPage.resolvedTab.click();
     await expect(conflictsPage.resolvedTab).toHaveAttribute('aria-selected', 'true');
-    await expect(conflictsPage.retryButton).toBeVisible();
+    await expect(conflictsPage.alertWith(hr.raspored.unavailable)).toBeVisible();
+    // STORY 8.2e: no read retry offline; it comes back with the connection.
+    await expect(conflictsPage.retryButton).toHaveCount(0);
     await expect(conflictsPage.offlineNote).toHaveCount(0);
   });
 
@@ -391,8 +402,12 @@ test.describe("offline reading of the admin's work surfaces (story 8.2c)", () =>
     await page.context().setOffline(true);
     await peoplePage.editLink(fixture.member.name).first().click();
     await expect(page).toHaveURL(/\/ljudi\/[^/]+$/);
-    // The member is in the cached list, yet the page is never half drawn: the member read is unavailable too.
-    await expect(peoplePage.basicsCard.getByRole('button', { name: hr.ljudi.error.retry, exact: true })).toBeVisible();
+    // The member is in the cached list, yet the page is never half drawn: the
+    // member read is unavailable too — with no read retry offline (story 8.2e).
+    await expect(peoplePage.basicsCard.getByRole('alert')).toBeVisible();
+    await expect(peoplePage.basicsCard.getByRole('button', { name: hr.ljudi.error.retry, exact: true })).toHaveCount(0);
+    await expect(peoplePage.retryLeaveButton).toHaveCount(0);
+    await expect(peoplePage.teamsRetry).toHaveCount(0);
     await expect(peoplePage.memberHeading(fixture.member.name)).toHaveCount(0);
     await expect(peoplePage.offlineNote).toHaveCount(0);
   });
@@ -643,5 +658,182 @@ test.describe('offline reading of the settings surfaces (story 8.2d)', () => {
     await expect(rotationPage.rotationRetryButton).toHaveCount(0);
     await expect(rotationPage.offlineNote).toHaveCount(0);
     await expect(rotationPage.historyButton).toHaveCount(0);
+  });
+});
+
+test.describe('no read retry offline (story 8.2e)', () => {
+  test.use({ storageState: MEMBER_STATE });
+
+  test('Danas, Kalendar, Sati and Godišnji never read online are unavailable offline, with no read retry', async ({
+    page,
+    peoplePage,
+    todayPage,
+    calendarPage,
+    hoursPage,
+    leavePage,
+  }) => {
+    // THE PRECONDITION: the directory reads neither the calendar snapshot nor
+    // the member's own leave and resolutions, so none is cached.
+    await peoplePage.goto();
+    await expect(peoplePage.directoryGroups.first()).toBeVisible();
+    await expect(peoplePage.busyMain).toHaveCount(0);
+
+    await page.context().setOffline(true);
+    await todayPage.navigationLink(hr.nav.danas, { exact: true }).click();
+    await expect(todayPage.heading(hr.nav.danas)).toBeVisible();
+    await expect(todayPage.unavailableAlert).toBeVisible();
+    await expect(todayPage.retryButton).toHaveCount(0);
+    await expect(todayPage.offlineNote).toHaveCount(0);
+
+    await calendarPage.navigationLink(hr.nav.kalendar, { exact: true }).click();
+    await expect(calendarPage.heading(hr.nav.kalendar)).toBeVisible();
+    await expect(calendarPage.unavailableAlert).toBeVisible();
+    await expect(calendarPage.retryButton).toHaveCount(0);
+    await expect(calendarPage.offlineNote).toHaveCount(0);
+
+    await hoursPage.navigationLink(hr.nav.sati, { exact: true }).click();
+    await expect(hoursPage.heading(hr.nav.sati)).toBeVisible();
+    await expect(hoursPage.unavailableAlert).toBeVisible();
+    await expect(hoursPage.retryButton).toHaveCount(0);
+    await expect(hoursPage.offlineNote).toHaveCount(0);
+
+    await leavePage.navigationLink(hr.nav.godisnji, { exact: true }).click();
+    await expect(leavePage.heading(hr.nav.godisnji)).toBeVisible();
+    await expect(leavePage.alertWith(hr.godisnji.unavailable)).toBeVisible();
+    await expect(leavePage.retryButton).toHaveCount(0);
+    await expect(leavePage.offlineNote).toHaveCount(0);
+  });
+});
+
+test.describe('no read retry offline, as an admin (story 8.2e)', () => {
+  test.use({ storageState: ADMIN_STATE });
+
+  test('a read retry that has focus when the connection drops hands it to its alert, and comes back online', async ({
+    page,
+    calendarPage,
+  }) => {
+    // A refused answer rather than an aborted socket, as the calendar
+    // conflicts spec's: the organization's leave read fails online, so the
+    // month is unavailable with its retry.
+    const records = '**/rest/v1/leave_records*';
+
+    await page.route(records, (route) => route.fulfill({ status: 500, body: '{}' }));
+    await calendarPage.goto('?prikaz=sve');
+    await expect(calendarPage.unavailableAlert).toBeVisible();
+    await calendarPage.retryButton.focus();
+    await expect(calendarPage.retryButton).toBeFocused();
+
+    await page.context().setOffline(true);
+    await expect(calendarPage.retryButton).toHaveCount(0);
+    await expect(calendarPage.unavailableAlert, 'focus moves to the alert beside the retry').toBeFocused();
+
+    await page.context().setOffline(false);
+    await expect(calendarPage.unavailableAlert).toBeVisible();
+    await expect(calendarPage.retryButton, 'online, the retry is back').toBeVisible();
+  });
+
+  test('the organization card\'s read retry, focused when the connection drops, hands focus to its alert', async ({
+    page,
+    organizationPage,
+  }) => {
+    // The settings retry spec's failing read: a refused answer, so the card
+    // shows its message and its retry online.
+    await page.route('**/rest/v1/organizations*', (route) =>
+      route.fulfill({ status: 400, contentType: 'application/json', body: '{"code":"E2E","message":"unavailable"}' }),
+    );
+    await organizationPage.goto();
+    const alert = organizationPage.alertWith(hr.organization.error.unavailable);
+
+    await expect(alert).toBeVisible();
+    await organizationPage.shellRetryButton.focus();
+    await expect(organizationPage.shellRetryButton).toBeFocused();
+
+    await page.context().setOffline(true);
+    await expect(organizationPage.shellRetryButton).toHaveCount(0);
+    await expect(alert, 'focus moves to the alert beside the retry').toBeFocused();
+
+    await page.context().setOffline(false);
+    await expect(organizationPage.shellRetryButton, 'online, the retry is back').toBeVisible();
+  });
+
+  test('an admin Danas whose read failed online keeps its alert offline, with no read retry', async ({
+    page,
+    todayPage,
+  }) => {
+    await page.route('**/rest/v1/leave_records*', (route) => route.fulfill({ status: 500, body: '{}' }));
+    await todayPage.goto();
+    await expect(todayPage.adminUnavailableAlert).toBeVisible();
+    await expect(todayPage.retryButton, 'online, the read retry is offered').toBeVisible();
+
+    await page.context().setOffline(true);
+    await expect(todayPage.adminUnavailableAlert).toBeVisible();
+    await expect(todayPage.retryButton).toHaveCount(0);
+  });
+
+  test('a resolution page whose read failed online keeps its alert offline, with no read retry', async ({
+    page,
+    fixture,
+    resolutionPage,
+  }) => {
+    await page.route('**/rest/v1/leave_records*', (route) => route.fulfill({ status: 500, body: '{}' }));
+    await resolutionPage.gotoConflict(randomUUID(), '2026-06-15', fixture.team.id);
+    const alert = resolutionPage.alertWith(hr.raspored.resolution.unavailable);
+    const retry = resolutionPage.retryButton;
+
+    await expect(alert).toBeVisible();
+    await expect(retry, 'online, the read retry is offered').toBeVisible();
+
+    await page.context().setOffline(true);
+    await expect(alert).toBeVisible();
+    await expect(retry).toHaveCount(0);
+  });
+
+  test('the Ljudi table and the Godišnji overview never read online are unavailable offline, with no read retry', async ({
+    page,
+    organizationPage,
+    peoplePage,
+    leavePage,
+  }) => {
+    // THE PRECONDITION: Organizacija reads neither the member list nor the
+    // calendar snapshot, so neither is cached when the connection drops.
+    await organizationPage.goto();
+    await expect(organizationPage.timeRegion).toBeVisible();
+    await expect(organizationPage.busyMain).toHaveCount(0);
+
+    await page.context().setOffline(true);
+    await peoplePage.navigationLink(hr.nav.ljudi, { exact: true }).click();
+    await expect(peoplePage.heading(hr.nav.ljudi)).toBeVisible();
+    await expect(peoplePage.alertWith(hr.ljudi.error.unavailable)).toBeVisible();
+    await expect(peoplePage.membersRetry).toHaveCount(0);
+
+    await leavePage.navigationLink(hr.nav.godisnji, { exact: true }).click();
+    await expect(leavePage.heading(hr.nav.godisnji)).toBeVisible();
+    await expect(leavePage.overviewUnavailable).toBeVisible();
+    await expect(leavePage.retryButton).toHaveCount(0);
+  });
+
+  test('the chrome\'s role notice, with no role read online, offers no retry offline', async ({ page, todayPage }) => {
+    // The role read refused online, as the phone navigation spec's: the
+    // notice and its retry show, and no role is cached.
+    await page.route(
+      (url) => url.pathname.endsWith('/rest/v1/members') && url.searchParams.get('select') === 'role',
+      (route) =>
+        route.fulfill({
+          status: 400,
+          json: { code: '42703', details: null, hint: null, message: 'e2e: role read refused' },
+        }),
+    );
+    await page.goto('/danas');
+    const notice = todayPage.alertWith(hr.shell.error.destinations);
+
+    await expect(notice).toBeVisible();
+    await expect(todayPage.shellRetryButton, 'online, the retry is offered').toBeVisible();
+
+    await page.context().setOffline(true);
+    await expect(notice).toBeVisible();
+    await expect(todayPage.shellRetryButton).toHaveCount(0);
+
+    await page.context().setOffline(false);
+    await expect(todayPage.shellRetryButton, 'online, the retry is back').toBeVisible();
   });
 });

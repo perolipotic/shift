@@ -21,6 +21,7 @@ import {
 } from '@/features/leave/services/leave-overview';
 import { t } from '@/lib/i18n';
 import { appLayoutRoute } from '@/pages/_app';
+import { keepFocusOnAlert } from '@/utils/retry-focus';
 
 /**
  * `Godišnji` — ONE DESTINATION WHOSE CONTENT IS ROLE-SCOPED, as *Sati* is
@@ -96,14 +97,17 @@ export function GodisnjiScreen() {
           ) : (
             <div className="grid min-w-0 gap-2">
               <Notice role="alert">{t('godisnji.unavailable')}</Notice>
-              <Button
-                className="h-11 w-full sm:w-auto sm:justify-self-start"
-                type="button"
-                variant="outline"
-                onClick={screen.retry}
-              >
-                {t('godisnji.retry')}
-              </Button>
+              {screen.retryable ? (
+                <Button
+                  ref={keepFocusOnAlert}
+                  className="h-11 w-full sm:w-auto sm:justify-self-start"
+                  type="button"
+                  variant="outline"
+                  onClick={screen.retry}
+                >
+                  {t('godisnji.retry')}
+                </Button>
+              ) : null}
             </div>
           )}
         </Card>
@@ -114,7 +118,7 @@ export function GodisnjiScreen() {
 
 /** A member-role session's *Godišnji*: their own three figures, as since story 5.2c. */
 function GodisnjiOwn() {
-  const { leave, loading, offline, retry } = useMyLeave();
+  const { leave, loading, offline, retryable, retry } = useMyLeave();
 
   return (
     <main className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6" aria-busy={loading}>
@@ -125,7 +129,7 @@ function GodisnjiOwn() {
       </PageHeader>
       <OfflineNote offline={offline} />
       <Card className="min-w-0 p-4">
-        <MyLeaveBody leave={leave} onRetry={retry} />
+        <MyLeaveBody leave={leave} retryable={retryable} onRetry={retry} />
       </Card>
     </main>
   );

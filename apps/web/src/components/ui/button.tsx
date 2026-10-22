@@ -69,6 +69,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     return (
       <Comp
         className={cn(buttonVariants({ variant, size, className }))}
+        // Passed through unchanged: `keepFocusOnAlert` (story 8.2e) relies on its ref callback's cleanup.
         ref={ref}
         {...props}
       />

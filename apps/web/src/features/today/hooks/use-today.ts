@@ -101,7 +101,7 @@ export function useToday() {
   // as it stands, never a figure drawn.
   const snapshotRole = calendarRead.data === undefined ? null : calendarRead.data.viewer.role;
   const pageRole = useTodayRole(snapshotRole);
-  const { freshness, answerOf } = useSnapshotFreshness(
+  const { freshness, clock, answerOf } = useSnapshotFreshness(
     todaySurfaceKeysOf(pageRole),
     [
       [CALENDAR_KEY, calendarRead],
@@ -241,6 +241,9 @@ export function useToday() {
       freshness.kind === FRESHNESS_OFFLINE && snapshot !== null && today.kind !== TODAY_UNAVAILABLE
         ? { asOf: freshness.asOf, timeZone: snapshot.timeZone }
         : null,
+    // STORY 8.2e: the unavailable alert's read retry, never offline — its
+    // re-read would pause until the connection returns. Online it returns.
+    retryable: clock.online && today.kind === TODAY_UNAVAILABLE && today.retryable,
     retry,
   };
 }

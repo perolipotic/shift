@@ -20,6 +20,7 @@ import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { Select } from '@/components/ui/select';
 import { t } from '@/lib/i18n';
+import { keepFocusOnAlert } from '@/utils/retry-focus';
 import type { MemberEdit } from '@/features/members/hooks/use-member-edit';
 import { memberErasureCopyOf } from '@/features/members/utils/erasure-copy';
 import { type MemberListRow } from '@/features/members/services/list';
@@ -132,14 +133,17 @@ export function MemberTeamCard({ edit }: { readonly edit: MemberEdit }): ReactNo
             <Notice role="alert">
               {t(teamsMessageKey(teamsState.refusal))}
             </Notice>
-            <Button
-              className="h-11 w-full sm:w-auto sm:justify-self-start"
-              type="button"
-              variant="outline"
-              onClick={edit.retryTeams}
-            >
-              {t(teamsRetryMessageKey(teamsState.refusal))}
-            </Button>
+            {edit.teamsRetryable ? (
+              <Button
+                ref={keepFocusOnAlert}
+                className="h-11 w-full sm:w-auto sm:justify-self-start"
+                type="button"
+                variant="outline"
+                onClick={edit.retryTeams}
+              >
+                {t(teamsRetryMessageKey(teamsState.refusal))}
+              </Button>
+            ) : null}
           </div>
         )}
         {/* THE CARD'S OWN REFUSAL — a withdrawal refused, or a dialog that
