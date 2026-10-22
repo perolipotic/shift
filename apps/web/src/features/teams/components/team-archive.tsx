@@ -1,6 +1,7 @@
 import { Archive } from 'lucide-react';
 import type { ReactNode } from 'react';
 
+import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Button } from '@/components/ui/button';
 import { DialogFooter } from '@/components/ui/dialog';
 import { Notice } from '@/components/ui/notice';
@@ -8,6 +9,7 @@ import type { TeamEditScreen } from '@/features/teams/hooks/use-team-edit';
 import type { TeamRow } from '@/features/teams/services/list';
 import { ARCHIVE_BUSY, teamWriteMessageKey, type TeamWriteFailure } from '@/features/teams/services/write';
 import { t } from '@/lib/i18n';
+import { useWriteGate } from '@/lib/offline/use-write-gate';
 
 // ARCHIVING IS ONE-WAY and takes ONE CONFIRMATION naming the team, in neutral
 // styling: it removes nothing, so it is not dressed as a destructive action.
@@ -68,12 +70,15 @@ export function TeamArchiveConfirm({
   readonly screen: TeamEditScreen;
   readonly team: TeamRow;
 }): ReactNode {
-  const { stage, setArmed, archive } = screen;
+  const { stage, setArmed, archive, archiveConfirm } = screen;
   const busy = stage === ARCHIVE_BUSY;
+  // STORY 8.3b: offline, the archive is gated and the note says why.
+  const gate = useWriteGate();
 
   return (
     <div className="grid gap-5">
       <p className="text-sm font-medium">{t('smjene.archivePrompt', { name: team.name })}</p>
+      <OfflineWriteNote gate={gate} />
       <DialogFooter>
         <Button
           className="h-11"
@@ -87,11 +92,15 @@ export function TeamArchiveConfirm({
           {t('smjene.archiveCancel')}
         </Button>
         <Button
-          className="h-11"
+          ref={archiveConfirm}
+          className="h-11 aria-disabled:opacity-50"
           type="button"
           disabled={busy}
+          aria-disabled={gate.disabled}
+          aria-describedby={gate.describedBy()}
           aria-busy={busy}
           onClick={() => {
+            if (!gate.online) return;
             void archive(team);
           }}
         >

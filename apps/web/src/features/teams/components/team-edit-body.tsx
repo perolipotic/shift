@@ -1,6 +1,7 @@
 import { Users } from 'lucide-react';
 import type { ReactNode } from 'react';
 
+import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Button } from '@/components/ui/button';
 import { DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -15,6 +16,7 @@ import type { TeamEditScreen } from '@/features/teams/hooks/use-team-edit';
 import type { TeamRow } from '@/features/teams/services/list';
 import { teamFormKey } from '@/features/teams/services/write';
 import { t } from '@/lib/i18n';
+import { useWriteGate } from '@/lib/offline/use-write-gate';
 import { NAME_MAX_LENGTH } from '@/utils/name';
 
 /**
@@ -27,6 +29,8 @@ import { NAME_MAX_LENGTH } from '@/utils/name';
 export function TeamEditBody({ screen }: { readonly screen: TeamEditScreen }): ReactNode {
   const { form, loading, renames, submit, confirming, nameField, setSaved, failure, archiveFailure, pending } =
     screen;
+  // STORY 8.3b: offline, the rename is gated and the note says why.
+  const gate = useWriteGate();
 
   /** An archived team: frozen, so its name and a note, and nothing that writes. */
   function renderArchived(team: TeamRow): ReactNode {
@@ -50,6 +54,10 @@ export function TeamEditBody({ screen }: { readonly screen: TeamEditScreen }): R
           method="post"
           noValidate
           onSubmit={(event) => {
+            if (!gate.online) {
+              event.preventDefault();
+              return;
+            }
             void submit(event, team);
           }}
           className={confirming ? 'hidden' : 'grid gap-5'}
@@ -82,9 +90,17 @@ export function TeamEditBody({ screen }: { readonly screen: TeamEditScreen }): R
           {/* THE TWO DECISIONS TOGETHER, at the right: archive, then save.
               Neutral, never `destructive`, which UX-DR4 keeps for conflicts.
               The dialog's close is the way back. */}
+          <OfflineWriteNote gate={gate} />
           <DialogFooter>
             <TeamArchive screen={screen} team={team} />
-            <Button className="h-11" type="submit" disabled={pending} aria-busy={pending}>
+            <Button
+              className="h-11 aria-disabled:opacity-50"
+              type="submit"
+              disabled={pending}
+              aria-disabled={gate.disabled}
+              aria-describedby={gate.describedBy()}
+              aria-busy={pending}
+            >
               {t('smjene.save')}
             </Button>
           </DialogFooter>

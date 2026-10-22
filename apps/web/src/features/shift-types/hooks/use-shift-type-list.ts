@@ -34,6 +34,7 @@ import { claimedOrganizationOf } from '@/lib/supabase/claims';
 import { retryRead } from '@/features/teams/services/dependents';
 import { zoneFromReads } from '@/lib/offline/freshness';
 import { useSnapshotFreshness } from '@/lib/offline/use-snapshot-freshness';
+import { droppedOffline, writesOnline } from '@/lib/offline/use-write-gate';
 import { supabaseClient } from '@/lib/supabase/client';
 import { NO_TEXT } from '@/utils/text';
 
@@ -130,6 +131,8 @@ export function useShiftTypeList() {
     const kind = kindField.current;
 
     if (name === null || kind === null || creating.current) return;
+    // STORY 8.3b: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
 
     creating.current = true;
     setFailure(null);
@@ -168,6 +171,13 @@ export function useShiftTypeList() {
       // uncontrolled and nothing clears them on that path (UX-DR34). A type
       // added WITHOUT its times exists, so the form is cleared and the
       // message says the times are still to be set.
+      // STORY 8.3b: the connection dropped under the write — the gate's note says why, not the write refusal.
+      if (!outcome.ok && droppedOffline(outcome.code, SHIFT_TYPE_WRITE_UNAVAILABLE)) {
+        name.focus();
+
+        return;
+      }
+
       const next = createdOutcomeOf(outcome);
 
       setSaved(next.saved);
@@ -202,6 +212,12 @@ export function useShiftTypeList() {
       }
     } catch (cause) {
       console.error(SHIFT_TYPE_WRITE_UNAVAILABLE, cause);
+      // STORY 8.3b: offline now, the gate's note says why, not the write refusal.
+      if (!writesOnline()) {
+        name.focus();
+
+        return;
+      }
       setFailure(SHIFT_TYPE_WRITE_UNAVAILABLE);
     } finally {
       creating.current = false;

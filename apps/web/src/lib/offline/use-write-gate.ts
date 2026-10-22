@@ -64,3 +64,14 @@ export function useWriteGate(): WriteGate {
 export function writesOnline(): boolean {
   return appFreshness.current().online;
 }
+
+/**
+ * Whether a write's failure is the connection dropping under it (story 8.3b):
+ * its transport failure, `unavailable` — the code that means nothing was
+ * written — while writes are offline now. The gate's note then says why, never
+ * the generic write refusal. A failure that arrives before the offline signal
+ * flips (lie-fi) is still said as the write's own refusal.
+ */
+export function droppedOffline(code: string, unavailable: string): boolean {
+  return code === unavailable && !writesOnline();
+}

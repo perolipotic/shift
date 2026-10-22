@@ -39,7 +39,9 @@ import { ORGANIZATION_SNAPSHOT_KEY, type OrganizationOutcome } from '@/features/
 import { formatMinuteOfDay } from '@/lib/i18n/format';
 import { zoneFromReads } from '@/lib/offline/freshness';
 import { useSnapshotFreshness } from '@/lib/offline/use-snapshot-freshness';
+import { droppedOffline, writesOnline } from '@/lib/offline/use-write-gate';
 import { supabaseClient } from '@/lib/supabase/client';
+import { focusLater } from '@/utils/focus-later';
 
 /**
  * One hour band's state, its one read and its two writes (story 2.1b): save
@@ -63,6 +65,8 @@ export function useHourBandEdit(id: string) {
   const nameField = useRef<HTMLInputElement>(null);
   const startField = useRef<HTMLInputElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
+  /** The removal's own confirm (story 8.3b): focus returns to it when the connection drops under the removal. */
+  const removeConfirm = useRef<HTMLButtonElement>(null);
   const writing = useRef(false);
   const [pending, setPending] = useState(false);
   const [armed, setArmed] = useState(false);
@@ -141,6 +145,8 @@ export function useHourBandEdit(id: string) {
     const start = startField.current;
 
     if (name === null || start === null || writing.current) return;
+    // STORY 8.3b: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
 
     writing.current = true;
     // A save is a different decision from the removal it may interrupt.
@@ -158,6 +164,13 @@ export function useHourBandEdit(id: string) {
         start.value,
       );
 
+      // STORY 8.3b: the connection dropped under the write — the gate's note says why, not the write refusal.
+      if (!outcome.ok && droppedOffline(outcome.code, HOUR_BAND_WRITE_UNAVAILABLE)) {
+        name.focus();
+
+        return;
+      }
+
       if (!outcome.ok) {
         setFailure(outcome.code);
         (refusedFieldOf(outcome.code) === HOUR_BAND_START_FIELD ? start : name).focus();
@@ -171,6 +184,12 @@ export function useHourBandEdit(id: string) {
       if (outcome.ok) setTypedStart(null);
     } catch (cause) {
       console.error(HOUR_BAND_WRITE_UNAVAILABLE, cause);
+      // STORY 8.3b: offline now, the gate's note says why, not the write refusal.
+      if (!writesOnline()) {
+        name.focus();
+
+        return;
+      }
       setFailure(HOUR_BAND_WRITE_UNAVAILABLE);
     } finally {
       writing.current = false;
@@ -184,6 +203,11 @@ export function useHourBandEdit(id: string) {
    */
   async function remove(band: HourBandRow): Promise<void> {
     if (writing.current) return;
+    // STORY 8.3b: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
+
+    // STORY 8.3b: the connection dropped under the removal — its confirmation stays armed.
+    let keepArmed = false;
 
     writing.current = true;
     setFailure(null);
@@ -196,6 +220,14 @@ export function useHourBandEdit(id: string) {
         supabaseClient().from(HOUR_BANDS_TABLE) as unknown as HourBandWriteTable,
         band,
       );
+
+      // STORY 8.3b: the connection dropped under the write — the gate's note says why, not the write refusal.
+      if (!outcome.ok && droppedOffline(outcome.code, HOUR_BAND_WRITE_UNAVAILABLE)) {
+        keepArmed = true;
+        focusLater([() => removeConfirm.current], () => nameField.current);
+
+        return;
+      }
 
       if (!outcome.ok) {
         setRemoveFailure(outcome.code);
@@ -211,11 +243,18 @@ export function useHourBandEdit(id: string) {
       if (outcome.ok) closeButton.current?.focus();
     } catch (cause) {
       console.error(HOUR_BAND_WRITE_UNAVAILABLE, cause);
+      // STORY 8.3b: offline now, the gate's note says why, not the write refusal.
+      if (!writesOnline()) {
+        keepArmed = true;
+        focusLater([() => removeConfirm.current], () => nameField.current);
+
+        return;
+      }
       setRemoveFailure(HOUR_BAND_WRITE_UNAVAILABLE);
     } finally {
       writing.current = false;
       setPending(false);
-      setArmed(false);
+      if (!keepArmed) setArmed(false);
     }
   }
 
@@ -230,6 +269,7 @@ export function useHourBandEdit(id: string) {
     nameField,
     startField,
     closeButton,
+    removeConfirm,
     pending,
     setArmed,
     failure,

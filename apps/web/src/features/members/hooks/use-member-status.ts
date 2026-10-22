@@ -37,10 +37,10 @@ import {
 import { dateMarkFor, dateMarked, type DateMark } from '@/features/members/utils/date-refusal';
 import { MEMBER_STATUS_HEADING_ID } from '@/features/members/utils/element-ids';
 import { MEMBERSHIP_WRITE_DEPENDENTS, NO_DEPENDENTS, refreshAfterWrite } from '@/features/teams/services/dependents';
+import { writesOnline } from '@/lib/offline/use-write-gate';
 import { supabaseClient } from '@/lib/supabase/client';
 import { firstEnabledOf, focusLater } from '@/utils/focus-later';
 import { NO_TEXT } from '@/utils/text';
-import { writesOnline } from '@/lib/offline/use-write-gate';
 
 /**
  * The member page's status card (stories 1.6, 5.5e, 7.11, 7.13c; split out
@@ -61,6 +61,9 @@ export function useMemberStatus(screen: MemberScreen) {
   const statusOpener = useRef<HTMLButtonElement>(null);
   const statusWithdrawButton = useRef<HTMLButtonElement>(null);
   const statusSaveButton = useRef<HTMLButtonElement>(null);
+  /** The withdrawal's own confirm and the erasure dialog's save (story 8.3b): where focus returns when the connection drops mid-check. */
+  const statusWithdrawConfirm = useRef<HTMLButtonElement>(null);
+  const statusErasuresSave = useRef<HTMLButtonElement>(null);
   const [statusPending, setStatusPending] = useState(false);
   const [statusOpen, setStatusOpen] = useState<RaisedForMember<DialogOpening<HeldStatusChange>> | null>(
     null,
@@ -355,7 +358,14 @@ export function useMemberStatus(screen: MemberScreen) {
         if (check.kind === CHECK_UNAVAILABLE) {
           disarm = false;
           // STORY 8.3a: the connection dropped while the check was out — the offline gate says why, not the unchecked refusal.
-          if (!writesOnline()) return;
+          // Focus goes back to what was pressed once its write no longer disables it (story 8.3b).
+          if (!writesOnline()) {
+            focusLater([() => statusSaveButton.current, () => statusWithdrawConfirm.current], () =>
+              firstEnabledOf<HTMLElement>(() => statusSaveButton.current, () => statusWithdrawButton.current),
+            );
+
+            return;
+          }
           setStatusUnchecked({ member: member.id, raised: true });
           focusLater([() => statusRetryButton.current], () =>
             firstEnabledOf<HTMLElement>(() => statusSaveButton.current, () => statusWithdrawButton.current),
@@ -513,8 +523,14 @@ export function useMemberStatus(screen: MemberScreen) {
           return true;
         },
         unavailable: () => {
-          // STORY 8.3a: offline, the confirmation stays open under the gate.
-          if (!writesOnline()) return;
+          // STORY 8.3a: offline, the confirmation stays open under the gate, focus on its save (story 8.3b).
+          if (!writesOnline()) {
+            focusLater([() => statusErasuresSave.current], () =>
+              firstEnabledOf<HTMLElement>(() => statusSaveButton.current, () => statusWithdrawButton.current),
+            );
+
+            return;
+          }
           statusErasures.drop();
           // A WITHDRAWAL'S CONFIRMATION, armed again, refuses with the retry; a
           // dialog's change is still open beneath and says it there.
@@ -565,6 +581,8 @@ export function useMemberStatus(screen: MemberScreen) {
     armStatus,
     confirmStatus,
     statusRetryButton,
+    statusWithdrawConfirm,
+    statusErasuresSave,
     retryStatus,
     statusUnchecked: raisedForMember(statusUnchecked, id) !== null,
     statusErased: raisedForMember(statusErased, id) ?? 0,

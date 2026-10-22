@@ -51,10 +51,10 @@ import { MEMBER_TEAM_HEADING_ID } from '@/features/members/utils/element-ids';
 import { ORGANIZATION_SNAPSHOT_KEY } from '@/features/organization/services/snapshot';
 import { MEMBERSHIP_WRITE_DEPENDENTS, NO_DEPENDENTS, refreshAfterWrite } from '@/features/teams/services/dependents';
 import { TEAMS_LIST_KEY } from '@/features/teams/services/list';
+import { writesOnline } from '@/lib/offline/use-write-gate';
 import { supabaseClient } from '@/lib/supabase/client';
 import { firstEnabledOf, focusLater } from '@/utils/focus-later';
 import { NO_TEXT } from '@/utils/text';
-import { writesOnline } from '@/lib/offline/use-write-gate';
 
 /**
  * The member page's *Smjena* card (stories 1.7b, 5.5e, 7.11; split out of
@@ -88,6 +88,9 @@ export function useMemberTeam(screen: MemberScreen) {
   const teamOpener = useRef<HTMLButtonElement>(null);
   const teamWithdrawButton = useRef<HTMLButtonElement>(null);
   const teamSaveButton = useRef<HTMLButtonElement>(null);
+  /** The withdrawal's own confirm and the erasure dialog's save (story 8.3b): where focus returns when the connection drops mid-check. */
+  const teamWithdrawConfirm = useRef<HTMLButtonElement>(null);
+  const teamErasuresSave = useRef<HTMLButtonElement>(null);
   const [teamPending, setTeamPending] = useState(false);
   const [teamOpen, setTeamOpen] = useState<RaisedForMember<DialogOpening<HeldTeamMove>> | null>(null);
   /** The armed WITHDRAWAL of a scheduled move. */
@@ -445,7 +448,14 @@ export function useMemberTeam(screen: MemberScreen) {
         if (check.kind === CHECK_UNAVAILABLE) {
           disarm = false;
           // STORY 8.3a: the connection dropped while the check was out — the offline gate says why, not the unchecked refusal.
-          if (!writesOnline()) return;
+          // Focus goes back to what was pressed once its write no longer disables it (story 8.3b).
+          if (!writesOnline()) {
+            focusLater([() => teamSaveButton.current, () => teamWithdrawConfirm.current], () =>
+              firstEnabledOf<HTMLElement>(() => teamSaveButton.current, () => teamWithdrawButton.current),
+            );
+
+            return;
+          }
           setTeamUnchecked({ member: member.id, raised: true });
           focusLater([() => teamRetryButton.current], () =>
             firstEnabledOf<HTMLElement>(() => teamSaveButton.current, () => teamWithdrawButton.current),
@@ -595,8 +605,14 @@ export function useMemberTeam(screen: MemberScreen) {
           return true;
         },
         unavailable: () => {
-          // STORY 8.3a: offline, the confirmation stays open under the gate.
-          if (!writesOnline()) return;
+          // STORY 8.3a: offline, the confirmation stays open under the gate, focus on its save (story 8.3b).
+          if (!writesOnline()) {
+            focusLater([() => teamErasuresSave.current], () =>
+              firstEnabledOf<HTMLElement>(() => teamSaveButton.current, () => teamWithdrawButton.current),
+            );
+
+            return;
+          }
           teamErasures.drop();
           // A WITHDRAWAL'S CONFIRMATION, armed again, refuses with the retry; a
           // move's dialog is still open beneath and says it there.
@@ -651,6 +667,8 @@ export function useMemberTeam(screen: MemberScreen) {
     pickTeam,
     confirmTeam,
     teamRetryButton,
+    teamWithdrawConfirm,
+    teamErasuresSave,
     retryTeam,
     teamUnchecked: raisedForMember(teamUnchecked, id) !== null,
     teamErased: raisedForMember(teamErased, id) ?? 0,

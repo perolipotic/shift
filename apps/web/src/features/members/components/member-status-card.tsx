@@ -20,7 +20,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { t } from '@/lib/i18n';
-import { useWriteGate, type WriteGate } from '@/lib/offline/use-write-gate';
 import { formatIsoDayMonth, isIsoDate } from '@/lib/i18n/format';
 import type { MemberEdit } from '@/features/members/hooks/use-member-edit';
 import { memberErasureCopyOf } from '@/features/members/utils/erasure-copy';
@@ -54,6 +53,7 @@ import {
   MEMBER_STATUS_WITHDRAW_PROMPT_ID,
 } from '@/features/members/utils/element-ids';
 import { refusalText } from '@/features/members/utils/refusal-text';
+import { useWriteGate, type WriteGate } from '@/lib/offline/use-write-gate';
 import { monthInMessageKey } from '@/utils/filter-bar';
 import { NO_TEXT, shownDate } from '@/utils/text';
 
@@ -379,7 +379,7 @@ export function MemberStatusDialog({ edit }: { readonly edit: MemberEdit }): Rea
  * backdrop cancel except while the write is outstanding.
  */
 function MemberStatusWithdrawal({ edit }: { readonly edit: MemberEdit }): ReactNode {
-  const { offer, statusArmedFor, statusStage, setStatusArmed, confirmStatus } = edit;
+  const { offer, statusArmedFor, statusStage, setStatusArmed, confirmStatus, statusWithdrawConfirm } = edit;
   const gate = useWriteGate();
 
   if (statusArmedFor === null || statusArmedFor.change !== WITHDRAW || offer === null) return null;
@@ -416,6 +416,7 @@ function MemberStatusWithdrawal({ edit }: { readonly edit: MemberEdit }): ReactN
           {t('ljudi.status.cancel')}
         </Button>
         <Button
+          ref={statusWithdrawConfirm}
           className="h-11 aria-disabled:opacity-50"
           type="button"
           disabled={busy || statusStage !== STATUS_ARMED}
@@ -441,7 +442,7 @@ function MemberStatusWithdrawal({ edit }: { readonly edit: MemberEdit }): ReactN
  * scroll inside it.
  */
 function MemberStatusErasures({ edit }: { readonly edit: MemberEdit }): ReactNode {
-  const { form, statusErasures, statusPending, confirmStatusErasures } = edit;
+  const { form, statusErasures, statusPending, confirmStatusErasures, statusErasuresSave } = edit;
   const shown = statusErasures.shown;
   const gate = useWriteGate();
 
@@ -451,6 +452,7 @@ function MemberStatusErasures({ edit }: { readonly edit: MemberEdit }): ReactNod
 
   return (
     <ErasureDialog
+      saveButton={statusErasuresSave}
       id="member-status-erasures"
       rows={shown.rows}
       changed={shown.changed}

@@ -43,10 +43,10 @@ import { useErasureConfirmation } from '@/features/conflicts/hooks/use-erasure-c
 import { useErasureReads } from '@/features/conflicts/hooks/use-erasure-reads';
 import { CHECK_READY, CHECK_UNAVAILABLE } from '@/features/conflicts/services/erasure-check';
 import { ROSTER_WRITE_DEPENDENTS, refreshAfterWrite } from '@/features/teams/services/dependents';
+import { writesOnline } from '@/lib/offline/use-write-gate';
 import { claimedOrganizationOf } from '@/lib/supabase/claims';
 import { supabaseClient } from '@/lib/supabase/client';
 import { focusLater } from '@/utils/focus-later';
-import { writesOnline } from '@/lib/offline/use-write-gate';
 
 /**
  * THE ADMIN'S ROSTER FORM (story 3.6b): taking a member off the open day's
@@ -166,6 +166,9 @@ export function useRosterForm(
   const inField = useRef<HTMLSelectElement>(null);
   const rosterReasonField = useRef<HTMLInputElement>(null);
   const removeCancel = useRef<HTMLButtonElement>(null);
+  /** The removal's own confirm and the erasure confirmation's save (story 8.3b): where focus returns when the connection drops mid-check. */
+  const removeConfirm = useRef<HTMLButtonElement>(null);
+  const erasuresSaveButton = useRef<HTMLButtonElement>(null);
   // Each listed change's removal button, by the change's id: focus returns to
   // the one that opened the confirmation.
   const removeActions = useRef(new Map<string, HTMLButtonElement>());
@@ -439,7 +442,12 @@ export function useRosterForm(
 
         if (check.kind === CHECK_UNAVAILABLE) {
           // STORY 8.3a: the connection dropped while the check was out — the offline gate says why, not the unchecked refusal.
-          if (!writesOnline()) return;
+          // Focus goes back to the save once its write no longer disables it (story 8.3b).
+          if (!writesOnline()) {
+            focusAfterWrite(() => saveButton.current);
+
+            return;
+          }
           setUnchecked(ROSTER_CHANGE_SAVE);
           focusAfterWrite(() => retryButton.current, first);
 
@@ -566,7 +574,12 @@ export function useRosterForm(
 
       if (check.kind === CHECK_UNAVAILABLE) {
         // STORY 8.3a: the connection dropped while the check was out — the offline gate says why, not the unchecked refusal.
-        if (!writesOnline()) return;
+        // Focus goes back to the removal's confirm once its write no longer disables it (story 8.3b).
+        if (!writesOnline()) {
+          focusAfterWrite(() => removeConfirm.current, cancelShown);
+
+          return;
+        }
         setUnchecked(ROSTER_CHANGE_REMOVAL);
         focusAfterWrite(() => retryButton.current, cancelShown);
 
@@ -625,8 +638,12 @@ export function useRosterForm(
           return true;
         },
         unavailable: () => {
-          // STORY 8.3a: offline, the confirmation stays open under the gate.
-          if (!writesOnline()) return;
+          // STORY 8.3a: offline, the confirmation stays open under the gate, focus on its save (story 8.3b).
+          if (!writesOnline()) {
+            focusAfterWrite(() => erasuresSaveButton.current);
+
+            return;
+          }
           confirmation.drop();
           if (change.kind === ROSTER_CHANGE_SAVE) {
             setUnchecked(ROSTER_CHANGE_SAVE);
@@ -750,6 +767,8 @@ export function useRosterForm(
     removeChange,
     saveButton,
     retryButton,
+    removeConfirm,
+    erasuresSaveButton,
     unchecked,
     retry,
     clearUnchecked,

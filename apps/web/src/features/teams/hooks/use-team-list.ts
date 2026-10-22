@@ -21,6 +21,7 @@ import {
 } from '@/features/teams/services/write';
 import { offlineNoteOf, zoneFromReads } from '@/lib/offline/freshness';
 import { useSnapshotFreshness } from '@/lib/offline/use-snapshot-freshness';
+import { droppedOffline, writesOnline } from '@/lib/offline/use-write-gate';
 import { claimedOrganizationOf } from '@/lib/supabase/claims';
 import { supabaseClient } from '@/lib/supabase/client';
 import { NO_TEXT } from '@/utils/text';
@@ -101,6 +102,8 @@ export function useTeamList() {
     const name = nameField.current;
 
     if (name === null || creating.current) return;
+    // STORY 8.3b: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
 
     creating.current = true;
     setFailure(null);
@@ -129,6 +132,13 @@ export function useTeamList() {
 
       // A REFUSED SAVE KEEPS THE ENTERED VALUE: the field is uncontrolled and
       // nothing here clears it on this path (UX-DR34).
+      // STORY 8.3b: the connection dropped under the write — the gate's note says why, not the write refusal.
+      if (!outcome.ok && droppedOffline(outcome.code, TEAM_WRITE_UNAVAILABLE)) {
+        name.focus();
+
+        return;
+      }
+
       if (!outcome.ok) {
         setFailure(outcome.code);
         name.focus();
@@ -152,6 +162,12 @@ export function useTeamList() {
       }
     } catch (cause) {
       console.error(TEAM_WRITE_UNAVAILABLE, cause);
+      // STORY 8.3b: offline now, the gate's note says why, not the write refusal.
+      if (!writesOnline()) {
+        name.focus();
+
+        return;
+      }
       setFailure(TEAM_WRITE_UNAVAILABLE);
     } finally {
       creating.current = false;

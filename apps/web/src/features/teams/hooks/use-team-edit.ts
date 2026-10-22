@@ -34,7 +34,9 @@ import {
 } from '@/features/teams/services/write';
 import { zoneFromReads } from '@/lib/offline/freshness';
 import { useSnapshotFreshness } from '@/lib/offline/use-snapshot-freshness';
+import { droppedOffline, writesOnline } from '@/lib/offline/use-write-gate';
 import { supabaseClient } from '@/lib/supabase/client';
+import { focusLater } from '@/utils/focus-later';
 
 /**
  * One team's state, its one read and its two writes (story 1.7a): rename it,
@@ -57,6 +59,8 @@ export function useTeamEdit(id: string) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const nameField = useRef<HTMLInputElement>(null);
+  /** The archive's own confirm (story 8.3b): focus returns to it when the connection drops under the archive. */
+  const archiveConfirm = useRef<HTMLButtonElement>(null);
   const writing = useRef(false);
   const [pending, setPending] = useState(false);
   const [armed, setArmed] = useState(false);
@@ -129,6 +133,8 @@ export function useTeamEdit(id: string) {
     const name = nameField.current;
 
     if (name === null || writing.current) return;
+    // STORY 8.3b: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
 
     writing.current = true;
     // A rename is a different decision from the archive it may interrupt.
@@ -145,6 +151,13 @@ export function useTeamEdit(id: string) {
         name.value,
       );
 
+      // STORY 8.3b: the connection dropped under the write — the gate's note says why, not the write refusal.
+      if (!outcome.ok && droppedOffline(outcome.code, TEAM_WRITE_UNAVAILABLE)) {
+        name.focus();
+
+        return;
+      }
+
       if (!outcome.ok) {
         setFailure(outcome.code);
         name.focus();
@@ -157,6 +170,12 @@ export function useTeamEdit(id: string) {
       setRenames((current) => renamesAfter(current, outcome));
     } catch (cause) {
       console.error(TEAM_WRITE_UNAVAILABLE, cause);
+      // STORY 8.3b: offline now, the gate's note says why, not the write refusal.
+      if (!writesOnline()) {
+        name.focus();
+
+        return;
+      }
       setFailure(TEAM_WRITE_UNAVAILABLE);
     } finally {
       writing.current = false;
@@ -170,6 +189,11 @@ export function useTeamEdit(id: string) {
    */
   async function archive(team: TeamRow): Promise<void> {
     if (writing.current) return;
+    // STORY 8.3b: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
+
+    // STORY 8.3b: the connection dropped under the archive — its confirmation stays armed.
+    let keepArmed = false;
 
     writing.current = true;
     setFailure(null);
@@ -183,6 +207,14 @@ export function useTeamEdit(id: string) {
         team,
       );
 
+      // STORY 8.3b: the connection dropped under the write — the gate's note says why, not the write refusal.
+      if (!outcome.ok && droppedOffline(outcome.code, TEAM_WRITE_UNAVAILABLE)) {
+        keepArmed = true;
+        focusLater([() => archiveConfirm.current], () => nameField.current);
+
+        return;
+      }
+
       if (!outcome.ok) {
         setArchiveFailure(outcome.code);
       } else {
@@ -192,11 +224,18 @@ export function useTeamEdit(id: string) {
       await refresh(outcome.ok);
     } catch (cause) {
       console.error(TEAM_WRITE_UNAVAILABLE, cause);
+      // STORY 8.3b: offline now, the gate's note says why, not the write refusal.
+      if (!writesOnline()) {
+        keepArmed = true;
+        focusLater([() => archiveConfirm.current], () => nameField.current);
+
+        return;
+      }
       setArchiveFailure(TEAM_WRITE_UNAVAILABLE);
     } finally {
       writing.current = false;
       setPending(false);
-      setArmed(false);
+      if (!keepArmed) setArmed(false);
     }
   }
 
@@ -207,6 +246,7 @@ export function useTeamEdit(id: string) {
 
   return {
     nameField,
+    archiveConfirm,
     pending,
     setArmed,
     failure,

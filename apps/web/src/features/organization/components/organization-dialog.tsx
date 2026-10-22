@@ -1,5 +1,6 @@
 import { Fragment, type FormEvent, type ReactNode, type SyntheticEvent } from 'react';
 
+import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Notice } from '@/components/ui/notice';
@@ -12,6 +13,7 @@ import {
   ORGANIZATION_DIALOG_SAVE_ID,
 } from '@/features/organization/utils/element-ids';
 import { organizationMessageKey } from '@/features/organization/utils/messages';
+import { useWriteGate } from '@/lib/offline/use-write-gate';
 
 /** One fact: its label above its value, so nothing breaks on a phone. */
 export function OrganizationFact({
@@ -104,12 +106,19 @@ export function OrganizationDialogForm({
   readonly children: ReactNode;
 }): ReactNode {
   const { pending, failure, close } = settings;
+  // STORY 8.3b: offline, every dialog's Spremi is gated and the note says why.
+  const gate = useWriteGate();
 
   return (
     <form
       method="post"
       noValidate
       onSubmit={(event) => {
+        // STORY 8.3b: offline, or with nothing to send, a submit does nothing.
+        if (!gate.online || !canSave) {
+          event.preventDefault();
+          return;
+        }
         void onSubmit(event);
       }}
       className="grid gap-5"
@@ -122,15 +131,20 @@ export function OrganizationDialogForm({
           {t(organizationMessageKey(failure))}
         </Notice>
       )}
+      <OfflineWriteNote gate={gate} />
       <DialogFooter>
         <Button className="h-11" type="button" variant="outline" disabled={pending} onClick={close}>
           {t('organization.cancel')}
         </Button>
         <Button
           id={ORGANIZATION_DIALOG_SAVE_ID}
-          className="h-11"
+          className="h-11 aria-disabled:opacity-50"
           type="submit"
-          disabled={pending || !canSave}
+          // NATIVE `disabled` only while the write is out (the 8.3a convention);
+          // offline or with nothing to send it stays focusable, `aria-disabled`.
+          disabled={pending}
+          aria-disabled={gate.disabled || !canSave || undefined}
+          aria-describedby={gate.describedBy()}
           aria-busy={pending}
         >
           {t('organization.save')}

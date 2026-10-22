@@ -1,6 +1,7 @@
 import { ClipboardCheck } from 'lucide-react';
 import type { ReactNode } from 'react';
 
+import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ConfirmDialog, Dialog, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -47,6 +48,7 @@ import {
   OVERRIDE_REVIEW_HEADING_ID,
   OVERRIDE_REVIEW_UNCHECKED_ID,
 } from '@/features/rotation/utils/element-ids';
+import { useWriteGate, type WriteGate } from '@/lib/offline/use-write-gate';
 
 /**
  * IZMJENE ZA PREGLED (story 3.5c; CAP-9): every override a rotation change
@@ -95,6 +97,7 @@ export function OverrideReview({
     typeField,
     reasonField,
     discardCancel,
+    discardConfirm,
     retryButton,
     confirmButtonOf,
     confirm,
@@ -106,6 +109,13 @@ export function OverrideReview({
     clearUnchecked,
     retry,
   } = state;
+  // STORY 8.3b: offline, every write here is gated before its erasure check
+  // starts, and a note says why — one gate per place a note is drawn, so each
+  // note's id is its own: the review (its rows' confirms and the unchecked
+  // confirm's retry, one note), the amend's dialog and the discard's.
+  const rowsGate = useWriteGate();
+  const amendGate = useWriteGate();
+  const discardGate = useWriteGate();
 
   /**
    * A confirm or an amend that could not check what it would erase (story
@@ -113,17 +123,23 @@ export function OverrideReview({
    * again — in the review for a confirm, inside the amend's dialog for an
    * amend. Written once.
    */
-  function renderUnchecked(): ReactNode {
+  function renderUnchecked(gate: WriteGate): ReactNode {
     return (
       <Notice id={OVERRIDE_REVIEW_UNCHECKED_ID} role="alert">
         {t('rotation.builder.overrides.erasures.unavailable')}
         <Button
           ref={retryButton}
-          className="mt-3 flex h-11"
+          className="mt-3 flex h-11 aria-disabled:opacity-50"
           type="button"
           variant="outline"
           disabled={disabled}
-          onClick={retry}
+          // STORY 8.3b: the retry is the same write again, gated with it.
+          aria-disabled={gate.disabled}
+          aria-describedby={gate.describedBy()}
+          onClick={() => {
+            if (!gate.online) return;
+            retry();
+          }}
         >
           {t('rotation.builder.overrides.erasures.retry')}
         </Button>
@@ -169,11 +185,14 @@ export function OverrideReview({
           {offers.confirm ? (
             <Button
               ref={confirmButtonOf(row.id)}
-              className="h-11"
+              className="h-11 aria-disabled:opacity-50"
               type="button"
               variant="outline"
               disabled={disabled}
+              aria-disabled={rowsGate.disabled}
+              aria-describedby={rowsGate.describedBy()}
               onClick={() => {
+                if (!rowsGate.online) return;
                 void confirm(row);
               }}
             >
@@ -266,6 +285,10 @@ export function OverrideReview({
           method="post"
           noValidate
           onSubmit={(event) => {
+            if (!amendGate.online) {
+              event.preventDefault();
+              return;
+            }
             submitAmend(event, row, groups);
           }}
           // STORY 5.5h: a field changed, so the refusal to check what was entered before no longer stands.
@@ -311,12 +334,20 @@ export function OverrideReview({
             </Notice>
           )}
           {/* STORY 5.5h: an amend that could not check what it would erase amended nothing. */}
-          {unchecked?.kind === DISPOSITION_AMENDED ? renderUnchecked() : null}
+          {unchecked?.kind === DISPOSITION_AMENDED ? renderUnchecked(amendGate) : null}
+          <OfflineWriteNote gate={amendGate} />
           <DialogFooter>
             <Button className="h-11" type="button" variant="outline" disabled={pending} onClick={disarm}>
               {t('rotation.builder.overrides.amendDialog.cancel')}
             </Button>
-            <Button className="h-11" type="submit" disabled={pending} aria-busy={pending}>
+            <Button
+              className="h-11 aria-disabled:opacity-50"
+              type="submit"
+              disabled={pending}
+              aria-disabled={amendGate.disabled}
+              aria-describedby={amendGate.describedBy()}
+              aria-busy={pending}
+            >
               {pending
                 ? t('rotation.builder.overrides.amendDialog.saving')
                 : t('rotation.builder.overrides.amendDialog.save')}
@@ -347,6 +378,7 @@ export function OverrideReview({
             {t(dispositionMessageKey(failure))}
           </Notice>
         )}
+        <OfflineWriteNote gate={discardGate} />
         <DialogFooter>
           <Button
             ref={discardCancel}
@@ -359,11 +391,15 @@ export function OverrideReview({
             {t('rotation.builder.overrides.discardDialog.cancel')}
           </Button>
           <Button
-            className="h-11"
+            ref={discardConfirm}
+            className="h-11 aria-disabled:opacity-50"
             type="button"
             disabled={pending}
+            aria-disabled={discardGate.disabled}
+            aria-describedby={discardGate.describedBy()}
             aria-busy={pending}
             onClick={() => {
+              if (!discardGate.online) return;
               void discard(row);
             }}
           >
@@ -402,7 +438,7 @@ export function OverrideReview({
         </Notice>
       )}
       {/* STORY 5.5h: a confirm that could not check what it would erase confirmed nothing. */}
-      {unchecked?.kind === DISPOSITION_CONFIRMED ? renderUnchecked() : null}
+      {unchecked?.kind === DISPOSITION_CONFIRMED ? renderUnchecked(rowsGate) : null}
       {review?.ok === false ? <Notice role="alert">{t('rotation.builder.overrides.unavailable')}</Notice> : null}
     </>
   );
@@ -413,6 +449,8 @@ export function OverrideReview({
     return (
       <>
         {notices}
+        {/* NO LIST TO DRAW THE REVIEW'S NOTE IN: drawn here, for the unchecked confirm's retry. */}
+        {unchecked?.kind === DISPOSITION_CONFIRMED ? <OfflineWriteNote gate={rowsGate} /> : null}
         {renderArmed()}
         <ReviewErasureConfirm state={state} />
       </>
@@ -438,6 +476,11 @@ export function OverrideReview({
           </div>
         </CardHeader>
         <CardContent className="pt-4">
+          {/* ONCE FOR THE REVIEW, above its list, while a row offers its
+              confirm or the unchecked confirm's retry is up. */}
+          {unchecked?.kind === DISPOSITION_CONFIRMED || rows.some((row) => reviewOffersOf(row).confirm) ? (
+            <OfflineWriteNote gate={rowsGate} className="mb-3" />
+          ) : null}
           <ul aria-labelledby={OVERRIDE_REVIEW_HEADING_ID} className="grid gap-3">
             {rows.map(renderRow)}
           </ul>
@@ -459,8 +502,10 @@ export function OverrideReview({
  * scroll inside it.
  */
 function ReviewErasureConfirm({ state }: { readonly state: OverrideReviewState }): ReactNode {
-  const { erasures, pending, backFromErasures, confirmReviewErasures } = state;
+  const { erasures, pending, backFromErasures, confirmReviewErasures, erasuresSaveButton } = state;
   const shown = erasures.shown;
+  // STORY 8.3b: offline, the erasure confirmation's save is gated and the note says why.
+  const gate = useWriteGate();
 
   if (shown === null) return null;
 
@@ -476,8 +521,8 @@ function ReviewErasureConfirm({ state }: { readonly state: OverrideReviewState }
 
   return (
     <ErasureDialog
-      // NOT GATED YET: the settings surfaces' writes are story 8.3b's (`deferred-work.md`).
-      gate={null}
+      gate={gate}
+      saveButton={erasuresSaveButton}
       id={OVERRIDE_REVIEW_ERASURES_ID}
       rows={rows}
       changed={shown.changed}

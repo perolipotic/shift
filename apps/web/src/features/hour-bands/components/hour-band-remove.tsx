@@ -1,6 +1,7 @@
 import { Trash2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 
+import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Button } from '@/components/ui/button';
 import { DialogFooter } from '@/components/ui/dialog';
 import { Notice } from '@/components/ui/notice';
@@ -8,6 +9,7 @@ import type { HourBandEditScreen } from '@/features/hour-bands/hooks/use-hour-ba
 import type { HourBandRow } from '@/features/hour-bands/services/list';
 import { REMOVE_BUSY, hourBandWriteMessageKey, type HourBandWriteFailure } from '@/features/hour-bands/services/write';
 import { t } from '@/lib/i18n';
+import { useWriteGate } from '@/lib/offline/use-write-gate';
 
 // REMOVAL TAKES ONE CONFIRMATION naming the band, in neutral styling. Any band
 // may be removed, the last one included: the day it leaves uncovered is
@@ -71,7 +73,9 @@ export function HourBandRemoveConfirm({
   readonly screen: HourBandEditScreen;
   readonly band: HourBandRow;
 }): ReactNode {
-  const { stage, setArmed, remove } = screen;
+  const { stage, setArmed, remove, removeConfirm } = screen;
+  // STORY 8.3b: offline, the confirm is gated and the note says why.
+  const gate = useWriteGate();
   const busy = stage === REMOVE_BUSY;
 
   return (
@@ -79,6 +83,7 @@ export function HourBandRemoveConfirm({
       <p className="text-sm font-medium">
         {t('organization.hourBands.removePrompt', { name: band.name })}
       </p>
+      <OfflineWriteNote gate={gate} />
       <DialogFooter>
         <Button
           className="h-11"
@@ -92,11 +97,15 @@ export function HourBandRemoveConfirm({
           <span className="truncate">{t('organization.hourBands.removeCancel')}</span>
         </Button>
         <Button
-          className="h-11"
+          ref={removeConfirm}
+          className="h-11 aria-disabled:opacity-50"
           type="button"
           disabled={busy}
+          aria-disabled={gate.disabled}
+          aria-describedby={gate.describedBy()}
           aria-busy={busy}
           onClick={() => {
+            if (!gate.online) return;
             void remove(band);
           }}
         >

@@ -39,6 +39,7 @@ import {
   type ReviewChange,
 } from '@/features/rotation/services/override-review-erasures';
 import { ROTATION_SAVE_DEPENDENTS, refreshAfterWrite } from '@/features/teams/services/dependents';
+import { writesOnline } from '@/lib/offline/use-write-gate';
 import { supabaseClient } from '@/lib/supabase/client';
 import { firstEnabledOf, focusLater } from '@/utils/focus-later';
 
@@ -172,6 +173,12 @@ export function useOverrideReview({
   const retryButton = useRef<HTMLButtonElement>(null);
   /** Each row's confirm, by override id: where a confirm's erasure confirmation returns focus. */
   const confirmButtons = useRef<Record<string, HTMLButtonElement | undefined>>({});
+  /** The discard's own confirm (story 8.3b): focus returns to it when the connection drops under its write. */
+  const discardConfirm = useRef<HTMLButtonElement>(null);
+  /** The erasure confirmation's save (story 8.3b), for the same. */
+  const erasuresSaveButton = useRef<HTMLButtonElement>(null);
+  /** The control the write in flight was asked from (story 8.3b): where focus returns when the connection drops under it. */
+  const pressed = useRef<() => HTMLElement | null>(() => null);
   /** Bumped whenever the erasure dialog closes from outside its own write: a handler past an await that finds it changed settles nothing. */
   const generation = useRef(0);
   const [pending, setPending] = useState(false);
@@ -263,6 +270,16 @@ export function useOverrideReview({
       }),
       () => heading.current ?? refusalNotice.current,
     );
+  }
+
+  /**
+   * STORY 8.3b: the connection dropped while a check or a write was out. The
+   * gate's note says why — no refusal — the dialog it was asked from stays
+   * open, and focus goes back to the control that was pressed once the write
+   * no longer disables it, never to the body.
+   */
+  function focusPressed(): void {
+    focusLater([pressed.current], () => heading.current ?? refusalNotice.current);
   }
 
   /** The refused field takes focus: the reason for its own refusal, the type (the first field) for any other. */
@@ -403,7 +420,7 @@ export function useOverrideReview({
     const outcome = await call(supabaseClient() as unknown as ReviewRpc);
 
     if (outcome.ok) {
-      // DISCARD IS UNGUARDED AND UNCHANGED: it re-reads the rotation alone.
+      // A DISCARD RUNS NO ERASURE CHECK and is unchanged: it re-reads the rotation alone.
       if (kind === DISPOSITION_DISCARDED) await reread();
       else await refreshLanded();
       if (superseded(started)) return;
@@ -418,6 +435,13 @@ export function useOverrideReview({
     }
 
     if (superseded(started)) return;
+
+    // STORY 8.3b: the connection dropped under the write — the gate's note says why, and the dialog stays open.
+    if (outcome.code === DISPOSITION_FAILED && !writesOnline()) {
+      focusPressed();
+
+      return;
+    }
 
     if (staleRefusalOf(outcome.code) || !inDialog) {
       await refuse(outcome.code, null, started, settle);
@@ -450,17 +474,30 @@ export function useOverrideReview({
     return generation.current;
   }
 
-  /** The discard, unguarded (human, 2026-10-05): one call, settled as before. */
+  /**
+   * The discard, with no erasure check (human, 2026-10-05): one call, settled
+   * as before. Offline it is gated like every write (story 8.3b).
+   */
   async function discard(row: ReviewRow): Promise<void> {
+    // STORY 8.3b: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
+
     const started = begin();
 
     if (started === null) return;
+
+    pressed.current = () => discardConfirm.current;
 
     try {
       await writeDisposition(DISPOSITION_DISCARDED, (client) => discardReviewed(client, row), 0, true, null, started);
     } catch (cause) {
       console.error(DISPOSITION_FAILED, cause);
       if (superseded(started)) return;
+      if (!writesOnline()) {
+        focusPressed();
+
+        return;
+      }
       setFailure(DISPOSITION_FAILED);
       focusAfterWrite(discardCancel);
     } finally {
@@ -478,9 +515,14 @@ export function useOverrideReview({
    * retry.
    */
   async function confirm(row: ReviewRow): Promise<void> {
+    // STORY 8.3b: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
+
     const started = begin();
 
     if (started === null) return;
+
+    pressed.current = () => confirmButtons.current[row.id] ?? null;
 
     try {
       // THE GOVERNED REFUSAL FIRST: the write refuses it without a request, as it always did.
@@ -496,6 +538,12 @@ export function useOverrideReview({
       if (superseded(started)) return;
 
       if (check.kind === CHECK_UNAVAILABLE) {
+        // STORY 8.3b: the connection dropped while the check was out — the offline gate says why, not the unchecked refusal.
+        if (!writesOnline()) {
+          focusPressed();
+
+          return;
+        }
         setUnchecked({ kind: DISPOSITION_CONFIRMED, row });
         focusAfterWrite(retryButton);
 
@@ -519,6 +567,11 @@ export function useOverrideReview({
     } catch (cause) {
       console.error(DISPOSITION_FAILED, cause);
       if (superseded(started)) return;
+      if (!writesOnline()) {
+        focusPressed();
+
+        return;
+      }
       setRefusal(DISPOSITION_FAILED);
       focusAfterWrite(refusalNotice, heading);
     } finally {
@@ -534,9 +587,14 @@ export function useOverrideReview({
    * closes with what was entered kept, and the erasure confirmation opens.
    */
   async function amend(row: ReviewRow, entered: AmendEntered, groups: readonly AmendOptionGroup[]): Promise<void> {
+    // STORY 8.3b: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
+
     const started = begin();
 
     if (started === null) return;
+
+    pressed.current = () => typeField.current;
 
     const reopen: CheckedAmend = { row, entered, groups };
     const write = (client: ReviewRpc) => amendReviewed(client, row, entered.choiceId, entered.reason);
@@ -564,6 +622,12 @@ export function useOverrideReview({
       if (superseded(started)) return;
 
       if (check.kind === CHECK_UNAVAILABLE) {
+        // STORY 8.3b: the connection dropped while the check was out — the offline gate says why, not the unchecked refusal.
+        if (!writesOnline()) {
+          focusPressed();
+
+          return;
+        }
         setUnchecked({ kind: DISPOSITION_AMENDED });
         focusAfterWrite(retryButton, typeField);
 
@@ -589,6 +653,11 @@ export function useOverrideReview({
     } catch (cause) {
       console.error(DISPOSITION_FAILED, cause);
       if (superseded(started)) return;
+      if (!writesOnline()) {
+        focusPressed();
+
+        return;
+      }
       setFailure(DISPOSITION_FAILED);
       focusRefused(DISPOSITION_FAILED);
     } finally {
@@ -609,6 +678,8 @@ export function useOverrideReview({
    */
   async function confirmReviewErasures(shown: NonNullable<typeof confirmation.shown>): Promise<void> {
     if (writing.current || busy || !confirmation.confirmed) return;
+    // STORY 8.3b: offline, nothing is sent — the component's gate is not the only guard.
+    if (!writesOnline()) return;
 
     const checked = shown.subject;
     const reopen: CheckedAmend | null =
@@ -622,6 +693,7 @@ export function useOverrideReview({
 
     writing.current = true;
     setPending(true);
+    pressed.current = () => erasuresSaveButton.current;
 
     try {
       const check = await checkErasures(checked.change);
@@ -629,6 +701,12 @@ export function useOverrideReview({
       await confirmation.follow(shown, check, {
         stopped: () => superseded(started),
         unavailable: () => {
+          // STORY 8.3b: offline, the confirmation stays open under the gate.
+          if (!writesOnline()) {
+            focusPressed();
+
+            return;
+          }
           settle();
           if (reopen === null) {
             setUnchecked({ kind: DISPOSITION_CONFIRMED, row: checked.row });
@@ -673,6 +751,12 @@ export function useOverrideReview({
     } catch (cause) {
       console.error(DISPOSITION_FAILED, cause);
       if (superseded(started)) return;
+      // STORY 8.3b: offline now, the confirmation stays open under the gate; no refusal.
+      if (!writesOnline()) {
+        focusPressed();
+
+        return;
+      }
       await refuse(DISPOSITION_FAILED, reopen, started, settle);
     } finally {
       writing.current = false;
@@ -832,6 +916,8 @@ export function useOverrideReview({
     reasonField,
     discardCancel,
     retryButton,
+    discardConfirm,
+    erasuresSaveButton,
     confirmButtonOf,
     erasures: confirmation,
     confirm,

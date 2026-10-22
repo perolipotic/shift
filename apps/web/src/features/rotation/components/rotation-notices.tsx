@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Save, Undo2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 
+import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog, DialogFooter } from '@/components/ui/dialog';
 import { Notice } from '@/components/ui/notice';
@@ -25,6 +26,7 @@ import {
 } from '@/features/rotation/utils/warnings';
 import { retryRead } from '@/features/teams/services/dependents';
 import { t } from '@/lib/i18n';
+import { useWriteGate, type WriteGate } from '@/lib/offline/use-write-gate';
 import { keepFocusOnAlert } from '@/utils/retry-focus';
 
 /**
@@ -35,7 +37,14 @@ import { keepFocusOnAlert } from '@/utils/retry-focus';
  * the save's and the cancel's erasure dialogs, what a landed save or cancel
  * says, and the read's own refusal with its retry.
  */
-export function RotationNotices({ builder }: { readonly builder: RotationBuilder }) {
+export function RotationNotices({
+  builder,
+  saveGate,
+}: {
+  readonly builder: RotationBuilder;
+  /** The save's write gate (story 8.3b): the unchecked save's retry names the save bar's note. */
+  readonly saveGate: WriteGate;
+}) {
   const queryClient = useQueryClient();
   const {
     refusal,
@@ -59,12 +68,21 @@ export function RotationNotices({ builder }: { readonly builder: RotationBuilder
     retryButton,
     cancelOfferButton,
     cancelRetryButton,
+    cancelConfirmButton,
+    erasuresSaveButton,
+    cancelErasuresSaveButton,
     cancelConfirmation,
     requestSave,
     confirmErasures,
     cancelScheduled,
     confirmCancelErasures,
   } = builder;
+  // STORY 8.3b: offline, every write here is gated before its erasure check
+  // starts, and a note says why — one gate per dialog, so each note's id is
+  // its own; the unchecked save's retry is the save's, under the save bar's note.
+  const cancelGate = useWriteGate();
+  const erasuresGate = useWriteGate();
+  const cancelErasuresGate = useWriteGate();
 
   /**
    * The cancel's confirmation, in a modal open for as long as it is rendered;
@@ -90,11 +108,15 @@ export function RotationNotices({ builder }: { readonly builder: RotationBuilder
             {t('rotation.builder.cancelScheduled.erasures.unavailable')}
             <Button
               ref={cancelRetryButton}
-              className="mt-3 flex h-11"
+              className="mt-3 flex h-11 aria-disabled:opacity-50"
               type="button"
               variant="outline"
               disabled={pending}
+              // STORY 8.3b: the retry is the same cancel again, gated with it.
+              aria-disabled={cancelGate.disabled}
+              aria-describedby={cancelGate.describedBy()}
               onClick={() => {
+                if (!cancelGate.online) return;
                 // THE DATE THAT WAS CONFIRMED, never the snapshot's now: a
                 // change re-dated meanwhile goes down the STALE path.
                 void cancelScheduled(cancelUnchecked);
@@ -104,6 +126,7 @@ export function RotationNotices({ builder }: { readonly builder: RotationBuilder
             </Button>
           </Notice>
         ) : null}
+        <OfflineWriteNote gate={cancelGate} />
         <DialogFooter>
           <Button
             className="h-11"
@@ -118,11 +141,15 @@ export function RotationNotices({ builder }: { readonly builder: RotationBuilder
             {t('rotation.builder.cancelScheduled.keep')}
           </Button>
           <Button
-            className="h-11"
+            ref={cancelConfirmButton}
+            className="h-11 aria-disabled:opacity-50"
             type="button"
             disabled={pending}
+            aria-disabled={cancelGate.disabled}
+            aria-describedby={cancelGate.describedBy()}
             aria-busy={pending}
             onClick={() => {
+              if (!cancelGate.online) return;
               void cancelScheduled(change.effectiveFrom);
             }}
           >
@@ -183,8 +210,8 @@ export function RotationNotices({ builder }: { readonly builder: RotationBuilder
 
     return (
       <ErasureDialog
-        // NOT GATED YET: the settings surfaces' writes are story 8.3b's (`deferred-work.md`).
-        gate={null}
+        gate={erasuresGate}
+        saveButton={erasuresSaveButton}
         id="rotation-erasures"
         rows={rows}
         changed={shown.changed}
@@ -237,8 +264,8 @@ export function RotationNotices({ builder }: { readonly builder: RotationBuilder
 
     return (
       <ErasureDialog
-        // NOT GATED YET: the settings surfaces' writes are story 8.3b's (`deferred-work.md`).
-        gate={null}
+        gate={cancelErasuresGate}
+        saveButton={cancelErasuresSaveButton}
         id="rotation-cancel-erasures"
         rows={rows}
         changed={shown.changed}
@@ -312,11 +339,15 @@ export function RotationNotices({ builder }: { readonly builder: RotationBuilder
           {t('rotation.builder.erasures.unavailable')}
           <Button
             ref={retryButton}
-            className="mt-3 flex h-11"
+            className="mt-3 flex h-11 aria-disabled:opacity-50"
             type="button"
             variant="outline"
             disabled={pending}
+            // STORY 8.3b: the retry is the same save again, gated with it.
+            aria-disabled={saveGate.disabled}
+            aria-describedby={saveGate.describedBy()}
             onClick={() => {
+              if (!saveGate.online) return;
               void requestSave();
             }}
           >

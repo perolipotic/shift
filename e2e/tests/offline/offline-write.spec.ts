@@ -1,30 +1,35 @@
 import { randomBytes } from 'node:crypto';
 
-import type { Locator, Page } from '@playwright/test';
+import type { Locator, Page, Route } from '@playwright/test';
 
 import type { CalendarPage } from '../../pages/calendar.page.ts';
+import type { RotationPage } from '../../pages/rotation.page.ts';
 import { LoginPage } from '../../pages/login.page.ts';
 import { SetPasswordPage } from '../../pages/set-password.page.ts';
 import {
   API_URL,
+  databaseNow,
   holdAtSetPasswordInSql,
   holdRotation,
   OFFLINE_MEMBER_USERNAME_PREFIX,
   removeLeaveMemberInSql,
   removeOfflineMemberInSql,
+  removeRotationChangesOver,
   removeSeededRotation,
   removeTeamInSql,
   seedExtraTeam,
   seedLeaveMember,
   seedLeaveRecord,
+  seedRotationChange,
+  seedShiftTypeOverride,
   seedTeamRotation,
   type RotationHold,
   type SeededLeaveMember,
   type SeededRotation,
 } from '../../utils/database-helper.ts';
-import { addDays } from '../../utils/dates.ts';
-import { hr } from '../../utils/i18n.ts';
-import { offlineSignInNoteOf, offlineWriteNoteIn } from '../../utils/offline.ts';
+import { addDays, fullDate } from '../../utils/dates.ts';
+import { fill, hr } from '../../utils/i18n.ts';
+import { offlineSignInNoteOf, offlineWriteNoteIn, offlineWriteNoteNamedBy } from '../../utils/offline.ts';
 import { ADMIN_STATE, RUN_TIMEZONE } from '../../utils/run-fixture.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
 
@@ -41,6 +46,11 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * and a leave removal's confirm (a `type="button"` path); *Dodaj osobu*; the
  * sign-in, gated with *Za prijavu je potrebna veza.*; and the set-password
  * submit.
+ *
+ * Story 8.3b, the settings surfaces: the Organizacija name's *Spremi*, the
+ * hour band add, the shift type add, *Spremi rotaciju* (no erasure check
+ * starts) and the override review's *Potvrdi* (a seeded pending override),
+ * and the team rename.
  *
  * THE REQUEST SPY counts every request to the Supabase API while offline,
  * less GoTrue's token REFRESH (the client's own, never a write), and every
@@ -117,6 +127,31 @@ async function expectLifted(control: Locator, scope: Page | Locator): Promise<vo
   await expect(control).not.toHaveAttribute('aria-describedby', /offline-write-/);
 }
 
+/**
+ * The API's requests held unanswered from now on (story 8.3b): a check or a
+ * write in flight that the connection then drops under. `drop` aborts every
+ * one held as a dropped connection would, and stops holding.
+ */
+async function holdApi(page: Page): Promise<{ readonly held: () => number; readonly drop: () => Promise<void> }> {
+  const pattern = `${API_URL}/rest/v1/**`;
+  const held: Route[] = [];
+  let holding = true;
+  await page.route(pattern, async (route) => {
+    // ONCE DROPPED, a request is failed as the dropped connection would fail it.
+    if (holding) held.push(route);
+    else await route.abort('internetdisconnected');
+  });
+
+  return {
+    held: () => held.length,
+    drop: async () => {
+      holding = false;
+      for (const route of held.splice(0)) await route.abort('internetdisconnected');
+      await page.unroute(pattern);
+    },
+  };
+}
+
 /** Opens `team`'s day detail on `date`. */
 async function openDay(calendarPage: CalendarPage, teamName: string, date: string): Promise<Locator> {
   await calendarPage.goto(`?prikaz=sve&mjesec=${date.slice(0, 7)}`);
@@ -127,11 +162,13 @@ async function openDay(calendarPage: CalendarPage, teamName: string, date: strin
   return detail;
 }
 
-test.describe('offline writes on the admin work surfaces', () => {
+test.describe('offline writes on the admin surfaces', () => {
   test.use({ storageState: ADMIN_STATE, viewport: { width: 1280, height: 900 } });
 
   let hold: RotationHold | null = null;
   let seed: SeededRotation | null = null;
+  /** When a test seeded a scheduled change: the changes since then are removed first. */
+  let seededSince: string | null = null;
   let written: { readonly slug: string; members: string[]; teams: string[]; usernames: string[] } | null = null;
 
   test.afterEach(async ({ page }) => {
@@ -146,14 +183,18 @@ test.describe('offline writes on the admin work surfaces', () => {
       }
     };
     const seeded = seed;
+    const since = seededSince;
     const own = written;
 
-    // The seed first: it deletes every roster override, which names the member.
+    // A scheduled change first, if the test left one standing.
+    if (seeded !== null && since !== null) await attempt(() => removeRotationChangesOver(seeded, since));
+    // The seed next: it deletes every roster override, which names the member.
     if (seeded !== null) await attempt(() => removeSeededRotation(seeded));
     for (const id of own?.members ?? []) await attempt(() => removeLeaveMemberInSql(own?.slug ?? '', id));
     for (const id of own?.teams ?? []) await attempt(() => removeTeamInSql(own?.slug ?? '', id));
     for (const name of own?.usernames ?? []) await attempt(() => removeOfflineMemberInSql(own?.slug ?? '', name));
     seed = null;
+    seededSince = null;
     written = null;
     await attempt(async () => {
       await hold?.release();
@@ -177,14 +218,16 @@ test.describe('offline writes on the admin work surfaces', () => {
   async function rotationWithMember(
     slug: string,
     onLeave: boolean,
+    daysBefore = 0,
   ): Promise<{ team: { id: string; name: string }; person: SeededLeaveMember; rotation: SeededRotation }> {
     hold = holdRotation(slug);
     await hold.ready;
+    seededSince = await databaseNow();
     const mine = own(slug);
     const suffix = randomBytes(3).toString('hex');
     const team = await seedExtraTeam(slug, `Smjena ${suffix}`);
     mine.teams.push(team.id);
-    seed = await seedTeamRotation(slug, team.id, suffix);
+    seed = await seedTeamRotation(slug, team.id, suffix, daysBefore);
     const person = await seedLeaveMember(slug, team.id, seed.today, 20);
     mine.members.push(person.id);
     if (onLeave) {
@@ -193,6 +236,48 @@ test.describe('offline writes on the admin work surfaces', () => {
     }
 
     return { team, person, rotation: seed };
+  }
+
+  /**
+   * {@link rotationWithMember} on leave, and a Slobodno override on today + 4
+   * left pending review by a change saved after it, anchored on Noć from
+   * today + 1 so today + 4 stays a Dan: confirming it would erase the
+   * member's conflict there (story 5.5h's setup).
+   */
+  async function pendingOverride(
+    slug: string,
+  ): Promise<{ team: { id: string; name: string }; rotation: SeededRotation; date: string }> {
+    const { team, rotation } = await rotationWithMember(slug, true);
+    const date = addDays(rotation.today, 4);
+    await seedShiftTypeOverride(rotation, team.id, date, 2, 'Bez veze (E2E).');
+    await seedRotationChange(rotation, team.id, addDays(rotation.today, 1), 1);
+
+    return { team, rotation, date };
+  }
+
+  /**
+   * {@link rotationWithMember} on leave over today + 4, seeded from two days
+   * back, and a change scheduled tomorrow anchored on Noć — so today + 4 is a
+   * Dan only under the scheduled change, and cancelling it would erase the
+   * member's conflict (story 5.5g's setup). The builder's save is refused as
+   * scheduled, and its cancel's confirmation is opened.
+   */
+  async function armScheduledCancel(slug: string, rotationPage: RotationPage): Promise<Locator> {
+    const { team, rotation } = await rotationWithMember(slug, true, 2);
+    const scheduled = addDays(rotation.today, 1);
+    await seedRotationChange(rotation, team.id, scheduled, 1);
+
+    await rotationPage.goto();
+    await expect(rotationPage.effectiveFromInput).toBeVisible();
+    await rotationPage.saveButton.click();
+    await expect(rotationPage.scheduledRefusal).toBeVisible();
+    await rotationPage.cancelScheduledOffer(fullDate(scheduled)).click();
+    const dialog = rotationPage.dialog();
+    await expect(dialog).toContainText(
+      fill(hr.rotation.builder.cancelScheduled.prompt, { date: fullDate(scheduled) }),
+    );
+
+    return dialog;
   }
 
   test('the Kalendar roster save is gated offline before its erasure check, and the reconnect sends nothing', async ({
@@ -417,6 +502,432 @@ test.describe('offline writes on the admin work surfaces', () => {
     await expect(peoplePage.offlineNote).toHaveCount(0);
     expect(spy.writes(), 'the reconnect sent a write').toEqual([]);
     await expect(peoplePage.createdStatus(person.name, person.username)).toHaveCount(0);
+  });
+
+  // ------------------------------------------------ the settings surfaces (story 8.3b)
+
+  test("Organizacija's name save is gated offline, and the reconnect sends nothing", async ({
+    page,
+    organizationPage,
+  }) => {
+    await organizationPage.goto();
+    await organizationPage.nameOpener.click();
+    const dialog = organizationPage.nameDialog;
+    await expect(dialog).toBeVisible();
+    await organizationPage.nameInput.fill('Bez veze (E2E)');
+    const save = organizationPage.saveIn(dialog);
+    await expect(offlineWriteNoteIn(dialog), 'online, no note').toHaveCount(0);
+
+    const spy = spyOnApi(page);
+    await page.context().setOffline(true);
+    await expectGated(save, offlineWriteNoteIn(dialog));
+    await expect(offlineWriteNoteIn(dialog)).toHaveText(hr.offline.needsConnection);
+
+    await press(save);
+    await organizationPage.nameInput.press('Enter');
+    await expect(dialog, 'the dialog closed on an offline press').toBeVisible();
+    await expect(organizationPage.nameInput).toHaveValue('Bez veze (E2E)');
+    expect(spy.all(), 'a request left the page offline').toEqual([]);
+
+    await page.context().setOffline(false);
+    await expectLifted(save, dialog);
+    await expect(organizationPage.offlineNote).toHaveCount(0);
+    expect(spy.writes(), 'the reconnect sent a write').toEqual([]);
+    await expect(dialog).toBeVisible();
+  });
+
+  test('the hour band add is gated offline, and the reconnect sends nothing', async ({ page, hourBandsPage }) => {
+    const bands = hr.organization.hourBands;
+
+    await hourBandsPage.goto();
+    await hourBandsPage.openButton.click();
+    const dialog = hourBandsPage.addDialog;
+    await expect(dialog).toBeVisible();
+    await hourBandsPage.nameInput.fill('Bez veze');
+    await hourBandsPage.startInput.fill('03:17');
+    const add = dialog.getByRole('button', { name: bands.add, exact: true });
+
+    const spy = spyOnApi(page);
+    await page.context().setOffline(true);
+    await expectGated(add, offlineWriteNoteIn(dialog));
+    await expect(offlineWriteNoteIn(dialog)).toHaveText(hr.offline.needsConnection);
+
+    await press(add);
+    await hourBandsPage.nameInput.press('Enter');
+    await expect(dialog).toBeVisible();
+    await expect(hourBandsPage.nameInput).toHaveValue('Bez veze');
+    expect(spy.all(), 'a request left the page offline').toEqual([]);
+
+    await page.context().setOffline(false);
+    await expectLifted(add, dialog);
+    await expect(hourBandsPage.offlineNote).toHaveCount(0);
+    expect(spy.writes(), 'the reconnect sent a write').toEqual([]);
+    await expect(hourBandsPage.statusWith(bands.created)).toHaveCount(0);
+  });
+
+  test('the shift type add is gated offline, and the reconnect sends nothing', async ({ page, rotationPage }) => {
+    const shiftTypes = hr.rotation.shiftTypes;
+    const name = `Bez veze ${randomBytes(3).toString('hex')}`;
+
+    await rotationPage.goto();
+    await rotationPage.shiftTypeOpenButton.click();
+    const dialog = rotationPage.addShiftTypeDialog;
+    await expect(dialog).toBeVisible();
+    await rotationPage.addShiftTypeName.fill(name);
+    await rotationPage.addShiftTypeKind.selectOption({ label: shiftTypes.nonworking });
+    const add = dialog.getByRole('button', { name: shiftTypes.add, exact: true });
+
+    const spy = spyOnApi(page);
+    await page.context().setOffline(true);
+    await expectGated(add, offlineWriteNoteIn(dialog));
+    await expect(offlineWriteNoteIn(dialog)).toHaveText(hr.offline.needsConnection);
+
+    await press(add);
+    await rotationPage.addShiftTypeName.press('Enter');
+    await expect(dialog).toBeVisible();
+    await expect(rotationPage.addShiftTypeName).toHaveValue(name);
+    expect(spy.all(), 'a request left the page offline').toEqual([]);
+
+    await page.context().setOffline(false);
+    await expectLifted(add, dialog);
+    await expect(rotationPage.offlineNote).toHaveCount(0);
+    expect(spy.writes(), 'the reconnect sent a write').toEqual([]);
+    await expect(rotationPage.statusWith(shiftTypes.created)).toHaveCount(0);
+  });
+
+  test('Spremi rotaciju is gated offline before its erasure check, and the reconnect sends nothing', async ({
+    page,
+    fixture,
+    rotationPage,
+  }) => {
+    test.slow();
+    // A member on leave over today + 4, a Dan: an all-free draft would erase that conflict.
+    const { rotation } = await rotationWithMember(fixture.slug, true);
+    await rotationPage.goto();
+    await expect(rotationPage.effectiveFromInput).toBeVisible();
+    await rotationPage.addStep(rotation.steps[2]);
+    await rotationPage.effectiveFromInput.fill(addDays(rotation.today, 1));
+    const save = rotationPage.saveButton;
+    const bar = rotationPage.saveBar;
+    await expect(offlineWriteNoteIn(bar), 'online, no note').toHaveCount(0);
+
+    const spy = spyOnApi(page);
+    await page.context().setOffline(true);
+    await expectGated(save, offlineWriteNoteIn(bar));
+
+    await press(save);
+    await expect(rotationPage.erasuresUnavailable, 'the erasure check started offline').toHaveCount(0);
+    await expect(rotationPage.dialog(), 'the erasure confirmation opened offline').toHaveCount(0);
+    await expect(
+      rotationPage.alertWith(hr.rotation.builder.error.saveUnavailable),
+      "the save's unavailable refusal said it, not the note",
+    ).toHaveCount(0);
+    await expect(rotationPage.savedConfirmation).toHaveCount(0);
+    expect(spy.all(), 'a request left the page offline').toEqual([]);
+
+    await page.context().setOffline(false);
+    await expectLifted(save, bar);
+    await expect(rotationPage.offlineNote).toHaveCount(0);
+    expect(spy.writes(), 'the reconnect sent a write').toEqual([]);
+    await expect(rotationPage.savedConfirmation).toHaveCount(0);
+  });
+
+  test("the override review's Potvrdi is gated offline before its erasure check, and the reconnect sends nothing", async ({
+    page,
+    fixture,
+    rotationPage,
+  }) => {
+    test.slow();
+    const { team, date } = await pendingOverride(fixture.slug);
+
+    await rotationPage.goto();
+    const row = rotationPage.overrideReviewRow(team.name, fullDate(date));
+    await expect(row).toHaveCount(1);
+    const confirm = rotationPage.confirmOverrideIn(row);
+    await expect(confirm).toBeVisible();
+
+    const spy = spyOnApi(page);
+    await page.context().setOffline(true);
+    // THE REVIEW'S OWN NOTE, the one its confirms name (the save bar has its own).
+    await expect(confirm).toHaveAttribute('aria-describedby', /offline-write-/);
+    const note = await offlineWriteNoteNamedBy(page, confirm);
+    await expectGated(confirm, note);
+    await expect(note).toHaveText(hr.offline.needsConnection);
+
+    await press(confirm);
+    await confirm.press('Space');
+    await expect(rotationPage.reviewUnchecked, 'the erasure check started offline').toHaveCount(0);
+    await expect(rotationPage.dialog(), 'the erasure confirmation opened offline').toHaveCount(0);
+    await expect(row).toHaveCount(1);
+    expect(spy.all(), 'a request left the page offline').toEqual([]);
+
+    await page.context().setOffline(false);
+    await expectLifted(confirm, rotationPage.main);
+    await expect(rotationPage.offlineNote).toHaveCount(0);
+    expect(spy.writes(), 'the reconnect sent a write').toEqual([]);
+    await expect(row).toHaveCount(1);
+  });
+
+  test("the override amend's save is gated offline, and the reconnect sends nothing", async ({
+    page,
+    fixture,
+    rotationPage,
+  }) => {
+    test.slow();
+    const { team, rotation, date } = await pendingOverride(fixture.slug);
+
+    await rotationPage.goto();
+    const row = rotationPage.overrideReviewRow(team.name, fullDate(date));
+    await expect(row).toHaveCount(1);
+    // THE OPENER IS NOT GATED: the dialog opens online or offline (decision 4a).
+    await rotationPage.amendOverrideIn(row).click();
+    const dialog = rotationPage.amendDialogOf(team.name, fullDate(date));
+    await expect(dialog).toBeVisible();
+    await rotationPage.amendTypeIn(dialog).selectOption({ label: rotation.steps[1] });
+    await rotationPage.amendReasonIn(dialog).fill('Bez veze (E2E).');
+    const save = dialog.getByRole('button', { name: hr.rotation.builder.overrides.amendDialog.save, exact: true });
+
+    const spy = spyOnApi(page);
+    await page.context().setOffline(true);
+    await expectGated(save, offlineWriteNoteIn(dialog));
+    await expect(offlineWriteNoteIn(dialog)).toHaveText(hr.offline.needsConnection);
+
+    await press(save);
+    await rotationPage.amendReasonIn(dialog).press('Enter');
+    await expect(dialog, 'the amend closed on an offline press').toBeVisible();
+    await expect(rotationPage.reviewUnchecked, 'the erasure check started offline').toHaveCount(0);
+    await expect(rotationPage.amendReasonIn(dialog)).toHaveValue('Bez veze (E2E).');
+    expect(spy.all(), 'a request left the page offline').toEqual([]);
+
+    await page.context().setOffline(false);
+    await expectLifted(save, dialog);
+    await expect(rotationPage.offlineNote).toHaveCount(0);
+    expect(spy.writes(), 'the reconnect sent a write').toEqual([]);
+    await expect(dialog).toBeVisible();
+  });
+
+  test("the override discard's confirm is gated offline, and the reconnect sends nothing", async ({
+    page,
+    fixture,
+    rotationPage,
+  }) => {
+    test.slow();
+    const { team, date } = await pendingOverride(fixture.slug);
+
+    await rotationPage.goto();
+    const row = rotationPage.overrideReviewRow(team.name, fullDate(date));
+    await expect(row).toHaveCount(1);
+    await rotationPage.discardOverrideIn(row).click();
+    const dialog = rotationPage.dialog();
+    await expect(dialog).toBeVisible();
+    const discard = rotationPage.confirmDiscardIn(dialog);
+
+    const spy = spyOnApi(page);
+    await page.context().setOffline(true);
+    await expectGated(discard, offlineWriteNoteIn(dialog));
+    await expect(offlineWriteNoteIn(dialog)).toHaveText(hr.offline.needsConnection);
+
+    await press(discard);
+    await expect(dialog, 'the confirmation closed on an offline press').toBeVisible();
+    expect(spy.all(), 'a request left the page offline').toEqual([]);
+
+    await page.context().setOffline(false);
+    await expectLifted(discard, dialog);
+    await expect(rotationPage.offlineNote).toHaveCount(0);
+    expect(spy.writes(), 'the reconnect sent a write').toEqual([]);
+    await expect(row).toHaveCount(1);
+  });
+
+  test("the rotation cancel's confirm is gated offline before its erasure check, and the reconnect sends nothing", async ({
+    page,
+    fixture,
+    rotationPage,
+  }) => {
+    test.slow();
+    const dialog = await armScheduledCancel(fixture.slug, rotationPage);
+    const confirm = rotationPage.cancelScheduledConfirm;
+
+    const spy = spyOnApi(page);
+    await page.context().setOffline(true);
+    await expectGated(confirm, offlineWriteNoteIn(dialog));
+
+    await press(confirm);
+    await expect(dialog, 'the confirmation closed on an offline press').toBeVisible();
+    await expect(rotationPage.cancelErasuresUnavailable, 'the erasure check started offline').toHaveCount(0);
+    expect(spy.all(), 'a request left the page offline').toEqual([]);
+
+    await page.context().setOffline(false);
+    await expectLifted(confirm, dialog);
+    await expect(rotationPage.offlineNote).toHaveCount(0);
+    expect(spy.writes(), 'the reconnect sent a write').toEqual([]);
+    await expect(dialog).toBeVisible();
+  });
+
+  test('a rotation save whose connection drops mid-check shows only the note, and Spremi works again after the reconnect', async ({
+    page,
+    fixture,
+    rotationPage,
+  }) => {
+    test.slow();
+    // A member on leave over today + 4, a Dan: an all-free draft would erase that conflict.
+    const { rotation } = await rotationWithMember(fixture.slug, true);
+    await rotationPage.goto();
+    await expect(rotationPage.effectiveFromInput).toBeVisible();
+    await rotationPage.addStep(rotation.steps[2]);
+    await rotationPage.effectiveFromInput.fill(addDays(rotation.today, 1));
+    const save = rotationPage.saveButton;
+
+    const spy = spyOnApi(page);
+    // ONLINE: the press starts the check; its reads are held, then the connection drops under them.
+    const api = await holdApi(page);
+    await save.click();
+    await expect.poll(api.held, { message: 'the erasure check never asked' }).toBeGreaterThan(0);
+    await page.context().setOffline(true);
+    await api.drop();
+    // The check's reads retry once before it settles as unavailable.
+    await expect(save, 'the check never settled').not.toHaveAttribute('aria-busy', 'true', { timeout: 20_000 });
+
+    await expectGated(save, offlineWriteNoteIn(rotationPage.saveBar));
+    await expect(save, 'focus fell off the pressed save').toBeFocused();
+    await expect(rotationPage.erasuresUnavailable, 'the unchecked refusal showed offline').toHaveCount(0);
+    await expect(rotationPage.alertWith(hr.rotation.builder.error.saveUnavailable)).toHaveCount(0);
+    await expect(rotationPage.dialog()).toHaveCount(0);
+
+    // RECONNECT: the save's state was released, so the next press runs the check again.
+    await page.context().setOffline(false);
+    await expectLifted(save, rotationPage.saveBar);
+    await expect(rotationPage.offlineNote).toHaveCount(0);
+    expect(spy.writes(), 'a write was sent').toEqual([]);
+    await save.click();
+    await expect(rotationPage.erasureDialog(1), 'the save did not work again after the reconnect').toBeVisible();
+    expect(spy.writes(), 'a write was sent').toEqual([]);
+  });
+
+  test("a rotation cancel whose connection drops mid-check keeps its confirmation open under the note", async ({
+    page,
+    fixture,
+    rotationPage,
+  }) => {
+    test.slow();
+    const dialog = await armScheduledCancel(fixture.slug, rotationPage);
+    const confirm = rotationPage.cancelScheduledConfirm;
+
+    const spy = spyOnApi(page);
+    const api = await holdApi(page);
+    await confirm.click();
+    await expect.poll(api.held, { message: 'the erasure check never asked' }).toBeGreaterThan(0);
+    await page.context().setOffline(true);
+    await api.drop();
+    // The check's reads retry once before it settles as unavailable.
+    await expect(confirm, 'the check never settled').not.toHaveAttribute('aria-busy', 'true', { timeout: 20_000 });
+
+    await expect(dialog, 'the confirmation closed when the connection dropped').toBeVisible();
+    await expectGated(confirm, offlineWriteNoteIn(dialog));
+    await expect(confirm, 'focus fell off the pressed confirm').toBeFocused();
+    await expect(rotationPage.cancelErasuresUnavailable, 'the unchecked refusal showed offline').toHaveCount(0);
+
+    await page.context().setOffline(false);
+    await expectLifted(confirm, dialog);
+    await expect(rotationPage.offlineNote).toHaveCount(0);
+    expect(spy.writes(), 'a write was sent').toEqual([]);
+    await expect(confirm).not.toHaveAttribute('disabled');
+    await expect(dialog).toBeVisible();
+  });
+
+  test("the shift type's times save is gated offline, and the reconnect sends nothing", async ({
+    page,
+    fixture,
+    rotationPage,
+  }) => {
+    test.slow();
+    const { rotation } = await rotationWithMember(fixture.slug, false);
+    await rotationPage.goto();
+    await rotationPage.shiftTypeEditLink(rotation.steps[0]).click();
+    const dialog = rotationPage.shiftTypeEditDialog;
+    await expect(dialog).toBeVisible();
+    await rotationPage.timesStartInput.fill('06:30');
+    const save = rotationPage.timesCorrectButton;
+
+    const spy = spyOnApi(page);
+    await page.context().setOffline(true);
+    // THE DIALOG'S ONE NOTE, which the rename and the times both name.
+    await expect(offlineWriteNoteIn(dialog)).toHaveCount(1);
+    await expectGated(save, offlineWriteNoteIn(dialog));
+    await expectGated(rotationPage.shiftTypeSaveButton, offlineWriteNoteIn(dialog));
+    await expect(offlineWriteNoteIn(dialog)).toHaveText(hr.offline.needsConnection);
+
+    await press(save);
+    await rotationPage.timesStartInput.press('Enter');
+    await expect(dialog).toBeVisible();
+    await expect(rotationPage.timesStartInput).toHaveValue('06:30');
+    expect(spy.all(), 'a request left the page offline').toEqual([]);
+
+    await page.context().setOffline(false);
+    await expectLifted(save, dialog);
+    await expect(rotationPage.offlineNote).toHaveCount(0);
+    expect(spy.writes(), 'the reconnect sent a write').toEqual([]);
+  });
+
+  test("the team archive's confirm is gated offline, and the reconnect sends nothing", async ({
+    page,
+    fixture,
+    teamsPage,
+  }) => {
+    const mine = own(fixture.slug);
+    const team = await seedExtraTeam(fixture.slug, `Smjena ${randomBytes(3).toString('hex')}`);
+    mine.teams.push(team.id);
+
+    await teamsPage.goto();
+    await teamsPage.openTeam(team.name);
+    await expect(teamsPage.editDialog).toBeVisible();
+    await teamsPage.archiveButton(team.name).click();
+    const confirm = teamsPage.archiveConfirmButton(team.name);
+    await expect(confirm).toBeVisible();
+
+    const spy = spyOnApi(page);
+    await page.context().setOffline(true);
+    await expectGated(confirm, offlineWriteNoteIn(teamsPage.editDialog));
+
+    await press(confirm);
+    await expect(teamsPage.archivePrompt(team.name), 'the confirmation closed on an offline press').toBeVisible();
+    expect(spy.all(), 'a request left the page offline').toEqual([]);
+
+    await page.context().setOffline(false);
+    await expectLifted(confirm, teamsPage.editDialog);
+    await expect(teamsPage.offlineNote).toHaveCount(0);
+    expect(spy.writes(), 'the reconnect sent a write').toEqual([]);
+    await expect(teamsPage.archivePrompt(team.name)).toBeVisible();
+  });
+
+  test('the team rename is gated offline, and the reconnect sends nothing', async ({ page, fixture, teamsPage }) => {
+    const mine = own(fixture.slug);
+    const suffix = randomBytes(3).toString('hex');
+    const team = await seedExtraTeam(fixture.slug, `Smjena ${suffix}`);
+    mine.teams.push(team.id);
+    const renamed = `Bez veze ${suffix}`;
+
+    await teamsPage.goto();
+    await teamsPage.openTeam(team.name);
+    const dialog = teamsPage.editDialog;
+    await expect(dialog).toBeVisible();
+    await teamsPage.editNameInput.fill(renamed);
+    const save = teamsPage.editSaveButton;
+
+    const spy = spyOnApi(page);
+    await page.context().setOffline(true);
+    await expectGated(save, offlineWriteNoteIn(dialog));
+
+    await press(save);
+    await teamsPage.editNameInput.press('Enter');
+    await expect(dialog).toBeVisible();
+    await expect(teamsPage.editNameInput).toHaveValue(renamed);
+    expect(spy.all(), 'a request left the page offline').toEqual([]);
+
+    await page.context().setOffline(false);
+    await expectLifted(save, dialog);
+    await expect(teamsPage.offlineNote).toHaveCount(0);
+    expect(spy.writes(), 'the reconnect sent a write').toEqual([]);
+    await expect(teamsPage.editNameInput).toHaveValue(renamed);
   });
 });
 
