@@ -260,7 +260,7 @@ describe('the navy sidebar carries readable text and visible controls', () => {
       surface: 'sidebar',
     },
     {
-      label: 'sidebar-foreground at 70% on sidebar (the profile role, the Više group headings and identity line)',
+      label: 'sidebar-foreground at 70% on sidebar (the profile role, the Više group headings and identity line, the iOS install steps)',
       text: (theme) =>
         composite({ ...rgb(colour(theme, 'sidebar-foreground')), alpha: 0.7 }, colour(theme, 'sidebar')),
       surface: 'sidebar',

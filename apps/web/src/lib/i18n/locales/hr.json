@@ -1348,6 +1348,8 @@
     "menuShow": "Prikaži izbornik",
     "menuHide": "Sakrij izbornik",
     "signOut": "Odjava",
+    "install": "Instaliraj",
+    "installIosSteps": "Dodirni Dijeli, pa Dodaj na početni zaslon.",
     "more": "Više",
     "moreClose": "Zatvori izbornik Više",
     "moreGroup": {

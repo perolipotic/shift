@@ -10,6 +10,7 @@ import { bootLocalization } from '@/lib/i18n/boot';
 import { appFreshness } from '@/lib/offline/app-freshness';
 import { pageDeviceSnapshot, restoreForSession } from '@/lib/offline/device-snapshot';
 import { persistsKey } from '@/lib/offline/persistence';
+import { pageInstall } from '@/lib/pwa/page-install';
 import { supabaseClient } from '@/lib/supabase/client';
 import { bootSessionState, offlineSessionUser, restoreForBoot } from '@/lib/supabase/offline-session';
 import { resetOnSessionChange, sessionEnded } from '@/lib/supabase/session-cache';
@@ -49,6 +50,13 @@ const stopFreshness = appFreshness.start((freshAfter) => {
   );
 });
 import.meta.hot?.dispose(stopFreshness);
+
+// INSTALL FROM VIŠE (story 8.4), before any `await`: Chrome can fire
+// `beforeinstallprompt` before the first render, and an event nobody held is
+// one the *Instaliraj* row never gets. Idempotent, and a hot reload disposes
+// it, like the freshness clock above.
+const stopInstall = pageInstall.start();
+import.meta.hot?.dispose(stopInstall);
 
 // The device's copy of the cache is restored BEFORE the first render, and only
 // for the local session's own user: no session, another user or an expired
