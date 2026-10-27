@@ -377,8 +377,9 @@ export async function seedMemberStatusVersions(
 
 /**
  * Deletes a member {@link seedLeaveMember} wrote (story 5.5a's cleanup), with
- * everything that names them: their conflict resolutions and leave records —
- * neither key cascades (0028, 0031) — and then their auth user, from which
+ * everything that names them: their conflict resolutions, leave requests with
+ * their decisions, and leave records — no such key cascades (0028, 0031,
+ * 0040) — and then their auth user, from which
  * the member row and its versions cascade. Run it after the rotation seed is
  * removed, so no roster override names them. Safe to call twice: a member
  * already gone is nothing to do. REFUSES any member whose username is not one
@@ -401,6 +402,16 @@ export async function removeLeaveMemberInSql(slug: string, memberId: string): Pr
     await client.query('begin');
     const scope = [member.organization_id, memberId];
     await client.query('delete from conflict_resolutions where organization_id = $1 and member_id = $2', scope);
+    // Story 9.3: their leave requests and the decisions on them (0040), whose
+    // keys do not cascade — the decisions first, which name both a request
+    // and the leave an approval created.
+    await client.query(
+      `delete from leave_request_decisions d using leave_requests r
+        where d.organization_id = r.organization_id and d.request_id = r.id
+          and r.organization_id = $1 and r.member_id = $2`,
+      scope,
+    );
+    await client.query('delete from leave_requests where organization_id = $1 and member_id = $2', scope);
     await client.query('delete from leave_records where organization_id = $1 and member_id = $2', scope);
     await client.query(
       'delete from auth.users u using members m where m.auth_user_id = u.id and m.organization_id = $1 and m.id = $2',
@@ -535,6 +546,80 @@ export async function seedLeaveRecord(slug: string, memberId: string, from: stri
     if (record === undefined) throw new Error(`E2E: the leave record ${from}–${to} of ${memberId} was not inserted`);
 
     return record.id;
+  } finally {
+    await client.end();
+  }
+}
+
+/** How a request {@link seedLeaveRequest} writes stands: pending, or closed as 0040's definers close one. */
+export type SeededRequestStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn';
+
+/**
+ * A leave request of `memberId` from `from` to `to` (both `YYYY-MM-DD`, both
+ * included), in SQL (story 9.3), as the member's own: `created_by` is their
+ * auth user. Closed as 0040's definers close one when `status` says so — an
+ * approval with its leave record and decision by the run organization's first
+ * admin, a rejection with its decision, a withdrawal by the member with none.
+ * 0040's checks and its pending exclusion still apply: the superuser bypasses
+ * only the policies (and the over-leave trigger, which acts for
+ * `authenticated` alone). Returns the request's id.
+ */
+export async function seedLeaveRequest(
+  slug: string,
+  memberId: string,
+  from: string,
+  to: string,
+  status: SeededRequestStatus = 'pending',
+): Promise<string> {
+  const client = await connect();
+  try {
+    await client.query('begin');
+    const found = await client.query<{ organization_id: string; member_user: string | null; admin_user: string | null }>(
+      `select o.id as organization_id, m.auth_user_id as member_user,
+              (select a.auth_user_id from members a
+                where a.organization_id = o.id and a.role = 'admin'
+                order by a.created_at, a.id limit 1) as admin_user
+         from organizations o join members m on m.organization_id = o.id
+        where o.slug = $1 and m.id = $2`,
+      [slug, memberId],
+    );
+    const scope = found.rows[0];
+    if (scope === undefined) throw new Error(`E2E: no member ${memberId} in the organization ${slug}`);
+    if (scope.member_user === null || scope.admin_user === null) {
+      throw new Error(`E2E: the member ${memberId} or the organization ${slug}'s admin has no account`);
+    }
+    const closedBy = status === 'pending' ? null : status === 'withdrawn' ? scope.member_user : scope.admin_user;
+    const { rows } = await client.query<{ id: string }>(
+      `insert into leave_requests (organization_id, member_id, during, created_by, closed_by, closed_at)
+       values ($1, $2, daterange($3::date, $4::date, '[]'), $5, $6, case when $6::uuid is null then null else now() end)
+       returning id`,
+      [scope.organization_id, memberId, from, to, scope.member_user, closedBy],
+    );
+    const request = rows[0];
+    if (request === undefined) throw new Error(`E2E: the request ${from}–${to} of ${memberId} was not inserted`);
+    if (status === 'approved' || status === 'rejected') {
+      let record: string | null = null;
+      if (status === 'approved') {
+        const created = await client.query<{ id: string }>(
+          `insert into leave_records (organization_id, member_id, during, created_by)
+           values ($1, $2, daterange($3::date, $4::date, '[]'), $5)
+           returning id`,
+          [scope.organization_id, memberId, from, to, scope.admin_user],
+        );
+        record = created.rows[0]?.id ?? null;
+      }
+      await client.query(
+        `insert into leave_request_decisions (organization_id, request_id, outcome, leave_record_id, decided_by)
+         values ($1, $2, $3, $4, $5)`,
+        [scope.organization_id, request.id, status, record, scope.admin_user],
+      );
+    }
+    await client.query('commit');
+
+    return request.id;
+  } catch (cause) {
+    await client.query('rollback').catch(() => undefined);
+    throw cause;
   } finally {
     await client.end();
   }

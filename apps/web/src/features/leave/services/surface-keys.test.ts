@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { CALENDAR_KEY } from '@/features/calendar/services/snapshot';
 import { LEAVE_OVERVIEW_RECORDS_KEY, MY_LEAVE_RECORDS_KEY } from '@/features/leave/services/leave-list';
+import { MY_LEAVE_REQUESTS_KEY } from '@/features/leave/services/leave-requests';
 import { GODISNJI_MEMBER_SURFACE_KEYS, godisnjiSurfaceKeysOf } from '@/features/leave/services/surface-keys';
 import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
 import { ORGANIZATION_SNAPSHOT_KEY } from '@/features/organization/services/snapshot';
@@ -13,12 +14,13 @@ import { persistsKey } from '@/lib/offline/persistence';
 const text = (key: readonly unknown[]): string => JSON.stringify(key);
 
 describe("Godišnji's keys", () => {
-  it("are a member's four reads", () => {
+  it("are a member's five reads: the figures' four and, since story 9.3, their own requests", () => {
     expect(godisnjiSurfaceKeysOf('member_role')).toEqual([
       CALENDAR_KEY,
       MEMBERS_LIST_KEY,
       ORGANIZATION_SNAPSHOT_KEY,
       MY_LEAVE_RECORDS_KEY,
+      MY_LEAVE_REQUESTS_KEY,
     ]);
   });
 
@@ -39,10 +41,15 @@ describe("Godišnji's keys", () => {
     expect(godisnjiSurfaceKeysOf(null)).toEqual([CALENDAR_KEY]);
   });
 
-  it("are, for a member, all keys Danas reads too", () => {
+  it("are, for a member, all keys Danas reads too, but the requests, which Danas does not read (story 9.3)", () => {
     const danas = new Set(todaySurfaceKeysOf('member_role').map(text));
+    const own = godisnjiSurfaceKeysOf('member_role');
 
-    for (const key of godisnjiSurfaceKeysOf('member_role')) expect(danas.has(text(key)), text(key)).toBe(true);
+    expect(danas.has(text(MY_LEAVE_REQUESTS_KEY)), 'Danas reads the requests').toBe(false);
+    expect(own.map(text)).toContain(text(MY_LEAVE_REQUESTS_KEY));
+    for (const key of own) {
+      if (text(key) !== text(MY_LEAVE_REQUESTS_KEY)) expect(danas.has(text(key)), text(key)).toBe(true);
+    }
   });
 
   it('are all kept on the device', () => {

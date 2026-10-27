@@ -192,6 +192,10 @@ const SANCTIONED_PLURAL_KEYS = [
   // STORY 7.15: the overview's summary line — how many people are shown, and
   // the days they used in total, each in its three forms.
   'godisnji.overview.summary',
+  // STORY 9.3: the request form's in-year charge and its over-balance note,
+  // each in its three forms, as the admin's leave dialog states them.
+  'godisnji.request.costInYear',
+  'godisnji.request.exceeds',
   // STORY 5.4b: the resolution screen's four counts — the way back's
   // `Za odluku · 7 čeka odluku`, the causing record's cost in days, the
   // coverage term's roster (`3 od 4 člana`, `od 5 članova`), and the balance
@@ -1704,6 +1708,51 @@ const SANCTIONED_SCREEN_KEYS = [
   'godisnji.overview.stateValue.recorded',
   'godisnji.overview.stateValue.unrecorded',
   'godisnji.overview.stateValue.negative',
+  // STORY 9.3: a member requests leave — *Zatraži godišnji*, the request
+  // form's heading, lede, fields, preview labels and notes, its reasons and
+  // refusals, *Pošalji* and *Odustani*; the sent line; and the member's own
+  // requests on *Godišnji*: the heading, the empty and unavailable lines, a
+  // row's labels and its range with its cost, the four status words,
+  // *Povuci zahtjev* and its accessible name, the withdrawn line and the
+  // withdrawal's three refusals. No "konflikt" anywhere (story 9.1).
+  'godisnji.request.action',
+  'godisnji.request.heading',
+  'godisnji.request.back',
+  'godisnji.request.lede',
+  'godisnji.request.from',
+  'godisnji.request.to',
+  'godisnji.request.cost',
+  'godisnji.request.balanceAfter',
+  'godisnji.request.overlapNote',
+  'godisnji.request.incomplete',
+  'godisnji.request.reversed',
+  'godisnji.request.tooLong',
+  'godisnji.request.refused',
+  'godisnji.request.submit',
+  'godisnji.request.cancel',
+  'godisnji.request.overlapsLeave',
+  'godisnji.request.overlapsRequest',
+  'godisnji.request.denied',
+  'godisnji.request.failed',
+  'godisnji.request.sent',
+  'godisnji.request.listHeading',
+  'godisnji.request.empty',
+  'godisnji.request.listUnavailable',
+  'godisnji.request.range',
+  'godisnji.request.rangeCost',
+  'godisnji.request.state',
+  'godisnji.request.decidedOn',
+  'godisnji.request.withdrawnOn',
+  'godisnji.request.status.pending',
+  'godisnji.request.status.approved',
+  'godisnji.request.status.rejected',
+  'godisnji.request.status.withdrawn',
+  'godisnji.request.withdraw',
+  'godisnji.request.withdrawName',
+  'godisnji.request.withdrawn',
+  'godisnji.request.withdrawNotPending',
+  'godisnji.request.withdrawDenied',
+  'godisnji.request.withdrawFailed',
   // STORY 5.3b: *Za odluku*, the conflicts queue — the true sentence an empty
   // queue states, the words a past row carries beside its dashed border, a
   // row's member and team, its shift type (with its times, or a type with

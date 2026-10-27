@@ -658,6 +658,15 @@ const SOURCES = [
   join(webRoot, 'src', 'features', 'leave', 'components', 'leave-overview-table.tsx'),
   join(webRoot, 'src', 'features', 'leave', 'components', 'leave-overview-rows.tsx'),
   join(webRoot, 'src', 'features', 'leave', 'services', 'leave-overview.ts'),
+  // Story 9.3: the member's requests on *Godišnji* and the request form —
+  // its page, hook and form, the list and its hook, and the 0040 boundary,
+  // which renders no string of its own.
+  join(webRoot, 'src', 'pages', 'godisnji.zatrazi.tsx'),
+  join(webRoot, 'src', 'features', 'leave', 'hooks', 'use-leave-request-form.ts'),
+  join(webRoot, 'src', 'features', 'leave', 'hooks', 'use-my-leave-requests.ts'),
+  join(webRoot, 'src', 'features', 'leave', 'components', 'leave-request-form.tsx'),
+  join(webRoot, 'src', 'features', 'leave', 'components', 'my-leave-requests.tsx'),
+  join(webRoot, 'src', 'features', 'leave', 'services', 'leave-requests.ts'),
   // Story 5.3b: *Za odluku*'s conflicts queue — its hook, components and rules
   // module. `za-odluku.tsx` is listed with the destinations above.
   join(webRoot, 'src', 'features', 'conflicts', 'hooks', 'use-conflicts-queue.ts'),

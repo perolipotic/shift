@@ -1,13 +1,41 @@
-import { leaveBalanceOf, type LeaveBalance, type LeaveYearStart } from '@shift/domain';
+import { leaveBalanceOf, leaveCostOf, type LeaveBalance, type LeaveYearStart } from '@shift/domain';
 
+import type { CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { calendarTodayOf, memberScheduleInputOf } from '@/features/calendar/utils/month';
 import { leaveRecordsOf } from '@/features/leave/services/leave-list';
-import type {
-  LeaveCalendarSource,
-  LeaveMembersSource,
-  LeaveOrganizationAnswer,
-  LeaveOrganizationSource,
+import {
+  LEAVE_RANGE_INCOMPLETE,
+  LEAVE_RANGE_REFUSED,
+  LEAVE_RANGE_REVERSED,
+  LEAVE_RANGE_TOO_LONG,
+  LEAVE_RANGE_UNCHANGED,
+  leavePreviewStateOf,
+  leaveRangeValuesOf,
+  type LeaveCalendarSource,
+  type LeaveMembersSource,
+  type LeaveOrganizationAnswer,
+  type LeaveOrganizationSource,
+  type LeavePreviewState,
+  type LeaveRangeReason,
+  type LeaveRecordsInput,
 } from '@/features/leave/services/leave-section';
+import {
+  REQUEST_APPROVED,
+  REQUEST_DENIED,
+  REQUEST_FAILED,
+  REQUEST_NOT_PENDING,
+  REQUEST_OVERLAPS_LEAVE,
+  REQUEST_OVERLAPS_REQUEST,
+  REQUEST_PENDING,
+  REQUEST_REJECTED,
+  REQUEST_WITHDRAWN,
+  leaveRequestsOf,
+  type LeaveRequest,
+  type LeaveRequestSendFailure,
+  type LeaveRequestStatus,
+  type LeaveRequestWithdrawFailure,
+} from '@/features/leave/services/leave-requests';
+import { RANGE_DASH, formatIsoDate, organizationIsoDate } from '@/lib/i18n/format';
 
 /**
  * *Godišnji* (story 5.2c): the viewer's own allowance, the days used in the
@@ -49,7 +77,21 @@ export type MyLeave =
   | { readonly kind: typeof MY_LEAVE_LOADING }
   | { readonly kind: typeof MY_LEAVE_UNAVAILABLE }
   | { readonly kind: typeof MY_LEAVE_UNSCHEDULED }
-  | { readonly kind: typeof MY_LEAVE_READY; readonly balance: LeaveBalance };
+  | {
+      readonly kind: typeof MY_LEAVE_READY;
+      readonly balance: LeaveBalance;
+      /**
+       * STORY 9.3: the one balance input the three figures were computed
+       * over, so the request form previews a range against exactly it and
+       * never recomputes one. Pending requests are no part of it.
+       */
+      readonly input: LeaveRecordsInput;
+      /** The organization and the member a request is sent for: the calendar snapshot's viewer. */
+      readonly organizationId: string;
+      readonly memberId: string;
+      /** The organization's zone, in which a closed request's instant is a date. */
+      readonly timeZone: string;
+    };
 
 /** The query result the own rows' state is derived from. */
 export interface MyLeaveRowsAnswer {
@@ -89,6 +131,29 @@ function leaveYearStartOf(answer: LeaveOrganizationAnswer): LeaveYearStart | nul
   return answer !== undefined && answer.ok
     ? { month: answer.snapshot.leaveYearStartMonth, day: answer.snapshot.leaveYearStartDay }
     : null;
+}
+
+/**
+ * The viewer's balance input (story 9.3, factored out of {@link myLeaveOf}):
+ * the calendar's one schedule recipe for the snapshot's viewer, their
+ * allowance, their own live records, today in the organization's zone and the
+ * leave year. The three figures and the request form's preview both stand on
+ * this one value. Throws what the schedule recipe throws.
+ */
+export function myLeaveInputOf(
+  snapshot: CalendarSnapshot,
+  allowanceDays: number,
+  records: LeaveRecordsInput['records'],
+  leaveYearStart: LeaveYearStart,
+  now: Date,
+): LeaveRecordsInput {
+  return {
+    input: memberScheduleInputOf(snapshot, snapshot.viewer),
+    allowanceDays,
+    records,
+    today: calendarTodayOf(snapshot, now),
+    leaveYearStart,
+  };
 }
 
 /**
@@ -139,15 +204,15 @@ export function myLeaveOf(sources: MyLeaveSources, now: Date): MyLeave {
   }
 
   try {
+    const input = myLeaveInputOf(snapshot, own.leaveAllowanceDays, recorded, leaveYearStart, now);
+
     return {
       kind: MY_LEAVE_READY,
-      balance: leaveBalanceOf({
-        input: memberScheduleInputOf(snapshot, viewer),
-        allowanceDays: own.leaveAllowanceDays,
-        records: recorded,
-        today: calendarTodayOf(snapshot, now),
-        leaveYearStart,
-      }),
+      balance: leaveBalanceOf(input),
+      input,
+      organizationId: snapshot.organizationId,
+      memberId: viewer.memberId,
+      timeZone: snapshot.timeZone,
     };
   } catch (cause) {
     // AS THE ADMIN CARD DOES (`memberLeaveBaseOf`): any failure — the domain's
@@ -191,4 +256,344 @@ export function myLeaveMessageKey(
   const unhandled: never = kind;
 
   return unhandled;
+}
+
+// ------------------------------------------------------- the request (9.3)
+
+/** The request form's heading (story 9.3), which names its region. Never a `member-leave-*` id. */
+export const LEAVE_REQUEST_HEADING_ID = 'leave-request-heading';
+/** The od field. */
+export const LEAVE_REQUEST_FROM_ID = 'leave-request-from';
+/** The do field. */
+export const LEAVE_REQUEST_TO_ID = 'leave-request-to';
+/** The preview's polite live region. */
+export const LEAVE_REQUEST_PREVIEW_ID = 'leave-request-preview';
+/** The reason line, which the field it names is described by while that field is marked. */
+export const LEAVE_REQUEST_REASON_ID = 'leave-request-reason';
+/** The refused send's alert, which the od field is described by while it stands. */
+export const LEAVE_REQUEST_ERROR_ID = 'leave-request-error';
+/** The list's heading on *Godišnji*, which names its section and its list. */
+export const MY_LEAVE_REQUESTS_HEADING_ID = 'my-leave-requests-heading';
+
+/**
+ * STORY 9.3: *Zatraži godišnji*. What the entered range would cost and the
+ * balance after it, as the domain's `leavePreviewOf` over the very input the
+ * three figures stand on (`leavePreviewStateOf`, the admin dialog's rule, with
+ * no record amended): a reason in place of the preview while a date is
+ * incomplete, the range is reversed, it is longer than 366 days, or the
+ * domain refuses it. Null while the figures are not ready. A NOTE, NEVER A
+ * GATE: over the balance or over the viewer's own leave, the request is sent,
+ * and the database decides. Pending requests charge nothing, so they are no
+ * part of the input and no part of the balance after it.
+ */
+export function myLeaveRequestPreviewOf(leave: MyLeave, from: string, to: string): LeavePreviewState | null {
+  if (leave.kind !== MY_LEAVE_READY) return null;
+
+  return leavePreviewStateOf(leave.input, from, to);
+}
+
+/** The reason line's key, in the request form's own words. Exhaustive. */
+export function myLeaveRequestReasonMessageKey(
+  reason: LeaveRangeReason,
+):
+  | 'godisnji.request.incomplete'
+  | 'godisnji.request.reversed'
+  | 'godisnji.request.tooLong'
+  | 'godisnji.request.refused' {
+  switch (reason) {
+    case LEAVE_RANGE_INCOMPLETE:
+      return 'godisnji.request.incomplete';
+    case LEAVE_RANGE_REVERSED:
+      return 'godisnji.request.reversed';
+    case LEAVE_RANGE_TOO_LONG:
+      return 'godisnji.request.tooLong';
+    // No amend here, so an unchanged range is never a reason the form meets;
+    // were it one, it could not be costed either.
+    case LEAVE_RANGE_REFUSED:
+    case LEAVE_RANGE_UNCHANGED:
+      return 'godisnji.request.refused';
+    default: {
+      const unhandled: never = reason;
+
+      return unhandled;
+    }
+  }
+}
+
+/** The alert a refused send renders as. Exhaustive. */
+export function myLeaveRequestSendMessageKey(
+  code: LeaveRequestSendFailure,
+):
+  | 'godisnji.request.overlapsLeave'
+  | 'godisnji.request.overlapsRequest'
+  | 'godisnji.request.denied'
+  | 'godisnji.request.failed' {
+  switch (code) {
+    case REQUEST_OVERLAPS_LEAVE:
+      return 'godisnji.request.overlapsLeave';
+    case REQUEST_OVERLAPS_REQUEST:
+      return 'godisnji.request.overlapsRequest';
+    case REQUEST_DENIED:
+      return 'godisnji.request.denied';
+    case REQUEST_FAILED:
+      return 'godisnji.request.failed';
+    default: {
+      const unhandled: never = code;
+
+      return unhandled;
+    }
+  }
+}
+
+/** The alert a refused withdrawal renders as. Exhaustive. */
+export function myLeaveRequestWithdrawMessageKey(
+  code: LeaveRequestWithdrawFailure,
+): 'godisnji.request.withdrawNotPending' | 'godisnji.request.withdrawDenied' | 'godisnji.request.withdrawFailed' {
+  switch (code) {
+    case REQUEST_NOT_PENDING:
+      return 'godisnji.request.withdrawNotPending';
+    case REQUEST_DENIED:
+      return 'godisnji.request.withdrawDenied';
+    case REQUEST_FAILED:
+      return 'godisnji.request.withdrawFailed';
+    default: {
+      const unhandled: never = code;
+
+      return unhandled;
+    }
+  }
+}
+
+/** A status as the word its badge carries. Exhaustive. */
+export function myLeaveRequestStatusMessageKey(
+  status: LeaveRequestStatus,
+):
+  | 'godisnji.request.status.pending'
+  | 'godisnji.request.status.approved'
+  | 'godisnji.request.status.rejected'
+  | 'godisnji.request.status.withdrawn' {
+  switch (status) {
+    case REQUEST_PENDING:
+      return 'godisnji.request.status.pending';
+    case REQUEST_APPROVED:
+      return 'godisnji.request.status.approved';
+    case REQUEST_REJECTED:
+      return 'godisnji.request.status.rejected';
+    case REQUEST_WITHDRAWN:
+      return 'godisnji.request.status.withdrawn';
+    default: {
+      const unhandled: never = status;
+
+      return unhandled;
+    }
+  }
+}
+
+/** One of the viewer's requests as *Godišnji* lists it. */
+export interface MyLeaveRequestRow {
+  readonly request: LeaveRequest;
+  /** `10.09.2026`, the first date as the list writes it. */
+  readonly from: string;
+  /** `14.09.2026`, the last. */
+  readonly to: string;
+  /** `10.09.2026–14.09.2026`. */
+  readonly label: string;
+  /** The domain's `leaveCostOf` over the whole range, or null when it refuses the range. */
+  readonly costDays: number | null;
+  /** `20.09.2026`, the date it was closed in the organization's zone, or null while pending. */
+  readonly closedOn: string | null;
+  /** Whether *Povuci zahtjev* is offered: a pending request alone. */
+  readonly withdrawable: boolean;
+}
+
+/** Still waiting on the requests read. */
+export const MY_REQUESTS_LOADING = 'loading';
+/** The read failed, or a row cannot be trusted: one line and a retry. */
+export const MY_REQUESTS_UNAVAILABLE = 'unavailable';
+/** Every row read, possibly none. */
+export const MY_REQUESTS_READY = 'ready';
+
+export type MyLeaveRequests =
+  | { readonly kind: typeof MY_REQUESTS_LOADING }
+  | { readonly kind: typeof MY_REQUESTS_UNAVAILABLE }
+  | { readonly kind: typeof MY_REQUESTS_READY; readonly rows: readonly MyLeaveRequestRow[] };
+
+/** An instant as the organization's calendar date, written `20.09.2026`; null when it is no instant. */
+function closedOnOf(closedAt: string | null, timeZone: string): string | null {
+  if (closedAt === null) return null;
+
+  const instant = new Date(closedAt);
+
+  if (Number.isNaN(instant.getTime())) return null;
+
+  const date = organizationIsoDate(instant, timeZone);
+
+  return formatIsoDate(date) ?? date;
+}
+
+/**
+ * Whose requests the list reads, from the calendar snapshot alone: the
+ * viewer's member id and the organization's zone, and the balance input a
+ * row is costed over — null while the figures are not ready (unscheduled,
+ * unavailable), when each row is drawn without its cost. The list never
+ * waits on the figures, so a member with no schedule still sees and withdraws
+ * their pending requests.
+ */
+export interface MyLeaveRequestsViewer {
+  readonly memberId: string;
+  readonly timeZone: string;
+  readonly input: LeaveRecordsInput | null;
+}
+
+/** The viewer of the list from the snapshot and the figures: the figures' input when ready, else none. */
+export function myLeaveRequestsViewerOf(
+  snapshot: Pick<CalendarSnapshot, 'viewer' | 'timeZone'>,
+  leave: MyLeave,
+): MyLeaveRequestsViewer {
+  return {
+    memberId: snapshot.viewer.memberId,
+    timeZone: snapshot.timeZone,
+    input: leave.kind === MY_LEAVE_READY ? leave.input : null,
+  };
+}
+
+/**
+ * *Godišnji*'s list of the viewer's own requests, from the requests read
+ * alone: loading while the read is, unavailable when it failed or a row is not
+ * the viewer's or does not parse, otherwise every request soonest first
+ * (`leaveRequestsOf`), each with its range, what it would cost over the
+ * viewer's schedule (null with no balance input, or when the domain refuses
+ * the range), its status and, once closed, the date. Nothing here is charged:
+ * a pending request's cost is what it would cost, and no balance counts it.
+ */
+export function myLeaveRequestsOf(viewer: MyLeaveRequestsViewer, rows: MyLeaveRowsState): MyLeaveRequests {
+  if (rows.rows === null) return rows.loading ? { kind: MY_REQUESTS_LOADING } : { kind: MY_REQUESTS_UNAVAILABLE };
+
+  const requests = leaveRequestsOf(rows.rows, viewer.memberId);
+
+  if (requests === null) {
+    console.error(MY_REQUESTS_UNAVAILABLE, 'row');
+
+    return { kind: MY_REQUESTS_UNAVAILABLE };
+  }
+
+  const input = viewer.input;
+
+  return {
+    kind: MY_REQUESTS_READY,
+    rows: requests.map((request) => {
+      const values = leaveRangeValuesOf(request);
+      let costDays: number | null = null;
+
+      if (input !== null) {
+        try {
+          costDays = leaveCostOf(input.input, request.from, request.to);
+        } catch (cause) {
+          console.error(MY_REQUESTS_UNAVAILABLE, cause);
+        }
+      }
+
+      return {
+        request,
+        from: values.from,
+        to: values.to,
+        label: `${values.from}${RANGE_DASH}${values.to}`,
+        costDays,
+        closedOn: closedOnOf(request.closedAt, viewer.timeZone),
+        withdrawable: request.status === REQUEST_PENDING,
+      };
+    }),
+  };
+}
+
+/** The closing date's line by status: decided or withdrawn; none while pending. Exhaustive. */
+export function myLeaveRequestClosedMessageKey(
+  status: LeaveRequestStatus,
+): 'godisnji.request.decidedOn' | 'godisnji.request.withdrawnOn' | null {
+  switch (status) {
+    case REQUEST_PENDING:
+      return null;
+    case REQUEST_APPROVED:
+    case REQUEST_REJECTED:
+      return 'godisnji.request.decidedOn';
+    case REQUEST_WITHDRAWN:
+      return 'godisnji.request.withdrawnOn';
+    default: {
+      const unhandled: never = status;
+
+      return unhandled;
+    }
+  }
+}
+
+// -------------------------------------------------- the sent line (9.3)
+
+/** The history state the form hands *Godišnji* after a landed send: the range sent. */
+export const LEAVE_REQUEST_SENT_STATE = 'leaveRequestSent';
+
+/** What the status line on *Godišnji* names. */
+export interface LeaveRequestSent {
+  readonly from: string;
+  readonly to: string;
+}
+
+/** The entry's state with `sent` added under {@link LEAVE_REQUEST_SENT_STATE}, every other field kept. */
+export function withLeaveRequestSent<State extends object>(state: State, sent: LeaveRequestSent): State {
+  return { ...state, [LEAVE_REQUEST_SENT_STATE]: sent };
+}
+
+/** The entry's state without the sent line: what a reload finds. */
+export function withoutLeaveRequestSent(state: unknown): Record<string, unknown> {
+  if (typeof state !== 'object' || state === null) return {};
+
+  const { [LEAVE_REQUEST_SENT_STATE]: _sent, ...rest } = state as Record<string, unknown>;
+
+  return rest;
+}
+
+/** The sent line's range from router state as it came back, or null for none or anything malformed. */
+export function leaveRequestSentOf(state: unknown): LeaveRequestSent | null {
+  if (typeof state !== 'object' || state === null) return null;
+
+  const sent: unknown = (state as Record<string, unknown>)[LEAVE_REQUEST_SENT_STATE];
+
+  if (typeof sent !== 'object' || sent === null) return null;
+
+  const { from, to } = sent as Record<string, unknown>;
+
+  if (typeof from !== 'string' || typeof to !== 'string' || formatIsoDate(from) === null || formatIsoDate(to) === null) {
+    return null;
+  }
+
+  return { from, to };
+}
+
+/** The sent range's dates as the line names them, `23.09.2026`. */
+export function leaveRequestSentValuesOf(sent: LeaveRequestSent): { readonly from: string; readonly to: string } {
+  return leaveRangeValuesOf(sent);
+}
+
+/** What the sent line does on one location: what it shows, and whether the entry is cleared. */
+export interface LeaveRequestSentStep {
+  readonly shown: LeaveRequestSent | null;
+  readonly clear: boolean;
+  readonly clearing: boolean;
+}
+
+/**
+ * The sent line on one location (the *Za odluku* saved line's rule): a
+ * location that brings it shows it and clears it off the entry, so a reload or
+ * Back finds none; the clearing replace keeps it; any other location drops it.
+ */
+export function leaveRequestSentStepOf(
+  shown: LeaveRequestSent | null,
+  state: unknown,
+  clearing: boolean,
+): LeaveRequestSentStep {
+  const arrived = leaveRequestSentOf(state);
+
+  if (arrived !== null) return { shown: arrived, clear: true, clearing: true };
+  if (clearing) return { shown, clear: false, clearing: false };
+
+  return { shown: null, clear: false, clearing: false };
 }

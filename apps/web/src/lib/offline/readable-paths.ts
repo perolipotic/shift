@@ -21,6 +21,9 @@ export const OFFLINE_READABLE_PATHS: readonly string[] = [
   '/kalendar',
   '/sati',
   '/godisnji',
+  // Story 9.3: the request form, read as one snapshot under the as-of note;
+  // its *Pošalji* is gated offline.
+  '/godisnji/zatrazi',
   '/ljudi',
   '/smjene/$id',
   '/za-odluku',

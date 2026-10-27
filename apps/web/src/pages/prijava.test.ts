@@ -11,12 +11,14 @@ import {
   componentFunction,
   describedByIds,
   finallyBlock,
+  GODISNJI,
   HOUR_BAND_EDIT,
   HOUR_BAND_LIST,
   idTokens,
   inputElements,
   KALENDAR,
   labelTargets,
+  LEAVE_REQUEST,
   MEMBER_CREATE,
   MEMBER_EDIT,
   namedHandler,
@@ -427,7 +429,43 @@ const IN_FLIGHT_HANDLERS = [
     pending: 'setPending',
     failure: 'setFailure',
   },
+  {
+    // STORY 9.3: the member's leave request, *Pošalji*, with its own ref; a
+    // landed send returns to *Godišnji*, a refusal stays with its alert.
+    name: "the leave request form's send",
+    file: LEAVE_REQUEST,
+    effect: 'sendLeaveRequest(',
+    inFlight: 'sending',
+    handler: 'send',
+    pending: 'setPending',
+    failure: 'setFailure',
+  },
+  {
+    // STORY 9.3: *Povuci zahtjev* on a member's pending request, one at a
+    // time, its refusal its own, its alert naming the request's range.
+    name: "Godišnji's request withdrawal",
+    file: GODISNJI,
+    effect: 'withdrawLeaveRequest(',
+    inFlight: 'withdrawing',
+    handler: 'withdraw',
+    pending: 'setWithdrawPending',
+    failure: 'setRefusal',
+  },
 ];
+
+describe("the leave request form's refusal is about the range it was sent for (story 9.3)", () => {
+  it('clears the standing refusal when od or do changes, so no alert or description outlives its range', () => {
+    const hook = source(join(srcRoot, 'features', 'leave', 'hooks', 'use-leave-request-form.ts'));
+    const change = namedHandler(hook, 'change');
+
+    expect(change, 'change could not be extracted').not.toBe('');
+    expect(change, 'editing a date leaves the last refusal standing').toContain('setFailure(null);');
+    // And the od field is described by the alert only while one stands.
+    expect(source(join(srcRoot, 'features', 'leave', 'components', 'leave-request-form.tsx'))).toMatch(
+      /if \(failure !== null && field === LEAVE_FROM_FIELD\) return LEAVE_REQUEST_ERROR_ID;/,
+    );
+  });
+});
 
 describe('the set-password step is one form with nothing to skip it (story 7.8)', () => {
   it('finds its two fields and its three buttons, in the form', () => {
@@ -1033,7 +1071,7 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // THIRTY SINCE STORY 7.8: the set-password step's submit.
     // STILL THIRTY SINCE STORY 7.18: the settings surface's `submit` became
     // the dialogs' one runner, `write`.
-    expect(IN_FLIGHT_HANDLERS.length, 'an awaiting handler is swept by nothing').toBe(30);
+    expect(IN_FLIGHT_HANDLERS.length, 'an awaiting handler is swept by nothing').toBe(32);
     expect(
       IN_FLIGHT_HANDLERS.map((entry) => `${entry.handler}/${entry.inFlight}`).sort(),
       'the in-flight handler names drifted from the handlers that hold them',
@@ -1055,6 +1093,7 @@ describe('the screen reaches the authentication seam rather than faking one', ()
       'removeChange/writing',
       'save/recording',
       'saveTimes/writing',
+      'send/sending',
       'submit/creating',
       'submit/creating',
       'submit/creating',
@@ -1067,6 +1106,7 @@ describe('the screen reaches the authentication seam rather than faking one', ()
       'submit/writing',
       'submit/writing',
       'submitRoster/writing',
+      'withdraw/withdrawing',
       'write/saving',
     ]);
     // NON-VACUITY ON THE EXTRACTOR ITSELF. A `namedHandler` that answered `''`

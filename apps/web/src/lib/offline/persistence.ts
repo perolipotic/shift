@@ -95,7 +95,9 @@ export const DEVICE_SNAPSHOT_THROTTLE_MS = 1000;
  *   - `hourBands` — `HOUR_BANDS_LIST_KEY`, *Satni pojasi* and *Organizacija*'s
  *     hour band card (story 8.2d);
  *   - `shiftTypes`, `rotation` — `SHIFT_TYPES_LIST_KEY` and `ROTATION_KEY`,
- *     *Postavke rotacije*'s shift types and rotation builder (story 8.2d).
+ *     *Postavke rotacije*'s shift types and rotation builder (story 8.2d);
+ *   - `my-leave-requests` — `MY_LEAVE_REQUESTS_KEY`, a member's own leave
+ *     requests on *Godišnji* and the request form (story 9.3).
  */
 export const PERSISTED_KEY_ROOTS: readonly string[] = [
   'calendar',
@@ -115,6 +117,7 @@ export const PERSISTED_KEY_ROOTS: readonly string[] = [
   'hourBands',
   'shiftTypes',
   'rotation',
+  'my-leave-requests',
 ];
 
 /**

@@ -256,6 +256,8 @@ export const FEATURE_PUBLIC = {
   leave: [
     'services/leave-list', // calendar, conflicts, hours, teams, today
     'services/leave-overview', // pages
+    // Story 9.3: the requests key, which a request write names among its dependents.
+    'services/leave-requests', // teams
     'services/leave-section', // conflicts
     'services/my-leave', // today
   ],

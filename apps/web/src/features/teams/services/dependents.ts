@@ -10,6 +10,7 @@ import {
   MY_LEAVE_RECORDS_KEY,
   ORGANIZATION_LEAVE_RECORDS_KEY,
 } from '@/features/leave/services/leave-list';
+import { MY_LEAVE_REQUESTS_KEY } from '@/features/leave/services/leave-requests';
 import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
 import { MEMBER_NAME_KEY } from '@/features/navigation/services/profile';
 import { MEMBER_ROLE_KEY } from '@/features/navigation/services/role';
@@ -117,6 +118,15 @@ export const LEAVE_WRITE_DEPENDENTS: readonly QueryKey[] = [
   MY_CONFLICT_RESOLUTIONS_KEY,
   ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
 ];
+
+/**
+ * A leave request sent or withdrawn (story 9.3): the viewer's own requests,
+ * which *Godišnji* lists and the form stands on. A PENDING REQUEST DERIVES
+ * NOTHING (0040): no leave record, balance, conflict or schedule reads it, so
+ * no leave, balance or resolution key is named. Story 9.4's admin reader of
+ * requests joins this list when it ships.
+ */
+export const LEAVE_REQUEST_WRITE_DEPENDENTS: readonly QueryKey[] = [MY_LEAVE_REQUESTS_KEY];
 
 /**
  * A conflict resolution recorded (story 5.4b): both live resolution reads.
@@ -238,7 +248,7 @@ export interface InvalidatingClient {
 
 /**
  * Re-read the surface's own key and every dependent, all started together so
- * one cannot hold up another.
+ * one cannot hold up another, each key once.
  *
  * IT RESOLVES WHEN A RE-READ FAILS. TanStack Query's `invalidateQueries`
  * refetches with `throwOnError` false, so a rejecting `queryFn` settles the
@@ -253,7 +263,12 @@ export async function refreshAfterWrite(
   own: QueryKey,
   dependents: readonly QueryKey[],
 ): Promise<void> {
-  await Promise.all([own, ...dependents].map((queryKey) => client.invalidateQueries({ queryKey })));
+  // ONCE EACH: a key named as its own and as a dependent is re-read once, not restarted.
+  const keys = [own, ...dependents].filter(
+    (queryKey, index, all) => all.findIndex((other) => JSON.stringify(other) === JSON.stringify(queryKey)) === index,
+  );
+
+  await Promise.all(keys.map((queryKey) => client.invalidateQueries({ queryKey })));
 }
 
 /** The one call a read's retry makes on the cache, named structurally so it can be stubbed. */

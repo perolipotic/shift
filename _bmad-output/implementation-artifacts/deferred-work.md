@@ -1032,3 +1032,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-9-2-the-leave-request-record.md`
   summary: Requests for past dates are accepted with no rule. 9.3's form should decide whether a member may request leave that has already started or passed.
   evidence: Raised by the 9.2 review (Edge Case Hunter). Admin-entered leave allows past dates, and R9 says nothing about requests.
+
+## Deferred from: code review of spec-9-3-a-member-requests-leave.md (2026-10-27)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-9-3-a-member-requests-leave.md`
+  summary: A write whose network drops after it lands but before `refreshAfterWrite`'s re-read settles stays pending until reconnect, because every hook awaits the re-read (9.3's send and withdraw, and the existing leave, roster and settings writes alike).
+  evidence: Raised by the 9.3 review (Edge Case Hunter). `use-member-leave.ts:670,707` awaits the same call. This is a shared pattern, not new to 9.3.
+- source_spec: `_bmad-output/implementation-artifacts/spec-9-3-a-member-requests-leave.md`
+  summary: The 9.2 entries asking 9.3 to decide about past-date requests, and about an approved request whose leave record was later removed, are still open. 9.3 accepts past ranges with no note, and keeps showing *Odobren*. Decide in 9.4 or 9.5.
+  evidence: Raised again by the 9.3 review (Blind Hunter: no `min` on the date inputs). The 9.3 spec did not cover either case.

@@ -37,7 +37,7 @@ sources:
 | Danas | Member dashboard | Am I on? When next? |
 | Kalendar | Calendar | What does the month look like? |
 | Sati | My hours — titled *Moji sati* (story 7.14) | How much have I worked? |
-| Godišnji | My leave — an admin's is the leave overview (story 7.15) | How much is left? |
+| Godišnji | My leave — the three figures, *Zatraži godišnji* (the request form, story 9.3) and my own requests by status, a pending one with *Povuci zahtjev*; an admin's is the leave overview (story 7.15) | How much is left? What did I ask for? |
 | Ljudi *(in Više)* | Member directory (story 7.17) | Who is on which team? |
 
 **Admin — the five above plus configuration**, grouped in the sidebar. *Ljudi* is one of the five and role-scoped: for an admin it is Members and Teams, for a member the directory (story 7.17). *Sati* and *Godišnji* are role-scoped the same way:
@@ -60,7 +60,8 @@ sources:
 | Day detail | CAP-11, CAP-12 | UJ-3 |
 | My hours (*Moji sati*) | CAP-14 | UJ-2 |
 | Organization hours | CAP-14 | UJ-4 |
-| My leave | CAP-15 | UJ-2 |
+| My leave *(the figures and the member's own requests, soonest first, each with its cost and its status word; story 9.3)* | CAP-15 | UJ-2 |
+| Request leave *(`/godisnji/zatrazi`, from *Zatraži godišnji* on a member's Godišnji: od–do, the cost, the in-year charge and the balance after it, never a gate, and one *Pošalji*; story 9.3)* | CAP-15 | UJ-2 |
 | Leave management *(the overview on Godišnji, story 7.15; recorded on the member page)* | CAP-15 | UJ-3 |
 | Conflicts queue — *Za odluku* *(tabs: Čeka odluku, the default, and Odlučeno)* | CAP-16 | UJ-3, UJ-4 |
 | Conflict resolution | CAP-16 | UJ-3 |

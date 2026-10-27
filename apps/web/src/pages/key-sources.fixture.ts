@@ -14,6 +14,7 @@ import {
   ERROR_SCREEN,
   FILTER_BAR_KEYS,
   GODISNJI,
+  LEAVE_REQUEST,
   HOUR_BAND_EDIT,
   HOUR_BAND_LIST,
   HOUR_BAND_LIST_KEYS,
@@ -901,10 +902,31 @@ export const KEY_SOURCES = [
     // pending team name, the Stanje chip's four (its text, ✕, picker and
     // heading) and its options' count, and the empty line the chips leave
     // with *Poništi filtre*.
+    //
+    // SIXTY-THREE SINCE STORY 9.3: *Zatraži godišnji* and the sent line on
+    // the page; and the requests list's heading, its empty and unavailable
+    // lines with the retry, a row's range with and without its cost, the
+    // cost, the hidden range and state labels, *Povuci zahtjev* and its
+    // accessible name, and the withdrawn line. The status words, the closing
+    // date's line and the refusals come through
+    // `@/features/leave/services/my-leave`.
     name: 'the Godišnji destination',
     file: GODISNJI,
     keys: translationKeys,
-    strings: 50,
+    strings: 63,
+  },
+  {
+    // STORY 9.3. On the request form: its heading (twice, once while the role
+    // is read) and lede, od and do, the cost and the balance after it with
+    // `count.days`, the in-year charge, the two notes, *Pošalji* and
+    // *Odustani*, the unavailable line with its retry, *Natrag na Godišnji*,
+    // and the page's own retry while the role cannot be read. The reasons,
+    // the refusals and the unscheduled line come through
+    // `@/features/leave/services/my-leave`, a key source.
+    name: 'the leave request form',
+    file: LEAVE_REQUEST,
+    keys: translationKeys,
+    strings: 18,
   },
   {
     // E884: the Stanje chip's five options and the five values its text says,
@@ -998,10 +1020,13 @@ export const KEY_SOURCES = [
     // STORY 5.2c: the two lines in place of the figures (unavailable,
     // unscheduled), off `myLeaveMessageKey`, and the three tiles' labels, as
     // `label` entries — `memberListKeys` reads both shapes.
+    // TWENTY-TWO SINCE STORY 9.3: the request form's four reasons and four
+    // refusals, the withdrawal's three refusals, the four status words, and
+    // the closing date's two lines, decided and withdrawn.
     name: 'the Godišnji rules',
     file: MY_LEAVE_KEYS,
     keys: memberListKeys,
-    strings: 5,
+    strings: 22,
   },
   {
     // STORY 4.1b: the hours' one failure, a read or a domain refusal alike.

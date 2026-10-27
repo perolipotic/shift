@@ -26,6 +26,21 @@ export const LEAVE_SCREEN_PARTS = {
   // Sati, and the glyph record it draws from.
   sortableHead: ['components', 'sortable-head.tsx'],
   sortGlyphs: ['components', 'sort-glyphs.ts'],
+  // STORY 9.3: a member's own requests — the hook holding their read and the
+  // withdrawal, and the list with its status words and *Povuci zahtjev*.
+  requestsHook: ['features', 'leave', 'hooks', 'use-my-leave-requests.ts'],
+  requests: ['features', 'leave', 'components', 'my-leave-requests.tsx'],
+} as const;
+
+/**
+ * STORY 9.3: THE REQUEST FORM'S FILE SET, `/godisnji/zatrazi` — its page,
+ * the hook holding the role gate, the reads and the send, and the form. The
+ * page is first.
+ */
+export const LEAVE_REQUEST_PARTS = {
+  page: ['pages', 'godisnji.zatrazi.tsx'],
+  hook: ['features', 'leave', 'hooks', 'use-leave-request-form.ts'],
+  form: ['features', 'leave', 'components', 'leave-request-form.tsx'],
 } as const;
 
 /**
@@ -77,6 +92,18 @@ export const LEAVE_SCREEN_EXEMPT: readonly { readonly file: string; readonly why
   {
     file: 'services/leave-conflicts.ts',
     why: "the admin dialog's conflict preview (story 7.12); codes and operands only, executed by leave-conflicts.test.ts",
+  },
+  {
+    file: 'services/leave-requests.ts',
+    why: "a member's own requests on 0040's boundary (story 9.3): the read, the parse, the status, the insert and the withdrawal; renders nothing, executed by leave-requests.test.ts",
+  },
+  {
+    file: 'hooks/use-leave-request-form.ts',
+    why: "the request form's hook (story 9.3), a part of the request form's own set, LEAVE_REQUEST_PARTS",
+  },
+  {
+    file: 'components/leave-request-form.tsx',
+    why: "the request form itself (story 9.3), a part of the request form's own set, LEAVE_REQUEST_PARTS",
   },
   {
     file: 'services/surface-keys.ts',

@@ -15,6 +15,7 @@ import {
   MY_LEAVE_RECORDS_KEY,
   ORGANIZATION_LEAVE_RECORDS_KEY,
 } from '@/features/leave/services/leave-list';
+import { MY_LEAVE_REQUESTS_KEY } from '@/features/leave/services/leave-requests';
 import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
 import { SESSION_SUBJECT_KEY } from '@/features/members/services/write';
 import { MEMBER_NAME_KEY } from '@/features/navigation/services/profile';
@@ -130,6 +131,7 @@ describe('what is kept on the device', () => {
         HOUR_BANDS_LIST_KEY,
         SHIFT_TYPES_LIST_KEY,
         ROTATION_KEY,
+        MY_LEAVE_REQUESTS_KEY,
       ].map((key) => {
         expect(key).toHaveLength(1);
 

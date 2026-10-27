@@ -10,7 +10,7 @@ import {
   CONFLICT_RESOLUTION_PARTS,
 } from '@/features/conflicts/conflicts-screen.fixture';
 import { HOURS_SCREEN_PARTS } from '@/features/hours/hours-screen.fixture';
-import { LEAVE_SCREEN_PARTS } from '@/features/leave/leave-screen.fixture';
+import { LEAVE_REQUEST_PARTS, LEAVE_SCREEN_PARTS } from '@/features/leave/leave-screen.fixture';
 import { TODAY_SCREEN_PARTS } from '@/features/today/today-screen.fixture';
 import {
   HOUR_BAND_EDIT_PARTS,
@@ -231,6 +231,11 @@ export const LEAVE_SECTION_KEYS = join(LEAVE_FEATURE, 'services', 'leave-section
  * a file set on *Sati*'s terms, written ONCE in `leave-screen.fixture.ts`.
  */
 export const GODISNJI: readonly string[] = Object.values(LEAVE_SCREEN_PARTS).map((parts) => join(srcRoot, ...parts));
+
+/** Story 9.3: the request form's files, page first. */
+export const LEAVE_REQUEST: readonly string[] = Object.values(LEAVE_REQUEST_PARTS).map((parts) =>
+  join(srcRoot, ...parts),
+);
 
 /** Story 5.2c's rules: the screen's two lines and its three tiles' labels. */
 export const MY_LEAVE_KEYS = join(LEAVE_FEATURE, 'services', 'my-leave.ts');
@@ -971,7 +976,17 @@ export const SCREENS = [
   // bar (still the one field), whose chips are the shared
   // `OptionFilterBar`'s, and the empty line the chips leave offers
   // *Poništi filtre*.
-  { name: 'the Godišnji destination', file: GODISNJI, expectedFields: 1, expectedButtons: 6 },
+  // NINE SINCE STORY 9.3: a member's *Zatraži godišnji*, a `<Button asChild>`
+  // link to the request form; and in their requests list *Povuci zahtjev*,
+  // written once inside the map over the rows, and the list's own retry.
+  { name: 'the Godišnji destination', file: GODISNJI, expectedFields: 1, expectedButtons: 9 },
+  // STORY 9.3. On the request form: the od and do `<Input>`s, *Pošalji*,
+  // *Odustani* (a `<Button asChild>` link back to Godišnji), the figures'
+  // unavailable alert's retry, *Natrag na Godišnji* above the title (written
+  // once, drawn in every state), and the page's own retry when the calendar
+  // cannot name the role. No type and no half day (Epic 13), and nothing
+  // that decides: the count is what notices one arriving.
+  { name: 'the leave request form', file: LEAVE_REQUEST, expectedFields: 2, expectedButtons: 5 },
   // STORY 5.3b. ONE on Za odluku: the retry its unavailable alert offers. The
   // queue is read, never pressed: no `Riješi` and no bulk action. STILL ONE
   // SINCE STORY 5.4b: each row became a `<Link>` to its resolution screen,
