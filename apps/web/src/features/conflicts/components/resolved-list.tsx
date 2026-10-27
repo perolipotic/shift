@@ -13,11 +13,11 @@ import { t } from '@/lib/i18n';
 function decisionOf(row: ResolvedConflictRow): string {
   if (row.kind === REPLACE_MEMBER) {
     return row.replacementName === null
-      ? t('raspored.resolved.replace_memberUnknown')
-      : t('raspored.resolved.replace_member', { replacement: row.replacementName });
+      ? t('zaOdluku.resolved.replace_memberUnknown')
+      : t('zaOdluku.resolved.replace_member', { replacement: row.replacementName });
   }
 
-  return row.kind === ACCEPT_UNCOVERED ? t('raspored.resolved.accept_uncovered') : t('raspored.resolved.amend_leave');
+  return row.kind === ACCEPT_UNCOVERED ? t('zaOdluku.resolved.accept_uncovered') : t('zaOdluku.resolved.amend_leave');
 }
 
 /**
@@ -32,17 +32,17 @@ function ResolvedItem({ row }: { readonly row: ResolvedConflictRow }): ReactNode
         <span className="font-semibold tabular-nums">{row.dateShown}</span>
         <Badge>{decisionOf(row)}</Badge>
       </span>
-      <span className="min-w-0 break-words font-medium">{t('raspored.who', { member: row.memberName, team: row.teamName })}</span>
+      <span className="min-w-0 break-words font-medium">{t('zaOdluku.who', { member: row.memberName, team: row.teamName })}</span>
       <span className="min-w-0 break-words text-sm text-muted-foreground">
         {row.shiftTypeName === null
-          ? t('raspored.resolved.shiftGone')
+          ? t('zaOdluku.resolved.shiftGone')
           : row.times === null
             ? row.shiftTypeName
             : `${row.shiftTypeName} ${row.times}`}
       </span>
       <span className="min-w-0 break-words text-sm text-muted-foreground">
-        {t('raspored.resolved.decided', {
-          actor: row.actorName ?? t('raspored.resolved.actorGone'),
+        {t('zaOdluku.resolved.decided', {
+          actor: row.actorName ?? t('zaOdluku.resolved.actorGone'),
           date: row.decidedOn,
           time: row.decidedAt,
         })}
@@ -51,15 +51,15 @@ function ResolvedItem({ row }: { readonly row: ResolvedConflictRow }): ReactNode
   );
 }
 
-/** The *Riješeni* list: its count, always — zero included — then the entries, newest decision first. */
+/** The *Odlučeno* list: its count, always — zero included — then the entries, newest decision first. */
 export function ResolvedList({ view }: { readonly view: ResolvedConflictsView }): ReactNode {
   return (
     <section className="flex min-w-0 flex-col gap-3" aria-labelledby={RESOLVED_COUNT_HEADING_ID}>
       <h2 id={RESOLVED_COUNT_HEADING_ID} className="text-base font-semibold">
-        {t('raspored.resolved.count', { count: view.rows.length })}
+        {t('zaOdluku.resolved.count', { count: view.rows.length })}
       </h2>
       {view.rows.length === 0 ? (
-        <p className="text-sm text-muted-foreground">{t('raspored.resolved.empty')}</p>
+        <p className="text-sm text-muted-foreground">{t('zaOdluku.resolved.empty')}</p>
       ) : (
         <ul className="flex min-w-0 flex-col gap-2">
           {view.rows.map((row) => (

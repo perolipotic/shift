@@ -32,7 +32,7 @@ import { leaveRecordsOf, organizationLeaveRecordsOf } from '@/features/leave/ser
  *
  * DERIVED, NEVER STORED (AD-4). The collisions are `collisionsOf`'s, from the
  * calendar's one snapshot and the live leave the viewer's role reads, through
- * *Raspored*'s own recipe (`collisionInputOf`) — so *Sati* counts exactly what
+ * *Za odluku*'s own recipe (`collisionInputOf`) — so *Sati* counts exactly what
  * the queue lists and the calendar marks. An admin's are the organization's;
  * a member's are their own, from `my_leave_records()` parsed against their
  * own id: no other member's leave ever reaches them.

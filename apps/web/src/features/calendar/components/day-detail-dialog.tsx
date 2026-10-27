@@ -275,8 +275,8 @@ function renderChanges(shown: DayDetail, form: OverrideFormState, roster: Roster
 
 /**
  * THE DAY'S UNRESOLVED CONFLICTS (story 7.9), an admin's alone: each member
- * on leave who is rostered on the shift, the leave's dates, and "Riješi
- * konflikt" to that conflict's decision screen. Its heading carries the
+ * on leave who is rostered on the shift, the leave's dates, and "Odluči"
+ * to that conflict's decision screen. Its heading carries the
  * calendar's own `⚠` and ring, the one treatment an unresolved conflict
  * has; the glyph is beside words, never alone.
  */
@@ -308,7 +308,7 @@ function renderConflicts(conflicts: readonly DayConflict[]): ReactNode {
             </p>
             <Button asChild variant="outline" className="h-11 justify-self-start">
               <Link
-                to="/raspored/$memberId/$date/$teamId"
+                to="/za-odluku/$memberId/$date/$teamId"
                 params={{ memberId: conflict.memberId, date: conflict.date, teamId: conflict.teamId }}
                 aria-describedby={conflictLineIdOf(conflict.memberId)}
               >

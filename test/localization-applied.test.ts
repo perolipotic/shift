@@ -450,7 +450,7 @@ const SOURCES = [
   join(webRoot, 'src', 'pages', 'kalendar.tsx'),
   join(webRoot, 'src', 'pages', 'sati.tsx'),
   join(webRoot, 'src', 'pages', 'godisnji.tsx'),
-  join(webRoot, 'src', 'pages', 'raspored.tsx'),
+  join(webRoot, 'src', 'pages', 'za-odluku.tsx'),
   join(webRoot, 'src', 'pages', 'ljudi.tsx'),
   join(webRoot, 'src', 'pages', 'organizacija.tsx'),
   // Story 1.4a's `snapshot.ts` and 1.4b's `logo.ts` render nothing and are
@@ -658,8 +658,8 @@ const SOURCES = [
   join(webRoot, 'src', 'features', 'leave', 'components', 'leave-overview-table.tsx'),
   join(webRoot, 'src', 'features', 'leave', 'components', 'leave-overview-rows.tsx'),
   join(webRoot, 'src', 'features', 'leave', 'services', 'leave-overview.ts'),
-  // Story 5.3b: *Raspored*'s conflicts queue — its hook, components and rules
-  // module. `raspored.tsx` is listed with the destinations above.
+  // Story 5.3b: *Za odluku*'s conflicts queue — its hook, components and rules
+  // module. `za-odluku.tsx` is listed with the destinations above.
   join(webRoot, 'src', 'features', 'conflicts', 'hooks', 'use-conflicts-queue.ts'),
   join(webRoot, 'src', 'features', 'conflicts', 'components', 'conflicts-body.tsx'),
   join(webRoot, 'src', 'features', 'conflicts', 'components', 'conflicts-list.tsx'),
@@ -672,6 +672,11 @@ const SOURCES = [
   // Story 5.4b: one conflict's resolution screen — its page, hook, components
   // and the two rules modules holding its keys. Missing until the pages
   // completeness check below read `pages/` off the disk.
+  join(webRoot, 'src', 'pages', 'za-odluku.$memberId.$date.$teamId.tsx'),
+  // Story 9.1: the queue's old URLs, which render nothing and only redirect to
+  // their `/za-odluku` twins. Listed so the pages completeness check below
+  // finds every route module here.
+  join(webRoot, 'src', 'pages', 'raspored.tsx'),
   join(webRoot, 'src', 'pages', 'raspored.$memberId.$date.$teamId.tsx'),
   join(webRoot, 'src', 'features', 'conflicts', 'hooks', 'use-conflict-resolution.ts'),
   join(webRoot, 'src', 'features', 'conflicts', 'components', 'conflict-resolution-body.tsx'),
@@ -952,7 +957,9 @@ const WIRING_MARKERS: { name: string; marker: string; proves: string }[] = [
   },
   {
     name: 'both resource messages reached it',
-    marker: 'konflikata',
+    // `count.conflicts`'s few form (`konflikata` until story 9.1 took the
+    // word out of the Croatian UI).
+    marker: '# čekaju odluku',
     proves: 'the whole resource object ships, not just the first key',
   },
   {
@@ -1084,7 +1091,7 @@ describe('a rejected initialization does not mount the application', () => {
  * As originally written — "the built bundle holds no user-facing text beyond
  * the existing `<title>`" — the criterion was false by construction: the two
  * ICU plural messages are user-facing text and MUST be in the bundle, which is
- * the whole point of bundling the resource file. `# dana`, `konflikata` and
+ * the whole point of bundling the resource file. `# dana`, `# čekaju odluku` and
  * `⟦` are all present and all correct.
  *
  * The real rule, and the one worth enforcing, is that the resource file is the
@@ -1604,11 +1611,12 @@ const AUTHORED_VOCABULARY = [
   // STORY 3.2b: the legend and the two marks no other surface names, so a
   // hard-coded mark label is a count that no longer matches.
   'Oznake',
-  'Konflikt',
+  // STORY 9.1: the conflict mark is `Čeka odluku` (it was `Konflikt`).
+  'Čeka',
   // STORY 5.3b: `Nema`, MOVED from the ban list below. The conflicts queue's
-  // empty state is worded by UX-DR20 itself — `Nema konflikata između
-  // godišnjih odmora i rasporeda.` — a fact about the organization rather than
-  // an absence of the screen's, and the human-owned spec fixes the sentence.
+  // empty state was worded by UX-DR20 itself — a fact about the organization
+  // rather than an absence of the screen's (story 9.1 reworded it to `Ništa ne
+  // čeka odluku.`, and other messages still say `Nema`).
   // A count is the stronger claim the other moved words make: only `hr.json`
   // may say it, so a hard-coded `Nema…` is still a count that no longer
   // matches.
@@ -1845,7 +1853,7 @@ describe('the resource file is the only user-facing Croatian in the build', () =
 
     expect(chunk.length).toBeGreaterThan(1000);
     expect(chunk).toContain('dan');
-    expect(chunk).toContain('konflikt');
+    expect(chunk).toContain('čeka odluku');
   });
 
   it.skipIf(notBuilt)('reads every chunk, not the entry alone', () => {

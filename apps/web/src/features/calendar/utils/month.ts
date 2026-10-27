@@ -185,7 +185,7 @@ export const MODE_SEARCH_PARAM = 'prikaz';
  * The search parameters that name the day open in the day detail:
  * `?dan=2026-10-05&danSmjena=<team id>` (deferred-work E862). Both or
  * neither: a day is a team on a date. In the URL, so Back from the conflict
- * screen `Riješi konflikt` leads to reopens the day, and Back while it is
+ * screen `Odluči` leads to reopens the day, and Back while it is
  * open closes it.
  */
 export const DAY_SEARCH_PARAM = 'dan';

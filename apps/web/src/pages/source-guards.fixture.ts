@@ -238,14 +238,14 @@ export const MY_LEAVE_KEYS = join(LEAVE_FEATURE, 'services', 'my-leave.ts');
 /** E884's rules: the overview's Stanje options and chip values, off `\w*MessageKey` unions. */
 export const LEAVE_OVERVIEW_KEYS = join(LEAVE_FEATURE, 'services', 'leave-overview.ts');
 
-/** The conflicts feature, which holds the *Raspored* screen's parts (story 5.3b). */
+/** The conflicts feature, which holds the *Za odluku* screen's parts (story 5.3b). */
 export const CONFLICTS_FEATURE = join(srcRoot, 'features', 'conflicts');
 
 /**
- * Story 5.3b's *Raspored*: the conflicts queue, a file set on *Sati*'s terms,
+ * Story 5.3b's *Za odluku*: the conflicts queue, a file set on *Sati*'s terms,
  * written ONCE in `conflicts-screen.fixture.ts`.
  */
-export const RASPORED: readonly string[] = Object.values(CONFLICTS_QUEUE_PARTS).map((parts) => join(srcRoot, ...parts));
+export const ZA_ODLUKU: readonly string[] = Object.values(CONFLICTS_QUEUE_PARTS).map((parts) => join(srcRoot, ...parts));
 
 /**
  * Story 5.4b's one conflict, decided on its own screen: the second, disjoint
@@ -650,7 +650,7 @@ export const CREDENTIAL_COPY_KEYS = join(srcRoot, 'features', 'members', 'utils'
  * what this list names. `router.test.ts` pins the same table against the
  * registered router, so the four copies are held together end to end.
  */
-// EMPTY SINCE STORY 5.3b: `/raspored` was the last placeholder, and left when
+// EMPTY SINCE STORY 5.3b: `/raspored` (now `/za-odluku`) was the last placeholder, and left when
 // it gained the conflicts queue. The list and its cross-checks stay, so a new
 // destination registered as only a heading still lands under the tight counts.
 export const PLACEHOLDER_SLUGS: readonly string[] = [];
@@ -830,7 +830,7 @@ export const SCREENS = [
   // written once inside the map over the records, the form's amend cancel,
   // and the removal confirmation's cancel and confirm.
   //
-  // THIRTY-THREE SINCE STORY 5.4d: "Natrag na konflikte", shown while the
+  // THIRTY-THREE SINCE STORY 5.4d: "Natrag na Za odluku", shown while the
   // page was reached from a conflict.
   //
   // THIRTY-FIVE SINCE STORY 5.5e: the "Pokušaj ponovno" a team or status
@@ -880,7 +880,7 @@ export const SCREENS = [
   // STILL ONE SINCE STORY 6.2: the duty-block offers nothing to tap.
   // TWO SINCE STORY 6.3: the admin body's unavailable alert has a retry of
   // its own, which reads the queue's three keys again. Every row of *Treba
-  // tebe*, "Otvori konflikte" and each block's way to its list view is a
+  // tebe*, "Otvori Za odluku" and each block's way to its list view is a
   // `<Link>`, which no detector reads.
   { name: 'the team roster', file: TEAM_ROSTER, expectedFields: 0, expectedButtons: 1 },
   // STORY 7.17. THREE on the member directory: *Traži osobu*, the
@@ -929,7 +929,7 @@ export const SCREENS = [
   // `DialogHeader`'s own.
   // THIRTY-NINE SINCE STORY 7.9: the day detail's footer — "Promijeni
   // sastav" and "Promijeni tip smjene" — each change dialog's cancel, and
-  // "Riješi konflikt", a `<Button asChild>` over the link, written once
+  // "Odluči", a `<Button asChild>` over the link, written once
   // inside the map over the day's conflicts.
   // THIRTY-FOUR BUTTONS SINCE DEFERRED-WORK E795: the month picker footer's `Ovaj mjesec`.
   { name: 'the Kalendar destination', file: KALENDAR, expectedFields: 6, expectedButtons: 34 },
@@ -972,11 +972,11 @@ export const SCREENS = [
   // `OptionFilterBar`'s, and the empty line the chips leave offers
   // *Poništi filtre*.
   { name: 'the Godišnji destination', file: GODISNJI, expectedFields: 1, expectedButtons: 6 },
-  // STORY 5.3b. ONE on Raspored: the retry its unavailable alert offers. The
+  // STORY 5.3b. ONE on Za odluku: the retry its unavailable alert offers. The
   // queue is read, never pressed: no `Riješi` and no bulk action. STILL ONE
   // SINCE STORY 5.4b: each row became a `<Link>` to its resolution screen,
   // written once inside the map over the rows, which no detector reads.
-  { name: 'the Raspored destination', file: RASPORED, expectedFields: 0, expectedButtons: 1 },
+  { name: 'the Za odluku destination', file: ZA_ODLUKU, expectedFields: 0, expectedButtons: 1 },
   // STORY 5.4b. On one conflict's screen: the way back (written once, drawn
   // in every state and again under a refusal that the conflict is gone), ‹
   // and ›, Odustani and Spremi odluku, and the unavailable alert's retry. The

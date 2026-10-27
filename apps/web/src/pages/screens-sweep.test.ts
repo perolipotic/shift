@@ -69,7 +69,7 @@ import {
   occurrences,
   POSITION_KEYS,
   RANK_KEYS,
-  RASPORED,
+  ZA_ODLUKU,
   RESOLUTION,
   SATI,
   SCREEN,
@@ -121,8 +121,8 @@ const SETTINGS_PAGE = join(srcRoot, ...SETTINGS_SCREEN_PARTS.page);
 /** The *Godišnji* screen's page, which only composes (story 5.2c). */
 const GODISNJI_PAGE = join(srcRoot, ...LEAVE_SCREEN_PARTS.page);
 
-/** The *Raspored* screen's page, which only composes (story 5.3b). */
-const RASPORED_PAGE = join(srcRoot, ...CONFLICTS_QUEUE_PARTS.page);
+/** The *Za odluku* screen's page, which only composes (story 5.3b). */
+const ZA_ODLUKU_PAGE = join(srcRoot, ...CONFLICTS_QUEUE_PARTS.page);
 
 /** Story 5.4b's resolution screen's page, which only composes. */
 const RESOLUTION_PAGE = join(srcRoot, ...CONFLICT_RESOLUTION_PARTS.page);
@@ -196,6 +196,10 @@ const PAGES_NOT_SCREENS = [
   // STORY 7.13b: `/ljudi/novi` only redirects to *Ljudi*'s add dialog, which
   // leads the member create set.
   'ljudi.novi.tsx',
+  // STORY 9.1: the queue's old URLs only redirect to their `/za-odluku`
+  // twins, which lead the conflicts sets.
+  'raspored.tsx',
+  'raspored.$memberId.$date.$teamId.tsx',
   // The root route: an `<Outlet />` in a layout `div`, with no string and no
   // control. `not-found.tsx`, which it registers, is its own entry, and so is
   // the update notice it mounts (story 8.1).
@@ -648,7 +652,7 @@ describe('the screen is read at all, so every sweep below means something', () =
     ).toEqual(DANAS.filter((file) => file !== DANAS_PAGE).sort());
   });
 
-  it('sweeps every part of the Raspored screens, so a new file cannot escape the sets', () => {
+  it('sweeps every part of the Za odluku screens, so a new file cannot escape the sets', () => {
     // STORY 5.3b, on *Sati*'s terms: an EQUALITY between the sets and every
     // non-test module under the conflicts feature, less the exempt ones.
     // TWO DISJOINT SETS SINCE STORY 5.4b: the queue, and one conflict's
@@ -661,17 +665,17 @@ describe('the screen is read at all, so every sweep below means something', () =
     expect(found, 'the walk reaches services/').toContain(CONFLICTS_QUEUE_RULES);
     for (const file of exempt) expect(found, `${file} is exempt and does not exist`).toContain(file);
     for (const entry of CONFLICTS_SCREEN_EXEMPT) expect(entry.why.length).toBeGreaterThan(20);
-    for (const file of [...RASPORED, ...RESOLUTION]) {
+    for (const file of [...ZA_ODLUKU, ...RESOLUTION]) {
       expect(existsSync(file), `${file} is in a set and does not exist`).toBe(true);
       expect(source(file).trim().length, `${file} is all but empty`).toBeGreaterThan(150);
     }
-    expect(RASPORED.filter((file) => RESOLUTION.includes(file)), 'the two sets share a part').toEqual([]);
-    expect(RASPORED[0], 'the page is read first').toBe(RASPORED_PAGE);
+    expect(ZA_ODLUKU.filter((file) => RESOLUTION.includes(file)), 'the two sets share a part').toEqual([]);
+    expect(ZA_ODLUKU[0], 'the page is read first').toBe(ZA_ODLUKU_PAGE);
     expect(RESOLUTION[0], 'the page is read first').toBe(RESOLUTION_PAGE);
     expect(
       found.filter((file) => !exempt.has(file)).sort(),
-      'the Raspored file sets and the feature folders disagree',
-    ).toEqual([...RASPORED, ...RESOLUTION].filter((file) => file !== RASPORED_PAGE && file !== RESOLUTION_PAGE).sort());
+      'the Za odluku file sets and the feature folders disagree',
+    ).toEqual([...ZA_ODLUKU, ...RESOLUTION].filter((file) => file !== ZA_ODLUKU_PAGE && file !== RESOLUTION_PAGE).sort());
   });
 
   it('sweeps every part of the shift type screens, so a new file cannot escape the sets', () => {

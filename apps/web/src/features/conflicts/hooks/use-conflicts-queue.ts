@@ -44,7 +44,7 @@ import { useSnapshotFreshness } from '@/lib/offline/use-snapshot-freshness';
 import { supabaseClient } from '@/lib/supabase/client';
 
 /**
- * *Raspored*'s three reads and its state (stories 5.3b, 5.4a). Wiring only —
+ * *Za odluku*'s three reads and its state (stories 5.3b, 5.4a). Wiring only —
  * every decision is `@/features/conflicts/services/conflicts-queue`'s, which
  * the node suite executes.
  *
@@ -59,10 +59,10 @@ import { supabaseClient } from '@/lib/supabase/client';
  * it saved in ROUTER STATE — never the URL, never storage. It is derived per
  * location (`resolutionSavedStepOf`): the location that brings it shows it
  * and clears it off the entry through the router, so a reload or Back to the
- * entry later finds none; any other navigation, the Raspored tab's included,
+ * entry later finds none; any other navigation, the Za odluku tab's included,
  * drops it. Focus moves to it once drawn, so it is announced.
  *
- * THE TABS (story 7.16): *Neriješeni* is the default. The *Riješeni* tab reads
+ * THE TABS (story 7.16): *Čeka odluku* is the default. The *Odlučeno* tab reads
  * the same three answers and, once opened, the names of whoever decided
  * (`resolvedConflictsOf`); nothing is written.
  */
@@ -90,7 +90,7 @@ export function useConflictsQueue() {
     clearing.current = step.clearing;
     setSaved(step.shown);
     if (step.clear) {
-      void navigate({ to: '/raspored', replace: true, state: (entry) => withoutResolutionSaved(entry) });
+      void navigate({ to: '/za-odluku', replace: true, state: (entry) => withoutResolutionSaved(entry) });
     }
     // The line's own state is read, never followed: `stepped` lets only a new
     // location step, so a change of `saved` alone returns at the guard.
@@ -127,8 +127,8 @@ export function useConflictsQueue() {
   // results over the open tab's keys (`rasporedSurfaceKeysOf`): online, a read
   // older than this session's network is never drawn as fresh; offline, the
   // whole cached snapshot is drawn under the as-of note (`offline`), or the
-  // unavailable state is. The names join the keys on *Riješeni* alone, so on
-  // *Neriješeni* they pass raw (`answerFor`) and never decide the queue.
+  // unavailable state is. The names join the keys on *Odlučeno* alone, so on
+  // *Čeka odluku* they pass raw (`answerFor`) and never decide the queue.
   const { freshness, clock, answerOf, answerFor } = useSnapshotFreshness(
     rasporedSurfaceKeysOf(tab),
     [

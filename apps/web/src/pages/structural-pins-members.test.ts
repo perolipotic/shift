@@ -1669,14 +1669,14 @@ describe('the two member forms write through the seam and keep nothing back', ()
     const screen = source(file);
     const links = linkElements(screen);
 
-    // STORY 5.4d: the edit form adds ONE more, "Natrag na konflikte" to the
+    // STORY 5.4d: the edit form adds ONE more, "Natrag na Za odluku" to the
     // queue, shown only while the page was reached from a conflict.
     expect(links, 'the screen offers a different number of links than its ways back').toHaveLength(file === MEMBER_EDIT ? 2 : 1);
     expect(attributeOf(links[0] ?? '', 'to'), 'the way back does not go to the list').toBe('/ljudi');
     expect(
       links.slice(1).map((link) => attributeOf(link, 'to')),
       'a link beyond the way back to the list goes anywhere but the conflicts queue',
-    ).toEqual(file === MEMBER_EDIT ? ['/raspored'] : []);
+    ).toEqual(file === MEMBER_EDIT ? ['/za-odluku'] : []);
     // And the link is NOT inside the gated branch: a read that settled failed
     // renders no form, and an exit rendered inside one would be the element
     // nobody can reach.

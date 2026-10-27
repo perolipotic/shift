@@ -55,7 +55,7 @@ import {
  * the removed record and the failed read (the e2e spec's), over the calendar
  * month as `calendarMonthOf` builds it — the grid, the viewer's own day list
  * and the person shown — with the marks `calendarMarksOf` derives. Each
- * admin mark is checked against `collisionsOf` itself, through *Raspored*'s
+ * admin mark is checked against `collisionsOf` itself, through *Za odluku*'s
  * own recipe, so the calendar marks exactly what the queue lists.
  */
 
@@ -185,7 +185,7 @@ describe('the worked example, on the admin grid', () => {
     expect(marked).toEqual(COLLIDING_DATES.map((date) => [a, date]));
   });
 
-  it('draws ⚠, the ring and the hatch, and the legend shows Konflikt and Godišnji', () => {
+  it('draws ⚠, the ring and the hatch, and the legend shows Čeka odluku and Godišnji', () => {
     const month = monthOf(pilot, [WORKED]);
     const treatment = modifierTreatmentOf(gridCellOf(month, teamOf(PILOT, 0), '2026-09-10').modifiers);
 
@@ -193,7 +193,7 @@ describe('the worked example, on the admin grid', () => {
     expect(treatment.glyphText).toBe('⚠');
     expect(treatment.glyphs).toHaveLength(2);
     expect(legendOf(month.rows.flatMap((row) => row.cells)).map((modifier) => translate(modifierMessageKey(modifier)))).toEqual([
-      'Konflikt',
+      'Čeka odluku',
       'Godišnji',
     ]);
   });
@@ -203,7 +203,7 @@ describe('the worked example, on the admin grid', () => {
     const labels = gridCellLabelsOf(month, translate);
     const row = month.rows.findIndex((one) => one.date === '2026-09-10');
 
-    expect(labels[row]?.[0]).toBe('četvrtak 10.09., Smjena A, Dan, 07:00–19:00, Konflikt, Godišnji');
+    expect(labels[row]?.[0]).toBe('četvrtak 10.09., Smjena A, Dan, 07:00–19:00, Čeka odluku, Godišnji');
   });
 
   it.each([
@@ -325,7 +325,7 @@ describe('an overridden cell that collides', () => {
     expect(treatment.className).toBe('modifier-ring-conflict-overridden modifier-hatch-leave');
     expect(treatment.glyphText).toBe('⚠✎');
     expect(gridCellLabelsOf(month, translate)[row]?.[0]).toBe(
-      'subota 12.09., Smjena A, Dan, 07:00–19:00, Konflikt, Izmijenjeno, Godišnji',
+      'subota 12.09., Smjena A, Dan, 07:00–19:00, Čeka odluku, Izmijenjeno, Godišnji',
     );
   });
 });

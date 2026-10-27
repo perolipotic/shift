@@ -222,7 +222,7 @@ test('deactivating a member on leave lists every conflict it erases, by keyboard
   await expect(peoplePage.statusDialog).toHaveCount(0);
   const saved = peoplePage.statusWith(hr.ljudi.status.saved);
   await expect(saved).toBeVisible();
-  // The `few` form: "Uklonjena 2 konflikta."
+  // The `few` form: "Uklonjene 2 stavke koje su čekale odluku."
   await expect(saved).toContainText(plural(erasures.removed, 2));
 
   await conflictsPage.goto();

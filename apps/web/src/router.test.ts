@@ -62,10 +62,12 @@ import {
   postavkeRotacijeTipSmjeneRoute,
 } from '@/pages/postavke-rotacije.tipovi-smjena.$id';
 import { prijavaBareRoute, prijavaRoute, SignInScreen } from '@/pages/prijava';
-import { RasporedScreen, rasporedRoute } from '@/pages/raspored';
-import { RasporedKonfliktScreen, rasporedKonfliktRoute } from '@/pages/raspored.$memberId.$date.$teamId';
+import { rasporedRoute } from '@/pages/raspored';
+import { rasporedCollisionRoute } from '@/pages/raspored.$memberId.$date.$teamId';
 import { SatiScreen, satiRoute } from '@/pages/sati';
 import { SmjenaScreen, smjenaRoute } from '@/pages/smjene.$id';
+import { ZaOdlukuScreen, zaOdlukuRoute } from '@/pages/za-odluku';
+import { ZaOdlukuCollisionScreen, zaOdlukuCollisionRoute } from '@/pages/za-odluku.$memberId.$date.$teamId';
 import type { AppRouterContext } from '@/pages/__root';
 import { rootRoute } from '@/pages/__root';
 import { READ_TIMED_OUT, withinTimeBudget } from '@/utils/time-budget';
@@ -185,7 +187,7 @@ const DESTINATION_ROUTES = [
   { id: '/_app/kalendar', path: '/kalendar', route: kalendarRoute, component: KalendarScreen },
   { id: '/_app/sati', path: '/sati', route: satiRoute, component: SatiScreen },
   { id: '/_app/godisnji', path: '/godisnji', route: godisnjiRoute, component: GodisnjiScreen },
-  { id: '/_app/raspored', path: '/raspored', route: rasporedRoute, component: RasporedScreen },
+  { id: '/_app/za-odluku', path: '/za-odluku', route: zaOdlukuRoute, component: ZaOdlukuScreen },
   { id: '/_app/ljudi', path: '/ljudi', route: ljudiRoute, component: LjudiScreen },
   {
     id: '/_app/postavke-rotacije',
@@ -222,7 +224,7 @@ const DESTINATION_ROUTES = [
 // the member role no surface for.
 //
 // DERIVED SINCE THE ADMIN ROUTE GUARD FIX, and the derivation is the point: a
-// hand-kept list let `/raspored` and `/organizacija` sit `ADMIN_ONLY` in the
+// hand-kept list let `/za-odluku` and `/organizacija` sit `ADMIN_ONLY` in the
 // destination table with no guard at all, and a member who typed either URL
 // reached an admin screen shell. Every destination the member role does not
 // reach carries the admin guard, so a new `ADMIN_ONLY` row without one fails
@@ -272,14 +274,29 @@ const SEARCH_REDIRECT_PATHS: readonly string[] = ['/sati', '/godisnji'];
 const LEVEL_GUARDED_ROUTES = [
   // THE ADMIN ROUTE GUARD FIX: the two `ADMIN_ONLY` destinations that carried
   // no guard, now copies of the same one.
-  { id: '/_app/raspored', path: '/raspored', route: rasporedRoute, component: RasporedScreen },
+  { id: '/_app/za-odluku', path: '/za-odluku', route: zaOdlukuRoute, component: ZaOdlukuScreen },
   // STORY 5.4b: one conflict's resolution screen, admin-only, a copy of the
   // same guard, and not a destination.
   {
+    id: '/_app/za-odluku/$memberId/$date/$teamId',
+    path: '/za-odluku/$memberId/$date/$teamId',
+    route: zaOdlukuCollisionRoute,
+    component: ZaOdlukuCollisionScreen,
+  },
+  // STORY 9.1: the queue's old URLs. No screen of their own: past the guard an
+  // admin is redirected to the `/za-odluku` twin, which the cases below
+  // assert instead of a component.
+  {
+    id: '/_app/raspored',
+    path: '/raspored',
+    route: rasporedRoute,
+    component: null,
+  },
+  {
     id: '/_app/raspored/$memberId/$date/$teamId',
     path: '/raspored/$memberId/$date/$teamId',
-    route: rasporedKonfliktRoute,
-    component: RasporedKonfliktScreen,
+    route: rasporedCollisionRoute,
+    component: null,
   },
   {
     id: '/_app/organizacija',
@@ -396,12 +413,15 @@ describe('the shell route tree', () => {
       '/_app/postavke-rotacije',
       // STORY 2.2b. One shift type, reached from `Postavke rotacije` only.
       '/_app/postavke-rotacije/tipovi-smjena/$id',
+      // STORY 9.1. The queue's old URLs, now redirects to `/za-odluku`.
       '/_app/raspored',
-      // STORY 5.4b. One conflict's resolution screen, reached from the queue only.
       '/_app/raspored/$memberId/$date/$teamId',
       '/_app/sati',
       // STORY 1.8. One team's roster, for every role, reached from Danas only.
       '/_app/smjene/$id',
+      '/_app/za-odluku',
+      // STORY 5.4b. One conflict's resolution screen, reached from the queue only.
+      '/_app/za-odluku/$memberId/$date/$teamId',
       // STORY 7.8. The first sign-in's set-password step: a root route, outside
       // the layout whose guard sends a flagged session to it.
       '/postavi-lozinku',
@@ -1588,6 +1608,8 @@ describe('the signed-in layout guards every destination once, and is pathless', 
         '/godisnji',
         '/ljudi',
         '/smjene/$id',
+        '/za-odluku',
+        '/za-odluku/$memberId/$date/$teamId',
         '/raspored',
         '/raspored/$memberId/$date/$teamId',
         '/ljudi/$id',
@@ -1606,6 +1628,9 @@ describe('the signed-in layout guards every destination once, and is pathless', 
         '/godisnji',
         '/ljudi',
         '/smjene/team-1',
+        '/za-odluku',
+        '/za-odluku/member-1/2026-10-21/team-1',
+        // Story 9.1: the old URLs, so an offline bookmark reaches their redirect.
         '/raspored',
         '/raspored/member-1/2026-10-21/team-1',
         '/ljudi/member-1',
@@ -1629,9 +1654,9 @@ describe('the signed-in layout guards every destination once, and is pathless', 
       expect(await guardedAt('/smjene/team-1/', SESSION)).toEqual({ returned: undefined });
       expect(await guardedAt('/ljudi/member-1/', SESSION)).toEqual({ returned: undefined });
       expect(readsOffline('/ljudi/member-1/')).toBe(true);
-      expect(readsOffline('/raspored/')).toBe(true);
-      expect(readsOffline('/raspored/member-1/2026-10-21/team-1/')).toBe(true);
-      expect(await guardedAt('/raspored/member-1/2026-10-21/team-1/', SESSION)).toEqual({ returned: undefined });
+      expect(readsOffline('/za-odluku/')).toBe(true);
+      expect(readsOffline('/za-odluku/member-1/2026-10-21/team-1/')).toBe(true);
+      expect(await guardedAt('/za-odluku/member-1/2026-10-21/team-1/', SESSION)).toEqual({ returned: undefined });
     });
 
     it('reads the live session alone for every other destination', async () => {
@@ -1647,8 +1672,8 @@ describe('the signed-in layout guards every destination once, and is pathless', 
       expect(readsOffline('/organizacija/satni-pojasi/band-1/x')).toBe(false);
       expect(readsOffline('/postavke-rotacije/tipovi-smjena')).toBe(false);
       expect(readsOffline('/smjene/team-1/x')).toBe(false);
-      expect(readsOffline('/raspored/member-1/2026-10-21')).toBe(false);
-      expect(readsOffline('/raspored/member-1/2026-10-21/team-1/x')).toBe(false);
+      expect(readsOffline('/za-odluku/member-1/2026-10-21')).toBe(false);
+      expect(readsOffline('/za-odluku/member-1/2026-10-21/team-1/x')).toBe(false);
     });
 
     it('matches a path in any case, as the router does', async () => {
@@ -2073,7 +2098,7 @@ describe('/ljudi decides its content by permission level, and the admin screens 
    * synchronously and make every case here report the wrong thing.
    */
 
-  type BeforeLoad = (options: { context: AppRouterContext }) => unknown;
+  type BeforeLoad = (options: { context: AppRouterContext; params?: Readonly<Record<string, string>> }) => unknown;
 
   /** What running the guard did, the shape the layout block established. */
   type Outcome = { readonly thrown: unknown } | { readonly returned: unknown };
@@ -2094,6 +2119,9 @@ describe('/ljudi decides its content by permission level, and the admin screens 
     // What this helper actually needs is the one property it reads.
     route: { readonly options: unknown },
     role: () => Promise<MemberRoleOutcome>,
+    // STORY 9.1: the route's params, which only the old conflict URL reads
+    // (it redirects to the same conflict under `/za-odluku`).
+    params?: Readonly<Record<string, string>>,
   ): Promise<Outcome> {
     const run = (route.options as { beforeLoad?: BeforeLoad }).beforeLoad;
 
@@ -2114,6 +2142,7 @@ describe('/ljudi decides its content by permission level, and the admin screens 
             currentMemberRole: role,
             isKnownPath: KNOWN_PATH,
           },
+          ...(params === undefined ? {} : { params }),
         }),
       };
     } catch (thrown) {
@@ -2179,14 +2208,14 @@ describe('/ljudi decides its content by permission level, and the admin screens 
   });
 
   it('forwards a member-role session away from an admin screen, to its first destination', async () => {
-    // THE CASE THE 1.5a ITERATION COULD NOT MAKE, now on `/raspored`: driven
+    // THE CASE THE 1.5a ITERATION COULD NOT MAKE, now on `/za-odluku`: driven
     // with a real `{ ok: true, role: 'member_role' }`, so widening a guard to
     // admit any resolved outcome fails here rather than shipping.
     const thrown = thrownBy(
-      await beforeLoadOn(rasporedRoute, () => Promise.resolve({ ok: true, role: 'member_role' })),
+      await beforeLoadOn(zaOdlukuRoute, () => Promise.resolve({ ok: true, role: 'member_role' })),
     );
 
-    expect(isRedirect(thrown), '/raspored threw something that is not a redirect').toBe(true);
+    expect(isRedirect(thrown), '/za-odluku threw something that is not a redirect').toBe(true);
     // The FIRST destination, read off the table rather than written here, and
     // the same one `/` forwards to: a second destination policy is the one that
     // goes stale silently.
@@ -2307,8 +2336,9 @@ describe('/ljudi decides its content by permission level, and the admin screens 
       // Vitest reports the shorter run as a pass. SEVEN SINCE STORY 2.1b.
       // NINE SINCE STORY 2.2b. ELEVEN SINCE THE ADMIN ROUTE GUARD FIX.
       // TWELVE SINCE STORY 5.4b. ELEVEN AGAIN SINCE STORY 7.17: `/ljudi` is
-      // role-scoped, and driven by the cases above instead.
-      expect(LEVEL_GUARDED_ROUTES).toHaveLength(11);
+      // role-scoped, and driven by the cases above instead. THIRTEEN SINCE
+      // STORY 9.1: the queue's two old URLs, now redirects.
+      expect(LEVEL_GUARDED_ROUTES).toHaveLength(13);
       for (const { path, route } of LEVEL_GUARDED_ROUTES) {
         expect(
           (route.options as { beforeLoad?: unknown }).beforeLoad,
@@ -2321,7 +2351,7 @@ describe('/ljudi decides its content by permission level, and the admin screens 
       // COMPLETENESS, derived rather than listed. The table's `ADMIN_ONLY` rows
       // are the source of truth for who may reach a destination, so each one
       // must be a route the cases below EXECUTE, not merely one that carries
-      // some function: a guard deleted from `/organizacija` or `/raspored` fails
+      // some function: a guard deleted from `/organizacija` or `/za-odluku` fails
       // here and in every case below.
       const adminOnly = DESTINATIONS.filter(
         (destination) => !destination.roles.includes('member_role'),
@@ -2363,6 +2393,50 @@ describe('/ljudi decides its content by permission level, and the admin screens 
       expect((thrown as { options: { to?: string } }).options.to).toBe('/ljudi');
       expect((thrown as { options: { search?: unknown } }).options.search).toEqual({ dodaj: 1 });
       expect((thrown as { options: { replace?: unknown } }).options.replace).toBe(true);
+    });
+
+    it('sends an admin on from /raspored to /za-odluku, replacing the entry (story 9.1)', async () => {
+      const thrown = thrownBy(
+        await beforeLoadOn(rasporedRoute, () => Promise.resolve({ ok: true, role: 'admin' })),
+      );
+
+      expect(isRedirect(thrown), '/raspored let an admin through to a screen it no longer has').toBe(true);
+      expect((thrown as { options: { to?: string } }).options.to).toBe('/za-odluku');
+      // The search and hash are kept (`true` carries the current ones on).
+      expect((thrown as { options: { search?: unknown } }).options.search).toBe(true);
+      expect((thrown as { options: { hash?: unknown } }).options.hash).toBe(true);
+      expect((thrown as { options: { replace?: unknown } }).options.replace).toBe(true);
+    });
+
+    it('sends an admin on from one conflict under /raspored to the same one under /za-odluku (story 9.1)', async () => {
+      const params = { memberId: 'm1', date: '2026-11-03', teamId: 't1' };
+      const thrown = thrownBy(
+        await beforeLoadOn(rasporedCollisionRoute, () => Promise.resolve({ ok: true, role: 'admin' }), params),
+      );
+
+      expect(isRedirect(thrown), '/raspored/$memberId/$date/$teamId let an admin through').toBe(true);
+      expect((thrown as { options: { to?: string } }).options.to).toBe('/za-odluku/$memberId/$date/$teamId');
+      expect((thrown as { options: { params?: unknown } }).options.params).toEqual(params);
+      expect((thrown as { options: { search?: unknown } }).options.search).toBe(true);
+      expect((thrown as { options: { hash?: unknown } }).options.hash).toBe(true);
+      expect((thrown as { options: { replace?: unknown } }).options.replace).toBe(true);
+    });
+
+    it('refuses a member on both old queue URLs as on any admin-only path (story 9.1)', async () => {
+      for (const route of [rasporedRoute, rasporedCollisionRoute]) {
+        const thrown = thrownBy(
+          await beforeLoadOn(route, () => Promise.resolve({ ok: true, role: 'member_role' }), {
+            memberId: 'm1',
+            date: '2026-11-03',
+            teamId: 't1',
+          }),
+        );
+
+        expect(isRedirect(thrown)).toBe(true);
+        expect((thrown as { options: { to?: string } }).options.to).toBe(DESTINATIONS[0].path);
+        expect((thrown as { options: { params?: unknown } }).options.params).toBeUndefined();
+        expect((thrown as { options: { replace?: unknown } }).options.replace).toBe(true);
+      }
     });
 
     it.each(LEVEL_GUARDED_ROUTES)(
@@ -2473,7 +2547,7 @@ describe('/ljudi decides its content by permission level, and the admin screens 
       for (const { path, route } of LEVEL_GUARDED_ROUTES) {
         const registered = (route.options as { beforeLoad?: unknown }).beforeLoad;
 
-        if (route === ljudiNoviRoute) {
+        if (route === ljudiNoviRoute || route === rasporedRoute || route === rasporedCollisionRoute) {
           expect(registered, `${path} carries no guard`).toBeTypeOf('function');
           expect(registered, `${path} carries the plain guard and lets an admin onto no screen`).not.toBe(
             requireAdmin,
@@ -2550,9 +2624,16 @@ describe('/ljudi decides its content by permission level, and the admin screens 
       expect(match('/ljudi/abc').at(-1)?.routeId).toBe('/_app/ljudi/$id');
     });
 
-    it('resolves a conflict\'s three-part URL to its resolution screen, and /raspored to the queue (story 5.4b)', () => {
+    it('resolves a conflict\'s three-part URL to its resolution screen, and /za-odluku to the queue (stories 5.4b, 9.1)', () => {
+      expect(match('/za-odluku').at(-1)?.routeId).toBe('/_app/za-odluku');
+      expect(match('/za-odluku/m-1/2026-10-02/t-1').at(-1)?.routeId).toBe('/_app/za-odluku/$memberId/$date/$teamId');
+    });
+
+    it('resolves the old /raspored URLs to their own routes, which render nothing and only redirect (story 9.1)', () => {
       expect(match('/raspored').at(-1)?.routeId).toBe('/_app/raspored');
       expect(match('/raspored/m-1/2026-10-02/t-1').at(-1)?.routeId).toBe('/_app/raspored/$memberId/$date/$teamId');
+      expect((rasporedRoute.options as { component?: unknown }).component).toBeUndefined();
+      expect((rasporedCollisionRoute.options as { component?: unknown }).component).toBeUndefined();
     });
 
     it('resolves /ljudi/novi to its own route, which renders nothing and only redirects (story 7.13b)', () => {

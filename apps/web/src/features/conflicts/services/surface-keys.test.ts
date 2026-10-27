@@ -9,12 +9,12 @@ import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
 import { ORGANIZATION_SNAPSHOT_KEY } from '@/features/organization/services/snapshot';
 import { persistsKey } from '@/lib/offline/persistence';
 
-/** Story 8.2c: *Raspored* by its tab, and one conflict's resolution page, each one snapshot, every key kept on the device. */
+/** Story 8.2c: *Za odluku* by its tab, and one conflict's resolution page, each one snapshot, every key kept on the device. */
 
 const text = (key: readonly unknown[]): string => JSON.stringify(key);
 
-describe("Raspored's keys", () => {
-  it('are the calendar, the organization leave and its resolutions on Neriješeni', () => {
+describe("Za odluku's keys", () => {
+  it('are the calendar, the organization leave and its resolutions on Čeka odluku', () => {
     expect(rasporedSurfaceKeysOf(TAB_UNRESOLVED)).toEqual([
       CALENDAR_KEY,
       ORGANIZATION_LEAVE_RECORDS_KEY,
@@ -22,7 +22,7 @@ describe("Raspored's keys", () => {
     ]);
   });
 
-  it('add the acting admins\' names on Riješeni', () => {
+  it('add the acting admins\' names on Odlučeno', () => {
     expect(rasporedSurfaceKeysOf(TAB_RESOLVED)).toEqual([
       CALENDAR_KEY,
       ORGANIZATION_LEAVE_RECORDS_KEY,

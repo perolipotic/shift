@@ -1182,7 +1182,7 @@ export interface DayConflict {
    */
   readonly leaveFrom: string | null;
   readonly leaveTo: string | null;
-  /** The conflict's key: `/raspored/$memberId/$date/$teamId`. */
+  /** The conflict's key: `/za-odluku/$memberId/$date/$teamId`. */
   readonly date: string;
   readonly teamId: string;
 }

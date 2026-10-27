@@ -19,7 +19,7 @@ import { ADMIN_STATE, MEMBER_STATE } from '../../utils/run-fixture.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
 
 /**
- * Story 5.3b: an admin opens *Raspored* and sees every unresolved conflict,
+ * Story 5.3b: an admin opens *Za odluku* and sees every unresolved conflict,
  * upcoming soonest first and past ones still listed.
  *
  * A team of the test's own gets a rotation in SQL (`seedTeamRotation`:
@@ -28,7 +28,7 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * on it from the same day. A record over the first two days (Dan, Noć) is
  * seeded in SQL: two past conflicts. The admin then records today to today +
  * 4 — Dan, Noć, Slobodno, Slobodno, Dan, the worked example — on the member's
- * page, and opens *Raspored* without a reload: three new conflicts, ahead of
+ * page, and opens *Za odluku* without a reload: three new conflicts, ahead of
  * the two past ones, most recent of those first. Removing the record on the
  * member's page clears its three rows, again without a reload.
  *
@@ -50,7 +50,7 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
 
 test.use({ storageState: ADMIN_STATE });
 
-const raspored = hr.raspored;
+const zaOdluku = hr.zaOdluku;
 
 /** The run organization's rotation, while this file's test holds it. */
 let hold: RotationHold | null = null;
@@ -116,15 +116,15 @@ test('lists the new conflicts without a reload, upcoming first and past ones aft
   });
 
   // THE PAST ROWS FIRST: most recent first, each with its own words.
-  await peoplePage.navigationLink(hr.nav.raspored, { exact: true }).click();
-  await expect(conflictsPage.heading(hr.nav.raspored)).toBeVisible();
+  await peoplePage.navigationLink(hr.nav.zaOdluku, { exact: true }).click();
+  await expect(conflictsPage.heading(hr.nav.zaOdluku)).toBeVisible();
   const rows = conflictsPage.rowsOf(seeded.name);
   await expect(rows).toHaveCount(2);
   await expect(rows.nth(0)).toContainText(fullDate(isoDaysAfter(start, 1)));
   await expect(rows.nth(1)).toContainText(fullDate(start));
-  for (const index of [0, 1]) await expect(rows.nth(index)).toContainText(raspored.past);
+  for (const index of [0, 1]) await expect(rows.nth(index)).toContainText(zaOdluku.past);
   await expect(rows.nth(0)).toContainText(
-    fill(raspored.detailTimed, { type: steps[1], times: ranges[1] ?? '', from: fullDate(past.from), to: fullDate(past.to) }),
+    fill(zaOdluku.detailTimed, { type: steps[1], times: ranges[1] ?? '', from: fullDate(past.from), to: fullDate(past.to) }),
   );
 
   // RECORD THE WORKED EXAMPLE on the member's page, back without a reload.
@@ -139,7 +139,7 @@ test('lists the new conflicts without a reload, upcoming first and past ones aft
   await peoplePage.saveLeaveButton.click();
   await expect(peoplePage.status).toBeVisible();
 
-  await peoplePage.navigationLink(hr.nav.raspored, { exact: true }).click();
+  await peoplePage.navigationLink(hr.nav.zaOdluku, { exact: true }).click();
   await expect(rows).toHaveCount(2 + 3);
   const expected = [
     { date: today, step: 0, past: false },
@@ -152,17 +152,17 @@ test('lists the new conflicts without a reload, upcoming first and past ones aft
     const shown = rows.nth(index);
     const range = row.past ? past : worked;
     await expect(shown).toContainText(fullDate(row.date));
-    await expect(shown).toContainText(fill(raspored.who, { member: seeded.name, team: team.name }));
+    await expect(shown).toContainText(fill(zaOdluku.who, { member: seeded.name, team: team.name }));
     await expect(shown).toContainText(
-      fill(raspored.detailTimed, {
+      fill(zaOdluku.detailTimed, {
         type: steps[row.step],
         times: ranges[row.step] ?? '',
         from: fullDate(range.from),
         to: fullDate(range.to),
       }),
     );
-    if (row.past) await expect(shown).toContainText(raspored.past);
-    else await expect(shown).not.toContainText(raspored.past);
+    if (row.past) await expect(shown).toContainText(zaOdluku.past);
+    else await expect(shown).not.toContainText(zaOdluku.past);
   }
   // The count is every row shown, whoever's — read together and retried,
   // because other specs write leave to the same organization meanwhile.
@@ -171,7 +171,7 @@ test('lists the new conflicts without a reload, upcoming first and past ones aft
       const shown = await conflictsPage.rows.count();
       const heading = await conflictsPage.anyCountHeading.textContent();
 
-      return heading === plural(raspored.count, shown);
+      return heading === plural(zaOdluku.count, shown);
     })
     .toBe(true);
   // No `Riješi`, no checkbox and no bulk action: since story 5.4b each row is
@@ -191,9 +191,9 @@ test('lists the new conflicts without a reload, upcoming first and past ones aft
   await expect(confirm).toHaveCount(0);
   await expect(peoplePage.removeLeaveButton(worked.from, worked.to)).toHaveCount(0);
 
-  await peoplePage.navigationLink(hr.nav.raspored, { exact: true }).click();
+  await peoplePage.navigationLink(hr.nav.zaOdluku, { exact: true }).click();
   await expect(rows).toHaveCount(2);
-  for (const index of [0, 1]) await expect(rows.nth(index)).toContainText(raspored.past);
+  for (const index of [0, 1]) await expect(rows.nth(index)).toContainText(zaOdluku.past);
   expect(await page.evaluate(() => (window as unknown as { noReload?: boolean }).noReload)).toBe(true);
 
   // The phone does not scroll sideways.
@@ -233,7 +233,7 @@ test('a resolved conflict leaves the queue and its count, and comes back unresol
       const shown = await conflictsPage.rows.count();
       const heading = await conflictsPage.anyCountHeading.textContent();
 
-      return heading === plural(raspored.count, shown);
+      return heading === plural(zaOdluku.count, shown);
     })
     .toBe(true);
   await page.evaluate(() => {
@@ -253,7 +253,7 @@ test('a resolved conflict leaves the queue and its count, and comes back unresol
   await peoplePage.saveLeaveButton.click();
   await expect(peoplePage.status).toBeVisible();
 
-  await peoplePage.navigationLink(hr.nav.raspored, { exact: true }).click();
+  await peoplePage.navigationLink(hr.nav.zaOdluku, { exact: true }).click();
   await expect(rows).toHaveCount(3);
   await expect(rows.nth(0)).toHaveText(datedOn(today));
   expect(await page.evaluate(() => (window as unknown as { noReload?: boolean }).noReload)).toBe(true);
@@ -303,7 +303,7 @@ test('an amend that takes a resolved date out of the range ends that resolution 
   await expect(peoplePage.leaveDialog).toHaveCount(0);
   await expect(peoplePage.leaveRecordRows).toHaveCount(1);
 
-  await peoplePage.navigationLink(hr.nav.raspored, { exact: true }).click();
+  await peoplePage.navigationLink(hr.nav.zaOdluku, { exact: true }).click();
   // Today is still resolved; +1 stands; +4 is no longer on leave.
   await expect(rows).toHaveCount(1);
   await expect(rows.nth(0)).toHaveText(datedOn(isoDaysAfter(today, 1)));
@@ -315,7 +315,7 @@ test('an amend that takes a resolved date out of the range ends that resolution 
   await peoplePage.saveLeaveButton.click();
   await expect(peoplePage.status).toBeVisible();
 
-  await peoplePage.navigationLink(hr.nav.raspored, { exact: true }).click();
+  await peoplePage.navigationLink(hr.nav.zaOdluku, { exact: true }).click();
   await expect(rows).toHaveCount(2);
   await expect(rows.nth(0)).toHaveText(datedOn(isoDaysAfter(today, 1)));
   await expect(rows.nth(1)).toHaveText(datedOn(dropped));
@@ -367,7 +367,7 @@ test('shows the zero count and the true sentence when there is no live leave', a
 
   await conflictsPage.goto();
   await expect(conflictsPage.countHeading(0)).toBeVisible();
-  await expect(conflictsPage.countHeading(0)).toHaveText('0 neriješenih konflikata');
+  await expect(conflictsPage.countHeading(0)).toHaveText('0 čeka odluku');
   await expect(conflictsPage.emptySentence).toBeVisible();
   await expect(conflictsPage.rows).toHaveCount(0);
 });
@@ -377,14 +377,14 @@ test('a failed read refuses the whole list, and the retry brings it back', async
   await page.route(records, (route) => route.fulfill({ status: 500, body: '{}' }));
 
   await conflictsPage.goto();
-  await expect(conflictsPage.alertWith(raspored.unavailable)).toBeVisible();
+  await expect(conflictsPage.alertWith(zaOdluku.unavailable)).toBeVisible();
   await expect(conflictsPage.anyCountHeading).toHaveCount(0);
   await expect(conflictsPage.rows).toHaveCount(0);
 
   await page.unroute(records);
   await conflictsPage.retryButton.click();
   await expect(conflictsPage.anyCountHeading).toBeVisible();
-  await expect(conflictsPage.alertWith(raspored.unavailable)).toHaveCount(0);
+  await expect(conflictsPage.alertWith(zaOdluku.unavailable)).toHaveCount(0);
 });
 
 test('a failed resolutions read refuses the whole list, and the retry brings it back', async ({ page, conflictsPage }) => {
@@ -392,20 +392,42 @@ test('a failed resolutions read refuses the whole list, and the retry brings it 
   await page.route(resolutions, (route) => route.fulfill({ status: 500, body: '{}' }));
 
   await conflictsPage.goto();
-  await expect(conflictsPage.alertWith(raspored.unavailable)).toBeVisible();
+  await expect(conflictsPage.alertWith(zaOdluku.unavailable)).toBeVisible();
   await expect(conflictsPage.anyCountHeading).toHaveCount(0);
   await expect(conflictsPage.rows).toHaveCount(0);
 
   await page.unroute(resolutions);
   await conflictsPage.retryButton.click();
   await expect(conflictsPage.anyCountHeading).toBeVisible();
-  await expect(conflictsPage.alertWith(raspored.unavailable)).toHaveCount(0);
+  await expect(conflictsPage.alertWith(zaOdluku.unavailable)).toHaveCount(0);
+});
+
+// STORY 9.1: the queue's old URLs redirect, keeping their params and leaving
+// no `/raspored` entry in the history.
+test('the old /raspored lands on Za odluku, with no /raspored entry to go Back to', async ({ page, conflictsPage }) => {
+  await page.goto('/danas');
+  await page.goto('/raspored');
+  await expect(page).toHaveURL('/za-odluku');
+  await expect(conflictsPage.anyCountHeading).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL('/danas');
+});
+
+test('an old conflict URL lands on the same conflict under /za-odluku', async ({ page }) => {
+  const id = '00000000-0000-4000-8000-000000000000';
+  await page.goto(`/raspored/${id}/2026-11-03/${id}`);
+  await expect(page).toHaveURL(`/za-odluku/${id}/2026-11-03/${id}`);
 });
 
 test.describe('a member', () => {
   test.use({ storageState: MEMBER_STATE });
 
-  test('opening Raspored is sent to Danas', async ({ page }) => {
+  test('opening Za odluku is sent to Danas', async ({ page }) => {
+    await page.goto('/za-odluku');
+    await expect(page).toHaveURL('/danas');
+  });
+
+  test('opening the old /raspored is refused like any admin-only path', async ({ page }) => {
     await page.goto('/raspored');
     await expect(page).toHaveURL('/danas');
   });

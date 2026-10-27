@@ -50,9 +50,9 @@ import { initialsOf } from '@/utils/initials';
 function BackLink({ count, disabled = false }: { readonly count: number | null; readonly disabled?: boolean }): ReactNode {
   return (
     <Button asChild variant="ghost" className="-ml-3 h-11 px-3 aria-disabled:opacity-50">
-      <Link to="/raspored" disabled={disabled}>
+      <Link to="/za-odluku" disabled={disabled}>
         <ChevronLeft aria-hidden />
-        {count === null ? t('raspored.resolution.backToQueue') : t('raspored.resolution.back', { count })}
+        {count === null ? t('zaOdluku.resolution.backToQueue') : t('zaOdluku.resolution.back', { count })}
       </Link>
     </Button>
   );
@@ -76,8 +76,8 @@ function ConflictNav({
         className="h-11 w-11 p-0"
         aria-label={
           view.previous === null
-            ? t('raspored.resolution.previousNone')
-            : t('raspored.resolution.previous', { date: view.previous.dayMonth })
+            ? t('zaOdluku.resolution.previousNone')
+            : t('zaOdluku.resolution.previous', { date: view.previous.dayMonth })
         }
         disabled={view.previous === null || pending}
         onClick={() => {
@@ -91,7 +91,7 @@ function ConflictNav({
         variant="outline"
         className="h-11 w-11 p-0"
         aria-label={
-          view.next === null ? t('raspored.resolution.nextNone') : t('raspored.resolution.next', { date: view.next.dayMonth })
+          view.next === null ? t('zaOdluku.resolution.nextNone') : t('zaOdluku.resolution.next', { date: view.next.dayMonth })
         }
         disabled={view.next === null || pending}
         onClick={() => {
@@ -114,7 +114,7 @@ function ResolutionFacts({ view }: { readonly view: ResolutionView }): ReactNode
       <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
         <Badge variant="outline" className="gap-1">
           <span aria-hidden>{CONFLICT_GLYPH}</span>
-          {t('raspored.resolution.mark')}
+          {t('zaOdluku.resolution.mark')}
         </Badge>
         <span className="min-w-0 break-words font-medium">
           {t(shiftFactsMessageKey(view.times), {
@@ -130,7 +130,7 @@ function ResolutionFacts({ view }: { readonly view: ResolutionView }): ReactNode
         <div className="grid min-w-0 gap-0.5">
           <p className="min-w-0 break-words font-semibold">{line.key === null ? line.text : t(line.key, line.values)}</p>
           <p className="min-w-0 break-words text-sm text-muted-foreground">
-            {t('raspored.resolution.leave', { from: view.leaveFrom, to: view.leaveTo, days: view.leaveCostDays })}
+            {t('zaOdluku.resolution.leave', { from: view.leaveFrom, to: view.leaveTo, days: view.leaveCostDays })}
           </p>
         </div>
       </div>
@@ -154,7 +154,7 @@ function ResolutionReady({ state, view }: { readonly state: ConflictResolutionSt
     state;
   const pickedId = replacement?.id ?? null;
   const waiting = !readyToSave(choice, pickedId, view.held);
-  const held = heldHintPartsOf((action) => t('raspored.resolution.heldHint', { action }));
+  const held = heldHintPartsOf((action) => t('zaOdluku.resolution.heldHint', { action }));
   const gone = failure === RESOLUTION_GONE;
   // STORY 8.3a: offline, Spremi is gated and the note says why.
   const gate = useWriteGate();
@@ -165,10 +165,10 @@ function ResolutionReady({ state, view }: { readonly state: ConflictResolutionSt
         <div className="grid min-w-0 justify-items-start gap-1">
           <BackLink count={view.count} disabled={pending} />
           <PageTitle asChild>
-            <h1>{t('raspored.resolution.heading')}</h1>
+            <h1>{t('zaOdluku.resolution.heading')}</h1>
           </PageTitle>
           <PageDescription>
-            {t('raspored.resolution.position', { position: view.position, count: view.count })}
+            {t('zaOdluku.resolution.position', { position: view.position, count: view.count })}
           </PageDescription>
         </div>
         <ConflictNav view={view} pending={pending} onGo={go} />
@@ -179,9 +179,9 @@ function ResolutionReady({ state, view }: { readonly state: ConflictResolutionSt
       <section className="grid min-w-0 gap-3" aria-labelledby={RESOLUTION_CHOICE_HEADING_ID}>
         <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
           <h2 id={RESOLUTION_CHOICE_HEADING_ID} className="text-base font-semibold">
-            {t('raspored.resolution.choice')}
+            {t('zaOdluku.resolution.choice')}
           </h2>
-          <span className="text-sm text-muted-foreground">{t('raspored.resolution.choiceHint')}</span>
+          <span className="text-sm text-muted-foreground">{t('zaOdluku.resolution.choiceHint')}</span>
         </div>
         <RadioGroup
           aria-labelledby={RESOLUTION_CHOICE_HEADING_ID}
@@ -218,7 +218,7 @@ function ResolutionReady({ state, view }: { readonly state: ConflictResolutionSt
               <p id={RESOLUTION_SAVE_HINT_ID} className="min-w-0 flex-1 break-words text-sm text-muted-foreground">
                 {held.before}
                 <Link to="/kalendar" search={view.heldCalendar} className="font-medium text-foreground underline underline-offset-4">
-                  {t('raspored.resolution.heldAction')}
+                  {t('zaOdluku.resolution.heldAction')}
                 </Link>
                 {held.after}
               </p>
@@ -230,8 +230,8 @@ function ResolutionReady({ state, view }: { readonly state: ConflictResolutionSt
               </p>
             )}
             <Button asChild variant="outline" className="h-11 w-full sm:w-auto">
-              <Link to="/raspored" disabled={pending}>
-                {t('raspored.resolution.cancel')}
+              <Link to="/za-odluku" disabled={pending}>
+                {t('zaOdluku.resolution.cancel')}
               </Link>
             </Button>
             <Button
@@ -241,10 +241,10 @@ function ResolutionReady({ state, view }: { readonly state: ConflictResolutionSt
               aria-describedby={gate.describedBy(RESOLUTION_SAVE_HINT_ID)}
               onClick={() => {
                 if (!gate.online) return;
-                void save((member) => t('raspored.resolution.replaceReason', { member }));
+                void save((member) => t('zaOdluku.resolution.replaceReason', { member }));
               }}
             >
-              {pending ? t('raspored.resolution.saving') : t('raspored.resolution.save')}
+              {pending ? t('zaOdluku.resolution.saving') : t('zaOdluku.resolution.save')}
             </Button>
           </div>
         )}
@@ -270,7 +270,7 @@ export function ConflictResolutionBody({ state }: { readonly state: ConflictReso
           <div className="grid min-w-0 justify-items-start gap-1">
             <BackLink count={screen.kind === RESOLUTION_MISSING ? screen.count : null} />
             <PageTitle asChild>
-              <h1>{t('raspored.resolution.heading')}</h1>
+              <h1>{t('zaOdluku.resolution.heading')}</h1>
             </PageTitle>
           </div>
         </PageHeader>
@@ -282,11 +282,11 @@ export function ConflictResolutionBody({ state }: { readonly state: ConflictReso
           <Notice role="alert">{t(resolutionFailureMessageKey(RESOLUTION_GONE))}</Notice>
         ) : null}
         {screen.kind === RESOLUTION_MISSING && failure !== RESOLUTION_GONE && failure !== RESOLUTION_HELD ? (
-          <Notice role="status">{t('raspored.resolution.missing')}</Notice>
+          <Notice role="status">{t('zaOdluku.resolution.missing')}</Notice>
         ) : null}
         {screen.kind === RESOLUTION_UNAVAILABLE ? (
           <div className="grid min-w-0 gap-2">
-            <Notice role="alert">{t('raspored.resolution.unavailable')}</Notice>
+            <Notice role="alert">{t('zaOdluku.resolution.unavailable')}</Notice>
             {retryable ? (
               <Button
                 ref={keepFocusOnAlert}
@@ -295,7 +295,7 @@ export function ConflictResolutionBody({ state }: { readonly state: ConflictReso
                 variant="outline"
                 onClick={retry}
               >
-                {t('raspored.resolution.retry')}
+                {t('zaOdluku.resolution.retry')}
               </Button>
             ) : null}
           </div>

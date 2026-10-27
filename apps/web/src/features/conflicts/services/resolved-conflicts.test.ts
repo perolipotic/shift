@@ -39,7 +39,7 @@ import {
 } from '@/features/rotation/rotation.fixture';
 
 /**
- * Story 7.16's view model, executed (AD-15): the *Riješeni* tab lists what
+ * Story 7.16's view model, executed (AD-15): the *Odlučeno* tab (*Riješeni* until story 9.1) lists what
  * `conflict_resolutions` holds — decision, acting admin, instant — and the
  * queue drops exactly the same conflicts, so each is in one tab only.
  */
@@ -157,7 +157,7 @@ describe('what an entry shows', () => {
       decidedOn: '02.09.2026',
       decidedAt: '11:30',
     });
-    expect(t('raspored.resolved.accept_uncovered')).toBe('Prihvaćeno kao nepokriveno');
+    expect(t('zaOdluku.resolved.accept_uncovered')).toBe('Prihvaćeno kao nepokriveno');
   });
 
   it('names the replacement of a replace_member resolution', async () => {
@@ -165,7 +165,7 @@ describe('what an entry shows', () => {
     const [row] = viewOf(snapshot, [resolutionOf('2026-09-11', a, '2026-09-02T09:30:00+00:00', { kind: 'replace_member', link: 'ro-ana' })]).rows;
 
     expect(row?.replacementName).toBe('Ana Anić');
-    expect(t('raspored.resolved.replace_member', { replacement: 'Ana Anić' })).toBe('Zamjena: Ana Anić');
+    expect(t('zaOdluku.resolved.replace_member', { replacement: 'Ana Anić' })).toBe('Zamjena: Ana Anić');
   });
 
   it('says so when the acting admin is no longer a member, never leaving it blank', () => {
@@ -173,7 +173,7 @@ describe('what an entry shows', () => {
 
     expect(row?.actorName).toBeNull();
     // The screen's words for a null actor (resolved-list.tsx).
-    expect(t('raspored.resolved.actorGone')).toBe('administrator kojeg više nema u organizaciji');
+    expect(t('zaOdluku.resolved.actorGone')).toBe('administrator kojeg više nema u organizaciji');
   });
 
   it('keeps an entry whose team no longer works that day, without a shift type', () => {
@@ -182,7 +182,7 @@ describe('what an entry shows', () => {
 
     expect(row).toMatchObject({ dateShown: '12.09.2026', shiftTypeName: null, times: null });
     // The screen's words for a null shift type (resolved-list.tsx).
-    expect(t('raspored.resolved.shiftGone')).toBe('Taj dan više nije radni po rasporedu');
+    expect(t('zaOdluku.resolved.shiftGone')).toBe('Taj dan više nije radni po rasporedu');
   });
 
   it("names the team's shift type when the member is only taken off the roster that day", async () => {
@@ -222,7 +222,7 @@ describe('the shift type a decision was made on (0038)', () => {
 describe('the list', () => {
   it('is empty and says so with no resolution', () => {
     expect(viewOf(pilot, []).rows).toEqual([]);
-    expect(t('raspored.resolved.count', { count: 0 })).toBe('0 riješenih konflikata');
+    expect(t('zaOdluku.resolved.count', { count: 0 })).toBe('0 odlučenih stavki');
   });
 
   it('lists the most recently decided first', () => {
@@ -346,8 +346,8 @@ describe('the tabs', () => {
   });
 
   it('words the tabs and the count at zero', () => {
-    expect(t('raspored.tabs.unresolved')).toBe('Neriješeni');
-    expect(t('raspored.tabs.resolved')).toBe('Riješeni');
-    expect(t('raspored.tabs.unresolvedCount', { count: 0 })).toBe('Neriješeni · 0');
+    expect(t('zaOdluku.tabs.unresolved')).toBe('Čeka odluku');
+    expect(t('zaOdluku.tabs.resolved')).toBe('Odlučeno');
+    expect(t('zaOdluku.tabs.unresolvedCount', { count: 0 })).toBe('Čeka odluku · 0');
   });
 });

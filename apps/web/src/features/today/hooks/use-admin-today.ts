@@ -56,15 +56,15 @@ export function useTodayRole(snapshotRole: MemberRole | null): MemberRole | null
  * every decision is `@/features/today/services/admin-today`'s, which the node
  * suite executes.
  *
- * *RASPORED*'S THREE READS (AD-13), through the queue's own query options:
+ * *ZA ODLUKU*'S THREE READS (AD-13), through the queue's own query options:
  * the calendar snapshot under `CALENDAR_KEY`, the organization's live leave
  * under `ORGANIZATION_LEAVE_RECORDS_KEY` and its live resolutions under
  * `ORGANIZATION_CONFLICT_RESOLUTIONS_KEY`. One cache entry per key, shared
- * with *Raspored* and *Kalendar*; a decision saved there re-reads them, and
+ * with *Za odluku* and *Kalendar*; a decision saved there re-reads them, and
  * the count here changes only then. No figure is optimistic, and nothing is
  * stored: the screen is derived from the three answers at every minute.
  *
- * NOT `useConflictsQueue`, which steps the router's state for *Raspored*'s
+ * NOT `useConflictsQueue`, which steps the router's state for *Za odluku*'s
  * status line.
  *
  * ONE SNAPSHOT WITH THE PAGE'S HEADER (story 8.2): every read is seen

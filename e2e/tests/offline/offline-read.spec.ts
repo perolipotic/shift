@@ -35,15 +35,15 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * overview from *Godišnji*'s own read; a member's team roster opens offline
  * from the roster the directory read.
  *
- * Story 8.2c: the admin's work surfaces read offline the same way. *Raspored*
- * read online — *Riješeni* too, names and all — opens offline under the note
- * on both tabs; a *Riješeni* never opened online is unavailable, with no
+ * Story 8.2c: the admin's work surfaces read offline the same way. *Za odluku*
+ * read online — *Odlučeno* too, names and all — opens offline under the note
+ * on both tabs; a *Odlučeno* never opened online is unavailable, with no
  * note. A resolution page and a member page read online open offline under
  * ONE note each — the member page's leave card decides with the page, and
  * adds none — and reconnecting removes it. A member page whose leave was
  * never read is unavailable offline as a whole, with no note; a real open
  * conflict (the conflicts specs' seeded rotation) opens offline ready, under
- * one note, from Raspored's row.
+ * one note, from Za odluku's row.
  *
  * Story 8.2d: the settings surfaces read offline the same way. An admin reads
  * *Ljudi/smjene*, *Organizacija*, *Satni pojasi* and *Postavke rotacije*
@@ -275,17 +275,17 @@ test.describe("offline reading of the admin's Sati, Godišnji and Ljudi table (s
 test.describe("offline reading of the admin's work surfaces (story 8.2c)", () => {
   test.use({ storageState: ADMIN_STATE });
 
-  test('Raspored read online opens offline under the note on both tabs, and the note goes on reconnect', async ({
+  test('Za odluku read online opens offline under the note on both tabs, and the note goes on reconnect', async ({
     page,
     todayPage,
     conflictsPage,
   }) => {
     await todayPage.goto();
     await expect(todayPage.needsYouCard).toBeVisible();
-    await conflictsPage.navigationLink(hr.nav.raspored, { exact: true }).click();
+    await conflictsPage.navigationLink(hr.nav.zaOdluku, { exact: true }).click();
     await expect(conflictsPage.anyCountHeading).toBeVisible();
     await expect(conflictsPage.busyMain).toHaveCount(0);
-    // *Riješeni* reads the names of whoever decided once it is open: read them
+    // *Odlučeno* reads the names of whoever decided once it is open: read them
     // online — its count stands only once they have landed.
     await conflictsPage.resolvedTab.click();
     await expect(conflictsPage.resolvedCount).toBeVisible();
@@ -297,15 +297,15 @@ test.describe("offline reading of the admin's work surfaces (story 8.2c)", () =>
     // Leave and enter again, with no connection.
     await todayPage.navigationLink(hr.nav.danas, { exact: true }).click();
     await expect(todayPage.heading(hr.nav.danas)).toBeVisible();
-    await conflictsPage.navigationLink(hr.nav.raspored, { exact: true }).click();
-    await expect(conflictsPage.heading(hr.nav.raspored)).toBeVisible();
+    await conflictsPage.navigationLink(hr.nav.zaOdluku, { exact: true }).click();
+    await expect(conflictsPage.heading(hr.nav.zaOdluku)).toBeVisible();
     await expect(conflictsPage.offlineNote).toHaveCount(1);
     await expect(conflictsPage.anyCountHeading).toBeVisible();
     await expect(conflictsPage.retryButton).toHaveCount(0);
 
     await conflictsPage.resolvedTab.click();
     await expect(conflictsPage.resolvedTab).toHaveAttribute('aria-selected', 'true');
-    await expect(conflictsPage.offlineNote, 'Riješeni, read online, opens offline under the note').toHaveCount(1);
+    await expect(conflictsPage.offlineNote, 'Odlučeno, read online, opens offline under the note').toHaveCount(1);
     await expect(conflictsPage.resolvedCount).toBeVisible();
     await expect(conflictsPage.retryButton).toHaveCount(0);
 
@@ -314,14 +314,14 @@ test.describe("offline reading of the admin's work surfaces (story 8.2c)", () =>
     await expect(conflictsPage.retryButton).toHaveCount(0);
   });
 
-  test('going offline on an open Raspored keeps the queue under the note, and Riješeni never opened online is unavailable, with no note', async ({
+  test('going offline on an open Za odluku keeps the queue under the note, and Odlučeno never opened online is unavailable, with no note', async ({
     page,
     todayPage,
     conflictsPage,
   }) => {
     await todayPage.goto();
     await expect(todayPage.needsYouCard).toBeVisible();
-    await conflictsPage.navigationLink(hr.nav.raspored, { exact: true }).click();
+    await conflictsPage.navigationLink(hr.nav.zaOdluku, { exact: true }).click();
     await expect(conflictsPage.anyCountHeading).toBeVisible();
     await expect(conflictsPage.busyMain).toHaveCount(0);
 
@@ -329,7 +329,7 @@ test.describe("offline reading of the admin's work surfaces (story 8.2c)", () =>
     await expect(conflictsPage.offlineNote, 'the queue read online is drawn under the note').toHaveCount(1);
     await conflictsPage.resolvedTab.click();
     await expect(conflictsPage.resolvedTab).toHaveAttribute('aria-selected', 'true');
-    await expect(conflictsPage.alertWith(hr.raspored.unavailable)).toBeVisible();
+    await expect(conflictsPage.alertWith(hr.zaOdluku.unavailable)).toBeVisible();
     // STORY 8.2e: no read retry offline; it comes back with the connection.
     await expect(conflictsPage.retryButton).toHaveCount(0);
     await expect(conflictsPage.offlineNote).toHaveCount(0);
@@ -344,7 +344,7 @@ test.describe("offline reading of the admin's work surfaces (story 8.2c)", () =>
     // A conflict that is not open: the page reads its five reads all the same,
     // and says so — a snapshot drawn, never the unavailable state.
     await resolutionPage.gotoConflict(randomUUID(), '2026-06-15', fixture.team.id);
-    await expect(resolutionPage.heading(hr.raspored.resolution.heading)).toBeVisible();
+    await expect(resolutionPage.heading(hr.zaOdluku.resolution.heading)).toBeVisible();
     await expect(resolutionPage.missingLine).toBeVisible();
     await expect(resolutionPage.busyMain).toHaveCount(0);
     await expect(resolutionPage.offlineNote, 'a fresh surface carries no note').toHaveCount(0);
@@ -370,10 +370,10 @@ test.describe("offline reading of the admin's work surfaces (story 8.2c)", () =>
     await page.goBack();
     await expect(peoplePage.table).toBeVisible();
     await page.goBack();
-    await expect(resolutionPage.heading(hr.raspored.resolution.heading)).toBeVisible();
+    await expect(resolutionPage.heading(hr.zaOdluku.resolution.heading)).toBeVisible();
     await expect(resolutionPage.offlineNote).toHaveCount(1);
     await expect(resolutionPage.missingLine).toBeVisible();
-    await expect(resolutionPage.alertWith(hr.raspored.resolution.unavailable)).toHaveCount(0);
+    await expect(resolutionPage.alertWith(hr.zaOdluku.resolution.unavailable)).toHaveCount(0);
 
     await page.context().setOffline(false);
     await expect(resolutionPage.offlineNote).toHaveCount(0);
@@ -412,7 +412,7 @@ test.describe("offline reading of the admin's work surfaces (story 8.2c)", () =>
     await expect(peoplePage.offlineNote).toHaveCount(0);
   });
 
-  test('an open conflict read online opens offline whole under one note, from Raspored, by client-side navigation', async ({
+  test('an open conflict read online opens offline whole under one note, from Za odluku, by client-side navigation', async ({
     page,
     fixture,
     conflictsPage,
@@ -438,7 +438,7 @@ test.describe("offline reading of the admin's work surfaces (story 8.2c)", () =>
       await seedLeaveRecord(fixture.slug, member.id, today, today);
 
       await resolutionPage.gotoConflict(member.id, today, team.id);
-      await expect(resolutionPage.heading(hr.raspored.resolution.heading)).toBeVisible();
+      await expect(resolutionPage.heading(hr.zaOdluku.resolution.heading)).toBeVisible();
       await expect(resolutionPage.acceptOption).toBeVisible();
       await expect(resolutionPage.busyMain).toHaveCount(0);
       await expect(resolutionPage.offlineNote, 'a fresh surface carries no note').toHaveCount(0);
@@ -453,10 +453,10 @@ test.describe("offline reading of the admin's work surfaces (story 8.2c)", () =>
 
       await expect(row).toBeVisible();
       await conflictsPage.rowLink(row).click();
-      await expect(page).toHaveURL(`/raspored/${member.id}/${today}/${team.id}`);
+      await expect(page).toHaveURL(`/za-odluku/${member.id}/${today}/${team.id}`);
       await expect(resolutionPage.offlineNote).toHaveCount(1);
       await expect(resolutionPage.acceptOption).toBeVisible();
-      await expect(resolutionPage.alertWith(hr.raspored.resolution.unavailable)).toHaveCount(0);
+      await expect(resolutionPage.alertWith(hr.zaOdluku.resolution.unavailable)).toHaveCount(0);
 
       await page.context().setOffline(false);
       await expect(resolutionPage.offlineNote).toHaveCount(0);
@@ -777,7 +777,7 @@ test.describe('no read retry offline, as an admin (story 8.2e)', () => {
   }) => {
     await page.route('**/rest/v1/leave_records*', (route) => route.fulfill({ status: 500, body: '{}' }));
     await resolutionPage.gotoConflict(randomUUID(), '2026-06-15', fixture.team.id);
-    const alert = resolutionPage.alertWith(hr.raspored.resolution.unavailable);
+    const alert = resolutionPage.alertWith(hr.zaOdluku.resolution.unavailable);
     const retry = resolutionPage.retryButton;
 
     await expect(alert).toBeVisible();

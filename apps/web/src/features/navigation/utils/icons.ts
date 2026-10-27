@@ -26,7 +26,7 @@ import type { NavigationKey } from '@/features/navigation/utils/destinations';
  * entry's `title`, so no entry is ever a glyph without a name. The
  * assignment below is the human decision of 2026-09-16 and it is recorded here
  * rather than argued: `Danas` Home, `Kalendar` Calendar, `Sati` Clock,
- * `Godišnji` TreePalm, `Raspored` CalendarRange, `Ljudi` Users, `Postavke
+ * `Godišnji` TreePalm, `Za odluku` CalendarRange, `Ljudi` Users, `Postavke
  * rotacije` Repeat, `Organizacija` Building2.
  *
  * A `.ts` MODULE AND NOT PART OF THE CHROME, and the reason is mechanical rather
@@ -54,7 +54,7 @@ const DESTINATION_ICONS: Record<NavigationKey, LucideIcon> = {
   'nav.kalendar': Calendar,
   'nav.sati': Clock,
   'nav.godisnji': TreePalm,
-  'nav.raspored': CalendarRange,
+  'nav.zaOdluku': CalendarRange,
   'nav.ljudi': Users,
   'nav.postavkeRotacije': Repeat,
   'nav.organizacija': Building2,

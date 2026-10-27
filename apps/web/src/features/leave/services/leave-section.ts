@@ -851,7 +851,7 @@ export function amendTargetOf(record: { readonly from: string; readonly to: stri
  * TWO KEYS, so the opening can go and the origin stay: once the card has
  * opened it, or found it does not apply, the entry is replaced without
  * {@link LEAVE_HANDOFF_STATE} — a reload or Back never reopens it — while
- * {@link LEAVE_HANDOFF_ORIGIN_STATE} keeps "Natrag na konflikte".
+ * {@link LEAVE_HANDOFF_ORIGIN_STATE} keeps "Natrag na Za odluku".
  */
 export const LEAVE_HANDOFF_STATE = 'leaveHandoff';
 export const LEAVE_HANDOFF_ORIGIN_STATE = 'leaveHandoffOrigin';
@@ -901,7 +901,7 @@ function originOf(origin: unknown): LeaveHandoffOrigin | null {
   return { memberId, date, teamId };
 }
 
-/** The conflict the page was reached from, for "Natrag na konflikte", or `null` when it was not. */
+/** The conflict the page was reached from, for "Natrag na Za odluku", or `null` when it was not. */
 export function leaveHandoffOriginOf(state: unknown): LeaveHandoffOrigin | null {
   if (typeof state !== 'object' || state === null) return null;
 

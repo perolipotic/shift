@@ -208,8 +208,8 @@ describe('Confirm erases', () => {
     expect(t('rotation.builder.overrides.erasures.rowFree', { member: row.memberName, team: row.teamName })).toBe(
       `${VIEWER_NAME} na godišnjem · nakon promjene: Smjena A taj dan slobodna`,
     );
-    expect(t('rotation.builder.overrides.erasures.title', { count: 1 })).toBe('Izmjena briše 1 konflikt');
-    expect(t('rotation.builder.overrides.erasures.removed', { count: 1 })).toBe('Uklonjen 1 konflikt.');
+    expect(t('rotation.builder.overrides.erasures.title', { count: 1 })).toBe('Izmjena uklanja 1 stavku koja čeka odluku');
+    expect(t('rotation.builder.overrides.erasures.removed', { count: 1 })).toBe('Uklonjena 1 stavka koja je čekala odluku.');
   });
 });
 

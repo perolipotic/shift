@@ -271,7 +271,7 @@ export function cellLabelOf(source: CellLabelSource, translate: CellLabelTransla
 
 /**
  * The marks' names as the day list reads them after the type and range, each
- * led by {@link LABEL_SEPARATOR} (`, Konflikt, Godišnji`), in canonical order;
+ * led by {@link LABEL_SEPARATOR} (`, Čeka odluku, Godišnji`), in canonical order;
  * `''` for none.
  */
 export function modifierNamesTextOf(modifiers: readonly CalendarModifier[], translate: CellLabelTranslate): string {

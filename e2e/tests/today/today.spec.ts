@@ -64,21 +64,21 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * sideways at 390 px.
  *
  * Story 6.3: an admin's own Danas at 14:20 in the organization's zone
- * (`page.clock`). With no live leave, *Treba tebe* says `0 neriješenih
- * konflikata`, neutral, with "Otvori konflikte (0)", and the admin on no
+ * (`page.clock`). With no live leave, *Treba tebe* says `0 čeka
+ * odluku`, neutral, with "Otvori Za odluku (0)", and the admin on no
  * team reads "Nisi raspoređen ni u jednu smjenu." in the subtitle. With a
  * team of the test's own working Noć today, four members on it and one on
  * leave today — the organization's leave read narrowed to those four, since
  * other specs write leave to the same organization — the count is 1 and
- * equals *Raspored*'s, the row opens its conflict's resolution screen,
+ * equals *Za odluku*'s, the row opens its conflict's resolution screen,
  * coverage reads `3 od 4 člana` with the member's name and why, the member is
  * absent today, and the week's cell for that team today is named with the
- * conflict. The keyboard reaches the row, "Otvori konflikte", the coverage,
+ * conflict. The keyboard reaches the row, "Otvori Za odluku", the coverage,
  * the absences and the week in that order, and nothing scrolls sideways at
  * 390 px. A failed leave read is one alert whose retry brings it back. The
  * member's Danas has no admin block. The keyboard starts from the top of the
  * page and arrows inside the week grid to the team's cell. Accepting the
- * conflict as uncovered on its screen takes the count to 0 on Raspored and,
+ * conflict as uncovered on its screen takes the count to 0 on Za odluku and,
  * after the save, on Danas. An admin of the test's own on the team reads
  * "Danas radiš ‹tip› ‹raspon›" and their team's link in the subtitle.
  */
@@ -651,7 +651,7 @@ async function seedShortTeam(slug: string): Promise<ShortTeam> {
 test.describe('as an admin', () => {
   test.use({ storageState: ADMIN_STATE });
 
-  test('Zero: 0 neriješenih konflikata, neutral, Otvori konflikte (0), and the subtitle for an admin on no team', async ({
+  test('Zero: 0 čeka odluku, neutral, Otvori Za odluku (0), and the subtitle for an admin on no team', async ({
     page,
     todayPage,
     conflictsPage,
@@ -660,7 +660,7 @@ test.describe('as an admin', () => {
     await todayPage.goto();
     await expect(todayPage.needsYouCard).toBeVisible();
     await expect(todayPage.needsYouCount(0)).toBeVisible();
-    await expect(todayPage.needsYouCount(0)).toHaveText('0 neriješenih konflikata');
+    await expect(todayPage.needsYouCount(0)).toHaveText('0 čeka odluku');
     await expect(todayPage.needsYouCard).toContainText(admin.needsYou.calm);
     await expect(todayPage.needsYouRowLinks).toHaveCount(0);
     await expect(todayPage.openConflictsLink(0)).toBeVisible();
@@ -670,11 +670,11 @@ test.describe('as an admin', () => {
     await expect(todayPage.text(hr.smjene.membership.none)).toHaveCount(0);
 
     await todayPage.openConflictsLink(0).click();
-    await expect(page).toHaveURL(/\/raspored$/);
+    await expect(page).toHaveURL(/\/za-odluku$/);
     await expect(conflictsPage.countHeading(0)).toBeVisible();
   });
 
-  test('a seeded leave conflict: the count equals Raspored, 3 od 4 člana, the absence, ⚠ in the week, and a decision saved takes it to 0', async ({
+  test('a seeded leave conflict: the count equals Za odluku, 3 od 4 člana, the absence, ⚠ in the week, and a decision saved takes it to 0', async ({
     page,
     todayPage,
     conflictsPage,
@@ -730,7 +730,7 @@ test.describe('as an admin', () => {
     await expect(ourCell).toHaveCount(1);
     await expectNoHorizontalScroll(page);
 
-    // THE KEYBOARD, from the top of the page: the row, Otvori konflikte, the
+    // THE KEYBOARD, from the top of the page: the row, Otvori Za odluku, the
     // coverage, the absences, then the week grid's one tab stop — today's
     // first team — and the arrows down to this team's row; then the week's link.
     await todayPage.heading(hr.nav.danas).click();
@@ -750,23 +750,23 @@ test.describe('as an admin', () => {
     await page.keyboard.press('Tab');
     await expect(todayPage.weekLink).toBeFocused();
 
-    // EQUALITY: the same count on Raspored.
+    // EQUALITY: the same count on Za odluku.
     await todayPage.openConflictsLink(1).click();
-    await expect(page).toHaveURL(/\/raspored$/);
+    await expect(page).toHaveURL(/\/za-odluku$/);
     await expect(conflictsPage.countHeading(1)).toBeVisible();
 
     // The row opens its own conflict's resolution screen; Danas still
     // counts 1 until the decision is saved, never ahead of it.
     await todayPage.goto();
     await todayPage.needsYouRowLinks.first().click();
-    await expect(page).toHaveURL(new RegExp(`/raspored/${absent.id}/${today}/${team.id}$`));
+    await expect(page).toHaveURL(new RegExp(`/za-odluku/${absent.id}/${today}/${team.id}$`));
     await resolutionPage.acceptOption.click();
     await page.goBack();
     await expect(todayPage.needsYouCount(1)).toBeVisible();
     await todayPage.needsYouRowLinks.first().click();
     await resolutionPage.acceptOption.click();
     await resolutionPage.saveButton.click();
-    await expect(page).toHaveURL(/\/raspored$/);
+    await expect(page).toHaveURL(/\/za-odluku$/);
     await expect(conflictsPage.countHeading(0)).toBeVisible();
 
     // Back on Danas, after the save: 0 there too.

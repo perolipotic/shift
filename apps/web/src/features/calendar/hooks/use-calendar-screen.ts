@@ -132,7 +132,7 @@ export function useCalendarScreen(
   const readsRole = answerRead.data === undefined ? null : answerRead.data.viewer.role;
   const readsAdmin = readsRole !== null && readsOrganizationLeave(readsRole);
   const organizationLeave = useQuery({
-    // Named structurally, as *Raspored*'s read is.
+    // Named structurally, as *Za odluku*'s read is.
     ...organizationLeaveRecordsQueryOptions(
       () => supabaseClient().from(LEAVE_RECORDS_TABLE) as unknown as OrganizationLeaveRecordsTable,
     ),
@@ -145,7 +145,7 @@ export function useCalendarScreen(
   });
   // An admin's alone: a member is shown no conflict.
   const resolutionsRead = useQuery({
-    // Named structurally, as *Raspored*'s read is.
+    // Named structurally, as *Za odluku*'s read is.
     ...organizationConflictResolutionsQueryOptions(
       () => supabaseClient().from(CONFLICT_RESOLUTIONS_TABLE) as unknown as OrganizationConflictResolutionsTable,
     ),

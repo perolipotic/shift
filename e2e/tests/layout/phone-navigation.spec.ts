@@ -16,7 +16,7 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * (the narrowest phone), for both roles.
  */
 
-const ADMIN_TABS = [hr.nav.danas, hr.nav.kalendar, hr.nav.raspored, hr.nav.ljudi] as const;
+const ADMIN_TABS = [hr.nav.danas, hr.nav.kalendar, hr.nav.zaOdluku, hr.nav.ljudi] as const;
 const MEMBER_TABS = [hr.nav.danas, hr.nav.kalendar, hr.nav.sati, hr.nav.godisnji] as const;
 /** The sheet's rows by destination name: each row's label and its one-line
  *  description come from the same key. */
@@ -187,7 +187,7 @@ test.describe('at a desktop viewport', () => {
       hr.nav.kalendar,
       hr.nav.sati,
       hr.nav.godisnji,
-      hr.nav.raspored,
+      hr.nav.zaOdluku,
       hr.nav.ljudi,
     ]);
     await expect(settings.getByText(hr.shell.moreGroup.adminOnly, { exact: true })).toBeVisible();

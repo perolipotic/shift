@@ -45,7 +45,7 @@ import {
   ORGANIZATION_MESSAGE_KEYS,
   POSITION_KEYS,
   RANK_KEYS,
-  RASPORED,
+  ZA_ODLUKU,
   REPLACEMENT_CANDIDATE_KEYS,
   RESOLUTION,
   RESOLUTION_SCREEN_KEYS,
@@ -372,7 +372,7 @@ export const KEY_SOURCES = [
     // (five: the date line again for an admin before their case answers,
     // the subtitle, its separator twice — between shifts and before the team
     // link — and the no-rotation word); *Treba tebe*'s heading, count
-    // (`raspored.count`), calm and past lines, a row's date and the action
+    // (`zaOdluku.count`), calm and past lines, a row's date and the action
     // (six); the coverage's heading, members (a plural), full shift, none,
     // off line with its list separator, and link (seven); the absences'
     // heading, none and link (three); the week's heading, region, team
@@ -759,7 +759,7 @@ export const KEY_SOURCES = [
     // module, a key source, and not here.
     // ONE HUNDRED AND SIXTY-TWO SINCE STORY 7.9: day detail is facts, and each
     // change is its own dialog — *Izmjene*'s heading and empty sentence; the
-    // conflict's heading, line and "Riješi konflikt"; the footer's two
+    // conflict's heading, line and "Odluči"; the footer's two
     // openers; each dialog's close and cancel, and its description (the day,
     // or the day with its type and times); a "Dolazi" group's heading; and
     // *Što se mijenja* — its label, the type from and to (a type with its
@@ -915,18 +915,18 @@ export const KEY_SOURCES = [
     strings: 10,
   },
   {
-    // STORY 5.3b. NINE on Raspored: its own `nav.raspored` heading; the
+    // STORY 5.3b. NINE on Za odluku (Raspored until story 9.1): its own `nav.zaOdluku` heading; the
     // unavailable line and its retry; the count, always shown, and the empty
     // sentence; and a row's four — the past words, the member and team, and
     // the shift with the causing range, with and without times. Its rules
     // module renders no string, so it is no key source.
-    name: 'the Raspored destination',
-    file: RASPORED,
+    name: 'the Za odluku destination',
+    file: ZA_ODLUKU,
     keys: translationKeys,
     // STILL NINE SINCE STORY 5.4b: the status line a decision returns with
     // reads through `resolutionSavedMessageKey`, the rules' union below.
     // TWENTY-THREE SINCE STORY 7.16: the two tabs' name, label and queue count
-    // (four), and the Riješeni list's count, empty sentence, shift-gone line,
+    // (four), and the Odlučeno list's count, empty sentence, shift-gone line,
     // the decisions (accepted, replacement with and without a name, amended),
     // and who decided it and when, with the words for an admin no longer
     // there.
@@ -1217,7 +1217,7 @@ export const KEY_SOURCES = [
     // `leaveRemovePromptMessageKey` (one fewer), and three more — the prompt's
     // in-year `count.days`, a row's in-year line and the row's amend marker.
     //
-    // SEVENTY-SIX SINCE STORY 5.4d: "Natrag na konflikte".
+    // SEVENTY-SIX SINCE STORY 5.4d: "Natrag na Za odluku".
     //
     // SEVENTY-EIGHT SINCE STORY 5.4e: the replacement guard's two lines — a
     // replacement left rostered, and that the replacements cannot be checked

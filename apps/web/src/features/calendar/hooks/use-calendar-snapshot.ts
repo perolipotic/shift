@@ -10,7 +10,7 @@ import { supabaseClient } from '@/lib/supabase/client';
 /**
  * THE CALENDAR SNAPSHOT'S ONE BINDING (deferred work from 7.13c): its query
  * options over the app's client, under `CALENDAR_KEY`. Every screen that
- * reads the snapshot — the calendar, *Danas*, *Raspored*, *Sati*,
+ * reads the snapshot — the calendar, *Danas*, *Za odluku*, *Sati*,
  * *Godišnji*, the member page and the erasure guard's fresh reads — takes it
  * from here, so "the same key, no extra request" holds by construction
  * rather than by each hook copying the same two lambdas.

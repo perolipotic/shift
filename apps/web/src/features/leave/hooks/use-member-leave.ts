@@ -149,7 +149,7 @@ export interface LeaveDialogOpening {
  * came from the conflict.
  * Either way the history entry is then replaced without the opening, so a
  * reload or Back never reopens it; the origin stays, for "Natrag na
- * konflikte". Nothing is written here until the admin saves; cancelling leaves
+ * Za odluku". Nothing is written here until the admin saves; cancelling leaves
  * the conflict open.
  *
  * THE REPLACEMENT GUARD (story 5.4e). The organization's live resolutions

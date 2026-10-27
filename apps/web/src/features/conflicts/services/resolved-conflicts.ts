@@ -11,7 +11,7 @@ import { organizationLeaveRecordsOf } from '@/features/leave/services/leave-list
 import { formatDate, formatIsoDate, formatTime } from '@/lib/i18n/format';
 
 /**
- * *Raspored*'s *Riješeni* tab (story 7.16; FR-48a, UX-DR20, UX-DR25), as a
+ * *Za odluku*'s *Odlučeno* tab (story 7.16; FR-48a, UX-DR20, UX-DR25), as a
  * pure view model in a `.ts` that renders nothing (AD-15).
  *
  * A READ OF `conflict_resolutions` ONLY (Q11; PRD §7.2's carve-out). Each
@@ -241,9 +241,9 @@ export function resolvedConflictsViewOf(
   return { rows: entries.map((entry) => entry.shown) };
 }
 
-/** *Neriješeni*, the default and the queue itself. */
+/** *Čeka odluku*, the default and the queue itself. */
 export const TAB_UNRESOLVED = 'unresolved';
-/** *Riješeni*, the decided conflicts. */
+/** *Odlučeno*, the decided conflicts. */
 export const TAB_RESOLVED = 'resolved';
 
 export type ConflictsTab = typeof TAB_UNRESOLVED | typeof TAB_RESOLVED;
@@ -252,14 +252,14 @@ export type ConflictsTab = typeof TAB_UNRESOLVED | typeof TAB_RESOLVED;
 export const CONFLICTS_TABS: readonly ConflictsTab[] = [TAB_UNRESOLVED, TAB_RESOLVED];
 
 /** The id the one tab panel carries, which each tab controls. */
-export const CONFLICTS_PANEL_ID = 'raspored-panel';
+export const CONFLICTS_PANEL_ID = 'za-odluku-panel';
 
 /** The id the resolved count's heading carries, which names the list's section. */
-export const RESOLVED_COUNT_HEADING_ID = 'raspored-resolved-count';
+export const RESOLVED_COUNT_HEADING_ID = 'za-odluku-resolved-count';
 
 /** The id of a tab, which the panel is labelled by. */
 export function conflictsTabId(tab: ConflictsTab): string {
-  return `raspored-tab-${tab}`;
+  return `za-odluku-tab-${tab}`;
 }
 
 /**

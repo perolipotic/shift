@@ -141,7 +141,7 @@ function tailOf(message: string): string {
   return message.slice(message.lastIndexOf('}') + 1).trim();
 }
 
-/** The `few` form of an ICU plural, filled — `2 neriješena konflikta` — without an ICU parser. */
+/** The `few` form of an ICU plural, filled — `2 čekaju odluku` — without an ICU parser. */
 function fewForm(message: string, count: number): string {
   const form = /few \{([^}]*)\}/.exec(message)?.[1];
   if (form === undefined) throw new Error(`E2E: ${message} has no few form`);

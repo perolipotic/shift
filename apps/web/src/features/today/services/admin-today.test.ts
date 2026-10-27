@@ -224,7 +224,7 @@ function viewOf(
   return shown.view;
 }
 
-/** What *Raspored* counts for the same reads at the same minute. */
+/** What *Za odluku* counts for the same reads at the same minute. */
 function queueCountOf(
   snapshot: CalendarSnapshot,
   rows: readonly unknown[],
@@ -265,8 +265,8 @@ describe('Treba tebe', () => {
     const { needsYou } = viewOf(pilot, []);
 
     expect(needsYou).toEqual({ count: 0, pastCount: 0, earliestPast: null, rows: [] });
-    expect(t('raspored.count', { count: needsYou.count })).toBe('0 neriješenih konflikata');
-    expect(t('danas.admin.needsYou.open', { count: needsYou.count })).toBe('Otvori konflikte (0)');
+    expect(t('zaOdluku.count', { count: needsYou.count })).toBe('0 čeka odluku');
+    expect(t('danas.admin.needsYou.open', { count: needsYou.count })).toBe('Otvori Za odluku (0)');
     expect(needsYou.count).toBe(queueCountOf(pilot, []));
   });
 
@@ -295,7 +295,7 @@ describe('Treba tebe', () => {
       times: '19:00–07:00',
       teamName: 'Smjena B',
     });
-    expect(t('raspored.count', { count: 7 })).toBe('7 neriješenih konflikata');
+    expect(t('zaOdluku.count', { count: 7 })).toBe('7 čeka odluku');
   });
 
   it('lists a later date with no badge once the past and today are fewer than three', () => {
@@ -323,7 +323,7 @@ describe('Treba tebe', () => {
     expect(t('danas.admin.needsYou.pastLine', { count: 21, date: '30.09.' })).toBe(
       '21 na datum koji je prošao · najraniji 30.09.',
     );
-    expect(t('raspored.count', { count: 22 })).toBe('22 neriješena konflikta');
+    expect(t('zaOdluku.count', { count: 22 })).toBe('22 čekaju odluku');
   });
 });
 
@@ -410,7 +410,7 @@ describe('Pokrivenost danas', () => {
     expect(noc?.absent).toEqual([{ memberId: ANA, name: 'Ana Anić', state: ABSENT_UNRESOLVED }]);
     expect(t('danas.admin.coverage.members', { present: noc?.present, total: noc?.total })).toBe('3 od 4 člana');
     expect(t(coverageAbsentMessageKey(ABSENT_UNRESOLVED), { name: 'Ana Anić' })).toBe(
-      'Ana Anić je na godišnjem · konflikt nije riješen',
+      'Ana Anić je na godišnjem, a u sastavu je smjene · čeka odluku',
     );
   });
 
@@ -577,7 +577,7 @@ describe('Ovaj tjedan', () => {
         type: cell.name,
         range: cell.range,
       }),
-    ).toBe('četvrtak 01.10., Smjena A, Noć 19:00–07:00, neriješen konflikt');
+    ).toBe('četvrtak 01.10., Smjena A, Noć 19:00–07:00, čeka odluku');
     expect(weekCellMessageKey({ range: null, conflict: false })).toBe('danas.admin.week.cell');
     expect(weekCellMessageKey({ range: '07:00–19:00', conflict: false })).toBe('danas.admin.week.cellTimed');
     expect(weekCellMessageKey({ range: null, conflict: true })).toBe('danas.admin.week.cellConflict');

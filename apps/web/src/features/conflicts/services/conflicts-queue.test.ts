@@ -162,7 +162,7 @@ afterEach(() => {
 });
 
 describe('the worked example', () => {
-  it('lists 3 conflicts, 10.09 first, under `3 neriješena konflikta`', () => {
+  it('lists 3 conflicts, 10.09 first, under `3 čekaju odluku`', () => {
     const view = viewOf(pilot, [WORKED], '2026-09-01');
 
     expect(view.count).toBe(3);
@@ -170,7 +170,7 @@ describe('the worked example', () => {
     expect(view.rows.map((row) => row.shiftTypeName)).toEqual(['Dan', 'Noć', 'Dan']);
     expect(view.rows.map((row) => row.times)).toEqual(['07:00–19:00', '19:00–07:00', '07:00–19:00']);
     expect(view.rows.every((row) => !row.past)).toBe(true);
-    expect(t('raspored.count', { count: view.count })).toBe('3 neriješena konflikta');
+    expect(t('zaOdluku.count', { count: view.count })).toBe('3 čekaju odluku');
   });
 
   it('names the date, the team, the shift type, the member and the causing range on each row', () => {
@@ -374,7 +374,7 @@ describe('shift-type overrides', () => {
     ]);
   });
 
-  it('shows a working type with no times in effect without them, through `raspored.detail`', async () => {
+  it('shows a working type with no times in effect without them, through `zaOdluku.detail`', async () => {
     const untimed: FixtureRows = {
       ...PILOT,
       types: [...PILOT.types, typeRow('pilot-dezurstvo', 'Dežurstvo', '2026-09-25T20:07:49.339741+00:00')],
@@ -385,19 +385,19 @@ describe('shift-type overrides', () => {
     const row = viewOf(snapshot, [WORKED], '2026-09-01').rows.find((one) => one.date === '2026-09-12');
 
     expect(row).toMatchObject({ shiftTypeName: 'Dežurstvo', times: null });
-    expect(t('raspored.detail', { type: row!.shiftTypeName, from: row!.leaveFrom, to: row!.leaveTo })).toBe(
+    expect(t('zaOdluku.detail', { type: row!.shiftTypeName, from: row!.leaveFrom, to: row!.leaveTo })).toBe(
       'Dežurstvo · Godišnji odmor 10.09.2026–14.09.2026',
     );
   });
 });
 
 describe('none', () => {
-  it('shows `0 neriješenih konflikata` with no live leave', () => {
+  it('shows `0 čeka odluku` with no live leave', () => {
     const view = viewOf(pilot, [], '2026-09-01');
 
     expect(view).toEqual({ count: 0, rows: [] });
-    expect(t('raspored.count', { count: 0 })).toBe('0 neriješenih konflikata');
-    expect(t('raspored.empty')).toBe('Nema konflikata između godišnjih odmora i rasporeda.');
+    expect(t('zaOdluku.count', { count: 0 })).toBe('0 čeka odluku');
+    expect(t('zaOdluku.empty')).toBe('Ništa ne čeka odluku.');
   });
 
   it('lists nothing for leave only over non-working dates', () => {
@@ -406,20 +406,20 @@ describe('none', () => {
   });
 
   it.each([
-    [1, '1 neriješen konflikt'],
-    [2, '2 neriješena konflikta'],
-    [4, '4 neriješena konflikta'],
-    [5, '5 neriješenih konflikata'],
-    [11, '11 neriješenih konflikata'],
-    [12, '12 neriješenih konflikata'],
-    [14, '14 neriješenih konflikata'],
-    [21, '21 neriješen konflikt'],
-    [22, '22 neriješena konflikta'],
-    [23, '23 neriješena konflikta'],
-    [24, '24 neriješena konflikta'],
-    [25, '25 neriješenih konflikata'],
+    [1, '1 čeka odluku'],
+    [2, '2 čekaju odluku'],
+    [4, '4 čekaju odluku'],
+    [5, '5 čeka odluku'],
+    [11, '11 čeka odluku'],
+    [12, '12 čeka odluku'],
+    [14, '14 čeka odluku'],
+    [21, '21 čeka odluku'],
+    [22, '22 čekaju odluku'],
+    [23, '23 čekaju odluku'],
+    [24, '24 čekaju odluku'],
+    [25, '25 čeka odluku'],
   ])('says %i in its Croatian form', (count, shown) => {
-    expect(t('raspored.count', { count })).toBe(shown);
+    expect(t('zaOdluku.count', { count })).toBe(shown);
   });
 });
 
@@ -525,7 +525,7 @@ describe('resolutions (story 5.4a)', () => {
     expect(view.count).toBe(2);
     expect(view.rows).toHaveLength(view.count);
     expect(view.rows.map((row) => row.date)).toEqual(['2026-09-10', '2026-09-14']);
-    expect(t('raspored.count', { count: view.count })).toBe('2 neriješena konflikta');
+    expect(t('zaOdluku.count', { count: view.count })).toBe('2 čekaju odluku');
   });
 
   it.each([

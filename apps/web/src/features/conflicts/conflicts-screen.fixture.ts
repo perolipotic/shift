@@ -1,18 +1,18 @@
 /**
- * THE RASPORED SCREENS' FILE SETS, written once (stories 5.3b, 5.4b), on the
+ * THE ZA_ODLUKU SCREENS' FILE SETS, written once (stories 5.3b, 5.4b), on the
  * hour band screens' terms (`hour-band-screens.fixture.ts`): each a page that
  * only composes, the hook holding its reads and handlers, and the components
  * that draw it. The source guards in `pages/` read each set as one source.
  *
- * THE TWO SETS ARE DISJOINT: the conflicts queue (`/raspored`) and one
- * conflict's resolution screen (`/raspored/$memberId/$date/$teamId`). No part
+ * THE TWO SETS ARE DISJOINT: the conflicts queue (`/za-odluku`) and one
+ * conflict's resolution screen (`/za-odluku/$memberId/$date/$teamId`). No part
  * belongs to both, so no string, control or handler is counted twice.
  *
  * Paths are SEGMENTS under `apps/web/src`, so this module imports nothing.
  * The page is first in each: the "the page itself renders" check reads it.
  */
 export const CONFLICTS_QUEUE_PARTS = {
-  page: ['pages', 'raspored.tsx'],
+  page: ['pages', 'za-odluku.tsx'],
   hook: ['features', 'conflicts', 'hooks', 'use-conflicts-queue.ts'],
   body: ['features', 'conflicts', 'components', 'conflicts-body.tsx'],
   list: ['features', 'conflicts', 'components', 'conflicts-list.tsx'],
@@ -22,7 +22,7 @@ export const CONFLICTS_QUEUE_PARTS = {
 } as const;
 
 export const CONFLICT_RESOLUTION_PARTS = {
-  page: ['pages', 'raspored.$memberId.$date.$teamId.tsx'],
+  page: ['pages', 'za-odluku.$memberId.$date.$teamId.tsx'],
   hook: ['features', 'conflicts', 'hooks', 'use-conflict-resolution.ts'],
   body: ['features', 'conflicts', 'components', 'conflict-resolution-body.tsx'],
   option: ['features', 'conflicts', 'components', 'resolution-option.tsx'],
@@ -50,7 +50,7 @@ export const CONFLICTS_SCREEN_EXEMPT: readonly { readonly file: string; readonly
   },
   {
     file: 'services/resolved-conflicts.ts',
-    why: 'the Riješeni tab\'s rules (story 7.16) — resolved entries from conflict_resolutions only, the acting admins\' names and the tab state; renders nothing and declares no key, executed by resolved-conflicts.test.ts',
+    why: 'the Odlučeno tab\'s rules (story 7.16) — resolved entries from conflict_resolutions only, the acting admins\' names and the tab state; renders nothing and declares no key, executed by resolved-conflicts.test.ts',
   },
   {
     file: 'services/resolution-screen.ts',
@@ -98,6 +98,6 @@ export const CONFLICTS_SCREEN_EXEMPT: readonly { readonly file: string; readonly
   },
   {
     file: 'services/surface-keys.ts',
-    why: "Raspored's and the resolution page's reads as one snapshot each (story 8.2c), the keys their offline freshness is decided over; renders nothing and declares no key, executed by surface-keys.test.ts",
+    why: "Za odluku's and the resolution page's reads as one snapshot each (story 8.2c), the keys their offline freshness is decided over; renders nothing and declares no key, executed by surface-keys.test.ts",
   },
 ];

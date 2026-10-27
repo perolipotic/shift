@@ -6,7 +6,7 @@ route and the router compose rather than a path: `not-found.tsx` (an unknown
 path), `error.tsx` (a route that failed: Croatian copy from `hr.json`, the cause
 to the console, never on screen) and `pending.tsx` (the text-free skeleton every
 route shows while a guard is still deciding). Member-role reaches Danas, Kalendar, Sati and
-Godišnji; admin adds Raspored, Ljudi, Postavke rotacije and Organizacija. `Sati`
+Godišnji; admin adds Za odluku, Ljudi, Postavke rotacije and Organizacija. `Sati`
 is ONE destination with role-scoped content, not one per role (human decision,
 2026-09-04), so there are eight and not nine. The roster is not a destination: it
 lives inside team detail.

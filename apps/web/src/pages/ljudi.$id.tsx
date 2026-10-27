@@ -65,7 +65,7 @@ export function LjudiMemberScreen() {
                 conflict is gone from it and a cancelled one still stands. */}
             {fromConflict ? (
               <Button asChild variant="ghost" className="-ml-3 h-11 px-3">
-                <Link to="/raspored">
+                <Link to="/za-odluku">
                   <ArrowLeft aria-hidden />
                   {t('ljudi.form.backToConflicts')}
                 </Link>

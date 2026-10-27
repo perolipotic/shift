@@ -241,7 +241,7 @@ describe('a key a replacement that does not apply still holds (story 5.5d)', () 
   });
 
   it('says the same line the screen states while the key is held', () => {
-    expect(resolutionFailureLineOf(RESOLUTION_HELD, null)).toEqual({ key: 'raspored.resolution.held' });
+    expect(resolutionFailureLineOf(RESOLUTION_HELD, null)).toEqual({ key: 'zaOdluku.resolution.held' });
     expect(t(resolutionFailureMessageKey(RESOLUTION_HELD))).toBe(
       'Zamjena se ne primjenjuje. Ukloni je u kalendaru pa odluči ponovno.',
     );
@@ -254,14 +254,14 @@ describe('the refusals as lines', () => {
 
     expect(named.values).toEqual({ name: 'Dino Grgić' });
     expect(t(named.key, { name: 'Dino Grgić' })).toBe('Dino Grgić je već na ovoj smjeni. Odaberi nekoga drugoga.');
-    expect(resolutionFailureLineOf(RESOLUTION_TAKEN, null)).toEqual({ key: 'raspored.resolution.error.failed' });
-    expect(resolutionFailureLineOf(RESOLUTION_GONE, 'Dino Grgić')).toEqual({ key: 'raspored.resolution.error.gone' });
-    expect(resolutionFailureMessageKey(RESOLUTION_TAKEN)).toBe('raspored.resolution.error.taken');
+    expect(resolutionFailureLineOf(RESOLUTION_TAKEN, null)).toEqual({ key: 'zaOdluku.resolution.error.failed' });
+    expect(resolutionFailureLineOf(RESOLUTION_GONE, 'Dino Grgić')).toEqual({ key: 'zaOdluku.resolution.error.gone' });
+    expect(resolutionFailureMessageKey(RESOLUTION_TAKEN)).toBe('zaOdluku.resolution.error.taken');
   });
 
   it('says the conflict is no longer open, denied, or failed with a retry', () => {
-    expect(t(resolutionFailureMessageKey(RESOLUTION_GONE))).toMatch(/^Ovaj konflikt više nije otvoren/);
-    expect(t(resolutionFailureMessageKey(RESOLUTION_DENIED))).toBe('Nemaš ovlasti odlučiti o ovom konfliktu.');
+    expect(t(resolutionFailureMessageKey(RESOLUTION_GONE))).toMatch(/^Ova stavka više ne čeka odluku/);
+    expect(t(resolutionFailureMessageKey(RESOLUTION_DENIED))).toBe('Nemaš ovlasti odlučiti o ovoj stavci.');
     expect(t(resolutionFailureMessageKey(RESOLUTION_FAILED))).toBe('Odluku nije bilo moguće spremiti. Pokušaj ponovno.');
   });
 });

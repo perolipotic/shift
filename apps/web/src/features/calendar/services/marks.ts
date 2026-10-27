@@ -18,7 +18,7 @@ import { leaveRecordsOf, organizationLeaveRecordsOf } from '@/features/leave/ser
  *
  * DERIVED, NEVER STORED (AD-4). An admin's marks are the UNRESOLVED
  * collisions (story 5.4a) from the calendar's one snapshot, the
- * organization's live leave and its live resolutions, through *Raspored*'s
+ * organization's live leave and its live resolutions, through *Za odluku*'s
  * own derivation (`unresolvedOf`), so a cell is marked exactly where the
  * queue lists a conflict; the same records' ranges hatch each member's own
  * dates. A member's marks carry NO collision and only their own live leave,
@@ -40,7 +40,7 @@ import { leaveRecordsOf, organizationLeaveRecordsOf } from '@/features/leave/ser
  * retry's press shows as the skeleton, not as the same alert standing still.
  *
  * ROWS NEWER THAN THE SNAPSHOT ARE A SKEW, NOT A BREAK (story 5.5d's edge
- * case; `./snapshot-skew`, which *Raspored*, *Sati* and *Danas* share). Rows
+ * case; `./snapshot-skew`, which *Za odluku*, *Sati* and *Danas* share). Rows
  * naming an id the snapshot does not hold yet are unavailable with the RETRY
  * — which re-reads the snapshot — and loading while the snapshot is being
  * read again (`useSnapshotSkewRefresh` re-reads it once by itself), never

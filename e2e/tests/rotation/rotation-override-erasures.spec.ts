@@ -205,8 +205,8 @@ test('confirming a pending Slobodno override over a member\'s leave waits for th
   await expect(rotationPage.overrideReviewRow(team.name, fullDate(date))).toHaveCount(0);
 
   // THE QUEUE −1, IN-APP: the landed confirm re-read the calendar, the leave and the resolutions.
-  await rotationPage.navigationLink(hr.nav.raspored, { exact: true }).click();
-  await expect(conflictsPage.heading(hr.nav.raspored)).toBeVisible();
+  await rotationPage.navigationLink(hr.nav.zaOdluku, { exact: true }).click();
+  await expect(conflictsPage.heading(hr.nav.zaOdluku)).toBeVisible();
   await expect(conflictsPage.anyCountHeading).toBeVisible();
   await expect(conflictsPage.rowsOf(person.name)).toHaveCount(0);
   expect(await page.evaluate(() => (window as unknown as { noReload?: boolean }).noReload), 'the page reloaded').toBe(true);

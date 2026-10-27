@@ -7,7 +7,7 @@ import type { MemberRole } from '@/features/navigation/utils/destinations';
  * and resolution reads can land after a member or team was added and before
  * the cached calendar snapshot is read again; their rows then name an id the
  * snapshot does not hold yet. Every surface that parses those rows against
- * the snapshot — the calendar's marks, *Raspored*, *Sati* and *Danas* — asks
+ * the snapshot — the calendar's marks, *Za odluku*, *Sati* and *Danas* — asks
  * this module first: such rows are unavailable WITH the retry, and loading
  * while the snapshot is being read again (`useSnapshotSkewRefresh` re-reads
  * it once by itself), never the parsers' refusal of a row that cannot be

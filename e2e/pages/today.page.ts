@@ -20,7 +20,7 @@ function leadOf(message: string): string {
  * duty-block) closes on the team line, "Tvoja smjena" and its roster link.
  *
  * For an admin (story 6.3): *Treba tebe* with its count, its rows (each a
- * link to its conflict) and "Otvori konflikte (n)"; *Pokrivenost danas*;
+ * link to its conflict) and "Otvori Za odluku (n)"; *Pokrivenost danas*;
  * *Odsutni danas*; and *Ovaj tjedan*, a grid in a scrolling region whose
  * cells are named in words — each block with its way to its list view.
  */
@@ -133,9 +133,9 @@ export class TodayPage extends BasePage {
     return this.card(admin.needsYou.heading);
   }
 
-  /** *Treba tebe*'s count, `7 neriješenih konflikata`, for `count`. */
+  /** *Treba tebe*'s count, `7 čeka odluku`, for `count`. */
   needsYouCount(count: number): Locator {
-    return this.needsYouCard.getByText(plural(hr.raspored.count, count), { exact: true });
+    return this.needsYouCard.getByText(plural(hr.zaOdluku.count, count), { exact: true });
   }
 
   /** *Treba tebe*'s rows, each the link to its conflict's resolution screen, in order. */
@@ -143,7 +143,7 @@ export class TodayPage extends BasePage {
     return this.needsYouCard.getByRole('list').getByRole('link');
   }
 
-  /** "Otvori konflikte (n)" for `count`, or whatever it counts. */
+  /** "Otvori Za odluku (n)" for `count`, or whatever it counts. */
   openConflictsLink(count?: number): Locator {
     const name =
       count === undefined

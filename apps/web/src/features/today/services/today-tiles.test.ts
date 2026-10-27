@@ -201,7 +201,7 @@ describe('the hours tile', () => {
     expect(t(figures.total.key, figures.total.values)).toBe('180 h');
     expect(figures.conflictCount).toBe(3);
     expect(figures.conflictCount).toBe(sati.conflictCount);
-    expect(t('sati.conflicts', { count: figures.conflictCount ?? 0 })).toBe('3 smjene u neriješenom konfliktu');
+    expect(t('sati.conflicts', { count: figures.conflictCount ?? 0 })).toBe('3 smjene čekaju odluku');
   });
 
   it('leaves an accepted-uncovered shift out of the total, as Sati does', () => {

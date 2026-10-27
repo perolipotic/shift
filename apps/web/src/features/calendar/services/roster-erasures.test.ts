@@ -150,10 +150,10 @@ describe('Take off', () => {
       `${VIEWER_NAME} na godišnjem · nakon promjene: Smjena A taj dan bez ${VIEWER_NAME}`,
     );
     expect(t('kalendar.detail.rosterChange.erasures.ledeRemoval', { count: 1 })).toBe(
-      'Ova promjena uklanja uzrok 1 neriješenog konflikta. Prije uklanjanja odluči za svaki.',
+      'Ova promjena uklanja uzrok 1 stavke koja čeka odluku. Prije uklanjanja odluči za svaku.',
     );
-    expect(t('kalendar.detail.rosterChange.erasures.title', { count: 1 })).toBe('Promjena briše 1 konflikt');
-    expect(t('kalendar.detail.rosterChange.erasures.removed', { count: 2 })).toBe('Uklonjena 2 konflikta.');
+    expect(t('kalendar.detail.rosterChange.erasures.title', { count: 1 })).toBe('Promjena uklanja 1 stavku koja čeka odluku');
+    expect(t('kalendar.detail.rosterChange.erasures.removed', { count: 2 })).toBe('Uklonjene 2 stavke koje su čekale odluku.');
   });
 
   it('stays bounded to the change\'s own date: the leave\'s other dates keep their conflicts', () => {

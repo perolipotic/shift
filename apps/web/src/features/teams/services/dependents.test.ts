@@ -94,7 +94,7 @@ const CLASSIFIED: Readonly<Record<string, readonly QueryKey[]>> = {
   LEAVE_OVERVIEW_RECORDS_KEY: [LEAVE_OVERVIEW_RECORDS_KEY],
   MY_CONFLICT_RESOLUTIONS_KEY: [MY_CONFLICT_RESOLUTIONS_KEY],
   ORGANIZATION_CONFLICT_RESOLUTIONS_KEY: [ORGANIZATION_CONFLICT_RESOLUTIONS_KEY],
-  // Story 7.16: the Riješeni tab's names; stale from the first read, so no write names it.
+  // Story 7.16: the Odlučeno tab's names; stale from the first read, so no write names it.
   ACTING_ADMINS_KEY: [ACTING_ADMINS_KEY],
 };
 

@@ -3,21 +3,21 @@ import type { Locator } from '@playwright/test';
 import { escapeRegExp, hr, plural } from '../utils/i18n.ts';
 import { BasePage } from './base.page.ts';
 
-const raspored = hr.raspored;
+const zaOdluku = hr.zaOdluku;
 
 /**
- * `/raspored`: the conflicts queue (story 5.3b) — its count, always shown,
+ * `/za-odluku`: the conflicts queue (story 5.3b) — its count, always shown,
  * a row per unresolved conflict (upcoming soonest first, then past most
  * recent first), the empty sentence, or, in their place, the failure with its
- * retry. Since story 7.16, two tabs: *Neriješeni*, the queue, and *Riješeni*,
+ * retry. Since story 7.16, two tabs: *Čeka odluku*, the queue, and *Odlučeno*,
  * the decisions in force.
  */
 export class ConflictsPage extends BasePage {
-  readonly path = '/raspored';
+  readonly path = '/za-odluku';
 
   /** The count's heading (h2), for `count` conflicts. */
   countHeading(count: number): Locator {
-    return this.page.getByRole('heading', { level: 2, name: plural(raspored.count, count), exact: true });
+    return this.page.getByRole('heading', { level: 2, name: plural(zaOdluku.count, count), exact: true });
   }
 
   /** The count's heading, whatever it counts. */
@@ -28,23 +28,23 @@ export class ConflictsPage extends BasePage {
   // ------------------------------------------------- the tabs (story 7.16)
   // Their names live here alone: story 9.1 renames them.
 
-  /** *Neriješeni*, the default tab; it carries the queue's count once read. */
+  /** *Čeka odluku*, the default tab; it carries the queue's count once read. */
   get unresolvedTab(): Locator {
-    return this.page.getByRole('tab', { name: new RegExp(`^${escapeRegExp(raspored.tabs.unresolved)}( · \\d+)?$`) });
+    return this.page.getByRole('tab', { name: new RegExp(`^${escapeRegExp(zaOdluku.tabs.unresolved)}( · \\d+)?$`) });
   }
 
-  /** *Riješeni*, the decisions in force. */
+  /** *Odlučeno*, the decisions in force. */
   get resolvedTab(): Locator {
-    return this.page.getByRole('tab', { name: raspored.tabs.resolved, exact: true });
+    return this.page.getByRole('tab', { name: zaOdluku.tabs.resolved, exact: true });
   }
 
-  /** Every entry of *Riješeni*, newest decision first: the open tab's list items. */
+  /** Every entry of *Odlučeno*, newest decision first: the open tab's list items. */
   get resolvedEntries(): Locator {
     return this.page.getByRole('tabpanel').getByRole('listitem');
   }
 
   /**
-   * *Riješeni* drawn: its count heading, which stands only once the tab's
+   * *Odlučeno* drawn: its count heading, which stands only once the tab's
    * reads have landed — the names of whoever decided among them — zero
    * included (story 8.2c's offline test waits on it).
    */
@@ -52,7 +52,7 @@ export class ConflictsPage extends BasePage {
     return this.page.getByRole('tabpanel').getByRole('heading', { level: 2 });
   }
 
-  /** The *Riješeni* entries of one member, by name. */
+  /** The *Odlučeno* entries of one member, by name. */
   resolvedEntriesOf(memberName: string): Locator {
     return this.resolvedEntries.filter({ hasText: memberName });
   }
@@ -74,12 +74,12 @@ export class ConflictsPage extends BasePage {
 
   /** The sentence an organization with no conflicts reads. */
   get emptySentence(): Locator {
-    return this.page.getByText(raspored.empty, { exact: true });
+    return this.page.getByText(zaOdluku.empty, { exact: true });
   }
 
   /** The retry the unavailable alert offers. */
   get retryButton(): Locator {
-    return this.page.getByRole('button', { name: raspored.retry, exact: true });
+    return this.page.getByRole('button', { name: zaOdluku.retry, exact: true });
   }
 
   /** The link a row is, to its conflict's resolution screen (story 5.4b). */
@@ -93,17 +93,17 @@ export class ConflictsPage extends BasePage {
   }
 }
 
-const resolution = raspored.resolution;
+const resolution = zaOdluku.resolution;
 
 /**
- * `/raspored/$memberId/$date/$teamId`: one conflict's resolution screen
+ * `/za-odluku/$memberId/$date/$teamId`: one conflict's resolution screen
  * (story 5.4b) — the way back, ‹ ›, the facts, the radio cards with their
  * consequence strips, and Odustani and Spremi odluku. Since story 5.4c, the
  * second card, "Zamijeni osobu", and the candidate picker after it. Since
  * story 5.4d, the third card, "Izmijeni godišnji odmor".
  */
 export class ConflictResolutionPage extends BasePage {
-  readonly path = '/raspored';
+  readonly path = '/za-odluku';
 
   /** Opens the screen of the conflict `(memberId, date, teamId)`. */
   async gotoConflict(memberId: string, date: string, teamId: string): Promise<void> {
@@ -115,9 +115,13 @@ export class ConflictResolutionPage extends BasePage {
     return this.page.getByRole('button', { name: resolution.retry, exact: true });
   }
 
-  /** The way back to the queue, with its count (`Raspored · 3 neriješena`) or plainly. */
+  /** The way back to the queue, with its count (`Za odluku · 3 čekaju odluku`) or plainly. */
   get backLink(): Locator {
-    return this.page.getByRole('main').getByRole('link', { name: new RegExp(`^(Raspored · |${resolution.backToQueue})`) });
+    const counted = resolution.back.slice(0, resolution.back.indexOf('{'));
+
+    return this.page
+      .getByRole('main')
+      .getByRole('link', { name: new RegExp(`^(${escapeRegExp(counted)}|${escapeRegExp(resolution.backToQueue)})`) });
   }
 
   /** `2 od 3 · odluči što vrijedi za ovu smjenu.` */

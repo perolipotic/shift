@@ -99,8 +99,8 @@ const SANCTIONED_PLURAL_KEYS = [
   // in the save's confirmation.
   'rotation.builder.overrides.count',
   // STORY 5.5a: how many conflicts a rotation change would erase, in the
-  // confirmation's title (`1 konflikt`, `2 konflikta`, `5 konflikata`) and
-  // its lede (`1 neriješenog`, `2 neriješena`, `5 neriješenih konflikata`).
+  // confirmation's title (`1 stavku`, `2 stavke`, `5 stavki koje čekaju
+  // odluku`) and its lede, in the same three forms (story 9.1's wording).
   'rotation.builder.erasures.title',
   'rotation.builder.erasures.lede',
   // STORY 5.5a (review): what a guarded save removed, in its confirmation —
@@ -156,7 +156,7 @@ const SANCTIONED_PLURAL_KEYS = [
   'sati.shiftCount',
   'sati.untimed',
   // STORY 5.3d: the viewer's shifts in unresolved conflict on *Sati*, shown
-  // only above 0 — `1 smjena`, `2 smjene`, `5 smjena u neriješenom konfliktu`.
+  // only above 0 — `1 smjena`, `2 smjene`, `5 smjena čeka odluku`.
   'sati.conflicts',
   // STORY 7.14: the status line after a downloaded hours file — its name and
   // how many people it holds, `1 osobom`, `3 osobe`, `17 osoba`.
@@ -182,32 +182,32 @@ const SANCTIONED_PLURAL_KEYS = [
   // STORY 5.2b: the line a landed amend shows, with what the new range cost.
   // Its over-balance warning is 5.1c's `savedExceeds`.
   'ljudi.leaveRecord.amended',
-  // STORY 5.3b: the conflicts queue's count, always shown — `0 neriješenih
-  // konflikata` included (UX-DR20). Its own key rather than `count.conflicts`,
-  // because the adjective agrees with the noun in all three forms.
-  'raspored.count',
-  // STORY 7.16: the Riješeni tab's count, always shown — `0 riješenih konflikata`
+  // STORY 5.3b: the conflicts queue's count, always shown — `0 čeka
+  // odluku` included (UX-DR20; story 9.1's wording). Its own key rather than
+  // `count.conflicts`, because the verb agrees in all three forms.
+  'zaOdluku.count',
+  // STORY 7.16: the Odlučeno tab's count, always shown — `0 odlučenih stavki`
   // included — with the adjective agreeing as the queue's does.
-  'raspored.resolved.count',
+  'zaOdluku.resolved.count',
   // STORY 7.15: the overview's summary line — how many people are shown, and
   // the days they used in total, each in its three forms.
   'godisnji.overview.summary',
   // STORY 5.4b: the resolution screen's four counts — the way back's
-  // `Raspored · 7 neriješenih`, the causing record's cost in days, the
+  // `Za odluku · 7 čeka odluku`, the causing record's cost in days, the
   // coverage term's roster (`3 od 4 člana`, `od 5 članova`), and the balance
   // the decision leaves (`16 dana preostalo`).
-  'raspored.resolution.back',
-  'raspored.resolution.leave',
-  'raspored.resolution.coverage',
-  'raspored.resolution.balance',
+  'zaOdluku.resolution.back',
+  'zaOdluku.resolution.leave',
+  'zaOdluku.resolution.coverage',
+  'zaOdluku.resolution.balance',
   // STORY 5.4d: what the third card gives back to the balance, `+1 dan`.
-  'raspored.resolution.balanceGained',
+  'zaOdluku.resolution.balanceGained',
   // D726: the days before the conflict a later start drops, named on the
   // third card — `za 1 dan`, `za 2 dana`, `za 5 dana`.
-  'raspored.resolution.amendDrops',
+  'zaOdluku.resolution.amendDrops',
   // LEAVE IN DAYS (2026-10-10): the first two cards' leave term, the day
   // the decision charges (`1 dan godišnjeg`), where it said hours.
-  'raspored.resolution.daysAsLeave',
+  'zaOdluku.resolution.daysAsLeave',
   // SINCE STORY 6.3: an admin's Danas — how many of the unresolved conflicts are
   // past (`1 na datum koji je prošao`, `3 na datume koji su prošli`), and how
   // many of a shift's roster are present (`3 od 4 člana`, `5 od 5 članova`).
@@ -306,7 +306,7 @@ const SANCTIONED_SCREEN_KEYS = [
   'nav.kalendar',
   'nav.sati',
   'nav.godisnji',
-  'nav.raspored',
+  'nav.zaOdluku',
   'nav.ljudi',
   'nav.postavkeRotacije',
   'nav.organizacija',
@@ -715,7 +715,7 @@ const SANCTIONED_SCREEN_KEYS = [
   'shell.description.kalendar',
   'shell.description.sati',
   'shell.description.godisnji',
-  'shell.description.raspored',
+  'shell.description.zaOdluku',
   'shell.description.ljudi',
   'shell.description.postavkeRotacije',
   'shell.description.organizacija',
@@ -1704,18 +1704,18 @@ const SANCTIONED_SCREEN_KEYS = [
   'godisnji.overview.stateValue.recorded',
   'godisnji.overview.stateValue.unrecorded',
   'godisnji.overview.stateValue.negative',
-  // STORY 5.3b: *Raspored*, the conflicts queue — the true sentence an empty
+  // STORY 5.3b: *Za odluku*, the conflicts queue — the true sentence an empty
   // queue states, the words a past row carries beside its dashed border, a
   // row's member and team, its shift type (with its times, or a type with
   // none in effect) and the causing record's range, and the line a refused
   // queue shows with its retry. The count is a plural, listed above.
-  'raspored.empty',
-  'raspored.past',
-  'raspored.who',
-  'raspored.detail',
-  'raspored.detailTimed',
-  'raspored.unavailable',
-  'raspored.retry',
+  'zaOdluku.empty',
+  'zaOdluku.past',
+  'zaOdluku.who',
+  'zaOdluku.detail',
+  'zaOdluku.detailTimed',
+  'zaOdluku.unavailable',
+  'zaOdluku.retry',
   // STORY 5.4b: the resolution screen — the queue's status line once a
   // decision lands; the screen's heading, its place in the queue and ‹ ›
   // (named by the target's date, or plainly at an end); the facts (the
@@ -1726,86 +1726,86 @@ const SANCTIONED_SCREEN_KEYS = [
   // save hint before and after a choice, Odustani, Spremi odluku and its
   // pending label; the line a conflict no longer open shows with its way
   // back, the unavailable line with its retry, and the three refusals.
-  'raspored.saved',
-  'raspored.resolution.heading',
-  'raspored.resolution.position',
-  'raspored.resolution.previous',
-  'raspored.resolution.previousNone',
-  'raspored.resolution.next',
-  'raspored.resolution.nextNone',
-  'raspored.resolution.mark',
-  'raspored.resolution.shiftTimed',
-  'raspored.resolution.shift',
-  'raspored.resolution.coworkers',
-  'raspored.resolution.noCoworkers',
-  'raspored.resolution.choice',
-  'raspored.resolution.choiceHint',
-  'raspored.resolution.acceptTitle',
-  'raspored.resolution.acceptBody',
-  'raspored.resolution.coverageLabel',
-  'raspored.resolution.uncovered',
+  'zaOdluku.saved',
+  'zaOdluku.resolution.heading',
+  'zaOdluku.resolution.position',
+  'zaOdluku.resolution.previous',
+  'zaOdluku.resolution.previousNone',
+  'zaOdluku.resolution.next',
+  'zaOdluku.resolution.nextNone',
+  'zaOdluku.resolution.mark',
+  'zaOdluku.resolution.shiftTimed',
+  'zaOdluku.resolution.shift',
+  'zaOdluku.resolution.coworkers',
+  'zaOdluku.resolution.noCoworkers',
+  'zaOdluku.resolution.choice',
+  'zaOdluku.resolution.choiceHint',
+  'zaOdluku.resolution.acceptTitle',
+  'zaOdluku.resolution.acceptBody',
+  'zaOdluku.resolution.coverageLabel',
+  'zaOdluku.resolution.uncovered',
   // LEAVE IN DAYS (2026-10-10): the strip's middle term is named for whom it
   // is about, the absent member, since it reads a leave day on cards 1–2 and
   // hours of work on card 3; and its empty mark for a date that charges no day.
-  'raspored.resolution.absentLabel',
-  'raspored.resolution.noHours',
-  'raspored.resolution.noDays',
-  'raspored.resolution.balanceLabel',
-  'raspored.resolution.balanceUnchanged',
-  'raspored.resolution.hintChoose',
-  'raspored.resolution.hintRecorded',
-  'raspored.resolution.cancel',
-  'raspored.resolution.save',
-  'raspored.resolution.saving',
-  'raspored.resolution.missing',
-  'raspored.resolution.backToQueue',
-  'raspored.resolution.unavailable',
-  'raspored.resolution.retry',
-  'raspored.resolution.error.gone',
-  'raspored.resolution.error.denied',
-  'raspored.resolution.error.failed',
+  'zaOdluku.resolution.absentLabel',
+  'zaOdluku.resolution.noHours',
+  'zaOdluku.resolution.noDays',
+  'zaOdluku.resolution.balanceLabel',
+  'zaOdluku.resolution.balanceUnchanged',
+  'zaOdluku.resolution.hintChoose',
+  'zaOdluku.resolution.hintRecorded',
+  'zaOdluku.resolution.cancel',
+  'zaOdluku.resolution.save',
+  'zaOdluku.resolution.saving',
+  'zaOdluku.resolution.missing',
+  'zaOdluku.resolution.backToQueue',
+  'zaOdluku.resolution.unavailable',
+  'zaOdluku.resolution.retry',
+  'zaOdluku.resolution.error.gone',
+  'zaOdluku.resolution.error.denied',
+  'zaOdluku.resolution.error.failed',
   // STORY 5.4c: the second card — its title and sentence, the replacement's
   // name in its strip — the picker's heading, its three group headings and
   // its nobody-to-add line, the hint while nobody is picked or nobody can be, the reason the
   // override is written with, the refusal naming a replacement already on the
   // shift, and the queue's status line naming the replacement.
-  'raspored.savedReplace',
-  'raspored.resolution.replaceTitle',
-  'raspored.resolution.replaceBody',
-  'raspored.resolution.replaceReason',
-  'raspored.resolution.candidatesHeading',
-  'raspored.resolution.candidates.free',
-  'raspored.resolution.candidates.working',
-  'raspored.resolution.candidates.onLeave',
+  'zaOdluku.savedReplace',
+  'zaOdluku.resolution.replaceTitle',
+  'zaOdluku.resolution.replaceBody',
+  'zaOdluku.resolution.replaceReason',
+  'zaOdluku.resolution.candidatesHeading',
+  'zaOdluku.resolution.candidates.free',
+  'zaOdluku.resolution.candidates.working',
+  'zaOdluku.resolution.candidates.onLeave',
   // D717: a candidate's line with the real continuous duty the shift would make.
-  'raspored.resolution.candidates.continuous',
-  'raspored.resolution.noCandidates',
-  'raspored.resolution.replacementShown',
-  'raspored.resolution.hintChooseReplacement',
-  'raspored.resolution.hintNoCandidates',
-  'raspored.resolution.error.taken',
+  'zaOdluku.resolution.candidates.continuous',
+  'zaOdluku.resolution.noCandidates',
+  'zaOdluku.resolution.replacementShown',
+  'zaOdluku.resolution.hintChooseReplacement',
+  'zaOdluku.resolution.hintNoCandidates',
+  'zaOdluku.resolution.error.taken',
   // STORY 5.4d: the third card — its title, its three sentences (the leave
   // starts later, ends earlier, or is removed), the absent member working in
   // its strip and their hours as work — the hint once it is chosen, with a
   // date or for a removal, and the member page's way back to the conflicts.
-  'raspored.resolution.amendTitle',
-  'raspored.resolution.amendBodyStarts',
-  'raspored.resolution.amendBodyEnds',
-  'raspored.resolution.amendBodyRemoves',
-  'raspored.resolution.amendWorks',
+  'zaOdluku.resolution.amendTitle',
+  'zaOdluku.resolution.amendBodyStarts',
+  'zaOdluku.resolution.amendBodyEnds',
+  'zaOdluku.resolution.amendBodyRemoves',
+  'zaOdluku.resolution.amendWorks',
   // D726: that some of the days a later start drops are already past.
-  'raspored.resolution.amendDropsPast',
-  'raspored.resolution.hoursAsWork',
-  'raspored.resolution.hintAmend',
-  'raspored.resolution.hintAmendRemove',
+  'zaOdluku.resolution.amendDropsPast',
+  'zaOdluku.resolution.hoursAsWork',
+  'zaOdluku.resolution.hintAmend',
+  'zaOdluku.resolution.hintAmendRemove',
   'ljudi.form.backToConflicts',
   // STORY 5.5d: a conflict back because its replacement no longer applies —
   // the line that says to remove it in the calendar and decide again, which a
   // refusal on the held key repeats.
-  'raspored.resolution.held',
+  'zaOdluku.resolution.held',
   // The same as Spremi's hint, "Ukloni je u kalendaru" a link to the day's month.
-  'raspored.resolution.heldHint',
-  'raspored.resolution.heldAction',
+  'zaOdluku.resolution.heldHint',
+  'zaOdluku.resolution.heldAction',
   // STORY 6.1a: *Danas* for the viewer — the heading's date subline; today's
   // three cases and the leave's range; the next shift's plain title, its
   // heading with the days (`count.days`, a plural listed above), the return
@@ -1987,23 +1987,23 @@ const SANCTIONED_SCREEN_KEYS = [
   'ljudi.leaveRecord.conflictsGroup',
   'ljudi.leaveRecord.conflictsNone',
   'ljudi.leaveRecord.conflictsUnknown',
-  // STORY 7.16: *Raspored*'s two tabs, *Neriješeni* (with its count, shown at
-  // zero too) and *Riješeni*, and the Riješeni list — its empty sentence, the
+  // STORY 7.16: *Za odluku*'s two tabs, *Čeka odluku* (with its count, shown at
+  // zero too) and *Odlučeno*, and the Odlučeno list — its empty sentence, the
   // line for an entry whose day is no longer worked, the decision per kind (a
   // replacement with or without the person's name), and who decided it and
   // when, with the words for an admin who is no longer a member.
-  'raspored.tabs.label',
-  'raspored.tabs.unresolved',
-  'raspored.tabs.unresolvedCount',
-  'raspored.tabs.resolved',
-  'raspored.resolved.empty',
-  'raspored.resolved.shiftGone',
-  'raspored.resolved.accept_uncovered',
-  'raspored.resolved.replace_member',
-  'raspored.resolved.replace_memberUnknown',
-  'raspored.resolved.amend_leave',
-  'raspored.resolved.decided',
-  'raspored.resolved.actorGone',
+  'zaOdluku.tabs.label',
+  'zaOdluku.tabs.unresolved',
+  'zaOdluku.tabs.unresolvedCount',
+  'zaOdluku.tabs.resolved',
+  'zaOdluku.resolved.empty',
+  'zaOdluku.resolved.shiftGone',
+  'zaOdluku.resolved.accept_uncovered',
+  'zaOdluku.resolved.replace_member',
+  'zaOdluku.resolved.replace_memberUnknown',
+  'zaOdluku.resolved.amend_leave',
+  'zaOdluku.resolved.decided',
+  'zaOdluku.resolved.actorGone',
   // STORY 7.18: Organizacija as facts and dialogs. The *Profil* and *Vrijeme i
   // godina* headings; `Promijeni` and `Uredi` with the names they announce
   // (the three on *Profil* are also their dialogs' titles); every dialog's
@@ -2078,34 +2078,38 @@ const SANCTIONED_KEYS = [...SANCTIONED_PLURAL_KEYS, ...SANCTIONED_SCREEN_KEYS];
 /**
  * Vocabulary the application has not earned the right to say, as STEMS.
  *
- * EMPTY TODAY, AND THE MECHANISM STAYS. The list started at seven — `danas,
+ * ONE ENTRY SINCE STORY 9.1: `konflik`, so no Croatian screen says *konflikt*.
+ * Going on leave is not a conflict, and leave requests wait in the same queue,
+ * so the queue is *Za odluku* and every item in it is something that waits for
+ * a decision (the change proposal's §5.5 vocabulary). "Conflict" stays the
+ * domain term in code, docs and the glossary; only the messages are swept.
+ * The stem is `konflik` rather than `konflikt` because the genitive plural,
+ * `konflikata`, does not contain `konflikt`, and the ban is on every ending.
+ *
+ * HISTORY. The list started at seven — `danas,
  * kalendar, godišnji, raspored, ljudi, postavke` plus `odjav` — and every story
  * that authored one of them moved it out into a COUNT in
  * `test/localization-applied.test.ts`, which is the stronger of the two claims:
  * absence says nothing may say the word, a count says `hr.json` is the only
- * thing that may. The navigation chrome authors the last one, so the ledger is
- * empty.
+ * thing that may. The navigation chrome authored the last one, and the ledger
+ * stood empty until story 9.1 reserved a word nothing may say at all.
  *
- * Deleting it with the ledger was the obvious move and the wrong one. This is
+ * The mechanism stayed while the ledger was empty. This is
  * the ONLY sweep in this file that reads message VALUES for unearned vocabulary
  * — the key-set comparison reads keys, and an equality check on three known keys
- * reads three known keys — so removing it left nothing at all scanning what the
- * strings SAY. The next story to reserve a word would have had to rebuild the
- * mechanism before it could use it, which is how a rule quietly stops being one.
+ * reads three known keys — so removing it would have left nothing scanning what
+ * the strings SAY.
  *
- * WHAT MOVED IS THE NON-VACUITY GUARD, off the LIST and onto the DETECTOR. The
- * old `expect(RESERVED_STEMS.length).toBeGreaterThan(0)` made emptying the array
- * fail loudly, which was right while emptying it was a thing a story did by
- * accident and is wrong now that it is the true state of the world. The
- * self-test below proves the predicate still finds a stem when handed one, on
- * both polarities, against a list passed in — so the sweep is demonstrably
- * capable of failing whether or not it currently has anything to fail on.
+ * THE NON-VACUITY GUARD sits on the DETECTOR, not the list: the self-test
+ * below proves the predicate still finds a stem when handed one, on both
+ * polarities, against a list passed in — so the sweep is demonstrably capable
+ * of failing whatever the ledger holds.
  *
  * A stem rather than a word because Croatian inflects: `Odjava` is the noun and
  * `Odjavi se` is what a button says, and only one of the two contains the other.
  * Matching the stem catches both, and every form a later story might reach for.
  */
-const RESERVED_STEMS: readonly string[] = [];
+const RESERVED_STEMS: readonly string[] = ['konflik'];
 
 /** The one namespace whose messages may say `smjen` as the Team (story 1.7a). */
 const TEAM_NAMESPACE = 'smjene.';
@@ -2162,7 +2166,7 @@ const DANAS_NAMESPACE = 'danas.';
  * words — so `smjen` names that shift there, as on *Sati*, and `tip… smjen…`
  * is refused: the shift type is shown by its name.
  */
-const RESOLUTION_NAMESPACE = 'raspored.resolution.';
+const RESOLUTION_NAMESPACE = 'zaOdluku.resolution.';
 
 /**
  * The member directory's namespace (story 7.17). It lists who is on which
@@ -2454,8 +2458,8 @@ describe('the messages obey the voice rules that bind every string', () => {
 
   it('carries no reserved vocabulary', () => {
     // The only sweep in this file that reads what the messages SAY rather than
-    // what they are called. It finds nothing today because the ledger is empty;
-    // the test below is what proves it would find something if it were not.
+    // what they are called. Since story 9.1 it refuses `konflik` in any case or
+    // ending; the test below proves the predicate would find a stem at all.
     const found = messages()
       .map((message) => ({ message, stem: reservedStemIn(message) }))
       .filter((entry) => entry.stem !== null);
@@ -2479,6 +2483,12 @@ describe('the messages obey the voice rules that bind every string', () => {
     expect(reservedStemIn('ODJAVA', ['odjav'])).toBe('odjav');
     expect(reservedStemIn('Prijava', ['odjav'])).toBeNull();
     expect(reservedStemIn('Kratica organizacije', ['odjav'])).toBeNull();
+    // Story 9.1's stem, through the REAL ledger: every ending, the genitive
+    // plural included, and the word *Za odluku* uses instead passes.
+    expect(reservedStemIn('Konflikt')).toBe('konflik');
+    expect(reservedStemIn('2 neriješena konflikta')).toBe('konflik');
+    expect(reservedStemIn('Uklonjeno 5 konflikata.')).toBe('konflik');
+    expect(reservedStemIn('3 čekaju odluku')).toBeNull();
     // And through the REAL ledger on the real file, so the sweep above is proved
     // against the messages it actually reads rather than only against strings
     // written here.

@@ -135,12 +135,12 @@ export type HoursExplanationView =
 /** The words a decision reads as on a leave line: the resolved queue's own. */
 export function leaveDecisionMessageKey(
   decision: LeaveDecision,
-): 'raspored.resolved.accept_uncovered' | 'raspored.resolved.replace_memberUnknown' {
+): 'zaOdluku.resolved.accept_uncovered' | 'zaOdluku.resolved.replace_memberUnknown' {
   switch (decision) {
     case LEAVE_DECISION_ACCEPTED:
-      return 'raspored.resolved.accept_uncovered';
+      return 'zaOdluku.resolved.accept_uncovered';
     case LEAVE_DECISION_REPLACED:
-      return 'raspored.resolved.replace_memberUnknown';
+      return 'zaOdluku.resolved.replace_memberUnknown';
   }
 }
 
