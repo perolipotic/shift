@@ -87,6 +87,21 @@ export abstract class BasePage {
     return this.page.getByRole('button', { name: hr.shell.signOut });
   }
 
+  /** *Instaliraj* (story 8.4), in the profile menu (sidebar) or the *Više* sheet (phone). */
+  get installButton(): Locator {
+    return this.page.getByRole('button', { name: hr.shell.install, exact: true });
+  }
+
+  /** The sidebar's profile menu, open: the theme, *Instaliraj* where it applies, and Odjava. */
+  get profileMenu(): Locator {
+    return this.page.locator('#profile-menu');
+  }
+
+  /** Every open dialog on the page. */
+  get dialogs(): Locator {
+    return this.page.getByRole('dialog');
+  }
+
   /** The phone bar's *Više*, the fifth cell; it opens the sheet. */
   get moreButton(): Locator {
     return this.navigation.getByRole('button', { name: hr.shell.more, exact: true });

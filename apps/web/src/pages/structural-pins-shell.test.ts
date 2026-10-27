@@ -280,7 +280,35 @@ describe('the chrome the layout wraps every destination in', () => {
     expect(profile, 'the profile menu holds no theme').toContain('{renderThemeSegments()}');
     expect(sheet, 'the Više sheet holds no exit').toContain('{renderSignOut()}');
     expect(sheet, 'the Više sheet holds no theme').toContain('{renderThemeSegments()}');
+    // STORY 8.4: *Instaliraj* in both, between the theme and Odjava; it
+    // draws itself only where it can do something.
+    expect(profile, 'the profile menu holds no Instaliraj').toContain('{renderInstall(PLACE.sidebar)}');
+    expect(sheet, 'the Više sheet holds no Instaliraj').toContain('{renderInstall(PLACE.sheet)}');
     expect(chrome, 'the Više sheet is never rendered').toContain('{renderMore()}');
+    // RIGHT BEFORE Odjava in both: when the focused row goes, focus moves to
+    // its next sibling, which must be Odjava.
+    expect(profile, 'Instaliraj is not right before Odjava in the profile menu').toMatch(
+      /\{renderInstall\(PLACE\.sidebar\)\}\s*\{renderSignOut\(\)\}/,
+    );
+    expect(sheet, 'Instaliraj is not right before Odjava in the Više sheet').toMatch(
+      /\{renderInstall\(PLACE\.sheet\)\}\s*\{renderSignOut\(\)\}/,
+    );
+    expect(phone, 'the phone bar carries Instaliraj').not.toContain('renderInstall(');
+    // Its iOS steps are a disclosure that resolves, inline, never a dialog.
+    const install = componentFunction(chrome, 'renderInstall');
+    expect(install, 'the iOS steps are not the row\'s controlled region').toMatch(/aria-controls=\{ios \? stepsId : undefined\}/);
+    expect(install, 'the iOS steps region carries no id').toContain('id={stepsId}');
+    expect(install, 'Instaliraj opens a nested dialog').not.toMatch(/<Dialog\b/);
+    // EACH PLACE ITS OWN STEPS ID: two `useId`s keyed by place, read by place.
+    expect(chrome, 'the two places do not have their own steps ids').toMatch(
+      /const installStepsIds = \{ \[PLACE\.sidebar\]: useId\(\), \[PLACE\.sheet\]: useId\(\) \} as const;/,
+    );
+    expect(install, 'the steps id is not the place\'s own').toContain('const stepsId = installStepsIds[place];');
+    // THE PROMPT OPENS ONLY FROM THE PRESS: one call in the whole chrome,
+    // inside the row's `onClick`.
+    expect(chrome.match(/install\.prompt\(\)/g), 'the prompt is opened from more than one place').toHaveLength(1);
+    const onClick = /onClick=\{\(\) => \{[\s\S]*?\n {10}\}\}/.exec(install)?.[0] ?? '';
+    expect(onClick, 'the prompt opens other than from the row\'s press').toContain('void install.prompt()');
     // And neither has a second home: the sidebar foot and the phone bar carry
     // no theme and no exit of their own.
     expect(aside, 'the sidebar foot still carries a theme control').not.toContain('renderThemeSegments(');
@@ -630,7 +658,9 @@ describe('the chrome the layout wraps every destination in', () => {
     // attribute — a reference to an absent id is ignored in silence, which is
     // worse than no reference because the source-level lookup passes either way.
     const chrome = source(CHROME);
-    const toggle = buttonElements(chrome).find((element) => element.includes('aria-expanded'));
+    // The collapse itself, by its state: story 8.4's *Instaliraj* is a
+    // disclosure too (its iOS steps), and is pinned on its own below.
+    const toggle = buttonElements(chrome).find((element) => element.includes('aria-expanded={expanded}'));
 
     expect(toggle, 'nothing on the chrome is a disclosure at all').not.toBeUndefined();
 

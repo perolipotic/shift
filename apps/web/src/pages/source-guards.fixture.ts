@@ -1084,15 +1084,17 @@ export const SCREENS = [
   // the theme's segmented pill (human decisions 2026-09-25/26), the profile
   // card that discloses the exit, the exit, the retry that makes the role
   // read's failure something a person can act on, and *Više* (story 7.3),
-  // which replaced the theme's cycling glyph when the phone bar lost it. The
-  // sheet's close is `DialogHeader`'s own button, measured with the primitive.
-  // The
+  // which replaced the theme's cycling glyph when the phone bar lost it.
+  // SEVEN with story 8.4's *Instaliraj*: one button, rendered in the profile
+  // menu and in the sheet, that opens the held install prompt or discloses
+  // the iOS steps. The sheet's close is `DialogHeader`'s own button,
+  // measured with the primitive. The
   // destinations are `<Link>`s, which neither detector matches by construction —
   // they are swept by name in the chrome block below, with their own count — so
-  // this number is the six BUTTONS and nothing else. It is what notices a
-  // seventh arriving: on a component that renders above every destination in the
+  // this number is the seven BUTTONS and nothing else. It is what notices an
+  // eighth arriving: on a component that renders above every destination in the
   // application, a control nobody reviewed is a control on eight screens.
-  { name: 'the navigation chrome', file: CHROME, expectedFields: 0, expectedButtons: 6 },
+  { name: 'the navigation chrome', file: CHROME, expectedFields: 0, expectedButtons: 7 },
   // ZERO on the lockup, and it is a claim rather than an accident of what has
   // been built: nothing about an organization's logo is pressable. It is not a
   // link to the organization, not a menu trigger and not a home button — which

@@ -1452,7 +1452,8 @@ export const KEY_SOURCES = [
   // EIGHTEEN with the sheet's copy: the current row's "Ovdje si". The rows'
   // descriptions and the place under *Više* come through the next entry but
   // one.
-  { name: 'the navigation chrome', file: CHROME, keys: translationKeys, strings: 18 },
+  // TWENTY with story 8.4: *Instaliraj* and its iOS steps.
+  { name: 'the navigation chrome', file: CHROME, keys: translationKeys, strings: 20 },
   {
     // TWO, for three role codes and one sign-out code. The collapse is the
     // decision `messages.test.ts` executes; what this count pins is that there

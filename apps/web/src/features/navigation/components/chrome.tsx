@@ -3,6 +3,7 @@ import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
 import {
   ChevronDown,
   ChevronUp,
+  Download,
   Ellipsis,
   LogOut,
   Monitor,
@@ -50,6 +51,8 @@ import { useRenderableLogo } from '@/features/organization/hooks/logo-url';
 import { organizationTable, organizationSnapshotQueryOptions } from '@/features/organization/services/snapshot';
 import { chromeAnswerOf } from '@/features/navigation/services/chrome-freshness';
 import { useFreshnessClock } from '@/lib/offline/use-snapshot-freshness';
+import { INSTALL_IOS, INSTALL_PROMPT } from '@/lib/pwa/install';
+import { useInstall } from '@/lib/pwa/use-install';
 import { forgetDeviceSnapshot } from '@/lib/offline/device-snapshot';
 import { currentSession, supabaseClient } from '@/lib/supabase/client';
 import { pageSignOutFallback } from '@/lib/supabase/local-sign-out';
@@ -59,6 +62,7 @@ import {
   useThemePreference,
   type ThemePreference,
 } from '@/lib/theme';
+import { focusLater } from '@/utils/focus-later';
 import { keepFocusOnAlert } from '@/utils/retry-focus';
 
 /**
@@ -223,6 +227,48 @@ export function AppChrome({ children }: AppChromeProps) {
   // are in the document at once.
   const sidebarGroupIds = [useId(), useId()] as const;
   const moreGroupIds = [useId(), useId()] as const;
+  // STORY 8.4: what *Instaliraj* can do on this device, and whether its iOS
+  // steps are open IN EACH PLACE: the profile menu and the sheet can both be
+  // in the document, so each has its own steps id and its own open state.
+  const install = useInstall();
+  const installStepsIds = { [PLACE.sidebar]: useId(), [PLACE.sheet]: useId() } as const;
+  const [installSteps, setInstallSteps] = useState({ kind: install.kind, sidebar: false, sheet: false });
+  // THE STEPS CLOSE WITH THEIR PLACE, and when the kind changes: adjusted
+  // during the render, so a reopened menu or sheet never opens on them. The
+  // sheet's `Dialog` stays mounted while closed, so no unmount resets it.
+  const sameInstallKind = installSteps.kind === install.kind;
+  const installStepsNow = {
+    kind: install.kind,
+    sidebar: sameInstallKind && installSteps.sidebar && profileOpen,
+    sheet: sameInstallKind && installSteps.sheet && moreOpen,
+  };
+  if (
+    !sameInstallKind ||
+    installStepsNow.sidebar !== installSteps.sidebar ||
+    installStepsNow.sheet !== installSteps.sheet
+  ) {
+    setInstallSteps(installStepsNow);
+  }
+  // WHEN THE FOCUSED ROW GOES (its prompt is spent, or `appinstalled`
+  // fired), focus moves to Odjava of the same place, the row's next sibling
+  // in both, rather than falling to the page. A ref cleanup runs before the
+  // row leaves the document, so it can still tell whether focus was in it.
+  // Stable, so a re-render never runs it.
+  const installRowRef = useCallback((row: HTMLDivElement | null) => {
+    if (row === null) return undefined;
+
+    return () => {
+      if (!row.contains(row.ownerDocument.activeElement)) return;
+
+      const signOut = row.nextElementSibling;
+
+      if (!(signOut instanceof HTMLElement)) return;
+
+      const present = () => (signOut.isConnected ? signOut : null);
+
+      focusLater([present], present);
+    };
+  }, []);
   const profileRegion = useRef<HTMLDivElement>(null);
   const closeProfile = useCallback(() => setProfileOpen(false), []);
   const closeMoreWhenWide = useCallback(() => setMoreOpen(false), []);
@@ -672,6 +718,61 @@ export function AppChrome({ children }: AppChromeProps) {
   }
 
   /**
+   * *Instaliraj* (story 8.4): in the *Više* sheet and in the profile menu,
+   * which is the desktop's *Više* (human decision 2026-10-22, 1a), and only
+   * where it can do something. Odjava's shape, with its own icon.
+   *
+   * WHERE THE BROWSER HOLDS AN INSTALL PROMPT, a press opens it; nothing
+   * opens it without a press, and nothing on a first visit opens by itself.
+   * ON ANY iOS BROWSER (decision 3a), which has no prompt, a press reveals
+   * the Share → Add to Home Screen steps right under the row: a disclosure,
+   * never a nested dialog. INSTALLED, OR NEITHER, it is not drawn (2a).
+   */
+  function renderInstall(place: typeof PLACE.sidebar | typeof PLACE.sheet): ReactNode {
+    if (install.kind !== INSTALL_PROMPT && install.kind !== INSTALL_IOS) return null;
+
+    const ios = install.kind === INSTALL_IOS;
+    const stepsId = installStepsIds[place];
+    const stepsOpen = place === PLACE.sidebar ? installStepsNow.sidebar : installStepsNow.sheet;
+
+    // ONE BUTTON for both kinds: on iOS it is the steps' disclosure, and
+    // elsewhere it opens the held prompt. While that prompt shows, the row
+    // is `aria-disabled`, never `disabled`, so it keeps focus, and a press
+    // does nothing.
+    return (
+      <div ref={installRowRef} className="grid gap-2">
+        <Button
+          className="h-11 w-full shrink-0 gap-2 px-4 sm:justify-start sm:border-0"
+          type="button"
+          variant="sidebar"
+          aria-disabled={install.prompting || undefined}
+          aria-expanded={ios ? stepsOpen : undefined}
+          aria-controls={ios ? stepsId : undefined}
+          onClick={() => {
+            if (ios) {
+              setInstallSteps((steps) =>
+                place === PLACE.sidebar ? { ...steps, sidebar: !stepsOpen } : { ...steps, sheet: !stepsOpen },
+              );
+            } else if (!install.prompting) {
+              void install.prompt();
+            }
+          }}
+        >
+          <Download aria-hidden className="size-4 shrink-0" />
+          <span>{t('shell.install')}</span>
+        </Button>
+        {ios ? (
+          // The sidebar's small muted text (`sidebar-foreground` at 70%),
+          // the pair `theme-contrast.test.ts` measures.
+          <p id={stepsId} hidden={!stepsOpen} className="px-4 text-xs text-sidebar-foreground/70">
+            {t('shell.installIosSteps')}
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+
+  /**
    * The profile card at the foot of the sidebar (sidebar redesign): initials,
    * name and role, and a disclosure whose panel holds the theme and the exit
    * (human decision 2026-09-26; the theme moved in with story 7.3).
@@ -697,6 +798,7 @@ export function AppChrome({ children }: AppChromeProps) {
             className="absolute bottom-full left-0 z-10 mb-2 flex w-full min-w-48 flex-col gap-2 rounded-lg border border-sidebar-border bg-sidebar p-2 shadow-sh-lg group-data-[collapsed=true]/sidebar:bottom-0 group-data-[collapsed=true]/sidebar:left-full group-data-[collapsed=true]/sidebar:mb-0 group-data-[collapsed=true]/sidebar:ml-3 group-data-[collapsed=true]/sidebar:w-auto"
           >
             {renderThemeSegments()}
+            {renderInstall(PLACE.sidebar)}
             {renderSignOut()}
           </div>
         ) : null}
@@ -770,7 +872,8 @@ export function AppChrome({ children }: AppChromeProps) {
 
   /**
    * The phone's *Više* sheet (story 7.3): who is signed in, the role's other
-   * destinations in two groups, the theme and Odjava.
+   * destinations in two groups, the theme, *Instaliraj* where it applies
+   * (story 8.4) and Odjava.
    *
    * THE ONE `Dialog`, docked at the bottom, so it is modal the way every other
    * dialog here is: the browser traps focus, Escape and a backdrop press close
@@ -848,6 +951,7 @@ export function AppChrome({ children }: AppChromeProps) {
           </h2>
           {renderThemeSegments()}
         </section>
+        {renderInstall(PLACE.sheet)}
         {renderSignOut()}
       </Dialog>
     );

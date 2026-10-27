@@ -736,6 +736,10 @@ const SANCTIONED_SCREEN_KEYS = [
   // that could carry it out. The sentence lost those two words when the control
   // gained them.
   'shell.retry',
+  // STORY 8.4: *Instaliraj* in the *Više* sheet and the profile menu, and
+  // the Share → Add to Home Screen steps it reveals on iOS.
+  'shell.install',
+  'shell.installIosSteps',
   'shell.error.destinations',
   'shell.error.signOut',
   // STORY 1.7a: the two team screens. The namespace is `smjene`, never
