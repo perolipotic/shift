@@ -7,6 +7,7 @@ import { sortControlIn, sortOptionIn, sortPickerIn } from './sort-control.ts';
 
 const godisnji = hr.godisnji;
 const overview = hr.godisnji.overview;
+const request = hr.godisnji.request;
 
 /**
  * `/godisnji`: the viewer's own leave (story 5.2c) — three tiles, the
@@ -16,6 +17,10 @@ const overview = hr.godisnji.overview;
  *
  * Since story 7.15 an admin's `/godisnji` is the overview instead: every
  * member active today as a table row from 640 px, a stacked row below it.
+ *
+ * Since story 9.3 a member's `/godisnji` offers *Zatraži godišnji*, which
+ * opens the request form at `/godisnji/zatrazi`, and lists their own requests
+ * by status; a pending one has *Povuci zahtjev*.
  */
 export class LeavePage extends BasePage {
   readonly path = '/godisnji';
@@ -151,6 +156,57 @@ export class LeavePage extends BasePage {
   /** A column in the phone sort control's list. */
   sortOption(label: string): Locator {
     return sortOptionIn(this.page, label);
+  }
+
+  // ------------------------------------------------------- the request (9.3)
+
+  /** *Zatraži godišnji*, the link to the request form. */
+  get requestAction(): Locator {
+    return this.page.getByRole('link', { name: request.action, exact: true });
+  }
+
+  /** The request form's od field. */
+  get requestFrom(): Locator {
+    return this.page.getByLabel(request.from, { exact: true });
+  }
+
+  /** The request form's do field. */
+  get requestTo(): Locator {
+    return this.page.getByLabel(request.to, { exact: true });
+  }
+
+  /** The figure under one of the preview's labels (*Trošak*, *Preostalo nakon odobrenja*). */
+  requestFigure(label: string): Locator {
+    return this.page
+      .locator('dl > div')
+      .filter({ has: this.page.getByRole('term').getByText(label, { exact: true }) })
+      .getByRole('definition');
+  }
+
+  /** *Pošalji*. */
+  get sendButton(): Locator {
+    return this.page.getByRole('button', { name: request.submit, exact: true });
+  }
+
+  /** Enters od and do on the request form. */
+  async enterRequest(from: string, to: string): Promise<void> {
+    await this.requestFrom.fill(from);
+    await this.requestTo.fill(to);
+  }
+
+  /** *Moji zahtjevi za godišnji*: the list of the member's own requests. */
+  get requestsList(): Locator {
+    return this.page.getByRole('list', { name: request.listHeading, exact: true });
+  }
+
+  /** The list's row whose range starts with `label` (`05.10.2026–07.10.2026`). */
+  requestRow(label: string): Locator {
+    return this.requestsList.getByRole('listitem').filter({ hasText: label });
+  }
+
+  /** *Povuci zahtjev* on the request `from`–`to`, both written `05.10.2026`. */
+  withdrawButton(from: string, to: string): Locator {
+    return this.page.getByRole('button', { name: fill(request.withdrawName, { from, to }), exact: true });
   }
 
   /** The overview's unavailable alert. */

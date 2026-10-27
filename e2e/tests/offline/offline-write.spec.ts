@@ -63,7 +63,8 @@ const membership = hr.smjene.membership;
 const today = (): string => new Intl.DateTimeFormat('en-CA', { timeZone: RUN_TIMEZONE }).format(new Date());
 
 /** The RPCs that WRITE (the read RPCs — the calendar's, the roster's, the resolutions' — are reads). */
-const WRITE_RPC = /\/rest\/v1\/rpc\/(remove_|replace_|confirm_|amend_)/;
+// Story 9.3: `withdraw_leave_request`, a member's withdrawal, is a write too.
+const WRITE_RPC = /\/rest\/v1\/rpc\/(remove_|replace_|confirm_|amend_|withdraw_)/;
 
 /** A spy on the page's requests to the Supabase API. */
 interface RequestSpy {

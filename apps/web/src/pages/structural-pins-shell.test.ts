@@ -1024,6 +1024,9 @@ describe('no read retry offline, on any surface (story 8.2e)', () => {
     ['features/hours/hooks/use-hours.ts', /retryable: clock\.online && surface\.retryable,/],
     ['features/leave/hooks/use-my-leave.ts', /retryable: clock\.online && leave\.kind === MY_LEAVE_UNAVAILABLE,/],
     ['features/leave/hooks/use-leave-overview.ts', /retryable: clock\.online && \(/],
+    // Story 9.3: a member's own requests list, beside their figures.
+    ['features/leave/hooks/use-leave-request-form.ts', /retryable: clock\.online && view === GODISNJI_UNAVAILABLE,/],
+    ['features/leave/hooks/use-my-leave-requests.ts', /retryable: clock\.online && list !== null && list\.kind === MY_REQUESTS_UNAVAILABLE,/],
     ['features/members/hooks/use-member-list.ts', /retryable: clock\.online && refusal !== null/],
     ['features/teams/hooks/use-member-directory.ts', /retryable: clock\.online && directory\.kind === DIRECTORY_UNAVAILABLE,/],
     ['features/conflicts/hooks/use-conflicts-queue.ts', /retryable:\s*clock\.online &&/],
@@ -1046,6 +1049,10 @@ describe('no read retry offline, on any surface (story 8.2e)', () => {
     ['features/hours/components/hours-body.tsx', 'onClick={onRetry}'],
     ['features/leave/components/my-leave-body.tsx', 'onClick={onRetry}'],
     ['features/leave/components/leave-overview-body.tsx', 'onClick={retry}'],
+    // Story 9.3: the requests list's retry, and the request form's.
+    ['features/leave/components/my-leave-requests.tsx', 'onClick={onRetry}'],
+    ['features/leave/components/leave-request-form.tsx', 'onClick={form.retry}'],
+    ['pages/godisnji.zatrazi.tsx', 'onClick={retry}'],
     ['pages/godisnji.tsx', 'onClick={screen.retry}'],
     ['pages/ljudi.tsx', 'onClick={list.retry}'],
     ['features/teams/components/member-directory.tsx', 'onClick={retry}'],

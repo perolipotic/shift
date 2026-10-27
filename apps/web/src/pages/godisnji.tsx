@@ -1,16 +1,19 @@
-import { createRoute, redirect, useNavigate } from '@tanstack/react-router';
+import { Link, createRoute, redirect, useNavigate } from '@tanstack/react-router';
+import { CalendarPlus } from 'lucide-react';
 import { useCallback } from 'react';
 
 import { OfflineNote } from '@/components/offline-note';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Notice } from '@/components/ui/notice';
-import { PageDescription, PageHeader, PageTitle } from '@/components/ui/page-header';
+import { PageActions, PageDescription, PageHeader, PageTitle } from '@/components/ui/page-header';
 import { LeaveOverviewBody } from '@/features/leave/components/leave-overview-body';
 import { MyLeaveBody } from '@/features/leave/components/my-leave-body';
+import { MyLeaveRequests } from '@/features/leave/components/my-leave-requests';
 import { MyLeaveSkeleton } from '@/features/leave/components/my-leave-skeleton';
 import { useLeaveOverview, type GodisnjiNavigate } from '@/features/leave/hooks/use-leave-overview';
 import { useMyLeave } from '@/features/leave/hooks/use-my-leave';
+import { useMyLeaveRequests } from '@/features/leave/hooks/use-my-leave-requests';
 import {
   GODISNJI_LOADING,
   GODISNJI_OVERVIEW,
@@ -19,6 +22,7 @@ import {
   godisnjiSearchRewriteOf,
   type GodisnjiSearch,
 } from '@/features/leave/services/leave-overview';
+import { MY_LEAVE_READY, leaveRequestSentValuesOf } from '@/features/leave/services/my-leave';
 import { t } from '@/lib/i18n';
 import { appLayoutRoute } from '@/pages/_app';
 import { keepFocusOnAlert } from '@/utils/retry-focus';
@@ -47,6 +51,11 @@ import { keepFocusOnAlert } from '@/utils/retry-focus';
  * to its default and is rewritten out of the URL. The path drops the diacritics the label
  * carries: a URL segment is not a label, and `hr.json` is where the `š`
  * belongs.
+ *
+ * STORY 9.3: a member's view also offers *Zatraži godišnji*, which opens the
+ * request form at `/godisnji/zatrazi`, and lists the member's own requests
+ * with their status — a pending one with *Povuci zahtjev* — and, after a
+ * landed send, a status line naming the range. An admin's view does not.
  *
  * STORY 8.2b: offline, the whole cached snapshot — the overview's, or a
  * member's own figures' — is drawn under the as-of note (`OfflineNote`, under
@@ -116,9 +125,16 @@ export function GodisnjiScreen() {
   );
 }
 
-/** A member-role session's *Godišnji*: their own three figures, as since story 5.2c. */
+/**
+ * A member-role session's *Godišnji*: their own three figures, as since story
+ * 5.2c, and since story 9.3 *Zatraži godišnji* (offered once the figures are
+ * ready, which the form previews against), the sent line and their own
+ * requests, which stand on their own read whatever the figures' state.
+ */
 function GodisnjiOwn() {
   const { leave, loading, offline, retryable, retry } = useMyLeave();
+  const requests = useMyLeaveRequests(leave);
+  const { sent, sentField } = requests;
 
   return (
     <main className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6" aria-busy={loading}>
@@ -126,11 +142,43 @@ function GodisnjiOwn() {
         <PageTitle asChild>
           <h1>{t('nav.godisnji')}</h1>
         </PageTitle>
+        {leave.kind === MY_LEAVE_READY ? (
+          <PageActions>
+            <Button asChild className="h-11">
+              <Link to="/godisnji/zatrazi">
+                <CalendarPlus aria-hidden />
+                {t('godisnji.request.action')}
+              </Link>
+            </Button>
+          </PageActions>
+        ) : null}
       </PageHeader>
       <OfflineNote offline={offline} />
+      {sent === null ? null : (
+        <Notice ref={sentField} role="status" tabIndex={-1}>
+          {t('godisnji.request.sent', leaveRequestSentValuesOf(sent))}
+        </Notice>
+      )}
       <Card className="min-w-0 p-4">
         <MyLeaveBody leave={leave} retryable={retryable} onRetry={retry} />
       </Card>
+      {requests.list === null ? null : (
+        <Card className="min-w-0 p-4">
+          <MyLeaveRequests
+            list={requests.list}
+            retryable={requests.retryable}
+            pendingId={requests.pendingId}
+            refusal={requests.refusal}
+            withdrawn={requests.withdrawn}
+            outcomeField={requests.outcomeField}
+            listHeading={requests.listHeading}
+            onWithdraw={(row) => {
+              void requests.withdraw(row);
+            }}
+            onRetry={requests.retry}
+          />
+        </Card>
+      )}
     </main>
   );
 }

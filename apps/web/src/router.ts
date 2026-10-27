@@ -3,6 +3,7 @@ import { createRouter } from '@tanstack/react-router';
 import { appLayoutRoute } from '@/pages/_app';
 import { danasRoute } from '@/pages/danas';
 import { godisnjiRoute } from '@/pages/godisnji';
+import { godisnjiZatraziRoute } from '@/pages/godisnji.zatrazi';
 import { indexRoute } from '@/pages/index';
 import { kalendarRoute } from '@/pages/kalendar';
 import { ljudiMemberRoute } from '@/pages/ljudi.$id';
@@ -47,6 +48,11 @@ const appDestinations = appLayoutRoute.addChildren([
   kalendarRoute,
   satiRoute,
   godisnjiRoute,
+  // STORY 9.3: the member's leave request form, on 1.7a's terms — nested
+  // under the layout, absent from the destinations (the `Godišnji` tab
+  // lights for it). No `beforeLoad`: the role is the calendar snapshot's, as
+  // on *Godišnji*, and an admin is sent to the overview from the screen.
+  godisnjiZatraziRoute,
   zaOdlukuRoute,
   // STORY 5.4b: one conflict's resolution screen, on 1.7a's terms — nested
   // under the layout, absent from the destinations (the `Za odluku` tab lights

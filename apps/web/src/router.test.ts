@@ -36,6 +36,7 @@ import {
 import { currentSessionForReads } from '@/lib/supabase/offline-session';
 import { DanasScreen, danasRoute } from '@/pages/danas';
 import { GodisnjiScreen, godisnjiRoute } from '@/pages/godisnji';
+import { GodisnjiZatraziScreen, godisnjiZatraziRoute } from '@/pages/godisnji.zatrazi';
 import { indexRoute } from '@/pages/index';
 import { KalendarScreen, kalendarRoute } from '@/pages/kalendar';
 import { LjudiMemberScreen, ljudiMemberRoute } from '@/pages/ljudi.$id';
@@ -387,6 +388,8 @@ describe('the shell route tree', () => {
       '/_app',
       '/_app/danas',
       '/_app/godisnji',
+      // STORY 9.3. The member's leave request form, reached from Godišnji only.
+      '/_app/godisnji/zatrazi',
       '/_app/kalendar',
       '/_app/ljudi',
       // TWO ROUTES THAT ARE NOT DESTINATIONS (story 1.5b). Both nest under the
@@ -1606,6 +1609,7 @@ describe('the signed-in layout guards every destination once, and is pathless', 
         '/kalendar',
         '/sati',
         '/godisnji',
+        '/godisnji/zatrazi',
         '/ljudi',
         '/smjene/$id',
         '/za-odluku',
@@ -1626,6 +1630,8 @@ describe('the signed-in layout guards every destination once, and is pathless', 
         '/kalendar',
         '/sati',
         '/godisnji',
+        // Story 9.3: the request form, read as one snapshot under the as-of note.
+        '/godisnji/zatrazi',
         '/ljudi',
         '/smjene/team-1',
         '/za-odluku',
@@ -2689,6 +2695,30 @@ describe('the roster route is for every role and is not a destination', () => {
     expect(DESTINATION_ROUTES.map((destination) => destination.path)).not.toContain('/smjene/$id');
     expect(ROLE_GUARDED_PATHS).not.toContain('/smjene/$id');
     expect(LEVEL_GUARDED_ROUTES.map((guarded) => guarded.path)).not.toContain('/smjene/$id');
+  });
+});
+
+describe('the leave request form is not a destination and carries no guard of its own (story 9.3)', () => {
+  it('resolves /godisnji/zatrazi inside the signed-in layout, to its own screen', () => {
+    expect(match('/godisnji/zatrazi').map((matched) => matched.routeId)).toEqual([
+      '__root__',
+      '/_app',
+      '/_app/godisnji/zatrazi',
+    ]);
+    expect((godisnjiZatraziRoute.options as { component?: unknown }).component).toBe(GodisnjiZatraziScreen);
+  });
+
+  it('carries no beforeLoad: the role is the calendar snapshot\'s, read on the screen, as on Godišnji', () => {
+    expect((godisnjiZatraziRoute.options as { beforeLoad?: unknown }).beforeLoad).toBeUndefined();
+  });
+
+  it('is in neither destination list, nor any guarded list', () => {
+    for (const role of MEMBER_ROLES) {
+      expect(destinationsFor(role).map((destination) => destination.path)).not.toContain('/godisnji/zatrazi');
+    }
+    expect(DESTINATION_ROUTES.map((destination) => destination.path)).not.toContain('/godisnji/zatrazi');
+    expect(ROLE_GUARDED_PATHS).not.toContain('/godisnji/zatrazi');
+    expect(LEVEL_GUARDED_ROUTES.map((guarded) => guarded.path)).not.toContain('/godisnji/zatrazi');
   });
 });
 

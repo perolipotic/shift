@@ -17,6 +17,7 @@ import {
   MY_LEAVE_RECORDS_KEY,
   ORGANIZATION_LEAVE_RECORDS_KEY,
 } from '@/features/leave/services/leave-list';
+import { MY_LEAVE_REQUESTS_KEY } from '@/features/leave/services/leave-requests';
 import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
 import { SESSION_SUBJECT_KEY } from '@/features/members/services/write';
 import { MEMBER_NAME_KEY } from '@/features/navigation/services/profile';
@@ -32,6 +33,7 @@ import {
   CONFLICT_RESOLUTION_HELD_DEPENDENTS,
   CONFLICT_RESOLUTION_WRITE_DEPENDENTS,
   HOUR_BAND_WRITE_DEPENDENTS,
+  LEAVE_REQUEST_WRITE_DEPENDENTS,
   LEAVE_WRITE_DEPENDENTS,
   MEMBERSHIP_WRITE_DEPENDENTS,
   MEMBER_SAVE_DEPENDENTS,
@@ -96,6 +98,8 @@ const CLASSIFIED: Readonly<Record<string, readonly QueryKey[]>> = {
   ORGANIZATION_CONFLICT_RESOLUTIONS_KEY: [ORGANIZATION_CONFLICT_RESOLUTIONS_KEY],
   // Story 7.16: the Odlučeno tab's names; stale from the first read, so no write names it.
   ACTING_ADMINS_KEY: [ACTING_ADMINS_KEY],
+  // Story 9.3: the viewer's own leave requests, which only a request write names.
+  MY_LEAVE_REQUESTS_KEY: [MY_LEAVE_REQUESTS_KEY],
 };
 
 /**
@@ -253,6 +257,14 @@ describe('the reads a team or membership write makes stale', () => {
       stale: [LEAVE_A, MY_LEAVE_RECORDS_KEY, ORGANIZATION_LEAVE_RECORDS_KEY, LEAVE_OVERVIEW_RECORDS_KEY, MY_CONFLICT_RESOLUTIONS_KEY, ORGANIZATION_CONFLICT_RESOLUTIONS_KEY],
     },
     {
+      write: 'a leave request sent or withdrawn (story 9.3)',
+      own: MY_LEAVE_REQUESTS_KEY,
+      dependents: LEAVE_REQUEST_WRITE_DEPENDENTS,
+      // The requests alone: a pending request derives nothing, so no leave,
+      // balance or resolution read is re-read.
+      stale: [MY_LEAVE_REQUESTS_KEY],
+    },
+    {
       write: 'a conflict resolution recorded (story 5.4b)',
       own: ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
       dependents: CONFLICT_RESOLUTION_WRITE_DEPENDENTS,
@@ -343,6 +355,21 @@ describe('the reads a team or membership write makes stale', () => {
     await refreshAfterWrite(client, own, dependents);
 
     expect(invalidated()).toEqual(stale);
+  });
+
+  it('re-reads a key named as its own and as a dependent once (story 9.3)', async () => {
+    const named: QueryKey[] = [];
+    const stub: InvalidatingClient = {
+      invalidateQueries: ({ queryKey }) => {
+        named.push(queryKey);
+
+        return Promise.resolve();
+      },
+    };
+
+    await refreshAfterWrite(stub, MY_LEAVE_REQUESTS_KEY, LEAVE_REQUEST_WRITE_DEPENDENTS);
+
+    expect(named).toEqual([MY_LEAVE_REQUESTS_KEY]);
   });
 
   it('reaches every roster through the one prefix', () => {

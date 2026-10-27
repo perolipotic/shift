@@ -7,6 +7,7 @@ import {
   myLeaveRecordsQueryOptions,
   type MyLeaveRecordsRpc,
 } from '@/features/leave/services/leave-list';
+import { MY_LEAVE_REQUESTS_KEY } from '@/features/leave/services/leave-requests';
 import { myLeaveOf, myLeaveRowsStateOf, MY_LEAVE_LOADING, MY_LEAVE_UNAVAILABLE } from '@/features/leave/services/my-leave';
 import { GODISNJI_MEMBER_SURFACE_KEYS } from '@/features/leave/services/surface-keys';
 import {
@@ -43,6 +44,11 @@ import { supabaseClient } from '@/lib/supabase/client';
  * `godisnjiSurfaceKeysOf`). Online, a read older than this session's network
  * is never drawn as fresh; offline, the whole cached snapshot is drawn under
  * the as-of note (`offline`), or the unavailable state is.
+ *
+ * STORY 9.3: the snapshot's fifth read, the viewer's own leave requests, is
+ * `useMyLeaveRequests`'s, mounted beside this hook on *Godišnji* and on the
+ * request form; the freshness here decides over it from the cache, so the
+ * figures and the requests are one snapshot, and the retry reads it again too.
  */
 export function useMyLeave() {
   const queryClient = useQueryClient();
@@ -86,7 +92,13 @@ export function useMyLeave() {
 
   /** Read again every read the screen stands on, from the unavailable alert's retry. */
   function retry(): void {
-    for (const queryKey of [MEMBERS_LIST_KEY, ORGANIZATION_SNAPSHOT_KEY, CALENDAR_KEY, MY_LEAVE_RECORDS_KEY]) {
+    for (const queryKey of [
+      MEMBERS_LIST_KEY,
+      ORGANIZATION_SNAPSHOT_KEY,
+      CALENDAR_KEY,
+      MY_LEAVE_RECORDS_KEY,
+      MY_LEAVE_REQUESTS_KEY,
+    ]) {
       void queryClient.invalidateQueries({ queryKey });
     }
   }

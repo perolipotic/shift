@@ -3,6 +3,7 @@ import type { QueryKey } from '@tanstack/react-query';
 import { CALENDAR_KEY } from '@/features/calendar/services/snapshot';
 import { readsOrganizationLeave } from '@/features/calendar/services/snapshot-skew';
 import { LEAVE_OVERVIEW_RECORDS_KEY, MY_LEAVE_RECORDS_KEY } from '@/features/leave/services/leave-list';
+import { MY_LEAVE_REQUESTS_KEY } from '@/features/leave/services/leave-requests';
 import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
 import type { MemberRole } from '@/features/navigation/utils/destinations';
 import { ORGANIZATION_SNAPSHOT_KEY } from '@/features/organization/services/snapshot';
@@ -22,6 +23,9 @@ const SHARED_KEYS: readonly QueryKey[] = [CALENDAR_KEY, MEMBERS_LIST_KEY, ORGANI
  * mounted for a member alone), so the own leave records are no admin key. The
  * overview's records are a read of *Godišnji*'s own, which no other surface
  * makes: they read offline only after the overview was read online once.
+ * STORY 9.3: a member's *Godišnji* and the request form also read the
+ * viewer's own requests, which *Danas* does not, so the member's keys are no
+ * longer a subset of *Danas*'s; both surfaces mount the requests read.
  * `surface-keys.test.ts` pins both and that every key is kept on the device.
  */
 export function godisnjiSurfaceKeysOf(role: MemberRole | null): readonly QueryKey[] {
@@ -29,8 +33,12 @@ export function godisnjiSurfaceKeysOf(role: MemberRole | null): readonly QueryKe
 
   return readsOrganizationLeave(role)
     ? [...SHARED_KEYS, LEAVE_OVERVIEW_RECORDS_KEY]
-    : [...SHARED_KEYS, MY_LEAVE_RECORDS_KEY];
+    : [...SHARED_KEYS, MY_LEAVE_RECORDS_KEY, MY_LEAVE_REQUESTS_KEY];
 }
 
-/** A member's own *Godišnji* keys, whatever the snapshot names: what `useMyLeave`, which draws only those figures, reads. */
+/**
+ * A member's own *Godišnji* keys, whatever the snapshot names: what
+ * `useMyLeave` (the figures) and `useMyLeaveRequests` (the requests) read
+ * together, on *Godišnji* and on the request form alike.
+ */
 export const GODISNJI_MEMBER_SURFACE_KEYS: readonly QueryKey[] = godisnjiSurfaceKeysOf('member_role');
