@@ -467,7 +467,7 @@ describe('the access-control migration', () => {
     ).toEqual([]);
   });
 
-  it('declares exactly the forty-four policies stories 1.3a, 1.4a, 1.4b, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a, 3.5a, 3.6a, 5.1b, 5.4a, 0025 and 0036 reviewed, and no forty-fifth', () => {
+  it('declares exactly the forty-seven policies stories 1.3a, 1.4a, 1.4b, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a, 3.5a, 3.6a, 5.1b, 5.4a, 9.2, 0025 and 0036 reviewed, and no forty-eighth', () => {
     // EXTENDED BY STORY 1.4a, exactly as this comment asked: `0004_organization
     // _settings.sql` adds `organizations_update_by_own_active_admin`, built by
     // copying `members_update_by_own_active_admin`, and its name is added here
@@ -516,6 +516,14 @@ describe('the access-control migration', () => {
       // functions (story 5.2a).
       'leave_records_insert_by_own_active_admin',
       'leave_records_select_own_organization',
+      // STORY 9.2, and THREE: a decision is read alone, and only
+      // `decide_leave_request` writes one; a request is inserted by any active
+      // account for its own member row (AD-10's self-owned row) and read as a
+      // leave record is. No update and no delete policy: the close is the two
+      // definers'.
+      'leave_request_decisions_select_own_organization',
+      'leave_requests_insert_own_by_active_member',
+      'leave_requests_select_own_organization',
       // STORY 1.6, and THREE rather than four: a status version is appended,
       // cancelled only while it is not yet in effect, and never changed, so
       // there is no update policy and that verb matches no row. A fourth name
@@ -2951,6 +2959,113 @@ describe('the access-control migration', () => {
     expect(statements, 'a migration grants anon something on leave_records').not.toMatch(
       /grant[^;]*on table public\.leave_records to[^;]*\banon\b/i,
     );
+  });
+
+  it('lets a member insert their own leave request, closes it through two definers alone, and refuses an overlap with leave by one named trigger (story 9.2)', () => {
+    const statements = migrationStatements();
+    const requests = columnsOf('leave_requests');
+    expect(requests.columns, 'leave_requests stores something beyond its reviewed columns').toEqual([
+      'organization_id',
+      'id',
+      'member_id',
+      'during',
+      'created_by',
+      'created_at',
+      'closed_by',
+      'closed_at',
+    ]);
+    expect(requests.body, 'two pending requests of one member may share a date').toMatch(
+      /exclude using gist \(member_id with =, during with &&\)\s+where \(closed_at is null\)/,
+    );
+    expect(requests.body, 'a close may be half-recorded').toMatch(/check \(\(closed_by is null\) = \(closed_at is null\)\)/);
+    expect(requests.body, 'the request stores a status, a cost or a balance').not.toMatch(/status|cost|balance|allowance/);
+    const decisions = columnsOf('leave_request_decisions');
+    expect(decisions.columns).toEqual([
+      'organization_id',
+      'request_id',
+      'outcome',
+      'leave_record_id',
+      'decided_by',
+      'decided_at',
+    ]);
+    expect(decisions.body, 'a request may be decided twice').toMatch(/request_id uuid primary key/);
+    expect(decisions.body).toMatch(/decided_by uuid not null default auth\.uid\(\)/);
+    expect(decisions.body).toMatch(/decided_at timestamptz not null default now\(\)/);
+
+    const insert = policyBody('leave_requests_insert_own_by_active_member');
+    expect(insert, 'the request policy does not pin the tenant').toMatch(/organization_id = nullif/);
+    expect(insert, 'the request policy does not re-read active state').toContain('access.is_active');
+    expect(insert, 'the member is not the caller\'s own row').toMatch(
+      /member\.id = leave_requests\.member_id\s+and member\.auth_user_id = \(select auth\.uid\(\)\)/,
+    );
+    expect(insert, 'the attribution is not pinned to the caller').toMatch(/created_by = \(select auth\.uid\(\)\)/);
+    for (const table of ['leave_requests', 'leave_request_decisions']) {
+      const policies = policyDeclarations(statements).filter((declaration) =>
+        new RegExp(`on public\\.${table}\\b`, 'i').test(declaration),
+      );
+      for (const verb of ['update', 'delete', 'all']) {
+        expect(
+          policies.filter((declaration) => new RegExp(`\\bfor ${verb}\\b`, 'i').test(declaration)),
+          `a policy opens ${verb} on ${table}`,
+        ).toEqual([]);
+      }
+      expect(statements).toMatch(
+        new RegExp(`revoke insert, update, delete, truncate, references, trigger on table public\\.${table}\\s+from anon, authenticated;`, 'i'),
+      );
+    }
+    expect(statements, 'a session may write a decision').not.toMatch(/grant[^;]*on table public\.leave_request_decisions\b/i);
+    expect(statements, 'the three facts are not the only insertable request columns').toMatch(
+      /grant insert \(organization_id, member_id, during\) on table public\.leave_requests\s+to authenticated;/i,
+    );
+
+    const migration = stripLineComments(readFileSync(join(supabaseRoot, 'migrations', '0040_leave_requests.sql'), 'utf8'));
+    const withdraw = /create function public\.withdraw_leave_request\(p_request_id uuid\)[\s\S]*?\$\$;/i.exec(migration)?.[0];
+    const decide = /create function public\.decide_leave_request\(p_request_id uuid, p_outcome text\)[\s\S]*?\$\$;/i.exec(migration)?.[0];
+    const trigger = /create function public\.refuse_leave_request_over_leave\(\)[\s\S]*?\$\$;/i.exec(migration)?.[0];
+    for (const [name, body] of [['withdraw_leave_request', withdraw], ['decide_leave_request', decide], ['refuse_leave_request_over_leave', trigger]] as const) {
+      expect(body, `${name} is not declared`).toBeDefined();
+      expect(body, name).toMatch(/security definer/i);
+      expect(body, name).toMatch(/set search_path = ''/);
+    }
+    for (const [name, body, refusal] of [
+      ['withdraw_leave_request', withdraw, 'LEAVE_REQUEST_WITHDRAWAL_REFUSED'],
+      ['decide_leave_request', decide, 'LEAVE_REQUEST_DECISION_REFUSED'],
+    ] as const) {
+      expect(body, `${name} does not lock before its first check`).toMatch(
+        /pg_catalog\.pg_advisory_xact_lock\([\s\S]*?'shift\.organization_writes:'/,
+      );
+      expect(body?.indexOf('pg_advisory_xact_lock')).toBeLessThan(body?.indexOf(refusal) ?? 0);
+      expect(body, name).toMatch(new RegExp(`errcode = 'insufficient_privilege',\\s+message = '${refusal}'`));
+      expect(body, name).toMatch(/errcode = 'no_data_found',\s+message = 'LEAVE_REQUEST_NOT_PENDING'/);
+      expect(body, `${name} hard-deletes`).not.toMatch(/\bdelete\b/i);
+      for (const role of ['public', 'anon', 'service_role']) {
+        expect(migration).toContain(`revoke execute on function public.${name}(${name === 'decide_leave_request' ? 'uuid, text' : 'uuid'}) from ${role};`);
+      }
+      expect(migration).toContain(`grant execute on function public.${name}(${name === 'decide_leave_request' ? 'uuid, text' : 'uuid'}) to authenticated;`);
+    }
+    expect(decide, 'a bad outcome is not 22023 by name').toMatch(
+      /errcode = 'invalid_parameter_value',\s+message = 'LEAVE_REQUEST_OUTCOME_UNKNOWN'/,
+    );
+    expect(decide, 'a stale approval is not refused by name').toMatch(
+      /when exclusion_violation then\s+raise exception using\s+errcode = 'exclusion_violation',\s+message = 'LEAVE_REQUEST_APPROVAL_OVERLAPS_LEAVE'/,
+    );
+    expect(migration, 'one leave record may back two decisions').toMatch(/unique \(organization_id, leave_record_id\)/);
+    expect(decide, 'the approval does not record leave by 0028\'s defaults').toMatch(
+      /insert into public\.leave_records \(organization_id, member_id, during\)\s+values \(claimed, requested_member, requested_during\)/,
+    );
+    expect(trigger, 'the overlap refusal is not 23P01 by name').toMatch(
+      /errcode = 'exclusion_violation',\s+message = 'LEAVE_REQUEST_OVERLAPS_LEAVE'/,
+    );
+    expect(trigger, 'the overlap trigger acts outside a request session').toMatch(
+      /if pg_catalog\.current_setting\('role'\) <> 'authenticated' then\s+return new;/,
+    );
+    for (const role of ['public', 'anon', 'authenticated', 'service_role']) {
+      expect(migration).toContain(`revoke execute on function public.refuse_leave_request_over_leave() from ${role};`);
+    }
+    expect(migration, 'story 9.2 changes a leave_records policy or grant').not.toMatch(
+      /(policy [a-z_]+ on public\.leave_records|on table public\.leave_records)\b/i,
+    );
+    expect(migration, 'story 9.2 puts a trigger on leave_records').not.toMatch(/trigger \w+[\s\S]{0,80}on public\.leave_records\b/i);
   });
 
   it('keeps a team name unique among active teams only, and never blank', () => {

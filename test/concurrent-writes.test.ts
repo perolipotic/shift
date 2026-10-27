@@ -1157,6 +1157,14 @@ describe('the remaining definers take the organization lock before their admin c
       sql: `select public.amend_roster_override($1::uuid, $1::uuid, 'x', null)`,
       message: 'ROSTER_OVERRIDE_AMEND_REFUSED',
     },
+    // 0040: the leave request's decision, behind the same lock. (The
+    // withdrawal admits any active account, so a demotion does not refuse it;
+    // its lock is proved by the race below.)
+    {
+      fn: 'decide_leave_request',
+      sql: `select public.decide_leave_request($1::uuid, 'approved')`,
+      message: 'LEAVE_REQUEST_DECISION_REFUSED',
+    },
   ] as const;
 
   for (const { fn, sql, message } of CALLS) {
@@ -1186,6 +1194,135 @@ describe('the remaining definers take the organization lock before their admin c
         expect(await second.outcome).toMatchObject({ ok: false, code: '42501', message });
       });
     });
+  }
+});
+
+describe('a decision and a withdrawal of one leave request wait for each other (0040)', () => {
+  /** A committed pending request of `member`, inserted as the owner. */
+  async function addRequest(client: Client, organization: string, member: Account): Promise<string> {
+    return insertedId(
+      client,
+      `insert into leave_requests (organization_id, member_id, during, created_by)
+       values ($1, $2, '[2046-03-02,2046-03-06]', $3)
+       returning id`,
+      [organization, member.id, member.authUserId],
+    );
+  }
+
+  const decide = (client: Client, request: string): Promise<{ rowCount: number | null }> =>
+    client.query(`select public.decide_leave_request($1::uuid, 'approved')`, [request]);
+  const withdraw = (client: Client, request: string): Promise<{ rowCount: number | null }> =>
+    client.query('select public.withdraw_leave_request($1::uuid)', [request]);
+
+  for (const first of ['decision', 'withdrawal'] as const) {
+    for (const t1Ends of ['commit', 'rollback'] as const) {
+      const second = first === 'decision' ? 'withdrawal' : 'decision';
+      it.skipIf(noDatabase)(
+        t1Ends === 'commit'
+          ? `refuses the ${second} that waited for a ${first} of the same request (P0002)`
+          : `lets the ${second} that waited for a rolled-back ${first} land`,
+        async () => {
+          const { organization, admin, member, request } = await fixture(async (client) => {
+            const organization = await addOrganization(client);
+            const admin = await addAccount(client, organization, 'admin');
+            const member = await addAccount(client, organization, 'member_role');
+            return { organization, admin, member, request: await addRequest(client, organization, member) };
+          });
+
+          await race(async (t1, t2, observer) => {
+            await t1.query('begin');
+            if (first === 'decision') {
+              await actAs(t1, admin, organization);
+              expect((await decide(t1, request)).rowCount).toBe(1);
+            } else {
+              await actAs(t1, member, organization);
+              expect((await withdraw(t1, request)).rowCount).toBe(1);
+            }
+
+            const pid = await backendPid(t2);
+            await t2.query('begin');
+            await actAs(t2, first === 'decision' ? member : admin, organization);
+            const waiting = pending(first === 'decision' ? withdraw(t2, request) : decide(t2, request));
+            await waitUntilBlocked(observer, pid, organization, waiting);
+
+            await t1.query(t1Ends);
+
+            if (t1Ends === 'commit') {
+              expect(await waiting.outcome).toMatchObject({
+                ok: false,
+                code: 'P0002',
+                message: 'LEAVE_REQUEST_NOT_PENDING',
+              });
+            } else {
+              expect(await waiting.outcome).toEqual({ ok: true, rowCount: 1 });
+            }
+          });
+        },
+      );
+    }
+  }
+});
+
+describe('a request waits for an approval of the same member\'s dates, and then sees its leave (0040)', () => {
+  for (const t1Ends of ['commit', 'rollback'] as const) {
+    it.skipIf(noDatabase)(
+      t1Ends === 'commit'
+        ? 'refuses a request that waited for an approval over its dates (23P01 LEAVE_REQUEST_OVERLAPS_LEAVE)'
+        : 'refuses a request that waited for a rolled-back approval by the pending exclusion instead, never by leave',
+      async () => {
+        const { organization, admin, member, request } = await fixture(async (client) => {
+          const organization = await addOrganization(client);
+          const admin = await addAccount(client, organization, 'admin');
+          const member = await addAccount(client, organization, 'member_role');
+          const request = await insertedId(
+            client,
+            `insert into leave_requests (organization_id, member_id, during, created_by)
+             values ($1, $2, '[2046-03-02,2046-03-06]', $3)
+             returning id`,
+            [organization, member.id, member.authUserId],
+          );
+          return { organization, admin, member, request };
+        });
+
+        await race(async (t1, t2, observer) => {
+          await t1.query('begin');
+          await actAs(t1, admin, organization);
+          expect(
+            (await t1.query(`select public.decide_leave_request($1::uuid, 'approved')`, [request])).rowCount,
+          ).toBe(1);
+
+          const pid = await backendPid(t2);
+          await t2.query('begin');
+          await actAs(t2, member, organization);
+          // Overlaps the approved range, and not the request it closes: only
+          // the new leave record can refuse it.
+          const waiting = pending(
+            t2.query(
+              `insert into leave_requests (organization_id, member_id, during)
+               values ($1, $2, '[2046-03-06,2046-03-10]')`,
+              [organization, member.id],
+            ),
+          );
+          await waitUntilBlocked(observer, pid, organization, waiting);
+
+          await t1.query(t1Ends);
+
+          if (t1Ends === 'commit') {
+            expect(await waiting.outcome).toMatchObject({
+              ok: false,
+              code: '23P01',
+              message: 'LEAVE_REQUEST_OVERLAPS_LEAVE',
+            });
+          } else {
+            // Rolled back, the first request is pending again; the new one
+            // shares 06.03 with it, so the exclusion answers instead.
+            const outcome = await waiting.outcome;
+            expect(outcome).toMatchObject({ ok: false, code: '23P01' });
+            expect(outcome.ok === false ? outcome.message : '').toContain('leave_requests_no_pending_overlap');
+          }
+        });
+      },
+    );
   }
 });
 
@@ -1482,11 +1619,16 @@ describe('every write verb 0023, 0035 and 0036 name waits on the lock', () => {
               'public.refuse_write_by_stale_admin()'::regprocedure,
               'public.refuse_archive_in_rotation()'::regprocedure,
               'public.refuse_override_on_archived()'::regprocedure,
-              'public.refuse_assignment_on_archived_type()'::regprocedure
+              'public.refuse_assignment_on_archived_type()'::regprocedure,
+              'public.refuse_leave_request_over_leave()'::regprocedure
             )
           order by 1, 2`,
       );
       expect(rows).toEqual([
+        // 0040: a request over live leave, ROW level and BEFORE, so it answers
+        // the member before the exclusion does; and the lock, as 0023's.
+        { table: 'leave_requests', trigger: 'leave_requests_refuse_over_leave', type: 1 | 2 | 4, columns: null },
+        { table: 'leave_requests', trigger: 'leave_requests_serialize_organization_writes', type: 2 | 4 | 8 | 16, columns: null },
         { table: 'member_status_versions', trigger: 'member_status_versions_keeps_an_admin', type: 1 | 4 | 8, columns: null },
         { table: 'member_status_versions', trigger: 'member_status_versions_refuse_truncate', type: 2 | 32, columns: null },
         { table: 'member_status_versions', trigger: 'member_status_versions_serialize_organization_writes', type: 2 | 4 | 8 | 16, columns: null },

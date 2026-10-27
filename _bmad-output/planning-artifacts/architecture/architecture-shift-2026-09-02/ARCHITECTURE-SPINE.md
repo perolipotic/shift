@@ -7,8 +7,8 @@ paradigm: 'Asserted-facts store with a pure derivation core — the database hol
 scope: 'The whole Shift platform: rotation engine, schedule projection, hours, leave, conflicts, tenancy, and the responsive web client.'
 status: final
 created: '2026-09-02'
-updated: '2026-10-19'
-binds: [CAP-1, CAP-2, CAP-3, CAP-4, CAP-5, CAP-6, CAP-7, CAP-8, CAP-9, CAP-10, CAP-11, CAP-12, CAP-13, CAP-14, CAP-15, CAP-16, CAP-17, CAP-18]
+updated: '2026-10-27'
+binds: [CAP-1, CAP-2, CAP-3, CAP-4, CAP-5, CAP-6, CAP-7, CAP-8, CAP-9, CAP-10, CAP-11, CAP-12, CAP-13, CAP-14, CAP-15, CAP-16, CAP-17, CAP-18, CAP-19]
 sources:
   - ../../../specs/spec-shift/SPEC.md
   - ../../../specs/spec-shift/engine-rules.md
@@ -70,16 +70,18 @@ The derivation lives in one pure package that cannot reach for data. The store e
 
 ### AD-3 — Illegal states are made unrepresentable, not validated
 
-- **Binds:** CAP-3, CAP-4, CAP-8, CAP-15; engine-rules R1.5, R1.6, R4.4; quality-requirements Q6
+- **Binds:** CAP-3, CAP-4, CAP-8, CAP-15, CAP-19; engine-rules R1.5, R1.6, R4.4, R9.4; quality-requirements Q6
 - **Prevents:** a guard existing only in client code, so a direct PostgREST call writes a state the engine cannot interpret.
 - **Rule:** Prefer schema shape to a check. Hour bands store a name and start time only, windows derived. A rotation offset is a foreign key to a step **of that pattern**, never an integer. Overlapping leave is refused by `EXCLUDE USING gist (member_id WITH =, during WITH &&)`, which requires the `btree_gist` extension. A validation that could have been a shape is a defect.
-- **Named exception:** Q6 — an organization may never be left with zero admins and the last admin's role may not be downgraded — is the one refusal that *cannot* be made unrepresentable, because it is a cross-row cardinality rule. It is enforced by a constraint trigger, and it is the only such trigger permitted. A second one is a signal that AD-9's no-server-tier decision needs revisiting, not that another trigger should be written.
+- **Named exception:** Q6 — an organization may never be left with zero admins and the last admin's role may not be downgraded — is the one refusal that *cannot* be made unrepresentable, because it is a cross-row cardinality rule. It is enforced by a constraint trigger, and it is the only constraint trigger and the only cardinality rule enforced by trigger that is permitted. A second one is a signal that AD-9's no-server-tier decision needs revisiting, not that another trigger should be written. The one other refusing trigger is the named, non-computing exception below (story 9.2); any further refusing trigger needs its own named exception here.
+- **Named exception (story 9.2, human decision 2026-10-27):** a leave request may not share a date with its member's live leave (R9.4). The rule crosses `leave_requests` and `leave_records`, and no exclusion constraint can span two tables, so the BEFORE INSERT row trigger `refuse_leave_request_over_leave()` (0040) refuses it with 23P01 and the message `LEAVE_REQUEST_OVERLAPS_LEAVE`. It computes nothing: it reads whether a live leave range of the same member overlaps the new one. It acts only for a request session whose caller is an active account inserting for its own member row, and leaves every other insert to the policy's 42501. The overlap between two pending requests of one member stays schema shape: `EXCLUDE USING gist (member_id WITH =, during WITH &&) WHERE (closed_at IS NULL)`. An admin's direct leave record is never refused because a pending request overlaps it; the approval then aborts on the leave exclusion.
 
 ### AD-4 — A conflict is derived; only its resolution is stored
 
-- **Binds:** CAP-16; engine-rules R6.1–R6.5; quality-requirements Q11
+- **Binds:** CAP-16, CAP-19; engine-rules R6.1–R6.5; quality-requirements Q11
 - **Prevents:** a missed recomputation path producing a silent false negative — the exact failure the product exists to prevent — and stale conflict rows surviving a rotation change as false positives.
 - **Rule:** No conflicts table. A collision is `leave ∩ working shift ∩ roster`, computed on read. A `conflict_resolutions` row keyed by `(organization_id, member_id, date, team_id)` records the kind, the shift type the key had when it was decided (`shift_type_id`, since 0038; null on older rows), the acting admin, and the timestamp — `team_id` is load-bearing, because a roster override can place a member on another team's shift on a date they already work, producing two distinct collisions the same day; replace-member and amend-leave also reference the override or leave change they caused. An unresolved conflict is a derived collision with no matching resolution. A replace-member resolution matches only while the override it references is live, in force and applied on that date (story 5.5d, decided in the browser, never by a roster computed in the database); removing that override ends the resolution in the same call (0033), so the key can be decided again. A resolution with a stored shift type matches only while the team's schedule has that same type on its date today (0038, decided in the browser's one resolution filter, `effectiveResolutionsOf`), so a decision left dormant when its key stopped colliding never re-applies to a different shift; a row with no stored type matches by key alone. A new decision on the key naming another type supersedes the stored one in the same insert (soft-removed, attributed to the new decision's author), comparing stored values only, so the database still derives no schedule.
+- **Amendment (story 9.2):** *Za odluku* is a union of three sets: derived collisions that have no resolution, pending leave requests, and (in Epic 12) pending swap requests. Requests are stored rows (`leave_requests`, 0040), and only a decision clears one: `decide_leave_request` writes one `leave_request_decisions` row per request, keyed by the request, and the member's `withdraw_leave_request` closes it with no decision. A request's status is derived and never stored twice: pending is `closed_at IS NULL`, approved or rejected is the decision's `outcome`, and a closed request with no decision is withdrawn. A pending request derives nothing: it is no leave record, so it raises no collision and charges no balance. An approval only adds leave, so it can add collisions and erase none, and AD-5's erasure diff does not apply to it. There is still no conflicts table.
 
 ### AD-5 — A configuration change diffs the collision set and surfaces what it would erase
 
@@ -116,6 +118,7 @@ The derivation lives in one pure package that cannot reach for data. The store e
 - **Binds:** CAP-1, CAP-4; quality-requirements Q1, Q2, Q3
 - **Prevents:** a deactivated or demoted account retaining write access until its token expires — which all-claims policies would allow, contradicting CAP-4's "blocks authentication."
 - **Rule:** `organization_id` rides in a JWT claim, safe only because one user belongs to exactly one organization. Role and active status are read on every policy evaluation through a `SECURITY DEFINER STABLE` helper. If multi-organization membership is ever added, this AD is void — see Deferred.
+- **Amendment (story 9.2):** a member may insert, and withdraw, rows they own: the first member-role domain writes. As shipped in 0040, any active account (member or admin) inserts a `leave_requests` row only for its own member row, under the self-owned row policy `leave_requests_insert_own_by_active_member`: `member_id` is matched against `members.auth_user_id = auth.uid()` in the claimed organization, the organization comes from the claim and the active status from `current_member_access()`, never from the request. The member withdraws only their own pending request, through `withdraw_leave_request`. A member writes no decision, no leave record and no colleague's request; only an active admin decides, through `decide_leave_request`. Epic 12 adds answering a swap addressed to the member.
 
 ### AD-11 — Attribution comes from column defaults the client cannot forge
 
@@ -299,6 +302,9 @@ erDiagram
     MEMBERS ||--o{ ROSTER_OVERRIDES : excepted
     MEMBERS ||--o{ LEAVE_RECORDS : takes
     MEMBERS ||--o{ CONFLICT_RESOLUTIONS : decided
+    MEMBERS ||--o{ LEAVE_REQUESTS : "asks for"
+    LEAVE_REQUESTS ||--o| LEAVE_REQUEST_DECISIONS : "decided once"
+    LEAVE_REQUEST_DECISIONS |o--o| LEAVE_RECORDS : "approval creates"
 ```
 
 No `schedules`, `shifts`, `shift_members`, or `conflicts` table exists — each is derived (AD-1, AD-4).
@@ -357,6 +363,7 @@ shift/
 | CAP-16 Conflicts resolved explicitly | `conflict_resolutions`, `domain/collisions` | AD-4, AD-5, AD-11 |
 | CAP-17 Role-appropriate landing surfaces | dashboard surfaces | AD-13 |
 | CAP-18 Installable, reads offline | the static build's manifest and service worker; offline reads come from the persisted query cache in IndexedDB, never the worker, under AD-13's offline amendment (story 8.2: *Danas* and *Kalendar*; 8.2b: *Sati*, *Godišnji*, *Ljudi* and `/smjene/$id`, and the role guard answers offline from the role cached on the device — with none it fails closed at once, never pending; 8.2c: *Raspored*, the resolution page and the member page `/ljudi/$id`; 8.2d: *Organizacija*, *Satni pojasi*, *Postavke rotacije* and *Ljudi/smjene*, each with its `$id` editor — every surface now reads offline; 8.2e: no surface offers a read retry offline; 8.3a: offline, every write control on the work surfaces, the sign-in and the set-password submit — the erasure retries included — is `aria-disabled` behind one write gate (`lib/offline/use-write-gate.ts`) with a stated reason, and each write function guards on the same clock; nothing is sent, queued or checked, and *Odjava* falls back to a local sign-out that always deletes the device copy; 8.3b: the settings surfaces' writes — *Organizacija*, *Satni pojasi*, *Postavke rotacije* with the rotation builder and the override review, and *Ljudi/smjene* — behind the same gate, their `ErasureDialog`s included, so every write control in the app is gated) | AD-14, AD-13 |
+| CAP-19 Leave requests | `leave_requests`, `leave_request_decisions`, `withdraw_leave_request`, `decide_leave_request` (0040, story 9.2); the member's form, the decision screen and the merged *Za odluku* are stories 9.3–9.5 | AD-3, AD-4, AD-10, AD-11 |
 
 ## Deferred
 
