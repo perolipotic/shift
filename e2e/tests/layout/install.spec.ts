@@ -13,6 +13,9 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
 
 const IPHONE_UA =
   'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/130.0 Mobile/15E148 Safari/604.1';
+/** Instagram's in-app browser: WebKit on an iPhone, with no Add to Home Screen. */
+const IPHONE_INSTAGRAM_UA =
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Instagram 340.0.2.23.88';
 /** iPadOS asks for the desktop site: desktop Safari's user agent. */
 const IPAD_UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15';
@@ -22,6 +25,7 @@ const PHONE = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch:
 interface InstallProbe {
   __installPrompts: number;
   __installPrevented: boolean | null;
+  __answerInstall?: () => void;
 }
 
 /**
@@ -44,6 +48,26 @@ function dispatchInstallPrompt(): boolean {
   window.dispatchEvent(event);
   probe.__installPrevented = event.defaultPrevented;
   return event.defaultPrevented;
+}
+
+/**
+ * As {@link dispatchInstallPrompt}, but the member has not answered yet: the
+ * choice settles only when the test calls `window.__answerInstall()`.
+ */
+function dispatchUnansweredInstallPrompt(): void {
+  const probe = window as unknown as InstallProbe;
+  probe.__installPrompts = 0;
+  const event = new Event('beforeinstallprompt', { cancelable: true });
+  Object.assign(event, {
+    prompt: () => {
+      probe.__installPrompts += 1;
+      return Promise.resolve();
+    },
+    userChoice: new Promise((resolve) => {
+      probe.__answerInstall = () => resolve({ outcome: 'dismissed', platform: 'web' });
+    }),
+  });
+  window.dispatchEvent(event);
 }
 
 async function offerInstallPrompt(page: Page): Promise<boolean> {
@@ -80,6 +104,30 @@ test.describe('on a phone', () => {
     await expect(install).toHaveCount(0);
     await expect(loginPage.moreSheet).toBeVisible();
     await expect(loginPage.moreSheet.getByRole('button', { name: hr.shell.signOut, exact: true })).toBeFocused();
+  });
+
+  test('while its prompt shows the row is aria-disabled, and a second press opens nothing', async ({
+    page,
+    loginPage,
+  }) => {
+    await page.goto('/danas');
+    await expect(loginPage.heading(hr.nav.danas)).toBeVisible();
+    await page.evaluate(dispatchUnansweredInstallPrompt);
+
+    await loginPage.moreButton.click();
+    const install = loginPage.moreSheet.getByRole('button', { name: hr.shell.install, exact: true });
+    await expect(install).not.toHaveAttribute('aria-disabled');
+
+    await install.click();
+    await expect.poll(() => promptCount(page)).toBe(1);
+    await expect(install).toHaveAttribute('aria-disabled', 'true');
+    // Playwright waits for an `aria-disabled` control to be enabled; the
+    // member's press is not refused, it does nothing.
+    await install.click({ force: true });
+    expect(await promptCount(page)).toBe(1);
+
+    await page.evaluate(() => (window as unknown as InstallProbe).__answerInstall?.());
+    await expect(install).toHaveCount(0);
   });
 
   test('a prompt the browser offers before the app renders is held all the same', async ({ page, loginPage }) => {
@@ -195,6 +243,19 @@ test.describe('on an iPhone, in any browser', () => {
   });
 });
 
+test.describe('in an iPhone app\'s in-app browser', () => {
+  test.use({ storageState: MEMBER_STATE, ...PHONE, userAgent: IPHONE_INSTAGRAM_UA });
+
+  test('Više has no Instaliraj: the in-app browser cannot add to the Home Screen', async ({ page, loginPage }) => {
+    await page.goto('/danas');
+    await expect(loginPage.heading(hr.nav.danas)).toBeVisible();
+
+    await loginPage.moreButton.click();
+    await expect(loginPage.moreSheet.getByRole('button', { name: hr.shell.signOut, exact: true })).toBeVisible();
+    await expect(loginPage.installButton).toHaveCount(0);
+  });
+});
+
 test.describe('on the desktop', () => {
   test.use({ storageState: ADMIN_STATE });
 
@@ -256,6 +317,13 @@ test.describe('on an iPad (iPadOS, desktop site)', () => {
       };
     });
     expect(fit).toEqual({ inMenu: true, onScreen: true, overflow: 0 });
+
+    // The steps close with the menu: reopened, they are closed.
+    await page.keyboard.press('Escape');
+    await expect(loginPage.profileMenu).toHaveCount(0);
+    await loginPage.profileButton(fixture.admin.name).click();
+    await expect(install).toHaveAttribute('aria-expanded', 'false');
+    await expect(steps).toBeHidden();
   });
 });
 

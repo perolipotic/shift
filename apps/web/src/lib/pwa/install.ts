@@ -12,8 +12,9 @@
  *   1a).
  * - `prompt`: the browser offered an install prompt (`beforeinstallprompt`),
  *   held here. A press opens it; nothing opens it without one.
- * - `ios`: any browser on iOS or iPadOS, which offers no prompt. A press
- *   reveals the Share → Add to Home Screen steps inline.
+ * - `ios`: a browser on iOS or iPadOS, which offers no prompt. A press
+ *   reveals the Share → Add to Home Screen steps inline. An app's own
+ *   in-app browser is not one: it has no Add to Home Screen.
  * - `none`: nothing the row could do (Firefox desktop, Chrome before the
  *   event). The row is not drawn.
  */
@@ -39,13 +40,22 @@ export interface InstallPromptEvent {
 }
 
 /**
- * iOS and iPadOS, in every browser (human decision 2026-10-22, 3a): every
- * iOS browser is WebKit and, since iOS 16.4, adds to the Home Screen. An
+ * Safari (`Version/… Safari/`), and Chrome, Firefox and Edge for iOS by
+ * their own markers. An in-app browser (Instagram, Facebook, Messenger, the
+ * Google app) carries none of them.
+ */
+const IOS_BROWSER = /\b(?:CriOS|FxiOS|EdgiOS)\/|\bVersion\/[\d.]+.*\bSafari\//;
+
+/**
+ * iOS and iPadOS, in a browser (human decision 2026-10-22, 3a): every iOS
+ * browser is WebKit and, since iOS 16.4, adds to the Home Screen. An app's
+ * in-app browser cannot, so it gets no steps (code review 2026-10-26). An
  * iPad asks for the desktop site and reports `MacIntel`; its touch points
  * tell it from a Mac.
  */
 export function isIos(traits: DeviceTraits): boolean {
-  return /iPad|iPhone|iPod/.test(traits.userAgent) || (traits.platform === 'MacIntel' && traits.maxTouchPoints > 1);
+  const device = /iPad|iPhone|iPod/.test(traits.userAgent) || (traits.platform === 'MacIntel' && traits.maxTouchPoints > 1);
+  return device && IOS_BROWSER.test(traits.userAgent);
 }
 
 /** The row's kind. Installed wins over everything; a held prompt over iOS. */
@@ -67,9 +77,10 @@ export interface InstallSources {
   onDisplayModeChange?(listener: () => void): () => void;
   /**
    * Resolves after `ms`: the bound on a member's choice that never settles.
-   * Defaults to `setTimeout`.
+   * An abort of `signal` cancels it once the choice settles first. Defaults
+   * to `setTimeout`.
    */
-  wait?(ms: number): Promise<void>;
+  wait?(ms: number, signal: AbortSignal): Promise<void>;
 }
 
 /**
@@ -120,9 +131,10 @@ function promptable(event: unknown): event is InstallPromptEvent {
   return typeof candidate.prompt === 'function' && typeof choice?.then === 'function';
 }
 
-function defaultWait(ms: number): Promise<void> {
+function defaultWait(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
-    setTimeout(resolve, ms);
+    const timer = setTimeout(resolve, ms);
+    signal.addEventListener('abort', () => clearTimeout(timer), { once: true });
   });
 }
 
@@ -132,15 +144,19 @@ export function installStore(sources: InstallSources): InstallStore {
   // The event whose prompt is showing, so a settling prompt never clears a
   // newer one's state.
   let showing: InstallPromptEvent | null = null;
-  // Sticky across a stop and a start (a hot reload): once installed, always.
-  let installed = false;
+  // `appinstalled` is sticky across a stop and a start (a hot reload): once
+  // installed, always. The display mode is read fresh on every change: a
+  // browser tab in fullscreen (F11, a video) matches `fullscreen` too, and
+  // must get its row back when it leaves.
+  let appInstalled = false;
+  let displayInstalled = false;
   let ios = false;
   let current: InstallSnapshot = INSTALL_NOTHING;
   let stop: (() => void) | null = null;
   const listeners = new Set<() => void>();
 
   function update(): void {
-    const kind = installKindOf({ installed, held: held !== null, ios });
+    const kind = installKindOf({ installed: appInstalled || displayInstalled, held: held !== null, ios });
     const prompting = kind === 'prompt' && showing !== null && showing === held;
     if (kind === current.kind && prompting === current.prompting) return;
     current = { kind, prompting };
@@ -167,13 +183,19 @@ export function installStore(sources: InstallSources): InstallStore {
       if (event === null || showing === event) return;
       showing = event;
       update();
+      // The bound covers the prompt opening as well as the choice, and is
+      // cancelled once either settles first.
+      const bound = new AbortController();
       try {
-        await event.prompt();
-        await Promise.race([event.userChoice, wait(PROMPT_CHOICE_TIMEOUT_MS)]);
+        await Promise.race([
+          event.prompt().then(() => event.userChoice),
+          wait(PROMPT_CHOICE_TIMEOUT_MS, bound.signal),
+        ]);
       } catch {
         // A prompt that cannot open (shown already, or refused by the
         // browser) is as spent as one answered.
       } finally {
+        bound.abort();
         settle(event);
       }
     },
@@ -187,8 +209,10 @@ export function installStore(sources: InstallSources): InstallStore {
 
       try {
         ios = isIos(sources.traits());
-        installed = installed || sources.standalone();
+        displayInstalled = sources.standalone();
 
+        // One push per source: a later source that throws must not lose an
+        // earlier one's unsubscribe.
         stops.push(
           sources.onBeforeInstallPrompt((event) => {
             if (!promptable(event)) return;
@@ -202,8 +226,10 @@ export function installStore(sources: InstallSources): InstallStore {
             showing = null;
             update();
           }),
+        );
+        stops.push(
           sources.onAppInstalled(() => {
-            installed = true;
+            appInstalled = true;
             held = null;
             showing = null;
             update();
@@ -212,7 +238,7 @@ export function installStore(sources: InstallSources): InstallStore {
         if (sources.onDisplayModeChange !== undefined) {
           stops.push(
             sources.onDisplayModeChange(() => {
-              installed = installed || sources.standalone();
+              displayInstalled = sources.standalone();
               update();
             }),
           );
@@ -221,6 +247,7 @@ export function installStore(sources: InstallSources): InstallStore {
         // A failure only disables the row.
         stopAll();
         ios = false;
+        displayInstalled = false;
         held = null;
         showing = null;
         current = INSTALL_NOTHING;

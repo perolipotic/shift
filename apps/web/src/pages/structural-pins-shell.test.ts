@@ -284,6 +284,15 @@ describe('the chrome the layout wraps every destination in', () => {
     // draws itself only where it can do something.
     expect(profile, 'the profile menu holds no Instaliraj').toContain('{renderInstall(PLACE.sidebar)}');
     expect(sheet, 'the Više sheet holds no Instaliraj').toContain('{renderInstall(PLACE.sheet)}');
+    expect(chrome, 'the Više sheet is never rendered').toContain('{renderMore()}');
+    // RIGHT BEFORE Odjava in both: when the focused row goes, focus moves to
+    // its next sibling, which must be Odjava.
+    expect(profile, 'Instaliraj is not right before Odjava in the profile menu').toMatch(
+      /\{renderInstall\(PLACE\.sidebar\)\}\s*\{renderSignOut\(\)\}/,
+    );
+    expect(sheet, 'Instaliraj is not right before Odjava in the Više sheet').toMatch(
+      /\{renderInstall\(PLACE\.sheet\)\}\s*\{renderSignOut\(\)\}/,
+    );
     expect(phone, 'the phone bar carries Instaliraj').not.toContain('renderInstall(');
     // Its iOS steps are a disclosure that resolves, inline, never a dialog.
     const install = componentFunction(chrome, 'renderInstall');

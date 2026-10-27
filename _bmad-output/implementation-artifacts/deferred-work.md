@@ -1005,3 +1005,9 @@
   - the `ErasureDialog` callers on these surfaces — the rotation save's and cancel's (`rotation-notices.tsx`) and the override review's (`override-review.tsx`) — pass `gate={null}` today: `gate` is required since the 8.3a review, and each passes the surface's `useWriteGate()` in 8.3b;
   - Ljudi/smjene: add, rename and archive.
   evidence: Human decision 2026-10-22 (1a), which split 8.3. The 8.3a spec's Epic AC Deviations narrow AC1. Site list from the 8.3 investigation.
+
+## Deferred from: code review of spec-8-4-install-from-vise.md (2026-10-26)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-4-install-from-vise.md`
+  summary: The iOS install steps, *Dodirni Dijeli, pa Dodaj na početni zaslon.* (`hr.json` `shell.installIosSteps`), were never checked against the labels Croatian iOS shows. Is the Share action *Dijeli* or *Podijeli*, and is the item *Dodaj na početni zaslon*? Check by hand on an iPhone set to Croatian, in Safari and in Chrome for iOS, and fix the copy if it differs.
+  evidence: Code review 2026-10-26 (Blind Hunter). Human decision: defer to a manual device check.

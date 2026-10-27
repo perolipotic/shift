@@ -33,6 +33,19 @@ const IPAD: DeviceTraits = {
   maxTouchPoints: 5,
 };
 const MAC: DeviceTraits = { ...IPAD, maxTouchPoints: 0 };
+// In-app browsers: WebKit on an iPhone, but no Add to Home Screen.
+const IPHONE_INSTAGRAM: DeviceTraits = {
+  ...IPHONE_SAFARI,
+  userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Instagram 340.0.2.23.88',
+};
+const IPHONE_FACEBOOK: DeviceTraits = {
+  ...IPHONE_SAFARI,
+  userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 [FBAN/FBIOS;FBAV/480.0.0.40.108]',
+};
+const IPHONE_GOOGLE_APP: DeviceTraits = {
+  ...IPHONE_SAFARI,
+  userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) GSA/340.0.689 Mobile/15E148 Safari/604.1',
+};
 const FIREFOX_DESKTOP: DeviceTraits = {
   userAgent: 'Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0',
   platform: 'Linux x86_64',
@@ -40,7 +53,7 @@ const FIREFOX_DESKTOP: DeviceTraits = {
 };
 
 function fakeSources(traits: DeviceTraits, standalone = false) {
-  const waits: { ms: number; resolve: () => void }[] = [];
+  const waits: { ms: number; signal: AbortSignal; resolve: () => void }[] = [];
   const prompts = new Set<(event: InstallPromptEvent) => void>();
   const installs = new Set<() => void>();
   const modes = new Set<() => void>();
@@ -61,9 +74,9 @@ function fakeSources(traits: DeviceTraits, standalone = false) {
       modes.add(listener);
       return () => modes.delete(listener);
     },
-    wait: (ms) =>
+    wait: (ms, signal) =>
       new Promise<void>((resolve) => {
-        waits.push({ ms, resolve });
+        waits.push({ ms, signal, resolve });
       }),
   };
 
@@ -79,12 +92,19 @@ function fakeSources(traits: DeviceTraits, standalone = false) {
       isStandalone = true;
       for (const listener of modes) listener();
     },
+    /** A browser tab leaving fullscreen (F11, a video): the mode reads browser again. */
+    leaveStandalone() {
+      isStandalone = false;
+      for (const listener of modes) listener();
+    },
     listenerCount: () => prompts.size + installs.size + modes.size,
     /** Lets every pending choice bound run out. */
     timeOut() {
       for (const pending of waits.splice(0)) pending.resolve();
     },
     waitedFor: () => waits.map((pending) => pending.ms),
+    /** Whether every bound started so far was cancelled. */
+    boundsCancelled: () => waits.every((pending) => pending.signal.aborted),
   };
 }
 
@@ -102,10 +122,13 @@ function fakeEvent(outcome: 'accepted' | 'dismissed' = 'accepted') {
   return event;
 }
 
-describe('iOS is every iOS browser, iPadOS included', () => {
+describe('iOS is every iOS browser, iPadOS included, and no in-app browser', () => {
   it.each([
     ['iPhone Safari', IPHONE_SAFARI, true],
     ['iPhone Chrome', IPHONE_CHROME, true],
+    ['Instagram\'s in-app browser', IPHONE_INSTAGRAM, false],
+    ['Facebook\'s in-app browser', IPHONE_FACEBOOK, false],
+    ['the Google app', IPHONE_GOOGLE_APP, false],
     ['iPadOS (desktop site)', IPAD, true],
     ['a Mac', MAC, false],
     ['Desktop Chrome', DESKTOP_CHROME, false],
@@ -245,6 +268,19 @@ describe('the store', () => {
     expect(store.snapshot().kind).toBe('installed');
   });
 
+  it('a display mode is read fresh: a tab leaving fullscreen gets its row back, appinstalled stays', () => {
+    const device = fakeSources(IPHONE_SAFARI);
+    const store = installStore(device.sources);
+    store.start();
+    device.becomeStandalone();
+    device.leaveStandalone();
+    expect(store.snapshot().kind).toBe('ios');
+
+    device.fireAppInstalled();
+    device.leaveStandalone();
+    expect(store.snapshot().kind).toBe('installed');
+  });
+
   it('starts once, and its stop removes every listener', () => {
     const device = fakeSources(DESKTOP_CHROME);
     const store = installStore(device.sources);
@@ -313,6 +349,40 @@ describe('a prompt that is showing', () => {
     expect(store.snapshot()).toEqual(INSTALL_NOTHING);
   });
 
+  it('a choice that settles first cancels the bound, so no timer outlives it', async () => {
+    const device = fakeSources(DESKTOP_CHROME);
+    const store = installStore(device.sources);
+    store.start();
+    const event = fakeEvent();
+    device.fireBeforeInstallPrompt(event);
+
+    const pressed = store.prompt();
+    await flush();
+    expect(device.boundsCancelled()).toBe(false);
+
+    event.answer();
+    await pressed;
+    expect(device.boundsCancelled()).toBe(true);
+  });
+
+  it('a prompt that never opens is bounded as well, so the row is never dead', async () => {
+    const device = fakeSources(DESKTOP_CHROME);
+    const store = installStore(device.sources);
+    store.start();
+    const event = fakeEvent();
+    event.prompt.mockImplementation(() => new Promise<void>(() => {}));
+    device.fireBeforeInstallPrompt(event);
+
+    const pressed = store.prompt();
+    await flush();
+    expect(device.waitedFor()).toEqual([PROMPT_CHOICE_TIMEOUT_MS]);
+    expect(store.snapshot().prompting).toBe(true);
+
+    device.timeOut();
+    await pressed;
+    expect(store.snapshot()).toEqual(INSTALL_NOTHING);
+  });
+
   it('a new event replaces the held one and frees the row; the old prompt settling leaves it alone', async () => {
     const device = fakeSources(DESKTOP_CHROME);
     const store = installStore(device.sources);
@@ -356,7 +426,7 @@ describe('the event and the sources are guarded', () => {
     expect(event.preventDefault).not.toHaveBeenCalled();
   });
 
-  it.each(['standalone', 'traits', 'onBeforeInstallPrompt', 'onDisplayModeChange'] as const)(
+  it.each(['standalone', 'traits', 'onBeforeInstallPrompt', 'onAppInstalled', 'onDisplayModeChange'] as const)(
     'a %s source that throws never throws from start, and only disables the row',
     (failing) => {
       const device = fakeSources(IPHONE_SAFARI);

@@ -106,10 +106,28 @@ The row never opens a modal on first visit.
 - Given an installable browser, when the member opens Više, then *Instaliraj* shows and opens the browser's prompt. Given iOS, it reveals the steps. Given installed, it is absent.
 - Given `pnpm test`, `lint` and `typecheck`, and the e2e suites for layout and offline, when they run, then all pass.
 
+### Review Findings
+
+Code review 2026-10-26 (second, independent pass). The human took the recommended options: D1 narrowed, D2 deferred, every patch applied.
+
+- [x] [Review][Decision] iOS in-app browsers get steps they cannot follow — RESOLVED as a patch: `isIos` now also needs a real iOS browser in the UA (Safari's `Version/… Safari/`, or `CriOS`/`FxiOS`/`EdgiOS`). Instagram, Facebook, Messenger and the Google app get no row. SFSafariViewController reads as Safari and cannot be told apart.
+- [x] [Review][Defer] The iOS step copy is not checked against the Croatian iOS UI [apps/web/src/lib/i18n/locales/hr.json:1352] — deferred: check *Dijeli* / *Podijeli* and *Dodaj na početni zaslon* by hand on a device set to Croatian.
+- [x] [Review][Patch] The `{renderMore()}` pin was deleted, not kept beside the new pins [apps/web/src/pages/structural-pins-shell.test.ts:283]
+- [x] [Review][Patch] `(display-mode: fullscreen)` was read as installed and kept for good, so F11 or a fullscreen video hid *Instaliraj* until a reload. The display mode is now read fresh; only `appinstalled` is sticky. [apps/web/src/lib/pwa/install.ts]
+- [x] [Review][Patch] The two-minute `userChoice` timer was never cleared. The bound now takes an `AbortSignal` and is cancelled once the choice settles. [apps/web/src/lib/pwa/install.ts]
+- [x] [Review][Patch] The bound raced only `userChoice`. It now covers `prompt()` too. [apps/web/src/lib/pwa/install.ts]
+- [x] [Review][Patch] No test saw the row `aria-disabled` while its prompt shows. Added an e2e case with an unanswered `userChoice`. [e2e/tests/layout/install.spec.ts]
+- [x] [Review][Patch] No test covered the other installed display modes or the `addListener` fallback. The page sources moved to `lib/pwa/install-sources.ts` (they read the page lazily), and `install-sources.test.ts` executes them. [apps/web/src/lib/pwa/install-sources.ts]
+- [x] [Review][Patch] No test checked that the iOS steps close with the profile menu. The iPad e2e case now closes and reopens the menu. [e2e/tests/layout/install.spec.ts]
+- [x] [Review][Patch] Nothing pinned *Instaliraj* right before Odjava. Both places are now pinned. [apps/web/src/pages/structural-pins-shell.test.ts]
+- [x] [Review][Patch] The "never throws from start" test did not cover a throwing `onAppInstalled`. It does now, and the test caught a real leak: `onBeforeInstallPrompt`'s unsubscribe was lost when `onAppInstalled` threw in the same `push`. Each source is now pushed on its own. [apps/web/src/lib/pwa/install.ts]
+
 ## Spec Change Log
 
 - 2026-10-23, review loop 1 (frozen additions approved by the human, 1a and 2a): two Epic AC Deviations lines record the iOS-in-browser-tab limit and the app-wide held prompt. KEEP all implemented code. The review patches follow.
 - 2026-10-23, review loop 1 patches: the store bounds a `userChoice` that never settles (two minutes), lets a new event replace the held one and free the row, keeps `installed` across a stop and a start, drops the held event on stop, holds only an event with a callable `prompt` and a thenable `userChoice`, counts `fullscreen`, `minimal-ui` and `window-controls-overlay` as installed, falls back to `addListener` on an old `MediaQueryList`, and never throws from `start`. The chrome keeps the iOS steps open per place and closes them with their place or a kind change, makes the row `aria-disabled` while its prompt shows, moves focus to Odjava when the focused row goes, and draws the steps in the measured `sidebar-foreground` at 70%. The row takes its place (`renderInstall(PLACE.sheet)` / `renderInstall(PLACE.sidebar)`), so each place has its own steps id. The e2e suite adds an early event, `appinstalled` on Chromium, `navigator.standalone`, iPadOS and the collapsed-rail wrap.
+
+- 2026-10-26, code review 2 (human decision: D1 narrowed, D2 deferred): the `ios` kind now needs a real iOS browser, so an app's in-app browser gets no row (this narrows decision 3a, which is unchanged in the frozen text). The display mode is read fresh, so only `appinstalled` is sticky. The choice bound covers `prompt()` and is cancelled when the choice settles. Each source's unsubscribe is pushed on its own. The page sources moved to `lib/pwa/install-sources.ts` and read the page lazily. New tests: in-app browsers, a tab leaving fullscreen, the bound cancelled, a `prompt()` that never settles, a throwing `onAppInstalled`, the page sources, `aria-disabled` while prompting (e2e), the profile menu closing the steps (e2e), and an in-app browser (e2e). The `{renderMore()}` pin is back, and *Instaliraj* is pinned right before Odjava. EXPERIENCE.md and UX-DR45 are updated.
 
 ## Verification
 
