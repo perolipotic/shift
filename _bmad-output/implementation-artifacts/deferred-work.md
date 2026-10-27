@@ -1020,3 +1020,15 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-9-1-raspored-becomes-za-odluku.md`
   summary: The *Za odluku* nav entry still uses the `CalendarRange` icon (`apps/web/src/features/navigation/utils/icons.ts`), which reads as "schedule"; consider an inbox/decision icon.
   evidence: Raised by the 9.1 review; the rename's point is that the queue is not the schedule, but an icon change was outside 9.1's copy/routes scope.
+
+## Deferred from: code review of spec-9-2-the-leave-request-record.md (2026-10-27)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-9-2-the-leave-request-record.md`
+  summary: An approved request keeps reading "approved" after its leave record is removed or amended (`remove_leave_record`/`amend_leave_record`), and its `leave_record_id` then points at a removed row. 9.3 and 9.5 must decide what the member and *Odlučeno* show in that case.
+  evidence: Raised by the 9.2 review (Blind Hunter, Edge Case Hunter). 9.2 derives status from `closed_at` and the decision row alone, and has no reader.
+- source_spec: `_bmad-output/implementation-artifacts/spec-9-2-the-leave-request-record.md`
+  summary: A deactivated member's pending requests stay pending: the member can no longer withdraw them, and `decide_leave_request` still approves them into leave for an inactive member. A request may also run past a scheduled deactivation date. Decide before 9.4 whether deactivation closes pending requests or the approval refuses them.
+  evidence: Raised by the 9.2 review (Edge Case Hunter). No rule in engine-rules R9 covers it.
+- source_spec: `_bmad-output/implementation-artifacts/spec-9-2-the-leave-request-record.md`
+  summary: Requests for past dates are accepted with no rule. 9.3's form should decide whether a member may request leave that has already started or passed.
+  evidence: Raised by the 9.2 review (Edge Case Hunter). Admin-entered leave allows past dates, and R9 says nothing about requests.

@@ -697,7 +697,8 @@ describe('every organization table carries row level security, and only its revi
               'team_membership_versions', 'hour_bands', 'shift_types',
               'shift_type_versions', 'rotation_patterns', 'rotation_steps',
               'rotation_assignments', 'shift_type_overrides', 'roster_overrides',
-              'leave_records', 'conflict_resolutions'
+              'leave_records', 'conflict_resolutions', 'leave_requests',
+              'leave_request_decisions'
             )
           order by relname`,
       );
@@ -709,11 +710,14 @@ describe('every organization table carries row level security, and only its revi
       // types and their versioned times, and STORY 2.3a the rotation: its
       // patterns, their steps and the versioned team assignments. STORY 3.5a
       // adds the shift-type overrides, STORY 3.6a the roster overrides,
-      // STORY 5.1b the leave records, and STORY 5.4a the conflict resolutions.
+      // STORY 5.1b the leave records, STORY 5.4a the conflict resolutions, and
+      // STORY 9.2 the leave requests and their decisions.
       expect(rows.map((row) => row.relname)).toEqual([
         'conflict_resolutions',
         'hour_bands',
         'leave_records',
+        'leave_request_decisions',
+        'leave_requests',
         'member_status_versions',
         'members',
         'organizations',
@@ -1490,6 +1494,117 @@ describe('every organization table carries row level security, and only its revi
     }
   });
 
+  it.skipIf(noDatabase)('holds no privilege on leave_requests but read and a three-column insert, and none but read on its decisions (story 9.2)', async () => {
+    // As 5.1b's: `authenticated` reads (narrowed by the policy to an active
+    // admin's organization or a member's own rows) and inserts the three
+    // facts of a request; no session names its attribution or its close,
+    // updates or deletes one, or writes a decision at all. `anon` holds nothing.
+    const client = await connect();
+    try {
+      const requests = await heldPrivileges(client, 'leave_requests', [
+        'organization_id',
+        'id',
+        'member_id',
+        'during',
+        'created_by',
+        'created_at',
+        'closed_by',
+        'closed_at',
+      ]);
+      expect(requests.tables).toEqual(['authenticated:SELECT']);
+      expect(requests.columns, 'the writable leave request columns changed, or anon holds one').toEqual([
+        'authenticated:INSERT:during',
+        'authenticated:INSERT:member_id',
+        'authenticated:INSERT:organization_id',
+      ]);
+      const decisions = await heldPrivileges(client, 'leave_request_decisions', [
+        'organization_id',
+        'request_id',
+        'outcome',
+        'leave_record_id',
+        'decided_by',
+        'decided_at',
+      ]);
+      expect(decisions.tables).toEqual(['authenticated:SELECT']);
+      expect(decisions.columns, 'a session may write a decision column, or anon holds one').toEqual([]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it.skipIf(noDatabase)('keys a request to its tenant\'s member and a decision to its request and leave, refuses a pending overlap by exclusion, and cascades from the organization alone (story 9.2)', async () => {
+    const client = await connect();
+    try {
+      const { rows: keys } = await client.query<{ table: string; definition: string }>(
+        `select conrelid::regclass::text as table, pg_get_constraintdef(oid) as definition
+           from pg_constraint
+          where contype in ('f', 'x', 'u', 'p', 'c')
+            and conrelid in ('public.leave_requests'::regclass, 'public.leave_request_decisions'::regclass)
+          order by 1, 2`,
+      );
+      expect(keys.map((row) => `${row.table}: ${row.definition}`).sort()).toEqual([
+        "leave_request_decisions: CHECK (((outcome = 'approved'::text) = (leave_record_id IS NOT NULL)))",
+        "leave_request_decisions: CHECK ((outcome = ANY (ARRAY['approved'::text, 'rejected'::text])))",
+        'leave_request_decisions: FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE',
+        'leave_request_decisions: FOREIGN KEY (organization_id, leave_record_id) REFERENCES leave_records(organization_id, id)',
+        'leave_request_decisions: FOREIGN KEY (organization_id, request_id) REFERENCES leave_requests(organization_id, id)',
+        'leave_request_decisions: PRIMARY KEY (request_id)',
+        // One leave record backs at most one decision; a rejection's null repeats.
+        'leave_request_decisions: UNIQUE (organization_id, leave_record_id)',
+        'leave_requests: CHECK (((NOT lower_inf(during)) AND (NOT upper_inf(during))))',
+        'leave_requests: CHECK (((closed_by IS NULL) = (closed_at IS NULL)))',
+        "leave_requests: CHECK (((lower(during) >= '0001-01-01'::date) AND (upper(during) <= '10000-01-01'::date)))",
+        'leave_requests: CHECK (((upper(during) - lower(during)) <= 366))',
+        'leave_requests: CHECK ((NOT isempty(during)))',
+        'leave_requests: CHECK (lower_inc(during))',
+        'leave_requests: EXCLUDE USING gist (member_id WITH =, during WITH &&) WHERE ((closed_at IS NULL))',
+        'leave_requests: FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE',
+        'leave_requests: FOREIGN KEY (organization_id, member_id) REFERENCES members(organization_id, id)',
+        'leave_requests: PRIMARY KEY (id)',
+        'leave_requests: UNIQUE (organization_id, id)',
+      ]);
+      const { rows: indexes } = await client.query<{ indexdef: string }>(
+        `select indexdef from pg_indexes where schemaname = 'public' and tablename = 'leave_requests'`,
+      );
+      expect(
+        indexes.some((row) => /\(organization_id\)$/.test(row.indexdef)),
+        'no index on leave_requests leads with organization_id alone',
+      ).toBe(true);
+      expect(
+        indexes.some((row) => /\(organization_id, member_id\)$/.test(row.indexdef)),
+        'no index on leave_requests serves one member\'s requests',
+      ).toBe(true);
+      const { rows: decisionIndexes } = await client.query<{ indexdef: string }>(
+        `select indexdef from pg_indexes where schemaname = 'public' and tablename = 'leave_request_decisions'`,
+      );
+      expect(
+        decisionIndexes.some((row) => /\(organization_id\)$/.test(row.indexdef)),
+        'no index on leave_request_decisions leads with organization_id alone',
+      ).toBe(true);
+      expect(
+        decisionIndexes.some((row) =>
+          /^CREATE UNIQUE INDEX leave_request_decisions_leave_record_key ON public\.leave_request_decisions USING btree \(organization_id, leave_record_id\)$/.test(
+            row.indexdef,
+          ),
+        ),
+        'no unique index keeps one decision per leave record and backs its key',
+      ).toBe(true);
+      const { rows: triggers } = await client.query<{ definition: string }>(
+        `select pg_get_triggerdef(oid) as definition
+           from pg_trigger
+          where tgrelid in ('public.leave_requests'::regclass, 'public.leave_request_decisions'::regclass)
+            and not tgisinternal
+          order by 1`,
+      );
+      expect(triggers.map((row) => row.definition), 'story 9.2 takes the lock and the overlap trigger, on requests alone').toEqual([
+        'CREATE TRIGGER leave_requests_refuse_over_leave BEFORE INSERT ON public.leave_requests FOR EACH ROW EXECUTE FUNCTION refuse_leave_request_over_leave()',
+        'CREATE TRIGGER leave_requests_serialize_organization_writes BEFORE INSERT OR DELETE OR UPDATE ON public.leave_requests FOR EACH STATEMENT EXECUTE FUNCTION serialize_organization_writes()',
+      ]);
+    } finally {
+      await client.end();
+    }
+  });
+
   it.skipIf(noDatabase)('keys the offset to a step of the same pattern, and cascades from nothing but the organization', async () => {
     // AD-3's shape: the offset key is THREE columns, so an offset outside the
     // cycle is unrepresentable. Every key toward another rule is NO ACTION;
@@ -1746,6 +1861,11 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // read past 0028's select policy so it can refuse anybody else, on 5.2c's
     // attributes.
     { name: 'leave_overview_records', argumentCount: 0 },
+    // STORY 9.2. The member's withdrawal and the admin's decision of a leave
+    // request, closing it past the table's missing update grant and writing
+    // the decision and its leave record past theirs, on 5.2a's attributes.
+    { name: 'withdraw_leave_request', argumentCount: 1 },
+    { name: 'decide_leave_request', argumentCount: 2 },
     // STORY 5.4a. The member's own live conflict resolutions, read past
     // 0031's admin-only select policy so no author leaves, on 5.2c's
     // attributes.
@@ -1758,6 +1878,9 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // STORY 5.4a. The born-on-leave trigger reads `leave_records` past row
     // level security and share-locks the row, as 0023's triggers read past it.
     { name: 'refuse_conflict_resolution_off_leave', argumentCount: 0 },
+    // STORY 9.2. The overlap trigger reads the caller, `members` and
+    // `leave_records` past row level security, as 5.4a's reads leave.
+    { name: 'refuse_leave_request_over_leave', argumentCount: 0 },
     // 0023. The lock is taken from a trigger every writer fires, and the
     // last-admin re-check reads `members` and the status history past row
     // level security, as 0002's trigger does, on the same attributes.
@@ -1876,6 +1999,10 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // STORY 7.15. The admin's leave overview, on 5.2c's terms; the function
     // itself refuses every caller but an active admin.
     { name: 'leave_overview_records', argumentCount: 0, expected: ['authenticated'] },
+    // STORY 9.2. The withdrawal and the decision, on 5.2a's terms; each
+    // function refuses every caller but its own population.
+    { name: 'withdraw_leave_request', argumentCount: 1, expected: ['authenticated'] },
+    { name: 'decide_leave_request', argumentCount: 2, expected: ['authenticated'] },
     // STORY 5.4a. The member's own conflict resolutions, on 5.2c's terms.
     { name: 'my_conflict_resolutions', argumentCount: 0, expected: ['authenticated'] },
     // STORY 5.4c. The replacement, on 5.2a's amend's terms; six arguments since 0038.
@@ -1900,6 +2027,8 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'refuse_assignment_on_archived_type', argumentCount: 0, expected: [] },
     // STORY 5.4a's trigger function, on 0023's terms: its owner, and nobody else.
     { name: 'refuse_conflict_resolution_off_leave', argumentCount: 0, expected: [] },
+    // STORY 9.2's overlap trigger function, on 0023's terms.
+    { name: 'refuse_leave_request_over_leave', argumentCount: 0, expected: [] },
     // 0024's name key, in `private`, which PostgREST does not expose. Every
     // name check and name unique index calls it, and both are
     // permission-checked against the WRITING role — and a check runs on every
