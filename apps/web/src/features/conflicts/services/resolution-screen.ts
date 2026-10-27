@@ -56,7 +56,7 @@ import { durationValuesOf, type DurationValues } from '@/utils/time';
  * executes this.
  *
  * THE SAME UNRESOLVED SET AS THE QUEUE. The conflict is found among
- * *Raspored*'s own derivation — `unresolvedOf` over the calendar's one
+ * *Za odluku*'s own derivation — `unresolvedOf` over the calendar's one
  * snapshot, the organization's live leave and its live resolutions — in the
  * queue's own order (`queueOrderOf`), so `K od N` and ‹ › are exactly the
  * queue's rows. A conflict that is not among them — already resolved, a URL
@@ -658,20 +658,20 @@ function resolutionScreenFrom(
 }
 
 /** The key a radio card's coverage term reads through: covered of total (the first card adds the uncovered mark). */
-export function coverageMessageKey(): 'raspored.resolution.coverage' {
-  return 'raspored.resolution.coverage';
+export function coverageMessageKey(): 'zaOdluku.resolution.coverage' {
+  return 'zaOdluku.resolution.coverage';
 }
 
 /** The facts line: with the shift's times, or without them for an untimed shift. */
-export function shiftFactsMessageKey(times: string | null): 'raspored.resolution.shiftTimed' | 'raspored.resolution.shift' {
-  return times === null ? 'raspored.resolution.shift' : 'raspored.resolution.shiftTimed';
+export function shiftFactsMessageKey(times: string | null): 'zaOdluku.resolution.shiftTimed' | 'zaOdluku.resolution.shift' {
+  return times === null ? 'zaOdluku.resolution.shift' : 'zaOdluku.resolution.shiftTimed';
 }
 
 /** Who else works: the names, or the sentence for nobody. */
 export function coworkersMessageKey(
   coworkers: readonly string[],
-): 'raspored.resolution.coworkers' | 'raspored.resolution.noCoworkers' {
-  return coworkers.length === 0 ? 'raspored.resolution.noCoworkers' : 'raspored.resolution.coworkers';
+): 'zaOdluku.resolution.coworkers' | 'zaOdluku.resolution.noCoworkers' {
+  return coworkers.length === 0 ? 'zaOdluku.resolution.noCoworkers' : 'zaOdluku.resolution.coworkers';
 }
 
 /**
@@ -687,20 +687,20 @@ export function saveHintMessageKey(
   candidatesExist = true,
   amendKind: ResolutionAmendKind | null = null,
 ):
-  | 'raspored.resolution.hintChoose'
-  | 'raspored.resolution.hintChooseReplacement'
-  | 'raspored.resolution.hintNoCandidates'
-  | 'raspored.resolution.hintRecorded'
-  | 'raspored.resolution.hintAmend'
-  | 'raspored.resolution.hintAmendRemove' {
-  if (choice === null) return 'raspored.resolution.hintChoose';
-  if (choice === OPTION_REPLACE_MEMBER && !candidatesExist) return 'raspored.resolution.hintNoCandidates';
-  if (choice === OPTION_REPLACE_MEMBER && replacementId === null) return 'raspored.resolution.hintChooseReplacement';
+  | 'zaOdluku.resolution.hintChoose'
+  | 'zaOdluku.resolution.hintChooseReplacement'
+  | 'zaOdluku.resolution.hintNoCandidates'
+  | 'zaOdluku.resolution.hintRecorded'
+  | 'zaOdluku.resolution.hintAmend'
+  | 'zaOdluku.resolution.hintAmendRemove' {
+  if (choice === null) return 'zaOdluku.resolution.hintChoose';
+  if (choice === OPTION_REPLACE_MEMBER && !candidatesExist) return 'zaOdluku.resolution.hintNoCandidates';
+  if (choice === OPTION_REPLACE_MEMBER && replacementId === null) return 'zaOdluku.resolution.hintChooseReplacement';
   if (choice === OPTION_AMEND_LEAVE) {
-    return amendKind === AMEND_REMOVES ? 'raspored.resolution.hintAmendRemove' : 'raspored.resolution.hintAmend';
+    return amendKind === AMEND_REMOVES ? 'zaOdluku.resolution.hintAmendRemove' : 'zaOdluku.resolution.hintAmend';
   }
 
-  return 'raspored.resolution.hintRecorded';
+  return 'zaOdluku.resolution.hintRecorded';
 }
 
 /**
@@ -717,9 +717,9 @@ const HELD_ACTION_SLOT = '\u0000';
 
 /**
  * The held hint (story 5.5d) split around its link: what `format` — the
- * sentence `raspored.resolution.heldHint` translated with `action` as its
+ * sentence `zaOdluku.resolution.heldHint` translated with `action` as its
  * slot — says before the link and after it. The link's own words are
- * `raspored.resolution.heldAction`.
+ * `zaOdluku.resolution.heldAction`.
  */
 export function heldHintPartsOf(format: (action: string) => string): { readonly before: string; readonly after: string } {
   const [before = '', after = ''] = format(HELD_ACTION_SLOT).split(HELD_ACTION_SLOT);
@@ -793,16 +793,16 @@ export function replacedSavedOf(saved: ResolutionView['saved'], replacementName:
 export function amendBodyMessageKey(
   kind: ResolutionAmendKind,
 ):
-  | 'raspored.resolution.amendBodyStarts'
-  | 'raspored.resolution.amendBodyEnds'
-  | 'raspored.resolution.amendBodyRemoves' {
+  | 'zaOdluku.resolution.amendBodyStarts'
+  | 'zaOdluku.resolution.amendBodyEnds'
+  | 'zaOdluku.resolution.amendBodyRemoves' {
   switch (kind) {
     case AMEND_STARTS:
-      return 'raspored.resolution.amendBodyStarts';
+      return 'zaOdluku.resolution.amendBodyStarts';
     case AMEND_ENDS:
-      return 'raspored.resolution.amendBodyEnds';
+      return 'zaOdluku.resolution.amendBodyEnds';
     case AMEND_REMOVES:
-      return 'raspored.resolution.amendBodyRemoves';
+      return 'zaOdluku.resolution.amendBodyRemoves';
     default: {
       const unhandled: never = kind;
 
@@ -814,8 +814,8 @@ export function amendBodyMessageKey(
 /** The third card's hours term: the duration as work, or the empty mark for an untimed shift. */
 export function workHoursMessageKey(
   hours: ResolutionHours | null,
-): 'raspored.resolution.hoursAsWork' | 'raspored.resolution.noHours' {
-  return hours === null ? 'raspored.resolution.noHours' : 'raspored.resolution.hoursAsWork';
+): 'zaOdluku.resolution.hoursAsWork' | 'zaOdluku.resolution.noHours' {
+  return hours === null ? 'zaOdluku.resolution.noHours' : 'zaOdluku.resolution.hoursAsWork';
 }
 
 /**
@@ -839,8 +839,8 @@ export function amendHandoffOf(view: ResolutionView, origin: ResolutionParams): 
  * active, with a working shift — and a conflict always has the shift), a
  * state a collision should not reach but the strip still states truthfully.
  */
-export function leaveDaysMessageKey(days: number): 'raspored.resolution.daysAsLeave' | 'raspored.resolution.noDays' {
-  return days === 0 ? 'raspored.resolution.noDays' : 'raspored.resolution.daysAsLeave';
+export function leaveDaysMessageKey(days: number): 'zaOdluku.resolution.daysAsLeave' | 'zaOdluku.resolution.noDays' {
+  return days === 0 ? 'zaOdluku.resolution.noDays' : 'zaOdluku.resolution.daysAsLeave';
 }
 
 /** The radio group's value as an option, or `null` for anything else. */
@@ -885,7 +885,7 @@ export interface ResolutionSavedStep {
  * THE STATUS LINE PER LOCATION. A location that brings a saved decision
  * shows it and clears it off its entry (so a reload, or Back to it later,
  * finds none); the replace that clearing makes keeps the line; any other
- * location — a navigation to the same route, the Raspored tab included —
+ * location — a navigation to the same route, the Za odluku tab included —
  * drops it.
  */
 export function resolutionSavedStepOf(shown: ResolutionSaved | null, state: unknown, clearing: boolean): ResolutionSavedStep {
@@ -926,9 +926,9 @@ export function resolutionSavedOf(state: unknown): ResolutionSaved | null {
 }
 
 /** The queue's status line for a landed decision, by its outcome. Exhaustive. */
-export function resolutionSavedMessageKey(kind: ResolutionSavedKind): 'raspored.saved' | 'raspored.savedReplace' {
-  if (kind === ACCEPT_UNCOVERED) return 'raspored.saved';
-  if (kind === REPLACE_MEMBER) return 'raspored.savedReplace';
+export function resolutionSavedMessageKey(kind: ResolutionSavedKind): 'zaOdluku.saved' | 'zaOdluku.savedReplace' {
+  if (kind === ACCEPT_UNCOVERED) return 'zaOdluku.saved';
+  if (kind === REPLACE_MEMBER) return 'zaOdluku.savedReplace';
 
   const unhandled: never = kind;
 

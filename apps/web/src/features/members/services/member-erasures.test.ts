@@ -169,8 +169,8 @@ describe('Move away', () => {
     expect(t('ljudi.erasures.rowWithout', { member: row.memberName, team: row.teamName })).toBe(
       `${VIEWER_NAME} na godišnjem · nakon promjene: Smjena A taj dan bez ${VIEWER_NAME}`,
     );
-    expect(t('ljudi.erasures.title', { count: 2 })).toBe('Promjena briše 2 konflikta');
-    expect(t('ljudi.erasures.removed', { count: 1 })).toBe('Uklonjen 1 konflikt.');
+    expect(t('ljudi.erasures.title', { count: 2 })).toBe('Promjena uklanja 2 stavke koje čekaju odluku');
+    expect(t('ljudi.erasures.removed', { count: 1 })).toBe('Uklonjena 1 stavka koja je čekala odluku.');
   });
 
   it('runs from the move\'s day: the leave before it keeps its conflicts', () => {

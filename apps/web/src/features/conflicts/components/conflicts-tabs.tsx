@@ -12,9 +12,9 @@ import { t } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
 /**
- * *Raspored*'s two tabs (story 7.16; UX-DR20, UX-DR25): *Neriješeni*, the
+ * *Za odluku*'s two tabs (story 7.16; UX-DR20, UX-DR25): *Čeka odluku*, the
  * default, which carries its count at zero too once the queue is read, and
- * *Riješeni*. A tablist with one tab stop: the arrow keys, Home and End move
+ * *Odlučeno*. A tablist with one tab stop: the arrow keys, Home and End move
  * and select.
  */
 export function ConflictsTabs({
@@ -38,15 +38,15 @@ export function ConflictsTabs({
   }
 
   return (
-    <div role="tablist" aria-label={t('raspored.tabs.label')} className="flex min-w-0 gap-1 rounded-md bg-muted p-1">
+    <div role="tablist" aria-label={t('zaOdluku.tabs.label')} className="flex min-w-0 gap-1 rounded-md bg-muted p-1">
       {CONFLICTS_TABS.map((one) => {
         const selected = one === tab;
         const label =
           one === TAB_UNRESOLVED && unresolvedCount !== null
-            ? t('raspored.tabs.unresolvedCount', { count: unresolvedCount })
+            ? t('zaOdluku.tabs.unresolvedCount', { count: unresolvedCount })
             : one === TAB_UNRESOLVED
-              ? t('raspored.tabs.unresolved')
-              : t('raspored.tabs.resolved');
+              ? t('zaOdluku.tabs.unresolved')
+              : t('zaOdluku.tabs.resolved');
 
         return (
           <button

@@ -27,15 +27,15 @@ import { t } from '@/lib/i18n';
 import { keepFocusOnAlert } from '@/utils/retry-focus';
 
 /**
- * What *Raspored* shows under its heading (story 5.3b): the skeleton while
+ * What *Za odluku* shows under its heading (story 5.3b): the skeleton while
  * the reads are unanswered, one alert with a retry when a read failed or the
  * queue was refused — never a partial list — and otherwise the queue.
  * Above whichever it is, the status line a decision just saved returns with
  * (story 5.4b), which takes focus so it is announced. `conflictsQueueOf`
  * decides which; this only draws it.
  *
- * TWO TABS (story 7.16): *Neriješeni*, the default, whose count stays on its
- * tab at zero, and *Riješeni* (`resolvedConflictsOf`). Both panels' reads
+ * TWO TABS (story 7.16): *Čeka odluku*, the default, whose count stays on its
+ * tab at zero, and *Odlučeno* (`resolvedConflictsOf`). Both panels' reads
  * fail the same way: one alert with a retry.
  */
 export function ConflictsBody({
@@ -81,7 +81,7 @@ export function ConflictsBody({
   );
 }
 
-/** The *Riješeni* tab's own state: the skeleton, the alert with its retry, or the list. */
+/** The *Odlučeno* tab's own state: the skeleton, the alert with its retry, or the list. */
 function ResolvedState({
   resolved,
   onRetry,
@@ -102,7 +102,7 @@ function ResolvedState({
 function UnavailableAlert({ onRetry }: { readonly onRetry: (() => void) | null }): ReactNode {
   return (
     <div className="grid min-w-0 gap-2">
-      <Notice role="alert">{t('raspored.unavailable')}</Notice>
+      <Notice role="alert">{t('zaOdluku.unavailable')}</Notice>
       {onRetry === null ? null : (
         <Button
           ref={keepFocusOnAlert}
@@ -111,7 +111,7 @@ function UnavailableAlert({ onRetry }: { readonly onRetry: (() => void) | null }
           variant="outline"
           onClick={onRetry}
         >
-          {t('raspored.retry')}
+          {t('zaOdluku.retry')}
         </Button>
       )}
     </div>

@@ -17,12 +17,14 @@ import { postaviLozinkuRoute } from '@/pages/postavi-lozinku';
 import { postavkeRotacijeRoute } from '@/pages/postavke-rotacije';
 import { postavkeRotacijeTipSmjeneRoute } from '@/pages/postavke-rotacije.tipovi-smjena.$id';
 import { prijavaBareRoute, prijavaRoute } from '@/pages/prijava';
-import { rasporedKonfliktRoute } from '@/pages/raspored.$memberId.$date.$teamId';
+import { rasporedCollisionRoute } from '@/pages/raspored.$memberId.$date.$teamId';
 import { rasporedRoute } from '@/pages/raspored';
 import { rootRoute } from '@/pages/__root';
 import { RoutePending } from '@/pages/pending';
 import { satiRoute } from '@/pages/sati';
 import { smjenaRoute } from '@/pages/smjene.$id';
+import { zaOdlukuCollisionRoute } from '@/pages/za-odluku.$memberId.$date.$teamId';
+import { zaOdlukuRoute } from '@/pages/za-odluku';
 import { routeMemberRole } from '@/features/navigation/services/role';
 import { knownPathOf } from '@/features/auth/services/return-target';
 import { currentSession } from '@/lib/supabase/client';
@@ -45,11 +47,16 @@ const appDestinations = appLayoutRoute.addChildren([
   kalendarRoute,
   satiRoute,
   godisnjiRoute,
-  rasporedRoute,
+  zaOdlukuRoute,
   // STORY 5.4b: one conflict's resolution screen, on 1.7a's terms — nested
-  // under the layout, absent from the destinations (the `Raspored` tab lights
-  // for it), with the admin guard `/raspored` carries.
-  rasporedKonfliktRoute,
+  // under the layout, absent from the destinations (the `Za odluku` tab lights
+  // for it), with the admin guard `/za-odluku` carries.
+  zaOdlukuCollisionRoute,
+  // STORY 9.1: the queue's old URLs, `/raspored` and one conflict under it.
+  // They render nothing: past the admin guard each redirects to its
+  // `/za-odluku` twin with the same params, replacing the entry.
+  rasporedRoute,
+  rasporedCollisionRoute,
   ljudiRoute,
   // TWO ROUTES THAT ARE NOT DESTINATIONS (story 1.5b). `/ljudi/novi` and
   // `/ljudi/$id` nest under the same layout — so the session guard covers them

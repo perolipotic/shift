@@ -36,7 +36,7 @@ import {
  * Story 7.12's conflict preview, executed (AD-15) over a real snapshot: the
  * pilot's Smjena A, which works Dan on 02, 06, 10, 14 and 18 September and
  * Noć the day after each, with the viewer on it. Every count is checked
- * against what *Raspored*'s queue lists once the change is stored.
+ * against what *Za odluku*'s queue lists once the change is stored.
  */
 
 const TEAM_A = 'pilot-smjena-a';
@@ -77,7 +77,7 @@ function linesOf(conflicts: LeaveConflicts | null) {
   return { created: strip(conflicts.created), cleared: strip(conflicts.cleared), kept: strip(conflicts.kept) };
 }
 
-/** How many unresolved conflicts *Raspored* lists for the viewer over `records`. */
+/** How many unresolved conflicts *Za odluku* lists for the viewer over `records`. */
 function queuedCount(records: readonly LeaveRecord[], resolutionRows: readonly unknown[] = []): number {
   const outcome = conflictsQueueOutcomeOf(snapshot, records.map(storedRow), resolutionRows, '2026-09-01');
 
@@ -136,7 +136,7 @@ describe('a new record', () => {
     });
   });
 
-  it("equals what Raspored lists for the member once the record is saved", () => {
+  it("equals what Za odluku lists for the member once the record is saved", () => {
     const next = { from: '2026-09-10', to: '2026-09-15' };
     const conflicts = leaveConflictsOf(READ(), snapshot, VIEWER_MEMBER, [OTHER], { target: null, next });
 
@@ -211,7 +211,7 @@ describe('an amend', () => {
     expect(linesOf(conflicts).created).toEqual([line('uto', '15.09.', 'Noć')]);
   });
 
-  it("agrees with Raspored: kept plus created is what it lists once the amend is stored", () => {
+  it("agrees with Za odluku: kept plus created is what it lists once the amend is stored", () => {
     const resolutions = [resolutionRow('2026-09-11')];
     const next = { from: '2026-09-11', to: '2026-09-18' };
     const conflicts = linesOf(

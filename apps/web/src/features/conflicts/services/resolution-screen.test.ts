@@ -233,12 +233,12 @@ describe('Open and Ends: K od N, and ‹ › in the queue\'s order', () => {
     const view = viewOf(resolutionScreenOf(sourcesOf(pilot), paramsOn('2026-09-11'), NOW));
 
     expect([view.position, view.count]).toEqual([2, 3]);
-    expect(t('raspored.resolution.position', { position: view.position, count: view.count })).toBe(
+    expect(t('zaOdluku.resolution.position', { position: view.position, count: view.count })).toBe(
       '2 od 3 · odluči što vrijedi za ovu smjenu.',
     );
     expect(view.previous).toEqual({ ...paramsOn('2026-09-10'), dayMonth: '10.09.' });
     expect(view.next).toEqual({ ...paramsOn('2026-09-14'), dayMonth: '14.09.' });
-    expect(t('raspored.resolution.previous', { date: view.previous!.dayMonth })).toBe('Prethodni konflikt: 10.09.');
+    expect(t('zaOdluku.resolution.previous', { date: view.previous!.dayMonth })).toBe('Prethodna stavka: 10.09.');
   });
 
   it('has no ‹ on the 1st and no › on the last', () => {
@@ -255,7 +255,7 @@ describe('Open and Ends: K od N, and ‹ › in the queue\'s order', () => {
     );
 
     expect([view.position, view.count, view.previous]).toEqual([1, 2, null]);
-    expect(t('raspored.resolution.back', { count: view.count })).toBe('Raspored · 2 neriješena');
+    expect(t('zaOdluku.resolution.back', { count: view.count })).toBe('Za odluku · 2 čekaju odluku');
   });
 });
 
@@ -268,7 +268,7 @@ describe('the facts', () => {
       t(shiftFactsMessageKey(view.times), { type: view.shiftTypeName, times: view.times, team: view.teamName, date: view.dateShown }),
     ).toBe('Dan 07:00–19:00 · Smjena A · četvrtak 10.09.2026');
     expect(view.memberName).toBe(VIEWER_NAME);
-    expect(t('raspored.resolution.leave', { from: view.leaveFrom, to: view.leaveTo, days: view.leaveCostDays })).toBe(
+    expect(t('zaOdluku.resolution.leave', { from: view.leaveFrom, to: view.leaveTo, days: view.leaveCostDays })).toBe(
       'na godišnjem 10.09.2026–14.09.2026 · 3 dana',
     );
   });
@@ -291,7 +291,7 @@ describe('the facts', () => {
     expect(plain.coworkers).toEqual(['Ante Bilić', 'Frane Lozić', 'Karlo Jelić']);
     expect(t(coworkersMessageKey(plain.coworkers), { team: plain.teamName, names: 'x' })).toBe('Taj dan rade i (Smjena A): x.');
     expect(frane.coworkers).toEqual(['Ante Bilić', 'Karlo Jelić']);
-    expect(coworkersMessageKey([])).toBe('raspored.resolution.noCoworkers');
+    expect(coworkersMessageKey([])).toBe('zaOdluku.resolution.noCoworkers');
   });
 });
 
@@ -304,9 +304,9 @@ describe('Strip: coverage, the day as leave and the balance', () => {
     // Leave is counted in days, never hours (human, 2026-10-10): the date as Godišnji charges it.
     expect(view.leaveDays).toBe(1);
     expect(t(leaveDaysMessageKey(view.leaveDays), { count: view.leaveDays })).toBe('1 dan godišnjeg');
-    expect(t('raspored.resolution.daysAsLeave', { count: 3 })).toBe('3 dana godišnjeg');
+    expect(t('zaOdluku.resolution.daysAsLeave', { count: 3 })).toBe('3 dana godišnjeg');
     expect(view.balanceDays).toBe(16);
-    expect(t('raspored.resolution.balance', { count: view.balanceDays })).toBe('16 dana preostalo');
+    expect(t('zaOdluku.resolution.balance', { count: view.balanceDays })).toBe('16 dana preostalo');
   });
 
   it('counts out every member on leave that date, and says the plural forms', () => {
@@ -317,11 +317,11 @@ describe('Strip: coverage, the day as leave and the balance', () => {
     expect([view.covered, view.total]).toEqual([2, 4]);
     expect(t(coverageMessageKey(), { covered: 4, total: 5 })).toBe('4 od 5 članova');
     expect(t(coverageMessageKey(), { covered: 0, total: 1 })).toBe('0 od 1 člana');
-    expect(t('raspored.resolution.balance', { count: 1 })).toBe('1 dan preostalo');
+    expect(t('zaOdluku.resolution.balance', { count: 1 })).toBe('1 dan preostalo');
   });
 
   it('says the empty mark for a date not charged', () => {
-    expect(leaveDaysMessageKey(0)).toBe('raspored.resolution.noDays');
+    expect(leaveDaysMessageKey(0)).toBe('zaOdluku.resolution.noDays');
     expect(t(leaveDaysMessageKey(0))).toBe('—');
   });
 
@@ -329,7 +329,7 @@ describe('Strip: coverage, the day as leave and the balance', () => {
     const view = viewOf(resolutionScreenOf(sourcesOf(pilot), paramsOn('2026-09-10'), NOW));
 
     expect(
-      t('raspored.saved', {
+      t('zaOdluku.saved', {
         type: view.saved.shiftTypeName,
         team: view.saved.teamName,
         date: view.saved.dateShown,
@@ -449,12 +449,12 @@ describe('the choice', () => {
   });
 
   it('No candidates: the second card says to choose another outcome, and Spremi sends focus back to that card', () => {
-    expect(saveHintMessageKey(OPTION_REPLACE_MEMBER, null, false)).toBe('raspored.resolution.hintNoCandidates');
+    expect(saveHintMessageKey(OPTION_REPLACE_MEMBER, null, false)).toBe('zaOdluku.resolution.hintNoCandidates');
     expect(t(saveHintMessageKey(OPTION_REPLACE_MEMBER, null, false))).toBe(
       'Nitko ne može preuzeti ovu smjenu. Odaberi drugu odluku.',
     );
     // The first card does not care whether anybody could replace.
-    expect(saveHintMessageKey(OPTION_ACCEPT_UNCOVERED, null, false)).toBe('raspored.resolution.hintRecorded');
+    expect(saveHintMessageKey(OPTION_ACCEPT_UNCOVERED, null, false)).toBe('zaOdluku.resolution.hintRecorded');
     expect(saveFocusOf(OPTION_REPLACE_MEMBER, null, false)).toBe(SAVE_FOCUS_REPLACE);
     expect(saveFocusOf(OPTION_REPLACE_MEMBER, null, true)).toBe(SAVE_FOCUS_CANDIDATES);
     expect(saveFocusOf(null, null, true)).toBe(SAVE_FOCUS_CHOICE);
@@ -477,7 +477,7 @@ describe('the status line travels in router state only', () => {
 
     expect(state).toEqual({ __TSR_index: 3, key: 'k', [RESOLUTION_SAVED_STATE]: saved });
     expect(resolutionSavedOf(state)).toEqual(saved);
-    expect(resolutionSavedMessageKey(saved.kind)).toBe('raspored.saved');
+    expect(resolutionSavedMessageKey(saved.kind)).toBe('zaOdluku.saved');
   });
 
   it('reads nothing from an entry without it, or a malformed one, an unknown outcome included', () => {
@@ -511,7 +511,7 @@ describe('the status line travels in router state only', () => {
     const second = resolutionSavedStepOf(first.shown, { __TSR_index: 3 }, first.clearing);
 
     expect(second).toEqual({ shown: saved, clear: false, clearing: false });
-    // The Raspored tab, a same-route navigation: the line is gone.
+    // The Za odluku tab, a same-route navigation: the line is gone.
     expect(resolutionSavedStepOf(second.shown, { __TSR_index: 4 }, second.clearing)).toEqual({
       shown: null,
       clear: false,
@@ -624,10 +624,10 @@ describe('replacing the absent member (story 5.4c)', () => {
 
     expect(dino?.name).toBe('Dino Grgić');
     expect(
-      `${t(coverageMessageKey(), { covered: view.replaceCovered, total: view.total })} ${t('raspored.resolution.replacementShown', { name: dino!.name })}`,
+      `${t(coverageMessageKey(), { covered: view.replaceCovered, total: view.total })} ${t('zaOdluku.resolution.replacementShown', { name: dino!.name })}`,
     ).toBe('4 od 4 člana · Dino Grgić');
     expect(t(leaveDaysMessageKey(view.leaveDays), { count: view.leaveDays })).toBe('1 dan godišnjeg');
-    expect(`${t('raspored.resolution.balance', { count: view.balanceDays })} · ${t('raspored.resolution.balanceUnchanged')}`).toBe(
+    expect(`${t('zaOdluku.resolution.balance', { count: view.balanceDays })} · ${t('zaOdluku.resolution.balanceUnchanged')}`).toBe(
       '16 dana preostalo · bez promjene',
     );
     expect(replacementOf(view, 'nobody')).toBeNull();
@@ -646,7 +646,7 @@ describe('replacing the absent member (story 5.4c)', () => {
   });
 
   it('generates the reason through t(), with no field for it', () => {
-    expect(t('raspored.resolution.replaceReason', { member: VIEWER_NAME })).toBe(`Zamjena za ${VIEWER_NAME} (godišnji)`);
+    expect(t('zaOdluku.resolution.replaceReason', { member: VIEWER_NAME })).toBe(`Zamjena za ${VIEWER_NAME} (godišnji)`);
   });
 
   it('names the replacement on the queue\'s status line, and reads it back from router state', () => {
@@ -655,7 +655,7 @@ describe('replacing the absent member (story 5.4c)', () => {
 
     expect(saved.kind).toBe('replace_member');
     expect(resolutionSavedOf(withResolutionSaved({}, saved))).toEqual(saved);
-    expect(resolutionSavedMessageKey(saved.kind)).toBe('raspored.savedReplace');
+    expect(resolutionSavedMessageKey(saved.kind)).toBe('zaOdluku.savedReplace');
     expect(
       t(resolutionSavedMessageKey(saved.kind), {
         type: saved.shiftTypeName,
@@ -687,7 +687,7 @@ describe('a replacement that no longer applies (story 5.5d)', () => {
     const view = viewOf(resolutionScreenOf(sourcesOf(snapshot, [WORKED], replacedBy('ro-dino')), paramsOn('2026-09-10'), NOW));
 
     expect([view.position, view.count, view.held]).toEqual([1, 3, true]);
-    expect(t('raspored.resolution.held')).toBe('Zamjena se ne primjenjuje. Ukloni je u kalendaru pa odluči ponovno.');
+    expect(t('zaOdluku.resolution.held')).toBe('Zamjena se ne primjenjuje. Ukloni je u kalendaru pa odluči ponovno.');
   });
 
   it('Inert: a replacement already on the team\'s roster holds the key, the conflict open, and Spremi waits with the way to the calendar', async () => {
@@ -700,10 +700,10 @@ describe('a replacement that no longer applies (story 5.5d)', () => {
     expect(readyToSave(OPTION_REPLACE_MEMBER, DINO, view.held)).toBe(false);
     expect(readyToSave(OPTION_ACCEPT_UNCOVERED, null)).toBe(true);
     // The hint, split around its link, reads as the refusal's line.
-    const { before, after } = heldHintPartsOf((action) => t('raspored.resolution.heldHint', { action }));
+    const { before, after } = heldHintPartsOf((action) => t('zaOdluku.resolution.heldHint', { action }));
 
     expect([before, after]).toEqual(['Zamjena se ne primjenjuje. ', ' pa odluči ponovno.']);
-    expect(`${before}${t('raspored.resolution.heldAction')}${after}`).toBe(t('raspored.resolution.held'));
+    expect(`${before}${t('zaOdluku.resolution.heldAction')}${after}`).toBe(t('zaOdluku.resolution.held'));
   });
 
   it('Fetch skew: a link to an override the snapshot does not hold yet keeps the conflict resolved, never held', async () => {
@@ -759,11 +759,11 @@ describe('amending the leave (story 5.4d)', () => {
       t(amendBodyMessageKey(view.amend.target.kind), { name: view.memberName, date: view.dayMonth, newDate: view.amend.dateShown ?? '' }),
     ).toBe(`${view.memberName} radi 10.09., a godišnji počinje 11.09. Otvara izmjenu godišnjeg s tim datumom.`);
     expect(
-      `${t(coverageMessageKey(), { covered: view.replaceCovered, total: view.total })} ${t('raspored.resolution.amendWorks', { name: view.memberName })}`,
+      `${t(coverageMessageKey(), { covered: view.replaceCovered, total: view.total })} ${t('zaOdluku.resolution.amendWorks', { name: view.memberName })}`,
     ).toBe(`4 od 4 člana · ${view.memberName} radi`);
     expect(t(workHoursMessageKey(view.shiftHours), { hours: t(view.shiftHours!.key, view.shiftHours!.values) })).toBe('12 h rada');
     expect(
-      `${t('raspored.resolution.balance', { count: view.amend.balanceDays })} · ${t('raspored.resolution.balanceGained', { count: view.amend.gainedDays })}`,
+      `${t('zaOdluku.resolution.balance', { count: view.amend.balanceDays })} · ${t('zaOdluku.resolution.balanceGained', { count: view.amend.gainedDays })}`,
     ).toBe('17 dana preostalo · +1 dan');
     expect(view.leaveRecordId).toBe('record-worked');
   });
@@ -775,13 +775,13 @@ describe('amending the leave (story 5.4d)', () => {
     expect(view.amend.dateShown).toBe('12.09.');
     // 10.09. and 11.09. are dropped, both working days.
     expect([view.amend.balanceDays, view.amend.gainedDays]).toEqual([18, 2]);
-    expect(t('raspored.resolution.balanceGained', { count: 2 })).toBe('+2 dana');
+    expect(t('zaOdluku.resolution.balanceGained', { count: 2 })).toBe('+2 dana');
   });
 
   it('Dropped (D726): a later start names the days before the conflict it drops, and says when some are past', () => {
     // 10.09. goes with the conflict's 11.09.; today (01.09.) is before it.
     expect(amendViewOn('2026-09-11').amend.dropped).toEqual({ days: 1, rangeShown: '10.09.', past: false });
-    expect(t('raspored.resolution.amendDrops', { count: 1, range: '10.09.' })).toBe(
+    expect(t('zaOdluku.resolution.amendDrops', { count: 1, range: '10.09.' })).toBe(
       'Godišnji se skraćuje i za 1 dan prije toga (10.09.).',
     );
     // The first day drops nothing before it; an earlier end or a removal drops nothing at all.
@@ -797,10 +797,10 @@ describe('amending the leave (story 5.4d)', () => {
       past: true,
     });
     expect(resolutionAmendDroppedOf(record, '2026-10-06', target, '2026-10-02')?.past).toBe(false);
-    expect(t('raspored.resolution.amendDrops', { count: 4, range: '02.10.–05.10.' })).toBe(
+    expect(t('zaOdluku.resolution.amendDrops', { count: 4, range: '02.10.–05.10.' })).toBe(
       'Godišnji se skraćuje i za 4 dana prije toga (02.10.–05.10.).',
     );
-    expect(t('raspored.resolution.amendDrops', { count: 5, range: '' })).toContain('5 dana');
+    expect(t('zaOdluku.resolution.amendDrops', { count: 5, range: '' })).toContain('5 dana');
   });
 
   it('Last day: "završava 13.09."', () => {
@@ -846,7 +846,7 @@ describe('amending the leave (story 5.4d)', () => {
       'Spremi otvara izmjenu godišnjeg s datumom 11.09.',
     );
     expect(t(saveHintMessageKey(OPTION_AMEND_LEAVE, null, true, AMEND_REMOVES))).toBe('Spremi otvara brisanje ovog godišnjeg.');
-    expect(workHoursMessageKey(null)).toBe('raspored.resolution.noHours');
+    expect(workHoursMessageKey(null)).toBe('zaOdluku.resolution.noHours');
   });
 
   it('Save: hands the record, the range and the conflict over in router state, beside the router\'s own keys', () => {

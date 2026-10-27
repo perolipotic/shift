@@ -1451,7 +1451,7 @@ test.describe('an admin changes a shift roster at 1280 px', () => {
     await expect(calendarPage.optionIn(calendarPage.rosterInIn(form), spareLine)).toHaveCount(1);
     await expect(calendarPage.memberOptionIn(calendarPage.rosterInIn(form), fixture.spare.name)).toHaveText(spareLine);
     const free = calendarPage.rosterInGroupIn(form, 'free');
-    await expect(free).toHaveAttribute('label', hr.raspored.resolution.candidates.free);
+    await expect(free).toHaveAttribute('label', hr.zaOdluku.resolution.candidates.free);
     await expect(calendarPage.memberOptionIn(free, fixture.spare.name)).toHaveCount(1);
     await expect(calendarPage.rosterInIn(form)).toHaveValue('');
     // The member on the default roster is offered to take off, not to put on.
@@ -1577,7 +1577,7 @@ test.describe('an admin changes a shift roster at 1280 px', () => {
     await expect(put).toHaveAccessibleDescription('');
     // STORY 7.9: she works that day, so she is under "radi taj dan" — informing, never blocking.
     const working = calendarPage.rosterInGroupIn(form, 'working');
-    await expect(working).toHaveAttribute('label', hr.raspored.resolution.candidates.working);
+    await expect(working).toHaveAttribute('label', hr.zaOdluku.resolution.candidates.working);
     await expect(calendarPage.memberOptionIn(working, fixture.member.name)).toHaveCount(1);
 
     // Her own team works the same window: the hint names it, tied to the field, neutral.

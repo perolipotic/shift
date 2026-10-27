@@ -66,16 +66,16 @@ export function AcceptUncoveredOption({
           </span>
           <span className="inline-flex min-w-0 items-center gap-1">
             <CircleDashed aria-hidden className="size-3.5 shrink-0" />
-            <span className="min-w-0 break-words">{t('raspored.resolution.uncovered')}</span>
+            <span className="min-w-0 break-words">{t('zaOdluku.resolution.uncovered')}</span>
           </span>
         </LeaveStrip>
       }
     >
       <span id={RESOLUTION_ACCEPT_TITLE_ID} className="font-semibold">
-        {t('raspored.resolution.acceptTitle')}
+        {t('zaOdluku.resolution.acceptTitle')}
       </span>
       <span id={RESOLUTION_ACCEPT_BODY_ID} className="min-w-0 break-words text-sm text-muted-foreground">
-        {t('raspored.resolution.acceptBody', { team: view.teamName })}
+        {t('zaOdluku.resolution.acceptBody', { team: view.teamName })}
       </span>
     </RadioCard>
   );
@@ -113,17 +113,17 @@ export function ReplaceMemberOption({
           </span>
           {replacementName === null ? null : (
             <span className="min-w-0 break-words">
-              {t('raspored.resolution.replacementShown', { name: replacementName })}
+              {t('zaOdluku.resolution.replacementShown', { name: replacementName })}
             </span>
           )}
         </LeaveStrip>
       }
     >
       <span id={RESOLUTION_REPLACE_TITLE_ID} className="font-semibold">
-        {t('raspored.resolution.replaceTitle')}
+        {t('zaOdluku.resolution.replaceTitle')}
       </span>
       <span id={RESOLUTION_REPLACE_BODY_ID} className="min-w-0 break-words text-sm text-muted-foreground">
-        {t('raspored.resolution.replaceBody')}
+        {t('zaOdluku.resolution.replaceBody')}
       </span>
     </RadioCard>
   );
@@ -156,17 +156,17 @@ export function AmendLeaveOption({ view }: { readonly view: ResolutionView }): R
               : t(workHoursMessageKey(view.shiftHours), { hours: t(view.shiftHours.key, view.shiftHours.values) })
           }
           balanceDays={amend.balanceDays}
-          balanceChange={t('raspored.resolution.balanceGained', { count: amend.gainedDays })}
+          balanceChange={t('zaOdluku.resolution.balanceGained', { count: amend.gainedDays })}
         >
           <span className="font-semibold tabular-nums">
             {t(coverageMessageKey(), { covered: view.replaceCovered, total: view.total })}
           </span>
-          <span className="min-w-0 break-words">{t('raspored.resolution.amendWorks', { name: view.memberName })}</span>
+          <span className="min-w-0 break-words">{t('zaOdluku.resolution.amendWorks', { name: view.memberName })}</span>
         </ConsequenceStrip>
       }
     >
       <span id={RESOLUTION_AMEND_TITLE_ID} className="font-semibold">
-        {t('raspored.resolution.amendTitle')}
+        {t('zaOdluku.resolution.amendTitle')}
       </span>
       <span id={RESOLUTION_AMEND_BODY_ID} className="min-w-0 break-words text-sm text-muted-foreground">
         {t(amendBodyMessageKey(amend.target.kind), {
@@ -177,8 +177,8 @@ export function AmendLeaveOption({ view }: { readonly view: ResolutionView }): R
         })}
         {amend.dropped === null ? null : (
           <span className="mt-1 block">
-            {t('raspored.resolution.amendDrops', { count: amend.dropped.days, range: amend.dropped.rangeShown })}
-            {amend.dropped.past ? ` ${t('raspored.resolution.amendDropsPast')}` : null}
+            {t('zaOdluku.resolution.amendDrops', { count: amend.dropped.days, range: amend.dropped.rangeShown })}
+            {amend.dropped.past ? ` ${t('zaOdluku.resolution.amendDropsPast')}` : null}
           </span>
         )}
       </span>
@@ -203,7 +203,7 @@ function LeaveStrip({
         t(leaveDaysMessageKey(view.leaveDays), { count: view.leaveDays })
       }
       balanceDays={view.balanceDays}
-      balanceChange={t('raspored.resolution.balanceUnchanged')}
+      balanceChange={t('zaOdluku.resolution.balanceUnchanged')}
     >
       {children}
     </ConsequenceStrip>
@@ -230,12 +230,12 @@ function ConsequenceStrip({
 }): ReactNode {
   return (
     <span id={id} className="grid min-w-0 grid-cols-3 gap-2 border-t pt-3">
-      <StripTerm label={t('raspored.resolution.coverageLabel')}>
+      <StripTerm label={t('zaOdluku.resolution.coverageLabel')}>
         <span className="flex min-w-0 flex-wrap items-center gap-x-1.5">{children}</span>
       </StripTerm>
-      <StripTerm label={t('raspored.resolution.absentLabel')}>{hours}</StripTerm>
-      <StripTerm label={t('raspored.resolution.balanceLabel')}>
-        <span className="block font-semibold tabular-nums">{t('raspored.resolution.balance', { count: balanceDays })}</span>
+      <StripTerm label={t('zaOdluku.resolution.absentLabel')}>{hours}</StripTerm>
+      <StripTerm label={t('zaOdluku.resolution.balanceLabel')}>
+        <span className="block font-semibold tabular-nums">{t('zaOdluku.resolution.balance', { count: balanceDays })}</span>
         <span className="block text-muted-foreground">{balanceChange}</span>
       </StripTerm>
     </span>

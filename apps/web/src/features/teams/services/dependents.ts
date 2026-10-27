@@ -98,7 +98,7 @@ export const HOUR_BAND_WRITE_DEPENDENTS: readonly QueryKey[] = [CALENDAR_KEY];
  * is the member's live records. Since story 5.2c the viewer's own records
  * (*Godišnji*) depend on it too — an admin's write to their own leave changes
  * their own tab. Since story 5.3b the organization's live records, which the
- * conflicts queue (*Raspored*) derives every collision from, depend on it
+ * conflicts queue (*Za odluku*) derives every collision from, depend on it
  * too. Since story 5.3c the calendar's marks read the same two keys — the
  * organization's records for an admin, the viewer's own for a member — so
  * they follow every leave write with no key of their own. Since story 5.3d
@@ -120,7 +120,7 @@ export const LEAVE_WRITE_DEPENDENTS: readonly QueryKey[] = [
 
 /**
  * A conflict resolution recorded (story 5.4b): both live resolution reads.
- * The organization's is what the queue (*Raspored*), the calendar's marks
+ * The organization's is what the queue (*Za odluku*), the calendar's marks
  * (the conflict ring, and the uncovered mark an accepted conflict leaves) and
  * an admin's *Sati* (the count, and the worked hours an accepted conflict
  * takes out) derive from; the viewer's own is a member's *Sati* — an admin's

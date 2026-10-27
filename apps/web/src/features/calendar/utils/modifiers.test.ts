@@ -67,7 +67,7 @@ describe('the vocabulary', () => {
       'kalendar.modifier.uncovered',
     ]);
     expect(CALENDAR_MODIFIERS.map((entry) => t(entry.labelKey))).toEqual([
-      'Konflikt',
+      'Čeka odluku',
       'Izmijenjeno',
       'Godišnji',
       'Nepokriveno',
@@ -211,7 +211,7 @@ describe('the cell label', () => {
   it('names each modifier, in canonical order', () => {
     expect(
       cellLabelOf({ ...day, name: 'Noć', range: '19:00–07:00', modifiers: ['leave', 'conflict'] }, translate),
-    ).toBe('subota 26.09., Smjena A, Noć, 19:00–07:00, Konflikt, Godišnji');
+    ).toBe('subota 26.09., Smjena A, Noć, 19:00–07:00, Čeka odluku, Godišnji');
   });
 });
 
@@ -236,7 +236,7 @@ describe("the day list's names of the marks", () => {
   it('leads each name with the separator, in canonical order, and is empty without marks', () => {
     expect(LABEL_SEPARATOR).toBe(', ');
     expect(modifierNamesTextOf([], translate)).toBe('');
-    expect(modifierNamesTextOf(['leave', 'conflict', 'leave'], translate)).toBe(', Konflikt, Godišnji');
+    expect(modifierNamesTextOf(['leave', 'conflict', 'leave'], translate)).toBe(', Čeka odluku, Godišnji');
     expect(modifierNamesTextOf(['uncovered'], translate)).toBe(', Nepokriveno');
   });
 });

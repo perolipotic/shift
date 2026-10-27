@@ -6,7 +6,7 @@ import { organizationTodayAt, type OrganizationToday } from '@/utils/organizatio
 /**
  * The organization's today in `timeZone` (the calendar snapshot's; `null`
  * until it lands), moved at the organization's midnight by the minute ticker
- * (story 6.2's), so the calendar, *Raspored*, *Sati* and the leave overview
+ * (story 6.2's), so the calendar, *Za odluku*, *Sati* and the leave overview
  * never keep marking yesterday. Wiring only: the rule, and why the instant is
  * held for the whole day, is `organizationTodayAt`, which the node suite
  * executes.

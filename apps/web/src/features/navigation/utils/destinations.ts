@@ -119,8 +119,8 @@ export const DESTINATIONS: readonly [Destination, ...Destination[]] = [
   { key: 'nav.sati', path: '/sati', roles: EVERYONE, group: 'overview' },
   { key: 'nav.godisnji', path: '/godisnji', roles: EVERYONE, group: 'overview' },
   // ADMIN-ONLY BUT NOT A SETTING: the conflicts an admin decides are daily
-  // work, so Raspored sits under *Pregled* with the places a person works in.
-  { key: 'nav.raspored', path: '/raspored', roles: ADMIN_ONLY, group: 'overview' },
+  // work, so Za odluku sits under *Pregled* with the places a person works in.
+  { key: 'nav.zaOdluku', path: '/za-odluku', roles: ADMIN_ONLY, group: 'overview' },
   // ROLE-SCOPED TOO (story 7.17): the member list for an admin, the read-only
   // directory of who is on which team for a member.
   { key: 'nav.ljudi', path: '/ljudi', roles: EVERYONE, group: 'overview' },
@@ -166,7 +166,7 @@ type PhoneTabs = readonly [RegisteredPath, RegisteredPath, RegisteredPath, Regis
  *
  * Below 640 px the bar is five equal cells: these four and *Više*. A member's
  * fifth destination, Ljudi (story 7.17), is in their *Više* under *Pregled*.
- * An admin's four trade Sati and Godišnji for Raspored and Ljudi, the two an
+ * An admin's four trade Sati and Godišnji for Za odluku and Ljudi, the two an
  * admin opens most; the rest stay one press away in *Više*.
  *
  * Paths rather than keys, and checked against `destinationsFor` by
@@ -181,7 +181,7 @@ type PhoneTabs = readonly [RegisteredPath, RegisteredPath, RegisteredPath, Regis
  */
 export const PHONE_TABS: Readonly<Record<MemberRole, PhoneTabs>> = {
   member_role: ['/danas', '/kalendar', '/sati', '/godisnji'],
-  admin: ['/danas', '/kalendar', '/raspored', '/ljudi'],
+  admin: ['/danas', '/kalendar', '/za-odluku', '/ljudi'],
 };
 
 /** A list of destinations split into the two groups, each in binding order. */
@@ -200,7 +200,7 @@ export interface GroupedDestinations {
  *
  * A FIELD, NOT THE ROLES. The sheet once derived its groups from who reaches a
  * row, which held while every admin-only row was configuration. The sidebar
- * shows Raspored too, which is admin-only and daily work, so the group is
+ * shows Za odluku too, which is admin-only and daily work, so the group is
  * stated on the entry and the role rule is a test instead.
  */
 export function groupDestinations(list: readonly Destination[]): GroupedDestinations {

@@ -263,24 +263,24 @@ export function candidateContinuousOf(
 }
 
 /** A candidate's line with their continuous duty after it: `{line} · {hours} bez pauze`. */
-export function candidateContinuousMessageKey(): 'raspored.resolution.candidates.continuous' {
-  return 'raspored.resolution.candidates.continuous';
+export function candidateContinuousMessageKey(): 'zaOdluku.resolution.candidates.continuous' {
+  return 'zaOdluku.resolution.candidates.continuous';
 }
 
 /** A candidate group's heading, by its kind. Exhaustive. */
 export function candidateGroupMessageKey(
   kind: CandidateGroupKind,
 ):
-  | 'raspored.resolution.candidates.free'
-  | 'raspored.resolution.candidates.working'
-  | 'raspored.resolution.candidates.onLeave' {
+  | 'zaOdluku.resolution.candidates.free'
+  | 'zaOdluku.resolution.candidates.working'
+  | 'zaOdluku.resolution.candidates.onLeave' {
   switch (kind) {
     case CANDIDATES_FREE:
-      return 'raspored.resolution.candidates.free';
+      return 'zaOdluku.resolution.candidates.free';
     case CANDIDATES_WORKING:
-      return 'raspored.resolution.candidates.working';
+      return 'zaOdluku.resolution.candidates.working';
     case CANDIDATES_ON_LEAVE:
-      return 'raspored.resolution.candidates.onLeave';
+      return 'zaOdluku.resolution.candidates.onLeave';
     default: {
       const unhandled: never = kind;
 

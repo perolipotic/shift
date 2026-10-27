@@ -10,7 +10,7 @@ import { conflictResolutionsOf, type ConflictResolution } from '@/features/confl
 import { formatIsoDate } from '@/lib/i18n/format';
 
 /**
- * *Raspored* for an admin: the conflicts queue (story 5.3b; CAP-16, R6.8,
+ * *Za odluku* for an admin: the conflicts queue (story 5.3b; CAP-16, R6.8,
  * UX-DR20, UX-DR25), as a pure view model in a `.ts` that renders nothing
  * (AD-15). The hook only wires it; the node suite executes it.
  *
@@ -45,7 +45,7 @@ import { formatIsoDate } from '@/lib/i18n/format';
 const FETCH_PAUSED = 'paused';
 
 /** The id the count's heading carries, which names the queue's section. */
-export const CONFLICTS_COUNT_HEADING_ID = 'raspored-count';
+export const CONFLICTS_COUNT_HEADING_ID = 'za-odluku-count';
 
 /** Still waiting on a read: the skeleton, never a count. */
 export const CONFLICTS_LOADING = 'loading';
@@ -309,7 +309,7 @@ export interface ConflictsQueueSources {
 }
 
 /**
- * What *Raspored* shows from its three reads at `now`: unavailable when any
+ * What *Za odluku* shows from its three reads at `now`: unavailable when any
  * read failed or is paused offline — first, so a failure is never hidden
  * behind another's skeleton — a failed refetch over cached data included;
  * loading while any is pending; otherwise the guarded queue. Rows naming a

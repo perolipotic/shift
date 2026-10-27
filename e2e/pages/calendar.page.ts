@@ -516,13 +516,13 @@ export class CalendarPage extends BasePage {
   conflictsIn(detail: Locator): Locator {
     const heading = kalendar.detail.conflict.heading;
 
-    // `Konflikt` for one, `Konflikti` for several.
+    // `Odsutnost u smjeni` for one, `Odsutnosti u smjeni` for several.
     return detail.getByRole('region', {
       name: new RegExp(`^(?:${escapeRegExp(plural(heading, 1))}|${escapeRegExp(plural(heading, 2))})$`),
     });
   }
 
-  /** Every "Riješi konflikt" in `scope`. */
+  /** Every "Odluči" in `scope`. */
   resolveLinksIn(scope: Locator): Locator {
     return scope.getByRole('link', { name: kalendar.detail.conflict.resolve, exact: true });
   }

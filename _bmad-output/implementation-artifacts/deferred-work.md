@@ -1011,3 +1011,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-8-4-install-from-vise.md`
   summary: The iOS install steps, *Dodirni Dijeli, pa Dodaj na početni zaslon.* (`hr.json` `shell.installIosSteps`), were never checked against the labels Croatian iOS shows. Is the Share action *Dijeli* or *Podijeli*, and is the item *Dodaj na početni zaslon*? Check by hand on an iPhone set to Croatian, in Safari and in Chrome for iOS, and fix the copy if it differs.
   evidence: Code review 2026-10-26 (Blind Hunter). Human decision: defer to a manual device check.
+
+## Deferred from: code review of spec-9-1-raspored-becomes-za-odluku.md (2026-10-27)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-9-1-raspored-becomes-za-odluku.md`
+  summary: Sati's sort URL value is still `?sort=konflikti` (`SORT_CONFLICTS` in `apps/web/src/features/hours/services/hours-search.ts`), so "konflikt" still shows in the address bar after 9.1; rename it (e.g. `ceka-odluku`) and accept the old value as an alias.
+  evidence: Raised by the 9.1 review; the spec scoped the ban to `hr.json` copy and put URL changes under Ask First, and `e2e/tests/hours/hours.spec.ts:595` asserts the old value.
+- source_spec: `_bmad-output/implementation-artifacts/spec-9-1-raspored-becomes-za-odluku.md`
+  summary: The *Za odluku* nav entry still uses the `CalendarRange` icon (`apps/web/src/features/navigation/utils/icons.ts`), which reads as "schedule"; consider an inbox/decision icon.
+  evidence: Raised by the 9.1 review; the rename's point is that the queue is not the schedule, but an icon change was outside 9.1's copy/routes scope.

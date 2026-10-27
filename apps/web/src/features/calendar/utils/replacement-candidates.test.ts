@@ -231,7 +231,7 @@ describe('the continuous duty (D717): the real figure, never a blanket 24 h', ()
       'Ivo Horvat': ' · 24 h bez pauze',
       'Eva Šarić': '',
     });
-    expect(t('raspored.resolution.candidates.working')).toBe('radi taj dan');
+    expect(t('zaOdluku.resolution.candidates.working')).toBe('radi taj dan');
   });
 
   it('a same-hours shift elsewhere (a double booking) works that day but claims no figure', async () => {

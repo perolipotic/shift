@@ -8,11 +8,11 @@ import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
 import { ORGANIZATION_SNAPSHOT_KEY } from '@/features/organization/services/snapshot';
 
 /**
- * *Raspored*'s reads as one snapshot (story 8.2c): the keys its offline
+ * *Za odluku*'s reads as one snapshot (story 8.2c): the keys its offline
  * freshness is decided over, by the open tab — the calendar snapshot, the
  * organization's live leave and its live resolutions on both, and on
- * *Riješeni* the names of whoever decided too, the one read that tab adds
- * (and makes only once it is open). Offline, a *Riješeni* never opened online
+ * *Odlučeno* the names of whoever decided too, the one read that tab adds
+ * (and makes only once it is open). Offline, a *Odlučeno* never opened online
  * is unavailable, never a list missing its names. `surface-keys.test.ts` pins
  * the set and that every key is kept on the device.
  */

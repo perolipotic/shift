@@ -46,7 +46,7 @@ function conflictListText(lines: readonly LeaveConflictLine[]): string {
   return formatList(lines.map(conflictText));
 }
 
-/** A group's count and its conflicts: `Uklanjaju se 2 konflikta (uto 06.10. Dan i sri 07.10. Noć).` */
+/** A group's count and its conflicts: `Uklanjaju se 2 stavke koje čekaju odluku (uto 06.10. Dan i sri 07.10. Noć).` */
 function conflictGroupText(summary: string, lines: readonly LeaveConflictLine[]): string {
   return t('ljudi.leaveRecord.conflictsGroup', { summary, lines: conflictListText(lines) });
 }

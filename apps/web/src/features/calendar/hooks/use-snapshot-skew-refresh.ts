@@ -5,7 +5,7 @@ import { NO_SKEW } from '@/features/calendar/services/snapshot-skew';
 import { CALENDAR_KEY } from '@/features/calendar/services/snapshot';
 
 /**
- * THE SKEW RE-READ for the calendar's marks, *Raspored*, *Sati* and *Danas*
+ * THE SKEW RE-READ for the calendar's marks, *Za odluku*, *Sati* and *Danas*
  * (story 5.5d's edge case): the leave or resolution read landed after a
  * member or team was added and names an id the cached snapshot does not hold
  * yet (`snapshotSkewOf`; `NO_SKEW` for none). The snapshot is read again ONCE

@@ -54,9 +54,9 @@ import {
 // SEVEN SINCE STORY 5.2c: `/godisnji` left the placeholders when it gained the
 // viewer's own allowance, days used and balance.
 //
-// EIGHT SINCE STORY 5.3b: `/raspored` left the placeholders when it gained the
+// EIGHT SINCE STORY 5.3b: `/raspored` (now `/za-odluku`) left the placeholders when it gained the
 // conflicts queue — every destination is built.
-const BUILT_SLUGS = ['organizacija', 'ljudi', 'danas', 'postavke-rotacije', 'kalendar', 'sati', 'godisnji', 'raspored'];
+const BUILT_SLUGS = ['organizacija', 'ljudi', 'danas', 'postavke-rotacije', 'kalendar', 'sati', 'godisnji', 'za-odluku'];
 
 /** Every registered destination, however much of it is built. */
 const DESTINATION_SLUGS = [...PLACEHOLDER_SLUGS, ...BUILT_SLUGS];

@@ -16,13 +16,13 @@ import { t } from '@/lib/i18n';
 /**
  * One of the queue's rows: the date, the type and team, the member, and
  * `prošlo` or `danas` in words — the whole row the link to its conflict's
- * resolution screen, as on *Raspored*.
+ * resolution screen, as on *Za odluku*.
  */
 function renderRow(row: NeedsYouRow): ReactNode {
   return (
     <li key={row.key} className="min-w-0">
       <Link
-        to="/raspored/$memberId/$date/$teamId"
+        to="/za-odluku/$memberId/$date/$teamId"
         params={{ memberId: row.memberId, date: row.date, teamId: row.teamId }}
         className="flex min-h-11 min-w-0 items-center gap-3 rounded-md border bg-card p-3 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
@@ -45,10 +45,10 @@ function renderRow(row: NeedsYouRow): ReactNode {
 
 /**
  * *Treba tebe* (story 6.3): the same shape at every count. The count always
- * shows, `0 neriješenih konflikata` included; above zero a `destructive`
+ * shows, `0 čeka odluku` included; above zero a `destructive`
  * left edge and ⚠, the past share with its earliest date, and the earliest
  * rows; at zero neutral, with a check and the sentence that states what is
- * true. It always ends with the way to *Raspored*, carrying the same count.
+ * true. It always ends with the way to *Za odluku*, carrying the same count.
  */
 export function NeedsYouCard({ needsYou }: { readonly needsYou: NeedsYou }): ReactNode {
   const headingId = useId();
@@ -64,7 +64,7 @@ export function NeedsYouCard({ needsYou }: { readonly needsYou: NeedsYou }): Rea
             <h2 id={headingId} className="text-sm font-semibold text-muted-foreground">
               {t('danas.admin.needsYou.heading')}
             </h2>
-            <p className="text-2xl font-bold tabular-nums">{t('raspored.count', { count: needsYou.count })}</p>
+            <p className="text-2xl font-bold tabular-nums">{t('zaOdluku.count', { count: needsYou.count })}</p>
             {waiting ? null : <p className="text-sm text-muted-foreground">{t('danas.admin.needsYou.calm')}</p>}
             {needsYou.earliestPast === null ? null : (
               <p className="text-sm text-muted-foreground tabular-nums">
@@ -75,7 +75,7 @@ export function NeedsYouCard({ needsYou }: { readonly needsYou: NeedsYou }): Rea
         </div>
         {needsYou.rows.length === 0 ? null : <ul className="grid min-w-0 gap-2">{needsYou.rows.map(renderRow)}</ul>}
         <Link
-          to="/raspored"
+          to="/za-odluku"
           className="inline-flex min-h-11 w-full items-center justify-center rounded-md border-[1.5px] border-input bg-card px-4 text-sm font-semibold tabular-nums hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
           {t('danas.admin.needsYou.open', { count: needsYou.count })}

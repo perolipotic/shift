@@ -144,7 +144,7 @@ describe('each role reaches exactly the destinations its rule names', () => {
       'nav.kalendar',
       'nav.sati',
       'nav.godisnji',
-      'nav.raspored',
+      'nav.zaOdluku',
       'nav.ljudi',
       'nav.postavkeRotacije',
       'nav.organizacija',
@@ -156,7 +156,7 @@ describe('each role reaches exactly the destinations its rule names', () => {
     // five happened to be the wrong five, and the specific fear is a
     // configuration destination leaking into the member's list. `Ljudi` is not
     // one for a member: its content is the read-only directory (story 7.17).
-    for (const key of ['nav.raspored', 'nav.postavkeRotacije', 'nav.organizacija']) {
+    for (const key of ['nav.zaOdluku', 'nav.postavkeRotacije', 'nav.organizacija']) {
       expect(keysFor('member_role'), `a member reaches ${key}`).not.toContain(key);
     }
   });
@@ -349,11 +349,11 @@ describe('the phone bar shows four tabs and puts the rest in Više (story 7.3)',
     ]);
   });
 
-  it('gives the admin role Danas, Kalendar, Raspored and Ljudi as tabs, in order', () => {
+  it('gives the admin role Danas, Kalendar, Za odluku and Ljudi as tabs, in order', () => {
     expect(phoneKeysFor('admin').tabs).toEqual([
       'nav.danas',
       'nav.kalendar',
-      'nav.raspored',
+      'nav.zaOdluku',
       'nav.ljudi',
     ]);
   });
@@ -422,10 +422,10 @@ describe('the sidebar and the sheet share two groups, Pregled and Postavke', () 
   }
 
   it('gives the admin sidebar six places under Pregled and the two settings under Postavke', () => {
-    // Raspored is admin-only and still daily work: it stays under Pregled, in
+    // Za odluku is admin-only and still daily work: it stays under Pregled, in
     // binding order, rather than joining the settings.
     expect(groupKeys(destinationsFor('admin'))).toEqual({
-      overview: ['nav.danas', 'nav.kalendar', 'nav.sati', 'nav.godisnji', 'nav.raspored', 'nav.ljudi'],
+      overview: ['nav.danas', 'nav.kalendar', 'nav.sati', 'nav.godisnji', 'nav.zaOdluku', 'nav.ljudi'],
       settings: ['nav.postavkeRotacije', 'nav.organizacija'],
     });
   });

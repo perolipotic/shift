@@ -64,7 +64,7 @@ export function ReplacementPicker({
   return (
     <section className="grid min-w-0 gap-2 rounded-lg border bg-card p-3 sm:p-4" aria-labelledby={RESOLUTION_CANDIDATES_HEADING_ID}>
       <h3 id={RESOLUTION_CANDIDATES_HEADING_ID} className="text-sm font-semibold">
-        {t('raspored.resolution.candidatesHeading')}
+        {t('zaOdluku.resolution.candidatesHeading')}
       </h3>
       {hasCandidates(view) ? (
         <RadioGroup
@@ -102,7 +102,7 @@ export function ReplacementPicker({
           )}
         </RadioGroup>
       ) : (
-        <p className="min-w-0 break-words text-sm text-muted-foreground">{t('raspored.resolution.noCandidates')}</p>
+        <p className="min-w-0 break-words text-sm text-muted-foreground">{t('zaOdluku.resolution.noCandidates')}</p>
       )}
     </section>
   );

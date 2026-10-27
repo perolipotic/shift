@@ -56,11 +56,11 @@ import { datesFrom, dayAfter } from '@/utils/dates';
  * THE QUEUE'S OWN READS AND GATING. The calendar snapshot under
  * `CALENDAR_KEY`, the organization's live leave under
  * `ORGANIZATION_LEAVE_RECORDS_KEY` and its live resolutions under
- * `ORGANIZATION_CONFLICT_RESOLUTIONS_KEY` — the three *Raspored* reads, through
+ * `ORGANIZATION_CONFLICT_RESOLUTIONS_KEY` — the three *Za odluku* reads, through
  * the same query options — and `conflictsQueueOf` decides loading,
  * unavailable and ready. The count IS the queue's `view.count`, and every
  * row of *Treba tebe* is one of the queue's rows, so the card equals
- * *Raspored* at every count, 0 included.
+ * *Za odluku* at every count, 0 included.
  *
  * THE CALENDAR'S OWN DERIVATIONS for the rest. The week and today's coverage
  * are `calendarMonthOutcomeOf`'s cells under the admin's marks

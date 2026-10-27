@@ -86,7 +86,7 @@ export const CALENDAR_SCREEN_EXEMPT: readonly { readonly file: string; readonly 
   },
   {
     file: 'services/snapshot-skew.ts',
-    why: 'the rule telling rows newer than the snapshot from rows that cannot be trusted (story 5.5d), shared with Raspored, Sati and Danas; renders nothing and declares no key, executed by marks.test.ts',
+    why: 'the rule telling rows newer than the snapshot from rows that cannot be trusted (story 5.5d), shared with Za odluku, Sati and Danas; renders nothing and declares no key, executed by marks.test.ts',
   },
   {
     file: 'services/surface-keys.ts',

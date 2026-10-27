@@ -175,8 +175,8 @@ describe('Set non-working', () => {
     expect(t('kalendar.detail.override.erasures.rowFree', { member: row.memberName, team: row.teamName })).toBe(
       `${VIEWER_NAME} na godišnjem · nakon promjene: Smjena A taj dan slobodna`,
     );
-    expect(t('kalendar.detail.override.erasures.title', { count: 1 })).toBe('Promjena briše 1 konflikt');
-    expect(t('kalendar.detail.override.erasures.removed', { count: 2 })).toBe('Uklonjena 2 konflikta.');
+    expect(t('kalendar.detail.override.erasures.title', { count: 1 })).toBe('Promjena uklanja 1 stavku koja čeka odluku');
+    expect(t('kalendar.detail.override.erasures.removed', { count: 2 })).toBe('Uklonjene 2 stavke koje su čekale odluku.');
   });
 
   it('stays bounded to the override\'s own date: the leave\'s other dates keep their conflicts', () => {

@@ -566,11 +566,11 @@ describe('plurals resolve through all three Croatian forms', () => {
   });
 
   it.each([
-    { count: 1, expected: '1 konflikt' },
-    { count: 2, expected: '2 konflikta' },
-    { count: 5, expected: '5 konflikata' },
-    { count: 21, expected: '21 konflikt' },
-    { count: 101, expected: '101 konflikt' },
+    { count: 1, expected: '1 čeka odluku' },
+    { count: 2, expected: '2 čekaju odluku' },
+    { count: 5, expected: '5 čeka odluku' },
+    { count: 21, expected: '21 čeka odluku' },
+    { count: 101, expected: '101 čeka odluku' },
   ])('renders $count conflicts as $expected', ({ count, expected }) => {
     expect(t('count.conflicts', { count })).toBe(expected);
   });

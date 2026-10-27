@@ -13,7 +13,7 @@ export function fill(message: string, values: Readonly<Record<string, string>>):
 }
 
 /** The destinations only an admin reaches (`features/navigation/utils/destinations.ts`). */
-export const ADMIN_DESTINATIONS = [hr.nav.raspored, hr.nav.postavkeRotacije, hr.nav.organizacija] as const;
+export const ADMIN_DESTINATIONS = [hr.nav.zaOdluku, hr.nav.postavkeRotacije, hr.nav.organizacija] as const;
 
 /** The ones every role reaches. Ljudi since story 7.17: the list for an admin,
  *  the team directory for a member. */

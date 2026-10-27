@@ -302,23 +302,23 @@ export function resolutionFailureLineOf(failure: ResolutionWriteFailure, taken: 
 export function resolutionFailureMessageKey(
   failure: ResolutionWriteFailure,
 ):
-  | 'raspored.resolution.held'
-  | 'raspored.resolution.error.gone'
-  | 'raspored.resolution.error.denied'
-  | 'raspored.resolution.error.failed'
-  | 'raspored.resolution.error.taken' {
+  | 'zaOdluku.resolution.held'
+  | 'zaOdluku.resolution.error.gone'
+  | 'zaOdluku.resolution.error.denied'
+  | 'zaOdluku.resolution.error.failed'
+  | 'zaOdluku.resolution.error.taken' {
   switch (failure) {
     // The same line the screen states while the key is held (story 5.5d).
     case RESOLUTION_HELD:
-      return 'raspored.resolution.held';
+      return 'zaOdluku.resolution.held';
     case RESOLUTION_GONE:
-      return 'raspored.resolution.error.gone';
+      return 'zaOdluku.resolution.error.gone';
     case RESOLUTION_DENIED:
-      return 'raspored.resolution.error.denied';
+      return 'zaOdluku.resolution.error.denied';
     case RESOLUTION_FAILED:
-      return 'raspored.resolution.error.failed';
+      return 'zaOdluku.resolution.error.failed';
     case RESOLUTION_TAKEN:
-      return 'raspored.resolution.error.taken';
+      return 'zaOdluku.resolution.error.taken';
     default: {
       const unhandled: never = failure;
 

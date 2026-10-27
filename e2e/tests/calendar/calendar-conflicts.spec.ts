@@ -34,8 +34,8 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * today to today + 4 — Dan, Noć, Slobodno, Slobodno, Dan, the worked
  * example — on the member's page and goes back to *Kalendar*: the
  * team's cells on offsets 0, 1 and 4 carry `⚠`, the ring and the hatch and are
- * named Konflikt and Godišnji; offsets 2 and 3 carry nothing on the grid; the
- * legend lists Konflikt and Godišnji. The member's person view hatches all
+ * named Čeka odluku and Godišnji; offsets 2 and 3 carry nothing on the grid; the
+ * legend lists Čeka odluku and Godišnji. The member's person view hatches all
  * five dates and adds `⚠` on the three working ones. Removing the record,
  * in the app the same way, clears every mark, and the page never reloaded.
  *
@@ -427,14 +427,14 @@ test('the day detail states each unresolved conflict with its leave, links to it
   const roster = await calendarPage.openRosterFormIn(detail);
   await expect(calendarPage.rosterInIn(roster)).toHaveValue('');
   const onLeave = calendarPage.rosterInGroupIn(roster, 'onLeave');
-  await expect(onLeave).toHaveAttribute('label', hr.raspored.resolution.candidates.onLeave);
+  await expect(onLeave).toHaveAttribute('label', hr.zaOdluku.resolution.candidates.onLeave);
   await expect(calendarPage.memberOptionIn(onLeave, away.name)).toHaveCount(1);
   await page.keyboard.press('Escape');
   await expect(calendarPage.rosterForm).toHaveCount(0);
 
-  // "Riješi konflikt" goes to that conflict's decision screen.
+  // "Odluči" goes to that conflict's decision screen.
   await calendarPage.resolveLinksIn(conflicts).click();
-  await expect(page).toHaveURL(`/raspored/${member.id}/${date}/${team.id}`);
+  await expect(page).toHaveURL(`/za-odluku/${member.id}/${date}/${team.id}`);
 
   // DEFERRED-WORK E862: the open day is the URL's, so Back reopens it.
   await page.goBack();

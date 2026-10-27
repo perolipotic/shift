@@ -65,8 +65,8 @@ test.use({ storageState: ADMIN_STATE });
 // so each may wait for the others of this file, and of other files, first.
 test.describe.configure({ timeout: 120_000 });
 
-const raspored = hr.raspored;
-const resolution = raspored.resolution;
+const zaOdluku = hr.zaOdluku;
+const resolution = zaOdluku.resolution;
 
 let hold: RotationHold | null = null;
 let seed: SeededRotation | null = null;
@@ -175,7 +175,7 @@ test('opens a conflict from its queue row, shows K of N, moves with ‹ › in t
 
   // OPEN THE 2ND OF 3.
   await conflictsPage.rowLink(rows.nth(1)).click();
-  await expect(page).toHaveURL(`/raspored/${seeded.id}/${dates[1]}/${team.id}`);
+  await expect(page).toHaveURL(`/za-odluku/${seeded.id}/${dates[1]}/${team.id}`);
   await expect(resolutionPage.heading(resolution.heading)).toBeVisible();
   await expect(resolutionPage.position(2, 3)).toBeVisible();
   await expect(resolutionPage.backLink).toHaveText(plural(resolution.back, 3));
@@ -197,7 +197,7 @@ test('opens a conflict from its queue row, shows K of N, moves with ‹ › in t
 
   // ‹ TO THE 1ST: ‹ disabled there, nothing saved.
   await resolutionPage.previousButton.click();
-  await expect(page).toHaveURL(`/raspored/${seeded.id}/${dates[0]}/${team.id}`);
+  await expect(page).toHaveURL(`/za-odluku/${seeded.id}/${dates[0]}/${team.id}`);
   await expect(resolutionPage.position(1, 3)).toBeVisible();
   await expect(resolutionPage.previousButton).toBeDisabled();
   await expect(resolutionPage.previousButton).toHaveAccessibleName(resolution.previousNone);
@@ -206,14 +206,14 @@ test('opens a conflict from its queue row, shows K of N, moves with ‹ › in t
   await resolutionPage.nextButton.click();
   await expect(resolutionPage.position(2, 3)).toBeVisible();
   await resolutionPage.nextButton.click();
-  await expect(page).toHaveURL(`/raspored/${seeded.id}/${dates[2]}/${team.id}`);
+  await expect(page).toHaveURL(`/za-odluku/${seeded.id}/${dates[2]}/${team.id}`);
   await expect(resolutionPage.position(3, 3)).toBeVisible();
   await expect(resolutionPage.nextButton).toBeDisabled();
   await expect(resolutionPage.nextButton).toHaveAccessibleName(resolution.nextNone);
 
   // NOTHING WAS SAVED: the queue still holds three.
   await resolutionPage.cancelLink.click();
-  await expect(page).toHaveURL('/raspored');
+  await expect(page).toHaveURL('/za-odluku');
   await expect(rows).toHaveCount(3);
 
   // MISSING: + 2 is a Slobodno — on leave, but no working shift, so no conflict.
@@ -276,7 +276,7 @@ test('accepts a conflict as uncovered by keyboard: the queue drops it with a sta
   const rows = conflictsPage.rowsOf(seeded.name);
   await expect(rows).toHaveCount(3);
   await conflictsPage.rowLink(rows.nth(0)).click();
-  await expect(page).toHaveURL(`/raspored/${seeded.id}/${today}/${team.id}`);
+  await expect(page).toHaveURL(`/za-odluku/${seeded.id}/${today}/${team.id}`);
 
   // THE STRIP: three terms, in order.
   await expect(resolutionPage.stripLabels).toHaveText([resolution.coverageLabel, resolution.absentLabel, resolution.balanceLabel]);
@@ -292,7 +292,7 @@ test('accepts a conflict as uncovered by keyboard: the queue drops it with a sta
   await expect(resolutionPage.acceptOption).toBeFocused();
   await expect(resolutionPage.acceptOption).toHaveAttribute('aria-checked', 'false');
   await expect(resolutionPage.text(resolution.hintChoose)).toBeVisible();
-  await expect(page).toHaveURL(`/raspored/${seeded.id}/${today}/${team.id}`);
+  await expect(page).toHaveURL(`/za-odluku/${seeded.id}/${today}/${team.id}`);
 
   // BY KEYBOARD: Tab reaches the card, Space selects it, and Tab goes on to Spremi.
   await resolutionPage.nextButton.focus();
@@ -308,7 +308,7 @@ test('accepts a conflict as uncovered by keyboard: the queue drops it with a sta
   await page.keyboard.press('Enter');
 
   // BACK ON THE QUEUE with the status line, focused so it is announced; the row is gone.
-  await expect(page).toHaveURL('/raspored');
+  await expect(page).toHaveURL('/za-odluku');
   await expect(conflictsPage.savedStatus).toContainText(seeded.name);
   await expect(conflictsPage.savedStatus).toContainText(team.name);
   await expect(conflictsPage.savedStatus).toBeFocused();
@@ -359,21 +359,21 @@ test('a failed save says so and Spremi saves again, the saved line is gone on na
   await resolutionPage.acceptOption.click();
   await resolutionPage.saveButton.click();
   await expect(resolutionPage.alertWith(resolution.error.failed)).toBeVisible();
-  await expect(page).toHaveURL(`/raspored/${seeded.id}/${today}/${team.id}`);
+  await expect(page).toHaveURL(`/za-odluku/${seeded.id}/${today}/${team.id}`);
   await page.unroute(write);
   await resolutionPage.saveButton.click();
-  await expect(page).toHaveURL('/raspored');
+  await expect(page).toHaveURL('/za-odluku');
   await expect(conflictsPage.savedStatus).toContainText(seeded.name);
 
-  // THE LINE IS GONE on navigation: away and back, and on the Raspored tab itself.
+  // THE LINE IS GONE on navigation: away and back, and on the Za odluku tab itself.
   await conflictsPage.navigationLink(hr.nav.kalendar, { exact: true }).click();
   await expect(page).toHaveURL(/\/kalendar/);
-  await conflictsPage.navigationLink(hr.nav.raspored, { exact: true }).click();
+  await conflictsPage.navigationLink(hr.nav.zaOdluku, { exact: true }).click();
   await expect(conflictsPage.anyCountHeading).toBeVisible();
   await expect(conflictsPage.savedStatus).toHaveCount(0);
   await page.goBack();
   await page.goBack();
-  await expect(page).toHaveURL('/raspored');
+  await expect(page).toHaveURL('/za-odluku');
   await expect(conflictsPage.anyCountHeading).toBeVisible();
   await expect(conflictsPage.savedStatus).toHaveCount(0);
 
@@ -392,7 +392,7 @@ test('a failed save says so and Spremi saves again, the saved line is gone on na
   await resolutionPage.acceptOption.click();
   await resolutionPage.saveButton.click();
   await expect(resolutionPage.alertWith(resolution.error.denied)).toBeVisible();
-  await expect(page).toHaveURL(`/raspored/${seeded.id}/${next}/${team.id}`);
+  await expect(page).toHaveURL(`/za-odluku/${seeded.id}/${next}/${team.id}`);
   await page.unroute(write);
 
   // GONE, 23505: resolved meanwhile, in SQL, while the screen is open.
@@ -421,7 +421,7 @@ test('a failed save says so and Spremi saves again, the saved line is gone on na
   await expect(resolutionPage.saveButton).toHaveCount(0);
   await expect(resolutionPage.backLink).toHaveCount(1);
   await page.unroute(write);
-  await expect(page).toHaveURL(`/raspored/${seeded.id}/${next}/${team.id}`);
+  await expect(page).toHaveURL(`/za-odluku/${seeded.id}/${next}/${team.id}`);
 
   // GONE, P0002: the leave removed meanwhile, in SQL, while the screen is open.
   await resolutionPage.gotoConflict(seeded.id, last, team.id);
@@ -434,7 +434,7 @@ test('a failed save says so and Spremi saves again, the saved line is gone on na
   await expect(resolutionPage.options).toHaveCount(0);
   await expect(resolutionPage.saveButton).toHaveCount(0);
   await expect(resolutionPage.backLink).toHaveCount(1);
-  await expect(page).toHaveURL(`/raspored/${seeded.id}/${last}/${team.id}`);
+  await expect(page).toHaveURL(`/za-odluku/${seeded.id}/${last}/${team.id}`);
 });
 
 /**
@@ -539,7 +539,7 @@ test('replaces the absent member by keyboard: the queue drops the conflict with 
   const rows = conflictsPage.rowsOf(seeded.name);
   await expect(rows).toHaveCount(3);
   await conflictsPage.rowLink(rows.nth(0)).click();
-  await expect(page).toHaveURL(`/raspored/${seeded.id}/${today}/${team.id}`);
+  await expect(page).toHaveURL(`/za-odluku/${seeded.id}/${today}/${team.id}`);
 
   // CARD 2 BY KEYBOARD: Tab to the group, the arrow to the second card.
   await resolutionPage.nextButton.focus();
@@ -567,7 +567,7 @@ test('replaces the absent member by keyboard: the queue drops the conflict with 
   await resolutionPage.saveButton.focus();
   await page.keyboard.press('Enter');
   await expect(resolutionPage.candidates.getByRole('radio').first()).toBeFocused();
-  await expect(page).toHaveURL(`/raspored/${seeded.id}/${today}/${team.id}`);
+  await expect(page).toHaveURL(`/za-odluku/${seeded.id}/${today}/${team.id}`);
 
   // PICK DINO with the arrow keys: each one moves the pick, across the groups, which block nothing.
   const dinoRadio = resolutionPage.candidate(dino.name);
@@ -587,7 +587,7 @@ test('replaces the absent member by keyboard: the queue drops the conflict with 
   await page.keyboard.press('Enter');
 
   // BACK ON THE QUEUE: the status line names the replacement, and the row is gone.
-  await expect(page).toHaveURL('/raspored');
+  await expect(page).toHaveURL('/za-odluku');
   await expect(conflictsPage.savedStatus).toContainText(seeded.name);
   await expect(conflictsPage.savedStatus).toContainText(dino.name);
   await expect(conflictsPage.savedStatus).toBeFocused();
@@ -645,7 +645,7 @@ test('a replacement already put on the shift meanwhile is named and leaves the l
   await expect(resolutionPage.text(resolution.hintChooseReplacement)).toBeVisible();
   // The next step is another pick: focus is on the re-read list.
   await expect(resolutionPage.candidates.getByRole('radio').first()).toBeFocused();
-  await expect(page).toHaveURL(`/raspored/${seeded.id}/${today}/${team.id}`);
+  await expect(page).toHaveURL(`/za-odluku/${seeded.id}/${today}/${team.id}`);
 
   // GONE, 23505 on the resolution's key: resolved meanwhile, in SQL.
   await resolutionPage.gotoConflict(seeded.id, next, team.id);
@@ -727,8 +727,8 @@ test('a pick is dropped when the choice moves to the first card: accepting saves
   await resolutionPage.acceptOption.click();
   await resolutionPage.saveButton.click();
 
-  await expect(page).toHaveURL('/raspored');
-  await expect(conflictsPage.savedStatus).toContainText(raspored.saved.replace(/^[\s\S]*\{member\}/, ''));
+  await expect(page).toHaveURL('/za-odluku');
+  await expect(conflictsPage.savedStatus).toContainText(zaOdluku.saved.replace(/^[\s\S]*\{member\}/, ''));
   await expect(conflictsPage.savedStatus).not.toContainText(dino.name);
 
   await calendarPage.goto();
@@ -757,7 +757,7 @@ test('Leave pick: a member on leave that date can be picked, and back on the que
   await expect(conflictsPage.rowsOf(seeded.name)).toHaveCount(3);
   await expect(conflictsPage.rowsOf(eva.name)).toHaveCount(0);
   await conflictsPage.rowLink(conflictsPage.rowsOf(seeded.name).nth(0)).click();
-  await expect(page).toHaveURL(`/raspored/${seeded.id}/${today}/${team.id}`);
+  await expect(page).toHaveURL(`/za-odluku/${seeded.id}/${today}/${team.id}`);
 
   await resolutionPage.replaceOption.click();
   // Offered under its own heading, and selectable: the group only informs.
@@ -769,7 +769,7 @@ test('Leave pick: a member on leave that date can be picked, and back on the que
   await resolutionPage.saveButton.click();
 
   // In-app, no reload: the calendar read is invalidated, so Eva's own conflict is derived at once.
-  await expect(page).toHaveURL('/raspored');
+  await expect(page).toHaveURL('/za-odluku');
   await expect(conflictsPage.savedStatus).toContainText(eva.name);
   await expect(conflictsPage.rowsOf(seeded.name)).toHaveCount(2);
   await expect(conflictsPage.rowsOf(eva.name)).toHaveCount(1);
@@ -847,12 +847,12 @@ test('Removed override: removing the replacement in the calendar asks nothing, t
   await expect(resolutionPage.text(resolution.held)).toHaveCount(0);
   await resolutionPage.acceptOption.click();
   await resolutionPage.saveButton.click();
-  await expect(page).toHaveURL('/raspored');
+  await expect(page).toHaveURL('/za-odluku');
   await expect(conflictsPage.savedStatus).toContainText(seeded.name);
   await expect(rows).toHaveCount(2);
 });
 
-test('Riješeni: a replacement saved on the screen is listed with its decision, the admin and the time, and once the replacement is removed in the calendar the conflict is back in Neriješeni', async ({
+test('Odlučeno: a replacement saved on the screen is listed with its decision, the admin and the time, and once the replacement is removed in the calendar the conflict is back in Čeka odluku', async ({
   page,
   conflictsPage,
   resolutionPage,
@@ -865,7 +865,7 @@ test('Riješeni: a replacement saved on the screen is listed with its decision, 
   const rosterChange = hr.kalendar.detail.rosterChange;
   // `Odluka: {admin}, {date} u {time}`: the date as the screen formats it, the time as hours and minutes.
   const decided = new RegExp(
-    escapeRegExp(fill(raspored.resolved.decided, { actor: fixture.admin.name, date: 'DATE', time: 'TIME' }))
+    escapeRegExp(fill(zaOdluku.resolved.decided, { actor: fixture.admin.name, date: 'DATE', time: 'TIME' }))
       .replace('DATE', '\\S.*')
       .replace('TIME', '\\d{1,2}:\\d{2}'),
   );
@@ -875,7 +875,7 @@ test('Riješeni: a replacement saved on the screen is listed with its decision, 
   await resolutionPage.replaceOption.click();
   await resolutionPage.candidate(dino.name).click();
   await resolutionPage.saveButton.click();
-  await expect(page).toHaveURL('/raspored');
+  await expect(page).toHaveURL('/za-odluku');
   await expect(conflictsPage.savedStatus).toContainText(dino.name);
   await expect(conflictsPage.rowsOf(seeded.name)).toHaveCount(2);
 
@@ -884,8 +884,8 @@ test('Riješeni: a replacement saved on the screen is listed with its decision, 
   await expect(conflictsPage.resolvedTab).toHaveAttribute('aria-selected', 'true');
   const entry = conflictsPage.resolvedEntriesOf(seeded.name);
   await expect(entry).toHaveCount(1);
-  await expect(entry).toContainText(fill(raspored.resolved.replace_member, { replacement: dino.name }));
-  await expect(entry).toContainText(fill(raspored.who, { member: seeded.name, team: team.name }));
+  await expect(entry).toContainText(fill(zaOdluku.resolved.replace_member, { replacement: dino.name }));
+  await expect(entry).toContainText(fill(zaOdluku.who, { member: seeded.name, team: team.name }));
   await expect(entry).toContainText(decided);
 
   // THE CALENDAR: the replacement's override is removed from the day detail.
@@ -900,7 +900,7 @@ test('Riješeni: a replacement saved on the screen is listed with its decision, 
   await expect(calendarPage.statusIn(detail)).toContainText(rosterChange.removedDone);
   await expect(block).toHaveCount(0);
 
-  // BACK IN NERIJEŠENI, and gone from Riješeni.
+  // BACK IN ČEKA ODLUKU, and gone from Odlučeno.
   await conflictsPage.goto();
   await conflictsPage.resolvedTab.click();
   await expect(conflictsPage.resolvedTab).toHaveAttribute('aria-selected', 'true');
@@ -910,7 +910,7 @@ test('Riješeni: a replacement saved on the screen is listed with its decision, 
   await expect(conflictsPage.rowsOf(seeded.name)).toHaveCount(3);
 });
 
-test('Another shift (0038): a decision stays with the shift type it was made on; once the day becomes another shift the conflict is back in Neriješeni, gone from Riješeni, and deciding it again saves', async ({
+test('Another shift (0038): a decision stays with the shift type it was made on; once the day becomes another shift the conflict is back in Čeka odluku, gone from Odlučeno, and deciding it again saves', async ({
   page,
   conflictsPage,
   resolutionPage,
@@ -921,11 +921,11 @@ test('Another shift (0038): a decision stays with the shift type it was made on;
   if (seed === null) throw new Error('E2E: no seeded rotation');
   const [day, night] = seed.steps;
 
-  // ACCEPTED ON TODAY'S DAN: the queue drops it, Riješeni names the type.
+  // ACCEPTED ON TODAY'S DAN: the queue drops it, Odlučeno names the type.
   await resolutionPage.gotoConflict(seeded.id, today, team.id);
   await resolutionPage.acceptOption.click();
   await resolutionPage.saveButton.click();
-  await expect(page).toHaveURL('/raspored');
+  await expect(page).toHaveURL('/za-odluku');
   await expect(conflictsPage.rowsOf(seeded.name)).toHaveCount(2);
   await conflictsPage.resolvedTab.click();
   await expect(conflictsPage.resolvedEntriesOf(seeded.name)).toHaveCount(1);
@@ -943,7 +943,7 @@ test('Another shift (0038): a decision stays with the shift type it was made on;
   await resolutionPage.gotoConflict(seeded.id, today, team.id);
   await resolutionPage.acceptOption.click();
   await resolutionPage.saveButton.click();
-  await expect(page).toHaveURL('/raspored');
+  await expect(page).toHaveURL('/za-odluku');
   await expect(conflictsPage.rowsOf(seeded.name)).toHaveCount(2);
   await conflictsPage.resolvedTab.click();
   await expect(conflictsPage.resolvedEntriesOf(seeded.name)).toHaveCount(1);
@@ -987,7 +987,7 @@ test('Pending after rotation save: the conflict is listed again, Spremi waits wi
     // `aria-disabled` keeps it focusable: a press does nothing.
     await resolutionPage.saveButton.focus();
     await page.keyboard.press('Enter');
-    await expect(page).toHaveURL(`/raspored/${seeded.id}/${last}/${team.id}`);
+    await expect(page).toHaveURL(`/za-odluku/${seeded.id}/${last}/${team.id}`);
     expect(writes.count()).toBe(0);
 
     // THE HINT'S LINK: the grid on that month, narrowed to the team; the pending change is removed there.
@@ -1012,7 +1012,7 @@ test('Pending after rotation save: the conflict is listed again, Spremi waits wi
     await expect(resolutionPage.text(resolution.held)).toHaveCount(0);
     await resolutionPage.acceptOption.click();
     await resolutionPage.saveButton.click();
-    await expect(page).toHaveURL('/raspored');
+    await expect(page).toHaveURL('/za-odluku');
     await expect(rows).toHaveCount(2);
   } finally {
     await removeRotationChangesOver(rotation, since);
@@ -1062,15 +1062,15 @@ test('Inert replacement: a replacement deactivated before the date holds the con
   await expect(resolutionPage.text(resolution.held)).toHaveCount(0);
   await resolutionPage.acceptOption.click();
   await resolutionPage.saveButton.click();
-  await expect(page).toHaveURL('/raspored');
+  await expect(page).toHaveURL('/za-odluku');
   await expect(rows).toHaveCount(2);
 });
 
 test.describe('a member', () => {
   test.use({ storageState: MEMBER_STATE });
 
-  test('opening a resolution screen is sent to Danas, as Raspored is', async ({ page }) => {
-    await page.goto('/raspored/00000000-0000-4000-8000-000000000000/2026-10-02/00000000-0000-4000-8000-000000000000');
+  test('opening a resolution screen is sent to Danas, as Za odluku is', async ({ page }) => {
+    await page.goto('/za-odluku/00000000-0000-4000-8000-000000000000/2026-10-02/00000000-0000-4000-8000-000000000000');
     await expect(page).toHaveURL('/danas');
   });
 });
@@ -1114,7 +1114,7 @@ test('amends the leave by keyboard: card 3 opens the member page\'s amend form p
   /** From the queue's first row to the member page, by keyboard, through card 3. */
   async function amendByKeyboard(): Promise<void> {
     await conflictsPage.rowLink(rows.nth(0)).click();
-    await expect(page).toHaveURL(`/raspored/${seeded.id}/${today}/${team.id}`);
+    await expect(page).toHaveURL(`/za-odluku/${seeded.id}/${today}/${team.id}`);
     await amendFromScreen();
   }
 
@@ -1158,7 +1158,7 @@ test('amends the leave by keyboard: card 3 opens the member page\'s amend form p
   await resolutionPage.amendOption.click();
   await expect(resolutionPage.text(fill(resolution.hintAmend, { date: dayMonth(start) }))).toBeVisible();
   await resolutionPage.cancelLink.click();
-  await expect(page).toHaveURL('/raspored');
+  await expect(page).toHaveURL('/za-odluku');
 
   // THE LAST DAY (today + 4): the leave ends the day before, and the hint names that date.
   const dayBefore = isoDaysAfter(today, 3);
@@ -1169,7 +1169,7 @@ test('amends the leave by keyboard: card 3 opens the member page\'s amend form p
   await resolutionPage.amendOption.click();
   await expect(resolutionPage.text(fill(resolution.hintAmend, { date: dayMonth(dayBefore) }))).toBeVisible();
   await resolutionPage.cancelLink.click();
-  await expect(page).toHaveURL('/raspored');
+  await expect(page).toHaveURL('/za-odluku');
 
   // THE AMEND DIALOG, opened once and prefilled with the range that clears the conflict, focus in it.
   await amendByKeyboard();
@@ -1187,7 +1187,7 @@ test('amends the leave by keyboard: card 3 opens the member page\'s amend form p
   await expect(peoplePage.leaveDialog).toHaveCount(0);
   await expect(peoplePage.backToConflictsLink).toBeVisible();
   await page.goBack();
-  await expect(page).toHaveURL(`/raspored/${seeded.id}/${today}/${team.id}`);
+  await expect(page).toHaveURL(`/za-odluku/${seeded.id}/${today}/${team.id}`);
   await amendFromScreen();
   await expect(peoplePage.leaveAmendDialog(today, last)).toBeVisible();
 
@@ -1196,7 +1196,7 @@ test('amends the leave by keyboard: card 3 opens the member page\'s amend form p
   await expect(peoplePage.leaveDialog).toHaveCount(0);
   await expect(peoplePage.leaveRecordsHeading).toBeFocused();
   await peoplePage.backToConflictsLink.click();
-  await expect(page).toHaveURL('/raspored');
+  await expect(page).toHaveURL('/za-odluku');
   await expect(rows).toHaveCount(3);
 
   // SAVE THE AMEND: back on the queue, today's conflict is gone, the other two stand.
@@ -1206,7 +1206,7 @@ test('amends the leave by keyboard: card 3 opens the member page\'s amend form p
   await expect(peoplePage.leaveDialog).toHaveCount(0);
   await expect(peoplePage.leaveRecordRow(start, last)).toHaveCount(1);
   await peoplePage.backToConflictsLink.click();
-  await expect(page).toHaveURL('/raspored');
+  await expect(page).toHaveURL('/za-odluku');
   await expect(rows).toHaveCount(2);
 
   // NOTHING WAS WRITTEN as a resolution: the leave amend is the write, and the listener saw it.

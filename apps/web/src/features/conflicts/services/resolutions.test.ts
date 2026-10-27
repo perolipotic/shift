@@ -110,7 +110,7 @@ describe("the organization's read", () => {
   const LAST = CONFLICT_RESOLUTIONS_PAGE_ROWS - 1;
   const many = (count: number) => Array.from({ length: count }, (_, index) => row(MEMBER, '2026-09-12', `t${String(index)}`));
 
-  it('asks for every live resolution by id, a page at a time, with its exact count, and the author columns the Riješeni tab reads', async () => {
+  it('asks for every live resolution by id, a page at a time, with its exact count, and the author columns the Odlučeno tab reads', async () => {
     const table = tableAnswering([{ data: [A, B], error: null, count: 2 }]);
 
     expect(await readOrganizationConflictResolutionRows(table)).toEqual({ ok: true, rows: [A, B] });

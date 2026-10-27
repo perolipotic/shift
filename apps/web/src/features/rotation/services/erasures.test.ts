@@ -179,10 +179,10 @@ describe('Erases', () => {
     expect(t('rotation.builder.erasures.rowFree', { member: row.memberName, team: row.teamName })).toBe(
       `${VIEWER_NAME} na godišnjem · nova rotacija: Smjena A taj dan slobodna`,
     );
-    expect(t('rotation.builder.erasures.title', { count: 2 })).toBe('Promjena briše 2 konflikta');
-    expect(t('rotation.builder.erasures.title', { count: 5 })).toBe('Promjena briše 5 konflikata');
+    expect(t('rotation.builder.erasures.title', { count: 2 })).toBe('Promjena uklanja 2 stavke koje čekaju odluku');
+    expect(t('rotation.builder.erasures.title', { count: 5 })).toBe('Promjena uklanja 5 stavki koje čekaju odluku');
     expect(t('rotation.builder.erasures.lede', { count: 1 })).toBe(
-      'Ova promjena uklanja uzrok 1 neriješenog konflikta. Prije spremanja odluči za svaki.',
+      'Ova promjena uklanja uzrok 1 stavke koja čeka odluku. Prije spremanja odluči za svaku.',
     );
   });
 
@@ -455,13 +455,13 @@ describe('the cancel: Plain revert', () => {
       `${VIEWER_NAME} na godišnjem · nakon poništavanja: Smjena A taj dan slobodna`,
     );
     expect(t('rotation.builder.cancelScheduled.erasures.lede', { count: 1 })).toBe(
-      'Poništavanje uklanja uzrok 1 neriješenog konflikta. Prije poništavanja odluči za svaki.',
+      'Poništavanje uklanja uzrok 1 stavke koja čeka odluku. Prije poništavanja odluči za svaku.',
     );
-    expect(t('rotation.builder.cancelScheduled.erasures.kept')).toBe('Zadržan konflikt: odustani od poništavanja.');
+    expect(t('rotation.builder.cancelScheduled.erasures.kept')).toBe('Zadržana stavka: odustani od poništavanja.');
     expect(t('rotation.builder.cancelScheduled.erasures.unavailable')).toBe(
-      'Ne mogu provjeriti konflikte koje bi poništavanje izbrisalo.',
+      'Ne mogu provjeriti što bi poništavanje uklonilo s popisa Za odluku.',
     );
-    expect(t('rotation.builder.cancelScheduled.erasures.removed', { count: 1 })).toBe('Uklonjen 1 konflikt.');
+    expect(t('rotation.builder.cancelScheduled.erasures.removed', { count: 1 })).toBe('Uklonjena 1 stavka koja je čekala odluku.');
   });
 
   it('never lists a conflict dated before the scheduled date', async () => {

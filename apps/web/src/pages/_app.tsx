@@ -62,7 +62,7 @@ import { sessionEnded } from '@/lib/supabase/session-cache';
  * now names the ones that do and still refuses every other; what did not change
  * is this file, which names no level and must go on naming none. Since the
  * admin route guard fix, every admin-only destination carries that check of its
- * own, `/raspored` and `/organizacija` included. Eight
+ * own, `/za-odluku` and `/organizacija` included. Eight
  * destinations sharing one session guard and one of them adding a second
  * decision of its own are two separate claims, and keeping them in two files is
  * what stops the next reviewer having to hold both at once.

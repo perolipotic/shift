@@ -68,11 +68,11 @@ import { keepFocusOnAlert } from '@/utils/retry-focus';
  *
  * ONE DAY (story 3.4b): a grid cell — clicked, or Enter or Space on it — and a
  * day-list day on a team open a Dialog of that team on that date: facts only
- * since story 7.9 — the type, an admin's unresolved conflicts with "Riješi
- * konflikt", the roster and *Izmjene* — with each change in its own dialog.
+ * since story 7.9 — the type, an admin's unresolved conflicts with "Odluči",
+ * the roster and *Izmjene* — with each change in its own dialog.
  * Which day is open lives in the URL (`?dan=…&danSmjena=…`, deferred-work
- * E862): opening pushes it, so Back closes the day and Back from "Riješi
- * konflikt" reopens it; closing replaces it. Every close returns focus to the
+ * E862): opening pushes it, so Back closes the day and Back from "Odluči"
+ * reopens it; closing replaces it. Every close returns focus to the
  * opener, or to the grid's tab stop or the month heading when the opener is
  * gone.
  *

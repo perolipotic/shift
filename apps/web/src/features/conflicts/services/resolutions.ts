@@ -17,7 +17,7 @@ import { isIsoDate } from '@/lib/i18n/format';
  * {@link ORGANIZATION_CONFLICT_RESOLUTIONS_KEY}; a member reads their own
  * through `my_conflict_resolutions()` under
  * {@link MY_CONFLICT_RESOLUTIONS_KEY}, which carries no author. The
- * organization's read names the author columns for the *Riješeni* tab
+ * organization's read names the author columns for the *Odlučeno* tab
  * ({@link CONFLICT_RESOLUTIONS_COLUMNS}); the member's never does.
  *
  * THE ROWS COME BACK UNPARSED. Whose rows are trustworthy is the calendar
@@ -45,7 +45,7 @@ export const CONFLICT_RESOLUTIONS_UNAVAILABLE = 'CONFLICT_RESOLUTIONS_UNAVAILABL
 /**
  * The columns the organization's read selects: the key, the kind, the
  * override a replacement names (0032; story 5.4e), the shift type the decision
- * was made on (0038), and — for the *Riješeni*
+ * was made on (0038), and — for the *Odlučeno*
  * tab alone (story 7.16; FR-48a) — who decided and when (`created_by`,
  * `created_at`; AD-11). Only an active admin reads this table (0031), and
  * {@link conflictResolutionsOf} ignores both. The member's own read has no

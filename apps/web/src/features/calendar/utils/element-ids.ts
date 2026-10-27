@@ -115,7 +115,7 @@ export const DAY_DETAIL_CHANGES_ID = 'kalendar-detail-changes';
 /** The day detail's conflict heading (story 7.9), which names its section of unresolved conflicts. */
 export const DAY_DETAIL_CONFLICTS_ID = 'kalendar-detail-conflicts';
 
-/** One conflict's line in the day detail (story 7.9), which its "Riješi konflikt" is described by. */
+/** One conflict's line in the day detail (story 7.9), which its "Odluči" is described by. */
 export function conflictLineIdOf(memberId: string): string {
   return `kalendar-conflict-${memberId}`;
 }

@@ -69,7 +69,7 @@ import {
  * the failed read (the e2e spec's), over *Sati*'s three surfaces — the
  * viewer's own month, the organization's table and the sheet — with the
  * collisions `hoursLeaveOf` derives. Each count is checked against
- * `collisionsOf` itself, through *Raspored*'s own recipe, and every other
+ * `collisionsOf` itself, through *Za odluku*'s own recipe, and every other
  * figure against the same month computed with no leave at all.
  */
 
@@ -266,7 +266,7 @@ describe('the worked example', () => {
     const sheet = hoursExportOf(view, admin.organizationName);
 
     expect(sheet.columns.at(-1)).toBe(t('sati.organization.conflicts'));
-    expect(t('sati.organization.conflicts')).toBe('Neriješeni konflikti');
+    expect(t('sati.organization.conflicts')).toBe('Čeka odluku');
     view.rows.forEach((row, index) => {
       expect(sheet.rows[index]!.at(-1)).toEqual({ kind: 'count', value: row.memberId === VIEWER_MEMBER ? 3 : 0 });
     });
@@ -277,10 +277,10 @@ describe('the worked example', () => {
 
     expect(view.conflictCount).toBe(3);
     expect(ownFiguresOf(view)).toEqual(ownFiguresOf(ownOf(member, NO_COLLISIONS, SEPTEMBER, [], NO_LEAVE_RECORDS)));
-    expect(t('sati.conflicts', { count: 3 })).toBe('3 smjene u neriješenom konfliktu');
-    expect(t('sati.conflicts', { count: 2 })).toBe('2 smjene u neriješenom konfliktu');
-    expect(t('sati.conflicts', { count: 1 })).toBe('1 smjena u neriješenom konfliktu');
-    expect(t('sati.conflicts', { count: 5 })).toBe('5 smjena u neriješenom konfliktu');
+    expect(t('sati.conflicts', { count: 3 })).toBe('3 smjene čekaju odluku');
+    expect(t('sati.conflicts', { count: 2 })).toBe('2 smjene čekaju odluku');
+    expect(t('sati.conflicts', { count: 1 })).toBe('1 smjena čeka odluku');
+    expect(t('sati.conflicts', { count: 5 })).toBe('5 smjena čeka odluku');
   });
 });
 

@@ -53,7 +53,7 @@
   },
   "count": {
     "days": "{count, plural, one {# dan} few {# dana} other {# dana}}",
-    "conflicts": "{count, plural, one {# konflikt} few {# konflikta} other {# konflikata}}"
+    "conflicts": "{count, plural, one {# čeka odluku} few {# čekaju odluku} other {# čeka odluku}}"
   },
   "danas": {
     "dateLine": "{weekday}, {date}",
@@ -122,7 +122,7 @@
         "shift": "{type} · {team}",
         "past": "prošlo",
         "today": "danas",
-        "open": "Otvori konflikte ({count})"
+        "open": "Otvori Za odluku ({count})"
       },
       "coverage": {
         "heading": "Pokrivenost danas",
@@ -132,9 +132,9 @@
         "running": "u tijeku, do {time}",
         "ended": "završeno u {time}",
         "members": "{present} od {total, plural, one {# člana} few {# člana} other {# članova}}",
-        "absentUnresolved": "{name} je na godišnjem · konflikt nije riješen",
+        "absentUnresolved": "{name} je na godišnjem, a u sastavu je smjene · čeka odluku",
         "absentAccepted": "{name} je na godišnjem · prihvaćeno bez zamjene",
-        "absentResolved": "{name} je na godišnjem · konflikt je riješen",
+        "absentResolved": "{name} je na godišnjem · odlučeno",
         "full": "✓ puna smjena",
         "nobody": "Nitko nije raspoređen",
         "none": "Danas nijedna smjena ne radi.",
@@ -161,11 +161,11 @@
         "team": "Smjena",
         "cellTimed": "{weekday} {date}, {team}, {type} {range}",
         "cell": "{weekday} {date}, {team}, {type}",
-        "cellTimedConflict": "{weekday} {date}, {team}, {type} {range}, neriješen konflikt",
-        "cellConflict": "{weekday} {date}, {team}, {type}, neriješen konflikt",
+        "cellTimedConflict": "{weekday} {date}, {team}, {type} {range}, čeka odluku",
+        "cellConflict": "{weekday} {date}, {team}, {type}, čeka odluku",
         "legend": "Oznake",
         "legendType": "{letter} {name}",
-        "legendConflict": "{glyph} neriješen konflikt",
+        "legendConflict": "{glyph} čeka odluku",
         "link": "Otvori kalendar"
       },
       "unavailable": "Pregled trenutačno nije moguće učitati. Pokušaj ponovno."
@@ -280,10 +280,10 @@
         "empty": "Za ovaj dan nema izmjena tipa smjene ni sastava."
       },
       "conflict": {
-        "heading": "{count, plural, one {Konflikt} few {Konflikti} other {Konflikti}}",
+        "heading": "{count, plural, one {Odsutnost u smjeni} few {Odsutnosti u smjeni} other {Odsutnosti u smjeni}}",
         "line": "{name}: godišnji {from}–{to}, a u sastavu je ove smjene.",
         "lineUndated": "{name}: godišnji, a u sastavu je ove smjene.",
-        "resolve": "Riješi konflikt"
+        "resolve": "Odluči"
       },
       "typeTimes": "{name} {range}",
       "changeContext": "{team} · {date} · {type}",
@@ -338,21 +338,21 @@
           "failed": "Promjena nije uspjela. Pokušaj ponovno."
         },
         "erasures": {
-          "title": "{count, plural, one {Promjena briše # konflikt} few {Promjena briše # konflikta} other {Promjena briše # konflikata}}",
-          "lede": "{count, plural, one {Ova promjena uklanja uzrok # neriješenog konflikta.} few {Ova promjena uklanja uzrok # neriješena konflikta.} other {Ova promjena uklanja uzrok # neriješenih konflikata.}} Prije spremanja odluči za svaki.",
+          "title": "{count, plural, one {Promjena uklanja # stavku koja čeka odluku} few {Promjena uklanja # stavke koje čekaju odluku} other {Promjena uklanja # stavki koje čekaju odluku}}",
+          "lede": "{count, plural, one {Ova promjena uklanja uzrok # stavke koja čeka odluku.} few {Ova promjena uklanja uzrok # stavke koje čekaju odluku.} other {Ova promjena uklanja uzrok # stavki koje čekaju odluku.}} Prije spremanja odluči za svaku.",
           "rowTitle": "{team} · {weekday} {date} · {type}",
-          "ledeRemoval": "{count, plural, one {Ova promjena uklanja uzrok # neriješenog konflikta.} few {Ova promjena uklanja uzrok # neriješena konflikta.} other {Ova promjena uklanja uzrok # neriješenih konflikata.}} Prije uklanjanja odluči za svaki.",
+          "ledeRemoval": "{count, plural, one {Ova promjena uklanja uzrok # stavke koja čeka odluku.} few {Ova promjena uklanja uzrok # stavke koje čekaju odluku.} other {Ova promjena uklanja uzrok # stavki koje čekaju odluku.}} Prije uklanjanja odluči za svaku.",
           "rowWithout": "{member} na godišnjem · nakon promjene: {team} taj dan bez {member}",
           "decision": "Odluka: {team} · {weekday} {date} · {type}",
           "confirm": "Potvrdi brisanje",
           "keep": "Zadrži",
           "back": "Natrag na uređivanje",
-          "kept": "Zadržan konflikt: vrati se na uređivanje.",
-          "keptRemoval": "Zadržan konflikt: odustani od uklanjanja ili se vrati na dan.",
-          "changed": "Popis konflikata se promijenio. Odluči ponovno za svaki.",
-          "unavailable": "Ne mogu provjeriti konflikte koje bi promjena izbrisala.",
+          "kept": "Zadržana stavka: vrati se na uređivanje.",
+          "keptRemoval": "Zadržana stavka: odustani od uklanjanja ili se vrati na dan.",
+          "changed": "Popis stavki koje čekaju odluku se promijenio. Odluči ponovno za svaku.",
+          "unavailable": "Ne mogu provjeriti što bi promjena uklonila s popisa Za odluku.",
           "retry": "Pokušaj ponovno",
-          "removed": "{count, plural, one {Uklonjen # konflikt.} few {Uklonjena # konflikta.} other {Uklonjeno # konflikata.}}"
+          "removed": "{count, plural, one {Uklonjena # stavka koja je čekala odluku.} few {Uklonjene # stavke koje su čekale odluku.} other {Uklonjeno # stavki koje su čekale odluku.}}"
         }
       },
       "override": {
@@ -400,26 +400,26 @@
           "removed": "Izmjena koja je čekala pregled je uklonjena."
         },
         "erasures": {
-          "title": "{count, plural, one {Promjena briše # konflikt} few {Promjena briše # konflikta} other {Promjena briše # konflikata}}",
-          "lede": "{count, plural, one {Ova izmjena uklanja uzrok # neriješenog konflikta.} few {Ova izmjena uklanja uzrok # neriješena konflikta.} other {Ova izmjena uklanja uzrok # neriješenih konflikata.}} Prije spremanja odluči za svaki.",
-          "ledeRemoval": "{count, plural, one {Uklanjanje izmjene uklanja uzrok # neriješenog konflikta.} few {Uklanjanje izmjene uklanja uzrok # neriješena konflikta.} other {Uklanjanje izmjene uklanja uzrok # neriješenih konflikata.}} Prije uklanjanja odluči za svaki.",
+          "title": "{count, plural, one {Promjena uklanja # stavku koja čeka odluku} few {Promjena uklanja # stavke koje čekaju odluku} other {Promjena uklanja # stavki koje čekaju odluku}}",
+          "lede": "{count, plural, one {Ova izmjena uklanja uzrok # stavke koja čeka odluku.} few {Ova izmjena uklanja uzrok # stavke koje čekaju odluku.} other {Ova izmjena uklanja uzrok # stavki koje čekaju odluku.}} Prije spremanja odluči za svaku.",
+          "ledeRemoval": "{count, plural, one {Uklanjanje izmjene uklanja uzrok # stavke koja čeka odluku.} few {Uklanjanje izmjene uklanja uzrok # stavke koje čekaju odluku.} other {Uklanjanje izmjene uklanja uzrok # stavki koje čekaju odluku.}} Prije uklanjanja odluči za svaku.",
           "rowTitle": "{team} · {weekday} {date} · {type}",
           "rowFree": "{member} na godišnjem · nakon promjene: {team} taj dan slobodna",
           "decision": "Odluka: {team} · {weekday} {date} · {type}",
           "confirm": "Potvrdi brisanje",
           "keep": "Zadrži",
           "back": "Natrag na uređivanje",
-          "kept": "Zadržan konflikt: promijeni izmjenu ili se vrati na uređivanje.",
-          "keptRemoval": "Zadržan konflikt: odustani od uklanjanja ili se vrati na dan.",
-          "changed": "Popis konflikata se promijenio. Odluči ponovno za svaki.",
-          "unavailable": "Ne mogu provjeriti konflikte koje bi promjena izbrisala.",
+          "kept": "Zadržana stavka: promijeni izmjenu ili se vrati na uređivanje.",
+          "keptRemoval": "Zadržana stavka: odustani od uklanjanja ili se vrati na dan.",
+          "changed": "Popis stavki koje čekaju odluku se promijenio. Odluči ponovno za svaku.",
+          "unavailable": "Ne mogu provjeriti što bi promjena uklonila s popisa Za odluku.",
           "retry": "Pokušaj ponovno",
-          "removed": "{count, plural, one {Uklonjen # konflikt.} few {Uklonjena # konflikta.} other {Uklonjeno # konflikata.}}"
+          "removed": "{count, plural, one {Uklonjena # stavka koja je čekala odluku.} few {Uklonjene # stavke koje su čekale odluku.} other {Uklonjeno # stavki koje su čekale odluku.}}"
         }
       }
     },
     "modifier": {
-      "conflict": "Konflikt",
+      "conflict": "Čeka odluku",
       "overridden": "Izmijenjeno",
       "leave": "Godišnji",
       "uncovered": "Nepokriveno"
@@ -469,19 +469,19 @@
       "none": "Danas nema nijedne aktivne osobe."
     }
   },
-  "raspored": {
-    "count": "{count, plural, one {# neriješen konflikt} few {# neriješena konflikta} other {# neriješenih konflikata}}",
-    "empty": "Nema konflikata između godišnjih odmora i rasporeda.",
+  "zaOdluku": {
+    "count": "{count, plural, one {# čeka odluku} few {# čekaju odluku} other {# čeka odluku}}",
+    "empty": "Ništa ne čeka odluku.",
     "past": "Prošli datum",
     "tabs": {
-      "label": "Konflikti",
-      "unresolved": "Neriješeni",
-      "unresolvedCount": "Neriješeni · {count}",
-      "resolved": "Riješeni"
+      "label": "Stavke za odluku",
+      "unresolved": "Čeka odluku",
+      "unresolvedCount": "Čeka odluku · {count}",
+      "resolved": "Odlučeno"
     },
     "resolved": {
-      "count": "{count, plural, one {# riješen konflikt} few {# riješena konflikta} other {# riješenih konflikata}}",
-      "empty": "Još nijedan konflikt nije riješen.",
+      "count": "{count, plural, one {# odlučena stavka} few {# odlučene stavke} other {# odlučenih stavki}}",
+      "empty": "Još ništa nije odlučeno.",
       "shiftGone": "Taj dan više nije radni po rasporedu",
       "accept_uncovered": "Prihvaćeno kao nepokriveno",
       "replace_member": "Zamjena: {replacement}",
@@ -493,19 +493,19 @@
     "who": "{member} · {team}",
     "detail": "{type} · Godišnji odmor {from}–{to}",
     "detailTimed": "{type} {times} · Godišnji odmor {from}–{to}",
-    "unavailable": "Konflikte trenutačno nije moguće učitati. Pokušaj ponovno.",
+    "unavailable": "Stavke za odluku trenutačno nije moguće učitati. Pokušaj ponovno.",
     "retry": "Pokušaj ponovno",
     "saved": "Odluka je spremljena: {type} · {team} · {date} · {member}, prihvaćeno kao nepokriveno.",
     "savedReplace": "Odluka je spremljena: {type} · {team} · {date} · {member}, zamjena: {replacement}.",
     "resolution": {
-      "back": "Raspored · {count, plural, one {# neriješen} few {# neriješena} other {# neriješenih}}",
-      "heading": "Konflikt",
+      "back": "Za odluku · {count, plural, one {# čeka odluku} few {# čekaju odluku} other {# čeka odluku}}",
+      "heading": "Odsutnost u smjeni",
       "position": "{position} od {count} · odluči što vrijedi za ovu smjenu.",
-      "previous": "Prethodni konflikt: {date}",
-      "previousNone": "Prethodni konflikt",
-      "next": "Sljedeći konflikt: {date}",
-      "nextNone": "Sljedeći konflikt",
-      "mark": "Konflikt",
+      "previous": "Prethodna stavka: {date}",
+      "previousNone": "Prethodna stavka",
+      "next": "Sljedeća stavka: {date}",
+      "nextNone": "Sljedeća stavka",
+      "mark": "Odsutnost u smjeni",
       "shiftTimed": "{type} {times} · {team} · {date}",
       "shift": "{type} · {team} · {date}",
       "leave": "na godišnjem {from}–{to} · {days, plural, one {# dan} few {# dana} other {# dana}}",
@@ -555,16 +555,16 @@
       "cancel": "Odustani",
       "save": "Spremi odluku",
       "saving": "Spremanje…",
-      "missing": "Ovaj konflikt više nije otvoren: odluka je već zabilježena ili godišnji više ne pokriva taj datum.",
-      "backToQueue": "Natrag na Raspored",
-      "unavailable": "Konflikt trenutačno nije moguće učitati. Pokušaj ponovno.",
+      "missing": "Ova stavka više ne čeka odluku: odluka je već zabilježena ili godišnji više ne pokriva taj datum.",
+      "backToQueue": "Natrag na Za odluku",
+      "unavailable": "Stavku trenutačno nije moguće učitati. Pokušaj ponovno.",
       "retry": "Pokušaj ponovno",
       "held": "Zamjena se ne primjenjuje. Ukloni je u kalendaru pa odluči ponovno.",
       "heldHint": "Zamjena se ne primjenjuje. {action} pa odluči ponovno.",
       "heldAction": "Ukloni je u kalendaru",
       "error": {
-        "gone": "Ovaj konflikt više nije otvoren: odluka je već zabilježena ili godišnji više ne pokriva taj datum.",
-        "denied": "Nemaš ovlasti odlučiti o ovom konfliktu.",
+        "gone": "Ova stavka više ne čeka odluku: odluka je već zabilježena ili godišnji više ne pokriva taj datum.",
+        "denied": "Nemaš ovlasti odlučiti o ovoj stavci.",
         "failed": "Odluku nije bilo moguće spremiti. Pokušaj ponovno.",
         "taken": "{name} je već na ovoj smjeni. Odaberi nekoga drugoga."
       }
@@ -579,7 +579,7 @@
     "noFigure": "—",
     "noFigureWord": "nema",
     "untimed": "{count, plural, one {# smjena nema upisano vrijeme pa nije uračunata u sate.} few {# smjene nemaju upisano vrijeme pa nisu uračunate u sate.} other {# smjena nema upisano vrijeme pa nije uračunato u sate.}}",
-    "conflicts": "{count, plural, one {# smjena u neriješenom konfliktu} few {# smjene u neriješenom konfliktu} other {# smjena u neriješenom konfliktu}}",
+    "conflicts": "{count, plural, one {# smjena čeka odluku} few {# smjene čekaju odluku} other {# smjena čeka odluku}}",
     "retry": "Pokušaj ponovno",
     "title": {
       "own": "Moji sati"
@@ -593,7 +593,7 @@
       "memberMonth": "{name} · {month}",
       "line": "{team} · {shiftType} · {source}",
       "leaveLine": "{team} · {shiftType}",
-      "conflict": "u neriješenom konfliktu",
+      "conflict": "čeka odluku",
       "plus": "+",
       "equals": "=",
       "sum": "Zbroj",
@@ -616,7 +616,7 @@
       "total": "Ukupno",
       "leave": "Godišnji odmor",
       "footer": "Ukupno za prikazane osobe",
-      "conflicts": "Neriješeni konflikti",
+      "conflicts": "Čeka odluku",
       "noTeam": "—",
       "noTeamWord": "bez smjene",
       "emptyMonth": "U ovom mjesecu nema nijedne osobe.",
@@ -713,7 +713,7 @@
       "edit": "Uredi osobu {name}",
       "actions": "Radnje",
       "back": "Vrati se na popis",
-      "backToConflicts": "Natrag na konflikte",
+      "backToConflicts": "Natrag na Za odluku",
       "username": "Korisničko ime",
       "save": "Spremi",
       "cancel": "Odustani",
@@ -810,19 +810,19 @@
       "saved": "Promjena statusa je spremljena."
     },
     "erasures": {
-      "title": "{count, plural, one {Promjena briše # konflikt} few {Promjena briše # konflikta} other {Promjena briše # konflikata}}",
-      "lede": "{count, plural, one {Ova promjena uklanja uzrok # neriješenog konflikta.} few {Ova promjena uklanja uzrok # neriješena konflikta.} other {Ova promjena uklanja uzrok # neriješenih konflikata.}} Prije potvrde odluči za svaki.",
+      "title": "{count, plural, one {Promjena uklanja # stavku koja čeka odluku} few {Promjena uklanja # stavke koje čekaju odluku} other {Promjena uklanja # stavki koje čekaju odluku}}",
+      "lede": "{count, plural, one {Ova promjena uklanja uzrok # stavke koja čeka odluku.} few {Ova promjena uklanja uzrok # stavke koje čekaju odluku.} other {Ova promjena uklanja uzrok # stavki koje čekaju odluku.}} Prije potvrde odluči za svaku.",
       "rowTitle": "{team} · {weekday} {date} · {type}",
       "rowWithout": "{member} na godišnjem · nakon promjene: {team} taj dan bez {member}",
       "decision": "Odluka: {team} · {weekday} {date} · {type}",
       "confirm": "Potvrdi brisanje",
       "keep": "Zadrži",
       "back": "Natrag na uređivanje",
-      "kept": "Zadržan konflikt: odustani od promjene ili se vrati na uređivanje.",
-      "changed": "Popis konflikata se promijenio. Odluči ponovno za svaki.",
-      "unavailable": "Ne mogu provjeriti konflikte koje bi promjena izbrisala.",
+      "kept": "Zadržana stavka: odustani od promjene ili se vrati na uređivanje.",
+      "changed": "Popis stavki koje čekaju odluku se promijenio. Odluči ponovno za svaku.",
+      "unavailable": "Ne mogu provjeriti što bi promjena uklonila s popisa Za odluku.",
       "retry": "Pokušaj ponovno",
-      "removed": "{count, plural, one {Uklonjen # konflikt.} few {Uklonjena # konflikta.} other {Uklonjeno # konflikata.}}"
+      "removed": "{count, plural, one {Uklonjena # stavka koja je čekala odluku.} few {Uklonjene # stavke koje su čekale odluku.} other {Uklonjeno # stavki koje su čekale odluku.}}"
     },
     "leaveRecord": {
       "heading": "Godišnji odmor",
@@ -883,20 +883,20 @@
       "removeDenied": "Ne možeš ukloniti godišnji odmor. Za to trebaš ovlasti administratora.",
       "removeFailed": "Godišnji odmor nije uklonjen. Pokušaj ponovno.",
       "gone": "Taj zapis godišnjeg odmora više ne postoji (uklonjen je ili izmijenjen).",
-      "handoffGone": "Godišnji odmor iz konflikta više ne postoji ili više ne pokriva taj datum, pa se ništa nije otvorilo.",
-      "handoffPrefilled": "Od i do su izračunati iz konflikta. Provjeri ih prije spremanja.",
+      "handoffGone": "Godišnji odmor iz stavke za odluku više ne postoji ili više ne pokriva taj datum, pa se ništa nije otvorilo.",
+      "handoffPrefilled": "Od i do su izračunati iz stavke za odluku. Provjeri ih prije spremanja.",
       "replacementStays": "{name} ostaje na smjeni {team} · {date} kao zamjena. Ukloni zamjenu u kalendaru ako više ne treba.",
       "replacementsUnknown": "Ne mogu provjeriti zamjene za ove datume.",
       "conflictLine": "{weekday} {date} {type}",
-      "conflictsCreated": "{count, plural, one {Spremanjem nastaje # konflikt s rasporedom.} few {Spremanjem nastaju # konflikta s rasporedom.} other {Spremanjem nastaje # konflikata s rasporedom.}}",
-      "conflictsWhere": "{count, plural, one {Rješavaš ga na njegovu ekranu u Rasporedu.} few {Svaki rješavaš na njegovu ekranu u Rasporedu.} other {Svaki rješavaš na njegovu ekranu u Rasporedu.}}",
-      "conflictsNone": "Spremanjem ne nastaje nijedan konflikt.",
-      "conflictsCleared": "{count, plural, one {Uklanja se # konflikt} few {Uklanjaju se # konflikta} other {Uklanja se # konflikata}}",
+      "conflictsCreated": "{count, plural, one {Spremanjem nastaje # stavka koja čeka odluku.} few {Spremanjem nastaju # stavke koje čekaju odluku.} other {Spremanjem nastaje # stavki koje čekaju odluku.}}",
+      "conflictsWhere": "{count, plural, one {O njoj odlučuješ na njezinu ekranu na popisu Za odluku.} few {O svakoj odlučuješ na njezinu ekranu na popisu Za odluku.} other {O svakoj odlučuješ na njezinu ekranu na popisu Za odluku.}}",
+      "conflictsNone": "Spremanjem ne nastaje ništa što čeka odluku.",
+      "conflictsCleared": "{count, plural, one {Uklanja se # stavka koja čeka odluku} few {Uklanjaju se # stavke koje čekaju odluku} other {Uklanja se # stavki koje čekaju odluku}}",
       "conflictsKept": "{count, plural, one {Ostaje #} few {Ostaju #} other {Ostaje #}}",
-      "conflictsNew": "{count, plural, one {Nastaje # novi konflikt} few {Nastaju # nova konflikta} other {Nastaje # novih konflikata}}",
+      "conflictsNew": "{count, plural, one {Nastaje # nova stavka koja čeka odluku} few {Nastaju # nove stavke koje čekaju odluku} other {Nastaje # novih stavki koje čekaju odluku}}",
       "conflictsGroup": "{summary} ({lines}).",
-      "conflictsUnknown": "Konflikte sada ne mogu provjeriti.",
-      "removeClears": "{count, plural, one {Uklanja se i # neriješeni konflikt.} few {Uklanjaju se i # neriješena konflikta.} other {Uklanja se i # neriješenih konflikata.}}"
+      "conflictsUnknown": "Stavke koje čekaju odluku sada ne mogu provjeriti.",
+      "removeClears": "{count, plural, one {Uklanja se i # stavka koja čeka odluku.} few {Uklanjaju se i # stavke koje čekaju odluku.} other {Uklanja se i # stavki koje čekaju odluku.}}"
     }
   },
   "nav": {
@@ -904,7 +904,7 @@
     "kalendar": "Kalendar",
     "sati": "Sati",
     "godisnji": "Godišnji",
-    "raspored": "Raspored",
+    "zaOdluku": "Za odluku",
     "ljudi": "Ljudi",
     "postavkeRotacije": "Postavke rotacije",
     "organizacija": "Organizacija"
@@ -936,7 +936,7 @@
     "logoMark": "Prvo slovo naziva, bez slike",
     "logoChosen": "Odabrano: {name}",
     "logoHint": "Dopušteni formati su PNG, JPEG i WebP, najviše 2 MiB.",
-    "accentRule": "Naglasak boji samo logotip i rub navigacije. Nikad ne boji raspored ni oznake na njemu. Crvena nije ponuđena jer je rezervirana za konflikte.",
+    "accentRule": "Naglasak boji samo logotip i rub navigacije. Nikad ne boji raspored ni oznake na njemu. Crvena nije ponuđena jer je rezervirana za ono što čeka odluku.",
     "accentChoose": "Odaberi naglasak.",
     "name": "Naziv",
     "timezone": "Vremenska zona",
@@ -1184,8 +1184,8 @@
         "done": "Zakazana promjena rotacije je poništena.",
         "stale": "Zakazana promjena više ne postoji: poništena je ili je već na snazi. Prikazano je trenutačno stanje.",
         "erasures": {
-          "title": "{count, plural, one {Poništavanje briše # konflikt} few {Poništavanje briše # konflikta} other {Poništavanje briše # konflikata}}",
-          "lede": "{count, plural, one {Poništavanje uklanja uzrok # neriješenog konflikta.} few {Poništavanje uklanja uzrok # neriješena konflikta.} other {Poništavanje uklanja uzrok # neriješenih konflikata.}} Prije poništavanja odluči za svaki.",
+          "title": "{count, plural, one {Poništavanje uklanja # stavku koja čeka odluku} few {Poništavanje uklanja # stavke koje čekaju odluku} other {Poništavanje uklanja # stavki koje čekaju odluku}}",
+          "lede": "{count, plural, one {Poništavanje uklanja uzrok # stavke koja čeka odluku.} few {Poništavanje uklanja uzrok # stavke koje čekaju odluku.} other {Poništavanje uklanja uzrok # stavki koje čekaju odluku.}} Prije poništavanja odluči za svaku.",
           "rowTitle": "{team} · {weekday} {date} · {type}",
           "rowFree": "{member} na godišnjem · nakon poništavanja: {team} taj dan slobodna",
           "rowWithout": "{member} na godišnjem · nakon poništavanja: {team} taj dan bez {member}",
@@ -1193,11 +1193,11 @@
           "confirm": "Potvrdi brisanje",
           "keep": "Zadrži",
           "back": "Natrag",
-          "kept": "Zadržan konflikt: odustani od poništavanja.",
-          "changed": "Popis konflikata se promijenio. Odluči ponovno za svaki.",
-          "unavailable": "Ne mogu provjeriti konflikte koje bi poništavanje izbrisalo.",
+          "kept": "Zadržana stavka: odustani od poništavanja.",
+          "changed": "Popis stavki koje čekaju odluku se promijenio. Odluči ponovno za svaku.",
+          "unavailable": "Ne mogu provjeriti što bi poništavanje uklonilo s popisa Za odluku.",
           "retry": "Pokušaj ponovno",
-          "removed": "{count, plural, one {Uklonjen # konflikt.} few {Uklonjena # konflikta.} other {Uklonjeno # konflikata.}}"
+          "removed": "{count, plural, one {Uklonjena # stavka koja je čekala odluku.} few {Uklonjene # stavke koje su čekale odluku.} other {Uklonjeno # stavki koje su čekale odluku.}}"
         }
       },
       "overrides": {
@@ -1256,9 +1256,9 @@
           "failed": "Promjena nije uspjela. Pokušaj ponovno."
         },
         "erasures": {
-          "title": "{count, plural, one {Izmjena briše # konflikt} few {Izmjena briše # konflikta} other {Izmjena briše # konflikata}}",
-          "ledeConfirm": "{count, plural, one {Kad izmjena vrijedi, uklanja uzrok # neriješenog konflikta.} few {Kad izmjena vrijedi, uklanja uzrok # neriješena konflikta.} other {Kad izmjena vrijedi, uklanja uzrok # neriješenih konflikata.}} Prije potvrde odluči za svaki.",
-          "ledeAmend": "{count, plural, one {Promijenjena izmjena uklanja uzrok # neriješenog konflikta.} few {Promijenjena izmjena uklanja uzrok # neriješena konflikta.} other {Promijenjena izmjena uklanja uzrok # neriješenih konflikata.}} Prije izmjene odluči za svaki.",
+          "title": "{count, plural, one {Izmjena uklanja # stavku koja čeka odluku} few {Izmjena uklanja # stavke koje čekaju odluku} other {Izmjena uklanja # stavki koje čekaju odluku}}",
+          "ledeConfirm": "{count, plural, one {Kad izmjena vrijedi, uklanja uzrok # stavke koja čeka odluku.} few {Kad izmjena vrijedi, uklanja uzrok # stavke koje čekaju odluku.} other {Kad izmjena vrijedi, uklanja uzrok # stavki koje čekaju odluku.}} Prije potvrde odluči za svaku.",
+          "ledeAmend": "{count, plural, one {Promijenjena izmjena uklanja uzrok # stavke koja čeka odluku.} few {Promijenjena izmjena uklanja uzrok # stavke koje čekaju odluku.} other {Promijenjena izmjena uklanja uzrok # stavki koje čekaju odluku.}} Prije izmjene odluči za svaku.",
           "rowTitle": "{team} · {weekday} {date} · {type}",
           "rowFree": "{member} na godišnjem · nakon promjene: {team} taj dan slobodna",
           "rowWithout": "{member} na godišnjem · nakon promjene: {team} taj dan bez {member}",
@@ -1266,17 +1266,17 @@
           "confirm": "Potvrdi brisanje",
           "keep": "Zadrži",
           "back": "Natrag na uređivanje",
-          "kept": "Zadržan konflikt: promijeni ili odbaci izmjenu, ili se vrati na uređivanje.",
-          "changed": "Popis konflikata se promijenio. Odluči ponovno za svaki.",
-          "unavailable": "Ne mogu provjeriti konflikte koje bi izmjena izbrisala.",
+          "kept": "Zadržana stavka: promijeni ili odbaci izmjenu, ili se vrati na uređivanje.",
+          "changed": "Popis stavki koje čekaju odluku se promijenio. Odluči ponovno za svaku.",
+          "unavailable": "Ne mogu provjeriti što bi izmjena uklonila s popisa Za odluku.",
           "retry": "Pokušaj ponovno",
           "saveConfirm": "Potvrdi izmjenu",
-          "removed": "{count, plural, one {Uklonjen # konflikt.} few {Uklonjena # konflikta.} other {Uklonjeno # konflikata.}}"
+          "removed": "{count, plural, one {Uklonjena # stavka koja je čekala odluku.} few {Uklonjene # stavke koje su čekale odluku.} other {Uklonjeno # stavki koje su čekale odluku.}}"
         }
       },
       "erasures": {
-        "title": "{count, plural, one {Promjena briše # konflikt} few {Promjena briše # konflikta} other {Promjena briše # konflikata}}",
-        "lede": "{count, plural, one {Ova promjena uklanja uzrok # neriješenog konflikta.} few {Ova promjena uklanja uzrok # neriješena konflikta.} other {Ova promjena uklanja uzrok # neriješenih konflikata.}} Prije spremanja odluči za svaki.",
+        "title": "{count, plural, one {Promjena uklanja # stavku koja čeka odluku} few {Promjena uklanja # stavke koje čekaju odluku} other {Promjena uklanja # stavki koje čekaju odluku}}",
+        "lede": "{count, plural, one {Ova promjena uklanja uzrok # stavke koja čeka odluku.} few {Ova promjena uklanja uzrok # stavke koje čekaju odluku.} other {Ova promjena uklanja uzrok # stavki koje čekaju odluku.}} Prije spremanja odluči za svaku.",
         "rowTitle": "{team} · {weekday} {date} · {type}",
         "rowFree": "{member} na godišnjem · nova rotacija: {team} taj dan slobodna",
         "rowWithout": "{member} na godišnjem · nova rotacija: {team} taj dan bez {member}",
@@ -1284,11 +1284,11 @@
         "confirm": "Potvrdi brisanje",
         "keep": "Zadrži",
         "back": "Natrag na uređivanje",
-        "kept": "Zadržan konflikt: promijeni rotaciju ili se vrati na uređivanje.",
-        "changed": "Popis konflikata se promijenio. Odluči ponovno za svaki.",
-        "unavailable": "Ne mogu provjeriti konflikte koje bi promjena izbrisala.",
+        "kept": "Zadržana stavka: promijeni rotaciju ili se vrati na uređivanje.",
+        "changed": "Popis stavki koje čekaju odluku se promijenio. Odluči ponovno za svaku.",
+        "unavailable": "Ne mogu provjeriti što bi promjena uklonila s popisa Za odluku.",
         "retry": "Pokušaj ponovno",
-        "removed": "{count, plural, one {Uklonjen # konflikt.} few {Uklonjena # konflikta.} other {Uklonjeno # konflikata.}}"
+        "removed": "{count, plural, one {Uklonjena # stavka koja je čekala odluku.} few {Uklonjene # stavke koje su čekale odluku.} other {Uklonjeno # stavki koje su čekale odluku.}}"
       },
       "history": {
         "heading": "Povijest rotacije",
@@ -1363,7 +1363,7 @@
       "kalendar": "Tko radi koji dan, po mjesecima",
       "sati": "Sati svih osoba po mjesecu, izvoz u Excel",
       "godisnji": "Godišnji odmori i stanja dana",
-      "raspored": "Konflikti koji čekaju odluku",
+      "zaOdluku": "Stavke koje čekaju odluku",
       "ljudi": "Osobe i njihove smjene",
       "postavkeRotacije": "Tipovi smjena, uzorak, pomaci",
       "organizacija": "Naziv, godina godišnjeg, satni pojasevi"

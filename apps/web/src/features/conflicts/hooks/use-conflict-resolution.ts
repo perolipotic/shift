@@ -271,7 +271,7 @@ export function useConflictResolution(params: ResolutionParams) {
     if (link === null || saving.current) return;
 
     void navigate({
-      to: '/raspored/$memberId/$date/$teamId',
+      to: '/za-odluku/$memberId/$date/$teamId',
       params: { memberId: link.memberId, date: link.date, teamId: link.teamId },
     });
   }
@@ -402,7 +402,7 @@ export function useConflictResolution(params: ResolutionParams) {
 
       const saved = replacing === null ? view.saved : replacedSavedOf(view.saved, replacing.name);
 
-      await navigate({ to: '/raspored', state: (entry) => withResolutionSaved(entry, saved) });
+      await navigate({ to: '/za-odluku', state: (entry) => withResolutionSaved(entry, saved) });
     } catch (cause) {
       console.error(RESOLUTION_FAILED, cause);
       setLanded(null);

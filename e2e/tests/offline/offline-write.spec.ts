@@ -392,7 +392,7 @@ test.describe('offline writes on the admin surfaces', () => {
     const date = addDays(rotation.today, 4);
 
     await resolutionPage.gotoConflict(person.id, date, team.id);
-    await expect(resolutionPage.heading(hr.raspored.resolution.heading)).toBeVisible();
+    await expect(resolutionPage.heading(hr.zaOdluku.resolution.heading)).toBeVisible();
     await resolutionPage.acceptOption.click();
     const save = resolutionPage.saveButton;
     await expect(save).toHaveAttribute('aria-disabled', 'false');
@@ -402,7 +402,7 @@ test.describe('offline writes on the admin surfaces', () => {
     await expectGated(save, offlineWriteNoteIn(resolutionPage.main));
 
     await press(save);
-    await expect(page, 'the save went back to the queue').toHaveURL(`/raspored/${person.id}/${date}/${team.id}`);
+    await expect(page, 'the save went back to the queue').toHaveURL(`/za-odluku/${person.id}/${date}/${team.id}`);
     await expect(resolutionPage.acceptOption).toHaveAttribute('aria-checked', 'true');
     expect(spy.all(), 'a request left the page offline').toEqual([]);
 

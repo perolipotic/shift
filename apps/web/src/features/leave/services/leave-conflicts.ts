@@ -12,7 +12,7 @@ import { formatIsoDayMonth, formatIsoWeekdayShortName } from '@/lib/i18n/format'
  * as a pure view model in a `.ts` that renders nothing (AD-15).
  *
  * ONE COMPUTATION. The collisions are `@shift/domain`'s `collisionsOf` over
- * *Raspored*'s own recipe (`collisionInputOf`), filtered by the one
+ * *Za odluku*'s own recipe (`collisionInputOf`), filtered by the one
  * resolution filter (`unresolvedCollisionsOf`) through the queue's own funnel
  * (`resolutionsOf`) — so a saved record's created conflicts are exactly the
  * rows the queue then lists for the member. Nothing here decides a collision.

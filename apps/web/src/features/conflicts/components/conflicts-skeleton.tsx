@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 const SKELETON_ROWS = [0, 1, 2];
 
 /**
- * *Raspored*'s placeholder while its two reads are unanswered, in the shape
+ * *Za odluku*'s placeholder while its two reads are unanswered, in the shape
  * the queue will take: the count, then a bar per row. No spinner, and no
  * count until both reads answer.
  */
