@@ -3,8 +3,11 @@
 #   Stage 1  quality   gitleaks over the full history, ESLint
 #   Stage 2  build     typecheck, build, upload apps/web/dist
 #            test      local Supabase, build, `pnpm test`, zero skipped
-#            e2e       local Supabase, the full Playwright E2E suite, then the
-#                      remote smoke against the same local servers
+#            changes   pull requests only: is anything but docs changed?
+#            e2e       local Supabase, the Playwright E2E suite in four shards,
+#                      then (shard 1) the remote smoke against the same servers;
+#                      skipped on a pull request that changes docs alone
+#            e2e-report  merges the four shards' reports into one HTML report
 #   main only, and only when vars.DEPLOY_ENABLED == 'true':
 #            deploy-staging → smoke-staging → deploy-production (approval) → smoke-production
 #            notify    on any failure on main
@@ -40,6 +43,11 @@ env:
   # Supabase CLI and Wrangler: no prompts, no telemetry, no update nag.
   SUPABASE_TELEMETRY_DISABLED: '1'
   WRANGLER_SEND_METRICS: 'false'
+  # Local stack services no CI job uses, left out of `supabase start`: Studio
+  # and its postgres-meta, the analytics pair (logflare, vector), Realtime (the
+  # app opens no channel) and the mail catcher (no account has a real address).
+  # About 4 GB of images every runner no longer pulls.
+  SUPABASE_UNUSED_SERVICES: studio,postgres-meta,logflare,vector,realtime,mailpit,imgproxy
 
 jobs:
   # ----------------------------------------------------------------- Stage 1
@@ -133,7 +141,7 @@ jobs:
       # seed.sql are applied by start. A runner of its own, so the E2E job's
       # organizations never meet this job's organization counts.
       - name: Start local Supabase
-        run: pnpm exec supabase start
+        run: pnpm exec supabase start -x "$SUPABASE_UNUSED_SERVICES"
 
       # The build-gated root tests read apps/web/dist and fail on a stale one.
       - name: Build
@@ -146,11 +154,58 @@ jobs:
       - name: No root test was skipped
         run: node scripts/ci/assert-no-skipped.mjs "$RUNNER_TEMP/vitest-root.json"
 
-  e2e:
-    name: E2E (Playwright, local Supabase)
-    needs: build
+  # Pull requests only: does the change reach anything the E2E suite runs?
+  # A pull request that changes only planning docs, Markdown or agent
+  # configuration skips `e2e` (and so `e2e-report`). Every push to main runs it,
+  # because the deploy jobs need it.
+  changes:
+    name: Changes
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 5
+    outputs:
+      e2e: ${{ steps.scope.outputs.e2e }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the diff needs the base commit
+          persist-credentials: false
+
+      - name: Docs-only?
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$EVENT" != "pull_request" ]; then
+            echo "e2e=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed="$(git diff --name-only "$BASE_SHA...$HEAD_SHA")"
+          echo "$changed"
+          # Docs: planning and BMad output, agent configuration, Markdown.
+          rest="$(printf '%s\n' "$changed" | grep -vE '^(_bmad-output/|_bmad/|\.claude/|docs/)|\.md$' || true)"
+          if [ -z "$rest" ]; then
+            echo "::notice title=E2E skipped::this pull request changes docs only"
+            echo "e2e=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "e2e=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  # Four shards, each on a runner with a stack of its own: Playwright splits the
+  # suite four ways (`--shard`), so the wall time is about a quarter of one run
+  # plus the setup every shard repeats. Each shard writes a blob report, and
+  # `e2e-report` merges them.
+  e2e:
+    name: E2E (Playwright, shard ${{ matrix.shard }}/4)
+    needs: [build, changes]
+    if: needs.changes.outputs.e2e == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false # a failing shard still lets the others report
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -162,7 +217,7 @@ jobs:
       # supabase/functions/.env, which cannot exist until the stack's keys do.
       # `supabase functions serve` below reads the file written after start.
       - name: Start local Supabase (edge runtime left to functions serve)
-        run: pnpm exec supabase start -x edge-runtime
+        run: pnpm exec supabase start -x "edge-runtime,$SUPABASE_UNUSED_SERVICES"
 
       - name: Write apps/web/.env.local and supabase/functions/.env
         run: node scripts/ci/write-local-env.mjs
@@ -192,13 +247,23 @@ jobs:
           wait_for http://127.0.0.1:5173/ vite
           wait_for http://127.0.0.1:54321/functions/v1/admin-auth admin-auth
 
-      - name: pnpm test:e2e
-        run: pnpm test:e2e --reporter=github,html
+      - name: pnpm test:e2e (shard ${{ matrix.shard }}/4)
+        run: pnpm test:e2e --shard=${{ matrix.shard }}/4 --reporter=github,blob
+
+      - name: Upload the blob report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-blob-${{ matrix.shard }}
+          path: blob-report/
+          if-no-files-found: ignore
+          retention-days: 3
 
       # The smoke specs, exercised on every PR against the local stack: every
       # anonymous check, plus sign-in with a seeded member. Never signs out.
+      # Once per run, on the first shard.
       - name: pnpm test:smoke (local stack)
-        if: ${{ !cancelled() && steps.serve.outcome == 'success' }}
+        if: ${{ !cancelled() && matrix.shard == 1 && steps.serve.outcome == 'success' }}
         env:
           SMOKE_BASE_URL: http://127.0.0.1:5173
           SMOKE_ORG: dvd-kastel-novi
@@ -212,16 +277,18 @@ jobs:
           echo "::group::vite"; cat "$RUNNER_TEMP/vite.log" || true; echo "::endgroup::"
           echo "::group::functions serve"; cat "$RUNNER_TEMP/functions.log" || true; echo "::endgroup::"
 
-      - name: Upload the Playwright reports
+      # Traces and screenshots of this shard's failures; the merged HTML report
+      # is `e2e-report`'s.
+      - name: Upload the test results
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: e2e-report
+          name: e2e-results-${{ matrix.shard }}
           path: |
-            playwright-report/
             test-results/
             playwright-report-smoke/
             test-results-smoke/
+          if-no-files-found: ignore
           retention-days: 14
 
       - name: Stop the servers
@@ -229,6 +296,38 @@ jobs:
         run: |
           pkill -f 'vite --host 127.0.0.1 --port 5173' || true
           pkill -f 'supabase functions serve admin-auth' || true
+
+  # One HTML report for the whole suite, merged from the shards' blob reports,
+  # whether the shards passed or not.
+  e2e-report:
+    name: E2E report
+    needs: [changes, e2e]
+    if: ${{ !cancelled() && needs.changes.outputs.e2e == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+
+      - name: Download the blob reports
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: e2e-blob-*
+          path: all-blob-reports
+          merge-multiple: true
+
+      - name: Merge into one HTML report
+        run: pnpm exec playwright merge-reports --reporter html ./all-blob-reports
+
+      - name: Upload the HTML report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-report
+          path: playwright-report/
+          retention-days: 14
 
   # ------------------------------------------------------- staging (main only)
   deploy-staging:
