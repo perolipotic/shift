@@ -1041,3 +1041,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-9-3-a-member-requests-leave.md`
   summary: The 9.2 entries asking 9.3 to decide about past-date requests, and about an approved request whose leave record was later removed, are still open. 9.3 accepts past ranges with no note, and keeps showing *Odobren*. Decide in 9.4 or 9.5.
   evidence: Raised again by the 9.3 review (Blind Hunter: no `min` on the date inputs). The 9.3 spec did not cover either case.
+
+## Deferred from: code review of spec-9-4-an-admin-decides-a-leave-request.md (2026-10-28)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-9-4-an-admin-decides-a-leave-request.md`
+  summary: The queue's saved-notice slot (`ResolutionSaved` in `features/conflicts/services/resolution-screen.ts`) now carries leave-request kinds, and `features/leave` imports a conflicts screen service to reach it; 9.5 and 12.x should move the slot to a neutral *Za odluku* home before adding more kinds.
+  evidence: Raised by the 9.4 review (Blind Hunter). `FEATURE_PUBLIC` had to widen conflicts' public surface for `resolution-screen` and `resolved-conflicts`.

@@ -65,6 +65,7 @@ sources:
 | Leave management *(the overview on Godišnji, story 7.15; recorded on the member page)* | CAP-15 | UJ-3 |
 | Conflicts queue — *Za odluku* *(tabs: Čeka odluku, the default, and Odlučeno)* | CAP-16 | UJ-3, UJ-4 |
 | Conflict resolution | CAP-16 | UJ-3 |
+| Leave request decision *(`/za-odluku/zahtjev/$requestId`, admin-only, reached by URL until story 9.5: who asked, the range, the cost, the balance after it and the collisions approval would create, never a gate, with *Odobri* and *Odbij*; a closed request read-only; story 9.4)* | CAP-16 | UJ-3 |
 | Members list *(opens on the active; status chip and column; *Dodaj osobu* opens the add dialog, `?dodaj=1`)* · member page *(facts; each change in its own dialog, leave included)* | CAP-4 | UJ-1 |
 | Team detail *(includes team roster)* | CAP-5, CAP-6 | UJ-2 |
 | Member directory *(Ljudi for a member: every active team with today's members, own team first and marked *tvoja smjena*, name search in `?trazi=`; read-only)* | CAP-5 | UJ-2 |

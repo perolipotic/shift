@@ -188,8 +188,19 @@ export interface ResolutionHours {
   readonly values: DurationValues;
 }
 
-/** The outcomes a landed decision can name on the queue: stories 5.4b and 5.4c. */
-export type ResolutionSavedKind = typeof ACCEPT_UNCOVERED | typeof REPLACE_MEMBER;
+/** A leave request approved on its decision screen (story 9.4), as the queue's status line names it. */
+export const LEAVE_REQUEST_APPROVED_SAVED = 'leave_request_approved';
+/** A leave request rejected on its decision screen (story 9.4). */
+export const LEAVE_REQUEST_REJECTED_SAVED = 'leave_request_rejected';
+
+/** The two request decisions the queue's status line can name (story 9.4). */
+export type LeaveRequestSavedKind = typeof LEAVE_REQUEST_APPROVED_SAVED | typeof LEAVE_REQUEST_REJECTED_SAVED;
+
+/**
+ * The outcomes a landed decision can name on the queue: stories 5.4b and
+ * 5.4c, and since story 9.4 a leave request's approval and rejection.
+ */
+export type ResolutionSavedKind = typeof ACCEPT_UNCOVERED | typeof REPLACE_MEMBER | LeaveRequestSavedKind;
 
 /** What every landed decision names on the queue: the shift, the date and the member, as shown. */
 interface ResolutionSavedFacts {
@@ -205,7 +216,19 @@ interface ResolutionSavedFacts {
  */
 export type ResolutionSaved =
   | (ResolutionSavedFacts & { readonly kind: typeof ACCEPT_UNCOVERED })
-  | (ResolutionSavedFacts & { readonly kind: typeof REPLACE_MEMBER; readonly replacementName: string });
+  | (ResolutionSavedFacts & { readonly kind: typeof REPLACE_MEMBER; readonly replacementName: string })
+  | LeaveRequestSaved;
+
+/**
+ * A leave request decided on its own screen (story 9.4), in the same slot:
+ * the outcome, the member's name, and the range as shown (`05.10.2026`).
+ */
+export interface LeaveRequestSaved {
+  readonly kind: LeaveRequestSavedKind;
+  readonly memberName: string;
+  readonly from: string;
+  readonly to: string;
+}
 
 // THE DATE RULE lives beside the leave card that re-applies it on arrival (story 5.4d).
 export {
@@ -785,7 +808,10 @@ export function hasCandidates(view: ResolutionView): boolean {
 }
 
 /** What the queue's status line names once a replacement by `replacementName` lands (story 5.4c). */
-export function replacedSavedOf(saved: ResolutionView['saved'], replacementName: string): ResolutionSaved {
+export function replacedSavedOf(
+  saved: ResolutionView['saved'],
+  replacementName: string,
+): Extract<ResolutionSaved, { readonly kind: typeof REPLACE_MEMBER }> {
   return { ...saved, kind: REPLACE_MEMBER, replacementName };
 }
 
@@ -905,7 +931,17 @@ export function resolutionSavedOf(state: unknown): ResolutionSaved | null {
 
   if (typeof saved !== 'object' || saved === null) return null;
 
-  const { kind, shiftTypeName, teamName, dateShown, memberName, replacementName } = saved as Record<string, unknown>;
+  const { kind, shiftTypeName, teamName, dateShown, memberName, replacementName, from, to } = saved as Record<
+    string,
+    unknown
+  >;
+
+  // STORY 9.4: a leave request's decision names the member and the range alone.
+  if (kind === LEAVE_REQUEST_APPROVED_SAVED || kind === LEAVE_REQUEST_REJECTED_SAVED) {
+    const filled = (value: unknown): value is string => typeof value === 'string' && value !== '';
+
+    return filled(memberName) && filled(from) && filled(to) ? { kind, memberName, from, to } : null;
+  }
 
   if (
     typeof shiftTypeName !== 'string' ||
@@ -926,11 +962,74 @@ export function resolutionSavedOf(state: unknown): ResolutionSaved | null {
 }
 
 /** The queue's status line for a landed decision, by its outcome. Exhaustive. */
-export function resolutionSavedMessageKey(kind: ResolutionSavedKind): 'zaOdluku.saved' | 'zaOdluku.savedReplace' {
+export function resolutionSavedMessageKey(
+  kind: ResolutionSavedKind,
+): 'zaOdluku.saved' | 'zaOdluku.savedReplace' | 'zaOdluku.savedRequestApproved' | 'zaOdluku.savedRequestRejected' {
   if (kind === ACCEPT_UNCOVERED) return 'zaOdluku.saved';
   if (kind === REPLACE_MEMBER) return 'zaOdluku.savedReplace';
+  if (kind === LEAVE_REQUEST_APPROVED_SAVED) return 'zaOdluku.savedRequestApproved';
+  if (kind === LEAVE_REQUEST_REJECTED_SAVED) return 'zaOdluku.savedRequestRejected';
 
   const unhandled: never = kind;
 
   return unhandled;
+}
+
+/**
+ * The queue's status line as `t()` takes it: its key and the values that key
+ * reads — a conflict's facts, or a leave request's member and range (`request`).
+ */
+export type ResolutionSavedLine =
+  | {
+      readonly request: false;
+      readonly key: 'zaOdluku.saved' | 'zaOdluku.savedReplace';
+      readonly values: {
+        readonly type: string;
+        readonly team: string;
+        readonly date: string;
+        readonly member: string;
+        readonly replacement?: string;
+      };
+    }
+  | {
+      readonly request: true;
+      readonly key: 'zaOdluku.savedRequestApproved' | 'zaOdluku.savedRequestRejected';
+      readonly values: { readonly member: string; readonly from: string; readonly to: string };
+    };
+
+/**
+ * The queue's status line for a landed decision (stories 5.4b, 5.4c, 9.4):
+ * a conflict's names the shift, the team, the date and the member — and a
+ * replacement its name — and a leave request's the member and the range.
+ */
+export function resolutionSavedLineOf(saved: ResolutionSaved): ResolutionSavedLine {
+  switch (saved.kind) {
+    case LEAVE_REQUEST_APPROVED_SAVED:
+      return { request: true, key: 'zaOdluku.savedRequestApproved', values: { member: saved.memberName, from: saved.from, to: saved.to } };
+    case LEAVE_REQUEST_REJECTED_SAVED:
+      return { request: true, key: 'zaOdluku.savedRequestRejected', values: { member: saved.memberName, from: saved.from, to: saved.to } };
+    case ACCEPT_UNCOVERED:
+      return {
+        request: false,
+        key: 'zaOdluku.saved',
+        values: { type: saved.shiftTypeName, team: saved.teamName, date: saved.dateShown, member: saved.memberName },
+      };
+    case REPLACE_MEMBER:
+      return {
+        request: false,
+        key: 'zaOdluku.savedReplace',
+        values: {
+          type: saved.shiftTypeName,
+          team: saved.teamName,
+          date: saved.dateShown,
+          member: saved.memberName,
+          replacement: saved.replacementName,
+        },
+      };
+    default: {
+      const unhandled: never = saved;
+
+      return unhandled;
+    }
+  }
 }

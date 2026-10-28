@@ -1031,6 +1031,8 @@ describe('no read retry offline, on any surface (story 8.2e)', () => {
     ['features/teams/hooks/use-member-directory.ts', /retryable: clock\.online && directory\.kind === DIRECTORY_UNAVAILABLE,/],
     ['features/conflicts/hooks/use-conflicts-queue.ts', /retryable:\s*clock\.online &&/],
     ['features/conflicts/hooks/use-conflict-resolution.ts', /retryable: clock\.online && screen\.kind === RESOLUTION_UNAVAILABLE,/],
+    // Story 9.4: one leave request's decision screen.
+    ['features/leave/hooks/use-leave-request-review.ts', /retryable: clock\.online && screen\.kind === REVIEW_UNAVAILABLE,/],
     ['features/members/hooks/use-member-edit.ts', /readRetryable: clock\.online && /],
     ['features/members/hooks/use-member-edit.ts', /teamsRetryable: clock\.online && teamsState\.refusal !== null,/],
     ['features/leave/hooks/use-member-leave.ts', /retryable: clock\.online && base\.kind === LEAVE_UNAVAILABLE,/],
@@ -1058,6 +1060,8 @@ describe('no read retry offline, on any surface (story 8.2e)', () => {
     ['features/teams/components/member-directory.tsx', 'onClick={retry}'],
     ['features/conflicts/components/conflicts-body.tsx', 'onClick={onRetry}'],
     ['features/conflicts/components/conflict-resolution-body.tsx', 'onClick={retry}'],
+    // Story 9.4: one leave request's decision screen's retry.
+    ['features/leave/components/leave-request-review-body.tsx', 'onClick={state.retry}'],
     ['features/members/components/member-basics-card.tsx', 'onClick={edit.retryMembers}'],
     ['features/members/components/member-team-card.tsx', 'onClick={edit.retryTeams}'],
     ['features/leave/components/member-leave-card.tsx', 'onClick={leave.retry}'],

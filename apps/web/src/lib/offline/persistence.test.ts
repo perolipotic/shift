@@ -15,7 +15,7 @@ import {
   MY_LEAVE_RECORDS_KEY,
   ORGANIZATION_LEAVE_RECORDS_KEY,
 } from '@/features/leave/services/leave-list';
-import { MY_LEAVE_REQUESTS_KEY } from '@/features/leave/services/leave-requests';
+import { LEAVE_REQUEST_KEY, MY_LEAVE_REQUESTS_KEY } from '@/features/leave/services/leave-requests';
 import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
 import { SESSION_SUBJECT_KEY } from '@/features/members/services/write';
 import { MEMBER_NAME_KEY } from '@/features/navigation/services/profile';
@@ -138,7 +138,11 @@ describe('what is kept on the device', () => {
         return key[0];
       }),
     );
-    expect(PERSISTED_PARAMETERISED_KEY_ROOTS).toEqual([TEAM_ROSTER_KEY('t')[0], LEAVE_RECORDS_KEY('m')[0]]);
+    expect(PERSISTED_PARAMETERISED_KEY_ROOTS).toEqual([
+      TEAM_ROSTER_KEY('t')[0],
+      LEAVE_RECORDS_KEY('m')[0],
+      LEAVE_REQUEST_KEY('r')[0],
+    ]);
   });
 
   it('keeps a parameterised read only in the exact shape [root, string id] (stories 8.2b, 8.2c)', () => {
@@ -146,6 +150,14 @@ describe('what is kept on the device', () => {
     // Story 8.2c: one member's leave, read by the member page.
     expect(persistsQuery({ queryKey: LEAVE_RECORDS_KEY('member-1'), state: success() } as never)).toBe(true);
     expect(persistsKey(LEAVE_RECORDS_KEY(''))).toBe(false);
+    // Story 9.4: one leave request, read by its decision screen.
+    const request = '11111111-1111-4111-8111-111111111111';
+
+    expect(persistsQuery({ queryKey: LEAVE_REQUEST_KEY(request), state: success() } as never)).toBe(true);
+    expect(persistsKey(LEAVE_REQUEST_KEY(''))).toBe(false);
+    expect(persistsKey([...LEAVE_REQUEST_KEY(request), 'more'])).toBe(false);
+    // Only a uuid: any other id names no request.
+    expect(persistsKey(LEAVE_REQUEST_KEY('not-a-request'))).toBe(false);
     expect(persistsKey([...LEAVE_RECORDS_KEY('member-1'), 'more'])).toBe(false);
     expect(persistsKey([...LEAVE_RECORDS_KEY('member-1'), ERASURE_CHECK_KEY_PART])).toBe(false);
     expect(persistsKey([LEAVE_RECORDS_KEY('m')[0], ERASURE_CHECK_KEY_PART])).toBe(false);

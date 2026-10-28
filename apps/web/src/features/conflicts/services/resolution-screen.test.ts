@@ -42,6 +42,9 @@ import {
   resolutionAmendDroppedOf,
   resolutionOptionOf,
   refetchingAfterFailure,
+  LEAVE_REQUEST_APPROVED_SAVED,
+  LEAVE_REQUEST_REJECTED_SAVED,
+  resolutionSavedLineOf,
   resolutionSavedMessageKey,
   resolutionSavedOf,
   resolutionSavedStepOf,
@@ -666,6 +669,56 @@ describe('replacing the absent member (story 5.4c)', () => {
       }),
     ).toBe(`Odluka je spremljena: Dan · Smjena A · četvrtak 10.09.2026 · ${VIEWER_NAME}, zamjena: Dino Grgić.`);
     expect(resolutionSavedOf({ resolutionSaved: { ...saved, replacementName: 3 } })).toBeNull();
+  });
+});
+
+describe("a leave request's decision rides the same status line (story 9.4)", () => {
+  const approved = { kind: LEAVE_REQUEST_APPROVED_SAVED, memberName: VIEWER_NAME, from: '05.10.2026', to: '09.10.2026' } as const;
+
+  it('reads back from router state, and names the member and the range', () => {
+    const rejected = { ...approved, kind: LEAVE_REQUEST_REJECTED_SAVED } as const;
+
+    expect(resolutionSavedOf(withResolutionSaved({ __TSR_index: 2 }, approved))).toEqual(approved);
+    expect(resolutionSavedOf(withResolutionSaved({}, rejected))).toEqual(rejected);
+    expect(resolutionSavedMessageKey(approved.kind)).toBe('zaOdluku.savedRequestApproved');
+    expect(resolutionSavedMessageKey(rejected.kind)).toBe('zaOdluku.savedRequestRejected');
+
+    const approvedLine = resolutionSavedLineOf(approved);
+    const rejectedLine = resolutionSavedLineOf(rejected);
+
+    if (!approvedLine.request || !rejectedLine.request) throw new Error('not a request line');
+
+    expect(t(approvedLine.key, approvedLine.values)).toBe(`Zahtjev odobren: ${VIEWER_NAME}, 05.10.2026–09.10.2026.`);
+    expect(t(rejectedLine.key, rejectedLine.values)).toBe(`Zahtjev odbijen: ${VIEWER_NAME}, 05.10.2026–09.10.2026.`);
+  });
+
+  it('reads nothing from a malformed request line', () => {
+    for (const saved of [
+      { ...approved, memberName: 3 },
+      { ...approved, from: undefined },
+      { ...approved, to: null },
+      { ...approved, memberName: '' },
+      { ...approved, from: '' },
+      { ...approved, to: '' },
+    ]) {
+      expect(resolutionSavedOf({ resolutionSaved: saved })).toBeNull();
+    }
+  });
+
+  it("words a conflict's line as before", () => {
+    const line = resolutionSavedLineOf({
+      kind: 'accept_uncovered',
+      shiftTypeName: 'Dan',
+      teamName: 'Smjena A',
+      dateShown: 'četvrtak 10.09.2026',
+      memberName: VIEWER_NAME,
+    });
+
+    if (line.request) throw new Error('a request line');
+
+    expect(t(line.key, line.values)).toBe(
+      `Odluka je spremljena: Dan · Smjena A · četvrtak 10.09.2026 · ${VIEWER_NAME}, prihvaćeno kao nepokriveno.`,
+    );
   });
 });
 

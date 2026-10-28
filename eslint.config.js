@@ -207,6 +207,9 @@ export const FEATURE_PUBLIC = {
   // Story 7.12: the leave dialog's conflict preview derives through the
   // queue's own recipe (`collisionInputOf`) and funnel (`resolutionsOf`), so
   // the conflicts it says a save creates are the rows the queue then lists.
+  // Story 9.4: a leave request's decision screen names its deciding admin as
+  // *Odlučeno* does (`actingAdminsQueryOptions`, `actorNamesOf`), and returns
+  // to the queue through its one status-line slot (`withResolutionSaved`).
   conflicts: [
     'components/erasure-dialog', // calendar, members, rotation
     'hooks/use-erasure-confirmation', // calendar, members, rotation
@@ -217,7 +220,9 @@ export const FEATURE_PUBLIC = {
     'services/erasures', // calendar, members, rotation
     'services/override-erasures', // calendar, rotation
     'services/replacement-effect', // hours, leave
-    'services/resolutions', // calendar, hours, teams, today
+    'services/resolution-screen', // leave
+    'services/resolutions', // calendar, hours, leave, teams, today
+    'services/resolved-conflicts', // leave
   ],
   'hour-bands': [
     // The generic time helpers (`minuteOfTime`, `durationValuesOf`)
@@ -258,6 +263,8 @@ export const FEATURE_PUBLIC = {
     'services/leave-overview', // pages
     // Story 9.3: the requests key, which a request write names among its dependents.
     'services/leave-requests', // teams
+    // Story 9.4: the decision screen's heading id, which names the page's main region.
+    'services/leave-request-review', // pages
     'services/leave-section', // conflicts
     'services/my-leave', // today
   ],

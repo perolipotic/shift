@@ -8,6 +8,7 @@ import { CALENDAR_SCREEN_PARTS } from '@/features/calendar/calendar-screen.fixtu
 import {
   CONFLICTS_QUEUE_PARTS,
   CONFLICT_RESOLUTION_PARTS,
+  LEAVE_REQUEST_REVIEW_PARTS,
 } from '@/features/conflicts/conflicts-screen.fixture';
 import { HOURS_SCREEN_PARTS } from '@/features/hours/hours-screen.fixture';
 import { LEAVE_REQUEST_PARTS, LEAVE_SCREEN_PARTS } from '@/features/leave/leave-screen.fixture';
@@ -259,6 +260,17 @@ export const ZA_ODLUKU: readonly string[] = Object.values(CONFLICTS_QUEUE_PARTS)
  */
 export const RESOLUTION: readonly string[] = Object.values(CONFLICT_RESOLUTION_PARTS).map((parts) => join(srcRoot, ...parts));
 
+/**
+ * Story 9.4's one leave request, decided on its own screen: a third *Za
+ * odluku* set in `conflicts-screen.fixture.ts`, its parts in the leave feature.
+ */
+export const LEAVE_REQUEST_REVIEW: readonly string[] = Object.values(LEAVE_REQUEST_REVIEW_PARTS).map((parts) =>
+  join(srcRoot, ...parts),
+);
+
+/** Story 9.4's rules: the decision screen's base lines, closed line and refusals, off literal and `\w*MessageKey` unions. */
+export const LEAVE_REQUEST_REVIEW_KEYS = join(LEAVE_FEATURE, 'services', 'leave-request-review.ts');
+
 /** Story 5.4b's rules: the resolution screen's facts, strip and lines, off `\w*MessageKey` unions. */
 export const RESOLUTION_SCREEN_KEYS = join(CONFLICTS_FEATURE, 'services', 'resolution-screen.ts');
 
@@ -302,6 +314,9 @@ export const MEMBER_EDIT: readonly string[] = [
   join(LEAVE_FEATURE, 'components', 'member-leave-records.tsx'),
   // STORY 7.12: the card's record and amend dialog, the od–do fields' one home.
   join(LEAVE_FEATURE, 'components', 'member-leave-dialog.tsx'),
+  // STORY 9.4: the dialog's conflict lines, extracted unchanged and shared
+  // with a leave request's decision screen.
+  join(LEAVE_FEATURE, 'components', 'leave-conflict-lines.tsx'),
 ];
 
 /** The two team pages, which only compose (source structure B6), and their hooks. */
@@ -1000,6 +1015,11 @@ export const SCREENS = [
   // STILL SIX SINCE STORY 5.4c: the second card and the candidate picker's
   // rows are radio items of their own groups, never a `<Button>`.
   { name: 'the conflict resolution screen', file: RESOLUTION, expectedFields: 0, expectedButtons: 6 },
+  // STORY 9.4. On one leave request's decision screen: *Natrag na Za odluku*
+  // (written once, drawn in every state), the unavailable alert's retry, and
+  // *Odbij* and *Odobri*. No confirmation, no reason field (Epic 9 has none)
+  // and no bulk action, which is what the count keeps true.
+  { name: 'the leave request decision screen', file: LEAVE_REQUEST_REVIEW, expectedFields: 0, expectedButtons: 4 },
   // STORY 2.1b. FIVE on the band list: the link back to `Organizacija`, the
   // name `<Input>`, the start `<Input type="time">`, the add `<Button>`, and ONE
   // row link written once inside the map over the bands — the same count at

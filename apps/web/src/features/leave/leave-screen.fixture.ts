@@ -106,6 +106,22 @@ export const LEAVE_SCREEN_EXEMPT: readonly { readonly file: string; readonly why
     why: "the request form itself (story 9.3), a part of the request form's own set, LEAVE_REQUEST_PARTS",
   },
   {
+    file: 'components/leave-conflict-lines.tsx',
+    why: "the admin dialog's conflict lines, extracted unchanged (story 9.4) so a request's decision screen words collisions the same; a part of the member edit screen's set",
+  },
+  {
+    file: 'services/leave-request-review.ts',
+    why: "every rule of a leave request's decision screen (story 9.4): its states, the preview through the dialog's pipeline, the closed line and the refusals; a key source of its own, executed by leave-request-review.test.ts",
+  },
+  {
+    file: 'hooks/use-leave-request-review.ts',
+    why: "the request decision screen's hook (story 9.4), a part of its own set, LEAVE_REQUEST_REVIEW_PARTS in conflicts-screen.fixture.ts",
+  },
+  {
+    file: 'components/leave-request-review-body.tsx',
+    why: "the request decision screen's body (story 9.4), a part of its own set, LEAVE_REQUEST_REVIEW_PARTS in conflicts-screen.fixture.ts",
+  },
+  {
     file: 'services/surface-keys.ts',
     why: "Godišnji's reads as one snapshot (story 8.2b), the keys its offline freshness is decided over; renders nothing and declares no key, executed by surface-keys.test.ts",
   },

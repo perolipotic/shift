@@ -2,8 +2,10 @@ import type { QueryKey } from '@tanstack/react-query';
 
 import { CALENDAR_KEY } from '@/features/calendar/services/snapshot';
 import { readsOrganizationLeave } from '@/features/calendar/services/snapshot-skew';
-import { LEAVE_OVERVIEW_RECORDS_KEY, MY_LEAVE_RECORDS_KEY } from '@/features/leave/services/leave-list';
-import { MY_LEAVE_REQUESTS_KEY } from '@/features/leave/services/leave-requests';
+import { ORGANIZATION_CONFLICT_RESOLUTIONS_KEY } from '@/features/conflicts/services/resolutions';
+import { ACTING_ADMINS_KEY } from '@/features/conflicts/services/resolved-conflicts';
+import { LEAVE_OVERVIEW_RECORDS_KEY, LEAVE_RECORDS_KEY, MY_LEAVE_RECORDS_KEY } from '@/features/leave/services/leave-list';
+import { LEAVE_REQUEST_KEY, MY_LEAVE_REQUESTS_KEY } from '@/features/leave/services/leave-requests';
 import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
 import type { MemberRole } from '@/features/navigation/utils/destinations';
 import { ORGANIZATION_SNAPSHOT_KEY } from '@/features/organization/services/snapshot';
@@ -42,3 +44,29 @@ export function godisnjiSurfaceKeysOf(role: MemberRole | null): readonly QueryKe
  * together, on *Godišnji* and on the request form alike.
  */
 export const GODISNJI_MEMBER_SURFACE_KEYS: readonly QueryKey[] = godisnjiSurfaceKeysOf('member_role');
+
+/**
+ * A leave request's decision screen as one snapshot (story 9.4): the request
+ * by its id, the calendar snapshot (the organization's zone, the schedule) and
+ * the member list (the name, the allowance) for every request; for a PENDING
+ * one, `previewMemberId`, the preview's reads too — the organization snapshot
+ * (the leave year), the organization's live resolutions (the collisions) and
+ * the member's live records; for a DECIDED one (`actors`), the acting admins'
+ * names, as *Odlučeno* reads them. Before the request is read, the first
+ * three alone. `surface-keys.test.ts` pins the sets and that every key is kept
+ * on the device.
+ */
+export function leaveRequestReviewSurfaceKeysOf(
+  requestId: string,
+  previewMemberId: string | null,
+  actors: boolean,
+): readonly QueryKey[] {
+  const keys: QueryKey[] = [LEAVE_REQUEST_KEY(requestId), CALENDAR_KEY, MEMBERS_LIST_KEY];
+
+  if (previewMemberId !== null) {
+    keys.push(ORGANIZATION_SNAPSHOT_KEY, ORGANIZATION_CONFLICT_RESOLUTIONS_KEY, LEAVE_RECORDS_KEY(previewMemberId));
+  }
+  if (actors) keys.push(ACTING_ADMINS_KEY);
+
+  return keys;
+}

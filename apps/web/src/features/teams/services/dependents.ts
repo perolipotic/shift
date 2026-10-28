@@ -10,7 +10,7 @@ import {
   MY_LEAVE_RECORDS_KEY,
   ORGANIZATION_LEAVE_RECORDS_KEY,
 } from '@/features/leave/services/leave-list';
-import { MY_LEAVE_REQUESTS_KEY } from '@/features/leave/services/leave-requests';
+import { LEAVE_REQUEST_ROOT_KEY, MY_LEAVE_REQUESTS_KEY } from '@/features/leave/services/leave-requests';
 import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
 import { MEMBER_NAME_KEY } from '@/features/navigation/services/profile';
 import { MEMBER_ROLE_KEY } from '@/features/navigation/services/role';
@@ -120,13 +120,31 @@ export const LEAVE_WRITE_DEPENDENTS: readonly QueryKey[] = [
 ];
 
 /**
- * A leave request sent or withdrawn (story 9.3): the viewer's own requests,
- * which *Godišnji* lists and the form stands on. A PENDING REQUEST DERIVES
- * NOTHING (0040): no leave record, balance, conflict or schedule reads it, so
- * no leave, balance or resolution key is named. Story 9.4's admin reader of
- * requests joins this list when it ships.
+ * A leave request sent, withdrawn or decided (stories 9.3, 9.4): the viewer's
+ * own requests, which *Godišnji* lists and the form stands on, and every one
+ * request held by its id (`LEAVE_REQUEST_ROOT_KEY`, the prefix of
+ * `LEAVE_REQUEST_KEY`), which the admin's decision screen reads. A PENDING
+ * REQUEST DERIVES NOTHING (0040): no leave record, balance, conflict or
+ * schedule reads it, so no leave, balance or resolution key is named.
  */
-export const LEAVE_REQUEST_WRITE_DEPENDENTS: readonly QueryKey[] = [MY_LEAVE_REQUESTS_KEY];
+export const LEAVE_REQUEST_WRITE_DEPENDENTS: readonly QueryKey[] = [MY_LEAVE_REQUESTS_KEY, LEAVE_REQUEST_ROOT_KEY];
+
+/**
+ * A leave request rejected (story 9.4): only the decision is recorded and the
+ * request closed, so the request keys alone.
+ */
+export const LEAVE_REQUEST_REJECTION_DEPENDENTS: readonly QueryKey[] = LEAVE_REQUEST_WRITE_DEPENDENTS;
+
+/**
+ * A leave request approved (story 9.4): the request keys, and everything a
+ * leave record saved makes stale — approval inserts one, exactly as if the
+ * admin had entered it. The member's own records (`LEAVE_RECORDS_KEY`) are
+ * named by the caller, which knows whose they are.
+ */
+export const LEAVE_REQUEST_APPROVAL_DEPENDENTS: readonly QueryKey[] = [
+  ...LEAVE_REQUEST_WRITE_DEPENDENTS,
+  ...LEAVE_WRITE_DEPENDENTS,
+];
 
 /**
  * A conflict resolution recorded (story 5.4b): both live resolution reads.

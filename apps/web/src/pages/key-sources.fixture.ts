@@ -51,6 +51,8 @@ import {
   RESOLUTION,
   RESOLUTION_SCREEN_KEYS,
   RESOLUTION_WRITE_KEYS,
+  LEAVE_REQUEST_REVIEW,
+  LEAVE_REQUEST_REVIEW_KEYS,
   ROTATION_DISPOSITION_KEYS,
   ROTATION_HISTORY_DIALOG,
   ROTATION_HISTORY_KEYS,
@@ -991,10 +993,37 @@ export const KEY_SOURCES = [
     // removal.
     // TWENTY SINCE STORY 7.9: the three candidate group headings moved to the
     // calendar's public `utils/replacement-candidates`, counted there.
+    // TWENTY-TWO SINCE STORY 9.4: the status line for a leave request
+    // approved or rejected on its own screen, in the same slot.
     name: 'the conflict resolution rules',
     file: RESOLUTION_SCREEN_KEYS,
     keys: messageKeyUnions,
+    strings: 22,
+  },
+  {
+    // STORY 9.4. On one leave request's decision screen, through `t('…')`:
+    // the way back, the heading, the missing and unavailable lines with the
+    // retry, the range, the cost and the balance after approval with
+    // `count.days`, the in-year charge, the overlap and over-balance notes,
+    // the decided line with its admin (or one no longer a member), the
+    // withdrawn date, and *Odbij* and *Odobri*. The status word comes through
+    // `@/features/leave/services/my-leave`, the base lines and the refusals
+    // through the rules below, and the collisions through the dialog's lines.
+    // TWENTY SINCE ITS REVIEW: the neutral line for a member gone from both
+    // lists, on the facts and as the queue's line names them.
+    name: 'the leave request decision screen',
+    file: LEAVE_REQUEST_REVIEW,
+    keys: translationKeys,
     strings: 20,
+  },
+  {
+    // STORY 9.4: the base's three lines in place of the figures (unavailable,
+    // unscheduled, absent) and the decision's four refusals, off
+    // `reviewBaseMessageKey` and `reviewFailureMessageKey`.
+    name: 'the leave request decision rules',
+    file: LEAVE_REQUEST_REVIEW_KEYS,
+    keys: messageKeyUnions,
+    strings: 7,
   },
   {
     // STORY 7.9: the three candidate group headings — free, working that day,
