@@ -21,8 +21,7 @@ import {
   type ConflictsTab,
   type ResolvedConflicts,
 } from '@/features/conflicts/services/resolved-conflicts';
-import { resolutionSavedMessageKey, type ResolutionSaved } from '@/features/conflicts/services/resolution-screen';
-import { REPLACE_MEMBER } from '@/features/conflicts/services/resolutions';
+import { resolutionSavedLineOf, type ResolutionSaved } from '@/features/conflicts/services/resolution-screen';
 import { t } from '@/lib/i18n';
 import { keepFocusOnAlert } from '@/utils/retry-focus';
 
@@ -31,7 +30,8 @@ import { keepFocusOnAlert } from '@/utils/retry-focus';
  * the reads are unanswered, one alert with a retry when a read failed or the
  * queue was refused — never a partial list — and otherwise the queue.
  * Above whichever it is, the status line a decision just saved returns with
- * (story 5.4b), which takes focus so it is announced. `conflictsQueueOf`
+ * (story 5.4b; a leave request's approval or rejection since story 9.4),
+ * which takes focus so it is announced. `conflictsQueueOf`
  * decides which; this only draws it.
  *
  * TWO TABS (story 7.16): *Čeka odluku*, the default, whose count stays on its
@@ -56,17 +56,15 @@ export function ConflictsBody({
   /** The unavailable alert's read retry, or `null` for none: never offline (story 8.2e). */
   readonly onRetry: (() => void) | null;
 }): ReactNode {
+  // STORY 9.4: a leave request's decision rides in the same slot, named by its own line.
+  const line = saved === null ? null : resolutionSavedLineOf(saved);
+
   return (
     <div className="flex min-w-0 flex-col gap-3">
-      {saved === null ? null : (
+      {line === null ? null : (
         <Notice role="status" ref={savedField} tabIndex={-1} className="outline-none">
-          {t(resolutionSavedMessageKey(saved.kind), {
-            type: saved.shiftTypeName,
-            team: saved.teamName,
-            date: saved.dateShown,
-            member: saved.memberName,
-            replacement: saved.kind === REPLACE_MEMBER ? saved.replacementName : undefined,
-          })}
+          {/* NARROWED FIRST: `t()`'s typed values check one key's variables at a time, so the union is split. */}
+          {line.request ? t(line.key, line.values) : t(line.key, line.values)}
         </Notice>
       )}
       <ConflictsTabs tab={tab} unresolvedCount={queue.kind === CONFLICTS_READY ? queue.view.count : null} onTab={onTab} />

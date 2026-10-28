@@ -1,6 +1,6 @@
 import type { Locator } from '@playwright/test';
 
-import { escapeRegExp, hr, plural } from '../utils/i18n.ts';
+import { escapeRegExp, fill, hr, plural } from '../utils/i18n.ts';
 import { BasePage } from './base.page.ts';
 
 const zaOdluku = hr.zaOdluku;
@@ -210,5 +210,61 @@ export class ConflictResolutionPage extends BasePage {
   /** One card's strip labels, in order. */
   stripLabelsOf(option: Locator): Locator {
     return option.getByText(new RegExp(`^(${resolution.coverageLabel}|${resolution.absentLabel}|${resolution.balanceLabel})$`));
+  }
+}
+
+const request = zaOdluku.request;
+
+/**
+ * `/za-odluku/zahtjev/$requestId`: one leave request's decision screen (story
+ * 9.4) — the way back, the heading, who asked and the range with the status
+ * word, the preview's figures and collision lines, and *Odbij* and *Odobri*;
+ * a closed request read-only.
+ */
+export class LeaveRequestReviewPage extends BasePage {
+  readonly path = '/za-odluku/zahtjev';
+
+  /** Opens the screen of the request `requestId`. */
+  async gotoRequest(requestId: string): Promise<void> {
+    await this.page.goto(`${this.path}/${requestId}`);
+  }
+
+  /** The screen's h1. */
+  get requestHeading(): Locator {
+    return this.heading(request.heading, { exact: true });
+  }
+
+  /** *Natrag na Za odluku*. */
+  get backLink(): Locator {
+    return this.page.getByRole('main').getByRole('link', { name: zaOdluku.resolution.backToQueue, exact: true });
+  }
+
+  /** The figure under `label` in the preview — the cost or the balance after approval. */
+  figure(label: string): Locator {
+    return this.page
+      .getByRole('main')
+      .locator('dl > div')
+      .filter({ has: this.page.getByRole('term').getByText(label, { exact: true }) })
+      .getByRole('definition');
+  }
+
+  /** *Odobri*. */
+  get approveButton(): Locator {
+    return this.page.getByRole('main').getByRole('button', { name: request.approve, exact: true });
+  }
+
+  /** *Odbij*. */
+  get rejectButton(): Locator {
+    return this.page.getByRole('main').getByRole('button', { name: request.reject, exact: true });
+  }
+
+  /** A line of the screen's main region: by its exact words, or by a pattern. */
+  line(words: string | RegExp): Locator {
+    return this.page.getByRole('main').getByText(words, typeof words === 'string' ? { exact: true } : {});
+  }
+
+  /** The closed line of a decided request, exactly: `{admin} · 20.10.2026 u 14:05`, as it was stored. */
+  decidedLine(actor: string, date: string, time: string): Locator {
+    return this.line(fill(request.decided, { actor, date, time }));
   }
 }

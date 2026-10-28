@@ -30,6 +30,11 @@ import { isIsoDate } from '@/lib/i18n/format';
  * with another pending request its exclusion constraint's 23P01, and a refusal
  * its policy's 42501. The domain's `overlapsRecord` is a warning, never a gate.
  *
+ * STORY 9.4 adds the admin's side: one request read by its id with its
+ * decision's author and instant (`leaveRequestFoundOf`, no member filter —
+ * 0040 shows an active admin every request), and `decideLeaveRequest`, 0040's
+ * definer, whose stale approval is its 23P01 and never refused here first.
+ *
  * Codes, never messages: the components map them to Croatian at their edge.
  */
 
@@ -39,11 +44,32 @@ export const LEAVE_REQUESTS_TABLE = 'leave_requests';
 /** The function a member withdraws their own pending request through (0040). */
 export const WITHDRAW_LEAVE_REQUEST_FUNCTION = 'withdraw_leave_request';
 
+/** The function an active admin approves or rejects a pending request through (0040, story 9.4). */
+export const DECIDE_LEAVE_REQUEST_FUNCTION = 'decide_leave_request';
+
 /** The one query key the viewer's own requests are read under. */
 export const MY_LEAVE_REQUESTS_KEY = ['my-leave-requests'] as const;
 
 /** The columns read: the request's own, and its decision's outcome through the embed. */
 export const LEAVE_REQUESTS_COLUMNS = 'id,member_id,during,closed_at,leave_request_decisions(outcome)';
+
+/**
+ * The prefix every one request's key starts with (story 9.4): a request
+ * decided or withdrawn re-reads each one held, whatever its id.
+ */
+export const LEAVE_REQUEST_ROOT_KEY = ['leave-request'] as const;
+
+/** The key one request is read under by its id, on its decision screen (story 9.4). */
+export function LEAVE_REQUEST_KEY(requestId: string) {
+  return [...LEAVE_REQUEST_ROOT_KEY, requestId] as const;
+}
+
+/**
+ * The columns one request is read with on its decision screen (story 9.4):
+ * the request's own, and its decision's outcome, who decided and when.
+ */
+export const LEAVE_REQUEST_COLUMNS =
+  'id,member_id,during,closed_at,leave_request_decisions(outcome,decided_by,decided_at)';
 
 /** The read could not be answered, or answered something that is not rows. */
 export const LEAVE_REQUESTS_UNAVAILABLE = 'LEAVE_REQUESTS_UNAVAILABLE';
@@ -174,6 +200,95 @@ export function leaveRequestsOf(rows: readonly unknown[], memberId: string): rea
   return requests.sort(compareRequests);
 }
 
+// ------------------------------------------------------- one request (9.4)
+
+/** A decided request's decision: its outcome, who decided (an auth user id) and when. */
+export interface LeaveRequestDecision {
+  readonly outcome: typeof REQUEST_APPROVED | typeof REQUEST_REJECTED;
+  /** `decided_by`: the deciding admin's auth user id. */
+  readonly decidedBy: string;
+  /** `decided_at`: the instant it was decided. */
+  readonly decidedAt: string;
+}
+
+/** One request as its decision screen reads it: whose it is, and its decision once decided. */
+export interface ReviewedLeaveRequest extends LeaveRequest {
+  readonly memberId: string;
+  /** The decision, for an approved or rejected request; null while pending or once withdrawn. */
+  readonly decision: LeaveRequestDecision | null;
+}
+
+/** The read answered one request, or none with that id. */
+export interface LeaveRequestFound {
+  /** The request, or null when no row has that id: it does not exist, or the session may not read it. */
+  readonly request: ReviewedLeaveRequest | null;
+}
+
+const DECIDED_BY_COLUMN = 'decided_by';
+const DECIDED_AT_COLUMN = 'decided_at';
+
+/** The one decision a closed request's embed holds, or null when it holds none or more than one. */
+function decisionRowOf(embedded: unknown): Record<string, unknown> | null {
+  const decisions: readonly unknown[] = Array.isArray(embedded)
+    ? embedded
+    : embedded === null || embedded === undefined
+      ? []
+      : [embedded];
+  const [decision] = decisions;
+
+  return decisions.length === 1 && isRecord(decision) ? decision : null;
+}
+
+/**
+ * The rows a by-id read answered as one request (story 9.4), with no member
+ * filter: none is the request missing, one is it — its member, range, status
+ * and, for an approved or rejected one, who decided and when. Null when the
+ * answer cannot be trusted: more than one row, a row of another id, a range
+ * or a status that does not parse, or a decision without its author or its
+ * instant.
+ */
+export function leaveRequestFoundOf(rows: readonly unknown[], requestId: string): LeaveRequestFound | null {
+  if (rows.length === 0) return { request: null };
+  if (rows.length > 1) return null;
+
+  const [row] = rows;
+
+  if (!isRecord(row) || row[ID_COLUMN] !== requestId) return null;
+
+  const memberId = row[MEMBER_COLUMN];
+  const range = leaveRangeOf(row[DURING_COLUMN]);
+  const status = leaveRequestStatusOf(row[CLOSED_COLUMN], row[DECISIONS_EMBED]);
+  const closed = row[CLOSED_COLUMN];
+
+  if (typeof memberId !== 'string' || memberId === '' || range === null || status === null) return null;
+
+  let decision: LeaveRequestDecision | null = null;
+
+  if (status === REQUEST_APPROVED || status === REQUEST_REJECTED) {
+    const decided = decisionRowOf(row[DECISIONS_EMBED]);
+    const decidedBy = decided?.[DECIDED_BY_COLUMN];
+    const decidedAt = decided?.[DECIDED_AT_COLUMN];
+
+    if (typeof decidedBy !== 'string' || decidedBy === '' || typeof decidedAt !== 'string' || decidedAt === '') {
+      return null;
+    }
+
+    decision = { outcome: status, decidedBy, decidedAt };
+  }
+
+  return {
+    request: {
+      id: requestId,
+      memberId,
+      from: range.from,
+      to: range.to,
+      status,
+      closedAt: typeof closed === 'string' ? closed : null,
+      decision,
+    },
+  };
+}
+
 // ------------------------------------------------------------------ the read
 
 export interface LeaveRequestsReadError {
@@ -214,6 +329,11 @@ export async function readMyLeaveRequestRows(
     return { ok: false, code: LEAVE_REQUESTS_UNAVAILABLE };
   }
 
+  return rowsOutcomeOf(answered);
+}
+
+/** A select's answer as its rows, or unavailable when it failed or answered something that is not rows. */
+function rowsOutcomeOf(answered: unknown): LeaveRequestRowsOutcome {
   if (!isRecord(answered)) {
     console.error(LEAVE_REQUESTS_UNAVAILABLE, typeof answered);
 
@@ -235,6 +355,57 @@ export async function readMyLeaveRequestRows(
   }
 
   return { ok: true, rows: data as readonly unknown[] };
+}
+
+/** Whether `value` is a uuid as PostgREST takes one: any other id names no request, so nothing is asked. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * One request's rows by its id (story 9.4), as the select answered them,
+ * unparsed, or unavailable. The select policy (0040) shows an active admin
+ * every request of the organization, so no member filter is applied; an id
+ * that is not a uuid is answered with no rows and no request, since none can
+ * carry it.
+ */
+export async function readLeaveRequestRows(
+  table: LeaveRequestsTable,
+  requestId: string,
+): Promise<LeaveRequestRowsOutcome> {
+  if (!UUID.test(requestId)) return { ok: true, rows: [] };
+
+  let answered: unknown;
+
+  try {
+    answered = await table.select(LEAVE_REQUEST_COLUMNS).eq(ID_COLUMN, requestId);
+  } catch (cause) {
+    console.error(LEAVE_REQUESTS_UNAVAILABLE, cause);
+
+    return { ok: false, code: LEAVE_REQUESTS_UNAVAILABLE };
+  }
+
+  return rowsOutcomeOf(answered);
+}
+
+/**
+ * The query options one request is read with on its decision screen, under
+ * {@link LEAVE_REQUEST_KEY} (story 9.4). The rows are kept unparsed, as the
+ * viewer's own are, and parsed by the screen.
+ */
+export function leaveRequestQueryOptions(table: () => LeaveRequestsTable, requestId: string) {
+  return queryOptions({
+    queryKey: LEAVE_REQUEST_KEY(requestId),
+    queryFn: async (): Promise<readonly unknown[]> => {
+      const outcome = await readLeaveRequestRows(table(), requestId);
+
+      if (!outcome.ok) throw new Error(outcome.code);
+
+      return outcome.rows;
+    },
+    staleTime: LEAVE_REQUESTS_READ_STALE_MS,
+    refetchOnWindowFocus: false,
+    retry: 1,
+    retryDelay: 1000,
+  });
 }
 
 /**
@@ -283,6 +454,27 @@ export type LeaveRequestSendFailure =
 
 export type LeaveRequestWithdrawFailure = typeof REQUEST_NOT_PENDING | typeof REQUEST_DENIED | typeof REQUEST_FAILED;
 
+/**
+ * An approval refused as stale (story 9.4): live leave sharing a date with the
+ * request was recorded since it was sent (23P01
+ * `LEAVE_REQUEST_APPROVAL_OVERLAPS_LEAVE`). The request stays pending, to be
+ * rejected.
+ */
+export const REQUEST_APPROVAL_STALE = 'approvalStale';
+
+export type LeaveRequestDecideFailure =
+  | typeof REQUEST_NOT_PENDING
+  | typeof REQUEST_APPROVAL_STALE
+  | typeof REQUEST_DENIED
+  | typeof REQUEST_FAILED;
+
+export type LeaveRequestDecideOutcome =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly code: LeaveRequestDecideFailure };
+
+/** The two outcomes an admin decides a request with, as 0040's `p_outcome` takes them. */
+export type LeaveRequestOutcome = typeof REQUEST_APPROVED | typeof REQUEST_REJECTED;
+
 export type LeaveRequestSendOutcome = { readonly ok: true } | { readonly ok: false; readonly code: LeaveRequestSendFailure };
 
 export type LeaveRequestWithdrawOutcome =
@@ -311,6 +503,14 @@ export interface WithdrawLeaveRequestRpc {
   ): PromiseLike<LeaveRequestWriteAnswer>;
 }
 
+/** The one function a decision calls, named structurally so it can be stubbed (story 9.4). */
+export interface DecideLeaveRequestRpc {
+  rpc(
+    fn: typeof DECIDE_LEAVE_REQUEST_FUNCTION,
+    args: { readonly p_request_id: string; readonly p_outcome: LeaveRequestOutcome },
+  ): PromiseLike<LeaveRequestWriteAnswer>;
+}
+
 /**
  * A refused insert as this application's own failure, by SQLSTATE and
  * message: 23P01 with `LEAVE_REQUEST_OVERLAPS_LEAVE` overlaps the member's
@@ -329,6 +529,19 @@ export function leaveRequestSendFailureOf(error: LeaveRequestWriteError): LeaveR
 /** A refused withdrawal as this application's own failure: P0002 no longer pending, 42501 not allowed, else failed. */
 export function leaveRequestWithdrawFailureOf(error: LeaveRequestWriteError): LeaveRequestWithdrawFailure {
   if (error.code === NO_DATA_FOUND) return REQUEST_NOT_PENDING;
+  if (error.code === INSUFFICIENT_PRIVILEGE) return REQUEST_DENIED;
+
+  return REQUEST_FAILED;
+}
+
+/**
+ * A refused decision as this application's own failure, by SQLSTATE (story
+ * 9.4): P0002 no longer pending, 23P01 an approval gone stale, 42501 not
+ * allowed, and anything else — 22023, the network, the unforeseen — failed.
+ */
+export function leaveRequestDecideFailureOf(error: LeaveRequestWriteError): LeaveRequestDecideFailure {
+  if (error.code === NO_DATA_FOUND) return REQUEST_NOT_PENDING;
+  if (error.code === EXCLUSION_VIOLATION) return REQUEST_APPROVAL_STALE;
   if (error.code === INSUFFICIENT_PRIVILEGE) return REQUEST_DENIED;
 
   return REQUEST_FAILED;
@@ -418,6 +631,41 @@ export async function withdrawLeaveRequest(
   if (error === undefined) return { ok: false, code: REQUEST_FAILED };
 
   const code = leaveRequestWithdrawFailureOf(error);
+
+  if (code === REQUEST_FAILED) console.error(code, error.code);
+
+  return { ok: false, code };
+}
+
+/**
+ * Decide the pending request `requestId` (story 9.4): 0040's definer, which
+ * on an approval inserts the leave record, records the decision and closes
+ * the request in one transaction, and on a rejection records the decision
+ * and closes it. The acting admin and the instant come from its defaults.
+ * NOTHING IS CHECKED HERE FIRST: the database decides overlap, and a stale
+ * approval is its refusal. The caller re-reads after any outcome.
+ */
+export async function decideLeaveRequest(
+  client: DecideLeaveRequestRpc,
+  requestId: string,
+  outcome: LeaveRequestOutcome,
+): Promise<LeaveRequestDecideOutcome> {
+  let answered: unknown;
+
+  try {
+    answered = await client.rpc(DECIDE_LEAVE_REQUEST_FUNCTION, { p_request_id: requestId, p_outcome: outcome });
+  } catch (cause) {
+    console.error(REQUEST_FAILED, cause);
+
+    return { ok: false, code: REQUEST_FAILED };
+  }
+
+  const error = answeredErrorOf(answered);
+
+  if (error === null) return { ok: true };
+  if (error === undefined) return { ok: false, code: REQUEST_FAILED };
+
+  const code = leaveRequestDecideFailureOf(error);
 
   if (code === REQUEST_FAILED) console.error(code, error.code);
 

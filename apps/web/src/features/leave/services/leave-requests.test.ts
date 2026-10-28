@@ -1,6 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  DECIDE_LEAVE_REQUEST_FUNCTION,
+  LEAVE_REQUEST_COLUMNS,
+  LEAVE_REQUEST_KEY,
+  REQUEST_APPROVAL_STALE,
+  decideLeaveRequest,
+  leaveRequestDecideFailureOf,
+  leaveRequestFoundOf,
+  leaveRequestQueryOptions,
+  readLeaveRequestRows,
+  type DecideLeaveRequestRpc,
   LEAVE_REQUESTS_COLUMNS,
   LEAVE_REQUESTS_UNAVAILABLE,
   MY_LEAVE_REQUESTS_KEY,
@@ -270,5 +280,166 @@ describe('the withdrawal', () => {
     const client: WithdrawLeaveRequestRpc = { rpc: () => Promise.reject(new Error('network')) };
 
     expect(await withdrawLeaveRequest(client, 'request-1')).toEqual({ ok: false, code: REQUEST_FAILED });
+  });
+});
+
+describe('one request by its id (story 9.4)', () => {
+  const REQUEST = '11111111-1111-4111-8111-111111111111';
+  const decided = (outcome: string) => [{ outcome, decided_by: 'admin-auth', decided_at: '2026-10-20T08:15:00Z' }];
+
+  it('is missing with no row, and the request with its member and range with one, no member filter applied', () => {
+    expect(leaveRequestFoundOf([], REQUEST)).toEqual({ request: null });
+    expect(leaveRequestFoundOf([rowOf(REQUEST, '2026-11-02', '2026-11-05', { memberId: 'member-2' })], REQUEST)).toEqual({
+      request: {
+        id: REQUEST,
+        memberId: 'member-2',
+        from: '2026-11-02',
+        to: '2026-11-04',
+        status: REQUEST_PENDING,
+        closedAt: null,
+        decision: null,
+      },
+    });
+  });
+
+  it('carries who decided and when for an approved or rejected request, as a list or as one object', () => {
+    const approved = leaveRequestFoundOf(
+      [rowOf(REQUEST, '2026-11-02', '2026-11-05', { closedAt: '2026-10-20T08:15:00Z', decisions: decided('approved') })],
+      REQUEST,
+    );
+
+    expect(approved?.request?.status).toBe(REQUEST_APPROVED);
+    expect(approved?.request?.decision).toEqual({
+      outcome: REQUEST_APPROVED,
+      decidedBy: 'admin-auth',
+      decidedAt: '2026-10-20T08:15:00Z',
+    });
+
+    const rejected = leaveRequestFoundOf(
+      [rowOf(REQUEST, '2026-11-02', '2026-11-05', { closedAt: '2026-10-20T08:15:00Z', decisions: decided('rejected')[0] })],
+      REQUEST,
+    );
+
+    expect(rejected?.request?.decision?.outcome).toBe(REQUEST_REJECTED);
+  });
+
+  it('carries no decision for a withdrawn request, only its closing instant', () => {
+    const found = leaveRequestFoundOf([rowOf(REQUEST, '2026-11-02', '2026-11-05', { closedAt: '2026-10-20T08:15:00Z' })], REQUEST);
+
+    expect(found?.request?.status).toBe(REQUEST_WITHDRAWN);
+    expect(found?.request?.decision).toBeNull();
+    expect(found?.request?.closedAt).toBe('2026-10-20T08:15:00Z');
+  });
+
+  it.each([
+    ['two rows', [rowOf(REQUEST, '2026-11-02', '2026-11-05'), rowOf(REQUEST, '2026-11-02', '2026-11-05')]],
+    ['a row of another id', [rowOf('other', '2026-11-02', '2026-11-05')]],
+    ['a range that does not parse', [{ ...rowOf(REQUEST, '2026-11-02', '2026-11-05'), during: 'x' }]],
+    ['no member', [{ ...rowOf(REQUEST, '2026-11-02', '2026-11-05'), member_id: null }]],
+    [
+      'a decision without its author',
+      [rowOf(REQUEST, '2026-11-02', '2026-11-05', { closedAt: '2026-10-20T08:15:00Z', decisions: [{ outcome: 'approved', decided_at: 'x' }] })],
+    ],
+    [
+      'a decision without its instant',
+      [rowOf(REQUEST, '2026-11-02', '2026-11-05', { closedAt: '2026-10-20T08:15:00Z', decisions: [{ outcome: 'rejected', decided_by: 'a' }] })],
+    ],
+  ])('cannot be trusted with %s', (_name, rows) => {
+    expect(leaveRequestFoundOf(rows, REQUEST)).toBeNull();
+  });
+
+  function tableAnswering(answer: unknown): LeaveRequestsTable & { calls: unknown[] } {
+    const calls: unknown[] = [];
+
+    return {
+      calls,
+      select: (columns) => ({
+        eq: (column, value) => {
+          calls.push([columns, column, value]);
+
+          return Promise.resolve(answer) as never;
+        },
+      }),
+    };
+  }
+
+  it('selects the request columns with the decision and its author, by the id alone, under its own key', async () => {
+    const table = tableAnswering({ data: [], error: null });
+
+    expect(await readLeaveRequestRows(table, REQUEST)).toEqual({ ok: true, rows: [] });
+    expect(table.calls).toEqual([[LEAVE_REQUEST_COLUMNS, 'id', REQUEST]]);
+    expect(LEAVE_REQUEST_COLUMNS).toContain('leave_request_decisions(outcome,decided_by,decided_at)');
+    expect(leaveRequestQueryOptions(() => table, REQUEST).queryKey).toEqual(LEAVE_REQUEST_KEY(REQUEST));
+    expect(LEAVE_REQUEST_KEY(REQUEST)).toEqual(['leave-request', REQUEST]);
+  });
+
+  it('asks nothing for an id that is not a uuid: no request can carry it', async () => {
+    const table = tableAnswering({ data: [rowOf('x', '2026-11-02', '2026-11-05')], error: null });
+
+    expect(await readLeaveRequestRows(table, 'not-a-uuid')).toEqual({ ok: true, rows: [] });
+    expect(table.calls).toEqual([]);
+  });
+
+  it('is unavailable when the read fails or throws, and the query rejects with the code', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    expect(await readLeaveRequestRows(tableAnswering({ data: null, error: { code: '42501' } }), REQUEST)).toEqual({
+      ok: false,
+      code: LEAVE_REQUESTS_UNAVAILABLE,
+    });
+
+    const throwing: LeaveRequestsTable = { select: () => ({ eq: () => Promise.reject(new Error('network')) }) };
+
+    await expect(leaveRequestQueryOptions(() => throwing, REQUEST).queryFn?.({} as never)).rejects.toThrow(
+      LEAVE_REQUESTS_UNAVAILABLE,
+    );
+  });
+});
+
+describe('the decision (story 9.4)', () => {
+  function rpcAnswering(answer: unknown): DecideLeaveRequestRpc & { calls: unknown[] } {
+    const calls: unknown[] = [];
+
+    return {
+      calls,
+      rpc: (fn, args) => {
+        calls.push([fn, args]);
+
+        return Promise.resolve(answer) as never;
+      },
+    };
+  }
+
+  it("calls 0040's definer with the request's id and the outcome, approval or rejection", async () => {
+    const client = rpcAnswering({ data: 'record-1', error: null });
+
+    expect(await decideLeaveRequest(client, 'request-1', REQUEST_APPROVED)).toEqual({ ok: true });
+    expect(await decideLeaveRequest(rpcAnswering({ data: null, error: null }), 'request-1', REQUEST_REJECTED)).toEqual({
+      ok: true,
+    });
+    expect(client.calls).toEqual([[DECIDE_LEAVE_REQUEST_FUNCTION, { p_request_id: 'request-1', p_outcome: 'approved' }]]);
+  });
+
+  it.each([
+    ['no longer pending', { code: 'P0002', message: 'LEAVE_REQUEST_NOT_PENDING' }, REQUEST_NOT_PENDING],
+    ['a stale approval', { code: '23P01', message: 'LEAVE_REQUEST_APPROVAL_OVERLAPS_LEAVE' }, REQUEST_APPROVAL_STALE],
+    ['not allowed', { code: '42501', message: 'LEAVE_REQUEST_DECISION_REFUSED' }, REQUEST_DENIED],
+    ['anything else', { code: '22023', message: 'LEAVE_REQUEST_OUTCOME_UNKNOWN' }, REQUEST_FAILED],
+  ] as const)('maps %s', async (_name, error, code) => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    expect(leaveRequestDecideFailureOf(error)).toBe(code);
+    expect(await decideLeaveRequest(rpcAnswering({ error }), 'request-1', REQUEST_APPROVED)).toEqual({ ok: false, code });
+  });
+
+  it('fails, never throws, when the call throws or answers nothing it can read', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const client: DecideLeaveRequestRpc = { rpc: () => Promise.reject(new Error('network')) };
+
+    expect(await decideLeaveRequest(client, 'request-1', REQUEST_REJECTED)).toEqual({ ok: false, code: REQUEST_FAILED });
+    expect(await decideLeaveRequest(rpcAnswering(null), 'request-1', REQUEST_REJECTED)).toEqual({
+      ok: false,
+      code: REQUEST_FAILED,
+    });
   });
 });

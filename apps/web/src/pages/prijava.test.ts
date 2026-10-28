@@ -19,6 +19,7 @@ import {
   KALENDAR,
   labelTargets,
   LEAVE_REQUEST,
+  LEAVE_REQUEST_REVIEW,
   MEMBER_CREATE,
   MEMBER_EDIT,
   namedHandler,
@@ -450,6 +451,18 @@ const IN_FLIGHT_HANDLERS = [
     handler: 'withdraw',
     pending: 'setWithdrawPending',
     failure: 'setRefusal',
+  },
+  {
+    // STORY 9.4: *Odobri* and *Odbij* on a pending request's decision screen,
+    // one handler and one ref for both; a landed decision returns to the
+    // queue, a refusal stays with its alert.
+    name: "the leave request decision screen's decide",
+    file: LEAVE_REQUEST_REVIEW,
+    effect: 'decideLeaveRequest(',
+    inFlight: 'deciding',
+    handler: 'decide',
+    pending: 'setPending',
+    failure: 'setFailure',
   },
 ];
 
@@ -1071,7 +1084,8 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // THIRTY SINCE STORY 7.8: the set-password step's submit.
     // STILL THIRTY SINCE STORY 7.18: the settings surface's `submit` became
     // the dialogs' one runner, `write`.
-    expect(IN_FLIGHT_HANDLERS.length, 'an awaiting handler is swept by nothing').toBe(32);
+    // THIRTY-THREE SINCE STORY 9.4: the leave request decision's decide.
+    expect(IN_FLIGHT_HANDLERS.length, 'an awaiting handler is swept by nothing').toBe(33);
     expect(
       IN_FLIGHT_HANDLERS.map((entry) => `${entry.handler}/${entry.inFlight}`).sort(),
       'the in-flight handler names drifted from the handlers that hold them',
@@ -1086,6 +1100,7 @@ describe('the screen reaches the authentication seam rather than faking one', ()
       'confirmOverrideErasures/writing',
       'confirmStatusErasures/statusing',
       'confirmTeamErasures/teaming',
+      'decide/deciding',
       'issue/resetting',
       'remove/removing',
       'remove/writing',

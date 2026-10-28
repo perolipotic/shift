@@ -625,6 +625,70 @@ export async function seedLeaveRequest(
   }
 }
 
+/** How a closed request's line reads it: the date and time in the organization's zone, and who decided. */
+export interface ClosedRequestShown {
+  /** `20.10.2026`: the decision's instant, or the withdrawal's, in the organization's zone. */
+  readonly date: string;
+  /** `14:05`, the same instant's time. */
+  readonly time: string;
+  /** The deciding admin's name; null for a withdrawal. */
+  readonly actor: string | null;
+}
+
+/**
+ * The closed request `requestId` as its decision screen should state it
+ * (story 9.4), read from what was STORED — the decision's `decided_at` and
+ * its author's member name, or the withdrawal's `closed_at` — formatted in
+ * the organization's zone, so no assertion depends on the clock around
+ * midnight or on the runner's zone.
+ */
+export async function closedRequestShownInSql(slug: string, requestId: string): Promise<ClosedRequestShown> {
+  const client = await connect();
+  try {
+    const { rows } = await client.query<{ date: string; time: string; actor: string | null }>(
+      `select to_char(coalesce(d.decided_at, r.closed_at) at time zone o.timezone, 'DD.MM.YYYY') as date,
+              to_char(coalesce(d.decided_at, r.closed_at) at time zone o.timezone, 'HH24:MI') as time,
+              a.name as actor
+         from leave_requests r
+         join organizations o on o.id = r.organization_id
+         left join leave_request_decisions d on d.organization_id = r.organization_id and d.request_id = r.id
+         left join members a on a.organization_id = r.organization_id and a.auth_user_id = d.decided_by
+        where o.slug = $1 and r.id = $2 and r.closed_at is not null`,
+      [slug, requestId],
+    );
+    const shown = rows[0];
+    if (shown === undefined || rows.length !== 1) throw new Error(`E2E: no closed request ${requestId} in ${slug}`);
+
+    return shown;
+  } finally {
+    await client.end();
+  }
+}
+
+/**
+ * Closes the pending request `requestId` of the run organization `slug` as
+ * the member's withdrawal closes it (story 9.4): `closed_by` the member's
+ * auth user, `closed_at` now, and no decision — what a decision screen opened
+ * before it then finds no longer pending. Throws when no pending request has
+ * that id there.
+ */
+export async function withdrawLeaveRequestInSql(slug: string, requestId: string): Promise<void> {
+  const client = await connect();
+  try {
+    const { rowCount } = await client.query(
+      `update leave_requests r
+          set closed_by = m.auth_user_id, closed_at = now()
+         from organizations o, members m
+        where o.slug = $1 and r.organization_id = o.id and r.id = $2 and r.closed_at is null
+          and m.organization_id = r.organization_id and m.id = r.member_id`,
+      [slug, requestId],
+    );
+    if (rowCount !== 1) throw new Error(`E2E: no pending request ${requestId} in the organization ${slug}`);
+  } finally {
+    await client.end();
+  }
+}
+
 /**
  * A live conflict resolution of `memberId`'s conflict on `date` on `teamId`
  * (`YYYY-MM-DD`), in SQL (story 5.4a), attributed to the run organization's

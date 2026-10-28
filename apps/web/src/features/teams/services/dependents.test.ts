@@ -17,7 +17,7 @@ import {
   MY_LEAVE_RECORDS_KEY,
   ORGANIZATION_LEAVE_RECORDS_KEY,
 } from '@/features/leave/services/leave-list';
-import { MY_LEAVE_REQUESTS_KEY } from '@/features/leave/services/leave-requests';
+import { LEAVE_REQUEST_KEY, LEAVE_REQUEST_ROOT_KEY, MY_LEAVE_REQUESTS_KEY } from '@/features/leave/services/leave-requests';
 import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
 import { SESSION_SUBJECT_KEY } from '@/features/members/services/write';
 import { MEMBER_NAME_KEY } from '@/features/navigation/services/profile';
@@ -33,6 +33,8 @@ import {
   CONFLICT_RESOLUTION_HELD_DEPENDENTS,
   CONFLICT_RESOLUTION_WRITE_DEPENDENTS,
   HOUR_BAND_WRITE_DEPENDENTS,
+  LEAVE_REQUEST_APPROVAL_DEPENDENTS,
+  LEAVE_REQUEST_REJECTION_DEPENDENTS,
   LEAVE_REQUEST_WRITE_DEPENDENTS,
   LEAVE_WRITE_DEPENDENTS,
   MEMBERSHIP_WRITE_DEPENDENTS,
@@ -68,6 +70,9 @@ const ROSTER_B = TEAM_ROSTER_KEY('team-b');
 /** Two members' leave records, so a leave write is shown to re-read its own member's alone. */
 const LEAVE_A = LEAVE_RECORDS_KEY('member-a');
 const LEAVE_B = LEAVE_RECORDS_KEY('member-b');
+/** Two requests read by their ids (story 9.4), so a request write is shown to re-read every one. */
+const REQUEST_A = LEAVE_REQUEST_KEY('request-a');
+const REQUEST_B = LEAVE_REQUEST_KEY('request-b');
 
 /**
  * EVERY EXPORTED QUERY KEY, by its exported name. The sweep below reads the
@@ -100,14 +105,18 @@ const CLASSIFIED: Readonly<Record<string, readonly QueryKey[]>> = {
   ACTING_ADMINS_KEY: [ACTING_ADMINS_KEY],
   // Story 9.3: the viewer's own leave requests, which only a request write names.
   MY_LEAVE_REQUESTS_KEY: [MY_LEAVE_REQUESTS_KEY],
+  // Story 9.4: one request by its id, on the admin's decision screen, under one prefix.
+  LEAVE_REQUEST_ROOT_KEY: [LEAVE_REQUEST_ROOT_KEY],
+  LEAVE_REQUEST_KEY: [REQUEST_A, REQUEST_B],
 };
 
 /**
  * Every entry seeded before each case. The bare roster prefix is left out: no
- * read is ever made under it, only under a team's own key.
+ * read is ever made under it, only under a team's own key; and so is the bare
+ * request prefix (story 9.4), for the same reason.
  */
 const EVERY_KEY: readonly QueryKey[] = Object.entries(CLASSIFIED)
-  .filter(([name]) => name !== 'TEAM_ROSTERS_KEY')
+  .filter(([name]) => name !== 'TEAM_ROSTERS_KEY' && name !== 'LEAVE_REQUEST_ROOT_KEY')
   .flatMap(([, keys]) => keys);
 
 const SRC = fileURLToPath(new URL('../../../', import.meta.url));
@@ -261,8 +270,35 @@ describe('the reads a team or membership write makes stale', () => {
       own: MY_LEAVE_REQUESTS_KEY,
       dependents: LEAVE_REQUEST_WRITE_DEPENDENTS,
       // The requests alone: a pending request derives nothing, so no leave,
-      // balance or resolution read is re-read.
-      stale: [MY_LEAVE_REQUESTS_KEY],
+      // balance or resolution read is re-read. Since story 9.4 every request
+      // read by its id too, which the admin's decision screen holds.
+      stale: [MY_LEAVE_REQUESTS_KEY, REQUEST_A, REQUEST_B],
+    },
+    {
+      write: 'a leave request rejected (story 9.4)',
+      own: REQUEST_A,
+      dependents: LEAVE_REQUEST_REJECTION_DEPENDENTS,
+      // Only the decision is recorded: the request keys alone.
+      stale: [MY_LEAVE_REQUESTS_KEY, REQUEST_A, REQUEST_B],
+    },
+    {
+      write: 'a leave request approved (story 9.4)',
+      own: REQUEST_A,
+      dependents: [...LEAVE_REQUEST_APPROVAL_DEPENDENTS, LEAVE_A],
+      // The request keys, and what a leave record saved makes stale: the
+      // member's own records (named by the screen), the viewer's own, the
+      // organization's and the overview's, and both resolution reads.
+      stale: [
+        LEAVE_A,
+        MY_LEAVE_RECORDS_KEY,
+        ORGANIZATION_LEAVE_RECORDS_KEY,
+        LEAVE_OVERVIEW_RECORDS_KEY,
+        MY_CONFLICT_RESOLUTIONS_KEY,
+        ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
+        MY_LEAVE_REQUESTS_KEY,
+        REQUEST_A,
+        REQUEST_B,
+      ],
     },
     {
       write: 'a conflict resolution recorded (story 5.4b)',
@@ -369,12 +405,17 @@ describe('the reads a team or membership write makes stale', () => {
 
     await refreshAfterWrite(stub, MY_LEAVE_REQUESTS_KEY, LEAVE_REQUEST_WRITE_DEPENDENTS);
 
-    expect(named).toEqual([MY_LEAVE_REQUESTS_KEY]);
+    expect(named).toEqual([MY_LEAVE_REQUESTS_KEY, LEAVE_REQUEST_ROOT_KEY]);
   });
 
   it('reaches every roster through the one prefix', () => {
     expect(TEAM_ROSTER_KEY('x').slice(0, TEAM_ROSTERS_KEY.length)).toEqual([...TEAM_ROSTERS_KEY]);
     expect(TEAM_ROSTERS_KEY).toEqual(['team-roster']);
+  });
+
+  it('reaches every request read by its id through the one prefix (story 9.4)', () => {
+    expect(LEAVE_REQUEST_KEY('x').slice(0, LEAVE_REQUEST_ROOT_KEY.length)).toEqual([...LEAVE_REQUEST_ROOT_KEY]);
+    expect(LEAVE_REQUEST_ROOT_KEY).toEqual(['leave-request']);
   });
 });
 

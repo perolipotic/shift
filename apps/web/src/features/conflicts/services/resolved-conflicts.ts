@@ -125,8 +125,12 @@ export async function readActingAdminRows(table: ActingAdminsTable): Promise<rea
   return rows;
 }
 
-/** The names by auth user id; a row that is not two texts is skipped, since a name only decorates. */
-function actorNamesOf(rows: readonly unknown[]): ReadonlyMap<string, string> {
+/**
+ * The names by auth user id; a row that is not two texts is skipped, since a
+ * name only decorates. Shared with a leave request's decision screen (story
+ * 9.4), which names its deciding admin as *Odlučeno* does.
+ */
+export function actorNamesOf(rows: readonly unknown[]): ReadonlyMap<string, string> {
   const names = new Map<string, string>();
 
   for (const row of rows) {

@@ -1819,6 +1819,25 @@ const SANCTIONED_SCREEN_KEYS = [
   // override is written with, the refusal naming a replacement already on the
   // shift, and the queue's status line naming the replacement.
   'zaOdluku.savedReplace',
+  // STORY 9.4: one leave request's decision screen — its heading, the missing
+  // and unavailable lines, the range, the absent member's line in place of
+  // the figures, the decided line, *Odobri* and *Odbij*, the four refusals —
+  // and the queue's status line for an approval or a rejection.
+  'zaOdluku.savedRequestApproved',
+  'zaOdluku.savedRequestRejected',
+  'zaOdluku.request.heading',
+  'zaOdluku.request.missing',
+  'zaOdluku.request.unavailable',
+  'zaOdluku.request.absent',
+  'zaOdluku.request.range',
+  'zaOdluku.request.memberGone',
+  'zaOdluku.request.decided',
+  'zaOdluku.request.approve',
+  'zaOdluku.request.reject',
+  'zaOdluku.request.notPending',
+  'zaOdluku.request.approvalStale',
+  'zaOdluku.request.denied',
+  'zaOdluku.request.failed',
   'zaOdluku.resolution.replaceTitle',
   'zaOdluku.resolution.replaceBody',
   'zaOdluku.resolution.replaceReason',

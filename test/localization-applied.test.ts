@@ -694,6 +694,13 @@ const SOURCES = [
   join(webRoot, 'src', 'features', 'conflicts', 'components', 'resolution-skeleton.tsx'),
   join(webRoot, 'src', 'features', 'conflicts', 'services', 'resolution-screen.ts'),
   join(webRoot, 'src', 'features', 'conflicts', 'services', 'resolution-write.ts'),
+  // Story 9.4: one leave request's decision screen — its page, hook and body,
+  // its rules module, and the admin leave dialog's conflict lines it shares.
+  join(webRoot, 'src', 'pages', 'za-odluku.zahtjev.$requestId.tsx'),
+  join(webRoot, 'src', 'features', 'leave', 'hooks', 'use-leave-request-review.ts'),
+  join(webRoot, 'src', 'features', 'leave', 'components', 'leave-request-review-body.tsx'),
+  join(webRoot, 'src', 'features', 'leave', 'components', 'leave-conflict-lines.tsx'),
+  join(webRoot, 'src', 'features', 'leave', 'services', 'leave-request-review.ts'),
   // The root route: no string of its own, but it registers the not-found
   // component, so it is wiring the built chunk depends on, as `/` is.
   join(webRoot, 'src', 'pages', '__root.tsx'),

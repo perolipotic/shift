@@ -541,6 +541,23 @@
     "retry": "Pokušaj ponovno",
     "saved": "Odluka je spremljena: {type} · {team} · {date} · {member}, prihvaćeno kao nepokriveno.",
     "savedReplace": "Odluka je spremljena: {type} · {team} · {date} · {member}, zamjena: {replacement}.",
+    "savedRequestApproved": "Zahtjev odobren: {member}, {from}–{to}.",
+    "savedRequestRejected": "Zahtjev odbijen: {member}, {from}–{to}.",
+    "request": {
+      "heading": "Zahtjev za godišnji odmor",
+      "missing": "Zahtjev ne postoji.",
+      "unavailable": "Zahtjev trenutačno nije moguće učitati. Pokušaj ponovno.",
+      "absent": "Osobe više nema među članovima, pa se trošak godišnjeg odmora ne može izračunati.",
+      "range": "Godišnji odmor {from}–{to}",
+      "memberGone": "Osoba više nije na popisu",
+      "decided": "{actor} · {date} u {time}",
+      "approve": "Odobri",
+      "reject": "Odbij",
+      "notPending": "Zahtjev više ne čeka odluku.",
+      "approvalStale": "U međuvremenu je upisan godišnji koji se preklapa s ovim zahtjevom. Odobrenje nije moguće, a zahtjev možeš odbiti.",
+      "denied": "Nemaš ovlasti odlučiti o ovom zahtjevu.",
+      "failed": "Odluku nije bilo moguće spremiti. Pokušaj ponovno."
+    },
     "resolution": {
       "back": "Za odluku · {count, plural, one {# čeka odluku} few {# čekaju odluku} other {# čeka odluku}}",
       "heading": "Odsutnost u smjeni",

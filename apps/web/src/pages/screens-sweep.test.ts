@@ -304,7 +304,8 @@ describe('the screen is read at all, so every sweep below means something', () =
     // THIRTY-THREE SINCE STORY 8.2: the as-of note.
     // THIRTY-FOUR SINCE STORY 8.3a: the offline write note.
     // THIRTY-FIVE SINCE STORY 9.3: the leave request form.
-    expect(SCREENS).toHaveLength(35);
+    // THIRTY-SIX SINCE STORY 9.4: the leave request decision screen.
+    expect(SCREENS).toHaveLength(36);
     //
     // FORTY-NINE SINCE STORY 3.6b: `@/features/calendar/services/roster-write`.
     //
@@ -368,7 +369,9 @@ describe('the screen is read at all, so every sweep below means something', () =
     // SEVENTY-SIX SINCE STORY 8.3a: the offline write note.
     //
     // SEVENTY-SEVEN SINCE STORY 9.3: the leave request form.
-    expect(KEY_SOURCES).toHaveLength(77);
+    //
+    // SEVENTY-NINE SINCE STORY 9.4: the leave request decision screen and its rules.
+    expect(KEY_SOURCES).toHaveLength(79);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"

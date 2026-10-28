@@ -31,6 +31,20 @@ export const CONFLICT_RESOLUTION_PARTS = {
 } as const;
 
 /**
+ * STORY 9.4: ONE LEAVE REQUEST'S DECISION SCREEN (`/za-odluku/zahtjev/$requestId`),
+ * a *Za odluku* screen whose parts live in the leave feature, beside the
+ * request's other modules: the page, the hook holding its reads and the
+ * decision, and the body. Disjoint from both sets above. Its rules are
+ * `features/leave/services/leave-request-review.ts`, a key source of its own,
+ * and its conflict lines the admin leave dialog's, a member edit part.
+ */
+export const LEAVE_REQUEST_REVIEW_PARTS = {
+  page: ['pages', 'za-odluku.zahtjev.$requestId.tsx'],
+  hook: ['features', 'leave', 'hooks', 'use-leave-request-review.ts'],
+  body: ['features', 'leave', 'components', 'leave-request-review-body.tsx'],
+} as const;
+
+/**
  * Non-test modules under the conflicts feature that are in NEITHER set, each
  * with the reason. Everything else found there must be listed above.
  * Paths are relative to the feature.

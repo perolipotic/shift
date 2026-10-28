@@ -128,12 +128,16 @@ export const PERSISTED_KEY_ROOTS: readonly string[] = [
  *   - `team-roster` — `TEAM_ROSTER_KEY(id)`, one team's roster, read by
  *     `/smjene/$id` and by the member directory for every active team;
  *   - `leave-records` — `LEAVE_RECORDS_KEY(id)`, one member's live leave,
- *     read by the member page `/ljudi/$id` (story 8.2c).
+ *     read by the member page `/ljudi/$id` (story 8.2c);
+ *   - `leave-request` — `LEAVE_REQUEST_KEY(id)`, one leave request, read by
+ *     its decision screen `/za-odluku/zahtjev/$requestId` (story 9.4), kept
+ *     only for a uuid id ({@link UUID_ONLY_ROOTS}): any other id is a URL
+ *     typed by hand, which names no request and is not worth a device entry.
  *
  * A longer key under one of them, or a second segment that is not a
  * non-empty string, is a different read and is never kept.
  */
-export const PERSISTED_PARAMETERISED_KEY_ROOTS: readonly string[] = ['team-roster', 'leave-records'];
+export const PERSISTED_PARAMETERISED_KEY_ROOTS: readonly string[] = ['team-roster', 'leave-records', 'leave-request'];
 
 /**
  * The key part the erasure guard appends to a screen's key for its own fresh
@@ -144,6 +148,11 @@ export const PERSISTED_PARAMETERISED_KEY_ROOTS: readonly string[] = ['team-roste
  * surface's snapshot.
  */
 export const ERASURE_CHECK_KEY_PART = 'erasure-check';
+
+/** The parameterised roots whose id must be a uuid to be kept (story 9.4). */
+export const UUID_ONLY_ROOTS: readonly string[] = ['leave-request'];
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const KEPT = new Set(PERSISTED_KEY_ROOTS);
 const KEPT_PARAMETERISED = new Set(PERSISTED_PARAMETERISED_KEY_ROOTS);
@@ -166,7 +175,13 @@ export function persistsKey(queryKey: QueryKey): boolean {
 
   const [id] = rest;
 
-  return rest.length === 1 && typeof id === 'string' && id !== '' && KEPT_PARAMETERISED.has(root);
+  return (
+    rest.length === 1 &&
+    typeof id === 'string' &&
+    id !== '' &&
+    KEPT_PARAMETERISED.has(root) &&
+    (!UUID_ONLY_ROOTS.includes(root) || UUID.test(id))
+  );
 }
 
 /** Whether a query is kept on the device: succeeded, a kept key, and not its own failure. */
