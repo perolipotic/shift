@@ -1084,6 +1084,18 @@ describe('no read retry offline, on any surface (story 8.2e)', () => {
     }
   });
 
+  // STORY 9.5: the organization's requests are one of the queue's reads, so
+  // every surface that counts the queue re-reads them from its retry.
+  it.each([
+    'features/conflicts/hooks/use-conflicts-queue.ts',
+    'features/conflicts/hooks/use-conflict-resolution.ts',
+    'features/today/hooks/use-admin-today.ts',
+  ])('re-reads the organization\'s requests from the read retry in %s', (file) => {
+    expect(source(join(srcRoot, file))).toMatch(
+      /function retry\(\): void \{\s*for \(const queryKey of \[[^\]]*ORGANIZATION_LEAVE_REQUESTS_KEY,[^\]]*\]\)/,
+    );
+  });
+
   it('hands the builder read retry\'s focus to its alert', () => {
     // Its press is an inline arrow, which the opening-tag reader cuts at `=>`.
     expect(source(join(srcRoot, 'features/rotation/components/rotation-notices.tsx'))).toMatch(

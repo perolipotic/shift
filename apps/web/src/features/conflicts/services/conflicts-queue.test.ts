@@ -7,15 +7,24 @@ import {
   type CalendarSnapshot,
   type CalendarSurfaceState,
 } from '@/features/calendar/services/snapshot';
+import { unknownSnapshotIdsOf } from '@/features/calendar/services/snapshot-skew';
 import {
   CONFLICTS_LOADING,
   CONFLICTS_READY,
   CONFLICTS_UNAVAILABLE,
   conflictsQueueOf,
   conflictsQueueOutcomeOf,
+  ITEM_COLLISION,
+  ITEM_REQUEST,
+  collisionRowsOf,
+  mergedQueueOrderOf,
   queueOrderOf,
+  queueCountOf,
+  type ConflictRow,
+  type ConflictsQueueSources,
   type ConflictsQueueView,
   type LeaveRowsAnswer,
+  type RequestRow,
 } from '@/features/conflicts/services/conflicts-queue';
 import { REPLACEMENT_LINK_MISMATCH } from '@/features/conflicts/services/replacement-effect';
 import { organizationLeaveRecordsOf } from '@/features/leave/services/leave-list';
@@ -107,17 +116,22 @@ function rowOf(id: string, from: string, toExclusive: string, memberId: string =
 /** The pilot's worked example: 10.09–14.09 over Dan, Noć, Slobodno, Slobodno, Dan. */
 const WORKED = rowOf('record-worked', '2026-09-10', '2026-09-15');
 
+/** The queue over no leave requests: every row a collision. */
 function viewOf(
   snapshot: CalendarSnapshot,
   rows: readonly unknown[],
   today: string,
   resolutionRows: readonly unknown[] = [],
-): ConflictsQueueView {
-  const outcome = conflictsQueueOutcomeOf(snapshot, rows, resolutionRows, today);
+): { readonly count: number; readonly rows: readonly ConflictRow[] } {
+  const outcome = conflictsQueueOutcomeOf(snapshot, rows, resolutionRows, today, []);
 
   if (!outcome.ok) throw new Error(outcome.code);
 
-  return outcome.view;
+  const collisions = collisionRowsOf(outcome.view.rows);
+
+  expect(collisions).toHaveLength(outcome.view.rows.length);
+
+  return { count: outcome.view.count, rows: collisions };
 }
 
 /**
@@ -177,6 +191,7 @@ describe('the worked example', () => {
     const [first] = viewOf(pilot, [WORKED], '2026-09-01').rows;
 
     expect(first).toEqual({
+      kind: ITEM_COLLISION,
       key: collisionKeyOf({ memberId: VIEWER_MEMBER, date: '2026-09-10', teamId: teamOf(PILOT, 0) }),
       memberId: VIEWER_MEMBER,
       date: '2026-09-10',
@@ -281,7 +296,7 @@ describe('the order', () => {
     // 22:30 UTC on the 10th is already the 11th in Zagreb: the 10th (Dan) is
     // PAST there, though the UTC date would still call it today.
     const queue = conflictsQueueOf(
-      { calendar: { snapshot: pilot, refusal: null, loading: false }, records: answered([WORKED]), resolutions: answered([]) },
+      { calendar: { snapshot: pilot, refusal: null, loading: false }, records: answered([WORKED]), resolutions: answered([]), requests: answered([]) },
       new Date('2026-09-10T22:30:00Z'),
     );
 
@@ -298,7 +313,7 @@ describe('the order', () => {
     // 02:00 UTC on the 11th is still the 10th in New York: the 10th is today, not past.
     const behind: CalendarSnapshot = { ...pilot, timeZone: 'America/New_York' };
     const queue = conflictsQueueOf(
-      { calendar: { snapshot: behind, refusal: null, loading: false }, records: answered([WORKED]), resolutions: answered([]) },
+      { calendar: { snapshot: behind, refusal: null, loading: false }, records: answered([WORKED]), resolutions: answered([]), requests: answered([]) },
       new Date('2026-09-11T02:00:00Z'),
     );
 
@@ -433,7 +448,7 @@ describe('corrupt data refuses the whole queue', () => {
   ])('refuses %s, and logs it', (_name, rows) => {
     const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    expect(conflictsQueueOutcomeOf(pilot, rows, [], '2026-09-01')).toEqual({ ok: false, code: CONFLICTS_UNAVAILABLE });
+    expect(conflictsQueueOutcomeOf(pilot, rows, [], '2026-09-01', [])).toEqual({ ok: false, code: CONFLICTS_UNAVAILABLE });
     expect(logged).toHaveBeenCalledWith(CONFLICTS_UNAVAILABLE, expect.any(RangeError));
   });
 });
@@ -443,12 +458,12 @@ function answered(rows: readonly unknown[]): LeaveRowsAnswer {
   return { isPending: false, isError: false, fetchStatus: 'idle', data: rows };
 }
 
-describe('the three reads', () => {
+describe('the four reads', () => {
   const ready: CalendarSurfaceState = { snapshot: null, refusal: null, loading: false };
 
   it('is ready once both answered', () => {
     const queue = conflictsQueueOf(
-      { calendar: { ...ready, snapshot: pilot }, records: answered([WORKED]), resolutions: answered([]) },
+      { calendar: { ...ready, snapshot: pilot }, records: answered([WORKED]), resolutions: answered([]), requests: answered([]) },
       nowOn('2026-09-01'),
     );
 
@@ -459,13 +474,13 @@ describe('the three reads', () => {
     const pending: LeaveRowsAnswer = { isPending: true, isError: false, fetchStatus: 'fetching', data: undefined };
 
     expect(
-      conflictsQueueOf({ calendar: { ...ready, loading: true }, records: answered([]), resolutions: answered([]) }, nowOn('2026-09-01')),
+      conflictsQueueOf({ calendar: { ...ready, loading: true }, records: answered([]), resolutions: answered([]), requests: answered([]) }, nowOn('2026-09-01')),
     ).toEqual({ kind: CONFLICTS_LOADING });
     expect(
-      conflictsQueueOf({ calendar: { ...ready, snapshot: pilot }, records: pending, resolutions: answered([]) }, nowOn('2026-09-01')),
+      conflictsQueueOf({ calendar: { ...ready, snapshot: pilot }, records: pending, resolutions: answered([]), requests: answered([]) }, nowOn('2026-09-01')),
     ).toEqual({ kind: CONFLICTS_LOADING });
     expect(
-      conflictsQueueOf({ calendar: { ...ready, snapshot: pilot }, records: answered([WORKED]), resolutions: pending }, nowOn('2026-09-01')),
+      conflictsQueueOf({ calendar: { ...ready, snapshot: pilot }, records: answered([WORKED]), resolutions: pending, requests: answered([]) }, nowOn('2026-09-01')),
     ).toEqual({ kind: CONFLICTS_LOADING });
   });
 
@@ -477,7 +492,7 @@ describe('the three reads', () => {
   ] as const)('is unavailable when %s, ahead of any skeleton', (_name, calendar, records) => {
     const state: CalendarSurfaceState = { ...calendar, snapshot: calendar.refusal === null && !calendar.loading ? pilot : null };
 
-    expect(conflictsQueueOf({ calendar: state, records, resolutions: answered([]) }, nowOn('2026-09-01'))).toEqual({
+    expect(conflictsQueueOf({ calendar: state, records, resolutions: answered([]), requests: answered([]) }, nowOn('2026-09-01'))).toEqual({
       kind: CONFLICTS_UNAVAILABLE,
     });
   });
@@ -497,7 +512,7 @@ describe('the three reads', () => {
     ['a resolution of a newer member', [WORKED], [resolutionOf('newer-member', '2026-09-11', teamOf(PILOT, 0))]],
   ])('is unavailable, unlogged, for %s, and loading while the snapshot is read again', (_name, rows, resolutionRows) => {
     const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const sources = { calendar: { ...ready, snapshot: pilot }, records: answered(rows), resolutions: answered(resolutionRows) };
+    const sources = { calendar: { ...ready, snapshot: pilot }, records: answered(rows), resolutions: answered(resolutionRows), requests: answered([]) };
 
     expect(conflictsQueueOf(sources, nowOn('2026-09-01'))).toEqual({ kind: CONFLICTS_UNAVAILABLE });
     expect(conflictsQueueOf({ ...sources, snapshotFetching: true }, nowOn('2026-09-01'))).toEqual({ kind: CONFLICTS_LOADING });
@@ -595,6 +610,7 @@ describe('resolutions (story 5.4a)', () => {
         [WORKED],
         [resolutionOf(VIEWER_MEMBER, '2026-09-10', a, 'replace_member', 'ro-ana')],
         '2026-09-01',
+        [],
       );
 
       expect(outcome.ok).toBe(true);
@@ -625,7 +641,7 @@ describe('resolutions (story 5.4a)', () => {
   ])('refuses the whole queue for %s, and logs it', (_name, resolutionRows) => {
     const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    expect(conflictsQueueOutcomeOf(pilot, [WORKED], resolutionRows, '2026-09-01')).toEqual({ ok: false, code: CONFLICTS_UNAVAILABLE });
+    expect(conflictsQueueOutcomeOf(pilot, [WORKED], resolutionRows, '2026-09-01', [])).toEqual({ ok: false, code: CONFLICTS_UNAVAILABLE });
     expect(logged).toHaveBeenCalledWith(CONFLICTS_UNAVAILABLE, expect.any(RangeError));
   });
 
@@ -635,7 +651,255 @@ describe('resolutions (story 5.4a)', () => {
     ['paused offline', { isPending: false, isError: false, fetchStatus: 'paused', data: [] }],
   ] as const)('is unavailable when the resolutions read %s, never a count without them', (_name, resolutions) => {
     expect(
-      conflictsQueueOf({ calendar: { snapshot: pilot, refusal: null, loading: false }, records: answered([WORKED]), resolutions }, nowOn('2026-09-01')),
+      conflictsQueueOf({ calendar: { snapshot: pilot, refusal: null, loading: false }, records: answered([WORKED]), resolutions, requests: answered([]) }, nowOn('2026-09-01')),
     ).toEqual({ kind: CONFLICTS_UNAVAILABLE });
+  });
+});
+
+/** A request row as `leave_requests` answers it, with its decision embedded (story 9.5). */
+function requestOf(
+  id: string,
+  from: string,
+  toExclusive: string,
+  options: {
+    readonly memberId?: string;
+    readonly closedAt?: string | null;
+    readonly decisions?: readonly unknown[];
+    readonly createdAt?: string;
+  } = {},
+): Row {
+  return {
+    id,
+    member_id: options.memberId ?? VIEWER_MEMBER,
+    during: `[${from},${toExclusive})`,
+    closed_at: options.closedAt ?? null,
+    ...(options.createdAt === undefined ? {} : { created_at: options.createdAt }),
+    leave_request_decisions: options.decisions ?? [],
+  };
+}
+
+const DECIDED_AT = '2026-09-02T08:00:00+00:00';
+
+/** The queue over the four reads, every one answered. */
+function mergedOf(
+  rows: readonly unknown[],
+  resolutionRows: readonly unknown[],
+  requestRows: readonly unknown[],
+  today: string,
+): ConflictsQueueView {
+  const outcome = conflictsQueueOutcomeOf(pilot, rows, resolutionRows, today, requestRows);
+
+  if (!outcome.ok) throw new Error(outcome.code);
+
+  return outcome.view;
+}
+
+describe('pending leave requests beside collisions (story 9.5)', () => {
+  const a = teamOf(PILOT, 0);
+
+  it('Mixed: 2 collisions and 1 pending request are `3 čekaju odluku`, by date, each naming its kind', () => {
+    const view = mergedOf([WORKED], [resolutionOf(VIEWER_MEMBER, '2026-09-11', a)], [requestOf('req-1', '2026-09-12', '2026-09-14')], '2026-09-01');
+
+    expect(view.count).toBe(3);
+    expect(t('zaOdluku.count', { count: view.count })).toBe('3 čekaju odluku');
+    expect(view.rows.map((row) => [row.kind, row.date])).toEqual([
+      [ITEM_COLLISION, '2026-09-10'],
+      [ITEM_REQUEST, '2026-09-12'],
+      [ITEM_COLLISION, '2026-09-14'],
+    ]);
+    expect(t('zaOdluku.kind.collision')).toBe('Odsutnost u smjeni');
+    expect(t('zaOdluku.kind.request')).toBe('Zahtjev za godišnji odmor');
+  });
+
+  it('Only requests: one pending request is `1 čeka odluku`, a row naming the member and the range', () => {
+    const view = mergedOf([], [], [requestOf('req-1', '2026-09-12', '2026-09-14')], '2026-09-01');
+    const expected: RequestRow = {
+      kind: ITEM_REQUEST,
+      key: 'request:req-1',
+      requestId: 'req-1',
+      memberId: VIEWER_MEMBER,
+      date: '2026-09-12',
+      dateShown: '12.09.2026',
+      past: false,
+      memberName: VIEWER_NAME,
+      from: '12.09.2026',
+      to: '13.09.2026',
+      createdAt: null,
+    };
+
+    expect(view).toEqual({ count: 1, rows: [expected] });
+    expect(t('zaOdluku.count', { count: view.count })).toBe('1 čeka odluku');
+    expect(t('zaOdluku.request.range', { from: expected.from, to: expected.to })).toBe('Godišnji odmor 12.09.2026–13.09.2026');
+  });
+
+  it('Zero: nothing pending is `0 čeka odluku`', () => {
+    expect(mergedOf([], [], [], '2026-09-01')).toEqual({ count: 0, rows: [] });
+  });
+
+  it('Withdrawn/decided: a closed request is not in the queue', () => {
+    const closed = [
+      requestOf('req-approved', '2026-09-20', '2026-09-22', {
+        closedAt: DECIDED_AT,
+        decisions: [{ outcome: 'approved', decided_by: 'admin-auth', decided_at: DECIDED_AT }],
+      }),
+      requestOf('req-rejected', '2026-09-20', '2026-09-22', {
+        closedAt: DECIDED_AT,
+        decisions: [{ outcome: 'rejected', decided_by: 'admin-auth', decided_at: DECIDED_AT }],
+      }),
+      requestOf('req-withdrawn', '2026-09-24', '2026-09-26', { closedAt: DECIDED_AT }),
+    ];
+
+    expect(mergedOf([], [], closed, '2026-09-01')).toEqual({ count: 0, rows: [] });
+  });
+
+  it('a request starting before today is past, and sorts with the past items, collisions first on one date', () => {
+    const view = mergedOf([WORKED], [], [requestOf('req-past', '2026-09-11', '2026-09-13')], '2026-09-12');
+
+    expect(view.rows.map((row) => [row.kind, row.date, row.past])).toEqual([
+      [ITEM_COLLISION, '2026-09-14', false],
+      [ITEM_COLLISION, '2026-09-11', true],
+      [ITEM_REQUEST, '2026-09-11', true],
+      [ITEM_COLLISION, '2026-09-10', true],
+    ]);
+    expect(view.count).toBe(4);
+  });
+
+  it('puts collisions before requests on one upcoming date, then the requests by id', () => {
+    const view = mergedOf(
+      [WORKED],
+      [],
+      [requestOf('req-b', '2026-09-10', '2026-09-11', { memberId: ANA }), requestOf('req-a', '2026-09-10', '2026-09-12', { memberId: ANA })],
+      '2026-09-01',
+    );
+
+    expect(view.rows.map((row) => row.key)).toEqual([
+      collisionKeyOf({ memberId: VIEWER_MEMBER, date: '2026-09-10', teamId: a }),
+      'request:req-a',
+      'request:req-b',
+      collisionKeyOf({ memberId: VIEWER_MEMBER, date: '2026-09-11', teamId: a }),
+      collisionKeyOf({ memberId: VIEWER_MEMBER, date: '2026-09-14', teamId: a }),
+    ]);
+  });
+
+  it('orders requests on one date by when they were sent, oldest first, then by id — upcoming and past alike', () => {
+    const sent = (id: string, from: string, toExclusive: string, createdAt?: string) =>
+      requestOf(id, from, toExclusive, { memberId: ANA, ...(createdAt === undefined ? {} : { createdAt }) });
+    const view = mergedOf(
+      [],
+      [],
+      [
+        // Upcoming, all from 20.09.
+        sent('up-a', '2026-09-20', '2026-09-21', '2026-09-03T10:00:00+00:00'),
+        sent('up-b', '2026-09-20', '2026-09-22', '2026-09-01T10:00:00+00:00'),
+        sent('up-c', '2026-09-20', '2026-09-23', '2026-09-01T10:00:00+00:00'),
+        sent('up-d', '2026-09-20', '2026-09-24'),
+        // Past, all from 05.09.
+        sent('past-z', '2026-09-05', '2026-09-06', '2026-08-02T09:00:00+00:00'),
+        sent('past-y', '2026-09-05', '2026-09-07', '2026-08-01T09:00:00+00:00'),
+        sent('past-x', '2026-09-05', '2026-09-08', '2026-08-03T09:00:00+00:00'),
+      ],
+      '2026-09-10',
+    );
+
+    expect(view.rows.map((row) => row.key)).toEqual([
+      // The oldest first; two sent at one instant by id; one with no instant last.
+      'request:up-b',
+      'request:up-c',
+      'request:up-a',
+      'request:up-d',
+      'request:past-y',
+      'request:past-z',
+      'request:past-x',
+    ]);
+  });
+
+  it('refuses a row whose sending instant is not one', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    expect(
+      conflictsQueueOutcomeOf(pilot, [], [], '2026-09-01', [{ ...requestOf('req-1', '2026-09-12', '2026-09-14'), created_at: 'never' }]),
+    ).toEqual({ ok: false, code: CONFLICTS_UNAVAILABLE });
+  });
+
+  it('Stale snapshot: a request naming a member the snapshot does not hold yet is a skew — unavailable, unlogged, and loading while the snapshot is read again; never drawn as gone', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const sources: ConflictsQueueSources = {
+      calendar: { snapshot: pilot, refusal: null, loading: false },
+      records: answered([]),
+      resolutions: answered([]),
+      requests: answered([requestOf('req-newer', '2026-09-12', '2026-09-14', { memberId: 'newer-member' })]),
+    };
+
+    expect(conflictsQueueOf(sources, nowOn('2026-09-01'))).toEqual({ kind: CONFLICTS_UNAVAILABLE });
+    expect(conflictsQueueOf({ ...sources, snapshotFetching: true }, nowOn('2026-09-01'))).toEqual({ kind: CONFLICTS_LOADING });
+    expect(unknownSnapshotIdsOf(pilot, [], [], sources.requests.data)).toEqual(['member:newer-member']);
+    expect(queueCountOf(pilot, [], [], sources.requests.data ?? [], '2026-09-01')).toBeNull();
+    expect(logged).not.toHaveBeenCalled();
+  });
+
+  it('states the same count through queueCountOf as the queue does', () => {
+    const requests = [requestOf('req-1', '2026-09-12', '2026-09-14')];
+
+    expect(queueCountOf(pilot, [WORKED], [], requests, '2026-09-01')).toBe(mergedOf([WORKED], [], requests, '2026-09-01').count);
+    expect(queueCountOf(pilot, [WORKED], [], requests, '2026-09-01')).toBe(4);
+  });
+
+  it.each([
+    ['a bad range', [{ ...requestOf('req-1', '2026-09-12', '2026-09-14'), during: 'garbage' }]],
+    ['two rows of one id', [requestOf('req-1', '2026-09-12', '2026-09-14'), requestOf('req-1', '2026-09-20', '2026-09-22')]],
+    ['a pending request with a decision', [requestOf('req-1', '2026-09-12', '2026-09-14', { decisions: [{ outcome: 'approved' }] })]],
+    ['a decision without its author', [requestOf('req-1', '2026-09-12', '2026-09-14', { closedAt: DECIDED_AT, decisions: [{ outcome: 'approved' }] })]],
+    ['a row that is not a request', [null]],
+  ])('refuses the whole queue for %s, and logs it', (_name, requestRows) => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    expect(conflictsQueueOutcomeOf(pilot, [WORKED], [], '2026-09-01', requestRows)).toEqual({ ok: false, code: CONFLICTS_UNAVAILABLE });
+    expect(logged).toHaveBeenCalledWith(CONFLICTS_UNAVAILABLE, expect.any(RangeError));
+  });
+
+  it.each([
+    ['failed', { isPending: true, isError: true, fetchStatus: 'idle', data: undefined }],
+    ['failed on a refetch over cached rows', { isPending: false, isError: true, fetchStatus: 'idle', data: [] }],
+    ['paused offline', { isPending: false, isError: false, fetchStatus: 'paused', data: [] }],
+  ] as const)('Read fails: the whole queue is unavailable when the requests read %s, never a partial list', (_name, requests) => {
+    expect(
+      conflictsQueueOf(
+        { calendar: { snapshot: pilot, refusal: null, loading: false }, records: answered([WORKED]), resolutions: answered([]), requests },
+        nowOn('2026-09-01'),
+      ),
+    ).toEqual({ kind: CONFLICTS_UNAVAILABLE });
+  });
+
+  it('is loading while the requests read is pending', () => {
+    expect(
+      conflictsQueueOf(
+        {
+          calendar: { snapshot: pilot, refusal: null, loading: false },
+          records: answered([WORKED]),
+          resolutions: answered([]),
+          requests: { isPending: true, isError: false, fetchStatus: 'fetching', data: undefined },
+        },
+        nowOn('2026-09-01'),
+      ),
+    ).toEqual({ kind: CONFLICTS_LOADING });
+  });
+
+  it('merges by date alone, whatever order the requests arrive in', () => {
+    const request = (requestId: string, date: string): RequestRow => ({
+      kind: ITEM_REQUEST,
+      key: `request:${requestId}`,
+      requestId,
+      memberId: VIEWER_MEMBER,
+      date,
+      dateShown: date,
+      past: date < '2026-09-10',
+      memberName: null,
+      from: date,
+      to: date,
+      createdAt: null,
+    });
+    const merged = mergedQueueOrderOf([], [request('z', '2026-09-12'), request('y', '2026-09-01'), request('x', '2026-09-12'), request('w', '2026-09-05')], '2026-09-10');
+
+    expect(merged.map((row) => row.key)).toEqual(['request:x', 'request:z', 'request:w', 'request:y']);
   });
 });

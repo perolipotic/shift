@@ -79,7 +79,7 @@ function linesOf(conflicts: LeaveConflicts | null) {
 
 /** How many unresolved conflicts *Za odluku* lists for the viewer over `records`. */
 function queuedCount(records: readonly LeaveRecord[], resolutionRows: readonly unknown[] = []): number {
-  const outcome = conflictsQueueOutcomeOf(snapshot, records.map(storedRow), resolutionRows, '2026-09-01');
+  const outcome = conflictsQueueOutcomeOf(snapshot, records.map(storedRow), resolutionRows, '2026-09-01', []);
 
   if (!outcome.ok) throw new Error(outcome.code);
 

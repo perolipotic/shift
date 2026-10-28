@@ -11,6 +11,7 @@ import {
 } from '@/features/calendar/utils/replacement-candidates';
 import {
   liveResolutionsOf,
+  queueCountOf,
   queueOrderOf,
   queueReadFailed,
   unresolvedOf,
@@ -62,7 +63,9 @@ import { durationValuesOf, type DurationValues } from '@/utils/time';
  * queue's rows. A conflict that is not among them — already resolved, a URL
  * that names nothing, or a member no longer on leave that date — is
  * {@link RESOLUTION_MISSING}: the screen says it is no longer open, and links
- * back. Nothing here decides whether a collision exists; the domain does.
+ * back. The way back names the WHOLE queue's count (story 9.5): its
+ * collisions and its pending leave requests, as *Za odluku* and *Danas* count
+ * them; `K od N` and ‹ › stay over the collisions alone. Nothing here decides whether a collision exists; the domain does.
  *
  * THE FACTS AND THE STRIP are read off the same answers: the shift type and
  * its times on the date, the team, the absent member with rank and position
@@ -334,8 +337,14 @@ export function resolutionAmendOf(input: LeaveRecordsInput, record: LeaveRecord,
 /** The screen, ready to render. */
 export interface ResolutionView {
   readonly key: string;
-  /** How many unresolved conflicts there are: the queue's count. */
-  readonly count: number;
+  /** How many unresolved conflicts there are: the N of `K od N`. */
+  readonly collisionCount: number;
+  /**
+   * The queue's own count (story 9.5) — conflicts and pending requests, from
+   * the queue model (`queueCountOf`) — as the way back names it; null while
+   * the queue would not state one (a skew, or a refused queue).
+   */
+  readonly queueCount: number | null;
   /** This conflict's place in the queue's order, from 1. */
   readonly position: number;
   readonly previous: ResolutionLink | null;
@@ -404,14 +413,17 @@ export interface ResolutionView {
 export type ResolutionScreen =
   | { readonly kind: typeof RESOLUTION_LOADING }
   | { readonly kind: typeof RESOLUTION_UNAVAILABLE }
-  | { readonly kind: typeof RESOLUTION_MISSING; readonly count: number }
+  /** The queue's own count, as the way back names it, or null when the queue would not state one (story 9.5). */
+  | { readonly kind: typeof RESOLUTION_MISSING; readonly queueCount: number | null }
   | { readonly kind: typeof RESOLUTION_READY; readonly view: ResolutionView };
 
-/** The five reads the screen stands on: the queue's three, and the member card's two for the balance. */
+/** The six reads the screen stands on: the queue's four, and the member card's two for the balance. */
 export interface ResolutionSources {
   readonly calendar: CalendarSurfaceState;
   readonly records: LeaveRowsAnswer;
   readonly resolutions: LeaveRowsAnswer;
+  /** The organization's leave requests (story 9.5): the pending ones join the back link's count. */
+  readonly requests: LeaveRowsAnswer;
   /** The member list: the allowance. */
   readonly members: LeaveMembersSource;
   /** The organization snapshot: where the leave year begins. */
@@ -517,7 +529,7 @@ export function resolutionPlaceOf(
  * caught.
  */
 export function resolutionScreenOf(sources: ResolutionSources, params: ResolutionParams, now: Date): ResolutionScreen {
-  const { calendar, records, resolutions, members, organization } = sources;
+  const { calendar, records, resolutions, requests, members, organization } = sources;
 
   // A failed read being read again is loading, not the refusal (as *Sati*'s
   // `hoursConflictsStateOf`): TanStack Query keeps `isError` while the retry
@@ -529,6 +541,7 @@ export function resolutionScreenOf(sources: ResolutionSources, params: Resolutio
     (!calendar.loading && calendar.snapshot === null) ||
     queueReadFailed(records) ||
     queueReadFailed(resolutions) ||
+    queueReadFailed(requests) ||
     membersReadFailed(members) ||
     organizationReadFailed(organization)
   ) {
@@ -538,11 +551,14 @@ export function resolutionScreenOf(sources: ResolutionSources, params: Resolutio
   const snapshot = calendar.snapshot;
   const rows = records.data;
   const resolutionRows = resolutions.data;
+  const requestRows = requests.data;
 
-  if (snapshot === null || rows === undefined || resolutionRows === undefined) return { kind: RESOLUTION_LOADING };
+  if (snapshot === null || rows === undefined || resolutionRows === undefined || requestRows === undefined) {
+    return { kind: RESOLUTION_LOADING };
+  }
 
   try {
-    return resolutionScreenFrom(sources, snapshot, rows, resolutionRows, params, now);
+    return resolutionScreenFrom(sources, snapshot, rows, resolutionRows, requestRows, params, now);
   } catch (cause) {
     if (!(cause instanceof RangeError)) throw cause;
 
@@ -553,7 +569,7 @@ export function resolutionScreenOf(sources: ResolutionSources, params: Resolutio
 }
 
 /**
- * {@link resolutionScreenOf} once the queue's three reads are in.
+ * {@link resolutionScreenOf} once the queue's four reads are in.
  *
  * @throws RangeError when a row cannot be trusted, on any precondition of the
  *   domain, or when the conflict names a member, team or type the inputs lack.
@@ -563,6 +579,7 @@ function resolutionScreenFrom(
   snapshot: CalendarSnapshot,
   rows: readonly unknown[],
   resolutionRows: readonly unknown[],
+  requestRows: readonly unknown[],
   params: ResolutionParams,
   now: Date,
 ): ResolutionScreen {
@@ -576,8 +593,10 @@ function resolutionScreenFrom(
   const today = calendarTodayOf(snapshot, now);
   const { ordered, index } = resolutionPlaceOf(snapshot, records, resolutionRows, params, today);
   const collision = ordered[index];
+  // THE QUEUE'S OWN COUNT, from the queue model itself: the conflicts and the pending requests.
+  const queueCount = queueCountOf(snapshot, rows, resolutionRows, requestRows, today);
 
-  if (collision === undefined) return { kind: RESOLUTION_MISSING, count: ordered.length };
+  if (collision === undefined) return { kind: RESOLUTION_MISSING, queueCount };
 
   // The balance, through the member card's own recipe: the member's records
   // here are the organization's read, filtered to them.
@@ -643,7 +662,8 @@ function resolutionScreenFrom(
     kind: RESOLUTION_READY,
     view: {
       key,
-      count: ordered.length,
+      collisionCount: ordered.length,
+      queueCount,
       position: index + 1,
       previous: linkOf(ordered[index - 1]),
       next: linkOf(ordered[index + 1]),

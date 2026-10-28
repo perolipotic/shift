@@ -1,6 +1,7 @@
 import { queryOptions } from '@tanstack/react-query';
 import type { LeaveRange } from '@shift/domain';
 
+import { readLeaveRowPages, type OrganizationLeaveRecordsAnswer } from '@/features/leave/services/leave-list';
 import { leaveRangeOf } from '@/features/leave/services/leave-write';
 import { isIsoDate } from '@/lib/i18n/format';
 
@@ -29,6 +30,10 @@ import { isIsoDate } from '@/lib/i18n/format';
  * leave is 0040's trigger's 23P01 (`LEAVE_REQUEST_OVERLAPS_LEAVE`), an overlap
  * with another pending request its exclusion constraint's 23P01, and a refusal
  * its policy's 42501. The domain's `overlapsRecord` is a warning, never a gate.
+ *
+ * STORY 9.5 adds the organization's read (`ORGANIZATION_LEAVE_REQUESTS_KEY`),
+ * every request with its decision, parsed row by row as the decision screen's
+ * one request is (`organizationLeaveRequestsOf`), for *Za odluku* and *Danas*.
  *
  * STORY 9.4 adds the admin's side: one request read by its id with its
  * decision's author and instant (`leaveRequestFoundOf`, no member filter —
@@ -66,10 +71,12 @@ export function LEAVE_REQUEST_KEY(requestId: string) {
 
 /**
  * The columns one request is read with on its decision screen (story 9.4):
- * the request's own, and its decision's outcome, who decided and when.
+ * the request's own, and its decision's outcome, who decided and when. Since
+ * story 9.5 also when it was sent (`created_at`), which orders requests that
+ * start on one date in *Za odluku*.
  */
 export const LEAVE_REQUEST_COLUMNS =
-  'id,member_id,during,closed_at,leave_request_decisions(outcome,decided_by,decided_at)';
+  'id,member_id,during,closed_at,created_at,leave_request_decisions(outcome,decided_by,decided_at)';
 
 /** The read could not be answered, or answered something that is not rows. */
 export const LEAVE_REQUESTS_UNAVAILABLE = 'LEAVE_REQUESTS_UNAVAILABLE';
@@ -216,6 +223,8 @@ export interface ReviewedLeaveRequest extends LeaveRequest {
   readonly memberId: string;
   /** The decision, for an approved or rejected request; null while pending or once withdrawn. */
   readonly decision: LeaveRequestDecision | null;
+  /** When it was sent (`created_at`, story 9.5), or null when the read did not answer it. */
+  readonly createdAt: string | null;
 }
 
 /** The read answered one request, or none with that id. */
@@ -225,6 +234,7 @@ export interface LeaveRequestFound {
 }
 
 const DECIDED_BY_COLUMN = 'decided_by';
+const CREATED_COLUMN = 'created_at';
 const DECIDED_AT_COLUMN = 'decided_at';
 
 /** The one decision a closed request's embed holds, or null when it holds none or more than one. */
@@ -237,6 +247,53 @@ function decisionRowOf(embedded: unknown): Record<string, unknown> | null {
   const [decision] = decisions;
 
   return decisions.length === 1 && isRecord(decision) ? decision : null;
+}
+
+/**
+ * One row read with {@link LEAVE_REQUEST_COLUMNS} as a request with no member
+ * filter (stories 9.4, 9.5): its member, range, status and, for an approved
+ * or rejected one, who decided and when. Null when the row cannot be trusted:
+ * no id, no member, a range or a status that does not parse, or a decision
+ * without its author or its instant.
+ */
+function reviewedLeaveRequestOf(row: unknown): ReviewedLeaveRequest | null {
+  if (!isRecord(row)) return null;
+
+  const id = row[ID_COLUMN];
+  const memberId = row[MEMBER_COLUMN];
+  const range = leaveRangeOf(row[DURING_COLUMN]);
+  const status = leaveRequestStatusOf(row[CLOSED_COLUMN], row[DECISIONS_EMBED]);
+  const closed = row[CLOSED_COLUMN];
+  const created = row[CREATED_COLUMN];
+
+  if (typeof id !== 'string' || id === '') return null;
+  if (created !== undefined && (typeof created !== 'string' || Number.isNaN(Date.parse(created)))) return null;
+  if (typeof memberId !== 'string' || memberId === '' || range === null || status === null) return null;
+
+  let decision: LeaveRequestDecision | null = null;
+
+  if (status === REQUEST_APPROVED || status === REQUEST_REJECTED) {
+    const decided = decisionRowOf(row[DECISIONS_EMBED]);
+    const decidedBy = decided?.[DECIDED_BY_COLUMN];
+    const decidedAt = decided?.[DECIDED_AT_COLUMN];
+
+    if (typeof decidedBy !== 'string' || decidedBy === '' || typeof decidedAt !== 'string' || decidedAt === '') {
+      return null;
+    }
+
+    decision = { outcome: status, decidedBy, decidedAt };
+  }
+
+  return {
+    id,
+    memberId,
+    from: range.from,
+    to: range.to,
+    status,
+    closedAt: typeof closed === 'string' ? closed : null,
+    decision,
+    createdAt: typeof created === 'string' ? created : null,
+  };
 }
 
 /**
@@ -255,38 +312,31 @@ export function leaveRequestFoundOf(rows: readonly unknown[], requestId: string)
 
   if (!isRecord(row) || row[ID_COLUMN] !== requestId) return null;
 
-  const memberId = row[MEMBER_COLUMN];
-  const range = leaveRangeOf(row[DURING_COLUMN]);
-  const status = leaveRequestStatusOf(row[CLOSED_COLUMN], row[DECISIONS_EMBED]);
-  const closed = row[CLOSED_COLUMN];
+  const request = reviewedLeaveRequestOf(row);
 
-  if (typeof memberId !== 'string' || memberId === '' || range === null || status === null) return null;
+  return request === null ? null : { request };
+}
 
-  let decision: LeaveRequestDecision | null = null;
+/**
+ * EVERY REQUEST OF THE ORGANIZATION (story 9.5), as *Za odluku* reads them:
+ * each row through the decision screen's own parse, in the list's order (by
+ * the range's start, then its end and the id). Null when any row cannot be
+ * trusted, or two rows carry one id — never a partial list.
+ */
+export function organizationLeaveRequestsOf(rows: readonly unknown[]): readonly ReviewedLeaveRequest[] | null {
+  const requests: ReviewedLeaveRequest[] = [];
+  const ids = new Set<string>();
 
-  if (status === REQUEST_APPROVED || status === REQUEST_REJECTED) {
-    const decided = decisionRowOf(row[DECISIONS_EMBED]);
-    const decidedBy = decided?.[DECIDED_BY_COLUMN];
-    const decidedAt = decided?.[DECIDED_AT_COLUMN];
+  for (const row of rows) {
+    const request = reviewedLeaveRequestOf(row);
 
-    if (typeof decidedBy !== 'string' || decidedBy === '' || typeof decidedAt !== 'string' || decidedAt === '') {
-      return null;
-    }
+    if (request === null || ids.has(request.id)) return null;
 
-    decision = { outcome: status, decidedBy, decidedAt };
+    ids.add(request.id);
+    requests.push(request);
   }
 
-  return {
-    request: {
-      id: requestId,
-      memberId,
-      from: range.from,
-      to: range.to,
-      status,
-      closedAt: typeof closed === 'string' ? closed : null,
-      decision,
-    },
-  };
+  return requests.sort(compareRequests);
 }
 
 // ------------------------------------------------------------------ the read
@@ -384,6 +434,69 @@ export async function readLeaveRequestRows(
   }
 
   return rowsOutcomeOf(answered);
+}
+
+/**
+ * The one query key the organization's requests are read under (story 9.5):
+ * *Za odluku*'s pending requests and *Odlučeno*'s decided ones, one read for
+ * both tabs and *Danas*.
+ */
+export const ORGANIZATION_LEAVE_REQUESTS_KEY = ['organization-leave-requests'] as const;
+
+/** The organization's read: a stable order, and one page of it, with the exact count. */
+export interface OrganizationLeaveRequestsQuery {
+  order(column: string, options: { readonly ascending: boolean }): OrganizationLeaveRequestsQuery;
+  range(from: number, to: number): PromiseLike<OrganizationLeaveRecordsAnswer>;
+}
+
+/** The one call made on `leave_requests` for the organization, named structurally so it can be stubbed. */
+export interface OrganizationLeaveRequestsTable {
+  select(columns: string, options: { readonly count: 'exact' }): OrganizationLeaveRequestsQuery;
+}
+
+/**
+ * EVERY REQUEST OF THE ORGANIZATION (story 9.5), pending and closed, with its
+ * decision's outcome, author and instant embedded, as the select answered
+ * them, unparsed, or unavailable. No filter: the select policy (0040) shows
+ * an active admin every request of the organization, and only the admin's
+ * surfaces make this read. NO WINDOW, as *Odlučeno*'s resolutions: paged by
+ * the leave records' own loop (`readLeaveRowPages`) under `max_rows`,
+ * ordered by id, with an exact count.
+ */
+export async function readOrganizationLeaveRequestRows(
+  table: OrganizationLeaveRequestsTable,
+): Promise<LeaveRequestRowsOutcome> {
+  const outcome = await readLeaveRowPages((from, to) =>
+    table.select(LEAVE_REQUEST_COLUMNS, { count: 'exact' }).order(ID_COLUMN, { ascending: true }).range(from, to),
+  );
+
+  return outcome.ok ? outcome : { ok: false, code: LEAVE_REQUESTS_UNAVAILABLE };
+}
+
+/**
+ * The query options the organization's requests are read with, under
+ * {@link ORGANIZATION_LEAVE_REQUESTS_KEY} (story 9.5). The rows are kept
+ * unparsed, as the organization's leave records are, and parsed by the queue.
+ */
+export function organizationLeaveRequestsQueryOptions(table: () => OrganizationLeaveRequestsTable) {
+  return queryOptions({
+    queryKey: ORGANIZATION_LEAVE_REQUESTS_KEY,
+    queryFn: async (): Promise<readonly unknown[]> => {
+      const outcome = await readOrganizationLeaveRequestRows(table());
+
+      if (!outcome.ok) throw new Error(outcome.code);
+
+      return outcome.rows;
+    },
+    // NEVER FRESH: a request is sent and withdrawn by a member, in another
+    // session, which no write of the admin's names; so every opening of the
+    // queue, its resolution page or *Danas* reads them again. The admin's own
+    // decisions name this key among their dependents.
+    staleTime: 0,
+    refetchOnWindowFocus: false,
+    retry: 1,
+    retryDelay: 1000,
+  });
 }
 
 /**

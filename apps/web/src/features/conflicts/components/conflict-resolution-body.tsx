@@ -163,12 +163,12 @@ function ResolutionReady({ state, view }: { readonly state: ConflictResolutionSt
     <>
       <PageHeader className="flex-row flex-nowrap items-start justify-between sm:flex-nowrap">
         <div className="grid min-w-0 justify-items-start gap-1">
-          <BackLink count={view.count} disabled={pending} />
+          <BackLink count={view.queueCount} disabled={pending} />
           <PageTitle asChild>
             <h1>{t('zaOdluku.resolution.heading')}</h1>
           </PageTitle>
           <PageDescription>
-            {t('zaOdluku.resolution.position', { position: view.position, count: view.count })}
+            {t('zaOdluku.resolution.position', { position: view.position, count: view.collisionCount })}
           </PageDescription>
         </div>
         <ConflictNav view={view} pending={pending} onGo={go} />
@@ -268,7 +268,7 @@ export function ConflictResolutionBody({ state }: { readonly state: ConflictReso
       <>
         <PageHeader>
           <div className="grid min-w-0 justify-items-start gap-1">
-            <BackLink count={screen.kind === RESOLUTION_MISSING ? screen.count : null} />
+            <BackLink count={screen.kind === RESOLUTION_MISSING ? screen.queueCount : null} />
             <PageTitle asChild>
               <h1>{t('zaOdluku.resolution.heading')}</h1>
             </PageTitle>

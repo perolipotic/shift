@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 
 import { useCalendarSnapshot } from '@/features/calendar/hooks/use-calendar-snapshot';
 import { CALENDAR_KEY, calendarSurfaceStateOf } from '@/features/calendar/services/snapshot';
+import { useSnapshotSkewRefresh } from '@/features/calendar/hooks/use-snapshot-skew-refresh';
+import { snapshotSkewOf } from '@/features/calendar/services/snapshot-skew';
 import { useReplacementLinkRefresh } from '@/features/conflicts/hooks/use-replacement-link-refresh';
 import {
   OPTION_AMEND_LEAVE,
@@ -55,6 +57,12 @@ import {
   organizationLeaveRecordsQueryOptions,
   type OrganizationLeaveRecordsTable,
 } from '@/features/leave/services/leave-list';
+import {
+  LEAVE_REQUESTS_TABLE,
+  ORGANIZATION_LEAVE_REQUESTS_KEY,
+  organizationLeaveRequestsQueryOptions,
+  type OrganizationLeaveRequestsTable,
+} from '@/features/leave/services/leave-requests';
 import { withLeaveHandoff } from '@/features/leave/services/leave-section';
 import {
   MEMBERS_LIST_KEY,
@@ -89,8 +97,9 @@ import { writesOnline } from '@/lib/offline/use-write-gate';
  * executes.
  *
  * THE READS, each under its own key and shared with the screens that own it
- * (AD-13): the queue's three — the calendar snapshot, the organization's live
- * leave and its live resolutions — and the member card's two for the
+ * (AD-13): the queue's four — the calendar snapshot, the organization's live
+ * leave, its live resolutions and (story 9.5) its leave requests, which the
+ * way back's count stands on — and the member card's two for the
  * balance, the member list (the allowance) and the organization snapshot
  * (the leave year).
  *
@@ -180,9 +189,15 @@ export function useConflictResolution(params: ResolutionParams) {
       () => supabaseClient().from(CONFLICT_RESOLUTIONS_TABLE) as unknown as OrganizationConflictResolutionsTable,
     ),
   );
+  // STORY 9.5: the organization's requests, so the way back names the whole queue's count.
+  const requestsRead = useQuery(
+    organizationLeaveRequestsQueryOptions(
+      () => supabaseClient().from(LEAVE_REQUESTS_TABLE) as unknown as OrganizationLeaveRequestsTable,
+    ),
+  );
   const membersRead = useQuery(membersQueryOptions(() => supabaseClient().from(MEMBERS_TABLE)));
   const organizationRead = useQuery(organizationSnapshotQueryOptions(organizationTable));
-  // STORY 8.2c: the five reads are one snapshot (`RESOLUTION_SURFACE_KEYS`),
+  // STORY 8.2c: the six reads (story 9.5's requests among them) are one snapshot (`RESOLUTION_SURFACE_KEYS`),
   // decided from these very observer results: online, a read older than this
   // session's network is never drawn as fresh; offline, the whole cached
   // snapshot is drawn under the as-of note (`offline`), or the unavailable
@@ -194,6 +209,7 @@ export function useConflictResolution(params: ResolutionParams) {
       [CALENDAR_KEY, calendarRead],
       [ORGANIZATION_LEAVE_RECORDS_KEY, recordsRead],
       [ORGANIZATION_CONFLICT_RESOLUTIONS_KEY, resolutionsRead],
+      [ORGANIZATION_LEAVE_REQUESTS_KEY, requestsRead],
       [MEMBERS_LIST_KEY, membersRead],
       [ORGANIZATION_SNAPSHOT_KEY, organizationRead],
     ],
@@ -202,21 +218,27 @@ export function useConflictResolution(params: ResolutionParams) {
   const calendar = answerOf(calendarRead);
   const records = answerOf(recordsRead);
   const resolutions = answerOf(resolutionsRead);
+  const requests = answerOf(requestsRead);
   const members = answerOf(membersRead);
   const organization = answerOf(organizationRead);
   const calendarState = calendarSurfaceStateOf(calendar);
 
   // STORY 5.5d: a replacement naming an override the snapshot does not hold yet re-reads it once.
   useReplacementLinkRefresh(calendarState.snapshot, resolutions.data);
+  // STORY 9.5: as the queue, a leave, resolution or request row naming a member
+  // or team the snapshot does not hold yet re-reads it once — the way back's
+  // count is the queue's, which waits for it.
+  useSnapshotSkewRefresh(snapshotSkewOf(calendarState.snapshot, records.data, resolutions.data, requests.data));
 
   const derived = resolutionScreenOf(
     {
       calendar: calendarState,
       records,
       resolutions,
+      requests,
       members: membersSurfaceStateOf(members),
       organization,
-      refetching: refetchingAfterFailure([calendar, records, resolutions, members, organization]),
+      refetching: refetchingAfterFailure([calendar, records, resolutions, requests, members, organization]),
     },
     params,
     new Date(),
@@ -258,6 +280,7 @@ export function useConflictResolution(params: ResolutionParams) {
       CALENDAR_KEY,
       ORGANIZATION_LEAVE_RECORDS_KEY,
       ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
+      ORGANIZATION_LEAVE_REQUESTS_KEY,
       MEMBERS_LIST_KEY,
       ORGANIZATION_SNAPSHOT_KEY,
     ]) {

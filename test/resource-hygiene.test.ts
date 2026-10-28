@@ -1825,6 +1825,10 @@ const SANCTIONED_SCREEN_KEYS = [
   // and the queue's status line for an approval or a rejection.
   'zaOdluku.savedRequestApproved',
   'zaOdluku.savedRequestRejected',
+  // STORY 9.5: every queue item names its kind in words, on *Čeka odluku*,
+  // *Odlučeno* and *Danas*: *Odsutnost u smjeni* and *Zahtjev za godišnji odmor*.
+  'zaOdluku.kind.collision',
+  'zaOdluku.kind.request',
   'zaOdluku.request.heading',
   'zaOdluku.request.missing',
   'zaOdluku.request.unavailable',
@@ -2308,6 +2312,14 @@ const ROTATION_DESCRIPTION_KEY = 'shell.description.postavkeRotacije';
 const PEOPLE_DESCRIPTION_KEY = 'shell.description.ljudi';
 
 /**
+ * A *Za odluku* item's kind (story 9.5), ONE KEY and no namespace: a
+ * collision is *Odsutnost u smjeni*, the resolution screen's own heading, so
+ * `smjen` names the rostered shift there as it does on that screen, and
+ * `tip… smjen…` is refused.
+ */
+const QUEUE_COLLISION_KIND_KEY = 'zaOdluku.kind.collision';
+
+/**
  * The rotation builder's override review (story 3.5c): the admin amends an
  * override's SHIFT TYPE there, so it says the term — `Tip smjene` is the
  * amend's field — and, being the builder's, the TEAM too, as `smjena` (an
@@ -2367,7 +2379,8 @@ function teamTermOutOfTurn(key: string, message: string): boolean {
     key !== LEAVE_REPLACEMENT_KEY &&
     key !== MEMBER_NO_TEAM_KEY &&
     key !== DEACTIVATION_CONSEQUENCE_KEY &&
-    key !== PEOPLE_DESCRIPTION_KEY
+    key !== PEOPLE_DESCRIPTION_KEY &&
+    key !== QUEUE_COLLISION_KIND_KEY
   ) {
     return lowered.includes('smjen');
   }

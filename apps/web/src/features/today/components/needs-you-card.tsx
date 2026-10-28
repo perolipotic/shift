@@ -1,9 +1,10 @@
 import { Link } from '@tanstack/react-router';
-import { CircleCheck, TriangleAlert } from 'lucide-react';
+import { ChevronRight, CircleCheck, TriangleAlert } from 'lucide-react';
 import { useId, type ReactNode } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
+import { ITEM_REQUEST } from '@/features/conflicts/services/conflicts-queue';
 import {
   needsYouBadgeMessageKey,
   needsYouShiftMessageKey,
@@ -13,12 +14,46 @@ import {
 import { cn } from '@/lib/utils';
 import { t } from '@/lib/i18n';
 
+/** The line every row opens with: the weekday and date, `prošlo` or `danas`, and the item's kind in words (story 9.5). */
+function dateLineOf(row: NeedsYouRow, kind: string): ReactNode {
+  return (
+    <span className="flex min-w-0 flex-wrap items-center gap-2">
+      <span className="text-sm tabular-nums">{t('danas.admin.needsYou.date', { weekday: row.weekday, date: row.dayMonth })}</span>
+      {row.badge === null ? null : <Badge variant="outline">{t(needsYouBadgeMessageKey(row.badge))}</Badge>}
+      <span className="text-sm text-muted-foreground">{kind}</span>
+    </span>
+  );
+}
+
 /**
- * One of the queue's rows: the date, the type and team, the member, and
- * `prošlo` or `danas` in words — the whole row the link to its conflict's
- * resolution screen, as on *Za odluku*.
+ * One of the queue's rows: the date, `prošlo` or `danas` in words, and the
+ * item's kind; for a collision the type and team and the member, the whole
+ * row the link to its resolution screen; for a pending leave request (story
+ * 9.5) the member and then the range, the whole row the link to its decision
+ * screen — drawn as *Za odluku*'s request row is, with the same chevron.
  */
 function renderRow(row: NeedsYouRow): ReactNode {
+  if (row.kind === ITEM_REQUEST) {
+    return (
+      <li key={row.key} className="min-w-0">
+        <Link
+          to="/za-odluku/zahtjev/$requestId"
+          params={{ requestId: row.requestId }}
+          className="flex min-h-11 min-w-0 items-center gap-3 rounded-md border bg-card p-3 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <span className="grid min-w-0 flex-1 gap-0.5">
+            {dateLineOf(row, t('zaOdluku.kind.request'))}
+            <span className="min-w-0 break-words font-medium">{row.memberName ?? t('zaOdluku.request.memberGone')}</span>
+            <span className="min-w-0 break-words text-sm text-muted-foreground tabular-nums">
+              {t('zaOdluku.request.range', { from: row.from, to: row.to })}
+            </span>
+          </span>
+          <ChevronRight aria-hidden className="size-4 shrink-0" />
+        </Link>
+      </li>
+    );
+  }
+
   return (
     <li key={row.key} className="min-w-0">
       <Link
@@ -27,17 +62,13 @@ function renderRow(row: NeedsYouRow): ReactNode {
         className="flex min-h-11 min-w-0 items-center gap-3 rounded-md border bg-card p-3 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <span className="grid min-w-0 flex-1 gap-0.5">
-          <span className="flex min-w-0 flex-wrap items-center gap-2">
-            <span className="text-sm tabular-nums">
-              {t('danas.admin.needsYou.date', { weekday: row.weekday, date: row.dayMonth })}
-            </span>
-            {row.badge === null ? null : <Badge variant="outline">{t(needsYouBadgeMessageKey(row.badge))}</Badge>}
-          </span>
+          {dateLineOf(row, t('zaOdluku.kind.collision'))}
           <span className="min-w-0 break-words font-medium tabular-nums">
             {t(needsYouShiftMessageKey(row), { type: row.shiftTypeName, times: row.times, team: row.teamName })}
           </span>
           <span className="min-w-0 break-words text-sm text-muted-foreground">{row.memberName}</span>
         </span>
+        <ChevronRight aria-hidden className="size-4 shrink-0" />
       </Link>
     </li>
   );

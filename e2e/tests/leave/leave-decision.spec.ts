@@ -31,8 +31,9 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
 
 /**
  * Story 9.4: an admin decides a leave request on its own screen,
- * `/za-odluku/zahtjev/$requestId`, reached by URL until story 9.5 lists
- * requests in the queue.
+ * `/za-odluku/zahtjev/$requestId`. Opened by URL here; since story 9.5 the
+ * queue lists the request and its row opens the same screen
+ * (`conflicts-queue.spec.ts`).
  *
  * A team of the test's own gets the seeded rotation from today (`[Dan, Noć,
  * Slobodno, Slobodno]`) under the run's rotation hold, and a fresh member on
@@ -149,7 +150,9 @@ test.describe("an admin's leave request decision screen", () => {
     await expect(peoplePage.leaveRecordRow(from, to)).toHaveCount(0);
     await peoplePage.navigationLink(hr.nav.zaOdluku, { exact: true }).click();
     await expect(conflictsPage.unresolvedTab).toBeVisible();
-    await expect(conflictsPage.rowsOf(member.name)).toHaveCount(0);
+    // Story 9.5: the pending request is the member's one row, and names its kind.
+    await expect(conflictsPage.rowsOf(member.name)).toHaveCount(1);
+    await expect(conflictsPage.rowsOf(member.name)).toContainText(zaOdluku.kind.request);
     await page.goBack();
     await page.goBack();
     await page.goBack();
@@ -163,8 +166,10 @@ test.describe("an admin's leave request decision screen", () => {
     });
     await expect(saved).toBeVisible();
     await expect(saved).toBeFocused();
-    // The approval's leave record raises its two collisions in the queue, which was cached before it.
+    // The approval's leave record raises its two collisions in the queue, which was cached before it,
+    // and the request itself is gone from it (story 9.5).
     await expect(conflictsPage.rowsOf(member.name)).toHaveCount(2);
+    await expect(conflictsPage.rowsOf(member.name).filter({ hasText: zaOdluku.kind.request })).toHaveCount(0);
 
     // Back to the request, with no reload: it reads Odobren, by whom and when — as stored — and offers nothing.
     await page.goBack();

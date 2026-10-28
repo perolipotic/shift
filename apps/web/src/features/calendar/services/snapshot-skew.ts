@@ -45,19 +45,22 @@ function idAt(row: unknown, column: string): string | null {
  * `member:<id>` and `team:<id>`, sorted and distinct — so a skew between the
  * reads is told apart from a row that cannot be trusted. A member's own rows
  * always name the viewer, so only their resolutions' teams can be newer than
- * the snapshot.
+ * the snapshot. STORY 9.5: an admin's leave request rows too — `calendar_members`
+ * answers inactive members as well, so a request naming a member the snapshot
+ * lacks is a snapshot older than the member, never a member who is gone.
  */
 export function unknownSnapshotIdsOf(
   snapshot: CalendarSnapshot,
   leaveRows: readonly unknown[] | undefined,
   resolutionRows: readonly unknown[] | undefined,
+  requestRows?: readonly unknown[] | undefined,
 ): readonly string[] {
   const admin = readsOrganizationLeave(snapshot.viewer.role);
   const members = new Set(snapshot.members.map((member) => member.id));
   const teams = new Set(snapshot.teams.map((team) => team.id));
   const unknown = new Set<string>();
 
-  for (const row of admin ? [...(leaveRows ?? []), ...(resolutionRows ?? [])] : []) {
+  for (const row of admin ? [...(leaveRows ?? []), ...(resolutionRows ?? []), ...(requestRows ?? [])] : []) {
     const memberId = idAt(row, MEMBER_COLUMN);
 
     if (memberId !== null && !members.has(memberId)) unknown.add(`member:${memberId}`);
@@ -83,6 +86,7 @@ export function snapshotSkewOf(
   snapshot: CalendarSnapshot | null,
   leaveRows: readonly unknown[] | undefined,
   resolutionRows: readonly unknown[] | undefined,
+  requestRows?: readonly unknown[] | undefined,
 ): string {
-  return snapshot === null ? NO_SKEW : unknownSnapshotIdsOf(snapshot, leaveRows, resolutionRows).join(' ');
+  return snapshot === null ? NO_SKEW : unknownSnapshotIdsOf(snapshot, leaveRows, resolutionRows, requestRows).join(' ');
 }

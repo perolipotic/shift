@@ -517,6 +517,10 @@
     "count": "{count, plural, one {# čeka odluku} few {# čekaju odluku} other {# čeka odluku}}",
     "empty": "Ništa ne čeka odluku.",
     "past": "Prošli datum",
+    "kind": {
+      "collision": "Odsutnost u smjeni",
+      "request": "Zahtjev za godišnji odmor"
+    },
     "tabs": {
       "label": "Stavke za odluku",
       "unresolved": "Čeka odluku",

@@ -64,7 +64,7 @@ export const CONFLICTS_SCREEN_EXEMPT: readonly { readonly file: string; readonly
   },
   {
     file: 'services/resolved-conflicts.ts',
-    why: 'the Odlučeno tab\'s rules (story 7.16) — resolved entries from conflict_resolutions only, the acting admins\' names and the tab state; renders nothing and declares no key, executed by resolved-conflicts.test.ts',
+    why: 'the Odlučeno tab\'s rules (story 7.16) — resolved entries from conflict_resolutions and, since story 9.5, decided leave requests from the organization\'s request read, the acting admins\' names and the tab state; renders nothing and declares no key, executed by resolved-conflicts.test.ts',
   },
   {
     file: 'services/resolution-screen.ts',

@@ -5,6 +5,7 @@ import { ACTING_ADMINS_KEY, TAB_RESOLVED, TAB_UNRESOLVED } from '@/features/conf
 import { ORGANIZATION_CONFLICT_RESOLUTIONS_KEY } from '@/features/conflicts/services/resolutions';
 import { RESOLUTION_SURFACE_KEYS, rasporedSurfaceKeysOf } from '@/features/conflicts/services/surface-keys';
 import { ORGANIZATION_LEAVE_RECORDS_KEY } from '@/features/leave/services/leave-list';
+import { ORGANIZATION_LEAVE_REQUESTS_KEY } from '@/features/leave/services/leave-requests';
 import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
 import { ORGANIZATION_SNAPSHOT_KEY } from '@/features/organization/services/snapshot';
 import { persistsKey } from '@/lib/offline/persistence';
@@ -14,11 +15,12 @@ import { persistsKey } from '@/lib/offline/persistence';
 const text = (key: readonly unknown[]): string => JSON.stringify(key);
 
 describe("Za odluku's keys", () => {
-  it('are the calendar, the organization leave and its resolutions on Čeka odluku', () => {
+  it('are the calendar, the organization leave, its resolutions and its requests on Čeka odluku', () => {
     expect(rasporedSurfaceKeysOf(TAB_UNRESOLVED)).toEqual([
       CALENDAR_KEY,
       ORGANIZATION_LEAVE_RECORDS_KEY,
       ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
+      ORGANIZATION_LEAVE_REQUESTS_KEY,
     ]);
   });
 
@@ -27,6 +29,7 @@ describe("Za odluku's keys", () => {
       CALENDAR_KEY,
       ORGANIZATION_LEAVE_RECORDS_KEY,
       ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
+      ORGANIZATION_LEAVE_REQUESTS_KEY,
       ACTING_ADMINS_KEY,
     ]);
   });
@@ -39,11 +42,12 @@ describe("Za odluku's keys", () => {
 });
 
 describe("the resolution page's keys", () => {
-  it('are the queue\'s three, the member list and the organization', () => {
+  it('are the queue\'s four, the member list and the organization', () => {
     expect(RESOLUTION_SURFACE_KEYS).toEqual([
       CALENDAR_KEY,
       ORGANIZATION_LEAVE_RECORDS_KEY,
       ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
+      ORGANIZATION_LEAVE_REQUESTS_KEY,
       MEMBERS_LIST_KEY,
       ORGANIZATION_SNAPSHOT_KEY,
     ]);

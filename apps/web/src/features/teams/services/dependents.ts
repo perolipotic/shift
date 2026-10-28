@@ -10,7 +10,11 @@ import {
   MY_LEAVE_RECORDS_KEY,
   ORGANIZATION_LEAVE_RECORDS_KEY,
 } from '@/features/leave/services/leave-list';
-import { LEAVE_REQUEST_ROOT_KEY, MY_LEAVE_REQUESTS_KEY } from '@/features/leave/services/leave-requests';
+import {
+  LEAVE_REQUEST_ROOT_KEY,
+  MY_LEAVE_REQUESTS_KEY,
+  ORGANIZATION_LEAVE_REQUESTS_KEY,
+} from '@/features/leave/services/leave-requests';
 import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
 import { MEMBER_NAME_KEY } from '@/features/navigation/services/profile';
 import { MEMBER_ROLE_KEY } from '@/features/navigation/services/role';
@@ -123,11 +127,17 @@ export const LEAVE_WRITE_DEPENDENTS: readonly QueryKey[] = [
  * A leave request sent, withdrawn or decided (stories 9.3, 9.4): the viewer's
  * own requests, which *Godišnji* lists and the form stands on, and every one
  * request held by its id (`LEAVE_REQUEST_ROOT_KEY`, the prefix of
- * `LEAVE_REQUEST_KEY`), which the admin's decision screen reads. A PENDING
+ * `LEAVE_REQUEST_KEY`), which the admin's decision screen reads, and the
+ * organization's requests (story 9.5), which *Za odluku*, *Odlučeno* and the
+ * admin's *Danas* count and list. A PENDING
  * REQUEST DERIVES NOTHING (0040): no leave record, balance, conflict or
  * schedule reads it, so no leave, balance or resolution key is named.
  */
-export const LEAVE_REQUEST_WRITE_DEPENDENTS: readonly QueryKey[] = [MY_LEAVE_REQUESTS_KEY, LEAVE_REQUEST_ROOT_KEY];
+export const LEAVE_REQUEST_WRITE_DEPENDENTS: readonly QueryKey[] = [
+  MY_LEAVE_REQUESTS_KEY,
+  LEAVE_REQUEST_ROOT_KEY,
+  ORGANIZATION_LEAVE_REQUESTS_KEY,
+];
 
 /**
  * A leave request rejected (story 9.4): only the decision is recorded and the

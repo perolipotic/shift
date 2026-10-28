@@ -1,13 +1,18 @@
 import { randomBytes } from 'node:crypto';
 
+import type { Page } from '@playwright/test';
+
+import { LeaveRequestReviewPage } from '../../pages/conflicts.page.ts';
 import {
   holdRotation,
+  removeLeaveMemberInSql,
   removeLeaveRecordsInSql,
   removeSeededRotation,
   seedConflictResolution,
   seedExtraTeam,
   seedLeaveMember,
   seedLeaveRecord,
+  seedLeaveRequest,
   seedTeamRotation,
   type RotationHold,
   type SeededRotation,
@@ -46,6 +51,13 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * the calendar and *Sati*, while the resolved date that stayed covered stays
  * resolved — again without a reload. A failed resolutions read
  * shows the same alert, and its retry brings the queue back.
+ *
+ * Story 9.5: pending leave requests are listed beside the collisions, by
+ * date, each row naming its kind, under the one count *Danas* shows too; a
+ * request's row opens its decision screen, and an approval there takes it off
+ * the queue and lists it on *Odlučeno* beside a rejected one, while a
+ * withdrawn request is listed nowhere. The zero state answers the requests
+ * read empty too.
  */
 
 test.use({ storageState: ADMIN_STATE });
@@ -58,18 +70,66 @@ let hold: RotationHold | null = null;
 let seed: SeededRotation | null = null;
 /** The member whose records the test wrote, soft-removed afterwards. */
 let member: { readonly slug: string; readonly id: string } | null = null;
+/**
+ * Story 9.5: a member whose requests the test wrote, deleted afterwards with
+ * every request and decision of theirs, so no pending request of this file's
+ * stays on another spec's queue.
+ */
+let requester: { readonly slug: string; readonly id: string } | null = null;
 
 test.afterEach(async () => {
+  // EACH STEP ON ITS OWN, the requester first: a throw in one never skips
+  // another, so no pending request of this file outlives it on another spec's
+  // queue. The first failure is still reported.
+  const failures: unknown[] = [];
+  const step = async (run: () => Promise<void>): Promise<void> => {
+    try {
+      await run();
+    } catch (cause) {
+      failures.push(cause);
+    }
+  };
+  const [ownRequester, ownMember, ownSeed] = [requester, member, seed];
+  requester = null;
+  member = null;
+  seed = null;
   try {
-    if (member !== null) await removeLeaveRecordsInSql(member.slug, member.id).catch(() => undefined);
-    if (seed !== null) await removeSeededRotation(seed);
+    if (ownRequester !== null) await step(() => removeLeaveMemberInSql(ownRequester.slug, ownRequester.id));
+    if (ownMember !== null) await step(() => removeLeaveRecordsInSql(ownMember.slug, ownMember.id));
+    if (ownSeed !== null) await step(() => removeSeededRotation(ownSeed));
   } finally {
-    member = null;
-    seed = null;
     await hold?.release();
     hold = null;
   }
+  if (failures.length > 0) throw failures[0];
 });
+
+/**
+ * Answers the organization's leave and leave request reads with `memberId`'s
+ * rows alone (story 9.5): *Treba tebe* lists only the earliest rows of the
+ * whole organization, which other specs write to.
+ */
+async function onlyRowsOf(page: Page, memberId: string): Promise<void> {
+  for (const table of ['**/rest/v1/leave_records*', '**/rest/v1/leave_requests*']) {
+    await page.route(table, async (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      const answered = await route.fetch();
+      const rows = (await answered.json()) as { readonly member_id?: string }[];
+      const own = Array.isArray(rows) ? rows.filter((row) => row.member_id === memberId) : [];
+
+      return route.fulfill({
+        response: answered,
+        headers: {
+          ...answered.headers(),
+          'access-control-allow-origin': '*',
+          'access-control-expose-headers': 'Content-Range',
+          'content-range': own.length === 0 ? '*/0' : `0-${String(own.length - 1)}/${String(own.length)}`,
+        },
+        body: JSON.stringify(own),
+      });
+    });
+  }
+}
 
 /** An ISO date `count` days after another (negative for before), by calendar arithmetic in UTC. */
 function isoDaysAfter(iso: string, count: number): string {
@@ -348,22 +408,28 @@ test('an amend that takes a resolved date out of the range ends that resolution 
   expect(await page.evaluate(() => (window as unknown as { noReload?: boolean }).noReload)).toBe(true);
 });
 
-test('shows the zero count and the true sentence when there is no live leave', async ({ page, conflictsPage }) => {
+test('shows the zero count and the true sentence when there is no live leave and no pending request', async ({
+  page,
+  conflictsPage,
+}) => {
   // Answered as PostgREST answers an exact count of none: the read checks the
-  // count against the rows, so the header is part of the answer.
-  await page.route('**/rest/v1/leave_records*', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      // Exposed across origins, as the API exposes it, or the page cannot read it.
-      headers: {
-        'access-control-allow-origin': '*',
-        'access-control-expose-headers': 'Content-Range',
-        'content-range': '*/0',
-      },
-      body: '[]',
-    }),
-  );
+  // count against the rows, so the header is part of the answer. Since story
+  // 9.5 the requests read too, which other specs write to.
+  for (const table of ['**/rest/v1/leave_records*', '**/rest/v1/leave_requests*']) {
+    await page.route(table, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        // Exposed across origins, as the API exposes it, or the page cannot read it.
+        headers: {
+          'access-control-allow-origin': '*',
+          'access-control-expose-headers': 'Content-Range',
+          'content-range': '*/0',
+        },
+        body: '[]',
+      }),
+    );
+  }
 
   await conflictsPage.goto();
   await expect(conflictsPage.countHeading(0)).toBeVisible();
@@ -400,6 +466,141 @@ test('a failed resolutions read refuses the whole list, and the retry brings it 
   await conflictsPage.retryButton.click();
   await expect(conflictsPage.anyCountHeading).toBeVisible();
   await expect(conflictsPage.alertWith(zaOdluku.unavailable)).toHaveCount(0);
+});
+
+test('a failed requests read refuses the whole list, and the retry brings it back (story 9.5)', async ({ page, conflictsPage }) => {
+  const requests = '**/rest/v1/leave_requests*';
+  await page.route(requests, (route) => route.fulfill({ status: 500, body: '{}' }));
+
+  await conflictsPage.goto();
+  await expect(conflictsPage.alertWith(zaOdluku.unavailable)).toBeVisible();
+  await expect(conflictsPage.anyCountHeading).toHaveCount(0);
+  await expect(conflictsPage.rows).toHaveCount(0);
+
+  await page.unroute(requests);
+  await conflictsPage.retryButton.click();
+  await expect(conflictsPage.anyCountHeading).toBeVisible();
+  await expect(conflictsPage.alertWith(zaOdluku.unavailable)).toHaveCount(0);
+});
+
+test('lists a pending request beside the collisions, by date and naming its kind, counted as Danas and the way back count it; its row opens the decision on both surfaces, and Odlučeno lists the decided requests beside a resolved conflict but never a withdrawn one', async ({
+  page,
+  conflictsPage,
+  resolutionPage,
+  todayPage,
+  fixture,
+}) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
+  hold = holdRotation(fixture.slug);
+  await hold.ready;
+  const suffix = randomBytes(3).toString('hex');
+  const team = await seedExtraTeam(fixture.slug, `Smjena ${suffix}`);
+  seed = await seedTeamRotation(fixture.slug, team.id, suffix);
+  const { today } = seed;
+  const seeded = await seedLeaveMember(fixture.slug, team.id, today, 20);
+  requester = { slug: fixture.slug, id: seeded.id };
+  // Leave over today (Dan) and +1 (Noć): two collisions, +1 resolved. A
+  // pending request over +4 (Dan) and +5 (Noć), after them; a rejected one
+  // and a withdrawn one later still, both closed.
+  const resolvedOn = isoDaysAfter(today, 1);
+  await seedLeaveRecord(fixture.slug, seeded.id, today, resolvedOn);
+  await seedConflictResolution(fixture.slug, seeded.id, resolvedOn, team.id);
+  const pending = { from: isoDaysAfter(today, 4), to: isoDaysAfter(today, 5) };
+  const requestId = await seedLeaveRequest(fixture.slug, seeded.id, pending.from, pending.to);
+  const rejected = { from: isoDaysAfter(today, 10), to: isoDaysAfter(today, 11) };
+  await seedLeaveRequest(fixture.slug, seeded.id, rejected.from, rejected.to, 'rejected');
+  const withdrawn = { from: isoDaysAfter(today, 14), to: isoDaysAfter(today, 15) };
+  await seedLeaveRequest(fixture.slug, seeded.id, withdrawn.from, withdrawn.to, 'withdrawn');
+  const range = (dates: { readonly from: string; readonly to: string }): string =>
+    fill(zaOdluku.request.range, { from: fullDate(dates.from), to: fullDate(dates.to) });
+
+  // MIXED, IN ORDER: today's collision, then the request, each naming its kind.
+  await conflictsPage.goto();
+  const rows = conflictsPage.rowsOf(seeded.name);
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0)).toHaveText(datedOn(today));
+  await expect(rows.nth(1)).toHaveText(datedOn(pending.from));
+  await expect(rows.nth(0)).toContainText(zaOdluku.kind.collision);
+  await expect(rows.nth(0)).not.toContainText(zaOdluku.kind.request);
+  await expect(rows.nth(1)).toContainText(zaOdluku.kind.request);
+  await expect(rows.nth(1)).toContainText(range(pending));
+  // Neither closed request waits.
+  await expect(conflictsPage.rows.filter({ hasText: range(rejected) })).toHaveCount(0);
+  await expect(conflictsPage.rows.filter({ hasText: range(withdrawn) })).toHaveCount(0);
+  // Every row is one link, whatever its kind.
+  await expect
+    .poll(async () => (await conflictsPage.rows.getByRole('link').count()) === (await conflictsPage.rows.count()))
+    .toBe(true);
+
+  // ONE COUNT: the heading counts every row of either kind, and Danas says the
+  // same — read together and retried, as other specs write to the organization.
+  await expect(async () => {
+    await conflictsPage.goto();
+    await expect(conflictsPage.anyCountHeading).toBeVisible();
+    const shown = await conflictsPage.rows.count();
+    await expect(conflictsPage.anyCountHeading).toHaveText(plural(zaOdluku.count, shown));
+    await todayPage.navigationLink(hr.nav.danas, { exact: true }).click();
+    await expect(todayPage.needsYouCount(shown)).toBeVisible({ timeout: 5_000 });
+    await expect(todayPage.openConflictsLink(shown)).toBeVisible();
+  }).toPass({ timeout: 60_000 });
+
+  // ...AND THE WAY BACK: a collision's resolution screen names the same count, the request included.
+  await expect(async () => {
+    await conflictsPage.goto();
+    await expect(conflictsPage.anyCountHeading).toBeVisible();
+    const shown = await conflictsPage.rows.count();
+    await expect(conflictsPage.anyCountHeading).toHaveText(plural(zaOdluku.count, shown));
+    await conflictsPage.rowLink(rows.nth(0)).click();
+    await expect(page).toHaveURL(`/za-odluku/${seeded.id}/${today}/${team.id}`);
+    await expect(resolutionPage.backLink).toHaveText(plural(zaOdluku.resolution.back, shown), { timeout: 5_000 });
+  }).toPass({ timeout: 60_000 });
+
+  // DANAS, with this test's rows alone: Treba tebe lists the collision and the
+  // request, each naming its kind, and the request's row opens its decision.
+  await onlyRowsOf(page, seeded.id);
+  await todayPage.goto();
+  await expect(todayPage.needsYouCount(2)).toBeVisible();
+  const needsYou = todayPage.needsYouRowLinks;
+  await expect(needsYou).toHaveCount(2);
+  await expect(needsYou.nth(0)).toContainText(zaOdluku.kind.collision);
+  await expect(needsYou.nth(0)).not.toContainText(zaOdluku.kind.request);
+  await expect(needsYou.nth(1)).toContainText(zaOdluku.kind.request);
+  await expect(needsYou.nth(1)).toContainText(range(pending));
+  await expect(needsYou.nth(1)).toContainText(seeded.name);
+  await needsYou.nth(1).click();
+  await expect(page).toHaveURL(new RegExp(`/za-odluku/zahtjev/${requestId}$`));
+
+  // THE DECISION: an approval takes the request off the queue.
+  const review = new LeaveRequestReviewPage(page);
+  await expect(review.requestHeading).toBeVisible();
+  await review.approveButton.click();
+  await expect(page).toHaveURL(/\/za-odluku$/);
+  // Its leave raises two collisions beside today's; no request of the member waits.
+  await expect(rows).toHaveCount(3);
+  await expect(rows.filter({ hasText: zaOdluku.kind.request })).toHaveCount(0);
+
+  // ODLUČENO: the approved and the rejected request beside the resolved
+  // conflict, each naming its kind, and never the withdrawn one.
+  await conflictsPage.resolvedTab.click();
+  const entries = conflictsPage.resolvedEntriesOf(seeded.name);
+  await expect(entries).toHaveCount(3);
+  const approvedEntry = entries.filter({ hasText: range(pending) });
+  await expect(approvedEntry).toContainText(hr.godisnji.request.status.approved);
+  await expect(approvedEntry).toContainText(zaOdluku.kind.request);
+  await expect(approvedEntry).toContainText(fullDate(pending.from));
+  const rejectedEntry = entries.filter({ hasText: range(rejected) });
+  await expect(rejectedEntry).toContainText(hr.godisnji.request.status.rejected);
+  await expect(rejectedEntry).toContainText(zaOdluku.kind.request);
+  const collisionEntry = entries.filter({ hasText: zaOdluku.kind.collision });
+  await expect(collisionEntry).toHaveCount(1);
+  await expect(collisionEntry).toContainText(fullDate(resolvedOn));
+  await expect(collisionEntry).not.toContainText(zaOdluku.kind.request);
+  await expect(conflictsPage.resolvedEntries.filter({ hasText: range(withdrawn) })).toHaveCount(0);
+  // The newest decision first: the approval just made.
+  await expect(entries.nth(0)).toContainText(range(pending));
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expectNoHorizontalScroll(page);
 });
 
 // STORY 9.1: the queue's old URLs redirect, keeping their params and leaving

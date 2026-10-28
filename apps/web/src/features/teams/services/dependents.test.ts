@@ -17,7 +17,12 @@ import {
   MY_LEAVE_RECORDS_KEY,
   ORGANIZATION_LEAVE_RECORDS_KEY,
 } from '@/features/leave/services/leave-list';
-import { LEAVE_REQUEST_KEY, LEAVE_REQUEST_ROOT_KEY, MY_LEAVE_REQUESTS_KEY } from '@/features/leave/services/leave-requests';
+import {
+  LEAVE_REQUEST_KEY,
+  LEAVE_REQUEST_ROOT_KEY,
+  MY_LEAVE_REQUESTS_KEY,
+  ORGANIZATION_LEAVE_REQUESTS_KEY,
+} from '@/features/leave/services/leave-requests';
 import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
 import { SESSION_SUBJECT_KEY } from '@/features/members/services/write';
 import { MEMBER_NAME_KEY } from '@/features/navigation/services/profile';
@@ -108,6 +113,8 @@ const CLASSIFIED: Readonly<Record<string, readonly QueryKey[]>> = {
   // Story 9.4: one request by its id, on the admin's decision screen, under one prefix.
   LEAVE_REQUEST_ROOT_KEY: [LEAVE_REQUEST_ROOT_KEY],
   LEAVE_REQUEST_KEY: [REQUEST_A, REQUEST_B],
+  // Story 9.5: every request of the organization, which Za odluku and Danas read.
+  ORGANIZATION_LEAVE_REQUESTS_KEY: [ORGANIZATION_LEAVE_REQUESTS_KEY],
 };
 
 /**
@@ -271,15 +278,16 @@ describe('the reads a team or membership write makes stale', () => {
       dependents: LEAVE_REQUEST_WRITE_DEPENDENTS,
       // The requests alone: a pending request derives nothing, so no leave,
       // balance or resolution read is re-read. Since story 9.4 every request
-      // read by its id too, which the admin's decision screen holds.
-      stale: [MY_LEAVE_REQUESTS_KEY, REQUEST_A, REQUEST_B],
+      // read by its id too, which the admin's decision screen holds, and
+      // since story 9.5 the organization's, which Za odluku and Danas list.
+      stale: [MY_LEAVE_REQUESTS_KEY, REQUEST_A, REQUEST_B, ORGANIZATION_LEAVE_REQUESTS_KEY],
     },
     {
       write: 'a leave request rejected (story 9.4)',
       own: REQUEST_A,
       dependents: LEAVE_REQUEST_REJECTION_DEPENDENTS,
       // Only the decision is recorded: the request keys alone.
-      stale: [MY_LEAVE_REQUESTS_KEY, REQUEST_A, REQUEST_B],
+      stale: [MY_LEAVE_REQUESTS_KEY, REQUEST_A, REQUEST_B, ORGANIZATION_LEAVE_REQUESTS_KEY],
     },
     {
       write: 'a leave request approved (story 9.4)',
@@ -298,6 +306,7 @@ describe('the reads a team or membership write makes stale', () => {
         MY_LEAVE_REQUESTS_KEY,
         REQUEST_A,
         REQUEST_B,
+        ORGANIZATION_LEAVE_REQUESTS_KEY,
       ],
     },
     {
@@ -405,7 +414,7 @@ describe('the reads a team or membership write makes stale', () => {
 
     await refreshAfterWrite(stub, MY_LEAVE_REQUESTS_KEY, LEAVE_REQUEST_WRITE_DEPENDENTS);
 
-    expect(named).toEqual([MY_LEAVE_REQUESTS_KEY, LEAVE_REQUEST_ROOT_KEY]);
+    expect(named).toEqual([MY_LEAVE_REQUESTS_KEY, LEAVE_REQUEST_ROOT_KEY, ORGANIZATION_LEAVE_REQUESTS_KEY]);
   });
 
   it('reaches every roster through the one prefix', () => {
