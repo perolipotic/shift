@@ -394,10 +394,14 @@ export const KEY_SOURCES = [
     // FIFTY-EIGHT SINCE B449: an empty day of the week and the today card's
     // no-shift line say inactive or no team through `dayEmptyMessageKey`,
     // counted in the calendar's `empty-day` (two fewer).
+    //
+    // SIXTY-TWO SINCE STORY 9.5: *Treba tebe*'s rows name their kind
+    // (*Odsutnost u smjeni*, *Zahtjev za godišnji odmor*), and a pending
+    // request's row its range and its member or the words for one who is gone.
     name: 'the Danas destination',
     file: DANAS,
     keys: translationKeys,
-    strings: 58,
+    strings: 62,
   },
   {
     // STORY 6.1a: today's three cases, the next shift's two headings, and
@@ -954,7 +958,13 @@ export const KEY_SOURCES = [
     // the decisions (accepted, replacement with and without a name, amended),
     // and who decided it and when, with the words for an admin no longer
     // there.
-    strings: 23,
+    // THIRTY-FIVE SINCE STORY 9.5: each item names its kind, on Čeka odluku
+    // (*Odsutnost u smjeni*, *Zahtjev za godišnji odmor*) and on Odlučeno
+    // (both again); a pending request's row, its member or the words for one
+    // who is gone, and its range; a decided request's row, its outcome
+    // (*Odobren*, *Odbijen*), its member or the gone words, its range, and
+    // who decided it and when, with the words for an admin no longer there.
+    strings: 35,
   },
   {
     // STORY 5.4b. On one conflict's screen, through `t('…')`: the way back

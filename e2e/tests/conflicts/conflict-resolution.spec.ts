@@ -135,25 +135,32 @@ function leaveOf({ today }: Scenario): string {
   return leaveText(days);
 }
 
-/** Answers the organization's leave read with `memberId`'s live records alone: the real rows, filtered. */
+/**
+ * Answers the organization's leave read with `memberId`'s live records alone,
+ * and (story 9.5) its leave request read with `memberId`'s requests alone —
+ * the queue's count, which the way back names, counts pending requests too,
+ * and other specs send them to the same organization: the real rows, filtered.
+ */
 async function onlyLeaveOf(page: Page, memberId: string): Promise<void> {
-  await page.route('**/rest/v1/leave_records*', async (route) => {
-    if (route.request().method() !== 'GET') return route.fallback();
-    const answered = await route.fetch();
-    const rows = (await answered.json()) as { readonly member_id?: string }[];
-    const own = Array.isArray(rows) ? rows.filter((row) => row.member_id === memberId) : [];
+  for (const table of ['**/rest/v1/leave_records*', '**/rest/v1/leave_requests*']) {
+    await page.route(table, async (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      const answered = await route.fetch();
+      const rows = (await answered.json()) as { readonly member_id?: string }[];
+      const own = Array.isArray(rows) ? rows.filter((row) => row.member_id === memberId) : [];
 
-    return route.fulfill({
-      response: answered,
-      headers: {
-        ...answered.headers(),
-        'access-control-allow-origin': '*',
-        'access-control-expose-headers': 'Content-Range',
-        'content-range': own.length === 0 ? '*/0' : `0-${String(own.length - 1)}/${String(own.length)}`,
-      },
-      body: JSON.stringify(own),
+      return route.fulfill({
+        response: answered,
+        headers: {
+          ...answered.headers(),
+          'access-control-allow-origin': '*',
+          'access-control-expose-headers': 'Content-Range',
+          'content-range': own.length === 0 ? '*/0' : `0-${String(own.length - 1)}/${String(own.length)}`,
+        },
+        body: JSON.stringify(own),
+      });
     });
-  });
+  }
 }
 
 test('opens a conflict from its queue row, shows K of N, moves with ‹ › in the queue\'s order, each disabled at its end, says a URL with no conflict is not open, and fits a phone', async ({

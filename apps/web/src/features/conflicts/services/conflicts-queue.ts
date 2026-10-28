@@ -4,6 +4,7 @@ import type { CalendarSnapshot, CalendarSurfaceState } from '@/features/calendar
 import { unknownSnapshotIdsOf } from '@/features/calendar/services/snapshot-skew';
 import { calendarTodayOf, memberScheduleInputOf, typeRangeOn } from '@/features/calendar/utils/month';
 import { organizationLeaveRecordsOf, type OrganizationLeaveRecord } from '@/features/leave/services/leave-list';
+import { REQUEST_PENDING, organizationLeaveRequestsOf, type ReviewedLeaveRequest } from '@/features/leave/services/leave-requests';
 import { leaveRangeValuesOf } from '@/features/leave/services/leave-section';
 import { effectiveResolutionsOf } from '@/features/conflicts/services/replacement-effect';
 import { conflictResolutionsOf, type ConflictResolution } from '@/features/conflicts/services/resolutions';
@@ -30,6 +31,15 @@ import { formatIsoDate } from '@/lib/i18n/format';
  * later in the organization's zone — soonest first; then past ones, most
  * recent first. Within one date, `collisionsOf`'s own order (team, member).
  *
+ * REQUESTS BESIDE COLLISIONS (story 9.5; AD-4's union). The organization's
+ * pending leave requests (`organizationLeaveRequestsOf`, 0040's read) join
+ * the unresolved collisions as items of their own kind, under ONE COUNT that
+ * *Danas* and the resolution screen's back link read too. A request is dated
+ * by its range's start and takes the same upcoming-then-past order; on one
+ * date, collisions come before requests, then their own order, then the
+ * request's id. A PENDING REQUEST DERIVES NOTHING: it is listed, never fed
+ * to `collisionsOf`.
+ *
  * NEVER A PARTIAL LIST. A read that failed or is paused offline, a record
  * row that does not parse, belongs to nobody in the snapshot or shares a date
  * with another of the same member, a resolution row that cannot be trusted,
@@ -54,8 +64,16 @@ export const CONFLICTS_UNAVAILABLE = 'unavailable';
 /** Everything read: the count and the rows, none included. */
 export const CONFLICTS_READY = 'ready';
 
+/** A queue item that is a collision: *Odsutnost u smjeni* (story 9.5). */
+export const ITEM_COLLISION = 'collision';
+/** A queue item that is a pending leave request: *Zahtjev za godišnji odmor* (story 9.5). */
+export const ITEM_REQUEST = 'request';
+
+export type QueueItemKind = typeof ITEM_COLLISION | typeof ITEM_REQUEST;
+
 /** One conflict as the queue shows it. */
 export interface ConflictRow {
+  readonly kind: typeof ITEM_COLLISION;
   /** `collisionKeyOf`'s key: unique per row, and what story 5.4 matches a resolution on. */
   readonly key: string;
   /** The member on leave: with `date` and `teamId`, what the row's resolution screen is opened by (story 5.4b). */
@@ -82,12 +100,47 @@ export interface ConflictRow {
   readonly leaveTo: string;
 }
 
+/** One pending leave request as the queue shows it (story 9.5). */
+export interface RequestRow {
+  readonly kind: typeof ITEM_REQUEST;
+  /** `request:` and the request's id: unique per row, and never a collision's key. */
+  readonly key: string;
+  /** What the row's decision screen is opened by. */
+  readonly requestId: string;
+  readonly memberId: string;
+  /** The range's first date, `YYYY-MM-DD`: what the row is ordered by. */
+  readonly date: string;
+  /** `12.09.2026`. */
+  readonly dateShown: string;
+  /** Starts before the organization's today: drawn as a past row. */
+  readonly past: boolean;
+  /**
+   * The member's name; null (`memberGone`) only for a row parsed without the
+   * skew check. A member the snapshot does not hold yet is a skew between the
+   * reads (`unknownSnapshotIdsOf`), loading or unavailable, never drawn as gone.
+   */
+  readonly memberName: string | null;
+  /** The requested range, as the member's leave card writes it. */
+  readonly from: string;
+  readonly to: string;
+  /** When it was sent: requests starting on one date are ordered by it, oldest first, then by id. */
+  readonly createdAt: string | null;
+}
+
+/** One item of *Čeka odluku*: a collision or a pending request (story 9.5). */
+export type QueueRow = ConflictRow | RequestRow;
+
 /** The queue, ready to render. */
 export interface ConflictsQueueView {
-  /** How many unresolved conflicts there are: every row, shown at zero too. */
+  /** How many items wait for a decision: unresolved collisions and pending requests, shown at zero too. */
   readonly count: number;
-  /** Upcoming soonest first, then past most recent first. */
-  readonly rows: readonly ConflictRow[];
+  /** Upcoming soonest first, then past most recent first; on one date, collisions before requests. */
+  readonly rows: readonly QueueRow[];
+}
+
+/** The rows that are collisions, in the queue's order: what the resolution screen and *Danas*' coverage read. */
+export function collisionRowsOf(rows: readonly QueueRow[]): readonly ConflictRow[] {
+  return rows.filter((row): row is ConflictRow => row.kind === ITEM_COLLISION);
 }
 
 export type ConflictsQueue =
@@ -114,6 +167,100 @@ export function queueOrderOf(collisions: readonly Collision[], today: string): r
     .sort((first, second) => byDate(second, first));
 
   return [...upcoming, ...past];
+}
+
+/** The instant a request was sent, in ms; a request with none sorts after every other. */
+function sentAt(row: RequestRow): number {
+  return row.createdAt === null ? Number.POSITIVE_INFINITY : Date.parse(row.createdAt);
+}
+
+/** Two requests by when they were sent, oldest first, then by id. */
+function bySentThenId(first: RequestRow, second: RequestRow): number {
+  const [a, b] = [sentAt(first), sentAt(second)];
+
+  if (a !== b) return a < b ? -1 : 1;
+
+  return first.requestId < second.requestId ? -1 : first.requestId > second.requestId ? 1 : 0;
+}
+
+/**
+ * The merged order of story 9.5: `collisions`, already in
+ * {@link queueOrderOf}'s order, and `requests`, each dated by its range's
+ * start. Upcoming items (dated `today` or later) soonest first, then past
+ * items most recent first; on one date, collisions before requests, the
+ * collisions in the order they came in and the requests by when they were
+ * sent (oldest first; one with no instant last), then by id.
+ */
+export function mergedQueueOrderOf(
+  collisions: readonly ConflictRow[],
+  requests: readonly RequestRow[],
+  today: string,
+): readonly QueueRow[] {
+  const ranked: { readonly row: QueueRow; readonly rank: number }[] = [
+    ...collisions.map((row, index) => ({ row, rank: index })),
+    ...[...requests]
+      .sort(bySentThenId)
+      .map((row, index) => ({ row, rank: collisions.length + index })),
+  ];
+  const ascending = (first: (typeof ranked)[number], second: (typeof ranked)[number]): number =>
+    first.row.date < second.row.date ? -1 : first.row.date > second.row.date ? 1 : first.rank - second.rank;
+  const upcoming = ranked.filter((item) => item.row.date >= today).sort(ascending);
+  const past = ranked
+    .filter((item) => item.row.date < today)
+    .sort((first, second) =>
+      first.row.date === second.row.date ? first.rank - second.rank : ascending(second, first),
+    );
+
+  return [...upcoming, ...past].map((item) => item.row);
+}
+
+/**
+ * The organization's pending requests from the rows as read (story 9.5).
+ *
+ * @throws RangeError when a request row cannot be trusted.
+ */
+export function pendingRequestsOf(requestRows: readonly unknown[]): readonly ReviewedLeaveRequest[] {
+  const requests = organizationLeaveRequestsOf(requestRows);
+
+  if (requests === null) throw new RangeError('a leave request row cannot be trusted');
+
+  return requests.filter((request) => request.status === REQUEST_PENDING);
+}
+
+/**
+ * The pending requests as the queue's rows, against `today` and the
+ * snapshot's names.
+ *
+ * @throws RangeError when a request row cannot be trusted, or a date cannot be formatted.
+ */
+export function requestRowsOf(
+  snapshot: CalendarSnapshot,
+  requestRows: readonly unknown[],
+  today: string,
+): readonly RequestRow[] {
+  const members = new Map(snapshot.members.map((member) => [member.id, member.name]));
+
+  return pendingRequestsOf(requestRows).map((request) => {
+    const dateShown = formatIsoDate(request.from);
+
+    if (dateShown === null) throw new RangeError(`the date ${request.from} cannot be formatted`);
+
+    const range = leaveRangeValuesOf(request);
+
+    return {
+      kind: ITEM_REQUEST,
+      key: `request:${request.id}`,
+      requestId: request.id,
+      memberId: request.memberId,
+      date: request.from,
+      dateShown,
+      past: request.from < today,
+      memberName: members.get(request.memberId) ?? null,
+      from: range.from,
+      to: range.to,
+      createdAt: request.createdAt,
+    };
+  });
 }
 
 /**
@@ -193,8 +340,8 @@ export function unresolvedOf(
 }
 
 /**
- * The queue from the snapshot, the organization's record and resolution rows
- * as read, and `today` in the organization's zone.
+ * The queue from the snapshot, the organization's record, resolution and
+ * request rows as read, and `today` in the organization's zone.
  *
  * @throws RangeError when a row cannot be trusted ({@link organizationLeaveRecordsOf}, {@link resolutionsOf}),
  *   on any precondition of `collisionsOf`, or when a collision names a
@@ -206,6 +353,7 @@ export function conflictsQueueViewOf(
   rows: readonly unknown[],
   resolutionRows: readonly unknown[],
   today: string,
+  requestRows: readonly unknown[],
 ): ConflictsQueueView {
   const records = organizationLeaveRecordsOf(
     rows,
@@ -234,7 +382,8 @@ export function conflictsQueueViewOf(
 
     const range = leaveRangeValuesOf(record);
 
-    return {
+    const row: ConflictRow = {
+      kind: ITEM_COLLISION,
       key: collisionKeyOf(collision),
       memberId: collision.memberId,
       date: collision.date,
@@ -250,9 +399,12 @@ export function conflictsQueueViewOf(
       leaveFrom: range.from,
       leaveTo: range.to,
     };
-  });
 
-  return { count: shown.length, rows: shown };
+    return row;
+  });
+  const merged = mergedQueueOrderOf(shown, requestRowsOf(snapshot, requestRows, today), today);
+
+  return { count: merged.length, rows: merged };
 }
 
 export type ConflictsQueueOutcome =
@@ -268,9 +420,10 @@ export function conflictsQueueOutcomeOf(
   rows: readonly unknown[],
   resolutionRows: readonly unknown[],
   today: string,
+  requestRows: readonly unknown[],
 ): ConflictsQueueOutcome {
   try {
-    return { ok: true, view: conflictsQueueViewOf(snapshot, rows, resolutionRows, today) };
+    return { ok: true, view: conflictsQueueViewOf(snapshot, rows, resolutionRows, today, requestRows) };
   } catch (cause) {
     if (!(cause instanceof RangeError)) throw cause;
 
@@ -278,6 +431,28 @@ export function conflictsQueueOutcomeOf(
 
     return { ok: false, code: CONFLICTS_UNAVAILABLE };
   }
+}
+
+/**
+ * THE QUEUE'S COUNT from the four reads' rows (story 9.5), for a surface that
+ * names it beside its own content — the resolution screen's way back: the
+ * very `count` {@link conflictsQueueOutcomeOf} derives, so the two cannot
+ * drift; null while a row names a member or team the snapshot does not hold
+ * yet (a skew, as {@link conflictsQueueOf} waits on) or when the queue is
+ * refused — never a number the queue would not state.
+ */
+export function queueCountOf(
+  snapshot: CalendarSnapshot,
+  rows: readonly unknown[],
+  resolutionRows: readonly unknown[],
+  requestRows: readonly unknown[],
+  today: string,
+): number | null {
+  if (unknownSnapshotIdsOf(snapshot, rows, resolutionRows, requestRows).length > 0) return null;
+
+  const outcome = conflictsQueueOutcomeOf(snapshot, rows, resolutionRows, today, requestRows);
+
+  return outcome.ok ? outcome.view.count : null;
 }
 
 /** The query result the record rows' state is derived from. */
@@ -298,18 +473,20 @@ export function queueReadFailed(answer: LeaveRowsAnswer): boolean {
   return readFailed(answer);
 }
 
-/** The three reads the queue stands on, each as far as it is read here. */
+/** The four reads the queue stands on, each as far as it is read here. */
 export interface ConflictsQueueSources {
   readonly calendar: CalendarSurfaceState;
   readonly records: LeaveRowsAnswer;
   /** The organization's live resolution rows (story 5.4a). */
   readonly resolutions: LeaveRowsAnswer;
+  /** The organization's leave request rows, every status (story 9.5): the pending ones are items. */
+  readonly requests: LeaveRowsAnswer;
   /** Whether the calendar snapshot is being read again: a skew then waits for it ({@link conflictsQueueOf}). */
   readonly snapshotFetching?: boolean;
 }
 
 /**
- * What *Za odluku* shows from its three reads at `now`: unavailable when any
+ * What *Za odluku* shows from its four reads at `now`: unavailable when any
  * read failed or is paused offline — first, so a failure is never hidden
  * behind another's skeleton — a failed refetch over cached data included;
  * loading while any is pending; otherwise the guarded queue. Rows naming a
@@ -319,26 +496,33 @@ export interface ConflictsQueueSources {
  * it — and never logged.
  */
 export function conflictsQueueOf(sources: ConflictsQueueSources, now: Date): ConflictsQueue {
-  const { calendar, records, resolutions } = sources;
+  const { calendar, records, resolutions, requests } = sources;
   const failed =
     calendar.refusal !== null ||
     (!calendar.loading && calendar.snapshot === null) ||
     readFailed(records) ||
-    readFailed(resolutions);
+    readFailed(resolutions) ||
+    readFailed(requests);
 
   if (failed) return { kind: CONFLICTS_UNAVAILABLE };
 
   const snapshot = calendar.snapshot;
   const rows = records.data;
   const resolutionRows = resolutions.data;
+  const requestRows = requests.data;
 
-  if (snapshot === null || rows === undefined || resolutionRows === undefined) return { kind: CONFLICTS_LOADING };
+  if (snapshot === null || rows === undefined || resolutionRows === undefined || requestRows === undefined) {
+    return { kind: CONFLICTS_LOADING };
+  }
 
-  if (unknownSnapshotIdsOf(snapshot, rows, resolutionRows).length > 0) {
+  // STORY 9.5: a request naming a member the snapshot lacks is a skew too —
+  // `calendar_members` answers inactive members, so the snapshot is older
+  // than the member — never a member drawn as gone.
+  if (unknownSnapshotIdsOf(snapshot, rows, resolutionRows, requestRows).length > 0) {
     return sources.snapshotFetching === true ? { kind: CONFLICTS_LOADING } : { kind: CONFLICTS_UNAVAILABLE };
   }
 
-  const outcome = conflictsQueueOutcomeOf(snapshot, rows, resolutionRows, calendarTodayOf(snapshot, now));
+  const outcome = conflictsQueueOutcomeOf(snapshot, rows, resolutionRows, calendarTodayOf(snapshot, now), requestRows);
 
   return outcome.ok ? { kind: CONFLICTS_READY, view: outcome.view } : { kind: CONFLICTS_UNAVAILABLE };
 }

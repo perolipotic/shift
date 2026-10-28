@@ -607,6 +607,12 @@ function leaveAnswer(rows: readonly unknown[]): { status: number; contentType: s
 /** The organization's leave read (`leave_records`), never the member's own (`my_leave_records`). */
 const ORGANIZATION_LEAVE = '**/rest/v1/leave_records*';
 
+/**
+ * The organization's leave request read (story 9.5): *Treba tebe* counts
+ * pending requests, and other specs send them to the same organization.
+ */
+const ORGANIZATION_REQUESTS = '**/rest/v1/leave_requests*';
+
 /** `3 od 4 člana`: the present count, then the roster through the plural. */
 function membersText(present: number, total: number): string {
   const message = admin.coverage.members;
@@ -657,6 +663,7 @@ test.describe('as an admin', () => {
     conflictsPage,
   }) => {
     await page.route(ORGANIZATION_LEAVE, (route) => route.fulfill(leaveAnswer([])));
+    await page.route(ORGANIZATION_REQUESTS, (route) => route.fulfill(leaveAnswer([])));
     await todayPage.goto();
     await expect(todayPage.needsYouCard).toBeVisible();
     await expect(todayPage.needsYouCount(0)).toBeVisible();
@@ -685,14 +692,16 @@ test.describe('as an admin', () => {
     const { team, rotation, members, absent } = await seedShortTeam(fixture.slug);
     const today = rotation.today;
     const ours = new Set(members.map((member) => member.id));
-    // Only this test's members' leave: other specs write leave to the same organization.
-    await page.route(ORGANIZATION_LEAVE, async (route) => {
-      const answered = await route.fetch();
-      const rows = ((await answered.json()) as readonly { readonly member_id?: string }[]).filter(
-        (row) => row.member_id !== undefined && ours.has(row.member_id),
-      );
-      await route.fulfill(leaveAnswer(rows));
-    });
+    // Only this test's members' leave and requests: other specs write both to the same organization.
+    for (const table of [ORGANIZATION_LEAVE, ORGANIZATION_REQUESTS]) {
+      await page.route(table, async (route) => {
+        const answered = await route.fetch();
+        const rows = ((await answered.json()) as readonly { readonly member_id?: string }[]).filter(
+          (row) => row.member_id !== undefined && ours.has(row.member_id),
+        );
+        await route.fulfill(leaveAnswer(rows));
+      });
+    }
     await page.clock.install({ time: await organizationInstant(fixture.slug, today, '14:20') });
     await page.setViewportSize({ width: 390, height: 844 });
 

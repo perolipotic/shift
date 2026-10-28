@@ -26,10 +26,14 @@ import {
 import {
   CONFLICTS_LOADING,
   CONFLICTS_READY,
+  ITEM_COLLISION,
+  ITEM_REQUEST,
+  collisionRowsOf,
   conflictsQueueOf,
   resolutionsOf,
   type ConflictRow,
   type ConflictsQueueSources,
+  type QueueRow,
 } from '@/features/conflicts/services/conflicts-queue';
 import { ACCEPT_UNCOVERED, REPLACE_MEMBER } from '@/features/conflicts/services/resolutions';
 import { organizationLeaveRecordsOf, type OrganizationLeaveRecord } from '@/features/leave/services/leave-list';
@@ -55,12 +59,14 @@ import { datesFrom, dayAfter } from '@/utils/dates';
  *
  * THE QUEUE'S OWN READS AND GATING. The calendar snapshot under
  * `CALENDAR_KEY`, the organization's live leave under
- * `ORGANIZATION_LEAVE_RECORDS_KEY` and its live resolutions under
- * `ORGANIZATION_CONFLICT_RESOLUTIONS_KEY` — the three *Za odluku* reads, through
+ * `ORGANIZATION_LEAVE_RECORDS_KEY`, its live resolutions under
+ * `ORGANIZATION_CONFLICT_RESOLUTIONS_KEY` and its leave requests under
+ * `ORGANIZATION_LEAVE_REQUESTS_KEY` (story 9.5) — the four *Za odluku* reads, through
  * the same query options — and `conflictsQueueOf` decides loading,
- * unavailable and ready. The count IS the queue's `view.count`, and every
- * row of *Treba tebe* is one of the queue's rows, so the card equals
- * *Za odluku* at every count, 0 included.
+ * unavailable and ready. The count IS the queue's `view.count` — unresolved
+ * collisions and pending requests — and every row of *Treba tebe* is one of
+ * the queue's rows, of either kind, so the card equals *Za odluku* at every
+ * count, 0 included.
  *
  * THE CALENDAR'S OWN DERIVATIONS for the rest. The week and today's coverage
  * are `calendarMonthOutcomeOf`'s cells under the admin's marks
@@ -107,8 +113,9 @@ export const BADGE_TODAY = 'today';
 
 export type NeedsYouBadge = typeof BADGE_PAST | typeof BADGE_TODAY;
 
-/** One of the queue's rows, as *Treba tebe* lists it. */
-export interface NeedsYouRow {
+/** One of the queue's collisions, as *Treba tebe* lists it. */
+export interface NeedsYouCollisionRow {
+  readonly kind: typeof ITEM_COLLISION;
   readonly key: string;
   /** With `date` and `teamId`, what opens the row's resolution screen. */
   readonly memberId: string;
@@ -126,9 +133,33 @@ export interface NeedsYouRow {
   readonly badge: NeedsYouBadge | null;
 }
 
+/** One of the queue's pending leave requests, as *Treba tebe* lists it (story 9.5). */
+export interface NeedsYouRequestRow {
+  readonly kind: typeof ITEM_REQUEST;
+  readonly key: string;
+  /** What opens the row's decision screen. */
+  readonly requestId: string;
+  /** The range's first date. */
+  readonly date: string;
+  /** `srijeda` */
+  readonly weekday: string;
+  /** `30.09.` */
+  readonly dayMonth: string;
+  /** The member's name, or null when the snapshot no longer holds them. */
+  readonly memberName: string | null;
+  /** The requested range, as the member's leave card writes it. */
+  readonly from: string;
+  readonly to: string;
+  /** `prošlo`, `danas`, or none for a later date. */
+  readonly badge: NeedsYouBadge | null;
+}
+
+/** One of the queue's rows, as *Treba tebe* lists it: a collision or a pending request. */
+export type NeedsYouRow = NeedsYouCollisionRow | NeedsYouRequestRow;
+
 /** *Treba tebe*: the queue's count, its past share and its earliest rows. */
 export interface NeedsYou {
-  /** The queue's `view.count`, every unresolved conflict, past ones included. */
+  /** The queue's `view.count`: every unresolved conflict and pending request, past ones included. */
   readonly count: number;
   /** How many of them are dated before today: a subset of `count`, never an addition. */
   readonly pastCount: number;
@@ -300,7 +331,7 @@ export type AdminToday =
   | { readonly kind: typeof ADMIN_TODAY_READY; readonly view: AdminTodayView };
 
 /**
- * What *Danas* shows an admin from the queue's three reads at `now`: the
+ * What *Danas* shows an admin from the queue's four reads at `now`: the
  * queue's own gating first — unavailable when a read failed or is paused, or
  * the queue refused its rows; loading while a read is pending — and then
  * {@link adminTodayViewOf}, unavailable when it throws a `RangeError`, logged.
@@ -316,7 +347,7 @@ export function adminTodayOf(sources: ConflictsQueueSources, now: Date): AdminTo
   const rows = sources.records.data;
   const resolutionRows = sources.resolutions.data;
 
-  // The queue answered ready, so all three are in; the guard is the type's.
+  // The queue answered ready, so its reads are in; the guard is the type's.
   if (snapshot === null || rows === undefined || resolutionRows === undefined) return { kind: ADMIN_TODAY_LOADING };
 
   try {
@@ -344,7 +375,7 @@ export function adminTodayViewOf(
   snapshot: CalendarSnapshot,
   rows: readonly unknown[],
   resolutionRows: readonly unknown[],
-  queueRows: readonly ConflictRow[],
+  queueRows: readonly QueueRow[],
   count: number,
   now: Date,
 ): AdminTodayView {
@@ -364,7 +395,7 @@ export function adminTodayViewOf(
   return {
     today,
     needsYou: needsYouOf(queueRows, count, today),
-    coverage: coverageOf(snapshot, todayMonth, records, resolutionRows, queueRows, today, now),
+    coverage: coverageOf(snapshot, todayMonth, records, resolutionRows, collisionRowsOf(queueRows), today, now),
     absences: absencesOf(snapshot, records, today),
     week: weekOf(dates, months, today),
   };
@@ -414,19 +445,19 @@ function rowOn(month: CalendarMonth, date: string): CalendarMonth['rows'][number
 }
 
 /** Two rows by date alone, ascending; 0 within one date, so the queue's order stays. */
-function byDate(first: ConflictRow, second: ConflictRow): number {
+function byDate(first: QueueRow, second: QueueRow): number {
   return first.date < second.date ? -1 : first.date > second.date ? 1 : 0;
 }
 
 /**
  * *Treba tebe* from the queue's own rows and count: the count as the queue
- * states it, how many rows are past and the earliest of them, and the
+ * states it, how many rows of either kind are past and the earliest of them, and the
  * earliest {@link NEEDS_YOU_ROWS} rows — the earliest date first, past ones
  * included (the mockup's order; the set and the count are the queue's).
  *
  * @throws RangeError when a date cannot be formatted.
  */
-export function needsYouOf(queueRows: readonly ConflictRow[], count: number, today: string): NeedsYou {
+export function needsYouOf(queueRows: readonly QueueRow[], count: number, today: string): NeedsYou {
   const ordered = [...queueRows].sort(byDate);
   const past = ordered.filter((row) => row.past);
   const earliest = past[0];
@@ -435,19 +466,39 @@ export function needsYouOf(queueRows: readonly ConflictRow[], count: number, tod
     count,
     pastCount: past.length,
     earliestPast: earliest === undefined ? null : dayMonthOf(earliest.date),
-    rows: ordered.slice(0, NEEDS_YOU_ROWS).map((row) => ({
-      key: row.key,
-      memberId: row.memberId,
-      date: row.date,
-      teamId: row.teamId,
-      weekday: weekdayOf(row.date),
-      dayMonth: dayMonthOf(row.date),
-      shiftTypeName: row.shiftTypeName,
-      times: row.times,
-      teamName: row.teamName,
-      memberName: row.memberName,
-      badge: row.past ? BADGE_PAST : row.date === today ? BADGE_TODAY : null,
-    })),
+    rows: ordered.slice(0, NEEDS_YOU_ROWS).map((row): NeedsYouRow => {
+      const badge = row.past ? BADGE_PAST : row.date === today ? BADGE_TODAY : null;
+
+      if (row.kind === ITEM_REQUEST) {
+        return {
+          kind: ITEM_REQUEST,
+          key: row.key,
+          requestId: row.requestId,
+          date: row.date,
+          weekday: weekdayOf(row.date),
+          dayMonth: dayMonthOf(row.date),
+          memberName: row.memberName,
+          from: row.from,
+          to: row.to,
+          badge,
+        };
+      }
+
+      return {
+        kind: ITEM_COLLISION,
+        key: row.key,
+        memberId: row.memberId,
+        date: row.date,
+        teamId: row.teamId,
+        weekday: weekdayOf(row.date),
+        dayMonth: dayMonthOf(row.date),
+        shiftTypeName: row.shiftTypeName,
+        times: row.times,
+        teamName: row.teamName,
+        memberName: row.memberName,
+        badge,
+      };
+    }),
   };
 }
 
@@ -825,7 +876,7 @@ export function needsYouBadgeMessageKey(badge: NeedsYouBadge): 'danas.admin.need
 
 /** A row's shift: with its times, or its type alone. */
 export function needsYouShiftMessageKey(
-  row: Pick<NeedsYouRow, 'times'>,
+  row: Pick<NeedsYouCollisionRow, 'times'>,
 ): 'danas.admin.needsYou.shiftTimed' | 'danas.admin.needsYou.shift' {
   return row.times === null ? 'danas.admin.needsYou.shift' : 'danas.admin.needsYou.shiftTimed';
 }

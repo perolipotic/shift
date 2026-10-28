@@ -97,7 +97,10 @@ export const DEVICE_SNAPSHOT_THROTTLE_MS = 1000;
  *   - `shiftTypes`, `rotation` — `SHIFT_TYPES_LIST_KEY` and `ROTATION_KEY`,
  *     *Postavke rotacije*'s shift types and rotation builder (story 8.2d);
  *   - `my-leave-requests` — `MY_LEAVE_REQUESTS_KEY`, a member's own leave
- *     requests on *Godišnji* and the request form (story 9.3).
+ *     requests on *Godišnji* and the request form (story 9.3);
+ *   - `organization-leave-requests` — `ORGANIZATION_LEAVE_REQUESTS_KEY`, every
+ *     request of the organization, which *Za odluku*, its resolution page and
+ *     the admin's *Danas* read (story 9.5).
  */
 export const PERSISTED_KEY_ROOTS: readonly string[] = [
   'calendar',
@@ -118,6 +121,7 @@ export const PERSISTED_KEY_ROOTS: readonly string[] = [
   'shiftTypes',
   'rotation',
   'my-leave-requests',
+  'organization-leave-requests',
 ];
 
 /**

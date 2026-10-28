@@ -1047,3 +1047,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-9-4-an-admin-decides-a-leave-request.md`
   summary: The queue's saved-notice slot (`ResolutionSaved` in `features/conflicts/services/resolution-screen.ts`) now carries leave-request kinds, and `features/leave` imports a conflicts screen service to reach it; 9.5 and 12.x should move the slot to a neutral *Za odluku* home before adding more kinds.
   evidence: Raised by the 9.4 review (Blind Hunter). `FEATURE_PUBLIC` had to widen conflicts' public surface for `resolution-screen` and `resolved-conflicts`.
+
+## Deferred from: code review of spec-9-5-za-odluku-lists-requests-beside-collisions.md (2026-10-28)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-9-5-za-odluku-lists-requests-beside-collisions.md`
+  summary: An admin queue or Danas left open (or an installed PWA brought back to the foreground) never picks up a member's new or withdrawn request until the next in-app visit; requests are the first cross-session writes an admin must notice, so decide on refetch-on-focus, an interval, or realtime (Epic 10 may cover it).
+  evidence: Raised by the 9.5 review (Blind Hunter). `organizationLeaveRequestsQueryOptions` has `staleTime: 0`, but `refetchOnWindowFocus` is off app-wide and nothing polls.
+- source_spec: `_bmad-output/implementation-artifacts/spec-9-5-za-odluku-lists-requests-beside-collisions.md`
+  summary: The organization-wide request read has no window, so every request ever made is paged in, persisted on the device and parsed on each queue, Danas and resolution render; consider a window for closed requests or a pending-only read beside a bounded decided read.
+  evidence: Raised by the 9.5 review (Blind Hunter). Unlike `conflict_resolutions`, which end with their leave, requests are kept forever.

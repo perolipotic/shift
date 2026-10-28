@@ -7,8 +7,13 @@ import {
   REQUEST_APPROVAL_STALE,
   decideLeaveRequest,
   leaveRequestDecideFailureOf,
+  ORGANIZATION_LEAVE_REQUESTS_KEY,
   leaveRequestFoundOf,
   leaveRequestQueryOptions,
+  organizationLeaveRequestsOf,
+  organizationLeaveRequestsQueryOptions,
+  readOrganizationLeaveRequestRows,
+  type OrganizationLeaveRequestsTable,
   readLeaveRequestRows,
   type DecideLeaveRequestRpc,
   LEAVE_REQUESTS_COLUMNS,
@@ -298,8 +303,15 @@ describe('one request by its id (story 9.4)', () => {
         status: REQUEST_PENDING,
         closedAt: null,
         decision: null,
+        createdAt: null,
       },
     });
+    // Story 9.5: when it was sent, once the read answers it; anything that is not an instant cannot be trusted.
+    const sent = { ...rowOf(REQUEST, '2026-11-02', '2026-11-05'), created_at: '2026-10-19T07:00:00+00:00' };
+
+    expect(leaveRequestFoundOf([sent], REQUEST)?.request?.createdAt).toBe('2026-10-19T07:00:00+00:00');
+    expect(leaveRequestFoundOf([{ ...sent, created_at: 'never' }], REQUEST)).toBeNull();
+    expect(LEAVE_REQUEST_COLUMNS).toContain('created_at');
   });
 
   it('carries who decided and when for an approved or rejected request, as a list or as one object', () => {
@@ -393,6 +405,96 @@ describe('one request by its id (story 9.4)', () => {
     await expect(leaveRequestQueryOptions(() => throwing, REQUEST).queryFn?.({} as never)).rejects.toThrow(
       LEAVE_REQUESTS_UNAVAILABLE,
     );
+  });
+});
+
+describe("the organization's requests (story 9.5)", () => {
+  const DECIDED = '2026-10-20T08:15:00Z';
+
+  it('parses every request of every member with the decision screen\'s parse, soonest first', () => {
+    const rows = [
+      rowOf('req-later', '2026-11-10', '2026-11-12', { memberId: 'member-2' }),
+      rowOf('req-approved', '2026-11-02', '2026-11-05', {
+        closedAt: DECIDED,
+        decisions: [{ outcome: 'approved', decided_by: 'admin-auth', decided_at: DECIDED }],
+      }),
+      rowOf('req-withdrawn', '2026-11-03', '2026-11-04', { closedAt: DECIDED }),
+    ];
+    const requests = organizationLeaveRequestsOf(rows);
+
+    expect(requests?.map((request) => [request.id, request.memberId, request.status])).toEqual([
+      ['req-approved', MEMBER, REQUEST_APPROVED],
+      ['req-withdrawn', MEMBER, REQUEST_WITHDRAWN],
+      ['req-later', 'member-2', REQUEST_PENDING],
+    ]);
+    expect(requests?.[0]?.decision).toEqual({ outcome: REQUEST_APPROVED, decidedBy: 'admin-auth', decidedAt: DECIDED });
+    expect(requests?.[0]).toMatchObject({ from: '2026-11-02', to: '2026-11-04' });
+  });
+
+  it.each([
+    ['two rows of one id', [rowOf('r', '2026-11-02', '2026-11-05'), rowOf('r', '2026-11-10', '2026-11-12')]],
+    ['no id', [{ ...rowOf('r', '2026-11-02', '2026-11-05'), id: null }]],
+    ['a range that does not parse', [{ ...rowOf('r', '2026-11-02', '2026-11-05'), during: 'x' }]],
+    ['a decision without its author', [rowOf('r', '2026-11-02', '2026-11-05', { closedAt: DECIDED, decisions: [{ outcome: 'rejected', decided_at: DECIDED }] })]],
+    ['a row that is not a request', [null]],
+  ])('cannot be trusted with %s: the whole answer, never a partial list', (_name, rows) => {
+    expect(organizationLeaveRequestsOf(rows)).toBeNull();
+  });
+
+  function pagedTable(pages: readonly unknown[]): OrganizationLeaveRequestsTable & { calls: unknown[] } {
+    const calls: unknown[] = [];
+    let page = 0;
+    const query = {
+      order: (column: string, options: { readonly ascending: boolean }) => {
+        calls.push(['order', column, options.ascending]);
+
+        return query;
+      },
+      range: (from: number, to: number) => {
+        calls.push(['range', from, to]);
+
+        return Promise.resolve(pages[page++]) as never;
+      },
+    };
+
+    return {
+      calls,
+      select: (columns, options) => {
+        calls.push(['select', columns, options.count]);
+
+        return query;
+      },
+    };
+  }
+
+  it('selects every request with its decision, ordered by id, counted exactly, under its own key', async () => {
+    const rows = [rowOf('r', '2026-11-02', '2026-11-05')];
+    const table = pagedTable([{ data: rows, error: null, count: 1 }]);
+
+    expect(await readOrganizationLeaveRequestRows(table)).toEqual({ ok: true, rows });
+    expect(table.calls).toEqual([
+      ['select', LEAVE_REQUEST_COLUMNS, 'exact'],
+      ['order', 'id', true],
+      ['range', 0, 999],
+    ]);
+    expect(organizationLeaveRequestsQueryOptions(() => table).queryKey).toEqual(ORGANIZATION_LEAVE_REQUESTS_KEY);
+    expect(ORGANIZATION_LEAVE_REQUESTS_KEY).toEqual(['organization-leave-requests']);
+  });
+
+  it('is unavailable when the read fails or its count disagrees, and the query rejects with the code', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    expect(await readOrganizationLeaveRequestRows(pagedTable([{ data: null, error: { code: '42501' }, count: null }]))).toEqual({
+      ok: false,
+      code: LEAVE_REQUESTS_UNAVAILABLE,
+    });
+    expect(await readOrganizationLeaveRequestRows(pagedTable([{ data: [], error: null, count: 2 }]))).toEqual({
+      ok: false,
+      code: LEAVE_REQUESTS_UNAVAILABLE,
+    });
+    await expect(
+      organizationLeaveRequestsQueryOptions(() => pagedTable([{ data: null, error: { code: 'x' }, count: null }])).queryFn?.({} as never),
+    ).rejects.toThrow(LEAVE_REQUESTS_UNAVAILABLE);
   });
 });
 

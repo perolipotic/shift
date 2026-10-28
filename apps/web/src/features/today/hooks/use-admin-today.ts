@@ -19,6 +19,12 @@ import {
   organizationLeaveRecordsQueryOptions,
   type OrganizationLeaveRecordsTable,
 } from '@/features/leave/services/leave-list';
+import {
+  LEAVE_REQUESTS_TABLE,
+  ORGANIZATION_LEAVE_REQUESTS_KEY,
+  organizationLeaveRequestsQueryOptions,
+  type OrganizationLeaveRequestsTable,
+} from '@/features/leave/services/leave-requests';
 import { MEMBER_ROLE_KEY } from '@/features/navigation/services/role';
 import type { MemberRole } from '@/features/navigation/utils/destinations';
 import { ADMIN_TODAY_UNAVAILABLE, adminTodayOf } from '@/features/today/services/admin-today';
@@ -56,13 +62,15 @@ export function useTodayRole(snapshotRole: MemberRole | null): MemberRole | null
  * every decision is `@/features/today/services/admin-today`'s, which the node
  * suite executes.
  *
- * *ZA ODLUKU*'S THREE READS (AD-13), through the queue's own query options:
+ * *ZA ODLUKU*'S FOUR READS (AD-13), through the queue's own query options:
  * the calendar snapshot under `CALENDAR_KEY`, the organization's live leave
- * under `ORGANIZATION_LEAVE_RECORDS_KEY` and its live resolutions under
- * `ORGANIZATION_CONFLICT_RESOLUTIONS_KEY`. One cache entry per key, shared
- * with *Za odluku* and *Kalendar*; a decision saved there re-reads them, and
- * the count here changes only then. No figure is optimistic, and nothing is
- * stored: the screen is derived from the three answers at every minute.
+ * under `ORGANIZATION_LEAVE_RECORDS_KEY`, its live resolutions under
+ * `ORGANIZATION_CONFLICT_RESOLUTIONS_KEY` and its leave requests under
+ * `ORGANIZATION_LEAVE_REQUESTS_KEY` (story 9.5). One cache entry per key,
+ * shared with *Za odluku* and *Kalendar*; a decision saved there — or a
+ * request sent or withdrawn — re-reads them, and the count here changes only
+ * then. No figure is optimistic, and nothing is stored: the screen is
+ * derived from the four answers at every minute.
  *
  * NOT `useConflictsQueue`, which steps the router's state for *Za odluku*'s
  * status line.
@@ -88,6 +96,11 @@ export function useAdminToday() {
       () => supabaseClient().from(CONFLICT_RESOLUTIONS_TABLE) as unknown as OrganizationConflictResolutionsTable,
     ),
   );
+  const requestsRead = useQuery(
+    organizationLeaveRequestsQueryOptions(
+      () => supabaseClient().from(LEAVE_REQUESTS_TABLE) as unknown as OrganizationLeaveRequestsTable,
+    ),
+  );
   // The page's role, as `useToday` reads it: an admin's, while this body is mounted.
   const pageRole = useTodayRole(calendarRead.data === undefined ? null : calendarRead.data.viewer.role);
   const { clock, answerOf } = useSnapshotFreshness(
@@ -96,12 +109,14 @@ export function useAdminToday() {
       [CALENDAR_KEY, calendarRead],
       [ORGANIZATION_LEAVE_RECORDS_KEY, recordsRead],
       [ORGANIZATION_CONFLICT_RESOLUTIONS_KEY, resolutionsRead],
+      [ORGANIZATION_LEAVE_REQUESTS_KEY, requestsRead],
     ],
     ZONE_FROM_CALENDAR,
   );
   const calendar = answerOf(calendarRead);
   const records = answerOf(recordsRead);
   const resolutions = answerOf(resolutionsRead);
+  const requests = answerOf(requestsRead);
   const calendarState = calendarSurfaceStateOf(calendar);
   const snapshot = calendarState.snapshot;
   const refusal = calendarState.refusal;
@@ -119,9 +134,14 @@ export function useAdminToday() {
   const resolutionsIsError = resolutions.isError;
   const resolutionsIsPending = resolutions.isPending;
   const resolutionsFetchStatus = resolutions.fetchStatus;
+  const requestRows = requests.data;
+  const requestsIsError = requests.isError;
+  const requestsIsPending = requests.isPending;
+  const requestsFetchStatus = requests.fetchStatus;
 
   // As the queue: a row naming a member or team the snapshot does not hold yet re-reads it once.
-  useSnapshotSkewRefresh(snapshotSkewOf(snapshot, rows, resolutionRows));
+  // STORY 9.5: a request row naming a member the snapshot does not hold yet too.
+  useSnapshotSkewRefresh(snapshotSkewOf(snapshot, rows, resolutionRows, requestRows));
   // Derived once per answer and per minute, not on every render: the
   // collisions walk every record, and the week draws up to two months.
   const adminToday = useMemo(
@@ -135,6 +155,12 @@ export function useAdminToday() {
             isError: resolutionsIsError,
             isPending: resolutionsIsPending,
             fetchStatus: resolutionsFetchStatus,
+          },
+          requests: {
+            data: requestRows,
+            isError: requestsIsError,
+            isPending: requestsIsPending,
+            fetchStatus: requestsFetchStatus,
           },
           snapshotFetching,
         },
@@ -152,6 +178,10 @@ export function useAdminToday() {
       resolutionsIsError,
       resolutionsIsPending,
       resolutionsFetchStatus,
+      requestRows,
+      requestsIsError,
+      requestsIsPending,
+      requestsFetchStatus,
       snapshotFetching,
       now,
     ],
@@ -159,7 +189,12 @@ export function useAdminToday() {
 
   /** Read again every read the screen stands on, from the unavailable alert's retry. */
   function retry(): void {
-    for (const queryKey of [CALENDAR_KEY, ORGANIZATION_LEAVE_RECORDS_KEY, ORGANIZATION_CONFLICT_RESOLUTIONS_KEY]) {
+    for (const queryKey of [
+      CALENDAR_KEY,
+      ORGANIZATION_LEAVE_RECORDS_KEY,
+      ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
+      ORGANIZATION_LEAVE_REQUESTS_KEY,
+    ]) {
       void queryClient.invalidateQueries({ queryKey });
     }
   }

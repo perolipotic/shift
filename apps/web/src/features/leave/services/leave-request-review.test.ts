@@ -24,6 +24,7 @@ import {
 import {
   LEAVE_REQUEST_ROOT_KEY,
   MY_LEAVE_REQUESTS_KEY,
+  ORGANIZATION_LEAVE_REQUESTS_KEY,
   REQUEST_APPROVAL_STALE,
   REQUEST_APPROVED,
   REQUEST_REJECTED,
@@ -408,7 +409,11 @@ describe('what a decision re-reads, besides the request itself', () => {
   });
 
   it('is, for a rejection, the request keys alone', () => {
-    expect(decisionRefreshKeysOf(REQUEST_REJECTED, VIEWER_MEMBER)).toEqual([MY_LEAVE_REQUESTS_KEY, LEAVE_REQUEST_ROOT_KEY]);
+    expect(decisionRefreshKeysOf(REQUEST_REJECTED, VIEWER_MEMBER)).toEqual([
+      MY_LEAVE_REQUESTS_KEY,
+      LEAVE_REQUEST_ROOT_KEY,
+      ORGANIZATION_LEAVE_REQUESTS_KEY,
+    ]);
   });
 
   it('is, for a request no longer pending, an approval\'s: another admin may have approved it', () => {
@@ -419,6 +424,7 @@ describe('what a decision re-reads, besides the request itself', () => {
     expect(decisionRefreshKeysOf(REQUEST_APPROVAL_STALE, VIEWER_MEMBER)).toEqual([
       MY_LEAVE_REQUESTS_KEY,
       LEAVE_REQUEST_ROOT_KEY,
+      ORGANIZATION_LEAVE_REQUESTS_KEY,
       LEAVE_RECORDS_KEY(VIEWER_MEMBER),
     ]);
     expect(decisionRefreshKeysOf(REQUEST_DENIED, VIEWER_MEMBER)).toEqual([]);

@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { readCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
-import { conflictsQueueOutcomeOf } from '@/features/conflicts/services/conflicts-queue';
+import { ITEM_COLLISION, ITEM_REQUEST, conflictsQueueOutcomeOf } from '@/features/conflicts/services/conflicts-queue';
 import {
   ACTING_ADMINS_COLUMNS,
   ACTING_ADMINS_PAGE_ROWS,
@@ -16,6 +16,7 @@ import {
   resolvedConflictsOf,
   resolvedConflictsOutcomeOf,
   tabAfterKey,
+  type ResolvedConflictRow,
   type ResolvedConflictsView,
 } from '@/features/conflicts/services/resolved-conflicts';
 import { initLocalization, t } from '@/lib/i18n';
@@ -115,16 +116,21 @@ const ACTORS: readonly Row[] = [
   { auth_user_id: '00000000-0000-4000-8000-0000000000a9', name: 'Iva Ivić' },
 ];
 
+/** The tab over no leave requests: every row a resolved conflict. */
 function viewOf(
   snapshot: CalendarSnapshot,
   resolutionRows: readonly unknown[],
   actorRows: readonly unknown[] = ACTORS,
-): ResolvedConflictsView {
-  const outcome = resolvedConflictsOutcomeOf(snapshot, [WORKED], resolutionRows, actorRows);
+): { readonly rows: readonly ResolvedConflictRow[] } {
+  const outcome = resolvedConflictsOutcomeOf(snapshot, [WORKED], resolutionRows, actorRows, []);
 
   if (!outcome.ok) throw new Error(outcome.code);
 
-  return outcome.view;
+  const rows = outcome.view.rows.filter((row): row is ResolvedConflictRow => row.item === ITEM_COLLISION);
+
+  expect(rows).toHaveLength(outcome.view.rows.length);
+
+  return { rows };
 }
 
 let pilot: CalendarSnapshot;
@@ -210,7 +216,7 @@ describe('the shift type a decision was made on (0038)', () => {
   it('does not list a decision made on another shift type: its conflict is back in the queue (dormant-key revival)', () => {
     // 11.09 is Noć today; the decision was stored on Dan.
     const rows = [resolutionOf('2026-09-11', a, '2026-09-02T09:30:00+00:00', { type: 'pilot-dan' })];
-    const queue = conflictsQueueOutcomeOf(pilot, [WORKED], rows, '2026-09-01');
+    const queue = conflictsQueueOutcomeOf(pilot, [WORKED], rows, '2026-09-01', []);
 
     if (!queue.ok) throw new Error(queue.code);
 
@@ -237,7 +243,7 @@ describe('the list', () => {
 
   it('is exactly the queue complement: a conflict is in one tab only', () => {
     const rows = [resolutionOf('2026-09-11', a, '2026-09-02T09:30:00+00:00')];
-    const queue = conflictsQueueOutcomeOf(pilot, [WORKED], rows, '2026-09-01');
+    const queue = conflictsQueueOutcomeOf(pilot, [WORKED], rows, '2026-09-01', []);
 
     if (!queue.ok) throw new Error(queue.code);
 
@@ -250,7 +256,7 @@ describe('the list', () => {
       calendarRosterOverrideRow('ro-ana', a, '2026-09-11', null, ANA, { createdAt: '2019-01-01T00:00:00+00:00' }),
     ]);
     const rows = [resolutionOf('2026-09-11', a, '2026-09-02T09:30:00+00:00', { kind: 'replace_member', link: 'ro-ana' })];
-    const queue = conflictsQueueOutcomeOf(snapshot, [WORKED], rows, '2026-09-01');
+    const queue = conflictsQueueOutcomeOf(snapshot, [WORKED], rows, '2026-09-01', []);
 
     if (!queue.ok) throw new Error(queue.code);
 
@@ -264,15 +270,15 @@ describe('refusals', () => {
     const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const bare: Row = { member_id: VIEWER_MEMBER, date: '2026-09-11', team_id: a, kind: 'accept_uncovered', roster_override_id: null };
 
-    expect(resolvedConflictsOutcomeOf(pilot, [WORKED], [bare], ACTORS)).toEqual({ ok: false, code: RESOLVED_UNAVAILABLE });
-    expect(resolvedConflictsOutcomeOf(pilot, [WORKED], [{ ...bare, created_at: 'never', created_by: ADMIN_AUTH }], ACTORS).ok).toBe(false);
+    expect(resolvedConflictsOutcomeOf(pilot, [WORKED], [bare], ACTORS, [])).toEqual({ ok: false, code: RESOLVED_UNAVAILABLE });
+    expect(resolvedConflictsOutcomeOf(pilot, [WORKED], [{ ...bare, created_at: 'never', created_by: ADMIN_AUTH }], ACTORS, []).ok).toBe(false);
     expect(logged).toHaveBeenCalled();
   });
 
   it('refuses the tab on an unreadable resolution row', () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    expect(resolvedConflictsOutcomeOf(pilot, [WORKED], ['junk'], ACTORS).ok).toBe(false);
+    expect(resolvedConflictsOutcomeOf(pilot, [WORKED], ['junk'], ACTORS, []).ok).toBe(false);
   });
 });
 
@@ -284,7 +290,7 @@ describe('the reads', () => {
     data,
     ...extra,
   });
-  const ready = { records: answer([WORKED]), resolutions: answer([]), actors: answer(ACTORS) };
+  const ready = { records: answer([WORKED]), resolutions: answer([]), requests: answer([]), actors: answer(ACTORS) };
 
   it('is loading until the names are read, and unavailable when any read failed', () => {
     const calendar = { snapshot: pilot, loading: false, refusal: null } as never;
@@ -295,6 +301,16 @@ describe('the reads', () => {
     expect(resolvedConflictsOf({ ...ready, calendar, actors: answer(undefined, { isError: true, isPending: false }) }).kind).toBe(
       RESOLVED_UNAVAILABLE,
     );
+  });
+
+  it('is loading until the requests are read, and unavailable when that read failed (story 9.5)', () => {
+    const calendar = { snapshot: pilot, loading: false, refusal: null } as never;
+
+    expect(resolvedConflictsOf({ ...ready, calendar, requests: answer(undefined) }).kind).toBe(RESOLVED_LOADING);
+    expect(resolvedConflictsOf({ ...ready, calendar, requests: answer(undefined, { isError: true, isPending: false }) }).kind).toBe(
+      RESOLVED_UNAVAILABLE,
+    );
+    expect(resolvedConflictsOf({ ...ready, calendar, requests: answer([], { fetchStatus: 'paused' }) }).kind).toBe(RESOLVED_UNAVAILABLE);
   });
 
   it('is unavailable, unlogged, for a resolution newer than the snapshot, and loading while it is read again (E765)', () => {
@@ -349,5 +365,87 @@ describe('the tabs', () => {
     expect(t('zaOdluku.tabs.unresolved')).toBe('Čeka odluku');
     expect(t('zaOdluku.tabs.resolved')).toBe('Odlučeno');
     expect(t('zaOdluku.tabs.unresolvedCount', { count: 0 })).toBe('Čeka odluku · 0');
+  });
+});
+
+describe('decided leave requests beside resolved conflicts (story 9.5)', () => {
+  /** A request row as `leave_requests` answers it, with its decision embedded. */
+  function requestOf(
+    id: string,
+    { closedAt = null as string | null, outcome = null as string | null, by = ADMIN_AUTH, at = '2026-09-02T10:00:00+00:00', memberId = ANA } = {},
+  ): Row {
+    return {
+      id,
+      member_id: memberId,
+      during: '[2026-10-05,2026-10-10)',
+      closed_at: closedAt,
+      leave_request_decisions: outcome === null ? [] : [{ outcome, decided_by: by, decided_at: at }],
+    };
+  }
+
+  function fullViewOf(resolutionRows: readonly unknown[], requestRows: readonly unknown[]): ResolvedConflictsView {
+    const outcome = resolvedConflictsOutcomeOf(pilot, [WORKED], resolutionRows, ACTORS, requestRows);
+
+    if (!outcome.ok) throw new Error(outcome.code);
+
+    return outcome.view;
+  }
+
+  it('lists an approved and a rejected request beside the resolved conflicts, newest decision first', () => {
+    const view = fullViewOf(
+      [resolutionOf('2026-09-11', a, '2026-09-02T09:30:00+00:00')],
+      [
+        requestOf('req-approved', { closedAt: '2026-09-02T10:00:00+00:00', outcome: 'approved', at: '2026-09-02T10:00:00+00:00' }),
+        requestOf('req-rejected', { closedAt: '2026-09-02T08:00:00+00:00', outcome: 'rejected', at: '2026-09-02T08:00:00+00:00', by: GONE_AUTH }),
+      ],
+    );
+
+    expect(view.rows.map((row) => row.key)).toEqual(['request:req-approved', expect.any(String), 'request:req-rejected']);
+    expect(view.rows[0]).toEqual({
+      item: ITEM_REQUEST,
+      key: 'request:req-approved',
+      outcome: 'approved',
+      dateShown: '05.10.2026',
+      memberName: 'Ana Anić',
+      from: '05.10.2026',
+      to: '09.10.2026',
+      actorName: 'Damir Dekanić',
+      decidedOn: '02.09.2026',
+      decidedAt: '12:00',
+    });
+    expect(view.rows[1]?.item).toBe(ITEM_COLLISION);
+    expect(view.rows[2]).toMatchObject({ item: ITEM_REQUEST, outcome: 'rejected', actorName: null });
+    expect(t('godisnji.request.status.approved')).toBe('Odobren');
+    expect(t('godisnji.request.status.rejected')).toBe('Odbijen');
+    expect(t('zaOdluku.resolved.decided', { actor: 'Damir Dekanić', date: '02.09.2026', time: '12:00' })).toBe(
+      'Odluka: Damir Dekanić, 02.09.2026 u 12:00',
+    );
+  });
+
+  it('lists neither a pending nor a withdrawn request', () => {
+    expect(fullViewOf([], [requestOf('req-pending'), requestOf('req-withdrawn', { closedAt: '2026-09-02T08:00:00+00:00' })]).rows).toEqual([]);
+  });
+
+  it('Stale snapshot: a request of a member the snapshot does not hold yet is a skew — unavailable, unlogged, loading while it is read again', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const answer = (data: readonly unknown[]) => ({ isPending: false, isError: false, fetchStatus: 'idle', data });
+    const sources = {
+      calendar: { snapshot: pilot, loading: false, refusal: null },
+      records: answer([WORKED]),
+      resolutions: answer([]),
+      actors: answer(ACTORS),
+      requests: answer([requestOf('req-1', { closedAt: '2026-09-02T08:00:00+00:00', outcome: 'approved', memberId: 'newer-member' })]),
+    };
+
+    expect(resolvedConflictsOf(sources).kind).toBe(RESOLVED_UNAVAILABLE);
+    expect(resolvedConflictsOf({ ...sources, snapshotFetching: true }).kind).toBe(RESOLVED_LOADING);
+    expect(logged).not.toHaveBeenCalled();
+  });
+
+  it('refuses the whole tab, logged, on a request row that cannot be trusted', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    expect(resolvedConflictsOutcomeOf(pilot, [WORKED], [], ACTORS, [{ id: 'req-1' }])).toEqual({ ok: false, code: RESOLVED_UNAVAILABLE });
+    expect(logged).toHaveBeenCalled();
   });
 });

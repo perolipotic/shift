@@ -4,10 +4,22 @@ import { collisionKeyOf, scheduledShiftTypeOn } from '@shift/domain';
 import type { CalendarSnapshot, CalendarSurfaceState } from '@/features/calendar/services/snapshot';
 import { unknownSnapshotIdsOf } from '@/features/calendar/services/snapshot-skew';
 import { overrideStandingOfCalendar, typeRangeOn, workingShiftTypeIdsOf } from '@/features/calendar/utils/month';
-import { liveResolutionsOf, queueReadFailed, type LeaveRowsAnswer } from '@/features/conflicts/services/conflicts-queue';
+import {
+  ITEM_COLLISION,
+  ITEM_REQUEST,
+  liveResolutionsOf,
+  queueReadFailed,
+  type LeaveRowsAnswer,
+} from '@/features/conflicts/services/conflicts-queue';
 import { effectiveResolutionsOf } from '@/features/conflicts/services/replacement-effect';
 import { REPLACE_MEMBER, type ConflictResolutionKind } from '@/features/conflicts/services/resolutions';
 import { organizationLeaveRecordsOf } from '@/features/leave/services/leave-list';
+import {
+  REQUEST_APPROVED,
+  REQUEST_REJECTED,
+  organizationLeaveRequestsOf,
+} from '@/features/leave/services/leave-requests';
+import { leaveRangeValuesOf } from '@/features/leave/services/leave-section';
 import { formatDate, formatIsoDate, formatTime } from '@/lib/i18n/format';
 
 /**
@@ -35,12 +47,20 @@ import { formatDate, formatIsoDate, formatTime } from '@/lib/i18n/format';
  * no member left (deleted) has `actorName` `null`, which the screen says in
  * words.
  *
+ * DECIDED LEAVE REQUESTS BESIDE THEM (story 9.5): every approved or rejected
+ * request of the organization, from the queue's own request read, with its
+ * outcome, member, range, and the deciding admin and instant its decision row
+ * stores (`decided_by`, `decided_at`). A withdrawn request was never decided
+ * and is not listed; a pending one waits on *Čeka odluku*. Still a read of
+ * stored decisions only — never a history.
+ *
  * ORDER: most recently decided first, by the instant, then by key.
  * NEVER A PARTIAL LIST, as the queue's: an untrustworthy row refuses the tab.
  */
 
 /** One resolved conflict as the tab shows it. */
 export interface ResolvedConflictRow {
+  readonly item: typeof ITEM_COLLISION;
   /** `collisionKeyOf`'s key: unique per row. */
   readonly key: string;
   readonly kind: ConflictResolutionKind;
@@ -66,8 +86,36 @@ export interface ResolvedConflictRow {
   readonly decidedAt: string;
 }
 
+/** One decided leave request as the tab shows it (story 9.5). */
+export interface ResolvedRequestRow {
+  readonly item: typeof ITEM_REQUEST;
+  /** `request:` and the request's id: unique per row, and never a collision's key. */
+  readonly key: string;
+  readonly outcome: typeof REQUEST_APPROVED | typeof REQUEST_REJECTED;
+  /** The range's first day, `05.10.2026`: the row's leading date, as a resolved conflict's. */
+  readonly dateShown: string;
+  /**
+   * The member's name; null (`memberGone`) only for a row parsed without the
+   * skew check. A member the snapshot does not hold yet is a skew between the
+   * reads (`unknownSnapshotIdsOf`), loading or unavailable, never drawn as gone.
+   */
+  readonly memberName: string | null;
+  /** The requested range, as the member's leave card writes it. */
+  readonly from: string;
+  readonly to: string;
+  /** The deciding admin's name, or `null` when they are no longer a member. */
+  readonly actorName: string | null;
+  /** `12.09.2026`, in the organization's zone. */
+  readonly decidedOn: string;
+  /** `19:00`, in the organization's zone. */
+  readonly decidedAt: string;
+}
+
+/** One entry of *Odlučeno*: a resolved conflict or a decided request (story 9.5). */
+export type ResolvedRow = ResolvedConflictRow | ResolvedRequestRow;
+
 export interface ResolvedConflictsView {
-  readonly rows: readonly ResolvedConflictRow[];
+  readonly rows: readonly ResolvedRow[];
 }
 
 /** One page of the names read, `members(auth_user_id,name)`, named structurally so it can be stubbed. */
@@ -162,8 +210,59 @@ function rowsByKeyOf(rows: readonly unknown[]): ReadonlyMap<string, Record<strin
 }
 
 /**
- * The tab from the snapshot, the leave rows, the resolution rows and the
- * member rows as read.
+ * The decided requests among the request rows as read (story 9.5), each with
+ * its instant, named from the snapshot and the acting admins.
+ *
+ * @throws RangeError when a request row cannot be trusted, or a decision's instant is not one.
+ */
+function decidedRequestsOf(
+  snapshot: CalendarSnapshot,
+  requestRows: readonly unknown[],
+  actors: ReadonlyMap<string, string>,
+): readonly { readonly at: number; readonly shown: ResolvedRequestRow }[] {
+  const requests = organizationLeaveRequestsOf(requestRows);
+
+  if (requests === null) throw new RangeError('a leave request row cannot be trusted');
+
+  const members = new Map(snapshot.members.map((member) => [member.id, member.name]));
+
+  return requests.flatMap((request) => {
+    const decision = request.decision;
+
+    if (decision === null) return [];
+
+    const decidedAt = new Date(decision.decidedAt);
+
+    if (Number.isNaN(decidedAt.getTime())) throw new RangeError(`request ${request.id} has no valid instant`);
+
+    const range = leaveRangeValuesOf(request);
+    const dateShown = formatIsoDate(request.from);
+
+    if (dateShown === null) throw new RangeError(`the date ${request.from} cannot be formatted`);
+
+    return [
+      {
+        at: decidedAt.getTime(),
+        shown: {
+          item: ITEM_REQUEST,
+          key: `request:${request.id}`,
+          outcome: decision.outcome,
+          dateShown,
+          memberName: members.get(request.memberId) ?? null,
+          from: range.from,
+          to: range.to,
+          actorName: actors.get(decision.decidedBy) ?? null,
+          decidedOn: formatDate(decidedAt, snapshot.timeZone),
+          decidedAt: formatTime(decidedAt, snapshot.timeZone),
+        },
+      },
+    ];
+  });
+}
+
+/**
+ * The tab from the snapshot, the leave rows, the resolution rows, the
+ * member rows and the request rows as read.
  *
  * @throws RangeError when a row cannot be trusted, a resolution lacks its
  *   instant or author, or on any precondition of the derivation.
@@ -173,6 +272,7 @@ export function resolvedConflictsViewOf(
   leaveRows: readonly unknown[],
   resolutionRows: readonly unknown[],
   actorRows: readonly unknown[],
+  requestRows: readonly unknown[],
 ): ResolvedConflictsView {
   const records = organizationLeaveRecordsOf(
     leaveRows,
@@ -224,6 +324,7 @@ export function resolvedConflictsViewOf(
     const replacementId = link?.memberInId ?? null;
 
     const shown: ResolvedConflictRow = {
+      item: ITEM_COLLISION,
       key,
       kind: resolution.kind,
       dateShown,
@@ -239,10 +340,14 @@ export function resolvedConflictsViewOf(
 
     return { at: createdAt.getTime(), shown };
   });
+  const all: { readonly at: number; readonly shown: ResolvedRow }[] = [
+    ...entries,
+    ...decidedRequestsOf(snapshot, requestRows, actors),
+  ];
 
-  entries.sort((first, second) => second.at - first.at || (first.shown.key < second.shown.key ? -1 : 1));
+  all.sort((first, second) => second.at - first.at || (first.shown.key < second.shown.key ? -1 : 1));
 
-  return { rows: entries.map((entry) => entry.shown) };
+  return { rows: all.map((entry) => entry.shown) };
 }
 
 /** *Čeka odluku*, the default and the queue itself. */
@@ -313,9 +418,10 @@ export function resolvedConflictsOutcomeOf(
   leaveRows: readonly unknown[],
   resolutionRows: readonly unknown[],
   actorRows: readonly unknown[],
+  requestRows: readonly unknown[],
 ): ResolvedConflictsOutcome {
   try {
-    return { ok: true, view: resolvedConflictsViewOf(snapshot, leaveRows, resolutionRows, actorRows) };
+    return { ok: true, view: resolvedConflictsViewOf(snapshot, leaveRows, resolutionRows, actorRows, requestRows) };
   } catch (cause) {
     if (!(cause instanceof RangeError)) throw cause;
 
@@ -330,11 +436,13 @@ export type ResolvedConflicts =
   | { readonly kind: typeof RESOLVED_UNAVAILABLE }
   | { readonly kind: typeof RESOLVED_READY; readonly view: ResolvedConflictsView };
 
-/** The four reads the tab stands on. */
+/** The five reads the tab stands on. */
 export interface ResolvedConflictsSources {
   readonly calendar: CalendarSurfaceState;
   readonly records: LeaveRowsAnswer;
   readonly resolutions: LeaveRowsAnswer;
+  /** The organization's leave requests (story 9.5): the decided ones are listed. */
+  readonly requests: LeaveRowsAnswer;
   readonly actors: LeaveRowsAnswer;
   /** Whether the calendar snapshot is being read again: a skew then waits for it, as the queue's. */
   readonly snapshotFetching?: boolean;
@@ -347,25 +455,32 @@ export interface ResolvedConflictsSources {
  * again, otherwise unavailable with its retry, never logged.
  */
 export function resolvedConflictsOf(sources: ResolvedConflictsSources): ResolvedConflicts {
-  const { calendar, records, resolutions, actors } = sources;
+  const { calendar, records, resolutions, requests, actors } = sources;
   const failed =
     calendar.refusal !== null ||
     (!calendar.loading && calendar.snapshot === null) ||
     queueReadFailed(records) ||
     queueReadFailed(resolutions) ||
+    queueReadFailed(requests) ||
     queueReadFailed(actors);
 
   if (failed) return { kind: RESOLVED_UNAVAILABLE };
 
-  if (calendar.snapshot === null || records.data === undefined || resolutions.data === undefined || actors.data === undefined) {
+  if (
+    calendar.snapshot === null ||
+    records.data === undefined ||
+    resolutions.data === undefined ||
+    requests.data === undefined ||
+    actors.data === undefined
+  ) {
     return { kind: RESOLVED_LOADING };
   }
 
-  if (unknownSnapshotIdsOf(calendar.snapshot, records.data, resolutions.data).length > 0) {
+  if (unknownSnapshotIdsOf(calendar.snapshot, records.data, resolutions.data, requests.data).length > 0) {
     return sources.snapshotFetching === true ? { kind: RESOLVED_LOADING } : { kind: RESOLVED_UNAVAILABLE };
   }
 
-  const outcome = resolvedConflictsOutcomeOf(calendar.snapshot, records.data, resolutions.data, actors.data);
+  const outcome = resolvedConflictsOutcomeOf(calendar.snapshot, records.data, resolutions.data, actors.data, requests.data);
 
   return outcome.ok ? { kind: RESOLVED_READY, view: outcome.view } : { kind: RESOLVED_UNAVAILABLE };
 }

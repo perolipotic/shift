@@ -15,6 +15,9 @@ import {
 } from '@/lib/offline/freshness';
 import {
   CONFLICTS_READY,
+  ITEM_COLLISION,
+  ITEM_REQUEST,
+  collisionRowsOf,
   conflictsQueueOf,
   type ConflictsQueueSources,
   type LeaveRowsAnswer,
@@ -204,10 +207,11 @@ function sourcesOf(
   snapshot: CalendarSnapshot,
   rows: readonly unknown[],
   resolutionRows: readonly unknown[] = [],
+  requestRows: readonly unknown[] = [],
 ): ConflictsQueueSources {
   const calendar: CalendarSurfaceState = { snapshot, refusal: null, loading: false };
 
-  return { calendar, records: answered(rows), resolutions: answered(resolutionRows) };
+  return { calendar, records: answered(rows), resolutions: answered(resolutionRows), requests: answered(requestRows) };
 }
 
 /** The ready view, as the hook builds it. */
@@ -314,6 +318,82 @@ describe('Treba tebe', () => {
     expect(viewOf(pilot, SEVEN).needsYou.count).toBe(7);
     expect(viewOf(pilot, SEVEN, resolved).needsYou.count).toBe(6);
     expect(queueCountOf(pilot, SEVEN, resolved)).toBe(6);
+  });
+
+  describe('pending leave requests (story 9.5)', () => {
+    /** A pending request row as `leave_requests` answers it: both days included. */
+    const requestOf = (id: string, memberId: string, from: string, to: string): Row => ({
+      id,
+      member_id: memberId,
+      during: `[${from},${nextIsoDate(to) ?? to})`,
+      closed_at: null,
+      leave_request_decisions: [],
+    });
+    const shownOf = (rows: readonly unknown[], requestRows: readonly unknown[]) => {
+      const shown = adminTodayOf(sourcesOf(pilot, rows, [], requestRows), AT_1420);
+
+      if (shown.kind !== ADMIN_TODAY_READY) throw new Error(shown.kind);
+
+      return shown.view.needsYou;
+    };
+
+    it('Mixed: counts requests with the collisions, the same count as the queue, and lists them by date', () => {
+      const requests = [requestOf('req-past', ANA, '2026-09-28', '2026-09-29'), requestOf('req-later', BRUNO, '2026-10-20', '2026-10-21')];
+      const needsYou = shownOf(SEVEN, requests);
+      const queue = conflictsQueueOf(sourcesOf(pilot, SEVEN, [], requests), AT_1420);
+
+      if (queue.kind !== CONFLICTS_READY) throw new Error(queue.kind);
+
+      expect(needsYou.count).toBe(9);
+      expect(needsYou.count).toBe(queue.view.count);
+      // The past share and its earliest date count both kinds.
+      expect([needsYou.pastCount, needsYou.earliestPast]).toEqual([2, '28.09.']);
+      expect(needsYou.rows.map((row) => [row.kind, row.date, row.badge])).toEqual([
+        [ITEM_REQUEST, '2026-09-28', BADGE_PAST],
+        [ITEM_COLLISION, '2026-09-30', BADGE_PAST],
+        [ITEM_COLLISION, '2026-10-01', BADGE_TODAY],
+      ]);
+      expect(needsYou.rows[0]).toEqual({
+        kind: ITEM_REQUEST,
+        key: 'request:req-past',
+        requestId: 'req-past',
+        date: '2026-09-28',
+        weekday: 'ponedjeljak',
+        dayMonth: '28.09.',
+        memberName: 'Ana Anić',
+        from: '28.09.2026',
+        to: '29.09.2026',
+        badge: BADGE_PAST,
+      });
+      expect(t('danas.admin.needsYou.open', { count: needsYou.count })).toBe('Otvori Za odluku (9)');
+    });
+
+    it('Only requests: one pending request is `1 čeka odluku`', () => {
+      const needsYou = shownOf([], [requestOf('req-1', ANA, '2026-10-04', '2026-10-05')]);
+
+      expect(needsYou.count).toBe(1);
+      expect(needsYou.rows.map((row) => row.kind)).toEqual([ITEM_REQUEST]);
+      expect(t('zaOdluku.count', { count: needsYou.count })).toBe('1 čeka odluku');
+    });
+
+    it('Stale snapshot: a request of a member the snapshot does not hold yet is a skew, as the queue\'s — never drawn as gone', () => {
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const newer = [requestOf('req-newer', '00000000-0000-4000-8000-0000000000ff', '2026-10-04', '2026-10-05')];
+
+      expect(adminTodayOf(sourcesOf(pilot, [], [], newer), AT_1420)).toEqual({ kind: ADMIN_TODAY_UNAVAILABLE });
+      expect(adminTodayOf({ ...sourcesOf(pilot, [], [], newer), snapshotFetching: true }, AT_1420)).toEqual({
+        kind: ADMIN_TODAY_LOADING,
+      });
+      expect(logged).not.toHaveBeenCalled();
+    });
+
+    it('Read fails: a failed or paused requests read makes the whole card unavailable', () => {
+      const failed: LeaveRowsAnswer = { isPending: false, isError: true, fetchStatus: 'idle', data: [] };
+      const paused: LeaveRowsAnswer = { isPending: false, isError: false, fetchStatus: 'paused', data: [] };
+
+      expect(adminTodayOf({ ...sourcesOf(pilot, []), requests: failed }, AT_1420)).toEqual({ kind: ADMIN_TODAY_UNAVAILABLE });
+      expect(adminTodayOf({ ...sourcesOf(pilot, []), requests: paused }, AT_1420)).toEqual({ kind: ADMIN_TODAY_UNAVAILABLE });
+    });
   });
 
   it('says each count in all three Croatian forms', () => {
@@ -548,7 +628,9 @@ describe('Ovaj tjedan', () => {
     if (queue.kind !== CONFLICTS_READY) throw new Error(queue.kind);
 
     const inWeek = new Set(week.days.map((day) => day.date));
-    const listed = queue.view.rows.filter((row) => inWeek.has(row.date)).map((row) => `${row.teamId}|${row.date}`);
+    const listed = collisionRowsOf(queue.view.rows)
+      .filter((row) => inWeek.has(row.date))
+      .map((row) => `${row.teamId}|${row.date}`);
 
     expect(marked.length).toBeGreaterThan(0);
     expect(new Set(marked)).toEqual(new Set(listed));
@@ -657,7 +739,7 @@ describe('Ovaj tjedan', () => {
   });
 });
 
-describe('the three reads', () => {
+describe('the four reads', () => {
   it('is loading while a read is pending: the skeleton, never a figure', () => {
     const pending: LeaveRowsAnswer = { isPending: true, isError: false, fetchStatus: 'fetching', data: undefined };
 
@@ -693,8 +775,15 @@ describe('the three reads', () => {
       records: ReadAnswer<readonly unknown[]>,
       resolutions: ReadAnswer<readonly unknown[]>,
       clock: FreshnessClock,
+      // Story 9.5: the requests read, in the same state as the resolutions unless a case says otherwise.
+      requests: ReadAnswer<readonly unknown[]> = resolutions,
     ) => {
-      const freshness = snapshotFreshnessOf([calendar, records, resolutions], clock.freshAfter, clock.online, clock.reconnected);
+      const freshness = snapshotFreshnessOf(
+        [calendar, records, resolutions, requests],
+        clock.freshAfter,
+        clock.online,
+        clock.reconnected,
+      );
       const answerOf = <Data,>(answer: ReadAnswer<Data>) => snapshotAnswerOf(answer, freshness, clock);
       const mappedCalendar = answerOf(calendar);
 
@@ -705,6 +794,7 @@ describe('the three reads', () => {
             calendar: calendarSurfaceStateOf(mappedCalendar),
             records: answerOf(records),
             resolutions: answerOf(resolutions),
+            requests: answerOf(requests),
             snapshotFetching: mappedCalendar.fetchStatus === 'fetching',
           },
           AT_1420,

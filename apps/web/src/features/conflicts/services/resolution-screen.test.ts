@@ -194,6 +194,7 @@ function sourcesOf(
     calendar: { snapshot, refusal: null, loading: false },
     records: settled(rows),
     resolutions: settled(resolutionRows),
+    requests: settled([]),
     members: {
       members: snapshot.members.map((member) => ({ id: member.id, leaveAllowanceDays: 19 })),
       refusal: null,
@@ -235,8 +236,8 @@ describe('Open and Ends: K od N, and ‹ › in the queue\'s order', () => {
   it('opens the 2nd of 3 as "2 od 3", both neighbours there', () => {
     const view = viewOf(resolutionScreenOf(sourcesOf(pilot), paramsOn('2026-09-11'), NOW));
 
-    expect([view.position, view.count]).toEqual([2, 3]);
-    expect(t('zaOdluku.resolution.position', { position: view.position, count: view.count })).toBe(
+    expect([view.position, view.collisionCount]).toEqual([2, 3]);
+    expect(t('zaOdluku.resolution.position', { position: view.position, count: view.collisionCount })).toBe(
       '2 od 3 · odluči što vrijedi za ovu smjenu.',
     );
     expect(view.previous).toEqual({ ...paramsOn('2026-09-10'), dayMonth: '10.09.' });
@@ -257,8 +258,65 @@ describe('Open and Ends: K od N, and ‹ › in the queue\'s order', () => {
       resolutionScreenOf(sourcesOf(pilot, [WORKED], [resolutionOf(VIEWER_MEMBER, '2026-09-10', A)]), paramsOn('2026-09-11'), NOW),
     );
 
-    expect([view.position, view.count, view.previous]).toEqual([1, 2, null]);
-    expect(t('zaOdluku.resolution.back', { count: view.count })).toBe('Za odluku · 2 čekaju odluku');
+    expect([view.position, view.collisionCount, view.previous]).toEqual([1, 2, null]);
+    expect(view.queueCount).toBe(2);
+    expect(t('zaOdluku.resolution.back', { count: view.queueCount })).toBe('Za odluku · 2 čekaju odluku');
+  });
+});
+
+describe('the way back counts the whole queue (story 9.5)', () => {
+  /** A request row as `leave_requests` answers it. */
+  function requestOf(id: string, closedAt: string | null = null, decisions: readonly unknown[] = []): Row {
+    return { id, member_id: ANTE, during: '[2026-09-20,2026-09-22)', closed_at: closedAt, leave_request_decisions: decisions };
+  }
+
+  it('names collisions and pending requests in the back link, while K od N stays over the collisions', () => {
+    const requests = [
+      requestOf('req-pending'),
+      requestOf('req-withdrawn', '2026-09-02T08:00:00+00:00'),
+      requestOf('req-approved', '2026-09-02T08:00:00+00:00', [
+        { outcome: 'approved', decided_by: 'admin-auth', decided_at: '2026-09-02T08:00:00+00:00' },
+      ]),
+    ];
+    const view = viewOf(resolutionScreenOf(sourcesOf(pilot, [WORKED], [], { requests: settled(requests) }), paramsOn('2026-09-11'), NOW));
+
+    expect([view.position, view.collisionCount, view.queueCount]).toEqual([2, 3, 4]);
+    expect(t('zaOdluku.resolution.back', { count: view.queueCount })).toBe('Za odluku · 4 čekaju odluku');
+    expect(resolutionScreenOf(sourcesOf(pilot, [WORKED], [], { requests: settled(requests) }), paramsOn('2026-09-12'), NOW)).toEqual({
+      kind: RESOLUTION_MISSING,
+      queueCount: 4,
+    });
+  });
+
+  it('names no number while a request names a member the snapshot does not hold yet (a skew), or the queue is refused', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const newer = { ...requestOf('req-newer'), member_id: '00000000-0000-4000-8000-0000000000ff' };
+    const skewed = viewOf(resolutionScreenOf(sourcesOf(pilot, [WORKED], [], { requests: settled([newer]) }), paramsOn('2026-09-11'), NOW));
+
+    expect([skewed.collisionCount, skewed.queueCount]).toEqual([3, null]);
+    expect(resolutionScreenOf(sourcesOf(pilot, [WORKED], [], { requests: settled([newer]) }), paramsOn('2026-09-12'), NOW)).toEqual({
+      kind: RESOLUTION_MISSING,
+      queueCount: null,
+    });
+
+    // A request row the queue refuses: the conflict's own screen still stands, with no count on the way back.
+    const refused = viewOf(
+      resolutionScreenOf(sourcesOf(pilot, [WORKED], [], { requests: settled([{ ...requestOf('req-bad'), during: 'garbage' }]) }), paramsOn('2026-09-11'), NOW),
+    );
+
+    expect([refused.collisionCount, refused.queueCount]).toEqual([3, null]);
+    expect(logged).toHaveBeenCalled();
+  });
+
+  it('is unavailable when the requests read failed, and loading while it is pending', () => {
+    const failed = { data: undefined, isError: true, isPending: true, fetchStatus: 'idle' };
+
+    expect(resolutionScreenOf(sourcesOf(pilot, [WORKED], [], { requests: failed }), paramsOn('2026-09-11'), NOW)).toEqual({
+      kind: RESOLUTION_UNAVAILABLE,
+    });
+    expect(resolutionScreenOf(sourcesOf(pilot, [WORKED], [], { requests: PENDING }), paramsOn('2026-09-11'), NOW)).toEqual({
+      kind: RESOLUTION_LOADING,
+    });
   });
 });
 
@@ -352,14 +410,14 @@ describe('Missing: a URL that names no open conflict', () => {
     ['another team', paramsOn('2026-09-10', VIEWER_MEMBER, teamOf(PILOT, 1))],
     ['params that are no ids at all', { memberId: 'x', date: 'not-a-date', teamId: 'y' }],
   ])('is missing for %s, with the queue\'s count', (_name, params) => {
-    expect(resolutionScreenOf(sourcesOf(pilot), params, NOW)).toEqual({ kind: RESOLUTION_MISSING, count: 3 });
+    expect(resolutionScreenOf(sourcesOf(pilot), params, NOW)).toEqual({ kind: RESOLUTION_MISSING, queueCount: 3 });
   });
 
   it('is missing once the conflict is resolved, or its leave removed', () => {
     expect(
       resolutionScreenOf(sourcesOf(pilot, [WORKED], [resolutionOf(VIEWER_MEMBER, '2026-09-10', A)]), paramsOn('2026-09-10'), NOW),
-    ).toEqual({ kind: RESOLUTION_MISSING, count: 2 });
-    expect(resolutionScreenOf(sourcesOf(pilot, []), paramsOn('2026-09-10'), NOW)).toEqual({ kind: RESOLUTION_MISSING, count: 0 });
+    ).toEqual({ kind: RESOLUTION_MISSING, queueCount: 2 });
+    expect(resolutionScreenOf(sourcesOf(pilot, []), paramsOn('2026-09-10'), NOW)).toEqual({ kind: RESOLUTION_MISSING, queueCount: 0 });
   });
 });
 
@@ -387,7 +445,7 @@ describe('the reads', () => {
         paramsOn('2026-09-12'),
         NOW,
       ),
-    ).toEqual({ kind: RESOLUTION_MISSING, count: 3 });
+    ).toEqual({ kind: RESOLUTION_MISSING, queueCount: 3 });
   });
 
   it('is unavailable when a read failed or is paused, first', () => {
@@ -645,7 +703,7 @@ describe('replacing the absent member (story 5.4c)', () => {
     expect(eva.memberName).toBe('Eva Šarić');
     expect(eva.teamName).toBe('Smjena A');
     // The viewer's three, less the replaced one, plus Eva's on A — and Eva's own team's Noć that day.
-    expect(eva.count).toBe(4);
+    expect(eva.collisionCount).toBe(4);
   });
 
   it('generates the reason through t(), with no field for it', () => {
@@ -732,14 +790,14 @@ describe('a replacement that no longer applies (story 5.5d)', () => {
     const snapshot = await snapshotOf(false, PILOT, true, [DINO_ON]);
     const screen = resolutionScreenOf(sourcesOf(snapshot, [WORKED], replacedBy('ro-dino')), paramsOn('2026-09-10'), NOW);
 
-    expect(screen).toEqual({ kind: RESOLUTION_MISSING, count: 2 });
+    expect(screen).toEqual({ kind: RESOLUTION_MISSING, queueCount: 2 });
   });
 
   it('Pending after rotation save: the conflict is open again, counted in the queue, and the screen says how to free it', async () => {
     const snapshot = await snapshotOf(false, PILOT, true, [DINO_PENDING]);
     const view = viewOf(resolutionScreenOf(sourcesOf(snapshot, [WORKED], replacedBy('ro-dino')), paramsOn('2026-09-10'), NOW));
 
-    expect([view.position, view.count, view.held]).toEqual([1, 3, true]);
+    expect([view.position, view.collisionCount, view.held]).toEqual([1, 3, true]);
     expect(t('zaOdluku.resolution.held')).toBe('Zamjena se ne primjenjuje. Ukloni je u kalendaru pa odluči ponovno.');
   });
 
@@ -747,7 +805,7 @@ describe('a replacement that no longer applies (story 5.5d)', () => {
     const snapshot = await snapshotOf(false, PILOT, true, [calendarRosterOverrideRow('ro-karlo', A, '2026-09-10', null, KARLO)]);
     const view = viewOf(resolutionScreenOf(sourcesOf(snapshot, [WORKED], replacedBy('ro-karlo')), paramsOn('2026-09-10'), NOW));
 
-    expect([view.count, view.held]).toEqual([3, true]);
+    expect([view.collisionCount, view.held]).toEqual([3, true]);
     expect(view.heldCalendar).toEqual({ prikaz: 'sve', mjesec: '2026-09', smjena: A });
     expect(readyToSave(OPTION_ACCEPT_UNCOVERED, null, view.held)).toBe(false);
     expect(readyToSave(OPTION_REPLACE_MEMBER, DINO, view.held)).toBe(false);
@@ -764,7 +822,7 @@ describe('a replacement that no longer applies (story 5.5d)', () => {
 
     expect(resolutionScreenOf(sourcesOf(snapshot, [WORKED], replacedBy('ro-dino')), paramsOn('2026-09-10'), NOW)).toEqual({
       kind: RESOLUTION_MISSING,
-      count: 2,
+      queueCount: 2,
     });
   });
 
@@ -773,7 +831,7 @@ describe('a replacement that no longer applies (story 5.5d)', () => {
     const stale = [{ ...resolutionOf(VIEWER_MEMBER, '2026-09-10', A, 'replace_member', 'ro-dino'), shift_type_id: 'pilot-noc' }];
     const view = viewOf(resolutionScreenOf(sourcesOf(snapshot, [WORKED], stale), paramsOn('2026-09-10'), NOW));
 
-    expect([view.count, view.held, view.shiftTypeId]).toEqual([3, false, 'pilot-dan']);
+    expect([view.collisionCount, view.held, view.shiftTypeId]).toEqual([3, false, 'pilot-dan']);
     expect(readyToSave(OPTION_ACCEPT_UNCOVERED, null, view.held)).toBe(true);
   });
 

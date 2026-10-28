@@ -38,22 +38,29 @@ import {
   organizationLeaveRecordsQueryOptions,
   type OrganizationLeaveRecordsTable,
 } from '@/features/leave/services/leave-list';
+import {
+  LEAVE_REQUESTS_TABLE,
+  ORGANIZATION_LEAVE_REQUESTS_KEY,
+  organizationLeaveRequestsQueryOptions,
+  type OrganizationLeaveRequestsTable,
+} from '@/features/leave/services/leave-requests';
 import { useOrganizationToday } from '@/hooks/organization-today';
 import { ZONE_FROM_CALENDAR, offlineNoteOf } from '@/lib/offline/freshness';
 import { useSnapshotFreshness } from '@/lib/offline/use-snapshot-freshness';
 import { supabaseClient } from '@/lib/supabase/client';
 
 /**
- * *Za odluku*'s three reads and its state (stories 5.3b, 5.4a). Wiring only —
+ * *Za odluku*'s four reads and its state (stories 5.3b, 5.4a, 9.5). Wiring only —
  * every decision is `@/features/conflicts/services/conflicts-queue`'s, which
  * the node suite executes.
  *
  * THE READS, each under its own key (AD-13): the calendar snapshot, shared
- * with the screens that own it, the organization's live leave records, and
- * its live conflict resolutions. A schedule write re-reads the first, and
- * every leave write names the other two among its dependents, so a conflict
- * appears or clears without a reload. Nothing is written, and no conflict set
- * is kept: the queue is derived from the three answers on every render.
+ * with the screens that own it, the organization's live leave records, its
+ * live conflict resolutions, and (story 9.5) its leave requests. A schedule
+ * write re-reads the first, every leave write names the next two among its
+ * dependents, and every request write — sent, withdrawn or decided — names
+ * the last, so a conflict or a request appears or clears without a reload. Nothing is written, and no conflict set
+ * is kept: the queue is derived from the four answers on every render.
  *
  * THE STATUS LINE (story 5.4b). A decision that landed returns here with what
  * it saved in ROUTER STATE — never the URL, never storage. It is derived per
@@ -63,7 +70,7 @@ import { supabaseClient } from '@/lib/supabase/client';
  * drops it. Focus moves to it once drawn, so it is announced.
  *
  * THE TABS (story 7.16): *Čeka odluku* is the default. The *Odlučeno* tab reads
- * the same three answers and, once opened, the names of whoever decided
+ * the same four answers and, once opened, the names of whoever decided
  * (`resolvedConflictsOf`); nothing is written.
  */
 export function useConflictsQueue() {
@@ -114,7 +121,14 @@ export function useConflictsQueue() {
     ),
   );
 
-  // THE *RIJEŠENI* TAB (story 7.16) reads the same three, plus the names of
+  // STORY 9.5: every request of the organization — pending on Čeka odluku, decided on Odlučeno.
+  const requestsRead = useQuery(
+    organizationLeaveRequestsQueryOptions(
+      () => supabaseClient().from(LEAVE_REQUESTS_TABLE) as unknown as OrganizationLeaveRequestsTable,
+    ),
+  );
+
+  // THE *RIJEŠENI* TAB (story 7.16) reads the same four, plus the names of
   // whoever decided, and only once the tab is open.
   const actorsRead = useQuery(
     actingAdminsQueryOptions(
@@ -135,6 +149,7 @@ export function useConflictsQueue() {
       [CALENDAR_KEY, calendarRead],
       [ORGANIZATION_LEAVE_RECORDS_KEY, recordsRead],
       [ORGANIZATION_CONFLICT_RESOLUTIONS_KEY, resolutionsRead],
+      [ORGANIZATION_LEAVE_REQUESTS_KEY, requestsRead],
       [ACTING_ADMINS_KEY, actorsRead],
     ],
     ZONE_FROM_CALENDAR,
@@ -142,6 +157,7 @@ export function useConflictsQueue() {
   const calendar = answerOf(calendarRead);
   const records = answerOf(recordsRead);
   const resolutions = answerOf(resolutionsRead);
+  const requests = answerOf(requestsRead);
   const actors = answerFor(ACTING_ADMINS_KEY, actorsRead);
 
   const calendarState = calendarSurfaceStateOf(calendar);
@@ -154,14 +170,21 @@ export function useConflictsQueue() {
   // snapshot is really being read again — a reconnect's refetch included —
   // and offline, where the read is paused, it is the unavailable state.
   const snapshotFetching = calendarRead.fetchStatus === CALENDAR_FETCH_FETCHING;
-  const resolved = resolvedConflictsOf({ calendar: calendarState, records, resolutions, actors, snapshotFetching });
+  const resolved = resolvedConflictsOf({
+    calendar: calendarState,
+    records,
+    resolutions,
+    requests,
+    actors,
+    snapshotFetching,
+  });
 
-  // A leave or resolution row naming a member or team the snapshot does not hold yet re-reads it once.
-  useSnapshotSkewRefresh(snapshotSkewOf(calendarState.snapshot, records.data, resolutions.data));
+  // A leave, resolution or (story 9.5) request row naming a member or team the snapshot does not hold yet re-reads it once.
+  useSnapshotSkewRefresh(snapshotSkewOf(calendarState.snapshot, records.data, resolutions.data, requests.data));
 
   // The organization's today, moved at its midnight: a queue left open overnight drops yesterday's conflicts.
   const { now } = useOrganizationToday(calendarState.snapshot === null ? null : calendarState.snapshot.timeZone);
-  const queue = conflictsQueueOf({ calendar: calendarState, records, resolutions, snapshotFetching }, now);
+  const queue = conflictsQueueOf({ calendar: calendarState, records, resolutions, requests, snapshotFetching }, now);
   // STORY 8.2c: the as-of note's time and zone — the calendar snapshot's —
   // while the whole cached snapshot is drawn offline, under the heading on
   // both tabs; none above the open tab's unavailable state, where nothing is drawn.
@@ -173,7 +196,13 @@ export function useConflictsQueue() {
 
   /** Read again every read the queue stands on, from the unavailable alert's retry. */
   function retry(): void {
-    for (const queryKey of [CALENDAR_KEY, ORGANIZATION_LEAVE_RECORDS_KEY, ORGANIZATION_CONFLICT_RESOLUTIONS_KEY, ACTING_ADMINS_KEY]) {
+    for (const queryKey of [
+      CALENDAR_KEY,
+      ORGANIZATION_LEAVE_RECORDS_KEY,
+      ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
+      ORGANIZATION_LEAVE_REQUESTS_KEY,
+      ACTING_ADMINS_KEY,
+    ]) {
       void queryClient.invalidateQueries({ queryKey });
     }
   }
