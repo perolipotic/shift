@@ -488,6 +488,7 @@
       "cancel": "Odustani",
       "overlapsLeave": "Zahtjev nije poslan: raspon se preklapa s tvojim upisanim godišnjim odmorom.",
       "overlapsRequest": "Zahtjev nije poslan: raspon se preklapa s tvojim zahtjevom koji čeka odluku.",
+      "memberInactive": "Zahtjev nije poslan: u tom rasponu tvoj status je neaktivan.",
       "denied": "Ne možeš poslati zahtjev za godišnji.",
       "failed": "Zahtjev nije poslan. Pokušaj ponovno.",
       "sent": "Zahtjev za godišnji {from}–{to} je poslan i čeka odluku.",
@@ -499,11 +500,13 @@
       "state": "Stanje",
       "decidedOn": "Odlučeno {date}",
       "withdrawnOn": "Povučeno {date}",
+      "closedOn": "Zatvoreno {date}",
       "status": {
         "pending": "Čeka odluku",
         "approved": "Odobren",
         "rejected": "Odbijen",
-        "withdrawn": "Povučen"
+        "withdrawn": "Povučen",
+        "closedOnDeactivation": "Zatvoren deaktivacijom"
       },
       "withdraw": "Povuci zahtjev",
       "withdrawName": "Povuci zahtjev {from}–{to}",
@@ -559,6 +562,7 @@
       "reject": "Odbij",
       "notPending": "Zahtjev više ne čeka odluku.",
       "approvalStale": "U međuvremenu je upisan godišnji koji se preklapa s ovim zahtjevom. Odobrenje nije moguće, a zahtjev možeš odbiti.",
+      "memberInactive": "Osoba nije aktivna na sve datume ovog zahtjeva. Odobrenje nije moguće, a zahtjev možeš odbiti.",
       "denied": "Nemaš ovlasti odlučiti o ovom zahtjevu.",
       "failed": "Odluku nije bilo moguće spremiti. Pokušaj ponovno."
     },
@@ -860,6 +864,7 @@
       "deactivateActionFrom": "Deaktiviraj od {date}",
       "deactivateConsequence": "{team} od tada ima {members} od {total, plural, one {# člana} few {# člana} other {# članova}}, a {month} {duties, plural, one {je to # smjena} few {su to # smjene} other {je to # smjena}}.",
       "deactivateConsequenceTeam": "{team} od tada ima {members} od {total, plural, one {# člana} few {# člana} other {# članova}}.",
+      "deactivateRequests": "{count, plural, one {Zatvara se # zahtjev za godišnji koji čeka odluku} few {Zatvaraju se # zahtjeva za godišnji koji čekaju odluku} other {Zatvara se # zahtjeva za godišnji koji čekaju odluku}}: {ranges}. Poništavanje deaktivacije ne vraća zatvorene zahtjeve.",
       "deactivateHeading": "Deaktivacija osobe",
       "reactivateHeading": "Ponovna aktivacija osobe",
       "deactivatePrompt": "Osoba {name} od {date} se ne može prijaviti i ne ulazi u buduće rasporede. Prošli rasporedi ostaju nepromijenjeni.",
@@ -875,19 +880,19 @@
       "saved": "Promjena statusa je spremljena."
     },
     "erasures": {
-      "title": "{count, plural, one {Promjena uklanja # stavku koja čeka odluku} few {Promjena uklanja # stavke koje čekaju odluku} other {Promjena uklanja # stavki koje čekaju odluku}}",
-      "lede": "{count, plural, one {Ova promjena uklanja uzrok # stavke koja čeka odluku.} few {Ova promjena uklanja uzrok # stavke koje čekaju odluku.} other {Ova promjena uklanja uzrok # stavki koje čekaju odluku.}} Prije potvrde odluči za svaku.",
+      "title": "{count, plural, one {Promjena uklanja # odsutnost u smjeni koja čeka odluku} few {Promjena uklanja # odsutnosti u smjeni koje čekaju odluku} other {Promjena uklanja # odsutnosti u smjeni koje čekaju odluku}}",
+      "lede": "{count, plural, one {Ova promjena uklanja uzrok # odsutnosti u smjeni koja čeka odluku.} few {Ova promjena uklanja uzrok # odsutnosti u smjeni koje čekaju odluku.} other {Ova promjena uklanja uzrok # odsutnosti u smjeni koje čekaju odluku.}} Prije potvrde odluči za svaku.",
       "rowTitle": "{team} · {weekday} {date} · {type}",
       "rowWithout": "{member} na godišnjem · nakon promjene: {team} taj dan bez {member}",
       "decision": "Odluka: {team} · {weekday} {date} · {type}",
       "confirm": "Potvrdi brisanje",
       "keep": "Zadrži",
       "back": "Natrag na uređivanje",
-      "kept": "Zadržana stavka: odustani od promjene ili se vrati na uređivanje.",
-      "changed": "Popis stavki koje čekaju odluku se promijenio. Odluči ponovno za svaku.",
+      "kept": "Zadržana odsutnost u smjeni: odustani od promjene ili se vrati na uređivanje.",
+      "changed": "Popis odsutnosti u smjeni koje čekaju odluku se promijenio. Odluči ponovno za svaku.",
       "unavailable": "Ne mogu provjeriti što bi promjena uklonila s popisa Za odluku.",
       "retry": "Pokušaj ponovno",
-      "removed": "{count, plural, one {Uklonjena # stavka koja je čekala odluku.} few {Uklonjene # stavke koje su čekale odluku.} other {Uklonjeno # stavki koje su čekale odluku.}}"
+      "removed": "{count, plural, one {Uklonjena # odsutnost u smjeni koja je čekala odluku.} few {Uklonjene # odsutnosti u smjeni koje su čekale odluku.} other {Uklonjeno # odsutnosti u smjeni koje su čekale odluku.}}"
     },
     "leaveRecord": {
       "heading": "Godišnji odmor",

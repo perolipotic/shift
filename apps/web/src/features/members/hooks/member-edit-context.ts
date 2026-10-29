@@ -53,6 +53,8 @@ export interface HeldTeamMove {
 export interface HeldStatusChange {
   readonly offer: StatusChangeOffer;
   readonly name: string;
+  /** When it was opened (epoch ms): a deactivation names only requests read after it (0041). */
+  readonly openedAt: number;
 }
 
 /** The screen as last drawn, read after an await (story 5.5e). */

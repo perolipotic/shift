@@ -21,8 +21,9 @@ import { isIsoDate } from '@/lib/i18n/format';
  * than a colleague's request drawn as the viewer's.
  *
  * STATUS IS DERIVED, as 0040 stores it: pending while `closed_at` is null;
- * once closed, the decision's `outcome` (`approved` or `rejected`), or
- * withdrawn when no decision exists. A PENDING REQUEST DERIVES NOTHING: no
+ * once closed, the decision's `outcome` (`approved` or `rejected`, or since
+ * 0041 `deactivated`: closed on the member's deactivation), or withdrawn when
+ * no decision exists. A PENDING REQUEST DERIVES NOTHING: no
  * balance, no conflict and no schedule reads it.
  *
  * THE DATABASE DECIDES. Only the shape of each date is checked before the
@@ -92,12 +93,27 @@ export const REQUEST_APPROVED = 'approved';
 export const REQUEST_REJECTED = 'rejected';
 /** Closed by the member, with no decision. */
 export const REQUEST_WITHDRAWN = 'withdrawn';
+/**
+ * Closed because its member was deactivated from a date it reaches (0041):
+ * a decision whose outcome is `deactivated`, by the deactivating admin.
+ */
+export const REQUEST_CLOSED_ON_DEACTIVATION = 'closedOnDeactivation';
+
+/** The outcome 0041's trigger stores for a request its member's deactivation closed. */
+export const DEACTIVATED_OUTCOME = 'deactivated';
 
 export type LeaveRequestStatus =
   | typeof REQUEST_PENDING
   | typeof REQUEST_APPROVED
   | typeof REQUEST_REJECTED
-  | typeof REQUEST_WITHDRAWN;
+  | typeof REQUEST_WITHDRAWN
+  | typeof REQUEST_CLOSED_ON_DEACTIVATION;
+
+/** The statuses a decision row stands for: an admin's approval or rejection, or a deactivation's close. */
+export type DecidedLeaveRequestStatus =
+  | typeof REQUEST_APPROVED
+  | typeof REQUEST_REJECTED
+  | typeof REQUEST_CLOSED_ON_DEACTIVATION;
 
 /** One of the viewer's own requests: its id, its inclusive range, its status and when it was closed. */
 export interface LeaveRequest extends LeaveRange {
@@ -117,9 +133,16 @@ const OUTCOME_COLUMN = 'outcome';
 const INSUFFICIENT_PRIVILEGE = '42501';
 const EXCLUSION_VIOLATION = '23P01';
 const NO_DATA_FOUND = 'P0002';
+const OBJECT_NOT_IN_PREREQUISITE_STATE = '55000';
 
 /** 0040's trigger's message for a request that shares a date with the member's live leave, under 23P01. */
 export const LEAVE_REQUEST_OVERLAPS_LEAVE_MESSAGE = 'LEAVE_REQUEST_OVERLAPS_LEAVE';
+
+/**
+ * 0041's message, under 55000, for an insert or an approval reaching a date on
+ * which the member is inactive (a scheduled deactivation included).
+ */
+export const LEAVE_REQUEST_MEMBER_INACTIVE_MESSAGE = 'LEAVE_REQUEST_MEMBER_INACTIVE';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -147,6 +170,7 @@ function closedStatusOf(embedded: unknown): LeaveRequestStatus | null {
 
   if (outcome === REQUEST_APPROVED) return REQUEST_APPROVED;
   if (outcome === REQUEST_REJECTED) return REQUEST_REJECTED;
+  if (outcome === DEACTIVATED_OUTCOME) return REQUEST_CLOSED_ON_DEACTIVATION;
 
   return null;
 }
@@ -209,9 +233,13 @@ export function leaveRequestsOf(rows: readonly unknown[], memberId: string): rea
 
 // ------------------------------------------------------- one request (9.4)
 
-/** A decided request's decision: its outcome, who decided (an auth user id) and when. */
+/**
+ * A decided request's decision: its outcome, who decided (an auth user id) and
+ * when. A close on deactivation (0041) is a decision too, by the deactivating
+ * admin.
+ */
 export interface LeaveRequestDecision {
-  readonly outcome: typeof REQUEST_APPROVED | typeof REQUEST_REJECTED;
+  readonly outcome: DecidedLeaveRequestStatus;
   /** `decided_by`: the deciding admin's auth user id. */
   readonly decidedBy: string;
   /** `decided_at`: the instant it was decided. */
@@ -221,7 +249,7 @@ export interface LeaveRequestDecision {
 /** One request as its decision screen reads it: whose it is, and its decision once decided. */
 export interface ReviewedLeaveRequest extends LeaveRequest {
   readonly memberId: string;
-  /** The decision, for an approved or rejected request; null while pending or once withdrawn. */
+  /** The decision, for an approved, rejected or deactivation-closed request; null while pending or once withdrawn. */
   readonly decision: LeaveRequestDecision | null;
   /** When it was sent (`created_at`, story 9.5), or null when the read did not answer it. */
   readonly createdAt: string | null;
@@ -272,7 +300,7 @@ function reviewedLeaveRequestOf(row: unknown): ReviewedLeaveRequest | null {
 
   let decision: LeaveRequestDecision | null = null;
 
-  if (status === REQUEST_APPROVED || status === REQUEST_REJECTED) {
+  if (status === REQUEST_APPROVED || status === REQUEST_REJECTED || status === REQUEST_CLOSED_ON_DEACTIVATION) {
     const decided = decisionRowOf(row[DECISIONS_EMBED]);
     const decidedBy = decided?.[DECIDED_BY_COLUMN];
     const decidedAt = decided?.[DECIDED_AT_COLUMN];
@@ -556,12 +584,19 @@ export const REQUEST_OVERLAPS_REQUEST = 'overlapsRequest';
 export const REQUEST_DENIED = 'denied';
 /** The request is no longer pending: decided, withdrawn already, or never there (P0002). */
 export const REQUEST_NOT_PENDING = 'notPending';
+/**
+ * The range reaches a date on which the member is inactive (55000
+ * `LEAVE_REQUEST_MEMBER_INACTIVE`, 0041): a send refused, or an approval —
+ * then only a rejection is possible.
+ */
+export const REQUEST_MEMBER_INACTIVE = 'memberInactive';
 /** Anything else — a refused range, the network, a malformed answer: try again. */
 export const REQUEST_FAILED = 'failed';
 
 export type LeaveRequestSendFailure =
   | typeof REQUEST_OVERLAPS_LEAVE
   | typeof REQUEST_OVERLAPS_REQUEST
+  | typeof REQUEST_MEMBER_INACTIVE
   | typeof REQUEST_DENIED
   | typeof REQUEST_FAILED;
 
@@ -578,6 +613,7 @@ export const REQUEST_APPROVAL_STALE = 'approvalStale';
 export type LeaveRequestDecideFailure =
   | typeof REQUEST_NOT_PENDING
   | typeof REQUEST_APPROVAL_STALE
+  | typeof REQUEST_MEMBER_INACTIVE
   | typeof REQUEST_DENIED
   | typeof REQUEST_FAILED;
 
@@ -627,16 +663,24 @@ export interface DecideLeaveRequestRpc {
 /**
  * A refused insert as this application's own failure, by SQLSTATE and
  * message: 23P01 with `LEAVE_REQUEST_OVERLAPS_LEAVE` overlaps the member's
- * leave, any other 23P01 overlaps a pending request, 42501 is not allowed,
- * and anything else — 23514, 22000, 23503, the unforeseen — failed.
+ * leave, any other 23P01 overlaps a pending request, 55000 with
+ * `LEAVE_REQUEST_MEMBER_INACTIVE` reaches an inactive date (0041), 42501 is
+ * not allowed, and anything else — 23514, 22000, 23503, the unforeseen —
+ * failed.
  */
 export function leaveRequestSendFailureOf(error: LeaveRequestWriteError): LeaveRequestSendFailure {
+  if (memberInactive(error)) return REQUEST_MEMBER_INACTIVE;
   if (error.code === EXCLUSION_VIOLATION) {
     return error.message === LEAVE_REQUEST_OVERLAPS_LEAVE_MESSAGE ? REQUEST_OVERLAPS_LEAVE : REQUEST_OVERLAPS_REQUEST;
   }
   if (error.code === INSUFFICIENT_PRIVILEGE) return REQUEST_DENIED;
 
   return REQUEST_FAILED;
+}
+
+/** 0041's refusal, by SQLSTATE and message together. */
+function memberInactive(error: LeaveRequestWriteError): boolean {
+  return error.code === OBJECT_NOT_IN_PREREQUISITE_STATE && error.message === LEAVE_REQUEST_MEMBER_INACTIVE_MESSAGE;
 }
 
 /** A refused withdrawal as this application's own failure: P0002 no longer pending, 42501 not allowed, else failed. */
@@ -650,9 +694,12 @@ export function leaveRequestWithdrawFailureOf(error: LeaveRequestWriteError): Le
 /**
  * A refused decision as this application's own failure, by SQLSTATE (story
  * 9.4): P0002 no longer pending, 23P01 an approval gone stale, 42501 not
- * allowed, and anything else — 22023, the network, the unforeseen — failed.
+ * allowed, 55000 with `LEAVE_REQUEST_MEMBER_INACTIVE` an approval reaching a
+ * date the member is inactive (0041), and anything else — 22023, the network,
+ * the unforeseen — failed.
  */
 export function leaveRequestDecideFailureOf(error: LeaveRequestWriteError): LeaveRequestDecideFailure {
+  if (memberInactive(error)) return REQUEST_MEMBER_INACTIVE;
   if (error.code === NO_DATA_FOUND) return REQUEST_NOT_PENDING;
   if (error.code === EXCLUSION_VIOLATION) return REQUEST_APPROVAL_STALE;
   if (error.code === INSUFFICIENT_PRIVILEGE) return REQUEST_DENIED;

@@ -264,7 +264,7 @@ export const FEATURE_PUBLIC = {
     // Story 9.3: the requests key, which a request write names among its dependents.
     // Story 9.5: the organization's requests read and parse, which Za odluku,
     // its resolution page and the admin's Danas stand on.
-    'services/leave-requests', // conflicts, teams, today
+    'services/leave-requests', // conflicts, members, teams, today
     // Story 9.4: the decision screen's heading id, which names the page's main region.
     'services/leave-request-review', // pages
     'services/leave-section', // conflicts

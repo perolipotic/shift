@@ -964,7 +964,9 @@ export const KEY_SOURCES = [
     // who is gone, and its range; a decided request's row, its outcome
     // (*Odobren*, *Odbijen*), its member or the gone words, its range, and
     // who decided it and when, with the words for an admin no longer there.
-    strings: 35,
+    // THIRTY-SIX SINCE 0041: a request closed on its member's deactivation,
+    // *Zatvoren deaktivacijom*, as its own outcome.
+    strings: 36,
   },
   {
     // STORY 5.4b. On one conflict's screen, through `t('…')`: the way back
@@ -1030,10 +1032,12 @@ export const KEY_SOURCES = [
     // STORY 9.4: the base's three lines in place of the figures (unavailable,
     // unscheduled, absent) and the decision's four refusals, off
     // `reviewBaseMessageKey` and `reviewFailureMessageKey`.
+    // EIGHT SINCE 0041: an approval refused because the member is inactive
+    // on a date of the request.
     name: 'the leave request decision rules',
     file: LEAVE_REQUEST_REVIEW_KEYS,
     keys: messageKeyUnions,
-    strings: 7,
+    strings: 8,
   },
   {
     // STORY 7.9: the three candidate group headings — free, working that day,
@@ -1062,10 +1066,13 @@ export const KEY_SOURCES = [
     // TWENTY-TWO SINCE STORY 9.3: the request form's four reasons and four
     // refusals, the withdrawal's three refusals, the four status words, and
     // the closing date's two lines, decided and withdrawn.
+    // TWENTY-FIVE SINCE 0041: a send refused because the member is inactive
+    // in the range, the fifth status word (*Zatvoren deaktivacijom*) and its
+    // closing date's line.
     name: 'the Godišnji rules',
     file: MY_LEAVE_KEYS,
     keys: memberListKeys,
-    strings: 22,
+    strings: 25,
   },
   {
     // STORY 4.1b: the hours' one failure, a read or a domain refusal alike.
@@ -1321,10 +1328,12 @@ export const KEY_SOURCES = [
     // ONE HUNDRED AND FIFTY-FIVE SINCE D723: the card's line when a hand-off
     // from a conflict opened nothing, and the amend dialog's line when its
     // od and do came from the conflict.
+    // ONE HUNDRED AND FIFTY-SIX SINCE 0041: the deactivation question's line
+    // naming the pending leave requests it closes.
     name: 'the member edit form',
     file: MEMBER_EDIT,
     keys: translationKeys,
-    strings: 155,
+    strings: 156,
   },
   {
     // THIRTEEN on the member write path's rules: eleven `ljudi.form.error.*`

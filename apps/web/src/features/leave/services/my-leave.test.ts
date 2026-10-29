@@ -23,6 +23,8 @@ import {
   REQUEST_NOT_PENDING,
   REQUEST_OVERLAPS_LEAVE,
   REQUEST_OVERLAPS_REQUEST,
+  REQUEST_CLOSED_ON_DEACTIVATION,
+  REQUEST_MEMBER_INACTIVE,
   REQUEST_PENDING,
   REQUEST_REJECTED,
   REQUEST_WITHDRAWN,
@@ -473,12 +475,13 @@ describe("the request form's preview (story 9.3)", () => {
       'godisnji.request.refused',
     ]);
     expect(
-      ([REQUEST_OVERLAPS_LEAVE, REQUEST_OVERLAPS_REQUEST, REQUEST_DENIED, REQUEST_FAILED] as const).map((code) =>
-        myLeaveRequestSendMessageKey(code),
+      ([REQUEST_OVERLAPS_LEAVE, REQUEST_OVERLAPS_REQUEST, REQUEST_MEMBER_INACTIVE, REQUEST_DENIED, REQUEST_FAILED] as const).map(
+        (code) => myLeaveRequestSendMessageKey(code),
       ),
     ).toEqual([
       'godisnji.request.overlapsLeave',
       'godisnji.request.overlapsRequest',
+      'godisnji.request.memberInactive',
       'godisnji.request.denied',
       'godisnji.request.failed',
     ]);
@@ -490,6 +493,7 @@ describe("the request form's preview (story 9.3)", () => {
       'godisnji.request.withdrawFailed',
     ]);
     expect(t('godisnji.request.overlapsLeave')).not.toBe(t('godisnji.request.overlapsRequest'));
+    expect(t('godisnji.request.memberInactive')).toBe('Zahtjev nije poslan: u tom rasponu tvoj status je neaktivan.');
   });
 });
 
@@ -584,10 +588,17 @@ describe("Godišnji's list of the viewer's requests (story 9.3)", () => {
 
   it('words the closing date by status: decided, or withdrawn; none while pending', () => {
     expect(
-      ([REQUEST_PENDING, REQUEST_APPROVED, REQUEST_REJECTED, REQUEST_WITHDRAWN] as const).map((status) =>
-        myLeaveRequestClosedMessageKey(status),
+      ([REQUEST_PENDING, REQUEST_APPROVED, REQUEST_REJECTED, REQUEST_WITHDRAWN, REQUEST_CLOSED_ON_DEACTIVATION] as const).map(
+        (status) => myLeaveRequestClosedMessageKey(status),
       ),
-    ).toEqual([null, 'godisnji.request.decidedOn', 'godisnji.request.decidedOn', 'godisnji.request.withdrawnOn']);
+    ).toEqual([
+      null,
+      'godisnji.request.decidedOn',
+      'godisnji.request.decidedOn',
+      'godisnji.request.withdrawnOn',
+      'godisnji.request.closedOn',
+    ]);
+    expect(t('godisnji.request.closedOn', { date: '21.10.2026' })).toBe('Zatvoreno 21.10.2026');
     expect(t('godisnji.request.decidedOn', { date: '21.10.2026' })).toBe('Odlučeno 21.10.2026');
     expect(t('godisnji.request.withdrawnOn', { date: '21.10.2026' })).toBe('Povučeno 21.10.2026');
   });
@@ -600,10 +611,10 @@ describe("Godišnji's list of the viewer's requests (story 9.3)", () => {
 
   it('says each status as its own word', () => {
     expect(
-      ([REQUEST_PENDING, REQUEST_APPROVED, REQUEST_REJECTED, REQUEST_WITHDRAWN] as const).map((status) =>
-        t(myLeaveRequestStatusMessageKey(status)),
+      ([REQUEST_PENDING, REQUEST_APPROVED, REQUEST_REJECTED, REQUEST_WITHDRAWN, REQUEST_CLOSED_ON_DEACTIVATION] as const).map(
+        (status) => t(myLeaveRequestStatusMessageKey(status)),
       ),
-    ).toEqual(['Čeka odluku', 'Odobren', 'Odbijen', 'Povučen']);
+    ).toEqual(['Čeka odluku', 'Odobren', 'Odbijen', 'Povučen', 'Zatvoren deaktivacijom']);
     expect(t('godisnji.request.empty')).toBe('Nemaš zahtjeva za godišnji.');
   });
 });

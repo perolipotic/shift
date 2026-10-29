@@ -1,4 +1,4 @@
-import { onlineManager, useQueryClient } from '@tanstack/react-query';
+import { onlineManager, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 
 import type { CalendarSnapshot } from '@/features/calendar/services/snapshot';
@@ -11,13 +11,20 @@ import {
   type HeldStatusChange,
   type MemberScreen,
 } from '@/features/members/hooks/member-edit-context';
+import {
+  LEAVE_REQUESTS_TABLE,
+  organizationLeaveRequestsQueryOptions,
+  type OrganizationLeaveRequestsTable,
+} from '@/features/leave/services/leave-requests';
 import { shownDeactivationConsequenceOf } from '@/features/members/services/deactivation-consequence';
+import { deactivationClosedRequestsOf } from '@/features/members/services/deactivation-requests';
 import { MEMBERS_LIST_KEY, membersTodayOf, type MemberListRow } from '@/features/members/services/list';
 import { memberErasureCheckOf, statusChangeOf } from '@/features/members/services/member-erasures';
 import {
   MEMBER_STATUS_STALE,
   MEMBER_STATUS_TABLE,
   MEMBER_WRITE_UNAVAILABLE,
+  DEACTIVATE,
   WITHDRAW,
   changeMemberStatus,
   raisedForMember,
@@ -168,6 +175,42 @@ export function useMemberStatus(screen: MemberScreen) {
     [statusCalendar, id, statusDialogOffer, statusDayEntered, today],
   );
 
+  // THE REQUESTS A DEACTIVATION CLOSES (retro 8–9, C1 + C4): the member's
+  // pending leave requests reaching the entered day or later, which 0041's
+  // trigger closes with the version. From the organization's requests read
+  // (*Za odluku*'s own key), read only for a DEACTIVATION's opening and held
+  // per opening as the calendar is above — but only an answer FETCHED WITHIN
+  // THIS OPENING (never fresh: a member sends and withdraws in another
+  // session), never a cached one from before it. An unread or untrusted list
+  // hides the line and never gates the save.
+  const requestsRead = useQuery({
+    ...organizationLeaveRequestsQueryOptions(
+      () => supabaseClient().from(LEAVE_REQUESTS_TABLE) as unknown as OrganizationLeaveRequestsTable,
+    ),
+    enabled: statusOpeningKey !== null && statusDialogOffer?.change === DEACTIVATE,
+  });
+  const requestsAnswered =
+    statusOpening !== null &&
+    requestsRead.data !== undefined &&
+    !requestsRead.isFetching &&
+    statusOpening.held.openedAt <= requestsRead.dataUpdatedAt;
+  const [heldRequests, setHeldRequests] = useState<{ readonly key: number; readonly rows: readonly unknown[] } | null>(
+    null,
+  );
+
+  if (statusOpeningKey === null) {
+    if (heldRequests !== null) setHeldRequests(null);
+  } else if (requestsAnswered && (heldRequests === null || heldRequests.key !== statusOpeningKey)) {
+    setHeldRequests({ key: statusOpeningKey, rows: requestsRead.data });
+  }
+
+  const statusRequestRows =
+    heldRequests !== null && heldRequests.key === statusOpeningKey ? heldRequests.rows : null;
+  const closedRequests = useMemo(
+    () => deactivationClosedRequestsOf(statusRequestRows, id, statusDialogOffer, statusDayEntered),
+    [statusRequestRows, id, statusDialogOffer, statusDayEntered],
+  );
+
   // THE DIALOG'S OFFER GONE ON A RE-READ (story 7.11): the change it was
   // opened for is no longer offered — another admin scheduled one. It closes,
   // its erasure dialog with it, and the card says the record moved, as the
@@ -201,7 +244,7 @@ export function useMemberStatus(screen: MemberScreen) {
     setStatusDateMark(null);
     setStatusDay({ member: id, raised: statusOffer.minimum });
     openings.current += 1;
-    setStatusOpen({ member: id, raised: { key: openings.current, held: { offer: statusOffer, name: member.name } } });
+    setStatusOpen({ member: id, raised: { key: openings.current, held: { offer: statusOffer, name: member.name, openedAt: Date.now() } } });
   }
 
   /** The status dialog's cancel, close button and Escape: never while a write is in flight. */
@@ -599,6 +642,8 @@ export function useMemberStatus(screen: MemberScreen) {
       day: statusDayEntered,
       /** A deactivation's consequence in numbers on the entered day, or `null` (story 7.13c). */
       consequence,
+      /** The member's pending leave requests a deactivation from the entered day closes, or `null` when unknown (0041). */
+      closedRequests,
       enterDay: enterStatusDay,
       open: openStatus,
       close: closeStatus,

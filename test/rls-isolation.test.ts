@@ -20995,3 +20995,245 @@ describe('a member requests their own leave, an overlap is refused by the databa
     20_000,
   );
 });
+
+/**
+ * 0041 (retro 8–9, C1): a deactivation closes its member's pending requests
+ * that reach its date or later, as a `deactivated` decision by the
+ * deactivating admin; no request is sent, and none approved, onto a date on
+ * which its member is inactive; and the migration's backfill closes the
+ * requests stranded before it.
+ */
+describe('a deactivation closes the pending leave requests it reaches, and nothing is approved or sent onto an inactive date (0041)', () => {
+  const closedOnDeactivation = (by: string) => ({
+    closedBy: by,
+    closed: true,
+    outcome: 'deactivated',
+    leaveRecordId: null,
+    decidedBy: by,
+  });
+
+  async function duringOf(client: Client, id: string): Promise<string> {
+    const { rows } = await client.query<{ during: string }>('select during::text as during from leave_requests where id = $1', [id]);
+    return rows[0]?.during ?? '';
+  }
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'closes a $fixture member\'s future request on a deactivation from today, and leaves one that ended before it pending and approvable',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const today = await organizationDay(client, organization);
+        const past = `[${await organizationDay(client, organization, -20)},${await organizationDay(client, organization, -15)}]`;
+        const future = `[${await organizationDay(client, organization, 10)},${await organizationDay(client, organization, 14)}]`;
+
+        await actAs(client, self.authUserId, organization);
+        const ended = await insertRequest(client, { organization, member: self.id, during: past });
+        const ahead = await insertRequest(client, { organization, member: self.id, during: future });
+        await actAs(client, owner.authUserId, organization);
+        await insertVersion(client, { organization, member: self.id, active: false, from: today });
+        const approved = await decideRequest(client, ended, 'approved');
+        await actAsOwner(client);
+
+        expect(await requestState(client, ahead), slug).toEqual(closedOnDeactivation(owner.authUserId));
+        expect(approved, `${slug}: the request that ended before the deactivation is not approvable`).not.toBeNull();
+        expect((await requestState(client, ended)).outcome, slug).toBe('approved');
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'closes a $fixture request straddling the deactivation date whole, never shrinking it',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const from = await organizationDay(client, organization, 5);
+        const during = `[${await organizationDay(client, organization, 1)},${await organizationDay(client, organization, 10)}]`;
+
+        await actAs(client, self.authUserId, organization);
+        const straddling = await insertRequest(client, { organization, member: self.id, during });
+        const before = await duringOf(client, straddling);
+        await actAs(client, owner.authUserId, organization);
+        await insertVersion(client, { organization, member: self.id, active: false, from });
+        await actAsOwner(client);
+
+        expect(await requestState(client, straddling), slug).toEqual(closedOnDeactivation(owner.authUserId));
+        expect(await duringOf(client, straddling), `${slug}: the request was shrunk`).toBe(before);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'closes a $fixture request beyond a scheduled deactivation at scheduling, refuses a new one reaching it (55000), and the member reads the decision',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const day = (offset: number) => organizationDay(client, organization, offset);
+
+        await actAs(client, self.authUserId, organization);
+        const beyond = await insertRequest(client, { organization, member: self.id, during: `[${await day(40)},${await day(45)}]` });
+        const before = await insertRequest(client, { organization, member: self.id, during: `[${await day(20)},${await day(24)}]` });
+        await actAs(client, owner.authUserId, organization);
+        await insertVersion(client, { organization, member: self.id, active: false, from: await day(30) });
+        // Still active today, so still signed in: the member asks again.
+        await actAs(client, self.authUserId, organization);
+        const reachingRange = `[${await day(25)},${await day(30)}]`;
+        const insideRange = `[${await day(50)},${await day(52)}]`;
+        const reaching = await refusedThenContinue(client, () =>
+          insertRequest(client, { organization, member: self.id, during: reachingRange }),
+        );
+        const inside = await refusedThenContinue(client, () =>
+          insertRequest(client, { organization, member: self.id, during: insideRange }),
+        );
+        const untilTheDay = await insertRequest(client, { organization, member: self.id, during: `[${await day(25)},${await day(29)}]` });
+        const decisions = await visibleDecisions(client);
+        const withdrawal = await refusedThenContinue(client, () => withdrawRequest(client, beyond));
+        await actAsOwner(client);
+
+        expect(await requestState(client, beyond), slug).toEqual(closedOnDeactivation(owner.authUserId));
+        expect(await requestState(client, before), `${slug}: a request before the date was closed`).toEqual(PENDING);
+        expect(reaching, slug).toMatchObject({ code: '55000', message: 'LEAVE_REQUEST_MEMBER_INACTIVE' });
+        expect(inside, slug).toMatchObject({ code: '55000', message: 'LEAVE_REQUEST_MEMBER_INACTIVE' });
+        expect(await requestState(client, untilTheDay), slug).toEqual(PENDING);
+        expect(decisions, `${slug}: the member does not read the deactivation's decision`).toEqual([beyond]);
+        expect(withdrawal, slug).toMatchObject({ code: 'P0002', message: 'LEAVE_REQUEST_NOT_PENDING' });
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture approval reaching an inactive date (55000) and leaves it pending, allows its rejection, and refuses `deactivated` as an outcome (22023)',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const day = (offset: number) => organizationDay(client, organization, offset);
+        await ownerVersion(client, { organization, member: self.id, active: false, from: await day(30), by: owner.authUserId });
+        // Past every trigger's gate, as the owner: the request a race could leave behind.
+        const stranded = await insertedRequestAsOwner(client, organization, self, `[${await day(28)},${await day(32)}]`);
+        const other = await insertedRequestAsOwner(client, organization, self, `[${await day(40)},${await day(42)}]`);
+
+        await actAs(client, owner.authUserId, organization);
+        const approval = await refusedThenContinue(client, () => decideRequest(client, stranded, 'approved'));
+        const named = await refusedThenContinue(client, () => decideRequest(client, other, 'deactivated'));
+        const pendingAfter = await (async () => {
+          await actAsOwner(client);
+          const state = await requestState(client, stranded);
+          await actAs(client, owner.authUserId, organization);
+          return state;
+        })();
+        const rejected = await decideRequest(client, stranded, 'rejected');
+        await actAsOwner(client);
+
+        expect(approval, slug).toMatchObject({ code: '55000', message: 'LEAVE_REQUEST_MEMBER_INACTIVE' });
+        expect(pendingAfter, `${slug}: a refused approval closed the request`).toEqual(PENDING);
+        expect(named, slug).toMatchObject({ code: '22023', message: 'LEAVE_REQUEST_OUTCOME_UNKNOWN' });
+        expect(rejected, slug).toBeNull();
+        expect((await requestState(client, stranded)).outcome, slug).toBe('rejected');
+        const { rows } = await client.query<{ total: number }>(
+          'select count(*)::int as total from leave_records where member_id = $1 and removed_at is null and during && $2::daterange',
+          [self.id, `[${await day(28)},${await day(43)})`],
+        );
+        expect(rows[0]?.total, `${slug}: leave was recorded for an inactive member`).toBe(0);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'closes nothing of a $fixture member on a reactivation',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const day = (offset: number) => organizationDay(client, organization, offset);
+        await ownerVersion(client, { organization, member: self.id, active: false, from: await day(0), by: owner.authUserId });
+        // Written after the deactivation, as the owner: pending over dates the reactivation brings back.
+        const later = await insertedRequestAsOwner(client, organization, self, `[${await day(20)},${await day(25)}]`);
+
+        await actAs(client, owner.authUserId, organization);
+        await insertVersion(client, { organization, member: self.id, active: true, from: await day(5) });
+        await actAsOwner(client);
+
+        expect(await requestState(client, later), slug).toEqual(PENDING);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'leaves a $fixture request after a later reactivation pending when the owner writes a deactivation before it',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const day = (offset: number) => organizationDay(client, organization, offset);
+        const covered = await insertedRequestAsOwner(client, organization, self, `[${await day(12)},${await day(14)}]`);
+        const after = await insertedRequestAsOwner(client, organization, self, `[${await day(25)},${await day(27)}]`);
+
+        // Out of date order, as only the owner can: the reactivation first, then the deactivation before it.
+        await ownerVersion(client, { organization, member: self.id, active: true, from: await day(20), by: owner.authUserId });
+        await ownerVersion(client, { organization, member: self.id, active: false, from: await day(10), by: owner.authUserId });
+
+        expect(await requestState(client, covered), slug).toEqual(closedOnDeactivation(owner.authUserId));
+        expect(await requestState(client, after), `${slug}: a request the reactivation governs was closed`).toEqual(PENDING);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'backfills a $fixture pending request stranded on an inactive date before 0041, attributed to its version, and nothing else',
+    async ({ slug, admin, member, bystander }) => {
+      const migration = stripSqlComments(
+        readFileSync(join(repoRoot, 'supabase', 'migrations', '0041_deactivation_closes_leave_requests.sql'), 'utf8'),
+      );
+      const backfill = /with stranded as \([\s\S]*?;/.exec(migration)?.[0];
+      expect(backfill, '0041 has no backfill').toBeDefined();
+
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const other = await memberByUsername(client, slug, bystander);
+        const organization = owner.organizationId;
+        const day = (offset: number) => organizationDay(client, organization, offset);
+        const by = other.authUserId;
+
+        // As before 0041: versions that close nothing.
+        await client.query('alter table member_status_versions disable trigger member_status_versions_close_leave_requests');
+        await ownerVersion(client, { organization, member: self.id, active: false, from: await day(10), by });
+        await ownerVersion(client, { organization, member: self.id, active: true, from: await day(20), by: owner.authUserId });
+        await client.query('alter table member_status_versions enable trigger member_status_versions_close_leave_requests');
+        const ended = await insertedRequestAsOwner(client, organization, self, `[${await day(2)},${await day(5)}]`);
+        const straddling = await insertedRequestAsOwner(client, organization, self, `[${await day(8)},${await day(12)}]`);
+        const inside = await insertedRequestAsOwner(client, organization, self, `[${await day(14)},${await day(16)}]`);
+        const reactivated = await insertedRequestAsOwner(client, organization, self, `[${await day(20)},${await day(25)}]`);
+        const colleague = await insertedRequestAsOwner(client, organization, other, `[${await day(10)},${await day(12)}]`);
+        await client.query(backfill ?? '');
+
+        expect(await requestState(client, straddling), slug).toEqual(closedOnDeactivation(by));
+        expect(await requestState(client, inside), slug).toEqual(closedOnDeactivation(by));
+        for (const untouched of [ended, reactivated, colleague]) {
+          expect(await requestState(client, untouched), `${slug}: the backfill closed a request it does not reach`).toEqual(PENDING);
+        }
+      });
+    },
+  );
+});
+
+/** A pending request written as the OWNER, past every policy and trigger gate. */
+async function insertedRequestAsOwner(client: Client, organization: string, member: MemberRow, during: string): Promise<string> {
+  const { rows } = await client.query<{ id: string }>(
+    `insert into leave_requests (organization_id, member_id, during, created_by)
+     values ($1, $2, $3::daterange, $4) returning id::text as id`,
+    [organization, member.id, during, member.authUserId],
+  );
+  const id = rows[0]?.id;
+  if (id === undefined) throw new Error('the owner request insert returned no id');
+  return id;
+}

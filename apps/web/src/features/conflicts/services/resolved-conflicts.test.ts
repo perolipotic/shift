@@ -422,6 +422,18 @@ describe('decided leave requests beside resolved conflicts (story 9.5)', () => {
     );
   });
 
+  it('lists a request closed on its member\'s deactivation, attributed to the deactivating admin (0041)', () => {
+    const view = fullViewOf(
+      [],
+      [requestOf('req-closed', { closedAt: '2026-09-02T10:00:00+00:00', outcome: 'deactivated', at: '2026-09-02T10:00:00+00:00' })],
+    );
+
+    expect(view.rows).toEqual([
+      expect.objectContaining({ item: ITEM_REQUEST, key: 'request:req-closed', outcome: 'closedOnDeactivation', actorName: 'Damir Dekanić' }),
+    ]);
+    expect(t('godisnji.request.status.closedOnDeactivation')).toBe('Zatvoren deaktivacijom');
+  });
+
   it('lists neither a pending nor a withdrawn request', () => {
     expect(fullViewOf([], [requestOf('req-pending'), requestOf('req-withdrawn', { closedAt: '2026-09-02T08:00:00+00:00' })]).rows).toEqual([]);
   });

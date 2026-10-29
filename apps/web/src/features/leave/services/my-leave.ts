@@ -21,8 +21,10 @@ import {
 } from '@/features/leave/services/leave-section';
 import {
   REQUEST_APPROVED,
+  REQUEST_CLOSED_ON_DEACTIVATION,
   REQUEST_DENIED,
   REQUEST_FAILED,
+  REQUEST_MEMBER_INACTIVE,
   REQUEST_NOT_PENDING,
   REQUEST_OVERLAPS_LEAVE,
   REQUEST_OVERLAPS_REQUEST,
@@ -326,6 +328,7 @@ export function myLeaveRequestSendMessageKey(
 ):
   | 'godisnji.request.overlapsLeave'
   | 'godisnji.request.overlapsRequest'
+  | 'godisnji.request.memberInactive'
   | 'godisnji.request.denied'
   | 'godisnji.request.failed' {
   switch (code) {
@@ -333,6 +336,8 @@ export function myLeaveRequestSendMessageKey(
       return 'godisnji.request.overlapsLeave';
     case REQUEST_OVERLAPS_REQUEST:
       return 'godisnji.request.overlapsRequest';
+    case REQUEST_MEMBER_INACTIVE:
+      return 'godisnji.request.memberInactive';
     case REQUEST_DENIED:
       return 'godisnji.request.denied';
     case REQUEST_FAILED:
@@ -371,7 +376,8 @@ export function myLeaveRequestStatusMessageKey(
   | 'godisnji.request.status.pending'
   | 'godisnji.request.status.approved'
   | 'godisnji.request.status.rejected'
-  | 'godisnji.request.status.withdrawn' {
+  | 'godisnji.request.status.withdrawn'
+  | 'godisnji.request.status.closedOnDeactivation' {
   switch (status) {
     case REQUEST_PENDING:
       return 'godisnji.request.status.pending';
@@ -381,6 +387,8 @@ export function myLeaveRequestStatusMessageKey(
       return 'godisnji.request.status.rejected';
     case REQUEST_WITHDRAWN:
       return 'godisnji.request.status.withdrawn';
+    case REQUEST_CLOSED_ON_DEACTIVATION:
+      return 'godisnji.request.status.closedOnDeactivation';
     default: {
       const unhandled: never = status;
 
@@ -506,16 +514,19 @@ export function myLeaveRequestsOf(viewer: MyLeaveRequestsViewer, rows: MyLeaveRo
   };
 }
 
-/** The closing date's line by status: decided or withdrawn; none while pending. Exhaustive. */
+/** The closing date's line by status: decided, withdrawn or closed on deactivation; none while pending. Exhaustive. */
 export function myLeaveRequestClosedMessageKey(
   status: LeaveRequestStatus,
-): 'godisnji.request.decidedOn' | 'godisnji.request.withdrawnOn' | null {
+): 'godisnji.request.decidedOn' | 'godisnji.request.withdrawnOn' | 'godisnji.request.closedOn' | null {
   switch (status) {
     case REQUEST_PENDING:
       return null;
     case REQUEST_APPROVED:
     case REQUEST_REJECTED:
       return 'godisnji.request.decidedOn';
+    // 0041: closed on the deactivation's date of writing, as a decision.
+    case REQUEST_CLOSED_ON_DEACTIVATION:
+      return 'godisnji.request.closedOn';
     case REQUEST_WITHDRAWN:
       return 'godisnji.request.withdrawnOn';
     default: {

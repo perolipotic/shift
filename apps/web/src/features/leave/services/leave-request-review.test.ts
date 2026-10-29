@@ -29,12 +29,14 @@ import {
   REQUEST_APPROVED,
   REQUEST_REJECTED,
   REQUEST_DENIED,
+  REQUEST_MEMBER_INACTIVE,
   REQUEST_FAILED,
   REQUEST_NOT_PENDING,
   leaveRequestFoundOf,
 } from '@/features/leave/services/leave-requests';
 import { LEAVE_PREVIEW_READY, leavePreviewStateOf, memberLeaveBaseOf } from '@/features/leave/services/leave-section';
 import { LEAVE_RECORDS_KEY } from '@/features/leave/services/leave-list';
+import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
 import { LEAVE_WRITE_DEPENDENTS } from '@/features/teams/services/dependents';
 import { initLocalization, t } from '@/lib/i18n';
 import {
@@ -363,6 +365,10 @@ describe('a refused decision', () => {
       REQUEST_APPROVAL_STALE,
       'U međuvremenu je upisan godišnji koji se preklapa s ovim zahtjevom. Odobrenje nije moguće, a zahtjev možeš odbiti.',
     ],
+    [
+      REQUEST_MEMBER_INACTIVE,
+      'Osoba nije aktivna na sve datume ovog zahtjeva. Odobrenje nije moguće, a zahtjev možeš odbiti.',
+    ],
     [REQUEST_DENIED, 'Nemaš ovlasti odlučiti o ovom zahtjevu.'],
     [REQUEST_FAILED, 'Odluku nije bilo moguće spremiti. Pokušaj ponovno.'],
   ] as const)('says %s in its own words', (code, words) => {
@@ -413,6 +419,16 @@ describe('what a decision re-reads, besides the request itself', () => {
       MY_LEAVE_REQUESTS_KEY,
       LEAVE_REQUEST_ROOT_KEY,
       ORGANIZATION_LEAVE_REQUESTS_KEY,
+    ]);
+  });
+
+  it('is, for an approval onto an inactive date (0041), the request keys, the member list and the member\'s records', () => {
+    expect(decisionRefreshKeysOf(REQUEST_MEMBER_INACTIVE, VIEWER_MEMBER)).toEqual([
+      MY_LEAVE_REQUESTS_KEY,
+      LEAVE_REQUEST_ROOT_KEY,
+      ORGANIZATION_LEAVE_REQUESTS_KEY,
+      MEMBERS_LIST_KEY,
+      LEAVE_RECORDS_KEY(VIEWER_MEMBER),
     ]);
   });
 
