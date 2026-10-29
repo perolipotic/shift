@@ -9,6 +9,7 @@ import {
   seedExtraTeam,
   seedLeaveMember,
   seedLeaveRecord,
+  seedLeaveRequest,
   seedMemberStatusVersions,
   seedShiftTypeOverride,
   seedTeamRotation,
@@ -16,7 +17,7 @@ import {
   type SeededLeaveMember,
   type SeededRotation,
 } from '../../utils/database-helper.ts';
-import { addDays, dayMonth, weekdayOf, weekdayShort } from '../../utils/dates.ts';
+import { addDays, dayMonth, fullDate, weekdayOf, weekdayShort } from '../../utils/dates.ts';
 import { fill, hr, icu, plural } from '../../utils/i18n.ts';
 import { expectNoHorizontalScroll, expectTouchTargets } from '../../utils/layout.ts';
 import { ADMIN_STATE } from '../../utils/run-fixture.ts';
@@ -73,6 +74,12 @@ test.afterEach(async () => {
   hold = null;
   if (failures.length > 0) throw failures[0];
 });
+
+/**
+ * The deactivation question's request line (0041), whatever its count: the
+ * sentence after its ranges, which every form ends with.
+ */
+const requestsLineEnd = hr.ljudi.status.deactivateRequests.slice(hr.ljudi.status.deactivateRequests.indexOf('{ranges}') + '{ranges}. '.length);
 
 /** Every count of the dialog's title (`anyErasureTitleOf`). */
 const anyErasureTitle = anyErasureTitleOf(erasures.title);
@@ -222,7 +229,7 @@ test('deactivating a member on leave lists every conflict it erases, by keyboard
   await expect(peoplePage.statusDialog).toHaveCount(0);
   const saved = peoplePage.statusWith(hr.ljudi.status.saved);
   await expect(saved).toBeVisible();
-  // The `few` form: "Uklonjene 2 stavke koje su čekale odluku."
+  // The `few` form: "Uklonjene 2 odsutnosti u smjeni koje su čekale odluku."
   await expect(saved).toContainText(plural(erasures.removed, 2));
 
   await conflictsPage.goto();
@@ -235,11 +242,54 @@ test('a status change that erases nothing writes as it always did', async ({ fix
   const { person } = await setUp(fixture.slug, null);
 
   await peoplePage.gotoMember(person.id);
-  await peoplePage.deactivate(person.name);
+  // No pending request: the question names none.
+  await peoplePage.deactivateButton(person.name).click();
+  await expect(peoplePage.deactivateSaveButton).toBeVisible();
+  await expect(peoplePage.statusDialog).not.toContainText(requestsLineEnd);
+  await peoplePage.deactivateSaveButton.click();
 
   await expect(peoplePage.statusWith(hr.ljudi.status.saved)).toBeVisible();
   // No erasure dialog of ANY count was shown.
   await expect(peoplePage.dialog(anyErasureTitle)).toHaveCount(0);
+});
+
+// RETRO 8–9, C1 + C4: a deactivation closes the member's pending leave
+// requests that reach its date (0041), and its question names them first.
+test('deactivating a member with a pending leave request names it in the question, and Za odluku stops counting it', async ({
+  fixture,
+  peoplePage,
+  conflictsPage,
+}) => {
+  test.slow();
+  const { rotation, person } = await setUp(fixture.slug, null);
+  const request = { from: addDays(rotation.today, 10), to: addDays(rotation.today, 12) };
+  await seedLeaveRequest(fixture.slug, person.id, request.from, request.to);
+
+  await conflictsPage.goto();
+  await expect(conflictsPage.rowsOf(person.name)).toHaveCount(1);
+
+  await peoplePage.gotoMember(person.id);
+  await peoplePage.deactivateButton(person.name).click();
+  await expect(peoplePage.statusDialog).toContainText(
+    fill(icu(hr.ljudi.status.deactivateRequests, { count: 1 }), {
+      ranges: `${fullDate(request.from)}–${fullDate(request.to)}`,
+    }),
+  );
+  await peoplePage.deactivateSaveButton.click();
+  await expect(peoplePage.statusWith(hr.ljudi.status.saved)).toBeVisible();
+  // It closes a request, and erases no collision: no erasure dialog was shown.
+  await expect(peoplePage.dialog(anyErasureTitle)).toHaveCount(0);
+
+  await conflictsPage.goto();
+  await expect(conflictsPage.anyCountHeading).toBeVisible();
+  await expect(conflictsPage.rowsOf(person.name)).toHaveCount(0);
+
+  // Decided by the deactivation, in its own words, never as a rejection.
+  await conflictsPage.resolvedTab.click();
+  const entry = conflictsPage.resolvedEntries.filter({ hasText: person.name });
+  await expect(entry).toHaveCount(1);
+  await expect(entry).toContainText(hr.godisnji.request.status.closedOnDeactivation);
+  await expect(entry).not.toContainText(hr.godisnji.request.status.rejected);
 });
 
 test('a kept conflict holds the move, and going back keeps the team dialog as entered and writes nothing', async ({

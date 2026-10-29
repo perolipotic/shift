@@ -9,7 +9,12 @@ import {
   type ResolvedConflictsView,
   type ResolvedRequestRow,
 } from '@/features/conflicts/services/resolved-conflicts';
-import { REQUEST_APPROVED } from '@/features/leave/services/leave-requests';
+import {
+  REQUEST_APPROVED,
+  REQUEST_CLOSED_ON_DEACTIVATION,
+  REQUEST_REJECTED,
+  type DecidedLeaveRequestStatus,
+} from '@/features/leave/services/leave-requests';
 import { t } from '@/lib/i18n';
 
 /** The decision in words: the kind's, naming the replacement where there is one. */
@@ -66,18 +71,36 @@ function ResolvedItem({ row }: { readonly row: ResolvedConflictRow }): ReactNode
   );
 }
 
+/** A decided request's outcome as its badge's word. Exhaustive. */
+function requestOutcomeWord(outcome: DecidedLeaveRequestStatus): string {
+  switch (outcome) {
+    case REQUEST_APPROVED:
+      return t('godisnji.request.status.approved');
+    case REQUEST_REJECTED:
+      return t('godisnji.request.status.rejected');
+    case REQUEST_CLOSED_ON_DEACTIVATION:
+      return t('godisnji.request.status.closedOnDeactivation');
+    default: {
+      const unhandled: never = outcome;
+
+      return unhandled;
+    }
+  }
+}
+
 /**
  * One decided leave request (story 9.5): its first day, its outcome's badge
  * and its kind, as a resolved conflict opens, then the member —
  * or that they are gone — the range, and who decided it and when. Read-only,
- * as a resolved conflict is. A withdrawn request is never listed.
+ * as a resolved conflict is. A withdrawn request is never listed; one closed
+ * on its member's deactivation (0041) is, as *Zatvoren deaktivacijom*.
  */
 function ResolvedRequestItem({ row }: { readonly row: ResolvedRequestRow }): ReactNode {
   return (
     <li className="grid min-w-0 gap-1 rounded-md border bg-card p-3">
       <EntryHead
         dateShown={row.dateShown}
-        decision={row.outcome === REQUEST_APPROVED ? t('godisnji.request.status.approved') : t('godisnji.request.status.rejected')}
+        decision={requestOutcomeWord(row.outcome)}
         kind={t('zaOdluku.kind.request')}
       />
       <span className="min-w-0 break-words font-medium">{row.memberName ?? t('zaOdluku.request.memberGone')}</span>

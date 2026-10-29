@@ -244,6 +244,10 @@ describe('the reads a team or membership write makes stale', () => {
         ORGANIZATION_LEAVE_RECORDS_KEY,
         LEAVE_OVERVIEW_RECORDS_KEY,
         ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
+        // 0041: a deactivation closes the member's pending leave requests.
+        REQUEST_A,
+        REQUEST_B,
+        ORGANIZATION_LEAVE_REQUESTS_KEY,
       ],
     },
     {

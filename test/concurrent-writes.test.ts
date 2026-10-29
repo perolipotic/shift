@@ -1326,6 +1326,63 @@ describe('a request waits for an approval of the same member\'s dates, and then 
   }
 });
 
+describe('a deactivation and an approval of the same member wait for each other (0041)', () => {
+  for (const first of ['deactivation', 'approval'] as const) {
+    it.skipIf(noDatabase)(
+      first === 'deactivation'
+        ? 'refuses the approval that waited for a deactivation closing its request (P0002)'
+        : 'lets the deactivation that waited for an approval land, and leaves the request approved',
+      async () => {
+        const { organization, admin, member, request, today } = await fixture(async (client) => {
+          const organization = await addOrganization(client);
+          const admin = await addAccount(client, organization, 'admin');
+          const member = await addAccount(client, organization, 'member_role');
+          const request = await insertedId(
+            client,
+            `insert into leave_requests (organization_id, member_id, during, created_by)
+             values ($1, $2, '[2046-03-02,2046-03-06]', $3)
+             returning id`,
+            [organization, member.id, member.authUserId],
+          );
+          return { organization, admin, member, request, today: await organizationDay(client, organization, 0) };
+        });
+        const deactivate = (client: Client) =>
+          insertStatus(client, { organization, member: member.id, active: false, from: today });
+        const approve = (client: Client) =>
+          client.query(`select public.decide_leave_request($1::uuid, 'approved')`, [request]);
+
+        await race(async (t1, t2, observer) => {
+          await t1.query('begin');
+          await actAs(t1, admin, organization);
+          expect((await (first === 'deactivation' ? deactivate(t1) : approve(t1))).rowCount).toBe(1);
+
+          const pid = await backendPid(t2);
+          await t2.query('begin');
+          await actAs(t2, admin, organization);
+          const waiting = pending(first === 'deactivation' ? approve(t2) : deactivate(t2));
+          await waitUntilBlocked(observer, pid, organization, waiting);
+
+          await t1.query('commit');
+
+          if (first === 'deactivation') {
+            expect(await waiting.outcome).toMatchObject({ ok: false, code: 'P0002', message: 'LEAVE_REQUEST_NOT_PENDING' });
+          } else {
+            expect(await waiting.outcome).toEqual({ ok: true, rowCount: 1 });
+            await t2.query('commit');
+          }
+
+          const { rows } = await observer.query<{ outcome: string }>(
+            'select outcome from leave_request_decisions where request_id = $1',
+            [request],
+          );
+          expect(rows).toEqual([{ outcome: first === 'deactivation' ? 'deactivated' : 'approved' }]);
+        });
+      },
+      LONG_CASE_MS,
+    );
+  }
+});
+
 describe('an archive waits for a rotation write, and a rotation write for an archive (0036, 0037)', () => {
   it.skipIf(noDatabase)('lets a team archive that waited while the team was given a rotation land (0037)', async () => {
     // 0037 withdrew 0036's team rule: no version ends a rotation, so it made a

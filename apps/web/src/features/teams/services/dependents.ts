@@ -72,7 +72,10 @@ export const TEAM_CHANGE_DEPENDENTS: readonly QueryKey[] = [
  * says who is on which team today — and, since story 5.5e, the
  * organization's live leave records and resolutions, the other two reads the
  * member page's erasure check stands on beside the calendar, so a change
- * that erased a conflict takes it out of the queue on the next read.
+ * that erased a conflict takes it out of the queue on the next read. Since
+ * 0041 a deactivation closes the member's pending leave requests in the same
+ * statement, so the organization's requests and every one request held are
+ * re-read too, and *Za odluku* stops counting them.
  */
 export const MEMBERSHIP_WRITE_DEPENDENTS: readonly QueryKey[] = [
   OWN_TEAM_KEY,
@@ -81,6 +84,8 @@ export const MEMBERSHIP_WRITE_DEPENDENTS: readonly QueryKey[] = [
   ORGANIZATION_LEAVE_RECORDS_KEY,
   LEAVE_OVERVIEW_RECORDS_KEY,
   ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
+  ORGANIZATION_LEAVE_REQUESTS_KEY,
+  LEAVE_REQUEST_ROOT_KEY,
 ];
 
 /**

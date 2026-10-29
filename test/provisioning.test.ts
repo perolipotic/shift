@@ -1544,7 +1544,8 @@ describe('every organization table carries row level security, and only its revi
       );
       expect(keys.map((row) => `${row.table}: ${row.definition}`).sort()).toEqual([
         "leave_request_decisions: CHECK (((outcome = 'approved'::text) = (leave_record_id IS NOT NULL)))",
-        "leave_request_decisions: CHECK ((outcome = ANY (ARRAY['approved'::text, 'rejected'::text])))",
+        // 0041: a request closed on its member's deactivation is its own outcome.
+        "leave_request_decisions: CHECK ((outcome = ANY (ARRAY['approved'::text, 'rejected'::text, 'deactivated'::text])))",
         'leave_request_decisions: FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE',
         'leave_request_decisions: FOREIGN KEY (organization_id, leave_record_id) REFERENCES leave_records(organization_id, id)',
         'leave_request_decisions: FOREIGN KEY (organization_id, request_id) REFERENCES leave_requests(organization_id, id)',
@@ -1881,6 +1882,9 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // STORY 9.2. The overlap trigger reads the caller, `members` and
     // `leave_records` past row level security, as 5.4a's reads leave.
     { name: 'refuse_leave_request_over_leave', argumentCount: 0 },
+    // 0041. The close on deactivation updates `leave_requests` and writes
+    // `leave_request_decisions` past row level security, which no session may.
+    { name: 'close_leave_requests_on_deactivation', argumentCount: 0 },
     // 0023. The lock is taken from a trigger every writer fires, and the
     // last-admin re-check reads `members` and the status history past row
     // level security, as 0002's trigger does, on the same attributes.
@@ -2029,6 +2033,10 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'refuse_conflict_resolution_off_leave', argumentCount: 0, expected: [] },
     // STORY 9.2's overlap trigger function, on 0023's terms.
     { name: 'refuse_leave_request_over_leave', argumentCount: 0, expected: [] },
+    // 0041's trigger function, on 0023's terms, and the inactive-in-range
+    // reader only its definers call, as the owner.
+    { name: 'close_leave_requests_on_deactivation', argumentCount: 0, expected: [] },
+    { name: 'member_inactive_within', argumentCount: 2, expected: [] },
     // 0024's name key, in `private`, which PostgREST does not expose. Every
     // name check and name unique index calls it, and both are
     // permission-checked against the WRITING role — and a check runs on every
@@ -2058,6 +2066,8 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'rotation_steps_in_view', argumentCount: 1 },
     { name: 'rotation_overrides_in_view', argumentCount: 1 },
     { name: 'rotation_roster_overrides_in_view', argumentCount: 1 },
+    // 0041's reader of 0008's history, as 0008's readers.
+    { name: 'member_inactive_within', argumentCount: 2 },
     // 0023's TRUNCATE refusal reads nothing, so it has no reason to be a definer.
     { name: 'refuse_truncate', argumentCount: 0 },
     // 0024's name key reads nothing; it runs as whoever writes the name.

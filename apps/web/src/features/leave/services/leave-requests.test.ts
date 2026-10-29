@@ -20,8 +20,10 @@ import {
   LEAVE_REQUESTS_UNAVAILABLE,
   MY_LEAVE_REQUESTS_KEY,
   REQUEST_APPROVED,
+  REQUEST_CLOSED_ON_DEACTIVATION,
   REQUEST_DENIED,
   REQUEST_FAILED,
+  REQUEST_MEMBER_INACTIVE,
   REQUEST_NOT_PENDING,
   REQUEST_OVERLAPS_LEAVE,
   REQUEST_OVERLAPS_REQUEST,
@@ -75,12 +77,16 @@ describe('the status, derived as 0040 stores it', () => {
     ['withdrawn when closed with no decision', '2026-10-20T08:00:00Z', [], REQUEST_WITHDRAWN],
     ['approved from a one-to-one embed', '2026-10-20T08:00:00Z', { outcome: 'approved' }, REQUEST_APPROVED],
     ['withdrawn from a null one-to-one embed', '2026-10-20T08:00:00Z', null, REQUEST_WITHDRAWN],
+    // 0041: closed by the member's deactivation, as its own outcome.
+    ['closed on deactivation by its decision', '2026-10-20T08:00:00Z', [{ outcome: 'deactivated' }], REQUEST_CLOSED_ON_DEACTIVATION],
   ] as const)('is %s', (_name, closedAt, decisions, status) => {
     expect(leaveRequestStatusOf(closedAt, decisions)).toBe(status);
   });
 
   it.each([
     ['a pending request with a decision', null, [{ outcome: 'approved' }]],
+    ['a pending request with a deactivation decision', null, [{ outcome: 'deactivated' }]],
+    ['the status word stored as an outcome', '2026-10-20T08:00:00Z', [{ outcome: 'closedOnDeactivation' }]],
     ['two decisions', '2026-10-20T08:00:00Z', [{ outcome: 'approved' }, { outcome: 'rejected' }]],
     ['an unknown outcome', '2026-10-20T08:00:00Z', [{ outcome: 'maybe' }]],
     ['a closed_at that is no text', 42, []],
@@ -202,6 +208,8 @@ describe('the send', () => {
     ['an overlap with live leave', { code: '23P01', message: 'LEAVE_REQUEST_OVERLAPS_LEAVE' }, REQUEST_OVERLAPS_LEAVE],
     ['an overlap with a pending request', { code: '23P01', message: 'conflicting key value violates exclusion constraint' }, REQUEST_OVERLAPS_REQUEST],
     ['a refusal', { code: '42501', message: 'new row violates row-level security policy' }, REQUEST_DENIED],
+    ['a date the member is inactive (0041)', { code: '55000', message: 'LEAVE_REQUEST_MEMBER_INACTIVE' }, REQUEST_MEMBER_INACTIVE],
+    ['another 55000', { code: '55000', message: 'something else' }, REQUEST_FAILED],
     ['a check', { code: '23514', message: 'leave_requests_during_at_most_366_days' }, REQUEST_FAILED],
   ] as const)('maps %s by SQLSTATE and message', async (_name, error, code) => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -431,6 +439,22 @@ describe("the organization's requests (story 9.5)", () => {
     expect(requests?.[0]).toMatchObject({ from: '2026-11-02', to: '2026-11-04' });
   });
 
+  it('reads a request closed on its member\'s deactivation as decided by the deactivating admin (0041)', () => {
+    const requests = organizationLeaveRequestsOf([
+      rowOf('req-closed', '2026-11-02', '2026-11-05', {
+        closedAt: DECIDED,
+        decisions: [{ outcome: 'deactivated', decided_by: 'admin-auth', decided_at: DECIDED }],
+      }),
+    ]);
+
+    expect(requests?.[0]?.status).toBe(REQUEST_CLOSED_ON_DEACTIVATION);
+    expect(requests?.[0]?.decision).toEqual({
+      outcome: REQUEST_CLOSED_ON_DEACTIVATION,
+      decidedBy: 'admin-auth',
+      decidedAt: DECIDED,
+    });
+  });
+
   it.each([
     ['two rows of one id', [rowOf('r', '2026-11-02', '2026-11-05'), rowOf('r', '2026-11-10', '2026-11-12')]],
     ['no id', [{ ...rowOf('r', '2026-11-02', '2026-11-05'), id: null }]],
@@ -526,6 +550,8 @@ describe('the decision (story 9.4)', () => {
     ['no longer pending', { code: 'P0002', message: 'LEAVE_REQUEST_NOT_PENDING' }, REQUEST_NOT_PENDING],
     ['a stale approval', { code: '23P01', message: 'LEAVE_REQUEST_APPROVAL_OVERLAPS_LEAVE' }, REQUEST_APPROVAL_STALE],
     ['not allowed', { code: '42501', message: 'LEAVE_REQUEST_DECISION_REFUSED' }, REQUEST_DENIED],
+    ['an approval onto an inactive date (0041)', { code: '55000', message: 'LEAVE_REQUEST_MEMBER_INACTIVE' }, REQUEST_MEMBER_INACTIVE],
+    ['another 55000', { code: '55000', message: 'something else' }, REQUEST_FAILED],
     ['anything else', { code: '22023', message: 'LEAVE_REQUEST_OUTCOME_UNKNOWN' }, REQUEST_FAILED],
   ] as const)('maps %s', async (_name, error, code) => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);

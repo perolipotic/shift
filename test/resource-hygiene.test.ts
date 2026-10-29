@@ -150,6 +150,9 @@ const SANCTIONED_PLURAL_KEYS = [
   // 7 smjena`); without it, the size alone.
   'ljudi.status.deactivateConsequence',
   'ljudi.status.deactivateConsequenceTeam',
+  // 0041: the pending leave requests a deactivation closes — `1 zahtjev`,
+  // `2 zahtjeva`, `5 zahtjeva` — and that cancelling it does not reopen them.
+  'ljudi.status.deactivateRequests',
   // STORY 4.1b: how many shifts the viewer works in the month and in each
   // band — `0 smjena`, `1 smjena`, `2 smjene`, `21 smjena` — and the note on
   // the ones with no times, shown only when there is one.
@@ -1732,6 +1735,7 @@ const SANCTIONED_SCREEN_KEYS = [
   'godisnji.request.cancel',
   'godisnji.request.overlapsLeave',
   'godisnji.request.overlapsRequest',
+  'godisnji.request.memberInactive',
   'godisnji.request.denied',
   'godisnji.request.failed',
   'godisnji.request.sent',
@@ -1743,10 +1747,12 @@ const SANCTIONED_SCREEN_KEYS = [
   'godisnji.request.state',
   'godisnji.request.decidedOn',
   'godisnji.request.withdrawnOn',
+  'godisnji.request.closedOn',
   'godisnji.request.status.pending',
   'godisnji.request.status.approved',
   'godisnji.request.status.rejected',
   'godisnji.request.status.withdrawn',
+  'godisnji.request.status.closedOnDeactivation',
   'godisnji.request.withdraw',
   'godisnji.request.withdrawName',
   'godisnji.request.withdrawn',
@@ -1840,6 +1846,7 @@ const SANCTIONED_SCREEN_KEYS = [
   'zaOdluku.request.reject',
   'zaOdluku.request.notPending',
   'zaOdluku.request.approvalStale',
+  'zaOdluku.request.memberInactive',
   'zaOdluku.request.denied',
   'zaOdluku.request.failed',
   'zaOdluku.resolution.replaceTitle',
@@ -2320,6 +2327,21 @@ const PEOPLE_DESCRIPTION_KEY = 'shell.description.ljudi';
 const QUEUE_COLLISION_KIND_KEY = 'zaOdluku.kind.collision';
 
 /**
+ * The member page's erasure copy (retro 8–9, C4), FIVE KEYS: the dialog
+ * names what it erases as {@link QUEUE_COLLISION_KIND_KEY} names it —
+ * *odsutnost u smjeni* — rather than as a vague *stavka*, now that *Za
+ * odluku* also lists leave requests. `smjen` names the rostered shift there,
+ * and `tip… smjen…` is refused.
+ */
+const MEMBER_ERASURE_COLLISION_KEYS: readonly string[] = [
+  'ljudi.erasures.title',
+  'ljudi.erasures.lede',
+  'ljudi.erasures.kept',
+  'ljudi.erasures.changed',
+  'ljudi.erasures.removed',
+];
+
+/**
  * The rotation builder's override review (story 3.5c): the admin amends an
  * override's SHIFT TYPE there, so it says the term — `Tip smjene` is the
  * amend's field — and, being the builder's, the TEAM too, as `smjena` (an
@@ -2380,7 +2402,8 @@ function teamTermOutOfTurn(key: string, message: string): boolean {
     key !== MEMBER_NO_TEAM_KEY &&
     key !== DEACTIVATION_CONSEQUENCE_KEY &&
     key !== PEOPLE_DESCRIPTION_KEY &&
-    key !== QUEUE_COLLISION_KIND_KEY
+    key !== QUEUE_COLLISION_KIND_KEY &&
+    !MEMBER_ERASURE_COLLISION_KEYS.includes(key)
   ) {
     return lowered.includes('smjen');
   }

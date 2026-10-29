@@ -24,6 +24,7 @@ import { formatIsoDayMonth, isIsoDate } from '@/lib/i18n/format';
 import type { MemberEdit } from '@/features/members/hooks/use-member-edit';
 import { memberErasureCopyOf } from '@/features/members/utils/erasure-copy';
 import { type MemberListRow } from '@/features/members/services/list';
+import { deactivationClosedRangesText } from '@/features/members/services/deactivation-requests';
 import {
   DEACTIVATE,
   STATUS_ARMED,
@@ -244,6 +245,8 @@ export function MemberStatusDialog({ edit }: { readonly edit: MemberEdit }): Rea
   /** `05.10.` while the field holds a date, for the final button; `null` otherwise. */
   const dayMonth = asked ? formatIsoDayMonth(statusDialog.day) : null;
   const consequence = asked ? statusDialog.consequence : null;
+  /** The pending requests a deactivation closes (0041): none, or unknown, names nothing. */
+  const closedRequests = asked ? statusDialog.closedRequests : null;
 
   /**
    * The one neutral question, naming the person and the date as it stands in
@@ -273,6 +276,19 @@ export function MemberStatusDialog({ edit }: { readonly edit: MemberEdit }): Rea
                   total: consequence.total,
                   month: t(monthInMessageKey(consequence.month)),
                   duties: consequence.duties,
+                })}
+          </output>
+        ) : null}
+        {/* Retro 8–9, C1 + C4: the member's pending leave requests the
+            deactivation closes, named in the question the admin always sees.
+            Neutral, as the consequence: an unread list hides it. */}
+        {offered.change === DEACTIVATE ? (
+          <output aria-live="polite" className="block">
+            {closedRequests === null || closedRequests.length === 0
+              ? null
+              : t('ljudi.status.deactivateRequests', {
+                  count: closedRequests.length,
+                  ranges: deactivationClosedRangesText(closedRequests),
                 })}
           </output>
         ) : null}

@@ -1027,7 +1027,7 @@
   summary: An approved request keeps reading "approved" after its leave record is removed or amended (`remove_leave_record`/`amend_leave_record`), and its `leave_record_id` then points at a removed row. 9.3 and 9.5 must decide what the member and *Odlučeno* show in that case.
   evidence: Raised by the 9.2 review (Blind Hunter, Edge Case Hunter). 9.2 derives status from `closed_at` and the decision row alone, and has no reader.
 - source_spec: `_bmad-output/implementation-artifacts/spec-9-2-the-leave-request-record.md`
-  summary: A deactivated member's pending requests stay pending: the member can no longer withdraw them, and `decide_leave_request` still approves them into leave for an inactive member. A request may also run past a scheduled deactivation date. Decide before 9.4 whether deactivation closes pending requests or the approval refuses them.
+  summary: RESOLVED by retro 8–9 C1 (0041: deactivation closes the member's pending requests reaching its date as a `deactivated` decision; an insert or approval onto an inactive date is refused) — A deactivated member's pending requests stay pending: the member can no longer withdraw them, and `decide_leave_request` still approves them into leave for an inactive member. A request may also run past a scheduled deactivation date. Decide before 9.4 whether deactivation closes pending requests or the approval refuses them.
   evidence: Raised by the 9.2 review (Edge Case Hunter). No rule in engine-rules R9 covers it.
 - source_spec: `_bmad-output/implementation-artifacts/spec-9-2-the-leave-request-record.md`
   summary: Requests for past dates are accepted with no rule. 9.3's form should decide whether a member may request leave that has already started or passed.
@@ -1056,3 +1056,15 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-9-5-za-odluku-lists-requests-beside-collisions.md`
   summary: The organization-wide request read has no window, so every request ever made is paged in, persisted on the device and parsed on each queue, Danas and resolution render; consider a window for closed requests or a pending-only read beside a bounded decided read.
   evidence: Raised by the 9.5 review (Blind Hunter). Unlike `conflict_resolutions`, which end with their leave, requests are kept forever.
+
+## Deferred from: code review of spec-retro-8-9-c1-deactivation-closes-leave-requests.md (2026-10-29)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-retro-8-9-c1-deactivation-closes-leave-requests.md`
+  summary: Leave already recorded (admin-entered or approved earlier) on dates after a member's deactivation stays live, and an admin can still insert a leave record on an inactive date; 0041 only stops a pending request becoming leave there. Decide whether deactivation should remove, flag or refuse such leave.
+  evidence: Raised by the C1 review (Blind Hunter). `leave_records` (0028) has no activity rule; the concurrent test "lets the deactivation that waited for an approval land" leaves an approved 2046 record for a member deactivated from today.
+- source_spec: `_bmad-output/implementation-artifacts/spec-retro-8-9-c1-deactivation-closes-leave-requests.md`
+  summary: Cancelling (deleting) a scheduled reactivation makes the member inactive from its date, but nothing closes pending requests reaching that date; they stay in Za odluku and can only be rejected.
+  evidence: Raised by the C1 review (Edge Case Hunter). 0041's trigger fires only on an inactive version's insert. Rare in practice: an inactive member cannot sign in to request, and every request reaching the deactivation date was closed by it.
+- source_spec: `_bmad-output/implementation-artifacts/spec-retro-8-9-c1-deactivation-closes-leave-requests.md`
+  summary: DESIGN.md, EXPERIENCE.md and the UX-DR lines (UX-DR27 one consequence line, UX-DR33 four request statuses, UX-DR46 "stavki" erasure copy, UX-DR52 Odlučeno lists approved/rejected) do not yet describe the deactivation close, *Zatvoren deaktivacijom* or the member-inactive refusals. Fold into retro action 6 (docs reconciliation).
+  evidence: Raised by the C1 review (Epic AC Auditor). The diff touches no planning or UX document.

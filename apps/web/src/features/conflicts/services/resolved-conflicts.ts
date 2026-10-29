@@ -15,9 +15,8 @@ import { effectiveResolutionsOf } from '@/features/conflicts/services/replacemen
 import { REPLACE_MEMBER, type ConflictResolutionKind } from '@/features/conflicts/services/resolutions';
 import { organizationLeaveRecordsOf } from '@/features/leave/services/leave-list';
 import {
-  REQUEST_APPROVED,
-  REQUEST_REJECTED,
   organizationLeaveRequestsOf,
+  type DecidedLeaveRequestStatus,
 } from '@/features/leave/services/leave-requests';
 import { leaveRangeValuesOf } from '@/features/leave/services/leave-section';
 import { formatDate, formatIsoDate, formatTime } from '@/lib/i18n/format';
@@ -48,9 +47,10 @@ import { formatDate, formatIsoDate, formatTime } from '@/lib/i18n/format';
  * words.
  *
  * DECIDED LEAVE REQUESTS BESIDE THEM (story 9.5): every approved or rejected
- * request of the organization, from the queue's own request read, with its
- * outcome, member, range, and the deciding admin and instant its decision row
- * stores (`decided_by`, `decided_at`). A withdrawn request was never decided
+ * request of the organization — and since 0041 every one closed on its
+ * member's deactivation, attributed to the deactivating admin — from the
+ * queue's own request read, with its outcome, member, range, and the deciding
+ * admin and instant its decision row stores (`decided_by`, `decided_at`). A withdrawn request was never decided
  * and is not listed; a pending one waits on *Čeka odluku*. Still a read of
  * stored decisions only — never a history.
  *
@@ -91,7 +91,8 @@ export interface ResolvedRequestRow {
   readonly item: typeof ITEM_REQUEST;
   /** `request:` and the request's id: unique per row, and never a collision's key. */
   readonly key: string;
-  readonly outcome: typeof REQUEST_APPROVED | typeof REQUEST_REJECTED;
+  /** Approved, rejected, or closed on the member's deactivation (0041), by the deactivating admin. */
+  readonly outcome: DecidedLeaveRequestStatus;
   /** The range's first day, `05.10.2026`: the row's leading date, as a resolved conflict's. */
   readonly dateShown: string;
   /**

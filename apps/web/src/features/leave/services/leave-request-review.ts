@@ -10,6 +10,7 @@ import {
   REQUEST_APPROVED,
   REQUEST_DENIED,
   REQUEST_FAILED,
+  REQUEST_MEMBER_INACTIVE,
   REQUEST_NOT_PENDING,
   REQUEST_PENDING,
   REQUEST_REJECTED,
@@ -40,6 +41,7 @@ import {
   LEAVE_REQUEST_REJECTION_DEPENDENTS,
   NO_DEPENDENTS,
 } from '@/features/teams/services/dependents';
+import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
 import { formatDate, formatTime } from '@/lib/i18n/format';
 
 /**
@@ -356,6 +358,7 @@ export function reviewFailureMessageKey(
 ):
   | 'zaOdluku.request.notPending'
   | 'zaOdluku.request.approvalStale'
+  | 'zaOdluku.request.memberInactive'
   | 'zaOdluku.request.denied'
   | 'zaOdluku.request.failed' {
   switch (code) {
@@ -363,6 +366,8 @@ export function reviewFailureMessageKey(
       return 'zaOdluku.request.notPending';
     case REQUEST_APPROVAL_STALE:
       return 'zaOdluku.request.approvalStale';
+    case REQUEST_MEMBER_INACTIVE:
+      return 'zaOdluku.request.memberInactive';
     case REQUEST_DENIED:
       return 'zaOdluku.request.denied';
     case REQUEST_FAILED:
@@ -381,7 +386,8 @@ export function reviewFailureMessageKey(
  * saved makes stale and the member's own records; a rejection the request keys
  * alone; a request no longer pending as an approval — another admin may have
  * approved it meanwhile; a stale approval the request keys and the member's
- * records, whose new leave the overlap note then names; any other refusal
+ * records, whose new leave the overlap note then names; an approval refused
+ * because the member is inactive on its dates (0041) the request keys; any other refusal
  * nothing more.
  */
 export function decisionRefreshKeysOf(
@@ -396,6 +402,11 @@ export function decisionRefreshKeysOf(
       return LEAVE_REQUEST_REJECTION_DEPENDENTS;
     case REQUEST_APPROVAL_STALE:
       return [...LEAVE_REQUEST_REJECTION_DEPENDENTS, LEAVE_RECORDS_KEY(memberId)];
+    // 0041: the member is inactive on a date of it. The request keys, so a
+    // deactivation's close, if one landed meanwhile, is read; and the member
+    // list and the member's records, so the review re-reads their status.
+    case REQUEST_MEMBER_INACTIVE:
+      return [...LEAVE_REQUEST_REJECTION_DEPENDENTS, MEMBERS_LIST_KEY, LEAVE_RECORDS_KEY(memberId)];
     case REQUEST_DENIED:
     case REQUEST_FAILED:
       return NO_DEPENDENTS;
