@@ -111,7 +111,7 @@ The derivation lives in one pure package that cannot reach for data. The store e
 
 - **Binds:** all domain writes; quality-requirements Q1, Q2
 - **Prevents:** domain logic acquiring a second home, and a service-role key bypassing the row-level policies the spec requires.
-- **Rule:** Every domain write goes through PostgREST. Isolation and role are enforced by RLS, integrity by schema shape (AD-3), attribution by column default (AD-11). Any rule that cannot be expressed declaratively is escalated to this spine, not solved by adding a function. The sole exception is the privileged auth boundary of AD-16, which touches no domain table.
+- **Rule:** Every domain write goes through PostgREST. Isolation and role are enforced by RLS, integrity by schema shape (AD-3), attribution by column default (AD-11). Any rule that cannot be expressed declaratively is escalated to this spine, not solved by adding a function. The exceptions are the two Edge Functions of AD-14, and neither writes a domain table: the privileged auth boundary of AD-16, and `notify` (AD-18), which reads and writes only through two `service_role`-only functions (`claim_notifications`, `settle_notification`) and writes only the outbox's delivery columns.
 
 ### AD-10 — RLS reads the organization from a claim and the role from the table
 
@@ -146,11 +146,12 @@ The derivation lives in one pure package that cannot reach for data. The store e
 - **Amended 2026-10-21 (story 8.2e) — no read retry offline, on any surface.** Offline, no surface's unavailable state offers the `Pokušaj ponovno` read retry (its `refetch()` would pause until the connection returns): *Danas* (member and admin), *Kalendar*, *Sati*, *Godišnji*, *Ljudi* and the directory, *Raspored* (both tabs), the resolution page, the member page's cards and the chrome's role notice, as the settings surfaces since 8.2d. Each surface's hook ANDs the freshness clock's `online` into the retry flag it exposes; the services' own `retryable` stays as it is. The message is unchanged, and online the retry returns (human decision 2026-10-21, 2a). A read-retry button that leaves while it has focus hands focus to the alert beside it (`utils/retry-focus.ts`). Write-path retries are 8.3's.
 - **Home:** a surface's loader is `features/<module>/services/snapshot.ts` in `apps/web`. There is no `surfaces/` folder (`sprint-change-proposal-2026-09-27-source-structure.md`).
 
-### AD-14 — No server runtime beyond the privileged auth boundary
+### AD-14 — No server runtime beyond two Edge Functions
 
 - **Binds:** all; quality-requirements Q13
 - **Prevents:** a server tier reappearing incrementally and reopening Q8.
-- **Rule:** The frontend is a static SPA build. No SSR and no application server. Exactly one Edge Function exists — the privileged auth boundary of AD-16 — and a second one amends this AD. The installable PWA (CAP-18, story 8.1) adds client-side pieces only: a manifest and a service worker generated at build time by `vite-plugin-pwa`. The worker precaches the app shell, has no runtime caching of Supabase or any other cross-origin request, and activates a new version only when the member taps *Osvježi*.
+- **Rule:** The frontend is a static SPA build. No SSR and no application server. Exactly **two** Edge Functions exist: `admin-auth` (AD-16, unchanged) and `notify`. `notify` runs on a schedule over `notification_outbox`, sends email (and Web Push from story 10.4), and marks rows settled. It reads and writes the database only through two `service_role`-only functions: `claim_notifications`, which returns each row with what it needs to address and localize the message (the recipient's email, the organization's locale, timezone and slug), and `settle_notification`, which writes only the outbox's delivery columns. Story 10.4 adds deleting expired push subscriptions, the same way. Its text comes from the shared locale resource by code (L4, AD-8). A third function amends this AD again. The installable PWA (CAP-18, story 8.1) adds client-side pieces only: a manifest and a service worker generated at build time by `vite-plugin-pwa`. The worker precaches the app shell, has no runtime caching of Supabase or any other cross-origin request, and activates a new version only when the member taps *Osvježi*.
+- **Amended 2026-10-29 (story 10.1).** As shipped in 0042: the pg_cron job `notify` (every minute) POSTs to the function with an invoke secret from Vault (`notify_url`, `notify_invoke_secret`) and does nothing while either is absent. The claim is a `FOR UPDATE SKIP LOCKED` lease of 10 minutes whose `claimed_at` is the token the settle must hand back, so a stale run settles nothing; a transient failure backs the row off by attempts × 10 minutes. Its text is a copy of `hr.json`'s `obavijesti` namespace pinned deep-equal by a root test, because the function cannot import `apps/web`. Email only until story 10.4.
 
 ### AD-15 — Every rule is asserted without a browser, against two fixtures
 
@@ -176,7 +177,15 @@ The derivation lives in one pure package that cannot reach for data. The store e
 
 - **Binds:** all environments; quality-requirements Q1, Q2
 - **Prevents:** the service key reaching a browser bundle, a committed file, or a migration — which would make every RLS policy in the system decorative.
-- **Rule:** The SPA ships the publishable key (`sb_publishable_*`) only. The secret key (`sb_secret_*`) exists solely in the AD-16 function's environment, per environment. Supabase's legacy `anon`/`service_role` keys are deprecated at the end of 2026 and are not used.
+- **Rule:** The SPA ships the publishable key (`sb_publishable_*`) only. The secret key (`sb_secret_*`) exists solely in the Edge Functions' environment, per environment. Supabase's legacy `anon`/`service_role` keys are deprecated at the end of 2026 and are not used.
+- **Amended 2026-10-29 (story 10.1).** The email provider key and the VAPID private key live only in `notify`'s environment. `notify` holds the secret key only to call `claim_notifications` and `settle_notification` (AD-14); it reads no table and writes nothing but delivery columns. Supabase function secrets are per project, so the guarantee is that nothing but `supabase/functions/notify/` names them in code (`test/key-hygiene.test.ts`); no secret value or name appears in a migration, `config.toml` or `apps/web`, and the cron job reads the function URL and the invoke secret from Vault.
+
+### AD-18 — A notification is written by the request that asserts its fact
+
+- **Binds:** CAP-20; localization L4; quality-requirements Q25
+- **Prevents:** a notifier that computes its own answer (a second home for domain logic), and a notification for a fact that was rolled back.
+- **Rule:** A notification is written to the outbox by the same request that asserts the fact it reports (an approval, a decision, a roster change), as codes and operands. `notify` computes no domain answer. A reminder that needs projection is out of v1.
+- **As shipped (story 10.1, 0042):** `notification_outbox` is organization-scoped, row level security on with no policy, and no table privilege for `anon`, `authenticated` or `service_role`. A row holds `code`, `operands`, `subject_id`, `recipient_member_id` and `channel` (`email`), never prose and never an address; the unique key (`code`, `subject_id`, `recipient_member_id`, `channel`) makes it at most once per recipient and channel. `decide_leave_request` inserts `LEAVE_REQUEST_APPROVED` or `LEAVE_REQUEST_REJECTED` with `{startDate, endDate}` for the requester in its own transaction; 0041's deactivation close writes none. Delivery: email rows only; a claim lease of 10 minutes with `claimed_at` as the settle's token; at most 5 attempts; Resend's `Idempotency-Key` = the row id. A transient failure (network, 408, 409, 429, 5xx, or a code the deployed function cannot render yet) releases the claim and backs off attempts × 10 minutes; 401 or 403 stops the run and gives every held row back without spending its attempt, as does the run's 45 s budget; any other 4xx fails the row. A failed send never blocks or rolls back the decision. Story 10.2 adds the other events.
 
 ### Dependency direction
 
@@ -318,7 +327,8 @@ shift/
       src/             # projection, rosters, bands, hours, leave, collisions, warnings
       test/            # AD-15 — vitest node env; pilot + security fixtures
   supabase/functions/
-    admin-auth/        # AD-16 — the only privileged component; no domain logic
+    admin-auth/        # AD-16 — the privileged auth boundary; no domain logic
+    notify/            # AD-14, AD-18 — sends the outbox; no domain logic
   apps/
     web/
       src/
@@ -364,6 +374,7 @@ shift/
 | CAP-17 Role-appropriate landing surfaces | dashboard surfaces | AD-13 |
 | CAP-18 Installable, reads offline | the static build's manifest and service worker; offline reads come from the persisted query cache in IndexedDB, never the worker, under AD-13's offline amendment (story 8.2: *Danas* and *Kalendar*; 8.2b: *Sati*, *Godišnji*, *Ljudi* and `/smjene/$id`, and the role guard answers offline from the role cached on the device — with none it fails closed at once, never pending; 8.2c: *Raspored*, the resolution page and the member page `/ljudi/$id`; 8.2d: *Organizacija*, *Satni pojasi*, *Postavke rotacije* and *Ljudi/smjene*, each with its `$id` editor — every surface now reads offline; 8.2e: no surface offers a read retry offline; 8.3a: offline, every write control on the work surfaces, the sign-in and the set-password submit — the erasure retries included — is `aria-disabled` behind one write gate (`lib/offline/use-write-gate.ts`) with a stated reason, and each write function guards on the same clock; nothing is sent, queued or checked, and *Odjava* falls back to a local sign-out that always deletes the device copy; 8.3b: the settings surfaces' writes — *Organizacija*, *Satni pojasi*, *Postavke rotacije* with the rotation builder and the override review, and *Ljudi/smjene* — behind the same gate, their `ErasureDialog`s included, so every write control in the app is gated) | AD-14, AD-13 |
 | CAP-19 Leave requests | `leave_requests`, `leave_request_decisions`, `withdraw_leave_request`, `decide_leave_request` (0040, story 9.2); the member's form, the decision screen and the merged *Za odluku* are stories 9.3–9.5 | AD-3, AD-4, AD-10, AD-11 |
+| CAP-20 Notifications | `notification_outbox`, `claim_notifications`, `settle_notification`, the `notify` cron job (0042) and the `notify` Edge Function (story 10.1: the leave decision by email; 10.2–10.4 the other events, settings and push) | AD-14, AD-17, AD-18 |
 
 ## Deferred
 
@@ -373,6 +384,7 @@ shift/
 - **Conflict-resolution history.** Resolutions are current-state rows. **Revisit when** someone needs to see a resolution that was later superseded.
 - **Realtime.** No subscriptions; surfaces refetch. **Revisit when** two admins working the same conflict queue becomes a real scenario rather than a hypothetical.
 - **Typed linting.** TypeScript 7 has no stable programmatic API until 7.1. **Revisit at** 7.1, or sooner if typed lint rules are wanted — fallback is pinning TypeScript 5.x, which nothing else in this spine depends on.
+- **Shift reminders (needs projection outside the browser).** A reminder of an upcoming shift is a fact no request asserts: it would need the schedule projected on the server, which AD-1 and AD-18 keep in the browser. Out of v1. **Revisit when** a reminder is required and a projection outside the browser is accepted as an architecture change.
 - **Organization-specific PWA manifest.** The manifest is one static file named "Shift" (human decision 2026-10-19) with the product icon; no organization's name or logo is in it. **Revisit when** an organization wants its own name or logo on the home screen — the manifest then has to be served per organization, which a static build cannot do from one file.
 - **Storage-level policy detail** for branding assets beyond Q4's ownership rule. **Revisit when** the upload surface is built.
 - **Claim-code identity**, the fully server-free alternative to AD-16: an admin issues a one-time code, the member signs up, and the exchange is an ordinary RLS-governed write linking their auth user to a pre-created member row — an unlinked account reads nothing, so open signup is harmless. Rejected because it reworks CAP-1 and CAP-4. One of its reasons no longer holds: since story 7.8 the member chooses their own password at the first sign-in (the admin-issued one is a one-time, four-word credential), so "moves password choice to the member" is now true of AD-16 as well. The account is still issued by an admin, so CAP-1 and CAP-4 are unchanged. **Revisit if** the AD-16 function ever needs to be removed, or if it starts accreting responsibilities its rule forbids.

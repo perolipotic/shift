@@ -21237,3 +21237,257 @@ async function insertedRequestAsOwner(client: Client, organization: string, memb
   if (id === undefined) throw new Error('the owner request insert returned no id');
   return id;
 }
+
+/**
+ * 0042 (story 10.1, AD-18): the leave decision writes its notification to
+ * the outbox in its own transaction, and no session reads, writes or settles
+ * an outbox row. The outbox has row level security on and no policy, and no
+ * table privilege for any request role; `claim_notifications` and
+ * `settle_notification` are `service_role`'s alone.
+ */
+describe('the decision writes one outbox row in its own transaction, and no session reaches the outbox (0042)', () => {
+  interface OutboxRow {
+    code: string;
+    recipient: string;
+    channel: string;
+    operands: unknown;
+    sent: boolean;
+    failed: boolean;
+  }
+
+  async function outboxOf(client: Client, subject: string): Promise<OutboxRow[]> {
+    const { rows } = await client.query<OutboxRow>(
+      `select code, recipient_member_id::text as recipient, channel, operands,
+              sent_at is not null as sent, failed_at is not null as failed
+         from notification_outbox where subject_id = $1 order by code`,
+      [subject],
+    );
+    return rows;
+  }
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    "writes one $fixture email row for the requester on an approval and on a rejection, with the inclusive range",
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+
+        await actAs(client, self.authUserId, organization);
+        const approvedRequest = await insertRequest(client, { organization, member: self.id, during: '[2046-03-02,2046-03-06]' });
+        const rejectedRequest = await insertRequest(client, { organization, member: self.id, during: '[2046-04-01,2046-04-01]' });
+        await actAs(client, owner.authUserId, organization);
+        await decideRequest(client, approvedRequest, 'approved');
+        await decideRequest(client, rejectedRequest, 'rejected');
+        await actAsOwner(client);
+
+        expect(await outboxOf(client, approvedRequest), slug).toEqual([
+          {
+            code: 'LEAVE_REQUEST_APPROVED',
+            recipient: self.id,
+            channel: 'email',
+            operands: { startDate: '2046-03-02', endDate: '2046-03-06' },
+            sent: false,
+            failed: false,
+          },
+        ]);
+        expect(await outboxOf(client, rejectedRequest), slug).toEqual([
+          {
+            code: 'LEAVE_REQUEST_REJECTED',
+            recipient: self.id,
+            channel: 'email',
+            operands: { startDate: '2046-04-01', endDate: '2046-04-01' },
+            sent: false,
+            failed: false,
+          },
+        ]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'leaves no $fixture row for a refused decision, a rolled-back one, or a deactivation that closes a request',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const day = (offset: number) => organizationDay(client, organization, offset);
+
+        await actAs(client, self.authUserId, organization);
+        const request = await insertRequest(client, { organization, member: self.id, during: `[${await day(40)},${await day(42)}]` });
+        const closing = await insertRequest(client, { organization, member: self.id, during: `[${await day(60)},${await day(62)}]` });
+        // Refused: a member-role caller, an unknown outcome.
+        const byMember = await refusedThenContinue(client, () => decideRequest(client, request, 'approved'));
+        await actAs(client, owner.authUserId, organization);
+        const unknown = await refusedThenContinue(client, () => decideRequest(client, request, 'maybe'));
+        // Rolled back: the decision landed, then its transaction did not.
+        await client.query('savepoint decision');
+        await decideRequest(client, request, 'approved');
+        await actAsOwner(client);
+        const inside = await outboxOf(client, request);
+        // The rollback restores the session the savepoint began in (the admin's).
+        await client.query('rollback to savepoint decision');
+        await actAsOwner(client);
+        const afterRollback = await outboxOf(client, request);
+        // A deactivation closing a request writes a decision and no row.
+        await actAs(client, owner.authUserId, organization);
+        await insertVersion(client, { organization, member: self.id, active: false, from: await day(50) });
+        await actAsOwner(client);
+
+        expect(byMember, slug).toMatchObject({ code: '42501', message: 'LEAVE_REQUEST_DECISION_REFUSED' });
+        expect(unknown, slug).toMatchObject({ code: '22023', message: 'LEAVE_REQUEST_OUTCOME_UNKNOWN' });
+        expect(inside, `${slug}: the decision wrote no row inside its own transaction`).toHaveLength(1);
+        expect(afterRollback, `${slug}: a rolled-back decision left its row`).toEqual([]);
+        expect((await requestState(client, closing)).outcome, slug).toBe('deactivated');
+        expect(await outboxOf(client, closing), `${slug}: the deactivation wrote a notification`).toEqual([]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'leaves no $fixture row for an approval refused onto an inactive date (55000) or over live leave (23P01)',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const day = (offset: number) => organizationDay(client, organization, offset);
+        await ownerVersion(client, { organization, member: self.id, active: false, from: await day(30), by: owner.authUserId });
+        const stranded = await insertedRequestAsOwner(client, organization, self, `[${await day(28)},${await day(32)}]`);
+        const overlapped = await insertedRequestAsOwner(client, organization, self, `[${await day(10)},${await day(12)}]`);
+        await insertLeave(client, { organization, member: self.id, during: `[${await day(11)},${await day(11)}]`, by: owner.authUserId });
+
+        await actAs(client, owner.authUserId, organization);
+        const inactive = await refusedThenContinue(client, () => decideRequest(client, stranded, 'approved'));
+        const overlap = await refusedThenContinue(client, () => decideRequest(client, overlapped, 'approved'));
+        await actAsOwner(client);
+
+        expect(inactive, slug).toMatchObject({ code: '55000', message: 'LEAVE_REQUEST_MEMBER_INACTIVE' });
+        expect(overlap, slug).toMatchObject({ code: '23P01', message: 'LEAVE_REQUEST_APPROVAL_OVERLAPS_LEAVE' });
+        expect(await outboxOf(client, stranded), `${slug}: a refused approval wrote a notification`).toEqual([]);
+        expect(await outboxOf(client, overlapped), `${slug}: a refused approval wrote a notification`).toEqual([]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'shows the $fixture outbox to no admin and no member, and refuses every write and both RPCs to a session (42501)',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+
+        await actAs(client, self.authUserId, organization);
+        const request = await insertRequest(client, { organization, member: self.id, during: '[2046-05-04,2046-05-05]' });
+        await actAs(client, owner.authUserId, organization);
+        await decideRequest(client, request, 'approved');
+        await actAsOwner(client);
+        const { rows: stored } = await client.query<{ id: string }>(
+          'select id::text as id from notification_outbox where subject_id = $1',
+          [request],
+        );
+        const id = stored[0]?.id ?? '';
+        expect(id, `${slug}: the decision wrote no row to probe with`).not.toBe('');
+
+        const codes: Record<string, string> = {};
+        for (const [who, account] of [['admin', owner], ['member', self]] as const) {
+          await actAs(client, account.authUserId, organization);
+          codes[`${who} select`] = (await refusedThenContinue(client, () => client.query('select * from notification_outbox'))).code;
+          codes[`${who} insert`] = (
+            await refusedThenContinue(client, () =>
+              client.query(
+                `insert into notification_outbox (organization_id, code, subject_id, recipient_member_id, channel)
+                 values ($1, 'LEAVE_REQUEST_APPROVED', gen_random_uuid(), $2, 'email')`,
+                [organization, account.id],
+              ),
+            )
+          ).code;
+          codes[`${who} update`] = (
+            await refusedThenContinue(client, () =>
+              client.query('update notification_outbox set sent_at = now() where id = $1', [id]),
+            )
+          ).code;
+          codes[`${who} delete`] = (
+            await refusedThenContinue(client, () => client.query('delete from notification_outbox where id = $1', [id]))
+          ).code;
+          codes[`${who} claim`] = (
+            await refusedThenContinue(client, () => client.query('select * from public.claim_notifications(10)'))
+          ).code;
+          codes[`${who} settle`] = (
+            await refusedThenContinue(client, () =>
+              client.query(`select public.settle_notification($1::uuid, now(), 'sent', null)`, [id]),
+            )
+          ).code;
+        }
+        await actAsOwner(client);
+
+        expect(codes, slug).toEqual({
+          'admin select': '42501',
+          'admin insert': '42501',
+          'admin update': '42501',
+          'admin delete': '42501',
+          'admin claim': '42501',
+          'admin settle': '42501',
+          'member select': '42501',
+          'member insert': '42501',
+          'member update': '42501',
+          'member delete': '42501',
+          'member claim': '42501',
+          'member settle': '42501',
+        });
+        const { rows } = await client.query<{ total: number; open: number }>(
+          `select count(*)::int as total,
+                  count(*) filter (where sent_at is null and failed_at is null and claimed_at is null)::int as open
+             from notification_outbox where subject_id = $1`,
+          [request],
+        );
+        expect(rows[0], `${slug}: a refused session changed the outbox`).toEqual({ total: 1, open: 1 });
+      });
+    },
+  );
+
+  it.skipIf(noDatabase)('holds no table privilege on the outbox for anon, authenticated or service_role, and no policy', async () => {
+    const client = await connect();
+    try {
+      const { rows } = await client.query<{ held: string }>(
+        `select role || ':' || privilege as held
+           from unnest(array['anon', 'authenticated', 'service_role']) as role,
+                unnest(array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER']) as privilege
+          where has_table_privilege(role, 'public.notification_outbox', privilege)`,
+      );
+      const { rows: policies } = await client.query<{ total: number }>(
+        `select count(*)::int as total from pg_policies where schemaname = 'public' and tablename = 'notification_outbox'`,
+      );
+      const { rows: security } = await client.query<{ rls: boolean }>(
+        `select relrowsecurity as rls from pg_class where oid = 'public.notification_outbox'::regclass`,
+      );
+
+      expect(rows.map((row) => row.held)).toEqual([]);
+      expect(policies[0]?.total).toBe(0);
+      expect(security[0]?.rls).toBe(true);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it.skipIf(noDatabase)('schedules the notify job every minute, and the job sends nothing while Vault lacks its secrets', async () => {
+    await inRolledBackTransaction(async (client) => {
+      const { rows: jobs } = await client.query<{ schedule: string; command: string; active: boolean }>(
+        `select schedule, command, active from cron.job where jobname = 'notify'`,
+      );
+      expect(jobs).toEqual([{ schedule: '* * * * *', command: 'select private.invoke_notify()', active: true }]);
+
+      // Hidden for this transaction only: the case holds whether or not the
+      // local Vault was set up by hand (DEPLOY.md §3a).
+      await client.query(`delete from vault.secrets where name in ('notify_url', 'notify_invoke_secret')`);
+      const { rows: before } = await client.query<{ total: number }>('select count(*)::int as total from net.http_request_queue');
+      const { rows: answered } = await client.query<{ id: string | null }>('select private.invoke_notify()::text as id');
+      const { rows: after } = await client.query<{ total: number }>('select count(*)::int as total from net.http_request_queue');
+
+      expect(answered[0]?.id).toBeNull();
+      expect(after[0]?.total).toBe(before[0]?.total);
+    });
+  });
+});

@@ -36,10 +36,15 @@ describe('the keys rendered and the keys declared are the same set', () => {
    * `count.*` plural — except `count.days`, which story 5.1c's leave card is
    * the first screen to render (the allowance, the days used, the balance, the
    * cost and the balance after). `count.conflicts` still waits for its screen.
+   *
+   * And never `obavijesti.*` (story 10.1): those are the emails the `notify`
+   * Edge Function renders from its pinned copy of the namespace
+   * (`test/notify-boundary.test.ts`). No screen renders them.
    */
   const declared = (): string[] =>
     resourceKeys()
       .filter((key) => !key.startsWith('count.') || key === 'count.days')
+      .filter((key) => !key.startsWith('obavijesti.'))
       .sort();
 
   it('renders every screen key the resource file declares', () => {

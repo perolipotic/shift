@@ -8,7 +8,7 @@ import { NAME_WHITESPACE } from '../apps/web/src/utils/name.ts';
 
 /**
  * The Supabase scaffold's shape: forward-only migrations, a seed carrying both
- * fixtures, and exactly one Edge Function (AD-14, AD-15).
+ * fixtures, and exactly two Edge Functions (AD-14, AD-15).
  *
  * These are structural assertions. Whether `supabase db reset` actually applies
  * the migrations and loads the seed is a live-database check: what the schema
@@ -179,12 +179,26 @@ function coreSql(): string {
 }
 
 describe('supabase scaffold', () => {
-  it('holds exactly one Edge Function, the privileged auth boundary', () => {
+  it('holds exactly two Edge Functions, the privileged auth boundary and notify (AD-14)', () => {
     const functions = readdirSync(join(supabaseRoot, 'functions'), { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name);
+      .map((entry) => entry.name)
+      .sort();
 
-    expect(functions).toEqual(['admin-auth']);
+    expect(functions).toEqual(['admin-auth', 'notify']);
+  });
+
+  it('declares both functions in config.toml, and notify takes no user JWT (story 10.1)', () => {
+    const config = readFileSync(join(supabaseRoot, 'config.toml'), 'utf8');
+    const section = (name: string): string =>
+      new RegExp(String.raw`^\[functions\.${name}\]\n((?:[^\[\n].*\n?)*)`, 'm').exec(config)?.[1] ?? '';
+
+    expect(section('admin-auth')).toMatch(/^verify_jwt = true$/m);
+    // The cron job calls `notify` with the invoke secret as its bearer token,
+    // which is no JWT: the gateway must let it through to the handler's own
+    // constant-time check.
+    expect(section('notify')).toMatch(/^verify_jwt = false$/m);
+    expect(section('notify')).toMatch(/^enabled = true$/m);
   });
 
   it('numbers migrations 0001, 0002, … with no gaps and no duplicates', () => {
@@ -230,10 +244,10 @@ describe('supabase scaffold', () => {
   });
 
   it('keeps the operator provisioning script out of the Edge Function directory', () => {
-    // `supabase/functions/` holds exactly one directory, asserted above, so the
+    // `supabase/functions/` holds exactly two directories, asserted above, so the
     // provisioning artifact has to live somewhere else. It lives in
     // `supabase/operator/`, and that directory must not quietly become the
-    // second Edge Function: a function is TypeScript with an entry point, and
+    // third Edge Function: a function is TypeScript with an entry point, and
     // nothing here is TypeScript at all (AD-16).
     //
     // Existence is asserted before the read, so a missing directory reports the

@@ -15,8 +15,8 @@ import {
 } from './source-scan.ts';
 
 /**
- * AD-17 — the secret key exists in exactly one place: the admin-auth Edge
- * Function's per-environment env.
+ * AD-17 — the secret key exists only in the Edge Functions' per-environment
+ * env (admin-auth, and notify for its two RPCs).
  *
  * Two different fears, so two different scans:
  *
@@ -317,6 +317,101 @@ describe('secret key hygiene: key material', () => {
         ).toBeLessThan(KEY_MATERIAL_LENGTH);
       }
     }
+  });
+});
+
+/**
+ * AD-17, amended by story 10.1: the email provider key, the notify invoke
+ * secret and the VAPID private key live only in `notify`'s environment.
+ *
+ * Supabase function secrets are per PROJECT, so `admin-auth` receives the
+ * values too; the guarantee is that nothing but `supabase/functions/notify/`
+ * names them in code. The operator-facing places that must name them —
+ * DEPLOY.md, the functions' `.env.example` and the deploy action — are
+ * asserted to, so a rename cannot leave the runbook behind.
+ */
+const NOTIFY_SECRET_NAMES = ['RESEND_API_KEY', 'NOTIFY_INVOKE_SECRET', 'VAPID_PRIVATE_KEY'] as const;
+
+/** The one directory permitted to read the notify secrets. */
+const NOTIFY_DIRECTORY = join(repoRoot, 'supabase', 'functions', 'notify');
+
+/**
+ * A plausible Resend key: `re_` at a word start, then a long run of key
+ * characters. The documented placeholder (`re_...`) and the test fixture
+ * (`re_test`) are far shorter.
+ */
+const PLAUSIBLE_RESEND_KEY = /\bre_[A-Za-z0-9_-]{20,}/;
+
+function namesANotifySecret(file: string): boolean {
+  const code = stripComments(file, readFileSync(file, 'utf8'));
+  return NOTIFY_SECRET_NAMES.some((name) => code.includes(name));
+}
+
+describe('notify secret hygiene (story 10.1)', () => {
+  it('names no notify secret in the client tree or the workspace configuration', () => {
+    const clientFiles = [
+      ...collectFiles(join(repoRoot, 'apps'), byExtension(...CODE_EXTENSIONS)),
+      ...collectFiles(join(repoRoot, 'packages'), byExtension(...CODE_EXTENSIONS)),
+      ...readdirSync(repoRoot)
+        .map((entry) => join(repoRoot, entry))
+        .filter((file) => statSync(file).isFile())
+        .filter((file) => CODE_EXTENSIONS.includes(extname(file)) || basename(file) === '.npmrc'),
+    ];
+
+    expect(clientFiles.length).toBeGreaterThan(0);
+    expect(show(clientFiles.filter(namesANotifySecret))).toEqual([]);
+  });
+
+  it('is read only inside the notify function, never by admin-auth, a migration or config.toml', () => {
+    const supabaseFiles = collectFiles(join(repoRoot, 'supabase'), byExtension('.ts', '.sql', '.toml'));
+    const readers = supabaseFiles.filter(namesANotifySecret);
+
+    // Non-empty guard: the function must still read them, or this passes on nothing.
+    expect(readers.length).toBeGreaterThan(0);
+    expect(show(readers.filter((file) => !file.startsWith(NOTIFY_DIRECTORY)))).toEqual([]);
+  });
+
+  it('keeps the secret values out of every migration: the cron job reads them from Vault by name', () => {
+    const migrations = collectFiles(join(repoRoot, 'supabase', 'migrations'), byExtension('.sql'));
+    const outbox = migrations.find((file) => basename(file) === '0042_notification_outbox.sql');
+
+    expect(outbox, '0042 is missing').toBeDefined();
+    const code = stripComments(outbox ?? '', readFileSync(outbox ?? '', 'utf8'));
+    expect(code).toContain("s.name = 'notify_url'");
+    expect(code).toContain("s.name = 'notify_invoke_secret'");
+    expect(code, 'a migration creates a Vault secret, so its value would be committed').not.toMatch(
+      /vault\.(create|update)_secret/,
+    );
+  });
+
+  it('names every notify secret in DEPLOY.md, the functions .env.example and the deploy action', () => {
+    for (const relativePath of [
+      'DEPLOY.md',
+      join('supabase', 'functions', '.env.example'),
+      join('.github', 'actions', 'deploy', 'action.yml'),
+    ]) {
+      const text = readFileSync(join(repoRoot, relativePath), 'utf8');
+      for (const name of NOTIFY_SECRET_NAMES) {
+        expect(text, `${relativePath} does not name ${name}`).toContain(name);
+      }
+    }
+  });
+
+  it('holds no plausible Resend key value in any committed file', () => {
+    const inScope = byExtension(...CODE_EXTENSIONS, ...PROSE_EXTENSIONS);
+    const committed = (trackedFiles() ?? collectFiles(repoRoot, inScope))
+      .filter(inScope)
+      .filter((file) => existsSync(file));
+
+    expect(committed.length).toBeGreaterThan(0);
+    expect(show(committed.filter((file) => PLAUSIBLE_RESEND_KEY.test(readFileSync(file, 'utf8'))))).toEqual([]);
+  });
+
+  it('tells a Resend key from a placeholder, both polarities', () => {
+    expect(PLAUSIBLE_RESEND_KEY.test(`re_${'a'.repeat(8)}_${'B'.repeat(24)}`)).toBe(true);
+    expect(PLAUSIBLE_RESEND_KEY.test('re_...')).toBe(false);
+    expect(PLAUSIBLE_RESEND_KEY.test('re_test')).toBe(false);
+    expect(PLAUSIBLE_RESEND_KEY.test(`store_${'a'.repeat(30)}`)).toBe(false);
   });
 });
 

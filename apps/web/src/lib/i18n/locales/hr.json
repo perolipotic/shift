@@ -1583,5 +1583,15 @@
     "descending": "silazno",
     "picker": "Poredaj po stupcu",
     "option": "{column}, {direction}"
+  },
+  "obavijesti": {
+    "leaveRequestApproved": {
+      "subject": "Zahtjev za godišnji {startDate}–{endDate} je odobren",
+      "body": "Tvoj zahtjev za godišnji odmor {startDate}–{endDate} je odobren. Pogledaj ga u aplikaciji: {link}"
+    },
+    "leaveRequestRejected": {
+      "subject": "Zahtjev za godišnji {startDate}–{endDate} je odbijen",
+      "body": "Tvoj zahtjev za godišnji odmor {startDate}–{endDate} je odbijen. Pogledaj ga u aplikaciji: {link}"
+    }
   }
 }

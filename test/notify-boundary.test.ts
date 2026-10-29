@@ -1,0 +1,1073 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import type { Client } from 'pg';
+import { describe, expect, it, vi } from 'vitest';
+
+import { FIXTURES, inRolledBackTransaction, noDatabase, organizationId } from './database.js';
+import { formatIsoDate as spaFormatIsoDate } from '../apps/web/src/lib/i18n/format.ts';
+import {
+  ATTEMPTS_EXHAUSTED,
+  BATCH_SIZE,
+  SEND_TIMEOUT_MS,
+  CLAIM_FAILED,
+  CLAIM_RPC,
+  INVOKE_SECRET_MIN_LENGTH,
+  INVOKE_SECRET_REFUSED,
+  METHOD_NOT_ALLOWED,
+  NETWORK_ERROR,
+  NOTIFY_RAN,
+  PACE_MS,
+  PROVIDER_CONFLICT,
+  PROVIDER_RATE_LIMITED,
+  PROVIDER_REFUSED,
+  PROVIDER_TIMEOUT,
+  PROVIDER_UNAUTHORIZED,
+  PROVIDER_UNAVAILABLE,
+  RECIPIENT_NO_EMAIL,
+  RESEND_ENDPOINT,
+  ROW_INVALID,
+  RUN_DEADLINE,
+  RUN_DEADLINE_MS,
+  SETTLE_RPC,
+  CLIENT_CONSTRUCTION_FAILED,
+  createHandler,
+  deliveryOfStatus,
+  readConfiguration,
+  sameSecret,
+  type Fetch,
+  type OutboxClient,
+  type RpcAnswer,
+} from '../supabase/functions/notify/handler.ts';
+import {
+  MESSAGE_OF_CODE,
+  MESSAGE_UNKNOWN,
+  OBAVIJESTI,
+  OPERANDS_INVALID,
+  formatIsoDate,
+  render,
+} from '../supabase/functions/notify/messages.ts';
+
+/**
+ * Story 10.1: the `notify` Edge Function, asserted without deploying it
+ * (AD-15). `handler.ts` takes its environment, its client and its `fetch` as
+ * arguments, so every row of the spec's I/O matrix is driven here:
+ *
+ *   - against a fake client, for the transport's own decisions (the invoke
+ *     secret, the configuration, the provider's answers);
+ *   - against the REAL `claim_notifications` and `settle_notification` in a
+ *     rolled-back transaction, as `service_role`, with only `fetch` faked: the
+ *     lease, the attempts and the settle are the database's, so that is where
+ *     they are proved.
+ */
+
+const repoRoot = fileURLToPath(new URL('..', import.meta.url));
+const notifyRoot = join(repoRoot, 'supabase', 'functions', 'notify');
+
+const INVOKE_SECRET = 'i'.repeat(INVOKE_SECRET_MIN_LENGTH + 8);
+
+/** No real waiting in a test: the pace is asserted through the calls, not the clock. */
+const instantly = (): Promise<void> => Promise.resolve();
+const APP_URL = 'https://shift.example.org';
+
+const ENVIRONMENT: Readonly<Record<string, string>> = {
+  SUPABASE_URL: 'http://127.0.0.1:54321',
+  SHIFT_SECRET_KEY: 'sb_secret_test',
+  NOTIFY_INVOKE_SECRET: INVOKE_SECRET,
+  RESEND_API_KEY: 're_test',
+  NOTIFY_EMAIL_FROM: 'Shift <obavijesti@example.org>',
+  SHIFT_APP_URL: APP_URL,
+};
+
+const configured = readConfiguration((name) => ENVIRONMENT[name]);
+
+function invoke(token: string | null = INVOKE_SECRET, method = 'POST'): Request {
+  const headers: Record<string, string> = {};
+  if (token !== null) headers['Authorization'] = `Bearer ${token}`;
+  return new Request('http://localhost/functions/v1/notify', { method, headers });
+}
+
+/** A provider that answers every send with `status`, or throws. */
+function provider(answer: number | 'network'): ReturnType<typeof vi.fn<Fetch>> {
+  return vi.fn<Fetch>(() =>
+    answer === 'network'
+      ? Promise.reject(new TypeError('fetch failed'))
+      : Promise.resolve(new Response(null, { status: answer })),
+  );
+}
+
+interface FakeRow {
+  id: string;
+  code: string;
+  channel: string;
+  operands: unknown;
+  attempts: number;
+  claimed_at: string;
+  email: string | null;
+  locale: string | null;
+  timezone: string | null;
+  slug: string | null;
+}
+
+function row(overrides: Partial<FakeRow> = {}): FakeRow {
+  return {
+    id: crypto.randomUUID(),
+    code: 'LEAVE_REQUEST_APPROVED',
+    channel: 'email',
+    operands: { startDate: '2046-03-02', endDate: '2046-03-06' },
+    attempts: 1,
+    claimed_at: '2046-03-01T10:00:00.123456+00:00',
+    email: 'ana@example.org',
+    locale: 'hr',
+    timezone: 'Europe/Zagreb',
+    slug: 'dvd-kastel-novi',
+    ...overrides,
+  };
+}
+
+/**
+ * A fake secret-key client: the claim answers `rows`, every settle is
+ * recorded (with its lease token checked against the row's), and
+ * `settleAnswer` may make one settle fail.
+ */
+function fakeClient(
+  rows: readonly unknown[] | RpcAnswer,
+  settleAnswer: (index: number) => Promise<RpcAnswer> = () => Promise.resolve({ data: null, error: null }),
+) {
+  const settles: { p_id: unknown; p_result: unknown; p_failure_code: unknown }[] = [];
+  const tokens: unknown[] = [];
+  const rpc = vi.fn((fn: string, args: Record<string, unknown>): Promise<RpcAnswer> => {
+    if (fn === CLAIM_RPC) {
+      return Promise.resolve(Array.isArray(rows) ? { data: rows, error: null } : (rows as RpcAnswer));
+    }
+    settles.push({ p_id: args['p_id'], p_result: args['p_result'], p_failure_code: args['p_failure_code'] });
+    tokens.push(args['p_claimed_at']);
+    return settleAnswer(settles.length - 1);
+  });
+  return { client: { rpc } satisfies OutboxClient, rpc, settles, tokens };
+}
+
+/** The handler over a fake client, with no real waiting. */
+function handlerOf(client: OutboxClient, fetch: Fetch, now?: () => number): (request: Request) => Promise<Response> {
+  return createHandler(configured, { makeClient: () => client, fetch, sleep: instantly, ...(now ? { now } : {}) });
+}
+
+// --------------------------------------------------------------- the messages
+
+describe('notify renders from a pinned copy of the obavijesti namespace', () => {
+  it("keeps its messages deep-equal to hr.json's obavijesti", () => {
+    const resource = JSON.parse(
+      readFileSync(join(repoRoot, 'apps', 'web', 'src', 'lib', 'i18n', 'locales', 'hr.json'), 'utf8'),
+    ) as Record<string, unknown>;
+
+    expect(resource['obavijesti'], 'hr.json has no obavijesti namespace').toBeDefined();
+    expect(OBAVIJESTI).toEqual(resource['obavijesti']);
+  });
+
+  it('maps every code it renders to a message that exists, and only plain {name} placeholders', () => {
+    expect(Object.keys(MESSAGE_OF_CODE).sort()).toEqual(['LEAVE_REQUEST_APPROVED', 'LEAVE_REQUEST_REJECTED']);
+    for (const key of Object.values(MESSAGE_OF_CODE)) {
+      expect(OBAVIJESTI[key], key).toBeDefined();
+      for (const message of [OBAVIJESTI[key].subject, OBAVIJESTI[key].body]) {
+        // Plain interpolation only: no ICU argument a `{name}` renderer would
+        // print raw.
+        expect(message, key).not.toMatch(/\{[^}]*,/);
+      }
+    }
+  });
+
+  it.each(['2026-09-23', '2046-03-02', '0001-01-01', '9999-12-31', '2024-02-29'])(
+    'formats %s exactly as the SPA formatIsoDate does',
+    (iso) => {
+      expect(formatIsoDate(iso)).toBe(spaFormatIsoDate(iso));
+    },
+  );
+
+  it.each(['2026-02-30', '2026-13-01', '0000-01-01', '23.09.2026', ''])('refuses %j as a date, as the SPA does', (iso) => {
+    expect(formatIsoDate(iso)).toBeNull();
+    expect(spaFormatIsoDate(iso)).toBeNull();
+  });
+
+  it('renders the approval and the rejection with the dates and the Godišnji link', () => {
+    const approved = render('LEAVE_REQUEST_APPROVED', 'hr', { startDate: '2046-03-02', endDate: '2046-03-06' }, APP_URL);
+    const rejected = render('LEAVE_REQUEST_REJECTED', 'hr-HR', { startDate: '2046-03-02', endDate: '2046-03-06' }, `${APP_URL}/`);
+
+    expect(approved).toEqual({
+      ok: true,
+      subject: 'Zahtjev za godišnji 02.03.2046–06.03.2046 je odobren',
+      text: `Tvoj zahtjev za godišnji odmor 02.03.2046–06.03.2046 je odobren. Pogledaj ga u aplikaciji: ${APP_URL}/godisnji`,
+    });
+    expect(rejected).toMatchObject({ ok: true, subject: 'Zahtjev za godišnji 02.03.2046–06.03.2046 je odbijen' });
+    expect(rejected.ok && rejected.text).toContain(`${APP_URL}/godisnji`);
+  });
+
+  it('refuses a code it has no message for, and operands that do not fill the message', () => {
+    expect(render('SOMETHING_ELSE', 'hr', {}, APP_URL)).toEqual({ ok: false, code: MESSAGE_UNKNOWN });
+    expect(render('LEAVE_REQUEST_APPROVED', 'hr', { startDate: '2046-03-02' }, APP_URL)).toEqual({
+      ok: false,
+      code: OPERANDS_INVALID,
+    });
+    expect(render('LEAVE_REQUEST_APPROVED', 'hr', [], APP_URL)).toEqual({ ok: false, code: OPERANDS_INVALID });
+    expect(
+      render('LEAVE_REQUEST_APPROVED', 'hr', { startDate: '2046-02-30', endDate: '2046-03-06' }, APP_URL),
+    ).toEqual({ ok: false, code: OPERANDS_INVALID });
+  });
+
+  it('renders a locale with no resource of its own in Croatian', () => {
+    const operands = { startDate: '2046-03-02', endDate: '2046-03-06' };
+
+    expect(render('LEAVE_REQUEST_APPROVED', 'en', operands, APP_URL)).toEqual(
+      render('LEAVE_REQUEST_APPROVED', 'hr', operands, APP_URL),
+    );
+    expect(render('LEAVE_REQUEST_APPROVED', null, operands, APP_URL)).toEqual(
+      render('LEAVE_REQUEST_APPROVED', 'hr', operands, APP_URL),
+    );
+  });
+});
+
+// ---------------------------------------------------------- the configuration
+
+describe('notify reads its environment once, with one code per missing variable', () => {
+  it('accepts the complete environment', () => {
+    expect(configured.ok).toBe(true);
+  });
+
+  it.each([
+    ['SUPABASE_URL', '', 'PROJECT_URL_MISSING'],
+    ['SUPABASE_URL', 'not a url', 'PROJECT_URL_INVALID'],
+    ['SHIFT_SECRET_KEY', '', 'SECRET_KEY_MISSING'],
+    ['SHIFT_SECRET_KEY', 'sb_publishable_test', 'SECRET_KEY_INVALID'],
+    ['NOTIFY_INVOKE_SECRET', '', 'INVOKE_SECRET_MISSING'],
+    ['NOTIFY_INVOKE_SECRET', 'short', 'INVOKE_SECRET_INVALID'],
+    // The deploy check's charset: a space, a quote or a colon is refused at any length.
+    ['NOTIFY_INVOKE_SECRET', `${'a'.repeat(40)} b`, 'INVOKE_SECRET_INVALID'],
+    ['NOTIFY_INVOKE_SECRET', `${'a'.repeat(40)}:`, 'INVOKE_SECRET_INVALID'],
+    ['RESEND_API_KEY', '', 'RESEND_API_KEY_MISSING'],
+    ['RESEND_API_KEY', 'sb_secret_test', 'RESEND_API_KEY_INVALID'],
+    ['NOTIFY_EMAIL_FROM', '  ', 'EMAIL_FROM_MISSING'],
+    ['NOTIFY_EMAIL_FROM', 'obavijesti', 'EMAIL_FROM_INVALID'],
+    ['NOTIFY_EMAIL_FROM', 'Shift obavijesti@example.org', 'EMAIL_FROM_INVALID'],
+    ['NOTIFY_EMAIL_FROM', 'Shift <obavijesti>', 'EMAIL_FROM_INVALID'],
+    ['SHIFT_APP_URL', '', 'APP_URL_MISSING'],
+    ['SHIFT_APP_URL', 'ftp://example.org', 'APP_URL_INVALID'],
+  ])('%s = %j answers %s', (name, value, code) => {
+    const result = readConfiguration((key) => (key === name ? value : ENVIRONMENT[key]));
+
+    expect(result).toEqual({ ok: false, code });
+  });
+
+  it.each(['obavijesti@example.org', 'Shift <obavijesti@example.org>', 'DVD Mladost <no-reply@mail.example.org>'])(
+    'accepts %j as the sender',
+    (from) => {
+      expect(readConfiguration((key) => (key === 'NOTIFY_EMAIL_FROM' ? from : ENVIRONMENT[key])).ok).toBe(true);
+    },
+  );
+
+  it('is handed every variable it reads but SUPABASE_URL by the deploy action', () => {
+    // The deploy action writes one env file for both functions with a
+    // heredoc; every name in it is a `NAME=` line. `SUPABASE_URL` is the
+    // Edge Runtime's own and is never set.
+    const action = readFileSync(join(repoRoot, '.github', 'actions', 'deploy', 'action.yml'), 'utf8');
+    const heredoc = /cat > "\$env_file" <<EOF\n([\s\S]*?)\n\s*EOF/.exec(action)?.[1] ?? '';
+    const written = [...heredoc.matchAll(/^\s*([A-Z][A-Z0-9_]*)=/gm)].map((match) => match[1] ?? '');
+    expect(written.length, 'the deploy action writes no function secrets').toBeGreaterThan(0);
+
+    const read: string[] = [];
+    readConfiguration((name) => {
+      read.push(name);
+      return ENVIRONMENT[name];
+    });
+    expect(read.filter((name) => name !== 'SUPABASE_URL').filter((name) => !written.includes(name))).toEqual([]);
+
+    const fromAction = readConfiguration((name) =>
+      name === 'SUPABASE_URL' || written.includes(name) ? ENVIRONMENT[name] : undefined,
+    );
+    expect(fromAction.ok).toBe(true);
+  });
+
+  it('answers every request 500 with the code when misconfigured, claiming nothing', async () => {
+    const { client, rpc } = fakeClient([]);
+    const handle = createHandler({ ok: false, code: 'RESEND_API_KEY_MISSING' }, {
+      makeClient: () => client,
+      fetch: provider(200),
+    });
+
+    const response = await handle(invoke());
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ code: 'RESEND_API_KEY_MISSING' });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+});
+
+// ------------------------------------------------------------- the bad caller
+
+describe('notify refuses any caller without the invoke secret, before anything is claimed', () => {
+  it.each([
+    ['no Authorization header', null],
+    ['an empty bearer', ''],
+    ['a wrong secret of the same length', 'j'.repeat(INVOKE_SECRET.length)],
+    ['a prefix of the secret', INVOKE_SECRET.slice(0, -1)],
+    ['the secret and more', `${INVOKE_SECRET}x`],
+  ])('answers 401 to %s', async (_label, token) => {
+    const { client, rpc } = fakeClient([row()]);
+    const makeClient = vi.fn(() => client);
+    const fetch = provider(200);
+    const handle = createHandler(configured, { makeClient, fetch });
+
+    const response = await handle(invoke(token));
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ code: INVOKE_SECRET_REFUSED });
+    expect(makeClient).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('answers 405 to anything but POST', async () => {
+    const { client } = fakeClient([]);
+    const handle = createHandler(configured, { makeClient: () => client, fetch: provider(200) });
+
+    const response = await handle(invoke(INVOKE_SECRET, 'GET'));
+
+    expect(response.status).toBe(405);
+    expect(await response.json()).toMatchObject({ code: METHOD_NOT_ALLOWED });
+  });
+
+  it('compares the secret over its whole length (constant time), both polarities', () => {
+    expect(sameSecret(INVOKE_SECRET, INVOKE_SECRET)).toBe(true);
+    expect(sameSecret(`${INVOKE_SECRET.slice(0, -1)}j`, INVOKE_SECRET)).toBe(false);
+    expect(sameSecret('', INVOKE_SECRET)).toBe(false);
+    expect(sameSecret(INVOKE_SECRET, '')).toBe(false);
+    expect(sameSecret('', '')).toBe(true);
+  });
+
+  it('accepts the scheme in any case', async () => {
+    const { client, rpc } = fakeClient([]);
+    const handle = createHandler(configured, { makeClient: () => client, fetch: provider(200) });
+
+    const response = await handle(
+      new Request('http://localhost/', { method: 'POST', headers: { Authorization: `bearer ${INVOKE_SECRET}` } }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(rpc).toHaveBeenCalledWith(CLAIM_RPC, { p_limit: BATCH_SIZE });
+  });
+});
+
+// ----------------------------------------------------- the matrix, transport
+
+describe("notify's matrix against a fake client: one send per row, settled by the provider's answer", () => {
+  it('sends one email per claimed row with the row id as the Idempotency-Key, and settles it sent with its lease token', async () => {
+    const claimed = row();
+    const { client, settles, tokens } = fakeClient([claimed]);
+    const fetch = provider(200);
+
+    const response = await handlerOf(client, fetch)(invoke());
+
+    expect(await response.json()).toEqual({
+      code: NOTIFY_RAN,
+      claimed: 1,
+      sent: 1,
+      failed: 0,
+      retried: 0,
+      released: 0,
+      unsettled: 0,
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const [url, init] = fetch.mock.calls[0] ?? [];
+    expect(url).toBe(RESEND_ENDPOINT);
+    const headers = (init?.headers ?? {}) as Record<string, string>;
+    expect(headers['Idempotency-Key']).toBe(claimed.id);
+    expect(headers['Authorization']).toBe('Bearer re_test');
+    expect(JSON.parse(String(init?.body))).toEqual({
+      from: ENVIRONMENT['NOTIFY_EMAIL_FROM'],
+      to: ['ana@example.org'],
+      subject: 'Zahtjev za godišnji 02.03.2046–06.03.2046 je odobren',
+      text: `Tvoj zahtjev za godišnji odmor 02.03.2046–06.03.2046 je odobren. Pogledaj ga u aplikaciji: ${APP_URL}/godisnji`,
+    });
+    expect(settles).toEqual([{ p_id: claimed.id, p_result: 'sent', p_failure_code: null }]);
+    expect(tokens).toEqual([claimed.claimed_at]);
+  });
+
+  it.each([null, '', '   '])('makes no call for a recipient with email %j, and fails the row RECIPIENT_NO_EMAIL', async (email) => {
+    const claimed = row({ email });
+    const { client, settles } = fakeClient([claimed]);
+    const fetch = provider(200);
+
+    await handlerOf(client, fetch)(invoke());
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(settles).toEqual([{ p_id: claimed.id, p_result: 'permanent', p_failure_code: RECIPIENT_NO_EMAIL }]);
+  });
+
+  it.each([
+    ['a network error', 'network', NETWORK_ERROR],
+    ['408', 408, PROVIDER_TIMEOUT],
+    ['409', 409, PROVIDER_CONFLICT],
+    ['429', 429, PROVIDER_RATE_LIMITED],
+    ['500', 500, PROVIDER_UNAVAILABLE],
+    ['503', 503, PROVIDER_UNAVAILABLE],
+  ] as const)('releases the row as transient on %s', async (_label, answer, failureCode) => {
+    const claimed = row();
+    const { client, settles } = fakeClient([claimed]);
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const response = await handlerOf(client, provider(answer))(invoke());
+
+    expect(settles).toEqual([{ p_id: claimed.id, p_result: 'transient', p_failure_code: failureCode }]);
+    expect(await response.json()).toMatchObject({ retried: 1, sent: 0 });
+    if (answer !== 'network') {
+      // The status and the row id, never the body or the address.
+      expect(errors).toHaveBeenCalledWith('PROVIDER_STATUS', claimed.id, answer);
+      expect(JSON.stringify(errors.mock.calls)).not.toContain('ana@example.org');
+    }
+    errors.mockRestore();
+  });
+
+  it.each([400, 404, 413, 418, 422])('fails the row PROVIDER_REFUSED on %i, never retried', async (status) => {
+    const claimed = row();
+    const { client, settles } = fakeClient([claimed]);
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await handlerOf(client, provider(status))(invoke());
+
+    expect(settles).toEqual([{ p_id: claimed.id, p_result: 'permanent', p_failure_code: PROVIDER_REFUSED }]);
+    expect(errors).toHaveBeenCalledWith('PROVIDER_STATUS', claimed.id, status);
+    errors.mockRestore();
+  });
+
+  it.each([401, 403])('stops the run on %i and gives every held row back without spending its attempt', async (status) => {
+    const rows = [row(), row(), row()];
+    const { client, settles } = fakeClient(rows);
+    const fetch = provider(status);
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const response = await handlerOf(client, fetch)(invoke());
+
+    expect(fetch, 'the run went on sending with a refused key').toHaveBeenCalledTimes(1);
+    expect(settles).toEqual(
+      rows.map((claimed) => ({ p_id: claimed.id, p_result: 'released', p_failure_code: PROVIDER_UNAUTHORIZED })),
+    );
+    expect(await response.json()).toMatchObject({ released: 3, sent: 0, failed: 0, stopped: PROVIDER_UNAUTHORIZED });
+    errors.mockRestore();
+  });
+
+  it('maps every status class once', () => {
+    expect(deliveryOfStatus(200)).toEqual({ result: 'sent' });
+    expect(deliveryOfStatus(202)).toEqual({ result: 'sent' });
+    expect(deliveryOfStatus(401)).toEqual({ result: 'stop', failureCode: PROVIDER_UNAUTHORIZED });
+    expect(deliveryOfStatus(403)).toEqual({ result: 'stop', failureCode: PROVIDER_UNAUTHORIZED });
+    expect(deliveryOfStatus(408)).toEqual({ result: 'transient', failureCode: PROVIDER_TIMEOUT });
+    expect(deliveryOfStatus(409)).toEqual({ result: 'transient', failureCode: PROVIDER_CONFLICT });
+    expect(deliveryOfStatus(429)).toEqual({ result: 'transient', failureCode: PROVIDER_RATE_LIMITED });
+    expect(deliveryOfStatus(418)).toEqual({ result: 'permanent', failureCode: PROVIDER_REFUSED });
+    expect(deliveryOfStatus(502)).toEqual({ result: 'transient', failureCode: PROVIDER_UNAVAILABLE });
+  });
+
+  it('retries a row whose code it cannot render yet (a newer migration before the newer function), without a call', async () => {
+    const claimed = row({ code: 'NOT_A_MESSAGE' });
+    const { client, settles } = fakeClient([claimed]);
+    const fetch = provider(200);
+
+    await handlerOf(client, fetch)(invoke());
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(settles).toEqual([{ p_id: claimed.id, p_result: 'transient', p_failure_code: MESSAGE_UNKNOWN }]);
+  });
+
+  it('settles a batch of mixed results, each by its own answer', async () => {
+    const rows = [row(), row({ email: null }), row(), row({ code: 'NOT_A_MESSAGE' }), row()];
+    const answers = [200, 503, 422];
+    let call = 0;
+    const fetch = vi.fn<Fetch>(() => Promise.resolve(new Response(null, { status: answers[call++] ?? 200 })));
+    const { client, settles } = fakeClient(rows);
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const response = await handlerOf(client, fetch)(invoke());
+
+    expect(settles.map(({ p_result, p_failure_code }) => `${String(p_result)}:${String(p_failure_code)}`)).toEqual([
+      'sent:null',
+      `permanent:${RECIPIENT_NO_EMAIL}`,
+      `transient:${PROVIDER_UNAVAILABLE}`,
+      `transient:${MESSAGE_UNKNOWN}`,
+      `permanent:${PROVIDER_REFUSED}`,
+    ]);
+    expect(await response.json()).toMatchObject({ claimed: 5, sent: 1, failed: 2, retried: 2, released: 0, unsettled: 0 });
+    errors.mockRestore();
+  });
+
+  it('paces sends at least PACE_MS apart', async () => {
+    let clock = 0;
+    const waits: number[] = [];
+    const { client } = fakeClient([row(), row(), row()]);
+    const handle = createHandler(configured, {
+      makeClient: () => client,
+      fetch: provider(200),
+      now: () => clock,
+      sleep: (ms) => {
+        waits.push(ms);
+        clock += ms;
+        return Promise.resolve();
+      },
+    });
+
+    await handle(invoke());
+
+    expect(waits).toEqual([PACE_MS, PACE_MS]);
+  });
+
+  it('stops sending past the run deadline, and gives the untried rows back without spending their attempt', async () => {
+    let clock = 0;
+    const rows = [row(), row(), row()];
+    const { client, settles } = fakeClient(rows);
+    // Each send takes most of the budget.
+    const fetch = vi.fn<Fetch>(() => {
+      clock += RUN_DEADLINE_MS - 1_000;
+      return Promise.resolve(new Response(null, { status: 200 }));
+    });
+
+    const response = await handlerOf(client, fetch, () => clock)(invoke());
+
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(settles.map(({ p_result, p_failure_code }) => `${String(p_result)}:${String(p_failure_code)}`)).toEqual([
+      'sent:null',
+      'sent:null',
+      `released:${RUN_DEADLINE}`,
+    ]);
+    expect(await response.json()).toMatchObject({ sent: 2, released: 1, stopped: RUN_DEADLINE });
+  });
+
+  it('keeps the worst case inside pg_net 55 s: the batch, the pace and the send timeout', () => {
+    expect(BATCH_SIZE * (SEND_TIMEOUT_MS + PACE_MS)).toBeLessThan(55_000);
+    expect(RUN_DEADLINE_MS + SEND_TIMEOUT_MS).toBeLessThan(55_000);
+  });
+
+  it.each([
+    ['rejects', () => Promise.reject(new Error('socket hang up'))],
+    ['answers an error', () => Promise.resolve({ data: null, error: { code: 'P0002', message: 'NOTIFICATION_NOT_CLAIMED' } })],
+  ] as const)('goes on to the next row when a settle %s, counting it unsettled', async (_label, failing) => {
+    const rows = [row(), row()];
+    const { client, settles } = fakeClient(rows, (index) =>
+      index === 0 ? (failing() as Promise<RpcAnswer>) : Promise.resolve({ data: null, error: null }),
+    );
+    const fetch = provider(200);
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const response = await handlerOf(client, fetch)(invoke());
+
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(settles).toHaveLength(2);
+    expect(await response.json()).toMatchObject({ claimed: 2, sent: 1, unsettled: 1 });
+    expect(errors).toHaveBeenCalledWith('SETTLE_FAILED', rows[0]?.id);
+    errors.mockRestore();
+  });
+
+  it('fails a malformed row ROW_INVALID when it has an id, and counts one with none unsettled', async () => {
+    const good = row();
+    const { client, settles } = fakeClient([{ id: 'abc', claimed_at: 'token' }, { nothing: true }, null, good]);
+    const fetch = provider(200);
+
+    const response = await handlerOf(client, fetch)(invoke());
+
+    expect(settles).toEqual([
+      { p_id: 'abc', p_result: 'permanent', p_failure_code: ROW_INVALID },
+      { p_id: good.id, p_result: 'sent', p_failure_code: null },
+    ]);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(await response.json()).toMatchObject({ claimed: 1, sent: 1, failed: 1, unsettled: 2 });
+  });
+
+  it('answers 500 CLAIM_FAILED and sends nothing when the claim fails, throws, or answers no list', async () => {
+    const throwing: OutboxClient = { rpc: () => Promise.reject(new Error('fetch failed')) };
+    const errored = fakeClient({ data: null, error: { code: '42501', message: 'permission denied' } }).client;
+    const notAList = fakeClient({ data: { rows: [] }, error: null }).client;
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    for (const client of [throwing, errored, notAList]) {
+      const fetch = provider(200);
+      const response = await handlerOf(client, fetch)(invoke());
+
+      expect(response.status).toBe(500);
+      expect(await response.json()).toEqual({ code: CLAIM_FAILED });
+      expect(fetch).not.toHaveBeenCalled();
+    }
+    errors.mockRestore();
+  });
+
+  it('answers 500 CLIENT_CONSTRUCTION_FAILED, logging the code alone', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const handle = createHandler(configured, {
+      makeClient: () => {
+        throw new Error('bad key sb_secret_test');
+      },
+      fetch: provider(200),
+    });
+
+    const response = await handle(invoke());
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ code: CLIENT_CONSTRUCTION_FAILED });
+    expect(errors.mock.calls).toEqual([[CLIENT_CONSTRUCTION_FAILED]]);
+    errors.mockRestore();
+  });
+});
+
+describe('notify may not think: it reaches the database through the two RPCs alone', () => {
+  const sources = readdirSync(notifyRoot)
+    .filter((name) => name.endsWith('.ts'))
+    .map((name) => ({ name, source: readFileSync(join(notifyRoot, name), 'utf8') }));
+
+  it('holds the four files the spec names', () => {
+    expect(sources.map(({ name }) => name).sort()).toEqual(['deno-runtime.d.ts', 'handler.ts', 'index.ts', 'messages.ts']);
+  });
+
+  it.each(sources)('$name reads no table directly and imports no domain code', ({ source }) => {
+    expect(source).not.toMatch(/\.from\(/);
+    expect(source).not.toMatch(/from\s+['"][^'"]*(@shift\/domain|packages\/domain|apps\/web)/);
+  });
+
+  it('names exactly claim_notifications and settle_notification', () => {
+    expect([CLAIM_RPC, SETTLE_RPC]).toEqual(['claim_notifications', 'settle_notification']);
+  });
+});
+
+// -------------------------------------------------------- the matrix, live
+
+/**
+ * The secret-key client, played by a `pg` connection: each RPC runs as
+ * `service_role` (the role a `sb_secret_*` request takes) inside a savepoint,
+ * so a refusal answers `{ error }` as PostgREST would and the transaction goes
+ * on.
+ */
+function serviceRoleClient(client: Client): OutboxClient {
+  return {
+    async rpc(fn, args) {
+      await client.query('savepoint notify_rpc');
+      try {
+        await client.query('set local role service_role');
+        let data: unknown = null;
+        if (fn === CLAIM_RPC) {
+          // The lease token as TEXT, as PostgREST serializes it: a JS Date
+          // would drop the microseconds and never match again.
+          data = (
+            await client.query(
+              `select id::text as id, code, channel, operands, attempts, claimed_at::text as claimed_at,
+                      email, locale, timezone, slug
+                 from public.claim_notifications($1)`,
+              [args['p_limit']],
+            )
+          ).rows;
+        } else {
+          await client.query('select public.settle_notification($1::uuid, $2::timestamptz, $3, $4)', [
+            args['p_id'],
+            args['p_claimed_at'],
+            args['p_result'],
+            args['p_failure_code'],
+          ]);
+        }
+        await client.query('release savepoint notify_rpc');
+        await client.query('reset role');
+        return { data, error: null };
+      } catch (cause) {
+        await client.query('rollback to savepoint notify_rpc');
+        await client.query('reset role');
+        const error = cause as { code?: string; message?: string };
+        return { data: null, error: { code: error.code ?? '', message: error.message ?? '' } };
+      }
+    },
+  };
+}
+
+interface OutboxState {
+  attempts: number;
+  claimed: boolean;
+  sent: boolean;
+  failed: boolean;
+  failureCode: string | null;
+}
+
+async function stateOf(client: Client, id: string): Promise<OutboxState> {
+  const { rows } = await client.query<OutboxState>(
+    `select attempts, claimed_at is not null as claimed, sent_at is not null as sent,
+            failed_at is not null as failed, failure_code as "failureCode"
+       from notification_outbox where id = $1`,
+    [id],
+  );
+  const found = rows[0];
+  if (found === undefined) throw new Error(`outbox row ${id} is not in the database`);
+  return found;
+}
+
+/**
+ * The fixture's member-role account with `email` set, one outbox row for it
+ * written as the owner, and every OTHER open row in the database hidden for
+ * the rest of the (rolled-back) transaction, so the claim sees this case's
+ * rows alone.
+ */
+async function arrange(
+  client: Client,
+  slug: string,
+  username: string,
+  email: string | null,
+): Promise<{ organization: string; member: string; insert: (code?: string) => Promise<string> }> {
+  await client.query(
+    `update notification_outbox set failed_at = now(), failure_code = 'HIDDEN_BY_TEST'
+      where sent_at is null and failed_at is null`,
+  );
+  const organization = await organizationId(client, slug);
+  const { rows } = await client.query<{ id: string }>(
+    'update members set email = $3 where organization_id = $1 and username = $2 returning id::text as id',
+    [organization, username, email],
+  );
+  const member = rows[0]?.id;
+  if (member === undefined) throw new Error(`${slug} has no member ${username}`);
+
+  const insert = async (code = 'LEAVE_REQUEST_APPROVED'): Promise<string> => {
+    const { rows: inserted } = await client.query<{ id: string }>(
+      `insert into notification_outbox (organization_id, code, subject_id, recipient_member_id, channel, operands)
+       values ($1, $2, gen_random_uuid(), $3, 'email', '{"startDate":"2046-03-02","endDate":"2046-03-06"}')
+       returning id::text as id`,
+      [organization, code, member],
+    );
+    const id = inserted[0]?.id;
+    if (id === undefined) throw new Error('outbox insert returned no row');
+    return id;
+  };
+
+  return { organization, member, insert };
+}
+
+describe("notify's matrix against the real claim and settle (0042)", () => {
+  const run = (client: Client, fetch: Fetch): Promise<Response> =>
+    createHandler(configured, { makeClient: () => serviceRoleClient(client), fetch, sleep: instantly })(invoke());
+
+  /** Time passes: every backoff in this case's transaction is over. */
+  const backoffOver = (client: Client): Promise<unknown> =>
+    client.query('update notification_outbox set next_attempt_at = null where next_attempt_at is not null');
+
+  it.skipIf(noDatabase).each(FIXTURES)('sends a $fixture row once and marks it sent', async ({ slug, member }) => {
+    await inRolledBackTransaction(async (client) => {
+      const { insert } = await arrange(client, slug, member, 'member@example.org');
+      const id = await insert();
+      const fetch = provider(200);
+
+      const response = await run(client, fetch);
+
+      expect(await response.json(), slug).toMatchObject({ code: NOTIFY_RAN, claimed: 1, sent: 1 });
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect((fetch.mock.calls[0]?.[1]?.headers as Record<string, string>)['Idempotency-Key']).toBe(id);
+      expect(await stateOf(client, id)).toEqual({ attempts: 1, claimed: true, sent: true, failed: false, failureCode: null });
+
+      // Sent is final: the next run claims nothing.
+      const again = provider(200);
+      expect(await (await run(client, again)).json()).toMatchObject({ claimed: 0 });
+      expect(again).not.toHaveBeenCalled();
+    });
+  });
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'makes no call for a $fixture member with no address, and fails the row RECIPIENT_NO_EMAIL',
+    async ({ slug, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const { insert } = await arrange(client, slug, member, null);
+        const id = await insert();
+        const fetch = provider(200);
+
+        await run(client, fetch);
+
+        expect(fetch).not.toHaveBeenCalled();
+        expect(await stateOf(client, id)).toMatchObject({ sent: false, failed: true, failureCode: RECIPIENT_NO_EMAIL });
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'releases a $fixture row on a transient failure with the code kept, and fails it ATTEMPTS_EXHAUSTED on the fifth',
+    async ({ slug, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const { insert } = await arrange(client, slug, member, 'member@example.org');
+        const id = await insert();
+
+        await run(client, provider(503));
+        expect(await stateOf(client, id)).toEqual({
+          attempts: 1,
+          claimed: false,
+          sent: false,
+          failed: false,
+          failureCode: PROVIDER_UNAVAILABLE,
+        });
+
+        // The backoff: not claimed again before attempts x 10 minutes.
+        const { rows: backoff } = await client.query<{ minutes: number }>(
+          `select extract(epoch from next_attempt_at - now())::int / 60 as minutes from notification_outbox where id = $1`,
+          [id],
+        );
+        expect(backoff[0]?.minutes).toBe(10);
+        const tooSoon = provider(200);
+        await run(client, tooSoon);
+        expect(tooSoon, `${slug}: a row was claimed inside its backoff`).not.toHaveBeenCalled();
+
+        for (let attempt = 2; attempt <= 4; attempt += 1) {
+          await backoffOver(client);
+          await run(client, provider(429));
+        }
+        const { rows: longer } = await client.query<{ minutes: number }>(
+          `select extract(epoch from next_attempt_at - now())::int / 60 as minutes from notification_outbox where id = $1`,
+          [id],
+        );
+        expect(longer[0]?.minutes, 'the backoff does not grow with the attempts').toBe(40);
+        expect(await stateOf(client, id)).toMatchObject({ attempts: 4, failed: false, failureCode: PROVIDER_RATE_LIMITED });
+
+        await backoffOver(client);
+        const fifth = provider('network');
+        await run(client, fifth);
+        expect(fifth).toHaveBeenCalledTimes(1);
+        expect(await stateOf(client, id)).toMatchObject({ attempts: 5, failed: true, failureCode: ATTEMPTS_EXHAUSTED });
+
+        await backoffOver(client);
+        const sixth = provider(200);
+        await run(client, sixth);
+        expect(sixth, `${slug}: a sixth attempt was made`).not.toHaveBeenCalled();
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)('fails a $fixture row PROVIDER_REFUSED on a 4xx, never retried', async ({ slug, member }) => {
+    await inRolledBackTransaction(async (client) => {
+      const { insert } = await arrange(client, slug, member, 'member@example.org');
+      const id = await insert();
+
+      await run(client, provider(422));
+      const again = provider(200);
+      await run(client, again);
+
+      expect(await stateOf(client, id)).toMatchObject({ attempts: 1, failed: true, failureCode: PROVIDER_REFUSED });
+      expect(again).not.toHaveBeenCalled();
+    });
+  });
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    're-claims a $fixture row whose claim is older than 10 minutes, with the same Idempotency-Key, and leaves a younger one',
+    async ({ slug, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const { insert } = await arrange(client, slug, member, 'member@example.org');
+        const crashed = await insert();
+        const running = await insert('LEAVE_REQUEST_REJECTED');
+        // A run that claimed both and died before settling: one long ago, one
+        // still within its lease.
+        await client.query(
+          `update notification_outbox set attempts = 1,
+                  claimed_at = case when id = $1 then now() - interval '11 minutes' else now() - interval '9 minutes' end
+            where id in ($1, $2)`,
+          [crashed, running],
+        );
+        const fetch = provider(200);
+
+        await run(client, fetch);
+
+        expect(fetch).toHaveBeenCalledTimes(1);
+        expect((fetch.mock.calls[0]?.[1]?.headers as Record<string, string>)['Idempotency-Key']).toBe(crashed);
+        expect(await stateOf(client, crashed)).toMatchObject({ attempts: 2, sent: true });
+        expect(await stateOf(client, running)).toMatchObject({ attempts: 1, claimed: true, sent: false, failed: false });
+      });
+    },
+  );
+
+  it.skipIf(noDatabase)('fails, never re-sends, a row whose lease expired on its fifth attempt', async () => {
+    const [{ slug, member }] = FIXTURES;
+    await inRolledBackTransaction(async (client) => {
+      const { insert } = await arrange(client, slug, member, 'member@example.org');
+      const id = await insert();
+      await client.query(
+        `update notification_outbox set attempts = 5, claimed_at = now() - interval '11 minutes' where id = $1`,
+        [id],
+      );
+      const fetch = provider(200);
+
+      await run(client, fetch);
+
+      expect(fetch).not.toHaveBeenCalled();
+      expect(await stateOf(client, id)).toMatchObject({ failed: true, failureCode: ATTEMPTS_EXHAUSTED });
+    });
+  });
+
+  it.skipIf(noDatabase)('returns the address, locale, timezone and slug with each claimed row', async () => {
+    const [{ slug, member }] = FIXTURES;
+    await inRolledBackTransaction(async (client) => {
+      const { insert, organization } = await arrange(client, slug, member, 'member@example.org');
+      const id = await insert();
+
+      const answer = await serviceRoleClient(client).rpc(CLAIM_RPC, { p_limit: 10 });
+
+      expect(answer.error).toBeNull();
+      const { rows: expected } = await client.query<{ locale: string; timezone: string }>(
+        'select locale, timezone from organizations where id = $1',
+        [organization],
+      );
+      expect(answer.data).toEqual([
+        expect.objectContaining({
+          id,
+          code: 'LEAVE_REQUEST_APPROVED',
+          channel: 'email',
+          attempts: 1,
+          email: 'member@example.org',
+          locale: expected[0]?.locale,
+          timezone: expected[0]?.timezone,
+          slug,
+        }),
+      ]);
+    });
+  });
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'gives a $fixture row back without spending its attempt when the provider refuses the key, and sends it next run',
+    async ({ slug, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const { insert } = await arrange(client, slug, member, 'member@example.org');
+        const first = await insert();
+        const second = await insert('LEAVE_REQUEST_REJECTED');
+        const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+        const refused = provider(401);
+        await run(client, refused);
+        errors.mockRestore();
+
+        expect(refused).toHaveBeenCalledTimes(1);
+        for (const id of [first, second]) {
+          expect(await stateOf(client, id), slug).toEqual({
+            attempts: 0,
+            claimed: false,
+            sent: false,
+            failed: false,
+            failureCode: PROVIDER_UNAUTHORIZED,
+          });
+        }
+
+        const fixed = provider(200);
+        await run(client, fixed);
+        expect(fixed).toHaveBeenCalledTimes(2);
+        expect(await stateOf(client, first)).toMatchObject({ attempts: 1, sent: true });
+      });
+    },
+  );
+
+  it.skipIf(noDatabase)('refuses a stale lease: a run whose row was re-claimed settles nothing (P0002)', async () => {
+    const [{ slug, member }] = FIXTURES;
+    await inRolledBackTransaction(async (client) => {
+      const { insert } = await arrange(client, slug, member, 'member@example.org');
+      const id = await insert();
+      const rpc = serviceRoleClient(client);
+
+      const firstClaim = (await rpc.rpc(CLAIM_RPC, { p_limit: 1 })).data as { claimed_at: string }[];
+      const stale = firstClaim[0]?.claimed_at;
+      // The first run's lease expires, and a second run claims the row.
+      await client.query(`update notification_outbox set claimed_at = now() - interval '11 minutes' where id = $1`, [id]);
+      const secondClaim = (await rpc.rpc(CLAIM_RPC, { p_limit: 1 })).data as { claimed_at: string }[];
+      const fresh = secondClaim[0]?.claimed_at;
+
+      const late = await rpc.rpc(SETTLE_RPC, { p_id: id, p_claimed_at: stale, p_result: 'sent', p_failure_code: null });
+      const current = await rpc.rpc(SETTLE_RPC, { p_id: id, p_claimed_at: fresh, p_result: 'sent', p_failure_code: null });
+
+      expect(fresh).not.toBe(stale);
+      expect(late.error).toMatchObject({ code: 'P0002', message: 'NOTIFICATION_NOT_CLAIMED' });
+      expect(current.error).toBeNull();
+      expect(await stateOf(client, id)).toMatchObject({ attempts: 2, sent: true });
+    });
+  });
+
+  it.skipIf(noDatabase)('guards the claim and the settle with named refusals', async () => {
+    const [{ slug, member }] = FIXTURES;
+    await inRolledBackTransaction(async (client) => {
+      const { insert } = await arrange(client, slug, member, 'member@example.org');
+      const unclaimed = await insert();
+      const settled = await insert('LEAVE_REQUEST_REJECTED');
+      const rpc = serviceRoleClient(client);
+      const settle = (id: string, token: unknown, result: unknown, code: unknown) =>
+        rpc.rpc(SETTLE_RPC, { p_id: id, p_claimed_at: token, p_result: result, p_failure_code: code });
+
+      const limits: Record<string, unknown> = {};
+      for (const limit of [0, -1, 101, null]) {
+        limits[String(limit)] = (await rpc.rpc(CLAIM_RPC, { p_limit: limit })).error;
+      }
+      const inRange = await rpc.rpc(CLAIM_RPC, { p_limit: 100 });
+      const claimedRows = inRange.data as { id: string; claimed_at: string }[];
+      const token = (id: string) => claimedRows.find((claimed) => claimed.id === id)?.claimed_at;
+      await settle(settled, token(settled), 'sent', null);
+      // Back to unclaimed, keeping the other row's lease for the guards below.
+      await client.query('update notification_outbox set claimed_at = null where id = $1', [unclaimed]);
+
+      const answers = {
+        unknownResult: (await settle(settled, token(settled), 'delivered', null)).error,
+        noFailureCode: (await settle(settled, token(settled), 'transient', null)).error,
+        badFailureCode: (await settle(settled, token(settled), 'permanent', 'not a code')).error,
+        unclaimed: (await settle(unclaimed, token(unclaimed), 'sent', null)).error,
+        alreadySettled: (await settle(settled, token(settled), 'sent', null)).error,
+      };
+
+      for (const refusal of Object.values(limits)) {
+        expect(refusal).toMatchObject({ code: '22023', message: 'NOTIFICATION_LIMIT_INVALID' });
+      }
+      expect(inRange.error).toBeNull();
+      expect(answers).toEqual({
+        unknownResult: { code: '22023', message: 'NOTIFICATION_RESULT_UNKNOWN' },
+        noFailureCode: { code: '22023', message: 'NOTIFICATION_FAILURE_CODE_INVALID' },
+        badFailureCode: { code: '22023', message: 'NOTIFICATION_FAILURE_CODE_INVALID' },
+        unclaimed: { code: 'P0002', message: 'NOTIFICATION_NOT_CLAIMED' },
+        alreadySettled: { code: 'P0002', message: 'NOTIFICATION_NOT_CLAIMED' },
+      });
+    });
+  });
+
+  it.skipIf(noDatabase)('claims only email rows: no other channel is deliverable yet', async () => {
+    const [{ slug, member }] = FIXTURES;
+    await inRolledBackTransaction(async (client) => {
+      const { insert } = await arrange(client, slug, member, 'member@example.org');
+      const id = await insert();
+      // A channel 10.4 will add, past the check for this probe only.
+      await client.query('alter table notification_outbox drop constraint notification_outbox_channel_check');
+      await client.query(`update notification_outbox set channel = 'push' where id = $1`, [id]);
+
+      const answer = await serviceRoleClient(client).rpc(CLAIM_RPC, { p_limit: 10 });
+
+      expect(answer.data).toEqual([]);
+    });
+  });
+});
+
+/**
+ * The cron job's send branch (0042): with both Vault secrets present,
+ * `private.invoke_notify()` queues one POST to `notify_url` carrying the
+ * invoke secret as its bearer — and that request passes the handler's auth.
+ * Rolled back, so pg_net's worker never sees it.
+ */
+describe('the cron job calls notify with the invoke secret from Vault (0042)', () => {
+  it.skipIf(noDatabase)('queues a POST to notify_url with Authorization: Bearer <notify_invoke_secret>', async () => {
+    await inRolledBackTransaction(async (client) => {
+      const target = 'http://notify.invalid/functions/v1/notify';
+      await client.query(`delete from vault.secrets where name in ('notify_url', 'notify_invoke_secret')`);
+      await client.query(`select vault.create_secret($1, 'notify_url')`, [target]);
+      await client.query(`select vault.create_secret($1, 'notify_invoke_secret')`, [INVOKE_SECRET]);
+
+      const { rows: queued } = await client.query<{ id: string }>('select private.invoke_notify()::text as id');
+      const id = queued[0]?.id;
+      expect(id, 'invoke_notify queued nothing').toBeTruthy();
+      const { rows } = await client.query<{ url: string; method: string; headers: Record<string, string> }>(
+        'select url, method::text as method, headers from net.http_request_queue where id = $1::bigint',
+        [id],
+      );
+      const request = rows[0];
+      expect(request).toMatchObject({ url: target, method: 'POST' });
+      expect(request?.headers['Authorization']).toBe(`Bearer ${INVOKE_SECRET}`);
+
+      // The same headers, as the request notify receives: past its auth.
+      const { client: fake, rpc } = fakeClient([]);
+      const response = await createHandler(configured, { makeClient: () => fake, fetch: provider(200), sleep: instantly })(
+        new Request(target, { method: 'POST', headers: request?.headers ?? {} }),
+      );
+      expect(response.status).toBe(200);
+      expect(rpc).toHaveBeenCalledWith(CLAIM_RPC, { p_limit: BATCH_SIZE });
+    });
+  });
+});

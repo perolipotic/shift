@@ -30,6 +30,14 @@ export const FORMATS = {
   publishable: (value) =>
     /^sb_publishable_[A-Za-z0-9_-]+$/.test(value) ? null : 'is not a publishable key (sb_publishable_…)',
   secret: (value) => (/^sb_secret_[A-Za-z0-9_-]+$/.test(value) ? null : 'is not a secret key (sb_secret_…)'),
+  // Story 10.1: the email provider's key, which only `notify` reads (AD-17).
+  resend: (value) => (/^re_[A-Za-z0-9_-]+$/.test(value) ? null : 'is not a Resend API key (re_…)'),
+  // The bearer token the `notify` cron job sends from Vault. Guessable is no
+  // secret: at least 32 characters, and nothing a header could mangle.
+  'invoke-secret': (value) =>
+    /^[A-Za-z0-9_-]{32,}$/.test(value)
+      ? null
+      : 'is not an invoke secret (at least 32 letters, digits, - or _; `openssl rand -hex 32`)',
 };
 
 /**
