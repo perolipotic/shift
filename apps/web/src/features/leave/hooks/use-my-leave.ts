@@ -7,7 +7,7 @@ import {
   myLeaveRecordsQueryOptions,
   type MyLeaveRecordsRpc,
 } from '@/features/leave/services/leave-list';
-import { MY_LEAVE_REQUESTS_KEY } from '@/features/leave/services/leave-requests';
+import { MY_LEAVE_REQUESTS_KEY } from '@/features/leave/services/leave-request-list';
 import { myLeaveOf, myLeaveRowsStateOf, MY_LEAVE_LOADING, MY_LEAVE_UNAVAILABLE } from '@/features/leave/services/my-leave';
 import { GODISNJI_MEMBER_SURFACE_KEYS } from '@/features/leave/services/surface-keys';
 import {

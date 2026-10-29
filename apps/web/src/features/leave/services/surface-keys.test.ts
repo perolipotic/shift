@@ -4,7 +4,7 @@ import { CALENDAR_KEY } from '@/features/calendar/services/snapshot';
 import { ORGANIZATION_CONFLICT_RESOLUTIONS_KEY } from '@/features/conflicts/services/resolutions';
 import { ACTING_ADMINS_KEY } from '@/features/conflicts/services/resolved-conflicts';
 import { LEAVE_OVERVIEW_RECORDS_KEY, LEAVE_RECORDS_KEY, MY_LEAVE_RECORDS_KEY } from '@/features/leave/services/leave-list';
-import { LEAVE_REQUEST_KEY, MY_LEAVE_REQUESTS_KEY } from '@/features/leave/services/leave-requests';
+import { LEAVE_REQUEST_KEY, MY_LEAVE_REQUESTS_KEY } from '@/features/leave/services/leave-request-list';
 import {
   GODISNJI_MEMBER_SURFACE_KEYS,
   godisnjiSurfaceKeysOf,

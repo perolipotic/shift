@@ -21,7 +21,8 @@ import { keepFocusOnAlert } from '@/utils/retry-focus';
  * surfaces), reached from a member's *Godišnji*; the *Godišnji* tab lights
  * for it. This file composes the screen; the role gate is
  * `useLeaveRequestView`, the form `useLeaveRequestForm`, and every rule is in
- * `@/features/leave/services/my-leave` and `.../leave-requests`.
+ * `@/features/leave/services/my-leave`, `.../leave-request-list` and
+ * `.../leave-request-write`.
  *
  * THE ROLE is the calendar snapshot's, as on *Godišnji*: an admin is sent to
  * `/godisnji`, the overview; only a member's view mounts the form's reads. An

@@ -9,7 +9,7 @@ import type {
   LeaveRequestWithdrawRefusal,
   LeaveRequestWithdrawn,
 } from '@/features/leave/hooks/use-my-leave-requests';
-import { REQUEST_PENDING } from '@/features/leave/services/leave-requests';
+import { REQUEST_PENDING } from '@/features/leave/services/leave-request-list';
 import {
   MY_LEAVE_REQUESTS_HEADING_ID,
   MY_REQUESTS_LOADING,

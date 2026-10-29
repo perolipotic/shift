@@ -38,12 +38,8 @@ import {
   organizationLeaveRecordsQueryOptions,
   type OrganizationLeaveRecordsTable,
 } from '@/features/leave/services/leave-list';
-import {
-  LEAVE_REQUESTS_TABLE,
-  ORGANIZATION_LEAVE_REQUESTS_KEY,
-  organizationLeaveRequestsQueryOptions,
-  type OrganizationLeaveRequestsTable,
-} from '@/features/leave/services/leave-requests';
+import { useOrganizationLeaveRequests } from '@/features/leave/hooks/use-organization-leave-requests';
+import { ORGANIZATION_LEAVE_REQUESTS_KEY } from '@/features/leave/services/leave-request-list';
 import { useOrganizationToday } from '@/hooks/organization-today';
 import { ZONE_FROM_CALENDAR, offlineNoteOf } from '@/lib/offline/freshness';
 import { useSnapshotFreshness } from '@/lib/offline/use-snapshot-freshness';
@@ -122,11 +118,7 @@ export function useConflictsQueue() {
   );
 
   // STORY 9.5: every request of the organization — pending on Čeka odluku, decided on Odlučeno.
-  const requestsRead = useQuery(
-    organizationLeaveRequestsQueryOptions(
-      () => supabaseClient().from(LEAVE_REQUESTS_TABLE) as unknown as OrganizationLeaveRequestsTable,
-    ),
-  );
+  const requestsRead = useOrganizationLeaveRequests();
 
   // THE *RIJEŠENI* TAB (story 7.16) reads the same four, plus the names of
   // whoever decided, and only once the tab is open.

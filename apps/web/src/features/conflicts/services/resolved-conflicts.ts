@@ -17,7 +17,7 @@ import { organizationLeaveRecordsOf } from '@/features/leave/services/leave-list
 import {
   organizationLeaveRequestsOf,
   type DecidedLeaveRequestStatus,
-} from '@/features/leave/services/leave-requests';
+} from '@/features/leave/services/leave-request-list';
 import { leaveRangeValuesOf } from '@/features/leave/services/leave-section';
 import { formatDate, formatIsoDate, formatTime } from '@/lib/i18n/format';
 

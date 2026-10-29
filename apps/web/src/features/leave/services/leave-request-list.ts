@@ -3,22 +3,33 @@ import type { LeaveRange } from '@shift/domain';
 
 import { readLeaveRowPages, type OrganizationLeaveRecordsAnswer } from '@/features/leave/services/leave-list';
 import { leaveRangeOf } from '@/features/leave/services/leave-write';
-import { isIsoDate } from '@/lib/i18n/format';
 
 /**
- * A member's own leave requests (story 9.3): the one module that stands on
- * 0040's boundary, in a `.ts` that renders nothing (AD-15). The read of the
- * member's own rows with their decisions embedded, the row parse, the status
- * derivation and the sort; the insert *Pošalji* sends and the withdrawal
- * *Povuci zahtjev* calls, each with its refusals mapped to codes.
+ * LEAVE REQUESTS, READ (0040, stories 9.3–9.5): the read side of the one
+ * boundary `leave_requests` stands on, in a `.ts` that renders nothing
+ * (AD-15). Its keys and columns, the statuses and their types, the row parse,
+ * and three reads with their query options. The writes — the insert, the
+ * withdrawal and the decision — are `leave-request-write.ts`, which imports
+ * from here and never the reverse.
  *
- * THE READ is a select on `leave_requests` with `leave_request_decisions`
- * embedded through its composite key, filtered to the viewer's own member row
- * (the calendar snapshot's). The select policy (0040) shows a member-role
- * session its own rows alone, and the filter keeps the read the viewer's own
- * where a session may read more (an admin, from story 9.4); the parse below
- * still refuses any row of anybody else, so the answer is unavailable rather
- * than a colleague's request drawn as the viewer's.
+ * THREE READS, each a select on `leave_requests` with
+ * `leave_request_decisions` embedded through its composite key:
+ *   - the viewer's own requests (9.3), filtered to the viewer's own member
+ *     row (the calendar snapshot's). The select policy (0040) shows a
+ *     member-role session its own rows alone, and the filter keeps the read
+ *     the viewer's own where a session may read more (an admin); the parse
+ *     still refuses any row of anybody else, so the answer is unavailable
+ *     rather than a colleague's request drawn as the viewer's;
+ *   - one request by its id (9.4), on its decision screen, with its
+ *     decision's author and instant and no member filter — 0040 shows an
+ *     active admin every request;
+ *   - every request of the organization (9.5), parsed row by row as the
+ *     decision screen's one request is, for *Za odluku* and *Danas*.
+ *
+ * ONE ROW PARSE: every read parses a row's id, member, range, status and
+ * `closed_at` the same way, and the embedded decisions through one
+ * normaliser, whether PostgREST answers the embed as a list, one object or
+ * null.
  *
  * STATUS IS DERIVED, as 0040 stores it: pending while `closed_at` is null;
  * once closed, the decision's `outcome` (`approved` or `rejected`, or since
@@ -26,32 +37,11 @@ import { isIsoDate } from '@/lib/i18n/format';
  * no decision exists. A PENDING REQUEST DERIVES NOTHING: no
  * balance, no conflict and no schedule reads it.
  *
- * THE DATABASE DECIDES. Only the shape of each date is checked before the
- * insert, so no malformed literal is sent; an overlap with the member's live
- * leave is 0040's trigger's 23P01 (`LEAVE_REQUEST_OVERLAPS_LEAVE`), an overlap
- * with another pending request its exclusion constraint's 23P01, and a refusal
- * its policy's 42501. The domain's `overlapsRecord` is a warning, never a gate.
- *
- * STORY 9.5 adds the organization's read (`ORGANIZATION_LEAVE_REQUESTS_KEY`),
- * every request with its decision, parsed row by row as the decision screen's
- * one request is (`organizationLeaveRequestsOf`), for *Za odluku* and *Danas*.
- *
- * STORY 9.4 adds the admin's side: one request read by its id with its
- * decision's author and instant (`leaveRequestFoundOf`, no member filter —
- * 0040 shows an active admin every request), and `decideLeaveRequest`, 0040's
- * definer, whose stale approval is its 23P01 and never refused here first.
- *
  * Codes, never messages: the components map them to Croatian at their edge.
  */
 
 /** The table a request is inserted into and read from (0040). */
 export const LEAVE_REQUESTS_TABLE = 'leave_requests';
-
-/** The function a member withdraws their own pending request through (0040). */
-export const WITHDRAW_LEAVE_REQUEST_FUNCTION = 'withdraw_leave_request';
-
-/** The function an active admin approves or rejects a pending request through (0040, story 9.4). */
-export const DECIDE_LEAVE_REQUEST_FUNCTION = 'decide_leave_request';
 
 /** The one query key the viewer's own requests are read under. */
 export const MY_LEAVE_REQUESTS_KEY = ['my-leave-requests'] as const;
@@ -130,37 +120,28 @@ const CLOSED_COLUMN = 'closed_at';
 const DECISIONS_EMBED = 'leave_request_decisions';
 const OUTCOME_COLUMN = 'outcome';
 
-const INSUFFICIENT_PRIVILEGE = '42501';
-const EXCLUSION_VIOLATION = '23P01';
-const NO_DATA_FOUND = 'P0002';
-const OBJECT_NOT_IN_PREREQUISITE_STATE = '55000';
-
-/** 0040's trigger's message for a request that shares a date with the member's live leave, under 23P01. */
-export const LEAVE_REQUEST_OVERLAPS_LEAVE_MESSAGE = 'LEAVE_REQUEST_OVERLAPS_LEAVE';
-
-/**
- * 0041's message, under 55000, for an insert or an approval reaching a date on
- * which the member is inactive (a scheduled deactivation included).
- */
-export const LEAVE_REQUEST_MEMBER_INACTIVE_MESSAGE = 'LEAVE_REQUEST_MEMBER_INACTIVE';
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * A request's embedded decisions as a list: PostgREST answers the embed as a
+ * list, or as one object or null when it reads the key as one-to-one; all
+ * three are taken.
+ */
+function decisionsOf(embedded: unknown): readonly unknown[] {
+  if (Array.isArray(embedded)) return embedded;
+
+  return embedded === null || embedded === undefined ? [] : [embedded];
 }
 
 /**
  * A closed request's status from its embedded decisions: the one decision's
  * outcome, or withdrawn when there is none; null when the embed is not a
  * decision PostgREST could answer (more than one, or an unknown outcome).
- * PostgREST answers the embed as a list, or as one object or null when it
- * reads the key as one-to-one; all three are taken.
  */
 function closedStatusOf(embedded: unknown): LeaveRequestStatus | null {
-  const decisions: readonly unknown[] = Array.isArray(embedded)
-    ? embedded
-    : embedded === null || embedded === undefined
-      ? []
-      : [embedded];
+  const decisions = decisionsOf(embedded);
 
   if (decisions.length === 0) return REQUEST_WITHDRAWN;
   if (decisions.length > 1) return null;
@@ -200,6 +181,27 @@ function compareRequests(first: LeaveRequest, second: LeaveRequest): number {
 }
 
 /**
+ * One row's own facts, read the same way by every read: its id, its member,
+ * its inclusive range, its status and when it was closed. Null when the row
+ * is no object, carries no id or no member, or has a range or a status that
+ * does not parse.
+ */
+function requestRowOf(row: unknown): (LeaveRequest & { readonly memberId: string }) | null {
+  if (!isRecord(row)) return null;
+
+  const id = row[ID_COLUMN];
+  const memberId = row[MEMBER_COLUMN];
+  const range = leaveRangeOf(row[DURING_COLUMN]);
+  const status = leaveRequestStatusOf(row[CLOSED_COLUMN], row[DECISIONS_EMBED]);
+  const closed = row[CLOSED_COLUMN];
+
+  if (typeof id !== 'string' || id === '') return null;
+  if (typeof memberId !== 'string' || memberId === '' || range === null || status === null) return null;
+
+  return { id, memberId, from: range.from, to: range.to, status, closedAt: typeof closed === 'string' ? closed : null };
+}
+
+/**
  * The rows as the viewer's own requests, sorted by the range's start, soonest
  * first; null when any row is another member's, carries no id or one another
  * row carries, has a range that does not parse, or a status that cannot be
@@ -210,22 +212,15 @@ export function leaveRequestsOf(rows: readonly unknown[], memberId: string): rea
   const ids = new Set<string>();
 
   for (const row of rows) {
-    if (!isRecord(row) || row[MEMBER_COLUMN] !== memberId) return null;
+    const request = requestRowOf(row);
 
-    const id = row[ID_COLUMN];
+    if (request === null || request.memberId !== memberId || ids.has(request.id)) return null;
 
-    if (typeof id !== 'string' || id === '' || ids.has(id)) return null;
+    ids.add(request.id);
 
-    ids.add(id);
+    const { id, from, to, status, closedAt } = request;
 
-    const range = leaveRangeOf(row[DURING_COLUMN]);
-    const status = leaveRequestStatusOf(row[CLOSED_COLUMN], row[DECISIONS_EMBED]);
-
-    if (range === null || status === null) return null;
-
-    const closed = row[CLOSED_COLUMN];
-
-    requests.push({ id, from: range.from, to: range.to, status, closedAt: typeof closed === 'string' ? closed : null });
+    requests.push({ id, from, to, status, closedAt });
   }
 
   return requests.sort(compareRequests);
@@ -265,45 +260,34 @@ const DECIDED_BY_COLUMN = 'decided_by';
 const CREATED_COLUMN = 'created_at';
 const DECIDED_AT_COLUMN = 'decided_at';
 
-/** The one decision a closed request's embed holds, or null when it holds none or more than one. */
-function decisionRowOf(embedded: unknown): Record<string, unknown> | null {
-  const decisions: readonly unknown[] = Array.isArray(embedded)
-    ? embedded
-    : embedded === null || embedded === undefined
-      ? []
-      : [embedded];
-  const [decision] = decisions;
-
-  return decisions.length === 1 && isRecord(decision) ? decision : null;
-}
-
 /**
  * One row read with {@link LEAVE_REQUEST_COLUMNS} as a request with no member
- * filter (stories 9.4, 9.5): its member, range, status and, for an approved
- * or rejected one, who decided and when. Null when the row cannot be trusted:
- * no id, no member, a range or a status that does not parse, or a decision
- * without its author or its instant.
+ * filter (stories 9.4, 9.5): its member, range, status and, for an approved,
+ * rejected or deactivation-closed one, who decided and when. Null when the row cannot be trusted:
+ * no id, no member, a range or a status that does not parse, a sending
+ * instant that is not one, or a decision without its author or its instant.
  */
 function reviewedLeaveRequestOf(row: unknown): ReviewedLeaveRequest | null {
-  if (!isRecord(row)) return null;
+  const request = requestRowOf(row);
 
-  const id = row[ID_COLUMN];
-  const memberId = row[MEMBER_COLUMN];
-  const range = leaveRangeOf(row[DURING_COLUMN]);
-  const status = leaveRequestStatusOf(row[CLOSED_COLUMN], row[DECISIONS_EMBED]);
-  const closed = row[CLOSED_COLUMN];
+  // `requestRowOf` refuses a row that is no object; this narrows `row` for the reads below.
+  if (request === null || !isRecord(row)) return null;
+
   const created = row[CREATED_COLUMN];
 
-  if (typeof id !== 'string' || id === '') return null;
   if (created !== undefined && (typeof created !== 'string' || Number.isNaN(Date.parse(created)))) return null;
-  if (typeof memberId !== 'string' || memberId === '' || range === null || status === null) return null;
 
+  const { status } = request;
   let decision: LeaveRequestDecision | null = null;
 
   if (status === REQUEST_APPROVED || status === REQUEST_REJECTED || status === REQUEST_CLOSED_ON_DEACTIVATION) {
-    const decided = decisionRowOf(row[DECISIONS_EMBED]);
-    const decidedBy = decided?.[DECIDED_BY_COLUMN];
-    const decidedAt = decided?.[DECIDED_AT_COLUMN];
+    const decisions = decisionsOf(row[DECISIONS_EMBED]);
+    const [decided] = decisions;
+
+    if (decisions.length !== 1 || !isRecord(decided)) return null;
+
+    const decidedBy = decided[DECIDED_BY_COLUMN];
+    const decidedAt = decided[DECIDED_AT_COLUMN];
 
     if (typeof decidedBy !== 'string' || decidedBy === '' || typeof decidedAt !== 'string' || decidedAt === '') {
       return null;
@@ -312,22 +296,14 @@ function reviewedLeaveRequestOf(row: unknown): ReviewedLeaveRequest | null {
     decision = { outcome: status, decidedBy, decidedAt };
   }
 
-  return {
-    id,
-    memberId,
-    from: range.from,
-    to: range.to,
-    status,
-    closedAt: typeof closed === 'string' ? closed : null,
-    decision,
-    createdAt: typeof created === 'string' ? created : null,
-  };
+  return { ...request, decision, createdAt: typeof created === 'string' ? created : null };
 }
 
 /**
  * The rows a by-id read answered as one request (story 9.4), with no member
  * filter: none is the request missing, one is it — its member, range, status
- * and, for an approved or rejected one, who decided and when. Null when the
+ * and, for an approved, rejected or deactivation-closed one, who decided and
+ * when. Null when the
  * answer cannot be trusted: more than one row, a row of another id, a range
  * or a status that does not parse, or a decision without its author or its
  * instant.
@@ -378,12 +354,15 @@ export interface LeaveRequestsAnswer {
   readonly error: LeaveRequestsReadError | null;
 }
 
-/** The member filter on the read, answering the rows, as supabase-js's builder does. */
+/** The read's one filter — by member, or by id — answering the rows, as supabase-js's builder does. */
 export interface LeaveRequestsQuery {
   eq(column: string, value: string): PromiseLike<LeaveRequestsAnswer>;
 }
 
-/** The one read made on `leave_requests`, named structurally so it can be stubbed. */
+/**
+ * The select on `leave_requests` the viewer's own read and the by-id read
+ * make, named structurally so it can be stubbed.
+ */
 export interface LeaveRequestsTable {
   select(columns: string): LeaveRequestsQuery;
 }
@@ -572,262 +551,4 @@ export function myLeaveRequestsQueryOptions(table: () => LeaveRequestsTable, mem
     retry: 1,
     retryDelay: 1000,
   });
-}
-
-// ----------------------------------------------------------------- the writes
-
-/** The range shares a date with the member's live leave (23P01 `LEAVE_REQUEST_OVERLAPS_LEAVE`). */
-export const REQUEST_OVERLAPS_LEAVE = 'overlapsLeave';
-/** The range shares a date with another pending request of the member's (any other 23P01). */
-export const REQUEST_OVERLAPS_REQUEST = 'overlapsRequest';
-/** The caller may not send or withdraw this request (42501). */
-export const REQUEST_DENIED = 'denied';
-/** The request is no longer pending: decided, withdrawn already, or never there (P0002). */
-export const REQUEST_NOT_PENDING = 'notPending';
-/**
- * The range reaches a date on which the member is inactive (55000
- * `LEAVE_REQUEST_MEMBER_INACTIVE`, 0041): a send refused, or an approval —
- * then only a rejection is possible.
- */
-export const REQUEST_MEMBER_INACTIVE = 'memberInactive';
-/** Anything else — a refused range, the network, a malformed answer: try again. */
-export const REQUEST_FAILED = 'failed';
-
-export type LeaveRequestSendFailure =
-  | typeof REQUEST_OVERLAPS_LEAVE
-  | typeof REQUEST_OVERLAPS_REQUEST
-  | typeof REQUEST_MEMBER_INACTIVE
-  | typeof REQUEST_DENIED
-  | typeof REQUEST_FAILED;
-
-export type LeaveRequestWithdrawFailure = typeof REQUEST_NOT_PENDING | typeof REQUEST_DENIED | typeof REQUEST_FAILED;
-
-/**
- * An approval refused as stale (story 9.4): live leave sharing a date with the
- * request was recorded since it was sent (23P01
- * `LEAVE_REQUEST_APPROVAL_OVERLAPS_LEAVE`). The request stays pending, to be
- * rejected.
- */
-export const REQUEST_APPROVAL_STALE = 'approvalStale';
-
-export type LeaveRequestDecideFailure =
-  | typeof REQUEST_NOT_PENDING
-  | typeof REQUEST_APPROVAL_STALE
-  | typeof REQUEST_MEMBER_INACTIVE
-  | typeof REQUEST_DENIED
-  | typeof REQUEST_FAILED;
-
-export type LeaveRequestDecideOutcome =
-  | { readonly ok: true }
-  | { readonly ok: false; readonly code: LeaveRequestDecideFailure };
-
-/** The two outcomes an admin decides a request with, as 0040's `p_outcome` takes them. */
-export type LeaveRequestOutcome = typeof REQUEST_APPROVED | typeof REQUEST_REJECTED;
-
-export type LeaveRequestSendOutcome = { readonly ok: true } | { readonly ok: false; readonly code: LeaveRequestSendFailure };
-
-export type LeaveRequestWithdrawOutcome =
-  | { readonly ok: true }
-  | { readonly ok: false; readonly code: LeaveRequestWithdrawFailure };
-
-export interface LeaveRequestWriteError {
-  readonly code?: string | undefined;
-  readonly message?: string | undefined;
-}
-
-export interface LeaveRequestWriteAnswer {
-  readonly error: LeaveRequestWriteError | null;
-}
-
-/** The one write made on `leave_requests`, named structurally so it can be stubbed: the insert. */
-export interface LeaveRequestInsertTable {
-  insert(values: Readonly<Record<string, unknown>>): PromiseLike<LeaveRequestWriteAnswer>;
-}
-
-/** The one function a withdrawal calls, named structurally so it can be stubbed. */
-export interface WithdrawLeaveRequestRpc {
-  rpc(
-    fn: typeof WITHDRAW_LEAVE_REQUEST_FUNCTION,
-    args: { readonly p_request_id: string },
-  ): PromiseLike<LeaveRequestWriteAnswer>;
-}
-
-/** The one function a decision calls, named structurally so it can be stubbed (story 9.4). */
-export interface DecideLeaveRequestRpc {
-  rpc(
-    fn: typeof DECIDE_LEAVE_REQUEST_FUNCTION,
-    args: { readonly p_request_id: string; readonly p_outcome: LeaveRequestOutcome },
-  ): PromiseLike<LeaveRequestWriteAnswer>;
-}
-
-/**
- * A refused insert as this application's own failure, by SQLSTATE and
- * message: 23P01 with `LEAVE_REQUEST_OVERLAPS_LEAVE` overlaps the member's
- * leave, any other 23P01 overlaps a pending request, 55000 with
- * `LEAVE_REQUEST_MEMBER_INACTIVE` reaches an inactive date (0041), 42501 is
- * not allowed, and anything else — 23514, 22000, 23503, the unforeseen —
- * failed.
- */
-export function leaveRequestSendFailureOf(error: LeaveRequestWriteError): LeaveRequestSendFailure {
-  if (memberInactive(error)) return REQUEST_MEMBER_INACTIVE;
-  if (error.code === EXCLUSION_VIOLATION) {
-    return error.message === LEAVE_REQUEST_OVERLAPS_LEAVE_MESSAGE ? REQUEST_OVERLAPS_LEAVE : REQUEST_OVERLAPS_REQUEST;
-  }
-  if (error.code === INSUFFICIENT_PRIVILEGE) return REQUEST_DENIED;
-
-  return REQUEST_FAILED;
-}
-
-/** 0041's refusal, by SQLSTATE and message together. */
-function memberInactive(error: LeaveRequestWriteError): boolean {
-  return error.code === OBJECT_NOT_IN_PREREQUISITE_STATE && error.message === LEAVE_REQUEST_MEMBER_INACTIVE_MESSAGE;
-}
-
-/** A refused withdrawal as this application's own failure: P0002 no longer pending, 42501 not allowed, else failed. */
-export function leaveRequestWithdrawFailureOf(error: LeaveRequestWriteError): LeaveRequestWithdrawFailure {
-  if (error.code === NO_DATA_FOUND) return REQUEST_NOT_PENDING;
-  if (error.code === INSUFFICIENT_PRIVILEGE) return REQUEST_DENIED;
-
-  return REQUEST_FAILED;
-}
-
-/**
- * A refused decision as this application's own failure, by SQLSTATE (story
- * 9.4): P0002 no longer pending, 23P01 an approval gone stale, 42501 not
- * allowed, 55000 with `LEAVE_REQUEST_MEMBER_INACTIVE` an approval reaching a
- * date the member is inactive (0041), and anything else — 22023, the network,
- * the unforeseen — failed.
- */
-export function leaveRequestDecideFailureOf(error: LeaveRequestWriteError): LeaveRequestDecideFailure {
-  if (memberInactive(error)) return REQUEST_MEMBER_INACTIVE;
-  if (error.code === NO_DATA_FOUND) return REQUEST_NOT_PENDING;
-  if (error.code === EXCLUSION_VIOLATION) return REQUEST_APPROVAL_STALE;
-  if (error.code === INSUFFICIENT_PRIVILEGE) return REQUEST_DENIED;
-
-  return REQUEST_FAILED;
-}
-
-/** A call's answer as its error: `null` alone is success; anything malformed is logged and `undefined`. */
-function answeredErrorOf(answered: unknown): LeaveRequestWriteError | null | undefined {
-  if (!isRecord(answered)) {
-    console.error(REQUEST_FAILED, typeof answered);
-
-    return undefined;
-  }
-
-  const error: unknown = answered['error'];
-
-  if (error === null) return null;
-
-  if (!isRecord(error)) {
-    console.error(REQUEST_FAILED, typeof error);
-
-    return undefined;
-  }
-
-  return error as LeaveRequestWriteError;
-}
-
-/**
- * Send a request for `memberId` from `from` to `to`, both `YYYY-MM-DD` and
- * both included: 0040's plain insert of the three facts, the range as the
- * `daterange` literal `[from,to]`. `created_by` and `created_at` come from
- * their defaults. A date that is not a calendar date, or a reversed range, is
- * {@link REQUEST_FAILED} without a request.
- */
-export async function sendLeaveRequest(
-  table: LeaveRequestInsertTable,
-  organizationId: string,
-  memberId: string,
-  from: string,
-  to: string,
-): Promise<LeaveRequestSendOutcome> {
-  if (!isIsoDate(from) || !isIsoDate(to) || to < from) {
-    console.error(REQUEST_FAILED, 'not a range of calendar dates');
-
-    return { ok: false, code: REQUEST_FAILED };
-  }
-
-  let answered: unknown;
-
-  try {
-    answered = await table.insert({ organization_id: organizationId, member_id: memberId, during: `[${from},${to}]` });
-  } catch (cause) {
-    console.error(REQUEST_FAILED, cause);
-
-    return { ok: false, code: REQUEST_FAILED };
-  }
-
-  const error = answeredErrorOf(answered);
-
-  if (error === null) return { ok: true };
-  if (error === undefined) return { ok: false, code: REQUEST_FAILED };
-
-  const code = leaveRequestSendFailureOf(error);
-
-  if (code === REQUEST_FAILED) console.error(code, error.code);
-
-  return { ok: false, code };
-}
-
-/** Withdraw the viewer's own pending request `requestId`: 0040's definer, which closes it with no decision. */
-export async function withdrawLeaveRequest(
-  client: WithdrawLeaveRequestRpc,
-  requestId: string,
-): Promise<LeaveRequestWithdrawOutcome> {
-  let answered: unknown;
-
-  try {
-    answered = await client.rpc(WITHDRAW_LEAVE_REQUEST_FUNCTION, { p_request_id: requestId });
-  } catch (cause) {
-    console.error(REQUEST_FAILED, cause);
-
-    return { ok: false, code: REQUEST_FAILED };
-  }
-
-  const error = answeredErrorOf(answered);
-
-  if (error === null) return { ok: true };
-  if (error === undefined) return { ok: false, code: REQUEST_FAILED };
-
-  const code = leaveRequestWithdrawFailureOf(error);
-
-  if (code === REQUEST_FAILED) console.error(code, error.code);
-
-  return { ok: false, code };
-}
-
-/**
- * Decide the pending request `requestId` (story 9.4): 0040's definer, which
- * on an approval inserts the leave record, records the decision and closes
- * the request in one transaction, and on a rejection records the decision
- * and closes it. The acting admin and the instant come from its defaults.
- * NOTHING IS CHECKED HERE FIRST: the database decides overlap, and a stale
- * approval is its refusal. The caller re-reads after any outcome.
- */
-export async function decideLeaveRequest(
-  client: DecideLeaveRequestRpc,
-  requestId: string,
-  outcome: LeaveRequestOutcome,
-): Promise<LeaveRequestDecideOutcome> {
-  let answered: unknown;
-
-  try {
-    answered = await client.rpc(DECIDE_LEAVE_REQUEST_FUNCTION, { p_request_id: requestId, p_outcome: outcome });
-  } catch (cause) {
-    console.error(REQUEST_FAILED, cause);
-
-    return { ok: false, code: REQUEST_FAILED };
-  }
-
-  const error = answeredErrorOf(answered);
-
-  if (error === null) return { ok: true };
-  if (error === undefined) return { ok: false, code: REQUEST_FAILED };
-
-  const code = leaveRequestDecideFailureOf(error);
-
-  if (code === REQUEST_FAILED) console.error(code, error.code);
-
-  return { ok: false, code };
 }

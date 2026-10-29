@@ -259,16 +259,22 @@ export const FEATURE_PUBLIC = {
   // the queue's own query options. Story 7.15: `/godisnji` parses its search
   // and picks its role-scoped body through the overview's own rules.
   leave: [
+    // Retro 8–9 (D6): the organization's requests' one binding, which Za
+    // odluku, its resolution page, the admin's Danas and the member page's
+    // deactivation read through.
+    'hooks/use-organization-leave-requests', // conflicts, members, today
     'services/leave-list', // calendar, conflicts, hours, teams, today
     'services/leave-overview', // pages
     // Story 9.3: the requests key, which a request write names among its dependents.
-    // Story 9.5: the organization's requests read and parse, which Za odluku,
-    // its resolution page and the admin's Danas stand on.
-    'services/leave-requests', // conflicts, members, teams, today
-    // Story 9.4: the decision screen's heading id, which names the page's main region.
-    'services/leave-request-review', // pages
+    // Story 9.5: the organization's requests key and parse, which Za odluku,
+    // its resolution page and the admin's Danas stand on. Retro 8–9 (S1): the
+    // read side of `leave-requests`, split from its writes, which stay private.
+    'services/leave-request-list', // conflicts, members, teams, today
     'services/leave-section', // conflicts
     'services/my-leave', // today
+    // Story 9.4: the decision screen's heading id, which names the page's main
+    // region; since retro 8–9 (P1) in its own ids file, not a service.
+    'utils/element-ids', // pages
   ],
   // Story 6.1b: *Danas*'s leave tile reads the viewer's allowance, as *Godišnji* does.
   // Story 8.2c: `services/surface-keys` is PUBLIC — the member page's one key

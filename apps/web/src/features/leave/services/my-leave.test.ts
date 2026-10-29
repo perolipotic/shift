@@ -18,17 +18,19 @@ import {
 } from '@/features/leave/services/leave-section';
 import {
   REQUEST_APPROVED,
+  REQUEST_CLOSED_ON_DEACTIVATION,
+  REQUEST_PENDING,
+  REQUEST_REJECTED,
+  REQUEST_WITHDRAWN,
+} from '@/features/leave/services/leave-request-list';
+import {
   REQUEST_DENIED,
   REQUEST_FAILED,
   REQUEST_NOT_PENDING,
   REQUEST_OVERLAPS_LEAVE,
   REQUEST_OVERLAPS_REQUEST,
-  REQUEST_CLOSED_ON_DEACTIVATION,
   REQUEST_MEMBER_INACTIVE,
-  REQUEST_PENDING,
-  REQUEST_REJECTED,
-  REQUEST_WITHDRAWN,
-} from '@/features/leave/services/leave-requests';
+} from '@/features/leave/services/leave-request-write';
 import {
   LEAVE_REQUEST_SENT_STATE,
   MY_LEAVE_LOADING,

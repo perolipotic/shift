@@ -11,11 +11,7 @@ import {
   type HeldStatusChange,
   type MemberScreen,
 } from '@/features/members/hooks/member-edit-context';
-import {
-  LEAVE_REQUESTS_TABLE,
-  organizationLeaveRequestsQueryOptions,
-  type OrganizationLeaveRequestsTable,
-} from '@/features/leave/services/leave-requests';
+import { organizationLeaveRequestsReadOptions } from '@/features/leave/hooks/use-organization-leave-requests';
 import { shownDeactivationConsequenceOf } from '@/features/members/services/deactivation-consequence';
 import { deactivationClosedRequestsOf } from '@/features/members/services/deactivation-requests';
 import { MEMBERS_LIST_KEY, membersTodayOf, type MemberListRow } from '@/features/members/services/list';
@@ -184,9 +180,7 @@ export function useMemberStatus(screen: MemberScreen) {
   // session), never a cached one from before it. An unread or untrusted list
   // hides the line and never gates the save.
   const requestsRead = useQuery({
-    ...organizationLeaveRequestsQueryOptions(
-      () => supabaseClient().from(LEAVE_REQUESTS_TABLE) as unknown as OrganizationLeaveRequestsTable,
-    ),
+    ...organizationLeaveRequestsReadOptions(),
     enabled: statusOpeningKey !== null && statusDialogOffer?.change === DEACTIVATE,
   });
   const requestsAnswered =

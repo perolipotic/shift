@@ -1068,3 +1068,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-retro-8-9-c1-deactivation-closes-leave-requests.md`
   summary: DESIGN.md, EXPERIENCE.md and the UX-DR lines (UX-DR27 one consequence line, UX-DR33 four request statuses, UX-DR46 "stavki" erasure copy, UX-DR52 Odlučeno lists approved/rejected) do not yet describe the deactivation close, *Zatvoren deaktivacijom* or the member-inactive refusals. Fold into retro action 6 (docs reconciliation).
   evidence: Raised by the C1 review (Epic AC Auditor). The diff touches no planning or UX document.
+
+## Deferred from: code review of spec-retro-8-9-item-20-split-leave-requests.md (2026-10-29)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-retro-8-9-item-20-split-leave-requests.md`
+  summary: The read/write split leaves a private `isRecord` in both `leave-request-list.ts` and `leave-request-write.ts` (one more copy than before); fold it into retro 8–9 D5's shared `isRecord` / SQLSTATE helper.
+  evidence: Raised by the item 20 review (Blind Hunter). D5 was deferred by the retro and kept out of this spec's scope.

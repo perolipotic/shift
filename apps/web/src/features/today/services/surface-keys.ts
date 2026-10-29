@@ -7,7 +7,7 @@ import {
   ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
 } from '@/features/conflicts/services/resolutions';
 import { MY_LEAVE_RECORDS_KEY, ORGANIZATION_LEAVE_RECORDS_KEY } from '@/features/leave/services/leave-list';
-import { ORGANIZATION_LEAVE_REQUESTS_KEY } from '@/features/leave/services/leave-requests';
+import { ORGANIZATION_LEAVE_REQUESTS_KEY } from '@/features/leave/services/leave-request-list';
 import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
 import type { MemberRole } from '@/features/navigation/utils/destinations';
 import { ORGANIZATION_SNAPSHOT_KEY } from '@/features/organization/services/snapshot';

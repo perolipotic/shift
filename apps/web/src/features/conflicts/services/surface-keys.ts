@@ -4,7 +4,7 @@ import { CALENDAR_KEY } from '@/features/calendar/services/snapshot';
 import { ACTING_ADMINS_KEY, TAB_RESOLVED, type ConflictsTab } from '@/features/conflicts/services/resolved-conflicts';
 import { ORGANIZATION_CONFLICT_RESOLUTIONS_KEY } from '@/features/conflicts/services/resolutions';
 import { ORGANIZATION_LEAVE_RECORDS_KEY } from '@/features/leave/services/leave-list';
-import { ORGANIZATION_LEAVE_REQUESTS_KEY } from '@/features/leave/services/leave-requests';
+import { ORGANIZATION_LEAVE_REQUESTS_KEY } from '@/features/leave/services/leave-request-list';
 import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
 import { ORGANIZATION_SNAPSHOT_KEY } from '@/features/organization/services/snapshot';
 

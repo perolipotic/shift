@@ -19,7 +19,7 @@ import {
   LEAVE_REQUEST_KEY,
   MY_LEAVE_REQUESTS_KEY,
   ORGANIZATION_LEAVE_REQUESTS_KEY,
-} from '@/features/leave/services/leave-requests';
+} from '@/features/leave/services/leave-request-list';
 import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
 import { SESSION_SUBJECT_KEY } from '@/features/members/services/write';
 import { MEMBER_NAME_KEY } from '@/features/navigation/services/profile';

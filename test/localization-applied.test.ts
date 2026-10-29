@@ -666,7 +666,8 @@ const SOURCES = [
   join(webRoot, 'src', 'features', 'leave', 'hooks', 'use-my-leave-requests.ts'),
   join(webRoot, 'src', 'features', 'leave', 'components', 'leave-request-form.tsx'),
   join(webRoot, 'src', 'features', 'leave', 'components', 'my-leave-requests.tsx'),
-  join(webRoot, 'src', 'features', 'leave', 'services', 'leave-requests.ts'),
+  join(webRoot, 'src', 'features', 'leave', 'services', 'leave-request-list.ts'),
+  join(webRoot, 'src', 'features', 'leave', 'services', 'leave-request-write.ts'),
   // Story 5.3b: *Za odluku*'s conflicts queue — its hook, components and rules
   // module. `za-odluku.tsx` is listed with the destinations above.
   join(webRoot, 'src', 'features', 'conflicts', 'hooks', 'use-conflicts-queue.ts'),
