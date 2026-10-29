@@ -4,7 +4,11 @@ import type { CalendarSnapshot, CalendarSurfaceState } from '@/features/calendar
 import { unknownSnapshotIdsOf } from '@/features/calendar/services/snapshot-skew';
 import { calendarTodayOf, memberScheduleInputOf, typeRangeOn } from '@/features/calendar/utils/month';
 import { organizationLeaveRecordsOf, type OrganizationLeaveRecord } from '@/features/leave/services/leave-list';
-import { REQUEST_PENDING, organizationLeaveRequestsOf, type ReviewedLeaveRequest } from '@/features/leave/services/leave-requests';
+import {
+  REQUEST_PENDING,
+  organizationLeaveRequestsOf,
+  type ReviewedLeaveRequest,
+} from '@/features/leave/services/leave-request-list';
 import { leaveRangeValuesOf } from '@/features/leave/services/leave-section';
 import { effectiveResolutionsOf } from '@/features/conflicts/services/replacement-effect';
 import { conflictResolutionsOf, type ConflictResolution } from '@/features/conflicts/services/resolutions';

@@ -94,8 +94,20 @@ export const LEAVE_SCREEN_EXEMPT: readonly { readonly file: string; readonly why
     why: "the admin dialog's conflict preview (story 7.12); codes and operands only, executed by leave-conflicts.test.ts",
   },
   {
-    file: 'services/leave-requests.ts',
-    why: "a member's own requests on 0040's boundary (story 9.3): the read, the parse, the status, the insert and the withdrawal; renders nothing, executed by leave-requests.test.ts",
+    file: 'services/leave-request-list.ts',
+    why: "leave requests read on 0040's boundary (stories 9.3–9.5): the keys, the statuses, the one row parse and the three reads; renders nothing, executed by leave-request-list.test.ts",
+  },
+  {
+    file: 'services/leave-request-write.ts',
+    why: "leave requests written on 0040's boundary (stories 9.3, 9.4): the insert, the withdrawal and the decision, each refusal mapped to a code; renders nothing, executed by leave-request-write.test.ts",
+  },
+  {
+    file: 'hooks/use-organization-leave-requests.ts',
+    why: "the organization's requests' one binding (retro 8–9), read by Za odluku, its resolution page, the admin's Danas and the member page's deactivation; no part of Godišnji",
+  },
+  {
+    file: 'utils/element-ids.ts',
+    why: "a leave request's decision screen's element ids (story 9.4), shared by its page and its body; a part of LEAVE_REQUEST_REVIEW_PARTS' screen, no part of Godišnji",
   },
   {
     file: 'hooks/use-leave-request-form.ts',

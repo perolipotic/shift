@@ -728,7 +728,7 @@ action_items:
       or refuse approval and mark in Za odluku), fix the erasure dialog wording, then
       build it before Epic 10"
     owner: "Perolipotic (decision), Dev (bmad-build)"
-    status: open
+    status: done  # PR #239
     ref: "_bmad-output/implementation-artifacts/epic-8-9-retro-2026-10-28.md"
   - id: "epic-9-retro-item-17-decide-past-dated-leave-requests-and-how"
     epic: 9
@@ -757,7 +757,7 @@ action_items:
       families, add one useOrganizationLeaveRequests hook, move review DOM ids to
       utils/element-ids.ts"
     owner: "Dev"
-    status: open
+    status: done  # PR #240
     ref: "_bmad-output/implementation-artifacts/epic-8-9-retro-2026-10-28.md"
   - id: "epic-9-retro-item-21-docs-reconciliation-fr-54-fr-55-and-epic"
     epic: 9

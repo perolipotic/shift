@@ -14,14 +14,13 @@ import {
   type LeaveField,
 } from '@/features/leave/services/leave-section';
 import { GODISNJI_OVERVIEW, GODISNJI_UNAVAILABLE, godisnjiViewOf } from '@/features/leave/services/leave-overview';
+import { LEAVE_REQUESTS_TABLE, MY_LEAVE_REQUESTS_KEY } from '@/features/leave/services/leave-request-list';
 import {
-  LEAVE_REQUESTS_TABLE,
-  MY_LEAVE_REQUESTS_KEY,
   REQUEST_FAILED,
   sendLeaveRequest,
   type LeaveRequestInsertTable,
   type LeaveRequestSendFailure,
-} from '@/features/leave/services/leave-requests';
+} from '@/features/leave/services/leave-request-write';
 import {
   MY_LEAVE_READY,
   myLeaveRequestPreviewOf,
@@ -70,8 +69,8 @@ export function useLeaveRequestView() {
 /**
  * *Zatraži godišnji* (story 9.3): the member's own figures' reads, the
  * entered range, its preview and the one send. Wiring only — every decision
- * is `@/features/leave/services/my-leave`'s and `.../leave-requests`', which
- * the node suite executes.
+ * is `@/features/leave/services/my-leave`'s, `.../leave-request-list`'s and
+ * `.../leave-request-write`'s, which the node suite executes.
  *
  * ONE SNAPSHOT (story 8.2b): the figures' four reads (`useMyLeave`) and the
  * viewer's own requests, mounted here so the freshness decides over all five,

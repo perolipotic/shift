@@ -2,7 +2,7 @@ import {
   REQUEST_PENDING,
   organizationLeaveRequestsOf,
   type ReviewedLeaveRequest,
-} from '@/features/leave/services/leave-requests';
+} from '@/features/leave/services/leave-request-list';
 import { DEACTIVATE, type REACTIVATE } from '@/features/members/services/wire';
 import { RANGE_DASH, formatIsoDate, formatList, isIsoDate } from '@/lib/i18n/format';
 

@@ -19,12 +19,8 @@ import {
   organizationLeaveRecordsQueryOptions,
   type OrganizationLeaveRecordsTable,
 } from '@/features/leave/services/leave-list';
-import {
-  LEAVE_REQUESTS_TABLE,
-  ORGANIZATION_LEAVE_REQUESTS_KEY,
-  organizationLeaveRequestsQueryOptions,
-  type OrganizationLeaveRequestsTable,
-} from '@/features/leave/services/leave-requests';
+import { useOrganizationLeaveRequests } from '@/features/leave/hooks/use-organization-leave-requests';
+import { ORGANIZATION_LEAVE_REQUESTS_KEY } from '@/features/leave/services/leave-request-list';
 import { MEMBER_ROLE_KEY } from '@/features/navigation/services/role';
 import type { MemberRole } from '@/features/navigation/utils/destinations';
 import { ADMIN_TODAY_UNAVAILABLE, adminTodayOf } from '@/features/today/services/admin-today';
@@ -96,11 +92,7 @@ export function useAdminToday() {
       () => supabaseClient().from(CONFLICT_RESOLUTIONS_TABLE) as unknown as OrganizationConflictResolutionsTable,
     ),
   );
-  const requestsRead = useQuery(
-    organizationLeaveRequestsQueryOptions(
-      () => supabaseClient().from(LEAVE_REQUESTS_TABLE) as unknown as OrganizationLeaveRequestsTable,
-    ),
-  );
+  const requestsRead = useOrganizationLeaveRequests();
   // The page's role, as `useToday` reads it: an admin's, while this body is mounted.
   const pageRole = useTodayRole(calendarRead.data === undefined ? null : calendarRead.data.viewer.role);
   const { clock, answerOf } = useSnapshotFreshness(

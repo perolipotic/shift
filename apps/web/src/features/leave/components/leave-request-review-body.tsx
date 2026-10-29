@@ -12,8 +12,6 @@ import { PageHeader, PageTitle } from '@/components/ui/page-header';
 import { LeaveConflictLines } from '@/features/leave/components/leave-conflict-lines';
 import type { LeaveRequestReviewState } from '@/features/leave/hooks/use-leave-request-review';
 import {
-  LEAVE_REQUEST_REVIEW_HEADING_ID,
-  LEAVE_REQUEST_REVIEW_PREVIEW_ID,
   PREVIEW_BASE,
   PREVIEW_REASON,
   PREVIEW_REFRESHING,
@@ -27,8 +25,12 @@ import {
   type ReviewFacts,
   type ReviewPreview,
 } from '@/features/leave/services/leave-request-review';
-import { REQUEST_APPROVED, REQUEST_PENDING, REQUEST_REJECTED } from '@/features/leave/services/leave-requests';
+import { REQUEST_APPROVED, REQUEST_PENDING, REQUEST_REJECTED } from '@/features/leave/services/leave-request-list';
 import { myLeaveRequestStatusMessageKey } from '@/features/leave/services/my-leave';
+import {
+  LEAVE_REQUEST_REVIEW_HEADING_ID,
+  LEAVE_REQUEST_REVIEW_PREVIEW_ID,
+} from '@/features/leave/utils/element-ids';
 import { t } from '@/lib/i18n';
 import { useWriteGate } from '@/lib/offline/use-write-gate';
 import { keepFocusOnAlert } from '@/utils/retry-focus';

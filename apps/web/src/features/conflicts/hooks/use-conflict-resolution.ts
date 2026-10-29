@@ -57,12 +57,8 @@ import {
   organizationLeaveRecordsQueryOptions,
   type OrganizationLeaveRecordsTable,
 } from '@/features/leave/services/leave-list';
-import {
-  LEAVE_REQUESTS_TABLE,
-  ORGANIZATION_LEAVE_REQUESTS_KEY,
-  organizationLeaveRequestsQueryOptions,
-  type OrganizationLeaveRequestsTable,
-} from '@/features/leave/services/leave-requests';
+import { useOrganizationLeaveRequests } from '@/features/leave/hooks/use-organization-leave-requests';
+import { ORGANIZATION_LEAVE_REQUESTS_KEY } from '@/features/leave/services/leave-request-list';
 import { withLeaveHandoff } from '@/features/leave/services/leave-section';
 import {
   MEMBERS_LIST_KEY,
@@ -190,11 +186,7 @@ export function useConflictResolution(params: ResolutionParams) {
     ),
   );
   // STORY 9.5: the organization's requests, so the way back names the whole queue's count.
-  const requestsRead = useQuery(
-    organizationLeaveRequestsQueryOptions(
-      () => supabaseClient().from(LEAVE_REQUESTS_TABLE) as unknown as OrganizationLeaveRequestsTable,
-    ),
-  );
+  const requestsRead = useOrganizationLeaveRequests();
   const membersRead = useQuery(membersQueryOptions(() => supabaseClient().from(MEMBERS_TABLE)));
   const organizationRead = useQuery(organizationSnapshotQueryOptions(organizationTable));
   // STORY 8.2c: the six reads (story 9.5's requests among them) are one snapshot (`RESOLUTION_SURFACE_KEYS`),

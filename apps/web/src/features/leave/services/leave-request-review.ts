@@ -6,20 +6,22 @@ import { actorNamesOf } from '@/features/conflicts/services/resolved-conflicts';
 import { leaveConflictsOf, type LeaveConflicts } from '@/features/leave/services/leave-conflicts';
 import { LEAVE_RECORDS_KEY, type LeaveRecordsState } from '@/features/leave/services/leave-list';
 import {
-  REQUEST_APPROVAL_STALE,
   REQUEST_APPROVED,
-  REQUEST_DENIED,
-  REQUEST_FAILED,
-  REQUEST_MEMBER_INACTIVE,
-  REQUEST_NOT_PENDING,
   REQUEST_PENDING,
   REQUEST_REJECTED,
   REQUEST_WITHDRAWN,
   leaveRequestFoundOf,
+  type ReviewedLeaveRequest,
+} from '@/features/leave/services/leave-request-list';
+import {
+  REQUEST_APPROVAL_STALE,
+  REQUEST_DENIED,
+  REQUEST_FAILED,
+  REQUEST_MEMBER_INACTIVE,
+  REQUEST_NOT_PENDING,
   type LeaveRequestDecideFailure,
   type LeaveRequestOutcome,
-  type ReviewedLeaveRequest,
-} from '@/features/leave/services/leave-requests';
+} from '@/features/leave/services/leave-request-write';
 import {
   LEAVE_ABSENT,
   LEAVE_LOADING,
@@ -417,9 +419,3 @@ export function decisionRefreshKeysOf(
     }
   }
 }
-
-/** The decision screen's heading id, which names its main region. */
-export const LEAVE_REQUEST_REVIEW_HEADING_ID = 'leave-request-review-heading';
-
-/** The preview's polite live region's id. */
-export const LEAVE_REQUEST_REVIEW_PREVIEW_ID = 'leave-request-review-preview';

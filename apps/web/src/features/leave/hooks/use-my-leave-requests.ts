@@ -7,14 +7,16 @@ import { CALENDAR_KEY, calendarSurfaceStateOf } from '@/features/calendar/servic
 import {
   LEAVE_REQUESTS_TABLE,
   MY_LEAVE_REQUESTS_KEY,
+  myLeaveRequestsQueryOptions,
+  type LeaveRequestsTable,
+} from '@/features/leave/services/leave-request-list';
+import {
   REQUEST_FAILED,
   REQUEST_NOT_PENDING,
-  myLeaveRequestsQueryOptions,
   withdrawLeaveRequest,
   type LeaveRequestWithdrawFailure,
-  type LeaveRequestsTable,
   type WithdrawLeaveRequestRpc,
-} from '@/features/leave/services/leave-requests';
+} from '@/features/leave/services/leave-request-write';
 import {
   MY_LEAVE_LOADING,
   MY_REQUESTS_LOADING,
@@ -117,8 +119,8 @@ function useLeaveRequestSent() {
 /**
  * *Godišnji*'s list of the viewer's own leave requests, *Povuci zahtjev* and
  * the page's one polite outcome line (story 9.3). Wiring only — every
- * decision is `@/features/leave/services/my-leave`'s and `.../leave-requests`',
- * which the node suite executes.
+ * decision is `@/features/leave/services/my-leave`'s, `.../leave-request-list`'s
+ * and `.../leave-request-write`'s, which the node suite executes.
  *
  * THE LIST STANDS ON THE REQUESTS READ ALONE, and the calendar snapshot for
  * whose they are: a member whose figures are unscheduled or unavailable still

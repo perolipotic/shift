@@ -2,7 +2,7 @@ import { createRoute } from '@tanstack/react-router';
 
 import { LeaveRequestReviewBody } from '@/features/leave/components/leave-request-review-body';
 import { useLeaveRequestReview } from '@/features/leave/hooks/use-leave-request-review';
-import { LEAVE_REQUEST_REVIEW_HEADING_ID } from '@/features/leave/services/leave-request-review';
+import { LEAVE_REQUEST_REVIEW_HEADING_ID } from '@/features/leave/utils/element-ids';
 import { requireAdmin } from '@/features/navigation/services/admin-guard';
 import { appLayoutRoute } from '@/pages/_app';
 
@@ -17,8 +17,8 @@ import { appLayoutRoute } from '@/pages/_app';
  * THIS FILE COMPOSES. The reads and the decision are
  * `useLeaveRequestReview`; the screen is
  * `@/features/leave/components/leave-request-review-body`; every rule is in
- * `@/features/leave/services/leave-request-review` and `.../leave-requests`,
- * which the node suite executes.
+ * `@/features/leave/services/leave-request-review`, `.../leave-request-list`
+ * and `.../leave-request-write`, which the node suite executes.
  *
  * KEYED BY THE REQUEST, so another one starts with no refusal carried over.
  *

@@ -43,15 +43,17 @@ import {
   LEAVE_REQUESTS_TABLE,
   LEAVE_REQUEST_KEY,
   REQUEST_APPROVED,
-  REQUEST_FAILED,
-  decideLeaveRequest,
   leaveRequestFoundOf,
   leaveRequestQueryOptions,
+  type LeaveRequestsTable,
+} from '@/features/leave/services/leave-request-list';
+import {
+  REQUEST_FAILED,
+  decideLeaveRequest,
   type DecideLeaveRequestRpc,
   type LeaveRequestDecideFailure,
   type LeaveRequestOutcome,
-  type LeaveRequestsTable,
-} from '@/features/leave/services/leave-requests';
+} from '@/features/leave/services/leave-request-write';
 import { leaveRequestReviewSurfaceKeysOf } from '@/features/leave/services/surface-keys';
 import {
   MEMBERS_LIST_KEY,
@@ -74,8 +76,8 @@ import { focusLater } from '@/utils/focus-later';
 /**
  * One leave request's decision screen (story 9.4): its reads, *Odobri* and
  * *Odbij*. Wiring only — every decision is
- * `@/features/leave/services/leave-request-review`'s and `.../leave-requests`',
- * which the node suite executes.
+ * `@/features/leave/services/leave-request-review`'s, `.../leave-request-list`'s
+ * and `.../leave-request-write`'s, which the node suite executes.
  *
  * THE READS, each under its own key and shared with the screens that own it
  * (AD-13): the request by its id, the calendar snapshot and the member list

@@ -14,7 +14,7 @@ import {
   REQUEST_CLOSED_ON_DEACTIVATION,
   REQUEST_REJECTED,
   type DecidedLeaveRequestStatus,
-} from '@/features/leave/services/leave-requests';
+} from '@/features/leave/services/leave-request-list';
 import { t } from '@/lib/i18n';
 
 /** The decision in words: the kind's, naming the replacement where there is one. */
