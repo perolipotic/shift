@@ -413,6 +413,12 @@ export async function removeLeaveMemberInSql(slug: string, memberId: string): Pr
     );
     await client.query('delete from leave_requests where organization_id = $1 and member_id = $2', scope);
     await client.query('delete from leave_records where organization_id = $1 and member_id = $2', scope);
+    // Story 10.1: a decision writes their notification (0042), whose
+    // recipient key does not cascade.
+    await client.query(
+      'delete from notification_outbox where organization_id = $1 and recipient_member_id = $2',
+      scope,
+    );
     await client.query(
       'delete from auth.users u using members m where m.auth_user_id = u.id and m.organization_id = $1 and m.id = $2',
       scope,
