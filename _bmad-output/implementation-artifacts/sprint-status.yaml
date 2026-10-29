@@ -757,7 +757,7 @@ action_items:
       families, add one useOrganizationLeaveRequests hook, move review DOM ids to
       utils/element-ids.ts"
     owner: "Dev"
-    status: done  # PR: the split-leave-requests branch (retro 8–9 item 20)
+    status: done  # PR #240
     ref: "_bmad-output/implementation-artifacts/epic-8-9-retro-2026-10-28.md"
   - id: "epic-9-retro-item-21-docs-reconciliation-fr-54-fr-55-and-epic"
     epic: 9
