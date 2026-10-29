@@ -630,6 +630,18 @@ pnpm exec supabase functions deploy admin-auth   # only if the function changed
 pnpm exec supabase functions deploy notify       # only if the function changed
 ```
 
+**Migration `0043` before the `notify` that needs it.** Story 10.2's `notify`
+names the organization in every email and reads that name from
+`claim_notifications`, which only `0043` returns. Deployed against a database
+still on `0042`, the new function gets no `organization_name`, renders nothing,
+and releases each row as transient: every run spends an attempt, and after
+five the row fails `ATTEMPTS_EXHAUSTED`. So `db push` first, then
+`functions deploy notify` — the order above, and the order the deploy action
+(§8) runs. The reverse window is harmless: the old `notify` ignores the extra
+column, and a code it cannot render yet (one only `0043` writes) is retried
+with backoff, five attempts over about 100 minutes, so deploy the function
+within that window.
+
 With the pipeline enabled (§8), merging to `main` is what promotes: staging is
 deployed and smoked, then production waits for an approval, and each deploy
 pushes migrations **before** it publishes the SPA. Without it, nothing publishes

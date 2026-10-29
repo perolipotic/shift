@@ -11,6 +11,9 @@ import {
   returnTargetOf,
   type RouteMatcher,
 } from '@/features/auth/services/return-target';
+// Story 10.2: the paths the `notify` emails link to, read from the function's
+// own module, so the sign-in route is proved to follow every one of them.
+import { MESSAGE_OF_CODE, linkPathOf } from '../../../supabase/functions/notify/messages';
 import { LJUDI_DIRECTORY, LJUDI_TABLE, ljudiViewOf, mayReadMembers } from '@/features/members/services/list';
 import { DESTINATIONS, destinationsFor } from '@/features/navigation/utils/destinations';
 import { adminGuard, requireAdmin } from '@/features/navigation/services/admin-guard';
@@ -173,6 +176,23 @@ const REFUSES_ROLE = (): Promise<MemberRoleOutcome> =>
  * exactly as it is in a browser.
  */
 const KNOWN_PATH = knownPathOf(router);
+
+describe("every notification email's link is a return target the sign-in follows (story 10.2)", () => {
+  const REQUEST = '0b5e7f9a-3c2d-4e1f-8a6b-9c0d1e2f3a4b';
+  const paths = Object.entries(MESSAGE_OF_CODE).map(([code, key]) => ({
+    code,
+    path: linkPathOf(key, { requestId: REQUEST }),
+  }));
+
+  it('derives a path for every code', () => {
+    expect(paths.length).toBeGreaterThan(0);
+    expect(paths.filter((entry) => entry.path === null)).toEqual([]);
+  });
+
+  it.each(paths)('returns $code to $path, not to /', ({ path }) => {
+    expect(returnTargetOf(path ?? undefined, KNOWN_PATH)).toBe(path);
+  });
+});
 
 /**
  * The eight destinations, each paired with what must render on it.

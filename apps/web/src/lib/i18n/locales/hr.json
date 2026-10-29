@@ -1587,11 +1587,71 @@
   "obavijesti": {
     "leaveRequestApproved": {
       "subject": "Zahtjev za godišnji {startDate}–{endDate} je odobren",
-      "body": "Tvoj zahtjev za godišnji odmor {startDate}–{endDate} je odobren. Pogledaj ga u aplikaciji: {link}"
+      "body": "{organizationName}: tvoj zahtjev za godišnji odmor {startDate}–{endDate} je odobren. Pogledaj ga u aplikaciji: {link}"
     },
     "leaveRequestRejected": {
       "subject": "Zahtjev za godišnji {startDate}–{endDate} je odbijen",
-      "body": "Tvoj zahtjev za godišnji odmor {startDate}–{endDate} je odbijen. Pogledaj ga u aplikaciji: {link}"
+      "body": "{organizationName}: tvoj zahtjev za godišnji odmor {startDate}–{endDate} je odbijen. Pogledaj ga u aplikaciji: {link}"
+    },
+    "leaveRecorded": {
+      "subject": "Upisan ti je godišnji {startDate}–{endDate}",
+      "body": "{organizationName}: upisan ti je godišnji odmor {startDate}–{endDate}. Pogledaj ga u aplikaciji: {link}"
+    },
+    "leaveRecordChanged": {
+      "subject": "Izmijenjen ti je godišnji, sada {startDate}–{endDate}",
+      "body": "{organizationName}: tvoj godišnji odmor izmijenjen je na {startDate}–{endDate}. Pogledaj ga u aplikaciji: {link}"
+    },
+    "leaveRecordRemoved": {
+      "subject": "Uklonjen ti je godišnji {startDate}–{endDate}",
+      "body": "{organizationName}: uklonjen ti je godišnji odmor {startDate}–{endDate}. Pogledaj u aplikaciji: {link}"
+    },
+    "rosterPutOn": {
+      "subject": "Promjena rasporeda {date}: na rasporedu si",
+      "body": "{organizationName}: upisana je promjena rasporeda koja te stavlja na raspored {date}. Pogledaj kalendar: {link}"
+    },
+    "rosterPutOnChanged": {
+      "subject": "Izmijenjena promjena rasporeda {date}",
+      "body": "{organizationName}: izmijenjena je promjena rasporeda koja te stavlja na raspored {date}. Pogledaj kalendar: {link}"
+    },
+    "rosterPutOnRemoved": {
+      "subject": "Uklonjena promjena rasporeda {date}",
+      "body": "{organizationName}: uklonjena je promjena rasporeda koja te stavila na raspored {date}. Pogledaj kalendar: {link}"
+    },
+    "rosterTakenOff": {
+      "subject": "Promjena rasporeda {date}: nisi na rasporedu",
+      "body": "{organizationName}: upisana je promjena rasporeda koja te miče s rasporeda {date}. Pogledaj kalendar: {link}"
+    },
+    "rosterTakenOffChanged": {
+      "subject": "Izmijenjena promjena rasporeda {date}",
+      "body": "{organizationName}: izmijenjena je promjena rasporeda koja te miče s rasporeda {date}. Pogledaj kalendar: {link}"
+    },
+    "rosterTakenOffRemoved": {
+      "subject": "Uklonjena promjena rasporeda {date}",
+      "body": "{organizationName}: uklonjena je promjena rasporeda koja te maknula s rasporeda {date}. Pogledaj kalendar: {link}"
+    },
+    "teamShiftTypeSet": {
+      "subject": "Promjena rasporeda {date}",
+      "body": "{organizationName}: za {date} vrijedi {shiftTypeName} umjesto rasporeda po rotaciji. Pogledaj kalendar: {link}"
+    },
+    "teamShiftTypeChanged": {
+      "subject": "Izmijenjena promjena rasporeda {date}",
+      "body": "{organizationName}: za {date} sada vrijedi {shiftTypeName} umjesto rasporeda po rotaciji. Pogledaj kalendar: {link}"
+    },
+    "teamShiftTypeRemoved": {
+      "subject": "Uklonjena promjena rasporeda {date}",
+      "body": "{organizationName}: za {date} ponovno vrijedi raspored po rotaciji. Pogledaj kalendar: {link}"
+    },
+    "rotationChanges": {
+      "subject": "Nova rotacija od {effectiveFrom}",
+      "body": "{organizationName}: od {effectiveFrom} vrijedi nova rotacija. Pogledaj kalendar: {link}"
+    },
+    "rotationChangeCancelled": {
+      "subject": "Otkazana promjena rotacije od {effectiveFrom}",
+      "body": "{organizationName}: promjena rotacije zakazana od {effectiveFrom} je otkazana. Pogledaj kalendar: {link}"
+    },
+    "leaveRequestCreated": {
+      "subject": "Novi zahtjev za godišnji: {memberName}",
+      "body": "{organizationName}: {memberName} traži godišnji odmor {startDate}–{endDate}. Zahtjev čeka tvoju odluku: {link}"
     }
   }
 }

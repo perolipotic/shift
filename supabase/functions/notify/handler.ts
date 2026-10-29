@@ -8,7 +8,7 @@
  *   1. refuses any caller without the invoke secret (401, compared in
  *      constant time), before anything is claimed;
  *   2. claims a batch through `claim_notifications` — the row, the
- *      recipient's email, the organization's locale, timezone and slug;
+ *      recipient's email, the organization's locale, timezone, slug and name;
  *   3. renders each row by its code from the pinned locale messages
  *      (`messages.ts`), never from prose in the row;
  *   4. sends it through Resend with `Idempotency-Key` = the row id, so a
@@ -209,6 +209,8 @@ export interface ClaimedNotification {
   readonly locale: string | null;
   readonly timezone: string | null;
   readonly slug: string | null;
+  /** The organization's name, which every email names (0043). */
+  readonly organization_name: string | null;
 }
 
 export type SettleResult = 'sent' | 'transient' | 'released' | 'permanent';
@@ -276,7 +278,11 @@ async function deliver(row: ClaimedNotification, configuration: Configuration, f
   // TRANSIENT, not permanent: a code this deployment cannot render yet is
   // most likely one a newer migration writes before the newer function is
   // deployed. The backoff gives the deploy time; five misses fail the row.
-  const rendered = render(row.code, row.locale, row.operands, configuration.appUrl);
+  const rendered = render(row.code, row.locale, row.operands, {
+    appUrl: configuration.appUrl,
+    slug: row.slug,
+    organizationName: row.organization_name,
+  });
   if (!rendered.ok) return { result: 'transient', failureCode: rendered.code };
 
   let response: Response;

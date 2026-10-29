@@ -70,6 +70,11 @@ const INVOKE_SECRET = 'i'.repeat(INVOKE_SECRET_MIN_LENGTH + 8);
 /** No real waiting in a test: the pace is asserted through the calls, not the clock. */
 const instantly = (): Promise<void> => Promise.resolve();
 const APP_URL = 'https://shift.example.org';
+const ORGANIZATION_NAME = 'DVD Kaštel Novi';
+/** Where the rendered tests send a row: the app, the pilot's slug and name. */
+const TARGET = { appUrl: APP_URL, slug: 'dvd-kastel-novi', organizationName: ORGANIZATION_NAME } as const;
+/** The link to `path` through the pilot's sign-in route. */
+const linkTo = (path: string): string => `${APP_URL}/prijava/dvd-kastel-novi?povratak=${encodeURIComponent(path)}`;
 
 const ENVIRONMENT: Readonly<Record<string, string>> = {
   SUPABASE_URL: 'http://127.0.0.1:54321',
@@ -108,6 +113,7 @@ interface FakeRow {
   locale: string | null;
   timezone: string | null;
   slug: string | null;
+  organization_name: string | null;
 }
 
 function row(overrides: Partial<FakeRow> = {}): FakeRow {
@@ -122,6 +128,7 @@ function row(overrides: Partial<FakeRow> = {}): FakeRow {
     locale: 'hr',
     timezone: 'Europe/Zagreb',
     slug: 'dvd-kastel-novi',
+    organization_name: ORGANIZATION_NAME,
     ...overrides,
   };
 }
@@ -166,7 +173,6 @@ describe('notify renders from a pinned copy of the obavijesti namespace', () => 
   });
 
   it('maps every code it renders to a message that exists, and only plain {name} placeholders', () => {
-    expect(Object.keys(MESSAGE_OF_CODE).sort()).toEqual(['LEAVE_REQUEST_APPROVED', 'LEAVE_REQUEST_REJECTED']);
     for (const key of Object.values(MESSAGE_OF_CODE)) {
       expect(OBAVIJESTI[key], key).toBeDefined();
       for (const message of [OBAVIJESTI[key].subject, OBAVIJESTI[key].body]) {
@@ -189,40 +195,241 @@ describe('notify renders from a pinned copy of the obavijesti namespace', () => 
     expect(spaFormatIsoDate(iso)).toBeNull();
   });
 
-  it('renders the approval and the rejection with the dates and the Godišnji link', () => {
-    const approved = render('LEAVE_REQUEST_APPROVED', 'hr', { startDate: '2046-03-02', endDate: '2046-03-06' }, APP_URL);
-    const rejected = render('LEAVE_REQUEST_REJECTED', 'hr-HR', { startDate: '2046-03-02', endDate: '2046-03-06' }, `${APP_URL}/`);
+  it('renders the approval and the rejection with the organization, the dates and the Godišnji link', () => {
+    const approved = render('LEAVE_REQUEST_APPROVED', 'hr', { startDate: '2046-03-02', endDate: '2046-03-06' }, TARGET);
+    const rejected = render(
+      'LEAVE_REQUEST_REJECTED',
+      'hr-HR',
+      { startDate: '2046-03-02', endDate: '2046-03-06' },
+      { ...TARGET, appUrl: `${APP_URL}/` },
+    );
 
     expect(approved).toEqual({
       ok: true,
       subject: 'Zahtjev za godišnji 02.03.2046–06.03.2046 je odobren',
-      text: `Tvoj zahtjev za godišnji odmor 02.03.2046–06.03.2046 je odobren. Pogledaj ga u aplikaciji: ${APP_URL}/godisnji`,
+      text: `${ORGANIZATION_NAME}: tvoj zahtjev za godišnji odmor 02.03.2046–06.03.2046 je odobren. Pogledaj ga u aplikaciji: ${linkTo('/godisnji')}`,
     });
     expect(rejected).toMatchObject({ ok: true, subject: 'Zahtjev za godišnji 02.03.2046–06.03.2046 je odbijen' });
-    expect(rejected.ok && rejected.text).toContain(`${APP_URL}/godisnji`);
+    expect(rejected.ok && rejected.text).toContain(linkTo('/godisnji'));
   });
 
   it('refuses a code it has no message for, and operands that do not fill the message', () => {
-    expect(render('SOMETHING_ELSE', 'hr', {}, APP_URL)).toEqual({ ok: false, code: MESSAGE_UNKNOWN });
-    expect(render('LEAVE_REQUEST_APPROVED', 'hr', { startDate: '2046-03-02' }, APP_URL)).toEqual({
+    expect(render('SOMETHING_ELSE', 'hr', {}, TARGET)).toEqual({ ok: false, code: MESSAGE_UNKNOWN });
+    expect(render('LEAVE_REQUEST_APPROVED', 'hr', { startDate: '2046-03-02' }, TARGET)).toEqual({
       ok: false,
       code: OPERANDS_INVALID,
     });
-    expect(render('LEAVE_REQUEST_APPROVED', 'hr', [], APP_URL)).toEqual({ ok: false, code: OPERANDS_INVALID });
+    expect(render('LEAVE_REQUEST_APPROVED', 'hr', [], TARGET)).toEqual({ ok: false, code: OPERANDS_INVALID });
     expect(
-      render('LEAVE_REQUEST_APPROVED', 'hr', { startDate: '2046-02-30', endDate: '2046-03-06' }, APP_URL),
+      render('LEAVE_REQUEST_APPROVED', 'hr', { startDate: '2046-02-30', endDate: '2046-03-06' }, TARGET),
     ).toEqual({ ok: false, code: OPERANDS_INVALID });
+  });
+
+  it('refuses a row whose organization has no slug or no name to link and name', () => {
+    const operands = { startDate: '2046-03-02', endDate: '2046-03-06' };
+
+    expect(render('LEAVE_REQUEST_APPROVED', 'hr', operands, { ...TARGET, slug: null })).toEqual({
+      ok: false,
+      code: OPERANDS_INVALID,
+    });
+    expect(render('LEAVE_REQUEST_APPROVED', 'hr', operands, { ...TARGET, organizationName: '  ' })).toEqual({
+      ok: false,
+      code: OPERANDS_INVALID,
+    });
   });
 
   it('renders a locale with no resource of its own in Croatian', () => {
     const operands = { startDate: '2046-03-02', endDate: '2046-03-06' };
 
-    expect(render('LEAVE_REQUEST_APPROVED', 'en', operands, APP_URL)).toEqual(
-      render('LEAVE_REQUEST_APPROVED', 'hr', operands, APP_URL),
+    expect(render('LEAVE_REQUEST_APPROVED', 'en', operands, TARGET)).toEqual(
+      render('LEAVE_REQUEST_APPROVED', 'hr', operands, TARGET),
     );
-    expect(render('LEAVE_REQUEST_APPROVED', null, operands, APP_URL)).toEqual(
-      render('LEAVE_REQUEST_APPROVED', 'hr', operands, APP_URL),
+    expect(render('LEAVE_REQUEST_APPROVED', null, operands, TARGET)).toEqual(
+      render('LEAVE_REQUEST_APPROVED', 'hr', operands, TARGET),
     );
+  });
+});
+
+// ------------------------------------------------------------ story 10.2's codes
+
+/**
+ * Every code the 0043 triggers write, with the operands they write it with,
+ * the surface it links to, and the text it renders to.
+ */
+const REQUEST_ID = '0b5e7f9a-3c2d-4e1f-8a6b-9c0d1e2f3a4b';
+const EVERY_CODE: readonly {
+  code: string;
+  operands: Record<string, string>;
+  path: string;
+  subject: string;
+  text: string;
+}[] = [
+  {
+    code: 'LEAVE_RECORDED',
+    operands: { startDate: '2046-03-02', endDate: '2046-03-06' },
+    path: '/godisnji',
+    subject: 'Upisan ti je godišnji 02.03.2046–06.03.2046',
+    text: `${ORGANIZATION_NAME}: upisan ti je godišnji odmor 02.03.2046–06.03.2046. Pogledaj ga u aplikaciji: {link}`,
+  },
+  {
+    code: 'LEAVE_RECORD_CHANGED',
+    operands: { startDate: '2046-03-02', endDate: '2046-03-06' },
+    path: '/godisnji',
+    subject: 'Izmijenjen ti je godišnji, sada 02.03.2046–06.03.2046',
+    text: `${ORGANIZATION_NAME}: tvoj godišnji odmor izmijenjen je na 02.03.2046–06.03.2046. Pogledaj ga u aplikaciji: {link}`,
+  },
+  {
+    code: 'LEAVE_RECORD_REMOVED',
+    operands: { startDate: '2046-03-02', endDate: '2046-03-06' },
+    path: '/godisnji',
+    subject: 'Uklonjen ti je godišnji 02.03.2046–06.03.2046',
+    text: `${ORGANIZATION_NAME}: uklonjen ti je godišnji odmor 02.03.2046–06.03.2046. Pogledaj u aplikaciji: {link}`,
+  },
+  {
+    code: 'ROSTER_PUT_ON',
+    operands: { date: '2046-03-02' },
+    path: '/kalendar',
+    subject: 'Promjena rasporeda 02.03.2046: na rasporedu si',
+    text: `${ORGANIZATION_NAME}: upisana je promjena rasporeda koja te stavlja na raspored 02.03.2046. Pogledaj kalendar: {link}`,
+  },
+  {
+    code: 'ROSTER_PUT_ON_CHANGED',
+    operands: { date: '2046-03-02' },
+    path: '/kalendar',
+    subject: 'Izmijenjena promjena rasporeda 02.03.2046',
+    text: `${ORGANIZATION_NAME}: izmijenjena je promjena rasporeda koja te stavlja na raspored 02.03.2046. Pogledaj kalendar: {link}`,
+  },
+  {
+    code: 'ROSTER_PUT_ON_REMOVED',
+    operands: { date: '2046-03-02' },
+    path: '/kalendar',
+    subject: 'Uklonjena promjena rasporeda 02.03.2046',
+    text: `${ORGANIZATION_NAME}: uklonjena je promjena rasporeda koja te stavila na raspored 02.03.2046. Pogledaj kalendar: {link}`,
+  },
+  {
+    code: 'ROSTER_TAKEN_OFF',
+    operands: { date: '2046-03-02' },
+    path: '/kalendar',
+    subject: 'Promjena rasporeda 02.03.2046: nisi na rasporedu',
+    text: `${ORGANIZATION_NAME}: upisana je promjena rasporeda koja te miče s rasporeda 02.03.2046. Pogledaj kalendar: {link}`,
+  },
+  {
+    code: 'ROSTER_TAKEN_OFF_CHANGED',
+    operands: { date: '2046-03-02' },
+    path: '/kalendar',
+    subject: 'Izmijenjena promjena rasporeda 02.03.2046',
+    text: `${ORGANIZATION_NAME}: izmijenjena je promjena rasporeda koja te miče s rasporeda 02.03.2046. Pogledaj kalendar: {link}`,
+  },
+  {
+    code: 'ROSTER_TAKEN_OFF_REMOVED',
+    operands: { date: '2046-03-02' },
+    path: '/kalendar',
+    subject: 'Uklonjena promjena rasporeda 02.03.2046',
+    text: `${ORGANIZATION_NAME}: uklonjena je promjena rasporeda koja te maknula s rasporeda 02.03.2046. Pogledaj kalendar: {link}`,
+  },
+  {
+    code: 'TEAM_SHIFT_TYPE_SET',
+    operands: { date: '2046-03-02', shiftTypeName: 'Noć' },
+    path: '/kalendar',
+    subject: 'Promjena rasporeda 02.03.2046',
+    text: `${ORGANIZATION_NAME}: za 02.03.2046 vrijedi Noć umjesto rasporeda po rotaciji. Pogledaj kalendar: {link}`,
+  },
+  {
+    code: 'TEAM_SHIFT_TYPE_CHANGED',
+    operands: { date: '2046-03-02', shiftTypeName: 'Dan' },
+    path: '/kalendar',
+    subject: 'Izmijenjena promjena rasporeda 02.03.2046',
+    text: `${ORGANIZATION_NAME}: za 02.03.2046 sada vrijedi Dan umjesto rasporeda po rotaciji. Pogledaj kalendar: {link}`,
+  },
+  {
+    code: 'TEAM_SHIFT_TYPE_REMOVED',
+    operands: { date: '2046-03-02' },
+    path: '/kalendar',
+    subject: 'Uklonjena promjena rasporeda 02.03.2046',
+    text: `${ORGANIZATION_NAME}: za 02.03.2046 ponovno vrijedi raspored po rotaciji. Pogledaj kalendar: {link}`,
+  },
+  {
+    code: 'ROTATION_CHANGES',
+    operands: { effectiveFrom: '2046-03-02' },
+    path: '/kalendar',
+    subject: 'Nova rotacija od 02.03.2046',
+    text: `${ORGANIZATION_NAME}: od 02.03.2046 vrijedi nova rotacija. Pogledaj kalendar: {link}`,
+  },
+  {
+    code: 'ROTATION_CHANGE_CANCELLED',
+    operands: { effectiveFrom: '2046-03-02' },
+    path: '/kalendar',
+    subject: 'Otkazana promjena rotacije od 02.03.2046',
+    text: `${ORGANIZATION_NAME}: promjena rotacije zakazana od 02.03.2046 je otkazana. Pogledaj kalendar: {link}`,
+  },
+  {
+    code: 'LEAVE_REQUEST_CREATED',
+    operands: { requestId: REQUEST_ID, memberName: 'Ana Kovač', startDate: '2046-03-02', endDate: '2046-03-06' },
+    path: `/za-odluku/zahtjev/${REQUEST_ID}`,
+    subject: 'Novi zahtjev za godišnji: Ana Kovač',
+    text: `${ORGANIZATION_NAME}: Ana Kovač traži godišnji odmor 02.03.2046–06.03.2046. Zahtjev čeka tvoju odluku: {link}`,
+  },
+];
+
+describe("notify renders every 10.2 code with the organization's name and its sign-in link", () => {
+  it('knows exactly the codes 0042 and 0043 write', () => {
+    expect(Object.keys(MESSAGE_OF_CODE).sort()).toEqual(
+      ['LEAVE_REQUEST_APPROVED', 'LEAVE_REQUEST_REJECTED', ...EVERY_CODE.map((entry) => entry.code)].sort(),
+    );
+  });
+
+  it.each(EVERY_CODE)('renders $code', ({ code, operands, path, subject, text }) => {
+    const rendered = render(code, 'hr', operands, TARGET);
+
+    expect(rendered).toEqual({ ok: true, subject, text: text.replace('{link}', linkTo(path)) });
+  });
+
+  it.each(EVERY_CODE)('links $code through /prijava/<slug>?povratak=<path>, a target the sign-in follows', ({ code, operands, path }) => {
+    const rendered = render(code, 'hr', operands, TARGET);
+    if (!rendered.ok) throw new Error(`${code} did not render`);
+    const link = /https?:\/\/\S+$/.exec(rendered.text)?.[0] ?? '';
+    const url = new URL(link);
+
+    expect(url.origin).toBe(APP_URL);
+    expect(url.pathname).toBe('/prijava/dvd-kastel-novi');
+    expect([...url.searchParams.keys()]).toEqual(['povratak']);
+    expect(url.searchParams.get('povratak')).toBe(path);
+  });
+
+  it.each(EVERY_CODE.filter((entry) => entry.code !== 'LEAVE_REQUEST_CREATED'))(
+    'names no other member and no absence in $code, which a member-role account receives (Q5)',
+    ({ code }) => {
+      const message = OBAVIJESTI[MESSAGE_OF_CODE[code] ?? 'leaveRequestApproved'];
+      const placeholders = [...`${message.subject} ${message.body}`.matchAll(/\{(\w+)\}/g)].map((match) => match[1]);
+
+      expect(placeholders.filter((name) => !['organizationName', 'link', 'date', 'startDate', 'endDate', 'effectiveFrom', 'shiftTypeName'].includes(name ?? ''))).toEqual([]);
+    },
+  );
+
+  it('formats only the date operands as dates: a name that looks like one stays text', () => {
+    const rendered = render(
+      'LEAVE_REQUEST_CREATED',
+      'hr',
+      { requestId: REQUEST_ID, memberName: '2046-02-30', startDate: '2046-03-02', endDate: '2046-03-06' },
+      TARGET,
+    );
+    const typed = render('TEAM_SHIFT_TYPE_SET', 'hr', { date: '2046-03-02', shiftTypeName: '2046-03-02' }, TARGET);
+
+    expect(rendered).toMatchObject({ ok: true, subject: 'Novi zahtjev za godišnji: 2046-02-30' });
+    expect(typed.ok && typed.text).toContain('za 02.03.2046 vrijedi 2046-03-02 umjesto');
+  });
+
+  it('refuses a new request whose operands name no request id to link to', () => {
+    const { operands } = EVERY_CODE.find((entry) => entry.code === 'LEAVE_REQUEST_CREATED') ?? { operands: {} };
+
+    expect(render('LEAVE_REQUEST_CREATED', 'hr', { ...operands, requestId: undefined }, TARGET)).toEqual({
+      ok: false,
+      code: OPERANDS_INVALID,
+    });
+    expect(render('LEAVE_REQUEST_CREATED', 'hr', { ...operands, requestId: '../ljudi' }, TARGET)).toEqual({
+      ok: false,
+      code: OPERANDS_INVALID,
+    });
   });
 });
 
@@ -385,7 +592,7 @@ describe("notify's matrix against a fake client: one send per row, settled by th
       from: ENVIRONMENT['NOTIFY_EMAIL_FROM'],
       to: ['ana@example.org'],
       subject: 'Zahtjev za godišnji 02.03.2046–06.03.2046 je odobren',
-      text: `Tvoj zahtjev za godišnji odmor 02.03.2046–06.03.2046 je odobren. Pogledaj ga u aplikaciji: ${APP_URL}/godisnji`,
+      text: `${ORGANIZATION_NAME}: tvoj zahtjev za godišnji odmor 02.03.2046–06.03.2046 je odobren. Pogledaj ga u aplikaciji: ${linkTo('/godisnji')}`,
     });
     expect(settles).toEqual([{ p_id: claimed.id, p_result: 'sent', p_failure_code: null }]);
     expect(tokens).toEqual([claimed.claimed_at]);
@@ -654,7 +861,7 @@ function serviceRoleClient(client: Client): OutboxClient {
           data = (
             await client.query(
               `select id::text as id, code, channel, operands, attempts, claimed_at::text as claimed_at,
-                      email, locale, timezone, slug
+                      email, locale, timezone, slug, organization_name
                  from public.claim_notifications($1)`,
               [args['p_limit']],
             )
@@ -766,6 +973,31 @@ describe("notify's matrix against the real claim and settle (0042)", () => {
       expect(again).not.toHaveBeenCalled();
     });
   });
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    "claims a $fixture row with the organization's name and slug, and the email names it and links through them (0043)",
+    async ({ slug, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const { organization, insert } = await arrange(client, slug, member, 'member@example.org');
+        await insert();
+        const { rows: stored } = await client.query<{ name: string; slug: string }>(
+          'select name, slug from organizations where id = $1',
+          [organization],
+        );
+        const claimed = await serviceRoleClient(client).rpc(CLAIM_RPC, { p_limit: 10 });
+        const [row] = (claimed.data ?? []) as { organization_name: string; slug: string }[];
+
+        expect(row, slug).toMatchObject({ organization_name: stored[0]?.name, slug: stored[0]?.slug });
+
+        await client.query('update notification_outbox set claimed_at = null, attempts = 0 where organization_id = $1', [organization]);
+        const fetch = provider(200);
+        await run(client, fetch);
+        const body = JSON.parse(String(fetch.mock.calls[0]?.[1]?.body)) as { text: string };
+        expect(body.text.startsWith(`${stored[0]?.name ?? '?'}: `), `${slug}: the email does not open with the organization`).toBe(true);
+        expect(body.text, slug).toContain(`/prijava/${slug}?povratak=%2Fgodisnji`);
+      });
+    },
+  );
 
   it.skipIf(noDatabase).each(FIXTURES)(
     'makes no call for a $fixture member with no address, and fails the row RECIPIENT_NO_EMAIL',

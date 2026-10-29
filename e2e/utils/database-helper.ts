@@ -402,6 +402,16 @@ export async function removeLeaveMemberInSql(slug: string, memberId: string): Pr
     await client.query('begin');
     const scope = [member.organization_id, memberId];
     await client.query('delete from conflict_resolutions where organization_id = $1 and member_id = $2', scope);
+    // Story 10.2: the notifications their requests and leave wrote to OTHER
+    // members (the admins' new-request rows), which no recipient key removes.
+    await client.query(
+      `delete from notification_outbox
+        where organization_id = $1
+          and subject_id in (select id from leave_requests where organization_id = $1 and member_id = $2
+                             union all
+                             select id from leave_records where organization_id = $1 and member_id = $2)`,
+      scope,
+    );
     // Story 9.3: their leave requests and the decisions on them (0040), whose
     // keys do not cascade — the decisions first, which name both a request
     // and the leave an approval created.
@@ -413,8 +423,8 @@ export async function removeLeaveMemberInSql(slug: string, memberId: string): Pr
     );
     await client.query('delete from leave_requests where organization_id = $1 and member_id = $2', scope);
     await client.query('delete from leave_records where organization_id = $1 and member_id = $2', scope);
-    // Story 10.1: a decision writes their notification (0042), whose
-    // recipient key does not cascade.
+    // Story 10.1: a decision writes their notification (0042). The recipient
+    // key cascades since 0043, but the delete stays explicit.
     await client.query(
       'delete from notification_outbox where organization_id = $1 and recipient_member_id = $2',
       scope,
