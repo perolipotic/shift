@@ -1104,3 +1104,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-10-2-email-tells-people-what-concerns-them.md`
   summary: A pending outbox row whose fact no longer holds is still sent: `LEAVE_REQUEST_CREATED` for a request withdrawn or decided before `notify` runs, and `ROTATION_CHANGES` beside `ROTATION_CHANGE_CANCELLED` for a rotation cancelled within the minute.
   evidence: Raised by the 10.2 review (Blind Hunter, Edge Case Hunter). Fix candidates: `withdraw_leave_request` / `decide_leave_request` delete their subject's unclaimed `LEAVE_REQUEST_CREATED` rows; a definer may delete outbox rows, `notify` may not (AD-14).
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-2-email-tells-people-what-concerns-them.md`
+  summary: Story 10.3 adds an organization-level email switch (e.g. `organizations.email_notifications`) that `private.notify_members` checks, so a switched-off organization writes no outbox rows at all, beside each member's own on/off.
+  evidence: Asked by the product owner during 10.2 (2026-10-29). The switch must stop the writes, not only the sends, or a backlog of stale emails goes out when it is switched back on.
