@@ -1488,9 +1488,14 @@ describe('every organization table carries row level security, and only its revi
         'no index on leave_records serves one member\'s records',
       ).toBe(true);
       const { rows: triggers } = await client.query<{ tgname: string }>(
-        `select tgname from pg_trigger where tgrelid = 'public.leave_records'::regclass and not tgisinternal`,
+        `select tgname from pg_trigger where tgrelid = 'public.leave_records'::regclass and not tgisinternal order by 1`,
       );
-      expect(triggers, 'neither story 5.1b nor 5.2a takes a trigger').toEqual([]);
+      // Neither story 5.1b nor 5.2a takes a trigger; 0043's notifications are
+      // the only ones, AFTER the write.
+      expect(triggers.map((row) => row.tgname), 'leave_records takes only 0043\'s notification triggers').toEqual([
+        'leave_records_notify_insert',
+        'leave_records_notify_removal',
+      ]);
     } finally {
       await client.end();
     }
@@ -1600,6 +1605,8 @@ describe('every organization table carries row level security, and only its revi
           order by 1`,
       );
       expect(triggers.map((row) => row.definition), 'story 9.2 takes the lock and the overlap trigger, on requests alone').toEqual([
+        // 0043: a new request tells the admins, AFTER it is written.
+        'CREATE TRIGGER leave_requests_notify_insert AFTER INSERT ON public.leave_requests FOR EACH ROW WHEN ((new.closed_at IS NULL)) EXECUTE FUNCTION private.notify_leave_request()',
         'CREATE TRIGGER leave_requests_refuse_over_leave BEFORE INSERT ON public.leave_requests FOR EACH ROW EXECUTE FUNCTION refuse_leave_request_over_leave()',
         'CREATE TRIGGER leave_requests_serialize_organization_writes BEFORE INSERT OR DELETE OR UPDATE ON public.leave_requests FOR EACH STATEMENT EXECUTE FUNCTION serialize_organization_writes()',
       ]);
@@ -2053,6 +2060,21 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'settle_notification', argumentCount: 4, expected: ['service_role'] },
     // The cron job's one statement, run as its owner by pg_cron: nobody else.
     { name: 'invoke_notify', argumentCount: 0, expected: [], schema: 'private' },
+    // STORY 10.2 (0043). The notification triggers and their helpers, in
+    // `private`, on 0023's terms: run as the owner when a trigger fires, and
+    // callable by nobody.
+    { name: 'notify_members', argumentCount: 5, expected: [], schema: 'private' },
+    { name: 'team_members_on', argumentCount: 3, expected: [], schema: 'private' },
+    { name: 'notify_suppression', argumentCount: 0, expected: [], schema: 'private' },
+    { name: 'remember_amended', argumentCount: 1, expected: [], schema: 'private' },
+    { name: 'take_amended', argumentCount: 0, expected: [], schema: 'private' },
+    { name: 'amended_members', argumentCount: 1, expected: [], schema: 'private' },
+    { name: 'notify_leave_record', argumentCount: 0, expected: [], schema: 'private' },
+    { name: 'notify_roster_override', argumentCount: 0, expected: [], schema: 'private' },
+    { name: 'notify_shift_type_override', argumentCount: 0, expected: [], schema: 'private' },
+    { name: 'notify_rotation_inserted', argumentCount: 0, expected: [], schema: 'private' },
+    { name: 'notify_rotation_deleted', argumentCount: 0, expected: [], schema: 'private' },
+    { name: 'notify_leave_request', argumentCount: 0, expected: [], schema: 'private' },
     // 0024's name key, in `private`, which PostgREST does not expose. Every
     // name check and name unique index calls it, and both are
     // permission-checked against the WRITING role — and a check runs on every
@@ -2088,6 +2110,12 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'refuse_truncate', argumentCount: 0 },
     // 0024's name key reads nothing; it runs as whoever writes the name.
     { name: 'name_key', argumentCount: 1, schema: 'private' },
+    // 0043's flag readers read and write only transaction-local settings,
+    // and run as whichever trigger calls them (the owner).
+    { name: 'notify_suppression', argumentCount: 0, schema: 'private' },
+    { name: 'remember_amended', argumentCount: 1, schema: 'private' },
+    { name: 'take_amended', argumentCount: 0, schema: 'private' },
+    { name: 'amended_members', argumentCount: 1, schema: 'private' },
   ] as { name: string; argumentCount: number; schema?: string }[])('runs $name as the caller, with an empty search_path', async ({ name, argumentCount, schema }) => {
     // INVOKER, the opposite of the helper and the hook. They are reached from
     // the helper, the hook and the zero-admins function as the owner, and from

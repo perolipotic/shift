@@ -1089,3 +1089,18 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-10-1-the-outbox-and-the-notify-function.md`
   summary: Emails are plain text with no `List-Unsubscribe`, no `Reply-To` and no line saying why the member got it or how to stop it; 10.2 (wording) and 10.3 (settings) should add them before production sending from a new domain.
   evidence: Raised by the 10.1 review (Blind Hunter). Deliverability is the epic's named risk.
+
+## Deferred from: planning of spec-10-2-email-tells-people-what-concerns-them.md (2026-10-29)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-2-email-tells-people-what-concerns-them.md`
+  summary: Admins get no email when a new collision appears in *Za odluku*; only new leave requests notify them (epic 10.2 AC "a new item in Za odluku … every admin receives one email", narrowed).
+  evidence: Collisions are derived in the browser and never stored (AD-4, 0031 header, packages/domain/src/collisions.ts); no SQL engine and no added-collision diff exist, so no request can write the outbox row for one under AD-18 without projecting a roster. Needs an architecture decision (client-asserted event, or a stored collision fact).
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-2-email-tells-people-what-concerns-them.md`
+  summary: Swap-driven shift changes notify nobody yet (epic 10.2 AC "their shifts change by … a swap", deferred).
+  evidence: Swaps ship in Epic 12, which reuses this outbox for swap-proposed, swap-decided and swap-driven shift-change events.
+
+## Deferred from: code review of spec-10-2-email-tells-people-what-concerns-them.md (2026-10-29)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-2-email-tells-people-what-concerns-them.md`
+  summary: A pending outbox row whose fact no longer holds is still sent: `LEAVE_REQUEST_CREATED` for a request withdrawn or decided before `notify` runs, and `ROTATION_CHANGES` beside `ROTATION_CHANGE_CANCELLED` for a rotation cancelled within the minute.
+  evidence: Raised by the 10.2 review (Blind Hunter, Edge Case Hunter). Fix candidates: `withdraw_leave_request` / `decide_leave_request` delete their subject's unclaimed `LEAVE_REQUEST_CREATED` rows; a definer may delete outbox rows, `notify` may not (AD-14).

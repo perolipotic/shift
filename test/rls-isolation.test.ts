@@ -20218,6 +20218,16 @@ describe('every name is at most 100 characters (0036)', () => {
  * year 2046 and delete what they wrote in `finally`.
  */
 
+/**
+ * 0043: the notifications a committed REST case's requests and leave wrote
+ * (the admins' new-request rows, the requester's decision), deleted with
+ * them so no pending row outlives the case.
+ */
+const outboxOfYear2046 = `delete from notification_outbox
+  where subject_id in (select id from leave_requests where member_id = any($1::uuid[]) and during && $2::daterange
+                       union all
+                       select id from leave_records where member_id = any($1::uuid[]) and during && $2::daterange)`;
+
 /** One leave request, written as whoever the connection currently is: the three columns a session may name. */
 async function insertRequest(
   client: Client,
@@ -20933,6 +20943,7 @@ describe('a member requests their own leave, an overlap is refused by the databa
         const organization = owner.organizationId;
         cleanup = [self.id, other.id];
         // Leftovers of an interrupted run, before anything is written.
+        await client.query(outboxOfYear2046, [cleanup, year2046]);
         await client.query('delete from leave_request_decisions where request_id in (select id from leave_requests where member_id = any($1::uuid[]) and during && $2::daterange)', [cleanup, year2046]);
         await client.query('delete from leave_requests where member_id = any($1::uuid[]) and during && $2::daterange', [cleanup, year2046]);
         await client.query('delete from leave_records where member_id = any($1::uuid[]) and during && $2::daterange', [cleanup, year2046]);
@@ -20978,6 +20989,7 @@ describe('a member requests their own leave, an overlap is refused by the databa
         expect(rows, slug).toEqual([{ closedBy: self.authUserId }]);
       } finally {
         if (cleanup.length > 0) {
+          await client.query(outboxOfYear2046, [cleanup, year2046]);
           await client.query('delete from leave_request_decisions where request_id in (select id from leave_requests where member_id = any($1::uuid[]) and during && $2::daterange)', [cleanup, year2046]);
           await client.query('delete from leave_requests where member_id = any($1::uuid[]) and during && $2::daterange', [
             cleanup,
@@ -21255,11 +21267,12 @@ describe('the decision writes one outbox row in its own transaction, and no sess
     failed: boolean;
   }
 
+  /** The request's DECISION rows: 0043's new-request rows to the admins are the next block's. */
   async function outboxOf(client: Client, subject: string): Promise<OutboxRow[]> {
     const { rows } = await client.query<OutboxRow>(
       `select code, recipient_member_id::text as recipient, channel, operands,
               sent_at is not null as sent, failed_at is not null as failed
-         from notification_outbox where subject_id = $1 order by code`,
+         from notification_outbox where subject_id = $1 and code <> 'LEAVE_REQUEST_CREATED' order by code`,
       [subject],
     );
     return rows;
@@ -21385,7 +21398,7 @@ describe('the decision writes one outbox row in its own transaction, and no sess
         await decideRequest(client, request, 'approved');
         await actAsOwner(client);
         const { rows: stored } = await client.query<{ id: string }>(
-          'select id::text as id from notification_outbox where subject_id = $1',
+          `select id::text as id from notification_outbox where subject_id = $1 and code = 'LEAVE_REQUEST_APPROVED'`,
           [request],
         );
         const id = stored[0]?.id ?? '';
@@ -21440,7 +21453,7 @@ describe('the decision writes one outbox row in its own transaction, and no sess
         const { rows } = await client.query<{ total: number; open: number }>(
           `select count(*)::int as total,
                   count(*) filter (where sent_at is null and failed_at is null and claimed_at is null)::int as open
-             from notification_outbox where subject_id = $1`,
+             from notification_outbox where subject_id = $1 and code = 'LEAVE_REQUEST_APPROVED'`,
           [request],
         );
         expect(rows[0], `${slug}: a refused session changed the outbox`).toEqual({ total: 1, open: 1 });
@@ -21488,6 +21501,496 @@ describe('the decision writes one outbox row in its own transaction, and no sess
 
       expect(answered[0]?.id).toBeNull();
       expect(after[0]?.total).toBe(before[0]?.total);
+    });
+  });
+});
+
+/**
+ * 0043 (story 10.2, AD-18): the facts a member or an admin hears about write
+ * their outbox rows by trigger, in the write's own transaction. Recipients are
+ * stored facts only; the session's own member and anybody with no address get
+ * no row; an amend is one `*_CHANGED`; an approval's leave sends nothing
+ * beyond the decision. Every case runs in a rolled-back transaction.
+ */
+describe('the writes that assert a fact write its outbox rows, to the people it concerns (0043)', () => {
+  interface EventRow {
+    code: string;
+    recipient: string;
+    operands: Record<string, unknown>;
+  }
+
+  /** Every outbox row of one subject, by code and recipient, as the owner. */
+  async function eventsOf(client: Client, subject: string): Promise<EventRow[]> {
+    const { rows } = await client.query<EventRow>(
+      `select code, recipient_member_id::text as recipient, operands
+         from notification_outbox where subject_id = $1 order by code, recipient_member_id`,
+      [subject],
+    );
+    return rows;
+  }
+
+  /** The recipients of one subject's rows of one code, sorted. */
+  async function recipientsOf(client: Client, subject: string, code: string): Promise<string[]> {
+    return (await eventsOf(client, subject))
+      .filter((row) => row.code === code)
+      .map((row) => row.recipient)
+      .sort();
+  }
+
+  /** Every outbox row written since the case began that reaches a member-role account. */
+  async function memberRoleOperands(client: Client, since: string): Promise<Record<string, unknown>[]> {
+    const { rows } = await client.query<{ operands: Record<string, unknown> }>(
+      `select o.operands
+         from notification_outbox o
+         join members m on m.id = o.recipient_member_id
+        where m.role = 'member_role' and o.created_at >= $1::timestamptz`,
+      [since],
+    );
+    return rows.map((row) => row.operands);
+  }
+
+  async function setEmail(client: Client, member: string, email: string | null): Promise<void> {
+    await client.query('update members set email = $2 where id = $1', [member, email]);
+  }
+
+  /** A fresh team, written as the owner. */
+  async function ownerTeam(client: Client, organization: string, name: string, by: string): Promise<string> {
+    const { rows } = await client.query<{ id: string }>(
+      'insert into teams (organization_id, name, created_by) values ($1, $2, $3) returning id::text as id',
+      [organization, name, by],
+    );
+    const id = rows[0]?.id;
+    if (id === undefined) throw new Error('the team insert returned no id');
+    return id;
+  }
+
+  /** The fixture's admin, member and bystander, the two non-admins given addresses. */
+  async function cast(
+    client: Client,
+    fixture: { slug: string; admin: string; member: string; bystander: string },
+  ): Promise<{ owner: MemberRow; self: MemberRow; other: MemberRow; organization: string; since: string }> {
+    const owner = await memberByUsername(client, fixture.slug, fixture.admin);
+    const self = await memberByUsername(client, fixture.slug, fixture.member);
+    const other = await memberByUsername(client, fixture.slug, fixture.bystander);
+    await setEmail(client, owner.id, `${fixture.admin}@example.org`);
+    await setEmail(client, self.id, `${fixture.member}@example.org`);
+    await setEmail(client, other.id, `${fixture.bystander}@example.org`);
+    const { rows } = await client.query<{ now: string }>('select now()::text as now');
+    return { owner, self, other, organization: owner.organizationId, since: rows[0]?.now ?? '' };
+  }
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'tells a $fixture member their leave was recorded, amended (once) and removed; the recording admin, a null address and a rolled-back write get none',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { owner, self, other, organization, since } = await cast(client, fixture);
+        const day = (offset: number) => organizationDay(client, organization, offset);
+
+        // No session member (the seed, the owner): notifies normally.
+        await client.query(`select set_config('request.jwt.claims', '{}', true)`);
+        const seeded = await insertLeave(client, { organization, member: self.id, during: `[${await day(70)},${await day(71)}]`, by: owner.authUserId });
+
+        await actAs(client, owner.authUserId, organization);
+        const recorded = await insertLeave(client, { organization, member: self.id, during: `[${await day(40)},${await day(42)}]` });
+        const ownLeave = await insertLeave(client, { organization, member: owner.id, during: `[${await day(40)},${await day(42)}]` });
+        const amended = await amendLeaveRecord(client, recorded, await day(41), await day(44));
+        await actAsOwner(client);
+        const afterAmend = { old: await eventsOf(client, recorded), replacement: await eventsOf(client, amended) };
+
+        await actAs(client, owner.authUserId, organization);
+        await removeLeaveRecord(client, amended);
+        await client.query('savepoint leave_write');
+        const rolledBack = await insertLeave(client, { organization, member: self.id, during: `[${await day(80)},${await day(80)}]` });
+        await client.query('rollback to savepoint leave_write');
+        await actAsOwner(client);
+        await setEmail(client, other.id, null);
+        await actAs(client, owner.authUserId, organization);
+        const unaddressed = await insertLeave(client, { organization, member: other.id, during: `[${await day(40)},${await day(42)}]` });
+        await actAsOwner(client);
+
+        expect(await eventsOf(client, seeded), fixture.slug).toEqual([
+          { code: 'LEAVE_RECORDED', recipient: self.id, operands: { startDate: await day(70), endDate: await day(71) } },
+        ]);
+        expect(await eventsOf(client, ownLeave), `${fixture.slug}: the recording admin heard of their own write`).toEqual([]);
+        expect(afterAmend.old.map((row) => row.code), `${fixture.slug}: the amend's removal notified`).toEqual(['LEAVE_RECORDED']);
+        expect(afterAmend.replacement, fixture.slug).toEqual([
+          { code: 'LEAVE_RECORD_CHANGED', recipient: self.id, operands: { startDate: await day(41), endDate: await day(44) } },
+        ]);
+        expect(await recipientsOf(client, amended, 'LEAVE_RECORD_REMOVED'), fixture.slug).toEqual([self.id]);
+        expect(await eventsOf(client, rolledBack), `${fixture.slug}: a rolled-back write left its row`).toEqual([]);
+        expect(await eventsOf(client, unaddressed), `${fixture.slug}: a member with no address got a row`).toEqual([]);
+        expect(await memberRoleOperands(client, since), fixture.slug).not.toContainEqual(expect.objectContaining({ memberName: expect.anything() }));
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    "sends a $fixture approval's requester only the decision, never the leave it writes",
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { owner, self, organization } = await cast(client, fixture);
+        const day = (offset: number) => organizationDay(client, organization, offset);
+
+        await actAs(client, self.authUserId, organization);
+        const request = await insertRequest(client, { organization, member: self.id, during: `[${await day(40)},${await day(42)}]` });
+        await actAs(client, owner.authUserId, organization);
+        const record = await decideRequest(client, request, 'approved');
+        await actAsOwner(client);
+
+        expect(record, fixture.slug).not.toBeNull();
+        expect(await eventsOf(client, record ?? ''), `${fixture.slug}: the approval's leave notified`).toEqual([]);
+        expect((await eventsOf(client, request)).filter((row) => row.recipient === self.id).map((row) => row.code), fixture.slug).toEqual([
+          'LEAVE_REQUEST_APPROVED',
+        ]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'tells the $fixture member put on and the member taken off, each in their own words, neither naming the other, on set, amend and removal',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { owner, self, other, organization, since } = await cast(client, fixture);
+        const day = await organizationDay(client, organization, 20);
+        const [team] = await twoLiveTeamsOf(client, organization);
+
+        await actAs(client, owner.authUserId, organization);
+        const set = await insertRosterOverride(client, { organization, team, date: day, out: self.id, in: other.id, reason: 'Zamjena.' });
+        const amended = await amendRosterOverride(client, set, owner.id, 'Zamjena, izmijenjena.');
+        await removeRosterOverride(client, amended);
+        await actAsOwner(client);
+
+        expect(await eventsOf(client, set), fixture.slug).toEqual([
+          { code: 'ROSTER_PUT_ON', recipient: other.id, operands: { date: day } },
+          { code: 'ROSTER_TAKEN_OFF', recipient: self.id, operands: { date: day } },
+        ]);
+        // The amend puts the admin on (who made the write: no row), keeps
+        // `self` off, and drops `other`, who gets the put-on removal.
+        expect(await eventsOf(client, amended), fixture.slug).toEqual([
+          { code: 'ROSTER_PUT_ON_REMOVED', recipient: other.id, operands: { date: day } },
+          { code: 'ROSTER_TAKEN_OFF_CHANGED', recipient: self.id, operands: { date: day } },
+          { code: 'ROSTER_TAKEN_OFF_REMOVED', recipient: self.id, operands: { date: day } },
+        ]);
+        expect((await eventsOf(client, set)).concat(await eventsOf(client, amended)).every((row) => Object.keys(row.operands).join() === 'date')).toBe(true);
+        expect(await memberRoleOperands(client, since), fixture.slug).not.toContainEqual(expect.objectContaining({ memberName: expect.anything() }));
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    "tells a $fixture team's active members on the date of a shift-type override, and nobody off the team that day",
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { owner, self, other, organization } = await cast(client, fixture);
+        const day = (offset: number) => organizationDay(client, organization, offset);
+        const [type, otherType] = await twoShiftTypesOf(client, organization);
+        const { rows: names } = await client.query<{ id: string; name: string }>(
+          'select id::text as id, name from shift_types where id = any($1::uuid[])',
+          [[type, otherType]],
+        );
+        const nameOf = (id: string) => names.find((row) => row.id === id)?.name;
+        const team = await ownerTeam(client, organization, 'Obavijesti 10.2', owner.authUserId);
+        await ownerMembership(client, { organization, member: self.id, team, from: await day(1), by: owner.authUserId });
+        await ownerMembership(client, { organization, member: other.id, team, from: await day(1), by: owner.authUserId });
+        await ownerMembership(client, { organization, member: other.id, team: null, from: await day(8), by: owner.authUserId });
+
+        await actAs(client, owner.authUserId, organization);
+        const both = await insertOverride(client, { organization, team, date: await day(5), type, reason: 'Vježba.' });
+        const set = await insertOverride(client, { organization, team, date: await day(10), type, reason: 'Vježba.' });
+        const amended = await amendOverride(client, set, otherType, 'Vježba, izmijenjena.');
+        await removeOverride(client, amended);
+        await actAsOwner(client);
+
+        expect(await recipientsOf(client, both, 'TEAM_SHIFT_TYPE_SET'), fixture.slug).toEqual([self.id, other.id].sort());
+        expect(await eventsOf(client, set), `${fixture.slug}: a member off the team that day was told`).toEqual([
+          { code: 'TEAM_SHIFT_TYPE_SET', recipient: self.id, operands: { date: await day(10), shiftTypeName: nameOf(type) } },
+        ]);
+        expect(await eventsOf(client, amended), fixture.slug).toEqual([
+          { code: 'TEAM_SHIFT_TYPE_CHANGED', recipient: self.id, operands: { date: await day(10), shiftTypeName: nameOf(otherType) } },
+          { code: 'TEAM_SHIFT_TYPE_REMOVED', recipient: self.id, operands: { date: await day(10) } },
+        ]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    "tells each $fixture team's active members of a rotation change within 30 days, once per team, and of its cancel; nothing beyond 30 days",
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { owner, self, other, organization } = await cast(client, fixture);
+        const day = (offset: number) => organizationDay(client, organization, offset);
+        const pattern = await seededPattern(client, organization);
+        const first = await ownerTeam(client, organization, 'Obavijesti 10.2 A', owner.authUserId);
+        const second = await ownerTeam(client, organization, 'Obavijesti 10.2 B', owner.authUserId);
+        const far = await ownerTeam(client, organization, 'Obavijesti 10.2 C', owner.authUserId);
+        await ownerMembership(client, { organization, member: self.id, team: first, from: await day(1), by: owner.authUserId });
+        await ownerMembership(client, { organization, member: other.id, team: second, from: await day(1), by: owner.authUserId });
+        // The admin on the team made the write: told nothing.
+        await ownerMembership(client, { organization, member: owner.id, team: first, from: await day(1), by: owner.authUserId });
+
+        await actAs(client, owner.authUserId, organization);
+        const near = await day(10);
+        // One statement, two teams: each team's members, once each.
+        const { rows: saved } = await client.query<{ id: string; team: string }>(
+          `insert into rotation_assignments (organization_id, team_id, pattern_id, offset_step_id, anchor_date, effective_from)
+           values ($1, $2, $4, $5, $6::date, $6::date), ($1, $3, $4, $5, $6::date, $6::date)
+           returning id::text as id, team_id::text as team`,
+          [organization, first, second, pattern.id, pattern.steps[0], near],
+        );
+        await insertAssignment(client, { organization, team: far, pattern: pattern.id, offsetStep: pattern.steps[0] ?? null, anchor: await day(31), from: await day(31) });
+        const { rows: farRows } = await client.query<{ id: string }>('select id::text as id from rotation_assignments where team_id = $1', [far]);
+        const ofFirst = saved.find((row) => row.team === first)?.id ?? '';
+        const ofSecond = saved.find((row) => row.team === second)?.id ?? '';
+        await cancelAssignment(client, { team: first, from: near });
+        await cancelAssignment(client, { team: far, from: await day(31) });
+        await actAsOwner(client);
+
+        expect(await eventsOf(client, ofFirst), fixture.slug).toEqual([
+          { code: 'ROTATION_CHANGE_CANCELLED', recipient: self.id, operands: { effectiveFrom: near } },
+          { code: 'ROTATION_CHANGES', recipient: self.id, operands: { effectiveFrom: near } },
+        ]);
+        expect(await eventsOf(client, ofSecond), fixture.slug).toEqual([
+          { code: 'ROTATION_CHANGES', recipient: other.id, operands: { effectiveFrom: near } },
+        ]);
+        expect(farRows, fixture.slug).toHaveLength(1);
+        expect(await eventsOf(client, farRows[0]?.id ?? ''), `${fixture.slug}: a change 31 days out notified`).toEqual([]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'tells every active $fixture admin with an address of a new leave request, naming the member, and never the requester',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { owner, self, organization } = await cast(client, fixture);
+        const day = (offset: number) => organizationDay(client, organization, offset);
+        const { rows: names } = await client.query<{ name: string }>('select name from members where id = $1', [self.id]);
+
+        await actAs(client, self.authUserId, organization);
+        const request = await insertRequest(client, { organization, member: self.id, during: `[${await day(40)},${await day(42)}]` });
+        await actAs(client, owner.authUserId, organization);
+        const own = await insertRequest(client, { organization, member: owner.id, during: `[${await day(50)},${await day(52)}]` });
+        await actAsOwner(client);
+        const { rows: admins } = await client.query<{ id: string }>(
+          `select id::text as id from members
+            where organization_id = $1 and role = 'admin' and email is not null
+              and public.member_active_on(id, public.organization_today($1))
+            order by id`,
+          [organization],
+        );
+
+        expect(admins.map((row) => row.id), fixture.slug).toContain(owner.id);
+        const operands = { requestId: request, memberName: names[0]?.name, startDate: await day(40), endDate: await day(42) };
+        expect(await eventsOf(client, request), fixture.slug).toEqual(
+          admins.map((row) => ({ code: 'LEAVE_REQUEST_CREATED', recipient: row.id, operands })),
+        );
+        expect(await recipientsOf(client, request, 'LEAVE_REQUEST_CREATED'), `${fixture.slug}: the requester heard of their own request`).not.toContain(self.id);
+        expect(await recipientsOf(client, own, 'LEAVE_REQUEST_CREATED'), `${fixture.slug}: the requesting admin heard of their own request`).toEqual(
+          admins.map((row) => row.id).filter((id) => id !== owner.id),
+        );
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'tells no $fixture member inactive today, though on the team and active on the date, and no admin inactive today',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { owner, self, other, organization } = await cast(client, fixture);
+        const day = (offset: number) => organizationDay(client, organization, offset);
+        const [type] = await twoShiftTypesOf(client, organization);
+        const [rosterTeam] = await twoLiveTeamsOf(client, organization);
+        const team = await ownerTeam(client, organization, 'Obavijesti 10.2 neaktivni', owner.authUserId);
+        await ownerMembership(client, { organization, member: self.id, team, from: await day(1), by: owner.authUserId });
+        await ownerMembership(client, { organization, member: other.id, team, from: await day(1), by: owner.authUserId });
+        // `other`: inactive today, active again from day 5, and an admin.
+        await ownerVersion(client, { organization, member: other.id, active: false, from: await day(0), by: owner.authUserId });
+        await ownerVersion(client, { organization, member: other.id, active: true, from: await day(5), by: owner.authUserId });
+        await client.query(`update members set role = 'admin' where id = $1`, [other.id]);
+
+        await actAs(client, owner.authUserId, organization);
+        const typed = await insertOverride(client, { organization, team, date: await day(10), type, reason: 'Vježba.' });
+        const leave = await insertLeave(client, { organization, member: other.id, during: `[${await day(40)},${await day(42)}]` });
+        const roster = await insertRosterOverride(client, { organization, team: rosterTeam, date: await day(20), out: null, in: other.id, reason: 'Pojačanje.' });
+        await actAs(client, self.authUserId, organization);
+        const request = await insertRequest(client, { organization, member: self.id, during: `[${await day(60)},${await day(62)}]` });
+        await actAsOwner(client);
+
+        expect(await recipientsOf(client, typed, 'TEAM_SHIFT_TYPE_SET'), fixture.slug).toEqual([self.id]);
+        expect(await eventsOf(client, leave), fixture.slug).toEqual([]);
+        expect(await eventsOf(client, roster), fixture.slug).toEqual([]);
+        expect(await recipientsOf(client, request, 'LEAVE_REQUEST_CREATED'), `${fixture.slug}: an admin inactive today was told`).toEqual([owner.id]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'tells $fixture members of a rotation change on today + 30, and of none dated yesterday',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { owner, self, organization } = await cast(client, fixture);
+        const day = (offset: number) => organizationDay(client, organization, offset);
+        const pattern = await seededPattern(client, organization);
+        const edge = await ownerTeam(client, organization, 'Obavijesti 10.2 rub', owner.authUserId);
+        const past = await ownerTeam(client, organization, 'Obavijesti 10.2 jučer', owner.authUserId);
+        await ownerMembership(client, { organization, member: self.id, team: edge, from: await day(-10), by: owner.authUserId });
+
+        await actAs(client, owner.authUserId, organization);
+        await insertAssignment(client, { organization, team: edge, pattern: pattern.id, offsetStep: pattern.steps[0] ?? null, anchor: await day(30), from: await day(30) });
+        await actAsOwner(client);
+        // Yesterday's, as the owner (no session may write a past version),
+        // for a team `self` was on yesterday.
+        await client.query('update team_membership_versions set team_id = $2 where member_id = $1 and team_id = $3', [self.id, past, edge]);
+        await ownerAssignment(client, { organization, team: past, pattern: pattern.id, offsetStep: pattern.steps[0] ?? null, anchor: await day(-1), from: await day(-1), by: owner.authUserId });
+        const ids = async (team: string) =>
+          (await client.query<{ id: string }>('select id::text as id from rotation_assignments where team_id = $1', [team])).rows.map((row) => row.id);
+        const [atEdge] = await ids(edge);
+        const [yesterday] = await ids(past);
+
+        expect(await eventsOf(client, atEdge ?? ''), fixture.slug).toEqual([
+          { code: 'ROTATION_CHANGES', recipient: self.id, operands: { effectiveFrom: await day(30) } },
+        ]);
+        expect(await eventsOf(client, yesterday ?? ''), `${fixture.slug}: yesterday's version notified`).toEqual([]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'writes only the decision row for a $fixture rejection, and tells the put-on member of a conflict replacement',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { owner, self, other, organization } = await cast(client, fixture);
+        const day = (offset: number) => organizationDay(client, organization, offset);
+        const [team] = await twoLiveTeamsOf(client, organization);
+
+        await actAs(client, self.authUserId, organization);
+        const request = await insertRequest(client, { organization, member: self.id, during: `[${await day(40)},${await day(42)}]` });
+        await actAsOwner(client);
+        const { rows: before } = await client.query<{ total: number }>('select count(*)::int as total from notification_outbox');
+        await actAs(client, owner.authUserId, organization);
+        await decideRequest(client, request, 'rejected');
+        await actAsOwner(client);
+        const { rows: after } = await client.query<{ total: number }>('select count(*)::int as total from notification_outbox');
+
+        await actAs(client, owner.authUserId, organization);
+        await leaveOver(client, organization, [self.id]);
+        await replaceConflictMember(client, { member: self.id, date: '2042-09-12', team, replacement: other.id });
+        await actAsOwner(client);
+        const { rows: replacement } = await client.query<{ id: string }>(
+          `select id::text as id from roster_overrides where team_id = $1 and date = '2042-09-12' and removed_at is null`,
+          [team],
+        );
+
+        expect((after[0]?.total ?? 0) - (before[0]?.total ?? 0), fixture.slug).toBe(1);
+        expect((await eventsOf(client, request)).filter((row) => row.code !== 'LEAVE_REQUEST_CREATED'), fixture.slug).toEqual([
+          { code: 'LEAVE_REQUEST_REJECTED', recipient: self.id, operands: { startDate: await day(40), endDate: await day(42) } },
+        ]);
+        expect(await eventsOf(client, replacement[0]?.id ?? ''), fixture.slug).toEqual([
+          { code: 'ROSTER_PUT_ON', recipient: other.id, operands: { date: '2042-09-12' } },
+        ]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'leaves no $fixture row for a rolled-back override, rotation and request, nor for leave and overrides wholly before today',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { owner, self, other, organization } = await cast(client, fixture);
+        const day = (offset: number) => organizationDay(client, organization, offset);
+        const pattern = await seededPattern(client, organization);
+        const [type] = await twoShiftTypesOf(client, organization);
+        const [rosterTeam] = await twoLiveTeamsOf(client, organization);
+        const team = await ownerTeam(client, organization, 'Obavijesti 10.2 povijest', owner.authUserId);
+        await ownerMembership(client, { organization, member: self.id, team, from: await day(-20), by: owner.authUserId });
+        const { rows: before } = await client.query<{ total: number }>('select count(*)::int as total from notification_outbox');
+
+        await actAs(client, owner.authUserId, organization);
+        await client.query('savepoint rolled_back');
+        await insertOverride(client, { organization, team, date: await day(10), type, reason: 'Vježba.' });
+        await insertAssignment(client, { organization, team, pattern: pattern.id, offsetStep: pattern.steps[0] ?? null, anchor: await day(10), from: await day(10) });
+        await actAs(client, self.authUserId, organization);
+        await insertRequest(client, { organization, member: self.id, during: `[${await day(40)},${await day(42)}]` });
+        await client.query('rollback to savepoint rolled_back');
+        await actAsOwner(client);
+        const { rows: afterRollback } = await client.query<{ total: number }>('select count(*)::int as total from notification_outbox');
+
+        // Wholly before today: history, not news. Written as the owner, past
+        // any policy on dates, with the admin's claims still in place.
+        await actAs(client, owner.authUserId, organization);
+        await actAsOwner(client);
+        const pastLeave = await insertLeave(client, { organization, member: self.id, during: `[${await day(-5)},${await day(-1)}]`, by: owner.authUserId });
+        const { rows: typed } = await client.query<{ id: string }>(
+          `insert into shift_type_overrides (organization_id, team_id, date, shift_type_id, reason, created_by)
+           values ($1, $2, $3::date, $4, 'Vježba.', $5) returning id::text as id`,
+          [organization, team, await day(-1), type, owner.authUserId],
+        );
+        const { rows: rostered } = await client.query<{ id: string }>(
+          `insert into roster_overrides (organization_id, team_id, date, member_out_id, member_in_id, reason, created_by)
+           values ($1, $2, $3::date, $4, $5, 'Zamjena.', $6) returning id::text as id`,
+          [organization, rosterTeam, await day(-1), self.id, other.id, owner.authUserId],
+        );
+        await client.query('update leave_records set removed_by = $2, removed_at = now() where id = $1', [pastLeave, owner.authUserId]);
+
+        expect(afterRollback[0]?.total, `${fixture.slug}: a rolled-back write left a row`).toBe(before[0]?.total);
+        expect(await eventsOf(client, pastLeave), fixture.slug).toEqual([]);
+        expect(await eventsOf(client, typed[0]?.id ?? ''), fixture.slug).toEqual([]);
+        expect(await eventsOf(client, rostered[0]?.id ?? ''), fixture.slug).toEqual([]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase)(
+    'deletes an organization holding a rotation change scheduled within 30 days, with no cancel mailed and no 23503',
+    async () => {
+      await inRolledBackTransaction(async (client) => {
+        const [fixture] = FIXTURES;
+        const { owner, self, organization } = await cast(client, fixture);
+        const day = (offset: number) => organizationDay(client, organization, offset);
+        const pattern = await seededPattern(client, organization);
+        const team = await ownerTeam(client, organization, 'Obavijesti 10.2 brisanje', owner.authUserId);
+        await ownerMembership(client, { organization, member: self.id, team, from: await day(1), by: owner.authUserId });
+        await ownerAssignment(client, { organization, team, pattern: pattern.id, offsetStep: pattern.steps[0] ?? null, anchor: await day(10), from: await day(10), by: owner.authUserId });
+        const { rows: scheduled } = await client.query<{ id: string }>('select id::text as id from rotation_assignments where team_id = $1', [team]);
+        await client.query(`select set_config('request.jwt.claims', '{}', true)`);
+
+        const deleted = await client.query('delete from organizations where id = $1', [organization]);
+
+        expect(deleted.rowCount).toBe(1);
+        expect(await eventsOf(client, scheduled[0]?.id ?? ''), 'a cascading delete mailed a cancel').toEqual(
+          // The change itself was mailed when it was written; the delete adds
+          // no cancel, and the organization's rows are gone with it.
+          [],
+        );
+        const { rows } = await client.query<{ total: number }>(
+          `select count(*)::int as total from notification_outbox where code = 'ROTATION_CHANGE_CANCELLED' and subject_id = $1`,
+          [scheduled[0]?.id ?? ''],
+        );
+        expect(rows).toEqual([{ total: 0 }]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase)("removes a member's outbox rows with the member (the cascading recipient key)", async () => {
+    await inRolledBackTransaction(async (client) => {
+      const [fixture] = FIXTURES;
+      const owner = await memberByUsername(client, fixture.slug, fixture.admin);
+      const organization = owner.organizationId;
+      const doomed = await addThrowawayMember(client, organization);
+      await client.query(
+        `insert into notification_outbox (organization_id, code, subject_id, recipient_member_id, channel, operands)
+         values ($1, 'LEAVE_RECORDED', gen_random_uuid(), $2, 'email', '{}')`,
+        [organization, doomed.id],
+      );
+
+      const deleted = await client.query('delete from members where id = $1', [doomed.id]);
+      const { rows } = await client.query<{ total: number }>(
+        'select count(*)::int as total from notification_outbox where recipient_member_id = $1',
+        [doomed.id],
+      );
+
+      expect(deleted.rowCount).toBe(1);
+      expect(rows).toEqual([{ total: 0 }]);
     });
   });
 });
