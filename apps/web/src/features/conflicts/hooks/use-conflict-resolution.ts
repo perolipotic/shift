@@ -50,7 +50,7 @@ import {
   organizationConflictResolutionsQueryOptions,
   type OrganizationConflictResolutionsTable,
 } from '@/features/conflicts/services/resolutions';
-import { RESOLUTION_SURFACE_KEYS } from '@/features/conflicts/services/surface-keys';
+import { RESOLUTION_COUNT_KEYS, RESOLUTION_SURFACE_KEYS } from '@/features/conflicts/services/surface-keys';
 import {
   LEAVE_RECORDS_TABLE,
   ORGANIZATION_LEAVE_RECORDS_KEY,
@@ -140,6 +140,12 @@ import { writesOnline } from '@/lib/offline/use-write-gate';
  * and `resolutionScreenOf` derives from the answered reads. Offline the whole
  * cached snapshot is drawn under the as-of note; a save then fails as any
  * write without a connection does (8.3 states it before the press).
+ *
+ * THE COUNT'S OWN READ (retro 8–9 item 18): the organization's leave requests
+ * (story 9.5) only give the back link its count, so they are not one of the
+ * page's reads. Their freshness is decided over their key alone: offline,
+ * cached rows still give the count; failed, paused, uncached or pending, the
+ * page stands and the back link names no number.
  */
 export function useConflictResolution(params: ResolutionParams) {
   const queryClient = useQueryClient();
@@ -189,7 +195,7 @@ export function useConflictResolution(params: ResolutionParams) {
   const requestsRead = useOrganizationLeaveRequests();
   const membersRead = useQuery(membersQueryOptions(() => supabaseClient().from(MEMBERS_TABLE)));
   const organizationRead = useQuery(organizationSnapshotQueryOptions(organizationTable));
-  // STORY 8.2c: the six reads (story 9.5's requests among them) are one snapshot (`RESOLUTION_SURFACE_KEYS`),
+  // STORY 8.2c: the five reads are one snapshot (`RESOLUTION_SURFACE_KEYS`),
   // decided from these very observer results: online, a read older than this
   // session's network is never drawn as fresh; offline, the whole cached
   // snapshot is drawn under the as-of note (`offline`), or the unavailable
@@ -201,7 +207,6 @@ export function useConflictResolution(params: ResolutionParams) {
       [CALENDAR_KEY, calendarRead],
       [ORGANIZATION_LEAVE_RECORDS_KEY, recordsRead],
       [ORGANIZATION_CONFLICT_RESOLUTIONS_KEY, resolutionsRead],
-      [ORGANIZATION_LEAVE_REQUESTS_KEY, requestsRead],
       [MEMBERS_LIST_KEY, membersRead],
       [ORGANIZATION_SNAPSHOT_KEY, organizationRead],
     ],
@@ -210,9 +215,16 @@ export function useConflictResolution(params: ResolutionParams) {
   const calendar = answerOf(calendarRead);
   const records = answerOf(recordsRead);
   const resolutions = answerOf(resolutionsRead);
-  const requests = answerOf(requestsRead);
   const members = answerOf(membersRead);
   const organization = answerOf(organizationRead);
+  // RETRO 8–9 ITEM 18: the request read's own freshness, so it never decides
+  // the page — only whether the back link names a count. An online stale read
+  // is answered as pending (no old count); offline, its cached rows count.
+  const requests = useSnapshotFreshness(
+    RESOLUTION_COUNT_KEYS,
+    [[ORGANIZATION_LEAVE_REQUESTS_KEY, requestsRead]],
+    ZONE_FROM_CALENDAR,
+  ).answerOf(requestsRead);
   const calendarState = calendarSurfaceStateOf(calendar);
 
   // STORY 5.5d: a replacement naming an override the snapshot does not hold yet re-reads it once.
@@ -230,7 +242,8 @@ export function useConflictResolution(params: ResolutionParams) {
       requests,
       members: membersSurfaceStateOf(members),
       organization,
-      refetching: refetchingAfterFailure([calendar, records, resolutions, requests, members, organization]),
+      // The page's five only: a request refetch never blanks the page.
+      refetching: refetchingAfterFailure([calendar, records, resolutions, members, organization]),
     },
     params,
     new Date(),

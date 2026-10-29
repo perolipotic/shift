@@ -342,7 +342,9 @@ export interface ResolutionView {
   /**
    * The queue's own count (story 9.5) — conflicts and pending requests, from
    * the queue model (`queueCountOf`) — as the way back names it; null while
-   * the queue would not state one (a skew, or a refused queue).
+   * the queue would not state one (a skew, or a refused queue) or while the
+   * request read is not usable (retro 8–9 item 18): the way back then names
+   * no number, and the screen stands regardless.
    */
   readonly queueCount: number | null;
   /** This conflict's place in the queue's order, from 1. */
@@ -417,12 +419,21 @@ export type ResolutionScreen =
   | { readonly kind: typeof RESOLUTION_MISSING; readonly queueCount: number | null }
   | { readonly kind: typeof RESOLUTION_READY; readonly view: ResolutionView };
 
-/** The six reads the screen stands on: the queue's four, and the member card's two for the balance. */
+/**
+ * The screen's reads: the five it stands on — the queue's calendar, records
+ * and resolutions, and the member card's two for the balance — and the
+ * request read, which only the back link's count stands on (retro 8–9
+ * item 18).
+ */
 export interface ResolutionSources {
   readonly calendar: CalendarSurfaceState;
   readonly records: LeaveRowsAnswer;
   readonly resolutions: LeaveRowsAnswer;
-  /** The organization's leave requests (story 9.5): the pending ones join the back link's count. */
+  /**
+   * The organization's leave requests (story 9.5): the pending ones join the
+   * back link's count. Never the screen's: failed, paused, uncached or
+   * pending, the screen stands and the back link names no number.
+   */
   readonly requests: LeaveRowsAnswer;
   /** The member list: the allowance. */
   readonly members: LeaveMembersSource;
@@ -521,12 +532,13 @@ export function resolutionPlaceOf(
 
 /**
  * The screen from its five reads, the route's params and `now`: unavailable
- * when any read failed or is paused offline — first, so a failure is never
+ * when any of them failed or is paused offline — first, so a failure is never
  * hidden behind another's skeleton — loading while the queue's reads are
  * pending; missing once they are in and the conflict is not among the
  * unresolved; loading again while the balance's reads are pending; otherwise
  * the screen. A `RangeError` is logged and is unavailable; nothing else is
- * caught.
+ * caught. The request read is never waited on nor refused on: it only
+ * decides whether the back link names a count (null while it is not usable).
  */
 export function resolutionScreenOf(sources: ResolutionSources, params: ResolutionParams, now: Date): ResolutionScreen {
   const { calendar, records, resolutions, requests, members, organization } = sources;
@@ -541,7 +553,6 @@ export function resolutionScreenOf(sources: ResolutionSources, params: Resolutio
     (!calendar.loading && calendar.snapshot === null) ||
     queueReadFailed(records) ||
     queueReadFailed(resolutions) ||
-    queueReadFailed(requests) ||
     membersReadFailed(members) ||
     organizationReadFailed(organization)
   ) {
@@ -551,9 +562,10 @@ export function resolutionScreenOf(sources: ResolutionSources, params: Resolutio
   const snapshot = calendar.snapshot;
   const rows = records.data;
   const resolutionRows = resolutions.data;
-  const requestRows = requests.data;
+  // The count's own read: rows only when usable, otherwise null — no number.
+  const requestRows = queueReadFailed(requests) || requests.data === undefined ? null : requests.data;
 
-  if (snapshot === null || rows === undefined || resolutionRows === undefined || requestRows === undefined) {
+  if (snapshot === null || rows === undefined || resolutionRows === undefined) {
     return { kind: RESOLUTION_LOADING };
   }
 
@@ -569,7 +581,8 @@ export function resolutionScreenOf(sources: ResolutionSources, params: Resolutio
 }
 
 /**
- * {@link resolutionScreenOf} once the queue's four reads are in.
+ * {@link resolutionScreenOf} once the queue's three reads are in; the
+ * request rows are null while their read is not usable.
  *
  * @throws RangeError when a row cannot be trusted, on any precondition of the
  *   domain, or when the conflict names a member, team or type the inputs lack.
@@ -579,7 +592,7 @@ function resolutionScreenFrom(
   snapshot: CalendarSnapshot,
   rows: readonly unknown[],
   resolutionRows: readonly unknown[],
-  requestRows: readonly unknown[],
+  requestRows: readonly unknown[] | null,
   params: ResolutionParams,
   now: Date,
 ): ResolutionScreen {

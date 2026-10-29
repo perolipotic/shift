@@ -31,16 +31,20 @@ export function rasporedSurfaceKeysOf(tab: ConflictsTab): readonly QueryKey[] {
 }
 
 /**
- * One conflict's resolution page as one snapshot (story 8.2c): its six reads
- * — the queue's four (story 9.5's requests, for the back link's count), and
- * the member card's two for the balance, the member list and the
- * organization snapshot.
+ * One conflict's resolution page as one snapshot (story 8.2c): its five reads
+ * — the queue's calendar, live leave and live resolutions, and the member
+ * card's two for the balance, the member list and the organization snapshot.
+ * The leave-request read (story 9.5) is not among them: it is the back link
+ * count's own read, with its own freshness (retro 8–9 item 18), so a snapshot
+ * without it still shows the page — only the count goes.
  */
 export const RESOLUTION_SURFACE_KEYS: readonly QueryKey[] = [
   CALENDAR_KEY,
   ORGANIZATION_LEAVE_RECORDS_KEY,
   ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
-  ORGANIZATION_LEAVE_REQUESTS_KEY,
   MEMBERS_LIST_KEY,
   ORGANIZATION_SNAPSHOT_KEY,
 ];
+
+/** The resolution page's back link count's own read (retro 8–9 item 18): the organization's leave requests, fresh on their own. */
+export const RESOLUTION_COUNT_KEYS: readonly QueryKey[] = [ORGANIZATION_LEAVE_REQUESTS_KEY];

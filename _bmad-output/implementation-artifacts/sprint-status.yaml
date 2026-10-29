@@ -742,7 +742,7 @@ action_items:
     action: "Resolution page: a failed or missing leave-request read degrades only
       the back link count, not the whole page"
     owner: "Dev (bmad-build)"
-    status: open
+    status: done  # branch fix/retro-8-9-resolution-page-degrades-count
     ref: "_bmad-output/implementation-artifacts/epic-8-9-retro-2026-10-28.md"
   - id: "epic-9-retro-item-19-offline-e2e-seed-a-pending-request-and-a"
     epic: 9

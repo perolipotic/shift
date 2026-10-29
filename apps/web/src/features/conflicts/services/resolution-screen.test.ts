@@ -61,6 +61,7 @@ import {
 } from '@/features/conflicts/services/resolution-screen';
 import { LEAVE_HANDOFF_ORIGIN_STATE, LEAVE_HANDOFF_STATE, leaveHandoffOf, withLeaveHandoff } from '@/features/leave/services/leave-section';
 import { initLocalization, t } from '@/lib/i18n';
+import { snapshotAnswerOf, snapshotFreshnessOf, type FreshnessClock, type ReadAnswer } from '@/lib/offline/freshness';
 import {
   PILOT,
   SEEDED,
@@ -308,15 +309,82 @@ describe('the way back counts the whole queue (story 9.5)', () => {
     expect(logged).toHaveBeenCalled();
   });
 
-  it('is unavailable when the requests read failed, and loading while it is pending', () => {
-    const failed = { data: undefined, isError: true, isPending: true, fetchStatus: 'idle' };
+  const DEGRADED_REQUESTS = [
+    ['failed online', { data: undefined, isError: true, isPending: true, fetchStatus: 'idle' }],
+    ['pending online: the page does not wait', PENDING],
+    ['the raw paused answer, even over cached rows', { data: [], isError: false, isPending: false, fetchStatus: 'paused' }],
+    ['offline and never cached, as its own freshness answers it', { data: undefined, isError: true, isPending: false, fetchStatus: 'idle' }],
+  ] as const;
 
-    expect(resolutionScreenOf(sourcesOf(pilot, [WORKED], [], { requests: failed }), paramsOn('2026-09-11'), NOW)).toEqual({
-      kind: RESOLUTION_UNAVAILABLE,
+  it.each(DEGRADED_REQUESTS)('stands without the requests read (%s): the way back names no number (retro 8–9 item 18)', (_, requests) => {
+    const view = viewOf(resolutionScreenOf(sourcesOf(pilot, [WORKED], [], { requests }), paramsOn('2026-09-11'), NOW));
+
+    expect([view.position, view.collisionCount, view.queueCount]).toEqual([2, 3, null]);
+    expect(resolutionScreenOf(sourcesOf(pilot, [WORKED], [], { requests }), paramsOn('2026-09-12'), NOW)).toEqual({
+      kind: RESOLUTION_MISSING,
+      queueCount: null,
     });
-    expect(resolutionScreenOf(sourcesOf(pilot, [WORKED], [], { requests: PENDING }), paramsOn('2026-09-11'), NOW)).toEqual({
-      kind: RESOLUTION_LOADING,
+  });
+
+  it('counts with the requests read settled, on the screen and on the missing one', () => {
+    expect(viewOf(resolutionScreenOf(sourcesOf(pilot, [WORKED], []), paramsOn('2026-09-11'), NOW)).queueCount).toBe(3);
+    expect(resolutionScreenOf(sourcesOf(pilot, [WORKED], []), paramsOn('2026-09-12'), NOW)).toEqual({
+      kind: RESOLUTION_MISSING,
+      queueCount: 3,
     });
+  });
+
+  describe('offline, through the request read\'s own freshness', () => {
+    const OFFLINE: FreshnessClock = { online: false, freshAfter: 1_000 };
+
+    /** The raw request read as its own one-key surface answers it offline. */
+    function offlineRequestsOf(raw: ReadAnswer<readonly unknown[]>): ReadAnswer<readonly unknown[]> {
+      const freshness = snapshotFreshnessOf([raw], OFFLINE.freshAfter, OFFLINE.online);
+
+      return snapshotAnswerOf(raw, freshness, OFFLINE);
+    }
+
+    it('counts from rows cached with the page', () => {
+      const requests = offlineRequestsOf({ data: [], dataUpdatedAt: 500, isError: false, isPending: false, fetchStatus: 'paused' });
+      const view = viewOf(resolutionScreenOf(sourcesOf(pilot, [WORKED], [], { requests }), paramsOn('2026-09-11'), NOW));
+
+      expect(view.queueCount).toBe(3);
+    });
+
+    it('names no number, the page standing, when the rows were never cached', () => {
+      const requests = offlineRequestsOf({ data: undefined, dataUpdatedAt: 0, isError: false, isPending: true, fetchStatus: 'paused' });
+      const view = viewOf(resolutionScreenOf(sourcesOf(pilot, [WORKED], [], { requests }), paramsOn('2026-09-11'), NOW));
+
+      expect([view.collisionCount, view.queueCount]).toEqual([3, null]);
+    });
+  });
+
+  it.each([
+    ['the calendar refused', { calendar: { snapshot: null, refusal: 'unavailable' as never, loading: false } }],
+    ['the records failed', { records: { data: undefined, isError: true, isPending: false, fetchStatus: 'idle' } }],
+    ['the resolutions failed', { resolutions: { data: undefined, isError: true, isPending: false, fetchStatus: 'idle' } }],
+    ['the member list failed', { members: { members: null, refusal: 'MEMBERS_UNAVAILABLE', loading: false, paused: false } }],
+    [
+      'the organization failed',
+      { organization: { data: undefined, isPending: false, isError: true, fetchStatus: 'idle' } },
+    ],
+  ] as const)('is unavailable when one of its own five reads failed (%s), the requests read pending', (_, overrides) => {
+    expect(
+      resolutionScreenOf(sourcesOf(pilot, [WORKED], [], { ...overrides, requests: PENDING } as Partial<ResolutionSources>), paramsOn('2026-09-11'), NOW),
+    ).toEqual({ kind: RESOLUTION_UNAVAILABLE });
+  });
+
+  it('is loading, not unavailable, when the requests read failed and the records are pending', () => {
+    expect(
+      resolutionScreenOf(
+        sourcesOf(pilot, [WORKED], [], {
+          records: PENDING,
+          requests: { data: undefined, isError: true, isPending: false, fetchStatus: 'idle' },
+        }),
+        paramsOn('2026-09-11'),
+        NOW,
+      ),
+    ).toEqual({ kind: RESOLUTION_LOADING });
   });
 });
 
