@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { CALENDAR_KEY } from '@/features/calendar/services/snapshot';
 import { ACTING_ADMINS_KEY, TAB_RESOLVED, TAB_UNRESOLVED } from '@/features/conflicts/services/resolved-conflicts';
 import { ORGANIZATION_CONFLICT_RESOLUTIONS_KEY } from '@/features/conflicts/services/resolutions';
-import { RESOLUTION_SURFACE_KEYS, rasporedSurfaceKeysOf } from '@/features/conflicts/services/surface-keys';
+import { RESOLUTION_COUNT_KEYS, RESOLUTION_SURFACE_KEYS, rasporedSurfaceKeysOf } from '@/features/conflicts/services/surface-keys';
 import { ORGANIZATION_LEAVE_RECORDS_KEY } from '@/features/leave/services/leave-list';
 import { ORGANIZATION_LEAVE_REQUESTS_KEY } from '@/features/leave/services/leave-request-list';
 import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
@@ -42,12 +42,11 @@ describe("Za odluku's keys", () => {
 });
 
 describe("the resolution page's keys", () => {
-  it('are the queue\'s four, the member list and the organization', () => {
+  it('are the calendar, live leave, live resolutions, the member list and the organization', () => {
     expect(RESOLUTION_SURFACE_KEYS).toEqual([
       CALENDAR_KEY,
       ORGANIZATION_LEAVE_RECORDS_KEY,
       ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
-      ORGANIZATION_LEAVE_REQUESTS_KEY,
       MEMBERS_LIST_KEY,
       ORGANIZATION_SNAPSHOT_KEY,
     ]);
@@ -55,5 +54,20 @@ describe("the resolution page's keys", () => {
 
   it('are all kept on the device', () => {
     for (const key of RESOLUTION_SURFACE_KEYS) expect(persistsKey(key), text(key)).toBe(true);
+  });
+
+  it("keep the back link count's request read on the device, though it is not one of them", () => {
+    expect(RESOLUTION_SURFACE_KEYS).not.toContainEqual(ORGANIZATION_LEAVE_REQUESTS_KEY);
+    expect(persistsKey(ORGANIZATION_LEAVE_REQUESTS_KEY), text(ORGANIZATION_LEAVE_REQUESTS_KEY)).toBe(true);
+  });
+});
+
+describe("the resolution page's count keys (retro 8–9 item 18)", () => {
+  it('are the leave requests alone', () => {
+    expect(RESOLUTION_COUNT_KEYS).toEqual([ORGANIZATION_LEAVE_REQUESTS_KEY]);
+  });
+
+  it('are all kept on the device', () => {
+    for (const key of RESOLUTION_COUNT_KEYS) expect(persistsKey(key), text(key)).toBe(true);
   });
 });

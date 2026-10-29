@@ -443,15 +443,20 @@ export function conflictsQueueOutcomeOf(
  * very `count` {@link conflictsQueueOutcomeOf} derives, so the two cannot
  * drift; null while a row names a member or team the snapshot does not hold
  * yet (a skew, as {@link conflictsQueueOf} waits on) or when the queue is
- * refused — never a number the queue would not state.
+ * refused — never a number the queue would not state. Null too when
+ * `requestRows` is null: the request read is not usable (failed, paused
+ * offline, uncached or still pending), and the count cannot be stated
+ * without it (retro 8–9 item 18).
  */
 export function queueCountOf(
   snapshot: CalendarSnapshot,
   rows: readonly unknown[],
   resolutionRows: readonly unknown[],
-  requestRows: readonly unknown[],
+  requestRows: readonly unknown[] | null,
   today: string,
 ): number | null {
+  if (requestRows === null) return null;
+
   if (unknownSnapshotIdsOf(snapshot, rows, resolutionRows, requestRows).length > 0) return null;
 
   const outcome = conflictsQueueOutcomeOf(snapshot, rows, resolutionRows, today, requestRows);

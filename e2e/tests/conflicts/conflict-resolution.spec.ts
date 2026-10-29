@@ -707,6 +707,41 @@ test('fits the picker on a phone: no sideways scroll, and every candidate line w
   expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(390);
 });
 
+test('without the leave request read the screen stands: the way back names no number, and accepting as uncovered saves (retro 8–9 item 18)', async ({
+  page,
+  conflictsPage,
+  resolutionPage,
+  fixture,
+}) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
+  const { team, seeded, today } = await scenarioOf(fixture.slug);
+
+  // THE REQUEST READ FAILS: only the back link's count stands on it.
+  const requests = '**/rest/v1/leave_requests*';
+  await page.route(requests, (route) =>
+    route.request().method() === 'GET'
+      ? route.fulfill({ status: 500, contentType: 'application/json', body: '{"message":"E2E: requests unavailable"}' })
+      : route.fallback(),
+  );
+
+  await resolutionPage.gotoConflict(seeded.id, today, team.id);
+  await expect(resolutionPage.acceptOption).toBeVisible();
+  await expect(resolutionPage.replaceOption).toBeVisible();
+  await expect(resolutionPage.amendOption).toBeVisible();
+  await expect(resolutionPage.backLink).toHaveText(resolution.backToQueue);
+
+  await resolutionPage.acceptOption.click();
+  await expect(resolutionPage.acceptOption).toHaveAttribute('aria-checked', 'true');
+  // The queue itself still stands on the requests (Ask First): it reads them again once back.
+  await page.unroute(requests);
+  await resolutionPage.saveButton.click();
+
+  await expect(page).toHaveURL('/za-odluku');
+  await expect(conflictsPage.savedStatus).toContainText(seeded.name);
+  await expect(conflictsPage.savedStatus).toContainText(team.name);
+  await expect(conflictsPage.rowsOf(seeded.name)).toHaveCount(2);
+});
+
 test('a pick is dropped when the choice moves to the first card: accepting saves as uncovered, with no override and no replacement on the day', async ({
   page,
   conflictsPage,
