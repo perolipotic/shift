@@ -698,7 +698,7 @@ describe('every organization table carries row level security, and only its revi
               'shift_type_versions', 'rotation_patterns', 'rotation_steps',
               'rotation_assignments', 'shift_type_overrides', 'roster_overrides',
               'leave_records', 'conflict_resolutions', 'leave_requests',
-              'leave_request_decisions'
+              'leave_request_decisions', 'notification_outbox'
             )
           order by relname`,
       );
@@ -711,7 +711,8 @@ describe('every organization table carries row level security, and only its revi
       // patterns, their steps and the versioned team assignments. STORY 3.5a
       // adds the shift-type overrides, STORY 3.6a the roster overrides,
       // STORY 5.1b the leave records, STORY 5.4a the conflict resolutions, and
-      // STORY 9.2 the leave requests and their decisions.
+      // STORY 9.2 the leave requests and their decisions, and STORY 10.1 the
+      // notification outbox (on, with no policy at all).
       expect(rows.map((row) => row.relname)).toEqual([
         'conflict_resolutions',
         'hour_bands',
@@ -720,6 +721,7 @@ describe('every organization table carries row level security, and only its revi
         'leave_requests',
         'member_status_versions',
         'members',
+        'notification_outbox',
         'organizations',
         'roster_overrides',
         'rotation_assignments',
@@ -1885,6 +1887,13 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // 0041. The close on deactivation updates `leave_requests` and writes
     // `leave_request_decisions` past row level security, which no session may.
     { name: 'close_leave_requests_on_deactivation', argumentCount: 0 },
+    // STORY 10.1. The outbox has no policy and no table privilege, so the
+    // claim, the settle and the decision's outbox insert reach it past row
+    // level security; the cron job's invoker reads Vault, on the same
+    // attributes.
+    { name: 'claim_notifications', argumentCount: 1 },
+    { name: 'settle_notification', argumentCount: 4 },
+    { name: 'invoke_notify', argumentCount: 0, schema: 'private' },
     // 0023. The lock is taken from a trigger every writer fires, and the
     // last-admin re-check reads `members` and the status history past row
     // level security, as 0002's trigger does, on the same attributes.
@@ -1906,7 +1915,7 @@ describe('the access-control layer runs as the owner and hands that power to nob
 
   it.skipIf(noDatabase).each(ACCESS_CONTROL_FUNCTIONS)(
     'runs $name as the owner, past row level security',
-    async ({ name, argumentCount }) => {
+    async ({ name, argumentCount, schema }: { name: string; argumentCount: number; schema?: string }) => {
       // The same three attributes 0002's trigger function carries, and for the
       // same reason: both of these read `members` past row level security — the
       // helper because a policy on `members` cannot read `members` as the
@@ -1916,7 +1925,7 @@ describe('the access-control layer runs as the owner and hands that power to nob
       // whoever can call it.
       const client = await connect();
       try {
-        expectRunsAsOwner(await functionSecurity(client, name, argumentCount), name);
+        expectRunsAsOwner(await functionSecurity(client, name, argumentCount, schema), name);
       } finally {
         await client.end();
       }
@@ -2037,6 +2046,13 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // reader only its definers call, as the owner.
     { name: 'close_leave_requests_on_deactivation', argumentCount: 0, expected: [] },
     { name: 'member_inactive_within', argumentCount: 2, expected: [] },
+    // STORY 10.1. The claim and the settle are the `notify` function's, which
+    // calls them with the secret key: `service_role` alone. No session may
+    // read an address or mark a notification sent.
+    { name: 'claim_notifications', argumentCount: 1, expected: ['service_role'] },
+    { name: 'settle_notification', argumentCount: 4, expected: ['service_role'] },
+    // The cron job's one statement, run as its owner by pg_cron: nobody else.
+    { name: 'invoke_notify', argumentCount: 0, expected: [], schema: 'private' },
     // 0024's name key, in `private`, which PostgREST does not expose. Every
     // name check and name unique index calls it, and both are
     // permission-checked against the WRITING role — and a check runs on every

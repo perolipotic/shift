@@ -1959,3 +1959,69 @@ describe('the isolation level 0023 relies on', () => {
     }
   });
 });
+
+describe('two notify runs at once claim disjoint outbox rows (0042)', () => {
+  /** One committed outbox row for `member`, as the owner. */
+  async function addNotification(client: Client, organization: string, member: Account): Promise<string> {
+    return insertedId(
+      client,
+      `insert into notification_outbox (organization_id, code, subject_id, recipient_member_id, channel, operands)
+       values ($1, 'LEAVE_REQUEST_APPROVED', gen_random_uuid(), $2, 'email', '{}')
+       returning id`,
+      [organization, member.id],
+    );
+  }
+
+  /** `claim_notifications` as `service_role`, inside the caller's open transaction. */
+  async function claim(client: Client, limit: number): Promise<string[]> {
+    await client.query('set local role service_role');
+    const { rows } = await client.query<{ id: string }>('select id::text as id from public.claim_notifications($1)', [limit]);
+    return rows.map((row) => row.id);
+  }
+
+  /** Four committed rows of a throwaway organization: this case's own, and nobody else's. */
+  async function fourRows(): Promise<string[]> {
+    return fixture(async (client) => {
+      const organization = await addOrganization(client);
+      const member = await addAccount(client, organization, 'member_role');
+      const ours: string[] = [];
+      for (let index = 0; index < 4; index += 1) ours.push(await addNotification(client, organization, member));
+      return ours;
+    });
+  }
+
+  // Both cases assert on this case's own rows only, so rows other sessions
+  // left in the shared database change nothing.
+
+  it.skipIf(noDatabase)('lets the second run skip the rows a first run holds, without waiting', async () => {
+    const ours = await fourRows();
+
+    await race(async (t1, t2) => {
+      // T1 holds two of ours, as a run between its claim and its settle does.
+      await t1.query('begin');
+      const held = ours.slice(0, 2);
+      await t1.query('select id from notification_outbox where id = any($1::uuid[]) for update', [held]);
+
+      // SKIP LOCKED: T2 answers at once, with the rest of ours and none of T1's.
+      await t2.query('begin');
+      const second = await claim(t2, 100);
+
+      expect(second.filter((id) => held.includes(id)), 'a held row was claimed again').toEqual([]);
+      expect(second).toEqual(expect.arrayContaining(ours.slice(2)));
+    });
+  });
+
+  it.skipIf(noDatabase)('never claims one row in two concurrent claims', async () => {
+    const ours = await fourRows();
+
+    await race(async (t1, t2) => {
+      await t1.query('begin');
+      const first = (await claim(t1, 100)).filter((id) => ours.includes(id));
+      await t2.query('begin');
+      const second = (await claim(t2, 100)).filter((id) => ours.includes(id));
+
+      expect([...first].sort()).toEqual([...ours].sort());
+      expect(second, 'a row was claimed by both runs').toEqual([]);
+    });
+  });
+});

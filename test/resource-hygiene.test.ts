@@ -2149,6 +2149,12 @@ const SANCTIONED_SCREEN_KEYS = [
   // its sign-in wording.
   'offline.needsConnection',
   'offline.signInNeedsConnection',
+  // STORY 10.1: the leave decision email, rendered by the `notify` Edge
+  // Function from its pinned copy of this namespace (never by the SPA).
+  'obavijesti.leaveRequestApproved.subject',
+  'obavijesti.leaveRequestApproved.body',
+  'obavijesti.leaveRequestRejected.subject',
+  'obavijesti.leaveRequestRejected.body',
 ];
 
 /** Everything the resource file is permitted to hold, together. */

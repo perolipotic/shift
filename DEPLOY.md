@@ -3,19 +3,21 @@
 Everything needed to take this repository from a clean checkout to a live
 staging and production deployment, and to promote a migration through them.
 
-There are exactly three moving parts, because the architecture has no server
-tier:
+There are exactly four moving parts, because the architecture has no server
+tier beyond two Edge Functions (AD-14):
 
 | Part | Where it runs | What it holds |
 | --- | --- | --- |
 | `apps/web` | Cloudflare Pages, static | the publishable key only |
-| `supabase/migrations` | Supabase Postgres | the schema, forward-only |
+| `supabase/migrations` | Supabase Postgres | the schema, forward-only; the `notify` cron job and its two Vault secrets' names |
 | `supabase/functions/admin-auth` | Supabase Edge Functions | the secret key |
+| `supabase/functions/notify` | Supabase Edge Functions, called every minute by pg_cron | the secret key (for its two RPCs), the Resend key, the invoke secret, later the VAPID private key |
 
-The secret key exists in exactly one place: the `admin-auth` function's
-per-environment secrets. If you ever find `sb_secret_*` in a Pages environment
-variable, in a committed file, or in a migration, stop and rotate it — every RLS
-policy in the system is decorative until you do.
+The secret key exists only in the Edge Functions' per-environment secrets. If
+you ever find `sb_secret_*` in a Pages environment variable, in a committed
+file, or in a migration, stop and rotate it — every RLS policy in the system is
+decorative until you do. The same goes for a Resend key (`re_*`): it is read by
+`notify` and nothing else (AD-17).
 
 ---
 
@@ -109,6 +111,20 @@ $EDITOR supabase/functions/.env        # gitignored; paste the local keys here
 pnpm exec supabase functions serve admin-auth
 ```
 
+`notify` reads the same file. Locally it needs a Resend key of its own (a test
+key sends nothing real) and an invoke secret; without them it answers every
+call `500` with the missing variable's code, which is harmless. The local cron
+job does nothing until the local Vault holds `notify_url` and
+`notify_invoke_secret` (§3a), so a fresh stack never calls it. To try a send by
+hand:
+
+```bash
+pnpm exec supabase functions serve notify
+curl -s -X POST http://127.0.0.1:54321/functions/v1/notify \
+  -H "Authorization: Bearer $(grep ^NOTIFY_INVOKE_SECRET= supabase/functions/.env | cut -d= -f2-)"
+# -> 200 {"code":"NOTIFY_RAN","claimed":…,"sent":…,"failed":…,"retried":…,"unsettled":…}
+```
+
 `supabase functions serve` reads `supabase/functions/.env` by default, so no
 flag is needed. `supabase start` printed the local keys; `SUPABASE_URL` is
 injected for you.
@@ -177,6 +193,11 @@ end of 2026 and this system does not read them.
 | project URL | derived from the `staging` Environment's `SUPABASE_PROJECT_REF` into the build's `VITE_SUPABASE_URL` **and** function env (auto) | same, `production` Environment |
 | `sb_publishable_*` | `staging` Environment variable `SUPABASE_PUBLISHABLE_KEY` → the build's `VITE_SUPABASE_PUBLISHABLE_KEY` + function secret `SHIFT_PUBLISHABLE_KEY` | same, `production` Environment |
 | `sb_secret_*` | `staging` Environment secret `SUPABASE_SECRET_KEY` → function secret `SHIFT_SECRET_KEY` **only** | same, `production` Environment |
+| Resend key `re_*` | `staging` Environment secret `RESEND_API_KEY` → function secret `RESEND_API_KEY`, read by `notify` only | same, `production` Environment |
+| notify invoke secret | `staging` Environment secret `NOTIFY_INVOKE_SECRET` → function secret `NOTIFY_INVOKE_SECRET`, **and** the Vault secret `notify_invoke_secret` (§3a) | same, `production` Environment |
+| sender address | `staging` Environment variable `NOTIFY_EMAIL_FROM` → function secret `NOTIFY_EMAIL_FROM` | same, `production` Environment |
+| app origin | the first `APP_ORIGINS` entry → function secret `SHIFT_APP_URL` (auto) | same |
+| VAPID private key | `staging` Environment secret `VAPID_PRIVATE_KEY`, optional until story 10.4 → function secret `VAPID_PRIVATE_KEY` | same, `production` Environment |
 
 The pipeline (§8) sets the function secrets itself on every deploy, from those
 GitHub Environment values, through a temporary env file exactly like the one
@@ -203,12 +224,99 @@ pnpm exec supabase secrets set \
 Repeat with `supabase/functions/.env.production` and `<production-ref>`. Every
 `supabase/functions/.env*` file except `.env.example` is gitignored.
 
+**Function secrets are per project, not per function.** `supabase secrets set`
+puts every value in both functions' environments; that is the platform's
+granularity, not a choice. What keeps the Resend key, the invoke secret and the
+VAPID key `notify`'s alone is that nothing else reads them:
+`test/key-hygiene.test.ts` fails if any file outside `supabase/functions/notify/`
+names them in code.
+
 `SHIFT_ALLOWED_ORIGINS` is a comma-separated allowlist of exact origins. An
 origin not on it receives no `Access-Control-Allow-*` header at all, so the
 browser refuses the response — set it to the exact Pages hostname(s) for that
 environment. It is required: unset, blank or only commas, the function refuses
 every request with `500 {"code":"ALLOWED_ORIGINS_MISSING"}` (§6), because the
 SPA is its only caller and a list that admits no browser is always a mistake.
+
+### 3a. Notifications: Resend, Vault and the schedule (story 10.1)
+
+`notify` sends what `notification_outbox` holds. Migration `0042` schedules the
+pg_cron job `notify` every minute; it POSTs to the function with the invoke
+secret as its bearer token, and **does nothing while either Vault secret below
+is absent**. Set up each environment once, in this order.
+
+How a row is delivered: one run claims at most 8 rows, sends them about 550 ms
+apart and stops starting sends after 45 s, so it ends inside pg_net's 55 s.
+A network error, 408, 409, 429 or 5xx releases the row and backs it off
+(attempts × 10 minutes: 10, 20, 30, 40), and the fifth failure fails it
+`ATTEMPTS_EXHAUSTED`. A 401 or 403 (the key or the domain) stops the run and
+gives every held row back without spending its attempt, `PROVIDER_UNAUTHORIZED`,
+so a misconfiguration delays mail and loses none. Any other 4xx fails the row
+`PROVIDER_REFUSED`. Every send carries the row id as Resend's
+`Idempotency-Key`, which holds for 24 hours, longer than five attempts take.
+
+**1. The sending domain.** In Resend, add a domain you control (for example
+`obavijesti.<your-domain>`), and publish the DNS records Resend shows: the SPF
+`TXT` (`include:amazonses.com` or as Resend shows it), the DKIM `TXT`
+(`resend._domainkey`) and the bounce `MX`. Wait until Resend marks the domain
+*Verified*. Unverified, Resend refuses every send with a 403, which `notify`
+answers by stopping the run and giving the rows back (`PROVIDER_UNAUTHORIZED`):
+nothing is sent and nothing is lost until the domain verifies. Use one domain per
+environment, or one domain for both; `NOTIFY_EMAIL_FROM` names an address on it
+(`Shift <obavijesti@obavijesti.example.org>`).
+
+**2. The Resend key.** Create an API key with *Sending access* only, limited to
+that domain. It is the Environment secret `RESEND_API_KEY` (§8.2), and for a
+manual setup a line in `supabase/functions/.env.<environment>` (§3).
+
+**3. The invoke secret.** Generate it once per environment, and never reuse
+one across environments:
+
+```bash
+openssl rand -hex 32      # 64 characters; paste it, do not pipe it anywhere
+```
+
+Its charset is `[A-Za-z0-9_-]`, at least 32 characters: the function
+(`INVOKE_SECRET_INVALID`) and the pre-deploy check refuse anything else, such
+as a space, a quote or a colon a header or a SQL literal could mangle. Hex
+output always fits.
+
+It goes to two places, with the same value: the Environment secret
+`NOTIFY_INVOKE_SECRET` (the pipeline makes it a function secret), and that
+project's Vault.
+
+**4. Vault.** In the project's dashboard, *SQL Editor*, run once (replace both
+placeholders in the editor; never in a committed file or a migration):
+
+```sql
+select vault.create_secret('https://<ref>.supabase.co/functions/v1/notify', 'notify_url');
+select vault.create_secret('<the invoke secret>', 'notify_invoke_secret');
+```
+
+To rotate the invoke secret, update both places, Vault first:
+
+```sql
+select vault.update_secret(
+  (select id from vault.secrets where name = 'notify_invoke_secret'),
+  '<the new invoke secret>'
+);
+```
+
+then the Environment secret, then redeploy (or `supabase secrets set`). Between
+the two steps the function answers the job `401` and nothing is claimed: no
+email is lost, it waits for the next minute.
+
+**5. VAPID (story 10.4).** Nothing reads `VAPID_PRIVATE_KEY` before story 10.4.
+Generate the pair when 10.4 starts (`npx web-push generate-vapid-keys`) and set
+the private half as the Environment secret `VAPID_PRIVATE_KEY`; the public half
+is not a secret.
+
+**Locally** the same two Vault statements against the local database turn the
+local job on, with `notify_url` set to the API gateway as the database
+container reaches it on the stack's Docker network
+(`http://supabase_kong_shift:8000/functions/v1/notify`) and
+`supabase functions serve notify` running. `supabase db reset` removes them
+again.
 
 ---
 
@@ -343,6 +451,7 @@ pnpm exec supabase db push                       # applies pending migrations on
 pnpm exec supabase migration list                # local vs remote, must agree
 pnpm exec supabase config push                   # see 5.2a — auth config is NOT in a migration
 pnpm exec supabase functions deploy admin-auth   # only if the function changed
+pnpm exec supabase functions deploy notify       # only if the function changed
 ```
 
 #### 5.2a Why `config push` is not optional
@@ -518,6 +627,7 @@ pnpm exec supabase db push
 pnpm exec supabase migration list
 pnpm exec supabase config push                   # 5.2a applies here too
 pnpm exec supabase functions deploy admin-auth   # only if the function changed
+pnpm exec supabase functions deploy notify       # only if the function changed
 ```
 
 With the pipeline enabled (§8), merging to `main` is what promotes: staging is
@@ -553,8 +663,9 @@ ls apps/web/dist                       # index.html, assets/, _redirects, _heade
 # The bundle carries no secret
 grep -rn "sb_secret_" apps/web/dist/ || echo CLEAN
 
-# Exactly one Edge Function exists (AD-14)
-ls supabase/functions/                 # -> admin-auth
+# Exactly two Edge Functions exist (AD-14)
+ls supabase/functions/                 # -> admin-auth  notify
+pnpm exec supabase functions list --project-ref <ref>   # -> admin-auth, notify; nothing else
 ```
 
 Against the live host:
@@ -582,6 +693,47 @@ means `SUPABASE_URL` is not a parseable http(s) URL, and
 origin (§3). A browser sees none of these codes — with no allowlist it gets no
 CORS header — so read them with `curl`, or in the function's log, which names
 the code at startup.
+
+`notify`, against the live host (the deploy action runs this probe after every
+deploy). Without the invoke secret it refuses before
+claiming anything; a `500` with a code instead names the missing or malformed
+function secret (`RESEND_API_KEY_MISSING`, `INVOKE_SECRET_INVALID`, …):
+
+```bash
+curl -s -X POST https://<ref>.supabase.co/functions/v1/notify
+# -> 401 {"code":"INVOKE_SECRET_REFUSED"}
+```
+
+In the project's *SQL Editor*, the schedule and its recent runs, and the
+outbox's state (counts only; never select `operands` for a report):
+
+```sql
+select jobname, schedule, active from cron.job where jobname = 'notify';
+-- -> notify | * * * * * | t
+select name from vault.secrets where name in ('notify_url', 'notify_invoke_secret');
+-- -> both names; with either missing the job sends nothing (§3a)
+select status_code, count(*) from net._http_response
+ where created > now() - interval '1 hour' group by 1;
+-- -> 200 ✅ · 401 the Vault secret and the function secret differ ❌ · 500 read the code
+select id, created, error_msg from net._http_response
+ where created > now() - interval '1 hour' and status_code is null
+ order by created desc limit 20;
+-- -> no rows ✅ · a timeout or a DNS error: the call never got an answer;
+--    `notify_url` is wrong, or a run took longer than 55 s
+select count(*) filter (where sent_at is not null) as sent,
+       count(*) filter (where failed_at is not null) as failed,
+       count(*) filter (where sent_at is null and failed_at is null) as waiting
+  from notification_outbox;
+select failure_code, count(*) from notification_outbox
+ where failed_at is not null group by 1;
+-- RECIPIENT_NO_EMAIL is expected (a member with no address);
+-- PROVIDER_REFUSED means Resend refused the message itself (a 4xx other than 401/403);
+-- ATTEMPTS_EXHAUSTED means five transient failures (Resend down, or rate-limited).
+select failure_code, count(*) from notification_outbox
+ where sent_at is null and failed_at is null and failure_code is not null group by 1;
+-- PROVIDER_UNAUTHORIZED waiting means the key or the domain is wrong (§3a 1–2):
+-- nothing is lost, every row is retried once it is fixed.
+```
 
 ### When a member write half-happened
 
@@ -1025,8 +1177,9 @@ that rule:
 same order, with nothing skipped:
 
 1. check that every required secret and variable is set, has no leading or
-   trailing whitespace, and — for the project ref, the publishable key and the
-   secret key — has the right shape, naming each one that fails
+   trailing whitespace, and — for the project ref, the publishable key, the
+   secret key, the Resend key and the invoke secret — has the right shape,
+   naming each one that fails
    (`scripts/ci/require-config.mjs`), then parse `APP_ORIGINS` once into a
    normalized https-only list (`scripts/ci/origins.mjs`); all of this **before**
    any remote command;
@@ -1043,11 +1196,18 @@ same order, with nothing skipped:
 6. `supabase config push` — after `db push`, always (§5.2b; what it sends: §8.6);
 7. `supabase secrets set --env-file` from a temporary file written by a heredoc
    and deleted when the step ends (`SHIFT_SECRET_KEY`, `SHIFT_PUBLISHABLE_KEY`,
-   `SHIFT_ALLOWED_ORIGINS` = the normalized origins);
-8. `supabase functions deploy admin-auth` — every time, which is idempotent;
+   `SHIFT_ALLOWED_ORIGINS` = the normalized origins; for `notify`,
+   `NOTIFY_INVOKE_SECRET`, `RESEND_API_KEY`, `NOTIFY_EMAIL_FROM`,
+   `SHIFT_APP_URL` = the first origin, and `VAPID_PRIVATE_KEY` when set);
+8. `supabase functions deploy admin-auth`, then `supabase functions deploy
+   notify` — every time, which is idempotent. The Vault secrets the cron job
+   reads are set by hand, once per environment (§3a): the pipeline never
+   writes Vault. Then a probe: a POST to `notify` with no token must answer
+   `401 {"code":"INVOKE_SECRET_REFUSED"}`;
 9. `pnpm --filter "@shift/web..." build` with that environment's `VITE_*`
-   values, then a check that neither this environment's secret key nor any
-   key-shaped `sb_secret_` value is in `apps/web/dist`;
+   values, then a check that neither this environment's secret key, Resend
+   key, invoke secret or VAPID private key, nor any key-shaped `sb_secret_`
+   value, is in `apps/web/dist`;
 10. delete every `*.map` from `apps/web/dist`, so no source map is published (§4);
 11. `wrangler pages deploy apps/web/dist --branch staging|main`.
 
@@ -1082,7 +1242,11 @@ environment's values:
 | --- | --- | --- |
 | `SUPABASE_ACCESS_TOKEN` | secret | a Supabase access token (`sbp_*`, §0) — see the warning below |
 | `SUPABASE_DB_PASSWORD` | secret | that project's database password (§0) |
-| `SUPABASE_SECRET_KEY` | secret | that project's `sb_secret_*` — reaches the `admin-auth` function secrets and nothing else |
+| `SUPABASE_SECRET_KEY` | secret | that project's `sb_secret_*` — reaches the function secrets (`SHIFT_SECRET_KEY`) and nothing else |
+| `RESEND_API_KEY` | secret | that environment's Resend key (`re_*`, §3a) — read by `notify` only |
+| `NOTIFY_INVOKE_SECRET` | secret | at least 32 characters (`openssl rand -hex 32`), the same value as that project's Vault secret `notify_invoke_secret` (§3a) |
+| `VAPID_PRIVATE_KEY` | secret, optional until story 10.4 | the Web Push private key; set as a function secret only when present |
+| `NOTIFY_EMAIL_FROM` | variable | the sender, on the domain verified in Resend (§3a), e.g. `Shift <obavijesti@obavijesti.example.org>` |
 | `CLOUDFLARE_API_TOKEN` | secret | a Cloudflare API token with *Account → Cloudflare Pages → Edit* |
 | `SUPABASE_PROJECT_REF` | variable | the project ref (20 lowercase letters and digits); the project URL is `https://<ref>.supabase.co` |
 | `SUPABASE_PUBLISHABLE_KEY` | variable | `sb_publishable_*` — public by design, it is inlined into the bundle |

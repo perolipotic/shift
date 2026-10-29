@@ -1074,3 +1074,18 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-retro-8-9-item-20-split-leave-requests.md`
   summary: The read/write split leaves a private `isRecord` in both `leave-request-list.ts` and `leave-request-write.ts` (one more copy than before); fold it into retro 8–9 D5's shared `isRecord` / SQLSTATE helper.
   evidence: Raised by the item 20 review (Blind Hunter). D5 was deferred by the retro and kept out of this spec's scope.
+
+## Deferred from: planning of spec-10-1-the-outbox-and-the-notify-function.md (2026-10-29)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-1-the-outbox-and-the-notify-function.md`
+  summary: `notification_outbox` rows are kept forever once sent or failed; decide a retention window and who deletes settled rows (notify may write only delivery columns under AD-14, so deletion needs its own owner).
+  evidence: Out of 10.1's scope by the spec's Never list; the outbox grows with every decision and, from 10.2, every event.
+
+## Deferred from: code review of spec-10-1-the-outbox-and-the-notify-function.md (2026-10-29)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-1-the-outbox-and-the-notify-function.md`
+  summary: The email link is always `SHIFT_APP_URL + /godisnji` and names no organization, so a signed-out member who taps it lands without organization context; 10.2 should decide the link (e.g. via `/prijava/<slug>` with a return path) and whether the email names the organization.
+  evidence: Raised by the 10.1 review (Blind Hunter, Edge Case Hunter). `claim_notifications` already returns `slug`; sign-in is per organization.
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-1-the-outbox-and-the-notify-function.md`
+  summary: Emails are plain text with no `List-Unsubscribe`, no `Reply-To` and no line saying why the member got it or how to stop it; 10.2 (wording) and 10.3 (settings) should add them before production sending from a new domain.
+  evidence: Raised by the 10.1 review (Blind Hunter). Deliverability is the epic's named risk.

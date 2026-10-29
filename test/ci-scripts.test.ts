@@ -348,6 +348,22 @@ describe('require-config: a deploy names what it is missing', () => {
     ]);
   });
 
+  it('checks the shape of a Resend key and a notify invoke secret (story 10.1)', () => {
+    const typed = parseRequirements(['secret:RESEND_API_KEY:resend', 'secret:NOTIFY_INVOKE_SECRET:invoke-secret']);
+
+    expect(problems(typed, { RESEND_API_KEY: 're_x', NOTIFY_INVOKE_SECRET: 'a'.repeat(64) })).toEqual([]);
+    expect(
+      problems(typed, { RESEND_API_KEY: 'sb_secret_x', NOTIFY_INVOKE_SECRET: 'too-short' }).map(
+        ({ requirement, reason }) => `${requirement.name} ${reason}`,
+      ),
+    ).toEqual([
+      'RESEND_API_KEY is not a Resend API key (re_…)',
+      'NOTIFY_INVOKE_SECRET is not an invoke secret (at least 32 letters, digits, - or _; `openssl rand -hex 32`)',
+    ]);
+    // A character a bearer header could mangle is refused, at any length.
+    expect(problems(typed, { RESEND_API_KEY: 're_x', NOTIFY_INVOKE_SECRET: `${'a'.repeat(40)} b` })).toHaveLength(1);
+  });
+
   it('names the item, its kind and the environment, and never a value', () => {
     const [line] = describeProblems([{ kind: 'secret', name: 'SUPABASE_DB_PASSWORD', format: null }], 'staging');
 

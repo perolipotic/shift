@@ -120,7 +120,8 @@ jobs:
             echo "To turn deploys on, configure what DEPLOY.md → *CI/CD* lists, then set \`DEPLOY_ENABLED=true\`:"
             echo ""
             echo "- environments \`staging\` and \`production\`, both restricted to the \`main\` branch, production with a required reviewer"
-            echo "- on EACH environment, secrets \`SUPABASE_ACCESS_TOKEN\`, \`SUPABASE_DB_PASSWORD\`, \`SUPABASE_SECRET_KEY\`, \`CLOUDFLARE_API_TOKEN\` and variables \`SUPABASE_PROJECT_REF\`, \`SUPABASE_PUBLISHABLE_KEY\`, \`APP_ORIGINS\`, \`CLOUDFLARE_ACCOUNT_ID\`, \`CLOUDFLARE_PAGES_PROJECT\`"
+            echo "- on EACH environment, secrets \`SUPABASE_ACCESS_TOKEN\`, \`SUPABASE_DB_PASSWORD\`, \`SUPABASE_SECRET_KEY\`, \`CLOUDFLARE_API_TOKEN\`, \`RESEND_API_KEY\`, \`NOTIFY_INVOKE_SECRET\` and variables \`SUPABASE_PROJECT_REF\`, \`SUPABASE_PUBLISHABLE_KEY\`, \`APP_ORIGINS\`, \`CLOUDFLARE_ACCOUNT_ID\`, \`CLOUDFLARE_PAGES_PROJECT\`, \`NOTIFY_EMAIL_FROM\`; optionally the secret \`VAPID_PRIVATE_KEY\` (read from story 10.4)"
+            echo "- on EACH environment's database, the Vault secrets \`notify_url\` and \`notify_invoke_secret\` (DEPLOY.md §3a)"
             echo "- no deploy credential as a repository secret"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -361,12 +362,16 @@ jobs:
           APP_ORIGINS: ${{ vars.APP_ORIGINS }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          NOTIFY_INVOKE_SECRET: ${{ secrets.NOTIFY_INVOKE_SECRET }}
+          NOTIFY_EMAIL_FROM: ${{ vars.NOTIFY_EMAIL_FROM }}
         run: >-
           node scripts/ci/require-config.mjs --environment staging
           secret:SUPABASE_ACCESS_TOKEN secret:CLOUDFLARE_API_TOKEN
           var:CLOUDFLARE_ACCOUNT_ID var:CLOUDFLARE_PAGES_PROJECT
           var:SUPABASE_PROJECT_REF:project-ref var:SUPABASE_PUBLISHABLE_KEY:publishable var:APP_ORIGINS
           secret:SUPABASE_DB_PASSWORD secret:SUPABASE_SECRET_KEY:secret
+          secret:RESEND_API_KEY:resend secret:NOTIFY_INVOKE_SECRET:invoke-secret var:NOTIFY_EMAIL_FROM
 
       - uses: ./.github/actions/setup
 
@@ -382,6 +387,10 @@ jobs:
           supabase-db-password: ${{ secrets.SUPABASE_DB_PASSWORD }}
           supabase-publishable-key: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
           supabase-secret-key: ${{ secrets.SUPABASE_SECRET_KEY }}
+          resend-api-key: ${{ secrets.RESEND_API_KEY }}
+          notify-invoke-secret: ${{ secrets.NOTIFY_INVOKE_SECRET }}
+          notify-email-from: ${{ vars.NOTIFY_EMAIL_FROM }}
+          vapid-private-key: ${{ secrets.VAPID_PRIVATE_KEY }}
           cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           cloudflare-account-id: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           cloudflare-pages-project: ${{ vars.CLOUDFLARE_PAGES_PROJECT }}
@@ -463,12 +472,16 @@ jobs:
           APP_ORIGINS: ${{ vars.APP_ORIGINS }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          NOTIFY_INVOKE_SECRET: ${{ secrets.NOTIFY_INVOKE_SECRET }}
+          NOTIFY_EMAIL_FROM: ${{ vars.NOTIFY_EMAIL_FROM }}
         run: >-
           node scripts/ci/require-config.mjs --environment production
           secret:SUPABASE_ACCESS_TOKEN secret:CLOUDFLARE_API_TOKEN
           var:CLOUDFLARE_ACCOUNT_ID var:CLOUDFLARE_PAGES_PROJECT
           var:SUPABASE_PROJECT_REF:project-ref var:SUPABASE_PUBLISHABLE_KEY:publishable var:APP_ORIGINS
           secret:SUPABASE_DB_PASSWORD secret:SUPABASE_SECRET_KEY:secret
+          secret:RESEND_API_KEY:resend secret:NOTIFY_INVOKE_SECRET:invoke-secret var:NOTIFY_EMAIL_FROM
 
       - uses: ./.github/actions/setup
 
@@ -484,6 +497,10 @@ jobs:
           supabase-db-password: ${{ secrets.SUPABASE_DB_PASSWORD }}
           supabase-publishable-key: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
           supabase-secret-key: ${{ secrets.SUPABASE_SECRET_KEY }}
+          resend-api-key: ${{ secrets.RESEND_API_KEY }}
+          notify-invoke-secret: ${{ secrets.NOTIFY_INVOKE_SECRET }}
+          notify-email-from: ${{ vars.NOTIFY_EMAIL_FROM }}
+          vapid-private-key: ${{ secrets.VAPID_PRIVATE_KEY }}
           cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           cloudflare-account-id: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           cloudflare-pages-project: ${{ vars.CLOUDFLARE_PAGES_PROJECT }}

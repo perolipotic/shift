@@ -113,7 +113,20 @@ uri = "pg-functions://postgres/public/custom_access_token_hook"
 enabled = true
 policy = "oneshot"
 
-# AD-16: exactly one Edge Function exists. A second one amends AD-14.
+# AD-14 (amended by story 10.1): exactly two Edge Functions exist. A third one
+# amends AD-14 again.
+#
+# `admin-auth` is the privileged auth boundary (AD-16): every caller is a
+# signed-in session, so the gateway verifies the JWT before the handler runs.
 [functions.admin-auth]
 enabled = true
 verify_jwt = true
+
+# `notify` sends what `notification_outbox` holds (AD-18). Its only caller is
+# the `notify` cron job, which carries the invoke secret from Vault as its
+# bearer token. That is no JWT, so the gateway lets it through and the handler
+# compares it in constant time; a missing or wrong one is a 401 before
+# anything is claimed.
+[functions.notify]
+enabled = true
+verify_jwt = false

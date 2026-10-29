@@ -2,7 +2,7 @@ name: Deploy one environment
 description: >-
   DEPLOY.md §5.2 / §5.2b, in order, against one hosted environment:
   link, db push, migration list, config push, secrets set, functions deploy
-  admin-auth, then a build with that environment's VITE_* values and a
+  admin-auth and notify, then a build with that environment's VITE_* values and a
   Cloudflare Pages Direct Upload. Runs after actions/checkout and ./setup, and
   after the calling job has checked that every input is set
   (scripts/ci/require-config.mjs, including the shape of the project ref and
@@ -31,6 +31,23 @@ inputs:
     required: true
   supabase-secret-key:
     required: true
+  # Story 10.1 (AD-17, amended): read by the notify function and nothing else.
+  resend-api-key:
+    required: true
+  notify-invoke-secret:
+    description: >-
+      The bearer token the notify cron job sends. The same value must be in
+      this environment's Vault as notify_invoke_secret (DEPLOY.md §3a).
+    required: true
+  notify-email-from:
+    description: The sender, on a domain verified in Resend (SPF and DKIM).
+    required: true
+  vapid-private-key:
+    description: >-
+      Story 10.4 reads it; nothing does before. Optional until then, and set
+      as a function secret only when given.
+    required: false
+    default: ''
   cloudflare-api-token:
     required: true
   cloudflare-account-id:
@@ -121,8 +138,10 @@ runs:
 
     # From a file, never as NAME=VALUE arguments (§3). The file is written from
     # the environment by a heredoc, is readable by this user only, and is
-    # removed however the step ends.
-    - name: supabase secrets set (admin-auth)
+    # removed however the step ends. Function secrets are per project, so one
+    # file carries both functions' values; only `notify` reads the RESEND_,
+    # NOTIFY_ and VAPID_ names (test/key-hygiene.test.ts).
+    - name: supabase secrets set (admin-auth and notify)
       shell: bash
       env:
         SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase-access-token }}
@@ -130,15 +149,27 @@ runs:
         FUNCTION_SECRET_KEY: ${{ inputs.supabase-secret-key }}
         FUNCTION_PUBLISHABLE_KEY: ${{ inputs.supabase-publishable-key }}
         ORIGINS: ${{ steps.origin.outputs.origins }}
+        APP_ORIGIN: ${{ steps.origin.outputs.app-origin }}
+        FUNCTION_RESEND_API_KEY: ${{ inputs.resend-api-key }}
+        FUNCTION_INVOKE_SECRET: ${{ inputs.notify-invoke-secret }}
+        FUNCTION_EMAIL_FROM: ${{ inputs.notify-email-from }}
+        FUNCTION_VAPID_PRIVATE_KEY: ${{ inputs.vapid-private-key }}
       run: |
-        env_file="$RUNNER_TEMP/admin-auth.env"
+        env_file="$RUNNER_TEMP/functions.env"
         trap 'rm -f "$env_file"' EXIT
         umask 077
         cat > "$env_file" <<EOF
         SHIFT_SECRET_KEY=${FUNCTION_SECRET_KEY}
         SHIFT_PUBLISHABLE_KEY=${FUNCTION_PUBLISHABLE_KEY}
         SHIFT_ALLOWED_ORIGINS=${ORIGINS}
+        NOTIFY_INVOKE_SECRET=${FUNCTION_INVOKE_SECRET}
+        RESEND_API_KEY=${FUNCTION_RESEND_API_KEY}
+        NOTIFY_EMAIL_FROM=${FUNCTION_EMAIL_FROM}
+        SHIFT_APP_URL=${APP_ORIGIN}
         EOF
+        if [ -n "$FUNCTION_VAPID_PRIVATE_KEY" ]; then
+          printf 'VAPID_PRIVATE_KEY=%s\n' "$FUNCTION_VAPID_PRIVATE_KEY" >> "$env_file"
+        fi
         pnpm exec supabase secrets set --env-file "$env_file" --project-ref "$PROJECT_REF"
 
     - name: supabase functions deploy admin-auth
@@ -147,6 +178,30 @@ runs:
         SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase-access-token }}
         PROJECT_REF: ${{ inputs.supabase-project-ref }}
       run: pnpm exec supabase functions deploy admin-auth --project-ref "$PROJECT_REF"
+
+    # Story 10.1. The cron job (0042) calls it every minute once this
+    # environment's Vault holds notify_url and notify_invoke_secret (§3a).
+    - name: supabase functions deploy notify
+      shell: bash
+      env:
+        SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase-access-token }}
+        PROJECT_REF: ${{ inputs.supabase-project-ref }}
+      run: pnpm exec supabase functions deploy notify --project-ref "$PROJECT_REF"
+
+    # The post-deploy probe (DEPLOY.md §6): notify is live and refuses a
+    # caller without the invoke secret before it claims anything. Sends no
+    # token, so it can never trigger a send.
+    - name: notify refuses a caller without the invoke secret
+      shell: bash
+      env:
+        SUPABASE_URL: ${{ steps.origin.outputs.supabase-url }}
+      run: |
+        body="$(curl -sS -o - -w '\n%{http_code}' -X POST "$SUPABASE_URL/functions/v1/notify")"
+        status="${body##*$'\n'}"
+        if [ "$status" != "401" ] || ! grep -q '"code":"INVOKE_SECRET_REFUSED"' <<<"${body%$'\n'*}"; then
+          echo "::error title=notify probe::expected 401 INVOKE_SECRET_REFUSED, got ${status}"
+          exit 1
+        fi
 
     # ---------------------------------------------------------------- Pages
     # Vite inlines VITE_* at build time, so each environment builds its own
@@ -160,14 +215,30 @@ runs:
       run: pnpm --filter "@shift/web..." build
 
     # AD-17, on the bundle about to ship: this environment's secret key value,
-    # and any key-shaped value, must be absent.
+    # its Resend key, its notify invoke secret and its VAPID private key (when
+    # set), and any key-shaped sb_secret_ value, must be absent.
     - name: The bundle carries no secret
       shell: bash
       env:
         FUNCTION_SECRET_KEY: ${{ inputs.supabase-secret-key }}
+        FUNCTION_RESEND_API_KEY: ${{ inputs.resend-api-key }}
+        FUNCTION_INVOKE_SECRET: ${{ inputs.notify-invoke-secret }}
+        FUNCTION_VAPID_PRIVATE_KEY: ${{ inputs.vapid-private-key }}
       run: |
         if grep -rqF -- "$FUNCTION_SECRET_KEY" apps/web/dist; then
           echo "::error title=Secret in bundle::this environment's secret key is in apps/web/dist"
+          exit 1
+        fi
+        if grep -rqF -- "$FUNCTION_RESEND_API_KEY" apps/web/dist; then
+          echo "::error title=Secret in bundle::this environment's Resend key is in apps/web/dist"
+          exit 1
+        fi
+        if grep -rqF -- "$FUNCTION_INVOKE_SECRET" apps/web/dist; then
+          echo "::error title=Secret in bundle::this environment's notify invoke secret is in apps/web/dist"
+          exit 1
+        fi
+        if [ -n "$FUNCTION_VAPID_PRIVATE_KEY" ] && grep -rqF -- "$FUNCTION_VAPID_PRIVATE_KEY" apps/web/dist; then
+          echo "::error title=Secret in bundle::this environment's VAPID private key is in apps/web/dist"
           exit 1
         fi
         if grep -rqE 'sb_secret_[A-Za-z0-9_-]{20}' apps/web/dist; then
