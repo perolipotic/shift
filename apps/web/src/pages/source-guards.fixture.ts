@@ -86,6 +86,9 @@ export const SIGN_IN_HOOK = join(srcRoot, ...SIGN_IN_PARTS.hook);
 
 export const SIGN_IN_FORM = join(srcRoot, ...SIGN_IN_PARTS.form);
 
+/** Retro 10 A5: the other-organization offer's hook, the set's second hook. */
+export const SIGN_IN_SWITCH_HOOK = join(srcRoot, ...SIGN_IN_PARTS.switchHook);
+
 /**
  * The sign-in screen. A FILE SET since source structure B7 — the page, its
  * hook and its form — read as one source like the team screens, and written
@@ -734,7 +737,9 @@ export const SCREENS = [
   // and four buttons (`Promijeni`, the password toggle, `Prijava` and the
   // `Zaboravljena lozinka?` disclosure). The bare-`/prijava` prompt's two
   // controls went with it.
-  { name: 'the sign-in screen', file: SCREEN, expectedFields: 3, expectedButtons: 4 },
+  // SIX SINCE RETRO 10 A5: the other-organization offer's two buttons (switch
+  // and stay), drawn in the same card in place of the form.
+  { name: 'the sign-in screen', file: SCREEN, expectedFields: 3, expectedButtons: 6 },
   // STORY 7.8. FIVE on the set-password step: the new password and its
   // repeat, the show/hide toggle, `Spremi i nastavi` and `Odjava`.
   { name: 'the set-password screen', file: SET_PASSWORD_SCREEN, expectedFields: 2, expectedButtons: 3 },

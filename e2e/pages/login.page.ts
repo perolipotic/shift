@@ -1,6 +1,6 @@
 import { expect, type Locator } from '@playwright/test';
 
-import { hr } from '../utils/i18n.ts';
+import { fill, hr } from '../utils/i18n.ts';
 import { BasePage } from './base.page.ts';
 
 /**
@@ -58,6 +58,26 @@ export class LoginPage extends BasePage {
   /** The panel the disclosure opens. */
   get forgotPanel(): Locator {
     return this.page.locator('#forgot-password');
+  }
+
+  /** Retro 10 A5: the offer a signed-in visitor gets on another organization's link. */
+  get switchHeading(): Locator {
+    return this.heading(hr.auth.switch.heading);
+  }
+
+  /** The offer's text, naming both organizations by slug. */
+  switchBody(current: string, target: string): Locator {
+    return this.page.getByText(fill(hr.auth.switch.body, { current, target }), { exact: true });
+  }
+
+  /** Sign out of this organization and open the other one's form. */
+  switchButton(target: string): Locator {
+    return this.page.getByRole('button', { name: fill(hr.auth.switch.switch, { target }), exact: true });
+  }
+
+  /** Stay signed in to this organization. */
+  stayButton(current: string): Locator {
+    return this.page.getByRole('button', { name: fill(hr.auth.switch.stay, { current }), exact: true });
   }
 
   /** The real sign-in from bare `/prijava`, through GoTrue. Leaves the page

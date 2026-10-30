@@ -140,3 +140,37 @@ export function signInAddress(username: string, slug: string): string {
 
   return `${account}@${organization}.${ADDRESS_DOMAIN}`;
 }
+
+/**
+ * The organization a session's synthesized address names (AD-12), or `null`
+ * when the address is not one this module would build.
+ *
+ * The inverse of `signInAddress`, for one reader: `/prijava/$slug` asks which
+ * organization the visitor is signed in to, to tell a link for that
+ * organization (followed, as before) from a link for another one (offered,
+ * retro 10 A5). The session's `user.email` is GoTrue's copy of the address
+ * the person signed in with, so the slug is its domain less
+ * {@link ADDRESS_DOMAIN}. Normalized and checked by the same slug rule, so the
+ * answer compares equal to `organizationDestination` of a URL's segment.
+ *
+ * `null` for anything else — no address, a real mailbox, a malformed label —
+ * and the caller then keeps its earlier behaviour: an address that does not
+ * parse never decides anything on its own.
+ */
+export function organizationOfAddress(email: string | null | undefined): string | null {
+  if (typeof email !== 'string') return null;
+
+  const address = email.trim().toLowerCase();
+  const at = address.lastIndexOf('@');
+
+  if (at <= 0) return null;
+
+  const domain = address.slice(at + 1);
+  const suffix = `.${ADDRESS_DOMAIN}`;
+
+  if (!domain.endsWith(suffix)) return null;
+
+  const slug = domain.slice(0, -suffix.length);
+
+  return isOrganizationSlug(slug) ? slug : null;
+}

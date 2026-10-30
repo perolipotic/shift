@@ -1,6 +1,5 @@
 import { randomBytes } from 'node:crypto';
 
-import type { Page } from '@playwright/test';
 
 import { LeaveRequestReviewPage } from '../../pages/conflicts.page.ts';
 import {
@@ -19,6 +18,7 @@ import {
 } from '../../utils/database-helper.ts';
 import { fullDate } from '../../utils/dates.ts';
 import { fill, hr, plural } from '../../utils/i18n.ts';
+import { onlyRowsOf } from '../../utils/routes.ts';
 import { expectNoHorizontalScroll } from '../../utils/layout.ts';
 import { ADMIN_STATE, MEMBER_STATE } from '../../utils/run-fixture.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
@@ -103,33 +103,6 @@ test.afterEach(async () => {
   }
   if (failures.length > 0) throw failures[0];
 });
-
-/**
- * Answers the organization's leave and leave request reads with `memberId`'s
- * rows alone (story 9.5): *Treba tebe* lists only the earliest rows of the
- * whole organization, which other specs write to.
- */
-async function onlyRowsOf(page: Page, memberId: string): Promise<void> {
-  for (const table of ['**/rest/v1/leave_records*', '**/rest/v1/leave_requests*']) {
-    await page.route(table, async (route) => {
-      if (route.request().method() !== 'GET') return route.fallback();
-      const answered = await route.fetch();
-      const rows = (await answered.json()) as { readonly member_id?: string }[];
-      const own = Array.isArray(rows) ? rows.filter((row) => row.member_id === memberId) : [];
-
-      return route.fulfill({
-        response: answered,
-        headers: {
-          ...answered.headers(),
-          'access-control-allow-origin': '*',
-          'access-control-expose-headers': 'Content-Range',
-          'content-range': own.length === 0 ? '*/0' : `0-${String(own.length - 1)}/${String(own.length)}`,
-        },
-        body: JSON.stringify(own),
-      });
-    });
-  }
-}
 
 /** An ISO date `count` days after another (negative for before), by calendar arithmetic in UTC. */
 function isoDaysAfter(iso: string, count: number): string {

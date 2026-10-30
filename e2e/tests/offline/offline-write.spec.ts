@@ -62,10 +62,14 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
 const membership = hr.smjene.membership;
 const today = (): string => new Intl.DateTimeFormat('en-CA', { timeZone: RUN_TIMEZONE }).format(new Date());
 
-/** The RPCs that WRITE (the read RPCs — the calendar's, the roster's, the resolutions' — are reads). */
-// Story 9.3: `withdraw_leave_request`, a member's withdrawal, is a write too.
-// Story 9.4: and `decide_leave_request`, an admin's approval or rejection.
-const WRITE_RPC = /\/rest\/v1\/rpc\/(remove_|replace_|confirm_|amend_|withdraw_|decide_)/;
+/**
+ * The RPCs that WRITE on the surfaces this spec visits (the read RPCs — the
+ * calendar's, the roster's, the resolutions' — are reads). The request
+ * writes (`withdraw_leave_request`, `decide_leave_request`) are spied where
+ * their surfaces are: `leave/leave-request.spec.ts` and
+ * `leave/leave-decision.spec.ts` (retro 8–9 item 19, V2).
+ */
+const WRITE_RPC = /\/rest\/v1\/rpc\/(remove_|replace_|confirm_|amend_)/;
 
 /** A spy on the page's requests to the Supabase API. */
 interface RequestSpy {

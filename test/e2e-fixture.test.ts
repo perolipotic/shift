@@ -1,11 +1,14 @@
 import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
 
 import type pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { connect, requireAdminAuth, requireStack } from '../e2e/utils/database-helper.ts';
+import { requireOwnDevServer } from '../e2e/utils/global-setup.ts';
 import { STALE_AFTER, literal, sweepStale, teardown } from '../e2e/utils/run-fixture.ts';
 
 import { noDatabase } from './database.js';
@@ -204,7 +207,52 @@ describe('an E2E run without the stack', () => {
   });
 
   it('fails the function check with a message naming supabase functions serve', async () => {
-    await expect(requireAdminAuth(UNREACHABLE_API)).rejects.toThrow(/supabase functions serve/);
+    // No patience: the retry of a cold function (retro 8–9 item 22) is the next case's.
+    await expect(requireAdminAuth(UNREACHABLE_API, 0)).rejects.toThrow(/supabase functions serve/);
+  });
+
+  it('retries a function that does not answer yet, for as long as its patience, then names it', async () => {
+    const started = Date.now();
+    await expect(requireAdminAuth(UNREACHABLE_API, 1_500)).rejects.toThrow(/within 2 s/);
+    expect(Date.now() - started, 'gave up without retrying').toBeGreaterThanOrEqual(1_000);
+  });
+
+  it('retries an answer that is not the function\'s own (a booting runtime) until the function answers', async () => {
+    let asked = 0;
+    const server = createServer((_request, response) => {
+      asked += 1;
+      if (asked < 3) {
+        response.writeHead(503).end();
+        return;
+      }
+      response
+        .writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST, OPTIONS' })
+        .end();
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const { port } = server.address() as AddressInfo;
+      await expect(requireAdminAuth(`http://127.0.0.1:${String(port)}`, 10_000)).resolves.toBeUndefined();
+      expect(asked).toBe(3);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it('fails at once when the function itself answers without admitting the origin', async () => {
+    let asked = 0;
+    const server = createServer((_request, response) => {
+      asked += 1;
+      response.writeHead(204, { 'Access-Control-Allow-Origin': '*' }).end();
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const { port } = server.address() as AddressInfo;
+      await expect(requireAdminAuth(`http://127.0.0.1:${String(port)}`, 10_000)).rejects.toThrow(/allow-methods absent/);
+      expect(asked).toBe(1);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 
   it('stops the web server command before `supabase functions serve`', () => {
@@ -224,5 +272,39 @@ describe('an E2E run without the stack', () => {
 
     expect(status).not.toBe(0);
     expect(stderr).toContain('supabase start');
+  });
+});
+
+describe('the e2e refuses a dev server another checkout started (retro 10 A14)', () => {
+  /** A server on a free port answering the checkout path with `body`, for the case. */
+  async function answering(body: string, run: (url: string) => Promise<void>): Promise<void> {
+    const server = createServer((_request, response) => {
+      response.setHeader('content-type', body.startsWith('{') ? 'application/json' : 'text/html');
+      response.end(body);
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as AddressInfo;
+    try {
+      await run(`http://127.0.0.1:${String(port)}/__shift/checkout`);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  }
+
+  it("accepts this checkout's server", async () => {
+    await answering(JSON.stringify({ root: `${repoRoot}/` }), (url) => expect(requireOwnDevServer(url, repoRoot)).resolves.toBeUndefined());
+  });
+
+  it("refuses another checkout's server, naming it", async () => {
+    await answering(JSON.stringify({ root: '/elsewhere/shift' }), (url) =>
+      expect(requireOwnDevServer(url, repoRoot)).rejects.toThrow(/another checkout \(\/elsewhere\/shift\)/),
+    );
+  });
+
+  it('refuses a server that does not say (the SPA fallback of an older one), and no server at all', async () => {
+    await answering('<!doctype html><html></html>', (url) =>
+      expect(requireOwnDevServer(url, repoRoot)).rejects.toThrow(/does not say which checkout/),
+    );
+    await expect(requireOwnDevServer(`${UNREACHABLE_API}/__shift/checkout`, repoRoot)).rejects.toThrow(/does not say which checkout/);
   });
 });

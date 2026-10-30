@@ -4,7 +4,7 @@ type: 'feature'
 created: '2026-10-30'
 status: 'done'
 baseline_commit: '6726b35b53e669f651549f43c67709ca6aa8cabb'
-review_loop_iteration: 0
+review_loop_iteration: 1
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-10-context.md'
   - '{project-root}/_bmad-output/implementation-artifacts/spec-10-2-email-tells-people-what-concerns-them.md'

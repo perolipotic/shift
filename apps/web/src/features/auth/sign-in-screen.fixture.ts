@@ -19,6 +19,10 @@ export const SIGN_IN_PARTS = {
   page: ['pages', 'prijava.tsx'],
   hook: ['features', 'auth', 'hooks', 'use-sign-in.ts'],
   form: ['features', 'auth', 'components', 'sign-in-form.tsx'],
+  // Retro 10 A5: a signed-in visitor on another organization's link is
+  // offered it in the same card, in place of the form, on the same page.
+  switchHook: ['features', 'auth', 'hooks', 'use-organization-switch.ts'],
+  switchOffer: ['features', 'auth', 'components', 'organization-switch-offer.tsx'],
 } as const;
 
 /**
@@ -48,6 +52,14 @@ export const SIGN_IN_SCREEN_EXEMPT: readonly { readonly file: string; readonly w
   {
     file: 'services/return-target.ts',
     why: 'the validator the hook follows the carried deep link through, and the search both sign-in routes carry it in; executed by return-target.test.ts',
+  },
+  {
+    file: 'services/organization-switch.ts',
+    why: 'retro 10 A5: whether a signed-in visitor on a sign-in link is offered another organization; executed by organization-switch.test.ts',
+  },
+  {
+    file: 'hooks/use-end-session.ts',
+    why: 'retro 10 A5: the one session end (push forgotten, sign-out, cache and kept snapshot cleared) the chrome, the set-password step and the switch offer share; renders nothing',
   },
   {
     file: 'services/sign-out.ts',

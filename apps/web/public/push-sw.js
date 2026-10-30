@@ -5,8 +5,10 @@
  * at runtime (story 8.1).
  *
  * The payload is `notify`'s: `{ title, body, url, tag }`, where `url` is the
- * organization's sign-in route returning to the surface
- * (`/prijava/<slug>?povratak=<path>`) and `tag` is `<code>:<subject_id>`, so a
+ * organization's sign-in route returning to the surface, as a PATH with no
+ * origin (`/prijava/<slug>?povratak=<path>`, retro 10 A6): it is resolved on
+ * this worker's own origin, so an app served from more than one origin keeps
+ * the deep link. `tag` is `<code>:<subject_id>`, so a
  * re-send of one fact replaces its notification rather than stacking. A tap
  * navigates a window this worker controls, or opens one; a failed navigation
  * opens one too. Only this app's own origin is ever opened.
@@ -34,7 +36,10 @@ self.addEventListener('push', (event) => {
   event.waitUntil(self.registration.showNotification(title, options));
 });
 
-/** The tapped notification's url, on this origin only; anything else is `/`. */
+/**
+ * The tapped notification's url, resolved on this origin (a path, as `notify`
+ * sends it, lands here); an absolute url naming any other origin is `/`.
+ */
 function targetOf(raw) {
   const origin = self.location.origin;
   try {

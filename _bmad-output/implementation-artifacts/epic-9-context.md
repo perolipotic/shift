@@ -4,21 +4,21 @@
 
 ## Goal
 
-Before this epic, only an admin could enter leave. Epic 9 lets a member request a leave range from their phone and see what it would cost before sending it. An admin sees the request in *Za odluku*, next to the conflicts that approval would raise, and decides it. Approval creates a Leave Record exactly as if the admin had entered it. Until then nothing in the schedule, the hours or the balance moves. Admin-entered leave keeps working, and requests add a second path into it. These are the product's first member-role domain writes. Stories 9.1–9.3 are done: the queue is now *Za odluku* and no Croatian string says "konflikt" (9.1); the request record exists with its RLS, its withdraw and decide functions (9.2); and a member can request leave from *Godišnji* and withdraw a pending request (9.3). Two stories remain: the admin's decision screen (9.4) and the merged queue (9.5). Epic 12 reuses this item model for swaps.
+Before this epic, only an admin could enter leave. Epic 9 lets a member request a leave range from their phone and see what it would cost before sending it. An admin sees the request in *Za odluku*, next to the conflicts that approval would raise, and decides it. Approval creates a Leave Record exactly as if the admin had entered it. Until then nothing in the schedule, the hours or the balance moves. Admin-entered leave keeps working, and requests add a second path into it. These are the product's first member-role domain writes. All five stories are done: the queue is now *Za odluku* and no Croatian string says "konflikt" (9.1); the request record exists with its RLS, its withdraw and decide functions (9.2); a member can request leave from *Godišnji* and withdraw a pending request (9.3); the admin decides on its own screen (9.4); and *Za odluku* lists requests beside collisions (9.5). Epic 12 reuses this item model for swaps.
 
 ## Stories
 
 - Story 9.1: Raspored becomes Za odluku, and no screen says konflikt (done)
 - Story 9.2: The leave request record (done)
 - Story 9.3: A member requests leave and sees what it costs (done)
-- Story 9.4: An admin decides a leave request on its own screen
-- Story 9.5: Za odluku lists requests beside collisions
+- Story 9.4: An admin decides a leave request on its own screen (done)
+- Story 9.5: Za odluku lists requests beside collisions (done)
 
 ## Requirements & Constraints
 
 - **Members propose and admins decide.** A member inserts requests only for themselves and withdraws only their own pending request. A member writes no decision, no Leave Record and no colleague's request, whether through the UI or a direct API call. A member cannot read another member's requests. A request has no reason field.
 - **A pending request derives nothing.** It raises no conflict, charges no balance, and changes no shift, hours or roster on any surface.
-- **Decisions.** Approval creates one Leave Record for the requested range, attributed to the approving admin. From then on it behaves like any direct leave record: its conflicts appear and the request reads as approved. Rejection records only the decision. Every decision carries the acting admin and a timestamp. If the schedule has changed so that the request no longer applies, approval is refused as stale and the request stays pending. A decided request cannot be withdrawn; an admin changes approved leave the usual way.
+- **Decisions.** Approval creates one Leave Record for the requested range, attributed to the approving admin. From then on it behaves like any direct leave record: its conflicts appear and the request reads as approved. Rejection records only the decision (and closes the request: `closed_by`, `closed_at`, as every decision does). Every decision carries the acting admin and a timestamp. If the schedule has changed so that the request no longer applies, approval is refused as stale and the request stays pending. A decided request cannot be withdrawn; an admin changes approved leave the usual way.
 - **The preview never blocks.** Before deciding, the admin sees the cost, the balance after it and every conflict that approval would create. Short-staffed shifts join this preview once Epic 11 ships. All of it uses the same rules as a direct leave save, never a second implementation.
 - **Queue count.** The admin's Danas count equals the number of items in *Čeka odluku* exactly (unresolved collisions plus pending requests). It is shown even at zero.
 - ***Odlučeno* is not a history surface.** It reads stored resolutions and request decisions only. The change history is Epic 14.

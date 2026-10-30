@@ -4,7 +4,7 @@
 
 ## Goal
 
-Members use Shift on phones, often with little or no signal, for example on a truck. This epic makes the static SPA an installable PWA on Android and iOS. A surface the member has already read opens offline and shows its whole last snapshot, labelled with the time that snapshot is from. Nothing pretends to save offline, and signing out leaves no organization data on the device. Every surface already works online, so the epic adds only installability and offline reads. **Shipped:** 8.1 (install, app-shell worker, update notice), 8.2 (*Danas* and *Kalendar* offline, the device snapshot, the freshness rule, the offline session), 8.2b (*Sati*, *Godišnji*, *Ljudi*, `/smjene/$id`, the offline role guard, the chrome), 8.2c (*Raspored*, the resolution page, the member page) and 8.2d (the settings surfaces, with no read retry offline; every surface now reads offline). **Remaining:** 8.2e, by a human decision of 2026-10-21, drops the read-retry button from every other surface's offline unavailable state. After it come 8.3 (offline write refusal and sign-out clearing) and 8.4 (install entry). Epic 10's Web Push later builds on the same service worker.
+Members use Shift on phones, often with little or no signal, for example on a truck. This epic makes the static SPA an installable PWA on Android and iOS. A surface the member has already read opens offline and shows its whole last snapshot, labelled with the time that snapshot is from. Nothing pretends to save offline, and signing out leaves no organization data on the device. Every surface already works online, so the epic adds only installability and offline reads. **Shipped:** 8.1 (install, app-shell worker, update notice), 8.2 (*Danas* and *Kalendar* offline, the device snapshot, the freshness rule, the offline session), 8.2b (*Sati*, *Godišnji*, *Ljudi*, `/smjene/$id`, the offline role guard, the chrome), 8.2c (*Raspored*, the resolution page, the member page) and 8.2d (the settings surfaces, with no read retry offline; every surface now reads offline), 8.2e (no read-retry button offline anywhere, human decision 2026-10-21), 8.3a/8.3b (every write refused offline behind one write gate; every sign-out clears the device) and 8.4 (install from *Više*). The epic is done (retro 2026-10-28). Epic 10's Web Push later builds on the same service worker.
 
 ## Stories
 
@@ -13,9 +13,9 @@ Members use Shift on phones, often with little or no signal, for example on a tr
 - Story 8.2b: Member surfaces read offline (done)
 - Story 8.2c: Admin work surfaces read offline (done)
 - Story 8.2d: Settings surfaces read offline (done)
-- Story 8.2e: No read-retry button offline
-- Story 8.3: Offline writes are refused, and signing out clears the device
-- Story 8.4: Install from Više
+- Story 8.2e: No read-retry button offline (done)
+- Story 8.3: Offline writes are refused, and signing out clears the device (done, as 8.3a and 8.3b)
+- Story 8.4: Install from Više (done)
 
 ## Requirements & Constraints
 
@@ -25,10 +25,10 @@ Members use Shift on phones, often with little or no signal, for example on a tr
 - **Online freshness.** After an app start, which includes a restored cache, the surface shows its skeleton until every read is refetched. After a reconnect, it keeps the cached snapshot and its note, so an open dialog stays open. Once every read is fresh, it switches to the fresh render at once. If any read has no data at that point, it shows the skeleton.
 - **Shipped admin work surfaces (8.2c).** *Raspored* reads offline; *Riješeni* adds the acting admins' names, so a *Riješeni* never opened online is unavailable offline. The resolution page reads its five reads as one snapshot. The member page `/ljudi/$id` decides its member edit and leave card over one key set, the union of their reads, so it is drawn whole under one note or is unavailable whole.
 - **Shipped settings surfaces (8.2d).** *Organizacija* (the row and its hour bands as one snapshot; a resolved refusal is its own message, with no note), *Satni pojasi* (+`$id`), *Postavke rotacije* (the shift types and the builder as one snapshot under one note; `tipovi-smjena/$id`) and *Ljudi/smjene* (+`$id`) read offline. `hourBands`, `shiftTypes` and `rotation` are persisted. A surface that needs the organization only for its zone decides it from the cache, with no second `useQuery`. The builder never builds a save from its cached snapshot. Offline, these surfaces offer no read retry.
-- **Prefetch.** Opening Danas online prefetches the member's current and next month, so that Danas and Kalendar read offline.
-- **Offline writes (8.3).** While offline, every write control states that it needs a connection. Nothing is queued, nothing is optimistic, and reconnecting changes no record by itself. Until 8.3, an offline save fails through the existing write error. Most of these write forms are on the 8.2c and 8.2d surfaces.
+- **Prefetch (as built, 8.2).** The calendar snapshot is one unwindowed entry that covers every month, and Danas reads every key Kalendar reads; keeping those keys on the device is the prefetch, so a member who opened Danas online opens Kalendar offline.
+- **Offline writes (8.3).** While offline, every write control states that it needs a connection. Nothing is queued, nothing is optimistic, and reconnecting changes no record by itself. As built (8.3a, 8.3b), every write control in the app sits behind one write gate (`lib/offline/use-write-gate.ts`): `aria-disabled` with *Za ovo je potrebna veza.*, and a press sends nothing.
 - **Sign-out.** Every sign-out path removes the device copy. A second account on the same device sees none of the first account's data.
-- **Accepted risks.** Cached organization data, which includes leave records, members, rosters and the rotation (member names and override reasons), stays unencrypted in IndexedDB for up to 30 days on a device that never reopens the app. Offline, a cached role is trusted for up to 30 days. An offline save fails through the existing write error, and 8.3 adds the up-front refusal.
+- **Accepted risks.** Cached organization data, which includes leave records, members, rosters and the rotation (member names and override reasons), stays unencrypted in IndexedDB for up to 30 days on a device that never reopens the app. Offline, a cached role is trusted for up to 30 days. No save is attempted offline: 8.3a/8.3b refuse every write up front.
 - **Updates.** A new version applies only when the member taps *Osvježi*. Nothing reloads by itself.
 - **Quality bars.** A cached snapshot is never shown without its as-of time, never beside a fresh one, and never survives sign-out. Figures stay consistent across surfaces. The app stays responsive web with no native app.
 - **Docs in the same change.** Each story updates the DESIGN.md, EXPERIENCE.md, UX-DR and spine lines it changes, in the same change.

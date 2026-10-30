@@ -255,7 +255,8 @@ export interface SeededLeaveMember {
  */
 export async function seedLeaveMember(
   slug: string,
-  teamId: string,
+  /** The team they join on `today`; `null` for a member on no team (a fresh admin of a test's own). */
+  teamId: string | null,
   today: string,
   allowanceDays: number,
   /** Words after the fresh `Godišnji {suffix}`, for a longer name (story 5.4c's phone test). */
@@ -282,11 +283,13 @@ export async function seedLeaveMember(
     const password = randomBytes(18).toString('base64url');
     const { memberId } = await insertMember(client, organizationId, slug, person, password);
     await client.query('update members set leave_allowance_days = $2 where id = $1', [memberId, allowanceDays]);
-    await client.query(
-      `insert into team_membership_versions (organization_id, member_id, team_id, effective_from, created_by)
-       values ($1, $2, $3, $4::date, $5)`,
-      [organizationId, memberId, teamId, today, adminUser],
-    );
+    if (teamId !== null) {
+      await client.query(
+        `insert into team_membership_versions (organization_id, member_id, team_id, effective_from, created_by)
+         values ($1, $2, $3, $4::date, $5)`,
+        [organizationId, memberId, teamId, today, adminUser],
+      );
+    }
     await client.query('commit');
 
     return { id: memberId, name: person.name, username: person.username, password };
@@ -1665,6 +1668,11 @@ export async function requireStack(
   if (status !== 200) throw new Error(stackDownMessage(`GoTrue at ${health} (HTTP ${status})`));
 }
 
+/** How long {@link requireAdminAuth} retries a function that does not answer yet. */
+const ADMIN_AUTH_PATIENCE_MS = 30_000;
+/** The pause between two of its tries. */
+const ADMIN_AUTH_RETRY_MS = 1_000;
+
 /**
  * Fails, naming `supabase functions serve`, unless admin-auth itself answers a
  * CORS request from the app's origin.
@@ -1677,32 +1685,49 @@ export async function requireStack(
  * `corsHeaders`), so this proves the function is served AND configured for this
  * origin.
  */
-export async function requireAdminAuth(apiUrl: string = API_URL): Promise<void> {
-  let response: Response;
-  try {
-    response = await fetch(`${apiUrl}/functions/v1/admin-auth`, {
-      method: 'OPTIONS',
-      headers: { Origin: APP_ORIGIN },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-  } catch (cause) {
-    throw new Error(functionDownMessage(`no answer from ${apiUrl}`), { cause });
-  }
+export async function requireAdminAuth(
+  apiUrl: string = API_URL,
+  /** How long "no answer" is retried: a cold edge runtime boots the worker first. */
+  patienceMs: number = ADMIN_AUTH_PATIENCE_MS,
+): Promise<void> {
+  // RETRO 8–9 ITEM 22 (CI shard failure 40679959525): the edge runtime
+  // answered while it booted the function's worker, and the one OPTIONS then
+  // timed out after REQUEST_TIMEOUT_MS. Until `patienceMs` has passed, "no
+  // answer" and any answer that is not the function's own (the function
+  // answers OPTIONS 204, always: anything else is the gateway or the runtime
+  // still booting) are retried. The function's own 204 that does not admit
+  // this origin is a configuration, and fails at once.
+  const deadline = Date.now() + patienceMs;
+  for (;;) {
+    let response: Response;
+    try {
+      response = await fetch(`${apiUrl}/functions/v1/admin-auth`, {
+        method: 'OPTIONS',
+        headers: { Origin: APP_ORIGIN },
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+    } catch (cause) {
+      if (Date.now() >= deadline) {
+        throw new Error(functionDownMessage(`no answer from ${apiUrl} within ${Math.round(patienceMs / 1000)} s`), {
+          cause,
+        });
+      }
+      await new Promise((resolve) => setTimeout(resolve, ADMIN_AUTH_RETRY_MS));
+      continue;
+    }
 
-  const allowOrigin = response.headers.get('access-control-allow-origin');
-  const allowMethods = response.headers.get('access-control-allow-methods');
+    const allowOrigin = response.headers.get('access-control-allow-origin');
+    const allowMethods = response.headers.get('access-control-allow-methods');
+    await response.body?.cancel().catch(() => undefined);
 
-  if (
-    response.status !== 204 ||
-    allowOrigin === null ||
-    allowMethods?.replace(/\s/g, '') !== 'POST,OPTIONS'
-  ) {
-    throw new Error(
-      functionDownMessage(
-        `OPTIONS answered HTTP ${response.status}, allow-origin ${allowOrigin ?? 'absent'}, ` +
-          `allow-methods ${allowMethods ?? 'absent'}`,
-      ),
-    );
+    if (response.status === 204 && allowOrigin !== null && allowMethods?.replace(/\s/g, '') === 'POST,OPTIONS') return;
+
+    const detail =
+      `OPTIONS answered HTTP ${response.status}, allow-origin ${allowOrigin ?? 'absent'}, ` +
+      `allow-methods ${allowMethods ?? 'absent'}`;
+    // The function's own answer, wrong for this origin: waiting cannot fix it.
+    if (response.status === 204 || Date.now() >= deadline) throw new Error(functionDownMessage(detail));
+    await new Promise((resolve) => setTimeout(resolve, ADMIN_AUTH_RETRY_MS));
   }
 }
 

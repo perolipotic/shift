@@ -1,4 +1,3 @@
-import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useRouter, useSearch } from '@tanstack/react-router';
 import { useRef, useState, type FormEvent } from 'react';
 import { flushSync } from 'react-dom';
@@ -14,11 +13,9 @@ import {
   type SetPasswordFailure,
 } from '@/features/auth/services/set-password';
 import { knownPathOf, returnTargetOf } from '@/features/auth/services/return-target';
-import { SIGN_OUT_FAILED, signOut, type SignOutFailure } from '@/features/auth/services/sign-out';
-import { forgetThisPushDevice } from '@/features/notifications/services/page-push';
-import { forgetDeviceSnapshot } from '@/lib/offline/device-snapshot';
+import { useEndSession } from '@/features/auth/hooks/use-end-session';
+import { SIGN_OUT_FAILED, type SignOutFailure } from '@/features/auth/services/sign-out';
 import { supabaseClient } from '@/lib/supabase/client';
-import { pageSignOutFallback } from '@/lib/supabase/local-sign-out';
 import { writesOnline } from '@/lib/offline/use-write-gate';
 
 /**
@@ -54,7 +51,7 @@ export function useSetPassword() {
   const router = useRouter();
   // NOT STRICT, so no route id is spelt here, as in the sign-in hook.
   const { povratak } = useSearch({ strict: false });
-  const queryClient = useQueryClient();
+  const endSession = useEndSession();
   const passwordField = useRef<HTMLInputElement>(null);
   const repeatField = useRef<HTMLInputElement>(null);
   // A REF, read inside the handler: state would be stale on a second submit in
@@ -181,11 +178,11 @@ export function useSetPassword() {
     setSignOutFailure(null);
 
     try {
-      // STORY 10.4: this device's push goes with the session, as from the
-      // chrome's Odjava. Best-effort and bounded; never blocks the sign-out.
-      await forgetThisPushDevice();
-
-      const outcome = await signOut(supabaseClient().auth, pageSignOutFallback);
+      // THE ONE SESSION END, as the chrome's Odjava
+      // (`@/features/auth/hooks/use-end-session`): push forgotten, the
+      // sign-out, and only once it ended, the cache and the device's kept
+      // snapshot cleared.
+      const outcome = await endSession();
 
       if (!outcome.ok) {
         setSignOutFailure(outcome.code);
@@ -193,12 +190,6 @@ export function useSetPassword() {
         return;
       }
 
-      // Nothing this session read outlives it, as the chrome's exit does —
-      // the device's kept snapshot included (story 8.2): started first, so the
-      // clear saves nothing, and awaited before the navigation.
-      const forgetting = forgetDeviceSnapshot();
-      queryClient.clear();
-      await forgetting;
       await navigate({ to: '/prijava' });
     } catch (cause) {
       console.error(SIGN_OUT_FAILED, cause);

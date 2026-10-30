@@ -4,7 +4,7 @@ type: 'feature'
 created: '2026-10-30'
 status: 'done'
 baseline_commit: 'c16220a2146398f4881a026d0aa7448512ac9b4e'
-review_loop_iteration: 0
+review_loop_iteration: 1
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-10-context.md'
   - '{project-root}/_bmad-output/implementation-artifacts/spec-10-3-notification-settings-in-vise.md'
@@ -159,7 +159,7 @@ context:
   - E2E for the push section states with `navigator.serviceWorker`, `PushManager` and `Notification` stubbed by `addInitScript`;
   - every inventory in the Code Map.
 - [x] Docs:
-  - DEPLOY.md: VAPID public, private and subject; the build variable; the order 0045 → SPA → `notify`;
+  - DEPLOY.md: VAPID public, private and subject; the build variable; the order 0045 → `notify` → SPA (as built and as DEPLOY.md and the deploy action run it; corrected by the retro-10 batch, 2026-10-30);
   - UX-DR49 and EXPERIENCE.md as shipped;
   - close the 10.3 deferred push entry.
 

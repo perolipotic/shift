@@ -741,7 +741,7 @@ A Member can install the application to their device's home screen.
 - The application installs from Chrome on Android and from Safari on iOS, and opens without browser chrome.
 - The installed name is the confirmed product name, not a working title, and no Organization's name or logo is hard-coded into the installed manifest (DI-8).
 - An install entry is reachable from *Više*; nothing prompts installation as a modal on a first visit.
-- A new version is announced in the application and applied on reload. It is never applied silently mid-task.
+- A new version is announced in the application and applied when the Member taps *Osvježi*. A reload alone keeps the running version (the service worker waits, `registerType: 'prompt'`). It is never applied silently mid-task. *(Reconciled 2026-10-30 with story 8.1 as built; a minimum-version check is deferred.)*
 
 #### FR-55: Read offline with an as-of note
 A Member without a connection can open every surface they have already read and see its last snapshot, labelled with the time that snapshot was taken.
@@ -749,8 +749,8 @@ A Member without a connection can open every surface they have already read and 
 **Consequences (testable):**
 - Offline, a surface renders its whole last snapshot with `stanje od {datum} {vrijeme}` in the Organization timezone (FR-8).
 - A cached figure is never shown beside a fresh one. A surface is either wholly cached and labelled, or wholly fresh (NFR-24).
-- Online, a cached snapshot is never shown in place of a fresh read.
-- The Member's current and next month are available offline after they have opened their dashboard once online.
+- Online, a cached snapshot is never drawn as fresh. After the application starts, a surface shows its skeleton until every read is fresh; after a reconnect it keeps its whole cached snapshot under the as-of note until every read is fresh, then switches at once (human decision 2026-10-20 d, AD-13). *(Reconciled 2026-10-30.)*
+- The Member's current and next month are available offline after they have opened their dashboard once online. *(As built: the calendar snapshot is one unwindowed entry kept on the device, which covers every month; nothing is prefetched separately. Reconciled 2026-10-30.)*
 
 #### FR-56: Writes refused offline
 Every write is refused while offline, with a stated reason.

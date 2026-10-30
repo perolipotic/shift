@@ -869,8 +869,10 @@ describe('the build being read reflects the current localization source', () => 
     // EXACT, so a new exemption is a reviewed change to this test.
     expect([...AUTH_RULE_MODULES].sort(), 'the fixture exempts other service modules').toEqual(
       [
+        'hooks/use-end-session.ts',
         'services/address.ts',
         'services/last-organization.ts',
+        'services/organization-switch.ts',
         'services/return-target.ts',
         'services/set-password.ts',
         'services/sign-in.ts',
@@ -881,8 +883,9 @@ describe('the build being read reflects the current localization source', () => 
       AUTH_FEATURE_PARTS.length + AUTH_RULE_MODULES.length,
     );
     // TEN SINCE STORY 7.8: the set-password step's hook and form, and its
-    // service module.
-    expect(parts, 'the auth feature grew or lost a module').toHaveLength(10);
+    // service module. FOURTEEN SINCE RETRO 10 A5: the other-organization
+    // offer's hook and component, its rule, and the shared session end.
+    expect(parts, 'the auth feature grew or lost a module').toHaveLength(14);
     expect(SOURCES, `${SIGN_IN_PAGE} is not in SOURCES`).toContain(SIGN_IN_PAGE);
     expect(SOURCES, `${SET_PASSWORD_PAGE} is not in SOURCES`).toContain(SET_PASSWORD_PAGE);
     expect([...parts].sort(), 'the feature holds a module no set and no service list names').toEqual(

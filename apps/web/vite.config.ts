@@ -2,8 +2,45 @@ import { fileURLToPath } from 'node:url';
 
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+
+/** The addresses a loopback caller arrives from. */
+const LOOPBACK: ReadonlySet<string> = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+
+/** The path the dev server answers with its checkout (retro 10 A14). */
+export const CHECKOUT_PATH = '/__shift/checkout';
+
+/**
+ * DEV SERVER ONLY (retro 10 A14): `GET /__shift/checkout` answers the
+ * repository root this server was started from, as `{ "root": "…" }`, to a
+ * loopback caller only (any other caller gets 404). The e2e
+ * global setup reuses a server already on 127.0.0.1:5173 only when it is this
+ * checkout's, so a parallel session's Vite never silently serves another
+ * branch's run. `apply: 'serve'`: nothing of it reaches a build.
+ */
+function checkoutAnswer(): Plugin {
+  const root = fileURLToPath(new URL('../..', import.meta.url));
+  return {
+    name: 'shift-checkout-answer',
+    apply: 'serve',
+    configureServer(server) {
+      server.middlewares.use(CHECKOUT_PATH, (request, response) => {
+        // LOOPBACK CALLERS ONLY: a server started with a LAN `--host` (the
+        // demo) must not tell the network where the checkout lives.
+        const caller = request.socket.remoteAddress ?? '';
+        if (!LOOPBACK.has(caller)) {
+          response.statusCode = 404;
+          response.end();
+          return;
+        }
+        response.setHeader('content-type', 'application/json');
+        response.setHeader('cache-control', 'no-store');
+        response.end(JSON.stringify({ root }));
+      });
+    },
+  };
+}
 
 // AD-14: a static SPA build. No SSR, no application server, no prerender step.
 // The publishable key (AD-17) is injected at build time through VITE_* env
@@ -12,6 +49,7 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
+    checkoutAnswer(),
     // STORY 8.1. AD-14 stays intact: the PWA adds client-side pieces only, a
     // manifest and a service worker generated at build time, with no server.
     //
