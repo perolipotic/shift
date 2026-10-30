@@ -1,20 +1,15 @@
+
 import {
-  Building2,
+  Buildings,
   Calendar,
-  CalendarRange,
+  CalendarDots,
   Clock,
-  Home,
+  House,
   Repeat,
-  // `TreePalm` and NOT `Palmtree`, which is the same glyph under the name
-  // lucide-react kept for compatibility. The legacy alias resolves at the pinned
-  // version and is the sort of thing that stops resolving at a major — and it
-  // would fail as an unresolved import at build time rather than anywhere near
-  // this file, so the cheapest moment to be on the current name is now.
   TreePalm,
   Users,
-  type LucideIcon,
-} from 'lucide-react';
-
+  type IconComponent,
+} from '@/components/ui/icon';
 import type { NavigationKey } from '@/features/navigation/utils/destinations';
 
 /**
@@ -27,7 +22,10 @@ import type { NavigationKey } from '@/features/navigation/utils/destinations';
  * assignment below is the human decision of 2026-09-16 and it is recorded here
  * rather than argued: `Danas` Home, `Kalendar` Calendar, `Sati` Clock,
  * `Godišnji` TreePalm, `Za odluku` CalendarRange, `Ljudi` Users, `Postavke
- * rotacije` Repeat, `Organizacija` Building2.
+ * rotacije` Repeat, `Organizacija` Building2 — lucide's names; since story
+ * 15.1 the Phosphor glyphs `House`, `Calendar`, `Clock`, `TreePalm`,
+ * `CalendarDots`, `Users`, `Repeat` and `Buildings`, through
+ * `@/components/ui/icon`.
  *
  * A `.ts` MODULE AND NOT PART OF THE CHROME, and the reason is mechanical rather
  * than tidy: the map is keyed by `nav.*` key, which means writing eight quoted
@@ -49,15 +47,15 @@ import type { NavigationKey } from '@/features/navigation/utils/destinations';
  * an entry is a React component object whose own fields are strings, which would
  * fail that sweep for a reason that has nothing to do with what it guards.
  */
-const DESTINATION_ICONS: Record<NavigationKey, LucideIcon> = {
-  'nav.danas': Home,
+const DESTINATION_ICONS: Record<NavigationKey, IconComponent> = {
+  'nav.danas': House,
   'nav.kalendar': Calendar,
   'nav.sati': Clock,
   'nav.godisnji': TreePalm,
-  'nav.zaOdluku': CalendarRange,
+  'nav.zaOdluku': CalendarDots,
   'nav.ljudi': Users,
   'nav.postavkeRotacije': Repeat,
-  'nav.organizacija': Building2,
+  'nav.organizacija': Buildings,
 };
 
 /**
@@ -68,6 +66,6 @@ const DESTINATION_ICONS: Record<NavigationKey, LucideIcon> = {
  * returned one icon for everything would be caught by the test that compares
  * what the eight destinations resolve to.
  */
-export function destinationIcon(key: NavigationKey): LucideIcon {
+export function destinationIcon(key: NavigationKey): IconComponent {
   return DESTINATION_ICONS[key];
 }

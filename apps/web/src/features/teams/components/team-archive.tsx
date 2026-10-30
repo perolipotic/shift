@@ -1,9 +1,9 @@
-import { Archive } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Button } from '@/components/ui/button';
 import { DialogFooter } from '@/components/ui/dialog';
+import { Archive } from '@/components/ui/icon';
 import { Notice } from '@/components/ui/notice';
 import type { TeamEditScreen } from '@/features/teams/hooks/use-team-edit';
 import type { TeamRow } from '@/features/teams/services/list';

@@ -23,6 +23,12 @@ import { STICKY_HEAD_HEIGHT_VAR, filtersCoveredBy, stickyHeadHeightOf } from '@/
  *
  * It sits inside the screen's Card: a sticky element sticks within its
  * container, so it leaves with the Card and never covers what follows it.
+ *
+ * GLASS ON A PHONE (story 15.1): the month scrolls UNDER the head there, so it
+ * is `glass-over-content`, one of the three layers a phone may blur, and what
+ * it holds is foreground-strength text on opaque controls. The summary line
+ * under it stays on the opaque card, so its muted text is measured on one
+ * known colour.
  */
 export function StickyHead({
   summary = null,
@@ -93,7 +99,7 @@ export function StickyHead({
     <div
       ref={head}
       data-sticky-head
-      className="min-w-0 max-sm:sticky max-sm:top-0 max-sm:z-20 max-sm:rounded-t-lg max-sm:border-b max-sm:bg-card"
+      className="min-w-0 max-sm:sticky max-sm:top-0 max-sm:z-20 max-sm:rounded-t-lg max-sm:border-b max-sm:glass-over-content"
     >
       {children}
       {summary !== null && covered ? (

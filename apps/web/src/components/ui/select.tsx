@@ -1,6 +1,6 @@
 import * as React from "react"
-import { ChevronDown } from "lucide-react"
 
+import { CaretDown } from "@/components/ui/icon"
 import { cn } from "@/lib/utils"
 
 // The one select, and still the NATIVE `<select>`: it brings keyboard
@@ -30,7 +30,7 @@ const Select = React.forwardRef<HTMLSelectElement, React.ComponentProps<"select"
           ref={ref}
           {...props}
         />
-        <ChevronDown
+        <CaretDown
           aria-hidden
           className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
         />

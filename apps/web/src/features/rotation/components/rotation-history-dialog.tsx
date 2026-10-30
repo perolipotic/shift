@@ -1,9 +1,9 @@
-import { History } from 'lucide-react';
 import { useState, type ReactNode, type SyntheticEvent } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { ClockCounterClockwise } from '@/components/ui/icon';
 import { PageActions } from '@/components/ui/page-header';
 import { StackedField, StackedFields, StackedList, StackedRow } from '@/components/ui/stacked-list';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -43,7 +43,7 @@ export function RotationHistoryDialog({ rows }: { readonly rows: readonly Rotati
           setOpen(true);
         }}
       >
-        <History aria-hidden />
+        <ClockCounterClockwise aria-hidden />
         {heading}
       </Button>
       <Dialog

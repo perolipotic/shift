@@ -1,26 +1,26 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
-import {
-  Bell,
-  ChevronDown,
-  ChevronUp,
-  Download,
-  Ellipsis,
-  LogOut,
-  Monitor,
-  Moon,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Sun,
-  User,
-  type LucideIcon,
-} from 'lucide-react';
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 
 import { initialsOf } from '@/utils/initials';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogHeader } from '@/components/ui/dialog';
+import {
+  Bell,
+  CaretDown,
+  CaretLineLeft,
+  CaretLineRight,
+  CaretUp,
+  DotsThree,
+  DownloadSimple,
+  Monitor,
+  Moon,
+  SignOut,
+  Sun,
+  User,
+  type IconComponent,
+} from '@/components/ui/icon';
 import { t } from '@/lib/i18n';
 import {
   destinationsFor,
@@ -186,10 +186,19 @@ import { keepFocusOnAlert } from '@/utils/retry-focus';
  *
  * Sizing: `h-11` is 44 px, the tap-target floor UX-DR40 sets, composed onto
  * every link and every button — the inherited primitives are `h-9`/`h-10`. A
- * phone cell is taller still (56 px, icon over label), and the bar is 4 rem
- * plus its 1 px edge, which is what the content's bottom padding and the
- * page's `scroll-padding-bottom` (`index.css`) clear. The lockup is NOT a
- * control — nothing about it is pressable — so it is 32 px rather than 44.
+ * phone cell is taller still (56 px, icon over label), and the bar is a 4 rem
+ * pill plus its 2 px edge, floating 0.75 rem above the safe area, which is
+ * what the content's bottom padding and the page's `scroll-padding-bottom`
+ * (`index.css`) clear. The lockup is NOT a control — nothing about it is
+ * pressable — so it is 32 px rather than 44.
+ *
+ * GLASS SINCE STORY 15.1 (direction G). The desktop sidebar is a floating
+ * `glass-chrome` panel inset 16 px from the viewport, and the phone's bar a
+ * floating `glass-over-content` pill above the safe area; both draw with the
+ * glass set and `--foreground`, never with the navy `--sidebar*` tokens, which
+ * stay for the screens 15.2 and 15.3 move. The *Više* sheet and the profile
+ * menu are opaque (`card`, `popover`), so their small muted text is measured on
+ * an opaque surface. The accent is still the lockup and a 2 px edge.
  */
 
 export interface AppChromeProps {
@@ -201,7 +210,7 @@ export interface AppChromeProps {
 const PLACE = { sidebar: 0, tab: 1, sheet: 2 } as const;
 type Place = (typeof PLACE)[keyof typeof PLACE];
 
-const THEME_GLYPHS: Record<ThemePreference, LucideIcon> = {
+const THEME_GLYPHS: Record<ThemePreference, IconComponent> = {
   system: Monitor,
   light: Sun,
   dark: Moon,
@@ -583,17 +592,18 @@ export function AppChrome({ children }: AppChromeProps) {
         // `aria-current="page"` AND a treatment that is not colour (UX-DR37),
         // all of it in the `shell-entry` utility (`index.css`), which *Više*
         // carries too, so the two cannot drift:
-        // the active entry is a filled `sidebar-primary` pill, and it is ALSO
-        // semibold and underlined where its neighbours are neither. The pill
-        // alone is not enough: a hovered neighbour takes the same filled
-        // shape, so the weight and the underline are what make the active
-        // entry readable to somebody who cannot tell the two fills apart; the
-        // attribute is what makes it audible. All of them are driven by the
-        // same attribute, so they cannot disagree.
+        // the active entry is a `glass-active` pill (story 15.1; white in
+        // light, a translucent white tint in dark, tuned in 15.5), and it
+        // is ALSO semibold and underlined where its neighbours are neither.
+        // The pill alone is not enough: a hovered neighbour takes a lighter
+        // pill of the same shape, so the weight and the underline are what
+        // make the active entry readable to somebody who cannot tell the two
+        // fills apart; the attribute is what makes it audible. All of them are
+        // driven by the same attribute, so they cannot disagree.
         //
-        // The focus ring (also in `shell-entry`) is OFFSET by the sidebar colour, so it is always
-        // drawn against navy (where `--sidebar-ring` clears 3:1) and never
-        // against the pill it would touch at under 3:1.
+        // The focus ring (also in `shell-entry`) is `--ring` drawn straight
+        // against the glass, which `theme-contrast.test.ts` measures against
+        // every backdrop the glass can sit on.
         //
         // MATCHED AS A SECTION, not as a string. Every destination here is a
         // section rather than a leaf, and an equality test drops the signal on
@@ -604,7 +614,7 @@ export function AppChrome({ children }: AppChromeProps) {
         aria-describedby={row ? rowDescriptionId + destination.path : undefined}
         title={place === PLACE.sidebar && !expanded ? name : undefined}
         onClick={place === PLACE.sheet ? closeMore : undefined}
-        className="shell-entry flex h-11 min-w-0 shrink-0 items-center justify-center gap-2 rounded-md px-3 text-sm font-normal text-sidebar-foreground sm:justify-start"
+        className="shell-entry flex h-11 min-w-0 shrink-0 items-center justify-center gap-2 rounded-md px-3 text-sm font-normal sm:justify-start"
       >
         <Icon aria-hidden className="size-4 shrink-0" />
         {row ? (
@@ -665,7 +675,7 @@ export function AppChrome({ children }: AppChromeProps) {
       <div
         role="group"
         aria-label={t('shell.theme.label')}
-        className="flex w-fit self-center rounded-full border-[1.5px] border-sidebar-foreground/50 p-0.5"
+        className="flex w-fit self-center rounded-full border-[1.5px] border-input p-0.5"
       >
         {THEME_PREFERENCES.map((preference) => {
           const Glyph = THEME_GLYPHS[preference];
@@ -673,9 +683,9 @@ export function AppChrome({ children }: AppChromeProps) {
           return (
             <Button
               key={preference}
-              className="h-11 w-11 rounded-full border-0 p-0 aria-pressed:bg-sidebar-primary aria-pressed:text-sidebar-primary-foreground"
+              className="h-11 w-11 rounded-full border-0 p-0 aria-pressed:bg-primary aria-pressed:text-primary-foreground"
               type="button"
-              variant="sidebar"
+              variant="ghost"
               aria-pressed={theme === preference}
               aria-label={names[preference]}
               title={names[preference]}
@@ -708,12 +718,12 @@ export function AppChrome({ children }: AppChromeProps) {
       <Button
         className="h-11 w-full shrink-0 gap-2 px-4 sm:justify-start sm:border-0"
         type="button"
-        variant="sidebar"
+        variant="outline"
         disabled={pending}
         aria-busy={pending}
         onClick={startSignOut}
       >
-        <LogOut aria-hidden className="size-4 shrink-0" />
+        <SignOut aria-hidden className="size-4 shrink-0" />
         <span>{name}</span>
       </Button>
     );
@@ -741,7 +751,7 @@ export function AppChrome({ children }: AppChromeProps) {
         onClick={row ? closeMore : closeProfile}
         // The destination rows' classes; in the sheet its wrapper gives it
         // their taller row, as the groups' sections give theirs.
-        className="shell-entry flex h-11 w-full min-w-0 shrink-0 items-center justify-center gap-2 rounded-md px-3 text-sm font-normal text-sidebar-foreground sm:justify-start"
+        className="shell-entry flex h-11 w-full min-w-0 shrink-0 items-center justify-center gap-2 rounded-md px-3 text-sm font-normal sm:justify-start"
       >
         <Bell aria-hidden className="size-4 shrink-0" />
         {row ? (
@@ -801,7 +811,7 @@ export function AppChrome({ children }: AppChromeProps) {
         <Button
           className="h-11 w-full shrink-0 gap-2 px-4 sm:justify-start sm:border-0"
           type="button"
-          variant="sidebar"
+          variant="outline"
           aria-disabled={install.prompting || undefined}
           aria-expanded={ios ? stepsOpen : undefined}
           aria-controls={ios ? stepsId : undefined}
@@ -815,13 +825,13 @@ export function AppChrome({ children }: AppChromeProps) {
             }
           }}
         >
-          <Download aria-hidden className="size-4 shrink-0" />
+          <DownloadSimple aria-hidden className="size-4 shrink-0" />
           <span>{t('shell.install')}</span>
         </Button>
         {ios ? (
-          // The sidebar's small muted text (`sidebar-foreground` at 70%),
-          // the pair `theme-contrast.test.ts` measures.
-          <p id={stepsId} hidden={!stepsOpen} className="px-4 text-xs text-sidebar-foreground/70">
+          // Small muted text on the opaque menu or sheet (`muted-foreground` on
+          // `card`), the pair `theme-contrast.test.ts` measures.
+          <p id={stepsId} hidden={!stepsOpen} className="px-4 text-xs text-muted-foreground">
             {t('shell.installIosSteps')}
           </p>
         ) : null}
@@ -845,14 +855,14 @@ export function AppChrome({ children }: AppChromeProps) {
   function renderProfile(): ReactNode {
     const roleName = role === null ? null : t(memberRoleLabelKey(role));
     const initials = memberName === null ? null : initialsOf(memberName);
-    const Chevron = profileOpen ? ChevronDown : ChevronUp;
+    const Chevron = profileOpen ? CaretDown : CaretUp;
 
     return (
       <div ref={profileRegion} className="relative">
         {profileOpen ? (
           <div
             id="profile-menu"
-            className="absolute bottom-full left-0 z-10 mb-2 flex w-full min-w-48 flex-col gap-2 rounded-lg border border-sidebar-border bg-sidebar p-2 shadow-sh-lg group-data-[collapsed=true]/sidebar:bottom-0 group-data-[collapsed=true]/sidebar:left-full group-data-[collapsed=true]/sidebar:mb-0 group-data-[collapsed=true]/sidebar:ml-3 group-data-[collapsed=true]/sidebar:w-auto"
+            className="shell-entries-opaque absolute bottom-full left-0 z-10 mb-2 flex w-full min-w-48 flex-col gap-2 rounded-lg border bg-popover p-2 text-popover-foreground shadow-sh-lg group-data-[collapsed=true]/sidebar:bottom-0 group-data-[collapsed=true]/sidebar:left-full group-data-[collapsed=true]/sidebar:mb-0 group-data-[collapsed=true]/sidebar:ml-3 group-data-[collapsed=true]/sidebar:w-auto"
           >
             {renderThemeSegments()}
             {renderNotifications(PLACE.sidebar)}
@@ -861,21 +871,23 @@ export function AppChrome({ children }: AppChromeProps) {
           </div>
         ) : null}
         <Button
-          className="h-auto min-h-11 w-full justify-start gap-3 border-0 px-2 py-1.5 text-left group-data-[collapsed=true]/sidebar:w-11 group-data-[collapsed=true]/sidebar:justify-center group-data-[collapsed=true]/sidebar:px-0"
+          className="h-auto min-h-11 w-full justify-start gap-3 border-0 px-2 py-1.5 text-left hover:bg-glass-active/60 hover:text-foreground focus-visible:ring-offset-0 group-data-[collapsed=true]/sidebar:w-11 group-data-[collapsed=true]/sidebar:justify-center group-data-[collapsed=true]/sidebar:px-0"
           type="button"
-          variant="sidebar"
+          variant="ghost"
           aria-expanded={profileOpen}
           aria-controls="profile-menu"
           title={expanded ? undefined : (memberName ?? roleName ?? undefined)}
           onClick={() => setProfileOpen((open) => !open)}
         >
-          <Avatar className="bg-sidebar-accent text-sidebar-accent-foreground">
+          <Avatar>
             {initials ?? <User className="size-4" />}
           </Avatar>
           <span className="flex min-w-0 flex-1 flex-col group-data-[collapsed=true]/sidebar:sr-only">
             <span className="truncate text-sm font-semibold">{memberName ?? roleName}</span>
+            {/* `foreground`, never muted: the sidebar's glass is below the .85
+                that muted text needs (story 15.1). */}
             {memberName === null || roleName === null ? null : (
-              <span className="truncate text-xs font-normal text-sidebar-foreground/70">
+              <span className="truncate text-xs font-normal text-foreground">
                 {roleName}
               </span>
             )}
@@ -918,7 +930,7 @@ export function AppChrome({ children }: AppChromeProps) {
         <div key={group.id} role="group" aria-labelledby={group.id} className="flex flex-col gap-1">
           <p
             id={group.id}
-            className="px-3 pt-2 font-sans text-xs font-semibold uppercase tracking-wide text-sidebar-foreground/70 group-data-[collapsed=true]/sidebar:sr-only"
+            className="px-3 pt-2 font-sans text-xs font-semibold uppercase tracking-wide text-foreground group-data-[collapsed=true]/sidebar:sr-only"
           >
             {group.label}
           </p>
@@ -936,8 +948,9 @@ export function AppChrome({ children }: AppChromeProps) {
    * THE ONE `Dialog`, docked at the bottom, so it is modal the way every other
    * dialog here is: the browser traps focus, Escape and a backdrop press close
    * it, and focus returns to *Više*. A group renders only when it has rows, so
-   * a member's sheet holds the theme and Odjava and nothing else. Navy, like
-   * the bar it opens from, so the one link keeps the one treatment.
+   * a member's sheet holds the theme and Odjava and nothing else. On the opaque
+   * `card` since story 15.1 (the docked sheet takes its glass with the Dialog
+   * primitive in 15.2), and the one link keeps the one treatment.
    *
    * Not dismissible while a sign-out is in flight, so the request cannot lose
    * the sheet before it answers; a refusal closes it in the same render the
@@ -965,18 +978,11 @@ export function AppChrome({ children }: AppChromeProps) {
         onOpenChange={setMoreOpen}
         dismissible={!pending}
         aria-label={t('shell.more')}
-        className="mb-0 mt-auto w-full max-w-none rounded-b-none rounded-t-2xl border-x-0 border-b-0 border-sidebar-border bg-sidebar pb-[env(safe-area-inset-bottom,0px)] text-sidebar-foreground"
+        className="shell-entries-opaque mb-0 mt-auto w-full max-w-none rounded-b-none rounded-t-2xl border-x-0 border-b-0 bg-card pb-[env(safe-area-inset-bottom,0px)] text-card-foreground"
       >
-        <DialogHeader
-          // The close is the primitive's `ghost` button; on navy it takes the
-          // shell's hover and its ring offset by the sidebar, from here, so no
-          // other dialog changes.
-          className="[&>button]:hover:bg-sidebar-accent [&>button]:hover:text-sidebar-accent-foreground [&>button]:focus-visible:ring-sidebar-ring [&>button]:focus-visible:ring-offset-sidebar"
-          closeLabel={t('shell.moreClose')}
-          onClose={closeMore}
-        >
+        <DialogHeader closeLabel={t('shell.moreClose')} onClose={closeMore}>
           <div className="flex min-w-0 items-center gap-3">
-            <Avatar className="bg-sidebar-accent text-sidebar-accent-foreground">
+            <Avatar>
               {initials ?? <User className="size-4" />}
             </Avatar>
             <div className="grid min-w-0">
@@ -984,7 +990,7 @@ export function AppChrome({ children }: AppChromeProps) {
                 <span className="truncate text-sm font-semibold">{primary}</span>
               )}
               {secondary === null ? null : (
-                <span className="truncate text-xs text-sidebar-foreground/70">{secondary}</span>
+                <span className="truncate text-xs text-muted-foreground">{secondary}</span>
               )}
             </div>
           </div>
@@ -996,7 +1002,7 @@ export function AppChrome({ children }: AppChromeProps) {
               aria-labelledby={group.id}
               className="grid gap-1 *:justify-start [&>a]:h-auto [&>a]:min-h-12 [&>a]:py-1"
             >
-              <h2 id={group.id} className="font-sans text-xs font-semibold uppercase tracking-wide text-sidebar-foreground/70">
+              <h2 id={group.id} className="font-sans text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 {group.label}
               </h2>
               {group.rows.map((destination) => renderLink(destination, PLACE.sheet))}
@@ -1004,7 +1010,7 @@ export function AppChrome({ children }: AppChromeProps) {
           ),
         )}
         <section aria-labelledby="more-display" className="grid gap-2">
-          <h2 id="more-display" className="font-sans text-xs font-semibold uppercase tracking-wide text-sidebar-foreground/70">
+          <h2 id="more-display" className="font-sans text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             {t('shell.moreGroup.display')}
           </h2>
           {renderThemeSegments()}
@@ -1080,10 +1086,12 @@ export function AppChrome({ children }: AppChromeProps) {
 
   return (
     <div className="flex flex-1 flex-col sm:flex-row">
-      {/* NAVY IN BOTH THEMES (visual refresh A), and sticky to the viewport so
-          the profile at its foot stays reachable beside a long destination.
-          The accent is the EDGE, never the fill: the organization tints the
-          line between the chrome and the content and nothing inside it.
+      {/* A FLOATING GLASS PANEL (story 15.1), inset 16 px from the viewport
+          and sticky to it, so the profile at its foot stays reachable beside
+          a long destination. `glass-chrome`: it sits BESIDE the content,
+          never over it. The accent is a 2 px EDGE, never the fill: the
+          organization tints the line between the chrome and the content and
+          nothing inside it; with no accent the edge is the glass hairline.
 
           NO FIXED WIDTH ON THE ASIDE: the width is the destination list's,
           and only while expanded, so collapsing leaves the aside as wide as
@@ -1094,12 +1102,12 @@ export function AppChrome({ children }: AppChromeProps) {
           clip it. */}
       <aside
         data-collapsed={!expanded}
-        className={`group/sidebar hidden shrink-0 flex-col gap-3 border-r bg-sidebar p-3 text-sidebar-foreground sm:sticky sm:top-0 sm:flex sm:h-dvh ${accent.edge}`}
+        className={`glass-chrome group/sidebar hidden shrink-0 flex-col gap-3 rounded-3xl border-r-2 p-3 text-foreground sm:sticky sm:top-4 sm:my-4 sm:ml-4 sm:flex sm:h-[calc(100dvh-2rem)] ${accent.edge}`}
       >
         {/* The organization: its mark, and its name beside it while there is
             room. The name is `aria-hidden` because the mark already carries it
             as its accessible name; read twice it would be noise. */}
-        <div className="flex min-h-11 items-center gap-3 border-b border-sidebar-border pb-3 group-data-[collapsed=true]/sidebar:justify-center">
+        <div className="flex min-h-11 items-center gap-3 border-b pb-3 group-data-[collapsed=true]/sidebar:justify-center">
           {renderLockup()}
           {organization === null ? null : (
             <span
@@ -1124,7 +1132,7 @@ export function AppChrome({ children }: AppChromeProps) {
         >
           {destinations}
         </nav>
-        <div className="flex flex-col gap-3 border-t border-sidebar-border pt-3">
+        <div className="flex flex-col gap-3 border-t pt-3">
           {renderProfile()}
         </div>
       </aside>
@@ -1148,19 +1156,20 @@ export function AppChrome({ children }: AppChromeProps) {
             onClick={toggleNavigation}
           >
             {expanded ? (
-              <PanelLeftClose aria-hidden className="size-5" />
+              <CaretLineLeft aria-hidden className="size-5" />
             ) : (
-              <PanelLeftOpen aria-hidden className="size-5" />
+              <CaretLineRight aria-hidden className="size-5" />
             )}
           </Button>
         </div>
         {renderMessage()}
-        {/* Bottom padding that clears the sticky bar and the phone's own home
-            indicator. The bar is `sticky`, so content scrolls UNDER it; without
-            this the last thing on every destination is unreachable on exactly
-            the device this story is written for. 4 rem is the bar (two 4 px
-            paddings around a 56 px cell) and 1 px its edge. */}
-        <div className="flex flex-1 flex-col pb-[calc(4rem+1px+env(safe-area-inset-bottom,0px))] sm:pb-0">
+        {/* Bottom padding that clears the floating bar and the phone's own
+            home indicator. The bar is `sticky`, so content scrolls UNDER it;
+            without this the last thing on every destination is unreachable on
+            exactly the device this story is written for. 4 rem is the pill
+            (two 4 px paddings around a 56 px cell), 2 px its top edge, and
+            0.75 rem the gap it floats above the safe area. */}
+        <div className="flex flex-1 flex-col pb-[calc(4rem+2px+0.75rem+env(safe-area-inset-bottom,0px))] sm:pb-0">
           {children}
         </div>
         {/* FIVE EQUAL CELLS AND NO SCROLLER (story 7.3): four tabs and *Više*,
@@ -1168,19 +1177,25 @@ export function AppChrome({ children }: AppChromeProps) {
             even the current tab. No lockup, no theme and no exit here: the
             sheet holds the last two, and the sidebar the lockup. The `<nav>`
             stays the sticky bar's direct child; the calendar's layout test
-            finds the bar as its sticky parent. */}
+            finds the bar as its sticky parent.
+
+            A FLOATING GLASS PILL (story 15.1): the sticky strip is clear and
+            lets presses through, and the `<nav>` inside it is the
+            `glass-over-content` pill, 0.75 rem above the safe area, since
+            content scrolls UNDER it. Its text and icons are `foreground`,
+            measured against the darkest cell that can pass beneath. */}
         <div
-          className={`sticky bottom-0 border-t bg-sidebar pt-1 pb-[calc(0.25rem+env(safe-area-inset-bottom,0px))] text-sidebar-foreground sm:hidden ${accent.edge}`}
+          className={`sticky bottom-0 z-40 pointer-events-none px-2 min-[360px]:px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] sm:hidden`}
         >
           <nav
             aria-label={t('shell.navigation')}
-            className="grid grid-cols-5 items-center *:h-14 *:min-w-0 *:flex-col *:gap-1 *:px-1 *:text-xs"
+            className={`glass-over-content pointer-events-auto grid grid-cols-5 items-center rounded-[1.75rem] border-t-2 p-1 text-foreground *:h-14 *:min-w-0 *:flex-col *:gap-1 *:px-0.5 *:text-xs ${accent.edge}`}
           >
             {tabs}
             <Button
-              className="shell-entry col-start-5 h-14 gap-1 rounded-md border-0 px-1 py-0 text-xs font-normal"
+              className="shell-entry col-start-5 h-14 gap-1 rounded-md border-0 px-0.5 py-0 text-xs font-normal focus-visible:ring-offset-0"
               type="button"
-              variant="sidebar"
+              variant="ghost"
               aria-haspopup="dialog"
               aria-expanded={moreOpen}
               aria-current={moreCurrent ? 'page' : undefined}
@@ -1188,7 +1203,7 @@ export function AppChrome({ children }: AppChromeProps) {
               aria-describedby={moreHere === null ? undefined : moreHereId}
               onClick={() => setMoreOpen(true)}
             >
-              <Ellipsis aria-hidden className="size-4 shrink-0" />
+              <DotsThree aria-hidden className="size-4 shrink-0" />
               <span id={moreLabelId} className="max-w-full truncate">
                 {moreName}
               </span>

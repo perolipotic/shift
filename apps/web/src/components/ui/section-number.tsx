@@ -4,8 +4,8 @@ import { cn } from "@/lib/utils"
 
 // A section's number beside its card title (story 2.3b, owner layout): a small
 // round badge in the primary tint the icon tile and badge measure, holding one
-// figure, in the body face's tabular Shift Figures (story 7.2: numbers are
-// never Syne). DECORATIVE: the heading beside it says what the section is, and the
+// figure, in the body face's tabular figures (Outfit `tnum` since story 15.1; story 7.2: numbers are
+// never the heading face). DECORATIVE: the heading beside it says what the section is, and the
 // order is the document's own, so it is hidden from assistive technology. It
 // renders its `value` and nothing else — no copy and no `t()`.
 

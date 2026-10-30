@@ -16,12 +16,12 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { BriefcaseBusiness, CalendarRange, Clock3, Coffee, GripVertical, Plus, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Briefcase, CalendarDots, Clock, Coffee, DotsSixVertical, Plus, X } from '@/components/ui/icon';
 import { IconTile } from '@/components/ui/icon-tile';
 import { Label } from '@/components/ui/label';
 import { SectionNumber } from '@/components/ui/section-number';
@@ -179,7 +179,7 @@ export function RotationPatternCard({
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-2">
         <StatTile className="p-3">
           <IconTile>
-            <CalendarRange />
+            <CalendarDots />
           </IconTile>
           <div className="min-w-0">
             <StatTileLabel>{t('rotation.builder.cycleLengthLabel')}</StatTileLabel>
@@ -190,7 +190,7 @@ export function RotationPatternCard({
         </StatTile>
         <StatTile className="p-3">
           <IconTile>
-            <BriefcaseBusiness />
+            <Briefcase />
           </IconTile>
           <div className="min-w-0">
             <StatTileLabel>{t('rotation.builder.workingStepsLabel')}</StatTileLabel>
@@ -208,7 +208,7 @@ export function RotationPatternCard({
         </StatTile>
         <StatTile className="p-3">
           <IconTile>
-            <Clock3 />
+            <Clock />
           </IconTile>
           <div className="min-w-0">
             <StatTileLabel>{t('rotation.builder.cycleHoursLabel')}</StatTileLabel>
@@ -288,7 +288,7 @@ function SortableStep({
         {...listeners}
         aria-roledescription={t('rotation.builder.drag.roleDescription')}
       >
-        <GripVertical aria-hidden />
+        <DotsSixVertical aria-hidden />
         <span className="sr-only">{t('rotation.builder.drag.handle', { position: row.position })}</span>
       </Button>
       {/* A FIXED LABEL COLUMN, so `Korak N` never touches the chip. */}

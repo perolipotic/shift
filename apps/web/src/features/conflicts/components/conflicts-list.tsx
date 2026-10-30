@@ -1,8 +1,8 @@
 import { Link } from '@tanstack/react-router';
-import { ChevronRight } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { Badge } from '@/components/ui/badge';
+import { CaretRight } from '@/components/ui/icon';
 import {
   CONFLICTS_COUNT_HEADING_ID,
   ITEM_COLLISION,
@@ -54,7 +54,7 @@ function ConflictItem({ row }: { readonly row: ConflictRow }): ReactNode {
               : t('zaOdluku.detailTimed', { type: row.shiftTypeName, times: row.times, from: row.leaveFrom, to: row.leaveTo })}
           </span>
         </span>
-        <ChevronRight aria-hidden className="size-4 shrink-0" />
+        <CaretRight aria-hidden className="size-4 shrink-0" />
       </Link>
     </li>
   );
@@ -86,7 +86,7 @@ function RequestItem({ row }: { readonly row: RequestRow }): ReactNode {
             {t('zaOdluku.request.range', { from: row.from, to: row.to })}
           </span>
         </span>
-        <ChevronRight aria-hidden className="size-4 shrink-0" />
+        <CaretRight aria-hidden className="size-4 shrink-0" />
       </Link>
     </li>
   );

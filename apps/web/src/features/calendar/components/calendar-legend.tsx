@@ -22,7 +22,7 @@ export function CalendarLegend({ cells }: { readonly cells: Iterable<CalendarCel
           <li key={modifier} className="flex items-center gap-2">
             <span
               aria-hidden
-              className={`inline-flex size-6 items-center justify-center rounded-sm bg-card text-xs [font-variant-emoji:text] ${modifierTreatmentOf([modifier]).className}`}
+              className={`inline-flex size-6 items-center justify-center rounded-cell bg-card text-xs [font-variant-emoji:text] ${modifierTreatmentOf([modifier]).className}`}
             >
               <ModifierGlyphs glyphs={modifierTreatmentOf([modifier]).glyphs} />
             </span>

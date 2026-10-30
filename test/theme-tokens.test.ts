@@ -11,6 +11,9 @@ import {
   DARK_SELECTOR,
   darkScope,
   ELEVATION_TOKENS,
+  GLASS_COLOUR_TOKENS,
+  GLASS_EFFECT_TOKENS,
+  GLASS_TOKENS,
   lightScope,
   rawToken,
   stripped,
@@ -31,12 +34,15 @@ import {
  * block kept the suite green.
  */
 
-const ALL_TOKENS = [...BASE_TOKENS, ...BRAND_TOKENS];
+/** Every COLOUR token: the base, the brand delta and, since story 15.1, the
+ *  glass colours. The colour-only sweeps (OKLCH, `--color-*` mappings) read
+ *  this. */
+const ALL_TOKENS = [...BASE_TOKENS, ...BRAND_TOKENS, ...GLASS_COLOUR_TOKENS];
 
 /** Every token a theme declares: the colours, plus the two elevation shadows
- *  visual refresh A added. The colour-only sweeps (OKLCH, `--color-*`
- *  mappings) keep reading `ALL_TOKENS`. */
-const THEME_TOKENS = [...ALL_TOKENS, ...ELEVATION_TOKENS];
+ *  visual refresh A added and the glass effects (blur, saturate, shadow)
+ *  story 15.1 added. */
+const THEME_TOKENS = [...ALL_TOKENS, ...ELEVATION_TOKENS, ...GLASS_EFFECT_TOKENS];
 const THEMES = ['light', 'dark'] as const;
 
 describe('the token lists are the size everything else assumes', () => {
@@ -62,6 +68,14 @@ describe('the token lists are the size everything else assumes', () => {
 
   it('has 2 elevation tokens', () => {
     expect(ELEVATION_TOKENS).toHaveLength(2);
+  });
+
+  // STORY 15.1: the glass set, ten colours and three effects, so a glass
+  // token dropped from the list cannot silently leave every sweep below.
+  it('has 13 glass tokens: 10 colours and 3 effects', () => {
+    expect(GLASS_COLOUR_TOKENS).toHaveLength(10);
+    expect(GLASS_EFFECT_TOKENS).toHaveLength(3);
+    expect(GLASS_TOKENS).toHaveLength(13);
   });
 });
 
@@ -100,6 +114,9 @@ describe('the dark theme is a real theme, not a copy of the light one', () => {
     'chart-4',
     'chart-5',
     'sidebar-primary-foreground',
+    // Story 15.1: the glass blur is 24 px in both themes, the budget's
+    // ceiling; the dark glass differs by colour and saturate instead.
+    'glass-blur',
   ];
 
   // The elevation shadows are in this sweep: the dark theme's shadows are
@@ -230,6 +247,45 @@ describe('the tokens are actually applied to the document', () => {
     expect(css).toContain('@layer base');
     expect(layer).toMatch(/background-color:\s*var\(--background\)/);
     expect(layer).toMatch(/color:\s*var\(--foreground\)/);
+  });
+
+  it('lays the three blobs over the page as static gradients on one fixed layer (story 15.1)', () => {
+    // Direction G's backdrop. Gradients, never `filter: blur()` on a large
+    // element, which re-rasterises on every scrolled frame; never animated;
+    // and never in the way of a press.
+    const css = stripped();
+    const layer = css.slice(css.indexOf('@layer base'));
+    const blobs = /body::before\s*\{([^}]*)\}/.exec(layer)?.[1] ?? '';
+
+    expect(blobs, 'no blob layer in @layer base').not.toBe('');
+    expect(blobs).toMatch(/position:\s*fixed/);
+    expect(blobs).toMatch(/pointer-events:\s*none/);
+    for (const blob of ['glass-blob-1', 'glass-blob-2', 'glass-blob-3']) {
+      expect(blobs).toMatch(new RegExp(`radial-gradient\\([^;]*var\\(--${blob}\\)`));
+    }
+    expect(blobs).not.toMatch(/filter|animation|transition/);
+  });
+
+  it('keeps the month-grid cell radius at 10 px or less (story 15.1)', () => {
+    // A dense grid must read as a grid, whatever `--radius` widens to.
+    const value = /--radius-cell:\s*([^;]+);/.exec(stripped())?.[1]?.trim() ?? '';
+    const found = /^(\d*\.?\d+)(rem|px)$/.exec(value);
+
+    expect(found, `--radius-cell is ${value || 'undeclared'}, not a fixed length`).not.toBeNull();
+    const px = Number(found?.[1]) * (found?.[2] === 'rem' ? 16 : 1);
+
+    expect(px).toBeGreaterThan(0);
+    expect(px).toBeLessThanOrEqual(10);
+  });
+
+  it('sets tabular figures once, on the document (story 15.1, UX-DR40)', () => {
+    // Outfit's `tnum` gives every digit one advance at every weight, so one
+    // declaration makes every number tabular by construction.
+    const css = stripped();
+    const layer = css.slice(css.indexOf('@layer base'));
+    const html = /\bhtml\s*\{([\s\S]*?)\n {2}\}/.exec(layer)?.[1] ?? '';
+
+    expect(html).toMatch(/font-variant-numeric:\s*tabular-nums;/);
   });
 
   it('tells the user agent to follow the theme', () => {

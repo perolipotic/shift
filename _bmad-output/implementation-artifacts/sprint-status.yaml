@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 10-30-2026 09:20
+last_updated: 10-30-2026 13:25
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -618,8 +618,8 @@ development_status:
   14-3-the-change-history-exports-to-pdf: backlog
   epic-14-retrospective: optional
 
-  epic-15: backlog
-  15-1-pilot-kalendar-and-the-shell-in-glass: backlog
+  epic-15: in-progress
+  15-1-pilot-kalendar-and-the-shell-in-glass: review
   15-2-every-primitive-and-layered-surface-in-glass: backlog
   15-3-member-surfaces-read-in-glass: backlog
   15-4-admin-surfaces-read-in-glass: backlog

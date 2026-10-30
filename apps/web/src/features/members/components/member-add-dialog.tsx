@@ -1,10 +1,10 @@
 import { Link } from '@tanstack/react-router';
-import { AtSign, CalendarDays, Mail, Medal, Plus, ShieldCheck, User } from 'lucide-react';
 import type { ReactNode, SyntheticEvent } from 'react';
 
 import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { At, CalendarDots, Envelope, Medal, Plus, ShieldCheck, User } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
 import { InputGroup, InputGroupIcon } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
@@ -233,7 +233,7 @@ export function MemberAddDialog({ create }: { readonly create: MemberCreate }): 
               letter produces a username `0007`'s lowercase check refuses. */}
           <InputGroup>
             <InputGroupIcon>
-              <AtSign />
+              <At />
             </InputGroupIcon>
             <Input
               ref={usernameField}
@@ -261,7 +261,7 @@ export function MemberAddDialog({ create }: { readonly create: MemberCreate }): 
               `null`, never an empty string. */}
           <InputGroup>
             <InputGroupIcon>
-              <Mail />
+              <Envelope />
             </InputGroupIcon>
             <Input
               ref={emailField}
@@ -307,7 +307,7 @@ export function MemberAddDialog({ create }: { readonly create: MemberCreate }): 
           <Label htmlFor="member-leave">{t('ljudi.leave')}</Label>
           <InputGroup>
             <InputGroupIcon>
-              <CalendarDays />
+              <CalendarDots />
             </InputGroupIcon>
             <Input
               ref={leaveField}

@@ -1,10 +1,10 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { Save, Undo2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog, DialogFooter } from '@/components/ui/dialog';
+import { ArrowUUpLeft, FloppyDisk } from '@/components/ui/icon';
 import { Notice } from '@/components/ui/notice';
 import { ErasureDialog } from '@/features/conflicts/components/erasure-dialog';
 import type { RotationBuilder } from '@/features/rotation/hooks/use-rotation-builder';
@@ -234,7 +234,7 @@ export function RotationNotices({
           kept: t('rotation.builder.erasures.kept'),
           save: t('rotation.builder.save'),
         }}
-        saveIcon={<Save aria-hidden />}
+        saveIcon={<FloppyDisk aria-hidden />}
         notes={renderWarnings(erasureWarnings)}
         onDecide={confirmation.decide}
         onBack={confirmation.close}
@@ -288,7 +288,7 @@ export function RotationNotices({
           kept: t('rotation.builder.cancelScheduled.erasures.kept'),
           save: t('rotation.builder.cancelScheduled.confirm'),
         }}
-        saveIcon={<Undo2 aria-hidden />}
+        saveIcon={<ArrowUUpLeft aria-hidden />}
         onDecide={cancelErasures.decide}
         onBack={cancelErasures.close}
         onSave={() => {
@@ -326,7 +326,7 @@ export function RotationNotices({
                 setCancelArmed(scheduled.effectiveFrom);
               }}
             >
-              <Undo2 aria-hidden />
+              <ArrowUUpLeft aria-hidden />
               {t('rotation.builder.cancelScheduled.offer', { date: scheduled.label })}
             </Button>
           ) : null}

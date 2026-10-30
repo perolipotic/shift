@@ -308,9 +308,9 @@ const CALENDAR_SEARCH_ORDER = [
   DAY_TEAM_SEARCH_PARAM,
 ] as const;
 
-/** A cell's shape: at least 30 px high, the small radius, the label never truncated. */
+/** A cell's shape: at least 30 px high, the cell radius (`rounded-cell`, 8 px: at most 10 px whatever the other radii become, story 15.1), the label never truncated. */
 export const CALENDAR_CELL_CLASS =
-  'flex min-h-[30px] flex-col items-start justify-center gap-0.5 whitespace-nowrap rounded-sm px-2 py-1 text-xs font-semibold';
+  'flex min-h-[30px] flex-col items-start justify-center gap-0.5 whitespace-nowrap rounded-cell px-2 py-1 text-xs font-semibold';
 
 /**
  * A grid cell below 640 px, on top of {@link CALENDAR_CELL_CLASS}: a 44 × 44 px

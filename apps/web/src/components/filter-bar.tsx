@@ -1,4 +1,3 @@
-import { ChevronDown, X } from 'lucide-react';
 import {
   useCallback,
   useEffect,
@@ -15,6 +14,7 @@ import {
 
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { CaretDown, X } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Popover } from '@/components/ui/popover';
@@ -420,7 +420,7 @@ export function ChipFrame({
         onClick={onToggle}
       >
         <span className="truncate">{text}</span>
-        <ChevronDown aria-hidden />
+        <CaretDown aria-hidden />
       </Button>
       {active ? (
         <Button

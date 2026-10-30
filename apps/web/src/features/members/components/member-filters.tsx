@@ -1,7 +1,7 @@
-import { Search } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { OptionFilterBar, type OptionChipView } from '@/components/option-filter-bar';
+import { MagnifyingGlass } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
 import { InputGroup, InputGroupIcon } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
@@ -109,7 +109,7 @@ export function MemberFilters({ list }: { readonly list: MemberList }): ReactNod
           </Label>
           <InputGroup>
             <InputGroupIcon>
-              <Search />
+              <MagnifyingGlass />
             </InputGroupIcon>
             <Input
               id="ljudi-search"

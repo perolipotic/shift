@@ -1,9 +1,9 @@
-import { Check, TriangleAlert } from 'lucide-react';
 import type { ReactNode, Ref, RefObject } from 'react';
 
 import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog, DialogFooter } from '@/components/ui/dialog';
+import { Check, Warning } from '@/components/ui/icon';
 import {
   ERASURE_CONFIRMED,
   ERASURE_KEPT,
@@ -135,7 +135,7 @@ export function ErasureDialog({
           return (
             <li key={row.key} className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 rounded-md border p-3">
               {/* THE CONFLICT MARK as a shape, never a colour alone. */}
-              <TriangleAlert aria-hidden className="size-4 shrink-0" />
+              <Warning aria-hidden className="size-4 shrink-0" />
               <span className="grid min-w-0 flex-1 basis-48 gap-0.5">
                 <span className="break-words font-semibold tabular-nums">{copy.rowTitle(row)}</span>
                 <span className="break-words text-sm text-muted-foreground">{copy.rowDetail(row)}</span>

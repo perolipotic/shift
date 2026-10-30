@@ -1,10 +1,10 @@
-import { Info, Rows3 } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { OfflineNote } from '@/components/offline-note';
 import { Button } from '@/components/ui/button';
 import { Callout, CalloutBody, CalloutDescription, CalloutTitle } from '@/components/ui/callout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Info, Rows } from '@/components/ui/icon';
 import { IconTile } from '@/components/ui/icon-tile';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -227,7 +227,7 @@ export function RotationSection({
                   change(withOffsetsSpread(current, teams));
                 }}
               >
-                <Rows3 aria-hidden />
+                <Rows aria-hidden />
                 {t('rotation.builder.spread')}
               </Button>
             ) : null}

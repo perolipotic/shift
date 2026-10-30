@@ -1,6 +1,6 @@
-import { CircleDashed } from 'lucide-react';
 import type { ReactNode, RefObject } from 'react';
 
+import { CircleDashedBold } from '@/components/ui/icon';
 import { RadioCard } from '@/components/ui/radio-group';
 import {
   OPTION_ACCEPT_UNCOVERED,
@@ -65,7 +65,7 @@ export function AcceptUncoveredOption({
             {t(coverageMessageKey(), { covered: view.covered, total: view.total })}
           </span>
           <span className="inline-flex min-w-0 items-center gap-1">
-            <CircleDashed aria-hidden className="size-3.5 shrink-0" />
+            <CircleDashedBold aria-hidden className="size-3.5 shrink-0" />
             <span className="min-w-0 break-words">{t('zaOdluku.resolution.uncovered')}</span>
           </span>
         </LeaveStrip>

@@ -1,11 +1,11 @@
 import { Link } from '@tanstack/react-router';
-import { Pencil } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { SortControl } from '@/components/sort-control';
 import { SORT_DIRECTION_GLYPHS } from '@/components/sort-glyphs';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { PencilSimple } from '@/components/ui/icon';
 import {
   Table,
   TableBody,
@@ -173,7 +173,7 @@ export function MemberTable({ list }: { readonly list: MemberList }): ReactNode 
                           with visible text. */}
                       <Button asChild variant="ghost" className="h-11 w-11 px-0">
                         <Link to="/ljudi/$id" params={{ id: member.id }}>
-                          <Pencil aria-hidden />
+                          <PencilSimple aria-hidden />
                           <span className="sr-only">
                             {t('ljudi.form.edit', { name: memberActionName(member) })}
                           </span>

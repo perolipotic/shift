@@ -1,9 +1,9 @@
-import { Undo2 } from 'lucide-react';
 import type { ReactNode, RefObject } from 'react';
 
 import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ArrowUUpLeft } from '@/components/ui/icon';
 import { Notice } from '@/components/ui/notice';
 import type {
   LeaveRequestWithdrawRefusal,
@@ -102,7 +102,7 @@ export function MyLeaveRequests({
               onWithdraw(row);
             }}
           >
-            <Undo2 aria-hidden />
+            <ArrowUUpLeft aria-hidden />
             {t('godisnji.request.withdraw')}
           </Button>
         ) : null}

@@ -780,6 +780,30 @@ export default [
     },
   },
 
+  // ------------------------------------------------ one icon module
+  // Story 15.1 (D2): `components/ui/icon.tsx` is the only file that imports an
+  // icon library, so a library swap, or the fill-only fallback, is one file.
+  // The only `no-restricted-imports` over these files: the domain-purity block
+  // above matches `packages/domain` alone, so nothing here replaces it.
+  {
+    files: ['apps/web/src/**/*.{ts,tsx,js,jsx,mts,cts}'],
+    ignores: ['apps/web/src/components/ui/icon.tsx'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['lucide-react', 'lucide-react/*', '@phosphor-icons/*'],
+              message:
+                'Icons come from `@/components/ui/icon`, the one module that imports an icon library (story 15.1, D2). Add the icon there.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+
   // ------------------------------------------------------------ node: configs
   // `apps/web/src/**/*.test.ts` is here as well as under the browser block
   // above, and this one wins by coming later: those files run under Vitest in

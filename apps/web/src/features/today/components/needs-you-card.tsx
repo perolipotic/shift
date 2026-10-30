@@ -1,9 +1,9 @@
 import { Link } from '@tanstack/react-router';
-import { ChevronRight, CircleCheck, TriangleAlert } from 'lucide-react';
 import { useId, type ReactNode } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
+import { CaretRight, CheckCircle, Warning } from '@/components/ui/icon';
 import { ITEM_REQUEST } from '@/features/conflicts/services/conflicts-queue';
 import {
   needsYouBadgeMessageKey,
@@ -48,7 +48,7 @@ function renderRow(row: NeedsYouRow): ReactNode {
               {t('zaOdluku.request.range', { from: row.from, to: row.to })}
             </span>
           </span>
-          <ChevronRight aria-hidden className="size-4 shrink-0" />
+          <CaretRight aria-hidden className="size-4 shrink-0" />
         </Link>
       </li>
     );
@@ -68,7 +68,7 @@ function renderRow(row: NeedsYouRow): ReactNode {
           </span>
           <span className="min-w-0 break-words text-sm text-muted-foreground">{row.memberName}</span>
         </span>
-        <ChevronRight aria-hidden className="size-4 shrink-0" />
+        <CaretRight aria-hidden className="size-4 shrink-0" />
       </Link>
     </li>
   );
@@ -84,7 +84,7 @@ function renderRow(row: NeedsYouRow): ReactNode {
 export function NeedsYouCard({ needsYou }: { readonly needsYou: NeedsYou }): ReactNode {
   const headingId = useId();
   const waiting = needsYou.count !== 0;
-  const Icon = waiting ? TriangleAlert : CircleCheck;
+  const Icon = waiting ? Warning : CheckCircle;
 
   return (
     <Card className={cn('min-w-0', waiting && 'border-l-4 border-l-destructive')}>

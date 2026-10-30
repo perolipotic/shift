@@ -1,8 +1,8 @@
-import { Info } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Info } from '@/components/ui/icon';
 import { Notice } from '@/components/ui/notice';
 import { CONFLICT_GLYPH } from '@/features/calendar/utils/modifiers';
 import type { HoursExplanationView } from '@/features/hours/services/hours-explanation';

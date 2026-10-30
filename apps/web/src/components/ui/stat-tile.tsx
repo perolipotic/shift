@@ -4,8 +4,8 @@ import { cn } from "@/lib/utils"
 
 // A summary figure INSIDE a card (design refresh C), where `StatCard` would be
 // a card inside a card: a muted panel with an icon tile, a small label and a
-// value in the body face, whose digits are Shift Figures (story 7.2: numbers
-// are never Syne). Two slots and no copy, like `StatCard`.
+// value in the body face, whose digits are tabular Outfit `tnum` (story 15.1;
+// story 7.2: numbers are never the heading face). Two slots and no copy, like `StatCard`.
 
 const StatTile = React.forwardRef<
   HTMLDivElement,

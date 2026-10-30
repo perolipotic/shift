@@ -111,6 +111,37 @@ export const BASE_TOKENS = [
  */
 export const ELEVATION_TOKENS = ['elevation-sh', 'elevation-sh-lg'] as const;
 
+/**
+ * The glass set (story 15.1, direction G): DESIGN.md's `glass:` key, one map
+ * per theme, round-tripped by `theme-fidelity.test.ts`.
+ *
+ * TWO LISTS, KEPT APART, on the elevation pattern. The COLOURS are OKLCH like
+ * every other colour token, mapped to `--color-*` in `@theme inline`, swept
+ * for gamut and measured in `theme-contrast.test.ts` against the worst
+ * backdrop. The EFFECTS — the blur, the saturate and the shadow — are theme
+ * tokens that are not colours: nothing measures a blur for contrast, and they
+ * reach the page through the two `@utility` glass treatments rather than
+ * through a utility of their own. Both lists take the once-per-theme,
+ * both-themes and dark-differs sweeps (`glass-blur` is the same 24 px in both
+ * themes, by design, and is asserted equal rather than skipped).
+ */
+export const GLASS_COLOUR_TOKENS = [
+  'glass',
+  'glass-over-content',
+  'glass-reading',
+  'glass-border',
+  'glass-active',
+  'glass-blob-1',
+  'glass-blob-2',
+  'glass-blob-3',
+  'ink',
+  'ink-foreground',
+] as const;
+
+export const GLASS_EFFECT_TOKENS = ['glass-blur', 'glass-saturate', 'glass-shadow'] as const;
+
+export const GLASS_TOKENS = [...GLASS_COLOUR_TOKENS, ...GLASS_EFFECT_TOKENS] as const;
+
 export type Theme = 'light' | 'dark';
 
 function source(): string {

@@ -104,7 +104,7 @@ function renderMark(treatment = OVERRIDDEN_TREATMENT): ReactNode {
   return (
     <span
       aria-hidden
-      className={`inline-flex size-6 items-center justify-center rounded-sm bg-card text-xs [font-variant-emoji:text] ${treatment.className}`}
+      className={`inline-flex size-6 items-center justify-center rounded-cell bg-card text-xs [font-variant-emoji:text] ${treatment.className}`}
     >
       {treatment.glyphText}
     </span>

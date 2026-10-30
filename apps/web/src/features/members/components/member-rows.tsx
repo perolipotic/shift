@@ -1,8 +1,8 @@
 import { Link } from '@tanstack/react-router';
-import { ChevronRight } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { Avatar } from '@/components/ui/avatar';
+import { CaretRight } from '@/components/ui/icon';
 import {
   StackedField,
   StackedFields,
@@ -110,7 +110,7 @@ function MemberRow({
           </span>
         </StackedField>
       </StackedFields>
-      <ChevronRight aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+      <CaretRight aria-hidden className="size-4 shrink-0 text-muted-foreground" />
     </StackedRow>
   );
 }
