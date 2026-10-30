@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="hr">
+<head>
+<meta charset="utf-8">
+<title>Kalendar G — desktop</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#E8EDF5}
+a{color:#2F55B8}a:hover{color:#1E3B87}
+.glass{background:rgba(255,255,255,.58);backdrop-filter:blur(24px) saturate(160%);-webkit-backdrop-filter:blur(24px) saturate(160%);border:1px solid rgba(255,255,255,.8);box-shadow:0 10px 40px rgba(30,40,70,.10)}
+.blob{position:absolute;border-radius:999px;filter:blur(70px);opacity:.75}
+.nv{display:flex;align-items:center;gap:12px;height:42px;padding:0 14px;border-radius:14px;font-size:14.5px;font-weight:500;color:#3C465C;text-decoration:none}
+.nv.on{background:rgba(255,255,255,.85);color:#111827;font-weight:600;box-shadow:0 2px 8px rgba(30,40,70,.08)}
+.col{display:flex;flex-direction:column;gap:8px;min-width:0}
+.dh{display:flex;align-items:baseline;gap:6px;padding:4px 4px 6px}
+.dh b{font-size:26px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-0.02em}
+.dh span{font-size:12.5px;color:#5B6478}
+.col.today .dh b{color:#2F55B8}
+.sc{border-radius:16px;padding:10px 12px;display:flex;flex-direction:column;gap:4px;font-size:12.5px}
+.sc.dan{background:rgba(214,230,255,.9);color:#123B7A}
+.sc.noc{background:rgba(35,45,110,.92);color:#E3E8FF}
+.sc.cf{box-shadow:inset 0 0 0 2px #D93A46}
+.sc.ov{box-shadow:inset 0 0 0 2px #8B7BE8}
+.sc .h{display:flex;align-items:center;gap:6px;font-weight:600;font-size:13.5px}
+.sc .m{margin-left:auto;display:flex;gap:3px}
+.off{font-size:11.5px;color:#5B6478;padding:2px 6px}
+.mm{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;text-align:center;font-size:12px;font-variant-numeric:tabular-nums}
+.mm span{height:28px;display:flex;align-items:center;justify-content:center;border-radius:8px;color:#3C465C}
+.mm span.wk{background:rgba(47,85,184,.12);color:#111827;font-weight:600}
+.mm span.td{background:#2F55B8;color:#FFFFFF;font-weight:700}
+.mm span.out{color:#9AA3B5}
+</style>
+</helmet>
+<div style="width: 100%; min-height: 860px; box-sizing: border-box; position: relative; overflow: hidden; display: flex; flex-wrap: wrap; gap: 18px; padding: 20px; background: #E8EDF5; color: #111827; font-family: Outfit, system-ui, sans-serif;">
+  <div class="blob" aria-hidden="true" style="width: 520px; height: 520px; left: -120px; top: -160px; background: #B9D3FF;"></div>
+  <div class="blob" aria-hidden="true" style="width: 460px; height: 460px; right: -80px; top: 120px; background: #E2CCFF;"></div>
+  <div class="blob" aria-hidden="true" style="width: 420px; height: 420px; left: 40%; bottom: -200px; background: #C6F0E2;"></div>
+  <nav class="glass" aria-label="Glavna navigacija" style="position: relative; flex: 0 0 210px; border-radius: 26px; padding: 14px; display: flex; flex-direction: column; gap: 4px; align-self: stretch;">
+    <div style="display: flex; align-items: center; gap: 10px; padding: 4px 6px 16px; font-weight: 700; font-size: 15px;"><span style="width: 34px; height: 34px; border-radius: 12px; background: #2E8A35; color: #FFFFFF; display: flex; align-items: center; justify-content: center;">M</span>DVD Mladost</div>
+    <a class="nv" href="#"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 256 256" fill="currentColor" style="flex: 0 0 auto;"><path d="M120,56v48a16,16,0,0,1-16,16H56a16,16,0,0,1-16-16V56A16,16,0,0,1,56,40h48A16,16,0,0,1,120,56Zm80-16H152a16,16,0,0,0-16,16v48a16,16,0,0,0,16,16h48a16,16,0,0,0,16-16V56A16,16,0,0,0,200,40Zm-96,96H56a16,16,0,0,0-16,16v48a16,16,0,0,0,16,16h48a16,16,0,0,0,16-16V152A16,16,0,0,0,104,136Zm96,0H152a16,16,0,0,0-16,16v48a16,16,0,0,0,16,16h48a16,16,0,0,0,16-16V152A16,16,0,0,0,200,136Z"/></svg>Danas</a>
+    <a class="nv on" href="#" aria-current="page"><span style="color: #2F55B8; display: flex;"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 256 256" fill="currentColor" style="flex: 0 0 auto;"><path d="M208,32H184V24a8,8,0,0,0-16,0v8H88V24a8,8,0,0,0-16,0v8H48A16,16,0,0,0,32,48V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V48A16,16,0,0,0,208,32ZM84,184a12,12,0,1,1,12-12A12,12,0,0,1,84,184Zm44,0a12,12,0,1,1,12-12A12,12,0,0,1,128,184Zm0-40a12,12,0,1,1,12-12A12,12,0,0,1,128,144Zm44,40a12,12,0,1,1,12-12A12,12,0,0,1,172,184Zm0-40a12,12,0,1,1,12-12A12,12,0,0,1,172,144Zm36-64H48V48H72v8a8,8,0,0,0,16,0V48h80v8a8,8,0,0,0,16,0V48h24Z"/></svg></span>Kalendar</a>
+    <a class="nv" href="#"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 256 256" fill="currentColor" style="flex: 0 0 auto;"><path d="M208,32H48A16,16,0,0,0,32,48V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V48A16,16,0,0,0,208,32Zm0,176H48V168H76.69L96,187.32A15.89,15.89,0,0,0,107.31,192h41.38A15.86,15.86,0,0,0,160,187.31L179.31,168H208v40Z"/></svg>Za odluku<span style="margin-left: auto; font-size: 11.5px; font-weight: 700; background: #D93A46; color: #FFFFFF; border-radius: 99px; padding: 1px 7px;">2</span></a>
+    <a class="nv" href="#"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 256 256" fill="currentColor" style="flex: 0 0 auto;"><path d="M64.12,147.8a4,4,0,0,1-4,4.2H16a8,8,0,0,1-7.8-6.17,8.35,8.35,0,0,1,1.62-6.93A67.79,67.79,0,0,1,37,117.51a40,40,0,1,1,66.46-35.8,3.94,3.94,0,0,1-2.27,4.18A64.08,64.08,0,0,0,64,144C64,145.28,64,146.54,64.12,147.8Zm182-8.91A67.76,67.76,0,0,0,219,117.51a40,40,0,1,0-66.46-35.8,3.94,3.94,0,0,0,2.27,4.18A64.08,64.08,0,0,1,192,144c0,1.28,0,2.54-.12,3.8a4,4,0,0,0,4,4.2H240a8,8,0,0,0,7.8-6.17A8.33,8.33,0,0,0,246.17,138.89Zm-89,43.18a48,48,0,1,0-58.37,0A72.13,72.13,0,0,0,65.07,212,8,8,0,0,0,72,224H184a8,8,0,0,0,6.93-12A72.15,72.15,0,0,0,157.19,182.07Z"/></svg>Ljudi</a>
+    <a class="nv" href="#"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 256 256" fill="currentColor" style="flex: 0 0 auto;"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm56,112H128a8,8,0,0,1-8-8V72a8,8,0,0,1,16,0v48h48a8,8,0,0,1,0,16Z"/></svg>Sati</a>
+    <a class="nv" href="#"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 256 256" fill="currentColor" style="flex: 0 0 auto;"><path d="M215.52,197.26a8,8,0,0,1-1.86,8.39l-24,24A8,8,0,0,1,184,232a7.09,7.09,0,0,1-.79,0,8,8,0,0,1-5.87-3.52l-44.07-66.12L112,183.59V208a8,8,0,0,1-2.34,5.65s-14,14.06-15.88,15.88A7.91,7.91,0,0,1,91,231.41a8,8,0,0,1-10.41-4.35l-.06-.15-14.7-36.76L29,175.42a8,8,0,0,1-2.69-13.08l16-16A8,8,0,0,1,48,144H72.4l21.27-21.27L27.56,78.65a8,8,0,0,1-1.22-12.32l24-24a8,8,0,0,1,8.39-1.86l85.94,31.25L176.2,40.19a28,28,0,0,1,39.6,39.6l-31.53,31.53Z"/></svg>Godišnji</a>
+    <a class="nv" href="#" style="margin-top: auto;"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 256 256" fill="currentColor" style="flex: 0 0 auto;"><path d="M237.94,107.21a8,8,0,0,0-3.89-5.4l-29.83-17-.12-33.62a8,8,0,0,0-2.83-6.08,111.91,111.91,0,0,0-36.72-20.67,8,8,0,0,0-6.46.59L128,41.85,97.88,25a8,8,0,0,0-6.47-.6A111.92,111.92,0,0,0,54.73,45.15a8,8,0,0,0-2.83,6.07l-.15,33.65-29.83,17a8,8,0,0,0-3.89,5.4,106.47,106.47,0,0,0,0,41.56,8,8,0,0,0,3.89,5.4l29.83,17,.12,33.63a8,8,0,0,0,2.83,6.08,111.91,111.91,0,0,0,36.72,20.67,8,8,0,0,0,6.46-.59L128,214.15,158.12,231a7.91,7.91,0,0,0,3.9,1,8.09,8.09,0,0,0,2.57-.42,112.1,112.1,0,0,0,36.68-20.73,8,8,0,0,0,2.83-6.07l.15-33.65,29.83-17a8,8,0,0,0,3.89-5.4A106.47,106.47,0,0,0,237.94,107.21ZM128,168a40,40,0,1,1,40-40A40,40,0,0,1,128,168Z"/></svg>Postavke</a>
+  </nav>
+  <main style="position: relative; flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 16px;">
+    <header style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+      <div>
+        <div style="font-size: 13.5px; color: #5B6478; font-weight: 500;">Tjedan 44 · 26.10.–1.11.</div>
+        <h1 style="margin: 0; font-size: 32px; font-weight: 600; letter-spacing: -0.03em;">Listopad 2026</h1>
+      </div>
+      <div style="flex: 1;"></div>
+      <div class="glass" role="group" aria-label="Prikaz" style="display: flex; gap: 2px; padding: 4px; border-radius: 14px;">
+        <button aria-pressed="false" style="font: inherit; font-size: 13.5px; border: 0; background: transparent; padding: 7px 14px; border-radius: 10px; color: #3C465C;">Dan</button>
+        <button aria-pressed="true" style="font: inherit; font-size: 13.5px; font-weight: 600; border: 0; background: #FFFFFF; padding: 7px 14px; border-radius: 10px; box-shadow: 0 2px 6px rgba(30,40,70,.10);">Tjedan</button>
+        <button aria-pressed="false" style="font: inherit; font-size: 13.5px; border: 0; background: transparent; padding: 7px 14px; border-radius: 10px; color: #3C465C;">Mjesec</button>
+      </div>
+      <button class="glass" aria-label="Prethodni tjedan" style="font: inherit; width: 42px; height: 42px; border-radius: 14px; display: flex; align-items: center; justify-content: center; color: #111827;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 256 256" fill="currentColor" style="flex: 0 0 auto;"><path d="M168,48V208a8,8,0,0,1-13.66,5.66l-80-80a8,8,0,0,1,0-11.32l80-80A8,8,0,0,1,168,48Z"/></svg></button>
+      <button class="glass" aria-label="Sljedeći tjedan" style="font: inherit; width: 42px; height: 42px; border-radius: 14px; display: flex; align-items: center; justify-content: center; color: #111827;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 256 256" fill="currentColor" style="flex: 0 0 auto;"><path d="M181.66,133.66l-80,80A8,8,0,0,1,88,208V48a8,8,0,0,1,13.66-5.66l80,80A8,8,0,0,1,181.66,133.66Z"/></svg></button>
+      <button style="font: inherit; font-size: 14px; font-weight: 600; height: 42px; padding: 0 16px; border: 0; border-radius: 14px; background: #111827; color: #FFFFFF; display: flex; align-items: center; gap: 8px;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 256 256" fill="currentColor" style="flex: 0 0 auto;"><path d="M208,32H48A16,16,0,0,0,32,48V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V48A16,16,0,0,0,208,32ZM184,136H136v48a8,8,0,0,1-16,0V136H72a8,8,0,0,1,0-16h48V72a8,8,0,0,1,16,0v48h48a8,8,0,0,1,0,16Z"/></svg>Izmjena</button>
+    </header>
+    <section class="glass" aria-label="Tjedan 26.10.–1.11." style="border-radius: 26px; padding: 16px; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px;">
+      <sc-for list="{{week}}" as="d" hint-placeholder-count="7">
+        <div class="col {{d.cls}}">
+          <div class="dh"><b>{{d.n}}</b><span>{{d.wd}}</span></div>
+          <sc-for list="{{d.shifts}}" as="s" hint-placeholder-count="2">
+            <div class="sc {{s.cls}}">
+              <div class="h">{{s.type}}<span class="m"><sc-if value="{{s.cf}}" hint-placeholder-val="{{false}}"><span style="color: #D93A46; background: #FFFFFF; border-radius: 99px; display: flex; padding: 2px;"><svg role="img" aria-label="konflikt" width="13" height="13" viewBox="0 0 256 256" fill="currentColor" style="flex: 0 0 auto;"><path d="M236.8,188.09,149.35,36.22h0a24.76,24.76,0,0,0-42.7,0L19.2,188.09a23.51,23.51,0,0,0,0,23.72A24.35,24.35,0,0,0,40.55,224h174.9a24.35,24.35,0,0,0,21.33-12.19A23.51,23.51,0,0,0,236.8,188.09ZM120,104a8,8,0,0,1,16,0v40a8,8,0,0,1-16,0Zm8,88a12,12,0,1,1,12-12A12,12,0,0,1,128,192Z"/></svg></span></sc-if><sc-if value="{{s.ov}}" hint-placeholder-val="{{false}}"><svg role="img" aria-label="izmijenjeno" width="13" height="13" viewBox="0 0 256 256" fill="currentColor" style="flex: 0 0 auto;"><path d="M227.31,73.37,182.63,28.68a16,16,0,0,0-22.63,0L36.69,152A15.86,15.86,0,0,0,32,163.31V208a16,16,0,0,0,16,16H92.69A15.86,15.86,0,0,0,104,219.31L227.31,96a16,16,0,0,0,0-22.63ZM192,108.68,147.31,64l24-24L216,84.68Z"/></svg></sc-if></span></div>
+              <div style="font-weight: 600;">{{s.team}}</div>
+              <div style="opacity: .8; font-variant-numeric: tabular-nums;">{{s.time}}</div>
+            </div>
+          </sc-for>
+          <div class="off">Slobodno: {{d.off}}</div>
+        </div>
+      </sc-for>
+    </section>
+    <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+      <section class="glass" aria-label="Za odluku" style="flex: 2 1 380px; border-radius: 22px; padding: 16px 18px; display: flex; align-items: center; gap: 14px;">
+        <span style="width: 42px; height: 42px; border-radius: 14px; background: #D93A46; color: #FFFFFF; display: flex; align-items: center; justify-content: center;"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 256 256" fill="currentColor" style="flex: 0 0 auto;"><path d="M236.8,188.09,149.35,36.22h0a24.76,24.76,0,0,0-42.7,0L19.2,188.09a23.51,23.51,0,0,0,0,23.72A24.35,24.35,0,0,0,40.55,224h174.9a24.35,24.35,0,0,0,21.33-12.19A23.51,23.51,0,0,0,236.8,188.09ZM120,104a8,8,0,0,1,16,0v40a8,8,0,0,1-16,0Zm8,88a12,12,0,1,1,12-12A12,12,0,0,1,128,192Z"/></svg></span>
+        <div style="flex: 1;"><div style="font-weight: 600; font-size: 15px;">2 konflikta ovaj tjedan</div><div style="font-size: 13px; color: #5B6478;">Ana Kovač je na godišnjem 30. i 31.10., a raspoređena je u Smjenu C i B.</div></div>
+        <a href="#" style="font-weight: 600; font-size: 14px; white-space: nowrap;">Riješi</a>
+      </section>
+      <section class="glass" aria-label="Listopad" style="flex: 1 1 260px; border-radius: 22px; padding: 14px;">
+        <div class="mm">
+          <sc-for list="{{mini}}" as="c" hint-placeholder-count="35"><span class="{{c.cls}}">{{c.n}}</span></sc-for>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":860}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const WD = ['pon', 'uto', 'sri', 'čet', 'pet', 'sub', 'ned'];
+    const marks = { '30-2': 'cf', '31-1': 'cf', '27-1': 'ov' };
+    const T = ['A', 'B', 'C', 'D'];
+    const week = [26, 27, 28, 29, 30, 31, 32].map((d, j) => {
+      const team = (k) => [0, 1, 2, 3].find((x) => (d + x) % 4 === k);
+      const shifts = [0, 1].map((k) => {
+        const i = team(k);
+        const m = marks[d + '-' + i] || '';
+        return {
+          cls: (k === 0 ? 'dan' : 'noc') + (m === 'cf' ? ' cf' : m === 'ov' ? ' ov' : ''),
+          type: k === 0 ? 'Dan' : 'Noć', team: 'Smjena ' + T[i], time: k === 0 ? '07:00–19:00' : '19:00–07:00',
+          cf: m === 'cf', ov: m === 'ov',
+        };
+      });
+      const off = [team(2), team(3)].map((i) => T[i]).sort().join(', ');
+      return { n: d > 31 ? 1 : d, wd: WD[j], cls: d === 30 ? 'today' : '', shifts, off };
+    });
+    const mini = [];
+    [28, 29, 30].forEach((n) => mini.push({ n, cls: 'out' }));
+    for (let d = 1; d <= 31; d++) mini.push({ n: d, cls: d === 30 ? 'td' : (d >= 26 ? 'wk' : '') });
+    mini.push({ n: 1, cls: 'wk' });
+    return { week, mini };
+  }
+}
+</script>
+</body>
+</html>

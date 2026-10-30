@@ -617,6 +617,15 @@ development_status:
   14-2-an-admin-reads-the-change-history: backlog
   14-3-the-change-history-exports-to-pdf: backlog
   epic-14-retrospective: optional
+
+  epic-15: backlog
+  15-1-pilot-kalendar-and-the-shell-in-glass: backlog
+  15-2-every-primitive-and-layered-surface-in-glass: backlog
+  15-3-member-surfaces-read-in-glass: backlog
+  15-4-admin-surfaces-read-in-glass: backlog
+  15-5-glass-holds-in-dark-without-blur-and-on-a-low-end-phone: backlog
+  15-6-week-view-and-day-view: backlog   # optional, outside v1 (D6): only after a PRD edit
+  epic-15-retrospective: optional
 action_items:
   - id: "epic-4-retro-item-1-fix-c1-a-sati-name-for-a-member-no-longe"
     epic: 4
