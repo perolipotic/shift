@@ -20,7 +20,48 @@ import { cn } from "@/lib/utils"
 // and its children stay mounted, so an uncontrolled form inside keeps its
 // refs and, after a refusal, its values (UX-DR34).
 //
+// GLASS SINCE STORY 15.2: the panel is `glass-panel` (the reading alpha, ≥ .85,
+// blurred, with the opaque and forced-colours fallbacks in `index.css`) over a
+// `glass-scrim` backdrop, tinted and never blurred. `docked` is the phone's
+// bottom sheet (*Više*, the filter sheet): full width at the bottom edge,
+// rounded on top, padded clear of the safe area. Screens pass `docked` and
+// never restyle the panel.
+//
+// ONE BLURRED PANEL AT A TIME. A dialog opened over another (a change from the
+// day detail) marks every open panel beneath it `data-covered`, and
+// `glass-panel` draws a covered panel opaque and unblurred: a phone shows the
+// tab bar, the sticky head and one panel blurred, never more.
+//
 // No copy and no `t()`: the close button's name is the screen's `closeLabel`.
+
+/** Every open Dialog, bottom to top: the order `showModal()` stacks them in. */
+const openPanels: HTMLDialogElement[] = []
+
+function restack(): void {
+  openPanels.forEach((panel, index) => {
+    panel.toggleAttribute("data-covered", index < openPanels.length - 1)
+  })
+}
+
+/**
+ * On top: a `showModal()` puts the dialog above every other open one.
+ * IDEMPOTENT: a dialog already in the stack keeps its place, so an effect that
+ * runs again (StrictMode, Fast Refresh) never reorders it. A dialog that
+ * really re-opens was released by its `close` first, so it lands on top.
+ */
+function raise(panel: HTMLDialogElement): void {
+  if (!openPanels.includes(panel)) openPanels.push(panel)
+  restack()
+}
+
+function release(panel: HTMLDialogElement): void {
+  const at = openPanels.indexOf(panel)
+
+  if (at === -1) return
+  openPanels.splice(at, 1)
+  panel.removeAttribute("data-covered")
+  restack()
+}
 
 export interface DialogProps
   extends Omit<React.DialogHTMLAttributes<HTMLDialogElement>, "open"> {
@@ -33,12 +74,15 @@ export interface DialogProps
    * reports its outcome.
    */
   dismissible?: boolean
+  /** The phone's bottom sheet: docked to the bottom edge, full width. */
+  docked?: boolean
 }
 
 function Dialog({
   open,
   onOpenChange,
   dismissible = true,
+  docked = false,
   className,
   children,
   ...props
@@ -50,9 +94,27 @@ function Dialog({
 
     if (dialog === null) return
 
-    if (open && !dialog.open) dialog.showModal()
-    if (!open && dialog.open) dialog.close()
+    // `raise` whenever open, not only on the `showModal()`: a dialog that
+    // mounts open and whose effects re-run (StrictMode, Fast Refresh) is
+    // released by the cleanup below while still open, and must rejoin.
+    if (open) {
+      if (!dialog.open) dialog.showModal()
+      raise(dialog)
+    } else {
+      if (dialog.open) dialog.close()
+      release(dialog)
+    }
   }, [open])
+
+  // Unmounted while open (a ConfirmDialog is open for as long as it renders):
+  // the element leaves the top layer, so it leaves the stack too.
+  React.useEffect(() => {
+    const dialog = element.current
+
+    return () => {
+      if (dialog !== null) release(dialog)
+    }
+  }, [])
 
   return (
     // eslint-disable-next-line jsx-a11y-x/no-noninteractive-element-interactions -- a native modal <dialog>; the keydown only cancels Escape (below).
@@ -70,11 +132,17 @@ function Dialog({
         if (!dismissible) event.preventDefault()
       }}
       onClose={() => {
+        const dialog = element.current
+
+        // A close event queued before the dialog was opened again must not
+        // release a dialog that is open now.
+        if (dialog !== null && !dialog.open) release(dialog)
         if (!open) return
         // A native close that still got through while not dismissible is
         // undone: the dialog reopens and the screen's state is never told.
         if (!dismissible) {
-          element.current?.showModal()
+          dialog?.showModal()
+          if (dialog !== null) raise(dialog)
 
           return
         }
@@ -84,7 +152,10 @@ function Dialog({
         if (dismissible && event.target === event.currentTarget) onOpenChange(false)
       }}
       className={cn(
-        "m-auto w-[calc(100%-2rem)] max-w-lg rounded-lg border bg-card p-0 text-card-foreground shadow-sh-lg backdrop:bg-sidebar/60",
+        "glass-panel p-0 text-foreground backdrop:bg-glass-scrim",
+        docked
+          ? "mb-0 mt-auto w-full max-w-none rounded-b-none rounded-t-2xl pb-[env(safe-area-inset-bottom,0px)]"
+          : "m-auto w-[calc(100%-2rem)] max-w-lg rounded-lg",
         className
       )}
       {...props}
@@ -179,7 +250,7 @@ function ConfirmDialog({
   onCancel,
   children,
   ...props
-}: Omit<DialogProps, "open" | "onOpenChange" | "dismissible"> & {
+}: Omit<DialogProps, "open" | "onOpenChange" | "dismissible" | "docked"> & {
   busy: boolean
   onCancel: () => void
 }) {

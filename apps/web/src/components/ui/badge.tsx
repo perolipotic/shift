@@ -12,9 +12,9 @@ import { cn } from "@/lib/utils"
 // `default` is a primary TINT, `bg-primary/15`, with its text in `foreground`,
 // measured against the card in both themes by `test/theme-contrast.test.ts`,
 // which reads every variant's classes from this file, on the card and on a
-// hovered row. NOT `text-primary`: the dark theme's primary misses 4.5:1 on the
-// dark card even untinted (asserted there), every tint only lowers it, and a
-// new colour token is a decision for the design owner.
+// hovered row. NOT `text-primary`: chosen when the dark theme's primary missed
+// 4.5:1 on the dark card even untinted. Story 15.2 re-tuned dark primary to
+// clear it, and the badge keeps `foreground`, the stronger pair.
 
 const badgeVariants = cva(
   "inline-flex max-w-full items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold",

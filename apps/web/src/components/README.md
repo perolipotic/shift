@@ -10,7 +10,11 @@ primitive is added here.
 `layout/auth-layout.tsx` is the shared frame of the sign-in screens. shadcn's
 `cn` merger lives in `lib/utils.ts`, and `components.json` points the `utils`,
 `lib` and `hooks` aliases at `@/lib/utils`, `@/lib` and `@/hooks`, shadcn's own
-defaults. `utils/initials.ts` is the one pure rule for initials: the avatar
+defaults. Its `iconLibrary` is Phosphor (story 15.2), but a component the
+shadcn CLI generates must not import an icon package itself: every icon goes
+through `@/components/ui/icon`, the one module allowed to (the lint rule in
+`eslint.config.js` refuses the rest), so rewrite a generated import to name the
+icon there. `utils/initials.ts` is the one pure rule for initials: the avatar
 chips and the organization lockup's neutral mark both draw from it.
 
 `sortable-head.tsx` is the one sortable table heading — *Sati*'s
@@ -74,17 +78,19 @@ Every screen (destination, form, placeholder or not-found) is built the same way
 | `Avatar` (`ui/avatar.tsx`) | A round initials chip for a PERSON, hidden from assistive technology because the name is always rendered beside it. With no initials it is an empty chip, so names stay aligned. |
 | `PageDescription` (`ui/page-header.tsx`) | The one-sentence lede under the title. Wrap `PageTitle` and it in one `<div>` so they stay on the left. |
 | `Callout` (`ui/callout.tsx`) | An explanation box with an icon tile, a title, a sentence and an optional action. It explains; it never refuses or confirms (that is `Notice`). |
-| `IconTile` (`ui/icon-tile.tsx`) | A decorative rounded square holding one icon, beside words that carry the meaning. `light`/`dark` match the timeline's tones. |
+| `IconTile` (`ui/icon-tile.tsx`) | A decorative rounded square holding one icon, beside words that carry the meaning. `light`/`dark` match the timeline's tones; `dark` is the `band-dark` pair (story 15.2). |
 | `EmptyMark` (`ui/empty-mark.tsx`) | The one empty mark (C587): a figure or a name that is not there, as a glyph hidden from assistive technology and a visually hidden word, so a screen reader says `nema` or `bez smjene` rather than "dash". The screen passes both from `t()`. |
 | `StatTile` (`ui/stat-tile.tsx`) | A summary figure INSIDE a card, where `StatCard` would nest a card in a card. |
 | `InputGroup`, `InputGroupIcon`, `InputGroupAction` (`ui/input-group.tsx`) | A leading icon on an `Input` or a `Select`; the group adds the padding, so neither primitive changes. `InputGroupAction` holds a trailing 44 px button inside the field, such as the password's show/hide toggle; the screen names it and pads the input on the right. Never on `type="time"` or `type="date"`: the browser already draws its own clock or calendar button there, and a second icon reads as a duplicate. |
 | `Select` (`ui/select.tsx`) | The one select: native underneath, so `defaultValue`, `ref`, `FormData`, key-remounts and a phone's picker all keep working. The screen composes `h-11`. |
 | `OutputField` (`ui/output-field.tsx`) | A computed, read-only value shaped like a field (dashed, muted), on a native `<output>`. |
 | `Timeline` and parts (`ui/timeline.tsx`) | A day as one bar: `TimelineScale`, `TimelineTrack` of `TimelineSegment`s and `TimelineGap`s, `TimelineBoundaries`, `TimelineLegend`. The screen hides it from assistive technology beside a text equivalent. |
-| `Dialog` and parts (`ui/dialog.tsx`) | The one modal, on the native `<dialog>` and `showModal()`: focus trap, Escape, backdrop click and focus return come from the browser. Closed means hidden, not unmounted, so uncontrolled fields keep their values. A confirmation replaces the form inside the same dialog. `ConfirmDialog` is a confirmation on its own: open while the screen renders it, so an "armed" state becomes a modal without changing, and not dismissible while `busy`. |
+| `Dialog` and parts (`ui/dialog.tsx`) | The one modal, on the native `<dialog>` and `showModal()`: focus trap, Escape, backdrop click and focus return come from the browser. Closed means hidden, not unmounted, so uncontrolled fields keep their values. A confirmation replaces the form inside the same dialog. `ConfirmDialog` is a confirmation on its own: open while the screen renders it, so an "armed" state becomes a modal without changing, and not dismissible while `busy`. A `glass-panel` over a tinted `glass-scrim` backdrop since story 15.2; `docked` makes it the phone's bottom sheet (*Više*, the filter sheet), so a screen never restyles it. A dialog opened over another leaves only the top one blurred. |
+| `Popover` (`ui/popover.tsx`) | The one non-modal anchored surface (story 7.4), a `glass-panel` since story 15.2. Never inside a `glass-*` ancestor, which would clip its blur. |
+| `Button` (`ui/button.tsx`) | `default` is ink (story 15.1); `chrome` (story 15.2, formerly the navy `sidebar`) is the glass shell's borderless variant, its ring drawn with no offset. |
 | `SectionNumber` (`ui/section-number.tsx`) | A numbered section's badge beside its `CardTitle` (`/postavke-rotacije`, sections 1–4). Takes `value`, renders the figure in the primary tint, and is hidden from assistive technology: the heading beside it carries the meaning. |
 | `RadioGroup`, `RadioCard`, `RadioRow` (`ui/radio-group.tsx`) | Radix's radio group (story 5.4b): one tab stop, arrows move, Space selects. `RadioCard` is a whole card as the radio — a dot, the words, and an optional full-width `footer` — unselected in the `input` border, selected with a `primary` border, ring and filled dot, never a new fill. `RadioRow` (story 5.4c) is one line of a pick list — the dot and words that wrap, at least 44 px tall — selected with a `primary` border alone. The screen labels the group. |
-| `Notice` (`ui/notice.tsx`) | The one refusal and confirmation box, in the Input look. The `role` is the variant: `alert` draws a warning icon and `status` a check, so the two differ by shape as well as by words. One more shape since story 8.2: `role="status" variant="offline"` draws a WifiOff icon, for the as-of note over a snapshot drawn offline. Every other attribute (`id`, `ref`, `tabIndex`, `aria-*`) passes through to its `<p>`. |
+| `Notice` (`ui/notice.tsx`) | The one refusal and confirmation box, in the Input look. The `role` is the variant: `alert` draws a warning icon and `status` a check, so the two differ by shape as well as by words. One more shape since story 8.2: `role="status" variant="offline"` draws a WifiSlash icon, for the as-of note over a snapshot drawn offline. Every other attribute (`id`, `ref`, `tabIndex`, `aria-*`) passes through to its `<p>`. |
 | `StackedList`, `StackedRow`, `StackedFields`, `StackedField`, `StackedSkeletonRow` (`ui/stacked-list.tsx`) | A table's phone form (story 7.6): a `ul` named by the table's caption, an `li` per row, and a `dl` pairing every value with its column's own label — visible, or `sr-only` (`labelHidden`) where the row's position carries it. The screen switches on `usePhone()` and renders one form only; nothing in it scrolls sideways. `sort-control.tsx` beside it is the phone's `Poredano:` control, shared by *Sati* and *Ljudi*. |
 
 ## Reordering a list (story 2.3b)
@@ -94,7 +100,7 @@ HTML5 drag-and-drop, which is unreliable on touch. The rotation builder's steps
 (`features/rotation/components/rotation-pattern-card.tsx`) are the reference:
 
 - Each item is one row that never wraps. Only a ghost `Button` handle
-  (`GripVertical`, `h-11 w-11`, `touch-none`) activates the drag
+  (`DotsSixVertical`, `h-11 w-11`, `touch-none`) activates the drag
   (`setActivatorNodeRef`), and its accessible name names the item's position.
 - Mouse, touch and keyboard sensors: space lifts, the arrows move, space drops,
   Escape cancels. Every announcement, the instructions and the handle's role

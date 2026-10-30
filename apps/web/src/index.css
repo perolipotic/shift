@@ -31,27 +31,32 @@
  * for the floating chrome). Month-grid cells keep their own 8 px radius
  * (`rounded-cell`), so the dense grid still reads as a grid.
  *
- * GLASS IS A TOKEN SET AND TWO UTILITIES, never a class string on a screen:
+ * GLASS IS A TOKEN SET AND THREE UTILITIES, never a class string on a screen:
  * `--glass` (.58, chrome BESIDE content: the desktop sidebar),
  * `--glass-over-content` (.80, chrome content scrolls UNDER: the phone tab bar
  * and the phone's sticky month head; text on it is foreground-strength, never
- * `muted-foreground`), `--glass-reading` (≥ .85, for reading surfaces once
- * 15.2 moves them), the hairline `--glass-border`, the active row's pill
- * `--glass-active`, three `--glass-blob-*` colours, and the blur, saturate and
- * shadow beside them. `@utility glass-chrome` and `@utility glass-over-content`
- * are the only places a `backdrop-filter` is written, each with
- * `-webkit-backdrop-filter`, and each falls back to the opaque `--card` without
- * blur support or under `prefers-reduced-transparency: reduce`, and to
- * `Canvas` with a `CanvasText` border under forced colours. The blur is 24 px
- * at most, and the blobs are gradients, never `filter: blur()`.
- * `test/theme-contrast.test.ts` measures every chrome pair against the worst
- * backdrop: the page, each blob and, under over-content glass, the darkest fill
- * that can scroll under it.
+ * `muted-foreground`), `--glass-reading` (≥ .85: the layered panels since
+ * story 15.2, where muted text is allowed), the hairline `--glass-border`, the
+ * active row's pill `--glass-active`, the Dialog's tinted, never blurred
+ * `::backdrop` `--glass-scrim` (story 15.2), three `--glass-blob-*` colours,
+ * and the blur, saturate and shadow beside them. `@utility glass-chrome`,
+ * `@utility glass-over-content` and `@utility glass-panel` (story 15.2:
+ * Dialog, ConfirmDialog, Popover and the docked sheets) are the only places a
+ * `backdrop-filter` is written, each with `-webkit-backdrop-filter`, and each
+ * falls back to the opaque `--card` without blur support or under
+ * `prefers-reduced-transparency: reduce`, and to `Canvas` with a `CanvasText`
+ * border under forced colours. The blur is 24 px at most, and the blobs are
+ * gradients, never `filter: blur()`. `test/theme-contrast.test.ts` measures
+ * every chrome and panel pair against the worst backdrop: the page, each blob
+ * and, under over-content glass and a panel, every opaque fill that can sit
+ * under it (for a Dialog, each of those under the scrim as well).
  *
- * `--sidebar*` KEEPS ITS NAVY until stories 15.2 and 15.3 move its last
- * consumers (the sign-in panel, the Timeline's `dark` tone, IconTile, the
- * Dialog `::backdrop` and Button's `sidebar` variant); the shell no longer
- * draws with it.
+ * `--sidebar*` KEEPS ITS NAVY only for the sign-in panel
+ * (`components/layout/auth-layout.tsx`), which story 15.3 moves and then
+ * deletes the set. Story 15.2 moved every other consumer: the Timeline's and
+ * IconTile's `dark` tone onto `--band-dark` (the same navy values), the Dialog
+ * `::backdrop` onto `--glass-scrim`, and Button's `sidebar` variant became
+ * `chrome`.
  *
  * MEASURED DEVIATIONS AND RE-PINS. Every threshold in `test/theme-*.test.ts`
  * kept its value; what moved is the measurements pinned against them, each to a
@@ -71,6 +76,10 @@
  *     2.98:1 on the new #E8EDF5 page; now 3.11:1 there, 3.65:1 on a card, and
  *     `--ring` still clears 3:1 against it (3.27:1). Dark measures 3.30:1 on
  *     the #0A1020 page.
+ *     STORY 15.2: light L 0.6191 -> 0.5854 (#6E7D93), because a field on a
+ *     glass panel (.85 white) over the scrimmed ink button measured 2.67:1;
+ *     now 3.06:1 there, 3.56:1 on the page and 4.19:1 on a card. Dark stays
+ *     36% white: 3.08:1 at its worst on the dark panel.
  *   --ring               light L 0.37 -> 0.3418 (#1A3275), dark L 0.8 ->
  *     0.8563 (#B4D2FD). Primary's hue now rather than grey. The ring draws
  *     immediately outside the input's own border, so it needs 3:1 from that
@@ -79,6 +88,21 @@
  *     3.41:1 and 3.47:1 against the composited `--input`, 11.42:1 and 11.51:1
  *     against `--background`. `#2563EB` itself measures 1.5:1 against the
  *     border, which is why the ring is a deeper blue than `primary`.
+ *     STORY 15.2: light L 0.3418 -> 0.3099 (#13296B), to stay 3:1 from the
+ *     darker `--input` (3.22:1 at the worst, a field on a panel; 3.27:1 there
+ *     before), and dark L 0.8563 -> 0.9197 (#D6E6FC), because the 36% white
+ *     input border on the dark panel over the near-white ink button measured
+ *     2.75:1 against the old ring; now 3.36:1. The ring clears 9.86:1 (light)
+ *     and 10.34:1 (dark) against every panel backdrop.
+ *   --primary            DARK only, story 15.2 (human decision 2026-10-30,
+ *     closing 15.1's deferred gap): #3B82F6 -> #3FA0FA (L 0.6231 -> 0.691,
+ *     hue 259.8° -> 250°). Primary text (links, the selected option) measured
+ *     4.44:1 on the dark card and 3.56:1 on the dark panel over the
+ *     near-white ink button; now 5.90:1 and 4.74:1, and `primary-foreground`
+ *     on it 6.55:1 (4.92:1 before). The hue moved 10° because at 259.8° the
+ *     lightness that clears the panel sits ΔE 8.7 from dark `--brand-blue`,
+ *     inside the ΔE 10 the accents keep from every signal; at 250° it is
+ *     ΔE 11.2. Light `primary` stays #2F55B8.
  *   --sidebar-ring       light L 0.654 -> 0.8091 (#93C5FD). The sidebar is
  *     navy now, so the ring that clears 3:1 on it is LIGHT: 10.04:1 light,
  *     7.60:1 dark (#60A5FA).
@@ -224,6 +248,7 @@
   --glass-reading: oklch(1 0 0 / 85%);
   --glass-border: oklch(1 0 0 / 80%);
   --glass-active: oklch(1 0 0);
+  --glass-scrim: oklch(0.2077 0.0398 265.75 / 32%);
   --glass-blob-1: oklch(0.8624 0.0676 260.91);
   --glass-blob-2: oklch(0.8797 0.073 304.58);
   --glass-blob-3: oklch(0.9216 0.0474 173);
@@ -247,8 +272,8 @@
   --accent: oklch(0.9683 0.0069 247.9);
   --accent-foreground: oklch(0.2795 0.0368 260.03);
   --border: oklch(0.9288 0.0126 255.51);
-  --input: oklch(0.6191 0.0377 257.87);
-  --ring: oklch(0.3418 0.1191 265.52);
+  --input: oklch(0.5854 0.0382 257.87);
+  --ring: oklch(0.3099 0.1185 265.66);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
@@ -267,6 +292,11 @@
    * blue is selection, today, links and progress; the default button is ink. */
   --primary: oklch(0.4805 0.1627 264.98);
   --primary-foreground: oklch(1 0 0);
+  /* The hour band's `dark` tone (story 15.2): the Timeline's alternate
+   * stretch and IconTile's `dark`, at the navy the `--sidebar` pair drew in
+   * before, so the bands look exactly as they did. */
+  --band-dark: oklch(0.2004 0.0397 259.82);
+  --band-dark-foreground: oklch(0.869 0.0198 252.89);
   --destructive: oklch(0.5908 0.1949 21.67);
   --destructive-foreground: oklch(1 0 0);
   --shift-slot-1: oklch(0.9491 0.0186 242.97);
@@ -312,6 +342,7 @@
   --glass-reading: oklch(0.2432 0.0444 259.63 / 92%);
   --glass-border: oklch(1 0 0 / 10%);
   --glass-active: oklch(1 0 0 / 12%);
+  --glass-scrim: oklch(0 0 0 / 55%);
   --glass-blob-1: oklch(0.3653 0.1148 263.45 / 45%);
   --glass-blob-2: oklch(0.3275 0.111 295.7 / 45%);
   --glass-blob-3: oklch(0.368 0.064 173.14 / 45%);
@@ -336,7 +367,7 @@
   --accent-foreground: oklch(0.9683 0.0069 247.9);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 36%);
-  --ring: oklch(0.8563 0.0683 257.35);
+  --ring: oklch(0.9197 0.0346 256.34);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
@@ -351,9 +382,12 @@
   --sidebar-border: oklch(1 0 0 / 7%);
   --sidebar-ring: oklch(0.7137 0.1434 254.62);
 
-  /* DESIGN.md brand delta */
-  --primary: oklch(0.6231 0.188 259.81);
+  /* DESIGN.md brand delta. Dark `primary` re-tuned by story 15.2 (#3B82F6 ->
+   * #3FA0FA): see the header's MEASURED DEVIATIONS. */
+  --primary: oklch(0.691 0.1602 249.98);
   --primary-foreground: oklch(0.2004 0.0397 259.82);
+  --band-dark: oklch(0.1634 0.028 259.94);
+  --band-dark-foreground: oklch(0.8383 0.0242 256.11);
   --destructive: oklch(0.6564 0.1747 18.71);
   --destructive-foreground: oklch(0.1757 0.0245 10.61);
   --shift-slot-1: oklch(0.3543 0.0751 235.02);
@@ -432,6 +466,8 @@
   --color-sidebar-ring: var(--sidebar-ring);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-band-dark: var(--band-dark);
+  --color-band-dark-foreground: var(--band-dark-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-shift-slot-1: var(--shift-slot-1);
@@ -465,6 +501,7 @@
   --color-glass-reading: var(--glass-reading);
   --color-glass-border: var(--glass-border);
   --color-glass-active: var(--glass-active);
+  --color-glass-scrim: var(--glass-scrim);
   --color-glass-blob-1: var(--glass-blob-1);
   --color-glass-blob-2: var(--glass-blob-2);
   --color-glass-blob-3: var(--glass-blob-3);
@@ -728,6 +765,65 @@
 
   @media (prefers-reduced-transparency: reduce) {
     background-color: var(--card);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  @media (forced-colors: active) {
+    background-color: Canvas;
+    border: 1px solid CanvasText;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* THE LAYERED PANEL (story 15.2): Dialog, ConfirmDialog, Popover and the
+ * docked sheets, restyled once in `components/ui`. The over-content pattern at
+ * the READING alpha (`--glass-reading`, ≥ .85), because a panel carries
+ * `DialogDescription` and muted counts, and muted text needs .85 or more. It
+ * owns its border: none, so a native `<dialog>`'s UA border never shows, and
+ * the hairline is the inset shadow as on the chrome.
+ *
+ * A COVERED PANEL DOES NOT BLUR. `Dialog` marks every open panel under the
+ * topmost one `data-covered` (a change dialog opened from the day detail), and
+ * that panel is the opaque `--card` beneath the top one's scrim: a phone then
+ * blurs at most three layers (the tab bar, the sticky head and one panel).
+ *
+ * The same fallbacks as the chrome: the opaque `--card` without blur support
+ * or under reduced transparency, `Canvas` with a `CanvasText` border under
+ * forced colours. Opaque (those two, and covered), the hairline is drawn in
+ * `--border`: the white glass hairline would vanish on a white card. The Dialog's `::backdrop` is `--glass-scrim`, tinted and
+ * never blurred, and is not this utility's: it stays in every fallback. */
+@utility glass-panel {
+  border: 0;
+  background-color: var(--glass-reading);
+  box-shadow:
+    inset 0 0 0 1px var(--glass-border),
+    var(--glass-shadow);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+
+  &[data-covered] {
+    background-color: var(--card);
+    box-shadow:
+      inset 0 0 0 1px var(--border),
+      var(--glass-shadow);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    background-color: var(--card);
+    box-shadow:
+      inset 0 0 0 1px var(--border),
+      var(--glass-shadow);
+  }
+
+  @media (prefers-reduced-transparency: reduce) {
+    background-color: var(--card);
+    box-shadow:
+      inset 0 0 0 1px var(--border),
+      var(--glass-shadow);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }

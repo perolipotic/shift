@@ -25,14 +25,14 @@ export const STYLESHEET = join(repoRoot, 'apps', 'web', 'src', 'index.css');
 export const DARK_SELECTOR = ':root[data-theme="dark"]';
 
 /**
- * The 30 brand token names: DESIGN.md's `colors:` front matter (22 names:
- * story 7.1 added `shift-nonworking-border`, and the unused `modifier-leave`
- * pair was retired), plus the four curated
- * accents story 1.4c adds.
+ * The 32 brand token names: DESIGN.md's `colors:` front matter (24 names:
+ * story 7.1 added `shift-nonworking-border`, the unused `modifier-leave`
+ * pair was retired, and story 15.2 added the hour band's `band-dark` pair),
+ * plus the four curated accents story 1.4c adds.
  *
  * BUILT rather than written out, and the expansion is what the accents extend:
  * each name below becomes a `[name, name-foreground]` pair, so an accent joins
- * by adding ONE entry and inherits every sweep the other twenty-two get —
+ * by adding ONE entry and inherits every sweep the other twenty-four get —
  * declared once per theme, present in both, light and dark actually different,
  * and mapped in `@theme inline`. `deferred-work.md:449` item (f) names the
  * failure this shape avoids: a token list that grows while the counts asserted
@@ -40,7 +40,7 @@ export const DARK_SELECTOR = ':root[data-theme="dark"]';
  *
  * The accents are the first entries here that are NOT in DESIGN.md, which is
  * why `theme-fidelity.test.ts` does not measure them: that file derives its
- * case list from DESIGN.md's own front matter, so it covers the twenty-two
+ * case list from DESIGN.md's own front matter, so it covers the twenty-four
  * and no more. `theme-contrast.test.ts` is what measures the accents, in both
  * themes, and what holds each of them away from `destructive`'s hue.
  *
@@ -59,6 +59,8 @@ export const BRAND_TOKENS: string[] = [
   'shift-slot-6',
   'shift-nonworking',
   'modifier-uncovered',
+  // Story 15.2: the Timeline's and IconTile's `dark` tone, off `--sidebar`.
+  'band-dark',
   'brand-blue',
   'brand-green',
   'brand-amber',
@@ -131,6 +133,8 @@ export const GLASS_COLOUR_TOKENS = [
   'glass-reading',
   'glass-border',
   'glass-active',
+  // Story 15.2: the Dialog's `::backdrop`, tinted and never blurred.
+  'glass-scrim',
   'glass-blob-1',
   'glass-blob-2',
   'glass-blob-3',
