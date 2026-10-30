@@ -1002,6 +1002,7 @@
     "changeAccent": "Promijeni naglasak",
     "editLeaveYear": "Uredi početak godine godišnjeg odmora",
     "editFireRanks": "Uredi vatrogasne činove i položaje",
+    "editEmailNotifications": "Uredi obavijesti e-poštom",
     "logoImage": "Slika",
     "logoMark": "Prvo slovo naziva, bez slike",
     "logoChosen": "Odabrano: {name}",
@@ -1038,6 +1039,13 @@
     "fireRanksOn": "Koriste se",
     "fireRanksStatusOff": "Vatrogasni činovi i položaji: ne koriste se.",
     "fireRanksStatusOn": "Vatrogasni činovi i položaji: koriste se.",
+    "emailNotifications": "Obavijesti e-poštom",
+    "emailNotificationsUse": "Slanje",
+    "emailNotificationsOn": "Šalju se",
+    "emailNotificationsOff": "Ne šalju se",
+    "emailNotificationsHint": "Kad se ne šalju, organizacija nikome ne šalje e-poštu o promjenama i zahtjevima. Sve ostaje vidljivo u aplikaciji.",
+    "emailNotificationsStatusOn": "Obavijesti e-poštom: šalju se.",
+    "emailNotificationsStatusOff": "Obavijesti e-poštom: ne šalju se.",
     "save": "Spremi",
     "cancel": "Odustani",
     "error": {
@@ -1419,6 +1427,8 @@
     "menuHide": "Sakrij izbornik",
     "signOut": "Odjava",
     "install": "Instaliraj",
+    "notifications": "Obavijesti",
+    "notificationsDescription": "Obavijesti e-poštom",
     "installIosSteps": "Dodirni Dijeli, pa Dodaj na početni zaslon.",
     "more": "Više",
     "moreClose": "Zatvori izbornik Više",
@@ -1584,6 +1594,25 @@
     "picker": "Poredaj po stupcu",
     "option": "{column}, {direction}"
   },
+  "postavkeObavijesti": {
+    "heading": "Obavijesti",
+    "ledeMember": "E-poštom ti javljamo odluke o tvojim zahtjevima za godišnji, godišnji koji ti je upisan, izmijenjen ili uklonjen, i promjene tvog rasporeda i rotacije.",
+    "ledeAdmin": "E-poštom ti javljamo svaki novi zahtjev za godišnji koji čeka odluku, godišnji koji ti je upisan, izmijenjen ili uklonjen, i promjene tvog rasporeda i rotacije.",
+    "email": "E-pošta",
+    "address": "Adresa",
+    "noAddress": "Nemaš upisan e-mail",
+    "organizationOff": "Tvoja organizacija ne šalje obavijesti e-poštom.",
+    "organizationOffAdmin": "Uključuje se u Organizaciji, pod Obavijesti e-poštom.",
+    "choice": "Obavijesti e-poštom",
+    "on": "Uključene",
+    "off": "Isključene",
+    "statusOn": "Obavijesti e-poštom su uključene.",
+    "statusOff": "Obavijesti e-poštom su isključene.",
+    "loading": "Učitavanje postavki obavijesti",
+    "unavailable": "Postavke obavijesti trenutačno nije moguće prikazati.",
+    "retry": "Pokušaj ponovno",
+    "saveFailed": "Spremanje trenutačno nije moguće. Pokušaj ponovno."
+  },
   "obavijesti": {
     "leaveRequestApproved": {
       "subject": "Zahtjev za godišnji {startDate}–{endDate} je odobren",
@@ -1652,6 +1681,7 @@
     "leaveRequestCreated": {
       "subject": "Novi zahtjev za godišnji: {memberName}",
       "body": "{organizationName}: {memberName} traži godišnji odmor {startDate}–{endDate}. Zahtjev čeka tvoju odluku: {link}"
-    }
+    },
+    "footer": "Obavijesti e-poštom možeš isključiti u aplikaciji, pod Obavijesti: {link}"
   }
 }

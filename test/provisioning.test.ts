@@ -698,7 +698,7 @@ describe('every organization table carries row level security, and only its revi
               'shift_type_versions', 'rotation_patterns', 'rotation_steps',
               'rotation_assignments', 'shift_type_overrides', 'roster_overrides',
               'leave_records', 'conflict_resolutions', 'leave_requests',
-              'leave_request_decisions', 'notification_outbox'
+              'leave_request_decisions', 'notification_outbox', 'notification_settings'
             )
           order by relname`,
       );
@@ -722,6 +722,7 @@ describe('every organization table carries row level security, and only its revi
         'member_status_versions',
         'members',
         'notification_outbox',
+        'notification_settings',
         'organizations',
         'roster_overrides',
         'rotation_assignments',
@@ -764,6 +765,40 @@ describe('every organization table carries row level security, and only its revi
         `select has_column_privilege('authenticated', 'public.member_status_versions', 'effective_from', 'INSERT') as held`,
       );
       expect(columns[0]?.held, 'the four fact columns lost their INSERT grant').toBe(true);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it.skipIf(noDatabase)('holds no privilege on notification_settings but its own row read and its column writes (0044)', async () => {
+    // STORY 10.3. Self-owned, as 0040's requests: `authenticated` reads (the
+    // policy narrows it to the own row), inserts the three facts and updates
+    // `email` alone. No delete; `anon` nothing.
+    const client = await connect();
+    try {
+      const { rows } = await client.query<{ role: string; privilege: string; held: boolean }>(
+        `select role, privilege,
+                has_table_privilege(role, 'public.notification_settings', privilege) as held
+           from unnest(array['anon', 'authenticated']) as role,
+                unnest(array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'])
+                  as privilege`,
+      );
+      expect(rows.filter((row) => row.held).map((row) => `${row.role}:${row.privilege}`).sort()).toEqual([
+        'authenticated:SELECT',
+      ]);
+
+      const { rows: columns } = await client.query<{ column: string; verb: string; held: boolean }>(
+        `select column_name as column, verb,
+                has_column_privilege('authenticated', 'public.notification_settings', column_name, verb) as held
+           from unnest(array['organization_id', 'member_id', 'email', 'updated_at']) as column_name,
+                unnest(array['INSERT', 'UPDATE']) as verb`,
+      );
+      expect(
+        columns
+          .filter((row) => row.held)
+          .map((row) => `${row.verb}:${row.column}`)
+          .sort(),
+      ).toEqual(['INSERT:email', 'INSERT:member_id', 'INSERT:organization_id', 'UPDATE:email']);
     } finally {
       await client.end();
     }
@@ -2075,6 +2110,11 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'notify_rotation_inserted', argumentCount: 0, expected: [], schema: 'private' },
     { name: 'notify_rotation_deleted', argumentCount: 0, expected: [], schema: 'private' },
     { name: 'notify_leave_request', argumentCount: 0, expected: [], schema: 'private' },
+    // STORY 10.3 (0044). The outbox filter (a definer: it reads another
+    // member's setting) and the settings row's `updated_at` stamp, triggers
+    // callable by nobody.
+    { name: 'filter_notification_outbox', argumentCount: 0, expected: [], schema: 'private' },
+    { name: 'touch_notification_settings', argumentCount: 0, expected: [], schema: 'private' },
     // 0024's name key, in `private`, which PostgREST does not expose. Every
     // name check and name unique index calls it, and both are
     // permission-checked against the WRITING role — and a check runs on every
@@ -2116,6 +2156,8 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'remember_amended', argumentCount: 1, schema: 'private' },
     { name: 'take_amended', argumentCount: 0, schema: 'private' },
     { name: 'amended_members', argumentCount: 1, schema: 'private' },
+    // 0044's `updated_at` stamp writes only the row it is given.
+    { name: 'touch_notification_settings', argumentCount: 0, schema: 'private' },
   ] as { name: string; argumentCount: number; schema?: string }[])('runs $name as the caller, with an empty search_path', async ({ name, argumentCount, schema }) => {
     // INVOKER, the opposite of the helper and the hook. They are reached from
     // the helper, the hook and the zero-admins function as the owner, and from

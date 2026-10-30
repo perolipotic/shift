@@ -110,9 +110,12 @@ export const ORGANIZATION_READ_STALE_MS = 300000;
  * `uses_fire_ranks` joined for member rank (`0014`). It is a setting that gates
  * DISPLAY AND ENTRY of a member's rank, read here because every surface that
  * shows or offers a rank already reads this one snapshot under this one key.
+ *
+ * `email_notifications` joined for story 10.3 (`0044`): the organization's
+ * switch for every email it sends, edited on this screen.
  */
 export const ORGANIZATION_COLUMNS =
-  'id,slug,name,organization_type,timezone,locale,leave_year_start_month,leave_year_start_day,logo_path,brand_accent,uses_fire_ranks';
+  'id,slug,name,organization_type,timezone,locale,leave_year_start_month,leave_year_start_day,logo_path,brand_accent,uses_fire_ranks,email_notifications';
 
 /**
  * The organization, as everything downstream sees it.
@@ -152,6 +155,11 @@ export interface OrganizationSnapshot {
    * survive untouched.
    */
   readonly usesFireRanks: boolean;
+  /**
+   * Whether this organization sends email notifications at all (`0044`). Off,
+   * the outbox takes no email row for any of its members.
+   */
+  readonly emailNotifications: boolean;
 }
 
 /**
@@ -176,6 +184,7 @@ export interface OrganizationNameEdit {
   readonly logoPath?: never;
   readonly brandAccent?: never;
   readonly usesFireRanks?: never;
+  readonly emailNotifications?: never;
 }
 
 /**
@@ -192,6 +201,7 @@ export interface OrganizationLeaveYearEdit {
   readonly logoPath?: never;
   readonly brandAccent?: never;
   readonly usesFireRanks?: never;
+  readonly emailNotifications?: never;
 }
 
 /**
@@ -215,6 +225,7 @@ export interface OrganizationLogoEdit {
   readonly leaveYearStartDay?: never;
   readonly brandAccent?: never;
   readonly usesFireRanks?: never;
+  readonly emailNotifications?: never;
 }
 
 /**
@@ -259,6 +270,7 @@ export interface OrganizationAccentEdit {
   readonly leaveYearStartDay?: never;
   readonly logoPath?: never;
   readonly usesFireRanks?: never;
+  readonly emailNotifications?: never;
 }
 
 /**
@@ -285,10 +297,31 @@ export interface OrganizationFireRanksEdit {
   readonly leaveYearStartDay?: never;
   readonly logoPath?: never;
   readonly brandAccent?: never;
+  readonly emailNotifications?: never;
 }
 
 /**
- * One of the five writes, and NEVER two of them.
+ * The email-notifications switch (story 10.3), written on its own — a FIFTH
+ * disjoint shape, for the fire-rank setting's reason.
+ */
+export interface OrganizationEmailNotificationsEdit {
+  readonly emailNotifications: boolean;
+  /** None of these, ever. See {@link OrganizationWrite}. */
+  readonly id?: never;
+  readonly slug?: never;
+  readonly locale?: never;
+  readonly name?: never;
+  readonly organizationType?: never;
+  readonly timezone?: never;
+  readonly leaveYearStartMonth?: never;
+  readonly leaveYearStartDay?: never;
+  readonly logoPath?: never;
+  readonly brandAccent?: never;
+  readonly usesFireRanks?: never;
+}
+
+/**
+ * One of the six writes, and NEVER two of them.
  *
  * The `?: never` members on every side are what make "disjoint" a fact the
  * compiler checks rather than a claim a comment makes. Without them a value
@@ -303,7 +336,8 @@ export type OrganizationWrite =
   | OrganizationLeaveYearEdit
   | OrganizationLogoEdit
   | OrganizationAccentEdit
-  | OrganizationFireRanksEdit;
+  | OrganizationFireRanksEdit
+  | OrganizationEmailNotificationsEdit;
 
 /**
  * Which of the two a write is: the one that actually carries a logo path.
@@ -337,6 +371,11 @@ function isAccentEdit(write: OrganizationWrite): write is OrganizationAccentEdit
 /** Which of the four a write is: the one that carries the fire-rank setting. */
 function isFireRanksEdit(write: OrganizationWrite): write is OrganizationFireRanksEdit {
   return 'usesFireRanks' in write && typeof write.usesFireRanks === 'boolean';
+}
+
+/** The one that carries the email-notifications switch (story 10.3). */
+function isEmailNotificationsEdit(write: OrganizationWrite): write is OrganizationEmailNotificationsEdit {
+  return 'emailNotifications' in write && typeof write.emailNotifications === 'boolean';
 }
 
 /**
@@ -534,9 +573,11 @@ export function organizationSnapshotOf(row: unknown): OrganizationSnapshot | nul
   const leaveYearStartMonth = numberAt(fields, 'leave_year_start_month');
   const leaveYearStartDay = numberAt(fields, 'leave_year_start_day');
   const usesFireRanks = fields['uses_fire_ranks'];
+  const emailNotifications = fields['email_notifications'];
 
   if (
     typeof usesFireRanks !== 'boolean' ||
+    typeof emailNotifications !== 'boolean' ||
     id === null ||
     slug === null ||
     name === null ||
@@ -561,6 +602,7 @@ export function organizationSnapshotOf(row: unknown): OrganizationSnapshot | nul
     logoPath: textAt(fields, 'logo_path'),
     brandAccent: textAt(fields, 'brand_accent'),
     usesFireRanks,
+    emailNotifications,
   };
 }
 
@@ -602,6 +644,9 @@ export function organizationEditColumns(
 
   // ONE COLUMN on the fire-rank setting, for the same reason.
   if (isFireRanksEdit(write)) return { uses_fire_ranks: write.usesFireRanks };
+
+  // ONE COLUMN on the email-notifications switch (story 10.3), likewise.
+  if (isEmailNotificationsEdit(write)) return { email_notifications: write.emailNotifications };
 
   // ONE COLUMN on the name (story 7.18). It used to travel with the type, the
   // zone and the leave year's start, filled in from the cached snapshot, so a

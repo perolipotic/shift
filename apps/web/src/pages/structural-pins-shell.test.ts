@@ -235,10 +235,14 @@ describe('the chrome the layout wraps every destination in', () => {
     // `<Link>` blocks — one for the tab bar, one for the sidebar — is two copies
     // of the destinations, their order, their icons and their active treatment,
     // and copies drift. ONE element rendered into two containers cannot.
-    expect(
-      linkElements(source(CHROME)),
-      'the chrome renders its destinations from more than one place',
-    ).toHaveLength(1);
+    //
+    // STORY 10.3: the one other `<Link>` is the fixed *Obavijesti* row, which
+    // is not a destination; the destinations' element stays the first.
+    const links = linkElements(source(CHROME));
+
+    expect(links, 'the chrome renders its destinations from more than one place').toHaveLength(2);
+    expect(links[0]).toContain('to={destination.path}');
+    expect(links[1]).toContain('to={NOTIFICATIONS_PATH}');
   });
 
   it('puts the destinations in both bars and the exit in both layouts, not merely somewhere', () => {

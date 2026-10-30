@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Notice } from '@/components/ui/notice';
 import { t } from '@/lib/i18n';
+import { OrganizationEmailNotificationsCard } from '@/features/organization/components/organization-email-notifications-card';
 import { OrganizationFireRanksCard } from '@/features/organization/components/organization-fire-ranks-card';
 import { OrganizationHourBandsCard } from '@/features/organization/components/organization-hour-bands-card';
 import { OrganizationProfileCard } from '@/features/organization/components/organization-profile-card';
@@ -15,9 +16,10 @@ import { keepFocusOnAlert } from '@/utils/retry-focus';
 
 /**
  * The settings page's body (stories 1.4a-1.4c and member rank; facts and
- * dialogs since story 7.18): the read's message and retry, then three cards of
- * facts — *Profil*, *Vrijeme i godina* and *Vatrogasni činovi i položaji* —
- * each change behind its own dialog with one Spremi, and a fourth, *Satni
+ * dialogs since story 7.18): the read's message and retry, then four cards of
+ * facts — *Profil*, *Vrijeme i godina*, *Vatrogasni činovi i položaji* and
+ * *Obavijesti e-poštom* (story 10.3) —
+ * each change behind its own dialog with one Spremi, and a fifth, *Satni
  * pojasi*, a summary of the hour bands with the way to their editor. No
  * field is mounted on the page.
  *
@@ -80,6 +82,7 @@ export function OrganizationSettingsCard({
         <OrganizationProfileCard settings={settings} organization={organization} />
         <OrganizationTimeCard settings={settings} organization={organization} />
         <OrganizationFireRanksCard settings={settings} organization={organization} />
+        <OrganizationEmailNotificationsCard settings={settings} organization={organization} />
         <OrganizationHourBandsCard hourBands={hourBands} />
       </>
     );

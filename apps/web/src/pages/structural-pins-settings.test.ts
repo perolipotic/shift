@@ -16,6 +16,7 @@ import {
   occurrences,
   selectElements,
   SETTINGS,
+  SETTINGS_EMAIL_NOTIFICATIONS,
   SETTINGS_FIRE_RANKS,
   SETTINGS_HOOK,
   SETTINGS_LOGO,
@@ -203,12 +204,21 @@ describe('every field on the settings surface carries an accessible name', () =>
 
 describe('the settings page is facts, and each change opens its own dialog (story 7.18)', () => {
   /**
-   * STORY 7.18. The page states the organization as facts in three cards, and
-   * every change — the name, the logo, the accent, the leave year's start and
-   * the fire-rank setting — opens its own dialog with one Spremi. Nothing on
+   * STORY 7.18. The page states the organization as facts in cards, and
+   * every change — the name, the logo, the accent, the leave year's start,
+   * the fire-rank setting and (story 10.3) the email-notifications switch —
+   * opens its own dialog with one Spremi: six dialogs. Nothing on
    * the page writes on change, and no field is mounted outside a dialog.
    */
-  const DIALOG_BODIES = [SETTINGS_PROFILE, SETTINGS_LOGO, SETTINGS_ACCENT, SETTINGS_TIME, SETTINGS_FIRE_RANKS];
+  const DIALOG_BODIES = [
+    SETTINGS_PROFILE,
+    SETTINGS_LOGO,
+    SETTINGS_ACCENT,
+    SETTINGS_TIME,
+    SETTINGS_FIRE_RANKS,
+    // Story 10.3.
+    SETTINGS_EMAIL_NOTIFICATIONS,
+  ];
 
   it('mounts no form outside the one dialog form every change draws', () => {
     expect(occurrences(source(SETTINGS), '<form'), 'a second form arrived on the page').toBe(1);
@@ -224,7 +234,8 @@ describe('the settings page is facts, and each change opens its own dialog (stor
     expect(
       occurrences(source(SETTINGS), '<OrganizationChangeDialog'),
       'a change has no dialog, or two',
-    ).toBe(5);
+      // SIX SINCE STORY 10.3: the email-notifications switch.
+    ).toBe(6);
   });
 
   it('keeps each dialog mounted and drives it through open, so every close returns focus', () => {
@@ -254,8 +265,9 @@ describe('the settings page is facts, and each change opens its own dialog (stor
     const hook = source(SETTINGS_HOOK);
     const openers = [...source(SETTINGS).matchAll(/ref=\{openers\.(\w+)\}/g)].map((found) => found[1]);
 
-    // FIVE OPENERS, ONE PER DIALOG; `ProfileRow` takes *Profil*'s three by prop.
-    expect(openers.sort()).toEqual(['fireRanks', 'leaveYear']);
+    // SIX OPENERS, ONE PER DIALOG; `ProfileRow` takes *Profil*'s three by prop.
+    // SIX SINCE STORY 10.3: the email-notifications card's own.
+    expect(openers.sort()).toEqual(['emailNotifications', 'fireRanks', 'leaveYear']);
     expect(source(SETTINGS_PROFILE)).toContain('<Button ref={opener}');
     for (const opener of ['openers.name', 'openers.logo', 'openers.accent']) {
       expect(source(SETTINGS_PROFILE), `${opener} opens nothing`).toContain(`opener={${opener}}`);
@@ -568,7 +580,10 @@ describe('the accent control offers a curated set and nothing else', () => {
     expect(invalidation, 'the invalidation is not the snapshot’s key').toContain(
       'invalidateQueries({ queryKey: ORGANIZATION_SNAPSHOT_KEY })',
     );
-    expect(occurrences(source(SETTINGS_HOOK), 'invalidateQueries('), 'a write invalidates outside the runner').toBe(1);
+    // TWO SINCE STORY 10.3, both in the runner's one guarded try: the
+    // snapshot, and a write's declared dependents (the email switch's
+    // `/obavijesti` read).
+    expect(occurrences(source(SETTINGS_HOOK), 'invalidateQueries('), 'a write invalidates outside the runner').toBe(2);
   });
 
   it('marks and focuses the control a refused save names, and only that one', () => {

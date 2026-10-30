@@ -975,6 +975,11 @@ describe('the access-control layer is present, so nothing below passes vacuously
         'members_insert_by_own_active_admin',
         'members_select_own_organization',
         'members_update_by_own_active_admin',
+        // STORY 10.3 (0044): the member's own settings row, read, inserted and
+        // updated by its member alone. No delete.
+        'notification_settings_insert_own',
+        'notification_settings_select_own',
+        'notification_settings_update_own',
         'organizations_select_own_organization',
         'organizations_update_by_own_active_admin',
         // STORY 3.6a: read and insert alone, and both an active admin's only,
@@ -2230,6 +2235,9 @@ describe('organizations admits exactly one write path, and it is the settings su
         // holding a value this build cannot render is `0006`'s check constraint
         // rather than either.
         'brand_accent',
+        // STORY 10.3. `0044` adds the email-notifications switch with its own
+        // column grant, written on its own disjoint shape.
+        'email_notifications',
         'leave_year_start_day',
         'leave_year_start_month',
         // STORY 1.4b. `0005` adds `logo_path` with a SECOND column grant rather
@@ -21991,6 +21999,338 @@ describe('the writes that assert a fact write its outbox rows, to the people it 
 
       expect(deleted.rowCount).toBe(1);
       expect(rows).toEqual([{ total: 0 }]);
+    });
+  });
+});
+
+/**
+ * 0044 (story 10.3): a member's own email setting and the organization's
+ * switch. One BEFORE INSERT trigger on the outbox drops an `email` row whose
+ * recipient turned email off, or whose organization did, whoever writes it:
+ * 0043's triggers and `decide_leave_request`'s direct insert alike. The
+ * settings row is self-owned: read, inserted and updated by its member alone.
+ * Every case runs in a rolled-back transaction.
+ */
+describe("a member's own email setting and the organization's switch stop the writes (0044)", () => {
+  async function setEmail(client: Client, member: string, email: string | null): Promise<void> {
+    await client.query('update members set email = $2 where id = $1', [member, email]);
+  }
+
+  /** The fixture's admin, member and bystander, each given an address, as the owner. */
+  async function cast(client: Client, fixture: (typeof FIXTURES)[number]) {
+    const owner = await memberByUsername(client, fixture.slug, fixture.admin);
+    const self = await memberByUsername(client, fixture.slug, fixture.member);
+    const other = await memberByUsername(client, fixture.slug, fixture.bystander);
+    for (const [row, name] of [[owner, fixture.admin], [self, fixture.member], [other, fixture.bystander]] as const) {
+      await setEmail(client, row.id, `${name}@example.org`);
+    }
+    return { owner, self, other, organization: owner.organizationId };
+  }
+
+  /** The recipients of one subject's rows, sorted, as the owner. */
+  async function recipientsOf(client: Client, subject: string): Promise<string[]> {
+    const { rows } = await client.query<{ recipient: string }>(
+      'select recipient_member_id::text as recipient from notification_outbox where subject_id = $1 order by 1',
+      [subject],
+    );
+    return rows.map((row) => row.recipient);
+  }
+
+  /** Runs `write` in a savepoint and answers its SQLSTATE, or `null` when it passed. */
+  async function refusal(client: Client, write: () => Promise<unknown>): Promise<string | null> {
+    await client.query('savepoint settings_write');
+    try {
+      await write();
+      await client.query('release savepoint settings_write');
+      return null;
+    } catch (error) {
+      await client.query('rollback to savepoint settings_write');
+      return (error as { code?: string }).code ?? 'UNKNOWN';
+    }
+  }
+
+  async function ownSetting(client: Client, organization: string, member: string, email: boolean): Promise<void> {
+    await client.query('insert into notification_settings (organization_id, member_id, email) values ($1, $2, $3)', [
+      organization,
+      member,
+      email,
+    ]);
+  }
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'writes no $fixture row to a member who turned email off, and writes again once they turn it on; others unaffected',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { owner, self, other, organization } = await cast(client, fixture);
+        const during = async (from: number, to: number) =>
+          `[${await organizationDay(client, organization, from)},${await organizationDay(client, organization, to)}]`;
+
+        // Default: no row is on.
+        await actAs(client, owner.authUserId, organization);
+        const before = await insertLeave(client, { organization, member: self.id, during: await during(40, 41) });
+
+        // Off, by the member's own insert.
+        await actAs(client, self.authUserId, organization);
+        await ownSetting(client, organization, self.id, false);
+        await actAs(client, owner.authUserId, organization);
+        const whileOff = await insertLeave(client, { organization, member: self.id, during: await during(50, 51) });
+        const bystander = await insertLeave(client, { organization, member: other.id, during: await during(50, 51) });
+
+        // Back on, by the member's own update.
+        await actAs(client, self.authUserId, organization);
+        const updated = await client.query('update notification_settings set email = true where member_id = $1', [self.id]);
+        await actAs(client, owner.authUserId, organization);
+        const after = await insertLeave(client, { organization, member: self.id, during: await during(60, 61) });
+        await actAsOwner(client);
+
+        expect(await recipientsOf(client, before), fixture.slug).toEqual([self.id]);
+        expect(await recipientsOf(client, whileOff), `${fixture.slug}: a member who turned email off got a row`).toEqual([]);
+        expect(await recipientsOf(client, bystander), fixture.slug).toEqual([other.id]);
+        expect(updated.rowCount, fixture.slug).toBe(1);
+        expect(await recipientsOf(client, after), `${fixture.slug}: turning email on again did not take`).toEqual([self.id]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    "writes no $fixture decision row to a requester who turned email off (decide_leave_request's own insert)",
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { owner, self, organization } = await cast(client, fixture);
+        const day = (offset: number) => organizationDay(client, organization, offset);
+
+        await actAs(client, self.authUserId, organization);
+        await ownSetting(client, organization, self.id, false);
+        const request = await insertRequest(client, { organization, member: self.id, during: `[${await day(40)},${await day(42)}]` });
+        await actAs(client, owner.authUserId, organization);
+        await decideRequest(client, request, 'rejected');
+        await actAsOwner(client);
+
+        const { rows } = await client.query<{ code: string }>(
+          'select code from notification_outbox where subject_id = $1 and recipient_member_id = $2',
+          [request, self.id],
+        );
+        expect(rows, fixture.slug).toEqual([]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase)(
+    "writes no email row for anybody in an organization whose admin turned the switch off, and leaves the other organization's alone",
+    async () => {
+      await inRolledBackTransaction(async (client) => {
+        const [a, b] = FIXTURES;
+        const one = await cast(client, a);
+        const two = await cast(client, b);
+        const day = (organization: string, offset: number) => organizationDay(client, organization, offset);
+
+        // The admin's own update, through the column grant and 0004's policy.
+        await actAs(client, one.owner.authUserId, one.organization);
+        const switched = await client.query('update organizations set email_notifications = false where id = $1', [one.organization]);
+        const leave = await insertLeave(client, {
+          organization: one.organization,
+          member: one.self.id,
+          during: `[${await day(one.organization, 40)},${await day(one.organization, 41)}]`,
+        });
+        await actAs(client, one.self.authUserId, one.organization);
+        const request = await insertRequest(client, {
+          organization: one.organization,
+          member: one.self.id,
+          during: `[${await day(one.organization, 50)},${await day(one.organization, 51)}]`,
+        });
+        await actAs(client, two.owner.authUserId, two.organization);
+        const elsewhere = await insertLeave(client, {
+          organization: two.organization,
+          member: two.self.id,
+          during: `[${await day(two.organization, 40)},${await day(two.organization, 41)}]`,
+        });
+        await actAsOwner(client);
+
+        expect(switched.rowCount).toBe(1);
+        expect(await recipientsOf(client, leave), 'the switch did not stop the member row').toEqual([]);
+        expect(await recipientsOf(client, request), 'the switch did not stop the admins rows').toEqual([]);
+        expect(await recipientsOf(client, elsewhere), "another organization's switch stopped this one").toEqual([two.self.id]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture member writing the organization switch, or a settings row that is not their own',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { owner, self, other, organization } = await cast(client, fixture);
+        const [elsewhereFixture] = FIXTURES.filter((entry) => entry.slug !== fixture.slug);
+        const elsewhere = await memberByUsername(client, elsewhereFixture?.slug ?? '', elsewhereFixture?.member ?? '');
+        // A row of the bystander's own, written as the owner, for the update and read cases.
+        await ownSetting(client, organization, other.id, true);
+
+        await actAs(client, self.authUserId, organization);
+        const forOther = await refusal(client, () => ownSetting(client, organization, other.id, false));
+        const forElsewhere = await refusal(client, () => ownSetting(client, elsewhere.organizationId, elsewhere.id, false));
+        const otherUpdate = await client.query('update notification_settings set email = false where member_id = $1', [other.id]);
+        const seen = await client.query('select member_id from notification_settings');
+        const switched = await client.query('update organizations set email_notifications = false where id = $1', [organization]);
+        await ownSetting(client, organization, self.id, false);
+        const moved = await refusal(client, () =>
+          client.query('update notification_settings set member_id = $2 where member_id = $1', [self.id, other.id]),
+        );
+        const deleted = await refusal(client, () => client.query('delete from notification_settings where member_id = $1', [self.id]));
+        await actAsOwner(client);
+
+        const { rows: organizations } = await client.query<{ on: boolean }>(
+          'select email_notifications as on from organizations where id = $1',
+          [organization],
+        );
+        const { rows: others } = await client.query<{ email: boolean }>(
+          'select email from notification_settings where member_id = $1',
+          [other.id],
+        );
+
+        expect(forOther, `${fixture.slug}: a member wrote another member's row`).toBe('42501');
+        expect(forElsewhere, `${fixture.slug}: a member wrote another organization's row`).toBe('42501');
+        expect(otherUpdate.rowCount, fixture.slug).toBe(0);
+        expect(others, fixture.slug).toEqual([{ email: true }]);
+        expect(seen.rows, `${fixture.slug}: a member read another member's row`).toEqual([]);
+        expect(switched.rowCount, `${fixture.slug}: a member-role account switched the organization`).toBe(0);
+        expect(organizations, fixture.slug).toEqual([{ on: true }]);
+        expect(moved, `${fixture.slug}: a member moved their row to another member`).toBe('42501');
+        expect(deleted, `${fixture.slug}: a member deleted a settings row`).toBe('42501');
+        expect(owner.role).toBe('admin');
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    "refuses a $fixture admin reading, inserting or updating another member's settings row",
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { owner, self, other, organization } = await cast(client, fixture);
+        // The bystander's own row, written as the owner.
+        await ownSetting(client, organization, other.id, true);
+
+        await actAs(client, owner.authUserId, organization);
+        const seen = await client.query('select member_id from notification_settings where member_id = $1', [other.id]);
+        const inserted = await refusal(client, () => ownSetting(client, organization, self.id, false));
+        const updated = await client.query('update notification_settings set email = false where member_id = $1', [other.id]);
+        await actAsOwner(client);
+
+        const { rows } = await client.query<{ member: string; email: boolean }>(
+          'select member_id::text as member, email from notification_settings where member_id = any($1::uuid[]) order by 1',
+          [[self.id, other.id]],
+        );
+
+        expect(seen.rows, `${fixture.slug}: an admin read another member's row`).toEqual([]);
+        expect(inserted, `${fixture.slug}: an admin wrote a member's row`).toBe('42501');
+        expect(updated.rowCount, `${fixture.slug}: an admin updated a member's row`).toBe(0);
+        expect(rows, fixture.slug).toEqual([{ member: other.id, email: true }]);
+      });
+    },
+  );
+
+  /** The claim, run as the owner (it is a definer), answering the ids it returned. */
+  async function claimed(client: Client): Promise<string[]> {
+    const { rows } = await client.query<{ id: string }>('select id::text as id from public.claim_notifications(100)');
+    return rows.map((row) => row.id);
+  }
+
+  /** One subject's outbox rows, with their delivery columns, as the owner. */
+  async function deliveryOf(client: Client, subject: string) {
+    const { rows } = await client.query<{ id: string; recipient: string; failed: boolean; failure: string | null; sent: boolean }>(
+      `select id::text as id, recipient_member_id::text as recipient, failed_at is not null as failed,
+              failure_code as failure, sent_at is not null as sent
+         from notification_outbox where subject_id = $1 order by recipient_member_id`,
+      [subject],
+    );
+    return rows;
+  }
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'settles a $fixture row queued before the member turned email off as failed at the claim, and still claims one for a member still on',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { owner, self, other, organization } = await cast(client, fixture);
+        const day = (offset: number) => organizationDay(client, organization, offset);
+
+        await actAs(client, owner.authUserId, organization);
+        const queued = await insertLeave(client, { organization, member: self.id, during: `[${await day(40)},${await day(41)}]` });
+        const stillOn = await insertLeave(client, { organization, member: other.id, during: `[${await day(40)},${await day(41)}]` });
+        await actAs(client, self.authUserId, organization);
+        await ownSetting(client, organization, self.id, false);
+        await actAsOwner(client);
+        const [offRow] = await deliveryOf(client, queued);
+        const [onRow] = await deliveryOf(client, stillOn);
+
+        const ids = await claimed(client);
+
+        expect(ids, `${fixture.slug}: the claim returned a row whose member turned email off`).not.toContain(offRow?.id);
+        expect(ids, `${fixture.slug}: the claim skipped a member still on`).toContain(onRow?.id);
+        expect(await deliveryOf(client, queued), fixture.slug).toEqual([
+          { id: offRow?.id, recipient: self.id, failed: true, failure: 'EMAIL_TURNED_OFF', sent: false },
+        ]);
+        expect((await deliveryOf(client, stillOn))[0]?.failed, fixture.slug).toBe(false);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase)("settles every queued row of an organization whose switch went off, and leaves another organization's alone", async () => {
+    await inRolledBackTransaction(async (client) => {
+      const [a, b] = FIXTURES;
+      const one = await cast(client, a);
+      const two = await cast(client, b);
+      const day = (organization: string, offset: number) => organizationDay(client, organization, offset);
+
+      await actAs(client, one.owner.authUserId, one.organization);
+      const queued = await insertLeave(client, {
+        organization: one.organization,
+        member: one.self.id,
+        during: `[${await day(one.organization, 40)},${await day(one.organization, 41)}]`,
+      });
+      await client.query('update organizations set email_notifications = false where id = $1', [one.organization]);
+      await actAs(client, two.owner.authUserId, two.organization);
+      const elsewhere = await insertLeave(client, {
+        organization: two.organization,
+        member: two.self.id,
+        during: `[${await day(two.organization, 40)},${await day(two.organization, 41)}]`,
+      });
+      await actAsOwner(client);
+      const [offRow] = await deliveryOf(client, queued);
+      const [onRow] = await deliveryOf(client, elsewhere);
+
+      const ids = await claimed(client);
+
+      expect(ids).not.toContain(offRow?.id);
+      expect(ids).toContain(onRow?.id);
+      expect((await deliveryOf(client, queued))[0]).toMatchObject({ failed: true, failure: 'EMAIL_TURNED_OFF', sent: false });
+    });
+  });
+
+  it.skipIf(noDatabase)('settles a row waiting out a retry at its next claim once the member turned email off', async () => {
+    await inRolledBackTransaction(async (client) => {
+      const [fixture] = FIXTURES;
+      const { owner, self, organization } = await cast(client, fixture);
+      const day = (offset: number) => organizationDay(client, organization, offset);
+
+      await actAs(client, owner.authUserId, organization);
+      const queued = await insertLeave(client, { organization, member: self.id, during: `[${await day(40)},${await day(41)}]` });
+      await actAsOwner(client);
+      const [row] = await deliveryOf(client, queued);
+      // A transient failure released it: one attempt spent, backing off.
+      await client.query(
+        `update notification_outbox set attempts = 1, failure_code = 'PROVIDER_UNAVAILABLE',
+                next_attempt_at = now() + interval '10 minutes' where id = $1`,
+        [row?.id],
+      );
+      // Still on: the backoff holds it, unclaimed and unfailed.
+      expect(await claimed(client)).not.toContain(row?.id);
+      expect((await deliveryOf(client, queued))[0]?.failed).toBe(false);
+
+      await actAs(client, self.authUserId, organization);
+      await ownSetting(client, organization, self.id, false);
+      await actAsOwner(client);
+      const ids = await claimed(client);
+
+      expect(ids).not.toContain(row?.id);
+      expect((await deliveryOf(client, queued))[0]).toMatchObject({ failed: true, failure: 'EMAIL_TURNED_OFF', sent: false });
     });
   });
 });

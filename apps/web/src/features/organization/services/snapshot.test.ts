@@ -127,6 +127,8 @@ const PILOT_ROW = {
   brand_accent: null,
   // Member rank (`0014`): the pilot records fire ranks.
   uses_fire_ranks: true,
+  // Story 10.3 (`0044`): every organization sends email until it says not to.
+  email_notifications: true,
 };
 
 /** The name dialog's write (story 7.18): the name and nothing else. */
@@ -253,6 +255,7 @@ describe('one PostgREST row becomes the canonical snapshot', () => {
       logoPath: null,
       brandAccent: null,
       usesFireRanks: true,
+      emailNotifications: true,
     });
   });
 
@@ -265,6 +268,15 @@ describe('one PostgREST row becomes the canonical snapshot', () => {
     );
     for (const value of [undefined, null, 'true', 1]) {
       expect(organizationSnapshotOf({ ...PILOT_ROW, uses_fire_ranks: value })).toBeNull();
+    }
+  });
+
+  it('carries the email-notifications switch as the boolean it is, and refuses anything else', () => {
+    // STORY 10.3. `not null default true`: a missing or non-boolean value is a
+    // row that is not an organization.
+    expect(organizationSnapshotOf({ ...PILOT_ROW, email_notifications: false })?.emailNotifications).toBe(false);
+    for (const value of [undefined, null, 'true', 1]) {
+      expect(organizationSnapshotOf({ ...PILOT_ROW, email_notifications: value })).toBeNull();
     }
   });
 
@@ -375,7 +387,7 @@ describe('the read returns one snapshot or one code', () => {
     // `id` is here because every write addresses the row by it.
     const columns = ORGANIZATION_COLUMNS.split(',');
 
-    for (const column of ['id', 'logo_path', 'brand_accent', 'uses_fire_ranks']) {
+    for (const column of ['id', 'logo_path', 'brand_accent', 'uses_fire_ranks', 'email_notifications']) {
       expect(columns, `the snapshot stops reading ${column}`).toContain(column);
     }
     // Spelled `snake_case`, because PostgREST speaks columns: a `camelCase`
@@ -561,6 +573,7 @@ describe('the update writes the edited fields and answers with the row', () => {
     ['the accent', { brandAccent: 'violet' }],
     ['the cleared accent', { brandAccent: null }],
     ['the fire-rank setting', { usesFireRanks: true }],
+    ['the email-notifications switch', { emailNotifications: false }],
   ] as const)('never writes the type or the zone with %s (FR-7, FR-8)', (_, write) => {
     const written = Object.keys(organizationEditColumns(write));
 
@@ -739,6 +752,30 @@ describe('the update writes the edited fields and answers with the row', () => {
     expect(withAccent).toBeDefined();
   });
 
+  it('sends the email-notifications switch alone, as a fifth disjoint write (story 10.3)', async () => {
+    for (const value of [true, false]) {
+      expect(organizationEditColumns({ emailNotifications: value })).toEqual({ email_notifications: value });
+
+      const log = recorder();
+      const outcome = await updateOrganization(
+        answering({ data: [PILOT_ROW], error: null }, log),
+        PILOT_ROW.id,
+        { emailNotifications: value },
+      );
+
+      expect(outcome.ok).toBe(true);
+      expect(log.updated).toEqual([{ email_notifications: value }]);
+    }
+
+    // @ts-expect-error the switch write may not carry the name
+    const withFields: OrganizationWrite = { ...EDITS, emailNotifications: true };
+    // @ts-expect-error the switch write may not carry the fire-rank setting
+    const withRanks: OrganizationWrite = { usesFireRanks: true, emailNotifications: true };
+
+    expect(withFields).toBeDefined();
+    expect(withRanks).toBeDefined();
+  });
+
   it('types the setting write apart from EVERY other snapshot field', () => {
     // The doc's claim, made executable: each `@ts-expect-error` below is a
     // `pnpm typecheck` failure the moment the field stops being excluded.
@@ -759,6 +796,8 @@ describe('the update writes the edited fields and answers with the row', () => {
       { usesFireRanks: true, leaveYearStartDay: 1 },
       // @ts-expect-error not the logo
       { usesFireRanks: true, logoPath: 'x' },
+      // @ts-expect-error not the email-notifications switch
+      { usesFireRanks: true, emailNotifications: true },
     ];
     const snapshotFields = Object.keys(organizationSnapshotOf(PILOT_ROW) ?? {}).filter(
       (field) => field !== 'usesFireRanks',

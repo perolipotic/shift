@@ -642,6 +642,21 @@ column, and a code it cannot render yet (one only `0043` writes) is retried
 with backoff, five attempts over about 100 minutes, so deploy the function
 within that window.
 
+**Migration `0044` before the SPA and the `notify` of story 10.3.** `0044` adds
+`organizations.email_notifications`, which `ORGANIZATION_COLUMNS` now selects
+(§5.2c: the chrome reads it on every signed-in screen), and the
+`notification_settings` table `/obavijesti` reads and writes. It also adds the
+outbox filter trigger, so a member's or an organization's switch stops the
+writes from the moment it lands. The new `notify` only adds the footer line
+linking to `/obavijesti`; it reads nothing `0044` adds, but the link lands on a
+route only the new SPA has. So: `db push`, then the SPA, then
+`functions deploy notify`. The switches also act at claim time: `claim_notifications`
+(re-created by `0044`, same signature and grants) settles as failed, with
+`failure_code = 'EMAIL_TURNED_OFF'`, every pending email row whose recipient or
+organization has email off, including rows waiting out a retry; only a row
+already claimed and in flight can still send. The `notify` function needs no
+change for this.
+
 With the pipeline enabled (§8), merging to `main` is what promotes: staging is
 deployed and smoked, then production waits for an approval, and each deploy
 pushes migrations **before** it publishes the SPA. Without it, nothing publishes
@@ -740,7 +755,9 @@ select failure_code, count(*) from notification_outbox
  where failed_at is not null group by 1;
 -- RECIPIENT_NO_EMAIL is expected (a member with no address);
 -- PROVIDER_REFUSED means Resend refused the message itself (a 4xx other than 401/403);
--- ATTEMPTS_EXHAUSTED means five transient failures (Resend down, or rate-limited).
+-- ATTEMPTS_EXHAUSTED means five transient failures (Resend down, or rate-limited);
+-- EMAIL_TURNED_OFF is expected (story 10.3): the recipient or the organization
+-- turned email off after the row was queued, and the claim settled it unsent.
 select failure_code, count(*) from notification_outbox
  where sent_at is null and failed_at is null and failure_code is not null group by 1;
 -- PROVIDER_UNAUTHORIZED waiting means the key or the domain is wrong (§3a 1–2):
