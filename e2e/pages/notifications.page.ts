@@ -38,22 +38,54 @@ export class NotificationsPage extends BasePage {
     return this.page.getByRole('link', { name: copy.organizationOffAdmin, exact: true });
   }
 
-  /** The failed save's alert. */
+  /** The email section's failed save. */
   get saveFailed(): Locator {
-    return this.page.getByRole('alert').filter({ hasText: copy.saveFailed });
+    return this.emailSection.getByRole('alert').filter({ hasText: copy.saveFailed });
   }
 
-  /** Every radio on the screen: the email on/off, when it is offered. */
+  /** The *E-pošta* section. */
+  get emailSection(): Locator {
+    return this.page.getByRole('region', { name: copy.email, exact: true });
+  }
+
+  /** Every radio in the email section: the email on/off, when it is offered. */
   get radios(): Locator {
-    return this.page.getByRole('radio');
+    return this.emailSection.getByRole('radio');
   }
 
   get emailOn(): Locator {
-    return this.page.getByRole('radio', { name: copy.on, exact: true });
+    return this.emailSection.getByRole('radio', { name: copy.on, exact: true });
   }
 
   get emailOff(): Locator {
-    return this.page.getByRole('radio', { name: copy.off, exact: true });
+    return this.emailSection.getByRole('radio', { name: copy.off, exact: true });
+  }
+
+  /** Story 10.4: the *Obavijesti na uređaju* section. */
+  get pushSection(): Locator {
+    return this.page.getByRole('region', { name: copy.pushHeading, exact: true });
+  }
+
+  get pushRadios(): Locator {
+    return this.pushSection.getByRole('radio');
+  }
+
+  get pushOn(): Locator {
+    return this.pushSection.getByRole('radio', { name: copy.on, exact: true });
+  }
+
+  get pushOff(): Locator {
+    return this.pushSection.getByRole('radio', { name: copy.off, exact: true });
+  }
+
+  /** A line of the push section, by its exact text. */
+  pushLine(text: string): Locator {
+    return this.pushSection.getByText(text, { exact: true });
+  }
+
+  /** The push section's failed choice. */
+  get pushFailed(): Locator {
+    return this.pushSection.getByRole('alert').filter({ hasText: copy.saveFailed });
   }
 
   /** The address, shown read-only. */

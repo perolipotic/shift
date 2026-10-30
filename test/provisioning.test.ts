@@ -698,7 +698,8 @@ describe('every organization table carries row level security, and only its revi
               'shift_type_versions', 'rotation_patterns', 'rotation_steps',
               'rotation_assignments', 'shift_type_overrides', 'roster_overrides',
               'leave_records', 'conflict_resolutions', 'leave_requests',
-              'leave_request_decisions', 'notification_outbox', 'notification_settings'
+              'leave_request_decisions', 'notification_outbox', 'notification_settings',
+              'push_subscriptions'
             )
           order by relname`,
       );
@@ -724,6 +725,8 @@ describe('every organization table carries row level security, and only its revi
         'notification_outbox',
         'notification_settings',
         'organizations',
+        // STORY 10.4 (0045): a member's devices, own rows only.
+        'push_subscriptions',
         'roster_overrides',
         'rotation_assignments',
         'rotation_patterns',
@@ -799,6 +802,37 @@ describe('every organization table carries row level security, and only its revi
           .map((row) => `${row.verb}:${row.column}`)
           .sort(),
       ).toEqual(['INSERT:email', 'INSERT:member_id', 'INSERT:organization_id', 'UPDATE:email']);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it.skipIf(noDatabase)('holds no privilege on push_subscriptions but the own rows read and delete (0045)', async () => {
+    // STORY 10.4. A member reads and deletes their own devices (the policies
+    // narrow both to the own rows); a device is registered only through
+    // `register_push_subscription`, so no insert and no update. `anon` holds
+    // nothing, and `service_role` reaches the table only through the claim and
+    // `delete_push_subscription`, as with the outbox.
+    const client = await connect();
+    try {
+      const { rows } = await client.query<{ role: string; privilege: string; held: boolean }>(
+        `select role, privilege,
+                has_table_privilege(role, 'public.push_subscriptions', privilege) as held
+           from unnest(array['anon', 'authenticated', 'service_role']) as role,
+                unnest(array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'])
+                  as privilege`,
+      );
+      expect(rows.filter((row) => row.held).map((row) => `${row.role}:${row.privilege}`).sort()).toEqual([
+        'authenticated:DELETE',
+        'authenticated:SELECT',
+      ]);
+
+      const { rows: columns } = await client.query<{ held: boolean }>(
+        `select bool_or(has_column_privilege('authenticated', 'public.push_subscriptions', column_name, verb)) as held
+           from unnest(array['organization_id', 'id', 'member_id', 'endpoint', 'p256dh', 'auth', 'created_at']) as column_name,
+                unnest(array['INSERT', 'UPDATE']) as verb`,
+      );
+      expect(columns[0]?.held, 'a column of push_subscriptions is writable directly').toBe(false);
     } finally {
       await client.end();
     }
@@ -1936,6 +1970,11 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'claim_notifications', argumentCount: 1 },
     { name: 'settle_notification', argumentCount: 4 },
     { name: 'invoke_notify', argumentCount: 0, schema: 'private' },
+    // STORY 10.4. A device's registration hands an endpoint over from the
+    // member who held it, a row the caller can neither see nor delete; a gone
+    // device is deleted for `notify`, which holds no table privilege.
+    { name: 'register_push_subscription', argumentCount: 3 },
+    { name: 'delete_push_subscription', argumentCount: 3 },
     // 0023. The lock is taken from a trigger every writer fires, and the
     // last-admin re-check reads `members` and the status history past row
     // level security, as 0002's trigger does, on the same attributes.
@@ -2115,6 +2154,11 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // callable by nobody.
     { name: 'filter_notification_outbox', argumentCount: 0, expected: [], schema: 'private' },
     { name: 'touch_notification_settings', argumentCount: 0, expected: [], schema: 'private' },
+    // STORY 10.4 (0045). A member registers their own device (a definer: it
+    // hands an endpoint over from whoever held it); only `notify`, with the
+    // secret key, deletes a device its push service says is gone.
+    { name: 'register_push_subscription', argumentCount: 3, expected: ['authenticated'] },
+    { name: 'delete_push_subscription', argumentCount: 3, expected: ['service_role'] },
     // 0024's name key, in `private`, which PostgREST does not expose. Every
     // name check and name unique index calls it, and both are
     // permission-checked against the WRITING role — and a check runs on every

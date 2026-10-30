@@ -120,7 +120,7 @@ jobs:
             echo "To turn deploys on, configure what DEPLOY.md → *CI/CD* lists, then set \`DEPLOY_ENABLED=true\`:"
             echo ""
             echo "- environments \`staging\` and \`production\`, both restricted to the \`main\` branch, production with a required reviewer"
-            echo "- on EACH environment, secrets \`SUPABASE_ACCESS_TOKEN\`, \`SUPABASE_DB_PASSWORD\`, \`SUPABASE_SECRET_KEY\`, \`CLOUDFLARE_API_TOKEN\`, \`RESEND_API_KEY\`, \`NOTIFY_INVOKE_SECRET\` and variables \`SUPABASE_PROJECT_REF\`, \`SUPABASE_PUBLISHABLE_KEY\`, \`APP_ORIGINS\`, \`CLOUDFLARE_ACCOUNT_ID\`, \`CLOUDFLARE_PAGES_PROJECT\`, \`NOTIFY_EMAIL_FROM\`; optionally the secret \`VAPID_PRIVATE_KEY\` (read from story 10.4)"
+            echo "- on EACH environment, secrets \`SUPABASE_ACCESS_TOKEN\`, \`SUPABASE_DB_PASSWORD\`, \`SUPABASE_SECRET_KEY\`, \`CLOUDFLARE_API_TOKEN\`, \`RESEND_API_KEY\`, \`NOTIFY_INVOKE_SECRET\`, \`VAPID_PRIVATE_KEY\` and variables \`SUPABASE_PROJECT_REF\`, \`SUPABASE_PUBLISHABLE_KEY\`, \`APP_ORIGINS\`, \`CLOUDFLARE_ACCOUNT_ID\`, \`CLOUDFLARE_PAGES_PROJECT\`, \`NOTIFY_EMAIL_FROM\`, \`VAPID_PUBLIC_KEY\`, \`VAPID_SUBJECT\`"
             echo "- on EACH environment's database, the Vault secrets \`notify_url\` and \`notify_invoke_secret\` (DEPLOY.md §3a)"
             echo "- no deploy credential as a repository secret"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -365,6 +365,9 @@ jobs:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           NOTIFY_INVOKE_SECRET: ${{ secrets.NOTIFY_INVOKE_SECRET }}
           NOTIFY_EMAIL_FROM: ${{ vars.NOTIFY_EMAIL_FROM }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          VAPID_PUBLIC_KEY: ${{ vars.VAPID_PUBLIC_KEY }}
+          VAPID_SUBJECT: ${{ vars.VAPID_SUBJECT }}
         run: >-
           node scripts/ci/require-config.mjs --environment staging
           secret:SUPABASE_ACCESS_TOKEN secret:CLOUDFLARE_API_TOKEN
@@ -372,6 +375,7 @@ jobs:
           var:SUPABASE_PROJECT_REF:project-ref var:SUPABASE_PUBLISHABLE_KEY:publishable var:APP_ORIGINS
           secret:SUPABASE_DB_PASSWORD secret:SUPABASE_SECRET_KEY:secret
           secret:RESEND_API_KEY:resend secret:NOTIFY_INVOKE_SECRET:invoke-secret var:NOTIFY_EMAIL_FROM
+          secret:VAPID_PRIVATE_KEY:vapid-private var:VAPID_PUBLIC_KEY:vapid-public var:VAPID_SUBJECT:vapid-subject
 
       - uses: ./.github/actions/setup
 
@@ -391,6 +395,8 @@ jobs:
           notify-invoke-secret: ${{ secrets.NOTIFY_INVOKE_SECRET }}
           notify-email-from: ${{ vars.NOTIFY_EMAIL_FROM }}
           vapid-private-key: ${{ secrets.VAPID_PRIVATE_KEY }}
+          vapid-public-key: ${{ vars.VAPID_PUBLIC_KEY }}
+          vapid-subject: ${{ vars.VAPID_SUBJECT }}
           cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           cloudflare-account-id: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           cloudflare-pages-project: ${{ vars.CLOUDFLARE_PAGES_PROJECT }}
@@ -475,6 +481,9 @@ jobs:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           NOTIFY_INVOKE_SECRET: ${{ secrets.NOTIFY_INVOKE_SECRET }}
           NOTIFY_EMAIL_FROM: ${{ vars.NOTIFY_EMAIL_FROM }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          VAPID_PUBLIC_KEY: ${{ vars.VAPID_PUBLIC_KEY }}
+          VAPID_SUBJECT: ${{ vars.VAPID_SUBJECT }}
         run: >-
           node scripts/ci/require-config.mjs --environment production
           secret:SUPABASE_ACCESS_TOKEN secret:CLOUDFLARE_API_TOKEN
@@ -482,6 +491,7 @@ jobs:
           var:SUPABASE_PROJECT_REF:project-ref var:SUPABASE_PUBLISHABLE_KEY:publishable var:APP_ORIGINS
           secret:SUPABASE_DB_PASSWORD secret:SUPABASE_SECRET_KEY:secret
           secret:RESEND_API_KEY:resend secret:NOTIFY_INVOKE_SECRET:invoke-secret var:NOTIFY_EMAIL_FROM
+          secret:VAPID_PRIVATE_KEY:vapid-private var:VAPID_PUBLIC_KEY:vapid-public var:VAPID_SUBJECT:vapid-subject
 
       - uses: ./.github/actions/setup
 
@@ -501,6 +511,8 @@ jobs:
           notify-invoke-secret: ${{ secrets.NOTIFY_INVOKE_SECRET }}
           notify-email-from: ${{ vars.NOTIFY_EMAIL_FROM }}
           vapid-private-key: ${{ secrets.VAPID_PRIVATE_KEY }}
+          vapid-public-key: ${{ vars.VAPID_PUBLIC_KEY }}
+          vapid-subject: ${{ vars.VAPID_SUBJECT }}
           cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           cloudflare-account-id: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           cloudflare-pages-project: ${{ vars.CLOUDFLARE_PAGES_PROJECT }}

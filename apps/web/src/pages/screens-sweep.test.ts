@@ -379,7 +379,8 @@ describe('the screen is read at all, so every sweep below means something', () =
     // SEVENTY-NINE SINCE STORY 9.4: the leave request decision screen and its rules.
     // EIGHTY-TWO SINCE STORY 10.3: the notification settings screen and its
     // rules, and the organization's email-notifications switch labels.
-    expect(KEY_SOURCES).toHaveLength(82);
+    // EIGHTY-THREE SINCE STORY 10.4: the push section's rules.
+    expect(KEY_SOURCES).toHaveLength(83);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"

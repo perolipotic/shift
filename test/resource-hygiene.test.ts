@@ -2217,6 +2217,18 @@ const SANCTIONED_SCREEN_KEYS = [
   'organization.emailNotificationsHint',
   'organization.emailNotificationsStatusOn',
   'organization.emailNotificationsStatusOff',
+  // STORY 10.4. The push section of the settings screen: this device's
+  // on/off, and what it says on iOS before install, without support, and
+  // with the permission blocked.
+  'postavkeObavijesti.pushHeading',
+  'postavkeObavijesti.pushLede',
+  'postavkeObavijesti.pushChoice',
+  'postavkeObavijesti.pushIosInstall',
+  'postavkeObavijesti.pushUnsupported',
+  'postavkeObavijesti.pushDenied',
+  'postavkeObavijesti.pushStatusOn',
+  'postavkeObavijesti.pushStatusOff',
+  'postavkeObavijesti.pushNotConfigured',
 ];
 
 /** Everything the resource file is permitted to hold, together. */

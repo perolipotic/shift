@@ -1795,3 +1795,35 @@ export async function emailNotificationsOf(slug: string): Promise<boolean | unde
     await client.end();
   }
 }
+
+/**
+ * Story 10.4: the member `username`'s own push devices, by endpoint, in the
+ * run organization.
+ */
+export async function pushEndpointsOf(slug: string, username: string): Promise<string[]> {
+  const client = await connect();
+  try {
+    const { rows } = await client.query<{ endpoint: string }>(
+      `select s.endpoint
+         from push_subscriptions s
+         join members m on m.organization_id = s.organization_id and m.id = s.member_id
+         join organizations o on o.id = m.organization_id
+        where o.slug = $1 and m.username = $2
+        order by s.endpoint`,
+      [slug, username],
+    );
+    return rows.map((row) => row.endpoint);
+  } finally {
+    await client.end();
+  }
+}
+
+/** Story 10.4: removes every device registered under `endpoint`, a case's own. */
+export async function removePushEndpointInSql(endpoint: string): Promise<void> {
+  const client = await connect();
+  try {
+    await client.query('delete from push_subscriptions where endpoint = $1', [endpoint]);
+  } finally {
+    await client.end();
+  }
+}

@@ -1111,8 +1111,20 @@
 ## Deferred from: planning of spec-10-3-notification-settings-in-vise.md (2026-10-30)
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-10-3-notification-settings-in-vise.md`
-  summary: The *Obavijesti* screen has no push on/off and no `Instaliraj aplikaciju za obavijesti` row (epic 10.3 AC, UX-DR49, deferred); story 10.4 adds both with the push channel itself.
+  summary: RESOLVED by 10.4 (2026-10-30) — `/obavijesti` has a section of its own, *Obavijesti na uređaju*: this device's push on/off, or `Instaliraj aplikaciju za obavijesti (iOS 16.4+)` on iOS before install, with `push_subscriptions` (0045), a `push` outbox channel and `notify` sending it with VAPID. Original: The *Obavijesti* screen has no push on/off and no `Instaliraj aplikaciju za obavijesti` row (epic 10.3 AC, UX-DR49, deferred); story 10.4 adds both with the push channel itself.
   evidence: Push has no subscription, VAPID key or outbox channel until 10.4; a push switch in 10.3 would store a preference with no effect. Product owner chose email-only for 10.3 (2026-10-30).
+
+## Deferred from: code review of spec-10-4-web-push-reaches-members-without-email.md (2026-10-30)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-4-web-push-reaches-members-without-email.md`
+  summary: The service worker has no `pushsubscriptionchange` handler, so a subscription the browser rotates or expires goes stale until the member turns push on again on `/obavijesti`.
+  evidence: Raised by the 10.4 review (Blind Hunter). Re-registering from the worker needs an authenticated call the worker does not hold.
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-4-web-push-reaches-members-without-email.md`
+  summary: A deactivated member keeps their `push_subscriptions` rows; the writers skip them, but on reactivation push resumes on devices that may since belong to someone else.
+  evidence: Raised by the 10.4 review (Blind Hunter). Needs a cleanup tied to deactivation (0041's trigger area).
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-4-web-push-reaches-members-without-email.md`
+  summary: The push body reuses the email body, including its "Pogledaj ga u aplikaciji: <link>" sentence, which is noise on a lock screen since the tap already opens the url.
+  evidence: Raised by the 10.4 review (Blind Hunter). The spec froze "body = rendered body without the email footer"; a push-specific wording needs new `obavijesti` keys.
 
 ## Deferred from: planning of spec-15-1-pilot-kalendar-and-the-shell-in-glass.md (2026-10-30)
 

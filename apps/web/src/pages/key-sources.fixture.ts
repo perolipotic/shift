@@ -46,6 +46,7 @@ import {
   NOTIFICATIONS,
   NOTIFICATIONS_KEYS,
   ORGANIZATION_HOURS_KEYS,
+  PUSH_KEYS,
   ORGANIZATION_MESSAGE_KEYS,
   POSITION_KEYS,
   RANK_KEYS,
@@ -1042,10 +1043,22 @@ export const KEY_SOURCES = [
     // no-address line, the address label, the organization-off line, the
     // control's label, its two options and the failure notice. The saved
     // line comes through `emailStatusMessageKey`, the entry below.
+    // TWENTY-FIVE SINCE STORY 10.4: the push card's heading, its loading
+    // words, the iOS-install, unsupported and blocked lines, the unavailable
+    // line and its retry, its lede, its control's label, its two options and
+    // its failure notice. Its saved line comes through `pushStatusMessageKey`.
+    // TWENTY-SIX: the line a build with no VAPID public key shows.
     name: 'the notification settings screen',
     file: NOTIFICATIONS,
     keys: translationKeys,
-    strings: 13,
+    strings: 26,
+  },
+  {
+    // STORY 10.4: the push section's two saved lines, off `pushStatusMessageKey`.
+    name: 'the push settings rules',
+    file: PUSH_KEYS,
+    keys: messageKeyUnions,
+    strings: 2,
   },
   {
     // STORY 10.3: the two saved lines, off `emailStatusMessageKey`, and the

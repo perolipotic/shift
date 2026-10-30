@@ -24,3 +24,30 @@ interface NotifyDenoRuntime {
 declare module 'npm:@supabase/supabase-js@2.113.0' {
   export function createClient(url: string, key: string, options?: unknown): unknown;
 }
+
+/**
+ * Story 10.4: `web-push`, as much as `index.ts` uses — the request builder,
+ * never its sender (the handler's own `fetch` sends).
+ */
+declare module 'npm:web-push@3.6.7' {
+  interface RequestDetails {
+    readonly method: string;
+    readonly headers: Readonly<Record<string, string | number>>;
+    readonly body: Uint8Array;
+    readonly endpoint: string;
+  }
+
+  const webpush: {
+    generateRequestDetails(
+      subscription: { endpoint: string; keys: { p256dh: string; auth: string } },
+      payload: string,
+      options: {
+        vapidDetails: { subject: string; publicKey: string; privateKey: string };
+        TTL: number;
+        contentEncoding: 'aes128gcm';
+      },
+    ): RequestDetails;
+  };
+
+  export default webpush;
+}

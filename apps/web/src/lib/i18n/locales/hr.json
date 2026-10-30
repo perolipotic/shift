@@ -1611,7 +1611,16 @@
     "loading": "Učitavanje postavki obavijesti",
     "unavailable": "Postavke obavijesti trenutačno nije moguće prikazati.",
     "retry": "Pokušaj ponovno",
-    "saveFailed": "Spremanje trenutačno nije moguće. Pokušaj ponovno."
+    "saveFailed": "Spremanje trenutačno nije moguće. Pokušaj ponovno.",
+    "pushHeading": "Obavijesti na uređaju",
+    "pushLede": "Na ovom uređaju javljamo isto što i e-poštom, i kad nemaš upisan e-mail. Uključuje se zasebno na svakom uređaju.",
+    "pushChoice": "Obavijesti na ovom uređaju",
+    "pushIosInstall": "Instaliraj aplikaciju za obavijesti (iOS 16.4+)",
+    "pushUnsupported": "Ovaj preglednik ne može primati obavijesti.",
+    "pushDenied": "Obavijesti su blokirane u postavkama preglednika. Dopusti ih ondje pa ih ovdje uključi.",
+    "pushStatusOn": "Obavijesti na ovom uređaju su uključene.",
+    "pushStatusOff": "Obavijesti na ovom uređaju su isključene.",
+    "pushNotConfigured": "Obavijesti na uređaju trenutačno nisu dostupne."
   },
   "obavijesti": {
     "leaveRequestApproved": {

@@ -415,6 +415,66 @@ describe('notify secret hygiene (story 10.1)', () => {
   });
 });
 
+/**
+ * Story 10.4 (AD-17, amended): the VAPID boundary. The private key is named
+ * by `notify` and by the files that deploy it, and nowhere else; the SPA may
+ * name the PUBLIC key's build variable, `VITE_VAPID_PUBLIC_KEY`, and so may
+ * the scripts and the action that set it, and nothing on the server side.
+ * Tests and planning documents are out of scope: they name what they pin.
+ */
+describe('the VAPID boundary (story 10.4)', () => {
+  /** Every committed or new (not ignored) file outside the tests and the planning output. */
+  function inScope(): string[] {
+    let listed: string[];
+    try {
+      listed = execFileSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], {
+        cwd: repoRoot,
+        encoding: 'utf8',
+      })
+        .split('\0')
+        .filter((entry) => entry !== '');
+    } catch {
+      listed = collectFiles(repoRoot, () => true).map((file) => relative(repoRoot, file));
+    }
+    return listed
+      .filter((entry) => !entry.startsWith('test/') && !entry.startsWith('_bmad') && !entry.startsWith('.claude/'))
+      .filter((entry) => !/\.(?:test|spec)\.tsx?$/.test(entry) && !entry.endsWith('.png') && entry !== 'pnpm-lock.yaml')
+      .filter((entry) => existsSync(join(repoRoot, entry)) && statSync(join(repoRoot, entry)).isFile());
+  }
+
+  const naming = (name: string): string[] =>
+    inScope().filter((entry) => readFileSync(join(repoRoot, entry), 'utf8').includes(name));
+
+  it('names VAPID_PRIVATE_KEY only in notify, the deploy files and DEPLOY.md', () => {
+    const allowed = (entry: string): boolean =>
+      entry.startsWith('supabase/functions/notify/') ||
+      [
+        'supabase/functions/.env.example',
+        '.github/actions/deploy/action.yml',
+        '.github/workflows/pipeline.yml',
+        'scripts/ci/require-config.mjs',
+        'DEPLOY.md',
+      ].includes(entry);
+    const found = naming('VAPID_PRIVATE_KEY');
+
+    expect(found, 'nothing names it, so this passes on nothing').toContain('supabase/functions/notify/handler.ts');
+    expect(found.filter((entry) => !allowed(entry))).toEqual([]);
+  });
+
+  it('names VITE_VAPID_PUBLIC_KEY only in the SPA, scripts/ci, the deploy action and DEPLOY.md', () => {
+    const allowed = (entry: string): boolean =>
+      entry.startsWith('apps/web/') ||
+      entry.startsWith('scripts/ci/') ||
+      ['.github/actions/deploy/action.yml', 'DEPLOY.md'].includes(entry);
+    const found = naming('VITE_VAPID_PUBLIC_KEY');
+
+    expect(found).toContain('apps/web/src/features/notifications/services/page-push.ts');
+    expect(found.filter((entry) => !allowed(entry))).toEqual([]);
+    // The SPA reads the PUBLIC key alone: no private key's name anywhere under apps/.
+    expect(naming('VAPID_PRIVATE_KEY').filter((entry) => entry.startsWith('apps/'))).toEqual([]);
+  });
+});
+
 describe('secret key hygiene: the scanner itself', () => {
   // Comment-stripping that swallowed too much would make every naming assertion
   // above pass vacuously, so each rule is proved to strip its own comments and

@@ -586,8 +586,8 @@ development_status:
   epic-10: in-progress
   10-1-the-outbox-and-the-notify-function: done
   10-2-email-tells-people-what-concerns-them: done
-  10-3-notification-settings-in-vise: review
-  10-4-web-push-reaches-members-without-email: backlog
+  10-3-notification-settings-in-vise: done
+  10-4-web-push-reaches-members-without-email: review
   epic-10-retrospective: optional
 
   epic-11: backlog

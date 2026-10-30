@@ -59,6 +59,7 @@ import { forgetDeviceSnapshot } from '@/lib/offline/device-snapshot';
 import { currentSession, supabaseClient } from '@/lib/supabase/client';
 import { pageSignOutFallback } from '@/lib/supabase/local-sign-out';
 import { SIGN_OUT_FAILED, signOut, type SignOutFailure } from '@/features/auth/services/sign-out';
+import { forgetThisPushDevice } from '@/features/notifications/services/page-push';
 import {
   THEME_PREFERENCES,
   useThemePreference,
@@ -449,6 +450,13 @@ export function AppChrome({ children }: AppChromeProps) {
     let revoked = false;
 
     try {
+      // STORY 10.4: this device's push goes with the session. Its row is
+      // deleted while the session can still delete it, and the browser
+      // unsubscribed, so the next person signed in here hears nothing meant
+      // for this one. BEST-EFFORT: bounded, never throws, never blocks the
+      // sign-out below, which runs whatever happened here.
+      await forgetThisPushDevice();
+
       const outcome = await signOut(supabaseClient().auth, pageSignOutFallback);
 
       if (!outcome.ok) {
