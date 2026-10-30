@@ -1180,3 +1180,18 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-retro-9-item-17-leave-request-rules.md`
   summary: `leave_record_change` recognises an amended leave record by its transaction signature (same member, the replacement's `created_at` equal to the old record's `removed_at`, `created_by` equal to `removed_by`), because 0029 stores no link from an old record to its replacement. Add a stored `replaces_id` on `leave_records`, written by `amend_leave_record`, and read the chain through it.
   evidence: Raised by the item-17 review (Blind Hunter); kept as is for now because no other path writes that signature, and recorded at the product owner's request (2026-10-30).
+
+## Deferred from: planning of spec-15-2-every-primitive-and-layered-surface-in-glass.md (2026-10-30)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-15-2-every-primitive-and-layered-surface-in-glass.md`
+  summary: `--sidebar*` is not yet retired (D5, epic 15.2 "Timeline … no longer the sidebar pair" partly deferred). After 15.2 the sign-in panel in `components/layout/auth-layout.tsx` is its only consumer. 15.3 moves that panel onto the backdrop and then deletes the eight `--sidebar*` tokens, their `@theme inline` lines, the base `sidebar` contrast pairs, the `sidebar-ring` shift pin and the DESIGN.md `base-palette` entries.
+  evidence: The sign-in panel is a screen, and the epic gives it to 15.3. Deleting the tokens in 15.2 would restyle sign-in outside its story.
+
+## Deferred from: code review of spec-15-2-every-primitive-and-layered-surface-in-glass.md (2026-10-30)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-15-2-every-primitive-and-layered-surface-in-glass.md`
+  summary: Several glass-panel pairs sit only a few hundredths above their thresholds. Story 15.5 must re-measure them whenever it tunes the dark scrim, the blobs, ink or the glass alphas:
+    - light `muted-foreground` on the panel, about 4.51–4.53:1;
+    - dark `--input` on the panel, 3.08:1;
+    - light ring beside the input, 3.22:1.
+  evidence: Raised by the 15.2 review (Blind Hunter). The ratios are recorded in `index.css` and DESIGN.md, and `theme-contrast` will fail on any thinner value, but nothing tells the 15.5 tuner where the margin is.

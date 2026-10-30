@@ -75,6 +75,9 @@ const BRAND_PAIRS = [
   // that ships without a measured pair is the one thing this curation exists to
   // prevent — a colour column would have moved the measurement to runtime.
   ...ACCENT_TOKENS,
+  // STORY 15.2: the hour band's `dark` tone, whose stretch carries the band's
+  // name as text (the Timeline) or sits beside it (IconTile).
+  'band-dark',
 ] as const;
 
 /** Base surfaces that carry text. */
@@ -246,6 +249,9 @@ describe('the navy sidebar carries readable text and visible controls', () => {
    * the active destination's label, the hovered row, the sign-in brand
    * panel's headline and the section label were measured by nothing.
    *
+   * STORY 15.2: the sign-in panel (`components/layout/auth-layout.tsx`) is
+   * the one surface left on this set; story 15.3 moves it and deletes the set.
+   *
    * The small muted text is drawn at 70% of `sidebar-foreground` — the
    * profile card's role and, since story 7.3, the *Više* sheet's group
    * headings and "role · organization" line, on the same `sidebar` fill — so
@@ -282,36 +288,10 @@ describe('the navy sidebar carries readable text and visible controls', () => {
     expect(measured, `measured ${measured.toFixed(2)}:1 (${theme})`).toBeGreaterThanOrEqual(AA_BODY);
   });
 
-  /**
-   * The `sidebar` Button variant's boundary: `sidebar-foreground` at 50%, the
-   * value `components/ui/button.tsx` spells as `border-sidebar-foreground/50`.
-   * The collapse and the exit are bordered controls on navy, and
-   * `--sidebar-border` measures about 1.2:1 there — a divider, not a control's
-   * edge. Floored at 3:1 and pinned, the `--input` bargain: the floor is the
-   * requirement, the pin is the drift alarm.
-   */
-  const SIDEBAR_CONTROL_ALPHA = 0.5;
-  const SIDEBAR_CONTROL_RATIO: Record<Theme, number> = { light: 3.91, dark: 3.67 };
-
-  it('reads the alpha from the primitive itself, so the two cannot drift apart', () => {
-    const button = readFileSync(
-      join(fileURLToPath(new URL('..', import.meta.url)), 'apps', 'web', 'src', 'components', 'ui', 'button.tsx'),
-      'utf8',
-    );
-
-    expect(button).toContain(`border-sidebar-foreground/${SIDEBAR_CONTROL_ALPHA * 100}`);
-  });
-
-  it.each(THEMES)('the sidebar button boundary clears 3:1 on --sidebar in %s', (theme) => {
-    const surface = colour(theme, 'sidebar');
-    const edge = composite({ ...rgb(colour(theme, 'sidebar-foreground')), alpha: SIDEBAR_CONTROL_ALPHA }, surface);
-    const measured = ratio(edge, surface);
-
-    expect(measured, `sidebar button boundary (${theme}) measured ${measured.toFixed(2)}:1`).toBeGreaterThanOrEqual(
-      AA_LARGE,
-    );
-    expect(measured, `expected ~${SIDEBAR_CONTROL_RATIO[theme]}:1`).toBeCloseTo(SIDEBAR_CONTROL_RATIO[theme], 2);
-  });
+  // STORY 15.2 retired the `sidebar` Button variant's boundary pin: the variant
+  // became the borderless glass `chrome` (measured in the layered-surfaces
+  // block below). The pairs above stay while the sign-in panel, the set's last
+  // consumer, draws with them; story 15.3 deletes both.
 });
 
 describe('badges and stat cards are text, and read on the card and on a hovered row', () => {
@@ -324,12 +304,11 @@ describe('badges and stat cards are text, and read on the card and on a hovered 
    * over whichever surface it sits on. Both alphas are read from the primitives,
    * as the sidebar button's is.
    *
-   * ITS TEXT IS `foreground`, NOT `primary`. Dark `primary` does not reach the
-   * body threshold on the dark card even with no tint, and every tint only
-   * lowers it, so no alpha could fix it and a new colour token is a
-   * design-owner decision. The assertion below keeps that reason measured
-   * rather than remembered: if it ever stops being true, `text-primary` is
-   * back on the table.
+   * ITS TEXT IS `foreground`, NOT `primary`. Until story 15.2 dark `primary`
+   * did not reach the body threshold on the dark card even with no tint
+   * (4.44:1). Story 15.2 re-tuned dark `primary` (#3FA0FA, 5.90:1 there), so
+   * the reason is gone; the badge keeps `foreground`, the stronger pair, and
+   * the assertion below now holds the re-tune instead.
    *
    * The stat card's label is `muted-foreground` on the card; its value is
    * `card-foreground` on the card, which the base sweep already measures.
@@ -348,8 +327,8 @@ describe('badges and stat cards are text, and read on the card and on a hovered 
     expect(table).toContain(`hover:bg-muted/${Math.round(ROW_HOVER_ALPHA * 100)}`);
   });
 
-  it('keeps the reason the tint takes foreground text: dark primary misses 4.5:1 on the card untinted', () => {
-    expect(ratio(colour('dark', 'primary'), colour('dark', 'card'))).toBeLessThan(AA_BODY);
+  it('holds the re-tuned dark primary at 4.5:1 or more on the card untinted (story 15.2)', () => {
+    expect(ratio(colour('dark', 'primary'), colour('dark', 'card'))).toBeGreaterThanOrEqual(AA_BODY);
   });
 
   const card = (theme: Theme): Color => colour(theme, 'card');
@@ -498,12 +477,16 @@ describe('the base deviations stay shifted, not reverted to stock shadcn', () =>
    *
    * RE-PINNED BY STORY 15.1: `input` 0.6291 -> 0.6191 (#78879D), because the
    * G page (#E8EDF5) is darker than slate-50 and #7B8AA0 measured 2.98:1 on it.
+   *
+   * RE-PINNED BY STORY 15.2: `input` 0.6191 -> 0.5854 (#6E7D93), because a
+   * field on a glass panel over the scrimmed ink button measured 2.67:1, and
+   * `ring` 0.3418 -> 0.3099 (#13296B), to stay 3:1 from that darker border.
    */
   const DEVIATIONS: Record<string, { shifted: number; stock: number }> = {
     'muted-foreground': { shifted: 0.4924, stock: 0.556 },
-    ring: { shifted: 0.3418, stock: 0.708 },
+    ring: { shifted: 0.3099, stock: 0.708 },
     'sidebar-ring': { shifted: 0.8091, stock: 0.708 },
-    input: { shifted: 0.6191, stock: 0.922 },
+    input: { shifted: 0.5854, stock: 0.922 },
   };
 
   it.each(Object.keys(DEVIATIONS))('--%s (light) holds its measured lightness, not shadcn’s stock one', (name) => {
@@ -544,7 +527,9 @@ describe('the input boundary clears the UI-component threshold', () => {
   // a slate-50 page), 3.26 -> 3.32 dark (the same 36% white, now over navy).
   // RE-PINNED BY STORY 15.1: 3.35 -> 3.11 light (#78879D on the #E8EDF5 G
   // page), 3.32 -> 3.30 dark (the same 36% white over the #0A1020 page).
-  const EXPECTED_RATIO: Record<Theme, number> = { light: 3.11, dark: 3.30 };
+  // RE-PINNED BY STORY 15.2: 3.11 -> 3.56 light (#6E7D93, darker so a field
+  // still clears 3:1 on a glass panel's worst backdrop); dark unchanged.
+  const EXPECTED_RATIO: Record<Theme, number> = { light: 3.56, dark: 3.30 };
 
   it.each(THEMES)('--input is discernible against the page in %s', (theme) => {
     const surface = colour(theme, 'background');
@@ -1266,12 +1251,274 @@ describe('the ink action and the re-tuned primary read (story 15.1, D3)', () => 
     expect(button).toMatch(/default:\s*"bg-ink text-ink-foreground/);
   });
 
-  it.each(['background', 'card'] as const)('light primary reads as link text on %s', (surface) => {
-    // Blue is kept for links, today and selection. #2F55B8 measures 6.75:1 on
-    // white where #2563EB measured 5.17:1. Dark primary on the dark card is the
-    // known gap the Badge block above keeps measured; links there are 15.2's.
-    const measured = ratio(colour('light', 'primary'), colour('light', surface));
+  const primaryCases = THEMES.flatMap((theme) => (['background', 'card'] as const).map((surface) => ({ theme, surface })));
 
-    expect(measured, `primary on ${surface} (light) measured ${measured.toFixed(2)}:1`).toBeGreaterThanOrEqual(AA_BODY);
+  it.each(primaryCases)('primary reads as link text on $surface in $theme', ({ theme, surface }) => {
+    // Blue is kept for links, today and selection. #2F55B8 measures 6.75:1 on
+    // white where #2563EB measured 5.17:1. Dark primary was the known gap on
+    // the dark card (4.44:1) until story 15.2 re-tuned it to #3FA0FA (5.90:1);
+    // its pairs on the glass panel are measured in the block below.
+    const measured = ratio(colour(theme, 'primary'), colour(theme, surface));
+
+    expect(measured, `primary on ${surface} (${theme}) measured ${measured.toFixed(2)}:1`).toBeGreaterThanOrEqual(AA_BODY);
+  });
+});
+
+/**
+ * THE LAYERED SURFACES, MEASURED AGAINST THEIR WORST BACKDROP (story 15.2).
+ *
+ * Dialog, ConfirmDialog, Popover and the docked sheets are one `glass-panel`
+ * at the reading alpha (`--glass-reading`, ≥ .85). A panel floats over
+ * anything, so its ground is the panel composited over every backdrop it can
+ * sit on — the page, each blob, the card and every opaque fill (each cell,
+ * the ink button, a primary fill, the conflict red, a muted row) — and, for a
+ * Dialog, each of those under the `--glass-scrim` first. Blur is ignored, as
+ * in the chrome block: it only averages toward the colours measured here.
+ *
+ * On the panel: text (`foreground`, `muted-foreground` — allowed only because
+ * the panel is ≥ .85 — and `primary`, a link or the selected option) at
+ * 4.5:1; a field's or an outline button's `input` boundary, a chosen option's
+ * `primary` border and the focus ring at 3:1; and the ring at 3:1 from the
+ * `input` border it abuts, as on the page and the card.
+ *
+ * I/O row 3 of the spec, measured before the re-tunes: light
+ * `muted-foreground` 4.53:1 at .85 over the scrimmed ink button (so the panel
+ * may not go thinner), dark primary text 3.56:1 on the panel over the
+ * near-white ink button and 4.44:1 on the opaque dark card, both failing. Dark
+ * `primary` was re-tuned to #3FA0FA (4.74:1 and 5.90:1), light `--input` to
+ * #6E7D93 (2.67:1 -> 3.06:1 on the panel), light `--ring` to #13296B and dark
+ * `--ring` to #D6E6FC (3.22:1 and 3.36:1 from the input border on the panel).
+ */
+describe('the layered surfaces read against their worst backdrop (story 15.2)', () => {
+  const root = fileURLToPath(new URL('..', import.meta.url));
+  const ui = (file: string): string => readFileSync(join(root, 'apps', 'web', 'src', 'components', 'ui', file), 'utf8');
+
+  /** The scrim a Dialog's `::backdrop` lays over the page. */
+  const scrim = (theme: Theme): Color => colour(theme, 'glass-scrim');
+  const panel = (theme: Theme): Color => colour(theme, 'glass-reading');
+
+  /** Every opaque colour a panel can float over, and each under the scrim. */
+  function backdrops(theme: Theme): { name: string; colour: Color | Rgb }[] {
+    const page = colour(theme, 'background');
+    const under: { name: string; colour: Color | Rgb }[] = [
+      { name: 'the page', colour: page },
+      ...(['glass-blob-1', 'glass-blob-2', 'glass-blob-3'] as const).map((blob) => ({
+        name: blob,
+        colour: composite(colour(theme, blob), page),
+      })),
+      // `band-dark`: a Timeline stretch or an IconTile can sit under a
+      // popover (story 15.2 review).
+      ...(['card', ...FILLS, 'ink', 'primary', 'destructive', 'muted', 'band-dark'] as const).map((fill) => ({
+        name: fill,
+        colour: colour(theme, fill),
+      })),
+    ];
+
+    return [
+      ...under,
+      ...under.map(({ name, colour: below }) => ({
+        name: `${name} under the scrim`,
+        colour: composite(scrim(theme), below as Color),
+      })),
+    ];
+  }
+
+  /** The panel over each backdrop. */
+  function grounds(theme: Theme): { name: string; colour: Rgb }[] {
+    return backdrops(theme).map(({ name, colour: below }) => ({ name, colour: composite(panel(theme), below as Color) }));
+  }
+
+  function worst(theme: Theme, measure: (ground: Rgb) => number): { ratio: number; on: string } {
+    return grounds(theme)
+      .map(({ name, colour: ground }) => ({ ratio: measure(ground), on: name }))
+      .reduce((low, next) => (next.ratio < low.ratio ? next : low));
+  }
+
+  it('draws Dialog and Popover as the glass panel over a tinted scrim, read from the primitives', () => {
+    const dialog = ui('dialog.tsx');
+    const popover = ui('popover.tsx');
+
+    expect(dialog).toContain('"glass-panel p-0 text-foreground backdrop:bg-glass-scrim"');
+    expect(dialog, 'the backdrop still draws with the navy sidebar').not.toMatch(/backdrop:bg-sidebar/);
+    expect(popover).toMatch(/"glass-panel absolute /);
+    for (const source of [dialog, popover]) {
+      expect(source, 'a panel still paints an opaque fill over its glass').not.toMatch(/\bbg-(?:card|popover)\b/);
+    }
+  });
+
+  it('builds the panel on the reading alpha, at .85 or more in both themes', () => {
+    expect(utilityBlock('glass-panel')).toContain('background-color: var(--glass-reading);');
+    for (const theme of THEMES) {
+      expect(panel(theme).alpha ?? 1, `glass-reading (${theme})`).toBeGreaterThanOrEqual(0.85);
+    }
+  });
+
+  it('measures the darkest fills and the scrim, so the worst case the spec names is real', () => {
+    // NON-VACUITY: light `muted-foreground`'s worst ground is one of the two
+    // darkest fills — the band's navy since the review added it (4.51:1), the
+    // scrimmed ink button before (4.53:1) — and dark primary's is the ink button.
+    expect(worst('light', (ground) => ratio(colour('light', 'muted-foreground'), ground)).on).toMatch(
+      /^(?:ink|band-dark)(?: under the scrim)?$/,
+    );
+    expect(worst('dark', (ground) => ratio(colour('dark', 'primary'), ground)).on).toMatch(/^ink/);
+    expect(backdrops('light').map(({ name }) => name)).toContain('ink under the scrim');
+  });
+
+  const TEXT = ['foreground', 'muted-foreground', 'primary'] as const;
+  const textCases = THEMES.flatMap((theme) => TEXT.map((text) => ({ theme, text })));
+
+  it.each(textCases)('$text reads on the panel in $theme', ({ theme, text }) => {
+    const found = worst(theme, (ground) => ratio(colour(theme, text), ground));
+
+    expect(
+      found.ratio,
+      `${text} on the panel over ${found.on} (${theme}) measured ${found.ratio.toFixed(2)}:1`,
+    ).toBeGreaterThanOrEqual(AA_BODY);
+  });
+
+  it.each(THEMES)('the input boundary (a field, an outline button) is discernible on the panel in %s', (theme) => {
+    const found = worst(theme, (ground) => ratio(composite(colour(theme, 'input'), ground), ground));
+
+    expect(
+      found.ratio,
+      `input on the panel over ${found.on} (${theme}) measured ${found.ratio.toFixed(2)}:1`,
+    ).toBeGreaterThanOrEqual(AA_LARGE);
+  });
+
+  it.each(THEMES)("a chosen option's primary border is discernible on the panel in %s", (theme) => {
+    const found = worst(theme, (ground) => ratio(colour(theme, 'primary'), ground));
+
+    expect(found.ratio, `primary on the panel over ${found.on} (${theme})`).toBeGreaterThanOrEqual(AA_LARGE);
+  });
+
+  it.each(THEMES)('the focus ring is perceivable on the panel and beside the input border in %s', (theme) => {
+    const onPanel = worst(theme, (ground) => ratio(colour(theme, 'ring'), ground));
+    const besideInput = worst(theme, (ground) => ratio(colour(theme, 'ring'), composite(colour(theme, 'input'), ground)));
+
+    expect(onPanel.ratio, `ring on the panel over ${onPanel.on} (${theme})`).toBeGreaterThanOrEqual(AA_LARGE);
+    expect(
+      besideInput.ratio,
+      `ring beside the input border over ${besideInput.on} (${theme}) measured ${besideInput.ratio.toFixed(2)}:1`,
+    ).toBeGreaterThanOrEqual(AA_LARGE);
+  });
+
+  it.each(THEMES)('the opaque fallback (no blur, reduced transparency) is the card, measured in %s', (theme) => {
+    // The panel resolves to `--card` there, so its text is the card's pairs.
+    for (const text of TEXT) {
+      expect(ratio(colour(theme, text), colour(theme, 'card')), `${text} on card (${theme})`).toBeGreaterThanOrEqual(AA_BODY);
+    }
+  });
+
+  it('records the re-tuned values at their measured ratios (I/O row 3)', () => {
+    // Pinned, so the numbers recorded in index.css and DESIGN.md stay true.
+    expect(ratio(colour('dark', 'primary'), colour('dark', 'card'))).toBeCloseTo(5.9, 1);
+    expect(worst('dark', (ground) => ratio(colour('dark', 'primary'), ground)).ratio).toBeCloseTo(4.74, 1);
+    expect(ratio(colour('dark', 'primary-foreground'), colour('dark', 'primary'))).toBeCloseTo(6.55, 1);
+    expect(worst('light', (ground) => ratio(colour('light', 'muted-foreground'), ground)).ratio).toBeCloseTo(4.51, 2);
+  });
+
+  it.each(THEMES)('a pressed option row\'s count reads on its primary tint over the panel in %s', (theme) => {
+    // The filter picker's chosen row (`aria-pressed:bg-primary/10`) in the
+    // glass Popover. Its count was `muted-foreground`, about 3.96:1 there in
+    // light, so on the pressed row it is `foreground` (story 15.2 review).
+    const filterBar = readFileSync(join(root, 'apps', 'web', 'src', 'components', 'filter-bar.tsx'), 'utf8');
+
+    expect(filterBar).toContain('aria-pressed:bg-primary/10');
+    expect(filterBar).toContain('group-aria-pressed:text-foreground');
+
+    const pressed = (ground: Rgb): Rgb => composite({ ...rgb(colour(theme, 'primary')), alpha: 0.1 }, ground as Color);
+    const found = worst(theme, (ground) => ratio(colour(theme, 'foreground'), pressed(ground)));
+    const muted = worst(theme, (ground) => ratio(colour(theme, 'muted-foreground'), pressed(ground)));
+
+    expect(found.ratio, `the count on the pressed row over ${found.on} (${theme})`).toBeGreaterThanOrEqual(AA_BODY);
+    if (theme === 'light') expect(muted.ratio, 'muted would have read on the pressed row after all').toBeLessThan(AA_BODY);
+  });
+
+  it('keeps light primary where it was: the re-tune is dark only', () => {
+    expect(rawToken('light', 'primary')).toBe('oklch(0.4805 0.1627 264.98)');
+  });
+
+  it.each(THEMES)('the scrim is a tint, never opaque, in %s', (theme) => {
+    const alpha = scrim(theme).alpha ?? 1;
+
+    expect(alpha).toBeGreaterThan(0);
+    expect(alpha).toBeLessThan(1);
+  });
+});
+
+describe('the hour band keeps its navy on its own token (story 15.2)', () => {
+  const root = fileURLToPath(new URL('..', import.meta.url));
+  const ui = (file: string): string => readFileSync(join(root, 'apps', 'web', 'src', 'components', 'ui', file), 'utf8');
+
+  it.each(THEMES)('band-dark is the navy the sidebar pair drew the band in, so the bands look as before, in %s', (theme) => {
+    expect(rawToken(theme, 'band-dark')).toBe(rawToken(theme, 'sidebar'));
+    expect(rawToken(theme, 'band-dark-foreground')).toBe(rawToken(theme, 'sidebar-foreground'));
+  });
+
+  it('draws the Timeline and IconTile dark tone in band-dark, read from the primitives', () => {
+    for (const file of ['timeline.tsx', 'icon-tile.tsx']) {
+      expect(ui(file), file).toContain('dark: "bg-band-dark text-band-dark-foreground",');
+      expect(ui(file), file).not.toMatch(/\bbg-sidebar\b|text-sidebar-/);
+    }
+  });
+
+  it.each(THEMES)('band-dark-foreground reads on band-dark in %s', (theme) => {
+    const measured = ratio(colour(theme, 'band-dark-foreground'), colour(theme, 'band-dark'));
+
+    expect(measured, `measured ${measured.toFixed(2)}:1 (${theme})`).toBeGreaterThanOrEqual(AA_BODY);
+  });
+});
+
+describe('Button chrome draws its ring straight on the glass (story 15.2)', () => {
+  /**
+   * `chrome` replaced the navy `sidebar` variant: borderless `foreground`, a
+   * `glass-active` hover at 60 %, and the ring with no offset band. It sits on
+   * the sidebar's `glass` (.58), beside the content, so its grounds are the
+   * glass over the page and each blob.
+   */
+  const HOVER_ALPHA = 0.6;
+  const button = (): string =>
+    readFileSync(
+      join(fileURLToPath(new URL('..', import.meta.url)), 'apps', 'web', 'src', 'components', 'ui', 'button.tsx'),
+      'utf8',
+    );
+
+  it('reads the variant from the primitive, and no variant is named sidebar', () => {
+    const source = button();
+    const chrome = /chrome:\s*"([^"]*)"/.exec(source)?.[1] ?? '';
+
+    expect(chrome.split(/\s+/)).toEqual(
+      expect.arrayContaining([
+        'border-0',
+        'text-foreground',
+        `hover:bg-glass-active/${HOVER_ALPHA * 100}`,
+        'focus-visible:ring-offset-0',
+      ]),
+    );
+    expect(source).not.toMatch(/^\s*sidebar:/m);
+    expect(source).not.toMatch(/-sidebar\b|sidebar-/);
+  });
+
+  function glassGrounds(theme: Theme): Rgb[] {
+    const page = colour(theme, 'background');
+    const under = [
+      page,
+      ...(['glass-blob-1', 'glass-blob-2', 'glass-blob-3'] as const).map((blob) => composite(colour(theme, blob), page)),
+    ];
+
+    return under.map((below) => composite(colour(theme, 'glass'), below as Color));
+  }
+
+  it.each(THEMES)('the ring and the label read on the glass and on the hover pill in %s', (theme) => {
+    const pill = rgb(colour(theme, 'glass-active'));
+
+    for (const ground of glassGrounds(theme)) {
+      const hovered = composite({ ...pill, alpha: (pill.alpha ?? 1) * HOVER_ALPHA }, ground);
+
+      expect(ratio(colour(theme, 'ring'), ground)).toBeGreaterThanOrEqual(AA_LARGE);
+      expect(ratio(colour(theme, 'ring'), hovered)).toBeGreaterThanOrEqual(AA_LARGE);
+      expect(ratio(colour(theme, 'foreground'), ground)).toBeGreaterThanOrEqual(AA_BODY);
+      expect(ratio(colour(theme, 'foreground'), hovered)).toBeGreaterThanOrEqual(AA_BODY);
+    }
   });
 });

@@ -11,15 +11,18 @@ import { cn } from "@/lib/utils"
 //
 // The focus ring is offset from the control by the surface colour, so `--ring`
 // is always drawn against the page rather than against a primary fill it
-// cannot contrast with. `sidebar` is the navy chrome's own variant, with the
-// ring that clears 3:1 on navy.
+// cannot contrast with. `chrome` is the exception (story 15.2).
 //
-// BOTH BORDERED VARIANTS DRAW A 3:1 BOUNDARY. `outline` uses `--input`, the
-// token held to 3:1 against the page for exactly this; `sidebar` uses the
-// sidebar's own text colour at 50%, which `test/theme-contrast.test.ts`
-// composites over `--sidebar` and holds to 3:1 in both themes — the
-// `--sidebar-border` divider token measures about 1.2:1 there and is a
-// divider, not a control's edge. `motion-reduce` drops the colour and shadow
+// `chrome` IS THE GLASS SHELL'S OWN VARIANT (story 15.2; it replaced the navy
+// `sidebar` variant): borderless `foreground` text, a `glass-active` hover, and
+// the ring with NO offset — an offset is an opaque band, and glass has no one
+// colour to paint it in, so `--ring` is drawn straight against the glass,
+// where `test/theme-contrast.test.ts` measures it against every glass
+// backdrop. The sidebar's profile card is its one consumer.
+//
+// THE BORDERED VARIANTS DRAW A 3:1 BOUNDARY. `outline` and `dashed` use
+// `--input`, the token held to 3:1 against the page, a card and every glass
+// panel backdrop for exactly this. `motion-reduce` drops the colour and shadow
 // transitions for anybody who asked the OS for less motion.
 const buttonVariants = cva(
   "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-semibold transition-[color,background-color,border-color,box-shadow] motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
@@ -43,8 +46,8 @@ const buttonVariants = cva(
           "border-[1.5px] border-dashed border-input bg-card text-foreground hover:bg-accent hover:text-accent-foreground",
         ghost: "hover:bg-accent hover:text-accent-foreground",
         link: "text-primary underline-offset-4 hover:underline",
-        sidebar:
-          "border-[1.5px] border-sidebar-foreground/50 bg-transparent text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-sidebar-ring focus-visible:ring-offset-sidebar",
+        chrome:
+          "border-0 bg-transparent text-foreground hover:bg-glass-active/60 hover:text-foreground focus-visible:ring-offset-0",
       },
       size: {
         default: "h-9 px-4 py-2",

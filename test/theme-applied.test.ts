@@ -211,10 +211,11 @@ describe('the built stylesheet links the Outfit files rather than inlining them'
 // Story 15.1: glass reaches the build, with its fallbacks, and the digits are
 // tabular on the document.
 describe('the built stylesheet carries the glass and the tabular figures', () => {
-  it.skipIf(notBuilt)('emits both glass treatments with the prefixed and standard backdrop filter', () => {
+  it.skipIf(notBuilt)('emits every glass treatment with the prefixed and standard backdrop filter', () => {
     const css = builtCss();
 
-    for (const name of ['glass-chrome', 'glass-over-content']) {
+    // Story 15.2 added `glass-panel`, the layered surfaces' treatment.
+    for (const name of ['glass-chrome', 'glass-over-content', 'glass-panel']) {
       const rule = new RegExp(`\\.${name}\\{[^}]*-webkit-backdrop-filter:blur\\(var\\(--glass-blur\\)\\)[^}]*;backdrop-filter:blur`).exec(css);
 
       expect(rule, `no .${name} rule with both backdrop filters in the built sheet`).not.toBeNull();
@@ -244,6 +245,32 @@ describe('the built stylesheet carries the glass and the tabular figures', () =>
 
     expect(px).toBeGreaterThan(0);
     expect(px).toBeLessThanOrEqual(10);
+  });
+
+  it.skipIf(notBuilt)('tints the Dialog backdrop with the scrim, and never blurs it (story 15.2)', () => {
+    const rule = /\.backdrop\\:bg-glass-scrim::backdrop\{([^}]*)\}/.exec(builtCss());
+
+    expect(rule, 'no ::backdrop rule draws the scrim in the built sheet').not.toBeNull();
+    expect(rule?.[1]).toContain('background-color:var(--glass-scrim)');
+    expect(rule?.[1]).not.toContain('backdrop-filter');
+  });
+
+  it.skipIf(notBuilt)('emits every glass-panel fallback: no blur support, reduced transparency, forced colours (story 15.2)', () => {
+    const css = builtCss();
+
+    expect(css, 'no opaque panel without blur support').toMatch(
+      /@supports not \([^{]*backdrop-filter[^{]*\{\s*\.glass-panel\{[^}]*background-color:var\(--card\)[^}]*inset 0 0 0 1px var\(--border\)/,
+    );
+    expect(css, 'no opaque panel under reduced transparency').toMatch(
+      /@media \(prefers-reduced-transparency:\s*reduce\)\{\s*\.glass-panel\{[^}]*backdrop-filter:none[^}]*background-color:var\(--card\)|@media \(prefers-reduced-transparency:\s*reduce\)\{\s*\.glass-panel\{[^}]*background-color:var\(--card\)[^}]*backdrop-filter:none/,
+    );
+    expect(css, 'no Canvas panel with a CanvasText border under forced colours').toMatch(
+      /@media \(forced-colors:\s*active\)\{\s*\.glass-panel\{[^}]*background-color:canvas[^}]*border:1px solid canvastext/i,
+    );
+  });
+
+  it.skipIf(notBuilt)('draws a covered panel opaque and unblurred (story 15.2)', () => {
+    expect(builtCss()).toMatch(/\.glass-panel\[data-covered\]\{[^}]*background-color:var\(--card\)[^}]*backdrop-filter:none/);
   });
 
   it.skipIf(notBuilt)('lets the opaque menu and sheet override the glass pill', () => {

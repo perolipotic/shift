@@ -13,8 +13,9 @@ import { cn } from "@/lib/utils"
 // read apart, and each stretch carries its band's name as text. The uncovered
 // stretch (`TimelineGap`) is HATCHED as well as tinted, and the screen flags it
 // in words besides. The two tones are pairs already measured elsewhere: the
-// badge's primary tint with `foreground`, and the navy sidebar with its own
-// foreground.
+// badge's primary tint with `foreground`, and `band-dark` with its own
+// foreground (story 15.2: the navy the `sidebar` pair drew before, as its own
+// token, so the bands look as they did).
 //
 // Named parts rather than string props (`TimelineScale`, `TimelineBoundaries`,
 // `TimelineGap`), so a screen composes them without a literal the string sweep
@@ -95,7 +96,7 @@ const timelineToneVariants = cva("", {
   variants: {
     tone: {
       light: "bg-primary/15 text-foreground",
-      dark: "bg-sidebar text-sidebar-foreground",
+      dark: "bg-band-dark text-band-dark-foreground",
       uncovered: "hatch-uncovered",
     },
   },

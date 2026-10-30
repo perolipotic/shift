@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils"
 //
 // `light` and `dark` are the hour band tones, the same pairs the day timeline
 // draws its stretches in, so a row and its stretch match: `light` is the
-// badge's measured primary tint, `dark` the navy sidebar pair. `primary` tints
+// badge's measured primary tint, `dark` the `band-dark` pair (story 15.2). `primary` tints
 // an info surface's icon; `muted` is the neutral default.
 
 const iconTileVariants = cva(
@@ -21,7 +21,7 @@ const iconTileVariants = cva(
         muted: "bg-muted text-muted-foreground",
         primary: "bg-primary/15 text-foreground",
         light: "bg-primary/15 text-foreground",
-        dark: "bg-sidebar text-sidebar-foreground",
+        dark: "bg-band-dark text-band-dark-foreground",
       },
       size: {
         default: "size-10 [&_svg]:size-5",
