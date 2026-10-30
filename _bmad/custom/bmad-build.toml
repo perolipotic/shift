@@ -7,6 +7,10 @@
 
 persistent_facts = [
   "EPIC AC DEVIATIONS. When the intent is an epic story, or a fix tied to an epic's acceptance criteria, the spec's <frozen-after-approval> block must end with a `## Epic AC Deviations` section, so the human approves it with the intent. List every epic AC the spec defers, narrows or reinterprets. For each one, quote the epic AC, give the spec's choice and say why. If there are none, write the single line `None.`. Every DEFERRED epic AC also gets a `deferred-work.md` entry, written during planning (step 02), not left for review.",
+  # Epic 10 retro, action A13 (P2, P3; epic 8-9 retro item 8 / epic-9-retro-item-23).
+  "SPINE AMENDMENTS ARE TASKS. A spec that amends an architecture decision (AD-x), or cites an AD amendment as its justification, carries an Execution task that edits `_bmad-output/planning-artifacts/architecture/architecture-shift-2026-09-02/ARCHITECTURE-SPINE.md` in the same change, adding an `Amended <date> (<story>)` clause to that AD. Citing an amendment that no task writes is a defect.",
+  "DEFERRALS ADDRESSED TO A STORY ARE ITS INPUTS. A `deferred-work.md` entry that says \"decide in story X\" (or \"X should …\", or names X as where it lands) is copied into X's spec as a required input, listed in the spec (Boundaries or Design Notes) with its answer. Story X cannot reach `done` while such an entry is unanswered: either the spec answers it, or the human records a new owner in the entry.",
+  "RESOLVED DEFERRALS ARE MARKED IN THE SAME CHANGE. A story that resolves a `deferred-work.md` entry, wholly or in part, prefixes that entry with `RESOLVED by <story> (<date>) — `, or for a part `RESOLVED in part (<which part>) by <story> (<date>) — ` naming what stays open, in the same change that resolves it.",
 ]
 
 [[workflow.review_layers]]

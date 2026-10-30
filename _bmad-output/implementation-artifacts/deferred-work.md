@@ -973,6 +973,7 @@
     - Resolutions: `my-conflict-resolutions`, `organization-conflict-resolutions` (who was replaced, and by whom).
     - Rosters and teams: `teams`, `own-team`, `team-roster` per team (8.2b).
     - Rotation (8.2d): `rotation`, the builder's snapshot, holds member names and the pending overrides' reasons. `shiftTypes` and `hourBands` (8.2d) hold no personal data.
+    - Leave requests (9.x; list completed by the retro-10 batch, 2026-10-30, retro 8–9 R3): `my-leave-requests` (the member's own), `organization-leave-requests` (every request of the organization, unwindowed: names, ranges, decisions and who decided) and `leave-request` per request uuid (9.4's decision screen). Decision 2026-10-20 (a) accepts the offline-readable risk itself; this entry only names them.
 - source_spec: `_bmad-output/implementation-artifacts/spec-8-2b-member-surfaces-read-offline.md`
   summary: RESOLVED by 8.2c for the work surfaces — Raspored (both tabs, `acting-admin-names` persisted), the resolution page and the member page `/ljudi/$id` (one key set for `use-member-edit` and `use-member-leave`, `leave-records` persisted) read offline under the as-of note. The settings surfaces moved to the 8.2d entry below. Original: Story 8.2c. Bring offline reads to the admin work and settings surfaces: Raspored (`use-conflicts-queue`, plus the `acting-admins` root on *Riješeni*), the resolution page, the member page `/ljudi/$id` (`use-member-edit`, `use-member-leave`), Organizacija (`use-organization-settings` has no paused rule at all, and `use-organization-hour-bands`), Satni pojasi (+`$id`), Postavke rotacije (shift types, `rotation`, `tipovi-smjena/$id`) and Ljudi/smjene (+`$id`). Each uses 8.2's recipe, and their keys join the persisted roots — among them the parameterised `leave-records` (`LEAVE_RECORDS_KEY(memberId)`, the member page's leave), held back from 8.2b because no 8.2b surface reads it (review loop 1, 2026-10-21).
   evidence: Human decision 2026-10-20 (1a), which split 8.2b. Spec 8.2b's Epic AC Deviations keep AC1 narrowed. Most of 8.3's write forms live on these surfaces.
@@ -1066,7 +1067,7 @@
   summary: Cancelling (deleting) a scheduled reactivation makes the member inactive from its date, but nothing closes pending requests reaching that date; they stay in Za odluku and can only be rejected.
   evidence: Raised by the C1 review (Edge Case Hunter). 0041's trigger fires only on an inactive version's insert. Rare in practice: an inactive member cannot sign in to request, and every request reaching the deactivation date was closed by it.
 - source_spec: `_bmad-output/implementation-artifacts/spec-retro-8-9-c1-deactivation-closes-leave-requests.md`
-  summary: DESIGN.md, EXPERIENCE.md and the UX-DR lines (UX-DR27 one consequence line, UX-DR33 four request statuses, UX-DR46 "stavki" erasure copy, UX-DR52 Odlučeno lists approved/rejected) do not yet describe the deactivation close, *Zatvoren deaktivacijom* or the member-inactive refusals. Fold into retro action 6 (docs reconciliation).
+  summary: RESOLVED by retro-10-batch (2026-10-30) — UX-DR27 (the deactivation question names the requests it closes), UX-DR33 (*Zatvoren deaktivacijom*, the inactive-date refusal), UX-DR46 (the inactive-member approval refusal, the close leaving the count, *odsutnost u smjeni* in the erasure copy) and UX-DR52 (*Odlučeno* lists closed-on-deactivation requests) in `epics.md`, the member page in EXPERIENCE.md and the status dialog in DESIGN.md now describe 0041 as built (retro 8–9 action 6, epic-9-retro-item-21). Original: DESIGN.md, EXPERIENCE.md and the UX-DR lines (UX-DR27 one consequence line, UX-DR33 four request statuses, UX-DR46 "stavki" erasure copy, UX-DR52 Odlučeno lists approved/rejected) do not yet describe the deactivation close, *Zatvoren deaktivacijom* or the member-inactive refusals. Fold into retro action 6 (docs reconciliation).
   evidence: Raised by the C1 review (Epic AC Auditor). The diff touches no planning or UX document.
 
 ## Deferred from: code review of spec-retro-8-9-item-20-split-leave-requests.md (2026-10-29)
@@ -1084,10 +1085,10 @@
 ## Deferred from: code review of spec-10-1-the-outbox-and-the-notify-function.md (2026-10-29)
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-10-1-the-outbox-and-the-notify-function.md`
-  summary: The email link is always `SHIFT_APP_URL + /godisnji` and names no organization, so a signed-out member who taps it lands without organization context; 10.2 should decide the link (e.g. via `/prijava/<slug>` with a return path) and whether the email names the organization.
+  summary: RESOLVED by retro-10-batch (2026-10-30) — done by 10.2: every email links through `/prijava/<slug>?povratak=<path>` (`linkOf` in `supabase/functions/notify/messages.ts`) and names the organization (0043's `organization_name`); the batch's A5 also offers the other organization when a signed-in member opens another organization's link, and A6 makes the push url path-only. Original: The email link is always `SHIFT_APP_URL + /godisnji` and names no organization, so a signed-out member who taps it lands without organization context; 10.2 should decide the link (e.g. via `/prijava/<slug>` with a return path) and whether the email names the organization.
   evidence: Raised by the 10.1 review (Blind Hunter, Edge Case Hunter). `claim_notifications` already returns `slug`; sign-in is per organization.
 - source_spec: `_bmad-output/implementation-artifacts/spec-10-1-the-outbox-and-the-notify-function.md`
-  summary: Emails are plain text with no `List-Unsubscribe`, no `Reply-To` and no line saying why the member got it or how to stop it; 10.2 (wording) and 10.3 (settings) should add them before production sending from a new domain.
+  summary: RESOLVED in part (the organization's name, the footer) by 10.2 and 10.3 (2026-10-29/30, marked by the retro-10 batch) — every email names the organization it comes from (10.2) and ends with the footer line linking to `/obavijesti`, where the member turns email off (10.3, `footer` in `messages.ts`). A `List-Unsubscribe` header is out of scope by epic 10's context (no unauthenticated unsubscribe endpoint). STILL OPEN: `Reply-To` is undecided. Original: Emails are plain text with no `List-Unsubscribe`, no `Reply-To` and no line saying why the member got it or how to stop it; 10.2 (wording) and 10.3 (settings) should add them before production sending from a new domain.
   evidence: Raised by the 10.1 review (Blind Hunter). Deliverability is the epic's named risk.
 
 ## Deferred from: planning of spec-10-2-email-tells-people-what-concerns-them.md (2026-10-29)
@@ -1105,7 +1106,7 @@
   summary: A pending outbox row whose fact no longer holds is still sent: `LEAVE_REQUEST_CREATED` for a request withdrawn or decided before `notify` runs, and `ROTATION_CHANGES` beside `ROTATION_CHANGE_CANCELLED` for a rotation cancelled within the minute.
   evidence: Raised by the 10.2 review (Blind Hunter, Edge Case Hunter). Fix candidates: `withdraw_leave_request` / `decide_leave_request` delete their subject's unclaimed `LEAVE_REQUEST_CREATED` rows; a definer may delete outbox rows, `notify` may not (AD-14).
 - source_spec: `_bmad-output/implementation-artifacts/spec-10-2-email-tells-people-what-concerns-them.md`
-  summary: Story 10.3 adds an organization-level email switch (e.g. `organizations.email_notifications`) that `private.notify_members` checks, so a switched-off organization writes no outbox rows at all, beside each member's own on/off.
+  summary: RESOLVED by retro-10-batch (2026-10-30) — done by 10.3: `organizations.email_notifications` (0044), enforced by the outbox filter trigger at write (every writer passes through it, so a switched-off organization writes no email rows) and by `claim_notifications` at claim (`EMAIL_TURNED_OFF`). Original: Story 10.3 adds an organization-level email switch (e.g. `organizations.email_notifications`) that `private.notify_members` checks, so a switched-off organization writes no outbox rows at all, beside each member's own on/off.
   evidence: Asked by the product owner during 10.2 (2026-10-29). The switch must stop the writes, not only the sends, or a backlog of stale emails goes out when it is switched back on.
 
 ## Deferred from: planning of spec-10-3-notification-settings-in-vise.md (2026-10-30)
@@ -1125,3 +1126,33 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-10-4-web-push-reaches-members-without-email.md`
   summary: The push body reuses the email body, including its "Pogledaj ga u aplikaciji: <link>" sentence, which is noise on a lock screen since the tap already opens the url.
   evidence: Raised by the 10.4 review (Blind Hunter). The spec froze "body = rendered body without the email footer"; a push-specific wording needs new `obavijesti` keys.
+
+## Deferred from: epic 10 retrospective (2026-10-30), recorded by the retro-10 batch
+
+- source_spec: `_bmad-output/implementation-artifacts/epic-10-retro-2026-10-30.md`
+  summary: Push rows take email's batch slots. `BATCH_SIZE = 8` is paced for Resend, and the claim orders both channels by `created_at`, so a large rotation save's rows delay a new admin alert's push by minutes (retro F9). Consider a per-channel claim limit or a separate push batch.
+  evidence: `supabase/functions/notify/handler.ts` `BATCH_SIZE`; `claim_notifications` (0045, 0046) `order by c.created_at, c.id limit p_limit`.
+- source_spec: `_bmad-output/implementation-artifacts/epic-10-retro-2026-10-30.md`
+  summary: A failed sign-out disables push silently. *Odjava* (and the set-password step's sign-out) forgets this device's push subscription BEFORE `signOut`; if the sign-out then fails and the session survives, push is off on this device and the member is not told (retro F12). Consider forgetting after a confirmed sign-out, or re-registering when the session survives.
+  evidence: `features/navigation/components/chrome.tsx` (the sign-out sequence), `features/auth/hooks/use-set-password.ts`; `forgetPushDevice` in `features/notifications/services/push.ts`.
+- source_spec: `_bmad-output/implementation-artifacts/epic-10-retro-2026-10-30.md`
+  summary: Duplication map (retro F14). The email-switch predicate is written three times (`0044` filter trigger, `0044`/`0045` claim settle and claim filter); the "has a device" predicate several times in 0045 (writer, decision, claim settle, claim filter, claim return). The on/off radio helper exists four times (`members/utils/rank.ts`, `organization/utils/email-notifications.ts`, `notifications/services/settings.ts`, `notifications/services/push.ts`). Another SQLSTATE constant copy in `notifications/services/settings.ts` (continues retro 8–9 D5). Fold each into one helper when next touched.
+  evidence: Retro 10 duplication map; re-checked by grep 2026-10-30.
+- source_spec: `_bmad-output/implementation-artifacts/epic-10-retro-2026-10-30.md`
+  summary: Size growth. `supabase/functions/notify/handler.ts` (about 800 lines: codes, configuration, types, email delivery, push delivery and the run loop) should split into email, push and run modules before Epic 12 adds codes; `features/notifications/services/push.ts` (about 476 lines) blurs the pure rules and the page binding; `features/navigation/components/chrome.tsx` (about 1,226 lines, a dozen nested render functions).
+  evidence: Retro 10 size growth; `wc -l` 2026-10-30.
+- source_spec: `_bmad-output/implementation-artifacts/epic-10-retro-2026-10-30.md`
+  summary: Split `test/rls-isolation.test.ts` (about 22,700 lines) by table or by epic. Retro 8–9 S3 called it a god file but logged no entry; every migration's suite still lands in it.
+  evidence: Retro 8–9 S3, retro 10 size growth.
+- source_spec: `_bmad-output/implementation-artifacts/epic-10-retro-2026-10-30.md`
+  summary: Pattern divergence in the notification codes: `PUSH_NOT_CONFIGURED` and `PUSH_SUBSCRIPTION_INVALID` mean different things in `notify` (a row's settlement) and in the SPA (a screen state, a registration refusal); `PUSH_SUBSCRIPTION_LIMIT` and `PUSH_ENDPOINT_NOT_ALLOWED` reach the SPA as a generic failure; the notifications hooks never map `droppedOffline` (continues retro 8–9 C7).
+  evidence: Retro 10 pattern divergence; `handler.ts` codes, `features/notifications/services/push.ts`, `settings.ts`.
+- source_spec: `_bmad-output/implementation-artifacts/epic-10-retro-2026-10-30.md`
+  summary: ACCEPTED, recorded so later retros stop re-flagging it — push is at-least-once. If a device accepts and the settle then fails, the row is re-claimed after its 10-minute lease and posted again; only the payload's `tag` (one notification per fact on a device) softens the duplicate (retro F8). The spec's Design Notes chose a duplicate over a missed device.
+  evidence: `handler.ts` settle and `settlementOfDevices`; 0045's lease.
+- source_spec: `_bmad-output/implementation-artifacts/spec-retro-10-batch-open-items.md`
+  summary: ACCEPTED — A2's remaining window. `notify` re-reads a push row's devices through `push_devices_for_send` (0046) right before posting, so a device handed to another member during the lease is not sent to; a hand-over in the milliseconds between that read and the POST can still deliver the earlier member's payload once.
+  evidence: The batch spec's Design Notes ("A2 leaves a millisecond window … accepted and recorded").
+- source_spec: `_bmad-output/implementation-artifacts/epic-10-retro-2026-10-30.md`
+  summary: Open question, not requested: whether an organization needs a push switch alongside its email switch (`organizations.email_notifications` stops email only).
+  evidence: Retro 10 open questions.
