@@ -1025,13 +1025,13 @@
 ## Deferred from: code review of spec-9-2-the-leave-request-record.md (2026-10-27)
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-9-2-the-leave-request-record.md`
-  summary: An approved request keeps reading "approved" after its leave record is removed or amended (`remove_leave_record`/`amend_leave_record`), and its `leave_record_id` then points at a removed row. 9.3 and 9.5 must decide what the member and *Odlučeno* show in that case.
+  summary: RESOLVED by retro-9-item-17-leave-request-rules (2026-10-30) — the request keeps *Odobren*, and the member's list and *Odlučeno* add `Godišnji je naknadno izmijenjen.` or `Godišnji je naknadno uklonjen.`, derived on read by 0047's `leave_record_change` — An approved request keeps reading "approved" after its leave record is removed or amended (`remove_leave_record`/`amend_leave_record`), and its `leave_record_id` then points at a removed row. 9.3 and 9.5 must decide what the member and *Odlučeno* show in that case.
   evidence: Raised by the 9.2 review (Blind Hunter, Edge Case Hunter). 9.2 derives status from `closed_at` and the decision row alone, and has no reader.
 - source_spec: `_bmad-output/implementation-artifacts/spec-9-2-the-leave-request-record.md`
   summary: RESOLVED by retro 8–9 C1 (0041: deactivation closes the member's pending requests reaching its date as a `deactivated` decision; an insert or approval onto an inactive date is refused) — A deactivated member's pending requests stay pending: the member can no longer withdraw them, and `decide_leave_request` still approves them into leave for an inactive member. A request may also run past a scheduled deactivation date. Decide before 9.4 whether deactivation closes pending requests or the approval refuses them.
   evidence: Raised by the 9.2 review (Edge Case Hunter). No rule in engine-rules R9 covers it.
 - source_spec: `_bmad-output/implementation-artifacts/spec-9-2-the-leave-request-record.md`
-  summary: Requests for past dates are accepted with no rule. 9.3's form should decide whether a member may request leave that has already started or passed.
+  summary: RESOLVED by retro-9-item-17-leave-request-rules (2026-10-30) — a member requests leave only from the organization's today on: the form (`min`, its own reason) and 0047's trigger (55000 `LEAVE_REQUEST_IN_PAST`) refuse an earlier start; admin-recorded leave is unchanged — Requests for past dates are accepted with no rule. 9.3's form should decide whether a member may request leave that has already started or passed.
   evidence: Raised by the 9.2 review (Edge Case Hunter). Admin-entered leave allows past dates, and R9 says nothing about requests.
 
 ## Deferred from: code review of spec-9-3-a-member-requests-leave.md (2026-10-27)
@@ -1040,7 +1040,7 @@
   summary: A write whose network drops after it lands but before `refreshAfterWrite`'s re-read settles stays pending until reconnect, because every hook awaits the re-read (9.3's send and withdraw, and the existing leave, roster and settings writes alike).
   evidence: Raised by the 9.3 review (Edge Case Hunter). `use-member-leave.ts:670,707` awaits the same call. This is a shared pattern, not new to 9.3.
 - source_spec: `_bmad-output/implementation-artifacts/spec-9-3-a-member-requests-leave.md`
-  summary: The 9.2 entries asking 9.3 to decide about past-date requests, and about an approved request whose leave record was later removed, are still open. 9.3 accepts past ranges with no note, and keeps showing *Odobren*. Decide in 9.4 or 9.5.
+  summary: RESOLVED by retro-9-item-17-leave-request-rules (2026-10-30) — both decided (product owner, 2026-10-30) and built; see the two 9.2 entries — The 9.2 entries asking 9.3 to decide about past-date requests, and about an approved request whose leave record was later removed, are still open. 9.3 accepts past ranges with no note, and keeps showing *Odobren*. Decide in 9.4 or 9.5.
   evidence: Raised again by the 9.3 review (Blind Hunter: no `min` on the date inputs). The 9.3 spec did not cover either case.
 
 ## Deferred from: code review of spec-9-4-an-admin-decides-a-leave-request.md (2026-10-28)
@@ -1174,6 +1174,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-15-1-pilot-kalendar-and-the-shell-in-glass.md`
   summary: Dark `primary` on the dark card is a known contrast gap for links and selection text on cards; 15.2 (primitives) or 15.5 (dark tuning) re-measures and re-tunes it.
   evidence: Noted in the new `theme-contrast` glass block during 15.1; dark `primary` was left unchanged because no pair the pilot measures failed.
+
+## Deferred from: review of spec-retro-9-item-17-leave-request-rules.md (2026-10-30)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-retro-9-item-17-leave-request-rules.md`
+  summary: `leave_record_change` recognises an amended leave record by its transaction signature (same member, the replacement's `created_at` equal to the old record's `removed_at`, `created_by` equal to `removed_by`), because 0029 stores no link from an old record to its replacement. Add a stored `replaces_id` on `leave_records`, written by `amend_leave_record`, and read the chain through it.
+  evidence: Raised by the item-17 review (Blind Hunter); kept as is for now because no other path writes that signature, and recorded at the product owner's request (2026-10-30).
 
 ## Deferred from: planning of spec-15-2-every-primitive-and-layered-surface-in-glass.md (2026-10-30)
 

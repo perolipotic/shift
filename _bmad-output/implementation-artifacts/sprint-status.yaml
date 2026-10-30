@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 10-30-2026 14:37
+last_updated: 10-30-2026 14:43
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -745,7 +745,7 @@ action_items:
     action: "Decide past-dated leave requests and how an approved request reads after
       its leave record is removed or amended; record each as spec or deferral"
     owner: "Perolipotic"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-8-9-retro-2026-10-28.md"
   - id: "epic-9-retro-item-18-resolution-page-a-failed-or-missing-leav"
     epic: 9

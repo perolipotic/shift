@@ -41,6 +41,12 @@ export const LEAVE_REQUEST_OVERLAPS_LEAVE_MESSAGE = 'LEAVE_REQUEST_OVERLAPS_LEAV
  */
 export const LEAVE_REQUEST_MEMBER_INACTIVE_MESSAGE = 'LEAVE_REQUEST_MEMBER_INACTIVE';
 
+/**
+ * 0047's message, under 55000, for an insert whose first day is before the
+ * organization's today: past leave is an admin's to record.
+ */
+export const LEAVE_REQUEST_IN_PAST_MESSAGE = 'LEAVE_REQUEST_IN_PAST';
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -59,6 +65,8 @@ export const REQUEST_NOT_PENDING = 'notPending';
  * then only a rejection is possible.
  */
 export const REQUEST_MEMBER_INACTIVE = 'memberInactive';
+/** The range starts before the organization's today (55000 `LEAVE_REQUEST_IN_PAST`, 0047): a send refused. */
+export const REQUEST_IN_PAST = 'inPast';
 /** Anything else — a refused range, the network, a malformed answer: try again. */
 export const REQUEST_FAILED = 'failed';
 
@@ -66,6 +74,7 @@ export type LeaveRequestSendFailure =
   | typeof REQUEST_OVERLAPS_LEAVE
   | typeof REQUEST_OVERLAPS_REQUEST
   | typeof REQUEST_MEMBER_INACTIVE
+  | typeof REQUEST_IN_PAST
   | typeof REQUEST_DENIED
   | typeof REQUEST_FAILED;
 
@@ -133,12 +142,15 @@ export interface DecideLeaveRequestRpc {
  * A refused insert as this application's own failure, by SQLSTATE and
  * message: 23P01 with `LEAVE_REQUEST_OVERLAPS_LEAVE` overlaps the member's
  * leave, any other 23P01 overlaps a pending request, 55000 with
- * `LEAVE_REQUEST_MEMBER_INACTIVE` reaches an inactive date (0041), 42501 is
- * not allowed, and anything else — 23514, 22000, 23503, the unforeseen —
- * failed.
+ * `LEAVE_REQUEST_MEMBER_INACTIVE` reaches an inactive date (0041), 55000 with
+ * `LEAVE_REQUEST_IN_PAST` starts before today (0047), 42501 is not allowed,
+ * and anything else — 23514, 22000, 23503, the unforeseen — failed.
  */
 export function leaveRequestSendFailureOf(error: LeaveRequestWriteError): LeaveRequestSendFailure {
   if (memberInactive(error)) return REQUEST_MEMBER_INACTIVE;
+  if (error.code === OBJECT_NOT_IN_PREREQUISITE_STATE && error.message === LEAVE_REQUEST_IN_PAST_MESSAGE) {
+    return REQUEST_IN_PAST;
+  }
   if (error.code === EXCLUSION_VIOLATION) {
     return error.message === LEAVE_REQUEST_OVERLAPS_LEAVE_MESSAGE ? REQUEST_OVERLAPS_LEAVE : REQUEST_OVERLAPS_REQUEST;
   }

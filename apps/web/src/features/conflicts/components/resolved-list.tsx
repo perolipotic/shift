@@ -13,6 +13,7 @@ import {
   REQUEST_APPROVED,
   REQUEST_CLOSED_ON_DEACTIVATION,
   REQUEST_REJECTED,
+  leaveRecordChangeMessageKey,
   type DecidedLeaveRequestStatus,
 } from '@/features/leave/services/leave-request-list';
 import { t } from '@/lib/i18n';
@@ -93,7 +94,9 @@ function requestOutcomeWord(outcome: DecidedLeaveRequestStatus): string {
  * and its kind, as a resolved conflict opens, then the member —
  * or that they are gone — the range, and who decided it and when. Read-only,
  * as a resolved conflict is. A withdrawn request is never listed; one closed
- * on its member's deactivation (0041) is, as *Zatvoren deaktivacijom*.
+ * on its member's deactivation (0041) is, as *Zatvoren deaktivacijom*. An
+ * approved one whose leave an admin amended or removed since says so under
+ * the range (0047), and keeps its *Odobren*.
  */
 function ResolvedRequestItem({ row }: { readonly row: ResolvedRequestRow }): ReactNode {
   return (
@@ -107,6 +110,9 @@ function ResolvedRequestItem({ row }: { readonly row: ResolvedRequestRow }): Rea
       <span className="min-w-0 break-words text-sm text-muted-foreground">
         {t('zaOdluku.request.range', { from: row.from, to: row.to })}
       </span>
+      {row.recordChange === null ? null : (
+        <span className="min-w-0 break-words text-sm">{t(leaveRecordChangeMessageKey(row.recordChange))}</span>
+      )}
       <span className="min-w-0 break-words text-sm text-muted-foreground">
         {t('zaOdluku.resolved.decided', {
           actor: row.actorName ?? t('zaOdluku.resolved.actorGone'),

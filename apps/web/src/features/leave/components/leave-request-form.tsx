@@ -26,6 +26,7 @@ import {
   MY_LEAVE_READY,
   MY_LEAVE_UNAVAILABLE,
   myLeaveMessageKey,
+  myLeaveRequestEarliestOf,
   myLeaveRequestReasonMessageKey,
   myLeaveRequestSendMessageKey,
 } from '@/features/leave/services/my-leave';
@@ -90,6 +91,9 @@ export function LeaveRequestFormBody({ form }: { readonly form: LeaveRequestForm
   if (leave.kind !== MY_LEAVE_READY) {
     return <p className="text-sm text-muted-foreground">{t(myLeaveMessageKey(leave.kind))}</p>;
   }
+
+  // 0047: no date before the organization's today; past leave is an admin's to record.
+  const earliest = myLeaveRequestEarliestOf(leave) ?? undefined;
 
   /** What a field is described by: the od field by a standing refusal, a marked field by its reason. */
   function describedBy(field: LeaveField): string | undefined {
@@ -157,6 +161,7 @@ export function LeaveRequestFormBody({ form }: { readonly form: LeaveRequestForm
               name={LEAVE_FROM_FIELD}
               type="date"
               required
+              min={earliest}
               onChange={form.change}
               aria-invalid={invalidField === LEAVE_FROM_FIELD}
               aria-describedby={describedBy(LEAVE_FROM_FIELD)}
@@ -171,6 +176,7 @@ export function LeaveRequestFormBody({ form }: { readonly form: LeaveRequestForm
               name={LEAVE_TO_FIELD}
               type="date"
               required
+              min={earliest}
               onChange={form.change}
               aria-invalid={invalidField === LEAVE_TO_FIELD}
               aria-describedby={describedBy(LEAVE_TO_FIELD)}

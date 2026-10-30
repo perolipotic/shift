@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  LEAVE_RECORD_AMENDED,
+  LEAVE_RECORD_REMOVED,
   LEAVE_REQUEST_COLUMNS,
   LEAVE_REQUEST_KEY,
   LEAVE_REQUESTS_COLUMNS,
@@ -12,6 +14,7 @@ import {
   REQUEST_PENDING,
   REQUEST_REJECTED,
   REQUEST_WITHDRAWN,
+  leaveRecordChangeMessageKey,
   leaveRequestFoundOf,
   leaveRequestQueryOptions,
   leaveRequestStatusOf,
@@ -100,8 +103,38 @@ describe("the viewer's own requests", () => {
     ];
 
     expect(leaveRequestsOf(rows, MEMBER)).toEqual([
-      { id: 'sooner', from: '2026-10-28', to: '2026-10-30', status: REQUEST_REJECTED, closedAt: '2026-10-20T08:00:00Z' },
-      { id: 'later', from: '2026-11-02', to: '2026-11-04', status: REQUEST_PENDING, closedAt: null },
+      { id: 'sooner', from: '2026-10-28', to: '2026-10-30', status: REQUEST_REJECTED, closedAt: '2026-10-20T08:00:00Z', recordChange: null },
+      { id: 'later', from: '2026-11-02', to: '2026-11-04', status: REQUEST_PENDING, closedAt: null, recordChange: null },
+    ]);
+  });
+
+  it.each([
+    ['live', null, null],
+    ['read before 0047, with no field', undefined, null],
+    ['amended since', 'amended', LEAVE_RECORD_AMENDED],
+    ['removed since', 'removed', LEAVE_RECORD_REMOVED],
+  ] as const)("carry an approved request's leave record as %s (0047)", (_name, change, expected) => {
+    const decision = change === undefined ? { outcome: 'approved' } : { outcome: 'approved', leave_record_change: change };
+    const rows = [rowOf('x', '2026-11-02', '2026-11-05', { closedAt: '2026-10-20T08:00:00Z', decisions: [decision] })];
+
+    expect(leaveRequestsOf(rows, MEMBER)?.[0]?.recordChange).toBe(expected);
+  });
+
+  it("read no record change on a request that is not approved, whatever the field says (0047)", () => {
+    const rows = [
+      rowOf('x', '2026-11-02', '2026-11-05', {
+        closedAt: '2026-10-20T08:00:00Z',
+        decisions: [{ outcome: 'rejected', leave_record_change: 'removed' }],
+      }),
+    ];
+
+    expect(leaveRequestsOf(rows, MEMBER)?.[0]?.recordChange).toBeNull();
+  });
+
+  it('speak a record change in the same words on Godišnji and Odlučeno (0047)', () => {
+    expect(([LEAVE_RECORD_AMENDED, LEAVE_RECORD_REMOVED] as const).map((change) => leaveRecordChangeMessageKey(change))).toEqual([
+      'godisnji.request.recordAmended',
+      'godisnji.request.recordRemoved',
     ]);
   });
 
@@ -120,6 +153,15 @@ describe("the viewer's own requests", () => {
     ['two rows with one id', [rowOf('x', '2026-11-02', '2026-11-05'), rowOf('x', '2026-12-02', '2026-12-05')]],
     ['a range that does not parse', [{ ...rowOf('x', '2026-11-02', '2026-11-05'), during: 'empty' }]],
     ['a status that cannot be derived', [rowOf('x', '2026-11-02', '2026-11-05', { decisions: [{ outcome: 'approved' }] })]],
+    [
+      'an unknown record change (0047)',
+      [
+        rowOf('x', '2026-11-02', '2026-11-05', {
+          closedAt: '2026-10-20T08:00:00Z',
+          decisions: [{ outcome: 'approved', leave_record_change: 'moved' }],
+        }),
+      ],
+    ],
     ['a row that is no object', [null]],
   ] as const)('are none at all when the rows hold %s', (_name, rows) => {
     expect(leaveRequestsOf(rows, MEMBER)).toBeNull();
@@ -136,7 +178,7 @@ describe('the read', () => {
 
     expect(await readMyLeaveRequestRows(table, MEMBER)).toEqual({ ok: true, rows: [rowOf('x', '2026-11-02', '2026-11-05')] });
     expect(table.calls).toEqual([[LEAVE_REQUESTS_COLUMNS, 'member_id', MEMBER]]);
-    expect(LEAVE_REQUESTS_COLUMNS).toContain('leave_request_decisions(outcome)');
+    expect(LEAVE_REQUESTS_COLUMNS).toContain('leave_request_decisions(outcome,leave_record_change)');
     expect(myLeaveRequestsQueryOptions(() => table, MEMBER).queryKey).toEqual(MY_LEAVE_REQUESTS_KEY);
   });
 
@@ -183,6 +225,7 @@ describe('one request by its id (story 9.4)', () => {
         to: '2026-11-04',
         status: REQUEST_PENDING,
         closedAt: null,
+        recordChange: null,
         decision: null,
         createdAt: null,
       },
@@ -246,7 +289,7 @@ describe('one request by its id (story 9.4)', () => {
 
     expect(await readLeaveRequestRows(table, REQUEST)).toEqual({ ok: true, rows: [] });
     expect(table.calls).toEqual([[LEAVE_REQUEST_COLUMNS, 'id', REQUEST]]);
-    expect(LEAVE_REQUEST_COLUMNS).toContain('leave_request_decisions(outcome,decided_by,decided_at)');
+    expect(LEAVE_REQUEST_COLUMNS).toContain('leave_request_decisions(outcome,decided_by,decided_at,leave_record_change)');
     expect(leaveRequestQueryOptions(() => table, REQUEST).queryKey).toEqual(LEAVE_REQUEST_KEY(REQUEST));
     expect(LEAVE_REQUEST_KEY(REQUEST)).toEqual(['leave-request', REQUEST]);
   });

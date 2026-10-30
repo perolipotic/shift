@@ -497,6 +497,8 @@
       "overlapsLeave": "Zahtjev nije poslan: raspon se preklapa s tvojim upisanim godišnjim odmorom.",
       "overlapsRequest": "Zahtjev nije poslan: raspon se preklapa s tvojim zahtjevom koji čeka odluku.",
       "memberInactive": "Zahtjev nije poslan: u tom rasponu tvoj status je neaktivan.",
+      "inPast": "Zahtjev nije poslan: godišnji odmor možeš zatražiti od danas nadalje. Prošli godišnji odmor upisuje administrator.",
+      "inPastReason": "Godišnji odmor možeš zatražiti od danas nadalje. Prošli godišnji odmor upisuje administrator.",
       "denied": "Ne možeš poslati zahtjev za godišnji.",
       "failed": "Zahtjev nije poslan. Pokušaj ponovno.",
       "sent": "Zahtjev za godišnji {from}–{to} je poslan i čeka odluku.",
@@ -509,6 +511,8 @@
       "decidedOn": "Odlučeno {date}",
       "withdrawnOn": "Povučeno {date}",
       "closedOn": "Zatvoreno {date}",
+      "recordAmended": "Godišnji je naknadno izmijenjen.",
+      "recordRemoved": "Godišnji je naknadno uklonjen.",
       "status": {
         "pending": "Čeka odluku",
         "approved": "Odobren",

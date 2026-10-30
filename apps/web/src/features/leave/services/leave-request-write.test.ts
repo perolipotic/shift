@@ -6,6 +6,7 @@ import {
   REQUEST_APPROVAL_STALE,
   REQUEST_DENIED,
   REQUEST_FAILED,
+  REQUEST_IN_PAST,
   REQUEST_MEMBER_INACTIVE,
   REQUEST_NOT_PENDING,
   REQUEST_OVERLAPS_LEAVE,
@@ -71,6 +72,7 @@ describe('the send', () => {
     ['an overlap with a pending request', { code: '23P01', message: 'conflicting key value violates exclusion constraint' }, REQUEST_OVERLAPS_REQUEST],
     ['a refusal', { code: '42501', message: 'new row violates row-level security policy' }, REQUEST_DENIED],
     ['a date the member is inactive (0041)', { code: '55000', message: 'LEAVE_REQUEST_MEMBER_INACTIVE' }, REQUEST_MEMBER_INACTIVE],
+    ['a start before today (0047)', { code: '55000', message: 'LEAVE_REQUEST_IN_PAST' }, REQUEST_IN_PAST],
     ['another 55000', { code: '55000', message: 'something else' }, REQUEST_FAILED],
     ['a check', { code: '23514', message: 'leave_requests_during_at_most_366_days' }, REQUEST_FAILED],
   ] as const)('maps %s by SQLSTATE and message', async (_name, error, code) => {

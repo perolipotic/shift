@@ -17,6 +17,7 @@ import { organizationLeaveRecordsOf } from '@/features/leave/services/leave-list
 import {
   organizationLeaveRequestsOf,
   type DecidedLeaveRequestStatus,
+  type LeaveRecordChange,
 } from '@/features/leave/services/leave-request-list';
 import { leaveRangeValuesOf } from '@/features/leave/services/leave-section';
 import { formatDate, formatIsoDate, formatTime } from '@/lib/i18n/format';
@@ -93,6 +94,12 @@ export interface ResolvedRequestRow {
   readonly key: string;
   /** Approved, rejected, or closed on the member's deactivation (0041), by the deactivating admin. */
   readonly outcome: DecidedLeaveRequestStatus;
+  /**
+   * An approved request's leave record, amended or removed by an admin since
+   * (0047), read under its *Odobren*; null while it is live and for every
+   * other outcome. The entry is still a read of the stored decision.
+   */
+  readonly recordChange: LeaveRecordChange | null;
   /** The range's first day, `05.10.2026`: the row's leading date, as a resolved conflict's. */
   readonly dateShown: string;
   /**
@@ -248,6 +255,7 @@ function decidedRequestsOf(
           item: ITEM_REQUEST,
           key: `request:${request.id}`,
           outcome: decision.outcome,
+          recordChange: request.recordChange,
           dateShown,
           memberName: members.get(request.memberId) ?? null,
           from: range.from,

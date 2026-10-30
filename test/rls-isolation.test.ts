@@ -21052,8 +21052,9 @@ describe('a deactivation closes the pending leave requests it reaches, and nothi
         const past = `[${await organizationDay(client, organization, -20)},${await organizationDay(client, organization, -15)}]`;
         const future = `[${await organizationDay(client, organization, 10)},${await organizationDay(client, organization, 14)}]`;
 
+        // 0047: a session may not send a request starting before today, so the past one is the owner's.
+        const ended = await insertedRequestAsOwner(client, organization, self, past);
         await actAs(client, self.authUserId, organization);
-        const ended = await insertRequest(client, { organization, member: self.id, during: past });
         const ahead = await insertRequest(client, { organization, member: self.id, during: future });
         await actAs(client, owner.authUserId, organization);
         await insertVersion(client, { organization, member: self.id, active: false, from: today });
@@ -21247,6 +21248,192 @@ describe('a deactivation closes the pending leave requests it reaches, and nothi
         }
       });
     },
+  );
+});
+
+/**
+ * 0047 (retro 8–9, item 17): a member requests leave from the organization's
+ * today on — a request starting earlier is refused with 55000
+ * `LEAVE_REQUEST_IN_PAST`, while an admin still records past leave — and an
+ * approved request's decision reads what became of its leave record through
+ * the computed field `leave_record_change`: null while it is live, `amended`
+ * once replaced, `removed` once the last record of its chain is removed.
+ */
+describe('a request starts today or later, and an approved request reads what became of its leave (0047)', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture request starting before today (55000), sends one starting today, and lets the admin record past leave',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const day = (offset: number) => organizationDay(client, organization, offset);
+        const straddling = `[${await day(-1)},${await day(3)}]`;
+        const ended = `[${await day(-10)},${await day(-5)}]`;
+
+        await actAs(client, self.authUserId, organization);
+        const fromYesterday = await refusedThenContinue(client, () =>
+          insertRequest(client, { organization, member: self.id, during: straddling }),
+        );
+        const past = await refusedThenContinue(client, () => insertRequest(client, { organization, member: self.id, during: ended }));
+        const fromToday = await insertRequest(client, { organization, member: self.id, during: `[${await day(0)},${await day(2)}]` });
+
+        await actAs(client, owner.authUserId, organization);
+        const adminOwn = await refusedThenContinue(client, () =>
+          insertRequest(client, { organization, member: owner.id, during: straddling }),
+        );
+        const recorded = await insertLeave(client, { organization, member: self.id, during: ended });
+        await actAsOwner(client);
+
+        expect(fromYesterday, slug).toMatchObject({ code: '55000', message: 'LEAVE_REQUEST_IN_PAST' });
+        expect(past, slug).toMatchObject({ code: '55000', message: 'LEAVE_REQUEST_IN_PAST' });
+        expect(adminOwn, `${slug}: an admin's own request is a request too`).toMatchObject({
+          code: '55000',
+          message: 'LEAVE_REQUEST_IN_PAST',
+        });
+        expect(await requestState(client, fromToday), slug).toEqual(PENDING);
+        expect(recorded, `${slug}: the admin's past leave record`).toMatch(/^[0-9a-f-]{36}$/);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    "leaves a $fixture colleague's past request to the policy (42501)",
+    async ({ slug, member, bystander }) => {
+      await inRolledBackTransaction(async (client) => {
+        const self = await memberByUsername(client, slug, member);
+        const other = await memberByUsername(client, slug, bystander);
+        const organization = self.organizationId;
+        const during = `[${await organizationDay(client, organization, -3)},${await organizationDay(client, organization, -1)}]`;
+
+        await actAs(client, self.authUserId, organization);
+        const colleague = await refusedThenContinue(client, () => insertRequest(client, { organization, member: other.id, during }));
+        await actAsOwner(client);
+
+        expect(colleague.code, slug).toBe('42501');
+      });
+    },
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
+    "reads a $fixture approved request's leave as live, amended or removed over PostgREST, for the member and the admin alike",
+    async ({ slug, admin, member }) => {
+      const client = await connect();
+      const year2046 = '[2046-01-01,2047-01-01)';
+      let cleanup: string[] = [];
+      const purge = async () => {
+        await client.query(outboxOfYear2046, [cleanup, year2046]);
+        await client.query(
+          'delete from leave_request_decisions where request_id in (select id from leave_requests where member_id = any($1::uuid[]) and during && $2::daterange)',
+          [cleanup, year2046],
+        );
+        await client.query('delete from leave_requests where member_id = any($1::uuid[]) and during && $2::daterange', [
+          cleanup,
+          year2046,
+        ]);
+        await client.query('delete from leave_records where member_id = any($1::uuid[]) and during && $2::daterange', [
+          cleanup,
+          year2046,
+        ]);
+      };
+      try {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        cleanup = [self.id];
+        // Leftovers of an interrupted run, before anything is written.
+        await purge();
+
+        const memberToken = await tokenFor(member, slug);
+        const adminToken = await tokenFor(admin, slug);
+        const ranges = {
+          live: '[2046-02-02,2046-02-04]',
+          amended: '[2046-03-02,2046-03-04]',
+          removed: '[2046-04-02,2046-04-04]',
+          amendedThenRemoved: '[2046-05-02,2046-05-04]',
+          amendedTwice: '[2046-07-02,2046-07-04]',
+          rejected: '[2046-06-02,2046-06-04]',
+        } as const;
+        const ids: Record<string, string> = {};
+        const records: Record<string, string | null> = {};
+
+        for (const [name, during] of Object.entries(ranges)) {
+          const sent = await rest('leave_requests', {
+            token: memberToken,
+            method: 'POST',
+            body: { organization_id: organization, member_id: self.id, during },
+            prefer: 'return=representation',
+          });
+          expect(sent.status, `${slug}: ${name}`).toBe(201);
+          const [created] = (await sent.json()) as Record<string, unknown>[];
+          const id = String(created?.['id']);
+          ids[name] = id;
+
+          const decided = await rest('rpc/decide_leave_request', {
+            token: adminToken,
+            method: 'POST',
+            body: { p_request_id: id, p_outcome: name === 'rejected' ? 'rejected' : 'approved' },
+          });
+          expect(decided.status, `${slug}: ${name}`).toBe(200);
+          records[name] = (await decided.json()) as string | null;
+        }
+
+        // Each call is its own transaction, as the admin's dialogs make them.
+        const call = async (fn: string, body: Record<string, unknown>): Promise<unknown> => {
+          const response = await rest(`rpc/${fn}`, { token: adminToken, method: 'POST', body });
+          expect(response.status, `${slug}: ${fn}`).toBeLessThan(300);
+          return response.status === 204 ? null : ((await response.json()) as unknown);
+        };
+        await call('amend_leave_record', { p_record_id: records['amended'], p_from: '2046-03-02', p_to: '2046-03-06' });
+        await call('remove_leave_record', { p_record_id: records['removed'] });
+        const replacement = await call('amend_leave_record', {
+          p_record_id: records['amendedThenRemoved'],
+          p_from: '2046-05-03',
+          p_to: '2046-05-04',
+        });
+        await call('remove_leave_record', { p_record_id: replacement });
+        const first = await call('amend_leave_record', {
+          p_record_id: records['amendedTwice'],
+          p_from: '2046-07-02',
+          p_to: '2046-07-05',
+        });
+        await call('amend_leave_record', { p_record_id: first, p_from: '2046-07-03', p_to: '2046-07-05' });
+
+        const expected: Record<string, { outcome: string; change: string | null }> = {};
+        for (const [name, change] of [
+          ['live', null],
+          ['amended', 'amended'],
+          ['removed', 'removed'],
+          ['amendedThenRemoved', 'removed'],
+          ['amendedTwice', 'amended'],
+          ['rejected', null],
+        ] as const) {
+          expected[ids[name] ?? name] = { outcome: name === 'rejected' ? 'rejected' : 'approved', change };
+        }
+
+        for (const [who, token] of [
+          ['the member', memberToken],
+          ['the admin', adminToken],
+        ] as const) {
+          const rows = await restRows(
+            `leave_requests?select=id,leave_request_decisions(outcome,leave_record_change)&id=in.(${Object.values(ids).join(',')})`,
+            { token },
+          );
+          const read = Object.fromEntries(
+            rows.map((row) => {
+              const embedded = row['leave_request_decisions'];
+              const decision = (Array.isArray(embedded) ? embedded[0] : embedded) as Record<string, unknown> | null;
+              return [String(row['id']), { outcome: decision?.['outcome'], change: decision?.['leave_record_change'] }];
+            }),
+          );
+          expect(read, `${slug}: ${who}`).toEqual(expected);
+        }
+      } finally {
+        if (cleanup.length > 0) await purge();
+        await client.end();
+      }
+    },
+    30_000,
   );
 });
 

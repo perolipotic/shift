@@ -2067,6 +2067,9 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // 0039's pending roster overrides, and 0025's assignments re-created
     // beside it, on the same terms.
     { name: 'rotation_roster_overrides_in_view', argumentCount: 1, expected: ['authenticated'] },
+    // 0047's computed field on a leave request decision, on the same terms:
+    // PostgREST calls it as the request role inside the decision's embed.
+    { name: 'leave_record_change', argumentCount: 1, expected: ['authenticated'] },
     // STORY 1.8. The roster is called by a signed-in session over REST, and by
     // nobody else: an anonymous caller has no organization to scope it to.
     { name: 'team_roster', argumentCount: 1, expected: ['authenticated'] },
@@ -2195,6 +2198,9 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'rotation_roster_overrides_in_view', argumentCount: 1 },
     // 0041's reader of 0008's history, as 0008's readers.
     { name: 'member_inactive_within', argumentCount: 2 },
+    // 0047's computed field reads `leave_records` under the caller's own
+    // policy, so a member reads only their own chain.
+    { name: 'leave_record_change', argumentCount: 1 },
     // 0023's TRUNCATE refusal reads nothing, so it has no reason to be a definer.
     { name: 'refuse_truncate', argumentCount: 0 },
     // 0024's name key reads nothing; it runs as whoever writes the name.

@@ -709,6 +709,55 @@ export async function withdrawLeaveRequestInSql(slug: string, requestId: string)
 }
 
 /**
+ * An admin's later change to the leave record the approved request
+ * `requestId` created, in SQL (0047), as 0029's definers write it, by the run
+ * organization's first admin: `removed` soft-removes it, as
+ * `remove_leave_record` does; `amended` removes it and inserts the
+ * replacement `from`–`to` in the SAME transaction, as `amend_leave_record`
+ * does, so the replacement's `created_at` is the removal's instant. Throws
+ * when the request has no live leave record there.
+ */
+export async function changeApprovedLeaveInSql(
+  slug: string,
+  requestId: string,
+  change: { readonly kind: 'removed' } | { readonly kind: 'amended'; readonly from: string; readonly to: string },
+): Promise<void> {
+  const client = await connect();
+  try {
+    await client.query('begin');
+    const { rows } = await client.query<{ organization_id: string; member_id: string; admin_user: string | null }>(
+      `update leave_records l
+          set removed_at = now(),
+              removed_by = (select a.auth_user_id from members a
+                             where a.organization_id = l.organization_id and a.role = 'admin'
+                             order by a.created_at, a.id limit 1)
+         from organizations o, leave_request_decisions d
+        where o.slug = $1 and d.organization_id = o.id and d.request_id = $2
+          and l.organization_id = d.organization_id and l.id = d.leave_record_id and l.removed_at is null
+       returning l.organization_id, l.member_id, l.removed_by as admin_user`,
+      [slug, requestId],
+    );
+    const removed = rows[0];
+    if (removed === undefined || removed.admin_user === null) {
+      throw new Error(`E2E: the request ${requestId} in ${slug} has no live leave record, or the organization no admin`);
+    }
+    if (change.kind === 'amended') {
+      await client.query(
+        `insert into leave_records (organization_id, member_id, during, created_by)
+         values ($1, $2, daterange($3::date, $4::date, '[]'), $5)`,
+        [removed.organization_id, removed.member_id, change.from, change.to, removed.admin_user],
+      );
+    }
+    await client.query('commit');
+  } catch (cause) {
+    await client.query('rollback').catch(() => undefined);
+    throw cause;
+  } finally {
+    await client.end();
+  }
+}
+
+/**
  * A live conflict resolution of `memberId`'s conflict on `date` on `teamId`
  * (`YYYY-MM-DD`), in SQL (story 5.4a), attributed to the run organization's
  * first admin: what 5.4b–d's screen will record. 0031's checks and its live
