@@ -758,7 +758,7 @@ action_items:
     action: "Offline e2e: seed a pending request and assert Za odluku and admin Danas
       show it and the merged count offline; drop the dead WRITE_RPC alternatives"
     owner: "Dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-8-9-retro-2026-10-28.md"
   - id: "epic-9-retro-item-20-split-leave-requests-ts-into-read-and-wr"
     epic: 9
@@ -774,21 +774,21 @@ action_items:
       9.4 rejection wording, stale epic-8/9 context files, Q24 persisted-data list,
       FEATURE_PUBLIC consumer comments"
     owner: "Dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-8-9-retro-2026-10-28.md"
   - id: "epic-9-retro-item-22-diagnose-the-flaky-offline-za-odluku-rea"
     epic: 9
     action: "Diagnose the flaky offline Za odluku read (offline-read.spec.ts:278,317)
       and the CI shard failure where admin-auth was not served after #234"
     owner: "Dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-8-9-retro-2026-10-28.md"
   - id: "epic-9-retro-item-23-process-a-deferral-that-says-decide-in-s"
     epic: 9
     action: "Process: a deferral that says decide in story X is copied into story
       X's spec as a required input, and the story cannot close with it unanswered"
     owner: "Perolipotic (bmad-build spec template)"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-8-9-retro-2026-10-28.md"
   - id: "epic-10-retro-item-24-a1-a9-fix-the-epic-10-cross-story-defect"
     epic: 10
@@ -796,33 +796,33 @@ action_items:
       stop, device ownership at send, claim activity check, one decision rule, cross-org
       sign-in link, push link origin, time budget, DEPLOY order, copy)"
     owner: "Dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-10-retro-2026-10-30.md"
   - id: "epic-10-retro-item-25-a10-a11-amend-the-architecture-spine-ad"
     epic: 10
     action: "A10–A11: amend the architecture spine (AD-9, 14, 17, 18) and reconcile
       epic-10-context, EXPERIENCE.md, spec frontmatter and stale deferred-work entries"
     owner: "Dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-10-retro-2026-10-30.md"
   - id: "epic-10-retro-item-26-a12-fix-the-time-of-day-flake-in-today-s"
     epic: 10
     action: "A12: fix the time-of-day flake in today.spec.ts:529 and make a red main
       block merges"
     owner: "Dev"
-    status: open
+    status: in-progress
     ref: "_bmad-output/implementation-artifacts/epic-10-retro-2026-10-30.md"
   - id: "epic-10-retro-item-27-a13-bmad-build-customization-ad-amendmen"
     epic: 10
     action: "A13: bmad-build customization: AD amendments carry a spine task, decide-in-X
       deferrals become inputs, resolving stories mark deferred entries"
     owner: "Dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-10-retro-2026-10-30.md"
   - id: "epic-10-retro-item-28-a14-parallel-sessions-never-share-a-dev"
     epic: 10
     action: "A14: parallel sessions never share a dev-server port silently (e2e refuses
       a foreign server or per-worktree ports)"
     owner: "Dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-10-retro-2026-10-30.md"

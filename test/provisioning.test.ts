@@ -1975,6 +1975,9 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // device is deleted for `notify`, which holds no table privilege.
     { name: 'register_push_subscription', argumentCount: 3 },
     { name: 'delete_push_subscription', argumentCount: 3 },
+    // RETRO 10 (0046). `notify` reads a push row's devices again at send
+    // time, through the outbox and the devices, neither of which it may read.
+    { name: 'push_devices_for_send', argumentCount: 2 },
     // 0023. The lock is taken from a trigger every writer fires, and the
     // last-admin re-check reads `members` and the status history past row
     // level security, as 0002's trigger does, on the same attributes.
@@ -2159,6 +2162,8 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // secret key, deletes a device its push service says is gone.
     { name: 'register_push_subscription', argumentCount: 3, expected: ['authenticated'] },
     { name: 'delete_push_subscription', argumentCount: 3, expected: ['service_role'] },
+    // RETRO 10 (0046). Only `notify` reads a push row's devices at send time.
+    { name: 'push_devices_for_send', argumentCount: 2, expected: ['service_role'] },
     // 0024's name key, in `private`, which PostgREST does not expose. Every
     // name check and name unique index calls it, and both are
     // permission-checked against the WRITING role — and a check runs on every

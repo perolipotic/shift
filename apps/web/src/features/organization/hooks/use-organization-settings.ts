@@ -430,8 +430,9 @@ export function useOrganizationSettings() {
 
   /**
    * The email-notifications dialog's Spremi (story 10.3), on its own disjoint
-   * next write on, and a row already queued is settled unsent at its next claim.
-   * next write on; a row already queued still sends.
+   * write. Off stops the organization's email from the next write on, and a
+   * row already queued is settled unsent at its next claim (0044); only a row
+   * already in flight can still send.
    */
   async function saveEmailNotifications(on: boolean): Promise<void> {
     // `/obavijesti` reads this switch, so a landed write re-reads it too.

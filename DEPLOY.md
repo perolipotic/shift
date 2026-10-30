@@ -11,7 +11,7 @@ tier beyond two Edge Functions (AD-14):
 | `apps/web` | Cloudflare Pages, static | the publishable key only |
 | `supabase/migrations` | Supabase Postgres | the schema, forward-only; the `notify` cron job and its two Vault secrets' names |
 | `supabase/functions/admin-auth` | Supabase Edge Functions | the secret key |
-| `supabase/functions/notify` | Supabase Edge Functions, called every minute by pg_cron | the secret key (for its three RPCs), the Resend key, the invoke secret, the VAPID key pair and subject |
+| `supabase/functions/notify` | Supabase Edge Functions, called every minute by pg_cron | the secret key (for its four RPCs), the Resend key, the invoke secret, the VAPID key pair and subject |
 
 The secret key exists only in the Edge Functions' per-environment secrets. If
 you ever find `sb_secret_*` in a Pages environment variable, in a committed
@@ -247,13 +247,18 @@ pg_cron job `notify` every minute; it POSTs to the function with the invoke
 secret as its bearer token, and **does nothing while either Vault secret below
 is absent**. Set up each environment once, in this order.
 
-How a row is delivered: one run claims at most 8 rows, sends them about 550 ms
-apart and stops starting sends after 45 s, so it ends inside pg_net's 55 s.
+How a row is delivered: one run claims at most 8 rows and sends emails about
+550 ms apart. It starts no email send after 45 s and no push row after 35 s (a
+push row's device read, send and gone-device delete take up to 5 s each;
+migration `0046`), and what it does not start is released untried
+(`RUN_DEADLINE`), so the run ends inside pg_net's 55 s.
 A network error, 408, 409, 429 or 5xx releases the row and backs it off
 (attempts × 10 minutes: 10, 20, 30, 40), and the fifth failure fails it
-`ATTEMPTS_EXHAUSTED`. A 401 or 403 (the key or the domain) stops the run and
-gives every held row back without spending its attempt, `PROVIDER_UNAUTHORIZED`,
-so a misconfiguration delays mail and loses none. Any other 4xx fails the row
+`ATTEMPTS_EXHAUSTED`. A 401 or 403 from Resend (the key or the domain) stops
+**email** for the rest of the run and gives every later email row back without
+spending its attempt, `PROVIDER_UNAUTHORIZED`, so a misconfiguration delays mail
+and loses none; push rows in the same run are still sent (the channels are
+independent). Any other 4xx fails the row
 `PROVIDER_REFUSED`. Every send carries the row id as Resend's
 `Idempotency-Key`, which holds for 24 hours, longer than five attempts take.
 
@@ -262,8 +267,9 @@ so a misconfiguration delays mail and loses none. Any other 4xx fails the row
 `TXT` (`include:amazonses.com` or as Resend shows it), the DKIM `TXT`
 (`resend._domainkey`) and the bounce `MX`. Wait until Resend marks the domain
 *Verified*. Unverified, Resend refuses every send with a 403, which `notify`
-answers by stopping the run and giving the rows back (`PROVIDER_UNAUTHORIZED`):
-nothing is sent and nothing is lost until the domain verifies. Use one domain per
+answers by stopping email for that run and giving the email rows back
+(`PROVIDER_UNAUTHORIZED`): no email is sent and none is lost until the domain
+verifies. Push is not held by it. Use one domain per
 environment, or one domain for both; `NOTIFY_EMAIL_FROM` names an address on it
 (`Shift <obavijesti@obavijesti.example.org>`).
 
@@ -676,8 +682,9 @@ within that window.
 outbox filter trigger, so a member's or an organization's switch stops the
 writes from the moment it lands. The new `notify` only adds the footer line
 linking to `/obavijesti`; it reads nothing `0044` adds, but the link lands on a
-route only the new SPA has. So: `db push`, then the SPA, then
-`functions deploy notify`. The switches also act at claim time: `claim_notifications`
+route only the new SPA has. Deployed on its own, that means `db push`, then the
+SPA, then `functions deploy notify`; deployed together with `0045` (as the
+first deploy does), the combined order below wins. The switches also act at claim time: `claim_notifications`
 (re-created by `0044`, same signature and grants) settles as failed, with
 `failure_code = 'EMAIL_TURNED_OFF'`, every pending email row whose recipient or
 organization has email off, including rows waiting out a retry; only a row
@@ -702,6 +709,70 @@ A `push` row whose member has no device left is settled failed at the claim
 (`failure_code = 'PUSH_NO_SUBSCRIPTION'`); one whose every device answered
 `404`/`410` fails `PUSH_SUBSCRIPTION_GONE`, and those devices are deleted.
 A push service's own failures carry `PUSH_SERVICE_*` codes, never Resend's.
+
+**Migration `0046` (the retro-10 batch), then its `notify` straight away.**
+`0046` changes who a notification reaches and adds `notify`'s fourth RPC:
+
+- `decide_leave_request` writes the decision's rows through
+  `private.notify_members`, so the decision follows the same recipient rules as
+  every other event on both channels: never the deciding admin's own session,
+  only a member active today, and an email row only for a member with an
+  address (before, the email row was written unconditionally);
+- `claim_notifications` (same signature and grants) settles as failed, with
+  `failure_code = 'RECIPIENT_INACTIVE'`, every pending `email` or `push` row
+  whose recipient is not active in the organization's today, and never returns
+  one;
+- `push_devices_for_send(p_id uuid, p_claimed_at timestamptz)`, `service_role`
+  only: `{status, devices}` — a push row's recipient's devices as they are
+  **now** (`ready`), or `lease_lost` when the row is no longer the caller's
+  (nothing is posted or settled), or `inactive` when the recipient was
+  deactivated after the claim (settled `RECIPIENT_INACTIVE`). `notify` reads it
+  right before posting, so a device handed to another member during the lease
+  (a shared phone) is not posted the earlier member's notification; only the
+  milliseconds between that read and the POST remain, an accepted window. The
+  claim's `subscriptions` column stays, but `notify` no longer sends to it.
+
+The new `notify` calls `push_devices_for_send`, which only `0046` has: against
+a database without it (PostgREST answers `PGRST202`), every push row is given
+back as `PUSH_DEVICES_MISSING` **without spending its attempt**, and none is
+sent, so the window costs delay, never a lost row. Any other failed device read
+is retried as `PUSH_DEVICES_UNAVAILABLE`, which does spend the attempt. So
+`db push` first, then `functions deploy notify` — the deploy action's order.
+The old (10.4) `notify` keeps working against `0046`, since the claim still
+returns `subscriptions`. The same `notify` also: stops only email on a Resend
+`401`/`403` (push rows in the run are still sent), and reports why each channel
+stopped as `stopped: { email?, push? }` in its run answer; sends each push with a
+path-only `url` (`/prijava/<slug>?povratak=…`), which the service worker opens
+on its own origin, so a second origin in `APP_ORIGINS` no longer loses the deep
+link; starts no push row after 35 s and no email after 45 s (checked
+again after the pace wait), and bounds every settle like a send, so a run fits
+inside pg_net's 55 s. The SPA needs nothing of `0046`.
+
+**The first deploy of `0042`–`0046` together.** One order, which the deploy
+action (§8.1) already runs:
+
+1. `db push` — all five migrations;
+2. the function secrets, with the Resend key, the invoke secret,
+   `NOTIFY_EMAIL_FROM`, `SHIFT_APP_URL` and the VAPID values (§3a);
+3. `functions deploy notify` — straight after `db push`, before the SPA;
+4. the SPA, built with `VITE_VAPID_PUBLIC_KEY`;
+5. **last, by hand, Vault** (§3a step 4): `notify_url` and
+   `notify_invoke_secret`. Until both exist the cron job sends nothing, so no
+   email's `/obavijesti` footer link (`0044`) can land on a bundle without the
+   route, and no row is claimed by a half-deployed pair.
+
+This replaces the per-migration orders above for that deploy: `0044`'s "SPA
+before `notify`" is satisfied by step 5 instead (nothing is sent before the SPA
+is live), and `0045`/`0046`'s "`notify` right after `db push`" by step 3.
+
+**Never roll `notify` back below story 10.4 once `0045` is applied.** A `notify`
+older than 10.4 knows only email: it sends every claimed `push` row as an email
+to its recipient's address (a second copy of the same notification), and fails
+the rest `RECIPIENT_NO_EMAIL`. Roll back only to a 10.4 or later `notify`; to
+stop push instead, unset `VAPID_PRIVATE_KEY` (push rows are then retried as
+`PUSH_NOT_CONFIGURED` and email is untouched). Rolling the batch's `notify` back
+to 10.4's is safe: it ignores `push_devices_for_send` and sends to the claim's
+`subscriptions`, without `0046`'s handover check.
 
 With the pipeline enabled (§8), merging to `main` is what promotes: staging is
 deployed and smoked, then production waits for an approval, and each deploy
@@ -1459,7 +1530,9 @@ environment.
   deployment* (for staging, the previous `staging` deployment). It is instant
   and changes nothing in Supabase. The next push to `main` deploys again.
 - **The function.** Check out the previous commit and run
-  `supabase functions deploy admin-auth --project-ref <ref>` (§5.2).
+  `supabase functions deploy admin-auth --project-ref <ref>` (§5.2). `notify`
+  likewise, but never to a version older than story 10.4 while `0045` is
+  applied: an older `notify` emails every `push` row (§5.3).
 - **Migrations are forward-fix only** (§5.4). There is no down-migration and
   no `db reset` against a hosted project, ever. A bad migration is corrected by
   the next migration, promoted the same way.

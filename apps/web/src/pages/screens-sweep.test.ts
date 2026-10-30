@@ -94,6 +94,7 @@ import {
   SHIFT_TYPE_LIST_KEYS,
   SIGN_IN_FORM,
   SIGN_IN_HOOK,
+  SIGN_IN_SWITCH_HOOK,
   SIGN_IN_PAGE,
   source,
   srcRoot,
@@ -1291,7 +1292,8 @@ describe('the screen is read at all, so every sweep below means something', () =
     /\buse(?:State|Ref|Query|Reducer|ActionState|Optimistic|Transition|FormStatus|Router|Navigate|QueryClient)\b/;
 
   it.each([
-    { name: 'the sign-in screen', set: SCREEN, hookFile: SIGN_IN_HOOK },
+    // Retro 10 A5: the offer's hook is the set's second hook, swept as one.
+    { name: 'the sign-in screen', set: SCREEN.filter((file) => file !== SIGN_IN_SWITCH_HOOK), hookFile: SIGN_IN_HOOK },
     { name: 'the team roster', set: TEAM_ROSTER, hookFile: TEAM_ROSTER_HOOK },
   ])('holds no state or navigation outside the hook on $name', ({ set, hookFile }) => {
     for (const part of set.filter((file) => file !== hookFile)) {
@@ -1468,6 +1470,8 @@ describe('the screen is read at all, so every sweep below means something', () =
         'set-password-screen.fixture.ts',
         'services/address.ts',
         'services/last-organization.ts',
+        'services/organization-switch.ts',
+        'hooks/use-end-session.ts',
         'services/return-target.ts',
         'services/set-password.ts',
         'services/sign-in.ts',
@@ -1550,7 +1554,9 @@ describe('the screen is read at all, so every sweep below means something', () =
       expect(occurrences(source(SCREEN), `const ${name} = useRef`), `${name} is not created exactly once`).toBe(1);
       expect(source(SIGN_IN_HOOK), `${name} is not created in the hook`).toContain(`const ${name} = useRef`);
     }
-    expect(occurrences(source(SCREEN), '= useRef'), 'a ref is created besides the three fields and the in-flight flag').toBe(4);
+    // FIVE SINCE RETRO 10 A5: the offer's own in-flight flag, in its hook.
+    expect(occurrences(source(SCREEN), '= useRef'), 'a ref is created besides the three fields and the two in-flight flags').toBe(5);
+    expect(source(SIGN_IN_SWITCH_HOOK), 'the offer\'s in-flight ref is not in its hook').toContain('const leaving = useRef(false);');
     expect(source(SIGN_IN_HOOK), 'the in-flight ref is not in the hook').toContain('const exchanging = useRef(false);');
   });
 
@@ -1560,7 +1566,7 @@ describe('the screen is read at all, so every sweep below means something', () =
     // object key of a part's own, nor the client a sign-in is made on.
     const wiring = /\buseNavigate\(|\buseQueryClient\(|[{,]\s*submit\s*:|\bsupabaseClient\b|\.from\(|\bsignIn\(/;
 
-    for (const part of SCREEN.filter((file) => file !== SIGN_IN_HOOK)) {
+    for (const part of SCREEN.filter((file) => file !== SIGN_IN_HOOK && file !== SIGN_IN_SWITCH_HOOK)) {
       expect(source(part), `${part} declares a handler of its own`).not.toMatch(shadow);
       expect(source(part), `${part} builds or hands on a handler of its own`).not.toMatch(wiring);
       expect(source(part), `${part} holds state of its own`).not.toMatch(/\buse(?:State|Ref|Query)\b/);
@@ -1592,7 +1598,9 @@ describe('the screen is read at all, so every sweep below means something', () =
     expect(inputElements(source(SIGN_IN_FORM))).toHaveLength(3);
     expect(buttonElements(source(SIGN_IN_FORM))).toHaveLength(4);
     expect(inputElements(source(SCREEN))).toHaveLength(3);
-    expect(buttonElements(source(SCREEN))).toHaveLength(4);
+    // SIX SINCE RETRO 10 A5: the other-organization offer's switch and stay,
+    // both `type="button"`, drawn in place of the form.
+    expect(buttonElements(source(SCREEN))).toHaveLength(6);
     expect(occurrences(source(SIGN_IN_FORM), 'type="submit"'), 'not exactly one submit button').toBe(1);
     expect(occurrences(source(SIGN_IN_FORM), 'type="button"'), 'a non-submit button would submit').toBe(3);
   });

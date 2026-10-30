@@ -45,6 +45,14 @@
       "heading": "Lozinku postavlja administrator",
       "body": "Javi se administratoru svoje organizacije. On ti daje novu lozinku, a stare prijave tada prestaju vrijediti."
     },
+    "switch": {
+      "heading": "Poveznica za drugu organizaciju",
+      "body": "Prijavljen si u organizaciju {current}. Ova poveznica za prijavu vodi u organizaciju {target}. Za prijavu u nju najprije se na ovom uređaju odjavljuješ iz organizacije {current}.",
+      "switch": "Odjavi se i prijavi u organizaciju {target}",
+      "pending": "Odjava…",
+      "stay": "Ostani u organizaciji {current}",
+      "error": "Odjava trenutačno nije moguća. Pokušaj ponovno."
+    },
     "brand": {
       "name": "Shift",
       "headline": "Raspored kojem možeš vjerovati.",
@@ -1428,7 +1436,7 @@
     "signOut": "Odjava",
     "install": "Instaliraj",
     "notifications": "Obavijesti",
-    "notificationsDescription": "Obavijesti e-poštom",
+    "notificationsDescription": "E-pošta i obavijesti na uređaju",
     "installIosSteps": "Dodirni Dijeli, pa Dodaj na početni zaslon.",
     "more": "Više",
     "moreClose": "Zatvori izbornik Više",
@@ -1613,7 +1621,7 @@
     "retry": "Pokušaj ponovno",
     "saveFailed": "Spremanje trenutačno nije moguće. Pokušaj ponovno.",
     "pushHeading": "Obavijesti na uređaju",
-    "pushLede": "Na ovom uređaju javljamo isto što i e-poštom, i kad nemaš upisan e-mail. Uključuje se zasebno na svakom uređaju.",
+    "pushLede": "Na ovom uređaju javljamo iste događaje kao i e-poštom, i kad je e-pošta isključena ili nemaš upisan e-mail. Uključuje se zasebno na svakom uređaju.",
     "pushChoice": "Obavijesti na ovom uređaju",
     "pushIosInstall": "Instaliraj aplikaciju za obavijesti (iOS 16.4+)",
     "pushUnsupported": "Ovaj preglednik ne može primati obavijesti.",

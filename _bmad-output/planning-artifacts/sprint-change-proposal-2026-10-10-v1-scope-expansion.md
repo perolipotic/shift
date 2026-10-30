@@ -67,7 +67,7 @@
 - **Epics 1–7:** they stay done. No acceptance criterion is reverted.
   - Story **9.1** renames the shipped surfaces of 5.3b, 5.4, 6.3 and 7.16 (*Raspored* → *Za odluku*, no "konflikt").
   - Epic 13 changes the leave surfaces of 5.1/5.2/7.12/7.15 through new stories, and their original criteria stay in history, as Epic 7 did.
-- **New:** Epics 8–14 (§4.6). The open Epic 7 retro items (8, 11–15) are unaffected. Item 14 (AD-13 wording) should land before Epic 8, because 8.3 amends AD-13.
+- **New:** Epics 8–14 (§4.6). The open Epic 7 retro items (8, 11–15) are unaffected. Item 14 (AD-13 wording) should land before Epic 8, because 8.3 amends AD-13. *(As built, stories 8.2–8.2e amended AD-13; 8.3 did not. Reconciled 2026-10-30.)*
 
 ### 3.2 Artifact conflicts
 
@@ -301,7 +301,7 @@
 
 | AD | Amendment | Applied with |
 |---|---|---|
-| AD-13 | A surface may render its persisted snapshot only while offline, whole, labelled with its as-of time. Online, a persisted snapshot is never shown. Q19 still holds, because one snapshot is still one read | 8.2 |
+| AD-13 | A surface may render its persisted snapshot only while offline, whole, labelled with its as-of time. Online, a persisted snapshot is never shown. Q19 still holds, because one snapshot is still one read *(as built, decision 2026-10-20 d: after a reconnect the whole cached snapshot stays drawn under its note until every read is fresh; only the app-start restore shows a skeleton; see the spine's AD-13)* | 8.2 |
 | AD-2 | New rows in the table: absence type (current-state, like shift type name), leave allowance (**versioned per leave year**, since carry-over must read the previous year's allowance as it was), minimum members (current-state, so moving it changes the warnings for past dates too, like hour bands) | 11.1, 13.1 |
 | AD-4 | *Za odluku* is a union: derived collisions without a resolution, plus pending leave requests, plus pending swap requests. Requests are stored, and only their decision clears them | 9.2 |
 | AD-10 | A member may insert, and withdraw, rows they own (requests), and answer a swap addressed to them. These are the first member-role domain writes. The policy reads `member_id = current member` from the helper, never from the request | 9.2 |

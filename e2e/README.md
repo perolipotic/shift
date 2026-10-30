@@ -26,12 +26,30 @@ function is reused. Before any test, globalSetup checks the database, GoTrue and
 that admin-auth answers CORS for `http://127.0.0.1:5173`, and stops with a message
 naming `supabase start` or `supabase functions serve` if one is missing.
 
-> **An existing dev server on 127.0.0.1:5173 is reused — whichever checkout
-> started it.** If the main checkout (or another worktree) is serving that port,
-> the suite tests THAT checkout's frontend, not the branch you are on, and still
-> passes or fails as if it were yours. When testing a branch, stop the other dev
-> server first (or run `pnpm test:e2e` from the checkout that owns it). The port
-> cannot simply be changed: the Edge Function's CORS admits only that origin.
+> **An existing dev server on 127.0.0.1:5173 is reused only when THIS checkout
+> started it** (retro 10 A14). The dev server answers `GET /__shift/checkout`
+> with its repository root (a dev-only plugin in `apps/web/vite.config.ts`), and
+> globalSetup stops the run, naming the other checkout, when that root is not
+> this one — or when the server does not answer it (one started before the
+> check existed). When another worktree is serving the port, wait for it to
+> stop, or run `pnpm test:e2e` from the checkout that owns it. The port cannot
+> simply be changed: the Edge Function's CORS admits only that origin.
+>
+> globalSetup also waits up to 30 s for admin-auth to answer at all: a cold edge
+> runtime boots the function's worker before it answers (retro 8–9 item 22).
+
+### A clock ahead of real time needs its own session
+
+A test that installs `page.clock` at a time AHEAD of the real wall clock signs
+in a member (or admin) of its own, in its own context (`seedLeaveMember` and
+the spec's `signedInAs`, as `today/today.spec.ts` does), and never uses the
+shared `MEMBER_STATE` or `ADMIN_STATE`. The clock makes the stored access token
+look expired, so the page refreshes it with the stored refresh token;
+`supabase/config.toml` rotates refresh tokens, so a second test refreshing the
+same stored token is a reuse, GoTrue refuses it, and the page signs out. Such a
+test passes or fails by the time of day it runs (retro 10 A12: the 06:00 duty
+test, red on `main` at about 23:12 UTC, CI run 40970110398). A clock set BEHIND
+real time, or no clock, may use the shared states.
 
 ## Layout
 

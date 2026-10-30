@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 
@@ -55,11 +55,9 @@ import { chromeAnswerOf } from '@/features/navigation/services/chrome-freshness'
 import { useFreshnessClock } from '@/lib/offline/use-snapshot-freshness';
 import { INSTALL_IOS, INSTALL_PROMPT } from '@/lib/pwa/install';
 import { useInstall } from '@/lib/pwa/use-install';
-import { forgetDeviceSnapshot } from '@/lib/offline/device-snapshot';
 import { currentSession, supabaseClient } from '@/lib/supabase/client';
-import { pageSignOutFallback } from '@/lib/supabase/local-sign-out';
-import { SIGN_OUT_FAILED, signOut, type SignOutFailure } from '@/features/auth/services/sign-out';
-import { forgetThisPushDevice } from '@/features/notifications/services/page-push';
+import { useEndSession } from '@/features/auth/hooks/use-end-session';
+import { SIGN_OUT_FAILED, type SignOutFailure } from '@/features/auth/services/sign-out';
 import {
   THEME_PREFERENCES,
   useThemePreference,
@@ -222,7 +220,9 @@ const THEME_GLYPHS: Record<ThemePreference, IconComponent> = {
 
 export function AppChrome({ children }: AppChromeProps) {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
+  // The one session end, shared with the set-password step and the
+  // other-organization offer (retro 10 A5).
+  const endSession = useEndSession();
   // The PATH the router currently resolves, read from router state rather than
   // from `window.location`: it is what a navigation updates, so the active entry
   // moves with the router instead of with a full page load.
@@ -453,14 +453,12 @@ export function AppChrome({ children }: AppChromeProps) {
     let revoked = false;
 
     try {
-      // STORY 10.4: this device's push goes with the session. Its row is
-      // deleted while the session can still delete it, and the browser
-      // unsubscribed, so the next person signed in here hears nothing meant
-      // for this one. BEST-EFFORT: bounded, never throws, never blocks the
-      // sign-out below, which runs whatever happened here.
-      await forgetThisPushDevice();
-
-      const outcome = await signOut(supabaseClient().auth, pageSignOutFallback);
+      // THE ONE SESSION END (`@/features/auth/hooks/use-end-session`): this
+      // device's push forgotten, the auth sign-out, and — only once the
+      // session actually ended — every cached answer and the device's kept
+      // snapshot cleared. The set-password step and the other-organization
+      // offer run the same sequence.
+      const outcome = await endSession();
 
       if (!outcome.ok) {
         // THE SESSION SURVIVED, so nothing navigates and nothing is cleared.
@@ -479,31 +477,6 @@ export function AppChrome({ children }: AppChromeProps) {
       }
 
       revoked = true;
-
-      // EVERY CACHED ANSWER GOES WITH THE SESSION, and this is the shared-device
-      // case the whole story is built around. `main.tsx` builds ONE `QueryClient`
-      // for the page load, and a client-side navigation does not reload the page
-      // — so without this, `['member-role']` and `['organization']` survive the
-      // sign-out and the next person to sign in on the same device sees the
-      // previous member's destinations and the previous organization's snapshot
-      // until each refetch settles. `clear()` rather than invalidating two keys
-      // by name: the rule is "nothing this session read outlives it", and a list
-      // of keys to forget is a list somebody has to remember to grow.
-      //
-      // KEPT beside the app-wide rule in `main.tsx`
-      // (`@/lib/supabase/session-cache`), which covers every other change of
-      // user: this one is synchronous with the navigation below. The rule's
-      // own router invalidation is deferred past this navigation, so it only
-      // re-checks the `/prijava` the tab is already heading to.
-      //
-      // AND THE DEVICE'S COPY GOES TOO (story 8.2): the snapshot kept in
-      // IndexedDB for offline reading is deleted, and nothing is kept again
-      // until the next sign-in. Started first, so the clear below saves
-      // nothing, and AWAITED before the navigation, so the sign-in form never
-      // renders over a copy still on the device (`forget` never rejects).
-      const forgetting = forgetDeviceSnapshot();
-      queryClient.clear();
-      await forgetting;
 
       // BARE `/prijava`, discarding a slug this component never had. The
       // organization's slug lives on the `organizations` row, and nothing in the

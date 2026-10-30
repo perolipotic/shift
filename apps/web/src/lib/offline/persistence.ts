@@ -37,8 +37,9 @@ import { persistQueryClientSubscribe, type PersistedClient } from '@tanstack/rea
  *
  * GONE ON SIGN-OUT. {@link DeviceSnapshot.forget} stops saving and deletes the
  * blob. Every path that clears or resets the cache on a session change calls
- * it: `resetOnSessionChange`, the chrome's *Odjava* and the set-password
- * step's sign-out.
+ * it: `resetOnSessionChange`, and the one session end (`useEndSession`) that
+ * the chrome's *Odjava*, the set-password step's sign-out and the
+ * other-organization switch on `/prijava/$slug` (retro 10 A5) all run.
  *
  * The storage is injected behind {@link SnapshotStorage}, so the node suite
  * runs every rule here with no IndexedDB (AD-15); `./device-snapshot` binds

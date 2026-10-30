@@ -13,24 +13,33 @@
  *      (`messages.ts`), never from prose in the row;
  *   4. sends it through Resend with `Idempotency-Key` = the row id, so a
  *      re-claim after a crash cannot send a second email; or, for a `push`
- *      row (story 10.4), posts the encrypted payload with a VAPID header to
- *      every device the claim returned with it, deleting through
+ *      row (story 10.4), reads the recipient's devices AGAIN through
+ *      `push_devices_for_send` (retro 10 A2: an endpoint handed to another
+ *      member since the claim is not this row's), posts the encrypted
+ *      payload with a VAPID header to each, and deletes through
  *      `delete_push_subscription` each device its push service answers 404
  *      or 410 for;
  *   5. settles it through `settle_notification` with the lease token the
  *      claim returned: sent; transient (the claim released, the next attempt
  *      backed off by attempts x 10 minutes, failed on the fifth); released
- *      (given back without spending the attempt, when the run stops before
- *      trying: the provider refused the key, or the time budget ran out); or
- *      permanent (failed).
+ *      (given back without spending the attempt, when the run stops trying a
+ *      channel: Resend refused the key, or the channel's time budget ran
+ *      out); or permanent (failed).
  *
- * THE TIME BUDGET. pg_net waits 55 s for an answer. One run claims at most
- * {@link BATCH_SIZE} rows, spaces sends {@link PACE_MS} apart (Resend's
- * default limit is about two requests a second), gives each send
- * {@link SEND_TIMEOUT_MS}, and stops sending past {@link RUN_DEADLINE_MS},
- * releasing what it did not try.
+ * CHANNELS ARE INDEPENDENT (retro 10 A1). A Resend 401 or 403 stops the
+ * run's EMAIL rows only; push rows go on. Nothing push answers stops email.
  *
- * It writes nothing but those three RPCs, reads no table directly, and computes
+ * THE TIME BUDGET. pg_net waits 55 s for an answer; the run's work fits in
+ * 50 s. One run claims at most {@link BATCH_SIZE} rows, spaces emails
+ * {@link PACE_MS} apart (Resend's default limit is about two requests a
+ * second), and bounds every call to a provider or to the database after the
+ * claim by {@link SEND_TIMEOUT_MS}. An email (one send) starts no later than
+ * {@link RUN_DEADLINE_MS}; a push row (the device read, the sends in parallel,
+ * the deletes in parallel: three bounded steps) no later than
+ * {@link PUSH_RUN_DEADLINE_MS} (retro 10 A7). A row past its channel's
+ * deadline is released untried.
+ *
+ * It writes nothing but those four RPCs, reads no table directly, and computes
  * no domain answer (AD-18): every fact arrives decided, in the row. Adding a
  * rule here is a defect, not a refactor (AD-16's spirit).
  *
@@ -61,10 +70,10 @@ export const PROVIDER_UNAVAILABLE = 'PROVIDER_UNAVAILABLE';
 export const PROVIDER_TIMEOUT = 'PROVIDER_TIMEOUT';
 /** 409: an idempotent request with this key is still in flight, or was sent. Retried, and the key keeps it to one email. */
 export const PROVIDER_CONFLICT = 'PROVIDER_CONFLICT';
-/** 401 or 403: the key or the domain is wrong. The run stops and gives every row back. */
+/** 401 or 403: the key or the domain is wrong. The run stops sending email and gives every email row back; push goes on. */
 export const PROVIDER_UNAUTHORIZED = 'PROVIDER_UNAUTHORIZED';
 export const NETWORK_ERROR = 'NETWORK_ERROR';
-/** The run's time budget ran out before this row was tried. */
+/** The row's channel's time budget ran out before this row was tried. */
 export const RUN_DEADLINE = 'RUN_DEADLINE';
 /** A claimed row that is not the shape the claim returns. */
 export const ROW_INVALID = 'ROW_INVALID';
@@ -79,6 +88,11 @@ export const CLAIM_RPC = 'claim_notifications';
 export const SETTLE_RPC = 'settle_notification';
 /** Story 10.4: a device its push service says is gone (404, 410) is deleted, and nothing else. */
 export const DELETE_SUBSCRIPTION_RPC = 'delete_push_subscription';
+/**
+ * Retro 10 A2 (0046): a push row's devices, read right before it is posted,
+ * while the lease is still this run's. Only these are sent to.
+ */
+export const PUSH_DEVICES_RPC = 'push_devices_for_send';
 
 /** A push row whose member has no device left when it is sent. */
 export const PUSH_NO_SUBSCRIPTION = 'PUSH_NO_SUBSCRIPTION';
@@ -105,6 +119,24 @@ export const PUSH_SERVICE_RATE_LIMITED = 'PUSH_SERVICE_RATE_LIMITED';
 export const PUSH_SERVICE_UNAVAILABLE = 'PUSH_SERVICE_UNAVAILABLE';
 export const PUSH_SERVICE_REFUSED = 'PUSH_SERVICE_REFUSED';
 export const PUSH_NETWORK_ERROR = 'PUSH_NETWORK_ERROR';
+/**
+ * The send-time device read failed, threw, answered no list, or did not answer
+ * in time: nothing was posted, and the row is retried.
+ */
+export const PUSH_DEVICES_UNAVAILABLE = 'PUSH_DEVICES_UNAVAILABLE';
+/**
+ * The device read found the row no longer this run's (re-claimed or settled
+ * since the claim). Logged; the row is not settled, because it is not this
+ * run's to settle.
+ */
+export const PUSH_LEASE_LOST = 'PUSH_LEASE_LOST';
+/** Set by the claim, or by this function from the device read: the recipient is not active today. */
+export const RECIPIENT_INACTIVE = 'RECIPIENT_INACTIVE';
+/**
+ * The device read's function does not exist (a `notify` deployed before the
+ * migration that adds it): the row is given back without spending its attempt.
+ */
+export const PUSH_DEVICES_MISSING = 'PUSH_DEVICES_MISSING';
 /** Logged when deleting a gone device fails; its next push answers 404 or 410 again. */
 export const PUSH_DELETE_FAILED = 'PUSH_DELETE_FAILED';
 
@@ -122,8 +154,15 @@ export const SEND_TIMEOUT_MS = 5_000;
 /** The least time between two sends' starts: Resend's default limit is about 2 a second. */
 export const PACE_MS = 550;
 
-/** No send starts this long after the run began; the rest are released untried. */
+/** No email starts this long after the run began; the rest are released untried. One send fits before 50 s. */
 export const RUN_DEADLINE_MS = 45_000;
+
+/**
+ * No push row starts this long after the run began (retro 10 A7): its device
+ * read, its sends and its deletes, each bounded by {@link SEND_TIMEOUT_MS},
+ * fit before 50 s. The rest are released untried.
+ */
+export const PUSH_RUN_DEADLINE_MS = 35_000;
 
 /** The shortest invoke secret accepted: a guessable one is no secret. */
 export const INVOKE_SECRET_MIN_LENGTH = 32;
@@ -276,19 +315,19 @@ export interface RpcAnswer {
 
 /**
  * The secret-key client, narrowed to the one method this function may use,
- * and to its three functions. No `from(...)`: reading or writing a table
+ * and to its four functions. No `from(...)`: reading or writing a table
  * directly is unrepresentable.
  */
 export interface OutboxClient {
   rpc(
-    fn: typeof CLAIM_RPC | typeof SETTLE_RPC | typeof DELETE_SUBSCRIPTION_RPC,
+    fn: typeof CLAIM_RPC | typeof SETTLE_RPC | typeof DELETE_SUBSCRIPTION_RPC | typeof PUSH_DEVICES_RPC,
     args: Record<string, unknown>,
   ): PromiseLike<RpcAnswer>;
 }
 
 export type Fetch = (input: string, init: RequestInit) => Promise<Response>;
 
-/** One device, as the claim returns it with a push row. */
+/** One device, as `push_devices_for_send` (and the claim) returns it with a push row. */
 export interface PushSubscriptionRow {
   readonly id: string;
   readonly endpoint: string;
@@ -367,7 +406,7 @@ export function pushEncryptorOf(generateRequestDetails: GenerateRequestDetails):
 }
 
 export interface HandlerDependencies {
-  /** Constructs the secret-key client. Its only permitted use is the three RPCs. */
+  /** Constructs the secret-key client. Its only permitted use is the four RPCs. */
   readonly makeClient: () => unknown;
   readonly fetch: Fetch;
   /** Story 10.4: builds each device's push request. Without it a push row is retried, never sent. */
@@ -395,7 +434,11 @@ export interface ClaimedNotification {
   readonly organization_name: string | null;
   /** The fact the row is about; a push's `tag` names it. */
   readonly subject_id?: string | null;
-  /** Story 10.4: a push row's devices (0045); `null` for an email row. */
+  /**
+   * Story 10.4: a push row's devices at claim time (0045); `null` for an
+   * email row. Kept for compatibility and never sent to: the send reads them
+   * again ({@link PUSH_DEVICES_RPC}, retro 10 A2).
+   */
   readonly subscriptions?: unknown;
 }
 
@@ -405,7 +448,7 @@ type Settlement =
   | { readonly result: 'sent' }
   | { readonly result: 'transient' | 'permanent' | 'released'; readonly failureCode: string };
 
-/** A send's outcome: a settlement, or the provider refusing the key, which stops the run. */
+/** A send's outcome: a settlement, or Resend refusing the key, which stops the run's email. */
 type Delivery = Settlement | { readonly result: 'stop'; readonly failureCode: typeof PROVIDER_UNAUTHORIZED };
 
 // --------------------------------------------------------------- the decisions
@@ -433,7 +476,7 @@ function bearerOf(authorization: string | null): string | null {
 }
 
 /**
- * A provider answer, as a delivery. 2xx is sent; 401 and 403 stop the run;
+ * A provider answer, as a delivery. 2xx is sent; 401 and 403 stop the run's email;
  * 408, 409, 429 and 5xx retry; any other 4xx is final.
  */
 export function deliveryOfStatus(status: number): Delivery {
@@ -567,11 +610,9 @@ async function deliverPush(
   configuration: Configuration,
   fetch: Fetch,
   encryptPush: PushEncryptor | undefined,
+  readDevices: (row: ClaimedNotification) => Promise<DeviceRead>,
   deleteSubscription: (device: PushSubscriptionRow) => Promise<void>,
-): Promise<Settlement> {
-  const devices = Array.isArray(row.subscriptions) ? row.subscriptions.filter(isSubscription) : [];
-  if (devices.length === 0) return { result: 'permanent', failureCode: PUSH_NO_SUBSCRIPTION };
-
+): Promise<Settlement | { readonly result: 'skip' }> {
   // TRANSIENT, as the email's: a code this deployment cannot render yet.
   const rendered = renderPush(row.code, row.locale, row.operands, {
     appUrl: configuration.appUrl,
@@ -583,6 +624,16 @@ async function deliverPush(
   const vapid = configuration.vapid;
   if (vapid === null) return { result: 'transient', failureCode: PUSH_NOT_CONFIGURED };
   if (encryptPush === undefined) return { result: 'transient', failureCode: PUSH_ENCRYPTOR_MISSING };
+
+  // The devices NOW (retro 10 A2), never the claim's snapshot: a device
+  // handed to another member since the claim is theirs, and is not posted to.
+  const read = await readDevices(row);
+  if (read.status === 'unavailable') return { result: 'transient', failureCode: PUSH_DEVICES_UNAVAILABLE };
+  if (read.status === 'missing') return { result: 'released', failureCode: PUSH_DEVICES_MISSING };
+  if (read.status === 'lease_lost') return { result: 'skip' };
+  if (read.status !== 'ready') return { result: 'permanent', failureCode: RECIPIENT_INACTIVE };
+  const devices = read.devices;
+  if (devices.length === 0) return { result: 'permanent', failureCode: PUSH_NO_SUBSCRIPTION };
 
   // `tag`: one notification per fact on a device, so a re-send replaces
   // rather than stacks.
@@ -634,6 +685,40 @@ async function deliverPush(
   );
 
   return settlementOfDevices(outcomes);
+}
+
+/**
+ * The send-time device read (A2), as `push_devices_for_send` answers it:
+ * `ready` with the recipient's current devices; `lease_lost` when the row is
+ * no longer this run's; `inactive` when the recipient is not active today;
+ * `unavailable` when the read failed, timed out or answered another shape;
+ * `missing` when the function does not exist yet.
+ */
+export type DeviceRead =
+  | { readonly status: 'ready'; readonly devices: readonly PushSubscriptionRow[] }
+  | { readonly status: 'lease_lost' | 'inactive' | 'unavailable' | 'missing' };
+
+/** A function PostgREST cannot find: PGRST202, or PostgreSQL's undefined_function. */
+const FUNCTION_MISSING_CODES: ReadonlySet<string> = new Set(['PGRST202', '42883']);
+
+/** `push_devices_for_send`'s answer, judged. Exported for the tests. */
+export function deviceReadOf(answer: RpcAnswer | null): DeviceRead {
+  if (answer === null) return { status: 'unavailable' };
+  if (answer.error !== null) {
+    return FUNCTION_MISSING_CODES.has(answer.error.code ?? '') ? { status: 'missing' } : { status: 'unavailable' };
+  }
+  const data = answer.data;
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) return { status: 'unavailable' };
+  const status = (data as Record<string, unknown>)['status'];
+  if (status === 'lease_lost' || status === 'inactive') return { status };
+  if (status !== 'ready') return { status: 'unavailable' };
+  const listed = (data as Record<string, unknown>)['devices'];
+  if (!Array.isArray(listed)) return { status: 'unavailable' };
+  const devices = listed.filter(isSubscription);
+  // Entries that are not devices: a shape this function cannot read, retried
+  // rather than taken for "no device left".
+  if (devices.length !== listed.length) return { status: 'unavailable' };
+  return { status: 'ready', devices };
 }
 
 function respond(status: number, body: { code: string; [operand: string]: unknown }): Response {
@@ -693,18 +778,36 @@ export function createHandler(
 
     const counts = { claimed: 0, sent: 0, failed: 0, retried: 0, released: 0, unsettled: 0 };
 
-    const settle = async (id: string, token: unknown, settlement: Settlement): Promise<boolean> => {
-      let settled: RpcAnswer | null;
+    // An RPC after the claim, bounded like a send: one that never answers
+    // must not hold the row's settle, nor the run's time budget. `null` when
+    // it threw or did not answer in time.
+    const bounded = async (call: () => PromiseLike<RpcAnswer>): Promise<RpcAnswer | null> => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
       try {
-        settled = await client.rpc(SETTLE_RPC, {
+        return await Promise.race([
+          Promise.resolve(call()),
+          new Promise<null>((resolve) => {
+            timer = setTimeout(() => resolve(null), SEND_TIMEOUT_MS);
+          }),
+        ]);
+      } catch {
+        return null;
+      } finally {
+        if (timer !== undefined) clearTimeout(timer);
+      }
+    };
+
+    const settle = async (id: string, token: unknown, settlement: Settlement): Promise<boolean> => {
+      // Bounded like every RPC after the claim, so a settle that never
+      // answers cannot carry the run past pg_net's 55 s (A7).
+      const settled = await bounded(() =>
+        client.rpc(SETTLE_RPC, {
           p_id: id,
           p_claimed_at: token,
           p_result: settlement.result,
           p_failure_code: settlement.result === 'sent' ? null : settlement.failureCode,
-        });
-      } catch {
-        settled = null;
-      }
+        }),
+      );
       if (settled === null || settled.error !== null) {
         // The row id and the code, never the address or the error's text. The
         // lease expires in ten minutes and the row is claimed again; the
@@ -716,33 +819,34 @@ export function createHandler(
       return true;
     };
 
+    // A push row's devices, read at send time under the row's lease (A2).
+    const readDevices = async (row: ClaimedNotification): Promise<DeviceRead> => {
+      const read = deviceReadOf(
+        await bounded(() => client.rpc(PUSH_DEVICES_RPC, { p_id: row.id, p_claimed_at: row.claimed_at })),
+      );
+      if (read.status === 'unavailable') console.error(PUSH_DEVICES_UNAVAILABLE, row.id);
+      if (read.status === 'missing') console.error(PUSH_DEVICES_MISSING, row.id);
+      if (read.status === 'lease_lost') console.error(PUSH_LEASE_LOST, row.id);
+      return read;
+    };
+
     // A gone device: deleted, and nothing else. A failed delete is logged
     // with the subscription's id; its next push answers 404 or 410 again.
     const deleteSubscription = async (device: PushSubscriptionRow): Promise<void> => {
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      let deleted: RpcAnswer | null;
-      try {
-        // Bounded like a send: a delete that never answers must not hold the
-        // row's settle, nor the run's time budget.
-        deleted = await Promise.race([
-          Promise.resolve(
-            client.rpc(DELETE_SUBSCRIPTION_RPC, { p_id: device.id, p_endpoint: device.endpoint, p_member: device.member_id }),
-          ),
-          new Promise<null>((resolve) => {
-            timer = setTimeout(() => resolve(null), SEND_TIMEOUT_MS);
-          }),
-        ]);
-      } catch {
-        deleted = null;
-      } finally {
-        if (timer !== undefined) clearTimeout(timer);
-      }
+      const deleted = await bounded(() =>
+        client.rpc(DELETE_SUBSCRIPTION_RPC, { p_id: device.id, p_endpoint: device.endpoint, p_member: device.member_id }),
+      );
       if (deleted === null || deleted.error !== null) console.error(PUSH_DELETE_FAILED, device.id);
     };
 
-    // Why the run stopped sending, if it did: every row after it is given
-    // back untried, without spending its attempt.
-    let stopped: typeof PROVIDER_UNAUTHORIZED | typeof RUN_DEADLINE | null = null;
+    // Why the run stopped trying a channel, if it did: every later row of
+    // that channel is given back untried, without spending its attempt. Per
+    // channel (A1): Resend refusing the key never holds a push row, and the
+    // push deadline, earlier than email's (A7), never holds an email.
+    const stopped: { email: typeof PROVIDER_UNAUTHORIZED | typeof RUN_DEADLINE | null; push: typeof RUN_DEADLINE | null } = {
+      email: null,
+      push: null,
+    };
     let lastSend: number | null = null;
 
     for (const row of claimed.data as unknown[]) {
@@ -760,28 +864,56 @@ export function createHandler(
       }
       counts.claimed += 1;
 
-      if (stopped === null && now() - started >= RUN_DEADLINE_MS) stopped = RUN_DEADLINE;
-      if (stopped !== null) {
-        if (await settle(row.id, row.claimed_at, { result: 'released', failureCode: stopped })) counts.released += 1;
+      const isPush = row.channel === 'push';
+      if (isPush) {
+        if (stopped.push === null && now() - started >= PUSH_RUN_DEADLINE_MS) stopped.push = RUN_DEADLINE;
+      } else if (stopped.email === null && now() - started >= RUN_DEADLINE_MS) {
+        stopped.email = RUN_DEADLINE;
+      }
+      const stop = isPush ? stopped.push : stopped.email;
+      if (stop !== null) {
+        if (await settle(row.id, row.claimed_at, { result: 'released', failureCode: stop })) counts.released += 1;
         continue;
       }
 
       // The pace: an email starts no sooner than PACE_MS after the last one.
       // A push goes to the device's push service, not Resend, and is not paced.
-      if (lastSend !== null && row.channel !== 'push') {
+      if (lastSend !== null && !isPush) {
         const wait = lastSend + PACE_MS - now();
         if (wait > 0) await sleep(wait);
+        // The deadline again, after the pace: an email STARTS no later than
+        // RUN_DEADLINE_MS, so its send and settle stay inside the budget.
+        if (now() - started >= RUN_DEADLINE_MS) {
+          stopped.email = RUN_DEADLINE;
+          if (await settle(row.id, row.claimed_at, { result: 'released', failureCode: RUN_DEADLINE })) {
+            counts.released += 1;
+          }
+          continue;
+        }
       }
-      const usesProvider = row.channel !== 'push' && (row.email ?? '').trim() !== '';
+      const usesProvider = !isPush && (row.email ?? '').trim() !== '';
       if (usesProvider) lastSend = now();
 
-      const delivery: Delivery =
-        row.channel === 'push'
-          ? await deliverPush(row, configuration.configuration, dependencies.fetch, dependencies.encryptPush, deleteSubscription)
-          : await deliverEmail(row, configuration.configuration, dependencies.fetch);
+      const delivery: Delivery | { readonly result: 'skip' } = isPush
+        ? await deliverPush(
+            row,
+            configuration.configuration,
+            dependencies.fetch,
+            dependencies.encryptPush,
+            readDevices,
+            deleteSubscription,
+          )
+        : await deliverEmail(row, configuration.configuration, dependencies.fetch);
+
+      // The row is no longer this run's (A2's read found the lease lost):
+      // nothing was posted, and nothing is settled with a stale token.
+      if (delivery.result === 'skip') {
+        counts.unsettled += 1;
+        continue;
+      }
 
       if (delivery.result === 'stop') {
-        stopped = delivery.failureCode;
+        stopped.email = delivery.failureCode;
         if (await settle(row.id, row.claimed_at, { result: 'released', failureCode: delivery.failureCode })) {
           counts.released += 1;
         }
@@ -792,9 +924,17 @@ export function createHandler(
 
       if (delivery.result === 'sent') counts.sent += 1;
       else if (delivery.result === 'permanent') counts.failed += 1;
+      else if (delivery.result === 'released') counts.released += 1;
       else counts.retried += 1;
     }
 
-    return respond(200, { code: NOTIFY_RAN, ...counts, ...(stopped === null ? {} : { stopped }) });
+    // `stopped`, per channel: why the run stopped sending email, push, or
+    // both; a channel that never stopped is absent, and so is `stopped` when
+    // neither did.
+    const stoppedBy: { email?: string; push?: string } = {
+      ...(stopped.email === null ? {} : { email: stopped.email }),
+      ...(stopped.push === null ? {} : { push: stopped.push }),
+    };
+    return respond(200, { code: NOTIFY_RAN, ...counts, ...(Object.keys(stoppedBy).length === 0 ? {} : { stopped: stoppedBy }) });
   };
 }
