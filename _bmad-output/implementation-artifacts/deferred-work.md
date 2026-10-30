@@ -1174,3 +1174,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-15-1-pilot-kalendar-and-the-shell-in-glass.md`
   summary: Dark `primary` on the dark card is a known contrast gap for links and selection text on cards; 15.2 (primitives) or 15.5 (dark tuning) re-measures and re-tunes it.
   evidence: Noted in the new `theme-contrast` glass block during 15.1; dark `primary` was left unchanged because no pair the pilot measures failed.
+
+## Deferred from: review of spec-retro-9-item-17-leave-request-rules.md (2026-10-30)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-retro-9-item-17-leave-request-rules.md`
+  summary: `leave_record_change` recognises an amended leave record by its transaction signature (same member, the replacement's `created_at` equal to the old record's `removed_at`, `created_by` equal to `removed_by`), because 0029 stores no link from an old record to its replacement. Add a stored `replaces_id` on `leave_records`, written by `amend_leave_record`, and read the chain through it.
+  evidence: Raised by the item-17 review (Blind Hunter); kept as is for now because no other path writes that signature, and recorded at the product owner's request (2026-10-30).
