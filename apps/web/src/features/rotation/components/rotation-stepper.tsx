@@ -1,6 +1,6 @@
-import { Check, ChevronLeft } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { CaretLeft, Check } from '@/components/ui/icon';
 import { rotationStepperStore } from '@/features/rotation/hooks/draft-store';
 import type { RotationBuilder } from '@/features/rotation/hooks/use-rotation-builder';
 import {
@@ -93,7 +93,7 @@ export function RotationStepActions({ builder }: { readonly builder: RotationBui
             });
           }}
         >
-          <ChevronLeft aria-hidden />
+          <CaretLeft aria-hidden />
           {t('rotation.builder.stepper.back')}
         </Button>
       )}

@@ -482,7 +482,8 @@ const SOURCES = [
   // The other four render nothing and are here for the reason `snapshot.ts` and
   // `client.ts` are: `role.ts` and `sign-out.ts` own the stable codes,
   // `messages.ts` owns the two `t()` keys those codes resolve to, and `icons.ts`
-  // is what pulls `lucide-react` into the bundle — so a chunk built before an
+  // is what pulls the icon facade (`components/ui/icon.tsx`, story 15.1) into
+  // the bundle — so a chunk built before an
   // edit to any of them is stale in a way the vocabulary sweeps cannot see.
   join(webRoot, 'src', 'features', 'navigation', 'utils', 'destinations.ts'),
   join(webRoot, 'src', 'features', 'navigation', 'components', 'chrome.tsx'),

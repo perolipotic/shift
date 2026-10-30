@@ -1,5 +1,4 @@
 import { Link } from '@tanstack/react-router';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { OfflineNote } from '@/components/offline-note';
@@ -8,6 +7,7 @@ import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { CaretLeft, CaretRight } from '@/components/ui/icon';
 import { Notice } from '@/components/ui/notice';
 import { PageDescription, PageHeader, PageTitle } from '@/components/ui/page-header';
 import { RadioGroup } from '@/components/ui/radio-group';
@@ -51,7 +51,7 @@ function BackLink({ count, disabled = false }: { readonly count: number | null; 
   return (
     <Button asChild variant="ghost" className="-ml-3 h-11 px-3 aria-disabled:opacity-50">
       <Link to="/za-odluku" disabled={disabled}>
-        <ChevronLeft aria-hidden />
+        <CaretLeft aria-hidden />
         {count === null ? t('zaOdluku.resolution.backToQueue') : t('zaOdluku.resolution.back', { count })}
       </Link>
     </Button>
@@ -84,7 +84,7 @@ function ConflictNav({
           onGo(view.previous);
         }}
       >
-        <ChevronLeft aria-hidden />
+        <CaretLeft aria-hidden />
       </Button>
       <Button
         type="button"
@@ -98,7 +98,7 @@ function ConflictNav({
           onGo(view.next);
         }}
       >
-        <ChevronRight aria-hidden />
+        <CaretRight aria-hidden />
       </Button>
     </div>
   );

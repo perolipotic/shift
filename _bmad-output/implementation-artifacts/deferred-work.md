@@ -1156,3 +1156,21 @@
 - source_spec: `_bmad-output/implementation-artifacts/epic-10-retro-2026-10-30.md`
   summary: Open question, not requested: whether an organization needs a push switch alongside its email switch (`organizations.email_notifications` stops email only).
   evidence: Retro 10 open questions.
+
+## Deferred from: planning of spec-15-1-pilot-kalendar-and-the-shell-in-glass.md (2026-10-30)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-15-1-pilot-kalendar-and-the-shell-in-glass.md`
+  summary: *Kalendar*'s filter sheet and month-picker popover take the new tokens but no glass panel in the pilot (epic 15.1 AC "filter chips and sheet … in G", narrowed); 15.2 glasses the Dialog, Popover and docked-sheet primitives.
+  evidence: The sheet and popover are the shared Dialog/Popover primitives; glassing them in 15.1 would restyle every dialog in the app inside the pilot gate.
+- source_spec: `_bmad-output/implementation-artifacts/spec-15-1-pilot-kalendar-and-the-shell-in-glass.md`
+  summary: `--sidebar*` keeps its navy values after 15.1 for the sign-in panel, Timeline `dark`, IconTile `dark`, the Dialog `::backdrop` and Button `sidebar`; 15.2/15.3 move those consumers to the glass/chrome set and retire `--sidebar*` (D5).
+  evidence: The pilot shell uses a new chrome/glass token set so that screens outside the pilot do not change before the product owner's go.
+
+## Deferred from: code review of spec-15-1-pilot-kalendar-and-the-shell-in-glass.md (2026-10-30)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-15-1-pilot-kalendar-and-the-shell-in-glass.md`
+  summary: `apps/web/components.json` still names `"iconLibrary": "lucide"`, so a component added with the shadcn CLI imports `lucide-react`, which the new lint ban and the facade sweep reject; point generated components at `@/components/ui/icon` (or document the repoint) in 15.2.
+  evidence: Raised by the 15.1 review (Verification Gap, Edge Case Hunter); lucide-react was removed and banned outside `components/ui/icon.tsx`.
+- source_spec: `_bmad-output/implementation-artifacts/spec-15-1-pilot-kalendar-and-the-shell-in-glass.md`
+  summary: Dark `primary` on the dark card is a known contrast gap for links and selection text on cards; 15.2 (primitives) or 15.5 (dark tuning) re-measures and re-tunes it.
+  evidence: Noted in the new `theme-contrast` glass block during 15.1; dark `primary` was left unchanged because no pair the pilot measures failed.

@@ -1,9 +1,9 @@
-import { BriefcaseBusiness } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Briefcase } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
 import { InputGroup, InputGroupIcon } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
@@ -132,7 +132,7 @@ export function ShiftTypeAddDialog({ screen }: { readonly screen: ShiftTypeListS
               Chosen once: the kind cannot change after creation. */}
           <InputGroup>
             <InputGroupIcon>
-              <BriefcaseBusiness />
+              <Briefcase />
             </InputGroupIcon>
             <Select
               ref={kindField}

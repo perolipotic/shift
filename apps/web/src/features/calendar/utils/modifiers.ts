@@ -1,5 +1,5 @@
-import { CircleDashed, Clock, type LucideIcon } from 'lucide-react';
 
+import { CircleDashedBold, ClockBold, type IconComponent } from '@/components/ui/icon';
 import type { CalendarDay, CalendarMonth } from '@/features/calendar/utils/month';
 
 /**
@@ -21,8 +21,13 @@ import type { CalendarDay, CalendarMonth } from '@/features/calendar/utils/month
  * uncovered (story 5.4b).
  *
  * TWO GLYPHS ARE TEXT AND TWO ARE ICONS (story 5.3c, human): `⚠` and `✎` stay
- * text; leave and uncovered are lucide's `Clock` and `CircleDashed`, because
- * neither face covers U+25F7 or U+25CC. Every glyph is `aria-hidden` and drawn in
+ * text; leave and uncovered are the icons `ClockBold` and `CircleDashedBold`
+ * (Phosphor `bold`, through `@/components/ui/icon`, story 15.1), because no
+ * face covers U+25F7 or U+25CC. BOLD, NOT FILL (human decision 2026-10-30):
+ * the fill marks are solid discs whose knockouts vanish at 12 px, while the
+ * bold outlines differ by drawn shape — a ring with hands against a dashed
+ * ring — which `test/typography-coverage.test.ts` proves on the rasterized
+ * marks. Every glyph is `aria-hidden` and drawn in
  * the cell's own foreground (`currentColor`), as its hatch is.
  *
  * PURE, and executed by the node suite (AD-15): `pages/kalendar.tsx` renders
@@ -50,13 +55,13 @@ export type ModifierTreatment = 'ring' | 'hatch';
 
 /** A glyph drawn as text. */
 export const GLYPH_TEXT = 'text';
-/** A glyph drawn as a lucide icon, in `currentColor`. */
+/** A glyph drawn as an icon from `@/components/ui/icon`, in `currentColor`. */
 export const GLYPH_ICON = 'icon';
 
 /** A modifier's glyph: a character, or an icon. */
 export type ModifierGlyph =
   | { readonly kind: typeof GLYPH_TEXT; readonly text: string }
-  | { readonly kind: typeof GLYPH_ICON; readonly icon: LucideIcon };
+  | { readonly kind: typeof GLYPH_ICON; readonly icon: IconComponent };
 
 /** One modifier as the calendar draws and names it. */
 export interface CalendarModifierEntry {
@@ -90,13 +95,13 @@ export const CALENDAR_MODIFIERS: readonly CalendarModifierEntry[] = [
   },
   {
     id: MODIFIER_LEAVE,
-    glyph: { kind: GLYPH_ICON, icon: Clock },
+    glyph: { kind: GLYPH_ICON, icon: ClockBold },
     treatment: 'hatch',
     labelKey: modifierMessageKey(MODIFIER_LEAVE),
   },
   {
     id: MODIFIER_UNCOVERED,
-    glyph: { kind: GLYPH_ICON, icon: CircleDashed },
+    glyph: { kind: GLYPH_ICON, icon: CircleDashedBold },
     treatment: 'hatch',
     labelKey: modifierMessageKey(MODIFIER_UNCOVERED),
   },

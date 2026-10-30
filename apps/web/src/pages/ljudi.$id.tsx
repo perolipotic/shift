@@ -1,8 +1,8 @@
 import { Link, createRoute, useLocation } from '@tanstack/react-router';
-import { ArrowLeft } from 'lucide-react';
 
 import { OfflineNote } from '@/components/offline-note';
 import { Button } from '@/components/ui/button';
+import { ArrowLeft } from '@/components/ui/icon';
 import { PageHeader } from '@/components/ui/page-header';
 import { t } from '@/lib/i18n';
 import { MemberLeaveCard } from '@/features/leave/components/member-leave-card';

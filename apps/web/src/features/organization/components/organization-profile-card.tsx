@@ -1,8 +1,8 @@
-import { Building2 } from 'lucide-react';
 import type { ReactNode, RefObject } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Buildings } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
 import { InputGroup, InputGroupIcon } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
@@ -164,7 +164,7 @@ function NameForm({
         <Label htmlFor={ORGANIZATION_NAME_FIELD_ID}>{t('organization.name')}</Label>
         <InputGroup>
           <InputGroupIcon>
-            <Building2 />
+            <Buildings />
           </InputGroupIcon>
           <Input
             id={ORGANIZATION_NAME_FIELD_ID}

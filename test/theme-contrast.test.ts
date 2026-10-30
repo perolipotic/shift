@@ -6,7 +6,15 @@ import { differenceCiede2000, differenceEuclidean, displayable, rgb, wcagContras
 import { describe, expect, it } from 'vitest';
 
 import { NONWORKING_TOKEN, rampSlotOf, rampTokenOf } from '../apps/web/src/features/shift-types/utils/ramp.ts';
-import { BASE_TOKENS, BRAND_TOKENS, STYLESHEET, rawToken, readToken, type Theme } from './theme-css.js';
+import {
+  BASE_TOKENS,
+  BRAND_TOKENS,
+  GLASS_COLOUR_TOKENS,
+  STYLESHEET,
+  rawToken,
+  readToken,
+  type Theme,
+} from './theme-css.js';
 
 /**
  * Contrast, measured rather than promised (story 1.1b, UX-DR3).
@@ -213,7 +221,7 @@ describe('every colour token renders as declared, inside sRGB', () => {
    * checked, their alpha is not a gamut question).
    */
   const cases = THEMES.flatMap((theme) =>
-    [...BASE_TOKENS, ...BRAND_TOKENS].map((name) => ({ theme, name })),
+    [...BASE_TOKENS, ...BRAND_TOKENS, ...GLASS_COLOUR_TOKENS].map((name) => ({ theme, name })),
   );
 
   it.each(cases)('--$name is inside sRGB in $theme', ({ theme, name }) => {
@@ -487,12 +495,15 @@ describe('the base deviations stay shifted, not reverted to stock shadcn', () =>
    *   ring              0.37  -> 0.3418  primary's hue, 3:1 from the border
    *   sidebar-ring      0.654 -> 0.8091  the sidebar is navy, so it goes light
    *   input             0.65  -> 0.6291  slate-toned, still 3:1 on the page
+   *
+   * RE-PINNED BY STORY 15.1: `input` 0.6291 -> 0.6191 (#78879D), because the
+   * G page (#E8EDF5) is darker than slate-50 and #7B8AA0 measured 2.98:1 on it.
    */
   const DEVIATIONS: Record<string, { shifted: number; stock: number }> = {
     'muted-foreground': { shifted: 0.4924, stock: 0.556 },
     ring: { shifted: 0.3418, stock: 0.708 },
     'sidebar-ring': { shifted: 0.8091, stock: 0.708 },
-    input: { shifted: 0.6291, stock: 0.922 },
+    input: { shifted: 0.6191, stock: 0.922 },
   };
 
   it.each(Object.keys(DEVIATIONS))('--%s (light) holds its measured lightness, not shadcn’s stock one', (name) => {
@@ -531,7 +542,9 @@ describe('the input boundary clears the UI-component threshold', () => {
   //
   // RE-PINNED BY VISUAL REFRESH A: 3.23 -> 3.35 light (a slate-toned input on
   // a slate-50 page), 3.26 -> 3.32 dark (the same 36% white, now over navy).
-  const EXPECTED_RATIO: Record<Theme, number> = { light: 3.35, dark: 3.32 };
+  // RE-PINNED BY STORY 15.1: 3.35 -> 3.11 light (#78879D on the #E8EDF5 G
+  // page), 3.32 -> 3.30 dark (the same 36% white over the #0A1020 page).
+  const EXPECTED_RATIO: Record<Theme, number> = { light: 3.11, dark: 3.30 };
 
   it.each(THEMES)('--input is discernible against the page in %s', (theme) => {
     const surface = colour(theme, 'background');
@@ -605,9 +618,12 @@ describe('the decorative border contrast is pinned, not merely floored', () => {
   // RE-PINNED BY VISUAL REFRESH A: 1.26 -> 1.18 light (slate-200 on slate-50),
   // 1.25 -> 1.32 dark (10% white over the navy page). Still below 3:1 on
   // purpose — the reasoning above is unchanged.
+  // RE-PINNED BY STORY 15.1: 1.18 -> 1.05 light (slate-200 on the #E8EDF5 G
+  // page, where a card's white fill now does more of the edging than its
+  // border), 1.32 -> 1.29 dark (10% white over the #0A1020 page).
   const EXPECTED_RATIO: Record<string, number> = {
-    light: 1.18,
-    dark: 1.32,
+    light: 1.05,
+    dark: 1.29,
   };
 
   it.each(THEMES)('--border against its surface in %s holds its pinned ratio', (theme) => {
@@ -665,7 +681,7 @@ function stripeOf(theme: Theme, fill: string, alpha: number): Color {
 }
 
 describe('overlay glyphs clear the UI-component threshold over every fill', () => {
-  // UX-DR8 makes leave and uncovered a hatch plus a glyph — lucide's `Clock`
+  // UX-DR8 makes leave and uncovered a hatch plus a glyph — the `Clock`
   // and `CircleDashed` since story 5.3c — not body text. WCAG holds graphical
   // objects needed to understand content to 3:1, and UX-DR37/Q21 make the
   // glyph the non-colour carrier of meaning. The glyph is drawn in the fill's
@@ -997,8 +1013,14 @@ describe('the accent is discernible on the surfaces it is drawn on', () => {
    * floor rather than pinned: unlike `--border`, which is deliberately below AA
    * and pinned so it cannot drift, this one has no ceiling worth defending — an
    * accent that is MORE visible as an edge is doing its job.
+   *
+   * STORY 15.1: the shell is glass, so the navy sidebar is no longer a surface
+   * the accent is drawn on; the 2 px edge on the glass panel and the glass
+   * pill is measured against every glass backdrop in the block below. The
+   * page and the card stay: the lockup sits on the settings card, and its
+   * frame on the page beside it.
    */
-  const SURFACES = ['background', 'card', 'sidebar'] as const;
+  const SURFACES = ['background', 'card'] as const;
   const cases = THEMES.flatMap((theme) =>
     ACCENT_TOKENS.flatMap((accent) => SURFACES.map((surface) => ({ theme, accent, surface }))),
   );
@@ -1017,15 +1039,16 @@ describe('the hour band bar flags its uncovered stretch legibly (story 2.1b)', (
   /**
    * THE MEASURED PAIR, and only that. The bar's `Nepokriveno` flag is small
    * text, so the body threshold applies. It sits on a `bg-modifier-uncovered`
-   * chip, and the chip is laid over an opaque `bg-background` backing rather
+   * chip, and the chip is laid over an opaque `bg-card` backing (the page's
+   * `bg-background` until story 15.1: the G page measured 4.46:1) rather
    * than straight over the hatch — measured, the chip over a STRIPE reaches
    * only 4.06:1 in light, so the backing is what makes the ground below the
-   * text one known colour: the tint over the page background. The stripes
+   * text one known colour: the tint over the card. The stripes
    * themselves carry no text and are the redundant texture beside the flag,
    * as the shift-cell hatch is.
    */
   it.each(THEMES)('flag over the chip over its opaque backing in %s', (theme) => {
-    const chip = composite(colour(theme, 'modifier-uncovered'), colour(theme, 'background'));
+    const chip = composite(colour(theme, 'modifier-uncovered'), colour(theme, 'card'));
     const measured = ratio(colour(theme, 'modifier-uncovered-foreground'), chip);
 
     expect(
@@ -1078,5 +1101,177 @@ describe('every slot the ramp can return is measured in both themes (story 2.2b,
       measured,
       `${name}-foreground on ${name} (${theme}) measured ${measured.toFixed(2)}:1`,
     ).toBeGreaterThanOrEqual(AA_BODY);
+  });
+});
+
+/**
+ * THE GLASS CHROME, MEASURED AGAINST ITS WORST BACKDROP (story 15.1, direction
+ * G; the proposal's rule 4).
+ *
+ * Glass is translucent, so a pair on it has no one ground: what is under the
+ * glass is. Every glass surface is composited over every backdrop it can sit
+ * on and held to the threshold against the WORST of them:
+ *
+ *   - the page (`--background`), and each blob at full strength over the page
+ *     (the dark blobs are 45 % alpha tokens, so they composite first);
+ *   - for `--glass-over-content` — the phone's tab bar and sticky month head,
+ *     which content scrolls UNDER — also the card, every fill a cell can have
+ *     (the darkest under light glass is slot-2's family, the lightest under
+ *     dark glass), the ink button, a primary fill, the conflict red and a
+ *     muted row.
+ *
+ * Blur is ignored: it only averages toward the colours measured here. The
+ * alphas are read from the tokens, so a thinner glass fails here.
+ *
+ * The text on glass is `foreground` (UX: never `muted-foreground` on glass
+ * below .85, and never on over-content glass at all); an icon is the same
+ * colour, so its 3:1 is implied by the text's 4.5:1. The current row is the
+ * `glass-active` pill composited over the glass. The focus ring is `--ring`
+ * drawn straight against the glass, with no offset band. The organization's
+ * accent is a 2 px edge on the glass.
+ */
+describe('the glass chrome reads against its worst backdrop (story 15.1)', () => {
+  const GLASS_SURFACES = ['glass', 'glass-over-content'] as const;
+  type GlassSurface = (typeof GLASS_SURFACES)[number];
+
+  /** What can be under a glass surface, already composited to opaque. */
+  function backdrops(theme: Theme, surface: GlassSurface): { name: string; colour: Color | Rgb }[] {
+    const page = colour(theme, 'background');
+    const under: { name: string; colour: Color | Rgb }[] = [
+      { name: 'the page', colour: page },
+      ...(['glass-blob-1', 'glass-blob-2', 'glass-blob-3'] as const).map((blob) => ({
+        name: blob,
+        colour: composite(colour(theme, blob), page),
+      })),
+    ];
+
+    if (surface === 'glass-over-content') {
+      // Every opaque fill a scrolled screen can pass under the bar: the card,
+      // every cell, the ink button, a primary fill (the pressed mode, a chosen
+      // month), the conflict red and a muted row.
+      for (const fill of ['card', ...FILLS, 'ink', 'primary', 'destructive', 'muted'] as const) {
+        under.push({ name: fill, colour: colour(theme, fill) });
+      }
+    }
+
+    return under;
+  }
+
+  /** The glass over each backdrop. */
+  function grounds(theme: Theme, surface: GlassSurface): { name: string; colour: Rgb }[] {
+    return backdrops(theme, surface).map(({ name, colour: under }) => ({
+      name,
+      colour: composite(colour(theme, surface), under as Color),
+    }));
+  }
+
+  function worst(measure: (ground: Rgb) => number, theme: Theme, surface: GlassSurface): { ratio: number; on: string } {
+    return grounds(theme, surface)
+      .map(({ name, colour: ground }) => ({ ratio: measure(ground), on: name }))
+      .reduce((low, next) => (next.ratio < low.ratio ? next : low));
+  }
+
+  const cases = THEMES.flatMap((theme) => GLASS_SURFACES.map((surface) => ({ theme, surface })));
+
+  it('measures the over-content glass over the darkest fills in light, so the worst case is real', () => {
+    // NON-VACUITY: the sweep must include the fill rule 4 names (slot-2), and
+    // the worst ground for the text in light must be one of the dark fills —
+    // the ink button, darker still than slot-2, since the review of 15.1.
+    const names = backdrops('light', 'glass-over-content').map(({ name }) => name);
+
+    expect(names).toEqual(expect.arrayContaining(['shift-slot-2', 'ink', 'primary', 'destructive', 'muted']));
+    expect(['ink', 'shift-slot-2']).toContain(
+      worst((ground) => ratio(colour('light', 'foreground'), ground), 'light', 'glass-over-content').on,
+    );
+  });
+
+  it('keeps the over-content glass thicker than the glass beside content', () => {
+    for (const theme of THEMES) {
+      expect(colour(theme, 'glass-over-content').alpha ?? 1).toBeGreaterThan(colour(theme, 'glass').alpha ?? 1);
+      expect(colour(theme, 'glass-over-content').alpha ?? 1).toBeGreaterThanOrEqual(theme === 'light' ? 0.72 : 0.8);
+      expect(colour(theme, 'glass-reading').alpha ?? 1).toBeGreaterThanOrEqual(0.85);
+    }
+  });
+
+  it.each(cases)('foreground text and icons read on $surface in $theme', ({ theme, surface }) => {
+    const found = worst((ground) => ratio(colour(theme, 'foreground'), ground), theme, surface);
+
+    expect(found.ratio, `foreground on ${surface} over ${found.on} (${theme}) measured ${found.ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(
+      AA_BODY,
+    );
+  });
+
+  it.each(cases)('the current row reads on its glass-active pill on $surface in $theme', ({ theme, surface }) => {
+    const found = worst(
+      (ground) => ratio(colour(theme, 'foreground'), composite(colour(theme, 'glass-active'), ground)),
+      theme,
+      surface,
+    );
+
+    expect(found.ratio, `foreground on the pill over ${found.on} (${theme}) measured ${found.ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(
+      AA_BODY,
+    );
+  });
+
+  it.each(cases)('the focus ring is perceivable on $surface in $theme', ({ theme, surface }) => {
+    const found = worst((ground) => ratio(colour(theme, 'ring'), ground), theme, surface);
+    const onPill = worst(
+      (ground) => ratio(colour(theme, 'ring'), composite(colour(theme, 'glass-active'), ground)),
+      theme,
+      surface,
+    );
+
+    expect(found.ratio, `ring on ${surface} over ${found.on} (${theme}) measured ${found.ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(
+      AA_LARGE,
+    );
+    expect(onPill.ratio, `ring beside the pill over ${onPill.on} (${theme})`).toBeGreaterThanOrEqual(AA_LARGE);
+  });
+
+  const accentCases = THEMES.flatMap((theme) =>
+    GLASS_SURFACES.flatMap((surface) => ACCENT_TOKENS.map((accent) => ({ theme, surface, accent }))),
+  );
+
+  it.each(accentCases)('$accent draws a visible 2 px edge on $surface in $theme', ({ theme, surface, accent }) => {
+    const found = worst((ground) => ratio(colour(theme, accent), ground), theme, surface);
+
+    expect(found.ratio, `${accent} on ${surface} over ${found.on} (${theme}) measured ${found.ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(
+      AA_LARGE,
+    );
+  });
+
+  it.each(THEMES)('every accent\'s lockup letter reads on its own opaque fill in %s', (theme) => {
+    // The lockup tile is an OPAQUE accent fill with its own foreground, so the
+    // glass under it does not reach the letter: this is the letter-on-tile
+    // pair (BRAND_PAIRS measures it too). The tile's edge against the glass is
+    // the accent edge measured above.
+    for (const accent of ACCENT_TOKENS) {
+      expect(ratio(colour(theme, `${accent}-foreground`), colour(theme, accent))).toBeGreaterThanOrEqual(AA_BODY);
+    }
+  });
+});
+
+describe('the ink action and the re-tuned primary read (story 15.1, D3)', () => {
+  it.each(THEMES)('ink-foreground reads on the ink default button in %s', (theme) => {
+    const measured = ratio(colour(theme, 'ink-foreground'), colour(theme, 'ink'));
+
+    expect(measured, `ink-foreground on ink (${theme}) measured ${measured.toFixed(2)}:1`).toBeGreaterThanOrEqual(AA_BODY);
+  });
+
+  it('draws the default button in ink, read from the primitive', () => {
+    const button = readFileSync(
+      join(fileURLToPath(new URL('..', import.meta.url)), 'apps', 'web', 'src', 'components', 'ui', 'button.tsx'),
+      'utf8',
+    );
+
+    expect(button).toMatch(/default:\s*"bg-ink text-ink-foreground/);
+  });
+
+  it.each(['background', 'card'] as const)('light primary reads as link text on %s', (surface) => {
+    // Blue is kept for links, today and selection. #2F55B8 measures 6.75:1 on
+    // white where #2563EB measured 5.17:1. Dark primary on the dark card is the
+    // known gap the Badge block above keeps measured; links there are 15.2's.
+    const measured = ratio(colour('light', 'primary'), colour('light', surface));
+
+    expect(measured, `primary on ${surface} (light) measured ${measured.toFixed(2)}:1`).toBeGreaterThanOrEqual(AA_BODY);
   });
 });

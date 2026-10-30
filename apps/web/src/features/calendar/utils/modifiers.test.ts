@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { CircleDashed, Clock } from 'lucide-react';
 import { beforeAll, describe, expect, it } from 'vitest';
 
+import { CircleDashedBold, ClockBold } from '@/components/ui/icon';
 import {
   CALENDAR_MODIFIERS,
   CALENDAR_MODIFIER_IDS,
@@ -52,12 +52,13 @@ function subsets(): readonly (readonly CalendarModifier[])[] {
 describe('the vocabulary', () => {
   it('is the four marks, in canonical order, each with its glyph, treatment and label', () => {
     expect(CALENDAR_MODIFIERS.map((entry) => entry.id)).toEqual(['conflict', 'overridden', 'leave', 'uncovered']);
-    // Story 5.3c (human): ⚠ and ✎ stay text; leave and uncovered are lucide icons.
+    // Story 5.3c (human): ⚠ and ✎ stay text; leave and uncovered are icons (Phosphor
+    // `fill` through `@/components/ui/icon` since story 15.1).
     expect(CALENDAR_MODIFIERS.map((entry) => entry.glyph)).toEqual([
       { kind: GLYPH_TEXT, text: '⚠' },
       { kind: GLYPH_TEXT, text: '✎' },
-      { kind: GLYPH_ICON, icon: Clock },
-      { kind: GLYPH_ICON, icon: CircleDashed },
+      { kind: GLYPH_ICON, icon: ClockBold },
+      { kind: GLYPH_ICON, icon: CircleDashedBold },
     ]);
     expect(CALENDAR_MODIFIERS.map((entry) => entry.treatment)).toEqual(['ring', 'ring', 'hatch', 'hatch']);
     expect(CALENDAR_MODIFIERS.map((entry) => entry.labelKey)).toEqual([

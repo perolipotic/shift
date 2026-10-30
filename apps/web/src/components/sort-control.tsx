@@ -1,4 +1,3 @@
-import { ArrowUpDown, type ArrowUp } from 'lucide-react';
 import {
   useCallback,
   useEffect,
@@ -12,6 +11,7 @@ import {
 
 import { SORT_DIRECTION_GLYPHS } from '@/components/sort-glyphs';
 import { Button } from '@/components/ui/button';
+import { ArrowsDownUp, type ArrowUp } from '@/components/ui/icon';
 import { Popover } from '@/components/ui/popover';
 import { t } from '@/lib/i18n';
 import { pickerIndexAfter } from '@/utils/filter-bar';
@@ -97,7 +97,7 @@ export function SortControl<K extends string>({
           else setOpen(true);
         }}
       >
-        <ArrowUpDown aria-hidden />
+        <ArrowsDownUp aria-hidden />
         <span className="truncate">{t('sort.label', { column })}</span>
         <Glyph aria-hidden className="size-4 shrink-0" />
       </Button>

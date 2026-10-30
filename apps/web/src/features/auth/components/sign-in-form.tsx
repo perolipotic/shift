@@ -1,9 +1,9 @@
-import { Building2, Eye, EyeOff, KeyRound, Lock, User } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Button } from '@/components/ui/button';
 import { Callout, CalloutBody, CalloutDescription, CalloutTitle } from '@/components/ui/callout';
+import { Buildings, Eye, EyeSlash, Key, Lock, User } from '@/components/ui/icon';
 import { IconTile } from '@/components/ui/icon-tile';
 import { Input } from '@/components/ui/input';
 import { InputGroup, InputGroupAction, InputGroupIcon } from '@/components/ui/input-group';
@@ -139,7 +139,7 @@ export function SignInForm({ screen }: { readonly screen: SignInScreenState }): 
             >
               {/* The state is SEEN as well as announced: a crossed eye while
                   the password is shown. The name stays the same. */}
-              {passwordShown ? <EyeOff aria-hidden /> : <Eye aria-hidden />}
+              {passwordShown ? <EyeSlash aria-hidden /> : <Eye aria-hidden />}
             </Button>
           </InputGroupAction>
         </InputGroup>
@@ -188,7 +188,7 @@ export function SignInForm({ screen }: { readonly screen: SignInScreenState }): 
         <Callout id="forgot-password" hidden={!forgotOpen}>
           <CalloutBody>
             <IconTile variant="primary">
-              <KeyRound />
+              <Key />
             </IconTile>
             <div className="min-w-0">
               <CalloutTitle>{t('auth.forgot.heading')}</CalloutTitle>
@@ -237,7 +237,7 @@ function OrganizationValue({ screen }: { readonly screen: SignInScreenState }): 
             would supply a value the slug rule always refuses. */}
         <InputGroup>
           <InputGroupIcon>
-            <Building2 />
+            <Buildings />
           </InputGroupIcon>
           <Input
             ref={organizationField}
@@ -284,7 +284,7 @@ function OrganizationValue({ screen }: { readonly screen: SignInScreenState }): 
         aria-describedby={failure === null ? undefined : 'sign-in-error'}
         className="flex min-w-0 items-center gap-3 rounded-md border-[1.5px] border-input bg-muted/40 pl-3"
       >
-        <Building2 aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+        <Buildings aria-hidden className="size-4 shrink-0 text-muted-foreground" />
         <span className="min-w-0 flex-1 truncate font-medium">{shownSlug}</span>
         {/* The organization in the FORM DATA too, so the `method="post"`
             fallback and anything reading the form carry it in both modes.

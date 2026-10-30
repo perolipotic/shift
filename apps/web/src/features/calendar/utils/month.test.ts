@@ -260,7 +260,9 @@ describe('this month', () => {
       modifiers: [],
     });
     expect(CALENDAR_CELL_CLASS).toContain('min-h-[30px]');
-    expect(CALENDAR_CELL_CLASS).toContain('rounded-sm');
+    // Story 15.1: the cell's own radius (8 px), never the widened `rounded-sm`.
+    expect(CALENDAR_CELL_CLASS).toContain('rounded-cell');
+    expect(CALENDAR_CELL_CLASS).not.toMatch(/\brounded-(?:sm|md|lg|xl|2xl|3xl|full)\b/);
     expect(CALENDAR_CELL_CLASS).not.toMatch(/truncate|ellipsis|destructive|accent/);
   });
 

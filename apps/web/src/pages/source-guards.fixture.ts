@@ -1532,7 +1532,7 @@ export const STRUCTURAL_ATTRIBUTES = new Set([
  * Note `buttonVariants`' sixth member is `destructive`, which is banned
  * separately and by name in every screen, so this does not widen that.
  * `Notice` joined in story 8.2: its `variant` is the closed set `offline`,
- * which picks the WifiOff icon of the as-of note and no text.
+ * which picks the WifiSlash icon of the as-of note and no text.
  */
 const VARIANT_COMPONENTS = new Set(['Button', 'Badge', 'IconTile', 'Notice']);
 

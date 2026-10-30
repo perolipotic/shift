@@ -1,9 +1,9 @@
 import { Link, createRoute, redirect, useNavigate } from '@tanstack/react-router';
-import { Plus, UsersRound } from 'lucide-react';
 import { useCallback } from 'react';
 
 import { OfflineNote } from '@/components/offline-note';
 import { Button } from '@/components/ui/button';
+import { Plus, UsersThree } from '@/components/ui/icon';
 import { Notice } from '@/components/ui/notice';
 import { PageActions, PageDescription, PageHeader, PageTitle } from '@/components/ui/page-header';
 import { t } from '@/lib/i18n';
@@ -179,7 +179,7 @@ function LjudiList() {
               the navigation, so the destinations stay eight. */}
           <Button asChild variant="outline" className="h-11">
             <Link to="/ljudi/smjene">
-              <UsersRound aria-hidden />
+              <UsersThree aria-hidden />
               {t('smjene.heading')}
             </Link>
           </Button>

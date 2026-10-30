@@ -1,7 +1,7 @@
-import { Copy } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { Copy } from '@/components/ui/icon';
 import { Notice } from '@/components/ui/notice';
 import {
   copyCredential,

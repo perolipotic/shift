@@ -83,7 +83,8 @@ export interface BrandAccentAppearance {
    * NEUTRAL CASE — which is exactly where it matters, because that is the state
    * every organization starts in. The two are byte-identical for all four
    * accents and diverge only in {@link NEUTRAL}: the lockup's untinted boundary
-   * is `border-input`, the shell's is `border-border`, and those are the
+   * is `border-input`, the shell's is `border-glass-border` (since story
+   * 15.1; `border-border` on the navy shell before it), and those are the
    * classes each element already carried before this story existed. UX-DR5's
    * "no accent renders the untinted shell it has today" is a claim about
    * BYTES, so collapsing the two into one field would have to pick one neutral
@@ -101,7 +102,11 @@ export interface BrandAccentAppearance {
    * leaving either to be noticed.
    */
   readonly frame: string;
-  /** The edge the sidebar and the phone bar draw against the content. */
+  /**
+   * The edge the sidebar and the phone bar draw against the content: a colour
+   * only. The chrome sets the width (2 px since story 15.1, D5) and the side —
+   * the sidebar's right, the phone pill's top — so one literal serves both.
+   */
   readonly edge: string;
 }
 
@@ -139,10 +144,12 @@ export const LOCKUP_COMPACT: LockupScale = { box: 'h-8 w-8', type: 'text-xs lead
 /**
  * What an organization with no accent renders, which is what ships today.
  *
- * `border-border` on the chrome's edges and `border-input`/`bg-muted` on the
- * lockup are the classes those elements already carry, so "no accent" is
- * byte-identically the shell the navigation chrome shipped with rather than a
- * second, subtly different neutral. The absence is a neutral default and never
+ * `border-glass-border` on the chrome's edges (story 15.1: the glass hairline,
+ * so an untinted edge reads as no edge at all) and `border-input`/`bg-muted` on the
+ * lockup. "No accent" is the untinted GLASS shell: since story 15.1 it is no
+ * longer byte-identical to the navy shell that shipped before (whose untinted
+ * edge was `border-border`), and it is the one neutral, never a second,
+ * subtly different one. The absence is a neutral default and never
  * an error (the story's I/O matrix), which is also why this is what an
  * UNRECOGNISED key resolves to.
  *
@@ -157,7 +164,7 @@ export const LOCKUP_COMPACT: LockupScale = { box: 'h-8 w-8', type: 'text-xs lead
 const NEUTRAL: BrandAccentAppearance = {
   mark: 'bg-muted text-foreground',
   frame: 'border-input',
-  edge: 'border-border',
+  edge: 'border-glass-border',
 };
 
 /**

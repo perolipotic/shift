@@ -1,6 +1,6 @@
-import { CalendarClock } from 'lucide-react';
 import { Fragment, type ReactNode, type SyntheticEvent } from 'react';
 
+import { ClockCountdown } from '@/components/ui/icon';
 import { ErasureDialog } from '@/features/conflicts/components/erasure-dialog';
 
 import { OfflineWriteNote } from '@/components/offline-write-note';
@@ -105,7 +105,7 @@ export function MemberStatusCard({ edit }: { readonly edit: MemberEdit }): React
           <Callout>
             <CalloutBody>
               <IconTile variant="primary">
-                <CalendarClock />
+                <ClockCountdown />
               </IconTile>
               <p className="self-center text-sm font-medium">
                 {t(statusScheduledMessageKey(status.scheduled.active), {

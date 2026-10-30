@@ -1,8 +1,8 @@
 import { DUTY_DONE, type DutyPhase } from '@shift/domain';
-import { CircleCheck, CircleDashed, CircleDot, type LucideIcon } from 'lucide-react';
 import { useId, type ReactNode } from 'react';
 
 import { Card } from '@/components/ui/card';
+import { CheckCircleBold, CircleDashedBold, RecordBold, type IconComponent } from '@/components/ui/icon';
 import {
   dutyEndLineMessageKey,
   dutyHeadlineMessageKey,
@@ -19,10 +19,10 @@ import {
 import { t } from '@/lib/i18n';
 
 /** Each leg state's icon: a shape as well as its word, never a colour alone. */
-const LEG_ICONS: Readonly<Record<DutyPhase, LucideIcon>> = {
-  done: CircleCheck,
-  running: CircleDot,
-  upcoming: CircleDashed,
+const LEG_ICONS: Readonly<Record<DutyPhase, IconComponent>> = {
+  done: CheckCircleBold,
+  running: RecordBold,
+  upcoming: CircleDashedBold,
 };
 
 /** `9 h 50 min`. */

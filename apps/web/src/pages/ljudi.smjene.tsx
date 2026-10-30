@@ -1,8 +1,8 @@
 import { Link, createRoute } from '@tanstack/react-router';
-import { Plus, UsersRound } from 'lucide-react';
 
 import { OfflineNote } from '@/components/offline-note';
 import { Button } from '@/components/ui/button';
+import { Plus, UsersThree } from '@/components/ui/icon';
 import { Notice } from '@/components/ui/notice';
 import { PageActions, PageDescription, PageHeader, PageTitle } from '@/components/ui/page-header';
 import { TeamAddDialog } from '@/features/teams/components/team-add-dialog';
@@ -58,7 +58,7 @@ export function LjudiSmjeneScreen() {
         <PageActions>
           <Button asChild variant="outline" className="h-11">
             <Link to="/ljudi">
-              <UsersRound aria-hidden />
+              <UsersThree aria-hidden />
               {t('nav.ljudi')}
             </Link>
           </Button>

@@ -1,10 +1,10 @@
 import { Link, createRoute, redirect, useNavigate } from '@tanstack/react-router';
-import { CalendarPlus } from 'lucide-react';
 import { useCallback } from 'react';
 
 import { OfflineNote } from '@/components/offline-note';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { CalendarPlus } from '@/components/ui/icon';
 import { Notice } from '@/components/ui/notice';
 import { PageActions, PageDescription, PageHeader, PageTitle } from '@/components/ui/page-header';
 import { LeaveOverviewBody } from '@/features/leave/components/leave-overview-body';

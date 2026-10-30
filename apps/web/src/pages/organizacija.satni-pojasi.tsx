@@ -1,5 +1,4 @@
 import { Link, createRoute } from '@tanstack/react-router';
-import { Building2, Info, Plus } from 'lucide-react';
 
 import { OfflineNote } from '@/components/offline-note';
 import { Button } from '@/components/ui/button';
@@ -10,6 +9,7 @@ import {
   CalloutDescription,
   CalloutTitle,
 } from '@/components/ui/callout';
+import { Buildings, Info, Plus } from '@/components/ui/icon';
 import { IconTile } from '@/components/ui/icon-tile';
 import { Notice } from '@/components/ui/notice';
 import { PageActions, PageDescription, PageHeader, PageTitle } from '@/components/ui/page-header';
@@ -58,7 +58,7 @@ export function OrganizacijaSatniPojasiScreen() {
         <PageActions>
           <Button asChild variant="outline" className="h-11">
             <Link to="/organizacija">
-              <Building2 aria-hidden />
+              <Buildings aria-hidden />
               {t('nav.organizacija')}
             </Link>
           </Button>

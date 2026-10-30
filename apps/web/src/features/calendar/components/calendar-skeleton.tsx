@@ -17,8 +17,8 @@ export function CalendarSkeleton({ shape }: { readonly shape: CalendarSkeletonSh
       <div className="divide-y divide-border px-4 pb-4">
         {SKELETON_ROWS.map((row) => (
           <div key={row} className="flex min-h-11 items-center gap-3 py-1 pl-3 pr-1">
-            <div className="h-[30px] w-20 shrink-0 animate-pulse rounded-sm bg-muted" />
-            <div className="h-[30px] min-w-0 flex-1 animate-pulse rounded-sm bg-muted" />
+            <div className="h-[30px] w-20 shrink-0 animate-pulse rounded-cell bg-muted" />
+            <div className="h-[30px] min-w-0 flex-1 animate-pulse rounded-cell bg-muted" />
           </div>
         ))}
       </div>
@@ -30,7 +30,7 @@ export function CalendarSkeleton({ shape }: { readonly shape: CalendarSkeletonSh
       {SKELETON_ROWS.map((row) => (
         <div key={row} className="grid gap-1" style={SKELETON_GRID_STYLE}>
           {SKELETON_COLUMNS.map((column) => (
-            <div key={column} className="h-[30px] animate-pulse rounded-sm bg-muted" />
+            <div key={column} className="h-[30px] animate-pulse rounded-cell bg-muted" />
           ))}
         </div>
       ))}

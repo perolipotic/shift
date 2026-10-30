@@ -1,5 +1,5 @@
-import { ArrowDown, ArrowUp } from 'lucide-react';
 
+import { ArrowDown, ArrowUp } from '@/components/ui/icon';
 import type { SortControlDirection } from '@/utils/sort-control';
 
 /**

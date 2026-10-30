@@ -143,6 +143,9 @@ describe('the built stylesheet consumes the tokens it defines', () => {
     })),
     // One modifier text utility: the hour band bar's uncovered flag.
     { utility: 'text-modifier-uncovered-foreground', property: 'color', token: 'modifier-uncovered-foreground' },
+    // Story 15.1 (D3): the ink default button, fill and text.
+    { utility: 'bg-ink', property: 'background-color', token: 'ink' },
+    { utility: 'text-ink-foreground', property: 'color', token: 'ink-foreground' },
   ])('emits a $utility rule resolving to --$token', ({ utility, property, token }) => {
     const rule = new RegExp(`\\.${utility}\\s*\\{[^}]*${property}:\\s*var\\(--${token}\\)`).exec(
       builtCss(),
@@ -182,23 +185,70 @@ describe('the user agent follows the theme too', () => {
   });
 });
 
-// Story 7.2. The Shift Figures files are under Vite's 4 KB inline limit, so
-// without `assetsInlineLimit` in `vite.config.ts` they would be data URIs in
-// the stylesheet: every weight fetched with the first paint instead of only
-// when a digit at that weight renders.
-describe('the built stylesheet links the figure files rather than inlining them', () => {
-  const WEIGHTS = ['400', '500', '600', '700', '800'] as const;
+// Story 15.1 (D1). Outfit replaced DM Sans, Syne and the five Shift Figures
+// files: the built stylesheet links Outfit's two subsets as files — latin and
+// latin-ext, where every Croatian diacritic lives — and nothing of the faces
+// it replaced. `vite.config.ts` keeps any woff2 out of the CSS as a data URI,
+// so a subset is fetched only when a character in its range renders.
+describe('the built stylesheet links the Outfit files rather than inlining them', () => {
+  it.skipIf(notBuilt)('references both Outfit subsets, each on disk', () => {
+    const files = [...new Set([...builtCss().matchAll(/outfit-(latin|latin-ext)-wght-normal-[\w-]+\.woff2/g)].map((match) => match[0]))];
 
-  it.skipIf(notBuilt)('references one hashed file per weight, each on disk', () => {
-    const referenced = [...builtCss().matchAll(/shift-figures-(400|500|600|700|800)-[\w-]+\.woff2/g)];
-    const files = [...new Set(referenced.map((match) => match[0]))];
+    expect(files.map((file) => /outfit-(latin(?:-ext)?)-/.exec(file)?.[1]).sort()).toEqual(['latin', 'latin-ext']);
+    expect(files.filter((file) => !existsSync(join(assets, file))), 'a referenced Outfit file is missing').toEqual([]);
+  });
 
-    expect([...new Set(referenced.map((match) => match[1]))].sort()).toEqual([...WEIGHTS]);
-    expect(files).toHaveLength(WEIGHTS.length);
-    expect(files.filter((file) => !existsSync(join(assets, file))), 'a referenced figure file is missing').toEqual([]);
+  it.skipIf(notBuilt)('ships nothing of the faces Outfit replaced', () => {
+    expect(builtCss()).not.toMatch(/dm-sans|syne|shift-figures|Shift Figures/i);
+    expect(readdirSync(assets).filter((name) => /dm-sans|syne|shift-figures/.test(name))).toEqual([]);
   });
 
   it.skipIf(notBuilt)('inlines no woff2 as a data URI', () => {
     expect(builtCss()).not.toContain('data:font/woff2');
+  });
+});
+
+// Story 15.1: glass reaches the build, with its fallbacks, and the digits are
+// tabular on the document.
+describe('the built stylesheet carries the glass and the tabular figures', () => {
+  it.skipIf(notBuilt)('emits both glass treatments with the prefixed and standard backdrop filter', () => {
+    const css = builtCss();
+
+    for (const name of ['glass-chrome', 'glass-over-content']) {
+      const rule = new RegExp(`\\.${name}\\{[^}]*-webkit-backdrop-filter:blur\\(var\\(--glass-blur\\)\\)[^}]*;backdrop-filter:blur`).exec(css);
+
+      expect(rule, `no .${name} rule with both backdrop filters in the built sheet`).not.toBeNull();
+    }
+    expect(css).toMatch(/@supports not \(/);
+    expect(css).toContain('prefers-reduced-transparency:reduce');
+  });
+
+  it.skipIf(notBuilt)('sets tabular figures on the document', () => {
+    expect(builtCss()).toMatch(/html\{[^}]*font-variant-numeric:tabular-nums/);
+  });
+
+  it.skipIf(notBuilt)('emits the phone head\'s over-content glass, under its breakpoint variant', () => {
+    // `StickyHead` asks for `max-sm:glass-over-content`; a class Tailwind
+    // cannot resolve would leave the phone's month head transparent.
+    expect(builtCss()).toMatch(/\.max-sm\\:glass-over-content\{[^}]*backdrop-filter:blur\(var\(--glass-blur\)\)/);
+  });
+
+  it.skipIf(notBuilt)('emits rounded-cell at 10 px or less', () => {
+    // `@theme inline` writes the value into the rule rather than a var(), so
+    // the rule itself is what is read.
+    const value = /\.rounded-cell\{border-radius:([^;}]+)[;}]/.exec(builtCss())?.[1] ?? '';
+    const found = /^(\d*\.?\d+)(rem|px)$/.exec(value.trim());
+
+    expect(found, `.rounded-cell draws ${value || 'nothing'}`).not.toBeNull();
+    const px = Number(found?.[1]) * (found?.[2] === 'rem' ? 16 : 1);
+
+    expect(px).toBeGreaterThan(0);
+    expect(px).toBeLessThanOrEqual(10);
+  });
+
+  it.skipIf(notBuilt)('lets the opaque menu and sheet override the glass pill', () => {
+    expect(builtCss()).toMatch(
+      /\.shell-entries-opaque \.shell-entry:hover,\.shell-entries-opaque \.shell-entry\[aria-current=page\]\{background-color:var\(--accent\)/,
+    );
   });
 });

@@ -1,6 +1,6 @@
-import { CalendarClock } from 'lucide-react';
 import type { ReactNode } from 'react';
 
+import { CalendarBlank } from '@/components/ui/icon';
 import { t } from '@/lib/i18n';
 
 /**
@@ -32,7 +32,7 @@ export function AuthLayout({ children }: { readonly children: ReactNode }) {
         />
         <div className="relative mb-12 flex items-center gap-3">
           <span className="flex size-10 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-            <CalendarClock aria-hidden className="size-5" />
+            <CalendarBlank aria-hidden className="size-5" />
           </span>
           <p className="font-heading text-lg font-extrabold text-sidebar-accent-foreground">
             {t('auth.brand.name')}
