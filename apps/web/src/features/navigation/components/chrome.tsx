@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
 import {
+  Bell,
   ChevronDown,
   ChevronUp,
   Download,
@@ -25,6 +26,7 @@ import {
   destinationsFor,
   groupDestinations,
   isCurrentDestination,
+  NOTIFICATIONS_PATH,
   phoneNavigationFor,
   type Destination,
   type GroupedDestinations,
@@ -718,6 +720,61 @@ export function AppChrome({ children }: AppChromeProps) {
   }
 
   /**
+   * *Obavijesti* (story 10.3): the person's own notification settings, for
+   * every role, as a fixed row like *Instaliraj* — never a destination. In
+   * the *Više* sheet after *Prikaz*, and in the profile menu, the desktop's
+   * *Više*. DRAWN AS THE DESTINATION ROWS ARE: in the sheet, a one-line
+   * description under the name and *Ovdje si* on the current page; in the
+   * menu, the name alone. A press closes the sheet or the menu even on
+   * `/obavijesti` itself, where no pathname change would.
+   */
+  function renderNotifications(place: typeof PLACE.sidebar | typeof PLACE.sheet): ReactNode {
+    const current = isCurrentDestination(pathname, NOTIFICATIONS_PATH);
+    const row = place === PLACE.sheet;
+
+    return (
+      <Link
+        to={NOTIFICATIONS_PATH}
+        aria-current={current ? 'page' : undefined}
+        aria-labelledby={row ? rowNameId + NOTIFICATIONS_PATH : undefined}
+        aria-describedby={row ? rowDescriptionId + NOTIFICATIONS_PATH : undefined}
+        onClick={row ? closeMore : closeProfile}
+        // The destination rows' classes; in the sheet its wrapper gives it
+        // their taller row, as the groups' sections give theirs.
+        className="shell-entry flex h-11 w-full min-w-0 shrink-0 items-center justify-center gap-2 rounded-md px-3 text-sm font-normal text-sidebar-foreground sm:justify-start"
+      >
+        <Bell aria-hidden className="size-4 shrink-0" />
+        {row ? (
+          <>
+            <span className="grid min-w-0 flex-1 text-left">
+              <span id={rowNameId + NOTIFICATIONS_PATH} className="truncate">
+                {t('shell.notifications')}
+              </span>
+              <span>
+                <span
+                  id={rowDescriptionId + NOTIFICATIONS_PATH}
+                  className="inline-block max-w-full truncate align-top text-xs font-normal opacity-80"
+                >
+                  {t('shell.notificationsDescription')}
+                </span>
+              </span>
+            </span>
+            {current ? (
+              <span aria-hidden className="shrink-0">
+                <span className="inline-block rounded-full border border-current px-2 text-xs font-semibold">
+                  {t('shell.moreHere')}
+                </span>
+              </span>
+            ) : null}
+          </>
+        ) : (
+          <span>{t('shell.notifications')}</span>
+        )}
+      </Link>
+    );
+  }
+
+  /**
    * *Instaliraj* (story 8.4): in the *Više* sheet and in the profile menu,
    * which is the desktop's *Više* (human decision 2026-10-22, 1a), and only
    * where it can do something. Odjava's shape, with its own icon.
@@ -798,6 +855,7 @@ export function AppChrome({ children }: AppChromeProps) {
             className="absolute bottom-full left-0 z-10 mb-2 flex w-full min-w-48 flex-col gap-2 rounded-lg border border-sidebar-border bg-sidebar p-2 shadow-sh-lg group-data-[collapsed=true]/sidebar:bottom-0 group-data-[collapsed=true]/sidebar:left-full group-data-[collapsed=true]/sidebar:mb-0 group-data-[collapsed=true]/sidebar:ml-3 group-data-[collapsed=true]/sidebar:w-auto"
           >
             {renderThemeSegments()}
+            {renderNotifications(PLACE.sidebar)}
             {renderInstall(PLACE.sidebar)}
             {renderSignOut()}
           </div>
@@ -872,8 +930,8 @@ export function AppChrome({ children }: AppChromeProps) {
 
   /**
    * The phone's *Više* sheet (story 7.3): who is signed in, the role's other
-   * destinations in two groups, the theme, *Instaliraj* where it applies
-   * (story 8.4) and Odjava.
+   * destinations in two groups, the theme, *Obavijesti* (story 10.3),
+   * *Instaliraj* where it applies (story 8.4) and Odjava.
    *
    * THE ONE `Dialog`, docked at the bottom, so it is modal the way every other
    * dialog here is: the browser traps focus, Escape and a backdrop press close
@@ -951,6 +1009,9 @@ export function AppChrome({ children }: AppChromeProps) {
           </h2>
           {renderThemeSegments()}
         </section>
+        <div className="grid *:justify-start [&>a]:h-auto [&>a]:min-h-12 [&>a]:py-1">
+          {renderNotifications(PLACE.sheet)}
+        </div>
         {renderInstall(PLACE.sheet)}
         {renderSignOut()}
       </Dialog>

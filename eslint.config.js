@@ -298,6 +298,11 @@ export const FEATURE_PUBLIC = {
     'services/role', // calendar, members, pages, router, teams, today
     'utils/destinations', // calendar, members, pages, today
   ],
+  // Story 10.3: `/obavijesti` names its heading by the screen's one id.
+  notifications: [
+    'services/settings', // organization
+    'utils/element-ids', // pages
+  ],
   // Story 6.1b: *Danas*'s leave tile reads the leave year, as *Godišnji* does.
   organization: [
     'components/lockup', // navigation

@@ -11,6 +11,7 @@ import { ljudiNoviRoute } from '@/pages/ljudi.novi';
 import { ljudiSmjenaRoute } from '@/pages/ljudi.smjene.$id';
 import { ljudiSmjeneRoute } from '@/pages/ljudi.smjene';
 import { ljudiRoute } from '@/pages/ljudi';
+import { obavijestiRoute } from '@/pages/obavijesti';
 import { organizacijaRoute } from '@/pages/organizacija';
 import { organizacijaSatniPojasRoute } from '@/pages/organizacija.satni-pojasi.$id';
 import { organizacijaSatniPojasiRoute } from '@/pages/organizacija.satni-pojasi';
@@ -106,6 +107,11 @@ const appDestinations = appLayoutRoute.addChildren([
   // reached from the Danas line only. No role guard of its own, because the
   // database decides what a session reads (`team_roster`, `0011`).
   smjenaRoute,
+  // STORY 10.3. The person's own notification settings, for EVERY role:
+  // nested under the layout and absent from the destinations — a fixed row in
+  // *Više* and in the profile menu opens it. No role guard: each reads and
+  // writes only their own row (`0044`).
+  obavijestiRoute,
 ]);
 
 /**

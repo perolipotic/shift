@@ -10,6 +10,8 @@
 export const ORGANIZATION_PROFILE_HEADING_ID = 'organization-profile-heading';
 export const ORGANIZATION_TIME_HEADING_ID = 'organization-time-heading';
 export const ORGANIZATION_FIRE_RANKS_HEADING_ID = 'organization-fire-ranks-heading';
+/** The email-notifications card (story 10.3). */
+export const ORGANIZATION_EMAIL_NOTIFICATIONS_HEADING_ID = 'organization-email-notifications-heading';
 /** The *Satni pojasi* facts card (deferred work from 7.18): a summary, and the way to the editor. */
 export const ORGANIZATION_HOUR_BANDS_HEADING_ID = 'organization-hour-bands-heading';
 
@@ -20,17 +22,18 @@ export const ORGANIZATION_DIALOG_CARD_HEADING_IDS = {
   accent: ORGANIZATION_PROFILE_HEADING_ID,
   leaveYear: ORGANIZATION_TIME_HEADING_ID,
   fireRanks: ORGANIZATION_FIRE_RANKS_HEADING_ID,
+  emailNotifications: ORGANIZATION_EMAIL_NOTIFICATIONS_HEADING_ID,
 } as const;
 
 /**
  * A dialog's Spremi, where focus goes back after a refusal that names no
  * field: the button was disabled while the write was in flight, which drops
- * focus out of it. ONE id for all five, for the refusal's reason below.
+ * focus out of it. ONE id for all six, for the refusal's reason below.
  */
 export const ORGANIZATION_DIALOG_SAVE_ID = 'organization-dialog-save';
 
 /**
- * A dialog's refusal. ONE id for all five: a dialog draws its body only while
+ * A dialog's refusal. ONE id for all six: a dialog draws its body only while
  * it is open, and only one is open at a time.
  */
 export const ORGANIZATION_DIALOG_ERROR_ID = 'organization-dialog-error';
@@ -57,6 +60,10 @@ export const ORGANIZATION_ACCENT_RULE_ID = 'organization-accent-rule';
 export const ORGANIZATION_FIRE_RANKS_LABEL_ID = 'organization-fire-ranks-label';
 export const ORGANIZATION_FIRE_RANKS_HINT_ID = 'organization-fire-ranks-hint';
 
+/** The email-notifications switch's radio group label, and the line that says what off means. */
+export const ORGANIZATION_EMAIL_NOTIFICATIONS_LABEL_ID = 'organization-email-notifications-label';
+export const ORGANIZATION_EMAIL_NOTIFICATIONS_HINT_ID = 'organization-email-notifications-hint';
+
 /**
  * What each radio group is described by while its dialog shows a refusal:
  * its own line AND the refusal, as an ID reference list, so the group
@@ -64,12 +71,14 @@ export const ORGANIZATION_FIRE_RANKS_HINT_ID = 'organization-fire-ranks-hint';
  */
 export const ORGANIZATION_ACCENT_REFUSED_DESCRIPTION = `${ORGANIZATION_ACCENT_RULE_ID} ${ORGANIZATION_DIALOG_ERROR_ID}`;
 export const ORGANIZATION_FIRE_RANKS_REFUSED_DESCRIPTION = `${ORGANIZATION_FIRE_RANKS_HINT_ID} ${ORGANIZATION_DIALOG_ERROR_ID}`;
+export const ORGANIZATION_EMAIL_NOTIFICATIONS_REFUSED_DESCRIPTION = `${ORGANIZATION_EMAIL_NOTIFICATIONS_HINT_ID} ${ORGANIZATION_DIALOG_ERROR_ID}`;
 
-/** Each dialog's title, which names the dialog; all five are mounted at once. */
+/** Each dialog's title, which names the dialog; all six are mounted at once. */
 export const ORGANIZATION_DIALOG_HEADING_IDS = {
   name: 'organization-name-dialog-heading',
   logo: 'organization-logo-dialog-heading',
   accent: 'organization-accent-dialog-heading',
   leaveYear: 'organization-leave-year-dialog-heading',
   fireRanks: 'organization-fire-ranks-dialog-heading',
+  emailNotifications: 'organization-email-notifications-dialog-heading',
 } as const;

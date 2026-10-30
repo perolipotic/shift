@@ -292,6 +292,7 @@ describe('the demo organization script', () => {
         leave_year_start_month: number;
         leave_year_start_day: number;
         uses_fire_ranks: boolean;
+        email_notifications: boolean;
       }>('select * from organizations where slug = $1', [DEMO_SLUG]);
 
       expect(organization.length).toBe(1);
@@ -303,6 +304,8 @@ describe('the demo organization script', () => {
         leave_year_start_month: 1,
         leave_year_start_day: 1,
         uses_fire_ranks: true,
+        // Story 10.3 (0044): the demo sends email, as every organization does by default.
+        email_notifications: true,
       });
       const organizationId = organization[0]?.id;
 

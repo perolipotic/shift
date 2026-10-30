@@ -611,6 +611,7 @@ describe('replacing a logo points the row at the key and then writes the object'
     leave_year_start_day: 1,
     logo_path: null,
     uses_fire_ranks: false,
+    email_notifications: true,
   };
 
   function snapshot(): OrganizationSnapshot {

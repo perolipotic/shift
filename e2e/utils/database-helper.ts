@@ -1705,3 +1705,93 @@ export async function requireAdminAuth(apiUrl: string = API_URL): Promise<void> 
     );
   }
 }
+
+/** What {@link holdMemberEmailInSql} found, for {@link restoreMemberEmailInSql}. */
+export interface HeldMemberEmail {
+  readonly memberId: string;
+  /** The member's recorded address. */
+  readonly email: string | null;
+  /** Their own `notification_settings.email`, or `null` when they had no row. */
+  readonly setting: boolean | null;
+}
+
+/**
+ * Story 10.3: gives the run organization's member `username` the recorded
+ * address `email` (or none) AND removes their own notification settings row,
+ * so the case starts with email on. Answers both as they were, for
+ * {@link restoreMemberEmailInSql}.
+ */
+export async function holdMemberEmailInSql(slug: string, username: string, email: string | null): Promise<HeldMemberEmail> {
+  const client = await connect();
+  try {
+    const before = await client.query<{ id: string; email: string | null; setting: boolean | null }>(
+      `select m.id::text as id, m.email, s.email as setting
+         from members m
+         join organizations o on o.id = m.organization_id
+         left join notification_settings s on s.organization_id = m.organization_id and s.member_id = m.id
+        where o.slug = $1 and m.username = $2`,
+      [slug, username],
+    );
+    const row = before.rows[0];
+    if (row === undefined) throw new Error(`E2E: no member ${username} in ${slug}`);
+    await client.query('update members set email = $2 where id = $1', [row.id, email]);
+    await client.query('delete from notification_settings where member_id = $1', [row.id]);
+
+    return { memberId: row.id, email: row.email, setting: row.setting };
+  } finally {
+    await client.end();
+  }
+}
+
+/** Puts back the address and the settings row {@link holdMemberEmailInSql} found. */
+export async function restoreMemberEmailInSql(held: HeldMemberEmail): Promise<void> {
+  const client = await connect();
+  try {
+    await client.query('update members set email = $2 where id = $1', [held.memberId, held.email]);
+    await client.query('delete from notification_settings where member_id = $1', [held.memberId]);
+    if (held.setting !== null) {
+      await client.query(
+        `insert into notification_settings (organization_id, member_id, email)
+         select organization_id, id, $2 from members where id = $1`,
+        [held.memberId, held.setting],
+      );
+    }
+  } finally {
+    await client.end();
+  }
+}
+
+/**
+ * Story 10.3: sets the run organization's `email_notifications` and answers
+ * what it was, so the caller can restore it.
+ */
+export async function setEmailNotificationsInSql(slug: string, on: boolean): Promise<boolean> {
+  const client = await connect();
+  try {
+    const before = await client.query<{ on: boolean }>(
+      'select email_notifications as on from organizations where slug = $1',
+      [slug],
+    );
+    const was = before.rows[0]?.on;
+    if (was === undefined) throw new Error(`E2E: no organization ${slug}`);
+    await client.query('update organizations set email_notifications = $2 where slug = $1', [slug, on]);
+
+    return was;
+  } finally {
+    await client.end();
+  }
+}
+
+/** Story 10.3: the run organization's `email_notifications` as stored. */
+export async function emailNotificationsOf(slug: string): Promise<boolean | undefined> {
+  const client = await connect();
+  try {
+    const { rows } = await client.query<{ on: boolean }>(
+      'select email_notifications as on from organizations where slug = $1',
+      [slug],
+    );
+    return rows[0]?.on;
+  } finally {
+    await client.end();
+  }
+}

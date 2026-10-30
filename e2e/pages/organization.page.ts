@@ -53,6 +53,16 @@ export class OrganizationPage extends BasePage {
     return this.dialog(organization.fireRanks);
   }
 
+  /** The email-notifications card's `Uredi` (story 10.3). */
+  get emailNotificationsOpener(): Locator {
+    return this.page.getByRole('button', { name: organization.editEmailNotifications, exact: true });
+  }
+
+  /** The email-notifications switch's dialog (story 10.3). */
+  get emailNotificationsDialog(): Locator {
+    return this.dialog(organization.emailNotifications);
+  }
+
   /** *Vrijeme i godina*: the zone, locked, and the leave year. */
   get timeRegion(): Locator {
     return this.page.getByRole('region', { name: organization.timeHeading });

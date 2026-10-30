@@ -11,6 +11,7 @@ import {
   DANAS,
   DESTINATION_COPY_KEYS,
   DESTINATION_SCREENS,
+  EMAIL_NOTIFICATIONS_KEYS,
   ERROR_SCREEN,
   FILTER_BAR_KEYS,
   GODISNJI,
@@ -42,6 +43,8 @@ import {
   MY_LEAVE_KEYS,
   NAVIGATION_MESSAGE_KEYS,
   NOT_FOUND,
+  NOTIFICATIONS,
+  NOTIFICATIONS_KEYS,
   ORGANIZATION_HOURS_KEYS,
   ORGANIZATION_MESSAGE_KEYS,
   POSITION_KEYS,
@@ -191,7 +194,12 @@ export const KEY_SOURCES = [
   // count and its value with the names, and the coverage's label and value.
   //
   // FIFTY-EIGHT SINCE C500: the skeleton's loading words, visually hidden.
-  { name: 'the organization settings surface', file: SETTINGS, keys: translationKeys, strings: 58 },
+  // SIXTY-FIVE SINCE STORY 10.3: the email-notifications card's heading and
+  // dialog title, `Uredi` and its name, the fact's label (twice: the fact and
+  // the dialog's group) and the hint. Its two option names and its status
+  // line reach `t()` through `emailNotificationsMessageKey` and
+  // `emailNotificationsStatusMessageKey`.
+  { name: 'the organization settings surface', file: SETTINGS, keys: translationKeys, strings: 65 },
   {
     // EIGHT on the member list since story 1.5b, up from five, and the number is
     // still small because most of what this screen says is read off a table
@@ -1029,6 +1037,33 @@ export const KEY_SOURCES = [
     strings: 20,
   },
   {
+    // STORY 10.3. On *Obavijesti*: its heading and lede; the email card's
+    // heading, the loading words, the unavailable line and its retry, the
+    // no-address line, the address label, the organization-off line, the
+    // control's label, its two options and the failure notice. The saved
+    // line comes through `emailStatusMessageKey`, the entry below.
+    name: 'the notification settings screen',
+    file: NOTIFICATIONS,
+    keys: translationKeys,
+    strings: 13,
+  },
+  {
+    // STORY 10.3: the two saved lines, off `emailStatusMessageKey`, and the
+    // two ledes, one per role, off `ledeMessageKey`.
+    name: 'the notification settings rules',
+    file: NOTIFICATIONS_KEYS,
+    keys: messageKeyUnions,
+    strings: 4,
+  },
+  {
+    // STORY 10.3: the organization's email-notifications switch — its two
+    // option labels and its two status lines, off two unions.
+    name: 'the email-notifications switch labels',
+    file: EMAIL_NOTIFICATIONS_KEYS,
+    keys: messageKeyUnions,
+    strings: 4,
+  },
+  {
     // STORY 9.4: the base's three lines in place of the figures (unavailable,
     // unscheduled, absent) and the decision's four refusals, off
     // `reviewBaseMessageKey` and `reviewFailureMessageKey`.
@@ -1526,7 +1561,9 @@ export const KEY_SOURCES = [
   // descriptions and the place under *Više* come through the next entry but
   // one.
   // TWENTY with story 8.4: *Instaliraj* and its iOS steps.
-  { name: 'the navigation chrome', file: CHROME, keys: translationKeys, strings: 20 },
+  // TWENTY-FOUR SINCE STORY 10.3: the fixed *Obavijesti* row — its name
+  // (in the sheet and in the menu), its description, and *Ovdje si*.
+  { name: 'the navigation chrome', file: CHROME, keys: translationKeys, strings: 24 },
   {
     // TWO, for three role codes and one sign-out code. The collapse is the
     // decision `messages.test.ts` executes; what this count pins is that there

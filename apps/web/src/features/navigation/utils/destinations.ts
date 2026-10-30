@@ -158,6 +158,14 @@ export function isCurrentDestination(pathname: string, path: string): boolean {
   return pathname === path || pathname.startsWith(`${path}/`);
 }
 
+/**
+ * *Obavijesti* (story 10.3): the person's own notification settings, for
+ * every role. A ROUTE, NEVER A DESTINATION: it is not in `DESTINATIONS`, and
+ * the chrome draws it as a fixed row in *Više* and the profile menu, as it
+ * draws *Instaliraj*.
+ */
+export const NOTIFICATIONS_PATH: RegisteredPath = '/obavijesti';
+
 /** The four paths a phone bar shows as tabs. Exactly four, by type. */
 type PhoneTabs = readonly [RegisteredPath, RegisteredPath, RegisteredPath, RegisteredPath];
 

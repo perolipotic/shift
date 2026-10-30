@@ -12,6 +12,7 @@ import {
 } from '@/features/conflicts/conflicts-screen.fixture';
 import { HOURS_SCREEN_PARTS } from '@/features/hours/hours-screen.fixture';
 import { LEAVE_REQUEST_PARTS, LEAVE_SCREEN_PARTS } from '@/features/leave/leave-screen.fixture';
+import { NOTIFICATIONS_SCREEN_PARTS } from '@/features/notifications/notifications-screen.fixture';
 import { TODAY_SCREEN_PARTS } from '@/features/today/today-screen.fixture';
 import {
   HOUR_BAND_EDIT_PARTS,
@@ -133,6 +134,8 @@ export const SETTINGS_LOGO = join(srcRoot, ...SETTINGS_SCREEN_PARTS.logo);
 
 /** Story 7.18: the fire-rank setting's card and dialog. */
 export const SETTINGS_FIRE_RANKS = join(srcRoot, ...SETTINGS_SCREEN_PARTS.fireRanks);
+/** Story 10.3: the email-notifications card and its dialog. */
+export const SETTINGS_EMAIL_NOTIFICATIONS = join(srcRoot, ...SETTINGS_SCREEN_PARTS.emailNotifications);
 
 /**
  * Story 1.4a's settings surface: the first destination that is not a
@@ -270,6 +273,20 @@ export const LEAVE_REQUEST_REVIEW: readonly string[] = Object.values(LEAVE_REQUE
 
 /** Story 9.4's rules: the decision screen's base lines, closed line and refusals, off literal and `\w*MessageKey` unions. */
 export const LEAVE_REQUEST_REVIEW_KEYS = join(LEAVE_FEATURE, 'services', 'leave-request-review.ts');
+
+/** Story 10.3: the notifications feature, which holds `/obavijesti`. */
+export const NOTIFICATIONS_FEATURE = join(srcRoot, 'features', 'notifications');
+
+/** Story 10.3: `/obavijesti`'s files, page first. */
+export const NOTIFICATIONS: readonly string[] = Object.values(NOTIFICATIONS_SCREEN_PARTS).map((parts) =>
+  join(srcRoot, ...parts),
+);
+
+/** Story 10.3: the page itself, which the set is read from first. */
+export const NOTIFICATIONS_PAGE = join(srcRoot, 'pages', 'obavijesti.tsx');
+
+/** Story 10.3: the screen's rules, its saved lines off one `\w*MessageKey` union. */
+export const NOTIFICATIONS_KEYS = join(NOTIFICATIONS_FEATURE, 'services', 'settings.ts');
 
 /** Story 5.4b's rules: the resolution screen's facts, strip and lines, off `\w*MessageKey` unions. */
 export const RESOLUTION_SCREEN_KEYS = join(CONFLICTS_FEATURE, 'services', 'resolution-screen.ts');
@@ -627,6 +644,9 @@ export const ACCENT_KEYS = join(srcRoot, 'features', 'organization', 'utils', 'a
 /** The fixed rank list as data (member rank), and its two label mappings. */
 export const RANK_KEYS = join(srcRoot, 'features', 'members', 'utils', 'rank.ts');
 
+/** Story 10.3: the organization's email-notifications switch, its labels off two `\w*MessageKey` unions. */
+export const EMAIL_NOTIFICATIONS_KEYS = join(srcRoot, 'features', 'organization', 'utils', 'email-notifications.ts');
+
 /** Story 7.11: the member page header's status badge, off one `\w*MessageKey` union. */
 export const MEMBER_FACTS_KEYS = join(srcRoot, 'features', 'members', 'utils', 'member-facts.ts');
 
@@ -766,7 +786,8 @@ export const SCREENS = [
   // anybody types in, and a slug, a zone or a locale control would still be
   // the count moving.
   // NINE BUTTONS since the *Satni pojasi* card's `Otvori` (deferred work from 7.18).
-  { name: 'the organization settings surface', file: SETTINGS, expectedFields: 3, expectedButtons: 9 },
+  // TEN since story 10.3: the email-notifications card's `Uredi`.
+  { name: 'the organization settings surface', file: SETTINGS, expectedFields: 3, expectedButtons: 10 },
   // THREE on the member list, and the count is what keeps a fourth from
   // arriving unreviewed: the search field, the permission-level filter, and ONE
   // `<Button>` — the sort control, written once inside a map over
@@ -1020,6 +1041,10 @@ export const SCREENS = [
   // *Odbij* and *Odobri*. No confirmation, no reason field (Epic 9 has none)
   // and no bulk action, which is what the count keeps true.
   { name: 'the leave request decision screen', file: LEAVE_REQUEST_REVIEW, expectedFields: 0, expectedButtons: 4 },
+  // STORY 10.3. ONE on *Obavijesti*: the unavailable alert's retry. The email
+  // on/off is a radio group, never a `<Button>`, and the address is shown,
+  // never a field: the count is what notices an address input arriving.
+  { name: 'the notification settings screen', file: NOTIFICATIONS, expectedFields: 0, expectedButtons: 1 },
   // STORY 2.1b. FIVE on the band list: the link back to `Organizacija`, the
   // name `<Input>`, the start `<Input type="time">`, the add `<Button>`, and ONE
   // row link written once inside the map over the bands — the same count at

@@ -45,6 +45,7 @@ import {
   MESSAGE_UNKNOWN,
   OBAVIJESTI,
   OPERANDS_INVALID,
+  SETTINGS_PATH,
   formatIsoDate,
   render,
 } from '../supabase/functions/notify/messages.ts';
@@ -75,6 +76,8 @@ const ORGANIZATION_NAME = 'DVD Kaštel Novi';
 const TARGET = { appUrl: APP_URL, slug: 'dvd-kastel-novi', organizationName: ORGANIZATION_NAME } as const;
 /** The link to `path` through the pilot's sign-in route. */
 const linkTo = (path: string): string => `${APP_URL}/prijava/dvd-kastel-novi?povratak=${encodeURIComponent(path)}`;
+/** Story 10.3: the line every email ends with, after a blank line, linking to the settings. */
+const FOOTER = `\n\nObavijesti e-poštom možeš isključiti u aplikaciji, pod Obavijesti: ${linkTo('/obavijesti')}`;
 
 const ENVIRONMENT: Readonly<Record<string, string>> = {
   SUPABASE_URL: 'http://127.0.0.1:54321',
@@ -207,10 +210,28 @@ describe('notify renders from a pinned copy of the obavijesti namespace', () => 
     expect(approved).toEqual({
       ok: true,
       subject: 'Zahtjev za godišnji 02.03.2046–06.03.2046 je odobren',
-      text: `${ORGANIZATION_NAME}: tvoj zahtjev za godišnji odmor 02.03.2046–06.03.2046 je odobren. Pogledaj ga u aplikaciji: ${linkTo('/godisnji')}`,
+      text: `${ORGANIZATION_NAME}: tvoj zahtjev za godišnji odmor 02.03.2046–06.03.2046 je odobren. Pogledaj ga u aplikaciji: ${linkTo('/godisnji')}${FOOTER}`,
     });
     expect(rejected).toMatchObject({ ok: true, subject: 'Zahtjev za godišnji 02.03.2046–06.03.2046 je odbijen' });
     expect(rejected.ok && rejected.text).toContain(linkTo('/godisnji'));
+  });
+
+  it('ends every email with the settings line, linking through the sign-in to /obavijesti (story 10.3)', () => {
+    expect(OBAVIJESTI.footer).toBe('Obavijesti e-poštom možeš isključiti u aplikaciji, pod Obavijesti: {link}');
+    expect(SETTINGS_PATH).toBe('/obavijesti');
+    for (const code of Object.keys(MESSAGE_OF_CODE)) {
+      const rendered = render(
+        code,
+        'hr',
+        { startDate: '2046-03-02', endDate: '2046-03-06', date: '2046-03-02', effectiveFrom: '2046-03-02', shiftTypeName: 'Dnevna', memberName: 'Ana Kovač', requestId: REQUEST_ID },
+        TARGET,
+      );
+      if (!rendered.ok) throw new Error(`${code} did not render`);
+      expect(rendered.text.endsWith(FOOTER), code).toBe(true);
+      const footerLink = new URL(/https?:\/\/\S+$/.exec(rendered.text)?.[0] ?? '');
+      expect(footerLink.pathname).toBe('/prijava/dvd-kastel-novi');
+      expect(footerLink.searchParams.get('povratak')).toBe('/obavijesti');
+    }
   });
 
   it('refuses a code it has no message for, and operands that do not fill the message', () => {
@@ -381,13 +402,14 @@ describe("notify renders every 10.2 code with the organization's name and its si
   it.each(EVERY_CODE)('renders $code', ({ code, operands, path, subject, text }) => {
     const rendered = render(code, 'hr', operands, TARGET);
 
-    expect(rendered).toEqual({ ok: true, subject, text: text.replace('{link}', linkTo(path)) });
+    expect(rendered).toEqual({ ok: true, subject, text: `${text.replace('{link}', linkTo(path))}${FOOTER}` });
   });
 
   it.each(EVERY_CODE)('links $code through /prijava/<slug>?povratak=<path>, a target the sign-in follows', ({ code, operands, path }) => {
     const rendered = render(code, 'hr', operands, TARGET);
     if (!rendered.ok) throw new Error(`${code} did not render`);
-    const link = /https?:\/\/\S+$/.exec(rendered.text)?.[0] ?? '';
+    // The surface's link is the first; the footer's, to the settings, the last.
+    const link = /https?:\/\/\S+/.exec(rendered.text)?.[0] ?? '';
     const url = new URL(link);
 
     expect(url.origin).toBe(APP_URL);
@@ -592,7 +614,7 @@ describe("notify's matrix against a fake client: one send per row, settled by th
       from: ENVIRONMENT['NOTIFY_EMAIL_FROM'],
       to: ['ana@example.org'],
       subject: 'Zahtjev za godišnji 02.03.2046–06.03.2046 je odobren',
-      text: `${ORGANIZATION_NAME}: tvoj zahtjev za godišnji odmor 02.03.2046–06.03.2046 je odobren. Pogledaj ga u aplikaciji: ${linkTo('/godisnji')}`,
+      text: `${ORGANIZATION_NAME}: tvoj zahtjev za godišnji odmor 02.03.2046–06.03.2046 je odobren. Pogledaj ga u aplikaciji: ${linkTo('/godisnji')}${FOOTER}`,
     });
     expect(settles).toEqual([{ p_id: claimed.id, p_result: 'sent', p_failure_code: null }]);
     expect(tokens).toEqual([claimed.claimed_at]);

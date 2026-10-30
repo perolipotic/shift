@@ -1107,3 +1107,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-10-2-email-tells-people-what-concerns-them.md`
   summary: Story 10.3 adds an organization-level email switch (e.g. `organizations.email_notifications`) that `private.notify_members` checks, so a switched-off organization writes no outbox rows at all, beside each member's own on/off.
   evidence: Asked by the product owner during 10.2 (2026-10-29). The switch must stop the writes, not only the sends, or a backlog of stale emails goes out when it is switched back on.
+
+## Deferred from: planning of spec-10-3-notification-settings-in-vise.md (2026-10-30)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-3-notification-settings-in-vise.md`
+  summary: The *Obavijesti* screen has no push on/off and no `Instaliraj aplikaciju za obavijesti` row (epic 10.3 AC, UX-DR49, deferred); story 10.4 adds both with the push channel itself.
+  evidence: Push has no subscription, VAPID key or outbox channel until 10.4; a push switch in 10.3 would store a preference with no effect. Product owner chose email-only for 10.3 (2026-10-30).

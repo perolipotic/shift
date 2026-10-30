@@ -2186,6 +2186,37 @@ const SANCTIONED_SCREEN_KEYS = [
   'obavijesti.rotationChangeCancelled.body',
   'obavijesti.leaveRequestCreated.subject',
   'obavijesti.leaveRequestCreated.body',
+  // STORY 10.3. The line every email ends with, linking to `/obavijesti`.
+  'obavijesti.footer',
+  // STORY 10.3. The notification settings screen, its *Više* row, and the
+  // organization's email-notifications card.
+  'shell.notifications',
+  'shell.notificationsDescription',
+  'postavkeObavijesti.heading',
+  'postavkeObavijesti.ledeMember',
+  'postavkeObavijesti.ledeAdmin',
+  'postavkeObavijesti.organizationOffAdmin',
+  'postavkeObavijesti.email',
+  'postavkeObavijesti.address',
+  'postavkeObavijesti.noAddress',
+  'postavkeObavijesti.organizationOff',
+  'postavkeObavijesti.choice',
+  'postavkeObavijesti.on',
+  'postavkeObavijesti.off',
+  'postavkeObavijesti.statusOn',
+  'postavkeObavijesti.statusOff',
+  'postavkeObavijesti.loading',
+  'postavkeObavijesti.unavailable',
+  'postavkeObavijesti.retry',
+  'postavkeObavijesti.saveFailed',
+  'organization.editEmailNotifications',
+  'organization.emailNotifications',
+  'organization.emailNotificationsUse',
+  'organization.emailNotificationsOn',
+  'organization.emailNotificationsOff',
+  'organization.emailNotificationsHint',
+  'organization.emailNotificationsStatusOn',
+  'organization.emailNotificationsStatusOff',
 ];
 
 /** Everything the resource file is permitted to hold, together. */

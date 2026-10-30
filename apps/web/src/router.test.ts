@@ -13,7 +13,7 @@ import {
 } from '@/features/auth/services/return-target';
 // Story 10.2: the paths the `notify` emails link to, read from the function's
 // own module, so the sign-in route is proved to follow every one of them.
-import { MESSAGE_OF_CODE, linkPathOf } from '../../../supabase/functions/notify/messages';
+import { MESSAGE_OF_CODE, SETTINGS_PATH, linkPathOf } from '../../../supabase/functions/notify/messages';
 import { LJUDI_DIRECTORY, LJUDI_TABLE, ljudiViewOf, mayReadMembers } from '@/features/members/services/list';
 import { DESTINATIONS, destinationsFor } from '@/features/navigation/utils/destinations';
 import { adminGuard, requireAdmin } from '@/features/navigation/services/admin-guard';
@@ -40,6 +40,7 @@ import { currentSessionForReads } from '@/lib/supabase/offline-session';
 import { DanasScreen, danasRoute } from '@/pages/danas';
 import { GodisnjiScreen, godisnjiRoute } from '@/pages/godisnji';
 import { GodisnjiZatraziScreen, godisnjiZatraziRoute } from '@/pages/godisnji.zatrazi';
+import { ObavijestiScreen, obavijestiRoute } from '@/pages/obavijesti';
 import { indexRoute } from '@/pages/index';
 import { KalendarScreen, kalendarRoute } from '@/pages/kalendar';
 import { LjudiMemberScreen, ljudiMemberRoute } from '@/pages/ljudi.$id';
@@ -191,6 +192,11 @@ describe("every notification email's link is a return target the sign-in follows
 
   it.each(paths)('returns $code to $path, not to /', ({ path }) => {
     expect(returnTargetOf(path ?? undefined, KNOWN_PATH)).toBe(path);
+  });
+
+  it("returns every email's footer to the settings, not to / (story 10.3)", () => {
+    expect(SETTINGS_PATH).toBe('/obavijesti');
+    expect(returnTargetOf(SETTINGS_PATH, KNOWN_PATH)).toBe(SETTINGS_PATH);
   });
 });
 
@@ -438,6 +444,9 @@ describe('the shell route tree', () => {
       // block below pins that by matching it.
       '/_app/ljudi/smjene',
       '/_app/ljudi/smjene/$id',
+      // STORY 10.3. The person's own notification settings, for every role,
+      // reached from a fixed row in *Više* and the profile menu only.
+      '/_app/obavijesti',
       '/_app/organizacija',
       // STORY 2.1b. The hour band editor, reached from `Organizacija` only.
       '/_app/organizacija/satni-pojasi',
@@ -2780,6 +2789,26 @@ describe('the leave request form is not a destination and carries no guard of it
     expect(DESTINATION_ROUTES.map((destination) => destination.path)).not.toContain('/godisnji/zatrazi');
     expect(ROLE_GUARDED_PATHS).not.toContain('/godisnji/zatrazi');
     expect(LEVEL_GUARDED_ROUTES.map((guarded) => guarded.path)).not.toContain('/godisnji/zatrazi');
+  });
+});
+
+describe('the notification settings are not a destination and carry no guard of their own (story 10.3)', () => {
+  it('resolves /obavijesti inside the signed-in layout, to its own screen', () => {
+    expect(match('/obavijesti').map((matched) => matched.routeId)).toEqual(['__root__', '/_app', '/_app/obavijesti']);
+    expect((obavijestiRoute.options as { component?: unknown }).component).toBe(ObavijestiScreen);
+  });
+
+  it('carries no beforeLoad: every role reads and writes only its own row (0044)', () => {
+    expect((obavijestiRoute.options as { beforeLoad?: unknown }).beforeLoad).toBeUndefined();
+  });
+
+  it('is in neither destination list, nor any guarded list', () => {
+    for (const role of MEMBER_ROLES) {
+      expect(destinationsFor(role).map((destination) => destination.path)).not.toContain('/obavijesti');
+    }
+    expect(DESTINATION_ROUTES.map((destination) => destination.path)).not.toContain('/obavijesti');
+    expect(ROLE_GUARDED_PATHS).not.toContain('/obavijesti');
+    expect(LEVEL_GUARDED_ROUTES.map((guarded) => guarded.path)).not.toContain('/obavijesti');
   });
 });
 

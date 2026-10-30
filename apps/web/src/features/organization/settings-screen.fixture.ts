@@ -2,7 +2,7 @@
  * THE SETTINGS SURFACE'S FILE SET, written once (source structure B2).
  *
  * `/organizacija` is more than one file: a page that only composes, the hook
- * holding its read and its five writes, the components that draw it, and one
+ * holding its read and its six writes, the components that draw it, and one
  * helper. Two suites read it as source — the source guards in `pages/` and
  * `features/organization/services/snapshot.test.ts` — and two hand-written
  * copies of the list would be two answers to "what is the screen". Both build
@@ -27,6 +27,9 @@ export const SETTINGS_SCREEN_PARTS = {
   accent: ['features', 'organization', 'components', 'organization-accent-dialog.tsx'],
   time: ['features', 'organization', 'components', 'organization-time-card.tsx'],
   fireRanks: ['features', 'organization', 'components', 'organization-fire-ranks-card.tsx'],
+  // STORY 10.3: the organization's email-notifications switch, on the fire
+  // ranks' terms.
+  emailNotifications: ['features', 'organization', 'components', 'organization-email-notifications-card.tsx'],
   // Deferred work from 7.18: the *Satni pojasi* facts card and the hook
   // holding its one read of the bands.
   hourBands: ['features', 'organization', 'components', 'organization-hour-bands-card.tsx'],
@@ -62,7 +65,11 @@ export const SETTINGS_SCREEN_EXEMPT: readonly { readonly file: string; readonly 
   },
   {
     file: 'utils/dialogs.ts',
-    why: 'the five dialog names (story 7.18); identifiers that say which dialog is open, never a string the page renders',
+    why: 'the six dialog names (story 7.18; the sixth since story 10.3); identifiers that say which dialog is open, never a string the page renders',
+  },
+  {
+    file: 'utils/email-notifications.ts',
+    why: 'the email-notifications switch’s values and labels (story 10.3); a key source of its own (EMAIL_NOTIFICATIONS_KEYS)',
   },
   {
     file: 'utils/leave-start.ts',
