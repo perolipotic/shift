@@ -69,20 +69,28 @@ function tokens(): Map<string, string> {
   return cached;
 }
 
-/** The 22 base names, derived rather than hard-coded so a DESIGN.md rename
- *  changes the case list instead of silently skipping a token. */
+/** The 24 brand names, derived rather than hard-coded so a DESIGN.md rename
+ *  changes the case list instead of silently skipping a token.
+ *
+ *  A key is a DARK VALUE only when the name it suffixes is itself declared:
+ *  story 15.2's `band-dark` ends in `-dark` and is a light value (its dark
+ *  value is `band-dark-dark`), so stripping the suffix blindly would read it
+ *  as the dark value of a `band` that does not exist. */
 function tokenNames(): string[] {
-  return [...new Set([...tokens().keys()].map((key) => key.replace(/-dark$/, '')))];
+  const keys = new Set(tokens().keys());
+
+  return [...keys].filter((key) => !(key.endsWith('-dark') && keys.has(key.slice(0, -'-dark'.length))));
 }
 
 describe('DESIGN.md is readable and complete', () => {
   // Without this, an unparsed front matter would make every case below vacuous.
-  it('parses all 44 declared colour values', () => {
-    expect(tokens().size).toBe(44);
+  // STORY 15.2: 48 and 24, with the hour band's `band-dark` pair.
+  it('parses all 48 declared colour values', () => {
+    expect(tokens().size).toBe(48);
   });
 
-  it('yields the 22 token names the rest of the suite expects', () => {
-    expect(tokenNames()).toHaveLength(22);
+  it('yields the 24 token names the rest of the suite expects', () => {
+    expect(tokenNames()).toHaveLength(24);
   });
 });
 
@@ -231,8 +239,8 @@ describe('every base token round-trips to the hex base-palette declares', () => 
 /**
  * The glass set, round-tripped the same way (story 15.1, direction G).
  *
- * DESIGN.md's `glass:` key holds one map per theme: ten colours and three
- * effects. The COLOURS round-trip as every other colour does, alpha included,
+ * DESIGN.md's `glass:` key holds one map per theme: eleven colours (story 15.2
+ * added the Dialog's `glass-scrim`) and three effects. The COLOURS round-trip as every other colour does, alpha included,
  * because a glass alpha IS the design (.58 beside content, .80 over it). The
  * EFFECTS are not colours: the blur and the saturate must be the same text,
  * and the shadow the same geometry with its colour round-tripped, since the
@@ -277,7 +285,7 @@ function driftOf(declared: string, shipped: string): { drift: number; alpha: [nu
 }
 
 describe('every glass token round-trips to the value glass: declares (story 15.1)', () => {
-  it.each(THEMES)('declares every one of the 13 glass tokens for %s', (theme) => {
+  it.each(THEMES)('declares every one of the 14 glass tokens for %s', (theme) => {
     expect([...glassBlock()[theme].keys()].sort()).toEqual([...GLASS_TOKENS].sort());
   });
 

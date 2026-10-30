@@ -58,8 +58,9 @@ describe('the token lists are the size everything else assumes', () => {
   // is the point. `deferred-work.md:449` item (f) records the opposite failure
   // as the one to avoid: a hard-coded count that admits the new tokens without
   // anybody deciding to let them in leaves them swept by nothing.
-  it('has 30 brand tokens', () => {
-    expect(BRAND_TOKENS).toHaveLength(30);
+  // STORY 15.2: thirty-two, with the hour band's `band-dark` pair.
+  it('has 32 brand tokens', () => {
+    expect(BRAND_TOKENS).toHaveLength(32);
   });
 
   it('has 28 shadcn base tokens', () => {
@@ -72,10 +73,11 @@ describe('the token lists are the size everything else assumes', () => {
 
   // STORY 15.1: the glass set, ten colours and three effects, so a glass
   // token dropped from the list cannot silently leave every sweep below.
-  it('has 13 glass tokens: 10 colours and 3 effects', () => {
-    expect(GLASS_COLOUR_TOKENS).toHaveLength(10);
+  // STORY 15.2: eleven colours, with the Dialog's `glass-scrim`.
+  it('has 14 glass tokens: 11 colours and 3 effects', () => {
+    expect(GLASS_COLOUR_TOKENS).toHaveLength(11);
     expect(GLASS_EFFECT_TOKENS).toHaveLength(3);
-    expect(GLASS_TOKENS).toHaveLength(13);
+    expect(GLASS_TOKENS).toHaveLength(14);
   });
 });
 

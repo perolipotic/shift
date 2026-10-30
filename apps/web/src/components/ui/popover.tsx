@@ -6,8 +6,14 @@ import { cn } from "@/lib/utils"
 // The one NON-MODAL anchored surface (story 7.4), beside the modal `Dialog`:
 // drawn below its nearest positioned ancestor, left-aligned to it, and never
 // wider than the viewport less the page gutters, so a phone at 320 px does
-// not scroll sideways. `bg-popover` and `sh-lg`, the elevation DESIGN.md
-// gives Dialog, Sheet and Popover.
+// not scroll sideways. A `glass-panel` since story 15.2, the layered glass it
+// shares with Dialog and the docked sheets (the reading alpha, blurred, with
+// the opaque and forced-colours fallbacks in `index.css`).
+//
+// NEVER INSIDE A `glass-*` ANCESTOR: a blurred ancestor is a backdrop root,
+// and the panel would blur only that ancestor rather than the page behind it.
+// The profile menu in the glass sidebar is therefore its own opaque surface,
+// not this primitive.
 //
 // Closed means UNMOUNTED: nothing inside it keeps state between openings.
 // Escape and a press outside `region` (the trigger and the surface, so a
@@ -35,7 +41,7 @@ function Popover({ open, onClose, region, className, children, ...props }: Popov
     <div
       role="dialog"
       className={cn(
-        "absolute left-0 top-full z-50 mt-2 max-w-[calc(100vw-2rem)] rounded-lg border bg-popover p-3 text-popover-foreground shadow-sh-lg",
+        "glass-panel absolute left-0 top-full z-50 mt-2 max-w-[calc(100vw-2rem)] rounded-lg p-3 text-foreground",
         className
       )}
       {...props}

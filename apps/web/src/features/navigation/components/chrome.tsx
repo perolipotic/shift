@@ -194,10 +194,13 @@ import { keepFocusOnAlert } from '@/utils/retry-focus';
  * GLASS SINCE STORY 15.1 (direction G). The desktop sidebar is a floating
  * `glass-chrome` panel inset 16 px from the viewport, and the phone's bar a
  * floating `glass-over-content` pill above the safe area; both draw with the
- * glass set and `--foreground`, never with the navy `--sidebar*` tokens, which
- * stay for the screens 15.2 and 15.3 move. The *Više* sheet and the profile
- * menu are opaque (`card`, `popover`), so their small muted text is measured on
- * an opaque surface. The accent is still the lockup and a 2 px edge.
+ * glass set and `--foreground`, never with the navy `--sidebar*` tokens. Since
+ * story 15.2 the *Više* sheet is the Dialog primitive's `docked` glass panel
+ * (the reading alpha, where small muted text is measured), and the profile
+ * card is Button's `chrome` variant. The profile menu stays an opaque
+ * `popover`: it opens inside the glass aside, a backdrop root, where a glass
+ * panel could not blur the page. The accent is still the lockup and a 2 px
+ * edge.
  */
 
 export interface AppChromeProps {
@@ -810,8 +813,9 @@ export function AppChrome({ children }: AppChromeProps) {
           <span>{t('shell.install')}</span>
         </Button>
         {ios ? (
-          // Small muted text on the opaque menu or sheet (`muted-foreground` on
-          // `card`), the pair `theme-contrast.test.ts` measures.
+          // Small muted text on the opaque menu or the sheet's glass panel
+          // (`muted-foreground` on `card`, and on `glass-reading` over its
+          // worst backdrop), the pairs `theme-contrast.test.ts` measures.
           <p id={stepsId} hidden={!stepsOpen} className="px-4 text-xs text-muted-foreground">
             {t('shell.installIosSteps')}
           </p>
@@ -852,9 +856,9 @@ export function AppChrome({ children }: AppChromeProps) {
           </div>
         ) : null}
         <Button
-          className="h-auto min-h-11 w-full justify-start gap-3 border-0 px-2 py-1.5 text-left hover:bg-glass-active/60 hover:text-foreground focus-visible:ring-offset-0 group-data-[collapsed=true]/sidebar:w-11 group-data-[collapsed=true]/sidebar:justify-center group-data-[collapsed=true]/sidebar:px-0"
+          className="h-auto min-h-11 w-full justify-start gap-3 px-2 py-1.5 text-left group-data-[collapsed=true]/sidebar:w-11 group-data-[collapsed=true]/sidebar:justify-center group-data-[collapsed=true]/sidebar:px-0"
           type="button"
-          variant="ghost"
+          variant="chrome"
           aria-expanded={profileOpen}
           aria-controls="profile-menu"
           title={expanded ? undefined : (memberName ?? roleName ?? undefined)}
@@ -929,9 +933,11 @@ export function AppChrome({ children }: AppChromeProps) {
    * THE ONE `Dialog`, docked at the bottom, so it is modal the way every other
    * dialog here is: the browser traps focus, Escape and a backdrop press close
    * it, and focus returns to *Više*. A group renders only when it has rows, so
-   * a member's sheet holds the theme and Odjava and nothing else. On the opaque
-   * `card` since story 15.1 (the docked sheet takes its glass with the Dialog
-   * primitive in 15.2), and the one link keeps the one treatment.
+   * a member's sheet holds the theme and Odjava and nothing else. `docked`, so
+   * the Dialog primitive draws it as the glass bottom sheet (story 15.2); the
+   * rows keep `shell-entries-opaque`, because the white `glass-active` pill
+   * would vanish on the near-white panel, and the one link keeps the one
+   * treatment.
    *
    * Not dismissible while a sign-out is in flight, so the request cannot lose
    * the sheet before it answers; a refusal closes it in the same render the
@@ -959,7 +965,8 @@ export function AppChrome({ children }: AppChromeProps) {
         onOpenChange={setMoreOpen}
         dismissible={!pending}
         aria-label={t('shell.more')}
-        className="shell-entries-opaque mb-0 mt-auto w-full max-w-none rounded-b-none rounded-t-2xl border-x-0 border-b-0 bg-card pb-[env(safe-area-inset-bottom,0px)] text-card-foreground"
+        docked
+        className="shell-entries-opaque"
       >
         <DialogHeader closeLabel={t('shell.moreClose')} onClose={closeMore}>
           <div className="flex min-w-0 items-center gap-3">

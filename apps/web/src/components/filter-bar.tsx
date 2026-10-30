@@ -531,7 +531,7 @@ export function OptionList({
             ref={register(index)}
             type="button"
             variant="ghost"
-            className="h-auto min-h-11 justify-between gap-3 whitespace-normal px-2 py-2 text-left font-normal aria-pressed:bg-primary/10 aria-pressed:font-semibold"
+            className="group h-auto min-h-11 justify-between gap-3 whitespace-normal px-2 py-2 text-left font-normal aria-pressed:bg-primary/10 aria-pressed:font-semibold"
             tabIndex={index === at ? 0 : -1}
             aria-pressed={option.id === chosen}
             onFocus={() => {
@@ -543,7 +543,12 @@ export function OptionList({
           >
             <span className="min-w-0 break-words">{option.name}</span>
             {option.count === null ? null : (
-              <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{option.count}</span>
+              // Muted on a plain row; `foreground` on the pressed one, whose
+              // `primary`/10 tint over the glass Popover leaves muted text
+              // under 4.5:1 (story 15.2, measured in `theme-contrast`).
+              <span className="shrink-0 text-xs text-muted-foreground tabular-nums group-aria-pressed:text-foreground">
+                {option.count}
+              </span>
             )}
           </Button>
         </div>
@@ -714,7 +719,7 @@ export function SheetDialog({
         if (!next) onClose();
       }}
       aria-labelledby={titleId}
-      className="mb-0 mt-auto w-full max-w-none rounded-b-none rounded-t-2xl border-x-0 border-b-0 pb-[env(safe-area-inset-bottom,0px)]"
+      docked
     >
       {children}
     </Dialog>

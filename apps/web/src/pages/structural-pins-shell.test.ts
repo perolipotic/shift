@@ -1,5 +1,5 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join, relative } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -682,7 +682,7 @@ describe('the chrome the layout wraps every destination in', () => {
     expect(barClasses).not.toContain('glass-chrome');
     expect(asideClasses).not.toContain('glass-over-content');
     // The navy register is gone from the shell (D5): no `sidebar` token and no
-    // Button `sidebar` variant (both stay for 15.2's screens).
+    // Button `sidebar` variant (story 15.2 renamed it `chrome`).
     expect(chrome, 'the shell still paints with the navy sidebar tokens').not.toMatch(
       /\b(?:bg|text|border|ring|ring-offset)-sidebar\b|-sidebar-(?:foreground|primary|accent|border|ring)\b/,
     );
@@ -695,19 +695,22 @@ describe('the chrome the layout wraps every destination in', () => {
     );
   });
 
-  it('writes no glass in a screen: no backdrop filter outside the two utilities (story 15.1)', () => {
+  it('writes no glass in a screen: no backdrop filter outside the glass utilities (stories 15.1, 15.2)', () => {
     // Glass is a token and primitive treatment, never a class string a screen
-    // spells (DESIGN.md; UX-DR53, written by 15.5). The two `@utility` blocks in `index.css`
-    // are the only `backdrop-filter`s in the application.
+    // spells (DESIGN.md; UX-DR53, written by 15.5). The three `@utility glass-*`
+    // blocks in `index.css` are the only `backdrop-filter`s in the
+    // application; story 15.2 added `glass-panel` for the layered surfaces.
     const css = readFileSync(join(srcRoot, 'index.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
     const utilities = [...css.matchAll(/@utility ([\w-]+) \{[\s\S]*?\n\}/g)];
     const blurring = utilities.filter(([body]) => body.includes('backdrop-filter')).map(([, name]) => name);
+    const outside = utilities.reduce((rest, [body]) => rest.replace(body, ''), css);
 
-    expect(blurring).toEqual(['glass-chrome', 'glass-over-content']);
-    expect(css.match(/(?<!-webkit-)backdrop-filter:\s*blur\(var/g)).toHaveLength(2);
-    expect(css.match(/-webkit-backdrop-filter:\s*blur\(var/g)).toHaveLength(2);
+    expect(blurring).toEqual(['glass-chrome', 'glass-over-content', 'glass-panel']);
+    expect(outside, 'a backdrop filter outside the glass utilities').not.toContain('backdrop-filter');
+    expect(css.match(/(?<!-webkit-)backdrop-filter:\s*blur\(var/g)).toHaveLength(3);
+    expect(css.match(/-webkit-backdrop-filter:\s*blur\(var/g)).toHaveLength(3);
     expect(css, 'a blob is blurred by a filter rather than drawn as a gradient').not.toMatch(/(?<!backdrop-)filter:\s*blur/);
-    for (const name of ['glass-chrome', 'glass-over-content']) {
+    for (const name of ['glass-chrome', 'glass-over-content', 'glass-panel']) {
       const body = utilities.find(([, found]) => found === name)?.[0] ?? '';
 
       expect(body, `${name} blurs by more than 24 px`).toContain('blur(var(--glass-blur))');
@@ -718,6 +721,65 @@ describe('the chrome the layout wraps every destination in', () => {
       );
     }
     expect(css).toMatch(/--glass-blur: 24px;/);
+  });
+
+  it('draws the layered surfaces in the primitives, and the screens only ask for them (story 15.2)', () => {
+    // Dialog and Popover are the glass panel; the Dialog's backdrop is the
+    // tinted scrim, never blurred. `docked` carries the sheet's geometry, so
+    // *Više* and the filter sheet restyle nothing.
+    const dialog = readFileSync(join(srcRoot, 'components', 'ui', 'dialog.tsx'), 'utf8');
+    const popover = readFileSync(join(srcRoot, 'components', 'ui', 'popover.tsx'), 'utf8');
+    const filterBar = readFileSync(join(srcRoot, 'components', 'filter-bar.tsx'), 'utf8');
+    const css = readFileSync(join(srcRoot, 'index.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const chrome = source(CHROME);
+    const sheet = componentFunction(chrome, 'renderMore');
+    const sheetDialog = /export function SheetDialog[\s\S]*?\n\}\n/.exec(filterBar)?.[0] ?? '';
+    // `docked` among the `<Dialog …>` opening tag's own props: the tag ends at
+    // the first `>` that is not an arrow function's `=>`.
+    const DOCKED = /<Dialog\b(?:=>|[^>])*?\sdocked\b(?:=>|[^>])*>/;
+    const SHEET_GEOMETRY = /\bmt-auto\b|\brounded-t-2xl\b|safe-area-inset-bottom|\bbg-card\b|\bborder-[xb]-0\b/;
+
+    expect(dialog).toContain('glass-panel');
+    expect(dialog).toContain('backdrop:bg-glass-scrim');
+    expect(dialog, 'the docked geometry is not the primitive’s').toContain(
+      '"mb-0 mt-auto w-full max-w-none rounded-b-none rounded-t-2xl pb-[env(safe-area-inset-bottom,0px)]"',
+    );
+    expect(popover).toContain('glass-panel');
+    expect(css, 'the scrim blurs').not.toMatch(/::backdrop[^{]*\{[^}]*backdrop-filter/);
+
+    expect(sheet, 'the Više sheet is not docked').toMatch(DOCKED);
+    expect(sheet, 'the Više rows lost their opaque treatment').toContain('className="shell-entries-opaque"');
+    expect(sheet, 'the Više sheet restyles the Dialog').not.toMatch(SHEET_GEOMETRY);
+    expect(sheetDialog, 'the filter sheet is not docked').toMatch(DOCKED);
+    expect(sheetDialog, 'the filter sheet restyles the Dialog').not.toMatch(SHEET_GEOMETRY);
+
+    // The profile card is Button's glass `chrome` variant, with nothing
+    // re-drawn on top of it.
+    const profile = componentFunction(chrome, 'renderProfile');
+    expect(profile).toContain('variant="chrome"');
+    expect(profile, 'the profile card re-draws the chrome variant').not.toMatch(
+      /hover:bg-glass-active|focus-visible:ring-offset-0|\bborder-0\b/,
+    );
+  });
+
+  it('leaves the navy sidebar set to the sign-in panel alone (story 15.2)', () => {
+    // D5, partly deferred: 15.3 moves the sign-in panel and deletes the set.
+    const SIDEBAR_CLASS =
+      /\b(?:bg|text|border|ring|ring-offset|fill|stroke|shadow|outline|from|via|to|divide)-sidebar(?:-[a-z-]+)?\b|\bvariant="sidebar"|var\(--sidebar/;
+    const offenders: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const path = join(dir, entry.name);
+
+        if (entry.isDirectory()) walk(path);
+        else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) && SIDEBAR_CLASS.test(readFileSync(path, 'utf8'))) {
+          offenders.push(relative(srcRoot, path));
+        }
+      }
+    };
+    walk(srcRoot);
+
+    expect(offenders).toEqual(['components/layout/auth-layout.tsx']);
   });
 
   it('names the region the collapse controls, and renders that region', () => {

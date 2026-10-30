@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto';
+import type { Locator } from '@playwright/test';
 
 import type { CalendarPage } from '../../pages/calendar.page.ts';
 import {
@@ -1854,6 +1855,15 @@ test.describe('an admin sets and removes a shift-type override at 1280 px', () =
     await expect(detail.locator('form')).toHaveCount(0);
     await expect(calendarPage.overrideRemoveIn(detail)).toHaveCount(0);
     const form = await calendarPage.openOverrideFormIn(detail);
+    // ONE BLURRED PANEL (story 15.2): the type dialog over the day detail is
+    // the glass panel, and the detail under it is covered, opaque and
+    // unblurred, so a phone never blurs more than three layers.
+    const backdropOf = (dialog: Locator): Promise<string> =>
+      dialog.evaluate((element) => getComputedStyle(element).backdropFilter);
+    await expect(detail).toHaveAttribute('data-covered', '');
+    expect(await backdropOf(detail)).toBe('none');
+    await expect(form).not.toHaveAttribute('data-covered');
+    expect(await backdropOf(form)).toMatch(/blur/);
     // The projected type is not offered.
     await expect(calendarPage.overrideTypeIn(form).locator('option', { hasText: projected })).toHaveCount(0);
     // Nothing is chosen yet, so *Što se mijenja* says nothing; then it follows the type chosen, before any save.
@@ -1895,6 +1905,9 @@ test.describe('an admin sets and removes a shift-type override at 1280 px', () =
     await expect(block).toContainText(fill(kalendar.detail.override.reason, { reason: REASON }));
     await expect(calendarPage.statusIn(detail)).toHaveText(kalendar.detail.override.saved);
     await expect(calendarPage.overrideForm).toHaveCount(0);
+    // The top panel closed: the detail is the top one again, and blurs.
+    await expect(detail).not.toHaveAttribute('data-covered');
+    expect(await backdropOf(detail)).toMatch(/blur/);
     await expect(calendarPage.overrideOpenerIn(detail)).toHaveCount(0);
     const remove = calendarPage.overrideRemoveIn(detail);
     await expect(remove).toBeFocused();
