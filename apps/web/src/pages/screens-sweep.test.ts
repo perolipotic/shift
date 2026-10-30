@@ -16,6 +16,7 @@ import {
 } from '@/features/conflicts/conflicts-screen.fixture';
 import { HOURS_SCREEN_EXEMPT, HOURS_SCREEN_PARTS } from '@/features/hours/hours-screen.fixture';
 import { LEAVE_SCREEN_EXEMPT, LEAVE_SCREEN_PARTS } from '@/features/leave/leave-screen.fixture';
+import { NOTIFICATIONS_SCREEN_EXEMPT } from '@/features/notifications/notifications-screen.fixture';
 import { TODAY_SCREEN_EXEMPT } from '@/features/today/today-screen.fixture';
 import {
   HOUR_BAND_EDIT_PARTS,
@@ -56,6 +57,10 @@ import {
   inputElements,
   KALENDAR,
   LEAVE_FEATURE,
+  NOTIFICATIONS,
+  NOTIFICATIONS_FEATURE,
+  NOTIFICATIONS_KEYS,
+  NOTIFICATIONS_PAGE,
   MEMBER_CREATE,
   MEMBER_DIRECTORY,
   MEMBER_EDIT,
@@ -305,7 +310,8 @@ describe('the screen is read at all, so every sweep below means something', () =
     // THIRTY-FOUR SINCE STORY 8.3a: the offline write note.
     // THIRTY-FIVE SINCE STORY 9.3: the leave request form.
     // THIRTY-SIX SINCE STORY 9.4: the leave request decision screen.
-    expect(SCREENS).toHaveLength(36);
+    // THIRTY-SEVEN SINCE STORY 10.3: the notification settings screen.
+    expect(SCREENS).toHaveLength(37);
     //
     // FORTY-NINE SINCE STORY 3.6b: `@/features/calendar/services/roster-write`.
     //
@@ -371,7 +377,9 @@ describe('the screen is read at all, so every sweep below means something', () =
     // SEVENTY-SEVEN SINCE STORY 9.3: the leave request form.
     //
     // SEVENTY-NINE SINCE STORY 9.4: the leave request decision screen and its rules.
-    expect(KEY_SOURCES).toHaveLength(79);
+    // EIGHTY-TWO SINCE STORY 10.3: the notification settings screen and its
+    // rules, and the organization's email-notifications switch labels.
+    expect(KEY_SOURCES).toHaveLength(82);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
@@ -634,6 +642,28 @@ describe('the screen is read at all, so every sweep below means something', () =
       'the Godišnji file set and the feature folders disagree',
       // The shared sortable heading and its glyphs live in `components/` (Epic 4 retro D2).
     ).toEqual(GODISNJI.filter((file) => file !== GODISNJI_PAGE && file.startsWith(LEAVE_FEATURE)).sort());
+  });
+
+  it('sweeps every part of the notification settings screen, so a new file cannot escape the set', () => {
+    // STORY 10.3, on *Godišnji*'s terms: an EQUALITY between the set and every
+    // non-test module under the notifications feature, less the exempt ones.
+    const exempt = new Set(NOTIFICATIONS_SCREEN_EXEMPT.map((entry) => join(NOTIFICATIONS_FEATURE, entry.file)));
+    const found = readdirSync(NOTIFICATIONS_FEATURE, { recursive: true, encoding: 'utf8' })
+      .filter((name) => /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name))
+      .map((name) => join(NOTIFICATIONS_FEATURE, name));
+
+    expect(found, 'the walk reaches services/').toContain(NOTIFICATIONS_KEYS);
+    for (const file of exempt) expect(found, `${file} is exempt and does not exist`).toContain(file);
+    for (const entry of NOTIFICATIONS_SCREEN_EXEMPT) expect(entry.why.length).toBeGreaterThan(20);
+    for (const file of NOTIFICATIONS) {
+      expect(existsSync(file), `${file} is in the set and does not exist`).toBe(true);
+      expect(source(file).trim().length, `${file} is all but empty`).toBeGreaterThan(150);
+    }
+    expect(NOTIFICATIONS[0], 'the page is read first').toBe(NOTIFICATIONS_PAGE);
+    expect(
+      found.filter((file) => !exempt.has(file)).sort(),
+      'the notification settings file set and the feature folder disagree',
+    ).toEqual(NOTIFICATIONS.filter((file) => file !== NOTIFICATIONS_PAGE).sort());
   });
 
   it('sweeps every part of the Danas screen, so a new file cannot escape the set', () => {

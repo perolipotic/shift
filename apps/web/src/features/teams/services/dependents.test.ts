@@ -27,6 +27,7 @@ import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
 import { SESSION_SUBJECT_KEY } from '@/features/members/services/write';
 import { MEMBER_NAME_KEY } from '@/features/navigation/services/profile';
 import { MEMBER_ROLE_KEY } from '@/features/navigation/services/role';
+import { NOTIFICATION_SETTINGS_KEY } from '@/features/notifications/services/settings';
 import { ORGANIZATION_SNAPSHOT_KEY } from '@/features/organization/services/snapshot';
 import { ACTING_ADMINS_KEY } from '@/features/conflicts/services/resolved-conflicts';
 import { ROTATION_KEY } from '@/features/rotation/services/list';
@@ -115,6 +116,11 @@ const CLASSIFIED: Readonly<Record<string, readonly QueryKey[]>> = {
   LEAVE_REQUEST_KEY: [REQUEST_A, REQUEST_B],
   // Story 9.5: every request of the organization, which Za odluku and Danas read.
   ORGANIZATION_LEAVE_REQUESTS_KEY: [ORGANIZATION_LEAVE_REQUESTS_KEY],
+  // Story 10.3: the person's own notification settings. No team, membership,
+  // member or leave write here names it; the organization's email switch
+  // write re-reads it (`saveEmailNotifications`), and each visit to
+  // `/obavijesti` reads it again.
+  NOTIFICATION_SETTINGS_KEY: [NOTIFICATION_SETTINGS_KEY],
 };
 
 /**

@@ -84,9 +84,17 @@ export const OBAVIJESTI = {
     subject: 'Novi zahtjev za godišnji: {memberName}',
     body: '{organizationName}: {memberName} traži godišnji odmor {startDate}–{endDate}. Zahtjev čeka tvoju odluku: {link}',
   },
+  footer: 'Obavijesti e-poštom možeš isključiti u aplikaciji, pod Obavijesti: {link}',
 } as const;
 
-export type MessageKey = keyof typeof OBAVIJESTI;
+/**
+ * A message an outbox code renders with. `footer` is not one: it is the line
+ * every email ends with (story 10.3), linking to the settings.
+ */
+export type MessageKey = Exclude<keyof typeof OBAVIJESTI, 'footer'>;
+
+/** The surface the footer links to: the member's own notification settings. */
+export const SETTINGS_PATH = '/obavijesti';
 
 /**
  * The resources by language. One today, as in the SPA. A locale with no
@@ -231,7 +239,9 @@ export type Rendered =
 
 /**
  * One outbox row's email, in the organization's language, naming the
- * organization and linking through its sign-in route to the surface.
+ * organization and linking through its sign-in route to the surface. Every
+ * body ends with the footer line, linking the same way to `/obavijesti`,
+ * where the member turns email off (story 10.3).
  */
 export function render(code: string, locale: string | null, operands: unknown, target: RenderTarget): Rendered {
   const key = Object.hasOwn(MESSAGE_OF_CODE, code) ? MESSAGE_OF_CODE[code] : undefined;
@@ -269,8 +279,9 @@ export function render(code: string, locale: string | null, operands: unknown, t
 
   const message = messages[key];
   const subject = interpolate(message.subject, values);
-  const text = interpolate(message.body, values);
-  if (subject === null || text === null) return { ok: false, code: OPERANDS_INVALID };
+  const body = interpolate(message.body, values);
+  const footer = interpolate(messages.footer, { link: linkOf(target.appUrl, slug, SETTINGS_PATH) });
+  if (subject === null || body === null || footer === null) return { ok: false, code: OPERANDS_INVALID };
 
-  return { ok: true, subject, text };
+  return { ok: true, subject, text: `${body}\n\n${footer}` };
 }

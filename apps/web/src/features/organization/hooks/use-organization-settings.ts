@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, type QueryKey } from '@tanstack/react-query';
 import { useEffect, useRef, useState, type FormEvent, type RefObject } from 'react';
 import { flushSync } from 'react-dom';
 
@@ -42,6 +42,7 @@ import {
 } from '@/features/organization/utils/element-ids';
 import {
   ACCENT_DIALOG,
+  EMAIL_NOTIFICATIONS_DIALOG,
   FIRE_RANKS_DIALOG,
   LEAVE_YEAR_DIALOG,
   LOGO_DIALOG,
@@ -49,6 +50,7 @@ import {
   type OrganizationDialog,
 } from '@/features/organization/utils/dialogs';
 import { ORGANIZATION_ERROR_ID, offersReadRetry } from '@/features/organization/utils/messages';
+import { NOTIFICATION_SETTINGS_KEY } from '@/features/notifications/services/settings';
 import { offlineNoteOf } from '@/lib/offline/freshness';
 import { useSnapshotFreshness } from '@/lib/offline/use-snapshot-freshness';
 import { droppedOffline, writesOnline } from '@/lib/offline/use-write-gate';
@@ -95,7 +97,7 @@ function cardHeading(dialog: OrganizationDialog): () => HTMLElement | null {
 }
 
 /**
- * `/organizacija`'s state, its one read and its five writes (stories 1.4a,
+ * `/organizacija`'s state, its one read and its six writes (stories 1.4a,
  * 1.4b, 1.4c and member rank; facts and dialogs since story 7.18). The page
  * composes the header and the fact cards, and each card is a component in
  * `@/features/organization/components` that reads this hook's result.
@@ -141,12 +143,14 @@ export function useOrganizationSettings() {
   const accentOpener = useRef<HTMLButtonElement>(null);
   const leaveYearOpener = useRef<HTMLButtonElement>(null);
   const fireRanksOpener = useRef<HTMLButtonElement>(null);
+  const emailNotificationsOpener = useRef<HTMLButtonElement>(null);
   const openers: Readonly<Record<OrganizationDialog, RefObject<HTMLButtonElement | null>>> = {
     name: nameOpener,
     logo: logoOpener,
     accent: accentOpener,
     leaveYear: leaveYearOpener,
     fireRanks: fireRanksOpener,
+    emailNotifications: emailNotificationsOpener,
   };
   // A REF as well as state: state drives the busy dialog, and state is stale
   // inside a handler already called once this tick.
@@ -275,13 +279,14 @@ export function useOrganizationSettings() {
   }
 
   /**
-   * Runs one dialog's write, the same way for all five. A refusal keeps the
+   * Runs one dialog's write, the same way for all six. A refusal keeps the
    * dialog open and focuses the control it names; a landed write closes it,
    * says so on its card and returns focus to its opener.
    */
   async function write(
     dialog: OrganizationDialog,
     send: (row: OrganizationSnapshot) => Promise<DialogOutcome>,
+    dependents: readonly QueryKey[] = [],
   ): Promise<void> {
     if (organization === null || saving.current) return;
     // STORY 8.3b: offline, nothing is sent — the component's gate is not the only guard.
@@ -323,6 +328,7 @@ export function useOrganizationSettings() {
       // accent from the same refetch. ITS FAILURE IS NOT THE WRITE'S.
       try {
         await queryClient.invalidateQueries({ queryKey: ORGANIZATION_SNAPSHOT_KEY });
+        for (const queryKey of dependents) await queryClient.invalidateQueries({ queryKey });
       } catch (cause) {
         console.error(unavailable, cause);
       }
@@ -423,6 +429,20 @@ export function useOrganizationSettings() {
   }
 
   /**
+   * The email-notifications dialog's Spremi (story 10.3), on its own disjoint
+   * next write on, and a row already queued is settled unsent at its next claim.
+   * next write on; a row already queued still sends.
+   */
+  async function saveEmailNotifications(on: boolean): Promise<void> {
+    // `/obavijesti` reads this switch, so a landed write re-reads it too.
+    await write(
+      EMAIL_NOTIFICATIONS_DIALOG,
+      (row) => updateOrganization(organizationTable(), row.id, { emailNotifications: on }),
+      [NOTIFICATION_SETTINGS_KEY],
+    );
+  }
+
+  /**
    * Reads the row again after a failed read — the retry the read's message
    * asks for. A second press while the read is in flight does nothing.
    *
@@ -468,6 +488,7 @@ export function useOrganizationSettings() {
     saveLogo,
     saveAccent,
     saveFireRanks,
+    saveEmailNotifications,
   };
 }
 

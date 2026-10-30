@@ -481,7 +481,7 @@ describe('the access-control migration', () => {
     ).toEqual([]);
   });
 
-  it('declares exactly the forty-seven policies stories 1.3a, 1.4a, 1.4b, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a, 3.5a, 3.6a, 5.1b, 5.4a, 9.2, 0025 and 0036 reviewed, and no forty-eighth', () => {
+  it('declares exactly the fifty policies stories 1.3a, 1.4a, 1.4b, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a, 3.5a, 3.6a, 5.1b, 5.4a, 9.2, 10.3, 0025 and 0036 reviewed, and no fifty-first', () => {
     // EXTENDED BY STORY 1.4a, exactly as this comment asked: `0004_organization
     // _settings.sql` adds `organizations_update_by_own_active_admin`, built by
     // copying `members_update_by_own_active_admin`, and its name is added here
@@ -550,6 +550,11 @@ describe('the access-control migration', () => {
       'members_insert_by_own_active_admin',
       'members_select_own_organization',
       'members_update_by_own_active_admin',
+      // STORY 10.3 (0044): the member's own notification settings, self-owned
+      // as 0040's requests: read, insert and update the own row, no delete.
+      'notification_settings_insert_own',
+      'notification_settings_select_own',
+      'notification_settings_update_own',
       // STORY 1.4b, on `storage.objects` rather than on a table in `public`,
       // and the three are named here for the reason the six above are: this is
       // the only bound on WHICH policies exist that needs no running stack, and
@@ -891,6 +896,9 @@ describe('the access-control migration', () => {
       // identity fields and from the logo, so none of the three can clobber
       // another. What it holds is a KEY and never a colour; `0006` says why.
       'brand_accent',
+      // STORY 10.3. The email-notifications switch, a NINTH column on its own
+      // disjoint write shape.
+      'email_notifications',
       'leave_year_start_day',
       'leave_year_start_month',
       // STORY 1.4b. The logo reference is writable because it is the
@@ -1224,6 +1232,18 @@ describe('the access-control migration', () => {
       /add column uses_fire_ranks boolean not null default false/,
     );
     expect(statements).toMatch(/add column fire_rank text\s+check \(fire_rank in \(/);
+  });
+
+  it('gives every organization an email switch that defaults on, and filters the outbox in one trigger (0044)', () => {
+    // STORY 10.3. Source text only; the behaviour is `test/rls-isolation.test.ts`.
+    const statements = migrationStatements();
+
+    expect(statements).toMatch(/add column email_notifications boolean not null default true/);
+    expect(statements).toMatch(/grant update \(email_notifications\) on table public\.organizations to authenticated/);
+    expect(statements).toMatch(
+      /create trigger notification_outbox_filter\s+before insert on public\.notification_outbox\s+for each row execute function private\.filter_notification_outbox\(\)/,
+    );
+    expect(statements).toMatch(/grant update \(email\) on table public\.notification_settings to authenticated/);
   });
 
   it('versions the position with the team, from a fixed list, with no default and no trigger', () => {

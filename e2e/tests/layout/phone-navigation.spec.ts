@@ -117,13 +117,18 @@ for (const width of WIDTHS) {
         const sheet = loginPage.moreSheet;
         // Each row is named by its label alone and described by its one line
         // (frame B), so the description never changes the row's name.
+        // STORY 10.3: the role's destinations, then the fixed *Obavijesti* row,
+        // drawn and described the same way.
         const rows = sheet.getByRole('link');
-        await expect(rows).toHaveCount(role.more.length);
+        await expect(rows).toHaveCount(role.more.length + 1);
         for (const [index, key] of role.more.entries()) {
           await expect(rows.nth(index)).toHaveAccessibleName(hr.nav[key]);
           await expect(rows.nth(index)).toHaveAccessibleDescription(hr.shell.description[key]);
           await expect(rows.nth(index)).toContainText(hr.shell.description[key]);
         }
+        const notifications = rows.nth(role.more.length);
+        await expect(notifications).toHaveAccessibleName(hr.shell.notifications);
+        await expect(notifications).toHaveAccessibleDescription(hr.shell.notificationsDescription);
         // Nothing in the sheet is the current page on Danas, so no marker.
         await expect(sheet.getByText(hr.shell.moreHere, { exact: true })).toHaveCount(0);
         await expect(sheet.getByRole('group', { name: hr.shell.theme.label })).toBeVisible();
@@ -279,7 +284,11 @@ test.describe('the I/O matrix at 390 px', () => {
 
       await loginPage.moreButton.click();
       await expect(loginPage.moreSheet).toBeVisible();
-      await expect(loginPage.moreSheet.getByRole('link')).toHaveCount(0);
+      // No destination; only the fixed *Obavijesti* row, which needs no role (story 10.3).
+      await expect(loginPage.moreSheet.getByRole('link')).toHaveCount(1);
+      await expect(
+        loginPage.moreSheet.getByRole('link', { name: hr.shell.notifications, exact: true }),
+      ).toBeVisible();
       await expect(loginPage.moreSheet.getByRole('group', { name: hr.shell.theme.label })).toBeVisible();
       await expect(
         loginPage.moreSheet.getByRole('button', { name: hr.shell.signOut, exact: true }),
