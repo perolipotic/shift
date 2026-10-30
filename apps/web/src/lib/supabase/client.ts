@@ -5,10 +5,13 @@ import { withinTimeBudget } from '@/utils/time-budget';
 /**
  * The single browser Supabase client (story 1.3b).
  *
- * AD-17: two inputs and no third. `VITE_SUPABASE_URL` and
- * `VITE_SUPABASE_PUBLISHABLE_KEY` are the whole contract — both are declared in
+ * AD-17: two inputs for the client. `VITE_SUPABASE_URL` and
+ * `VITE_SUPABASE_PUBLISHABLE_KEY` are its whole contract — both are declared in
  * `vite-env.d.ts`, both are injected at build time, and the secret key is not
- * reachable from this bundle at all. What this module adds is the RUNTIME half
+ * reachable from this bundle at all. AD-17, as amended by story 10.4, admits
+ * one more build input and no other: `VITE_VAPID_PUBLIC_KEY`, the PUBLIC key a
+ * device subscribes to push under, read by
+ * `@/features/notifications/services/page-push` and never by this client. What this module adds is the RUNTIME half
  * of that contract: the declarations type the variables as `string`, which is a
  * promise the type system cannot keep. Vite replaces an undeclared `VITE_*`
  * member access with `undefined`, so a build run without an environment ships a

@@ -238,12 +238,20 @@ export type Rendered =
   | { readonly ok: false; readonly code: typeof MESSAGE_UNKNOWN | typeof OPERANDS_INVALID };
 
 /**
- * One outbox row's email, in the organization's language, naming the
- * organization and linking through its sign-in route to the surface. Every
- * body ends with the footer line, linking the same way to `/obavijesti`,
- * where the member turns email off (story 10.3).
+ * A push notification's payload (story 10.4): the email's subject as the
+ * title, its body WITHOUT the footer (the footer speaks of email), and the
+ * same sign-in link to the surface, which the service worker opens on a tap.
  */
-export function render(code: string, locale: string | null, operands: unknown, target: RenderTarget): Rendered {
+export type RenderedPush =
+  | { readonly ok: true; readonly title: string; readonly body: string; readonly url: string }
+  | { readonly ok: false; readonly code: typeof MESSAGE_UNKNOWN | typeof OPERANDS_INVALID };
+
+type Composed =
+  | { readonly ok: true; readonly subject: string; readonly body: string; readonly link: string; readonly footer: string }
+  | { readonly ok: false; readonly code: typeof MESSAGE_UNKNOWN | typeof OPERANDS_INVALID };
+
+/** The parts one row renders to, shared by the email and the push. */
+function compose(code: string, locale: string | null, operands: unknown, target: RenderTarget): Composed {
   const key = Object.hasOwn(MESSAGE_OF_CODE, code) ? MESSAGE_OF_CODE[code] : undefined;
   if (key === undefined) return { ok: false, code: MESSAGE_UNKNOWN };
 
@@ -274,8 +282,9 @@ export function render(code: string, locale: string | null, operands: unknown, t
 
   const path = linkPathOf(key, operands as Record<string, unknown>);
   if (path === null) return { ok: false, code: OPERANDS_INVALID };
+  const link = linkOf(target.appUrl, slug, path);
   values['organizationName'] = organizationName;
-  values['link'] = linkOf(target.appUrl, slug, path);
+  values['link'] = link;
 
   const message = messages[key];
   const subject = interpolate(message.subject, values);
@@ -283,5 +292,30 @@ export function render(code: string, locale: string | null, operands: unknown, t
   const footer = interpolate(messages.footer, { link: linkOf(target.appUrl, slug, SETTINGS_PATH) });
   if (subject === null || body === null || footer === null) return { ok: false, code: OPERANDS_INVALID };
 
-  return { ok: true, subject, text: `${body}\n\n${footer}` };
+  return { ok: true, subject, body, link, footer };
+}
+
+/**
+ * One outbox row's email, in the organization's language, naming the
+ * organization and linking through its sign-in route to the surface. Every
+ * body ends with the footer line, linking the same way to `/obavijesti`,
+ * where the member turns email off (story 10.3).
+ */
+export function render(code: string, locale: string | null, operands: unknown, target: RenderTarget): Rendered {
+  const composed = compose(code, locale, operands, target);
+  if (!composed.ok) return composed;
+
+  return { ok: true, subject: composed.subject, text: `${composed.body}\n\n${composed.footer}` };
+}
+
+/**
+ * One outbox row's push payload (story 10.4): the same text as the email, by
+ * the same code and operands, without the email's footer, and the link the
+ * notification opens.
+ */
+export function renderPush(code: string, locale: string | null, operands: unknown, target: RenderTarget): RenderedPush {
+  const composed = compose(code, locale, operands, target);
+  if (!composed.ok) return composed;
+
+  return { ok: true, title: composed.subject, body: composed.body, url: composed.link };
 }

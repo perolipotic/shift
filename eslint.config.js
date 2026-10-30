@@ -300,6 +300,7 @@ export const FEATURE_PUBLIC = {
   ],
   // Story 10.3: `/obavijesti` names its heading by the screen's one id.
   notifications: [
+    'services/page-push', // auth, navigation, pages (story 10.4: a session's end forgets this device's push)
     'services/settings', // organization
     'utils/element-ids', // pages
   ],

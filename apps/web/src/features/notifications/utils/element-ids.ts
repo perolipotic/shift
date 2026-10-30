@@ -7,3 +7,7 @@ export const NOTIFICATIONS_HEADING_ID = 'notifications-heading';
 export const NOTIFICATIONS_EMAIL_HEADING_ID = 'notifications-email-heading';
 export const NOTIFICATIONS_EMAIL_LABEL_ID = 'notifications-email-label';
 export const NOTIFICATIONS_EMAIL_FAILURE_ID = 'notifications-email-failure';
+/** Story 10.4: the push section, beside the email one. */
+export const NOTIFICATIONS_PUSH_HEADING_ID = 'notifications-push-heading';
+export const NOTIFICATIONS_PUSH_LABEL_ID = 'notifications-push-label';
+export const NOTIFICATIONS_PUSH_FAILURE_ID = 'notifications-push-failure';

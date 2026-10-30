@@ -288,6 +288,9 @@ export const NOTIFICATIONS_PAGE = join(srcRoot, 'pages', 'obavijesti.tsx');
 /** Story 10.3: the screen's rules, its saved lines off one `\w*MessageKey` union. */
 export const NOTIFICATIONS_KEYS = join(NOTIFICATIONS_FEATURE, 'services', 'settings.ts');
 
+/** Story 10.4: the push section's rules, its saved lines off one `\w*MessageKey` union. */
+export const PUSH_KEYS = join(NOTIFICATIONS_FEATURE, 'services', 'push.ts');
+
 /** Story 5.4b's rules: the resolution screen's facts, strip and lines, off `\w*MessageKey` unions. */
 export const RESOLUTION_SCREEN_KEYS = join(CONFLICTS_FEATURE, 'services', 'resolution-screen.ts');
 
@@ -1044,7 +1047,8 @@ export const SCREENS = [
   // STORY 10.3. ONE on *Obavijesti*: the unavailable alert's retry. The email
   // on/off is a radio group, never a `<Button>`, and the address is shown,
   // never a field: the count is what notices an address input arriving.
-  { name: 'the notification settings screen', file: NOTIFICATIONS, expectedFields: 0, expectedButtons: 1 },
+  // Two buttons since story 10.4: each section's retry.
+  { name: 'the notification settings screen', file: NOTIFICATIONS, expectedFields: 0, expectedButtons: 2 },
   // STORY 2.1b. FIVE on the band list: the link back to `Organizacija`, the
   // name `<Input>`, the start `<Input type="time">`, the add `<Button>`, and ONE
   // row link written once inside the map over the bands — the same count at

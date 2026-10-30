@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { createECDH } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -14,9 +15,10 @@ import {
   missing,
   parseRequirements,
   problems,
+  vapidPairProblem,
 } from '../scripts/ci/require-config.mjs';
 import { rewriteAuthUrls, stripComment, withoutLocalRateLimits } from '../scripts/ci/set-auth-urls.mjs';
-import { LOCAL_APP_ORIGIN, renderEnvFiles } from '../scripts/ci/write-local-env.mjs';
+import { LOCAL_APP_ORIGIN, LOCAL_VAPID_PUBLIC_KEY, renderEnvFiles } from '../scripts/ci/write-local-env.mjs';
 
 /**
  * The pipeline's helpers (`scripts/ci/`). Each one guards a step whose failure
@@ -241,8 +243,11 @@ describe('write-local-env: the E2E env files from supabase status', () => {
     const files = renderEnvFiles(status);
 
     expect(files.web).toBe(
-      'VITE_SUPABASE_URL=http://127.0.0.1:54321\nVITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_local\n',
+      'VITE_SUPABASE_URL=http://127.0.0.1:54321\nVITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_local\n' +
+        `VITE_VAPID_PUBLIC_KEY=${LOCAL_VAPID_PUBLIC_KEY}\n`,
     );
+    // Story 10.4: a public key's shape (65 bytes, unpadded base64url), never a private one's.
+    expect(LOCAL_VAPID_PUBLIC_KEY).toMatch(/^[A-Za-z0-9_-]{87}$/);
     expect(files.functions.split('\n')).toEqual([
       'SHIFT_SECRET_KEY=sb_secret_local',
       'SHIFT_PUBLISHABLE_KEY=sb_publishable_local',
@@ -362,6 +367,61 @@ describe('require-config: a deploy names what it is missing', () => {
     ]);
     // A character a bearer header could mangle is refused, at any length.
     expect(problems(typed, { RESEND_API_KEY: 're_x', NOTIFY_INVOKE_SECRET: `${'a'.repeat(40)} b` })).toHaveLength(1);
+  });
+
+  /** A P-256 pair whose private key is a full 32 bytes (Node drops leading zero bytes). */
+  function vapidPair(): ReturnType<typeof createECDH> {
+    for (;;) {
+      const pair = createECDH('prime256v1');
+      pair.generateKeys();
+      if (pair.getPrivateKey().length === 32) return pair;
+    }
+  }
+
+  it('checks the shape of the VAPID key pair and its subject (story 10.4)', () => {
+    const typed = parseRequirements([
+      'secret:VAPID_PRIVATE_KEY:vapid-private',
+      'var:VAPID_PUBLIC_KEY:vapid-public',
+      'var:VAPID_SUBJECT:vapid-subject',
+    ]);
+    const pair = vapidPair();
+    const good = {
+      VAPID_PRIVATE_KEY: pair.getPrivateKey('base64url'),
+      VAPID_PUBLIC_KEY: pair.getPublicKey('base64url'),
+      VAPID_SUBJECT: 'mailto:a@example.org',
+    };
+
+    expect(problems(typed, good)).toEqual([]);
+    expect(problems(typed, { ...good, VAPID_SUBJECT: 'https://example.org/kontakt' })).toEqual([]);
+    expect(
+      problems(typed, {
+        // The swap AD-17 fears: the private key in the slot inlined into the bundle.
+        VAPID_PRIVATE_KEY: LOCAL_VAPID_PUBLIC_KEY,
+        VAPID_PUBLIC_KEY: 'p'.repeat(43),
+        VAPID_SUBJECT: 'a@example.org',
+      }).map(({ requirement, reason }) => `${requirement.name} ${reason}`),
+    ).toEqual([
+      'VAPID_PRIVATE_KEY is not a VAPID private key (43 base64url characters)',
+      'VAPID_PUBLIC_KEY is not a VAPID public key (87 base64url characters)',
+      'VAPID_SUBJECT is not a VAPID subject (mailto:addr or an https URL)',
+    ]);
+  });
+
+  it('fails a VAPID public key that is not the private key\'s own, naming neither value (story 10.4)', () => {
+    const typed = parseRequirements(['secret:VAPID_PRIVATE_KEY:vapid-private', 'var:VAPID_PUBLIC_KEY:vapid-public']);
+    const one = vapidPair();
+    const other = vapidPair();
+    const privateKey = one.getPrivateKey('base64url');
+
+    expect(privateKey).toHaveLength(43);
+    expect(vapidPairProblem(privateKey, one.getPublicKey('base64url'))).toBeNull();
+    const found = problems(typed, { VAPID_PRIVATE_KEY: privateKey, VAPID_PUBLIC_KEY: other.getPublicKey('base64url') });
+    expect(found.map(({ requirement, reason }) => `${requirement.name} ${reason}`)).toEqual([
+      'VAPID_PUBLIC_KEY is not the public key of VAPID_PRIVATE_KEY (not one key pair)',
+    ]);
+    expect(JSON.stringify(found)).not.toContain(privateKey);
+    // The local key's private half was never kept: no 43-character value derives it.
+    expect(vapidPairProblem('p'.repeat(43), LOCAL_VAPID_PUBLIC_KEY)).not.toBeNull();
   });
 
   it('names the item, its kind and the environment, and never a value', () => {

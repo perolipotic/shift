@@ -1,6 +1,8 @@
 import { Outlet, createRoute, redirect } from '@tanstack/react-router';
+import { useEffect } from 'react';
 
 import { AppChrome } from '@/features/navigation/components/chrome';
+import { reconcileThisPushDevice } from '@/features/notifications/services/page-push';
 import { returnSearchFor } from '@/features/auth/services/return-target';
 import { mustSetPassword } from '@/features/auth/services/set-password';
 import { rootRoute } from '@/pages/__root';
@@ -83,6 +85,14 @@ import { sessionEnded } from '@/lib/supabase/session-cache';
  * conditional outlet is a destination that resolves, guards, and paints nothing.
  */
 export function AppLayout() {
+  // STORY 10.4, in one place for every signed-in screen: a session that ended
+  // without Odjava (an expiry, a revocation, a local sign-out) left this
+  // device's push subscription behind. On a signed-in load, a subscription
+  // the member does not own is unsubscribed, silently and best-effort.
+  useEffect(() => {
+    void reconcileThisPushDevice();
+  }, []);
+
   return (
     <AppChrome>
       <Outlet />

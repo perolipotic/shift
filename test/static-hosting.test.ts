@@ -42,6 +42,8 @@ const PERMITTED_DIST_ENTRIES = new Set([
   'pwa-192x192.png', // the manifest's icons, generated once from favicon.svg
   'pwa-512x512.png',
   'maskable-icon-512x512.png',
+  // STORY 10.4. The push handlers the worker imports, copied from public/.
+  'push-sw.js',
 ]);
 
 /** Workbox's runtime, which `sw.js` imports; its name carries a content hash. */
@@ -304,6 +306,21 @@ describe('the build is an installable PWA', () => {
     // strategy (`NetworkFirst`, `CacheFirst`, `StaleWhileRevalidate`...).
     expect(worker.match(/registerRoute\(/g) ?? []).toHaveLength(1);
     expect(worker).not.toMatch(/NetworkFirst|NetworkOnly|CacheFirst|CacheOnly|StaleWhileRevalidate/);
+  });
+
+  it.skipIf(notBuilt)('imports the push handlers, never precaches them, and they answer no fetch (story 10.4)', () => {
+    const worker = read('sw.js');
+    const push = read('push-sw.js');
+
+    expect(worker).toMatch(/importScripts\(\s*"push-sw\.js"\s*\)/);
+    // Imported, so the browser checks it for updates with the worker; a
+    // precache entry would pin a stale copy.
+    expect(worker).not.toContain('url:"push-sw.js"');
+    expect(push).toMatch(/addEventListener\(\s*'push'/);
+    expect(push).toMatch(/addEventListener\(\s*'notificationclick'/);
+    // No fetch handler and no cache: the runtime-cache pins above still hold.
+    expect(push).not.toMatch(/addEventListener\(\s*['"]fetch['"]/);
+    expect(push).not.toMatch(/\bcaches\.|registerRoute|workbox\./);
   });
 
   it.skipIf(notBuilt)('never activates a new worker without the member', () => {

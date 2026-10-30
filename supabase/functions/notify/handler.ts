@@ -12,7 +12,11 @@
  *   3. renders each row by its code from the pinned locale messages
  *      (`messages.ts`), never from prose in the row;
  *   4. sends it through Resend with `Idempotency-Key` = the row id, so a
- *      re-claim after a crash cannot send a second email;
+ *      re-claim after a crash cannot send a second email; or, for a `push`
+ *      row (story 10.4), posts the encrypted payload with a VAPID header to
+ *      every device the claim returned with it, deleting through
+ *      `delete_push_subscription` each device its push service answers 404
+ *      or 410 for;
  *   5. settles it through `settle_notification` with the lease token the
  *      claim returned: sent; transient (the claim released, the next attempt
  *      backed off by attempts x 10 minutes, failed on the fifth); released
@@ -26,7 +30,7 @@
  * {@link SEND_TIMEOUT_MS}, and stops sending past {@link RUN_DEADLINE_MS},
  * releasing what it did not try.
  *
- * It writes nothing but those two RPCs, reads no table directly, and computes
+ * It writes nothing but those three RPCs, reads no table directly, and computes
  * no domain answer (AD-18): every fact arrives decided, in the row. Adding a
  * rule here is a defect, not a refactor (AD-16's spirit).
  *
@@ -35,7 +39,7 @@
  * environment (AD-15) with no deployment. `index.ts` holds the Deno wiring.
  */
 
-import { render } from './messages.ts';
+import { render, renderPush } from './messages.ts';
 
 // ------------------------------------------------------------------ the codes
 
@@ -73,6 +77,39 @@ export const PROVIDER_STATUS = 'PROVIDER_STATUS';
 
 export const CLAIM_RPC = 'claim_notifications';
 export const SETTLE_RPC = 'settle_notification';
+/** Story 10.4: a device its push service says is gone (404, 410) is deleted, and nothing else. */
+export const DELETE_SUBSCRIPTION_RPC = 'delete_push_subscription';
+
+/** A push row whose member has no device left when it is sent. */
+export const PUSH_NO_SUBSCRIPTION = 'PUSH_NO_SUBSCRIPTION';
+/** Every device of a push row answered 404 or 410: each was deleted, and the row fails. */
+export const PUSH_SUBSCRIPTION_GONE = 'PUSH_SUBSCRIPTION_GONE';
+/** A device's keys could not encrypt the payload: that device cannot receive. */
+export const PUSH_SUBSCRIPTION_INVALID = 'PUSH_SUBSCRIPTION_INVALID';
+/** The function was built without a push encryptor: a push row is retried, never sent. */
+export const PUSH_ENCRYPTOR_MISSING = 'PUSH_ENCRYPTOR_MISSING';
+/**
+ * The function has no usable VAPID configuration (a variable missing or
+ * malformed): a push row is retried, never sent. Email is unaffected.
+ */
+export const PUSH_NOT_CONFIGURED = 'PUSH_NOT_CONFIGURED';
+/**
+ * A push service's answers, kept apart from Resend's so a failure says which
+ * channel failed. 401 and 403 are retried per row and never stop the run: a
+ * push service refuses a VAPID key per device (human decision, 2026-10-30).
+ */
+export const PUSH_SERVICE_UNAUTHORIZED = 'PUSH_SERVICE_UNAUTHORIZED';
+export const PUSH_SERVICE_TIMEOUT = 'PUSH_SERVICE_TIMEOUT';
+export const PUSH_SERVICE_CONFLICT = 'PUSH_SERVICE_CONFLICT';
+export const PUSH_SERVICE_RATE_LIMITED = 'PUSH_SERVICE_RATE_LIMITED';
+export const PUSH_SERVICE_UNAVAILABLE = 'PUSH_SERVICE_UNAVAILABLE';
+export const PUSH_SERVICE_REFUSED = 'PUSH_SERVICE_REFUSED';
+export const PUSH_NETWORK_ERROR = 'PUSH_NETWORK_ERROR';
+/** Logged when deleting a gone device fails; its next push answers 404 or 410 again. */
+export const PUSH_DELETE_FAILED = 'PUSH_DELETE_FAILED';
+
+/** How long a push service keeps a payload for a device that is offline: a day. */
+export const PUSH_TTL_SECONDS = 86_400;
 
 /** How many rows one run claims. With the pace and the timeout below, the worst case stays inside pg_net's 55 s. */
 export const BATCH_SIZE = 8;
@@ -94,6 +131,15 @@ export const INVOKE_SECRET_MIN_LENGTH = 32;
 /** The invoke secret's shape, the same rule the deploy check applies (`scripts/ci/require-config.mjs`). */
 export const INVOKE_SECRET_SHAPE = /^[A-Za-z0-9_-]{32,}$/;
 
+/** An uncompressed P-256 public key, 65 bytes, as unpadded base64url. */
+const VAPID_PUBLIC_KEY_SHAPE = /^[A-Za-z0-9_-]{87}$/;
+
+/** A P-256 private key, 32 bytes, as unpadded base64url. */
+const VAPID_PRIVATE_KEY_SHAPE = /^[A-Za-z0-9_-]{43}$/;
+
+/** `mailto:addr@domain`, or an `https:` URL: who a push service may contact. */
+const VAPID_SUBJECT_SHAPE = /^(?:mailto:[^<>@\s]+@[^<>@\s]+\.[^<>@\s]+|https:\/\/\S+)$/;
+
 /** `addr@domain` or `Name <addr@domain>`. */
 const EMAIL_FROM_SHAPE = /^(?:[^<>@\s]+@[^<>@\s]+\.[^<>@\s]+|[^<>]+ <[^<>@\s]+@[^<>@\s]+\.[^<>@\s]+>)$/;
 
@@ -106,7 +152,30 @@ export interface Configuration {
   readonly resendApiKey: string;
   readonly emailFrom: string;
   readonly appUrl: string;
+  /**
+   * Story 10.4: the VAPID key pair (base64url, as `web-push` generates it)
+   * and its subject, or `null` when any is missing or malformed. Push alone
+   * depends on it: without it every push row is retried
+   * ({@link PUSH_NOT_CONFIGURED}) and email runs as before.
+   */
+  readonly vapid: Vapid | null;
+  /** Why {@link vapid} is `null`, logged once at start; `null` when it is set. */
+  readonly vapidProblem: VapidProblem | null;
 }
+
+export interface Vapid {
+  readonly publicKey: string;
+  readonly privateKey: string;
+  readonly subject: string;
+}
+
+export type VapidProblem =
+  | 'VAPID_PUBLIC_KEY_MISSING'
+  | 'VAPID_PUBLIC_KEY_INVALID'
+  | 'VAPID_PRIVATE_KEY_MISSING'
+  | 'VAPID_PRIVATE_KEY_INVALID'
+  | 'VAPID_SUBJECT_MISSING'
+  | 'VAPID_SUBJECT_INVALID';
 
 export type ConfigurationErrorCode =
   | 'PROJECT_URL_MISSING'
@@ -149,6 +218,9 @@ export function readConfiguration(getEnv: (name: string) => string | undefined):
   const resendApiKey = read('RESEND_API_KEY');
   const emailFrom = read('NOTIFY_EMAIL_FROM');
   const appUrl = read('SHIFT_APP_URL');
+  const vapidPublicKey = read('VAPID_PUBLIC_KEY');
+  const vapidPrivateKey = read('VAPID_PRIVATE_KEY');
+  const vapidSubject = read('VAPID_SUBJECT');
 
   if (projectUrl === '') return { ok: false, code: 'PROJECT_URL_MISSING' };
   if (!isHttpUrl(projectUrl)) return { ok: false, code: 'PROJECT_URL_INVALID' };
@@ -163,9 +235,35 @@ export function readConfiguration(getEnv: (name: string) => string | undefined):
   if (appUrl === '') return { ok: false, code: 'APP_URL_MISSING' };
   if (!isHttpUrl(appUrl)) return { ok: false, code: 'APP_URL_INVALID' };
 
+  // PUSH ONLY: a VAPID problem never stops the function, so email never
+  // depends on push's configuration.
+  const vapidProblem: VapidProblem | null =
+    vapidPublicKey === ''
+      ? 'VAPID_PUBLIC_KEY_MISSING'
+      : !VAPID_PUBLIC_KEY_SHAPE.test(vapidPublicKey)
+        ? 'VAPID_PUBLIC_KEY_INVALID'
+        : vapidPrivateKey === ''
+          ? 'VAPID_PRIVATE_KEY_MISSING'
+          : !VAPID_PRIVATE_KEY_SHAPE.test(vapidPrivateKey)
+            ? 'VAPID_PRIVATE_KEY_INVALID'
+            : vapidSubject === ''
+              ? 'VAPID_SUBJECT_MISSING'
+              : !VAPID_SUBJECT_SHAPE.test(vapidSubject)
+                ? 'VAPID_SUBJECT_INVALID'
+                : null;
+
   return {
     ok: true,
-    configuration: { projectUrl, secretKey, invokeSecret, resendApiKey, emailFrom, appUrl },
+    configuration: {
+      projectUrl,
+      secretKey,
+      invokeSecret,
+      resendApiKey,
+      emailFrom,
+      appUrl,
+      vapid: vapidProblem === null ? { publicKey: vapidPublicKey, privateKey: vapidPrivateKey, subject: vapidSubject } : null,
+      vapidProblem,
+    },
   };
 }
 
@@ -177,19 +275,103 @@ export interface RpcAnswer {
 }
 
 /**
- * The secret-key client, narrowed to the one method this function may use.
- * No `from(...)`: reading or writing a table directly is unrepresentable.
+ * The secret-key client, narrowed to the one method this function may use,
+ * and to its three functions. No `from(...)`: reading or writing a table
+ * directly is unrepresentable.
  */
 export interface OutboxClient {
-  rpc(fn: typeof CLAIM_RPC | typeof SETTLE_RPC, args: Record<string, unknown>): PromiseLike<RpcAnswer>;
+  rpc(
+    fn: typeof CLAIM_RPC | typeof SETTLE_RPC | typeof DELETE_SUBSCRIPTION_RPC,
+    args: Record<string, unknown>,
+  ): PromiseLike<RpcAnswer>;
 }
 
 export type Fetch = (input: string, init: RequestInit) => Promise<Response>;
 
+/** One device, as the claim returns it with a push row. */
+export interface PushSubscriptionRow {
+  readonly id: string;
+  readonly endpoint: string;
+  readonly p256dh: string;
+  readonly auth: string;
+  /** The member the claim found it registered to: a delete must still match it. */
+  readonly member_id: string;
+}
+
+/** A push request, encrypted and signed, ready for `fetch`. */
+export interface PushRequest {
+  readonly endpoint: string;
+  readonly headers: Readonly<Record<string, string>>;
+  readonly body: Uint8Array;
+}
+
+/**
+ * Encrypts `payload` for one device (RFC 8291, `aes128gcm`) and signs the
+ * request with the VAPID key pair (RFC 8292). `index.ts` wires `npm:web-push`'s
+ * `generateRequestDetails`; the tests inject a fake. It may throw for keys it
+ * cannot use; the send is `fetch`'s, so it is asserted here.
+ */
+export type PushEncryptor = (
+  subscription: { readonly endpoint: string; readonly keys: { readonly p256dh: string; readonly auth: string } },
+  payload: string,
+  options: {
+    readonly vapid: { readonly subject: string; readonly publicKey: string; readonly privateKey: string };
+    readonly ttl: number;
+  },
+) => PushRequest;
+
+/** As much of `web-push`'s `generateRequestDetails` as {@link pushEncryptorOf} calls. */
+export type GenerateRequestDetails = (
+  subscription: { endpoint: string; keys: { p256dh: string; auth: string } },
+  payload: string,
+  options: {
+    vapidDetails: { subject: string; publicKey: string; privateKey: string };
+    TTL: number;
+    contentEncoding: 'aes128gcm';
+  },
+) => {
+  readonly endpoint: string;
+  readonly headers: Readonly<Record<string, string | number>>;
+  readonly body: Uint8Array | ArrayLike<number> | null;
+};
+
+/**
+ * `web-push`'s request builder, without its sender, as a {@link PushEncryptor}:
+ * the payload encrypted (`aes128gcm`) and the VAPID header signed; the POST is
+ * the handler's own `fetch`. Header values become strings, and
+ * `Content-Length` is left to `fetch`. `index.ts` passes the real
+ * `generateRequestDetails`; `test/notify-boundary.test.ts` does too, from the
+ * same package version, so the adapter is asserted against the real library.
+ */
+export function pushEncryptorOf(generateRequestDetails: GenerateRequestDetails): PushEncryptor {
+  return (subscription, payload, options) => {
+    const details = generateRequestDetails(
+      { endpoint: subscription.endpoint, keys: { p256dh: subscription.keys.p256dh, auth: subscription.keys.auth } },
+      payload,
+      {
+        vapidDetails: {
+          subject: options.vapid.subject,
+          publicKey: options.vapid.publicKey,
+          privateKey: options.vapid.privateKey,
+        },
+        TTL: options.ttl,
+        contentEncoding: 'aes128gcm',
+      },
+    );
+    const headers: Record<string, string> = {};
+    for (const [name, value] of Object.entries(details.headers)) {
+      if (name.toLowerCase() !== 'content-length') headers[name] = String(value);
+    }
+    return { endpoint: details.endpoint, headers, body: new Uint8Array(details.body ?? []) };
+  };
+}
+
 export interface HandlerDependencies {
-  /** Constructs the secret-key client. Its only permitted use is the two RPCs. */
+  /** Constructs the secret-key client. Its only permitted use is the three RPCs. */
   readonly makeClient: () => unknown;
   readonly fetch: Fetch;
+  /** Story 10.4: builds each device's push request. Without it a push row is retried, never sent. */
+  readonly encryptPush?: PushEncryptor;
   /** Milliseconds since the epoch. Defaults to `Date.now`. */
   readonly now?: () => number;
   /** Waits `ms`. Defaults to a timer. */
@@ -211,6 +393,10 @@ export interface ClaimedNotification {
   readonly slug: string | null;
   /** The organization's name, which every email names (0043). */
   readonly organization_name: string | null;
+  /** The fact the row is about; a push's `tag` names it. */
+  readonly subject_id?: string | null;
+  /** Story 10.4: a push row's devices (0045); `null` for an email row. */
+  readonly subscriptions?: unknown;
 }
 
 export type SettleResult = 'sent' | 'transient' | 'released' | 'permanent';
@@ -271,7 +457,7 @@ function isClaimedNotification(value: unknown): value is ClaimedNotification {
   );
 }
 
-async function deliver(row: ClaimedNotification, configuration: Configuration, fetch: Fetch): Promise<Delivery> {
+async function deliverEmail(row: ClaimedNotification, configuration: Configuration, fetch: Fetch): Promise<Delivery> {
   const address = (row.email ?? '').trim();
   if (address === '') return { result: 'permanent', failureCode: RECIPIENT_NO_EMAIL };
 
@@ -318,6 +504,136 @@ async function deliver(row: ClaimedNotification, configuration: Configuration, f
   }
 
   return deliveryOfStatus(response.status);
+}
+
+function isSubscription(value: unknown): value is PushSubscriptionRow {
+  if (value === null || typeof value !== 'object') return false;
+  const device = value as Record<string, unknown>;
+  return (
+    typeof device['id'] === 'string' &&
+    typeof device['endpoint'] === 'string' &&
+    typeof device['p256dh'] === 'string' &&
+    typeof device['auth'] === 'string' &&
+    typeof device['member_id'] === 'string'
+  );
+}
+
+/** One device's answer: accepted, gone (404, 410), or a delivery like an email's. */
+type DeviceOutcome = { readonly result: 'accepted' } | { readonly result: 'gone' } | Settlement;
+
+/**
+ * A push service's answer for one device, with codes of its own (never
+ * Resend's). 2xx is accepted; 404 and 410 say the subscription is gone; 408,
+ * 409, 429 and 5xx retry, as an email's would; any other 4xx is final. 401 and
+ * 403 are retried and never stop the run (human decision, 2026-10-30): a push
+ * service refuses a VAPID key per device (a subscription made under another
+ * key pair), and a refusal that stopped the run would hold every row behind it.
+ */
+export function deviceOutcomeOfStatus(status: number): DeviceOutcome {
+  if (status >= 200 && status < 300) return { result: 'accepted' };
+  if (status === 404 || status === 410) return { result: 'gone' };
+  if (status === 401 || status === 403) return { result: 'transient', failureCode: PUSH_SERVICE_UNAUTHORIZED };
+  if (status === 408) return { result: 'transient', failureCode: PUSH_SERVICE_TIMEOUT };
+  if (status === 409) return { result: 'transient', failureCode: PUSH_SERVICE_CONFLICT };
+  if (status === 429) return { result: 'transient', failureCode: PUSH_SERVICE_RATE_LIMITED };
+  if (status >= 400 && status < 500) return { result: 'permanent', failureCode: PUSH_SERVICE_REFUSED };
+  return { result: 'transient', failureCode: PUSH_SERVICE_UNAVAILABLE };
+}
+
+/**
+ * The row's settlement from its devices' answers. One device that accepted
+ * makes it sent: a push cannot be made idempotent the way an email is, so a
+ * device that failed transiently in this run is not tried again (a duplicate
+ * on the others is worse). Every device gone fails it
+ * {@link PUSH_SUBSCRIPTION_GONE}. Otherwise the first transient failure
+ * retries it, and failing that, the first permanent one fails it.
+ */
+export function settlementOfDevices(outcomes: readonly DeviceOutcome[]): Settlement {
+  if (outcomes.length === 0) return { result: 'permanent', failureCode: PUSH_NO_SUBSCRIPTION };
+  if (outcomes.some((outcome) => outcome.result === 'accepted')) return { result: 'sent' };
+  const failures = outcomes.filter(
+    (outcome): outcome is Exclude<Settlement, { result: 'sent' }> =>
+      outcome.result === 'transient' || outcome.result === 'permanent' || outcome.result === 'released',
+  );
+  if (failures.length === 0) return { result: 'permanent', failureCode: PUSH_SUBSCRIPTION_GONE };
+  return failures.find((failure) => failure.result === 'transient') ?? failures[0] ?? {
+    result: 'permanent',
+    failureCode: PUSH_SUBSCRIPTION_GONE,
+  };
+}
+
+async function deliverPush(
+  row: ClaimedNotification,
+  configuration: Configuration,
+  fetch: Fetch,
+  encryptPush: PushEncryptor | undefined,
+  deleteSubscription: (device: PushSubscriptionRow) => Promise<void>,
+): Promise<Settlement> {
+  const devices = Array.isArray(row.subscriptions) ? row.subscriptions.filter(isSubscription) : [];
+  if (devices.length === 0) return { result: 'permanent', failureCode: PUSH_NO_SUBSCRIPTION };
+
+  // TRANSIENT, as the email's: a code this deployment cannot render yet.
+  const rendered = renderPush(row.code, row.locale, row.operands, {
+    appUrl: configuration.appUrl,
+    slug: row.slug,
+    organizationName: row.organization_name,
+  });
+  if (!rendered.ok) return { result: 'transient', failureCode: rendered.code };
+  // Retried, never sent, and never anything email depends on.
+  const vapid = configuration.vapid;
+  if (vapid === null) return { result: 'transient', failureCode: PUSH_NOT_CONFIGURED };
+  if (encryptPush === undefined) return { result: 'transient', failureCode: PUSH_ENCRYPTOR_MISSING };
+
+  // `tag`: one notification per fact on a device, so a re-send replaces
+  // rather than stacks.
+  const tag = `${row.code}:${typeof row.subject_id === 'string' ? row.subject_id : row.id}`;
+  const payload = JSON.stringify({ title: rendered.title, body: rendered.body, url: rendered.url, tag });
+
+  // The devices IN PARALLEL: one row takes one send's timeout at most, so the
+  // run's time budget holds however many devices a member has.
+  const outcomes = await Promise.all(
+    devices.map(async (device): Promise<DeviceOutcome> => {
+      let request: PushRequest;
+      try {
+        request = encryptPush(
+          { endpoint: device.endpoint, keys: { p256dh: device.p256dh, auth: device.auth } },
+          payload,
+          {
+            vapid,
+            ttl: PUSH_TTL_SECONDS,
+          },
+        );
+      } catch {
+        return { result: 'permanent', failureCode: PUSH_SUBSCRIPTION_INVALID };
+      }
+
+      let response: Response;
+      try {
+        response = await fetch(request.endpoint, {
+          method: 'POST',
+          headers: { ...request.headers },
+          body: request.body,
+          signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
+        });
+      } catch {
+        return { result: 'transient', failureCode: PUSH_NETWORK_ERROR };
+      }
+
+      await response.body?.cancel().catch(() => undefined);
+
+      if (response.status < 200 || response.status >= 300) {
+        // The row id and the status, never the endpoint: it carries the
+        // device's token.
+        console.error(PROVIDER_STATUS, row.id, response.status);
+      }
+
+      const outcome = deviceOutcomeOfStatus(response.status);
+      if (outcome.result === 'gone') await deleteSubscription(device);
+      return outcome;
+    }),
+  );
+
+  return settlementOfDevices(outcomes);
 }
 
 function respond(status: number, body: { code: string; [operand: string]: unknown }): Response {
@@ -400,6 +716,30 @@ export function createHandler(
       return true;
     };
 
+    // A gone device: deleted, and nothing else. A failed delete is logged
+    // with the subscription's id; its next push answers 404 or 410 again.
+    const deleteSubscription = async (device: PushSubscriptionRow): Promise<void> => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let deleted: RpcAnswer | null;
+      try {
+        // Bounded like a send: a delete that never answers must not hold the
+        // row's settle, nor the run's time budget.
+        deleted = await Promise.race([
+          Promise.resolve(
+            client.rpc(DELETE_SUBSCRIPTION_RPC, { p_id: device.id, p_endpoint: device.endpoint, p_member: device.member_id }),
+          ),
+          new Promise<null>((resolve) => {
+            timer = setTimeout(() => resolve(null), SEND_TIMEOUT_MS);
+          }),
+        ]);
+      } catch {
+        deleted = null;
+      } finally {
+        if (timer !== undefined) clearTimeout(timer);
+      }
+      if (deleted === null || deleted.error !== null) console.error(PUSH_DELETE_FAILED, device.id);
+    };
+
     // Why the run stopped sending, if it did: every row after it is given
     // back untried, without spending its attempt.
     let stopped: typeof PROVIDER_UNAUTHORIZED | typeof RUN_DEADLINE | null = null;
@@ -426,15 +766,19 @@ export function createHandler(
         continue;
       }
 
-      // The pace: a send starts no sooner than PACE_MS after the last one.
-      if (lastSend !== null) {
+      // The pace: an email starts no sooner than PACE_MS after the last one.
+      // A push goes to the device's push service, not Resend, and is not paced.
+      if (lastSend !== null && row.channel !== 'push') {
         const wait = lastSend + PACE_MS - now();
         if (wait > 0) await sleep(wait);
       }
-      const usesProvider = (row.email ?? '').trim() !== '';
+      const usesProvider = row.channel !== 'push' && (row.email ?? '').trim() !== '';
       if (usesProvider) lastSend = now();
 
-      const delivery = await deliver(row, configuration.configuration, dependencies.fetch);
+      const delivery: Delivery =
+        row.channel === 'push'
+          ? await deliverPush(row, configuration.configuration, dependencies.fetch, dependencies.encryptPush, deleteSubscription)
+          : await deliverEmail(row, configuration.configuration, dependencies.fetch);
 
       if (delivery.result === 'stop') {
         stopped = delivery.failureCode;

@@ -13,7 +13,8 @@ import type { Session } from '@supabase/supabase-js';
  * no row was there, never a PostgREST upsert (an upsert's `do update` names
  * every column it sends, and update is granted on `email` only).
  *
- * The address is shown, never edited here (Ask First). Push is story 10.4.
+ * The address is shown, never edited here (Ask First). Push is its own
+ * section (story 10.4, `./push`).
  */
 
 export const NOTIFICATION_SETTINGS_KEY = ['notification-settings'] as const;

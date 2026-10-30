@@ -1,9 +1,11 @@
+import { createECDH, randomBytes } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import type { Client } from 'pg';
 import { describe, expect, it, vi } from 'vitest';
+import webpush from 'web-push';
 
 import { FIXTURES, inRolledBackTransaction, noDatabase, organizationId } from './database.js';
 import { formatIsoDate as spaFormatIsoDate } from '../apps/web/src/lib/i18n/format.ts';
@@ -32,12 +34,29 @@ import {
   RUN_DEADLINE_MS,
   SETTLE_RPC,
   CLIENT_CONSTRUCTION_FAILED,
+  DELETE_SUBSCRIPTION_RPC,
+  PUSH_DELETE_FAILED,
+  PUSH_ENCRYPTOR_MISSING,
+  PUSH_NETWORK_ERROR,
+  PUSH_NOT_CONFIGURED,
+  PUSH_NO_SUBSCRIPTION,
+  PUSH_SERVICE_RATE_LIMITED,
+  PUSH_SERVICE_REFUSED,
+  PUSH_SERVICE_UNAUTHORIZED,
+  PUSH_SERVICE_UNAVAILABLE,
+  PUSH_SUBSCRIPTION_GONE,
+  PUSH_SUBSCRIPTION_INVALID,
+  PUSH_TTL_SECONDS,
   createHandler,
   deliveryOfStatus,
+  deviceOutcomeOfStatus,
+  pushEncryptorOf,
+  settlementOfDevices,
   readConfiguration,
   sameSecret,
   type Fetch,
   type OutboxClient,
+  type PushEncryptor,
   type RpcAnswer,
 } from '../supabase/functions/notify/handler.ts';
 import {
@@ -48,6 +67,7 @@ import {
   SETTINGS_PATH,
   formatIsoDate,
   render,
+  renderPush,
 } from '../supabase/functions/notify/messages.ts';
 
 /**
@@ -86,6 +106,10 @@ const ENVIRONMENT: Readonly<Record<string, string>> = {
   RESEND_API_KEY: 're_test',
   NOTIFY_EMAIL_FROM: 'Shift <obavijesti@example.org>',
   SHIFT_APP_URL: APP_URL,
+  // Story 10.4: a key pair's shapes (65 and 32 bytes, unpadded base64url) and its subject.
+  VAPID_PUBLIC_KEY: `B${'a'.repeat(86)}`,
+  VAPID_PRIVATE_KEY: 'p'.repeat(43),
+  VAPID_SUBJECT: 'mailto:obavijesti@example.org',
 };
 
 const configured = readConfiguration((name) => ENVIRONMENT[name]);
@@ -117,6 +141,8 @@ interface FakeRow {
   timezone: string | null;
   slug: string | null;
   organization_name: string | null;
+  subscriptions?: unknown;
+  subject_id?: string;
 }
 
 function row(overrides: Partial<FakeRow> = {}): FakeRow {
@@ -147,15 +173,20 @@ function fakeClient(
 ) {
   const settles: { p_id: unknown; p_result: unknown; p_failure_code: unknown }[] = [];
   const tokens: unknown[] = [];
+  const deletes: Record<string, unknown>[] = [];
   const rpc = vi.fn((fn: string, args: Record<string, unknown>): Promise<RpcAnswer> => {
     if (fn === CLAIM_RPC) {
       return Promise.resolve(Array.isArray(rows) ? { data: rows, error: null } : (rows as RpcAnswer));
+    }
+    if (fn === DELETE_SUBSCRIPTION_RPC) {
+      deletes.push(args);
+      return Promise.resolve({ data: null, error: null });
     }
     settles.push({ p_id: args['p_id'], p_result: args['p_result'], p_failure_code: args['p_failure_code'] });
     tokens.push(args['p_claimed_at']);
     return settleAnswer(settles.length - 1);
   });
-  return { client: { rpc } satisfies OutboxClient, rpc, settles, tokens };
+  return { client: { rpc } satisfies OutboxClient, rpc, settles, tokens, deletes };
 }
 
 /** The handler over a fake client, with no real waiting. */
@@ -484,6 +515,31 @@ describe('notify reads its environment once, with one code per missing variable'
     const result = readConfiguration((key) => (key === name ? value : ENVIRONMENT[key]));
 
     expect(result).toEqual({ ok: false, code });
+  });
+
+  it.each([
+    ['VAPID_PUBLIC_KEY', '', 'VAPID_PUBLIC_KEY_MISSING'],
+    ['VAPID_PUBLIC_KEY', 'a'.repeat(43), 'VAPID_PUBLIC_KEY_INVALID'],
+    ['VAPID_PRIVATE_KEY', ' ', 'VAPID_PRIVATE_KEY_MISSING'],
+    ['VAPID_PRIVATE_KEY', `B${'a'.repeat(86)}`, 'VAPID_PRIVATE_KEY_INVALID'],
+    ['VAPID_SUBJECT', '', 'VAPID_SUBJECT_MISSING'],
+    ['VAPID_SUBJECT', 'obavijesti@example.org', 'VAPID_SUBJECT_INVALID'],
+    ['VAPID_SUBJECT', 'http://example.org', 'VAPID_SUBJECT_INVALID'],
+  ])('%s = %j still starts the function, with push alone off (%s): email never depends on push', (name, value, code) => {
+    const result = readConfiguration((key) => (key === name ? value : ENVIRONMENT[key]));
+
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.configuration.vapid).toBeNull();
+    expect(result.ok && result.configuration.vapidProblem).toBe(code);
+  });
+
+  it('reads the VAPID pair and subject when all three are set', () => {
+    expect(configured.ok && configured.configuration.vapid).toEqual({
+      publicKey: ENVIRONMENT['VAPID_PUBLIC_KEY'],
+      privateKey: ENVIRONMENT['VAPID_PRIVATE_KEY'],
+      subject: ENVIRONMENT['VAPID_SUBJECT'],
+    });
+    expect(configured.ok && configured.configuration.vapidProblem).toBeNull();
   });
 
   it.each(['obavijesti@example.org', 'Shift <obavijesti@example.org>', 'DVD Mladost <no-reply@mail.example.org>'])(
@@ -843,7 +899,7 @@ describe("notify's matrix against a fake client: one send per row, settled by th
   });
 });
 
-describe('notify may not think: it reaches the database through the two RPCs alone', () => {
+describe('notify may not think: it reaches the database through its three RPCs alone', () => {
   const sources = readdirSync(notifyRoot)
     .filter((name) => name.endsWith('.ts'))
     .map((name) => ({ name, source: readFileSync(join(notifyRoot, name), 'utf8') }));
@@ -857,8 +913,27 @@ describe('notify may not think: it reaches the database through the two RPCs alo
     expect(source).not.toMatch(/from\s+['"][^'"]*(@shift\/domain|packages\/domain|apps\/web)/);
   });
 
-  it('names exactly claim_notifications and settle_notification', () => {
-    expect([CLAIM_RPC, SETTLE_RPC]).toEqual(['claim_notifications', 'settle_notification']);
+  it('names exactly claim_notifications, settle_notification and delete_push_subscription', () => {
+    expect([CLAIM_RPC, SETTLE_RPC, DELETE_SUBSCRIPTION_RPC]).toEqual([
+      'claim_notifications',
+      'settle_notification',
+      'delete_push_subscription',
+    ]);
+    // Every RPC the handler names is one of the three.
+    const handler = sources.find(({ name }) => name === 'handler.ts')?.source ?? '';
+    const called = [...handler.matchAll(/client\.rpc\((\w+)/g)].map((match) => match[1]);
+    expect(new Set(called)).toEqual(new Set(['CLAIM_RPC', 'SETTLE_RPC', 'DELETE_SUBSCRIPTION_RPC']));
+  });
+
+  it('reads the VAPID keys in notify alone, and sends push through web-push in index.ts only (AD-17)', () => {
+    const index = sources.find(({ name }) => name === 'index.ts')?.source ?? '';
+    const handler = sources.find(({ name }) => name === 'handler.ts')?.source ?? '';
+    expect(index).toMatch(/from 'npm:web-push@\d+\.\d+\.\d+'/);
+    expect(index).toContain('generateRequestDetails');
+    // The builder only: the send is the handler's own fetch, asserted here.
+    expect(index).not.toContain('sendNotification');
+    expect(handler).not.toMatch(/from\s+['"]npm:web-push/);
+    for (const name of ['VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY', 'VAPID_SUBJECT']) expect(handler).toContain(`'${name}'`);
   });
 });
 
@@ -882,12 +957,18 @@ function serviceRoleClient(client: Client): OutboxClient {
           // would drop the microseconds and never match again.
           data = (
             await client.query(
-              `select id::text as id, code, channel, operands, attempts, claimed_at::text as claimed_at,
-                      email, locale, timezone, slug, organization_name
+              `select id::text as id, code, subject_id::text as subject_id, channel, operands, attempts,
+                      claimed_at::text as claimed_at, email, locale, timezone, slug, organization_name, subscriptions
                  from public.claim_notifications($1)`,
               [args['p_limit']],
             )
           ).rows;
+        } else if (fn === DELETE_SUBSCRIPTION_RPC) {
+          await client.query('select public.delete_push_subscription($1::uuid, $2, $3::uuid)', [
+            args['p_id'],
+            args['p_endpoint'],
+            args['p_member'],
+          ]);
         } else {
           await client.query('select public.settle_notification($1::uuid, $2::timestamptz, $3, $4)', [
             args['p_id'],
@@ -1274,19 +1355,601 @@ describe("notify's matrix against the real claim and settle (0042)", () => {
     });
   });
 
-  it.skipIf(noDatabase)('claims only email rows: no other channel is deliverable yet', async () => {
+  it.skipIf(noDatabase)('claims email and push rows, and no other channel (0045)', async () => {
     const [{ slug, member }] = FIXTURES;
     await inRolledBackTransaction(async (client) => {
       const { insert } = await arrange(client, slug, member, 'member@example.org');
       const id = await insert();
-      // A channel 10.4 will add, past the check for this probe only.
+      // A channel nobody writes, past the check for this probe only.
       await client.query('alter table notification_outbox drop constraint notification_outbox_channel_check');
-      await client.query(`update notification_outbox set channel = 'push' where id = $1`, [id]);
+      await client.query(`update notification_outbox set channel = 'sms' where id = $1`, [id]);
 
       const answer = await serviceRoleClient(client).rpc(CLAIM_RPC, { p_limit: 10 });
 
       expect(answer.data).toEqual([]);
     });
+  });
+});
+
+// ---------------------------------------------------------- story 10.4: push
+
+/** A device's keys, in the shapes 0045 checks (65 and 16 bytes, unpadded base64url). */
+const P256DH = `B${'k'.repeat(86)}`;
+const AUTH = 'a'.repeat(22);
+
+/**
+ * A fake `web-push`: the request it would build, with a VAPID header and an
+ * `aes128gcm` body, recording each payload it was asked to encrypt.
+ */
+function fakeEncryptor(): { encryptPush: PushEncryptor; payloads: string[]; ttls: number[] } {
+  const payloads: string[] = [];
+  const ttls: number[] = [];
+  const encryptPush: PushEncryptor = (subscription, payload, options) => {
+    payloads.push(payload);
+    ttls.push(options.ttl);
+    return {
+      endpoint: subscription.endpoint,
+      headers: {
+        TTL: String(options.ttl),
+        'Content-Type': 'application/octet-stream',
+        'Content-Encoding': 'aes128gcm',
+        Authorization: `vapid t=jwt-for-${new URL(subscription.endpoint).origin}, k=${options.vapid.publicKey}`,
+      },
+      body: new TextEncoder().encode(`encrypted:${subscription.keys.p256dh}:${subscription.keys.auth}`),
+    };
+  };
+  return { encryptPush, payloads, ttls };
+}
+
+const DEVICE_MEMBER = crypto.randomUUID();
+
+function device(index: number): { id: string; endpoint: string; p256dh: string; auth: string; member_id: string } {
+  return {
+    member_id: DEVICE_MEMBER,
+    id: crypto.randomUUID(),
+    endpoint: `https://fcm.googleapis.com/fcm/send/device-${index}`,
+    p256dh: P256DH,
+    auth: AUTH,
+  };
+}
+
+const SUBJECT_ID = crypto.randomUUID();
+
+/** What a delete must match: the id, the endpoint and the member the claim returned. */
+const deleteOf = (target: { id: string; endpoint: string; member_id: string }) => ({
+  p_id: target.id,
+  p_endpoint: target.endpoint,
+  p_member: target.member_id,
+});
+
+function pushRow(devices: readonly unknown[] | null, overrides: Partial<FakeRow> = {}): FakeRow {
+  return row({ channel: 'push', email: null, subscriptions: devices, subject_id: SUBJECT_ID, ...overrides });
+}
+
+/** A push service answering each endpoint with its own status. */
+function pushServices(answers: Readonly<Record<string, number | 'network'>>): ReturnType<typeof vi.fn<Fetch>> {
+  return vi.fn<Fetch>((url) => {
+    const answer = answers[url] ?? 201;
+    return answer === 'network'
+      ? Promise.reject(new TypeError('fetch failed'))
+      : Promise.resolve(new Response(null, { status: answer }));
+  });
+}
+
+describe('notify renders a push payload from the same message, without the email footer (story 10.4)', () => {
+  it.each(EVERY_CODE)('renders $code as the subject, the body and its link', ({ code, operands, path, subject, text }) => {
+    expect(renderPush(code, 'hr', operands, TARGET)).toEqual({
+      ok: true,
+      title: subject,
+      body: text.replace('{link}', linkTo(path)),
+      url: linkTo(path),
+    });
+  });
+
+  it('refuses what the email refuses', () => {
+    expect(renderPush('SOMETHING_ELSE', 'hr', {}, TARGET)).toEqual({ ok: false, code: MESSAGE_UNKNOWN });
+    expect(renderPush('LEAVE_REQUEST_APPROVED', 'hr', { startDate: '2046-03-02' }, TARGET)).toEqual({
+      ok: false,
+      code: OPERANDS_INVALID,
+    });
+  });
+});
+
+describe("notify's push matrix against a fake client and a fake web-push (story 10.4)", () => {
+  const handlerWith = (client: OutboxClient, fetch: Fetch, encryptPush?: PushEncryptor) =>
+    createHandler(configured, {
+      makeClient: () => client,
+      fetch,
+      sleep: instantly,
+      ...(encryptPush === undefined ? {} : { encryptPush }),
+    });
+
+  it('posts the encrypted payload with a VAPID header to every device, and settles the row sent', async () => {
+    const devices = [device(1), device(2)];
+    const claimed = pushRow(devices);
+    const { client, settles, deletes } = fakeClient([claimed]);
+    const fetch = pushServices({});
+    const { encryptPush, payloads, ttls } = fakeEncryptor();
+
+    const response = await handlerWith(client, fetch, encryptPush)(invoke());
+
+    expect(await response.json()).toMatchObject({ claimed: 1, sent: 1, failed: 0, retried: 0 });
+    expect(fetch.mock.calls.map(([url]) => url).sort()).toEqual(devices.map(({ endpoint }) => endpoint).sort());
+    for (const [, init] of fetch.mock.calls) {
+      const headers = init.headers as Record<string, string>;
+      expect(init.method).toBe('POST');
+      expect(headers['Authorization']).toMatch(new RegExp(`^vapid t=.+, k=${ENVIRONMENT['VAPID_PUBLIC_KEY'] ?? '?'}$`));
+      expect(headers['Content-Encoding']).toBe('aes128gcm');
+      expect(headers['TTL']).toBe(String(PUSH_TTL_SECONDS));
+      // Never Resend's: no idempotency key, no email key.
+      expect(headers['Idempotency-Key']).toBeUndefined();
+      expect(JSON.stringify(headers)).not.toContain('re_test');
+      expect(new TextDecoder().decode(init.body as Uint8Array)).toBe(`encrypted:${P256DH}:${AUTH}`);
+    }
+    expect(ttls).toEqual([PUSH_TTL_SECONDS, PUSH_TTL_SECONDS]);
+    expect(payloads.map((payload) => JSON.parse(payload) as unknown)).toEqual([
+      {
+        title: 'Zahtjev za godišnji 02.03.2046–06.03.2046 je odobren',
+        body: `${ORGANIZATION_NAME}: tvoj zahtjev za godišnji odmor 02.03.2046–06.03.2046 je odobren. Pogledaj ga u aplikaciji: ${linkTo('/godisnji')}`,
+        url: linkTo('/godisnji'),
+        // One notification per fact on a device: a re-send replaces it.
+        tag: `LEAVE_REQUEST_APPROVED:${SUBJECT_ID}`,
+      },
+      expect.anything(),
+    ]);
+    expect(payloads[0]).toBe(payloads[1]);
+    expect(payloads[0]).not.toContain('/obavijesti');
+    expect(settles).toEqual([{ p_id: claimed.id, p_result: 'sent', p_failure_code: null }]);
+    expect(deletes).toEqual([]);
+  });
+
+  it('deletes a device that answers 410 and settles the row sent when another accepted', async () => {
+    const [gone, live] = [device(1), device(2)];
+    const claimed = pushRow([gone, live]);
+    const { client, settles, deletes } = fakeClient([claimed]);
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await handlerWith(client, pushServices({ [gone.endpoint]: 410, [live.endpoint]: 201 }), fakeEncryptor().encryptPush)(invoke());
+
+    expect(deletes).toEqual([deleteOf(gone)]);
+    expect(settles).toEqual([{ p_id: claimed.id, p_result: 'sent', p_failure_code: null }]);
+    // The row id and the status, never the endpoint (it carries the device's token).
+    expect(errors).toHaveBeenCalledWith('PROVIDER_STATUS', claimed.id, 410);
+    expect(JSON.stringify(errors.mock.calls)).not.toContain(gone.endpoint);
+    errors.mockRestore();
+  });
+
+  it.each([404, 410])('deletes every device that answers %i and fails the row PUSH_SUBSCRIPTION_GONE', async (status) => {
+    const only = device(1);
+    const claimed = pushRow([only]);
+    const { client, settles, deletes } = fakeClient([claimed]);
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await handlerWith(client, pushServices({ [only.endpoint]: status }), fakeEncryptor().encryptPush)(invoke());
+
+    expect(deletes).toEqual([deleteOf(only)]);
+    expect(settles).toEqual([{ p_id: claimed.id, p_result: 'permanent', p_failure_code: PUSH_SUBSCRIPTION_GONE }]);
+    errors.mockRestore();
+  });
+
+  it('retries a row no device accepted when one failed transiently, and never stops the run on a push 401 or 403', async () => {
+    const [gone, busy] = [device(1), device(2)];
+    const refused = device(3);
+    const rows = [pushRow([gone, busy]), pushRow([refused]), row()];
+    const { client, settles, deletes } = fakeClient(rows);
+    const fetch = vi.fn<Fetch>((url) =>
+      Promise.resolve(
+        new Response(null, { status: url === gone.endpoint ? 410 : url === busy.endpoint ? 503 : url === refused.endpoint ? 403 : 200 }),
+      ),
+    );
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const response = await handlerWith(client, fetch, fakeEncryptor().encryptPush)(invoke());
+
+    expect(deletes).toEqual([deleteOf(gone)]);
+    expect(settles.map(({ p_result, p_failure_code }) => `${String(p_result)}:${String(p_failure_code)}`)).toEqual([
+      `transient:${PUSH_SERVICE_UNAVAILABLE}`,
+      `transient:${PUSH_SERVICE_UNAUTHORIZED}`,
+      'sent:null',
+    ]);
+    expect(await response.json()).not.toHaveProperty('stopped');
+    errors.mockRestore();
+  });
+
+  it('fails a push row the claim returned with no device PUSH_NO_SUBSCRIPTION, with no call', async () => {
+    const rows = [pushRow(null), pushRow([]), pushRow([{ id: 'x' }])];
+    const { client, settles } = fakeClient(rows);
+    const fetch = pushServices({});
+
+    await handlerWith(client, fetch, fakeEncryptor().encryptPush)(invoke());
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(settles.map(({ p_failure_code }) => p_failure_code)).toEqual([
+      PUSH_NO_SUBSCRIPTION,
+      PUSH_NO_SUBSCRIPTION,
+      PUSH_NO_SUBSCRIPTION,
+    ]);
+  });
+
+  it('fails a device whose keys cannot encrypt, and retries a row it cannot render or encrypt at all', async () => {
+    const broken = pushRow([device(1)]);
+    const unknown = pushRow([device(2)], { code: 'NOT_A_MESSAGE' });
+    const unwired = pushRow([device(3)]);
+    const throwing: PushEncryptor = () => {
+      throw new Error('bad key');
+    };
+    const fetch = pushServices({});
+
+    const first = fakeClient([broken, unknown]);
+    await handlerWith(first.client, fetch, throwing)(invoke());
+    const second = fakeClient([unwired]);
+    await handlerWith(second.client, fetch)(invoke());
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(first.settles.map(({ p_result, p_failure_code }) => `${String(p_result)}:${String(p_failure_code)}`)).toEqual([
+      `permanent:${PUSH_SUBSCRIPTION_INVALID}`,
+      `transient:${MESSAGE_UNKNOWN}`,
+    ]);
+    expect(second.settles).toEqual([{ p_id: unwired.id, p_result: 'transient', p_failure_code: PUSH_ENCRYPTOR_MISSING }]);
+  });
+
+  it('logs a failed delete with the subscription id alone, and still settles the row', async () => {
+    const only = device(1);
+    const claimed = pushRow([only]);
+    const settles: unknown[] = [];
+    const client: OutboxClient = {
+      rpc: (fn, args) => {
+        if (fn === CLAIM_RPC) return Promise.resolve({ data: [claimed], error: null });
+        if (fn === DELETE_SUBSCRIPTION_RPC) return Promise.reject(new Error('down'));
+        settles.push(args['p_failure_code']);
+        return Promise.resolve({ data: null, error: null });
+      },
+    };
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await handlerWith(client, pushServices({ [only.endpoint]: 410 }), fakeEncryptor().encryptPush)(invoke());
+
+    expect(errors).toHaveBeenCalledWith(PUSH_DELETE_FAILED, only.id);
+    expect(settles).toEqual([PUSH_SUBSCRIPTION_GONE]);
+    errors.mockRestore();
+  });
+
+  it.each([
+    ['missing', undefined],
+    ['malformed', 'not-a-key'],
+  ])('sends email as before and retries a push row PUSH_NOT_CONFIGURED when the VAPID key is %s', async (_label, value) => {
+    const unconfigured = readConfiguration((name) => (name === 'VAPID_PRIVATE_KEY' ? value : ENVIRONMENT[name]));
+    if (!unconfigured.ok) throw new Error('a VAPID problem stopped the function');
+    const email = row();
+    const pushed = pushRow([device(1)]);
+    const { client, settles } = fakeClient([email, pushed]);
+    const fetch = provider(200);
+
+    const response = await createHandler(unconfigured, {
+      makeClient: () => client,
+      fetch,
+      sleep: instantly,
+      encryptPush: fakeEncryptor().encryptPush,
+    })(invoke());
+
+    expect(response.status).toBe(200);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch.mock.calls[0]?.[0]).toBe(RESEND_ENDPOINT);
+    expect(settles).toEqual([
+      { p_id: email.id, p_result: 'sent', p_failure_code: null },
+      { p_id: pushed.id, p_result: 'transient', p_failure_code: PUSH_NOT_CONFIGURED },
+    ]);
+  });
+
+  it('settles the row though a gone device\'s delete never answers, within the send timeout', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const only = device(1);
+      const claimed = pushRow([only]);
+      const settles: unknown[] = [];
+      const client: OutboxClient = {
+        rpc: (fn, args) => {
+          if (fn === CLAIM_RPC) return Promise.resolve({ data: [claimed], error: null });
+          if (fn === DELETE_SUBSCRIPTION_RPC) return new Promise<RpcAnswer>(() => undefined);
+          settles.push(args['p_failure_code']);
+          return Promise.resolve({ data: null, error: null });
+        },
+      };
+      const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      const running = handlerWith(client, pushServices({ [only.endpoint]: 410 }), fakeEncryptor().encryptPush)(invoke());
+      await vi.advanceTimersByTimeAsync(SEND_TIMEOUT_MS + 1);
+      await running;
+
+      expect(settles).toEqual([PUSH_SUBSCRIPTION_GONE]);
+      expect(errors).toHaveBeenCalledWith(PUSH_DELETE_FAILED, only.id);
+      errors.mockRestore();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('builds a real encrypted request through web-push 3.6.7 (the adapter index.ts wires)', () => {
+    const vapid = webpush.generateVAPIDKeys();
+    const browser = createECDH('prime256v1');
+    browser.generateKeys();
+    const encrypt = pushEncryptorOf(webpush.generateRequestDetails as Parameters<typeof pushEncryptorOf>[0]);
+
+    const request = encrypt(
+      {
+        endpoint: 'https://fcm.googleapis.com/fcm/send/real',
+        keys: { p256dh: browser.getPublicKey('base64url'), auth: randomBytes(16).toString('base64url') },
+      },
+      JSON.stringify({ title: 't', body: 'b', url: 'u', tag: 'x' }),
+      { vapid: { subject: 'mailto:obavijesti@example.org', publicKey: vapid.publicKey, privateKey: vapid.privateKey }, ttl: PUSH_TTL_SECONDS },
+    );
+
+    expect(request.endpoint).toBe('https://fcm.googleapis.com/fcm/send/real');
+    expect(request.headers['Authorization']).toMatch(new RegExp(`^vapid t=[\\w-]+\\.[\\w-]+\\.[\\w-]+, k=${vapid.publicKey}$`));
+    expect(request.headers['Content-Encoding']).toBe('aes128gcm');
+    expect(request.headers['TTL']).toBe(String(PUSH_TTL_SECONDS));
+    expect(Number.isInteger(Number(request.headers['TTL']))).toBe(true);
+    expect(Object.keys(request.headers).map((name) => name.toLowerCase())).not.toContain('content-length');
+    expect(request.body).toBeInstanceOf(Uint8Array);
+    expect(request.body.length).toBeGreaterThan(0);
+    // Encrypted: the plaintext is not in the body.
+    expect(Buffer.from(request.body).toString('latin1')).not.toContain('"title"');
+  });
+
+  it('retries a row whose only device the network could not reach PUSH_NETWORK_ERROR, never Resend\'s code', async () => {
+    const only = device(1);
+    const claimed = pushRow([only]);
+    const { client, settles } = fakeClient([claimed]);
+
+    await handlerWith(client, pushServices({ [only.endpoint]: 'network' }), fakeEncryptor().encryptPush)(invoke());
+
+    expect(settles).toEqual([{ p_id: claimed.id, p_result: 'transient', p_failure_code: PUSH_NETWORK_ERROR }]);
+  });
+
+  it('does not pace a push: only the emails wait for each other', async () => {
+    let clock = 0;
+    const waits: number[] = [];
+    const { client } = fakeClient([row(), pushRow([device(1)]), pushRow([device(2)]), row()]);
+    const handle = createHandler(configured, {
+      makeClient: () => client,
+      fetch: pushServices({}),
+      encryptPush: fakeEncryptor().encryptPush,
+      now: () => clock,
+      sleep: (ms) => {
+        waits.push(ms);
+        clock += ms;
+        return Promise.resolve();
+      },
+    });
+
+    await handle(invoke());
+
+    expect(waits).toEqual([PACE_MS]);
+  });
+
+  it('maps each push answer: accepted, gone, or the email classification but for 401 and 403', () => {
+    expect(deviceOutcomeOfStatus(201)).toEqual({ result: 'accepted' });
+    expect(deviceOutcomeOfStatus(404)).toEqual({ result: 'gone' });
+    expect(deviceOutcomeOfStatus(410)).toEqual({ result: 'gone' });
+    expect(deviceOutcomeOfStatus(413)).toEqual({ result: 'permanent', failureCode: PUSH_SERVICE_REFUSED });
+    expect(deviceOutcomeOfStatus(429)).toEqual({ result: 'transient', failureCode: PUSH_SERVICE_RATE_LIMITED });
+    expect(deviceOutcomeOfStatus(401)).toEqual({ result: 'transient', failureCode: PUSH_SERVICE_UNAUTHORIZED });
+    expect(deviceOutcomeOfStatus(403)).toEqual({ result: 'transient', failureCode: PUSH_SERVICE_UNAUTHORIZED });
+    expect(deviceOutcomeOfStatus(502)).toEqual({ result: 'transient', failureCode: PUSH_SERVICE_UNAVAILABLE });
+    // Never Resend's codes: a failure says which channel failed.
+    for (const status of [401, 403, 408, 409, 413, 429, 500, 503]) {
+      expect(String((deviceOutcomeOfStatus(status) as { failureCode?: string }).failureCode)).toMatch(/^PUSH_/);
+    }
+
+    expect(settlementOfDevices([])).toEqual({ result: 'permanent', failureCode: PUSH_NO_SUBSCRIPTION });
+    expect(settlementOfDevices([{ result: 'gone' }, { result: 'gone' }])).toEqual({
+      result: 'permanent',
+      failureCode: PUSH_SUBSCRIPTION_GONE,
+    });
+    expect(
+      settlementOfDevices([{ result: 'permanent', failureCode: PROVIDER_REFUSED }, { result: 'transient', failureCode: NETWORK_ERROR }]),
+    ).toEqual({ result: 'transient', failureCode: NETWORK_ERROR });
+    expect(settlementOfDevices([{ result: 'gone' }, { result: 'permanent', failureCode: PROVIDER_REFUSED }])).toEqual({
+      result: 'permanent',
+      failureCode: PROVIDER_REFUSED,
+    });
+  });
+});
+
+/** Gives the fixture member `count` devices and writes one push row for them, as the owner. */
+async function arrangePush(
+  client: Client,
+  slug: string,
+  username: string,
+  count: number,
+): Promise<{ organization: string; member: string; devices: { id: string; endpoint: string }[]; push: () => Promise<string> }> {
+  const { organization, member } = await arrange(client, slug, username, null);
+  const devices: { id: string; endpoint: string }[] = [];
+  for (let index = 0; index < count; index += 1) {
+    const { rows } = await client.query<{ id: string; endpoint: string }>(
+      `insert into push_subscriptions (organization_id, member_id, endpoint, p256dh, auth)
+       values ($1, $2, $3, $4, $5) returning id::text as id, endpoint`,
+      [organization, member, `https://fcm.googleapis.com/fcm/send/${member}-${index}`, P256DH, AUTH],
+    );
+    const inserted = rows[0];
+    if (inserted !== undefined) devices.push(inserted);
+  }
+  const push = async (): Promise<string> => {
+    const { rows } = await client.query<{ id: string }>(
+      `insert into notification_outbox (organization_id, code, subject_id, recipient_member_id, channel, operands)
+       values ($1, 'LEAVE_REQUEST_APPROVED', gen_random_uuid(), $2, 'push', '{"startDate":"2046-03-02","endDate":"2046-03-06"}')
+       returning id::text as id`,
+      [organization, member],
+    );
+    const id = rows[0]?.id;
+    if (id === undefined) throw new Error('outbox insert returned no row');
+    return id;
+  };
+  return { organization, member, devices, push };
+}
+
+describe("notify's push matrix against the real claim, settle and delete (0045)", () => {
+  const run = (client: Client, fetch: Fetch): Promise<Response> =>
+    createHandler(configured, {
+      makeClient: () => serviceRoleClient(client),
+      fetch,
+      sleep: instantly,
+      encryptPush: fakeEncryptor().encryptPush,
+    })(invoke());
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    "claims a $fixture push row with its member's devices and posts to each, with no address needed",
+    async ({ slug, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const { devices, push, member: memberId } = await arrangePush(client, slug, member, 2);
+        const id = await push();
+
+        const claimed = await serviceRoleClient(client).rpc(CLAIM_RPC, { p_limit: 10 });
+        expect(claimed.data, slug).toEqual([
+          expect.objectContaining({
+            id,
+            channel: 'push',
+            email: null,
+          }),
+        ]);
+        // Every device, in no promised order (one transaction gives them one `created_at`).
+        const returned = ((claimed.data as { subscriptions: { id: string }[] }[])[0]?.subscriptions ?? []).toSorted((a, b) =>
+          a.id.localeCompare(b.id),
+        );
+        expect(returned).toEqual(
+          devices
+            .map(({ id: deviceId, endpoint }) => ({ id: deviceId, endpoint, p256dh: P256DH, auth: AUTH, member_id: memberId }))
+            .toSorted((a, b) => a.id.localeCompare(b.id)),
+        );
+
+        await client.query('update notification_outbox set claimed_at = null, attempts = 0 where id = $1', [id]);
+        const fetch = pushServices({});
+        await run(client, fetch);
+
+        expect(fetch.mock.calls.map(([url]) => url).sort()).toEqual(devices.map(({ endpoint }) => endpoint).sort());
+        expect(await stateOf(client, id)).toMatchObject({ sent: true, failed: false });
+      });
+    },
+  );
+
+  it.skipIf(noDatabase)('deletes the gone device, keeps the other, and settles the row sent', async () => {
+    const [{ slug, member }] = FIXTURES;
+    await inRolledBackTransaction(async (client) => {
+      const { devices, push } = await arrangePush(client, slug, member, 2);
+      const [gone, live] = devices;
+      const id = await push();
+      const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      await run(client, pushServices({ [gone?.endpoint ?? '']: 410, [live?.endpoint ?? '']: 201 }));
+      errors.mockRestore();
+
+      const { rows } = await client.query<{ id: string }>('select id::text as id from push_subscriptions where id = any($1::uuid[])', [
+        devices.map(({ id: deviceId }) => deviceId),
+      ]);
+      expect(rows.map(({ id: deviceId }) => deviceId)).toEqual([live?.id]);
+      expect(await stateOf(client, id)).toMatchObject({ sent: true });
+    });
+  });
+
+  it.skipIf(noDatabase)('deletes the only device on 404 and fails the row PUSH_SUBSCRIPTION_GONE, changing nothing else', async () => {
+    const [{ slug, member }] = FIXTURES;
+    await inRolledBackTransaction(async (client) => {
+      const { organization, devices, push } = await arrangePush(client, slug, member, 1);
+      const id = await push();
+      const before = await client.query('select count(*)::int as n from members where organization_id = $1', [organization]);
+      const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      await run(client, pushServices({ [devices[0]?.endpoint ?? '']: 404 }));
+      errors.mockRestore();
+
+      const { rows } = await client.query('select 1 from push_subscriptions where id = $1', [devices[0]?.id]);
+      expect(rows).toEqual([]);
+      expect(await stateOf(client, id)).toMatchObject({ failed: true, failureCode: PUSH_SUBSCRIPTION_GONE });
+      const after = await client.query('select count(*)::int as n from members where organization_id = $1', [organization]);
+      expect(after.rows).toEqual(before.rows);
+    });
+  });
+
+  it.skipIf(noDatabase)('settles a queued push row PUSH_NO_SUBSCRIPTION at claim once its last device is gone, and returns it to no one', async () => {
+    const [{ slug, member }] = FIXTURES;
+    await inRolledBackTransaction(async (client) => {
+      const { devices, push } = await arrangePush(client, slug, member, 1);
+      const id = await push();
+      await client.query('delete from push_subscriptions where id = $1', [devices[0]?.id]);
+
+      const fetch = pushServices({});
+      const response = await run(client, fetch);
+
+      expect(await response.json()).toMatchObject({ claimed: 0 });
+      expect(fetch).not.toHaveBeenCalled();
+      expect(await stateOf(client, id)).toMatchObject({ attempts: 0, failed: true, failureCode: PUSH_NO_SUBSCRIPTION });
+    });
+  });
+
+  it.skipIf(noDatabase)('lets service_role alone delete a subscription by id', async () => {
+    const [{ slug, member }] = FIXTURES;
+    await inRolledBackTransaction(async (client) => {
+      const { devices, member: memberId } = await arrangePush(client, slug, member, 1);
+      const { rows } = await client.query<{ role: string; held: boolean }>(
+        `select role, has_function_privilege(role, 'public.delete_push_subscription(uuid, text, uuid)', 'execute') as held
+           from unnest(array['anon', 'authenticated', 'service_role']) as role`,
+      );
+      expect(Object.fromEntries(rows.map(({ role, held }) => [role, held]))).toEqual({
+        anon: false,
+        authenticated: false,
+        service_role: true,
+      });
+
+      const target = { p_id: devices[0]?.id, p_endpoint: devices[0]?.endpoint, p_member: memberId };
+      const answer = await serviceRoleClient(client).rpc(DELETE_SUBSCRIPTION_RPC, target);
+      const again = await serviceRoleClient(client).rpc(DELETE_SUBSCRIPTION_RPC, target);
+      expect(answer.error).toBeNull();
+      expect(again.error, 'a device already gone is no error').toBeNull();
+    });
+  });
+
+  it.skipIf(noDatabase)('keeps a device re-registered to another member after the claim, though its old owner\'s push answered 410', async () => {
+    const [{ slug, member, bystander }] = FIXTURES;
+    await inRolledBackTransaction(async (client) => {
+      const { organization, devices, push, member: memberId } = await arrangePush(client, slug, member, 1);
+      const id = await push();
+      const claimed = (await serviceRoleClient(client).rpc(CLAIM_RPC, { p_limit: 10 })).data as { claimed_at: string }[];
+      // Between the claim and the send, the bystander signs in on that phone and turns push on.
+      await client.query(
+        `update push_subscriptions set member_id = (select id from members where organization_id = $1 and username = $2)
+          where id = $3`,
+        [organization, bystander, devices[0]?.id],
+      );
+      // The run that holds the claim answers 410 for the old subscription.
+      const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const handle = createHandler(configured, {
+        makeClient: () => ({
+          rpc: (fn: string, args: Record<string, unknown>) =>
+            fn === CLAIM_RPC
+              ? Promise.resolve({
+                  data: [
+                    {
+                      ...pushRow(
+                        [{ id: devices[0]?.id, endpoint: devices[0]?.endpoint, p256dh: P256DH, auth: AUTH, member_id: memberId }],
+                        { id, claimed_at: claimed[0]?.claimed_at ?? '' },
+                      ),
+                    },
+                  ],
+                  error: null,
+                })
+              : serviceRoleClient(client).rpc(fn as typeof SETTLE_RPC, args),
+        }),
+        fetch: pushServices({ [devices[0]?.endpoint ?? '']: 410 }),
+        sleep: instantly,
+        encryptPush: fakeEncryptor().encryptPush,
+      });
+      await handle(invoke());
+      errors.mockRestore();
+
+      const { rows } = await client.query('select 1 from push_subscriptions where id = $1', [devices[0]?.id]);
+      expect(rows, "a stale 410 deleted another member's live device").toHaveLength(1);
+    });
+
   });
 });
 
