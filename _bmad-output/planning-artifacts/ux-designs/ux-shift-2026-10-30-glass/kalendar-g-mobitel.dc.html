@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="hr">
+<head>
+<meta charset="utf-8">
+<title>Kalendar G — mobitel</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#2F55B8}a:hover{color:#1E3B87}
+.glass{background:rgba(255,255,255,.58);backdrop-filter:blur(24px) saturate(160%);-webkit-backdrop-filter:blur(24px) saturate(160%);border:1px solid rgba(255,255,255,.8);box-shadow:0 10px 40px rgba(30,40,70,.10)}
+.blob{position:absolute;border-radius:999px;filter:blur(60px);opacity:.75}
+.dy{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 0;border-radius:16px;font:inherit;font-size:11.5px;color:#5B6478;border:0;background:transparent}
+.dy b{font-size:17px;color:#111827;font-weight:600;font-variant-numeric:tabular-nums}
+.dy.on{background:#111827;color:#C7CDD9}
+.dy.on b{color:#FFFFFF}
+.sc{border-radius:22px;padding:16px;display:flex;flex-direction:column;gap:10px}
+.av{width:30px;height:30px;border-radius:99px;border:2px solid rgba(255,255,255,.9);margin-left:-8px;background:#DCE3EF;font-size:10.5px;font-weight:600;display:flex;align-items:center;justify-content:center;color:#24304A}
+.tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:10.5px;font-weight:500;color:#3C465C;text-decoration:none;border-radius:22px}
+.tab.on{background:rgba(255,255,255,.9);color:#2F55B8;font-weight:600}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; position: relative; overflow: hidden; display: flex; flex-direction: column; gap: 14px; padding: 18px 16px 0; background: #E8EDF5; color: #111827; font-family: Outfit, system-ui, sans-serif;">
+  <div class="blob" aria-hidden="true" style="width: 320px; height: 320px; left: -110px; top: -90px; background: #B9D3FF;"></div>
+  <div class="blob" aria-hidden="true" style="width: 300px; height: 300px; right: -120px; top: 260px; background: #E2CCFF;"></div>
+  <div class="blob" aria-hidden="true" style="width: 300px; height: 300px; left: -60px; bottom: -80px; background: #C6F0E2;"></div>
+  <header style="position: relative; display: flex; align-items: center; gap: 10px;">
+    <div><div style="font-size: 13px; color: #5B6478;">Listopad 2026</div><h1 style="margin: 0; font-size: 30px; font-weight: 600; letter-spacing: -0.03em;">Petak, 30.</h1></div>
+    <div style="flex: 1;"></div>
+    <button class="glass" aria-label="Filtri" style="font: inherit; width: 46px; height: 46px; border-radius: 16px; display: flex; align-items: center; justify-content: center; color: #111827;"><svg aria-hidden="true" width="19" height="19" viewBox="0 0 256 256" fill="currentColor" style="flex: 0 0 auto;"><path d="M227.81,66.76l-.08.09L160,139.17v55.49A16,16,0,0,1,152.87,208l-32,21.34A16,16,0,0,1,96,216V139.17L28.27,66.85l-.08-.09A16,16,0,0,1,40,40H216a16,16,0,0,1,11.84,26.76Z"/></svg></button>
+  </header>
+  <div class="glass" style="position: relative; display: flex; gap: 2px; padding: 5px; border-radius: 22px;">
+    <sc-for list="{{week}}" as="w" hint-placeholder-count="7"><button class="dy {{w.cls}}" aria-pressed="{{w.on}}">{{w.wd}}<b>{{w.n}}</b></button></sc-for>
+  </div>
+  <a href="#" class="glass" style="position: relative; display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 20px; text-decoration: none; color: #111827;">
+    <span style="width: 36px; height: 36px; border-radius: 12px; background: #D93A46; color: #FFFFFF; display: flex; align-items: center; justify-content: center;"><svg aria-hidden="true" width="19" height="19" viewBox="0 0 256 256" fill="currentColor" style="flex: 0 0 auto;"><path d="M236.8,188.09,149.35,36.22h0a24.76,24.76,0,0,0-42.7,0L19.2,188.09a23.51,23.51,0,0,0,0,23.72A24.35,24.35,0,0,0,40.55,224h174.9a24.35,24.35,0,0,0,21.33-12.19A23.51,23.51,0,0,0,236.8,188.09ZM120,104a8,8,0,0,1,16,0v40a8,8,0,0,1-16,0Zm8,88a12,12,0,1,1,12-12A12,12,0,0,1,128,192Z"/></svg></span>
+    <span style="flex: 1; font-size: 13.5px;"><b style="font-weight: 600;">Konflikt u Smjeni C</b><br><span style="color: #5B6478;">Ana Kovač je na godišnjem</span></span>
+    <svg aria-hidden="true" width="14" height="14" viewBox="0 0 256 256" fill="currentColor" style="flex: 0 0 auto;"><path d="M181.66,133.66l-80,80A8,8,0,0,1,88,208V48a8,8,0,0,1,13.66-5.66l80,80A8,8,0,0,1,181.66,133.66Z"/></svg>
+  </a>
+  <section class="sc" aria-label="Dan, Smjena C" style="position: relative; background: rgba(214,230,255,.92); color: #123B7A; box-shadow: inset 0 0 0 2px #D93A46;">
+    <div style="display: flex; align-items: center; gap: 8px;"><span style="font-size: 18px; font-weight: 600;">Dan</span><span style="font-size: 13px; opacity: .8; font-variant-numeric: tabular-nums;">07:00–19:00</span><span style="margin-left: auto; font-size: 13px; font-weight: 600;">4 od 5</span></div>
+    <div style="display: flex; align-items: center; justify-content: space-between;"><span style="font-size: 15px; font-weight: 600;">Smjena C</span><span style="display: flex; padding-left: 8px;"><span class="av">IM</span><span class="av">MH</span><span class="av">LB</span><span class="av">PN</span></span></div>
+  </section>
+  <section class="sc" aria-label="Noć, Smjena D" style="position: relative; background: rgba(35,45,110,.92); color: #E3E8FF;">
+    <div style="display: flex; align-items: center; gap: 8px;"><span style="font-size: 18px; font-weight: 600;">Noć</span><span style="font-size: 13px; opacity: .8; font-variant-numeric: tabular-nums;">19:00–07:00</span><span style="margin-left: auto; font-size: 13px; font-weight: 600;">5 od 5</span></div>
+    <div style="display: flex; align-items: center; justify-content: space-between;"><span style="font-size: 15px; font-weight: 600;">Smjena D</span><span style="display: flex; padding-left: 8px;"><span class="av">JJ</span><span class="av">TP</span><span class="av">FŠ</span><span class="av">+2</span></span></div>
+  </section>
+  <div class="glass" style="position: relative; border-radius: 18px; padding: 12px 14px; font-size: 13.5px; color: #3C465C;">Slobodno: Smjena A, Smjena B</div>
+  <nav class="glass" aria-label="Glavna navigacija" style="position: absolute; left: 16px; right: 16px; bottom: 18px; height: 66px; padding: 6px; box-sizing: border-box; display: flex; gap: 4px; border-radius: 30px;">
+    <a class="tab" href="#"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 256 256" fill="currentColor" style="flex: 0 0 auto;"><path d="M120,56v48a16,16,0,0,1-16,16H56a16,16,0,0,1-16-16V56A16,16,0,0,1,56,40h48A16,16,0,0,1,120,56Zm80-16H152a16,16,0,0,0-16,16v48a16,16,0,0,0,16,16h48a16,16,0,0,0,16-16V56A16,16,0,0,0,200,40Zm-96,96H56a16,16,0,0,0-16,16v48a16,16,0,0,0,16,16h48a16,16,0,0,0,16-16V152A16,16,0,0,0,104,136Zm96,0H152a16,16,0,0,0-16,16v48a16,16,0,0,0,16,16h48a16,16,0,0,0,16-16V152A16,16,0,0,0,200,136Z"/></svg>Danas</a>
+    <a class="tab on" href="#" aria-current="page"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 256 256" fill="currentColor" style="flex: 0 0 auto;"><path d="M208,32H184V24a8,8,0,0,0-16,0v8H88V24a8,8,0,0,0-16,0v8H48A16,16,0,0,0,32,48V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V48A16,16,0,0,0,208,32ZM84,184a12,12,0,1,1,12-12A12,12,0,0,1,84,184Zm44,0a12,12,0,1,1,12-12A12,12,0,0,1,128,184Zm0-40a12,12,0,1,1,12-12A12,12,0,0,1,128,144Zm44,40a12,12,0,1,1,12-12A12,12,0,0,1,172,184Zm0-40a12,12,0,1,1,12-12A12,12,0,0,1,172,144Zm36-64H48V48H72v8a8,8,0,0,0,16,0V48h80v8a8,8,0,0,0,16,0V48h24Z"/></svg>Kalendar</a>
+    <a class="tab" href="#"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 256 256" fill="currentColor" style="flex: 0 0 auto;"><path d="M208,32H48A16,16,0,0,0,32,48V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V48A16,16,0,0,0,208,32Zm0,176H48V168H76.69L96,187.32A15.89,15.89,0,0,0,107.31,192h41.38A15.86,15.86,0,0,0,160,187.31L179.31,168H208v40Z"/></svg>Za odluku</a>
+    <a class="tab" href="#"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 256 256" fill="currentColor" style="flex: 0 0 auto;"><path d="M64.12,147.8a4,4,0,0,1-4,4.2H16a8,8,0,0,1-7.8-6.17,8.35,8.35,0,0,1,1.62-6.93A67.79,67.79,0,0,1,37,117.51a40,40,0,1,1,66.46-35.8,3.94,3.94,0,0,1-2.27,4.18A64.08,64.08,0,0,0,64,144C64,145.28,64,146.54,64.12,147.8Zm182-8.91A67.76,67.76,0,0,0,219,117.51a40,40,0,1,0-66.46-35.8,3.94,3.94,0,0,0,2.27,4.18A64.08,64.08,0,0,1,192,144c0,1.28,0,2.54-.12,3.8a4,4,0,0,0,4,4.2H240a8,8,0,0,0,7.8-6.17A8.33,8.33,0,0,0,246.17,138.89Zm-89,43.18a48,48,0,1,0-58.37,0A72.13,72.13,0,0,0,65.07,212,8,8,0,0,0,72,224H184a8,8,0,0,0,6.93-12A72.15,72.15,0,0,0,157.19,182.07Z"/></svg>Ljudi</a>
+    <a class="tab" href="#"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 256 256" fill="currentColor" style="flex: 0 0 auto;"><path d="M172,120a44,44,0,1,1-44-44A44.05,44.05,0,0,1,172,120Zm60,8A104,104,0,1,1,128,24,104.11,104.11,0,0,1,232,128Zm-16,0a88.09,88.09,0,0,0-91.47-87.93C77.43,41.89,39.87,81.12,40,128.25a87.65,87.65,0,0,0,22.24,58.16A79.71,79.71,0,0,1,84,165.1a4,4,0,0,1,4.83.32,59.83,59.83,0,0,0,78.28,0,4,4,0,0,1,4.83-.32,79.71,79.71,0,0,1,21.79,21.31A87.62,87.62,0,0,0,216,128Z"/></svg>Više</a>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const WD = ['pon', 'uto', 'sri', 'čet', 'pet', 'sub', 'ned'];
+    const nums = [26, 27, 28, 29, 30, 31, 1];
+    const week = nums.map((n, i) => ({ n, wd: WD[i], on: n === 30 ? 'true' : 'false', cls: n === 30 ? 'on' : '' }));
+    return { week };
+  }
+}
+</script>
+</body>
+</html>

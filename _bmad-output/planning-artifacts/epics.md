@@ -336,6 +336,14 @@ An admin reads who changed what and when — before and after, deletions include
 **Standalone:** attribution already exists on every asserted row; this epic records every write and makes it readable.
 **Implementation notes:** an Architect pass precedes 14.1. It amends AD-3 (a second permitted trigger class: append-only audit triggers that compute and refuse nothing) and AD-11 (the change history reads `audit_events`), and resolves the spine's Deferred "conflict-resolution history". Admin only (decision D4). Q12 as amended is proven here.
 
+### Epic 15: The app looks current, and still reads at a glance (added 2026-10-30, sprint change)
+
+Users said the app looks old-fashioned. Every screen takes direction G, "Staklo": light glass chrome over a pale page, Outfit, Phosphor icons and ink actions, in both themes. A pilot user still finds each answer in one glance, and nothing a conflict, a slot or a number says has changed.
+
+**Capabilities covered:** none. It reworks the surfaces of every shipped epic.
+**Standalone:** every story restyles a surface that already works. No behaviour, data or copy changes.
+**Implementation notes:** the source is `sprint-change-proposal-2026-10-30-glass-redesign.md` and the G mockups in `ux-designs/ux-shift-2026-10-30-glass/`. 15.1 is a pilot, held unmerged until the product owner accepts it on a phone. Each story updates the DESIGN.md, EXPERIENCE.md and UX-DR lines it changes in the same PR.
+
 
 ---
 
@@ -2443,3 +2451,64 @@ So that I can hand it on.
 **When** the admin chooses `Izvezi u PDF`
 **Then** the file holds exactly the filtered rows in their order, built from the rendered snapshot and never a second read, with the organization name, the period and the generation time (UX-DR51, AD-13)
 **And** the PDF writer is lazily loaded in `apps/web` only, and the spine's Stack table names its pinned version
+
+---
+
+## Epic 15: The app looks current, and still reads at a glance
+
+Users said the app looks old-fashioned. Every screen takes direction G, "Staklo": light glass chrome over a pale page, Outfit, Phosphor icons and ink actions, in both themes. A pilot user still finds each answer in one glance, and nothing a conflict, a slot or a number says has changed.
+
+Added 2026-10-30 by `sprint-change-proposal-2026-10-30-glass-redesign.md` (decisions D1–D10 accepted as recommended). Mockups: `ux-designs/ux-shift-2026-10-30-glass/`. 15.1 is a pilot, held unmerged until the product owner accepts it on a phone (D8). Each story updates the DESIGN.md, EXPERIENCE.md and UX-DR lines it changes in the same PR (proposal §4.2–4.4).
+
+**Capabilities:** none (reworks shipped surfaces) · **UX:** UX-DR1, 3, 5, 11, 26, 31/32 (form only), 40, 45, new 53
+
+| Id | Story | Depends on |
+|---|---|---|
+| 15.1 | Pilot: *Kalendar* and the shell in glass, on real data, on a phone | 10.3 merged (§2.6) |
+| 15.2 | Every primitive and layered surface in glass, restyled once | 15.1 accepted |
+| 15.3 | Member surfaces read in glass: sign-in, Danas, Sati, Godišnji, Ljudi, error pages | 15.2 |
+| 15.4 | Admin surfaces read in glass: Za odluku, decisions, member page, day detail, rotation, Organizacija | 15.2 |
+| 15.5 | Glass holds in the dark theme, without blur support, and on a low-end phone | 15.3, 15.4 |
+| 15.6 | *(optional, outside v1 unless D6)* A week view on the desktop and a day view on the phone | 15.1, PRD edit |
+
+### Story 15.1: Pilot: *Kalendar* and the shell in glass, on real data, on a phone
+
+As the product owner,
+I want to use *Kalendar* in direction G on my own phone with real data,
+So that I decide on glass from the app and not from a mockup.
+
+**Acceptance Criteria:**
+
+- **Given** the tokens, **when** `index.css` is read, **then** the page backdrop, both glass alphas, the reading alpha, blur, saturate, border and shadow exist in **both** themes. The page backdrop is `#E8EDF5` with three static radial-gradient blobs, never a `filter: blur()`. `primary`, the ink button pair and the radii follow D3, and every value round-trips with DESIGN.md (`theme-fidelity`).
+- **Given** any text, **when** it renders, **then** it is Outfit (self-hosted, latin and latin-ext), every digit uses `tnum`, and DM Sans, Syne and Shift Figures are no longer shipped (D1, `typography-coverage`).
+- **Given** a desktop, **when** any signed-in route renders, **then** the sidebar is a floating glass panel inset from the viewport edge. Its active row is a white pill **and** semibold **and** carries a non-colour indicator with `aria-current`. Every row is at least 44 px tall. The organization's accent tints only the lockup tile and the edge (D5).
+- **Given** a phone, **when** any signed-in route renders, **then** the tab bar is a floating glass pill above the safe area, with four tabs plus *Više* (UX-DR31/32 unchanged). The page reserves its height, so the last row is reachable. Its text clears 4.5:1 against the darkest content that can scroll under it.
+- **Given** *Kalendar* (month toolbar, filter chips and sheet, the grid in both modes, *Moj raspored*'s day list, legend, skeleton), **when** it renders in either theme, **then** it is in G. Cells are opaque slot fills with their label, ring and glyph unchanged (D4). The legend is present. The month grid's cells keep a radius of at most 10 px.
+- **Given** any icon in the app, **when** it renders, **then** it comes from `components/ui/icon.tsx` and is a Phosphor `fill` glyph. No file imports `lucide-react`, and the leave and uncovered marks are still told apart by shape (D2).
+- **Given** the built app, **when** the main chunk is measured against `main`, **then** the change in icons and fonts is recorded in the PR.
+- **Given** the PR, **when** it is ready, **then** it is **not merged** until the product owner has opened `dvd-demo` on their phone and given go or no-go (D8).
+- **Given** this story ships, **then** DESIGN.md (front matter, Brand & Style, Colors, Typography, Elevation, Shapes, Shell) and UX-DR40 are updated in the same PR.
+
+### Story 15.2: Every primitive and layered surface in glass, restyled once
+
+Covers Button (`default` = ink, D3; `outline`, `ghost`, `sidebar` → `chrome`), Card (reading alpha), Input, Badge, Notice, Callout, IconTile, StatCard, StatTile, Table, StackedList, RadioCard and RadioRow, PageHeader, Dialog and ConfirmDialog (glass panel, tinted `::backdrop` with no blur), Popover, the docked sheets (*Više*, filter sheet), and Timeline (its own `dark` tone token, no longer the sidebar pair). No screen file changes, except where a pin moves. Updates DESIGN.md §Components and UX-DR11 and UX-DR45 (icon names).
+
+### Story 15.3: Member surfaces read in glass
+
+Covers sign-in and set-password (auth layout on the backdrop), Danas (both roles, duty-block, admin cards with *Treba tebe*'s `destructive` edge unchanged), Sati and *Moji sati*, Godišnji and *Zatraži*, the Ljudi directory, `/obavijesti`, error, not-found and pending. Screen-level fixes only where composition is wrong. Updates EXPERIENCE.md §Responsive.
+
+### Story 15.4: Admin surfaces read in glass
+
+Covers Za odluku (tabs, rows), the resolution and request decision screens (resolution-option, consequence-strip), Ljudi and the member page with its dialogs, the day detail and its change dialogs, the rotation builder and its sticky save bar, Organizacija, hour bands and teams.
+
+### Story 15.5: Glass holds in the dark theme, without blur support, and on a low-end phone
+
+- The dark glass values are tuned and pinned.
+- `theme-contrast` measures every text and boundary pair on glass against the worst-case backdrop in both themes.
+- `@supports not (backdrop-filter)`, `prefers-reduced-transparency: reduce` and `forced-colors: active` each render solid, which a test pins.
+- The performance budget (§4.4) is measured on a low-end Android, and the trace is linked from the PR. NFR-22 still holds.
+- EXPERIENCE.md §Accessibility Floor and the new UX-DR53 are written.
+
+### Story 15.6 (optional): A week view on the desktop and a day view on the phone
+
+This is new functionality: a Dan/Tjedan/Mjesec switch, a seven-column week of shift cards, and a phone day agenda with a week strip, per-team coverage (`4 od 5`) and avatars. It needs the PRD's out-of-scope line amended and a new FR, so it is not part of the redesign.

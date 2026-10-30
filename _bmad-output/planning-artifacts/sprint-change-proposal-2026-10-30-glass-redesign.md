@@ -4,7 +4,7 @@
 - **Author:** Developer (correct-course), for Perolipotic
 - **Mode:** Batch, run non-interactively. Every question the workflow would ask the human is in §6, *Decisions for the product owner*, with a recommendation.
 - **Scope classification:** Moderate. It adds a new epic and rewrites several DESIGN.md sections. There is no PRD or architecture change, unless decision D6 brings the week view into v1.
-- **Status:** Proposed. It waits for the product owner's decisions D1–D10.
+- **Status:** Approved 2026-10-30. The product owner accepted D1–D10 as recommended. §4.1, §4.6 and the mockup copy are applied; the UX-DR and DESIGN.md edits ship with the stories.
 
 ---
 
@@ -59,8 +59,8 @@
 | 4.1 Direct adjustment | Viable | A new epic of 5 stories, plus 1 optional. |
 | 4.2 Rollback | Not viable | Nothing to revert. Every surface works. |
 | 4.3 MVP review | Not needed | v1 scope holds. Only D6 would touch it. |
-| 6.3 Approval | [!] | Pending (§6). |
-| 6.4 sprint-status | [!] | Apply when approved (§4.6). |
+| 6.3 Approval | [x] | Approved 2026-10-30, D1–D10 as recommended. |
+| 6.4 sprint-status | [x] | Applied (§4.6). |
 
 ### 2.2 Epic impact
 
