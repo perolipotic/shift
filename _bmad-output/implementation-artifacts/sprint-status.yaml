@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 10-30-2026 13:10
+last_updated: 10-30-2026 13:25
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -587,8 +587,8 @@ development_status:
   10-1-the-outbox-and-the-notify-function: done
   10-2-email-tells-people-what-concerns-them: done
   10-3-notification-settings-in-vise: done
-  10-4-web-push-reaches-members-without-email: review
-  epic-10-retrospective: optional
+  10-4-web-push-reaches-members-without-email: done
+  epic-10-retrospective: done
 
   epic-11: backlog
   11-1-the-staffing-rule-and-the-minimum-members-setting: backlog
@@ -790,3 +790,39 @@ action_items:
     owner: "Perolipotic (bmad-build spec template)"
     status: open
     ref: "_bmad-output/implementation-artifacts/epic-8-9-retro-2026-10-28.md"
+  - id: "epic-10-retro-item-24-a1-a9-fix-the-epic-10-cross-story-defect"
+    epic: 10
+    action: "A1–A9: fix the Epic 10 cross-story defects F1–F7, F10, F11 (channel-scoped
+      stop, device ownership at send, claim activity check, one decision rule, cross-org
+      sign-in link, push link origin, time budget, DEPLOY order, copy)"
+    owner: "Dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-10-retro-2026-10-30.md"
+  - id: "epic-10-retro-item-25-a10-a11-amend-the-architecture-spine-ad"
+    epic: 10
+    action: "A10–A11: amend the architecture spine (AD-9, 14, 17, 18) and reconcile
+      epic-10-context, EXPERIENCE.md, spec frontmatter and stale deferred-work entries"
+    owner: "Dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-10-retro-2026-10-30.md"
+  - id: "epic-10-retro-item-26-a12-fix-the-time-of-day-flake-in-today-s"
+    epic: 10
+    action: "A12: fix the time-of-day flake in today.spec.ts:529 and make a red main
+      block merges"
+    owner: "Dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-10-retro-2026-10-30.md"
+  - id: "epic-10-retro-item-27-a13-bmad-build-customization-ad-amendmen"
+    epic: 10
+    action: "A13: bmad-build customization: AD amendments carry a spine task, decide-in-X
+      deferrals become inputs, resolving stories mark deferred entries"
+    owner: "Dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-10-retro-2026-10-30.md"
+  - id: "epic-10-retro-item-28-a14-parallel-sessions-never-share-a-dev"
+    epic: 10
+    action: "A14: parallel sessions never share a dev-server port silently (e2e refuses
+      a foreign server or per-worktree ports)"
+    owner: "Dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-10-retro-2026-10-30.md"
