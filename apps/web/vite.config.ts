@@ -65,10 +65,11 @@ export default defineConfig({
     // The colour is `--background` in the light theme; the dark one stays in
     // `index.html`'s `theme-color` pair, which the manifest format cannot hold.
     //
-    // The PNG icons in `public/` were generated once from `favicon.svg`, and
-    // are committed rather than generated on each build:
-    //   pnpm dlx @vite-pwa/assets-generator@2.0.0 --preset minimal-2023 public/favicon.svg
-    // (its `favicon.ico` and 64 px icon were not kept; nothing links them).
+    // The PNG icons in `public/` are rendered from `favicon.svg` (the rotation
+    // ring on ink, 2026-10-30) and committed rather than generated on each
+    // build: 192 and 512 keep the rounded corners on transparency; the
+    // maskable 512 and the 180 Apple touch icon are the same drawing full
+    // bleed (no corner radius), because the platform applies its own mask.
     //
     // The worker precaches the app shell only. It has no runtime caching, so
     // a Supabase request (or any other cross-origin one) always goes to the
