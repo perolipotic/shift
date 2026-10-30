@@ -19,6 +19,7 @@ import {
   type ResolvedConflictRow,
   type ResolvedConflictsView,
 } from '@/features/conflicts/services/resolved-conflicts';
+import { leaveRecordChangeMessageKey } from '@/features/leave/services/leave-request-list';
 import { initLocalization, t } from '@/lib/i18n';
 import {
   PILOT,
@@ -372,14 +373,22 @@ describe('decided leave requests beside resolved conflicts (story 9.5)', () => {
   /** A request row as `leave_requests` answers it, with its decision embedded. */
   function requestOf(
     id: string,
-    { closedAt = null as string | null, outcome = null as string | null, by = ADMIN_AUTH, at = '2026-09-02T10:00:00+00:00', memberId = ANA } = {},
+    {
+      closedAt = null as string | null,
+      outcome = null as string | null,
+      by = ADMIN_AUTH,
+      at = '2026-09-02T10:00:00+00:00',
+      memberId = ANA,
+      change = null as string | null,
+    } = {},
   ): Row {
     return {
       id,
       member_id: memberId,
       during: '[2026-10-05,2026-10-10)',
       closed_at: closedAt,
-      leave_request_decisions: outcome === null ? [] : [{ outcome, decided_by: by, decided_at: at }],
+      leave_request_decisions:
+        outcome === null ? [] : [{ outcome, decided_by: by, decided_at: at, leave_record_change: change }],
     };
   }
 
@@ -405,6 +414,7 @@ describe('decided leave requests beside resolved conflicts (story 9.5)', () => {
       item: ITEM_REQUEST,
       key: 'request:req-approved',
       outcome: 'approved',
+      recordChange: null,
       dateShown: '05.10.2026',
       memberName: 'Ana Anić',
       from: '05.10.2026',
@@ -432,6 +442,21 @@ describe('decided leave requests beside resolved conflicts (story 9.5)', () => {
       expect.objectContaining({ item: ITEM_REQUEST, key: 'request:req-closed', outcome: 'closedOnDeactivation', actorName: 'Damir Dekanić' }),
     ]);
     expect(t('godisnji.request.status.closedOnDeactivation')).toBe('Zatvoren deaktivacijom');
+  });
+
+  it.each([
+    ['amended', 'Godišnji je naknadno izmijenjen.'],
+    ['removed', 'Godišnji je naknadno uklonjen.'],
+  ] as const)('keeps an approved request whose leave was %s since as Odobren, with the change beside it (0047)', (change, words) => {
+    const view = fullViewOf(
+      [],
+      [requestOf('req-changed', { closedAt: '2026-09-02T10:00:00+00:00', outcome: 'approved', change })],
+    );
+
+    expect(view.rows).toEqual([
+      expect.objectContaining({ item: ITEM_REQUEST, key: 'request:req-changed', outcome: 'approved', recordChange: change }),
+    ]);
+    expect(t(leaveRecordChangeMessageKey(change))).toBe(words);
   });
 
   it('lists neither a pending nor a withdrawn request', () => {

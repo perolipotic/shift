@@ -119,6 +119,10 @@ export const HOUR_BAND_WRITE_DEPENDENTS: readonly QueryKey[] = [CALENDAR_KEY];
  * every unresolved surface reads them. Since story 7.15 the admin's leave
  * overview on *Godišnji* reads the organization's records under a key of its
  * own, and every list naming the organization's records names it beside them.
+ * Since 0047 the leave requests too: an approved request reads whether its
+ * leave record was amended or removed since, on *Odlučeno* (the
+ * organization's requests), on its decision screen and on the viewer's own
+ * *Godišnji* list.
  */
 export const LEAVE_WRITE_DEPENDENTS: readonly QueryKey[] = [
   MY_LEAVE_RECORDS_KEY,
@@ -126,6 +130,9 @@ export const LEAVE_WRITE_DEPENDENTS: readonly QueryKey[] = [
   LEAVE_OVERVIEW_RECORDS_KEY,
   MY_CONFLICT_RESOLUTIONS_KEY,
   ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
+  MY_LEAVE_REQUESTS_KEY,
+  ORGANIZATION_LEAVE_REQUESTS_KEY,
+  LEAVE_REQUEST_ROOT_KEY,
 ];
 
 /**
@@ -158,7 +165,8 @@ export const LEAVE_REQUEST_REJECTION_DEPENDENTS: readonly QueryKey[] = LEAVE_REQ
  */
 export const LEAVE_REQUEST_APPROVAL_DEPENDENTS: readonly QueryKey[] = [
   ...LEAVE_REQUEST_WRITE_DEPENDENTS,
-  ...LEAVE_WRITE_DEPENDENTS,
+  // Since 0047 the leave writes name the request keys too: each once.
+  ...LEAVE_WRITE_DEPENDENTS.filter((key) => !LEAVE_REQUEST_WRITE_DEPENDENTS.includes(key)),
 ];
 
 /**

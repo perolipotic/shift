@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 
 import { LeaveRequestReviewPage } from '../../pages/conflicts.page.ts';
 import {
+  changeApprovedLeaveInSql,
   holdRotation,
   removeLeaveMemberInSql,
   removeLeaveRecordsInSql,
@@ -571,6 +572,16 @@ test('lists a pending request beside the collisions, by date and naming its kind
   await expect(conflictsPage.resolvedEntries.filter({ hasText: range(withdrawn) })).toHaveCount(0);
   // The newest decision first: the approval just made.
   await expect(entries.nth(0)).toContainText(range(pending));
+  await expect(approvedEntry).not.toContainText(hr.godisnji.request.recordRemoved);
+
+  // 0047: AN ADMIN REMOVES THE APPROVED LEAVE LATER. The entry keeps Odobren,
+  // and says the leave was removed since; the rejection says nothing.
+  await changeApprovedLeaveInSql(fixture.slug, requestId, { kind: 'removed' });
+  await page.reload();
+  await conflictsPage.resolvedTab.click();
+  await expect(approvedEntry).toContainText(hr.godisnji.request.status.approved);
+  await expect(approvedEntry).toContainText(hr.godisnji.request.recordRemoved);
+  await expect(rejectedEntry).not.toContainText(hr.godisnji.request.recordRemoved);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expectNoHorizontalScroll(page);

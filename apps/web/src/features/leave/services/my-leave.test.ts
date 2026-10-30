@@ -4,6 +4,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { readCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { memberScheduleInputOf } from '@/features/calendar/utils/month';
 import {
+  LEAVE_FROM_FIELD,
   LEAVE_PREVIEW_READY,
   LEAVE_PREVIEW_REASON,
   LEAVE_RANGE_INCOMPLETE,
@@ -26,12 +27,14 @@ import {
 import {
   REQUEST_DENIED,
   REQUEST_FAILED,
+  REQUEST_IN_PAST,
   REQUEST_NOT_PENDING,
   REQUEST_OVERLAPS_LEAVE,
   REQUEST_OVERLAPS_REQUEST,
   REQUEST_MEMBER_INACTIVE,
 } from '@/features/leave/services/leave-request-write';
 import {
+  LEAVE_REQUEST_IN_PAST,
   LEAVE_REQUEST_SENT_STATE,
   MY_LEAVE_LOADING,
   MY_LEAVE_READY,
@@ -45,6 +48,7 @@ import {
   leaveRequestSentValuesOf,
   myLeaveMessageKey,
   myLeaveRequestPreviewOf,
+  myLeaveRequestEarliestOf,
   myLeaveRequestClosedMessageKey,
   myLeaveRequestReasonMessageKey,
   myLeaveRequestSendMessageKey,
@@ -433,8 +437,9 @@ describe("the request form's preview (story 9.3)", () => {
   });
 
   it("warns, never refuses, over the viewer's own leave: the database decides", () => {
-    const leave = readyOf(myLeaveOf(sourcesOf(pilot, { records: rowsOf([WORKED]) }), NOW));
-    const state = myLeaveRequestPreviewOf(leave, '2026-09-12', '2026-09-16');
+    const ahead = rowOf('record-ahead', '2026-10-12', '2026-10-17');
+    const leave = readyOf(myLeaveOf(sourcesOf(pilot, { records: rowsOf([WORKED, ahead]) }), NOW));
+    const state = myLeaveRequestPreviewOf(leave, '2026-10-14', '2026-10-18');
 
     expect(state?.kind).toBe(LEAVE_PREVIEW_READY);
     if (state?.kind === LEAVE_PREVIEW_READY) expect(state.preview.overlapsRecord).toBe(true);
@@ -459,6 +464,29 @@ describe("the request form's preview (story 9.3)", () => {
     expect(myLeaveRequestPreviewOf(leave, from, to)).toMatchObject({ kind: LEAVE_PREVIEW_REASON, reason });
   });
 
+  it.each([
+    ['a range that ended', '2026-09-10', '2026-09-14'],
+    ['a range that started yesterday', '2026-09-25', '2026-09-30'],
+    ['a past start with no end yet', '2026-09-25', ''],
+    ['a past start after its end', '2026-09-25', '2026-09-20'],
+  ] as const)('refuses %s on Od, before any other reason: past leave is an admin\'s to record (0047)', (_name, from, to) => {
+    const leave = readyOf(myLeaveOf(sourcesOf(pilot), NOW));
+
+    expect(myLeaveRequestPreviewOf(leave, from, to)).toEqual({
+      kind: LEAVE_PREVIEW_REASON,
+      reason: LEAVE_REQUEST_IN_PAST,
+      field: LEAVE_FROM_FIELD,
+    });
+  });
+
+  it("takes a range starting on the organization's today, and offers it as the earliest date (0047)", () => {
+    const leave = readyOf(myLeaveOf(sourcesOf(pilot), NOW));
+
+    expect(myLeaveRequestPreviewOf(leave, '2026-09-26', '2026-09-28')?.kind).toBe(LEAVE_PREVIEW_READY);
+    expect(myLeaveRequestEarliestOf(leave)).toBe('2026-09-26');
+    expect(myLeaveRequestEarliestOf({ kind: MY_LEAVE_LOADING })).toBeNull();
+  });
+
   it('is nothing while the figures are not ready', () => {
     expect(myLeaveRequestPreviewOf({ kind: MY_LEAVE_LOADING }, '2026-10-05', '2026-10-07')).toBeNull();
     expect(myLeaveRequestPreviewOf({ kind: MY_LEAVE_UNSCHEDULED }, '2026-10-05', '2026-10-07')).toBeNull();
@@ -476,14 +504,23 @@ describe("the request form's preview (story 9.3)", () => {
       'godisnji.request.refused',
       'godisnji.request.refused',
     ]);
+    expect(myLeaveRequestReasonMessageKey(LEAVE_REQUEST_IN_PAST)).toBe('godisnji.request.inPastReason');
     expect(
-      ([REQUEST_OVERLAPS_LEAVE, REQUEST_OVERLAPS_REQUEST, REQUEST_MEMBER_INACTIVE, REQUEST_DENIED, REQUEST_FAILED] as const).map(
-        (code) => myLeaveRequestSendMessageKey(code),
-      ),
+      (
+        [
+          REQUEST_OVERLAPS_LEAVE,
+          REQUEST_OVERLAPS_REQUEST,
+          REQUEST_MEMBER_INACTIVE,
+          REQUEST_IN_PAST,
+          REQUEST_DENIED,
+          REQUEST_FAILED,
+        ] as const
+      ).map((code) => myLeaveRequestSendMessageKey(code)),
     ).toEqual([
       'godisnji.request.overlapsLeave',
       'godisnji.request.overlapsRequest',
       'godisnji.request.memberInactive',
+      'godisnji.request.inPast',
       'godisnji.request.denied',
       'godisnji.request.failed',
     ]);

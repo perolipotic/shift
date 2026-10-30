@@ -40,6 +40,7 @@ import {
   MESSAGE_KEYS,
   messageKeyUnion,
   messageKeyUnions,
+  LEAVE_REQUEST_LIST_KEYS,
   MY_LEAVE_KEYS,
   NAVIGATION_MESSAGE_KEYS,
   NOT_FOUND,
@@ -1119,10 +1120,20 @@ export const KEY_SOURCES = [
     // TWENTY-FIVE SINCE 0041: a send refused because the member is inactive
     // in the range, the fifth status word (*Zatvoren deaktivacijom*) and its
     // closing date's line.
+    // TWENTY-SEVEN SINCE 0047: the past start, as the form's reason and as
+    // the database's refusal.
     name: 'the Godišnji rules',
     file: MY_LEAVE_KEYS,
     keys: memberListKeys,
-    strings: 25,
+    strings: 27,
+  },
+  {
+    // 0047: the line under an approved request whose leave an admin amended
+    // or removed since, on *Godišnji* and on *Odlučeno* alike.
+    name: 'the leave request record change',
+    file: LEAVE_REQUEST_LIST_KEYS,
+    keys: messageKeyUnions,
+    strings: 2,
   },
   {
     // STORY 4.1b: the hours' one failure, a read or a domain refusal alike.

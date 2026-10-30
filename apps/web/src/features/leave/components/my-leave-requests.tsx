@@ -9,7 +9,7 @@ import type {
   LeaveRequestWithdrawRefusal,
   LeaveRequestWithdrawn,
 } from '@/features/leave/hooks/use-my-leave-requests';
-import { REQUEST_PENDING } from '@/features/leave/services/leave-request-list';
+import { REQUEST_PENDING, leaveRecordChangeMessageKey } from '@/features/leave/services/leave-request-list';
 import {
   MY_LEAVE_REQUESTS_HEADING_ID,
   MY_REQUESTS_LOADING,
@@ -29,7 +29,8 @@ import { keepFocusOnAlert } from '@/utils/retry-focus';
  * *Moji zahtjevi za godišnji* (story 9.3): the viewer's own leave requests,
  * soonest first — each its range, what it would cost, its status as a WORD in
  * a badge (*Čeka odluku*, *Odobren*, *Odbijen*, *Povučen*) and, once closed,
- * the date — and *Povuci zahtjev* on a pending one, with no confirmation: a
+ * the date; an approved one whose leave an admin amended or removed since
+ * says so under its badge (0047) — and *Povuci zahtjev* on a pending one, with no confirmation: a
  * withdrawn range can be sent again. Offline the button is gated and the note
  * says why. `myLeaveRequestsOf` decides every row; this only draws them.
  */
@@ -83,6 +84,9 @@ export function MyLeaveRequests({
               </dd>
             </div>
           </dl>
+          {row.request.recordChange === null ? null : (
+            <p className="text-sm">{t(leaveRecordChangeMessageKey(row.request.recordChange))}</p>
+          )}
           {closed === null || row.closedOn === null ? null : (
             <p className="text-sm text-muted-foreground tabular-nums">{t(closed, { date: row.closedOn })}</p>
           )}

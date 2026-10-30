@@ -280,7 +280,20 @@ describe('the reads a team or membership write makes stale', () => {
       // (*Godišnji*), and since story 5.3b the organization's, which the
       // conflicts queue derives from; never another member's. Since story
       // 5.4a both resolution reads, which a removal or an amend can end.
-      stale: [LEAVE_A, MY_LEAVE_RECORDS_KEY, ORGANIZATION_LEAVE_RECORDS_KEY, LEAVE_OVERVIEW_RECORDS_KEY, MY_CONFLICT_RESOLUTIONS_KEY, ORGANIZATION_CONFLICT_RESOLUTIONS_KEY],
+      // Since 0047 the requests, whose approved ones read what became of
+      // their leave record.
+      stale: [
+        LEAVE_A,
+        MY_LEAVE_RECORDS_KEY,
+        ORGANIZATION_LEAVE_RECORDS_KEY,
+        LEAVE_OVERVIEW_RECORDS_KEY,
+        MY_CONFLICT_RESOLUTIONS_KEY,
+        ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
+        MY_LEAVE_REQUESTS_KEY,
+        REQUEST_A,
+        REQUEST_B,
+        ORGANIZATION_LEAVE_REQUESTS_KEY,
+      ],
     },
     {
       write: 'a leave request sent or withdrawn (story 9.3)',

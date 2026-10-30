@@ -4,6 +4,7 @@ import type { Page } from '@playwright/test';
 
 import {
   API_URL,
+  changeApprovedLeaveInSql,
   holdRotation,
   leaveYearStartOf,
   removeLeaveMemberInSql,
@@ -45,7 +46,10 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * leave and one over their pending request are refused by the database and
  * named, the form keeping its values; *Povuci zahtjev* withdraws a pending
  * request with no confirmation; a seeded approved, rejected and withdrawn
- * request each read their own word with no withdrawal; offline *Pošalji* and
+ * request each read their own word with no withdrawal; a start before today
+ * is refused on *Od* before any request (0047), and an approved request whose
+ * leave an admin later amended or removed keeps *Odobren* and says which
+ * (0047); offline *Pošalji* and
  * *Povuci zahtjev* state the connection need and send nothing; and an admin
  * opening the form is sent to the overview.
  */
@@ -327,6 +331,67 @@ test.describe('a member requests leave', () => {
     await expect(leavePage.requestsList.getByRole('button', { name: request.withdraw })).toHaveCount(0);
     // The approval's leave record is live leave: its Dan and Noć are charged to their leave year.
     await expect(leavePage.usedFigure).toHaveText(plural(days, inYear(...approved)));
+  });
+
+  test("refuses a start before today on Od, saying past leave is the admin's, and sends nothing (0047)", async ({
+    page,
+    loginPage,
+    leavePage,
+    fixture,
+  }) => {
+    test.slow();
+    const { member, today } = await seeded(fixture.slug);
+    const writes = spyOnWrites(page);
+
+    await loginPage.signIn(fixture.slug, member.username, member.password);
+    await page.goto('/godisnji/zatrazi');
+    // Neither date picker offers a day before the organization's today.
+    await expect(leavePage.requestFrom).toHaveAttribute('min', today);
+    await expect(leavePage.requestTo).toHaveAttribute('min', today);
+
+    // A PAST START, typed past the picker: the reason names it, and the send refuses it here.
+    await leavePage.enterRequest(addDays(today, -1), addDays(today, 1));
+    await expect(leavePage.text(request.inPastReason)).toBeVisible();
+    await leavePage.sendButton.click();
+    await expect(leavePage.requestFrom).toHaveAttribute('aria-invalid', 'true');
+    await expect(leavePage.requestFrom).toBeFocused();
+    await expect(page).toHaveURL(/\/godisnji\/zatrazi$/);
+    expect(writes()).toEqual([]);
+
+    // From today it is a request like any other.
+    await leavePage.requestFrom.fill(today);
+    await expect(leavePage.text(request.inPastReason)).toHaveCount(0);
+    await expect(leavePage.requestFigure(request.cost)).toBeVisible();
+  });
+
+  test('keeps Odobren on an approved request whose leave an admin later amended or removed, and says which (0047)', async ({
+    loginPage,
+    leavePage,
+    fixture,
+  }) => {
+    test.slow();
+    const { member, at } = await seeded(fixture.slug);
+    const live = [at(8), at(9)] as const;
+    const amended = [at(16), at(17)] as const;
+    const removed = [at(24), at(25)] as const;
+    await seedLeaveRequest(fixture.slug, member.id, ...live, 'approved');
+    const amendedId = await seedLeaveRequest(fixture.slug, member.id, ...amended, 'approved');
+    const removedId = await seedLeaveRequest(fixture.slug, member.id, ...removed, 'approved');
+    await changeApprovedLeaveInSql(fixture.slug, amendedId, { kind: 'amended', from: at(16), to: at(18) });
+    await changeApprovedLeaveInSql(fixture.slug, removedId, { kind: 'removed' });
+
+    await loginPage.signIn(fixture.slug, member.username, member.password);
+    await leavePage.goto();
+    const rows = leavePage.requestsList.getByRole('listitem');
+    await expect(rows).toHaveCount(3);
+    for (const row of [rows.nth(0), rows.nth(1), rows.nth(2)]) await expect(row).toContainText(request.status.approved);
+    await expect(rows.nth(0)).toContainText(rangeLabel(...live));
+    await expect(rows.nth(0)).not.toContainText(request.recordAmended);
+    await expect(rows.nth(0)).not.toContainText(request.recordRemoved);
+    await expect(rows.nth(1)).toContainText(rangeLabel(...amended));
+    await expect(rows.nth(1)).toContainText(request.recordAmended);
+    await expect(rows.nth(2)).toContainText(rangeLabel(...removed));
+    await expect(rows.nth(2)).toContainText(request.recordRemoved);
   });
 
   test('across the leave-year start: the cost, and the part this year is charged beside it', async ({

@@ -247,6 +247,9 @@ export const LEAVE_REQUEST: readonly string[] = Object.values(LEAVE_REQUEST_PART
 /** Story 5.2c's rules: the screen's two lines and its three tiles' labels. */
 export const MY_LEAVE_KEYS = join(LEAVE_FEATURE, 'services', 'my-leave.ts');
 
+/** 0047's rule: the line under an approved request whose leave changed since, off `leaveRecordChangeMessageKey`. */
+export const LEAVE_REQUEST_LIST_KEYS = join(LEAVE_FEATURE, 'services', 'leave-request-list.ts');
+
 /** E884's rules: the overview's Stanje options and chip values, off `\w*MessageKey` unions. */
 export const LEAVE_OVERVIEW_KEYS = join(LEAVE_FEATURE, 'services', 'leave-overview.ts');
 

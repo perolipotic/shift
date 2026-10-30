@@ -4,6 +4,8 @@ import type { CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { calendarTodayOf, memberScheduleInputOf } from '@/features/calendar/utils/month';
 import { leaveRecordsOf } from '@/features/leave/services/leave-list';
 import {
+  LEAVE_FROM_FIELD,
+  LEAVE_PREVIEW_REASON,
   LEAVE_RANGE_INCOMPLETE,
   LEAVE_RANGE_REFUSED,
   LEAVE_RANGE_REVERSED,
@@ -32,6 +34,7 @@ import {
 import {
   REQUEST_DENIED,
   REQUEST_FAILED,
+  REQUEST_IN_PAST,
   REQUEST_MEMBER_INACTIVE,
   REQUEST_NOT_PENDING,
   REQUEST_OVERLAPS_LEAVE,
@@ -39,7 +42,7 @@ import {
   type LeaveRequestSendFailure,
   type LeaveRequestWithdrawFailure,
 } from '@/features/leave/services/leave-request-write';
-import { RANGE_DASH, formatIsoDate, organizationIsoDate } from '@/lib/i18n/format';
+import { RANGE_DASH, formatIsoDate, isIsoDate, organizationIsoDate } from '@/lib/i18n/format';
 
 /**
  * *Godišnji* (story 5.2c): the viewer's own allowance, the days used in the
@@ -280,31 +283,67 @@ export const LEAVE_REQUEST_ERROR_ID = 'leave-request-error';
 export const MY_LEAVE_REQUESTS_HEADING_ID = 'my-leave-requests-heading';
 
 /**
+ * RETRO 8–9 ITEM 17 (0047): the request's first day is before the
+ * organization's today. Past leave is recorded by an admin, so the form
+ * refuses it before any request, as the database does.
+ */
+export const LEAVE_REQUEST_IN_PAST = 'inPast';
+
+/** The reasons the request form names: the admin dialog's, and the past start. */
+export type LeaveRequestReason = LeaveRangeReason | typeof LEAVE_REQUEST_IN_PAST;
+
+/** The request form's preview: the admin dialog's states, or the past start on *Od*. */
+export type LeaveRequestPreviewState =
+  | LeavePreviewState
+  | {
+      readonly kind: typeof LEAVE_PREVIEW_REASON;
+      readonly reason: typeof LEAVE_REQUEST_IN_PAST;
+      readonly field: typeof LEAVE_FROM_FIELD;
+    };
+
+/**
+ * The earliest first day the request form takes (0047): the organization's
+ * today, as the figures' input holds it; null while the figures are not ready.
+ */
+export function myLeaveRequestEarliestOf(leave: MyLeave): string | null {
+  return leave.kind === MY_LEAVE_READY ? leave.input.today : null;
+}
+
+/**
  * STORY 9.3: *Zatraži godišnji*. What the entered range would cost and the
  * balance after it, as the domain's `leavePreviewOf` over the very input the
  * three figures stand on (`leavePreviewStateOf`, the admin dialog's rule, with
  * no record amended): a reason in place of the preview while a date is
  * incomplete, the range is reversed, it is longer than 366 days, or the
- * domain refuses it. Null while the figures are not ready. A NOTE, NEVER A
- * GATE: over the balance or over the viewer's own leave, the request is sent,
- * and the database decides. Pending requests charge nothing, so they are no
- * part of the input and no part of the balance after it.
+ * domain refuses it. Since retro 8–9 item 17 (0047) a first day before the
+ * organization's today is a reason too, on *Od*, named as soon as *Od* is a
+ * date and before any other. Null while the figures are not ready. A NOTE,
+ * NEVER A GATE: over the balance or over the viewer's own leave, the request
+ * is sent, and the database decides. Pending requests charge nothing, so they
+ * are no part of the input and no part of the balance after it.
  */
-export function myLeaveRequestPreviewOf(leave: MyLeave, from: string, to: string): LeavePreviewState | null {
+export function myLeaveRequestPreviewOf(leave: MyLeave, from: string, to: string): LeaveRequestPreviewState | null {
   if (leave.kind !== MY_LEAVE_READY) return null;
+
+  if (isIsoDate(from) && from < leave.input.today) {
+    return { kind: LEAVE_PREVIEW_REASON, reason: LEAVE_REQUEST_IN_PAST, field: LEAVE_FROM_FIELD };
+  }
 
   return leavePreviewStateOf(leave.input, from, to);
 }
 
 /** The reason line's key, in the request form's own words. Exhaustive. */
 export function myLeaveRequestReasonMessageKey(
-  reason: LeaveRangeReason,
+  reason: LeaveRequestReason,
 ):
+  | 'godisnji.request.inPastReason'
   | 'godisnji.request.incomplete'
   | 'godisnji.request.reversed'
   | 'godisnji.request.tooLong'
   | 'godisnji.request.refused' {
   switch (reason) {
+    case LEAVE_REQUEST_IN_PAST:
+      return 'godisnji.request.inPastReason';
     case LEAVE_RANGE_INCOMPLETE:
       return 'godisnji.request.incomplete';
     case LEAVE_RANGE_REVERSED:
@@ -331,6 +370,7 @@ export function myLeaveRequestSendMessageKey(
   | 'godisnji.request.overlapsLeave'
   | 'godisnji.request.overlapsRequest'
   | 'godisnji.request.memberInactive'
+  | 'godisnji.request.inPast'
   | 'godisnji.request.denied'
   | 'godisnji.request.failed' {
   switch (code) {
@@ -340,6 +380,8 @@ export function myLeaveRequestSendMessageKey(
       return 'godisnji.request.overlapsRequest';
     case REQUEST_MEMBER_INACTIVE:
       return 'godisnji.request.memberInactive';
+    case REQUEST_IN_PAST:
+      return 'godisnji.request.inPast';
     case REQUEST_DENIED:
       return 'godisnji.request.denied';
     case REQUEST_FAILED:
