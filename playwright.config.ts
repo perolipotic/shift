@@ -7,6 +7,10 @@ import { defineConfig, devices } from '@playwright/test';
  *
  * Every run provisions its own organization in globalSetup and deletes it in
  * globalTeardown (`e2e/utils/run-fixture.ts`). See `e2e/README.md`.
+ *
+ * `reuseExistingServer` keeps a Vite already on the port, but globalSetup
+ * refuses one that another checkout started (`requireOwnDevServer`, retro 10
+ * A14): a parallel session's server never silently serves this run.
  */
 
 const BASE_URL = 'http://127.0.0.1:5173';

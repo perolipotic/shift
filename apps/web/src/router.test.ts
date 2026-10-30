@@ -66,7 +66,7 @@ import {
   PostavkeRotacijeTipSmjeneScreen,
   postavkeRotacijeTipSmjeneRoute,
 } from '@/pages/postavke-rotacije.tipovi-smjena.$id';
-import { prijavaBareRoute, prijavaRoute, SignInScreen } from '@/pages/prijava';
+import { prijavaBareRoute, prijavaRoute, SignInScreen, SlugSignInScreen } from '@/pages/prijava';
 import { rasporedRoute } from '@/pages/raspored';
 import { rasporedCollisionRoute } from '@/pages/raspored.$memberId.$date.$teamId';
 import { SatiScreen, satiRoute } from '@/pages/sati';
@@ -507,10 +507,12 @@ describe('the shell route tree', () => {
     // still resolves, and the screen never renders.
     const registered = (prijavaRoute.options as { component?: unknown }).component;
 
+    // RETRO 10 A5: through `SlugSignInScreen`, which renders `SignInScreen`
+    // unless the guard found a session in another organization (the offer).
     expect(
       registered,
       '/prijava/$slug does not render SignInScreen — it renders an empty layout',
-    ).toBe(SignInScreen);
+    ).toBe(SlugSignInScreen);
   });
 
   it('remounts the sign-in screen when only the slug changes (story 7.7)', () => {

@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import type { Browser, BrowserContext } from '@playwright/test';
 
 import { CalendarPage } from '../../pages/calendar.page.ts';
+import { ConflictResolutionPage, ConflictsPage } from '../../pages/conflicts.page.ts';
 import { HoursPage } from '../../pages/hours.page.ts';
 import { LeavePage } from '../../pages/leave.page.ts';
 import { LoginPage } from '../../pages/login.page.ts';
@@ -28,6 +29,7 @@ import {
 } from '../../utils/database-helper.ts';
 import { addDays, dayMonth, fullDate, weekdayOf } from '../../utils/dates.ts';
 import { escapeRegExp, fill, hr, plural } from '../../utils/i18n.ts';
+import { onlyRowsOf } from '../../utils/routes.ts';
 import { expectNoHorizontalScroll } from '../../utils/layout.ts';
 import { ADMIN_STATE, MEMBER_STATE } from '../../utils/run-fixture.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
@@ -238,17 +240,42 @@ async function expectTilesEqualDetailViews(todayPage: TodayPage, hoursPage: Hour
   expect(hint).toBe(fill(danas.tiles.leaveHint, { used, allowance }));
 }
 
-/** *Danas* as `member`, in a fresh context of its own. */
+/**
+ * *Danas* as `member`, in a fresh context of its own.
+ *
+ * A TEST THAT INSTALLS `page.clock` AHEAD OF REAL TIME SIGNS IN THIS WAY,
+ * never on the shared `MEMBER_STATE`/`ADMIN_STATE` (retro 10 A12). The clock
+ * makes the stored access token look expired, so the page refreshes it with
+ * the stored refresh token; `supabase/config.toml` rotates refresh tokens, so
+ * a second test refreshing the SAME stored token is a reuse, GoTrue refuses
+ * it, and the page signs out (the 06:00 duty test failed this way between
+ * 00:00 and 06:00 org time, CI run 40970110398). See `e2e/README.md`.
+ */
 async function signedInAs(
   browser: Browser,
   slug: string,
   member: SeededLeaveMember,
-): Promise<{ today: TodayPage; calendar: CalendarPage; hours: HoursPage; leave: LeavePage }> {
-  context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+  options: { readonly viewport?: { readonly width: number; readonly height: number }; readonly hasTouch?: boolean } = {},
+): Promise<{
+  today: TodayPage;
+  calendar: CalendarPage;
+  hours: HoursPage;
+  leave: LeavePage;
+  conflicts: ConflictsPage;
+  resolution: ConflictResolutionPage;
+}> {
+  context = await browser.newContext({ storageState: { cookies: [], origins: [] }, ...options });
   const page = await context.newPage();
   await new LoginPage(page).signIn(slug, member.username, member.password);
 
-  return { today: new TodayPage(page), calendar: new CalendarPage(page), hours: new HoursPage(page), leave: new LeavePage(page) };
+  return {
+    today: new TodayPage(page),
+    calendar: new CalendarPage(page),
+    hours: new HoursPage(page),
+    leave: new LeavePage(page),
+    conflicts: new ConflictsPage(page),
+    resolution: new ConflictResolutionPage(page),
+  };
 }
 
 test.describe('as a member', () => {
@@ -426,22 +453,26 @@ test('a member on leave today reads the leave case with its range, and the next 
   await expectTilesEqualDetailViews(todayPage, hours, leave);
 });
 
-/** What {@link seedDuty} wrote: her own rotation, the second team's, and the member she replaces on it. */
+/** What {@link seedDuty} wrote: her own rotation, the second team's, the member she replaces on it, and herself. */
 interface SeededDuty {
   readonly rotation: SeededRotation;
   readonly other: SeededRotation;
   readonly beta: { readonly id: string; readonly name: string };
   readonly replaced: SeededLeaveMember;
+  readonly self: SeededLeaveMember;
 }
 
 /**
  * Story 6.2's duty: the fixture team works Dan today; a second team, a day
- * into the same pattern, works Noć today, and the fixture member replaces a
- * fresh member of it on that Noć.
+ * into the same pattern, works Noć today, and a fresh member of the fixture
+ * team from today (her own session, retro 10 A12) replaces a fresh member of
+ * the second team on that Noć.
  */
-async function seedDuty(slug: string, teamId: string, memberName: string): Promise<SeededDuty> {
+async function seedDuty(slug: string, teamId: string): Promise<SeededDuty> {
   const rotation = await seeded(slug, teamId, 0);
   const today = rotation.today;
+  const self = await seedLeaveMember(slug, teamId, today, 20);
+  crew = { slug, ids: [self.id] };
   const beta = await seedExtraTeam(slug, `Smjena Beta ${randomBytes(3).toString('hex')}`);
   extra = { slug, teamId: beta.id, seed: null, override: null, memberId: null };
   const other = await seedTeamRotation(slug, beta.id, randomBytes(3).toString('hex'), 1);
@@ -450,10 +481,10 @@ async function seedDuty(slug: string, teamId: string, memberName: string): Promi
   expect(stepOn(other, today)).toBe(1);
   const replaced = await seedLeaveMember(slug, beta.id, today, 20);
   extra = { ...extra, memberId: replaced.id };
-  await seedRosterOverride(rotation, beta.id, today, replaced.name, memberName, 'Zamjena zbog bolovanja.');
+  await seedRosterOverride(rotation, beta.id, today, replaced.name, self.name, 'Zamjena zbog bolovanja.');
   extra = { ...extra, override: { rotation, date: today } };
 
-  return { rotation, other, beta, replaced };
+  return { rotation, other, beta, replaced, self };
 }
 
 const duration = hr.organization.hourBands.duration;
@@ -468,19 +499,22 @@ function progressOf(hours: number, minutes: number): string {
   return fill(danas.duty.progress, { done, total: fill(duration.hours, { hours: '24' }) });
 }
 
-test.describe('a 24 h duty at 390 px, as the member', () => {
-  test.use({ storageState: MEMBER_STATE, viewport: { width: 390, height: 844 }, hasTouch: true });
+/** The duty tests' phone: 390 px, touch. */
+const PHONE = { viewport: { width: 390, height: 844 }, hasTouch: true } as const;
 
+test.describe('a 24 h duty at 390 px, as the member', () => {
+  // Each test installs a clock ahead of real time, so each signs in a member
+  // of its own (retro 10 A12): never the shared MEMBER_STATE.
   test('her own Dan and the Noć she takes over read as one duty-block, and Kalendar still lists two shifts', async ({
-    page,
-    todayPage,
-    calendarPage,
+    browser,
     fixture,
   }) => {
     test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
-    const { rotation, other, beta, replaced } = await seedDuty(fixture.slug, fixture.team.id, fixture.member.name);
+    const { rotation, other, beta, replaced, self } = await seedDuty(fixture.slug, fixture.team.id);
     const today = rotation.today;
     const tomorrow = addDays(today, 1);
+    const { today: todayPage, calendar: calendarPage } = await signedInAs(browser, fixture.slug, self, PHONE);
+    const page = todayPage.page;
 
     // 21:10 today on the organization's wall clock.
     await page.clock.install({ time: await organizationInstant(fixture.slug, today, '21:10') });
@@ -527,13 +561,14 @@ test.describe('a 24 h duty at 390 px, as the member', () => {
   });
 
   test('before 07:00 the same duty is still to come: do 07:00, počinje u 07:00 today, both legs Slijedi', async ({
-    page,
-    todayPage,
+    browser,
     fixture,
   }) => {
     test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
-    const { rotation } = await seedDuty(fixture.slug, fixture.team.id, fixture.member.name);
+    const { rotation, self } = await seedDuty(fixture.slug, fixture.team.id);
     const today = rotation.today;
+    const { today: todayPage } = await signedInAs(browser, fixture.slug, self, PHONE);
+    const page = todayPage.page;
 
     // 06:00 today on the organization's wall clock.
     await page.clock.install({ time: await organizationInstant(fixture.slug, today, '06:00') });
@@ -682,26 +717,26 @@ test.describe('as an admin', () => {
   });
 
   test('a seeded leave conflict: the count equals Za odluku, 3 od 4 člana, the absence, ⚠ in the week, and a decision saved takes it to 0', async ({
-    page,
-    todayPage,
-    conflictsPage,
-    resolutionPage,
+    browser,
     fixture,
   }) => {
     test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     const { team, rotation, members, absent } = await seedShortTeam(fixture.slug);
     const today = rotation.today;
+    // The clock below runs ahead of real time before 14:20, so an admin of
+    // the test's own, on no team, signs in (retro 10 A12): never ADMIN_STATE.
+    const ownAdmin = await seedLeaveMember(fixture.slug, null, today, 20);
+    crew = { slug: fixture.slug, ids: [...members.map((member) => member.id), ownAdmin.id] };
+    await promoteToAdminInSql(fixture.slug, ownAdmin.id);
+    const {
+      today: todayPage,
+      conflicts: conflictsPage,
+      resolution: resolutionPage,
+    } = await signedInAs(browser, fixture.slug, ownAdmin);
+    const page = todayPage.page;
     const ours = new Set(members.map((member) => member.id));
     // Only this test's members' leave and requests: other specs write both to the same organization.
-    for (const table of [ORGANIZATION_LEAVE, ORGANIZATION_REQUESTS]) {
-      await page.route(table, async (route) => {
-        const answered = await route.fetch();
-        const rows = ((await answered.json()) as readonly { readonly member_id?: string }[]).filter(
-          (row) => row.member_id !== undefined && ours.has(row.member_id),
-        );
-        await route.fulfill(leaveAnswer(rows));
-      });
-    }
+    await onlyRowsOf(page, ours);
     await page.clock.install({ time: await organizationInstant(fixture.slug, today, '14:20') });
     await page.setViewportSize({ width: 390, height: 844 });
 

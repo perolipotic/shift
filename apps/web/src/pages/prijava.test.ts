@@ -34,6 +34,7 @@ import {
   SIGN_IN_FORM,
   SIGN_IN_HOOK,
   SIGN_IN_PAGE,
+  SIGN_IN_SWITCH_HOOK,
   source,
   srcRoot,
   submitHandler,
@@ -45,6 +46,9 @@ import {
 // names, the authentication seam they reach, and the exit that ends a session.
 
 const SET_PASSWORD_FORM = join(srcRoot, ...SET_PASSWORD_PARTS.form);
+
+/** Retro 10 A5: the one session end the chrome, set-password and the offer share. */
+const END_SESSION_HOOK = join(srcRoot, 'features', 'auth', 'hooks', 'use-end-session.ts');
 
 /**
  * The screens that own a form, an uncontrolled field and a submit handler.
@@ -511,11 +515,25 @@ describe('the exit ends the session and says so when it cannot', () => {
     // The same claim the sign-in screen carries, on the other direction of the
     // same seam: the outcome mapping is in a `.ts` module a node test executes,
     // and the chrome's job is to reach it.
+    // RETRO 10 A5: the sequence lives in ONE hook, `use-end-session`, which
+    // the chrome, the set-password step and the other-organization offer all
+    // call; the chrome reaches the service through it.
     const chrome = source(CHROME);
+    const ending = source(END_SESSION_HOOK);
 
     for (const required of ["from '@/features/auth/services/sign-out'", 'signOut(', 'supabaseClient()']) {
-      expect(chrome, `the chrome no longer reaches ${required}`).toContain(required);
+      expect(ending, `the session end no longer reaches ${required}`).toContain(required);
     }
+    for (const caller of [CHROME, SET_PASSWORD_HOOK]) {
+      expect(source(caller), `${caller} ends the session some other way`).toContain('await endSession()');
+      expect(source(caller), `${caller} signs out around the shared end`).not.toMatch(/\bsignOut\(/);
+    }
+    // The offer hands the shared end to its sequence (`runOrganizationSwitch`,
+    // executed by `organization-switch.test.ts`), and signs out no other way.
+    expect(source(SIGN_IN_SWITCH_HOOK), 'the switch ends the session some other way').toMatch(
+      /runOrganizationSwitch\(\{\s*endSession,/,
+    );
+    expect(source(SIGN_IN_SWITCH_HOOK), 'the switch signs out around the shared end').not.toMatch(/\bsignOut\(/);
     // A BARE `fetch(`, matched with a boundary rather than as a substring. The
     // other screens use `not.toContain('fetch(')`, which is correct there and
     // wrong here: this component calls `member.refetch()` to re-read the role,
@@ -558,13 +576,19 @@ describe('the exit ends the session and says so when it cannot', () => {
     //
     // ONLY ON THE REVOKED PATH: clearing after a refused sign-out would throw
     // away a working session's cache for nothing.
+    const ending = source(END_SESSION_HOOK);
     const handler = componentFunction(source(CHROME), 'leave');
 
-    expect(handler, 'the cache outlives the session').toContain('queryClient.clear()');
+    expect(ending, 'the cache outlives the session').toContain('queryClient.clear()');
+    expect(ending, 'the kept snapshot outlives the session').toContain('forgetDeviceSnapshot()');
     expect(
-      handler.indexOf('revoked = true'),
+      ending.indexOf('if (!outcome.ok) return outcome;'),
       'the cache is cleared before the session is known to have ended',
-    ).toBeLessThan(handler.indexOf('queryClient.clear()'));
+    ).toBeGreaterThan(-1);
+    expect(ending.indexOf('if (!outcome.ok) return outcome;')).toBeLessThan(ending.indexOf('queryClient.clear()'));
+    // Story 10.4: the device's push is forgotten while the session can still do it.
+    expect(ending.indexOf('forgetThisPushDevice()')).toBeLessThan(ending.indexOf('signOut('));
+    expect(handler.indexOf('await endSession()')).toBeLessThan(handler.indexOf('revoked = true'));
   });
 
   it('does not report a failed navigation as a failed sign-out', () => {

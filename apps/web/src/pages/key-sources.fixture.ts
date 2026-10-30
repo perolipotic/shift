@@ -108,7 +108,9 @@ export const KEY_SOURCES = [
   // `hint`, `placeholder`, `change` and `changeLabel`; the username and password labels; the
   // toggle's `passwordShow`; `submit` and `pending`; and the disclosure's
   // `trigger`, `heading` and `body`.
-  { name: 'the sign-in screen', file: SCREEN, keys: translationKeys, strings: 16 },
+  // TWENTY-TWO SINCE RETRO 10 A5: the other-organization offer's heading,
+  // body, switch, pending, stay and refusal.
+  { name: 'the sign-in screen', file: SCREEN, keys: translationKeys, strings: 22 },
   // STORY 7.8. ELEVEN on the set-password step: the heading and the lede; the
   // two field labels and the toggle's `passwordShow`; the two live checks;
   // `submit` and `pending`; `Odjava` and the sign-out refusal. The checks'

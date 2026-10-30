@@ -125,7 +125,9 @@ export const FEATURE_PUBLIC = {
   // Story 7.8: the signed-in layout holds a flagged session at the
   // set-password step through `mustSetPassword`, never a reading of its own.
   auth: [
+    'hooks/use-end-session', // navigation (retro 10 A5: the one session end)
     'services/address', // pages
+    'services/organization-switch', // pages (retro 10 A5: the other-organization offer)
     'services/return-target', // pages, router
     'services/set-password', // pages
     'services/sign-out', // navigation
@@ -165,7 +167,7 @@ export const FEATURE_PUBLIC = {
     'hooks/use-snapshot-skew-refresh', // conflicts, hours, today
     'components/modifier-glyphs', // today
     'services/marks', // today
-    'services/snapshot', // conflicts, hours, leave, members, pages, teams, today
+    'services/snapshot', // conflicts, hours, leave, members, pages, rotation, teams, today
     'services/snapshot-skew', // conflicts, hours, today
     'utils/day-detail', // conflicts
     'utils/empty-day', // today
@@ -296,7 +298,7 @@ export const FEATURE_PUBLIC = {
     'services/admin-guard', // pages
     'services/profile', // teams
     'services/role', // calendar, members, pages, router, teams, today
-    'utils/destinations', // calendar, members, pages, today
+    'utils/destinations', // calendar, hours, leave, members, pages, today
   ],
   // Story 10.3: `/obavijesti` names its heading by the screen's one id.
   notifications: [
@@ -308,7 +310,7 @@ export const FEATURE_PUBLIC = {
   organization: [
     'components/lockup', // navigation
     'hooks/logo-url', // navigation
-    'services/snapshot', // conflicts, leave, members, navigation, teams, today
+    'services/snapshot', // conflicts, hour-bands, leave, members, navigation, teams, today
     'utils/accent', // navigation
   ],
   // Story 8.2d: `services/surface-keys` is *Postavke rotacije*'s one key set,

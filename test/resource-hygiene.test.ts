@@ -256,6 +256,15 @@ const SANCTIONED_SCREEN_KEYS = [
   'auth.forgot.trigger',
   'auth.forgot.heading',
   'auth.forgot.body',
+  // Retro 10 A5: the offer a signed-in visitor gets on another
+  // organization's sign-in link — its heading, its text naming both, switch
+  // (and its in-flight label), stay, and the sign-out refusal.
+  'auth.switch.heading',
+  'auth.switch.body',
+  'auth.switch.switch',
+  'auth.switch.pending',
+  'auth.switch.stay',
+  'auth.switch.error',
   // Two, not three. A wrong organization (story 7.7), a wrong password, an
   // unknown username and a deactivated account share `auth.error.credentials`: a third message would tell an
   // anonymous caller which usernames exist in an organization, which is the

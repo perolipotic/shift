@@ -11,6 +11,7 @@ import {
   isOrganizationSlug,
   normalizeUsername,
   organizationDestination,
+  organizationOfAddress,
   signInAddress,
 } from '@/features/auth/services/address';
 
@@ -226,5 +227,35 @@ describe('the slug rule decides what a typed organization means, and the decisio
     // refusal. A thrown error would force a caller to decide what to say;
     // `null` lets it say nothing.
     expect(() => organizationDestination('-not-a-slug-')).not.toThrow();
+  });
+});
+
+describe('the organization a session address names (retro 10 A5)', () => {
+  it('reads back the slug signInAddress builds', () => {
+    expect(organizationOfAddress(signInAddress('ivan.maric', 'dvd-kastel-novi'))).toBe('dvd-kastel-novi');
+    expect(organizationOfAddress(signInAddress('admin', 'a1'))).toBe('a1');
+  });
+
+  it('normalizes as the URL segment is normalized', () => {
+    expect(organizationOfAddress('  Admin@DVD-Demo.Shift.Invalid ')).toBe('dvd-demo');
+  });
+
+  it('answers null for an address this module would not build', () => {
+    for (const address of [
+      null,
+      undefined,
+      '',
+      'admin',
+      '@dvd-demo.shift.invalid',
+      'admin@shift.invalid',
+      'admin@.shift.invalid',
+      'admin@dvd_demo.shift.invalid',
+      'admin@a.b.shift.invalid',
+      'admin@dvd-demo.shift.invalid.example.com',
+      'ivan@example.com',
+      `admin@${'a'.repeat(64)}.${ADDRESS_DOMAIN}`,
+    ]) {
+      expect(organizationOfAddress(address), String(address)).toBeNull();
+    }
   });
 });

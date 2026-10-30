@@ -21297,6 +21297,8 @@ describe('the decision writes one outbox row in its own transaction, and no sess
         const owner = await memberByUsername(client, slug, admin);
         const self = await memberByUsername(client, slug, member);
         const organization = owner.organizationId;
+        // 0046 (A4): the decision's email row needs an address, as every event's.
+        await client.query('update members set email = $2 where id = $1', [self.id, `${member}@example.org`]);
 
         await actAs(client, self.authUserId, organization);
         const approvedRequest = await insertRequest(client, { organization, member: self.id, during: '[2046-03-02,2046-03-06]' });
@@ -21337,6 +21339,8 @@ describe('the decision writes one outbox row in its own transaction, and no sess
         const owner = await memberByUsername(client, slug, admin);
         const self = await memberByUsername(client, slug, member);
         const organization = owner.organizationId;
+        // 0046 (A4): the decision's email row needs an address, as every event's.
+        await client.query('update members set email = $2 where id = $1', [self.id, `${member}@example.org`]);
         const day = (offset: number) => organizationDay(client, organization, offset);
 
         await actAs(client, self.authUserId, organization);
@@ -21377,6 +21381,8 @@ describe('the decision writes one outbox row in its own transaction, and no sess
         const owner = await memberByUsername(client, slug, admin);
         const self = await memberByUsername(client, slug, member);
         const organization = owner.organizationId;
+        // 0046 (A4): the decision's email row needs an address, as every event's.
+        await client.query('update members set email = $2 where id = $1', [self.id, `${member}@example.org`]);
         const day = (offset: number) => organizationDay(client, organization, offset);
         await ownerVersion(client, { organization, member: self.id, active: false, from: await day(30), by: owner.authUserId });
         const stranded = await insertedRequestAsOwner(client, organization, self, `[${await day(28)},${await day(32)}]`);
@@ -21403,6 +21409,8 @@ describe('the decision writes one outbox row in its own transaction, and no sess
         const owner = await memberByUsername(client, slug, admin);
         const self = await memberByUsername(client, slug, member);
         const organization = owner.organizationId;
+        // 0046 (A4): the decision's email row needs an address, as every event's.
+        await client.query('update members set email = $2 where id = $1', [self.id, `${member}@example.org`]);
 
         await actAs(client, self.authUserId, organization);
         const request = await insertRequest(client, { organization, member: self.id, during: '[2046-05-04,2046-05-05]' });
@@ -22495,7 +22503,7 @@ describe('a member registers their own devices, and each event writes a push row
   );
 
   it.skipIf(noDatabase).each(FIXTURES)(
-    'writes the $fixture decision push row to a requester with a device and no address',
+    'writes the $fixture decision push row, and no email row, to a requester with a device and no address',
     async (fixture) => {
       await inRolledBackTransaction(async (client) => {
         const { owner, self, organization } = await cast(client, fixture, null);
@@ -22513,11 +22521,9 @@ describe('a member registers their own devices, and each event writes a push row
              from notification_outbox where subject_id = $1 and recipient_member_id = $2 order by channel`,
           [request, self.id],
         );
-        // The email row is written as before (and the claim settles it for no address); the push row beside it.
-        expect(rows, fixture.slug).toEqual([
-          { code: 'LEAVE_REQUEST_APPROVED', channel: 'email', recipient: self.id },
-          { code: 'LEAVE_REQUEST_APPROVED', channel: 'push', recipient: self.id },
-        ]);
+        // 0046 (A4): the decision follows every event's recipient rules, so no
+        // address means no email row; the push row is written for the device.
+        expect(rows, fixture.slug).toEqual([{ code: 'LEAVE_REQUEST_APPROVED', channel: 'push', recipient: self.id }]);
       });
     },
   );
@@ -22713,6 +22719,303 @@ describe('a member registers their own devices, and each event writes a push row
       expect(afterStale, 'a stale answer deleted the live device').toEqual({ [shared]: other.id });
       expect(afterWrongEndpoint).toEqual({ [shared]: other.id });
       expect(afterCurrent).toEqual({});
+    });
+  });
+});
+
+/**
+ * 0046 (retro 10 A2, A3, A4): one recipient rule for every row, at write and
+ * at send. The decision follows `notify_members`' rules on both channels; the
+ * claim settles a row whose recipient is not active today; and `notify` reads
+ * a push row's devices again at send time, under its lease.
+ */
+describe('the decision follows every event\'s recipient rules, and the claim and the send re-check them (0046)', () => {
+  const P256DH = `B${'k'.repeat(86)}`;
+  const AUTH = 'a'.repeat(22);
+  const endpointOf = (name: string) => `https://fcm.googleapis.com/fcm/send/0046-${name}`;
+
+  async function setEmail(client: Client, member: string, email: string | null): Promise<void> {
+    await client.query('update members set email = $2 where id = $1', [member, email]);
+  }
+
+  /** A device for `member`, written as the owner (the registration's own rules are 0045's suite). */
+  async function device(client: Client, member: MemberRow, name: string): Promise<{ id: string; endpoint: string }> {
+    const { rows } = await client.query<{ id: string; endpoint: string }>(
+      `insert into push_subscriptions (organization_id, member_id, endpoint, p256dh, auth)
+       values ($1, $2, $3, $4, $5) returning id::text as id, endpoint`,
+      [member.organizationId, member.id, endpointOf(name), P256DH, AUTH],
+    );
+    const row = rows[0];
+    if (row === undefined) throw new Error('the device insert returned no row');
+    return row;
+  }
+
+  /** One subject's decision rows as `channel:recipient`, sorted, as the owner. */
+  async function decisionRowsOf(client: Client, subject: string): Promise<string[]> {
+    const { rows } = await client.query<{ row: string }>(
+      `select channel || ':' || recipient_member_id::text as row from notification_outbox
+        where subject_id = $1 and code in ('LEAVE_REQUEST_APPROVED', 'LEAVE_REQUEST_REJECTED') order by 1`,
+      [subject],
+    );
+    return rows.map(({ row }) => row);
+  }
+
+  /** Every open row is moved out of the claim's way, so a claim sees only the case's rows. */
+  async function hideOpenRows(client: Client): Promise<void> {
+    await client.query(
+      `update notification_outbox set failed_at = now(), failure_code = 'HIDDEN_BY_TEST'
+        where sent_at is null and failed_at is null`,
+    );
+  }
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'A4: writes the $fixture decision on both channels to a requester with an address and a device',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, fixture.slug, fixture.admin);
+        const self = await memberByUsername(client, fixture.slug, fixture.member);
+        const organization = owner.organizationId;
+        const day = (offset: number) => organizationDay(client, organization, offset);
+        await setEmail(client, self.id, `${fixture.member}@example.org`);
+        await device(client, self, `${fixture.slug}-both`);
+
+        await actAs(client, self.authUserId, organization);
+        const request = await insertRequest(client, { organization, member: self.id, during: `[${await day(40)},${await day(42)}]` });
+        await actAs(client, owner.authUserId, organization);
+        await decideRequest(client, request, 'approved');
+        await actAsOwner(client);
+
+        expect(await decisionRowsOf(client, request), fixture.slug).toEqual([`email:${self.id}`, `push:${self.id}`]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'A4: writes no $fixture decision email to a requester without an address, and no row at all without a device',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, fixture.slug, fixture.admin);
+        const self = await memberByUsername(client, fixture.slug, fixture.member);
+        const organization = owner.organizationId;
+        const day = (offset: number) => organizationDay(client, organization, offset);
+        await setEmail(client, self.id, '   ');
+
+        await actAs(client, self.authUserId, organization);
+        const request = await insertRequest(client, { organization, member: self.id, during: `[${await day(40)},${await day(42)}]` });
+        await actAs(client, owner.authUserId, organization);
+        await decideRequest(client, request, 'rejected');
+        await actAsOwner(client);
+
+        expect(await decisionRowsOf(client, request), fixture.slug).toEqual([]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'A4: writes no $fixture row when an admin decides their own request',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, fixture.slug, fixture.admin);
+        const organization = owner.organizationId;
+        const day = (offset: number) => organizationDay(client, organization, offset);
+        await setEmail(client, owner.id, `${fixture.admin}@example.org`);
+        await device(client, owner, `${fixture.slug}-own`);
+
+        await actAs(client, owner.authUserId, organization);
+        const request = await insertRequest(client, { organization, member: owner.id, during: `[${await day(40)},${await day(42)}]` });
+        await decideRequest(client, request, 'approved');
+        await actAsOwner(client);
+
+        expect(await decisionRowsOf(client, request), fixture.slug).toEqual([]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'A4: writes no $fixture row to a requester not active today',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, fixture.slug, fixture.admin);
+        const self = await memberByUsername(client, fixture.slug, fixture.member);
+        const organization = owner.organizationId;
+        const day = (offset: number) => organizationDay(client, organization, offset);
+        await setEmail(client, self.id, `${fixture.member}@example.org`);
+        await device(client, self, `${fixture.slug}-inactive`);
+        // A request that ended before the deactivation stays pending (0041).
+        const request = await insertedRequestAsOwner(client, organization, self, `[${await day(-10)},${await day(-8)}]`);
+        await ownerVersion(client, { organization, member: self.id, active: false, from: await day(0), by: owner.authUserId });
+
+        await actAs(client, owner.authUserId, organization);
+        await decideRequest(client, request, 'rejected');
+        await actAsOwner(client);
+
+        expect((await requestState(client, request)).outcome, fixture.slug).toBe('rejected');
+        expect(await decisionRowsOf(client, request), fixture.slug).toEqual([]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'A3: the claim settles a $fixture email and push row RECIPIENT_INACTIVE once the recipient is inactive today, and returns neither',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, fixture.slug, fixture.admin);
+        const self = await memberByUsername(client, fixture.slug, fixture.member);
+        const other = await memberByUsername(client, fixture.slug, fixture.bystander);
+        const organization = owner.organizationId;
+        const day = (offset: number) => organizationDay(client, organization, offset);
+        await hideOpenRows(client);
+        await setEmail(client, self.id, `${fixture.member}@example.org`);
+        await setEmail(client, other.id, `${fixture.bystander}@example.org`);
+        await device(client, self, `${fixture.slug}-a3`);
+        // Rows written while both were active.
+        const subject = crypto.randomUUID();
+        for (const [member, channel] of [
+          [self.id, 'email'],
+          [self.id, 'push'],
+          [other.id, 'email'],
+        ] as const) {
+          await client.query(
+            `insert into notification_outbox (organization_id, code, subject_id, recipient_member_id, channel, operands)
+             values ($1, 'LEAVE_RECORDED', $2, $3, $4, '{"startDate":"2046-03-02","endDate":"2046-03-06"}')`,
+            [organization, subject, member, channel],
+          );
+        }
+        // Then the member is deactivated from today.
+        await ownerVersion(client, { organization, member: self.id, active: false, from: await day(0), by: owner.authUserId });
+
+        await client.query('set local role service_role');
+        const { rows: claimed } = await client.query<{ recipient: string; channel: string }>(
+          `select recipient_member_id::text as recipient, channel from public.claim_notifications(100) where subject_id = $1`,
+          [subject],
+        );
+        await client.query('reset role');
+        const { rows } = await client.query<{ row: string }>(
+          `select channel || ':' || (recipient_member_id = $2)::text || ':' || coalesce(failure_code, '-') || ':' || attempts as row
+             from notification_outbox where subject_id = $1 order by 1`,
+          [subject, self.id],
+        );
+
+        expect(claimed, fixture.slug).toEqual([{ recipient: other.id, channel: 'email' }]);
+        expect(rows.map(({ row }) => row), fixture.slug).toEqual([
+          'email:false:-:1',
+          'email:true:RECIPIENT_INACTIVE:0',
+          'push:true:RECIPIENT_INACTIVE:0',
+        ]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase)('A3: leaves a row in flight alone, and settles it only once its lease expired', async () => {
+    const [fixture] = FIXTURES;
+    await inRolledBackTransaction(async (client) => {
+      const owner = await memberByUsername(client, fixture.slug, fixture.admin);
+      const self = await memberByUsername(client, fixture.slug, fixture.member);
+      const organization = owner.organizationId;
+      const day = (offset: number) => organizationDay(client, organization, offset);
+      await hideOpenRows(client);
+      const { rows: inserted } = await client.query<{ id: string }>(
+        `insert into notification_outbox (organization_id, code, subject_id, recipient_member_id, channel, operands, claimed_at, attempts)
+         values ($1, 'LEAVE_RECORDED', gen_random_uuid(), $2, 'email', '{}', now(), 1) returning id::text as id`,
+        [organization, self.id],
+      );
+      const id = inserted[0]?.id;
+      await ownerVersion(client, { organization, member: self.id, active: false, from: await day(0), by: owner.authUserId });
+
+      const stateOf = async () =>
+        (
+          await client.query<{ failure: string | null }>('select failure_code as failure from notification_outbox where id = $1', [id])
+        ).rows[0]?.failure;
+      await client.query('set local role service_role');
+      await client.query('select * from public.claim_notifications(10)');
+      await client.query('reset role');
+      const inFlight = await stateOf();
+      await client.query(`update notification_outbox set claimed_at = now() - interval '11 minutes' where id = $1`, [id]);
+      await client.query('set local role service_role');
+      await client.query('select * from public.claim_notifications(10)');
+      await client.query('reset role');
+
+      expect(inFlight).toBeNull();
+      expect(await stateOf()).toBe('RECIPIENT_INACTIVE');
+    });
+  });
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    "A2: push_devices_for_send answers the $fixture recipient's devices now, under the lease, and none handed over",
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, fixture.slug, fixture.admin);
+        const self = await memberByUsername(client, fixture.slug, fixture.member);
+        const other = await memberByUsername(client, fixture.slug, fixture.bystander);
+        const organization = owner.organizationId;
+        await hideOpenRows(client);
+        const kept = await device(client, self, `${fixture.slug}-kept`);
+        const shared = await device(client, self, `${fixture.slug}-shared`);
+        const { rows: inserted } = await client.query<{ id: string }>(
+          `insert into notification_outbox (organization_id, code, subject_id, recipient_member_id, channel, operands)
+           values ($1, 'LEAVE_RECORDED', gen_random_uuid(), $2, 'push', '{}') returning id::text as id`,
+          [organization, self.id],
+        );
+        const id = inserted[0]?.id ?? '';
+
+        await client.query('set local role service_role');
+        const { rows: claimed } = await client.query<{ token: string }>(
+          'select claimed_at::text as token from public.claim_notifications(10) where id = $1',
+          [id],
+        );
+        await client.query('reset role');
+        const token = claimed[0]?.token ?? '';
+        // Between the claim and the send, the bystander registers the shared phone.
+        await client.query('update push_subscriptions set member_id = $2 where id = $1', [shared.id, other.id]);
+
+        type Read = { status: string; devices: { id: string; member_id: string }[] };
+        const read = async (lease: string): Promise<Read | undefined> => {
+          await client.query('set local role service_role');
+          const { rows } = await client.query<{ answer: Read }>(
+            'select public.push_devices_for_send($1::uuid, $2::timestamptz) as answer',
+            [id, lease],
+          );
+          await client.query('reset role');
+          return rows[0]?.answer;
+        };
+
+        const ready = await read(token);
+        expect(ready?.status, fixture.slug).toBe('ready');
+        expect((ready?.devices ?? []).map(({ id: deviceId, member_id }) => [deviceId, member_id]), fixture.slug).toEqual([
+          [kept.id, self.id],
+        ]);
+        expect(await read('2000-01-01T00:00:00Z'), `${fixture.slug}: a stale lease read devices`).toEqual({
+          status: 'lease_lost',
+          devices: [],
+        });
+
+        // The recipient deactivated after the claim: no device is answered.
+        await ownerVersion(client, {
+          organization,
+          member: self.id,
+          active: false,
+          from: await organizationDay(client, organization, 0),
+          by: owner.authUserId,
+        });
+        expect(await read(token), `${fixture.slug}: an inactive recipient's devices were answered`).toEqual({
+          status: 'inactive',
+          devices: [],
+        });
+      });
+    },
+  );
+
+  it.skipIf(noDatabase)('A2: lets service_role alone call push_devices_for_send', async () => {
+    await inRolledBackTransaction(async (client) => {
+      const { rows } = await client.query<{ role: string; held: boolean }>(
+        `select role, has_function_privilege(role, 'public.push_devices_for_send(uuid, timestamptz)', 'execute') as held
+           from unnest(array['anon', 'authenticated', 'service_role']) as role`,
+      );
+      expect(Object.fromEntries(rows.map(({ role, held }) => [role, held]))).toEqual({
+        anon: false,
+        authenticated: false,
+        service_role: true,
+      });
     });
   });
 });

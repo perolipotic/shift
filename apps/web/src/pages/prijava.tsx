@@ -1,10 +1,14 @@
 import { createRoute, redirect, useParams } from '@tanstack/react-router';
+import type { ReactNode } from 'react';
 
 import { AuthLayout } from '@/components/layout/auth-layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { OrganizationSwitchOffer } from '@/features/auth/components/organization-switch-offer';
 import { SignInForm } from '@/features/auth/components/sign-in-form';
+import { useOrganizationSwitch } from '@/features/auth/hooks/use-organization-switch';
 import { useSignIn } from '@/features/auth/hooks/use-sign-in';
 import { organizationDestination } from '@/features/auth/services/address';
+import { organizationSwitchOf, type OrganizationSwitch } from '@/features/auth/services/organization-switch';
 import { returnSearchOf, returnTargetOf } from '@/features/auth/services/return-target';
 import { t } from '@/lib/i18n';
 import { resolvedSession } from '@/lib/supabase/client';
@@ -58,6 +62,43 @@ export function SignInScreen() {
       </Card>
     </AuthLayout>
   );
+}
+
+/**
+ * Retro 10 A5: a signed-in visitor on another organization's sign-in link is
+ * OFFERED that organization rather than redirected inside the current one.
+ * The route's guard decides (`organizationSwitchOf`); this draws its answer in
+ * the sign-in card, in place of the form. Composes only: the state and both
+ * exits are `useOrganizationSwitch`, the drawing
+ * `@/features/auth/components/organization-switch-offer`.
+ */
+export function OrganizationSwitchScreen({ offer }: { readonly offer: OrganizationSwitch }): ReactNode {
+  const screen = useOrganizationSwitch(offer);
+
+  return (
+    <AuthLayout>
+      <Card className="w-full max-w-sm">
+        <CardHeader>
+          <CardTitle asChild>
+            <h1>{t('auth.switch.heading')}</h1>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <OrganizationSwitchOffer screen={screen} />
+        </CardContent>
+      </Card>
+    </AuthLayout>
+  );
+}
+
+/**
+ * `/prijava/$slug`'s screen: the offer when the guard found a session in
+ * another organization, the sign-in form otherwise.
+ */
+export function SlugSignInScreen(): ReactNode {
+  const { organizationSwitch } = prijavaRoute.useRouteContext();
+
+  return organizationSwitch === null ? <SignInScreen /> : <OrganizationSwitchScreen offer={organizationSwitch} />;
 }
 
 export const prijavaRoute = createRoute({
@@ -117,7 +158,19 @@ export const prijavaRoute = createRoute({
     // is a fix applied to one and not the other. What is NOT shared is what
     // `null` means, because that genuinely differs (see `@/lib/supabase/client`):
     // both sign-in routes fail OPEN.
-    if ((await resolvedSession(context.currentSession)) === null) return;
+    const session = await resolvedSession(context.currentSession);
+
+    if (session === null) return { organizationSwitch: null };
+
+    // ANOTHER ORGANIZATION'S LINK IS OFFERED, NOT FOLLOWED (retro 10 A5). The
+    // session's address is AD-12's `username@<slug>.shift.invalid`; a slug that
+    // differs from the URL's (both normalized) is another organization, and
+    // following `povratak` here would open B's path inside A. The screen then
+    // offers B (signing out of A first) or staying in A. An address that does
+    // not parse keeps the redirect below.
+    const organizationSwitch = organizationSwitchOf(session.user.email, params.slug);
+
+    if (organizationSwitch !== null) return { organizationSwitch };
 
     // WHERE THE VISITOR WAS GOING, not `/` (C512). A signed-in person who opens
     // a sign-in link carrying `povratak` — a second tab bounced while the first
@@ -126,7 +179,7 @@ export const prijavaRoute = createRoute({
     // one that is not a same-app path, that is `/`.
     throw redirect({ href: returnTargetOf(search.povratak, context.isKnownPath) });
   },
-  component: SignInScreen,
+  component: SlugSignInScreen,
 });
 
 /**

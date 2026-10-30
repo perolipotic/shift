@@ -55,12 +55,13 @@ describe('the push handler shows what notify sends', () => {
   it('shows the title, the body, the url and the tag, with the app icon and no badge', async () => {
     const scope = worker();
 
-    await scope.push({ title: 'Naslov', body: 'Tijelo', url: `${ORIGIN}/prijava/dvd?povratak=%2Fgodisnji`, tag: 'LEAVE_RECORDED:abc' });
+    // A path, as notify sends it since retro 10 A6.
+    await scope.push({ title: 'Naslov', body: 'Tijelo', url: '/prijava/dvd?povratak=%2Fgodisnji', tag: 'LEAVE_RECORDED:abc' });
 
     expect(scope.showNotification).toHaveBeenCalledWith('Naslov', {
       body: 'Tijelo',
       icon: '/pwa-192x192.png',
-      data: { url: `${ORIGIN}/prijava/dvd?povratak=%2Fgodisnji` },
+      data: { url: '/prijava/dvd?povratak=%2Fgodisnji' },
       tag: 'LEAVE_RECORDED:abc',
     });
   });
@@ -111,6 +112,18 @@ describe('a tap opens the url, on this origin only', () => {
 
     expect(refused.openWindow).toHaveBeenCalledWith(`${ORIGIN}/a`);
     expect(nothing.openWindow).toHaveBeenCalledWith(`${ORIGIN}/b`);
+  });
+
+  it('opens the path notify sends (retro 10 A6) on its own origin, whichever origin notify was configured with', async () => {
+    const navigate = vi.fn(() => Promise.resolve({ focus: vi.fn(() => Promise.resolve({})) }));
+    const controlled = worker([{ url: `${ORIGIN}/danas`, navigate }]);
+    const none = worker([]);
+
+    await controlled.click('/prijava/dvd?povratak=%2Fgodisnji');
+    await none.click('/prijava/dvd?povratak=%2Fkalendar');
+
+    expect(navigate).toHaveBeenCalledWith(`${ORIGIN}/prijava/dvd?povratak=%2Fgodisnji`);
+    expect(none.openWindow).toHaveBeenCalledWith(`${ORIGIN}/prijava/dvd?povratak=%2Fkalendar`);
   });
 
   it.each(['https://evil.example/phish', 'javascript:alert(1)', 42, undefined])('falls back to / for %j', async (url) => {

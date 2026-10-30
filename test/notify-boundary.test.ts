@@ -35,6 +35,12 @@ import {
   SETTLE_RPC,
   CLIENT_CONSTRUCTION_FAILED,
   DELETE_SUBSCRIPTION_RPC,
+  PUSH_DEVICES_RPC,
+  PUSH_DEVICES_MISSING,
+  PUSH_LEASE_LOST,
+  RECIPIENT_INACTIVE,
+  PUSH_DEVICES_UNAVAILABLE,
+  PUSH_RUN_DEADLINE_MS,
   PUSH_DELETE_FAILED,
   PUSH_ENCRYPTOR_MISSING,
   PUSH_NETWORK_ERROR,
@@ -96,6 +102,8 @@ const ORGANIZATION_NAME = 'DVD Kaštel Novi';
 const TARGET = { appUrl: APP_URL, slug: 'dvd-kastel-novi', organizationName: ORGANIZATION_NAME } as const;
 /** The link to `path` through the pilot's sign-in route. */
 const linkTo = (path: string): string => `${APP_URL}/prijava/dvd-kastel-novi?povratak=${encodeURIComponent(path)}`;
+/** Retro 10 A6: the same sign-in link with no origin, as a push carries it. */
+const pathTo = (path: string): string => `/prijava/dvd-kastel-novi?povratak=${encodeURIComponent(path)}`;
 /** Story 10.3: the line every email ends with, after a blank line, linking to the settings. */
 const FOOTER = `\n\nObavijesti e-poštom možeš isključiti u aplikaciji, pod Obavijesti: ${linkTo('/obavijesti')}`;
 
@@ -165,15 +173,19 @@ function row(overrides: Partial<FakeRow> = {}): FakeRow {
 /**
  * A fake secret-key client: the claim answers `rows`, every settle is
  * recorded (with its lease token checked against the row's), and
- * `settleAnswer` may make one settle fail.
+ * `settleAnswer` may make one settle fail. The send-time device read
+ * (retro 10 A2) answers the row's claimed `subscriptions` unless
+ * `devicesAnswer` says otherwise, and is recorded in `reads`.
  */
 function fakeClient(
   rows: readonly unknown[] | RpcAnswer,
   settleAnswer: (index: number) => Promise<RpcAnswer> = () => Promise.resolve({ data: null, error: null }),
+  devicesAnswer?: (args: Record<string, unknown>) => Promise<RpcAnswer>,
 ) {
   const settles: { p_id: unknown; p_result: unknown; p_failure_code: unknown }[] = [];
   const tokens: unknown[] = [];
   const deletes: Record<string, unknown>[] = [];
+  const reads: Record<string, unknown>[] = [];
   const rpc = vi.fn((fn: string, args: Record<string, unknown>): Promise<RpcAnswer> => {
     if (fn === CLAIM_RPC) {
       return Promise.resolve(Array.isArray(rows) ? { data: rows, error: null } : (rows as RpcAnswer));
@@ -182,11 +194,20 @@ function fakeClient(
       deletes.push(args);
       return Promise.resolve({ data: null, error: null });
     }
+    if (fn === PUSH_DEVICES_RPC) {
+      reads.push(args);
+      if (devicesAnswer !== undefined) return devicesAnswer(args);
+      const claimedRow = (Array.isArray(rows) ? rows : []).find(
+        (candidate) => (candidate as { id?: unknown } | null)?.id === args['p_id'],
+      ) as { subscriptions?: unknown } | undefined;
+      const devices = claimedRow?.subscriptions;
+      return Promise.resolve({ data: { status: 'ready', devices: Array.isArray(devices) ? devices : [] }, error: null });
+    }
     settles.push({ p_id: args['p_id'], p_result: args['p_result'], p_failure_code: args['p_failure_code'] });
     tokens.push(args['p_claimed_at']);
     return settleAnswer(settles.length - 1);
   });
-  return { client: { rpc } satisfies OutboxClient, rpc, settles, tokens, deletes };
+  return { client: { rpc } satisfies OutboxClient, rpc, settles, tokens, deletes, reads };
 }
 
 /** The handler over a fake client, with no real waiting. */
@@ -735,7 +756,7 @@ describe("notify's matrix against a fake client: one send per row, settled by th
     expect(settles).toEqual(
       rows.map((claimed) => ({ p_id: claimed.id, p_result: 'released', p_failure_code: PROVIDER_UNAUTHORIZED })),
     );
-    expect(await response.json()).toMatchObject({ released: 3, sent: 0, failed: 0, stopped: PROVIDER_UNAUTHORIZED });
+    expect(await response.json()).toMatchObject({ released: 3, sent: 0, failed: 0, stopped: { email: PROVIDER_UNAUTHORIZED } });
     errors.mockRestore();
   });
 
@@ -821,7 +842,7 @@ describe("notify's matrix against a fake client: one send per row, settled by th
       'sent:null',
       `released:${RUN_DEADLINE}`,
     ]);
-    expect(await response.json()).toMatchObject({ sent: 2, released: 1, stopped: RUN_DEADLINE });
+    expect(await response.json()).toMatchObject({ sent: 2, released: 1, stopped: { email: RUN_DEADLINE } });
   });
 
   it('keeps the worst case inside pg_net 55 s: the batch, the pace and the send timeout', () => {
@@ -899,7 +920,7 @@ describe("notify's matrix against a fake client: one send per row, settled by th
   });
 });
 
-describe('notify may not think: it reaches the database through its three RPCs alone', () => {
+describe('notify may not think: it reaches the database through its four RPCs alone', () => {
   const sources = readdirSync(notifyRoot)
     .filter((name) => name.endsWith('.ts'))
     .map((name) => ({ name, source: readFileSync(join(notifyRoot, name), 'utf8') }));
@@ -913,16 +934,19 @@ describe('notify may not think: it reaches the database through its three RPCs a
     expect(source).not.toMatch(/from\s+['"][^'"]*(@shift\/domain|packages\/domain|apps\/web)/);
   });
 
-  it('names exactly claim_notifications, settle_notification and delete_push_subscription', () => {
-    expect([CLAIM_RPC, SETTLE_RPC, DELETE_SUBSCRIPTION_RPC]).toEqual([
+  it('names exactly claim_notifications, settle_notification, delete_push_subscription and push_devices_for_send', () => {
+    expect([CLAIM_RPC, SETTLE_RPC, DELETE_SUBSCRIPTION_RPC, PUSH_DEVICES_RPC]).toEqual([
       'claim_notifications',
       'settle_notification',
       'delete_push_subscription',
+      'push_devices_for_send',
     ]);
-    // Every RPC the handler names is one of the three.
+    // Every RPC the handler names is one of the four, and each is named
+    // where it is called.
     const handler = sources.find(({ name }) => name === 'handler.ts')?.source ?? '';
     const called = [...handler.matchAll(/client\.rpc\((\w+)/g)].map((match) => match[1]);
-    expect(new Set(called)).toEqual(new Set(['CLAIM_RPC', 'SETTLE_RPC', 'DELETE_SUBSCRIPTION_RPC']));
+    expect(new Set(called)).toEqual(new Set(['CLAIM_RPC', 'SETTLE_RPC', 'DELETE_SUBSCRIPTION_RPC', 'PUSH_DEVICES_RPC']));
+    expect(handler.match(/\.rpc\(/g)?.length).toBe(called.length);
   });
 
   it('reads the VAPID keys in notify alone, and sends push through web-push in index.ts only (AD-17)', () => {
@@ -963,6 +987,13 @@ function serviceRoleClient(client: Client): OutboxClient {
               [args['p_limit']],
             )
           ).rows;
+        } else if (fn === PUSH_DEVICES_RPC) {
+          data = (
+            await client.query('select public.push_devices_for_send($1::uuid, $2::timestamptz) as devices', [
+              args['p_id'],
+              args['p_claimed_at'],
+            ])
+          ).rows[0]?.devices;
         } else if (fn === DELETE_SUBSCRIPTION_RPC) {
           await client.query('select public.delete_push_subscription($1::uuid, $2, $3::uuid)', [
             args['p_id'],
@@ -1437,12 +1468,13 @@ function pushServices(answers: Readonly<Record<string, number | 'network'>>): Re
 }
 
 describe('notify renders a push payload from the same message, without the email footer (story 10.4)', () => {
-  it.each(EVERY_CODE)('renders $code as the subject, the body and its link', ({ code, operands, path, subject, text }) => {
+  it.each(EVERY_CODE)('renders $code as the subject, the body and its link as a path', ({ code, operands, path, subject, text }) => {
     expect(renderPush(code, 'hr', operands, TARGET)).toEqual({
       ok: true,
       title: subject,
       body: text.replace('{link}', linkTo(path)),
-      url: linkTo(path),
+      // Retro 10 A6: no origin, so the worker opens it on its own.
+      url: pathTo(path),
     });
   });
 
@@ -1491,7 +1523,7 @@ describe("notify's push matrix against a fake client and a fake web-push (story 
       {
         title: 'Zahtjev za godišnji 02.03.2046–06.03.2046 je odobren',
         body: `${ORGANIZATION_NAME}: tvoj zahtjev za godišnji odmor 02.03.2046–06.03.2046 je odobren. Pogledaj ga u aplikaciji: ${linkTo('/godisnji')}`,
-        url: linkTo('/godisnji'),
+        url: pathTo('/godisnji'),
         // One notification per fact on a device: a re-send replaces it.
         tag: `LEAVE_REQUEST_APPROVED:${SUBJECT_ID}`,
       },
@@ -1556,7 +1588,7 @@ describe("notify's push matrix against a fake client and a fake web-push (story 
     errors.mockRestore();
   });
 
-  it('fails a push row the claim returned with no device PUSH_NO_SUBSCRIPTION, with no call', async () => {
+  it('fails a push row with no device at send time PUSH_NO_SUBSCRIPTION, and retries one whose devices it cannot read, with no call', async () => {
     const rows = [pushRow(null), pushRow([]), pushRow([{ id: 'x' }])];
     const { client, settles } = fakeClient(rows);
     const fetch = pushServices({});
@@ -1567,7 +1599,8 @@ describe("notify's push matrix against a fake client and a fake web-push (story 
     expect(settles.map(({ p_failure_code }) => p_failure_code)).toEqual([
       PUSH_NO_SUBSCRIPTION,
       PUSH_NO_SUBSCRIPTION,
-      PUSH_NO_SUBSCRIPTION,
+      // An entry that is not a device is a shape this function cannot read: retried, never "no device".
+      PUSH_DEVICES_UNAVAILABLE,
     ]);
   });
 
@@ -1601,6 +1634,7 @@ describe("notify's push matrix against a fake client and a fake web-push (story 
       rpc: (fn, args) => {
         if (fn === CLAIM_RPC) return Promise.resolve({ data: [claimed], error: null });
         if (fn === DELETE_SUBSCRIPTION_RPC) return Promise.reject(new Error('down'));
+        if (fn === PUSH_DEVICES_RPC) return Promise.resolve({ data: { status: 'ready', devices: [only] }, error: null });
         settles.push(args['p_failure_code']);
         return Promise.resolve({ data: null, error: null });
       },
@@ -1651,6 +1685,7 @@ describe("notify's push matrix against a fake client and a fake web-push (story 
         rpc: (fn, args) => {
           if (fn === CLAIM_RPC) return Promise.resolve({ data: [claimed], error: null });
           if (fn === DELETE_SUBSCRIPTION_RPC) return new Promise<RpcAnswer>(() => undefined);
+          if (fn === PUSH_DEVICES_RPC) return Promise.resolve({ data: { status: 'ready', devices: [only] }, error: null });
           settles.push(args['p_failure_code']);
           return Promise.resolve({ data: null, error: null });
         },
@@ -1725,6 +1760,274 @@ describe("notify's push matrix against a fake client and a fake web-push (story 
     await handle(invoke());
 
     expect(waits).toEqual([PACE_MS]);
+  });
+
+  // ------------------------------------------------- retro 10 A1, A2, A7
+
+  it('A1: a Resend 401 stops email only; the push row behind it is sent and the later email released untried', async () => {
+    const refusedEmail = row();
+    const pushed = pushRow([device(1)]);
+    const laterEmail = row();
+    const { client, settles } = fakeClient([refusedEmail, pushed, laterEmail]);
+    const fetch = vi.fn<Fetch>((url) =>
+      Promise.resolve(new Response(null, { status: url === RESEND_ENDPOINT ? 401 : 201 })),
+    );
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const response = await handlerWith(client, fetch, fakeEncryptor().encryptPush)(invoke());
+
+    // One Resend call (the refused one), one push.
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual([RESEND_ENDPOINT, device(1).endpoint]);
+    expect(settles).toEqual([
+      { p_id: refusedEmail.id, p_result: 'released', p_failure_code: PROVIDER_UNAUTHORIZED },
+      { p_id: pushed.id, p_result: 'sent', p_failure_code: null },
+      { p_id: laterEmail.id, p_result: 'released', p_failure_code: PROVIDER_UNAUTHORIZED },
+    ]);
+    expect(await response.json()).toEqual(
+      expect.objectContaining({ sent: 1, released: 2, stopped: { email: PROVIDER_UNAUTHORIZED } }),
+    );
+    errors.mockRestore();
+  });
+
+  it('A2: posts only to the devices read at send time under the lease, never to one handed over since the claim', async () => {
+    const handedOver = device(1);
+    const kept = device(2);
+    const claimed = pushRow([handedOver, kept]);
+    // Since the claim, `handedOver` was registered to another member.
+    const { client, settles, reads } = fakeClient([claimed], undefined, () =>
+      Promise.resolve({ data: { status: 'ready', devices: [kept] }, error: null }),
+    );
+    const fetch = pushServices({});
+
+    await handlerWith(client, fetch, fakeEncryptor().encryptPush)(invoke());
+
+    expect(reads).toEqual([{ p_id: claimed.id, p_claimed_at: claimed.claimed_at }]);
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual([kept.endpoint]);
+    expect(settles).toEqual([{ p_id: claimed.id, p_result: 'sent', p_failure_code: null }]);
+  });
+
+  it('A2: a row whose every device was handed over settles as with no device left, and nothing is posted', async () => {
+    const handedOver = device(1);
+    const claimed = pushRow([handedOver]);
+    const { client, settles } = fakeClient([claimed], undefined, () =>
+      Promise.resolve({ data: { status: 'ready', devices: [] }, error: null }),
+    );
+    const fetch = pushServices({});
+
+    await handlerWith(client, fetch, fakeEncryptor().encryptPush)(invoke());
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(settles).toEqual([{ p_id: claimed.id, p_result: 'permanent', p_failure_code: PUSH_NO_SUBSCRIPTION }]);
+  });
+
+  it.each([
+    ['answers an error', () => Promise.resolve({ data: null, error: { code: '42501', message: 'denied' } })],
+    ['rejects', () => Promise.reject(new Error('down'))],
+    ['answers no list', () => Promise.resolve({ data: null, error: null })],
+    ['answers a bare list (the old shape)', () => Promise.resolve({ data: [device(1)], error: null })],
+    ['answers an unknown status', () => Promise.resolve({ data: { status: 'maybe', devices: [] }, error: null })],
+    [
+      'answers entries that are not devices',
+      () => Promise.resolve({ data: { status: 'ready', devices: [{ id: 'x' }] }, error: null }),
+    ],
+  ] as const)('A2: retries a push row PUSH_DEVICES_UNAVAILABLE when the device read %s, posting nothing', async (_label, answer) => {
+    const claimed = pushRow([device(1)]);
+    const { client, settles } = fakeClient([claimed], undefined, answer as () => Promise<RpcAnswer>);
+    const fetch = pushServices({});
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await handlerWith(client, fetch, fakeEncryptor().encryptPush)(invoke());
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(settles).toEqual([{ p_id: claimed.id, p_result: 'transient', p_failure_code: PUSH_DEVICES_UNAVAILABLE }]);
+    expect(errors).toHaveBeenCalledWith(PUSH_DEVICES_UNAVAILABLE, claimed.id);
+    errors.mockRestore();
+  });
+
+  it('A2: a device read that never answers is bounded by the send timeout', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const claimed = pushRow([device(1)]);
+      const { client, settles } = fakeClient([claimed], undefined, () => new Promise<RpcAnswer>(() => undefined));
+      const fetch = pushServices({});
+      const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      const running = handlerWith(client, fetch, fakeEncryptor().encryptPush)(invoke());
+      await vi.advanceTimersByTimeAsync(SEND_TIMEOUT_MS + 1);
+      await running;
+
+      expect(fetch).not.toHaveBeenCalled();
+      expect(settles).toEqual([{ p_id: claimed.id, p_result: 'transient', p_failure_code: PUSH_DEVICES_UNAVAILABLE }]);
+      errors.mockRestore();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('A7: a push row reached at 36 s is released untried, and an email may still start until 45 s', async () => {
+    let clock = 0;
+    const first = row();
+    const latePush = pushRow([device(1)]);
+    const lateEmail = row();
+    const { client, settles, reads } = fakeClient([first, latePush, lateEmail]);
+    // The first email takes 36 s.
+    const fetch = vi.fn<Fetch>((url) => {
+      if (url === RESEND_ENDPOINT && clock === 0) clock = 36_000;
+      return Promise.resolve(new Response(null, { status: url === RESEND_ENDPOINT ? 200 : 201 }));
+    });
+
+    const response = await createHandler(configured, {
+      makeClient: () => client,
+      fetch,
+      encryptPush: fakeEncryptor().encryptPush,
+      now: () => clock,
+      sleep: instantly,
+    })(invoke());
+
+    expect(reads, 'a push row past its deadline read its devices').toEqual([]);
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual([RESEND_ENDPOINT, RESEND_ENDPOINT]);
+    expect(settles).toEqual([
+      { p_id: first.id, p_result: 'sent', p_failure_code: null },
+      { p_id: latePush.id, p_result: 'released', p_failure_code: RUN_DEADLINE },
+      { p_id: lateEmail.id, p_result: 'sent', p_failure_code: null },
+    ]);
+    // Per channel: push stopped at its deadline, email never did.
+    expect(await response.json()).toEqual(expect.objectContaining({ sent: 2, released: 1, stopped: { push: RUN_DEADLINE } }));
+  });
+
+  it('A7: an email that passes the deadline check but would start after 45 s once paced is released untried', async () => {
+    let clock = 0;
+    const first = row();
+    const second = row();
+    const third = row();
+    const { client, settles } = fakeClient([first, second, third]);
+    // The first send ends at 44.6 s, so the second starts then and ends at 44.7 s.
+    // The third passes the deadline check at 44.7 s, but the pace would start it
+    // at 45.15 s.
+    const fetch = vi.fn<Fetch>(() => {
+      clock = clock === 0 ? 44_600 : 44_700;
+      return Promise.resolve(new Response(null, { status: 200 }));
+    });
+
+    const response = await createHandler(configured, {
+      makeClient: () => client,
+      fetch,
+      now: () => clock,
+      sleep: (ms) => {
+        clock += ms;
+        return Promise.resolve();
+      },
+    })(invoke());
+
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(settles).toEqual([
+      { p_id: first.id, p_result: 'sent', p_failure_code: null },
+      { p_id: second.id, p_result: 'sent', p_failure_code: null },
+      { p_id: third.id, p_result: 'released', p_failure_code: RUN_DEADLINE },
+    ]);
+    expect(await response.json()).toEqual(expect.objectContaining({ stopped: { email: RUN_DEADLINE } }));
+  });
+
+  it('A1/A7: both channels stopped are both reported', async () => {
+    let clock = 0;
+    const refused = row();
+    const latePush = pushRow([device(1)]);
+    const { client } = fakeClient([refused, latePush]);
+    const fetch = vi.fn<Fetch>(() => {
+      clock = 40_000;
+      return Promise.resolve(new Response(null, { status: 401 }));
+    });
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const response = await createHandler(configured, {
+      makeClient: () => client,
+      fetch,
+      encryptPush: fakeEncryptor().encryptPush,
+      now: () => clock,
+      sleep: instantly,
+    })(invoke());
+
+    expect(await response.json()).toEqual(
+      expect.objectContaining({ stopped: { email: PROVIDER_UNAUTHORIZED, push: RUN_DEADLINE } }),
+    );
+    errors.mockRestore();
+  });
+
+  it('A7: a settle that never answers is bounded by the send timeout and counted unsettled', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const claimed = row();
+      const client: OutboxClient = {
+        rpc: (fn) =>
+          fn === CLAIM_RPC ? Promise.resolve({ data: [claimed], error: null }) : new Promise<RpcAnswer>(() => undefined),
+      };
+      const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      const running = handlerOf(client, provider(200))(invoke());
+      await vi.advanceTimersByTimeAsync(SEND_TIMEOUT_MS + 1);
+      const response = await running;
+
+      expect(await response.json()).toMatchObject({ unsettled: 1, sent: 0 });
+      expect(errors).toHaveBeenCalledWith('SETTLE_FAILED', claimed.id);
+      errors.mockRestore();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('A2: a lost lease posts nothing and settles nothing', async () => {
+    const claimed = pushRow([device(1)]);
+    const { client, settles } = fakeClient([claimed], undefined, () =>
+      Promise.resolve({ data: { status: 'lease_lost', devices: [] }, error: null }),
+    );
+    const fetch = pushServices({});
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const response = await handlerWith(client, fetch, fakeEncryptor().encryptPush)(invoke());
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(settles).toEqual([]);
+    expect(await response.json()).toMatchObject({ unsettled: 1, failed: 0 });
+    expect(errors).toHaveBeenCalledWith(PUSH_LEASE_LOST, claimed.id);
+    errors.mockRestore();
+  });
+
+  it('A3: a recipient deactivated after the claim is posted nothing and settled RECIPIENT_INACTIVE', async () => {
+    const claimed = pushRow([device(1)]);
+    const { client, settles } = fakeClient([claimed], undefined, () =>
+      Promise.resolve({ data: { status: 'inactive', devices: [] }, error: null }),
+    );
+    const fetch = pushServices({});
+
+    await handlerWith(client, fetch, fakeEncryptor().encryptPush)(invoke());
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(settles).toEqual([{ p_id: claimed.id, p_result: 'permanent', p_failure_code: RECIPIENT_INACTIVE }]);
+  });
+
+  it.each(['PGRST202', '42883'])(
+    'a notify deployed before 0046 (device read %s) gives the push row back without spending its attempt',
+    async (code) => {
+      const claimed = pushRow([device(1)]);
+      const { client, settles } = fakeClient([claimed], undefined, () =>
+        Promise.resolve({ data: null, error: { code, message: 'missing' } }),
+      );
+      const fetch = pushServices({});
+      const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      const response = await handlerWith(client, fetch, fakeEncryptor().encryptPush)(invoke());
+
+      expect(fetch).not.toHaveBeenCalled();
+      expect(settles).toEqual([{ p_id: claimed.id, p_result: 'released', p_failure_code: PUSH_DEVICES_MISSING }]);
+      expect(await response.json()).toMatchObject({ released: 1, retried: 0 });
+      errors.mockRestore();
+    },
+  );
+
+  it('A7: a push row (read, send, delete) and an email (one send) each finish inside 50 s, under pg_net 55 s', () => {
+    expect(PUSH_RUN_DEADLINE_MS + 3 * SEND_TIMEOUT_MS).toBeLessThanOrEqual(50_000);
+    expect(RUN_DEADLINE_MS + SEND_TIMEOUT_MS).toBeLessThanOrEqual(50_000);
+    expect(PUSH_RUN_DEADLINE_MS).toBeLessThan(RUN_DEADLINE_MS);
   });
 
   it('maps each push answer: accepted, gone, or the email classification but for 401 and 403', () => {
@@ -1908,7 +2211,7 @@ describe("notify's push matrix against the real claim, settle and delete (0045)"
     });
   });
 
-  it.skipIf(noDatabase)('keeps a device re-registered to another member after the claim, though its old owner\'s push answered 410', async () => {
+  it.skipIf(noDatabase)('A2: never posts to a device re-registered to another member after the claim, and keeps it', async () => {
     const [{ slug, member, bystander }] = FIXTURES;
     await inRolledBackTransaction(async (client) => {
       const { organization, devices, push, member: memberId } = await arrangePush(client, slug, member, 1);
@@ -1920,7 +2223,8 @@ describe("notify's push matrix against the real claim, settle and delete (0045)"
           where id = $3`,
         [organization, bystander, devices[0]?.id],
       );
-      // The run that holds the claim answers 410 for the old subscription.
+      // Had the run posted with the claim's snapshot, the old subscription would answer 410.
+      const fetch = pushServices({ [devices[0]?.endpoint ?? '']: 410 });
       const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
       const handle = createHandler(configured, {
         makeClient: () => ({
@@ -1937,17 +2241,21 @@ describe("notify's push matrix against the real claim, settle and delete (0045)"
                   ],
                   error: null,
                 })
-              : serviceRoleClient(client).rpc(fn as typeof SETTLE_RPC, args),
+              : serviceRoleClient(client).rpc(fn as typeof SETTLE_RPC | typeof PUSH_DEVICES_RPC, args),
         }),
-        fetch: pushServices({ [devices[0]?.endpoint ?? '']: 410 }),
+        fetch,
         sleep: instantly,
         encryptPush: fakeEncryptor().encryptPush,
       });
       await handle(invoke());
       errors.mockRestore();
 
+      // Retro 10 A2: the send-time read finds the device is the bystander's
+      // now, so the old owner's notification never reaches it.
+      expect(fetch, "the old owner's payload was posted to the new owner's device").not.toHaveBeenCalled();
+      expect(await stateOf(client, id)).toMatchObject({ failed: true, failureCode: PUSH_NO_SUBSCRIPTION });
       const { rows } = await client.query('select 1 from push_subscriptions where id = $1', [devices[0]?.id]);
-      expect(rows, "a stale 410 deleted another member's live device").toHaveLength(1);
+      expect(rows, "another member's live device was deleted").toHaveLength(1);
     });
 
   });

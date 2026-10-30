@@ -175,7 +175,17 @@ export interface RenderTarget {
  * sent straight on; anyone else signs in first, into the right organization.
  */
 export function linkOf(appUrl: string, slug: string, path: string): string {
-  return `${appUrl.replace(/\/+$/, '')}/prijava/${encodeURIComponent(slug)}?povratak=${encodeURIComponent(path)}`;
+  return `${appUrl.replace(/\/+$/, '')}${signInPathOf(slug, path)}`;
+}
+
+/**
+ * The same sign-in link with no origin (`/prijava/<slug>?povratak=<path>`):
+ * what a push carries (retro 10 A6). The service worker resolves it on its own
+ * origin, so a deployment serving the app from more than one origin never
+ * loses the deep link to `SHIFT_APP_URL`'s.
+ */
+export function signInPathOf(slug: string, path: string): string {
+  return `/prijava/${encodeURIComponent(slug)}?povratak=${encodeURIComponent(path)}`;
 }
 
 /** No message is known for the row's code: a code `notify` cannot render. */
@@ -240,14 +250,23 @@ export type Rendered =
 /**
  * A push notification's payload (story 10.4): the email's subject as the
  * title, its body WITHOUT the footer (the footer speaks of email), and the
- * same sign-in link to the surface, which the service worker opens on a tap.
+ * same sign-in link to the surface as a PATH (retro 10 A6), which the service
+ * worker opens on its own origin on a tap. The body's own text still names the
+ * absolute link, as the email's does.
  */
 export type RenderedPush =
   | { readonly ok: true; readonly title: string; readonly body: string; readonly url: string }
   | { readonly ok: false; readonly code: typeof MESSAGE_UNKNOWN | typeof OPERANDS_INVALID };
 
 type Composed =
-  | { readonly ok: true; readonly subject: string; readonly body: string; readonly link: string; readonly footer: string }
+  | {
+      readonly ok: true;
+      readonly subject: string;
+      readonly body: string;
+      readonly link: string;
+      readonly linkPath: string;
+      readonly footer: string;
+    }
   | { readonly ok: false; readonly code: typeof MESSAGE_UNKNOWN | typeof OPERANDS_INVALID };
 
 /** The parts one row renders to, shared by the email and the push. */
@@ -292,7 +311,7 @@ function compose(code: string, locale: string | null, operands: unknown, target:
   const footer = interpolate(messages.footer, { link: linkOf(target.appUrl, slug, SETTINGS_PATH) });
   if (subject === null || body === null || footer === null) return { ok: false, code: OPERANDS_INVALID };
 
-  return { ok: true, subject, body, link, footer };
+  return { ok: true, subject, body, link, linkPath: signInPathOf(slug, path), footer };
 }
 
 /**
@@ -310,12 +329,12 @@ export function render(code: string, locale: string | null, operands: unknown, t
 
 /**
  * One outbox row's push payload (story 10.4): the same text as the email, by
- * the same code and operands, without the email's footer, and the link the
- * notification opens.
+ * the same code and operands, without the email's footer, and the path the
+ * notification opens on the worker's origin.
  */
 export function renderPush(code: string, locale: string | null, operands: unknown, target: RenderTarget): RenderedPush {
   const composed = compose(code, locale, operands, target);
   if (!composed.ok) return composed;
 
-  return { ok: true, title: composed.subject, body: composed.body, url: composed.link };
+  return { ok: true, title: composed.subject, body: composed.body, url: composed.linkPath };
 }

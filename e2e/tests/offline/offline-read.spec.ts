@@ -1,16 +1,21 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 
+
 import {
   holdRotation,
+  removeLeaveMemberInSql,
   removeLeaveRecordsInSql,
   removeSeededRotation,
   seedExtraTeam,
   seedLeaveMember,
   seedLeaveRecord,
+  seedLeaveRequest,
   seedTeamRotation,
 } from '../../utils/database-helper.ts';
-import { hr } from '../../utils/i18n.ts';
-import { ADMIN_STATE, MEMBER_STATE } from '../../utils/run-fixture.ts';
+import { addDays } from '../../utils/dates.ts';
+import { hr, plural } from '../../utils/i18n.ts';
+import { onlyRowsOf } from '../../utils/routes.ts';
+import { ADMIN_STATE, MEMBER_STATE, RUN_TIMEZONE } from '../../utils/run-fixture.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
 
 /**
@@ -272,8 +277,66 @@ test.describe("offline reading of the admin's Sati, Godišnji and Ljudi table (s
   });
 });
 
+/** A requester of a test's own, deleted afterwards (retro 8–9 item 19). */
+let requester: { readonly slug: string; readonly id: string } | null = null;
+
+test.afterEach(async () => {
+  const own = requester;
+  requester = null;
+  // Not swallowed: a request left pending would sit on every other spec's queue.
+  if (own !== null) await removeLeaveMemberInSql(own.slug, own.id);
+});
+
 test.describe("offline reading of the admin's work surfaces (story 8.2c)", () => {
   test.use({ storageState: ADMIN_STATE });
+
+  // RETRO 8–9 ITEM 19 (V1): a pending request (story 9.5) is part of what
+  // Danas and Za odluku read, so offline both show it and count it.
+  test('a pending request read online is listed and counted offline, on Danas and Za odluku, under the note', async ({
+    page,
+    todayPage,
+    conflictsPage,
+    fixture,
+  }) => {
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: RUN_TIMEZONE }).format(new Date());
+    const member = await seedLeaveMember(fixture.slug, null, today, 20);
+    requester = { slug: fixture.slug, id: member.id };
+    await seedLeaveRequest(fixture.slug, member.id, addDays(today, 30), addDays(today, 32));
+    await onlyRowsOf(page, member.id);
+
+    // ONLINE: Danas, then Za odluku, each with the request and its count.
+    await todayPage.goto();
+    await expect(todayPage.needsYouCount(1)).toBeVisible();
+    await expect(todayPage.needsYouRowLinks).toHaveCount(1);
+    await expect(todayPage.needsYouRowLinks.first()).toContainText(member.name);
+    await conflictsPage.navigationLink(hr.nav.zaOdluku, { exact: true }).click();
+    await expect(conflictsPage.countHeading(1)).toBeVisible();
+    await expect(conflictsPage.rows).toHaveCount(1);
+    await expect(conflictsPage.rows.first()).toContainText(hr.zaOdluku.kind.request);
+    await expect(conflictsPage.busyMain).toHaveCount(0);
+    await expect(conflictsPage.offlineNote, 'a fresh surface carries no note').toHaveCount(0);
+
+    // OFFLINE: enter both again by navigation.
+    await page.context().setOffline(true);
+    await todayPage.navigationLink(hr.nav.danas, { exact: true }).click();
+    await expect(todayPage.heading(hr.nav.danas)).toBeVisible();
+    await expect(todayPage.offlineNote).toHaveCount(1);
+    await expect(todayPage.needsYouCount(1)).toBeVisible();
+    await expect(todayPage.needsYouRowLinks).toHaveCount(1);
+    await expect(todayPage.needsYouRowLinks.first()).toContainText(member.name);
+
+    await conflictsPage.navigationLink(hr.nav.zaOdluku, { exact: true }).click();
+    await expect(conflictsPage.heading(hr.nav.zaOdluku)).toBeVisible();
+    await expect(conflictsPage.offlineNote).toHaveCount(1);
+    await expect(conflictsPage.anyCountHeading).toHaveText(plural(hr.zaOdluku.count, 1));
+    await expect(conflictsPage.rows).toHaveCount(1);
+    await expect(conflictsPage.rows.first()).toContainText(hr.zaOdluku.kind.request);
+    await expect(conflictsPage.rows.first()).toContainText(member.name);
+    await expect(conflictsPage.retryButton).toHaveCount(0);
+
+    await page.context().setOffline(false);
+    await expect(conflictsPage.offlineNote).toHaveCount(0);
+  });
 
   test('Za odluku read online opens offline under the note on both tabs, and the note goes on reconnect', async ({
     page,
