@@ -1,7 +1,8 @@
 // Writes the two local env files the E2E suite needs (`e2e/README.md`) from
 // `supabase status -o json`:
 //
-//   apps/web/.env.local       VITE_SUPABASE_URL, VITE_SUPABASE_PUBLISHABLE_KEY
+//   apps/web/.env.local       VITE_SUPABASE_URL, VITE_SUPABASE_PUBLISHABLE_KEY,
+//                             VITE_VAPID_PUBLIC_KEY (a fixed local one)
 //   supabase/functions/.env   the function's keys and its allowed origin
 //
 // Both files are gitignored. Nothing is echoed: the keys go from the CLI's
@@ -23,6 +24,15 @@ import { fileURLToPath } from 'node:url';
 export const LOCAL_APP_ORIGIN = 'http://127.0.0.1:5173';
 
 /**
+ * Story 10.4: a VAPID PUBLIC key for local work and the E2E suite, so a
+ * device can subscribe on the dev server (the E2E stubs the browser's push).
+ * Public by design, and its private half was never kept: nothing can sign a
+ * push for it, so it reaches no real device.
+ */
+export const LOCAL_VAPID_PUBLIC_KEY =
+  'BO8VM-jYeQGhMl_-cXpeQll7R16J-dxBA0BgLyaSQbtkHe5omXOEkIGtO8uODlxq2pm20O_bYx4fExhSE-wXTfw';
+
+/**
  * The two files' contents, from the parsed status JSON.
  *
  * @param {Record<string, unknown>} status
@@ -42,7 +52,12 @@ export function renderEnvFiles(status) {
   }
 
   return {
-    web: [`VITE_SUPABASE_URL=${apiUrl}`, `VITE_SUPABASE_PUBLISHABLE_KEY=${publishable}`, ''].join('\n'),
+    web: [
+      `VITE_SUPABASE_URL=${apiUrl}`,
+      `VITE_SUPABASE_PUBLISHABLE_KEY=${publishable}`,
+      `VITE_VAPID_PUBLIC_KEY=${LOCAL_VAPID_PUBLIC_KEY}`,
+      '',
+    ].join('\n'),
     functions: [
       `SHIFT_SECRET_KEY=${secret}`,
       `SHIFT_PUBLISHABLE_KEY=${publishable}`,

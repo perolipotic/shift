@@ -67,6 +67,11 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,woff2,svg,png}'],
+        // STORY 10.4. The push handlers (`public/push-sw.js`) are imported
+        // by the worker, never precached: the browser checks an imported
+        // script for updates with the worker itself.
+        globIgnores: ['**/node_modules/**/*', 'push-sw.js'],
+        importScripts: ['push-sw.js'],
         navigateFallback: '/index.html',
         sourcemap: false,
       },

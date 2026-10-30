@@ -15,6 +15,7 @@
 // Exit codes: 0 all good, 1 something missing or malformed, 2 usage error
 // (including no requirements at all — a check of nothing is not a pass).
 
+import { createECDH } from 'node:crypto';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -38,6 +39,17 @@ export const FORMATS = {
     /^[A-Za-z0-9_-]{32,}$/.test(value)
       ? null
       : 'is not an invoke secret (at least 32 letters, digits, - or _; `openssl rand -hex 32`)',
+  // Story 10.4: the VAPID key pair, as `web-push generate-vapid-keys` prints it
+  // (unpadded base64url: a 65-byte public key, a 32-byte private key), and its
+  // subject, the same shapes `notify` checks.
+  'vapid-public': (value) =>
+    /^[A-Za-z0-9_-]{87}$/.test(value) ? null : 'is not a VAPID public key (87 base64url characters)',
+  'vapid-private': (value) =>
+    /^[A-Za-z0-9_-]{43}$/.test(value) ? null : 'is not a VAPID private key (43 base64url characters)',
+  'vapid-subject': (value) =>
+    /^(?:mailto:[^<>@\s]+@[^<>@\s]+\.[^<>@\s]+|https:\/\/\S+)$/.test(value)
+      ? null
+      : 'is not a VAPID subject (mailto:addr or an https URL)',
 };
 
 /**
@@ -82,7 +94,40 @@ export function problems(requirements, env) {
       if (reason !== null) found.push({ requirement, reason });
     }
   }
+
+  // Story 10.4: the VAPID public key must be the private key's own. A pair
+  // that does not match signs every push with a key no device subscribed
+  // under, and every push service refuses it, so the deploy fails here.
+  const privateKey = requirements.find((requirement) => requirement.format === 'vapid-private');
+  const publicKey = requirements.find((requirement) => requirement.format === 'vapid-public');
+  if (
+    privateKey !== undefined &&
+    publicKey !== undefined &&
+    !found.some(({ requirement }) => requirement === privateKey || requirement === publicKey)
+  ) {
+    const reason = vapidPairProblem(env[privateKey.name] ?? '', env[publicKey.name] ?? '', privateKey.name);
+    if (reason !== null) found.push({ requirement: publicKey, reason });
+  }
   return found;
+}
+
+/**
+ * Why a VAPID public key is not the private key's own, or `null` when it is.
+ * Never names either value.
+ *
+ * @param {string} privateKey unpadded base64url, 32 bytes
+ * @param {string} publicKey unpadded base64url, 65 bytes
+ * @param {string} privateName the private key's variable name, for the reason
+ * @returns {string | null}
+ */
+export function vapidPairProblem(privateKey, publicKey, privateName = 'VAPID_PRIVATE_KEY') {
+  try {
+    const ecdh = createECDH('prime256v1');
+    ecdh.setPrivateKey(Buffer.from(privateKey, 'base64url'));
+    return ecdh.getPublicKey('base64url') === publicKey ? null : `is not the public key of ${privateName} (not one key pair)`;
+  } catch {
+    return `cannot be checked: ${privateName} is not a P-256 private key`;
+  }
 }
 
 /**

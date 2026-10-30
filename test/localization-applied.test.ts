@@ -675,6 +675,10 @@ const SOURCES = [
   join(webRoot, 'src', 'features', 'notifications', 'hooks', 'use-notification-settings.ts'),
   join(webRoot, 'src', 'features', 'notifications', 'components', 'notification-settings-card.tsx'),
   join(webRoot, 'src', 'features', 'notifications', 'services', 'settings.ts'),
+  // Story 10.4: the push section — its hook, card and rules module.
+  join(webRoot, 'src', 'features', 'notifications', 'hooks', 'use-push-settings.ts'),
+  join(webRoot, 'src', 'features', 'notifications', 'components', 'push-settings-card.tsx'),
+  join(webRoot, 'src', 'features', 'notifications', 'services', 'push.ts'),
   // Story 5.3b: *Za odluku*'s conflicts queue — its hook, components and rules
   // module. `za-odluku.tsx` is listed with the destinations above.
   join(webRoot, 'src', 'features', 'conflicts', 'hooks', 'use-conflicts-queue.ts'),

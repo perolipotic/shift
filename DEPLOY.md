@@ -11,7 +11,7 @@ tier beyond two Edge Functions (AD-14):
 | `apps/web` | Cloudflare Pages, static | the publishable key only |
 | `supabase/migrations` | Supabase Postgres | the schema, forward-only; the `notify` cron job and its two Vault secrets' names |
 | `supabase/functions/admin-auth` | Supabase Edge Functions | the secret key |
-| `supabase/functions/notify` | Supabase Edge Functions, called every minute by pg_cron | the secret key (for its two RPCs), the Resend key, the invoke secret, later the VAPID private key |
+| `supabase/functions/notify` | Supabase Edge Functions, called every minute by pg_cron | the secret key (for its three RPCs), the Resend key, the invoke secret, the VAPID key pair and subject |
 
 The secret key exists only in the Edge Functions' per-environment secrets. If
 you ever find `sb_secret_*` in a Pages environment variable, in a committed
@@ -197,7 +197,9 @@ end of 2026 and this system does not read them.
 | notify invoke secret | `staging` Environment secret `NOTIFY_INVOKE_SECRET` → function secret `NOTIFY_INVOKE_SECRET`, **and** the Vault secret `notify_invoke_secret` (§3a) | same, `production` Environment |
 | sender address | `staging` Environment variable `NOTIFY_EMAIL_FROM` → function secret `NOTIFY_EMAIL_FROM` | same, `production` Environment |
 | app origin | the first `APP_ORIGINS` entry → function secret `SHIFT_APP_URL` (auto) | same |
-| VAPID private key | `staging` Environment secret `VAPID_PRIVATE_KEY`, optional until story 10.4 → function secret `VAPID_PRIVATE_KEY` | same, `production` Environment |
+| VAPID private key | `staging` Environment secret `VAPID_PRIVATE_KEY` → function secret `VAPID_PRIVATE_KEY`, read by `notify` only | same, `production` Environment |
+| VAPID public key | `staging` Environment variable `VAPID_PUBLIC_KEY` → function secret `VAPID_PUBLIC_KEY` + the build's `VITE_VAPID_PUBLIC_KEY` | same, `production` Environment |
+| VAPID subject | `staging` Environment variable `VAPID_SUBJECT` (`mailto:…` or an `https:` URL) → function secret `VAPID_SUBJECT` | same, `production` Environment |
 
 The pipeline (§8) sets the function secrets itself on every deploy, from those
 GitHub Environment values, through a temporary env file exactly like the one
@@ -227,7 +229,7 @@ Repeat with `supabase/functions/.env.production` and `<production-ref>`. Every
 **Function secrets are per project, not per function.** `supabase secrets set`
 puts every value in both functions' environments; that is the platform's
 granularity, not a choice. What keeps the Resend key, the invoke secret and the
-VAPID key `notify`'s alone is that nothing else reads them:
+VAPID private key `notify`'s alone is that nothing else reads them:
 `test/key-hygiene.test.ts` fails if any file outside `supabase/functions/notify/`
 names them in code.
 
@@ -306,10 +308,33 @@ then the Environment secret, then redeploy (or `supabase secrets set`). Between
 the two steps the function answers the job `401` and nothing is claimed: no
 email is lost, it waits for the next minute.
 
-**5. VAPID (story 10.4).** Nothing reads `VAPID_PRIVATE_KEY` before story 10.4.
-Generate the pair when 10.4 starts (`npx web-push generate-vapid-keys`) and set
-the private half as the Environment secret `VAPID_PRIVATE_KEY`; the public half
-is not a secret.
+**5. VAPID (story 10.4).** Web Push signs every send with a VAPID key pair, one
+per environment. Generate it once:
+
+```bash
+pnpm dlx web-push@3.6.7 generate-vapid-keys
+```
+
+and set the private half (43 characters) as the Environment secret
+`VAPID_PRIVATE_KEY`, the public half (87 characters) as the Environment
+variable `VAPID_PUBLIC_KEY`, and `VAPID_SUBJECT` — who a push service may
+contact — as a variable, `mailto:<an address you read>` or an `https:` URL.
+`notify` reads all three; without them, or with one malformed, it still sends
+email and retries every push as `PUSH_NOT_CONFIGURED` (it logs the
+`VAPID_*_MISSING`/`_INVALID` code at start). The deploy gate
+(`scripts/ci/require-config.mjs`) checks that the public key is the private
+key's own and fails the deploy on a mismatched pair. The public key is also the build's
+`VITE_VAPID_PUBLIC_KEY` (§4): AD-17, as amended by story 10.4, lets the SPA
+carry it, and it is public by design. The private key never leaves the
+function's environment.
+
+**Never rotate the pair casually.** Every device subscribed under the old
+public key; after a rotation its push service refuses each send (`403`,
+`PUSH_SERVICE_UNAUTHORIZED`), which `notify` retries and then fails. The next
+time the member turns push on on that device, the SPA sees the subscription
+was made under another key, unsubscribes it and subscribes again under the new
+one; until then that device receives nothing. Rotate only after a leak, and
+tell the members to turn push off and on again on each device.
 
 **Locally** the same two Vault statements against the local database turn the
 local job on, with `notify_url` set to the API gateway as the database
@@ -349,14 +374,16 @@ old one — or, at the very least, turn off *Settings → Builds & deployments �
 Automatic deployments* for both production and preview so nothing publishes
 without the pipeline.
 
-There are **no Pages environment variables** to set. `VITE_SUPABASE_URL` and
-`VITE_SUPABASE_PUBLISHABLE_KEY` are build-time values, and the build now runs in
-the pipeline's deploy job, which reads them from that GitHub Environment (§8):
+There are **no Pages environment variables** to set. `VITE_SUPABASE_URL`,
+`VITE_SUPABASE_PUBLISHABLE_KEY` and `VITE_VAPID_PUBLIC_KEY` are build-time
+values, and the build now runs in the pipeline's deploy job, which reads them
+from that GitHub Environment (§8):
 
 | Variable | Where it comes from |
 | --- | --- |
 | `VITE_SUPABASE_URL` | `https://<SUPABASE_PROJECT_REF>.supabase.co`, from the environment's `SUPABASE_PROJECT_REF` |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | the environment's `SUPABASE_PUBLISHABLE_KEY` variable (`sb_publishable_*`) |
+| `VITE_VAPID_PUBLIC_KEY` | the environment's `VAPID_PUBLIC_KEY` variable (story 10.4, §3a). Left empty, the app runs, and `/obavijesti` says push is unavailable, with no control |
 
 Vite inlines `VITE_*` variables into the bundle at build time, which is why the
 secret key can never appear here.
@@ -657,6 +684,25 @@ organization has email off, including rows waiting out a retry; only a row
 already claimed and in flight can still send. The `notify` function needs no
 change for this.
 
+**Migration `0045`, then the `notify` of story 10.4 straight away, then the
+SPA.** `0045` adds `push_subscriptions` with `register_push_subscription` (the
+SPA's *Obavijesti na uređaju* calls it), `delete_push_subscription` (the new
+`notify` calls it), the `push` channel, and a `claim_notifications` that now
+returns a `subscriptions` column (dropped and re-created, same grants). Every
+writer writes a `push` row beside the `email` row for a recipient with a
+device. The old `notify` knows only email and would send a `push` row by email,
+so deploy the new one right after `db push`: `db push`, the function secrets
+(with the VAPID values), `functions deploy notify`, and only then the SPA
+(built with `VITE_VAPID_PUBLIC_KEY`). That is the order the deploy action (§8)
+runs, and no `push` row exists before a member turns push on in the new SPA.
+The new `notify` needs nothing of the new SPA. A VAPID value missing or
+malformed never stops email: `notify` logs `notify cannot send push:
+VAPID_…` at start and retries every `push` row as `PUSH_NOT_CONFIGURED`.
+A `push` row whose member has no device left is settled failed at the claim
+(`failure_code = 'PUSH_NO_SUBSCRIPTION'`); one whose every device answered
+`404`/`410` fails `PUSH_SUBSCRIPTION_GONE`, and those devices are deleted.
+A push service's own failures carry `PUSH_SERVICE_*` codes, never Resend's.
+
 With the pipeline enabled (§8), merging to `main` is what promotes: staging is
 deployed and smoked, then production waits for an approval, and each deploy
 pushes migrations **before** it publishes the SPA. Without it, nothing publishes
@@ -666,6 +712,7 @@ promotion ends with a manual upload, built with that environment's values:
 ```bash
 VITE_SUPABASE_URL=https://<production-ref>.supabase.co \
 VITE_SUPABASE_PUBLISHABLE_KEY=<production sb_publishable_*> \
+VITE_VAPID_PUBLIC_KEY=<production VAPID public key> \
   pnpm --filter "@shift/web..." build
 find apps/web/dist -name '*.map' -type f -delete   # source maps stay off the CDN (§4)
 pnpm exec wrangler pages deploy apps/web/dist --project-name <project> --branch main
@@ -724,7 +771,8 @@ the code at startup.
 `notify`, against the live host (the deploy action runs this probe after every
 deploy). Without the invoke secret it refuses before
 claiming anything; a `500` with a code instead names the missing or malformed
-function secret (`RESEND_API_KEY_MISSING`, `INVOKE_SECRET_INVALID`, …):
+function secret (`RESEND_API_KEY_MISSING`, `INVOKE_SECRET_INVALID`, …; a
+VAPID problem is logged, not answered, because email does not depend on it):
 
 ```bash
 curl -s -X POST https://<ref>.supabase.co/functions/v1/notify
@@ -1227,7 +1275,8 @@ same order, with nothing skipped:
    and deleted when the step ends (`SHIFT_SECRET_KEY`, `SHIFT_PUBLISHABLE_KEY`,
    `SHIFT_ALLOWED_ORIGINS` = the normalized origins; for `notify`,
    `NOTIFY_INVOKE_SECRET`, `RESEND_API_KEY`, `NOTIFY_EMAIL_FROM`,
-   `SHIFT_APP_URL` = the first origin, and `VAPID_PRIVATE_KEY` when set);
+   `SHIFT_APP_URL` = the first origin, `VAPID_PRIVATE_KEY`, `VAPID_PUBLIC_KEY`
+   and `VAPID_SUBJECT`);
 8. `supabase functions deploy admin-auth`, then `supabase functions deploy
    notify` — every time, which is idempotent. The Vault secrets the cron job
    reads are set by hand, once per environment (§3a): the pipeline never
@@ -1274,7 +1323,9 @@ environment's values:
 | `SUPABASE_SECRET_KEY` | secret | that project's `sb_secret_*` — reaches the function secrets (`SHIFT_SECRET_KEY`) and nothing else |
 | `RESEND_API_KEY` | secret | that environment's Resend key (`re_*`, §3a) — read by `notify` only |
 | `NOTIFY_INVOKE_SECRET` | secret | at least 32 characters (`openssl rand -hex 32`), the same value as that project's Vault secret `notify_invoke_secret` (§3a) |
-| `VAPID_PRIVATE_KEY` | secret, optional until story 10.4 | the Web Push private key; set as a function secret only when present |
+| `VAPID_PRIVATE_KEY` | secret | the Web Push private key (43 characters, §3a) — read by `notify` only |
+| `VAPID_PUBLIC_KEY` | variable | the Web Push public key (87 characters, §3a) — `notify`'s, and the build's `VITE_VAPID_PUBLIC_KEY`; public by design |
+| `VAPID_SUBJECT` | variable | who a push service may contact: `mailto:<address>` or an `https:` URL |
 | `NOTIFY_EMAIL_FROM` | variable | the sender, on the domain verified in Resend (§3a), e.g. `Shift <obavijesti@obavijesti.example.org>` |
 | `CLOUDFLARE_API_TOKEN` | secret | a Cloudflare API token with *Account → Cloudflare Pages → Edit* |
 | `SUPABASE_PROJECT_REF` | variable | the project ref (20 lowercase letters and digits); the project URL is `https://<ref>.supabase.co` |

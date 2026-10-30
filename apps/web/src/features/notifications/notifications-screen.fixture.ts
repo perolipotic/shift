@@ -8,6 +8,9 @@ export const NOTIFICATIONS_SCREEN_PARTS = {
   page: ['pages', 'obavijesti.tsx'],
   hook: ['features', 'notifications', 'hooks', 'use-notification-settings.ts'],
   card: ['features', 'notifications', 'components', 'notification-settings-card.tsx'],
+  // Story 10.4: this device's push section, its hook and its card.
+  pushHook: ['features', 'notifications', 'hooks', 'use-push-settings.ts'],
+  pushCard: ['features', 'notifications', 'components', 'push-settings-card.tsx'],
 } as const;
 
 /**
@@ -27,5 +30,13 @@ export const NOTIFICATIONS_SCREEN_EXEMPT: readonly { readonly file: string; read
   {
     file: 'services/settings.ts',
     why: 'the read, the write and the view rule; a key source of its own, executed by settings.test.ts',
+  },
+  {
+    file: 'services/push.ts',
+    why: 'the device read, the push on and off, sign-out’s forgetting and the view rule; a key source of its own, executed by push.test.ts',
+  },
+  {
+    file: 'services/page-push.ts',
+    why: 'binds push.ts to `window`, the one client and the build’s VAPID public key; no copy',
   },
 ];

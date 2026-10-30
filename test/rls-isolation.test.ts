@@ -936,7 +936,7 @@ describe('the access-control layer is present, so nothing below passes vacuously
       );
       expect(
         policies.map((row) => row.policyname),
-        'stories 1.3a, 1.4a, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a, 3.5a, 3.6a, 5.1b, 5.4a, 9.2 and 0025 own exactly these policies; a missing one refuses silently and looks like a working refusal',
+        'stories 1.3a, 1.4a, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a, 3.5a, 3.6a, 5.1b, 5.4a, 9.2, 10.3, 10.4 and 0025 own exactly these policies; a missing one refuses silently and looks like a working refusal',
       ).toEqual([
         // STORY 5.4a: read and insert alone, and both an active admin's only;
         // a member reads their own live rows through `my_conflict_resolutions`.
@@ -982,6 +982,10 @@ describe('the access-control layer is present, so nothing below passes vacuously
         'notification_settings_update_own',
         'organizations_select_own_organization',
         'organizations_update_by_own_active_admin',
+        // STORY 10.4 (0045): a member's own devices, read and deleted by their
+        // member alone; registered only through `register_push_subscription`.
+        'push_subscriptions_delete_own',
+        'push_subscriptions_select_own',
         // STORY 3.6a: read and insert alone, and both an active admin's only,
         // as 3.5a's; members read the live rows through
         // `calendar_roster_overrides`. No update and no delete.
@@ -22331,6 +22335,384 @@ describe("a member's own email setting and the organization's switch stop the wr
 
       expect(ids).not.toContain(row?.id);
       expect((await deliveryOf(client, queued))[0]).toMatchObject({ failed: true, failure: 'EMAIL_TURNED_OFF', sent: false });
+    });
+  });
+});
+
+describe('a member registers their own devices, and each event writes a push row beside the email row (0045)', () => {
+  /** A device's keys, in the shapes 0045 checks (65 and 16 bytes, unpadded base64url). */
+  const P256DH = `B${'k'.repeat(86)}`;
+  const AUTH = 'a'.repeat(22);
+  const endpointOf = (name: string) => `https://fcm.googleapis.com/fcm/send/${name}`;
+
+  async function setEmail(client: Client, member: string, email: string | null): Promise<void> {
+    await client.query('update members set email = $2 where id = $1', [member, email]);
+  }
+
+  /** The fixture's admin, member and bystander, as the owner; the member's address as given, the others' set. */
+  async function cast(client: Client, fixture: (typeof FIXTURES)[number], memberEmail: string | null) {
+    const owner = await memberByUsername(client, fixture.slug, fixture.admin);
+    const self = await memberByUsername(client, fixture.slug, fixture.member);
+    const other = await memberByUsername(client, fixture.slug, fixture.bystander);
+    await setEmail(client, owner.id, `${fixture.admin}@example.org`);
+    await setEmail(client, self.id, memberEmail);
+    await setEmail(client, other.id, `${fixture.bystander}@example.org`);
+    return { owner, self, other, organization: owner.organizationId };
+  }
+
+  /** `register_push_subscription`, as the member themself; the connection is left as the owner. */
+  async function register(client: Client, member: MemberRow, endpoint: string): Promise<string> {
+    await actAs(client, member.authUserId, member.organizationId);
+    const { rows } = await client.query<{ id: string }>('select public.register_push_subscription($1, $2, $3)::text as id', [
+      endpoint,
+      P256DH,
+      AUTH,
+    ]);
+    await actAsOwner(client);
+    const id = rows[0]?.id;
+    if (id === undefined) throw new Error('the registration answered no id');
+    return id;
+  }
+
+  /** One subject's outbox rows as `channel:recipient`, sorted, as the owner. */
+  async function rowsOf(client: Client, subject: string): Promise<string[]> {
+    const { rows } = await client.query<{ row: string }>(
+      `select channel || ':' || recipient_member_id::text as row from notification_outbox where subject_id = $1 order by 1`,
+      [subject],
+    );
+    return rows.map(({ row }) => row);
+  }
+
+  /** Who owns each endpoint, as the owner. */
+  async function ownersOf(client: Client, endpoints: readonly string[]): Promise<Record<string, string>> {
+    const { rows } = await client.query<{ endpoint: string; member: string }>(
+      'select endpoint, member_id::text as member from push_subscriptions where endpoint = any($1::text[])',
+      [endpoints],
+    );
+    return Object.fromEntries(rows.map(({ endpoint, member }) => [endpoint, member]));
+  }
+
+  /** Runs `write` in a savepoint and answers its SQLSTATE and message, or `null` when it passed. */
+  async function refusal(client: Client, write: () => Promise<unknown>): Promise<string | null> {
+    await client.query('savepoint push_write');
+    try {
+      await write();
+      await client.query('release savepoint push_write');
+      return null;
+    } catch (error) {
+      await client.query('rollback to savepoint push_write');
+      const { code, message } = error as { code?: string; message?: string };
+      return `${code ?? 'UNKNOWN'} ${message ?? ''}`;
+    }
+  }
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'writes a $fixture member with no address and one device a push row and no email row; the recording admin, with devices, gets none',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { owner, self, organization } = await cast(client, fixture, null);
+        const day = (offset: number) => organizationDay(client, organization, offset);
+        await register(client, self, endpointOf(`${fixture.member}-phone`));
+        await register(client, owner, endpointOf(`${fixture.admin}-phone`));
+
+        await actAs(client, owner.authUserId, organization);
+        const leave = await insertLeave(client, { organization, member: self.id, during: `[${await day(40)},${await day(41)}]` });
+        const own = await insertLeave(client, { organization, member: owner.id, during: `[${await day(40)},${await day(41)}]` });
+        await actAsOwner(client);
+
+        expect(await rowsOf(client, leave), fixture.slug).toEqual([`push:${self.id}`]);
+        expect(await rowsOf(client, own), `${fixture.slug}: the recording admin heard of their own write`).toEqual([]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'writes a $fixture member with an address and two devices one email row and one push row, and the claim returns both devices',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { owner, self, organization } = await cast(client, fixture, `${fixture.member}@example.org`);
+        const day = (offset: number) => organizationDay(client, organization, offset);
+        await register(client, self, endpointOf(`${fixture.member}-phone`));
+        await register(client, self, endpointOf(`${fixture.member}-laptop`));
+
+        await actAs(client, owner.authUserId, organization);
+        const leave = await insertLeave(client, { organization, member: self.id, during: `[${await day(40)},${await day(41)}]` });
+        await actAsOwner(client);
+
+        expect(await rowsOf(client, leave), fixture.slug).toEqual([`email:${self.id}`, `push:${self.id}`].sort());
+
+        const { rows } = await client.query<{ channel: string; endpoints: string[] | null }>(
+          `select channel, (select array_agg(value ->> 'endpoint' order by value ->> 'endpoint') from jsonb_array_elements(subscriptions)) as endpoints
+             from public.claim_notifications(100) where subject_id = $1 order by channel`,
+          [leave],
+        );
+        expect(rows, fixture.slug).toEqual([
+          { channel: 'email', endpoints: null },
+          { channel: 'push', endpoints: [endpointOf(`${fixture.member}-laptop`), endpointOf(`${fixture.member}-phone`)] },
+        ]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)('writes a $fixture member with no device the email row only', async (fixture) => {
+    await inRolledBackTransaction(async (client) => {
+      const { owner, self, organization } = await cast(client, fixture, `${fixture.member}@example.org`);
+      const day = (offset: number) => organizationDay(client, organization, offset);
+
+      await actAs(client, owner.authUserId, organization);
+      const leave = await insertLeave(client, { organization, member: self.id, during: `[${await day(40)},${await day(41)}]` });
+      await actAsOwner(client);
+
+      expect(await rowsOf(client, leave), fixture.slug).toEqual([`email:${self.id}`]);
+    });
+  });
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    "writes and claims a $fixture push row while the organization's email switch is off, and the member's email setting too",
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { owner, self, organization } = await cast(client, fixture, `${fixture.member}@example.org`);
+        const day = (offset: number) => organizationDay(client, organization, offset);
+        await register(client, self, endpointOf(`${fixture.member}-phone`));
+        await client.query('update organizations set email_notifications = false where id = $1', [organization]);
+        await client.query('insert into notification_settings (organization_id, member_id, email) values ($1, $2, false)', [
+          organization,
+          self.id,
+        ]);
+
+        await actAs(client, owner.authUserId, organization);
+        const leave = await insertLeave(client, { organization, member: self.id, during: `[${await day(40)},${await day(41)}]` });
+        await actAsOwner(client);
+
+        expect(await rowsOf(client, leave), fixture.slug).toEqual([`push:${self.id}`]);
+        const { rows } = await client.query<{ channel: string }>(
+          'select channel from public.claim_notifications(100) where subject_id = $1',
+          [leave],
+        );
+        expect(rows, `${fixture.slug}: an email switch stopped a push row`).toEqual([{ channel: 'push' }]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'writes the $fixture decision push row to a requester with a device and no address',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { owner, self, organization } = await cast(client, fixture, null);
+        const day = (offset: number) => organizationDay(client, organization, offset);
+        await register(client, self, endpointOf(`${fixture.member}-phone`));
+
+        await actAs(client, self.authUserId, organization);
+        const request = await insertRequest(client, { organization, member: self.id, during: `[${await day(40)},${await day(42)}]` });
+        await actAs(client, owner.authUserId, organization);
+        await decideRequest(client, request, 'approved');
+        await actAsOwner(client);
+
+        const { rows } = await client.query<{ code: string; channel: string; recipient: string }>(
+          `select code, channel, recipient_member_id::text as recipient
+             from notification_outbox where subject_id = $1 and recipient_member_id = $2 order by channel`,
+          [request, self.id],
+        );
+        // The email row is written as before (and the claim settles it for no address); the push row beside it.
+        expect(rows, fixture.slug).toEqual([
+          { code: 'LEAVE_REQUEST_APPROVED', channel: 'email', recipient: self.id },
+          { code: 'LEAVE_REQUEST_APPROVED', channel: 'push', recipient: self.id },
+        ]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase)('settles a queued push row PUSH_NO_SUBSCRIPTION at the claim once the member turned off their last device', async () => {
+    await inRolledBackTransaction(async (client) => {
+      const [fixture] = FIXTURES;
+      const { owner, self, organization } = await cast(client, fixture, null);
+      const day = (offset: number) => organizationDay(client, organization, offset);
+      const endpoint = endpointOf(`${fixture.member}-phone`);
+      await register(client, self, endpoint);
+
+      await actAs(client, owner.authUserId, organization);
+      const leave = await insertLeave(client, { organization, member: self.id, during: `[${await day(40)},${await day(41)}]` });
+      // The member's own delete, through the policy.
+      await actAs(client, self.authUserId, organization);
+      const deleted = await client.query('delete from push_subscriptions where endpoint = $1', [endpoint]);
+      await actAsOwner(client);
+
+      const { rows: claimedRows } = await client.query<{ id: string }>(
+        'select id::text as id from public.claim_notifications(100) where subject_id = $1',
+        [leave],
+      );
+      const { rows } = await client.query<{ failed: boolean; failure: string | null; attempts: number }>(
+        `select failed_at is not null as failed, failure_code as failure, attempts
+           from notification_outbox where subject_id = $1 and channel = 'push'`,
+        [leave],
+      );
+
+      expect(deleted.rowCount).toBe(1);
+      expect(claimedRows).toEqual([]);
+      expect(rows).toEqual([{ failed: true, failure: 'PUSH_NO_SUBSCRIPTION', attempts: 0 }]);
+    });
+  });
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'hands a shared $fixture device to whoever registers it last, and the previous member no longer has it',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { self, other } = await cast(client, fixture, null);
+        const [elsewhereFixture] = FIXTURES.filter((entry) => entry.slug !== fixture.slug);
+        const elsewhere = await memberByUsername(client, elsewhereFixture?.slug ?? '', elsewhereFixture?.member ?? '');
+        const shared = endpointOf('shared-phone');
+
+        const first = await register(client, self, shared);
+        const second = await register(client, other, shared);
+        const afterColleague = await ownersOf(client, [shared]);
+        await register(client, elsewhere, shared);
+        const afterElsewhere = await ownersOf(client, [shared]);
+        // Registering one's own device again keeps it, with no second row.
+        await register(client, elsewhere, shared);
+        const { rows } = await client.query<{ n: number }>('select count(*)::int as n from push_subscriptions where endpoint = $1', [shared]);
+
+        expect(second, `${fixture.slug}: the endpoint got a second row`).toBe(first);
+        expect(afterColleague, fixture.slug).toEqual({ [shared]: other.id });
+        expect(afterElsewhere, `${fixture.slug}: another organization's member could not take the device`).toEqual({ [shared]: elsewhere.id });
+        expect(rows, fixture.slug).toEqual([{ n: 1 }]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    "refuses a $fixture member reading, deleting, inserting or moving another member's device, and an admin too",
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { owner, self, other, organization } = await cast(client, fixture, null);
+        const own = endpointOf(`${fixture.member}-phone`);
+        const theirs = endpointOf(`${fixture.bystander}-phone`);
+        await register(client, self, own);
+        await register(client, other, theirs);
+
+        await actAs(client, self.authUserId, organization);
+        const seen = await client.query<{ endpoint: string }>('select endpoint from push_subscriptions order by endpoint');
+        const deleted = await client.query('delete from push_subscriptions where endpoint = $1', [theirs]);
+        const inserted = await refusal(client, () =>
+          client.query(
+            'insert into push_subscriptions (organization_id, member_id, endpoint, p256dh, auth) values ($1, $2, $3, $4, $5)',
+            [organization, other.id, endpointOf('forged'), P256DH, AUTH],
+          ),
+        );
+        const moved = await refusal(client, () =>
+          client.query('update push_subscriptions set member_id = $2 where endpoint = $1', [own, other.id]),
+        );
+        await actAs(client, owner.authUserId, organization);
+        const adminSeen = await client.query('select endpoint from push_subscriptions where member_id <> $1', [owner.id]);
+        const adminDeleted = await client.query('delete from push_subscriptions where endpoint = $1', [theirs]);
+        await actAs(client, '00000000-0000-0000-0000-000000000000', null);
+        const anonymous = await refusal(client, () =>
+          client.query('select public.register_push_subscription($1, $2, $3)', [endpointOf('nobody'), P256DH, AUTH]),
+        );
+        await actAsOwner(client);
+
+        expect(seen.rows, `${fixture.slug}: a member saw another member's device`).toEqual([{ endpoint: own }]);
+        expect(deleted.rowCount, `${fixture.slug}: a member deleted another member's device`).toBe(0);
+        expect(inserted, fixture.slug).toMatch(/^42501 /);
+        expect(moved, fixture.slug).toMatch(/^42501 /);
+        expect(adminSeen.rows, `${fixture.slug}: an admin saw a member's device`).toEqual([]);
+        expect(adminDeleted.rowCount, `${fixture.slug}: an admin deleted a member's device`).toBe(0);
+        expect(anonymous, fixture.slug).toBe('42501 PUSH_SUBSCRIPTION_REFUSED');
+        expect(await ownersOf(client, [own, theirs]), fixture.slug).toEqual({ [own]: self.id, [theirs]: other.id });
+      });
+    },
+  );
+
+  it.skipIf(noDatabase)('accepts only a known push service, and refuses keys that are not a subscription', async () => {
+    await inRolledBackTransaction(async (client) => {
+      const [fixture] = FIXTURES;
+      const { self, organization } = await cast(client, fixture, null);
+
+      await actAs(client, self.authUserId, organization);
+      const attempt = (endpoint: string, p256dh = P256DH, auth = AUTH) =>
+        refusal(client, () => client.query('select public.register_push_subscription($1, $2, $3)', [endpoint, p256dh, auth]));
+      const accepted = [
+        await attempt('https://fcm.googleapis.com/fcm/send/abc'),
+        await attempt('https://updates.push.services.mozilla.com/wpush/v2/abc'),
+        await attempt('https://push.services.mozilla.com/wpush/abc'),
+        await attempt('https://web.push.apple.com/QGv-abc'),
+        await attempt('https://api.push.apple.com/3/device/abc'),
+        await attempt('https://wns2-db5p.notify.windows.com/w/?token=abc'),
+        await attempt('https://db5p.notify.windows.com/w/?token=abc'),
+      ];
+      const refusedHosts = [
+        await attempt('http://fcm.googleapis.com/fcm/send/abc'),
+        await attempt('https://push.example.org/send/x'),
+        await attempt('https://fcm.googleapis.com.evil.example/send/x'),
+        await attempt('https://evil.example/fcm.googleapis.com/send/x'),
+        await attempt('https://push.apple.com.evil.example/x'),
+        await attempt('https://notify.windows.com/x'),
+        await attempt('https://127.0.0.1/x'),
+      ];
+      const badKeys = [await attempt(endpointOf('x'), 'short'), await attempt(endpointOf('x'), P256DH, 'not base64url!')];
+      await actAsOwner(client);
+      // The table holds the same rule, for a write that does not pass through the definer.
+      const direct = await refusal(client, () =>
+        client.query(
+          'insert into push_subscriptions (organization_id, member_id, endpoint, p256dh, auth) values ($1, $2, $3, $4, $5)',
+          [organization, self.id, 'https://push.example.org/send/direct', P256DH, AUTH],
+        ),
+      );
+
+      expect(accepted).toEqual(accepted.map(() => null));
+      expect(refusedHosts).toEqual(refusedHosts.map(() => '22023 PUSH_ENDPOINT_NOT_ALLOWED'));
+      expect(badKeys).toEqual(['22023 PUSH_SUBSCRIPTION_INVALID', '22023 PUSH_SUBSCRIPTION_INVALID']);
+      expect(direct).toMatch(/^23514 /);
+    });
+  });
+
+  it.skipIf(noDatabase)("refuses a member's eleventh device, and still re-registers one of their ten", async () => {
+    await inRolledBackTransaction(async (client) => {
+      const [fixture] = FIXTURES;
+      const { self, other, organization } = await cast(client, fixture, null);
+      for (let index = 0; index < 10; index += 1) await register(client, self, endpointOf(`${fixture.member}-${index}`));
+
+      await actAs(client, self.authUserId, organization);
+      const eleventh = await refusal(client, () =>
+        client.query('select public.register_push_subscription($1, $2, $3)', [endpointOf(`${fixture.member}-10`), P256DH, AUTH]),
+      );
+      const again = await refusal(client, () =>
+        client.query('select public.register_push_subscription($1, $2, $3)', [endpointOf(`${fixture.member}-3`), P256DH, AUTH]),
+      );
+      await actAsOwner(client);
+      // Another member's cap is their own.
+      await register(client, other, endpointOf(`${fixture.bystander}-0`));
+      const { rows } = await client.query<{ n: number }>(
+        'select count(*)::int as n from push_subscriptions where member_id = $1',
+        [self.id],
+      );
+
+      expect(eleventh).toBe('54000 PUSH_SUBSCRIPTION_LIMIT');
+      expect(again).toBeNull();
+      expect(rows).toEqual([{ n: 10 }]);
+    });
+  });
+
+  it.skipIf(noDatabase)('deletes a gone device only while its id, endpoint and member all still match (a stale 404 after a re-registration deletes nothing)', async () => {
+    await inRolledBackTransaction(async (client) => {
+      const [fixture] = FIXTURES;
+      const { self, other } = await cast(client, fixture, null);
+      const shared = endpointOf('shared-tablet');
+      const id = await register(client, self, shared);
+      // The claim returned (id, shared, self); then the tablet passed to the bystander.
+      await register(client, other, shared);
+      const del = (member: string, endpoint: string) =>
+        client.query('select public.delete_push_subscription($1::uuid, $2, $3::uuid)', [id, endpoint, member]);
+
+      await del(self.id, shared);
+      const afterStale = await ownersOf(client, [shared]);
+      await del(other.id, endpointOf('another'));
+      const afterWrongEndpoint = await ownersOf(client, [shared]);
+      await del(other.id, shared);
+      const afterCurrent = await ownersOf(client, [shared]);
+
+      expect(afterStale, 'a stale answer deleted the live device').toEqual({ [shared]: other.id });
+      expect(afterWrongEndpoint).toEqual({ [shared]: other.id });
+      expect(afterCurrent).toEqual({});
     });
   });
 });

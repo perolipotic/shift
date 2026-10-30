@@ -42,12 +42,16 @@ inputs:
   notify-email-from:
     description: The sender, on a domain verified in Resend (SPF and DKIM).
     required: true
+  # Story 10.4: the VAPID key pair and its subject. The private key is read by
+  # notify alone; the public key by notify and, as VITE_VAPID_PUBLIC_KEY, by
+  # the SPA build (AD-17, amended).
   vapid-private-key:
-    description: >-
-      Story 10.4 reads it; nothing does before. Optional until then, and set
-      as a function secret only when given.
-    required: false
-    default: ''
+    required: true
+  vapid-public-key:
+    required: true
+  vapid-subject:
+    description: Who a push service may contact, as mailto:addr or an https URL.
+    required: true
   cloudflare-api-token:
     required: true
   cloudflare-account-id:
@@ -154,6 +158,8 @@ runs:
         FUNCTION_INVOKE_SECRET: ${{ inputs.notify-invoke-secret }}
         FUNCTION_EMAIL_FROM: ${{ inputs.notify-email-from }}
         FUNCTION_VAPID_PRIVATE_KEY: ${{ inputs.vapid-private-key }}
+        FUNCTION_VAPID_PUBLIC_KEY: ${{ inputs.vapid-public-key }}
+        FUNCTION_VAPID_SUBJECT: ${{ inputs.vapid-subject }}
       run: |
         env_file="$RUNNER_TEMP/functions.env"
         trap 'rm -f "$env_file"' EXIT
@@ -166,10 +172,10 @@ runs:
         RESEND_API_KEY=${FUNCTION_RESEND_API_KEY}
         NOTIFY_EMAIL_FROM=${FUNCTION_EMAIL_FROM}
         SHIFT_APP_URL=${APP_ORIGIN}
+        VAPID_PRIVATE_KEY=${FUNCTION_VAPID_PRIVATE_KEY}
+        VAPID_PUBLIC_KEY=${FUNCTION_VAPID_PUBLIC_KEY}
+        VAPID_SUBJECT=${FUNCTION_VAPID_SUBJECT}
         EOF
-        if [ -n "$FUNCTION_VAPID_PRIVATE_KEY" ]; then
-          printf 'VAPID_PRIVATE_KEY=%s\n' "$FUNCTION_VAPID_PRIVATE_KEY" >> "$env_file"
-        fi
         pnpm exec supabase secrets set --env-file "$env_file" --project-ref "$PROJECT_REF"
 
     - name: supabase functions deploy admin-auth
@@ -181,6 +187,9 @@ runs:
 
     # Story 10.1. The cron job (0042) calls it every minute once this
     # environment's Vault holds notify_url and notify_invoke_secret (§3a).
+    # Story 10.4: straight after db push and BEFORE the SPA. From 0045 the
+    # outbox holds push rows, which only this notify sends as push (an older
+    # one would email them).
     - name: supabase functions deploy notify
       shell: bash
       env:
@@ -212,11 +221,13 @@ runs:
       env:
         VITE_SUPABASE_URL: ${{ steps.origin.outputs.supabase-url }}
         VITE_SUPABASE_PUBLISHABLE_KEY: ${{ inputs.supabase-publishable-key }}
+        # Story 10.4: the VAPID PUBLIC key, which a device subscribes under.
+        VITE_VAPID_PUBLIC_KEY: ${{ inputs.vapid-public-key }}
       run: pnpm --filter "@shift/web..." build
 
     # AD-17, on the bundle about to ship: this environment's secret key value,
-    # its Resend key, its notify invoke secret and its VAPID private key (when
-    # set), and any key-shaped sb_secret_ value, must be absent.
+    # its Resend key, its notify invoke secret and its VAPID private key, and
+    # any key-shaped sb_secret_ value, must be absent.
     - name: The bundle carries no secret
       shell: bash
       env:
@@ -237,7 +248,7 @@ runs:
           echo "::error title=Secret in bundle::this environment's notify invoke secret is in apps/web/dist"
           exit 1
         fi
-        if [ -n "$FUNCTION_VAPID_PRIVATE_KEY" ] && grep -rqF -- "$FUNCTION_VAPID_PRIVATE_KEY" apps/web/dist; then
+        if grep -rqF -- "$FUNCTION_VAPID_PRIVATE_KEY" apps/web/dist; then
           echo "::error title=Secret in bundle::this environment's VAPID private key is in apps/web/dist"
           exit 1
         fi

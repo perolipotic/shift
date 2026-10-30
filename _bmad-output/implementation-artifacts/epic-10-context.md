@@ -4,49 +4,63 @@
 
 ## Goal
 
-A member learns by email or push that their leave request was decided or their own shifts changed, and every admin learns that a new item waits in *Za odluku*, without opening the app. A member with no email address gets push once they install the app. Every fact a notification reports already exists on a surface; notifications only carry it out and never compute anything of their own. This is the highest-risk epic of the v1 expansion: it adds the system's first server runtime beyond the auth boundary, depends on email deliverability, and iOS Web Push works only in an installed PWA on 16.4+. Story 10.1 has shipped the outbox, the `notify` function and the spine amendments (AD-14, AD-17, new AD-18, AD-9's exception), with the leave-request decision sent by email as the first event.
+A member learns by email or push that their leave request was decided or their own shifts changed, and every admin learns that a new item waits in *Za odluku*, without opening the app. A member with no email address gets push once they turn it on on a device: in any browser that supports Web Push, and on iOS in the installed app. Every fact a notification reports already exists on a surface. Notifications only carry it out and never compute anything of their own. Stories 10.1–10.3 have shipped email end to end: the outbox, the `notify` function, every v1 email event, and the member and organization on/off switches. Story 10.4 (in progress) adds Web Push as a second channel on the same pipeline, switched per device. iOS Web Push works only in an installed PWA on 16.4+.
 
 ## Stories
 
-- Story 10.1: The outbox and the notify function
-- Story 10.2: Email tells people what concerns them
-- Story 10.3: Notification settings in Više
-- Story 10.4: Web Push reaches members without email
+- Story 10.1: The outbox and the notify function (done)
+- Story 10.2: Email tells people what concerns them (done)
+- Story 10.3: Notification settings in Više (done)
+- Story 10.4: Web Push reaches members without email (in progress)
 
 ## Requirements & Constraints
 
-- **Events to a member:** their leave request is decided; an admin records leave for them; their own shifts change through a roster or shift-type override, a swap, or a rotation change taking effect within the next 30 days. Swap events (proposed or decided) ship with Epic 12.
-- **Events to admins:** every admin with an email address receives one notification when a new item appears in *Za odluku*. **As shipped in 10.2:** admins are notified of new leave requests only; collision emails are deferred (collisions are derived in the browser and have no stored fact to write from; see `deferred-work.md`).
-- **Derived from a recorded fact (Q25):** the notifier makes no calculation of its own. Each event is sent at most once per recipient and channel.
-- **Content:** a notification states facts in the organization's locale and links to the surface concerned. Nothing sent to a member-role account names another member's leave, absence or absence type (Q5).
-- **Email:** goes only to the member's own recorded address, never to the synthesized sign-in address. A failed send is retried and never blocks or rolls back the write that caused it.
-- **Push:** carries the same events as email. On iOS it is offered only to the installed app (16.4+), and the settings say so. A subscription the push service reports as gone is removed, and nothing else changes.
-- **Settings:** each member turns email and push on or off for themselves; when a channel is off, nothing is sent on it. Settings and push subscriptions are self-owned member-role writes, not administrative writes.
-- **Out of scope:** shift reminders or anything needing server-side projection (deferred: no request asserts that fact); messaging, broadcast, announcements, SMS.
-- **Ops:** an email provider account (Resend), a sending domain (SPF/DKIM), VAPID keys, the cron job and its Vault entries, per environment, all named in DEPLOY.md.
+- **Events (as shipped for email; push carries the same set):**
+  - To the member: their leave request is decided; leave is recorded, changed or removed for them; a roster override puts them on or takes them off; a shift-type override changes their team's day; a rotation change takes effect today to today+30, or a scheduled one is cancelled.
+  - To every active admin: a new leave request.
+  - Deferred: collision notices (collisions are derived in the browser, so no stored fact exists to write from) and swap events (Epic 12).
+- **Recipients:** stored facts only. The member whose session made the write gets nothing. No row is written for a recipient who is inactive today, or for a fact that lies wholly in the past. An amend is one `*_CHANGED` notification. An approval sends only the decision.
+- **Q25:** the notifier makes no calculation of its own. Each event is sent at most once per recipient and channel.
+- **Content:** the text states facts in the organization's locale and names the organization. It links through `/prijava/<slug>?povratak=<path>`, and every email ends with a line linking to `/obavijesti`. Nothing sent to a member-role account names another member or an absence type (Q5).
+- **Switches:** a member's own setting (no row means on) and the organization's `email_notifications` switch. When either is off, nothing is written, and any queued or retry-waiting row is settled as failed at claim time.
+- **Push (10.4):**
+  - Per device, not per member (AC deviation, product owner 2026-10-30): a subscription is one device's row, stored only for the member who turned push on there, in any browser that supports Web Push (Android and desktop in a tab too); only iOS needs the installed app. The browser permission prompt follows only that press.
+  - On iOS before install, the settings say push needs the installed app (iOS 16.4+).
+  - Channels are independent: the organization's email switch and the member's email setting never stop push.
+  - A shared device follows the last member who turned push on there; off, sign-out and any other session end unsubscribe the device.
+  - When the push service reports a subscription gone (404, 410), that subscription is removed and nothing else changes.
+- **Out of scope:** shift reminders, messaging, broadcast, SMS, a List-Unsubscribe header or an unauthenticated unsubscribe endpoint, and a members self-update policy.
+- **Ops:** each environment needs Resend with a sending domain (SPF/DKIM), VAPID keys, and the cron job with its Vault entries. DEPLOY.md names all of them and gives the migration order: each migration ships before the `notify` that depends on it.
 
 ## Technical Decisions
 
-- **AD-14 (amended):** exactly two Edge Functions: `admin-auth` (unchanged) and `notify`. A third one amends the AD again. `notify` touches the database only through two `service_role`-only functions: `claim_notifications` (returns each row with the recipient's email and the organization's locale, timezone and slug) and `settle_notification` (writes only the outbox's delivery columns). Story 10.4 adds deleting expired push subscriptions in the same way. A pg_cron job `notify` (every minute) POSTs to the function using `notify_url` and `notify_invoke_secret` from Vault, and does nothing while either is missing.
-- **AD-9 exception:** `notify` writes no domain table. Every other write, including settings and subscriptions, goes through PostgREST under RLS.
-- **AD-17 (amended):** the email provider key and the VAPID private key live only in `notify`'s environment. Only `supabase/functions/notify/` may name them in code (enforced by `test/key-hygiene.test.ts`). No secret value or name appears in a migration, `config.toml` or `apps/web`. The SPA still ships only the publishable key.
-- **AD-18 (new):** the request that asserts a fact (a decision, an approval, a roster change) inserts the outbox row in its own transaction, as a code plus operands. `notify` computes no domain answer; adding a domain rule or engine calculation to it is a defect.
-- **Outbox shape (0042):** `notification_outbox` is organization-scoped, RLS on with no policy, and gives no table privilege to `anon`, `authenticated` or `service_role`. A row holds `code`, `operands`, `subject_id`, `recipient_member_id` and `channel`. It never holds prose or an address. The unique key (`code`, `subject_id`, `recipient_member_id`, `channel`) gives at-most-once delivery. The existing pattern: `decide_leave_request` writes `LEAVE_REQUEST_APPROVED`/`_REJECTED` with `{startDate, endDate}`; deactivation closing requests writes none. Story 10.2 adds the other events at the writes that assert them.
-- **Delivery semantics:** a 10-minute `FOR UPDATE SKIP LOCKED` claim lease, with `claimed_at` as the settle token, so a stale run settles nothing. At most 5 attempts. The Resend `Idempotency-Key` is the row id. Transient failures (network, 408, 409, 429, 5xx, or a code the deployed function cannot render yet) release the row with a backoff of attempts × 10 minutes. A 401 or 403, or the run's 45 s budget, gives every held row back without spending its attempt. Any other 4xx fails the row.
-- **Text (AD-8 / L4):** rendered by code from the `obavijesti` namespace. The function cannot import `apps/web`, so it holds a copy of `hr.json`'s namespace, which a root test pins deep-equal to the original. Each new code needs both the locale entry and the copy.
+- **AD-14:** there are exactly two Edge Functions, `admin-auth` and `notify`. `notify` touches the database only through `service_role`-only functions: `claim_notifications` returns each row with the recipient's email and the organization's name, locale, timezone and slug, and `settle_notification` writes only the delivery columns. Story 10.4 adds deleting gone push subscriptions in the same way. The pg_cron `notify` job runs every minute using `notify_url` and `notify_invoke_secret` from Vault.
+- **AD-9 exception:** `notify` writes no domain table. Settings and subscriptions are self-owned member writes through PostgREST under RLS, using the 9.2 pattern: own-row policies plus column grants, with no delete unless the story needs one.
+- **AD-17:** the email key and the VAPID private key live only in `notify`'s environment. Only `supabase/functions/notify/` may name them in code (`test/key-hygiene.test.ts`). The SPA ships only the publishable key, plus the VAPID public key as `VITE_VAPID_PUBLIC_KEY` (amended by 10.4).
+- **AD-18:** the request that asserts a fact writes the outbox row in the same transaction, as a code plus operands (ISO dates, ids and snapshot names), never prose or an address. As shipped:
+  - Definer AFTER triggers on the fact tables call `private.notify_members`.
+  - `decide_leave_request` inserts its row directly.
+  - The transaction-local flag `shift.notify_suppress` (`approval` or `amend`) collapses an approval or an amend into one notification.
+- **Outbox:** `notification_outbox` is organization-scoped, has RLS with no policy, and grants no table privileges. Its unique key is (`code`, `subject_id`, `recipient_member_id`, `channel`). `channel` is `in ('email', 'push')` since 10.4.
+  - The switch filter is one definer BEFORE INSERT trigger, and it drops only `email` rows. Push needs its own rule.
+  - Every writer emits `email` rows today. Writing push rows as well means touching both `private.notify_members` and `decide_leave_request`.
+- **Delivery:**
+  - A claim takes a 10-minute `FOR UPDATE SKIP LOCKED` lease, and `claimed_at` is the settle token.
+  - A row gets at most 5 attempts, with a backoff of attempts × 10 minutes. Transient failures release the row; a 401/403 or the 45 s budget hands rows back without spending an attempt; any other 4xx fails the row.
+  - The Resend `Idempotency-Key` is the row id.
+- **Text (AD-8):** rendered by code from the `hr.json` `obavijesti` namespace. `supabase/functions/notify/messages.ts` holds a copy pinned deep-equal by a test, so each new code or line needs both. Screen text lives under its own top-level key, never under `obavijesti`.
 - **PWA:** push builds on Epic 8's service worker. The worker still caches nothing at runtime from Supabase or any other cross-origin source.
-- New tables (`push_subscriptions`, notification settings) are organization-scoped with `organization_id` first, and use the self-owned row policy pattern from story 9.2.
 
 ## UX & Interaction Patterns
 
-- *Više* → *Obavijesti* is a new row in a member's *Više* sheet (and in the desktop equivalent). It holds an email on/off control that shows the address, or reads `Nemaš upisan e-mail`, and a push on/off control, or `Instaliraj aplikaciju za obavijesti` where install is required (iOS before install).
-- Nothing opens unprompted. The browser permission request follows only the member's own action of turning push on.
-- All user-facing text lives in i18n, with no literal strings in the SPA or in `notify`.
-- Story 10.3 updates EXPERIENCE.md §IA, UX-DR31, UX-DR33 and UX-DR49 in the same change.
+- `/obavijesti` is a surface for every role, reached by a fixed row in *Više* (after *Prikaz*, before *Instaliraj*) and in the desktop profile menu. As shipped it shows:
+  - the address, read-only, with an email on/off that saves at once and shows pending and failure in a `Notice`;
+  - `Nemaš upisan e-mail` with no control when there is no address;
+  - a statement that the organization sends no email, with no control, when *Organizacija* → *Obavijesti e-poštom* is off.
+- **10.4:** adds its own section, *Obavijesti na uređaju*: this device's push on/off, or `Instaliraj aplikaciju za obavijesti (iOS 16.4+)` on iOS before install, or that the browser cannot receive or has blocked notifications. It reuses 8.4's install detection. Nothing opens unprompted.
+- All user-facing text lives in i18n. A shipping story rewrites the UX-DR49 and EXPERIENCE.md lines it changes in the same change; UX-DR49 now describes the push section as shipped by 10.4.
 
 ## Cross-Story Dependencies
 
-- **10.1** is done. It applied the spine amendments and shipped the first event (the leave decision by email).
-- **10.2** depends on 10.1 and 9.4. It adds the remaining events at the writes that assert them: admin leave records, overrides and rotation changes, and new leave requests in *Za odluku* (collision emails deferred, see `deferred-work.md`).
-- **10.3** depends on 10.2. **10.4** depends on 10.3 and on 8.1 (manifest and service worker), and uses 8.4's *Instaliraj* detection. Until 10.4 the outbox and `notify` handle email only.
-- **Epic 12** (swaps) reuses this outbox for swap-proposed, swap-decided and swap-driven shift-change events.
+- **10.4** depends on 10.3 (the settings screen and its switches) and on 8.1 (the manifest and the service worker). It closes the deferred-work entry for the missing push row and control.
+- **Epic 12** (swaps) reuses this outbox for the swap-proposed, swap-decided and swap-driven shift-change events, and passes through the same switch filter.

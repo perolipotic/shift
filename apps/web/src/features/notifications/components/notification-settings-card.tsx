@@ -36,7 +36,8 @@ const EMAIL_OPTIONS: readonly boolean[] = [true, false];
  * No address reads `Nemaš upisan e-mail` with no control; the organization's
  * switch off says the organization sends no email, with no control, and to
  * an admin where it is turned back on. Both facts show when both hold. The
- * control saves on choice; the browser asks no permission (push is 10.4).
+ * control saves on choice; the browser asks no permission (push is its own
+ * section, `push-settings-card.tsx`).
  */
 export function NotificationSettingsCard({ state }: { readonly state: NotificationSettingsState }): ReactNode {
   const { view } = state;

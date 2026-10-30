@@ -15,6 +15,7 @@ import {
 } from '@/features/auth/services/set-password';
 import { knownPathOf, returnTargetOf } from '@/features/auth/services/return-target';
 import { SIGN_OUT_FAILED, signOut, type SignOutFailure } from '@/features/auth/services/sign-out';
+import { forgetThisPushDevice } from '@/features/notifications/services/page-push';
 import { forgetDeviceSnapshot } from '@/lib/offline/device-snapshot';
 import { supabaseClient } from '@/lib/supabase/client';
 import { pageSignOutFallback } from '@/lib/supabase/local-sign-out';
@@ -180,6 +181,10 @@ export function useSetPassword() {
     setSignOutFailure(null);
 
     try {
+      // STORY 10.4: this device's push goes with the session, as from the
+      // chrome's Odjava. Best-effort and bounded; never blocks the sign-out.
+      await forgetThisPushDevice();
+
       const outcome = await signOut(supabaseClient().auth, pageSignOutFallback);
 
       if (!outcome.ok) {
