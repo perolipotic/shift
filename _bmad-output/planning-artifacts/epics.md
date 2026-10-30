@@ -2470,6 +2470,7 @@ Added 2026-10-30 by `sprint-change-proposal-2026-10-30-glass-redesign.md` (decis
 | 15.4 | Admin surfaces read in glass: Za odluku, decisions, member page, day detail, rotation, Organizacija | 15.2 |
 | 15.5 | Glass holds in the dark theme, without blur support, and on a low-end phone | 15.3, 15.4 |
 | 15.6 | *(optional, outside v1 unless D6)* A week view on the desktop and a day view on the phone | 15.1, PRD edit |
+| 15.7 | Every filter is one summary bar, a *Filtri* sheet and removable chips, and the month is a compact header control | 15.2 |
 
 ### Story 15.1: Pilot: *Kalendar* and the shell in glass, on real data, on a phone
 
@@ -2512,3 +2513,36 @@ Covers Za odluku (tabs, rows), the resolution and request decision screens (reso
 ### Story 15.6 (optional): A week view on the desktop and a day view on the phone
 
 This is new functionality: a Dan/Tjedan/Mjesec switch, a seven-column week of shift cards, and a phone day agenda with a week strip, per-team coverage (`4 od 5`) and avatars. It needs the PRD's out-of-scope line amended and a new FR, so it is not part of the redesign.
+
+### Story 15.7: Every filter is one summary bar, a *Filtri* sheet and removable chips
+
+As an admin or a member who narrows a list,
+I want every filter to look and work the same way, as part of the app and not bolted on,
+So that I see at a glance what is shown and change it in one place.
+
+Added 2026-10-30 at the product owner's request after the 15.1 pilot. The reference is `ux-designs/ux-shift-2026-10-30-glass/filters-15-7-po-reference.png`, a PO mockup (its filter names and values are illustrative). The product owner's choice: a shadcn-style **Sheet + Button + Badge + Popover/Command** for picking values. It applies to **every filter surface**: *Kalendar*, *Sati* and *Ljudi* (stories 7.4, 7.5 and 7.13).
+
+**Depends on:** 15.2 (the docked Dialog and the glass Popover).
+
+**Acceptance Criteria:**
+
+**Given** a filtered surface (*Kalendar*, *Sati*, *Ljudi*)
+**When** it renders
+**Then** one summary bar is drawn as a glass-reading card: an icon, the muted tabular summary (`Prikazano: sve smjene (4) · 17 osoba`), and a `Filtri` Button carrying a Badge with the number of active filters, at least 44 px
+**And** under it each active filter is a removable chip (`Smjena: B ✕`), with `Očisti sve` while any filter is on. A chip is told apart by its words and its ✕, never by colour alone.
+
+**Given** the `Filtri` button
+**When** it is pressed
+**Then** a Sheet opens: docked at the bottom on a phone, at the side from 1024 px. It holds every filter of that surface. Each value is picked through a Popover with a searchable Command list (a search field, options with their muted tabular counts, the chosen one marked). There is one `Prikaži {n}` and one `Poništi`.
+
+**Given** the month control on *Kalendar* and *Sati*
+**When** it renders
+**Then** it is a compact header control beside the page title: ‹ and › as 44 px icon buttons around the month name, which opens the month picker. The current month's `Ovaj mjesec` Badge is removed (PO, 2026-10-30, "maybe": planning confirms it). Returning to the current month stays one action, in the month picker.
+
+**Given** filter state in the URL, the counts, the keyboard and screen readers
+**When** the redesign ships
+**Then** every behaviour of stories 7.4, 7.5 and 7.13 is kept: `?` search params, counts, the offline read and the phone sticky head. The Sheet, Popover and Command are built on the app's own Dialog and Popover primitives, or a new primitive restyled once in `components/ui`. Any new dependency (e.g. `cmdk`) is named in the PR.
+
+**Given** this story ships
+**When** it is merged
+**Then** DESIGN.md (*month toolbar*, *Filter chip row*, *Filter sheet*), EXPERIENCE.md and the UX-DRs it changes are updated in the same change.
