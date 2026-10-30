@@ -1,9 +1,9 @@
-import { Search } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { MagnifyingGlass } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
 import { InputGroup, InputGroupIcon } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
@@ -118,7 +118,7 @@ export function MemberDirectory({ screen }: { readonly screen: MemberDirectorySc
         </Label>
         <InputGroup>
           <InputGroupIcon>
-            <Search />
+            <MagnifyingGlass />
           </InputGroupIcon>
           <Input
             id="ljudi-directory-search"

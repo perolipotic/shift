@@ -1,8 +1,8 @@
-import { CalendarDays, Lock } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { CalendarDots, Lock } from '@/components/ui/icon';
 import { InputGroup, InputGroupIcon } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
@@ -146,7 +146,7 @@ function LeaveYearForm({
           <Label htmlFor={ORGANIZATION_LEAVE_MONTH_FIELD_ID} className="sr-only">{t('organization.leaveYearStartMonth')}</Label>
           <InputGroup>
             <InputGroupIcon>
-              <CalendarDays />
+              <CalendarDots />
             </InputGroupIcon>
             <Select
               id={ORGANIZATION_LEAVE_MONTH_FIELD_ID}

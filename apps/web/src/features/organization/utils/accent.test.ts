@@ -243,7 +243,8 @@ describe('the tint reaches the lockup and the shell chrome, and nothing else', (
       // sidebar no longer lends it a legible one by inheritance.
       'text-foreground',
       'border-input',
-      'border-border',
+      // The untinted shell's 2 px edge since story 15.1: the glass hairline.
+      'border-glass-border',
       ...BRAND_ACCENT_KEYS.flatMap((key) => [
         `bg-brand-${key}`,
         `text-brand-${key}-foreground`,
@@ -278,7 +279,7 @@ describe('the tint reaches the lockup and the shell chrome, and nothing else', (
     // THE SEAM, asserted rather than left to be noticed. `frame` and `edge` are
     // byte-identical for every accent — there is one tint, not two — and they
     // diverge ONLY in the neutral case, where the lockup's untinted boundary is
-    // `border-input` and the shell's is `border-border`. Those are the classes
+    // `border-input` and the shell's is `border-glass-border`. Those are the classes
     // each element already carried, and UX-DR5's "no accent renders the
     // untinted shell it has today" is a claim about bytes: collapsing the two
     // fields would have to pick one neutral and change the other, and `--input`

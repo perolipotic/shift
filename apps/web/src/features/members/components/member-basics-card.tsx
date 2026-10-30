@@ -1,10 +1,10 @@
-import { AtSign, Mail, Medal, ShieldCheck, User } from 'lucide-react';
 import { Fragment, type ReactNode, type SyntheticEvent } from 'react';
 
 import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { At, Envelope, Medal, ShieldCheck, User } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
 import { InputGroup, InputGroupIcon } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
@@ -251,7 +251,7 @@ export function MemberBasicsDialog({ edit }: { readonly edit: MemberEdit }): Rea
               `saveMember` decides that, not this element. */}
           <InputGroup>
             <InputGroupIcon>
-              <AtSign />
+              <At />
             </InputGroupIcon>
             <Input
               ref={usernameField}
@@ -273,7 +273,7 @@ export function MemberBasicsDialog({ edit }: { readonly edit: MemberEdit }): Rea
           {/* OPTIONAL (CAP-1, `0002:135`): an emptied field stores `null`. */}
           <InputGroup>
             <InputGroupIcon>
-              <Mail />
+              <Envelope />
             </InputGroupIcon>
             <Input
               ref={emailField}

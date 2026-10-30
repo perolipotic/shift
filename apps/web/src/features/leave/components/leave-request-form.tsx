@@ -1,9 +1,9 @@
 import { Link } from '@tanstack/react-router';
-import { ArrowLeft, Send } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Button } from '@/components/ui/button';
+import { ArrowLeft, PaperPlaneRight } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
@@ -200,7 +200,7 @@ export function LeaveRequestFormBody({ form }: { readonly form: LeaveRequestForm
           aria-describedby={gate.describedBy()}
           aria-busy={pending}
         >
-          <Send aria-hidden />
+          <PaperPlaneRight aria-hidden />
           {t('godisnji.request.submit')}
         </Button>
       </div>

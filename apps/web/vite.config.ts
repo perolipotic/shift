@@ -52,8 +52,8 @@ export default defineConfig({
         lang: 'hr',
         start_url: '/',
         display: 'standalone',
-        theme_color: '#f8fafc',
-        background_color: '#f8fafc',
+        theme_color: '#e8edf5',
+        background_color: '#e8edf5',
         icons: [
           { src: '/pwa-192x192.png', sizes: '192x192', type: 'image/png' },
           { src: '/pwa-512x512.png', sizes: '512x512', type: 'image/png' },
@@ -96,10 +96,11 @@ export default defineConfig({
     // deletes `*.map` before upload (DEPLOY.md §4): the CDN never serves the
     // original sources and their comments.
     sourcemap: 'hidden',
-    // STORY 7.2. The Shift Figures files are ~1.3 KB each, under Vite's 4 KB
-    // inline limit, so they would land in the CSS as data URIs and every
-    // weight would ride along with the first stylesheet. As files, each is
-    // fetched only when a digit at that weight renders (`unicode-range`).
+    // STORY 7.2, kept by story 15.1. No font file is inlined into the CSS as
+    // a data URI, whatever its size: as a file, each subset is fetched only
+    // when a character in its `unicode-range` renders. (The rule was written
+    // for the ~1.3 KB Shift Figures files; Outfit, which replaced them, ships
+    // subsets over Vite's 4 KB limit, and the rule keeps a smaller one honest.)
     assetsInlineLimit: (file) => (file.endsWith('.woff2') ? false : undefined),
   },
 });

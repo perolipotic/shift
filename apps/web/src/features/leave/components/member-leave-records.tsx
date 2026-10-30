@@ -1,9 +1,9 @@
-import { Pencil, Trash2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog, DialogFooter } from '@/components/ui/dialog';
+import { PencilSimple, Trash } from '@/components/ui/icon';
 import { Notice } from '@/components/ui/notice';
 import type { MemberLeave } from '@/features/leave/hooks/use-member-leave';
 import { leaveConflictsUnknown, leaveRemoveClearsOf } from '@/features/leave/services/leave-conflicts';
@@ -139,7 +139,7 @@ export function MemberLeaveRecords({ leave }: { readonly leave: MemberLeave }): 
                   amendDialog.open(row, event);
                 }}
               >
-                <Pencil aria-hidden />
+                <PencilSimple aria-hidden />
                 {/* THE WORD IS SHORT, THE NAME IS WHOLE: the range is read
                     beside it, and the accessible name names it (WCAG 2.5.3). */}
                 <span aria-hidden>{t('ljudi.leaveRecord.amend')}</span>
@@ -154,7 +154,7 @@ export function MemberLeaveRecords({ leave }: { readonly leave: MemberLeave }): 
                   leave.openRemove(row, event);
                 }}
               >
-                <Trash2 aria-hidden />
+                <Trash aria-hidden />
                 <span aria-hidden>{t('ljudi.leaveRecord.remove')}</span>
                 <span className="sr-only">{t('ljudi.leaveRecord.removeName', { from: row.from, to: row.to })}</span>
               </Button>
@@ -282,7 +282,7 @@ export function MemberLeaveRemoveConfirm({ leave }: { readonly leave: MemberLeav
             void leave.remove();
           }}
         >
-          <Trash2 aria-hidden />
+          <Trash aria-hidden />
           {removePending ? t('ljudi.leaveRecord.removing') : t('ljudi.leaveRecord.removeConfirm')}
         </Button>
       </DialogFooter>

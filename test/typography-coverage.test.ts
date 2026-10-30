@@ -1,15 +1,16 @@
-import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { brotliDecompressSync } from 'node:zlib';
 
 import { describe, expect, it } from 'vitest';
 
 import { stripCssComments } from './source-scan.ts';
+import { coverage, difference, filled, fillRatio } from './svg-raster.ts';
 
 /**
  * Glyph coverage in the shipped faces (story 1.1b, UX-DR40; two faces since
- * visual refresh A).
+ * visual refresh A, ONE since story 15.1: Outfit, D1).
  *
  * The risk is the subset, not the face. A `@fontsource-variable` package splits
  * into subsets, and every Croatian diacritic sits in latin-ext — the latin
@@ -17,11 +18,12 @@ import { stripCssComments } from './source-scan.ts';
  * still renders, and falls back mid-word on exactly the strings that matter:
  * `Noć`, `Godišnji`, `Izmijenjeno`, and members' own names.
  *
- * TWO FACES, ONE GATE. Visual refresh A replaced Geist with DM Sans for body
- * text and Syne for headings. The first version of this file read only the
+ * EVERY FACE, ONE GATE. Visual refresh A replaced Geist with DM Sans for body
+ * text and Syne for headings, and the first version of this file read only the
  * FIRST `@fontsource` import, so a heading face with no latin-ext subset would
- * have shipped with every assertion here green — every `<h1>` a person reads
- * first falling back on `č`. Every assertion below now runs once per import.
+ * have shipped with every assertion here green. Every assertion below runs once
+ * per import — since story 15.1 that is Outfit alone, which both stacks name,
+ * and a second face added later joins `FACES` and every sweep with it.
  *
  * UX-DR8's two state glyphs are measured but NOT required here — neither is in
  * any subset of either face, and the fix belongs to Epic 3's `shift-cell`. See
@@ -42,29 +44,24 @@ const CROATIAN = [...'čćžšđČĆŽĐŠ'];
  * Hard-coded rather than derived, so dropping an import fails here instead of
  * silently shrinking the sweep.
  */
-const FACES = [
-  { specifier: '@fontsource-variable/dm-sans', family: 'DM Sans Variable', token: '--font-sans' },
-  { specifier: '@fontsource-variable/syne', family: 'Syne Variable', token: '--font-heading' },
+const FACES = [{ specifier: '@fontsource-variable/outfit', family: 'Outfit Variable' }] as const;
+
+/** Both stacks, and the face each leads with: Outfit for words and digits alike. */
+const STACKS = [
+  { token: '--font-sans', family: 'Outfit Variable' },
+  { token: '--font-heading', family: 'Outfit Variable' },
 ] as const;
 
 /**
  * UX-DR8's leave `◷` (U+25F7) and uncovered `◌` (U+25CC) marks are in no
- * subset of either face, so as text both would fall back to whatever face the
- * OS supplies. Story 5.3c resolved that by drawing them as lucide icons —
- * `Clock` and `CircleDashed` (human) — so neither character is rendered at
- * all. The block at the end pins that: no source the application ships holds
- * either character, so a regression to the uncovered text glyph fails here.
+ * subset of the face, so as text both would fall back to whatever face the
+ * OS supplies. Story 5.3c resolved that by drawing them as icons — `Clock`
+ * and `CircleDashed` (human), Phosphor `fill` through `@/components/ui/icon`
+ * since story 15.1 — so neither character is rendered at all. The block at
+ * the end pins that: no source the application ships holds either character,
+ * so a regression to the uncovered text glyph fails here.
  */
 const UNCOVERED_MARKS = ['◷', '◌'] as const;
-
-/**
- * Shift Figures (story 7.2): DM Sans's own digits on one advance per weight,
- * derived by `scripts/fonts/build-figures.py` and declared inline in
- * `index.css` — not an `@fontsource` import, so `FACES` does not list it. It
- * leads both stacks and covers U+0030-0039 only.
- */
-const FIGURES = 'Shift Figures';
-const FIGURE_WEIGHTS = [400, 500, 600, 700, 800] as const;
 
 function appCss(): string {
   return readFileSync(join(repoRoot, 'apps', 'web', 'src', 'index.css'), 'utf8');
@@ -135,9 +132,25 @@ function covers(specifier: string, character: string): boolean {
 const label = (character: string): string =>
   `U+${(character.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, '0')}`;
 
-describe('the application imports both faces', () => {
-  it('imports exactly the expected @fontsource stylesheets, body face first', () => {
+describe('the application imports its one face', () => {
+  it('imports exactly the expected @fontsource stylesheets', () => {
     expect(importedSpecifiers()).toEqual(FACES.map((face) => face.specifier));
+  });
+
+  it('ships none of the faces Outfit replaced (story 15.1, D1)', () => {
+    const manifest = JSON.parse(readFileSync(join(repoRoot, 'apps', 'web', 'package.json'), 'utf8')) as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+    };
+    const dependencies = Object.keys({ ...manifest.dependencies, ...manifest.devDependencies });
+
+    expect(dependencies).toContain('@fontsource-variable/outfit');
+    for (const retired of ['@fontsource-variable/dm-sans', '@fontsource-variable/syne']) {
+      expect(dependencies, `${retired} is still a dependency`).not.toContain(retired);
+    }
+    expect(stripCssComments(appCss())).not.toMatch(/@font-face|Shift Figures|DM Sans|Syne/);
+    expect(existsSync(join(repoRoot, 'scripts', 'fonts', 'build-figures.py')), 'the figure build script is back').toBe(false);
+    expect(existsSync(join(repoRoot, 'apps', 'web', 'src', 'assets', 'fonts')), 'the figure files are back').toBe(false);
   });
 });
 
@@ -175,11 +188,12 @@ describe.each(FACES)('the $family entry point', ({ specifier }) => {
 
 describe('each face is actually bound to its stack', () => {
   // A covered subset that nothing references still falls back to the system
-  // font, so coverage alone is not the guarantee.
-  // Shift Figures leads both stacks (story 7.2); it covers digits only, so the
-  // face named second is still the one every letter is drawn in.
-  it.each(FACES)('binds $family to $token', ({ family, token }) => {
-    expect(appCss()).toMatch(new RegExp(`${token}:\\s*'${FIGURES}',\\s*'${family}'`));
+  // font, so coverage alone is not the guarantee. Story 15.1: Outfit LEADS
+  // both stacks, words and digits alike; no figure face sits in front of it.
+  it.each(STACKS)('binds $family to $token, first', ({ family, token }) => {
+    const stack = new RegExp(`${token}:\\s*([^;]+);`).exec(stripCssComments(appCss()))?.[1] ?? '';
+
+    expect(stack.split(',').map((name) => name.trim())[0]).toBe(`'${family}'`);
   });
 
   it('paints every heading level in the heading face', () => {
@@ -209,54 +223,96 @@ describe('each face is actually bound to its stack', () => {
   });
 });
 
-describe('every digit is a DM Sans tabular figure (story 7.2, UX-DR40)', () => {
-  // DM Sans ships no `tnum`, so `tabular-nums` does nothing on its own. Shift
-  // Figures (`scripts/fonts/build-figures.py`) is DM Sans's digits on one
-  // advance per weight; these pin the rules that bind it and the slots that
-  // must not route a number back through Syne.
+describe('every digit is an Outfit tabular figure (story 15.1, D1, UX-DR40)', () => {
+  // Outfit has a real `tnum` feature: under it all ten digits share one
+  // advance (590 units) at every weight in use, so ONE
+  // `font-variant-numeric: tabular-nums` on the document makes every digit
+  // tabular by construction, and a column that mixes weights still aligns.
+  // The e2e `layout/numerals.spec.ts` measures the advances in a browser;
+  // these pin the rule, the feature and the slots that must not route a
+  // number into the heading slot.
   const sourceRoot = join(repoRoot, 'apps', 'web', 'src');
 
-  /** Every `@font-face` body that names Shift Figures, comments stripped. */
-  function figureRules(): string[] {
-    return [...stripCssComments(appCss()).matchAll(/@font-face\s*\{([^{}]*)\}/g)]
-      .map((match) => match[1] ?? '')
-      .filter((body) => new RegExp(`font-family:\\s*'${FIGURES}'`).test(body));
+  it('sets tabular-nums once, on html, in @layer base', () => {
+    const css = stripCssComments(appCss());
+    const layer = css.slice(css.indexOf('@layer base'));
+    const html = /\bhtml\s*\{([\s\S]*?)\n {2}\}/.exec(layer)?.[1] ?? '';
+
+    expect(html).toMatch(/font-variant-numeric:\s*tabular-nums;/);
+    expect(css.match(/font-variant-numeric:\s*tabular-nums/g), 'tabular-nums is set in more than one rule').toHaveLength(1);
+  });
+
+  /**
+   * The OpenType feature tags in a WOFF2 file's GSUB table.
+   *
+   * WOFF2 stores its tables as ONE Brotli stream after a table directory; GSUB
+   * is never transformed, so it is a plain slice of that stream. Read here
+   * rather than trusted, because the whole of D1 rests on Outfit having a real
+   * `tnum`: DM Sans looked tabular by its class names and was not.
+   */
+  function gsubFeatures(file: string): string[] {
+    const bytes = readFileSync(file);
+    let at = 48;
+    const readBase128 = (): number => {
+      let value = 0;
+      for (let index = 0; index < 5; index += 1) {
+        const byte = bytes[at] ?? 0;
+        at += 1;
+        value = value * 128 + (byte & 0x7f);
+        if ((byte & 0x80) === 0) return value;
+      }
+      throw new Error('WOFF2_BASE128');
+    };
+
+    expect(bytes.toString('latin1', 0, 4), 'not a WOFF2 file').toBe('wOF2');
+    const tableCount = bytes.readUInt16BE(12);
+    const compressedSize = bytes.readUInt32BE(20);
+    // The WOFF2 known-tag table, up to GSUB (index 28).
+    const KNOWN = ['cmap', 'head', 'hhea', 'hmtx', 'maxp', 'name', 'OS/2', 'post', 'cvt ', 'fpgm', 'glyf', 'loca', 'prep', 'CFF ', 'VORG', 'EBDT', 'EBLC', 'gasp', 'hdmx', 'kern', 'LTSH', 'PCLT', 'VDMX', 'vhea', 'vmtx', 'BASE', 'GDEF', 'GPOS', 'GSUB'];
+    const tables: { tag: string; length: number }[] = [];
+
+    for (let index = 0; index < tableCount; index += 1) {
+      const flags = bytes[at] ?? 0;
+      at += 1;
+      let tag = KNOWN[flags & 0x3f] ?? '';
+      if ((flags & 0x3f) === 0x3f) {
+        tag = bytes.toString('latin1', at, at + 4);
+        at += 4;
+      }
+      const original = readBase128();
+      const version = (flags >> 6) & 3;
+      const transformed = tag === 'glyf' || tag === 'loca' ? version === 0 : version !== 0;
+      tables.push({ tag, length: transformed ? readBase128() : original });
+    }
+
+    const stream = brotliDecompressSync(bytes.subarray(at, at + compressedSize));
+    let offset = 0;
+    for (const table of tables) {
+      if (table.tag === 'GSUB') {
+        const gsub = stream.subarray(offset, offset + table.length);
+        const features = gsub.readUInt16BE(6);
+        const count = gsub.readUInt16BE(features);
+
+        return Array.from({ length: count }, (_, index) =>
+          gsub.toString('latin1', features + 2 + index * 6, features + 6 + index * 6),
+        );
+      }
+      offset += table.length;
+    }
+
+    return [];
   }
 
-  it('declares one rule per weight in use, and no other', () => {
-    const weights = figureRules().map((body) => Number(/font-weight:\s*(\d+)/.exec(body)?.[1]));
+  it('ships a real tnum feature in the subset that holds the digits', () => {
+    const files = join(repoRoot, 'apps', 'web', 'node_modules', '@fontsource-variable', 'outfit', 'files');
+    const features = gsubFeatures(join(files, 'outfit-latin-wght-normal.woff2'));
 
-    expect(weights).toEqual([...FIGURE_WEIGHTS]);
+    // Non-vacuity: a misread table yields no tags at all.
+    expect(features.length, 'no GSUB features read from the Outfit file').toBeGreaterThan(0);
+    expect(features).toContain('tnum');
   });
 
-  it('limits every rule to exactly the ten digits', () => {
-    for (const body of figureRules()) {
-      expect(/unicode-range:\s*([^;]+);/.exec(body)?.[1]?.trim()).toBe('U+0030-0039');
-    }
-  });
-
-  it('swaps rather than blocks while a figure file loads', () => {
-    for (const body of figureRules()) expect(body).toMatch(/font-display:\s*swap/);
-  });
-
-  it('references only self-hosted woff2 files that exist', () => {
-    const urls = figureRules().flatMap((body) =>
-      [...body.matchAll(/url\(([^)]+)\)/g)].map((match) => (match[1] ?? '').replace(/^['"]|['"]$/g, '')),
-    );
-
-    expect(urls.map((url) => /shift-figures-(\d+)\.woff2$/.exec(url)?.[1])).toEqual(FIGURE_WEIGHTS.map(String));
-    expect(urls.filter((url) => !url.startsWith('./')), 'a figure file is not a relative, bundled path').toEqual([]);
-    expect(urls.filter((url) => !existsSync(join(sourceRoot, url))), 'a figure file is not on disk').toEqual([]);
-  });
-
-  it.each(FACES)('$token starts with Shift Figures, then $family', ({ family, token }) => {
-    const stack = new RegExp(`${token}:\\s*([^;]+);`).exec(appCss())?.[1] ?? '';
-    const names = stack.split(',').map((name) => name.trim());
-
-    expect(names.slice(0, 2)).toEqual([`'${FIGURES}'`, `'${family}'`]);
-  });
-
-  // The four numeric slots that used to be Syne. Each is read as its own
+  // The numeric slots that used to be Syne. Each is read as its own
   // definition, so `font-heading` elsewhere in the same file does not count.
   const NUMERIC_SLOTS = [
     { slot: 'StatValue', file: 'components/ui/stat-card.tsx', block: /const StatValue[\s\S]*?StatValue\.displayName/ },
@@ -273,37 +329,12 @@ describe('every digit is a DM Sans tabular figure (story 7.2, UX-DR40)', () => {
     },
   ] as const;
 
-  it.each(NUMERIC_SLOTS)('$slot is not set in the heading face', ({ file, block }) => {
+  it.each(NUMERIC_SLOTS)('$slot is not set in the heading slot', ({ file, block }) => {
     const definition = block.exec(readFileSync(join(sourceRoot, file), 'utf8'))?.[0] ?? '';
 
     expect(definition, `no definition found in ${file}`).not.toBe('');
     expect(definition).toMatch(/\btabular-nums\b/);
     expect(definition).not.toMatch(/\bfont-heading\b/);
-  });
-
-  it('was derived from the DM Sans file installed now', () => {
-    // The script records the sha256 of the Fontsource file it derived the
-    // figures from. A Fontsource bump without a regeneration would ship digits
-    // that no longer match the DM Sans letters around them.
-    const script = readFileSync(join(repoRoot, 'scripts', 'fonts', 'build-figures.py'), 'utf8');
-    const expected = /^SOURCE_SHA256 = "([0-9a-f]{64})"$/m.exec(script)?.[1];
-    const source = join(
-      repoRoot,
-      'apps',
-      'web',
-      'node_modules',
-      '@fontsource-variable',
-      'dm-sans',
-      'files',
-      'dm-sans-latin-wght-normal.woff2',
-    );
-    const actual = createHash('sha256').update(readFileSync(source)).digest('hex');
-
-    expect(expected, 'no SOURCE_SHA256 in build-figures.py').toMatch(/^[0-9a-f]{64}$/);
-    expect(
-      actual,
-      'the DM Sans source changed: update SOURCE_SHA256 and run `uv run scripts/fonts/build-figures.py`',
-    ).toBe(expected);
   });
 
   /** Every quoted string in every .ts/.tsx under src — the class lists among them. */
@@ -318,17 +349,19 @@ describe('every digit is a DM Sans tabular figure (story 7.2, UX-DR40)', () => {
       );
   }
 
-  it('uses no font weight that has no figure file', () => {
-    // Shift Figures ships 400-800 only; a lighter or heavier weight would get
-    // the nearest file's digits beside synthesized or mismatched letters.
+  it('uses no font weight outside the 400-700 direction G draws', () => {
+    // `font-extrabold` is mapped to 700 in `@theme inline`; a lighter or a
+    // heavier class would ask Outfit's variable axis for a weight the design
+    // does not use.
     const offenders = quotedStrings()
       .filter(({ text }) => /(?:^|\s|:)font-(?:thin|extralight|light|black|\[\d+\])(?=\s|$)/.test(text))
       .map(({ file, text }) => `${file}: ${text}`);
 
     expect(offenders).toEqual([]);
+    expect(stripCssComments(appCss())).toMatch(/--font-weight-extrabold:\s*700;/);
   });
 
-  it('uses no italic class, since there is no italic figure file', () => {
+  it('uses no italic class, since Outfit ships no italic', () => {
     const offenders = quotedStrings()
       .filter(({ text }) => /(?:^|\s|:)italic(?=\s|$)/.test(text))
       .map(({ file, text }) => `${file}: ${text}`);
@@ -367,11 +400,161 @@ describe('the calendar draws leave and uncovered as icons, never as uncovered te
     for (const { specifier } of FACES) expect(covers(specifier, mark), `${label(mark)} in ${specifier}`).toBe(false);
   });
 
-  it('draws them with lucide Clock and CircleDashed', () => {
+  it('draws them with the facade\'s bold Clock and CircleDashed (story 15.1)', () => {
     const vocabulary = readFileSync(join(sourceRoot, 'features', 'calendar', 'utils', 'modifiers.ts'), 'utf8');
 
-    expect(vocabulary).toMatch(/import \{ CircleDashed, Clock, type LucideIcon \} from 'lucide-react';/);
-    expect(vocabulary).toMatch(/glyph: \{ kind: GLYPH_ICON, icon: Clock \}/);
-    expect(vocabulary).toMatch(/glyph: \{ kind: GLYPH_ICON, icon: CircleDashed \}/);
+    expect(vocabulary).toMatch(/import \{ CircleDashedBold, ClockBold, type IconComponent \} from '@\/components\/ui\/icon';/);
+    expect(vocabulary).toMatch(/glyph: \{ kind: GLYPH_ICON, icon: ClockBold \}/);
+    expect(vocabulary).toMatch(/glyph: \{ kind: GLYPH_ICON, icon: CircleDashedBold \}/);
+  });
+
+});
+
+/**
+ * THE STATUS MARKS DIFFER BY WHAT IS DRAWN, at the size they are drawn (story
+ * 15.1, review loop 1, human decision 2026-10-30).
+ *
+ * Phosphor's `fill` clock and dashed circle are both solid discs whose
+ * knockouts are 16/256 units — under a pixel at 12 px — so the leave and the
+ * uncovered mark drew as the same dot while a test on their SOURCE TEXT
+ * passed. These rasterize the very files the facade imports
+ * (`./svg-raster.ts`, the nonzero rule on a 4×4-supersampled grid) at the
+ * cell's 12 px and at 24 px (12 px at device pixel ratio 2), threshold each
+ * pixel at half coverage, and compare the masks. Each case is also run
+ * against the `fill` files, which must FAIL it, so the thresholds are not
+ * vacuous.
+ */
+describe('the small status marks are told apart by drawn shape (story 15.1)', () => {
+  const core = join(repoRoot, 'apps', 'web', 'node_modules', '@phosphor-icons', 'core', 'assets');
+  const facade = (): string => readFileSync(join(repoRoot, 'apps', 'web', 'src', 'components', 'ui', 'icon.tsx'), 'utf8');
+  const pathsIn = (file: string): string[] =>
+    [...readFileSync(join(core, file), 'utf8').matchAll(/<path d="([^"]+)"\/>/g)].map((match) => match[1] ?? '');
+  const mask = (file: string, size: number): boolean[] => filled(coverage(pathsIn(file), size));
+  /** A solid disc of the marks' own 108-unit radius: what "a dot" is. */
+  const disc = (size: number): boolean[] =>
+    filled(coverage(['M128,20A108,108,0,1,0,236,128,108,108,0,0,0,128,20Z'], size));
+  const SIZES = [12, 24] as const;
+  /** At least this share of the inked pixels differs between two marks. */
+  const DISTINCT = 0.3;
+  /** A mark fills at most this share of what a solid disc fills. */
+  const NOT_A_DOT = 0.7; // record-bold (a ring around a dot) is 0.60–0.62; the fill clock 0.84–0.94
+
+  it('imports the bold files for the leave mark, the uncovered mark and the three duty legs', () => {
+    for (const [name, file] of [
+      ['clockBold', 'clock-bold'],
+      ['circleDashedBold', 'circle-dashed-bold'],
+      ['checkCircleBold', 'check-circle-bold'],
+      ['recordBold', 'record-bold'],
+    ] as const) {
+      expect(facade()).toContain(`import ${name} from "@phosphor-icons/core/bold/${file}.svg?raw"`);
+    }
+    const legs = readFileSync(join(repoRoot, 'apps', 'web', 'src', 'features', 'today', 'components', 'duty-block.tsx'), 'utf8');
+
+    expect(legs).toMatch(/done: CheckCircleBold,\s*running: RecordBold,\s*upcoming: CircleDashedBold,/);
+  });
+
+  it.each(SIZES)('the leave and uncovered marks differ by shape at %i px', (size) => {
+    const leave = mask('bold/clock-bold.svg', size);
+    const uncovered = mask('bold/circle-dashed-bold.svg', size);
+
+    expect(difference(leave, uncovered), `leave and uncovered differ in too few pixels at ${String(size)} px`).toBeGreaterThanOrEqual(
+      DISTINCT,
+    );
+    // The fill marks this replaced: too alike, which is the defect.
+    expect(difference(mask('fill/clock-fill.svg', size), mask('fill/circle-dashed-fill.svg', size))).toBeLessThan(DISTINCT);
+  });
+
+  it.each(SIZES)('no status mark is a near-solid disc at %i px', (size) => {
+    const dot = fillRatio(disc(size));
+
+    for (const file of ['bold/clock-bold.svg', 'bold/circle-dashed-bold.svg', 'bold/check-circle-bold.svg', 'bold/record-bold.svg']) {
+      expect(fillRatio(mask(file, size)) / dot, `${file} draws as a dot at ${String(size)} px`).toBeLessThan(NOT_A_DOT);
+    }
+    expect(fillRatio(mask('fill/clock-fill.svg', size)) / dot, 'the fill clock no longer measures as a dot').toBeGreaterThan(
+      NOT_A_DOT,
+    );
+  });
+
+  it.each(SIZES)('the duty block\'s done, running and upcoming legs differ by shape at %i px', (size) => {
+    const legs = {
+      done: mask('bold/check-circle-bold.svg', size),
+      running: mask('bold/record-bold.svg', size),
+      upcoming: mask('bold/circle-dashed-bold.svg', size),
+    };
+
+    for (const [one, other] of [
+      ['done', 'running'],
+      ['done', 'upcoming'],
+      ['running', 'upcoming'],
+    ] as const) {
+      expect(difference(legs[one], legs[other]), `${one} and ${other} are too alike at ${String(size)} px`).toBeGreaterThanOrEqual(
+        DISTINCT,
+      );
+    }
+  });
+});
+
+describe('every icon comes from the one facade, in Phosphor fill or, for status marks, bold (story 15.1, D2)', () => {
+  const sourceRoot = join(repoRoot, 'apps', 'web', 'src');
+  const FACADE = join(sourceRoot, 'components', 'ui', 'icon.tsx');
+  const sources = readdirSync(sourceRoot, { recursive: true, encoding: 'utf8' })
+    .filter((name) => /\.(tsx?|css)$/.test(name))
+    .map((name) => join(sourceRoot, name));
+
+  it('sweeps the sources it means to', () => {
+    expect(sources).toContain(FACADE);
+    expect(sources.length).toBeGreaterThan(100);
+  });
+
+  it('imports no icon library anywhere but the facade', () => {
+    const offenders = sources
+      .filter((file) => file !== FACADE)
+      .filter((file) => /from\s+['"](?:lucide-react|@phosphor-icons\/[^'"]+)['"]/.test(readFileSync(file, 'utf8')));
+
+    expect(offenders).toEqual([]);
+  });
+
+  it('draws only Phosphor fill files, and bold for the four status marks, and depends on no other icon package', () => {
+    const facade = readFileSync(FACADE, 'utf8');
+    const imports = [...facade.matchAll(/from\s+"(@phosphor-icons\/[^"]+)"/g)].map((match) => match[1] ?? '');
+    const manifest = JSON.parse(readFileSync(join(repoRoot, 'apps', 'web', 'package.json'), 'utf8')) as {
+      dependencies?: Record<string, string>;
+    };
+
+    expect(imports.length, 'the facade imports no icon at all').toBeGreaterThan(40);
+    expect(imports.filter((specifier) => !/^@phosphor-icons\/core\/(fill|bold)\/[a-z-]+-\1\.svg\?raw$/.test(specifier))).toEqual([]);
+    expect(imports.filter((specifier) => specifier.includes('/bold/')).sort()).toEqual(
+      ['check-circle', 'circle-dashed', 'clock', 'record'].map((name) => `@phosphor-icons/core/bold/${name}-bold.svg?raw`),
+    );
+    for (const specifier of imports) {
+      const file = specifier.replace(/^@phosphor-icons\/core\//, '').replace(/\?raw$/, '');
+
+      expect(
+        existsSync(join(repoRoot, 'apps', 'web', 'node_modules', '@phosphor-icons', 'core', 'assets', file)),
+        `${file} is not in the installed Phosphor core`,
+      ).toBe(true);
+    }
+    expect(Object.keys(manifest.dependencies ?? {}).filter((name) => /lucide|phosphor/.test(name))).toEqual([
+      '@phosphor-icons/core',
+    ]);
+  });
+
+  it('marks every icon with its name, and hides it unless named', () => {
+    const facade = readFileSync(FACADE, 'utf8');
+
+    expect(facade).toContain('data-icon={name}');
+    expect(facade).toMatch(/aria-hidden=\{named \? undefined : true\}/);
+    // Every export is drawn by the one factory, under its kebab name.
+    const exports = [...facade.matchAll(/export const (\w+) = glyph\((\w+), "([a-z-]+)"\)/g)];
+
+    expect(exports.length).toBe(facade.match(/^export const /gm)?.length);
+    for (const [, name = '', , kebab = ''] of exports) {
+      const expected = name
+        .replace(/([a-z])([A-Z])/g, '$1-$2')
+        .replace(/([A-Z])([A-Z][a-z])/g, '$1-$2')
+        .toLowerCase();
+
+      expect(kebab, `${name} is not marked by its own name`).toBe(expected);
+    }
   });
 });

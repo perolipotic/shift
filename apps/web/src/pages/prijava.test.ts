@@ -824,7 +824,7 @@ describe('all three sign-in fields carry an accessible name', () => {
     expect(toggle).toContain("aria-label={t('auth.passwordShow')}");
     expect(toggle).toContain('onClick={togglePassword}');
     expect(form, 'the toggle does not show its state').toContain(
-      '{passwordShown ? <EyeOff aria-hidden /> : <Eye aria-hidden />}',
+      '{passwordShown ? <EyeSlash aria-hidden /> : <Eye aria-hidden />}',
     );
     expect(attributeOf(toggle, 'className')).toMatch(/\bh-11\b[\s\S]*\bw-11\b/);
   });

@@ -1,7 +1,7 @@
-import { Upload } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { UploadSimple } from '@/components/ui/icon';
 import { t } from '@/lib/i18n';
 import {
   OrganizationChangeDialog,
@@ -108,7 +108,7 @@ function LogoForm({
             picker.current?.click();
           }}
         >
-          <Upload aria-hidden />
+          <UploadSimple aria-hidden />
           {t('organization.logoChoose')}
         </Button>
       </div>

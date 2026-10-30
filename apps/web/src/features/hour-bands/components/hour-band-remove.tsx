@@ -1,9 +1,9 @@
-import { Trash2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Button } from '@/components/ui/button';
 import { DialogFooter } from '@/components/ui/dialog';
+import { Trash } from '@/components/ui/icon';
 import { Notice } from '@/components/ui/notice';
 import type { HourBandEditScreen } from '@/features/hour-bands/hooks/use-hour-band-edit';
 import type { HourBandRow } from '@/features/hour-bands/services/list';
@@ -51,7 +51,7 @@ export function HourBandRemove({
         setArmed(true);
       }}
     >
-      <Trash2 aria-hidden />
+      <Trash aria-hidden />
       {/* THE WORD IS SHORT, THE NAME IS WHOLE: sighted people read the
           band's name in the field above, and the accessible name still
           names it — and begins with the visible word (WCAG 2.5.3). */}
@@ -109,7 +109,7 @@ export function HourBandRemoveConfirm({
             void remove(band);
           }}
         >
-          <Trash2 aria-hidden />
+          <Trash aria-hidden />
           <span className="truncate">
             {t('organization.hourBands.removeConfirm', { name: band.name })}
           </span>

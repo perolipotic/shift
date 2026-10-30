@@ -1,10 +1,10 @@
-import { ClipboardCheck } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ConfirmDialog, Dialog, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { ClipboardText } from '@/components/ui/icon';
 import { IconTile } from '@/components/ui/icon-tile';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -463,7 +463,7 @@ export function OverrideReview({
       <Card className="min-w-0">
         <CardHeader className="flex-row items-start gap-3">
           <IconTile>
-            <ClipboardCheck />
+            <ClipboardText />
           </IconTile>
           <div className="grid min-w-0 gap-1.5">
             <CardTitle asChild>

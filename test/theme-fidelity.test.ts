@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { formatHex, parse, rgb } from 'culori';
 import { describe, expect, it } from 'vitest';
 
-import { BASE_TOKENS, rawToken, type Theme } from './theme-css.js';
+import { BASE_TOKENS, GLASS_COLOUR_TOKENS, GLASS_EFFECT_TOKENS, GLASS_TOKENS, rawToken, type Theme } from './theme-css.js';
 
 /**
  * The OKLCH conversion round-trips to DESIGN.md's hex (story 1.1b, UX-DR3).
@@ -225,5 +225,101 @@ describe('every base token round-trips to the hex base-palette declares', () => 
       expected.alpha ?? 1,
       3,
     );
+  });
+});
+
+/**
+ * The glass set, round-tripped the same way (story 15.1, direction G).
+ *
+ * DESIGN.md's `glass:` key holds one map per theme: ten colours and three
+ * effects. The COLOURS round-trip as every other colour does, alpha included,
+ * because a glass alpha IS the design (.58 beside content, .80 over it). The
+ * EFFECTS are not colours: the blur and the saturate must be the same text,
+ * and the shadow the same geometry with its colour round-tripped, since the
+ * stylesheet writes that colour in OKLCH where DESIGN.md writes rgba.
+ */
+function glassBlock(): Record<Theme, Map<string, string>> {
+  const md = readFileSync(DESIGN, 'utf8');
+  const block = md.split(/^glass:\s*$/m)[1]?.split(/^\w[\w-]*:\s*$/m)[0] ?? '';
+  const themes: Record<Theme, Map<string, string>> = { light: new Map(), dark: new Map() };
+  let current: Theme | null = null;
+
+  for (const line of block.split('\n')) {
+    const heading = /^\s{2}(light|dark):\s*$/.exec(line);
+    if (heading?.[1] !== undefined) {
+      current = heading[1] as Theme;
+      continue;
+    }
+    const found = /^\s{4}([a-z0-9-]+):\s*'([^']+)'/.exec(line);
+    if (current !== null && found?.[1] !== undefined && found[2] !== undefined) {
+      themes[current].set(found[1], found[2]);
+    }
+  }
+
+  return themes;
+}
+
+/** The largest channel difference between two colours, on the 0–255 scale. */
+function driftOf(declared: string, shipped: string): { drift: number; alpha: [number, number] } | null {
+  const expected = rgb(parse(declared));
+  const actual = rgb(parse(shipped));
+  if (expected === undefined || actual === undefined) return null;
+
+  return {
+    drift:
+      Math.max(
+        Math.abs(expected.r - actual.r),
+        Math.abs(expected.g - actual.g),
+        Math.abs(expected.b - actual.b),
+      ) * 255,
+    alpha: [expected.alpha ?? 1, actual.alpha ?? 1],
+  };
+}
+
+describe('every glass token round-trips to the value glass: declares (story 15.1)', () => {
+  it.each(THEMES)('declares every one of the 13 glass tokens for %s', (theme) => {
+    expect([...glassBlock()[theme].keys()].sort()).toEqual([...GLASS_TOKENS].sort());
+  });
+
+  const colours = THEMES.flatMap((theme) => GLASS_COLOUR_TOKENS.map((token) => ({ theme, token })));
+
+  it.each(colours)('$token in $theme', ({ theme, token }) => {
+    const declared = glassBlock()[theme].get(token);
+    const shipped = rawToken(theme, token);
+    expect(declared, `glass.${theme} declares no ${token}`).toBeDefined();
+    expect(shipped, `--${token} is not declared in the ${theme} theme`).not.toBeNull();
+
+    const measured = driftOf(declared ?? '', shipped ?? '');
+    expect(measured, `--${token} (${theme}) or its DESIGN.md value is unparseable`).not.toBeNull();
+    if (measured === null) return;
+
+    expect(measured.drift, `--${token} (${theme}) drifts from DESIGN.md`).toBeLessThan(0.5);
+    expect(measured.alpha[1], `--${token} (${theme}) alpha differs from DESIGN.md`).toBeCloseTo(measured.alpha[0], 3);
+  });
+
+  const effects = THEMES.flatMap((theme) =>
+    GLASS_EFFECT_TOKENS.filter((token) => token !== 'glass-shadow').map((token) => ({ theme, token })),
+  );
+
+  it.each(effects)('$token in $theme is the same text', ({ theme, token }) => {
+    expect(rawToken(theme, token)).toBe(glassBlock()[theme].get(token));
+  });
+
+  it.each(THEMES)('glass-shadow in %s has the same geometry and colour', (theme) => {
+    const split = (value: string): [string, string] => {
+      const at = value.search(/(rgba?|oklch)\(/);
+
+      return [value.slice(0, at).trim(), value.slice(at).trim()];
+    };
+    const [declaredGeometry, declaredColour] = split(glassBlock()[theme].get('glass-shadow') ?? '');
+    const [shippedGeometry, shippedColour] = split(rawToken(theme, 'glass-shadow') ?? '');
+
+    expect(shippedGeometry).toBe(declaredGeometry);
+    expect(shippedColour, '--glass-shadow does not draw in OKLCH').toMatch(/^oklch\(/);
+
+    const measured = driftOf(declaredColour, shippedColour);
+    expect(measured).not.toBeNull();
+    expect(measured?.drift ?? Infinity).toBeLessThan(0.5);
+    expect(measured?.alpha[1]).toBeCloseTo(measured?.alpha[0] ?? -1, 3);
   });
 });

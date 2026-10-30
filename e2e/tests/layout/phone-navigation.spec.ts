@@ -86,13 +86,39 @@ for (const width of WIDTHS) {
         expect(await navOverflow(loginPage.navigation), 'the bar scrolls sideways').toBeLessThanOrEqual(0);
 
         const boxes = await cellBoxes(loginPage);
+        // STORY 15.1: the bar is a floating pill inset from the viewport's
+        // edges, so the five equal cells share the pill's inner width rather
+        // than the whole viewport's: 56 px each at 320 px.
+        const pill = await loginPage.navigation.evaluate((element) => {
+          const box = element.getBoundingClientRect();
+          const style = getComputedStyle(element);
+
+          return {
+            left: box.left,
+            right: box.right,
+            inner: element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+          };
+        });
         expect(boxes).toHaveLength(5);
+        expect(pill.left, 'the pill touches the viewport edge').toBeGreaterThan(0);
+        expect(pill.right, 'the pill touches the viewport edge').toBeLessThan(width);
         for (const box of boxes) {
           expect(box.height, 'a bar cell is below the 44 px target').toBeGreaterThanOrEqual(MINIMUM_TARGET);
+          expect(box.width, 'a bar cell is below the 44 px target').toBeGreaterThanOrEqual(MINIMUM_TARGET);
           expect(box.left, 'a bar cell starts off screen').toBeGreaterThanOrEqual(0);
           expect(box.right, 'a bar cell ends off screen').toBeLessThanOrEqual(width);
-          // Five equal cells across the whole width: 64 px each at 320 px.
-          expect(box.width).toBeCloseTo(width / 5, 0);
+          expect(box.width).toBeCloseTo(pill.inner / 5, 0);
+        }
+        // Every label is whole, never cut by its `truncate`, at the bar's
+        // narrowest (story 15.1: the pill's inset shrinks below 360 px).
+        const labels = await loginPage.navigation
+          .locator(':scope > a > span.truncate, :scope > button > span[id]')
+          .evaluateAll((spans) =>
+            spans.map((span) => ({ text: span.textContent, scroll: span.scrollWidth, client: span.clientWidth })),
+          );
+        expect(labels).toHaveLength(5);
+        for (const label of labels) {
+          expect(label.scroll, `the tab label ${String(label.text)} is cut`).toBeLessThanOrEqual(label.client);
         }
 
         // The current tab is marked and inside the viewport.

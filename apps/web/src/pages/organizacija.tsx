@@ -1,8 +1,8 @@
 import { Link, createRoute } from '@tanstack/react-router';
-import { Clock3 } from 'lucide-react';
 
 import { OfflineNote } from '@/components/offline-note';
 import { Button } from '@/components/ui/button';
+import { Clock } from '@/components/ui/icon';
 import { PageActions, PageDescription, PageHeader, PageTitle } from '@/components/ui/page-header';
 import { t } from '@/lib/i18n';
 import { requireAdmin } from '@/features/navigation/services/admin-guard';
@@ -60,7 +60,7 @@ export function OrganizacijaScreen() {
         <PageActions>
           <Button asChild variant="outline" className="h-11">
             <Link to="/organizacija/satni-pojasi">
-              <Clock3 aria-hidden />
+              <Clock aria-hidden />
               {t('organization.hourBands.heading')}
             </Link>
           </Button>

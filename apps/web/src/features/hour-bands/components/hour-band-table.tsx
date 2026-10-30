@@ -1,10 +1,10 @@
 import { Link } from '@tanstack/react-router';
-import { Clock3, Pencil } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle } from '@/components/ui/card';
+import { Clock, PencilSimple } from '@/components/ui/icon';
 import { IconTile } from '@/components/ui/icon-tile';
 import { StackedField, StackedFields, StackedList, StackedRow } from '@/components/ui/stacked-list';
 import {
@@ -51,7 +51,7 @@ export function HourBandTable({ rows }: { readonly rows: readonly HourBandDispla
           {rows.map((row) => (
             <StackedRow key={row.band.id} className="flex items-center gap-3">
               <IconTile variant={row.tone}>
-                <Clock3 />
+                <Clock />
               </IconTile>
               <div className="grid min-w-0 flex-1 gap-0.5">
                 <StackedFields>
@@ -100,7 +100,7 @@ export function HourBandTable({ rows }: { readonly rows: readonly HourBandDispla
                 <TableCell>
                   <div className="flex min-w-0 items-center gap-3">
                     <IconTile variant={row.tone}>
-                      <Clock3 />
+                      <Clock />
                     </IconTile>
                     <span className="truncate font-semibold">{row.band.name}</span>
                   </div>
@@ -136,7 +136,7 @@ function renderEdit(row: HourBandDisplayRow): ReactNode {
   return (
     <Button asChild variant="ghost" className="h-11 w-11 shrink-0 px-0">
       <Link to="/organizacija/satni-pojasi/$id" params={{ id: row.band.id }}>
-        <Pencil aria-hidden />
+        <PencilSimple aria-hidden />
         <span className="sr-only">{t('organization.hourBands.edit', { name: row.band.name })}</span>
       </Link>
     </Button>

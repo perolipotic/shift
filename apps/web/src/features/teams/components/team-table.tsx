@@ -1,8 +1,8 @@
 import { Link } from '@tanstack/react-router';
-import { Eye, Pencil, Users } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { Eye, PencilSimple, Users } from '@/components/ui/icon';
 import { IconTile } from '@/components/ui/icon-tile';
 import { StackedField, StackedFields, StackedList, StackedRow } from '@/components/ui/stacked-list';
 import {
@@ -90,7 +90,7 @@ function renderAction(team: TeamRow): ReactNode {
   return (
     <Button asChild variant="ghost" className="h-11 w-11 shrink-0 px-0">
       <Link to="/ljudi/smjene/$id" params={{ id: team.id }}>
-        {team.archived ? <Eye aria-hidden /> : <Pencil aria-hidden />}
+        {team.archived ? <Eye aria-hidden /> : <PencilSimple aria-hidden />}
         <span className="sr-only">{t(teamActionMessageKey(team), { name: team.name })}</span>
       </Link>
     </Button>

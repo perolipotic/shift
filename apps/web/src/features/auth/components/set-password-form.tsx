@@ -1,8 +1,8 @@
-import { Check, Eye, EyeOff, Lock, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Button } from '@/components/ui/button';
+import { Check, Eye, EyeSlash, Lock, X } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
 import { InputGroup, InputGroupAction, InputGroupIcon } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
@@ -95,7 +95,7 @@ export function SetPasswordForm({ screen }: { readonly screen: SetPasswordScreen
               aria-controls="new-password repeat-password"
               onClick={togglePassword}
             >
-              {passwordShown ? <EyeOff aria-hidden /> : <Eye aria-hidden />}
+              {passwordShown ? <EyeSlash aria-hidden /> : <Eye aria-hidden />}
             </Button>
           </InputGroupAction>
         </InputGroup>

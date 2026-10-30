@@ -170,11 +170,11 @@ test('the admin records leave and opens Kalendar: the conflicts and the hatch ar
     if (COLLIDING.has(offset)) {
       await expect(cell, date).toHaveAccessibleName(new RegExp(`, ${escapeRegExp(CONFLICT)}, ${escapeRegExp(LEAVE)}$`));
       // ⚠ drawn, the conflict's ring and the leave hatch over the type's fill,
-      // and the leave glyph lucide's Clock.
+      // and the leave glyph the facade's ClockBold (Phosphor bold since story 15.1).
       await expect(calendarPage.drawnText(cell, '⚠', { exact: false })).toBeVisible();
       await expect(cell.locator('.modifier-ring-conflict.modifier-hatch-leave')).toHaveCount(1);
-      await expect(cell.locator('svg.lucide-clock')).toHaveCount(1);
-      await expect(cell.locator('svg.lucide-clock')).toHaveAttribute('aria-hidden', 'true');
+      await expect(cell.locator('svg[data-icon="clock-bold"]')).toHaveCount(1);
+      await expect(cell.locator('svg[data-icon="clock-bold"]')).toHaveAttribute('aria-hidden', 'true');
     } else {
       // A non-working date raises nothing on the grid: it names the shift, not the person.
       await expect(cell, date).not.toHaveAccessibleName(names(CONFLICT));

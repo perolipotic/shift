@@ -1,9 +1,9 @@
-import { CalendarDays } from 'lucide-react';
 import { Fragment, type ReactNode, type SyntheticEvent } from 'react';
 
 import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { CalendarDots } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
 import { InputGroup, InputGroupIcon } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
@@ -92,7 +92,7 @@ export function MemberAllowanceDialog({ edit }: { readonly edit: MemberEdit }): 
           <Label htmlFor={MEMBER_ALLOWANCE_FIELD_ID}>{t('ljudi.leave')}</Label>
           <InputGroup>
             <InputGroupIcon>
-              <CalendarDays />
+              <CalendarDots />
             </InputGroupIcon>
             <Input
               ref={leaveField}

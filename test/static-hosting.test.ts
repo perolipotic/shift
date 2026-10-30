@@ -228,8 +228,8 @@ describe('the build is an installable PWA', () => {
       lang: 'hr',
       start_url: '/',
       display: 'standalone',
-      theme_color: '#f8fafc',
-      background_color: '#f8fafc',
+      theme_color: '#e8edf5',
+      background_color: '#e8edf5',
     });
   });
 

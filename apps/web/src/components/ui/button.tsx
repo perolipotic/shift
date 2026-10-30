@@ -4,8 +4,8 @@ import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
 
-// Restyled once, here, to DESIGN.md's register (visual refresh A): a 10px
-// radius, semibold labels and a soft primary-tinted lift on hover. Screens size
+// Restyled once, here, to DESIGN.md's register (visual refresh A): the `md`
+// radius (14px since story 15.1), semibold labels and a soft lift on hover. Screens size
 // and place a Button (`h-11`, `w-full`) and never restyle it; heights stay the
 // primitive's own so that the 44px floor remains a visible screen decision.
 //
@@ -26,8 +26,11 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
+        // INK since story 15.1 (D3): the one default action is near-black in
+        // light and near-white in dark (`--ink`), and blue `primary` is kept
+        // for selection, today, links and progress.
         default:
-          "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 hover:shadow-md hover:shadow-primary/30",
+          "bg-ink text-ink-foreground shadow-sm hover:bg-ink/90 hover:shadow-md",
         destructive:
           "bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90",
         outline:

@@ -1,8 +1,8 @@
-import { Archive } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { DialogFooter } from '@/components/ui/dialog';
+import { Archive } from '@/components/ui/icon';
 import { Notice } from '@/components/ui/notice';
 import type { ShiftTypeEditScreen } from '@/features/shift-types/hooks/use-shift-type-edit';
 import type { ShiftTypeRow } from '@/features/shift-types/services/list';

@@ -1,10 +1,10 @@
-import { MoveRight } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { ArrowRight } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
@@ -109,7 +109,7 @@ export function HourBandAddDialog({ screen }: { readonly screen: HourBandListScr
             <div className="grid gap-2">
               <Label htmlFor="hour-band-new-end">{t('organization.hourBands.end')}</Label>
               <OutputField id="hour-band-new-end" htmlFor="hour-band-new-start">
-                <MoveRight aria-hidden />
+                <ArrowRight aria-hidden />
                 {preview === null ? t('organization.hourBands.endPending') : preview.end}
               </OutputField>
             </div>

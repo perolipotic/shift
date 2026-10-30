@@ -1,10 +1,10 @@
-import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useCallback, useEffect, useId, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode } from 'react';
 
 import { SheetDialog } from '@/components/filter-bar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { CaretDown, CaretLeft, CaretRight } from '@/components/ui/icon';
 import { Popover } from '@/components/ui/popover';
 import { usePhone } from '@/hooks/viewport';
 import { t } from '@/lib/i18n';
@@ -192,7 +192,7 @@ export function MonthNav({
               step(-1);
             }}
           >
-            <ChevronLeft aria-hidden />
+            <CaretLeft aria-hidden />
           </Button>
           <Button
             ref={trigger}
@@ -213,7 +213,7 @@ export function MonthNav({
               <span className="font-bold">{t('kalendar.monthHeading', { month: month.monthName, year: month.year })}</span>
               {month.isCurrent ? <Badge variant="outline">{t('kalendar.thisMonthLabel')}</Badge> : null}
             </span>
-            <ChevronDown aria-hidden />
+            <CaretDown aria-hidden />
           </Button>
           <Button
             type="button"
@@ -225,7 +225,7 @@ export function MonthNav({
               step(1);
             }}
           >
-            <ChevronRight aria-hidden />
+            <CaretRight aria-hidden />
           </Button>
         </div>
         <Popover
@@ -334,7 +334,7 @@ function MonthPicker({
             showYear(year - 1);
           }}
         >
-          <ChevronLeft aria-hidden />
+          <CaretLeft aria-hidden />
         </Button>
         <span className="font-bold tabular-nums" aria-live="polite">
           {yearTextOf(year)}
@@ -349,7 +349,7 @@ function MonthPicker({
             showYear(year + 1);
           }}
         >
-          <ChevronRight aria-hidden />
+          <CaretRight aria-hidden />
         </Button>
       </div>
       <div role="presentation" className="grid grid-cols-4 gap-1.5" onKeyDown={moveOnKey}>

@@ -113,8 +113,8 @@ export function MemberLeaveCard({
     );
   }
 
-  /** One figure in whole days, or its skeleton. Body face, not Syne: its
-   *  digits are tabular Shift Figures (story 7.2). */
+  /** One figure in whole days, or its skeleton. Body face, never the heading slot: its
+   *  digits are tabular (story 7.2; Outfit `tnum` since story 15.1). */
   function renderFigure(days: number | null): ReactNode {
     if (days === null) {
       return (

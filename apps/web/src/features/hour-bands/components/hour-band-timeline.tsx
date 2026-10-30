@@ -1,7 +1,7 @@
-import { Check, TriangleAlert } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Check, Warning } from '@/components/ui/icon';
 import { IconTile } from '@/components/ui/icon-tile';
 import { StatTile, StatTileLabel, StatTileValue } from '@/components/ui/stat-tile';
 import {
@@ -48,9 +48,10 @@ export function HourBandTimeline({
             segment.name === null || segment.tone === null ? (
               <TimelineGap key={segment.key} widthPercent={segment.widthPercent}>
                 {/* THE FLAG, on a solid chip over an opaque backing, so the text
-                    never sits on the stripes: the chip over the page background
-                    is the pair `theme-contrast.test.ts` measures. */}
-                <span className="flex min-w-0 rounded-sm bg-background">
+                    never sits on the stripes: the chip over the card colour
+                    is the pair `theme-contrast.test.ts` measures. The card, not the
+                    page, since story 15.1: the page (#E8EDF5) is too dark under it. */}
+                <span className="flex min-w-0 rounded-sm bg-card">
                   <span className="truncate rounded-sm bg-modifier-uncovered px-1 text-xs font-medium text-modifier-uncovered-foreground">
                     {t('organization.hourBands.uncovered')}
                   </span>
@@ -101,7 +102,7 @@ export function HourBandTimeline({
           </StatTile>
           <StatTile>
             <IconTile>
-              <TriangleAlert />
+              <Warning />
             </IconTile>
             <div className="min-w-0">
               <StatTileLabel>{t('organization.hourBands.uncovered')}</StatTileLabel>

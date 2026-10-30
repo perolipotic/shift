@@ -486,9 +486,14 @@ describe('the chrome the layout wraps every destination in', () => {
       /aria-\[current=page\]:(?:font-bold|font-semibold|underline)/.test(shellEntryUtility()),
       'the active entry is distinguished by colour alone',
     ).toBe(true);
-    expect(shellEntryUtility(), 'the focus ring is not offset by the sidebar').toContain(
-      'focus-visible:ring-offset-sidebar',
+    // STORY 15.1: the glass set. The pill is `glass-active` (white in light), and the
+    // ring is the measured `--ring` drawn straight against the glass (an
+    // offset band would need one opaque colour, and glass has none).
+    expect(shellEntryUtility(), 'the current entry is not the glass pill').toContain(
+      'aria-[current=page]:bg-glass-active',
     );
+    expect(shellEntryUtility(), 'the focus ring is not the measured --ring').toContain('focus-visible:ring-ring');
+    expect(shellEntryUtility(), 'the shell still draws with the navy sidebar set').not.toMatch(/sidebar/);
   });
 
   it('matches a destination and its descendants, not the exact path alone', () => {
@@ -653,6 +658,66 @@ describe('the chrome the layout wraps every destination in', () => {
     expect(chrome, 'nothing clears the sticky bar, so content scrolls under it unreachably').toMatch(
       /pb-\[calc\(4rem/,
     );
+  });
+
+  it('floats the shell in glass, with the last row still reachable (story 15.1)', () => {
+    // Direction G: the desktop sidebar a floating `glass-chrome` panel inset
+    // 16 px, the phone's bar a floating `glass-over-content` pill above the
+    // safe area. The accent stays a 2 px EDGE on each, never a fill.
+    const chrome = source(CHROME);
+    const aside = /<aside\b[^>]*>/.exec(chrome)?.[0] ?? '';
+    const phone = navBlocks(chrome)[1] ?? '';
+    const phoneOpening = /<nav\b[^>]*>/.exec(phone)?.[0] ?? '';
+    const asideClasses = (/className=\{`([^`]*)`\}/.exec(aside)?.[1] ?? '').split(/\s+/);
+    const barClasses = (/className=\{`([^`]*)`\}/.exec(phoneOpening)?.[1] ?? '').split(/\s+/);
+
+    expect(asideClasses, 'the sidebar is not the glass panel').toEqual(
+      expect.arrayContaining(['glass-chrome', 'rounded-3xl', 'border-r-2', 'sm:sticky', 'sm:top-4', 'sm:ml-4']),
+    );
+    expect(barClasses, 'the phone bar is not the over-content glass pill').toEqual(
+      expect.arrayContaining(['glass-over-content', 'border-t-2', 'text-foreground', '${accent.edge}']),
+    );
+    // Content scrolls UNDER the bar, so it is the over-content glass, never the
+    // thinner one, and the sidebar beside the content is never the thicker one.
+    expect(barClasses).not.toContain('glass-chrome');
+    expect(asideClasses).not.toContain('glass-over-content');
+    // The navy register is gone from the shell (D5): no `sidebar` token and no
+    // Button `sidebar` variant (both stay for 15.2's screens).
+    expect(chrome, 'the shell still paints with the navy sidebar tokens').not.toMatch(
+      /\b(?:bg|text|border|ring|ring-offset)-sidebar\b|-sidebar-(?:foreground|primary|accent|border|ring)\b/,
+    );
+    expect(chrome, 'the shell still uses the navy Button variant').not.toContain('variant="sidebar"');
+    // The last row clears the floating bar plus the safe area, and the page's
+    // scroll padding says the same: 4 rem pill, its 2 px edge, 0.75 rem float.
+    expect(chrome).toContain('pb-[calc(4rem+2px+0.75rem+env(safe-area-inset-bottom,0px))]');
+    expect(readFileSync(join(srcRoot, 'index.css'), 'utf8')).toContain(
+      'scroll-padding-bottom: calc(4.75rem + 2px + env(safe-area-inset-bottom, 0px));',
+    );
+  });
+
+  it('writes no glass in a screen: no backdrop filter outside the two utilities (story 15.1)', () => {
+    // Glass is a token and primitive treatment, never a class string a screen
+    // spells (DESIGN.md; UX-DR53, written by 15.5). The two `@utility` blocks in `index.css`
+    // are the only `backdrop-filter`s in the application.
+    const css = readFileSync(join(srcRoot, 'index.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const utilities = [...css.matchAll(/@utility ([\w-]+) \{[\s\S]*?\n\}/g)];
+    const blurring = utilities.filter(([body]) => body.includes('backdrop-filter')).map(([, name]) => name);
+
+    expect(blurring).toEqual(['glass-chrome', 'glass-over-content']);
+    expect(css.match(/(?<!-webkit-)backdrop-filter:\s*blur\(var/g)).toHaveLength(2);
+    expect(css.match(/-webkit-backdrop-filter:\s*blur\(var/g)).toHaveLength(2);
+    expect(css, 'a blob is blurred by a filter rather than drawn as a gradient').not.toMatch(/(?<!backdrop-)filter:\s*blur/);
+    for (const name of ['glass-chrome', 'glass-over-content']) {
+      const body = utilities.find(([, found]) => found === name)?.[0] ?? '';
+
+      expect(body, `${name} blurs by more than 24 px`).toContain('blur(var(--glass-blur))');
+      expect(body, `${name} has no solid fallback without blur support`).toMatch(/@supports not \(/);
+      expect(body, `${name} ignores reduced transparency`).toContain('@media (prefers-reduced-transparency: reduce)');
+      expect(body, `${name} has no forced-colours fallback`).toMatch(
+        /@media \(forced-colors: active\) \{[^}]*background-color: Canvas;[^}]*border: 1px solid CanvasText;/,
+      );
+    }
+    expect(css).toMatch(/--glass-blur: 24px;/);
   });
 
   it('names the region the collapse controls, and renders that region', () => {

@@ -1,9 +1,9 @@
-import { Plus } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle } from '@/components/ui/card';
+import { Plus } from '@/components/ui/icon';
 import { Notice } from '@/components/ui/notice';
 import { SectionNumber } from '@/components/ui/section-number';
 import { ShiftTypeTable } from '@/features/shift-types/components/shift-type-table';

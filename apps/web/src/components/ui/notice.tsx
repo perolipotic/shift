@@ -1,6 +1,6 @@
 import * as React from "react"
-import { CircleAlert, CircleCheck, WifiOff } from "lucide-react"
 
+import { CheckCircle, WarningCircle, WifiSlash } from "@/components/ui/icon"
 import { cn } from "@/lib/utils"
 
 // The one refusal and confirmation box (visual refresh B), in the Input look:
@@ -23,8 +23,8 @@ import { cn } from "@/lib/utils"
 // `tabIndex` and `aria-*` wiring screens depend on keeps working unchanged.
 
 const NOTICE_ICONS = {
-  alert: CircleAlert,
-  status: CircleCheck,
+  alert: WarningCircle,
+  status: CheckCircle,
 } as const
 
 export type NoticeProps = React.HTMLAttributes<HTMLParagraphElement> &
@@ -35,7 +35,7 @@ export type NoticeProps = React.HTMLAttributes<HTMLParagraphElement> &
 
 const Notice = React.forwardRef<HTMLParagraphElement, NoticeProps>(
   ({ className, role, variant, children, ...props }, ref) => {
-    const Icon = variant === "offline" ? WifiOff : NOTICE_ICONS[role]
+    const Icon = variant === "offline" ? WifiSlash : NOTICE_ICONS[role]
     return (
       <p
         ref={ref}

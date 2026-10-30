@@ -394,10 +394,15 @@ test.describe('the sticky layers on a phone', () => {
       // Bring the scroller's lower half under the bar.
       window.scrollBy(0, wrapper.getBoundingClientRect().bottom - barBox.bottom - 150);
       const frame = wrapper.getBoundingClientRect();
-      const box = bar.getBoundingClientRect();
+      // STORY 15.1: the bar is a floating pill inside a clear strip that lets
+      // presses through, so what must win every point is the PILL (the
+      // `<nav>`), across its own width; beside it the content shows on purpose.
+      const pill = bar.querySelector('nav');
+      if (pill === null) throw new Error('E2E: the bar holds no pill');
+      const box = pill.getBoundingClientRect();
       const y = box.top + box.height / 2;
       const misses: number[] = [];
-      for (let x = 2; x < box.right; x += 8) {
+      for (let x = box.left + 2; x < box.right - 2; x += 8) {
         const hit = document.elementFromPoint(x, y);
         if (hit === null || !bar.contains(hit)) misses.push(x);
       }

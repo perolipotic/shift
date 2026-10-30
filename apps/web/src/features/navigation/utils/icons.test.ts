@@ -6,7 +6,7 @@ import { destinationIcon } from '@/features/navigation/utils/icons';
 /**
  * The icon map, EXECUTED.
  *
- * The record is total by TYPE — `Record<NavigationKey, LucideIcon>` — so a ninth
+ * The record is total by TYPE — `Record<NavigationKey, IconComponent>` — so a ninth
  * destination with no icon is a `pnpm typecheck` failure rather than a runtime
  * one. What the type cannot say is that the eight entries are eight DIFFERENT
  * icons: a map whose values had all been copied from the first line, or a reader

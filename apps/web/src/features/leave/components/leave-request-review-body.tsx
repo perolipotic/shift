@@ -1,5 +1,4 @@
 import { Link } from '@tanstack/react-router';
-import { Check, ChevronLeft, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { OfflineNote } from '@/components/offline-note';
@@ -7,6 +6,7 @@ import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { CaretLeft, Check, X } from '@/components/ui/icon';
 import { Notice } from '@/components/ui/notice';
 import { PageHeader, PageTitle } from '@/components/ui/page-header';
 import { LeaveConflictLines } from '@/features/leave/components/leave-conflict-lines';
@@ -40,7 +40,7 @@ function BackLink({ disabled = false }: { readonly disabled?: boolean }): ReactN
   return (
     <Button asChild variant="ghost" className="-ml-3 h-11 px-3 aria-disabled:opacity-50">
       <Link to="/za-odluku" disabled={disabled}>
-        <ChevronLeft aria-hidden />
+        <CaretLeft aria-hidden />
         {t('zaOdluku.resolution.backToQueue')}
       </Link>
     </Button>

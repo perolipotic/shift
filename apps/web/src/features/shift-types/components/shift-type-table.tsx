@@ -1,8 +1,8 @@
 import { Link } from '@tanstack/react-router';
-import { Pencil } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { PencilSimple } from '@/components/ui/icon';
 import {
   Table,
   TableBody,
@@ -58,7 +58,7 @@ function renderRow(row: ShiftTypeDisplayRow): ReactNode {
         {row.type.archived ? null : (
           <Button asChild variant="ghost" className="h-11 w-11 px-0">
             <Link to="/postavke-rotacije/tipovi-smjena/$id" params={{ id: row.type.id }}>
-              <Pencil aria-hidden />
+              <PencilSimple aria-hidden />
               <span className="sr-only">{t('rotation.shiftTypes.edit', { name: row.type.name })}</span>
             </Link>
           </Button>

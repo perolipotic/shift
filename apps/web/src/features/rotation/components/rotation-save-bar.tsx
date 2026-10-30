@@ -1,7 +1,7 @@
-import { Save } from 'lucide-react';
 
 import { OfflineWriteNote } from '@/components/offline-write-note';
 import { Button } from '@/components/ui/button';
+import { FloppyDisk } from '@/components/ui/icon';
 import type { RotationBuilder } from '@/features/rotation/hooks/use-rotation-builder';
 import { saveBarHintOf } from '@/features/rotation/services/history';
 import type { RotationDraft } from '@/features/rotation/utils/draft';
@@ -89,7 +89,7 @@ export function RotationSaveBar({
             void requestSave();
           }}
         >
-          <Save aria-hidden />
+          <FloppyDisk aria-hidden />
           {t('rotation.builder.save')}
         </Button>
       </div>
