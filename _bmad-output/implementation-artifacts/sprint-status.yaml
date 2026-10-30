@@ -625,6 +625,7 @@ development_status:
   15-4-admin-surfaces-read-in-glass: backlog
   15-5-glass-holds-in-dark-without-blur-and-on-a-low-end-phone: backlog
   15-6-week-view-and-day-view: backlog   # optional, outside v1 (D6): only after a PRD edit
+  15-7-every-filter-is-one-summary-bar-a-filtri-sheet-and-chips: backlog
   epic-15-retrospective: optional
 action_items:
   - id: "epic-4-retro-item-1-fix-c1-a-sati-name-for-a-member-no-longe"
