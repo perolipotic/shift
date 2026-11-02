@@ -1293,6 +1293,7 @@ pull request to `main` and every push to `main`.
 | `changes` | PR | Is anything but docs changed? A pull request that changes only `_bmad-output/`, `_bmad/`, `.claude/`, `docs/` or Markdown skips `e2e` and `e2e-report`; a push to `main` always runs them |
 | `e2e` | PR + `main`, four shards | Each shard on a runner of its own, so it never shares a stack with `test` or another shard (`e2e/README.md`): `supabase start -x edge-runtime,$SUPABASE_UNUSED_SERVICES`, the two local env files from `supabase status` (`scripts/ci/write-local-env.mjs`), `supabase functions serve admin-auth` and Vite on `127.0.0.1:5173`, then `pnpm test:e2e --shard=N/4`, which writes a blob report. Shard 1 then runs `pnpm test:smoke` against those same local servers (anonymous checks plus sign-in as the seeded `dvd-kastel-novi` / `ana.kovac`), so the smoke specs run on every PR. A failing shard uploads its traces and screenshots |
 | `e2e-report` | after `e2e` | Merges the shards' blob reports into one HTML report, uploaded as `e2e-report` |
+| `ci-passed` (check **CI passed**) | PR + `main`, always | The one check branch protection requires: fails if any of `quality`, `build`, `test`, `changes`, `e2e` failed, was cancelled or was skipped, except `e2e` skipped on a docs-only PR. `e2e-report` is not gated |
 | `deploy-staging` | `main`, deploys enabled | §5.2 against the `staging` Environment, then Pages `--branch staging` |
 | `smoke-staging` | after `deploy-staging` | `pnpm test:smoke` against the staging origin, with the smoke account if configured |
 | `deploy-production` | after `smoke-staging`, **after approval** | §5.3 against the `production` Environment, then Pages `--branch main` |
@@ -1301,6 +1302,14 @@ pull request to `main` and every push to `main`.
 
 A failing job stops everything after it: production never starts unless
 staging deployed **and** its smoke passed.
+
+**Branch protection on `main`** (retro 10 A12). Required: a pull request; the
+single status check **CI passed**, with "require branches to be up to date
+before merging", so a PR's run includes the latest `main`; no bypass for
+admins. Do not require the E2E shards by name: on a docs-only PR the skipped
+matrix job reports as `E2E (Playwright, shard ${{ matrix.shard }}/4)`, so a
+required `shard 1/4` never reports and the PR waits forever. Renaming the
+`ci-passed` job's `name:` needs the same change in the rule.
 
 **Concurrency.** GitHub keeps at most one *running* and one *pending* run or
 job per concurrency group, and when a newer one arrives it silently cancels the

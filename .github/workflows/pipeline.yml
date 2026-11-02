@@ -8,11 +8,13 @@
 #                      then (shard 1) the remote smoke against the same servers;
 #                      skipped on a pull request that changes docs alone
 #            e2e-report  merges the four shards' reports into one HTML report
+#            ci-passed   the one required check on main: quality, build, test and
+#                        e2e passed (e2e may be skipped on a docs-only PR)
 #   main only, and only when vars.DEPLOY_ENABLED == 'true':
 #            deploy-staging → smoke-staging → deploy-production (approval) → smoke-production
 #            notify    on any failure on main
 #
-# Pull requests stop after `test` and `e2e`. Every third-party action is pinned
+# Pull requests stop after `ci-passed` (the check named "CI passed"). Every third-party action is pinned
 # to a full commit SHA; the version is in the comment beside it.
 
 name: Pipeline
@@ -329,6 +331,51 @@ jobs:
           name: e2e-report
           path: playwright-report/
           retention-days: 14
+
+  # The one check branch protection on `main` requires (retro 10 A12: a red
+  # main blocks merges). Protection matches the job's NAME, "CI passed": rename
+  # it and update the rule in the same change, or every PR waits forever.
+  #
+  # Requiring the E2E shards directly cannot work: on a docs-only pull request
+  # the skipped matrix job reports under its unexpanded name, `E2E (Playwright,
+  # shard ${{ matrix.shard }}/4)`, so a required "shard 1/4" never reports.
+  #
+  # This job fails when any job in `needs` failed, was cancelled or was skipped,
+  # except `e2e` skipped because `changes` said docs only. A new job that must
+  # be green before a merge goes into `needs`; the check reads `needs` whole,
+  # so nothing else changes. `e2e-report` is left out on purpose: a broken
+  # report merge is not a reason to refuse a merge.
+  #
+  # `always()`, not `!cancelled()`: a skipped required check counts as passing,
+  # so on a cancelled run the gate must run and fail, not be skipped.
+  #
+  # With "require branches to be up to date", a PR merges only after its run
+  # included the latest main: a deterministic failure on main fails the PR too.
+  # A flake on main does not, and a docs-only PR skips E2E even then.
+  ci-passed:
+    name: CI passed
+    needs: [quality, build, test, changes, e2e]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Every required job passed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          E2E_WANTED: ${{ needs.changes.outputs.e2e }}
+        run: |
+          jq -r 'to_entries[] | "\(.key)=\(.value.result)"' <<< "$NEEDS"
+          # An empty E2E_WANTED (changes did not say) is not "docs only": e2e must pass.
+          bad="$(jq -r --arg wanted "$E2E_WANTED" '
+            to_entries
+            | map(select(.value.result != "success"
+                         and ((.key == "e2e" and .value.result == "skipped" and $wanted == "false") | not)))
+            | map("\(.key)=\(.value.result)") | join(", ")' <<< "$NEEDS")"
+          if [ -n "$bad" ]; then
+            echo "::error title=CI did not pass::${bad}"
+            exit 1
+          fi
+          if [ "$E2E_WANTED" = "false" ]; then echo "e2e skipped: docs only"; fi
 
   # ------------------------------------------------------- staging (main only)
   deploy-staging:
