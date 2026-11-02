@@ -102,3 +102,14 @@ describe('the calendar snapshot has one binding (deferred work from 7.13c)', () 
     expect(observers.length, 'no screen reads the snapshot through the binding').toBeGreaterThanOrEqual(10);
   });
 });
+
+describe("a change dialog's preview reads on the panel (story 15.4)", () => {
+  // The panel is glass, so the box under *Što se mijenja* is a reading
+  // surface: an opaque `muted` fill, never a translucent one.
+  const preview = source(['features', 'calendar', 'components', 'change-preview-output.tsx']);
+
+  it('fills the box with opaque bg-muted, never an alpha of it', () => {
+    expect(preview).toMatch(/\bbg-muted\b(?!\/)/);
+    expect(preview, 'the preview box is a translucent muted fill').not.toMatch(/bg-muted\//);
+  });
+});

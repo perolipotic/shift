@@ -11,16 +11,18 @@ import { t } from '@/lib/i18n';
 import type { WriteGate } from '@/lib/offline/use-write-gate';
 
 /**
- * THE SAVE BAR (story 5.5c, mockup `setup-1.html` §2): the builder's last
- * element — at the end of the builder, after the history — full width
- * across the page's `p-6`, on the card's background behind a top border.
- * From `sm` up (where the phone's tab bar is gone) it is `sticky` at the
+ * THE SAVE BAR (story 5.5c, mockup `setup-1.html` §2; glass since story
+ * 15.4): the builder's last element — a floating `glass-over-content` pill,
+ * `rounded-3xl`, inside the page's `p-6` (`saveBarClassOf`). From `sm` up
+ * (where the phone's tab bar is gone) it is `sticky` 16 px above the
  * viewport's bottom while there are unsaved changes, so the save stays in
  * reach however far the admin scrolled, and the page's scroll padding
  * clears it (`index.css`, keyed on `data-sticky`) so a focused control is
  * never under it; below `sm` it is never sticky — it stays in flow at the
- * end, after the step actions and the history, and never stacks on the
- * tab bar. The hint wraps above the buttons on a phone, and is a polite
+ * end, after the step actions, and never stacks on the tab bar. Content
+ * scrolls under the glass, so its text is `foreground`, never muted, and
+ * *Odbaci promjene* is the borderless `chrome` Button: an `outline`
+ * border measures under 3:1 there over an ink button. The hint wraps above the buttons on a phone, and is a polite
  * live region, so becoming unsaved is announced. Only rendered with a
  * draft, like the step actions and the history.
  */
@@ -53,7 +55,7 @@ export function RotationSaveBar({
           empty, it takes no space. */}
       <p
         aria-live="polite"
-        className="min-w-0 basis-full text-sm text-muted-foreground empty:sr-only sm:flex-1 sm:basis-auto"
+        className="min-w-0 basis-full text-sm text-foreground empty:sr-only sm:flex-1 sm:basis-auto"
       >
         {hint === null
           ? null
@@ -69,9 +71,10 @@ export function RotationSaveBar({
           wrapping flex. */}
       <OfflineWriteNote gate={gate} className="min-w-0 basis-full" />
       <div className="flex flex-wrap gap-3 sm:ml-auto">
-        {/* An outline, never the alarm variant: it drops only a local draft. */}
+        {/* The glass `chrome` variant, never the alarm one: it drops only a
+            local draft, and an outline's border fails 3:1 on this glass. */}
         {unsaved ? (
-          <Button className="h-11" type="button" variant="outline" disabled={pending} onClick={discard}>
+          <Button className="h-11" type="button" variant="chrome" disabled={pending} onClick={discard}>
             {t('rotation.builder.saveBar.discard')}
           </Button>
         ) : null}

@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -194,14 +197,38 @@ describe('the save bar (story 5.5c)', () => {
     const sticky = saveBarClassOf(true).split(' ');
     const still = saveBarClassOf(false).split(' ');
 
-    expect(sticky).toEqual(expect.arrayContaining(['sm:sticky', 'sm:bottom-0']));
+    expect(sticky).toEqual(expect.arrayContaining(['sm:sticky', 'sm:bottom-4']));
     // NEVER STICKY BELOW `sm`, so it never stacks on the phone's tab bar.
     for (const classes of [sticky, still]) {
       expect(classes).not.toContain('sticky');
       expect(classes).not.toContain('bottom-0');
+      expect(classes).not.toContain('bottom-4');
       expect(classes).not.toContain('sm:hidden');
-      expect(classes).toEqual(expect.arrayContaining(['-mx-6', '-mb-6', 'px-6', 'border-t', 'bg-card', 'flex-wrap']));
+      // STORY 15.4: a floating over-content glass pill inside the page's padding.
+      expect(classes).toEqual(
+        expect.arrayContaining(['glass-over-content', 'rounded-3xl', 'px-4', 'py-3', 'text-foreground', 'flex-wrap']),
+      );
+      for (const old of ['bg-card', '-mx-6', '-mb-6', 'border-t']) expect(classes).not.toContain(old);
     }
     expect(still.some((name) => name.includes('sticky'))).toBe(false);
+  });
+
+  // STORY 15.4: content scrolls under the bar's over-content glass, so its
+  // text is never muted (DESIGN rule 2) and Discard is never an `outline`,
+  // whose `input` border measures 2.73:1 there over an ink button.
+  it('draws foreground text and a borderless chrome Discard, read from the component', () => {
+    const bar = readFileSync(
+      fileURLToPath(new URL('../components/rotation-save-bar.tsx', import.meta.url)),
+      'utf8',
+    )
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+
+    expect(bar, 'the bar draws muted text on over-content glass').not.toMatch(/text-muted-foreground/);
+    expect(bar, 'the bar draws an outline Button on over-content glass').not.toMatch(/variant="outline"/);
+    const discard = /<Button\b[^>]*onClick=\{discard\}[^>]*>/.exec(bar)?.[0];
+
+    expect(discard, 'the Discard Button was not found').toBeDefined();
+    expect(discard ?? '').toContain('variant="chrome"');
   });
 });

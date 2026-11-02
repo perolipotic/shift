@@ -1046,7 +1046,7 @@ describe('every slot the ramp can return is measured in both themes (story 2.2b,
  *   - the page (`--background`), and each blob at full strength over the page
  *     (the dark blobs are 45 % alpha tokens, so they composite first);
  *   - for `--glass-over-content` — the phone's tab bar and sticky month head,
- *     which content scrolls UNDER — also the card, every fill a cell can have
+ *     and the rotation save bar (story 15.4), which content scrolls UNDER — also the card, every fill a cell can have
  *     (the darkest under light glass is slot-2's family, the lightest under
  *     dark glass), the ink button, a primary fill, the conflict red and a
  *     muted row.
