@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 10-30-2026 14:43
+last_updated: 11-02-2026 12:00
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -583,7 +583,7 @@ development_status:
   9-5-za-odluku-lists-requests-beside-collisions: done
   epic-9-retrospective: done
 
-  epic-10: in-progress
+  epic-10: done
   10-1-the-outbox-and-the-notify-function: done
   10-2-email-tells-people-what-concerns-them: done
   10-3-notification-settings-in-vise: done
@@ -620,7 +620,7 @@ development_status:
 
   epic-15: in-progress
   15-1-pilot-kalendar-and-the-shell-in-glass: done
-  15-2-every-primitive-and-layered-surface-in-glass: review
+  15-2-every-primitive-and-layered-surface-in-glass: done
   15-3-member-surfaces-read-in-glass: backlog
   15-4-admin-surfaces-read-in-glass: backlog
   15-5-glass-holds-in-dark-without-blur-and-on-a-low-end-phone: backlog
