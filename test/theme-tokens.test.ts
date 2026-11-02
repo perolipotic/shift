@@ -63,8 +63,9 @@ describe('the token lists are the size everything else assumes', () => {
     expect(BRAND_TOKENS).toHaveLength(32);
   });
 
-  it('has 28 shadcn base tokens', () => {
-    expect(BASE_TOKENS).toHaveLength(28);
+  // STORY 15.3: twenty, the eight `sidebar*` tokens retired.
+  it('has 20 shadcn base tokens', () => {
+    expect(BASE_TOKENS).toHaveLength(20);
   });
 
   it('has 2 elevation tokens', () => {
@@ -104,8 +105,9 @@ describe('the dark theme is a real theme, not a copy of the light one', () => {
    * contrast — the fill is copied alongside its foreground, so every ratio
    * holds. Only comparing the two values catches it.
    *
-   * Six stock shadcn tokens are identical across themes by design: the five
-   * neutral chart greys and `sidebar-primary-foreground`. They are asserted
+   * Five stock shadcn tokens are identical across themes by design: the five
+   * neutral chart greys (`sidebar-primary-foreground` was the sixth until
+   * story 15.3 retired the set). They are asserted
    * equal rather than skipped, so if a future shadcn release starts varying
    * them this test reports the change instead of quietly widening.
    */
@@ -115,7 +117,6 @@ describe('the dark theme is a real theme, not a copy of the light one', () => {
     'chart-3',
     'chart-4',
     'chart-5',
-    'sidebar-primary-foreground',
     // Story 15.1: the glass blur is 24 px in both themes, the budget's
     // ceiling; the dark glass differs by colour and saturate instead.
     'glass-blur',

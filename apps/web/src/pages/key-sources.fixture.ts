@@ -131,9 +131,9 @@ export const KEY_SOURCES = [
   { name: 'the as-of note', file: OFFLINE_NOTE, keys: translationKeys, strings: 1 },
   // STORY 8.3a. TWO on the offline write note: the save's and the sign-in's.
   { name: 'the offline write note', file: OFFLINE_WRITE_NOTE, keys: translationKeys, strings: 2 },
-  // THREE on the sign-in frame (visual refresh A): the brand panel's product
-  // name, headline and subline, written once and rendered around both steps,
-  // so neither step's own count moved.
+  // THREE on the sign-in frame (visual refresh A; glass since story 15.3): the
+  // brand panel's product name, headline and subline, written once and
+  // rendered around both steps, so neither step's own count moved.
   { name: 'the sign-in frame', file: AUTH_LAYOUT, keys: translationKeys, strings: 3 },
   { name: 'the failure-to-message mapping', file: MESSAGE_KEYS, keys: messageKeyUnion, strings: 2 },
   // TWELVE on the settings surface: its own `nav.organizacija` heading, five

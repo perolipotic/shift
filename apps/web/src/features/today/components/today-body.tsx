@@ -26,7 +26,8 @@ import { keepFocusOnAlert } from '@/utils/retry-focus';
  * answered cannot be trusted; the viewer's own sentence when they have no
  * membership; and otherwise today's card (closing on the viewer's team
  * today), the next shift and the week —
- * then, since story 6.1b, the hours and leave tiles side by side, each
+ * then, since story 6.1b, the hours and leave tiles side by side (in one
+ * Card since story 15.3), each
  * resolving on its own. `todayOf` and `todayTilesOf` decide which; this only
  * draws it. No tile on the unavailable or unscheduled screen.
  */
@@ -78,10 +79,13 @@ export function TodayBody({
       <TodayCard todayCase={view.todayCase} ownTeam={view.ownTeam} />
       <NextShiftCard next={view.next} returning={view.returning} />
       <WeekList week={view.week} />
-      <div className="grid min-w-0 grid-cols-2 gap-3">
+      {/* STORY 15.3: the two tiles share one Card. `StatTile` is a figure
+          INSIDE a card, and bare on the page backdrop it read as a loose
+          muted panel over the blobs. */}
+      <Card className="grid min-w-0 grid-cols-2 gap-3 p-3">
         <HoursTile tile={tiles.hours} />
         <LeaveTile tile={tiles.leave} />
-      </div>
+      </Card>
     </>
   );
 }

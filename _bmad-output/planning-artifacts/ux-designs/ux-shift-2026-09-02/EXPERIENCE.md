@@ -2,7 +2,7 @@
 name: Shift
 description: Information architecture, behaviour, states, interactions and flows for the Shift management platform. Peer to DESIGN.md, which owns the visual identity. Croatian-first, mobile-first for members.
 status: final
-updated: 2026-10-30
+updated: 2026-11-02
 design: ./DESIGN.md
 sources:
   - ../../../specs/spec-shift/SPEC.md
@@ -188,6 +188,7 @@ Behavioural. Visual contrast requirements are in `DESIGN.md`.
 
 - The compressed grid is the same component as the full grid with a narrower column treatment, not a separate mobile calendar.
 - **The chrome floats** (story 15.1, direction G; the shape only, the information architecture is unchanged). On a phone the tab bar is a glass pill 16 px in from the sides and 0.75 rem above the safe-area inset, and content scrolls under it; every page reserves the pill's height, its 2 px edge, the float and the inset at its bottom, and the page's scroll padding matches, so the last row of a long month and a cell revealed by the keyboard land above the bar, never under it. The phone's sticky month head on *Kalendar* and *Sati* is glass too, over the scrolling month. On the desktop the sidebar is a glass panel 16 px in from the viewport, sticky beside the page. Nothing about where a destination is, or how many there are, moved.
+- **Sign-in and the member screens on the glass page** (story 15.3). From `lg` (1024 px) up, sign-in and set-password (both drawn in the one sign-in frame) show a glass brand panel inset 16 px beside the form, with `foreground` text and an ink tile; below `lg` the form is the whole screen. The member screens (*Danas*, Sati and *Moji sati*, Godišnji and *Zatraži*, Ljudi, `/obavijesti`, and the error, not-found and pending pages) are opaque cards and notices on the page backdrop, at every width and in both themes, and no blur sits inside one: *Danas*'s hours and leave tiles share one card.
 - **Tables become stacked rows below 640 px** (story 7.6). Sati, Ljudi, the shift-types step, the leave overview, the hour bands, the teams, the rotation offsets and the rotation history render their own figures as a list of rows, never a table that scrolls sideways, and only one of the two forms is ever in the DOM. Every value keeps its column's label for assistive technology. Sort and filter state are kept across the 640 px switch.
   - **Sati:** as the hours table above.
   - **Ljudi:** the initials chip (hidden below 360 px, where its width is what lets the level's badge fit), the name, `{team} · {level}` under it, the status on a line of its own as the Status column states it (story 7.13), the leave allowance on the right and a chevron. The whole row is the one link to the member (`Uredi osobu {name}`); there is no pencil, and the address is shown only on the member's page and in the table from 640 px.

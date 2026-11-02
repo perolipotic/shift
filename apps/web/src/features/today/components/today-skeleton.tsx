@@ -13,8 +13,8 @@ export function TodayTileSkeleton(): ReactNode {
 /**
  * *Danas*'s placeholder while its reads are unanswered, in the shape the
  * cards will take: today's card, the next shift's, a bar per day of the
- * week, and the two tiles side by side (story 6.1b). No spinner, and no case
- * until the reads answer.
+ * week, and the two tiles side by side (story 6.1b), in one Card as on the
+ * loaded screen (story 15.3). No spinner, and no case until the reads answer.
  */
 export function TodaySkeleton(): ReactNode {
   return (
@@ -34,10 +34,10 @@ export function TodaySkeleton(): ReactNode {
           <div key={row} aria-hidden className="h-11 animate-pulse rounded-sm bg-muted" />
         ))}
       </Card>
-      <div className="grid min-w-0 grid-cols-2 gap-3">
+      <Card className="grid min-w-0 grid-cols-2 gap-3 p-3">
         <TodayTileSkeleton />
         <TodayTileSkeleton />
-      </div>
+      </Card>
     </>
   );
 }

@@ -641,8 +641,9 @@ export const OFFLINE_NOTE = join(srcRoot, 'components', 'offline-note.tsx');
 export const OFFLINE_WRITE_NOTE = join(srcRoot, 'components', 'offline-write-note.tsx');
 
 /**
- * The sign-in steps' shared frame (visual refresh A): the brand panel both
- * sign-in screens render around their card. Not a route, and swept anyway for
+ * The sign-in steps' shared frame (visual refresh A; a floating glass panel
+ * since story 15.3): the brand panel both sign-in screens render around their
+ * card. Not a route, and swept anyway for
  * the reason the chrome and the lockup are — it renders strings.
  */
 export const AUTH_LAYOUT = join(srcRoot, 'components', 'layout', 'auth-layout.tsx');
@@ -1174,8 +1175,8 @@ export const SCREENS = [
   // the phone bar, where nine real targets already compete for the width. The
   // first handler added here would make it a control nobody measured.
   { name: 'the organization lockup', file: LOCKUP, expectedFields: 0, expectedButtons: 0 },
-  // ZERO on the sign-in frame (visual refresh A): the brand panel is a product
-  // name, a headline and a subline. A control here would be a sign-in
+  // ZERO on the sign-in frame (visual refresh A; glass since story 15.3): the
+  // brand panel is a product name, a headline and a subline. A control here would be a sign-in
   // affordance outside the two frozen forms.
   { name: 'the sign-in frame', file: AUTH_LAYOUT, expectedFields: 0, expectedButtons: 0 },
 ];

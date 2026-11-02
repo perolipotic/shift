@@ -154,10 +154,12 @@ export const LOCKUP_COMPACT: LockupScale = { box: 'h-8 w-8', type: 'text-xs lead
  * UNRECOGNISED key resolves to.
  *
  * `text-foreground` ON THE MARK SINCE VISUAL REFRESH A, and it is the one
- * neutral class that is not inherited from before. The chrome's sidebar is navy
- * now and its text is light, so a mark that inherited its letter colour drew a
- * light letter on the light `bg-muted` fill — illegible in exactly the state
- * every organization starts in. Every accent's mark already names its own
+ * neutral class that is not inherited from before. The sidebar was navy then,
+ * with light text, so a mark that inherited its letter colour drew a light
+ * letter on the light `bg-muted` fill — illegible in exactly the state every
+ * organization starts in. The sidebar is a glass panel with `foreground` text
+ * since story 15.1, and the mark still names its own colour rather than
+ * trusting whatever surface it lands on. Every accent's mark already names its own
  * foreground; the neutral one now does too, which is also what the settings
  * card was rendering by inheritance all along.
  */

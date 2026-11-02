@@ -166,14 +166,15 @@ describe('every shipped value round-trips to the hex DESIGN.md declares', () => 
 /**
  * The base palette, round-tripped the same way (visual refresh A).
  *
- * The surfaces — page, card, muted, border, input, ring, sidebar — stopped
- * being stock shadcn when the slate/navy retheme landed, so their source of
- * truth moved into DESIGN.md's `base-palette:` key, one map per theme. Without
- * this block that claim would be prose: a surface could drift off its declared
- * hex with every contrast ratio still green.
+ * The surfaces — page, card, muted, border, input, ring (and the sidebar until
+ * story 15.3 retired it) — stopped being stock shadcn when the slate/navy
+ * retheme landed, so their source of truth moved into DESIGN.md's
+ * `base-palette:` key, one map per theme. Without this block that claim would
+ * be prose: a surface could drift off its declared hex with every contrast
+ * ratio still green.
  *
  * NO EXEMPTIONS. The accessibility deviations recorded in `index.css`'s header
- * (muted-foreground, input, ring, sidebar-ring) are deviations from the plain
+ * (muted-foreground, input, ring) are deviations from the plain
  * slate STEP, not from DESIGN.md: the declared hex already is the measured
  * value, so each round-trips like any other.
  */
@@ -199,7 +200,7 @@ function basePalette(): Record<Theme, Map<string, string>> {
 }
 
 describe('every base token round-trips to the hex base-palette declares', () => {
-  it.each(THEMES)('declares every one of the 28 base tokens for %s', (theme) => {
+  it.each(THEMES)('declares every one of the 20 base tokens for %s', (theme) => {
     expect([...basePalette()[theme].keys()].sort()).toEqual([...BASE_TOKENS].sort());
   });
 
