@@ -69,7 +69,7 @@ export function ChangePreviewOutput({
       {preview === null ? null : (
         <>
           <span className="font-medium">{t('kalendar.detail.preview.heading')}</span>
-          <span className="grid gap-1 rounded-md border bg-muted/40 p-3">
+          <span className="grid gap-1 rounded-md border bg-muted p-3">
             {preview.type === null ? null : (
               <span className="block break-words tabular-nums">
                 {t('kalendar.detail.preview.type', { from: typeShown(preview.type.from), to: typeShown(preview.type.to) })}

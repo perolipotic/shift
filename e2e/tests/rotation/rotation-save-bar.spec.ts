@@ -111,8 +111,8 @@ async function expectStatic(rotationPage: RotationPage): Promise<void> {
   expect(await positionOf(rotationPage.saveBar)).toBe('static');
 }
 
-/** Dirty from 640 px up: sticky, pinned to the viewport's bottom, and nothing drawn over it. */
-async function expectStickyAtBottom(page: Page, rotationPage: RotationPage): Promise<void> {
+/** Dirty from 640 px up: sticky, floating 16 px above the viewport's bottom (story 15.4), and nothing drawn over it. */
+async function expectFloatingAboveBottom(page: Page, rotationPage: RotationPage): Promise<void> {
   await expect(rotationPage.saveBar).toHaveAttribute('data-sticky', 'true');
   expect(await positionOf(rotationPage.saveBar)).toBe('sticky');
   await expect(rotationPage.saveButton).toBeInViewport();
@@ -120,7 +120,7 @@ async function expectStickyAtBottom(page: Page, rotationPage: RotationPage): Pro
   const viewport = page.viewportSize();
   expect(box, 'the bar has no box').not.toBeNull();
   expect(viewport, 'no viewport').not.toBeNull();
-  expect(Math.round((box?.y ?? 0) + (box?.height ?? 0))).toBe(viewport?.height);
+  expect(Math.round((box?.y ?? 0) + (box?.height ?? 0))).toBe((viewport?.height ?? 0) - 16);
   // NO OVERLAP: what is drawn at the bar's bottom edge, across it, is the bar.
   const covered = await rotationPage.saveBar.evaluate((bar) => {
     const rect = bar.getBoundingClientRect();
@@ -170,7 +170,7 @@ function stalledPatternInsert(): {
 test.describe('from 640 px up', () => {
   test.use({ viewport: { width: 1280, height: 720 } });
 
-  test('a draft keeps the bar at the viewport bottom however far up the admin scrolls, with its hint', async ({
+  test('a draft keeps the bar floating 16 px above the viewport bottom however far up the admin scrolls, with its hint', async ({
     page,
     fixture,
     rotationPage,
@@ -189,7 +189,7 @@ test.describe('from 640 px up', () => {
     const effectiveFrom = addDays(rotation.today, 10);
     await rotationPage.effectiveFromInput.fill(effectiveFrom);
     await scrollToTop(page);
-    await expectStickyAtBottom(page, rotationPage);
+    await expectFloatingAboveBottom(page, rotationPage);
     await expect(rotationPage.discardButton).toBeInViewport();
     await expect(rotationPage.discardButton).toBeEnabled();
 
@@ -221,7 +221,7 @@ test.describe('from 640 px up', () => {
     await openBuilder(rotationPage);
     await rotationPage.addStep(rotation.steps[0]);
     await scrollToTop(page);
-    await expectStickyAtBottom(page, rotationPage);
+    await expectFloatingAboveBottom(page, rotationPage);
 
     // The last team's step `<select>`, focused without scrolling; then Tab to
     // the preview's cycles choice, which lies below the viewport.
@@ -276,7 +276,7 @@ test.describe('from 640 px up', () => {
     );
     await expect(hint).toBeVisible();
 
-    // Outline, never the alarm variant, and no confirmation: one press.
+    // The borderless chrome variant, never the alarm one, and no confirmation: one press.
     await rotationPage.discardButton.click();
     await expect(rotationPage.steps).toHaveCount(0);
     await expect(rotationPage.text(builder.patternEmpty)).toBeVisible();
@@ -362,7 +362,7 @@ test.describe('with no version in force', () => {
 test.describe('just above 640 px, where the tab bar is gone', () => {
   test.use({ viewport: { width: 700, height: 800 } });
 
-  test('the bar is sticky at the bottom, and nothing overlaps it', async ({ page, fixture, rotationPage }) => {
+  test('the bar is sticky, floating 16 px above the bottom, and nothing overlaps it', async ({ page, fixture, rotationPage }) => {
     const rotation = await setUp(fixture.slug);
 
     await openBuilder(rotationPage);
@@ -370,7 +370,7 @@ test.describe('just above 640 px, where the tab bar is gone', () => {
     await scrollToTop(page);
     // No phone tab bar from 640 px up: one navigation landmark, the aside's.
     await expect(rotationPage.navigation).toHaveCount(1);
-    await expectStickyAtBottom(page, rotationPage);
+    await expectFloatingAboveBottom(page, rotationPage);
     await expect(rotationPage.discardButton).toBeInViewport();
     await expectNoHorizontalScroll(page);
   });

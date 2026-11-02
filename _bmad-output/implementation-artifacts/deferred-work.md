@@ -1201,3 +1201,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-15-3-member-surfaces-read-in-glass.md`
   summary: Under forced colours the sign-in panel's ink tile (`bg-ink text-ink-foreground`) is overridden by the system palette; nothing pins that the tile and its icon stay perceivable on `Canvas`. 15.5 pins the glass fallbacks and should cover it.
   evidence: Raised by the 15.3 review (Blind Hunter); the forced-colours spec covers the shell and sheets only.
+
+## Deferred from: code review of spec-15-4-admin-surfaces-read-in-glass.md (2026-11-02)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-15-4-admin-surfaces-read-in-glass.md`
+  summary: From `sm` up, offline with unsaved changes, the sticky rotation save bar carries an extra full-width `OfflineWriteNote` row, so the bar can be taller than the `scroll-padding-bottom` (7rem since 15.4, 6rem before) and a control focused near the bottom can land under it. Size the padding for the offline row too, or measure the bar's height.
+  evidence: Raised by the 15.4 review (Edge Case Hunter, Blind Hunter). Existed before 15.4: the note row was already in the bar with 6rem of padding. 15.4 added 1rem for the float and kept the margin.
+- source_spec: `_bmad-output/implementation-artifacts/spec-15-4-admin-surfaces-read-in-glass.md`
+  summary: Story 15.5 should check the rotation save bar's states on `glass-over-content`: the disabled and pending buttons (`opacity-50`), and the forced-colours fallback, where the `chrome` *Odbaci promjene* has no border on `Canvas`.
+  evidence: Raised by the 15.4 review (Blind Hunter). 15.5 owns the glass fallbacks and the worst-case backdrop measurements.

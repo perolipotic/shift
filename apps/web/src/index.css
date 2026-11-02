@@ -33,8 +33,8 @@
  *
  * GLASS IS A TOKEN SET AND THREE UTILITIES, never a class string on a screen:
  * `--glass` (.58, chrome BESIDE content: the desktop sidebar),
- * `--glass-over-content` (.80, chrome content scrolls UNDER: the phone tab bar
- * and the phone's sticky month head; text on it is foreground-strength, never
+ * `--glass-over-content` (.80, chrome content scrolls UNDER: the phone tab bar,
+ * the phone's sticky month head and the rotation save bar, story 15.4; text on it is foreground-strength, never
  * `muted-foreground`), `--glass-reading` (≥ .85: the layered panels since
  * story 15.2, where muted text is allowed), the hairline `--glass-border`, the
  * active row's pill `--glass-active`, the Dialog's tinted, never blurred
@@ -558,11 +558,12 @@
    * scroll padding clears it there and then: a control focused near the
    * bottom scrolls above the bar rather than under it. The bar is one row
    * (`py-3` around 44 px buttons, about 4.3 rem) from 640 px up, and the
-   * padding leaves room for a hint wrapped to a second line. CSS only, keyed
-   * on the bar's own `data-sticky`. */
+   * padding leaves room for a hint wrapped to a second line, plus the 1 rem
+   * the glass pill floats above the bottom (`sm:bottom-4`, story 15.4). CSS
+   * only, keyed on the bar's own `data-sticky`. */
   @media (min-width: 640px) {
     html:has(#rotation-save-bar[data-sticky='true']) {
-      scroll-padding-bottom: 6rem;
+      scroll-padding-bottom: 7rem;
     }
   }
 
