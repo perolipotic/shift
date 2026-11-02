@@ -81,7 +81,7 @@ const BRAND_PAIRS = [
 ] as const;
 
 /** Base surfaces that carry text. */
-const BASE_PAIRS = ['card', 'popover', 'secondary', 'muted', 'accent', 'sidebar'] as const;
+const BASE_PAIRS = ['card', 'popover', 'secondary', 'muted', 'accent'] as const;
 
 /** Every fill a shift cell can actually have. */
 const FILLS = [
@@ -242,58 +242,6 @@ describe('every colour token renders as declared, inside sRGB', () => {
   });
 });
 
-describe('the navy sidebar carries readable text and visible controls', () => {
-  /**
-   * The sidebar's own pairs (visual refresh A), owed since story 1.1b: the
-   * base sweep measures `sidebar-foreground` on `sidebar` and nothing else, so
-   * the active destination's label, the hovered row, the sign-in brand
-   * panel's headline and the section label were measured by nothing.
-   *
-   * STORY 15.2: the sign-in panel (`components/layout/auth-layout.tsx`) is
-   * the one surface left on this set; story 15.3 moves it and deletes the set.
-   *
-   * The small muted text is drawn at 70% of `sidebar-foreground` — the
-   * profile card's role and, since story 7.3, the *Više* sheet's group
-   * headings and "role · organization" line, on the same `sidebar` fill — so
-   * it is composited over the sidebar first; the raw token flatters it.
-   */
-  const SIDEBAR_PAIRS: { label: string; text: (theme: Theme) => Rgb | Color; surface: string }[] = [
-    {
-      label: 'sidebar-primary-foreground on sidebar-primary (the active destination)',
-      text: (theme) => colour(theme, 'sidebar-primary-foreground'),
-      surface: 'sidebar-primary',
-    },
-    {
-      label: 'sidebar-accent-foreground on sidebar-accent (a hovered row)',
-      text: (theme) => colour(theme, 'sidebar-accent-foreground'),
-      surface: 'sidebar-accent',
-    },
-    {
-      label: 'sidebar-accent-foreground on sidebar (the brand panel)',
-      text: (theme) => colour(theme, 'sidebar-accent-foreground'),
-      surface: 'sidebar',
-    },
-    {
-      label: 'sidebar-foreground at 70% on sidebar (the profile role, the Više group headings and identity line, the iOS install steps)',
-      text: (theme) =>
-        composite({ ...rgb(colour(theme, 'sidebar-foreground')), alpha: 0.7 }, colour(theme, 'sidebar')),
-      surface: 'sidebar',
-    },
-  ];
-  const cases = THEMES.flatMap((theme) => SIDEBAR_PAIRS.map((pair) => ({ theme, ...pair })));
-
-  it.each(cases)('$label reads in $theme', ({ theme, text, surface }) => {
-    const measured = ratio(text(theme), colour(theme, surface));
-
-    expect(measured, `measured ${measured.toFixed(2)}:1 (${theme})`).toBeGreaterThanOrEqual(AA_BODY);
-  });
-
-  // STORY 15.2 retired the `sidebar` Button variant's boundary pin: the variant
-  // became the borderless glass `chrome` (measured in the layered-surfaces
-  // block below). The pairs above stay while the sign-in panel, the set's last
-  // consumer, draws with them; story 15.3 deletes both.
-});
-
 describe('badges and stat cards are text, and read on the card and on a hovered row', () => {
   /**
    * Visual refresh B's badges carry their meaning in words (a level, an
@@ -377,11 +325,9 @@ describe('every focus indicator is perceivable', () => {
   // A focus ring is the archetypal non-text UI component the 3:1 bar exists for.
   // Enumerated as pairs so a new ring token has to join the list to exist:
   // `sidebar-ring` originally shipped the identical stock value that was
-  // rejected for `ring`, in the same block, measured by nothing.
-  const RINGS = [
-    { ring: 'ring', surface: 'background' },
-    { ring: 'sidebar-ring', surface: 'sidebar' },
-  ];
+  // rejected for `ring`, in the same block, measured by nothing (retired with
+  // the sidebar set by story 15.3).
+  const RINGS = [{ ring: 'ring', surface: 'background' }];
   const cases = THEMES.flatMap((theme) => RINGS.map((pair) => ({ theme, ...pair })));
 
   it.each(cases)('--$ring is distinguishable from --$surface in $theme', ({ theme, ring, surface }) => {
@@ -457,7 +403,6 @@ describe('the base deviations stay shifted, not reverted to stock shadcn', () =>
    *   ring              2.59:1 on --background at stock, then 1.06:1 against
    *                     the raised --input at 1.1b's own 0.665 — two separate
    *                     defects, and the second is why the value moved twice
-   *   sidebar-ring      2.48:1 on --sidebar
    *   input             1.26:1 on --background, where WCAG 1.4.11 wants 3:1
    *                     because the border is the control's whole affordance
    *
@@ -472,7 +417,6 @@ describe('the base deviations stay shifted, not reverted to stock shadcn', () =>
    *
    *   muted-foreground  0.542 -> 0.4924  slate-500 is 4.34:1 on slate-100
    *   ring              0.37  -> 0.3418  primary's hue, 3:1 from the border
-   *   sidebar-ring      0.654 -> 0.8091  the sidebar is navy, so it goes light
    *   input             0.65  -> 0.6291  slate-toned, still 3:1 on the page
    *
    * RE-PINNED BY STORY 15.1: `input` 0.6291 -> 0.6191 (#78879D), because the
@@ -481,11 +425,13 @@ describe('the base deviations stay shifted, not reverted to stock shadcn', () =>
    * RE-PINNED BY STORY 15.2: `input` 0.6191 -> 0.5854 (#6E7D93), because a
    * field on a glass panel over the scrimmed ink button measured 2.67:1, and
    * `ring` 0.3418 -> 0.3099 (#13296B), to stay 3:1 from that darker border.
+   *
+   * STORY 15.3 retired `sidebar-ring` (once 0.654 -> 0.8091, 2.48:1 on the
+   * navy at stock) with the rest of the sidebar set.
    */
   const DEVIATIONS: Record<string, { shifted: number; stock: number }> = {
     'muted-foreground': { shifted: 0.4924, stock: 0.556 },
     ring: { shifted: 0.3099, stock: 0.708 },
-    'sidebar-ring': { shifted: 0.8091, stock: 0.708 },
     input: { shifted: 0.5854, stock: 0.922 },
   };
 
@@ -1235,6 +1181,64 @@ describe('the glass chrome reads against its worst backdrop (story 15.1)', () =>
   });
 });
 
+/**
+ * THE SIGN-IN BRAND PANEL IS THE CHROME'S GLASS (story 15.3). It is
+ * `glass-chrome` (`--glass`, .58), beside the form and never over content, so
+ * its grounds are exactly the chrome block's: the glass over the page and over
+ * each blob. Its text pairs are therefore measured there already —
+ * `foreground` on `glass` in both themes — and this block pins only that the
+ * panel draws with those pairs and nothing the block does not measure: no
+ * muted text (DESIGN rule 2), no navy token, and a tile in the ink pair, whose
+ * icon is `ink-foreground` on `ink` (measured in the ink block) and whose
+ * fill stands off the glass at 3:1.
+ */
+describe('the sign-in brand panel reads on the chrome glass (story 15.3)', () => {
+  const layout = (): string =>
+    readFileSync(
+      join(fileURLToPath(new URL('..', import.meta.url)), 'apps', 'web', 'src', 'components', 'layout', 'auth-layout.tsx'),
+      'utf8',
+    ).replace(/\/\*[\s\S]*?\*\//g, '');
+
+  it('draws the panel as glass-chrome with foreground text and an ink tile, read from the layout', () => {
+    const source = layout();
+    const panel = /className="([^"]*\bglass-chrome\b[^"]*)"/.exec(source)?.[1];
+
+    expect(panel, 'the sign-in panel names no glass-chrome class').toBeDefined();
+    expect((panel ?? '').split(/\s+/)).toEqual(expect.arrayContaining(['glass-chrome', 'text-foreground', 'rounded-3xl']));
+    expect(source).toContain('bg-ink text-ink-foreground');
+    const tile = /<span className="([^"]*\bbg-ink\b[^"]*)"/.exec(source)?.[1];
+
+    expect(tile, 'the sign-in panel has no ink tile').toBeDefined();
+    expect(tile ?? '', 'the tile draws muted text').not.toMatch(/muted/);
+    expect(source, 'the panel draws muted text on .58 glass').not.toMatch(/text-muted-foreground/);
+    expect(source, 'the panel still paints with the navy set').not.toMatch(/sidebar/);
+    expect(source, 'the panel names a glass utility other than the chrome').not.toMatch(/glass-(?:over-content|panel|reading)/);
+    // Every class on a `<p>` that names a colour names `text-foreground`.
+    const paragraphs = [...source.matchAll(/<p className="([^"]*)"/g)].map(([, classes = '']) => classes);
+
+    expect(paragraphs.length, 'the panel’s name, headline and subline were not found').toBeGreaterThanOrEqual(3);
+    for (const classes of paragraphs) {
+      expect(classes, `a panel paragraph is not foreground: ${classes}`).toContain('text-foreground');
+    }
+  });
+
+  it.each(THEMES)('foreground and the ink tile hold on the glass over the page and every blob in %s', (theme) => {
+    const page = colour(theme, 'background');
+    const under = [
+      page,
+      ...(['glass-blob-1', 'glass-blob-2', 'glass-blob-3'] as const).map((blob) => composite(colour(theme, blob), page)),
+    ];
+
+    for (const below of under) {
+      const ground = composite(colour(theme, 'glass'), below as Color);
+
+      expect(ratio(colour(theme, 'foreground'), ground)).toBeGreaterThanOrEqual(AA_BODY);
+      expect(ratio(colour(theme, 'ink'), ground)).toBeGreaterThanOrEqual(AA_LARGE);
+    }
+    expect(ratio(colour(theme, 'ink-foreground'), colour(theme, 'ink'))).toBeGreaterThanOrEqual(AA_BODY);
+  });
+});
+
 describe('the ink action and the re-tuned primary read (story 15.1, D3)', () => {
   it.each(THEMES)('ink-foreground reads on the ink default button in %s', (theme) => {
     const measured = ratio(colour(theme, 'ink-foreground'), colour(theme, 'ink'));
@@ -1450,9 +1454,17 @@ describe('the hour band keeps its navy on its own token (story 15.2)', () => {
   const root = fileURLToPath(new URL('..', import.meta.url));
   const ui = (file: string): string => readFileSync(join(root, 'apps', 'web', 'src', 'components', 'ui', file), 'utf8');
 
+  // The navy the retired `--sidebar` / `--sidebar-foreground` pair drew the
+  // band in. Story 15.3 deleted that pair, so the pin holds the literal values
+  // it had (#0B1628 / #CBD5E1 light, #070E1A / #C0CBDA dark).
+  const SIDEBAR_NAVY: Record<Theme, { fill: string; text: string }> = {
+    light: { fill: 'oklch(0.2004 0.0397 259.82)', text: 'oklch(0.869 0.0198 252.89)' },
+    dark: { fill: 'oklch(0.1634 0.028 259.94)', text: 'oklch(0.8383 0.0242 256.11)' },
+  };
+
   it.each(THEMES)('band-dark is the navy the sidebar pair drew the band in, so the bands look as before, in %s', (theme) => {
-    expect(rawToken(theme, 'band-dark')).toBe(rawToken(theme, 'sidebar'));
-    expect(rawToken(theme, 'band-dark-foreground')).toBe(rawToken(theme, 'sidebar-foreground'));
+    expect(rawToken(theme, 'band-dark')).toBe(SIDEBAR_NAVY[theme].fill);
+    expect(rawToken(theme, 'band-dark-foreground')).toBe(SIDEBAR_NAVY[theme].text);
   });
 
   it('draws the Timeline and IconTile dark tone in band-dark, read from the primitives', () => {

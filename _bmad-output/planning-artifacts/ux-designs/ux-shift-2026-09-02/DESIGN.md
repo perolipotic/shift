@@ -2,16 +2,16 @@
 name: Shift
 description: Industry-agnostic shift management platform. shadcn/ui primitives on React + Vite + Tailwind, restyled once in `components/ui` to direction G, "Staklo" (story 15.1 pilot) — light glass chrome over a pale page, ink actions, one blue for selection, Outfit and Phosphor fill icons. Croatian-first UI, light and dark.
 status: final
-updated: 2026-10-30
+updated: 2026-11-02
 colors:
   # ── Brand delta ───────────────────────────────────────────────────
-  # The surface tokens (background, card, muted, border, input, ring,
-  # sidebar…) are NOT listed here; they live under `base-palette:` below,
+  # The surface tokens (background, card, muted, border, input, ring…)
+  # are NOT listed here; they live under `base-palette:` below,
   # and the glass set under `glass:`.
   # This block is parsed by test/theme-fidelity.test.ts and must hold
   # exactly 24 brand names (48 values, light and dark). The stylesheet adds
   # the four curated accents' 8 tokens, so it declares 32 brand tokens per
-  # theme, beside 28 base-palette and 11 glass colour tokens: 71 colours,
+  # theme, beside 20 base-palette and 11 glass colour tokens: 63 colours,
   # plus 2 elevation shadows and 3 glass effects (UX-DR1).
   primary: '#2F55B8'                 # re-tuned by story 15.1 (D3): selection, today, links, progress
   primary-foreground: '#FFFFFF'
@@ -73,7 +73,7 @@ colors:
 
   # ── Hour band tone (story 15.2) ───────────────────────────────────
   # The Timeline's alternate stretch and IconTile's `dark`, at the navy the
-  # `sidebar` pair drew in before, so the bands look exactly as they did.
+  # retired sidebar pair drew in before, so the bands look exactly as they did.
   band-dark: '#0B1628'
   band-dark-foreground: '#CBD5E1'
   band-dark-dark: '#070E1A'
@@ -82,9 +82,8 @@ base-palette:
   # ── Surfaces: the shadcn token names, filled with slate and navy ───
   # Every base token in apps/web/src/index.css traces to a hex here, and
   # test/theme-fidelity.test.ts round-trips each one against the stylesheet. The
-  # sidebar is navy in BOTH themes, as two distinct navies — kept after story
-  # 15.2 only for the sign-in panel, which story 15.3 moves before deleting
-  # the set; the shell is glass, the hour band has `band-dark`. Values marked
+  # navy sidebar set is retired (story 15.3): the shell and the sign-in panel
+  # are glass, and the hour band has `band-dark`. Values marked
   # (a11y) deviate from the plain slate step for a measured reason recorded
   # in index.css's header comment.
   light:
@@ -108,14 +107,6 @@ base-palette:
     chart-3: '#525252'               # nothing yet
     chart-4: '#404040'
     chart-5: '#262626'
-    sidebar: '#0B1628'               # navy
-    sidebar-foreground: '#CBD5E1'    # slate-300
-    sidebar-primary: '#2563EB'       # the active destination's pill
-    sidebar-primary-foreground: '#FFFFFF'
-    sidebar-accent: '#1A2D47'        # navy-3, hover
-    sidebar-accent-foreground: '#FFFFFF'
-    sidebar-border: 'rgba(255,255,255,0.08)'
-    sidebar-ring: '#93C5FD'
   dark:
     background: '#0A1020'            # direction G's dark page (story 15.1)
     foreground: '#E2E8F0'
@@ -137,14 +128,6 @@ base-palette:
     chart-3: '#525252'               # nothing yet
     chart-4: '#404040'
     chart-5: '#262626'
-    sidebar: '#070E1A'               # a darker navy than the page
-    sidebar-foreground: '#C0CBDA'
-    sidebar-primary: '#1D4ED8'
-    sidebar-primary-foreground: '#FFFFFF'
-    sidebar-accent: '#132035'
-    sidebar-accent-foreground: '#F8FAFC'
-    sidebar-border: 'rgba(255,255,255,0.07)'
-    sidebar-ring: '#60A5FA'
 glass:
   # ── Direction G, "Staklo" (story 15.1) ─────────────────────────────
   # The chrome's glass set, one map per theme; test/theme-fidelity.test.ts
@@ -254,9 +237,9 @@ components:
 
 Shift is an operational tool for people who currently keep the rota in a spreadsheet. The brand premise is **quiet competence**: the product's job is to be trusted with a schedule people plan their lives around, and nothing about it should feel like it is trying to be liked. Light glass chrome over a pale page, ink actions, one blue for selection, and a single red held in reserve for the one thing that must never be missed (direction G, "Staklo", story 15.1).
 
-*Style reference: the direction G mockups, [../ux-shift-2026-10-30-glass/kalendar-g-desktop.dc.html](../ux-shift-2026-10-30-glass/kalendar-g-desktop.dc.html) and [../ux-shift-2026-10-30-glass/kalendar-g-mobitel.dc.html](../ux-shift-2026-10-30-glass/kalendar-g-mobitel.dc.html) (story 15.1); before them [../shiftapp-v2/shiftapp_manager_v2.html](../shiftapp-v2/shiftapp_manager_v2.html) (shell, cards, buttons, inputs, tables) and [../shiftapp-v2/shiftapp_login_onboard.html](../shiftapp-v2/shiftapp_login_onboard.html) (sign-in), which still describe the surfaces 15.2–15.4 have not moved. Every reference is for LOOK only — its copy, its English, its product name, its information architecture, its week and day views, its indigo slot-2 and red count badge, its Google login, signup and demo affordances are not Shift's.*
+*Style reference: the direction G mockups, [../ux-shift-2026-10-30-glass/kalendar-g-desktop.dc.html](../ux-shift-2026-10-30-glass/kalendar-g-desktop.dc.html) and [../ux-shift-2026-10-30-glass/kalendar-g-mobitel.dc.html](../ux-shift-2026-10-30-glass/kalendar-g-mobitel.dc.html) (story 15.1); before them [../shiftapp-v2/shiftapp_manager_v2.html](../shiftapp-v2/shiftapp_manager_v2.html) (shell, cards, buttons, inputs, tables), which still describes the surfaces 15.4 has not moved, and [../shiftapp-v2/shiftapp_login_onboard.html](../shiftapp-v2/shiftapp_login_onboard.html) (sign-in), history since story 15.3 made the sign-in panel glass. Every reference is for LOOK only — its copy, its English, its product name, its information architecture, its week and day views, its indigo slot-2 and red count badge, its Google login, signup and demo affordances are not Shift's.*
 
-**The register is modern and calm, not decorative.** Since story 15.1 (the pilot of direction G): a pale `#E8EDF5` page carrying three static colour blobs, floating glass chrome (the desktop sidebar and the phone's tab bar) and, since story 15.2, glass dialogs, popovers and docked sheets over a tinted scrim, white cards with a soft shadow, radii from 12 to 24 px, Outfit for every word and digit, Phosphor `fill` icons (the small status marks — the calendar's leave and uncovered marks and *Danas*'s duty-block legs — in `bold`, so they differ by drawn shape at 12 px; human decision 2026-10-30), an ink default button and blue for selection. The screens 15.2–15.4 have not moved yet keep the visual-refresh-A register (white cards on the page, a 12–16 px card, a navy sign-in panel) until they do. Every surface the product draws inherits it through two layers and only two:
+**The register is modern and calm, not decorative.** Since story 15.1 (the pilot of direction G): a pale `#E8EDF5` page carrying three static colour blobs, floating glass chrome (the desktop sidebar and the phone's tab bar, and since story 15.3 the sign-in brand panel from `lg` up) and, since story 15.2, glass dialogs, popovers and docked sheets over a tinted scrim, white cards with a soft shadow, radii from 12 to 24 px, Outfit for every word and digit, Phosphor `fill` icons (the small status marks — the calendar's leave and uncovered marks and *Danas*'s duty-block legs — in `bold`, so they differ by drawn shape at 12 px; human decision 2026-10-30), an ink default button and blue for selection. The screens 15.4 has not moved yet keep the visual-refresh-A register (white cards on the page, a 12–16 px card) until they do. Every surface the product draws inherits it through two layers and only two:
 
 1. **Tokens** in `apps/web/src/index.css`, transcribed from this file's front matter.
 2. **Primitives** in `apps/web/src/components/ui` — Button, Card, Input, Label, Table and whatever shadcn primitive is added next. They are shadcn's components, **restyled once there** to this register.
@@ -272,7 +255,7 @@ Two properties are not stylistic preferences but consequences of the product con
 
 *Rendered reference: [mockups/color-themes-1.html](mockups/color-themes-1.html) — the four palettes considered, light and dark, with the state language applied to the pilot's content.*
 
-**Register.** Since story 15.1: a pale page (`#E8EDF5` light, `#0A1020` dark) with three static blobs, light glass chrome (`glass:`), an ink default action (`#111827` light, `#F1F5F9` dark) and one blue, `primary` `#2F55B8`, kept for selection, today, links, progress and the focus ring's hue. `#2F55B8` reads 6.75:1 on white where the old `#2563EB` read 5.17:1. The slate base (`base-palette:`) stays for cards, text and borders, and the navy `sidebar-*` pair stays only for the sign-in panel, which 15.3 moves before deleting the set (story 15.2 moved the Timeline and IconTile onto `band-dark`, the Dialog backdrop onto `glass-scrim`, and Button's `sidebar` variant became `chrome`). Dark `primary` is `#3FA0FA` since story 15.2 (`#3B82F6` before), so links and selection read 4.5:1 on the dark card and the dark panel. Before 15.1: a slate base, a navy sidebar in both themes, one blue primary `#2563EB`, near-zero decorative colour. The dark theme is navy-based, not grey: a navy page, navy-2 cards, and a darker navy sidebar. Both themes ship: the theme follows `prefers-color-scheme` unless the person pins one with the *Sustav / Svijetla / Tamna* control (human decision 2026-09-25), so every token below is defined in both and no state may rely on a single theme's contrast.
+**Register.** Since story 15.1: a pale page (`#E8EDF5` light, `#0A1020` dark) with three static blobs, light glass chrome (`glass:`), an ink default action (`#111827` light, `#F1F5F9` dark) and one blue, `primary` `#2F55B8`, kept for selection, today, links, progress and the focus ring's hue. `#2F55B8` reads 6.75:1 on white where the old `#2563EB` read 5.17:1. The slate base (`base-palette:`) stays for cards, text and borders. The navy sidebar set is retired: story 15.2 moved the Timeline and IconTile onto `band-dark`, the Dialog backdrop onto `glass-scrim` and Button's old variant onto `chrome`, and story 15.3 made the sign-in brand panel a `glass-chrome` panel with `foreground` text and an ink tile, then deleted the set. The sign-in tile is deliberately the neutral ink, never the organization's accent: UX-DR5 keeps the accent to the chrome's lockup and edges. Dark `primary` is `#3FA0FA` since story 15.2 (`#3B82F6` before), so links and selection read 4.5:1 on the dark card and the dark panel. Before 15.1: a slate base, a navy sidebar in both themes (a darker navy in dark), one blue primary `#2563EB`, near-zero decorative colour. The dark theme is navy-based, not grey: a navy page and navy-2 cards. Both themes ship: the theme follows `prefers-color-scheme` unless the person pins one with the *Sustav / Svijetla / Tamna* control (human decision 2026-09-25), so every token below is defined in both and no state may rely on a single theme's contrast.
 
 **The reserved hue.** `destructive` is overridden to `#D93A46` and is **reserved exclusively for an unresolved conflict**. It appears nowhere else — not on delete buttons, not on validation errors, not as an Organization's brand accent. This is a hard rule with a specific origin: the pilot is a fire department and the obvious brand accent is red. Had brand red and conflict red been the same red, the alarm colour would have become the furniture and conflicts would have stopped reading as conflicts. Destructive actions that are not conflicts use shadcn's neutral button styles plus a confirmation step.
 

@@ -59,7 +59,7 @@ export const BRAND_TOKENS: string[] = [
   'shift-slot-6',
   'shift-nonworking',
   'modifier-uncovered',
-  // Story 15.2: the Timeline's and IconTile's `dark` tone, off `--sidebar`.
+  // Story 15.2: the Timeline's and IconTile's `dark` tone, off the retired `--sidebar`.
   'band-dark',
   'brand-blue',
   'brand-green',
@@ -69,8 +69,9 @@ export const BRAND_TOKENS: string[] = [
   .flatMap((name) => [name, `${name}-foreground`])
   .concat('modifier-overridden', 'shift-nonworking-border');
 
-/** The 28 shadcn/ui neutral base names, less `primary` and `destructive`,
- *  which the brand delta supplies instead. */
+/** The 20 shadcn/ui neutral base names, less `primary` and `destructive`,
+ *  which the brand delta supplies instead, and less the eight `sidebar*`
+ *  names, retired by story 15.3 (the shell and the sign-in panel are glass). */
 export const BASE_TOKENS = [
   'background',
   'foreground',
@@ -92,14 +93,6 @@ export const BASE_TOKENS = [
   'chart-3',
   'chart-4',
   'chart-5',
-  'sidebar',
-  'sidebar-foreground',
-  'sidebar-primary',
-  'sidebar-primary-foreground',
-  'sidebar-accent',
-  'sidebar-accent-foreground',
-  'sidebar-border',
-  'sidebar-ring',
 ] as const;
 
 /**

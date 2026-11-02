@@ -762,8 +762,9 @@ describe('the chrome the layout wraps every destination in', () => {
     );
   });
 
-  it('leaves the navy sidebar set to the sign-in panel alone (story 15.2)', () => {
-    // D5, partly deferred: 15.3 moves the sign-in panel and deletes the set.
+  it('paints nothing with the retired navy sidebar set (stories 15.2, 15.3)', () => {
+    // D5: 15.2 moved every consumer but the sign-in panel; 15.3 made that panel
+    // glass and deleted the eight `--sidebar*` tokens, so no source may name one.
     const SIDEBAR_CLASS =
       /\b(?:bg|text|border|ring|ring-offset|fill|stroke|shadow|outline|from|via|to|divide)-sidebar(?:-[a-z-]+)?\b|\bvariant="sidebar"|var\(--sidebar/;
     const offenders: string[] = [];
@@ -779,7 +780,54 @@ describe('the chrome the layout wraps every destination in', () => {
     };
     walk(srcRoot);
 
-    expect(offenders).toEqual(['components/layout/auth-layout.tsx']);
+    expect(offenders).toEqual([]);
+
+    const css = readFileSync(join(srcRoot, 'index.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(css, 'index.css still declares a sidebar token').not.toMatch(/--(?:color-)?sidebar\b/);
+  });
+
+  /**
+   * A Tailwind `blur-*` filter or `backdrop-blur-*` class (story 15.3). Not a
+   * DOM call: a `.` before (`ref.current?.blur()`, `fireEvent.blur(`) or a `(`
+   * after excludes it, and a word or hyphen on either side (`onBlur`,
+   * `blurred`) is not a class.
+   */
+  const BLUR_CLASS = /(?<![\w.-])(?:backdrop-)?blur(?:-[\w[\]().%/-]+)?(?![\w(-])/;
+
+  it('recognises a blur class and nothing else (story 15.3)', () => {
+    for (const hit of ['className="x blur-3xl"', 'backdrop-blur-md', 'blur-[2px]', 'sm:backdrop-blur', '"p-4 blur"']) {
+      expect(BLUR_CLASS.test(hit), hit).toBe(true);
+    }
+    for (const miss of ['onBlur={close}', 'ref.current?.blur()', 'fireEvent.blur(input)', 'never blurred', 'useBlur', 'element.blur']) {
+      expect(BLUR_CLASS.test(miss), miss).toBe(false);
+    }
+  });
+
+  it('blurs nothing with a Tailwind filter class in a component (story 15.3)', () => {
+    // The glass utilities are the only blur in the application, and the blobs
+    // are gradients. A `blur-*` filter or a `backdrop-blur-*` class in a
+    // component or a class-string module would be glass (or a glow) spelled
+    // outside the three measured `@utility glass-*` blocks and their
+    // fallbacks. Comments are stripped first, so a source may still explain
+    // why it does not blur; tests and fixtures are not shipped code.
+    const offenders: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const path = join(dir, entry.name);
+
+        if (entry.isDirectory()) walk(path);
+        else if (/\.tsx?$/.test(entry.name) && !/\.(?:test|fixture)\.tsx?$/.test(entry.name)) {
+          const code = readFileSync(path, 'utf8')
+            .replace(/\/\*[\s\S]*?\*\//g, '')
+            .replace(/(^|[^:])\/\/.*$/gm, '$1');
+
+          if (BLUR_CLASS.test(code)) offenders.push(relative(srcRoot, path));
+        }
+      }
+    };
+    walk(srcRoot);
+
+    expect(offenders, 'a component blurs with a Tailwind class').toEqual([]);
   });
 
   it('names the region the collapse controls, and renders that region', () => {

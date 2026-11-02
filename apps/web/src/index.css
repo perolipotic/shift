@@ -51,12 +51,12 @@
  * and, under over-content glass and a panel, every opaque fill that can sit
  * under it (for a Dialog, each of those under the scrim as well).
  *
- * `--sidebar*` KEEPS ITS NAVY only for the sign-in panel
- * (`components/layout/auth-layout.tsx`), which story 15.3 moves and then
- * deletes the set. Story 15.2 moved every other consumer: the Timeline's and
- * IconTile's `dark` tone onto `--band-dark` (the same navy values), the Dialog
- * `::backdrop` onto `--glass-scrim`, and Button's `sidebar` variant became
- * `chrome`.
+ * `--sidebar*` IS RETIRED (story 15.3). Story 15.2 moved the Timeline's and
+ * IconTile's `dark` tone onto `--band-dark` (the navy values the set drew
+ * them in), the Dialog `::backdrop` onto `--glass-scrim`, and Button's
+ * `sidebar` variant to `chrome`; story 15.3 made the sign-in brand panel
+ * (`components/layout/auth-layout.tsx`) a `glass-chrome` panel and deleted the
+ * eight tokens.
  *
  * MEASURED DEVIATIONS AND RE-PINS. Every threshold in `test/theme-*.test.ts`
  * kept its value; what moved is the measurements pinned against them, each to a
@@ -103,9 +103,6 @@
  *     lightness that clears the panel sits ΔE 8.7 from dark `--brand-blue`,
  *     inside the ΔE 10 the accents keep from every signal; at 250° it is
  *     ΔE 11.2. Light `primary` stays #2F55B8.
- *   --sidebar-ring       light L 0.654 -> 0.8091 (#93C5FD). The sidebar is
- *     navy now, so the ring that clears 3:1 on it is LIGHT: 10.04:1 light,
- *     7.60:1 dark (#60A5FA).
  *   --border             light 1.26:1 -> 1.18:1 (slate-200 on slate-50), dark
  *     1.25:1 -> 1.32:1 (the same 10% white over navy). Still deliberately below
  *     AA and still pinned: it edges cards and separators, never a control, and
@@ -279,22 +276,14 @@
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.2004 0.0397 259.82);
-  --sidebar-foreground: oklch(0.869 0.0198 252.89);
-  --sidebar-primary: oklch(0.5461 0.2152 262.88);
-  --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.2947 0.0539 256.53);
-  --sidebar-accent-foreground: oklch(1 0 0);
-  --sidebar-border: oklch(1 0 0 / 8%);
-  --sidebar-ring: oklch(0.8091 0.0956 251.81);
 
   /* DESIGN.md brand delta. `primary` re-tuned to #2F55B8 by story 15.1 (D3):
    * blue is selection, today, links and progress; the default button is ink. */
   --primary: oklch(0.4805 0.1627 264.98);
   --primary-foreground: oklch(1 0 0);
   /* The hour band's `dark` tone (story 15.2): the Timeline's alternate
-   * stretch and IconTile's `dark`, at the navy the `--sidebar` pair drew in
-   * before, so the bands look exactly as they did. */
+   * stretch and IconTile's `dark`, at the navy the retired `--sidebar` pair
+   * drew in before, so the bands look exactly as they did. */
   --band-dark: oklch(0.2004 0.0397 259.82);
   --band-dark-foreground: oklch(0.869 0.0198 252.89);
   --destructive: oklch(0.5908 0.1949 21.67);
@@ -373,14 +362,6 @@
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.1634 0.028 259.94);
-  --sidebar-foreground: oklch(0.8383 0.0242 256.11);
-  --sidebar-primary: oklch(0.4882 0.2172 264.38);
-  --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.2432 0.0444 259.63);
-  --sidebar-accent-foreground: oklch(0.9842 0.0034 247.86);
-  --sidebar-border: oklch(1 0 0 / 7%);
-  --sidebar-ring: oklch(0.7137 0.1434 254.62);
 
   /* DESIGN.md brand delta. Dark `primary` re-tuned by story 15.2 (#3B82F6 ->
    * #3FA0FA): see the header's MEASURED DEVIATIONS. */
@@ -456,14 +437,6 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
   --color-band-dark: var(--band-dark);

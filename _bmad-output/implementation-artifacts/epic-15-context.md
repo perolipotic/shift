@@ -4,83 +4,69 @@
 
 ## Goal
 
-Users said the app looks old-fashioned. Epic 15 moves every screen to direction G, "Staklo": light glass chrome over a pale page, Outfit type, Phosphor fill icons and ink primary actions, in both themes. It changes no behaviour, data, routes, i18n keys or copy. A user must still find each answer in one glance, and nothing a conflict, a slot or a number says may change. The work starts with a pilot (15.1). The product owner reviews it on their own phone with real data before the rest of the app moves, and a no-go stops the epic with `main` untouched.
+Users said the app looks old-fashioned. Epic 15 moves every screen to direction G, "Staklo": light glass chrome over a pale page, Outfit type, Phosphor fill icons and ink primary actions, in both themes. It changes no behaviour, data, routes or copy. A user must still find each answer in one glance, and nothing a conflict, a slot or a number says may change. The pilot (15.1, *Kalendar* and the shell) was accepted by the product owner on a phone, and the primitives and layered surfaces (15.2) shipped. The work left is the member and admin screens (15.3, 15.4), the dark, fallback and low-end hardening (15.5), and one filter pattern on every filtered surface (15.7), which the product owner added after the pilot.
 
 ## Stories
 
-- Story 15.1: Pilot: *Kalendar* and the shell in glass, on real data, on a phone
-- Story 15.2: Every primitive and layered surface in glass, restyled once
+- Story 15.1: Pilot: *Kalendar* and the shell in glass, on real data, on a phone (done)
+- Story 15.2: Every primitive and layered surface in glass, restyled once (done)
 - Story 15.3: Member surfaces read in glass
 - Story 15.4: Admin surfaces read in glass
 - Story 15.5: Glass holds in the dark theme, without blur support, and on a low-end phone
 - Story 15.6 (optional, outside v1): A week view on the desktop and a day view on the phone
+- Story 15.7: Every filter is one summary bar, a *Filtri* sheet and removable chips
 
 ## Requirements & Constraints
 
-These hard rules stay exactly as they are:
-- **The conflict red is reserved.** `destructive` `#D93A46` (dark `#E85B66`) marks only an unresolved conflict. It is never a badge on a mixed count, a delete button or an accent. The mockup's red count on *Za odluku* is not built.
-- **Colour never carries meaning alone.** Every shift state keeps its glyph and its fill or ring. The active nav item keeps semibold, a non-colour indicator and `aria-current`, on the glass pill too.
-- **Colour goes by slot, never by shift-type name.** No sun or moon icons, and no type tokens.
-- **Every digit is tabular** (`tnum`). Every face covers Latin Extended-A (č ć ž š đ and their capitals).
-- **Targets are at least 44 px.** Mockup controls drawn smaller (sidebar rows, ‹ › buttons, view switch) are built at 44.
+- **The conflict red is reserved.** `destructive` marks only an unresolved conflict. It is never a badge on a mixed count, a delete button or an accent. The mockup's red count on *Za odluku* is not built.
+- **Colour never carries meaning alone.** Shift states keep their glyph and their fill or ring. The active nav row keeps semibold, a non-colour indicator and `aria-current`. A filter chip is told apart by its words and its ✕.
+- **Colour goes by slot, never by shift-type name.** The shipped slot ramp stays as opaque cells. The mockup's indigo slot-2 is not used, because it breaks the conflict-ring contrast.
+- **Every digit is tabular** (`tnum`). Every face covers č ć ž š đ and their capitals.
+- **Targets are at least 44 px**, even where a mockup draws them smaller.
 - **Both themes**, with every token defined in both.
-- **Screens compose primitives and never restyle them.** Glass is a primitive or token treatment, never a class string in a screen.
-- **Nothing from the mockups' copy or IA is adopted.** The UI keeps *Odsutnost u smjeni*, *čeka odluku* and *Odluči*, and a hygiene test bans "konflikt". The binding nav order stays: Danas, Kalendar, Sati, Godišnji, Za odluku, Ljudi, Postavke rotacije, Organizacija. The phone keeps four tabs plus *Više*. The calendar legend and the leave and uncovered hatches stay.
-- **Docs ship with the code.** Each story updates the DESIGN.md, EXPERIENCE.md and UX-DR lines it changes in the same PR (UX-DR1, 3, 5, 11, 26, 31/32 form only, 40, 45, and the new UX-DR53 for glass).
-- **The month render still takes at most 2 s** (NFR-22).
-
-Success means:
-- the product owner gives go on the pilot;
-- no file imports lucide, DM Sans or Syne;
-- every glass text pair clears 4.5:1, and every boundary and icon clears 3:1, against the worst-case backdrop;
-- the solid fallbacks work;
-- the low-end Android trace meets the budget;
-- the ring, the ramp, the glyphs and the legend read as before.
+- **Screens compose primitives and never restyle them.** Glass is a primitive or token treatment, never a class string on a screen.
+- **Nothing from the mockups' copy or IA is adopted.** Keep *Odsutnost u smjeni*, *čeka odluku* and *Odluči*. A hygiene test bans "konflikt". The nav order stays: Danas, Kalendar, Sati, Godišnji, Za odluku, Ljudi, Postavke rotacije, Organizacija. The phone keeps four tabs plus *Više*. The calendar legend and the leave and uncovered hatches stay.
+- **Docs ship with the code.** Each story updates the DESIGN.md, EXPERIENCE.md and UX-DR lines it changes in the same PR. 15.5 writes UX-DR53 (glass) and EXPERIENCE.md §Accessibility Floor.
+- **The month still renders in at most 2 s** (NFR-22).
+- **Success:** every glass text pair clears 4.5:1, and every boundary and icon clears 3:1, against the worst-case backdrop. The solid fallbacks work. A low-end Android trace meets the budget. The ring, the ramp, the glyphs and the legend read as before.
 
 ## Technical Decisions
 
-- **Font (D1).** `@fontsource-variable/outfit` (self-hosted, latin and latin-ext subsets) replaces DM Sans, Syne and Shift Figures. Set `font-variant-numeric: tabular-nums` once on `html` in `@layer base`. Outfit's `tnum` gives all ten digits one advance at every weight. Remove `scripts/fonts/build-figures.py` and the `shift-figures-*.woff2` files along with their OFL notice. Map weight 800 to 700. In the pilot, check that `1` and `7` stay legible at 12 px in the grid.
-- **Icons (D2).** `@phosphor-icons/react` with the `fill` weight replaces lucide-react. `components/ui/icon.tsx` is the only module that imports an icon library, and screens name icons through it. Record the main-chunk delta in the PR. If it grows by more than 15 KB gzip, switch the facade to fill-only SVGs from `@phosphor-icons/core`, with no screen changing. Name mappings include `TriangleAlert`→`Warning`, `Clock3`→`Clock`, `WifiOff`→`WifiSlash`, `GripVertical`→`DotsSixVertical`, Chevron→Caret, and `CircleDashed`→`CircleDashed`. The leave and uncovered marks must stay told apart by shape.
-- **Primary (D3).** The default button is ink: `#111827` with white text in light, and `#F1F5F9` with `#0B1220` text in dark. Blue `#2F55B8` is kept for selection, today, links, progress and the focus ring.
-- **Slot ramp (D4).** The shipped ramp stays, as fully opaque cells. Do not use the mockup's indigo slot-2, because it breaks the conflict-ring contrast.
-- **Navy retired (D5).** The `--sidebar*` set becomes a glass set. The org accent tints only the lockup tile and a 2 px edge on the sidebar and tab bar, and its window is re-measured against glass. Four things depend on the navy today: `theme-contrast`, the Dialog `::backdrop`, the Timeline `dark` tone (it gets its own token in 15.2) and `chrome.tsx`.
-- **Glass tokens (light).**
-  - Page `#E8EDF5`, with three blobs: `#B9D3FF`, `#E2CCFF` and `#C6F0E2`. The blobs are **static radial gradients** on a fixed layer, never `filter: blur()`.
-  - `glass` is `.58` white, for chrome beside content.
-  - `glass-over-content` is at least `.72`, for chrome that content scrolls under. Text on it is foreground-strength only.
-  - Reading surfaces are at least `.85`.
-  - Blur is 24 px with saturate 160 %, the border is white at 80 %, and the shadow is `0 10px 40px rgba(30,40,70,.10)`.
-  - Radii run 14–30 px for chrome and cards. Month-grid cells keep a radius of at most 10 px.
-  - Every value round-trips with DESIGN.md front matter (`theme-fidelity`).
-- **Dark values (proposed, tuned in 15.5).**
-  - Page `#0A1020`, with blobs `#1D3A7A`, `#3B2466` and `#0E4A3C` at about 45 %.
-  - `glass` is `rgba(15,23,42,.58)` with saturate 140 %. `glass-over-content` is at least `.80`.
-  - The border is `rgba(255,255,255,.10)`, and the shadow is `0 10px 40px rgba(0,0,0,.45)`.
-  - The reading surface is `rgba(19,32,53,.92)`.
-- **Where glass goes.** Glass is only for floating chrome: the desktop sidebar, the phone tab bar, the phone's sticky month head, Dialog, ConfirmDialog, Popover and the docked sheets. Tables, lists, the grid, forms, data cards, resolution options and the consequence strip are reading surfaces with no `backdrop-filter`.
-- **Contrast.** `theme-contrast` composites each glass pair over the page, over each blob and, for over-content glass, over the darkest fill that can scroll under it (light: slot-2; dark: the lightest slot). It reuses the existing `composite()` helper.
-- **Fallbacks.** Under `@supports not (backdrop-filter)` and under `prefers-reduced-transparency: reduce`, glass resolves to the opaque card colour. Under `forced-colors: active` it resolves to `Canvas` with a `CanvasText` border. Always emit `-webkit-backdrop-filter`.
+- **Stack already in place (15.1, 15.2).** Outfit is self-hosted, with `tnum` set once on the document. `@phosphor-icons/react` with the `fill` weight is reached only through `components/ui/icon.tsx`, and no file imports lucide. The default Button is ink. Blue `primary` is for selection, today, links, progress and the focus ring. The `--sidebar*` navy is now a glass set. Dialog, ConfirmDialog, Popover and the docked sheets are glass panels over a tinted, never blurred `glass-scrim` backdrop. Timeline has its own `dark` tone token. The token values live in the DESIGN.md front matter (`glass:`, `base-palette`) and `index.css`. `theme-fidelity` round-trips them, so change both together.
+- **Where glass goes.** Glass is for floating chrome only: the sidebar, the tab bar, the phone's sticky month head, dialogs, popovers and docked sheets. Tables, lists, the grid, forms, data cards, resolution options and the consequence strip are opaque reading surfaces (at least `.85`) with no `backdrop-filter`. Chrome that content scrolls under uses `glass-over-content`, with foreground-strength text only.
+- **Org accent.** It tints only the lockup tile and a 2 px edge on the sidebar and the tab bar.
+- **Contrast.** `theme-contrast` composites each glass pair over the page, over each blob, and, for over-content glass and panels, over the darkest fill that can scroll under it. It reuses the existing `composite()` helper.
+- **Fallbacks (15.5 pins them).** Under `@supports not (backdrop-filter)` and `prefers-reduced-transparency: reduce`, glass resolves to the opaque card colour. Under `forced-colors: active` it resolves to `Canvas` with a `CanvasText` border. Always emit `-webkit-backdrop-filter`.
+- **Dark values.** The dark glass values were proposed as starting points. 15.5 tunes and pins them.
 - **Performance budget.**
-  - No `backdrop-filter` inside a scrolling list or grid, a card, a row or a cell.
-  - At most three blurred layers on a phone at once.
-  - Blur of at most 24 px.
-  - No blur on the Dialog `::backdrop`, which is only tinted.
-  - On a low-end Android, scrolling *Kalendar* allows no frame over 50 ms caused by paint or composite.
-- **Tests that churn.** High churn: `theme-fidelity`, `theme-contrast`, `typography-coverage` (one Outfit face, a `tnum` assertion, the icon pin) and `structural-pins-shell`. Medium: `theme-tokens` and `theme-applied`. Low: the other structural pins, `modifiers.test.ts` and `localization-applied`. The e2e tests are role-based, but a phone test may need to scroll past the floating bar.
-- **No changes** to Supabase, RLS, migrations, routes, i18n, CI or deploy.
+  - No `backdrop-filter` in a scrolling list or grid, a card, a row or a cell.
+  - At most three blurred layers on a phone at once, with blur of at most 24 px.
+  - No blur on the Dialog `::backdrop`.
+  - On a low-end Android, scrolling *Kalendar* has no frame over 50 ms from paint or composite.
+- **15.7 build.** The product owner chose a shadcn-style Sheet, Button, Badge and Popover/Command. Build it on the app's own Dialog (`docked`) and Popover primitives, or on a new primitive restyled once in `components/ui`. Name any new dependency (e.g. `cmdk`) in the PR.
+- **Tests that churn.** `theme-fidelity`, `theme-contrast`, `typography-coverage` and the structural pins (`structural-pins-shell` most of all). The e2e tests are role-based, but a phone test may need to scroll past the floating bar.
+- **No changes** to Supabase, RLS, migrations, routes, i18n structure, CI or deploy.
 
 ## UX & Interaction Patterns
 
-- The mockups in `ux-designs/ux-shift-2026-10-30-glass/` are a reference for **look only**. Their week and day layouts, indigo slot-2, red badge, copy and sidebar order are not adopted.
-- **Desktop sidebar.** A floating glass panel, inset 16–20 px from the viewport edge. The active row is a white pill, semibold, with an indicator.
-- **Phone tab bar.** A floating glass pill above the safe area. The page reserves the bar's height plus the safe-area inset, so the last row is reachable.
-- **Kalendar in the pilot.** The pilot covers the month view only: toolbar, filter chips and sheet, the grid in both modes, *Moj raspored*'s day list, legend and skeleton. Cells keep their label, ring and glyph.
-- *Danas*'s *Treba tebe* card keeps its `destructive` edge.
-- Glass needs no motion: do not add a motion token, and do not animate the blobs. Glass is never a state signal.
+- **Mockups are a reference for look only.** They are in `ux-designs/ux-shift-2026-10-30-glass/`. Their week and day layouts, indigo slot-2, red badge, copy and sidebar order are not adopted. For 15.7, `filters-15-7-po-reference.png` is a PO mockup, and its filter names and values are illustrative.
+- **Shell.**
+  - Desktop: a floating glass sidebar, inset from the viewport edge, with the active row as a white pill.
+  - Phone: a floating glass tab-bar pill above the safe area. The page reserves the bar's height, so the last row is reachable.
+- **15.3 member surfaces.** Sign-in, set-password, Danas, Sati and *Moji sati*, Godišnji and *Zatraži*, the Ljudi directory, `/obavijesti`, and the error, not-found and pending pages. Make screen-level fixes only where the composition is wrong. *Danas*'s *Treba tebe* card keeps its `destructive` edge.
+- **15.4 admin surfaces.** Za odluku, the resolution and request decisions, the member page and its dialogs, the day detail and its change dialogs, the rotation builder and its sticky save bar, Organizacija, hour bands and teams.
+- **15.7 filter pattern.** It applies to *Kalendar*, *Sati* and *Ljudi*. *Godišnji* draws the same option-chip bar as *Ljudi* today.
+  - **Summary bar.** One glass-reading card holds an icon, the muted tabular summary (`Prikazano: …`) and a `Filtri` Button. The button is at least 44 px and carries a Badge with the active-filter count.
+  - **Chips.** Under the bar, each active filter is a removable chip (`Smjena: B ✕`). `Očisti sve` shows while any filter is on.
+  - **Sheet.** `Filtri` opens a Sheet that holds every filter of the surface. It is docked at the bottom on a phone and at the side from 1024 px. Each value is picked in a Popover with a searchable Command list: options carry muted tabular counts, and the chosen one is marked. The footer has one `Prikaži {n}` and one `Poništi`.
+  - **Month control.** On *Kalendar* and *Sati*, the month becomes a compact header control beside the title: 44 px ‹ and › around the month name, which opens the month picker. The `Ovaj mjesec` Badge goes. Returning to the current month stays one action, in the picker.
+  - **Kept behaviour.** Everything from stories 7.4, 7.5 and 7.13 stays: URL search params, counts, focus moves, the keyboard model, the offline read and the phone sticky head.
+- **No motion.** Glass needs no motion token, and the blobs are never animated. Glass is never a state signal.
 
 ## Cross-Story Dependencies
 
-- **Order.** 10.3 is merged, then 15.1, then 15.2, then 15.3 and 15.4 (in either order, or folded into one), then 15.5. Epic 11 starts after 15.2, so 11.3's `warning` token and short-staffed glyph (a Phosphor icon) are measured on the final surfaces. 10.4 runs in parallel with 15.1–15.2 and merges `origin/main` when either lands.
-- **15.1 is gated.** The PR stays **unmerged** until the product owner opens `dvd-demo` on their phone, with Vite bound to the LAN address, and gives go or no-go (D8). 15.2 starts only after go.
-- **15.6** needs 15.1 plus a PRD edit, because week and day views are out of v1, and a new FR. It runs only if D6 brings it in.
-- **Hot files.** `index.css`, `components/ui/*`, `chrome.tsx` and `structural-pins-shell.test.ts` are held by this epic, so no parallel session may restyle them at the same time. Merge `origin/main` and never rebase. Epics 12–14 inherit the look through the primitives.
+- **Order.** 15.3 and 15.4 follow 15.2, in either order or folded into one. 15.5 follows both. 15.7 depends only on 15.2 (the docked Dialog and the glass Popover).
+- **Shared surfaces.** 15.7 and 15.3 both touch *Sati* and *Ljudi*, and 15.7 and 15.4 both touch the admin *Ljudi* list. Coordinate, or merge `origin/main` before starting.
+- **Epic 11** starts after 15.2. 11.3's `warning` token and short-staffed glyph are measured on the glass surfaces and drawn as a Phosphor icon.
+- **15.6** needs a PRD edit (week and day views are out of v1) and a new FR. It runs only if decision D6 brings it in.
+- **Hot files.** This epic holds `index.css`, `components/ui/*`, `chrome.tsx` and `structural-pins-shell.test.ts`. No parallel session may restyle them at the same time. Merge `origin/main` and never rebase. Epics 12–14 inherit the look through the primitives.

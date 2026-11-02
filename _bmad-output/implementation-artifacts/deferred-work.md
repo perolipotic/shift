@@ -1163,7 +1163,7 @@
   summary: *Kalendar*'s filter sheet and month-picker popover take the new tokens but no glass panel in the pilot (epic 15.1 AC "filter chips and sheet … in G", narrowed); 15.2 glasses the Dialog, Popover and docked-sheet primitives.
   evidence: The sheet and popover are the shared Dialog/Popover primitives; glassing them in 15.1 would restyle every dialog in the app inside the pilot gate.
 - source_spec: `_bmad-output/implementation-artifacts/spec-15-1-pilot-kalendar-and-the-shell-in-glass.md`
-  summary: `--sidebar*` keeps its navy values after 15.1 for the sign-in panel, Timeline `dark`, IconTile `dark`, the Dialog `::backdrop` and Button `sidebar`; 15.2/15.3 move those consumers to the glass/chrome set and retire `--sidebar*` (D5).
+  summary: RESOLVED by 15.3 — the sign-in panel is `glass-chrome` and the eight `--sidebar*` tokens are deleted (15.2 had moved every other consumer). `--sidebar*` keeps its navy values after 15.1 for the sign-in panel, Timeline `dark`, IconTile `dark`, the Dialog `::backdrop` and Button `sidebar`; 15.2/15.3 move those consumers to the glass/chrome set and retire `--sidebar*` (D5).
   evidence: The pilot shell uses a new chrome/glass token set so that screens outside the pilot do not change before the product owner's go.
 
 ## Deferred from: code review of spec-15-1-pilot-kalendar-and-the-shell-in-glass.md (2026-10-30)
@@ -1184,7 +1184,7 @@
 ## Deferred from: planning of spec-15-2-every-primitive-and-layered-surface-in-glass.md (2026-10-30)
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-15-2-every-primitive-and-layered-surface-in-glass.md`
-  summary: `--sidebar*` is not yet retired (D5, epic 15.2 "Timeline … no longer the sidebar pair" partly deferred). After 15.2 the sign-in panel in `components/layout/auth-layout.tsx` is its only consumer. 15.3 moves that panel onto the backdrop and then deletes the eight `--sidebar*` tokens, their `@theme inline` lines, the base `sidebar` contrast pairs, the `sidebar-ring` shift pin and the DESIGN.md `base-palette` entries.
+  summary: RESOLVED by 15.3 — the sign-in panel is a `glass-chrome` panel with `foreground` text and an ink tile, and the eight `--sidebar*` tokens, their `@theme inline` lines, the base `sidebar` contrast pairs, the `sidebar-ring` shift pin and the DESIGN.md `base-palette` entries are deleted; `band-dark`'s pin holds the literal navy values. `--sidebar*` is not yet retired (D5, epic 15.2 "Timeline … no longer the sidebar pair" partly deferred). After 15.2 the sign-in panel in `components/layout/auth-layout.tsx` is its only consumer. 15.3 moves that panel onto the backdrop and then deletes the eight `--sidebar*` tokens, their `@theme inline` lines, the base `sidebar` contrast pairs, the `sidebar-ring` shift pin and the DESIGN.md `base-palette` entries.
   evidence: The sign-in panel is a screen, and the epic gives it to 15.3. Deleting the tokens in 15.2 would restyle sign-in outside its story.
 
 ## Deferred from: code review of spec-15-2-every-primitive-and-layered-surface-in-glass.md (2026-10-30)
@@ -1195,3 +1195,9 @@
     - dark `--input` on the panel, 3.08:1;
     - light ring beside the input, 3.22:1.
   evidence: Raised by the 15.2 review (Blind Hunter). The ratios are recorded in `index.css` and DESIGN.md, and `theme-contrast` will fail on any thinner value, but nothing tells the 15.5 tuner where the margin is.
+
+## Deferred from: code review of spec-15-3-member-surfaces-read-in-glass.md (2026-11-02)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-15-3-member-surfaces-read-in-glass.md`
+  summary: Under forced colours the sign-in panel's ink tile (`bg-ink text-ink-foreground`) is overridden by the system palette; nothing pins that the tile and its icon stay perceivable on `Canvas`. 15.5 pins the glass fallbacks and should cover it.
+  evidence: Raised by the 15.3 review (Blind Hunter); the forced-colours spec covers the shell and sheets only.
