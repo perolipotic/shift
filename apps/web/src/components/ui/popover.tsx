@@ -21,6 +21,13 @@ import { cn } from "@/lib/utils"
 // screen to close it through `onClose`; the screen owns where focus goes,
 // and closes it, without moving focus, when focus leaves the region.
 //
+// `opaque` IS THE POPOVER INSIDE A PANEL (story 15.7, the filter sheet's
+// pickers): the sheet is a glass panel, so a glass popover there would blur
+// only the panel. It is drawn on the opaque `--popover` with its own border and
+// shadow, and names no glass utility. Inside the sheet's modal `<dialog>` an
+// Escape would also cancel the dialog, so the opaque popover hears Escape
+// first and cancels it: one Escape closes one layer.
+//
 // No copy and no `t()`: the accessible name is the screen's `aria-label`.
 
 export interface PopoverProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -30,10 +37,12 @@ export interface PopoverProps extends React.HTMLAttributes<HTMLDivElement> {
   region: React.RefObject<HTMLElement | null>
   /** The dialog's name, from the screen's `t()`. */
   "aria-label": string
+  /** Inside a panel (a Dialog): opaque, and its Escape never reaches the panel. */
+  opaque?: boolean
 }
 
-function Popover({ open, onClose, region, className, children, ...props }: PopoverProps) {
-  useDismiss(open, region, onClose)
+function Popover({ open, onClose, region, opaque = false, className, children, ...props }: PopoverProps) {
+  useDismiss(open, region, onClose, opaque)
 
   if (!open) return null
 
@@ -41,7 +50,9 @@ function Popover({ open, onClose, region, className, children, ...props }: Popov
     <div
       role="dialog"
       className={cn(
-        "glass-panel absolute left-0 top-full z-50 mt-2 max-w-[calc(100vw-2rem)] rounded-lg p-3 text-foreground",
+        opaque
+          ? "absolute left-0 top-full z-50 mt-2 max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-popover p-3 text-popover-foreground shadow-sh-lg"
+          : "glass-panel absolute left-0 top-full z-50 mt-2 max-w-[calc(100vw-2rem)] rounded-lg p-3 text-foreground",
         className
       )}
       {...props}

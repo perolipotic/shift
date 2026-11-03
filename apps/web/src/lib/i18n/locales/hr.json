@@ -182,12 +182,11 @@
   "filter": {
     "label": "Filtri",
     "open": "Filtri",
-    "openCount": "Filtri · {count}",
+    "openActive": "Filtri, aktivno: {count}",
     "chip": {
       "team": "Smjena: {value}",
       "teamAll": "Smjena: sve",
-      "person": "Osoba: {value}",
-      "personAll": "Osoba: sve"
+      "person": "Osoba: {value}"
     },
     "remove": {
       "team": "Ukloni filtar smjena: {value}",
@@ -210,11 +209,15 @@
       "both": "Prikazano: {team} i {person} · {shown, plural, one {# osoba} few {# osobe} other {# osoba}}"
     },
     "clear": "Poništi filtre",
+    "clearAll": "Očisti sve",
+    "optionSearch": "Pretraži: {label}",
+    "noMatch": "Nema rezultata",
     "sheetTitle": "Filtri",
     "sheetClose": "Zatvori filtre",
     "team": "Smjena",
     "person": "Osoba",
     "replaceNote": "U Kalendaru osoba zamjenjuje smjenu.",
+    "teamReplaced": "Zamijenjeno osobom",
     "sheetReset": "Poništi",
     "sheetShow": "{count, plural, one {Prikaži # osobu} few {Prikaži # osobe} other {Prikaži # osoba}}",
     "empty": {

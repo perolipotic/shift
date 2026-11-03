@@ -1,11 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { PHONE_MEDIA_QUERY, WIDE_QUERY, phoneStoreOf, type PhoneMediaQuery } from '@/utils/viewport';
+import { PHONE_MEDIA_QUERY, SIDE_SHEET_QUERY, WIDE_QUERY, phoneStoreOf, type PhoneMediaQuery } from '@/utils/viewport';
 
 describe('the one breakpoint (story 7.5)', () => {
   it("is Tailwind's sm: a phone is below 640 px, wide is 640 px and up", () => {
     expect(PHONE_MEDIA_QUERY).toBe('(max-width: 639px)');
     expect(WIDE_QUERY).toBe('(min-width: 640px)');
+  });
+
+  it("docks the filter sheet at the side from Tailwind's lg: 1024 px (story 15.7)", () => {
+    expect(SIDE_SHEET_QUERY).toBe('(min-width: 1024px)');
   });
 
   it('follows the width through one shared media query list', () => {

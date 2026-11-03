@@ -1375,7 +1375,13 @@ describe('the layered surfaces read against their worst backdrop (story 15.2)', 
     expect(dialog).toContain('"glass-panel p-0 text-foreground backdrop:bg-glass-scrim"');
     expect(dialog, 'the backdrop still draws with the navy sidebar').not.toMatch(/backdrop:bg-sidebar/);
     expect(popover).toMatch(/"glass-panel absolute /);
-    for (const source of [dialog, popover]) {
+    // STORY 15.7: the opaque Popover — for use inside a panel, where glass
+    // would blur only the panel — is the one opaque fill, and names no glass.
+    const opaque = /opaque\s*\?\s*"([^"]*)"/.exec(popover)?.[1] ?? '';
+
+    expect(opaque, 'the opaque popover is gone').toContain('bg-popover');
+    expect(opaque, 'the opaque popover names a glass utility').not.toMatch(/\bglass-/);
+    for (const source of [dialog, popover.replace(opaque, '')]) {
       expect(source, 'a panel still paints an opaque fill over its glass').not.toMatch(/\bbg-(?:card|popover)\b/);
     }
   });
@@ -1635,5 +1641,52 @@ describe('the dark glass values are final, recorded at their measured worst rati
 
     expect(chromeWorst(half('light'), 'light', 'glass-over-content').ratio).toBeCloseTo(3.06, 1);
     expect(chromeWorst(half('dark'), 'dark', 'glass-over-content').ratio).toBeCloseTo(3.3, 1);
+  });
+});
+
+/**
+ * STORY 15.7: THE OPAQUE POPOVER, the *Filtri* sheet's pickers. It is drawn on
+ * the opaque `--popover` — never glass, which inside the glass sheet would blur
+ * only the sheet — so every pair is measured on that one known colour: its
+ * text (`popover-foreground`), the muted counts, group headings and the
+ * `Nema rezultata` line, and the pressed option, a `primary`/10 tint whose
+ * name AND count turn `foreground` (`group-aria-pressed:text-foreground`).
+ * The classes are read from the primitives, so the measured surface cannot
+ * drift from the drawn one.
+ */
+describe('the opaque popover reads on its own fill in both themes (story 15.7)', () => {
+  const root = fileURLToPath(new URL('..', import.meta.url));
+  const read = (...parts: string[]): string => readFileSync(join(root, 'apps', 'web', 'src', ...parts), 'utf8');
+  const PRESSED_TINT_ALPHA = 0.1;
+  const popover = (theme: Theme): Color => colour(theme, 'popover');
+  const pressed = (theme: Theme): Rgb =>
+    composite({ ...rgb(colour(theme, 'primary')), alpha: PRESSED_TINT_ALPHA }, popover(theme));
+
+  it('reads the fill, the muted lines and the pressed tint from the primitives', () => {
+    const opaque = /opaque\s*\?\s*"([^"]*)"/.exec(read('components', 'ui', 'popover.tsx'))?.[1] ?? '';
+    const bar = read('components', 'filter-bar.tsx');
+
+    expect(opaque).toContain('bg-popover');
+    expect(opaque).toContain('text-popover-foreground');
+    expect(bar).toContain(`aria-pressed:bg-primary/${Math.round(PRESSED_TINT_ALPHA * 100)}`);
+    expect(bar).toContain('group-aria-pressed:text-foreground');
+    expect(bar).toMatch(/<p role="status" className="[^"]*text-muted-foreground[^"]*">\s*\{noMatch \?/);
+  });
+
+  const PAIRS: { label: string; text: string; surface: (theme: Theme) => Color | Rgb }[] = [
+    { label: 'popover-foreground on the popover (an option)', text: 'popover-foreground', surface: popover },
+    {
+      label: 'muted-foreground on the popover (a count, a group heading, Nema rezultata)',
+      text: 'muted-foreground',
+      surface: popover,
+    },
+    { label: 'foreground on the pressed tint over the popover (the chosen option and its count)', text: 'foreground', surface: pressed },
+  ];
+  const cases = THEMES.flatMap((theme) => PAIRS.map((pair) => ({ theme, ...pair })));
+
+  it.each(cases)('$label reads in $theme', ({ theme, text, surface }) => {
+    const measured = ratio(colour(theme, text), surface(theme) as Color);
+
+    expect(measured, `measured ${measured.toFixed(2)}:1 (${theme})`).toBeGreaterThanOrEqual(AA_BODY);
   });
 });

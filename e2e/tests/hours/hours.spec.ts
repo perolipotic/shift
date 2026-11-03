@@ -551,9 +551,9 @@ test.describe('as an admin', () => {
     await expect(page).toHaveURL(/[?&]smjena=/);
     await expect(page).not.toHaveURL(/[?&]tim=/);
     await expect(hoursPage.filters.teamChip).toHaveAccessibleName(hoursPage.filters.teamChipText(fixture.team.name));
-    // The picker closes and focus is back on its chip.
-    await expect(hoursPage.filters.teamPicker).toHaveCount(0);
-    await expect(hoursPage.filters.teamChip).toBeFocused();
+    // The sheet closes through `Prikaži …`, and focus is back on `Filtri`.
+    await expect(hoursPage.filters.sheet).toBeHidden();
+    await expect(hoursPage.filters.filtriButton).toBeFocused();
     await expect(adminRow).toHaveCount(0);
     await expect(row).toHaveCount(1);
     await expect
@@ -564,7 +564,7 @@ test.describe('as an admin', () => {
       .toBe(true);
 
     // THE PERSON FILTER COMBINES with the team (story 7.5): the member alone,
-    // both chips on, and the ✕ on the team drops it alone, focus on Osoba.
+    // both chips on, and the ✕ on the team drops it alone, focus on Osoba, the next chip.
     await hoursPage.filters.choosePerson(fixture.member.name);
     await expect(page).toHaveURL(/[?&]osoba=/);
     await expect(page).toHaveURL(/[?&]smjena=/);
@@ -586,8 +586,8 @@ test.describe('as an admin', () => {
     await hoursPage.filters.removePerson(fixture.member.name).click();
     await expect(page).not.toHaveURL(/[?&]osoba=/);
     await expect(adminRow).toHaveCount(1);
-    // Focus moves to the first chip, never to <body>.
-    await expect(hoursPage.filters.teamChip).toBeFocused();
+    // No chip is left: focus moves to `Filtri`, never to <body>.
+    await expect(hoursPage.filters.filtriButton).toBeFocused();
     await expect(hoursPage.filters.clearButton).toHaveCount(0);
 
     // E909: the shifts in unresolved conflict sort like any other column.
@@ -751,7 +751,9 @@ test.describe('as an admin', () => {
     await expect(
       main.getByRole('button', { name: fill(hr.filter.empty.removeTeam, { team: fixture.team.name }), exact: true }),
     ).toBeVisible();
-    await expect(main.getByRole('button', { name: hr.filter.clear, exact: true })).toHaveCount(2);
+    // The bar's own clear-all is `Očisti sve` since story 15.7.
+    await expect(main.getByRole('button', { name: hr.filter.clear, exact: true })).toHaveCount(1);
+    await expect(hoursPage.filters.clearButton).toBeVisible();
     await expectNoHorizontalScroll(page);
     await expectNoInnerHorizontalScroll(page);
     await page.setViewportSize({ width: 1280, height: 720 });
@@ -764,7 +766,8 @@ test.describe('as an admin', () => {
     await expect(page).toHaveURL(/\/sati\?/);
     await expect(hoursPage.memberLink(fixture.admin.name)).toBeVisible();
     await expect(hoursPage.exportButton).toBeEnabled();
-    await expect(hoursPage.filters.teamChip).toBeFocused();
+    // Focus goes to the first chip drawn: the person's, which the change kept.
+    await expect(hoursPage.filters.personChip).toBeFocused();
 
     // `Poništi filtre` in the empty table drops both.
     await hoursPage.filters.chooseTeam(fixture.team.name);
@@ -773,7 +776,8 @@ test.describe('as an admin', () => {
     await expect(page).not.toHaveURL(/[?&]smjena=/);
     await expect(page).not.toHaveURL(/[?&]osoba=/);
     await expect(page).toHaveURL(new RegExp(`[?&]mjesec=${month}`));
-    await expect(hoursPage.filters.teamChip).toBeFocused();
+    // No chip is left to take focus: `Filtri` does.
+    await expect(hoursPage.filters.filtriButton).toBeFocused();
     await expect(hoursPage.exportButton).toBeEnabled();
   });
 
@@ -874,9 +878,9 @@ test.describe('the filters on a phone, as an admin', () => {
     await filters.filtriButton.click();
     await expect(filters.sheet).toBeVisible();
     await expect(filters.sheet.getByText(hr.filter.replaceNote, { exact: true })).toHaveCount(0);
-    await filters.sheetTeam(fixture.team.name).check();
+    await filters.pickIn(hr.filter.team, filters.teamOption(fixture.team.name));
     await expect(page).toHaveURL(/[?&]smjena=/);
-    await filters.sheetPerson(fixture.member.name).click();
+    await filters.pickIn(hr.filter.person, filters.personOption(fixture.member.name));
     // Combined: the team is kept beside the person.
     await expect(page).toHaveURL(/[?&]smjena=/);
     await expect(page).toHaveURL(/[?&]osoba=/);
@@ -884,7 +888,7 @@ test.describe('the filters on a phone, as an admin', () => {
     await filters.sheetShow(1).click();
     await expect(filters.sheet).toBeHidden();
     // Both chips stay visible above the table, each with its ✕.
-    await expect(filters.filtriButton).toHaveAccessibleName(fill(hr.filter.openCount, { count: '2' }));
+    await expect(filters.filtriButton).toHaveAccessibleName(filters.filtriName(2));
     await expect(filters.removeTeam(fixture.team.name)).toBeVisible();
     await expect(filters.removePerson(fixture.member.name)).toBeVisible();
     await expect(hoursPage.organizationListRows).toHaveCount(1);

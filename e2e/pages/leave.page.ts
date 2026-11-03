@@ -72,12 +72,12 @@ export class LeavePage extends BasePage {
     return this.page.getByRole('searchbox', { name: overview.search, exact: true });
   }
 
-  /** The overview's filter bar (E884): the chips' group, the summary, `Poništi filtre`. */
+  /** The overview's filter bar (E884, story 15.7): the summary card, `Filtri`, the chips and the sheet. */
   get filters(): FilterBarParts {
     return new FilterBarParts(this.page);
   }
 
-  /** The Stanje chip, whatever it reads. */
+  /** The Stanje chip, drawn while a state is chosen. */
   get stateChip(): Locator {
     return this.filters.bar.getByRole('button', {
       name: new RegExp(`^${escapeRegExp(overview.stateChip.replace('{value}', ''))}`),
@@ -89,7 +89,7 @@ export class LeavePage extends BasePage {
     return fill(overview.stateChip, { value: overview.stateValue[value] });
   }
 
-  /** A state option in the Stanje chip's picker (from 640 px): its label, then its person count. */
+  /** A state option in the Stanje field's picker, in the *Filtri* sheet: its label, then its person count. */
   stateOption(value: keyof typeof overview.state): Locator {
     return this.page
       .getByRole('dialog', { name: overview.statePicker, exact: true })

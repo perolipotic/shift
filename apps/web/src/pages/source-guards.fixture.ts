@@ -836,7 +836,9 @@ export const SCREENS = [
   // EIGHT with the option-chip bar's own `Filtri` (`option-filter-bar.tsx`,
   // read with the member list since it is only *Ljudi*'s).
   // NINE SINCE THE DEFERRED-WORK SWEEP: the read failure's retry.
-  { name: 'the member list', file: MEMBER_LIST, expectedFields: 1, expectedButtons: 8 },
+  // ONE FEWER SINCE STORY 15.7: `Filtri` moved into the shared summary card
+  // (`@/components/filter-bar`, counted in the Kalendar and Sati sets).
+  { name: 'the member list', file: MEMBER_LIST, expectedFields: 1, expectedButtons: 7 },
   // EIGHT on the create form: four `<Input>`s — name, username, address,
   // allowance — the level `<select>`, and three `<Button>`s, which are Save,
   // Cancel and the link back to the list. The count is what notices a SIXTH
@@ -985,7 +987,11 @@ export const SCREENS = [
   // "Odluči", a `<Button asChild>` over the link, written once
   // inside the map over the day's conflicts.
   // THIRTY-FOUR BUTTONS SINCE DEFERRED-WORK E795: the month picker footer's `Ovaj mjesec`.
-  { name: 'the Kalendar destination', file: KALENDAR, expectedFields: 6, expectedButtons: 34 },
+  // THIRTY-FIVE SINCE STORY 15.7: the filter bar draws `Filtri` in its
+  // summary card, an active chip's body and its ✕, `Očisti sve`, a sheet
+  // field's value button (written once in `FilterField`), a picker option,
+  // and the sheet's `Poništi` and `Prikaži` — one more than the chip bar.
+  { name: 'the Kalendar destination', file: KALENDAR, expectedFields: 6, expectedButtons: 35 },
   // STORY 4.1b. THREE on Sati: the month navigation it shares with the
   // calendar — the previous month, `Ovaj mjesec` and the next month. The
   // figures are read, never pressed.
@@ -1010,7 +1016,9 @@ export const SCREENS = [
   // TWENTY-THREE SINCE STORY 7.14: the ⓘ `Button` beside an hours figure,
   // written once in `ExplainButton` however many figures carry one.
   // TWENTY-THREE BUTTONS SINCE DEFERRED-WORK E795: the month picker footer's `Ovaj mjesec`.
-  { name: 'the Sati destination', file: SATI, expectedFields: 1, expectedButtons: 23 },
+  // TWENTY-FOUR SINCE STORY 15.7: the shared filter bar's one more, counted
+  // in the Kalendar set too.
+  { name: 'the Sati destination', file: SATI, expectedFields: 1, expectedButtons: 24 },
   // STORY 5.2c. ONE on Godišnji: the retry its unavailable alert offers. The
   // three figures are read, never pressed, and nothing here writes: a member
   // requests no leave (story 5.3 is conflicts, not requests).

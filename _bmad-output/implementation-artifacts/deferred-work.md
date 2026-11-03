@@ -1216,3 +1216,15 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-15-5-glass-holds-in-dark-without-blur-and-on-a-low-end-phone.md`
   summary: OWNER the product owner. The glass performance budget, and NFR-22, are not yet measured on a real low-end Android (epic 15.5 AC "measured on a low-end Android, and the trace is linked from the PR", narrowed). 15.5 measures a proxy, `pnpm test:perf` at 6× CPU throttling on a phone viewport. A human runs Chrome remote debugging on a low-end Android over `dvd-demo`, records a Performance trace of scrolling *Kalendar* (admin, all teams) across two months, times a cold load of the month grid (NFR-22, 2 s), and links the trace from the PR and here (append `TRACE: <link>, <device>, <date>` to this entry). 15.5 is not `done` until that trace is linked or the product owner waives it.
   evidence: An agent cannot drive a physical device. If the real trace shows a frame over 50 ms in paint or composite, glass turns solid on that class of device by the fallback token path (proposal §4.4 rule 7).
+
+## Deferred from: story 15.7 scope split (2026-11-03)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-15-7-every-filter-is-one-summary-bar-a-filtri-sheet-and-chips.md`
+  summary: Story 15.7b — the month control on *Kalendar* and *Sati* becomes a compact header control beside the page title (‹ and › as 44 px icon buttons around the month name, which opens the month picker), and the `Ovaj mjesec` Badge is removed (the product owner confirmed the removal on 2026-11-03); returning to the current month stays one action, in the month picker. DESIGN.md *month toolbar* is updated with it.
+  evidence: Split from story 15.7 at the product owner's choice (2026-11-03): the filter pattern and the month control are separately shippable, and the filter pattern alone spans four surfaces. Epic 15.7's third AC moves here.
+
+## Deferred from: code review of spec-15-7-every-filter-is-one-summary-bar-a-filtri-sheet-and-chips.md (2026-11-03)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-15-7-every-filter-is-one-summary-bar-a-filtri-sheet-and-chips.md`
+  summary: No executed test checks that `Filtri`, a chip's body and ✕, `Očisti sve` and the sheet's fields are disabled and carry `aria-describedby` = the refusal's id while *Ljudi* or *Godišnji* is unanswered; only source-text pins read the screens' `disabled` prop.
+  evidence: Raised by the 15.7 review (Verification Gap). Since 15.7 `Filtri` is the only way into the filters at every width, so removing `disabled` from `FilterSummaryCard` would ship green. Needs an e2e that holds the list unanswered (e.g. a delayed or failed read), or a render test once render tests land.

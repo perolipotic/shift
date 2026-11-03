@@ -158,13 +158,12 @@ export function filterSummaryValuesOf(summary: FilterSummary): Readonly<Record<s
   return values;
 }
 
-/** A chip's text: `Smjena: Smjena B`, or `Smjena: sve` with nothing chosen. */
-export function filterChipMessageKey(
-  chip: FilterChip,
-): 'filter.chip.team' | 'filter.chip.teamAll' | 'filter.chip.person' | 'filter.chip.personAll' {
-  if (chip.key === FILTER_TEAM) return chip.value === null ? 'filter.chip.teamAll' : 'filter.chip.team';
-
-  return chip.value === null ? 'filter.chip.personAll' : 'filter.chip.person';
+/**
+ * An active chip's text: `Smjena: Smjena B`. Only an active chip is drawn
+ * (story 15.7), so there is no `sve` form.
+ */
+export function filterChipMessageKey(chip: FilterChip): 'filter.chip.team' | 'filter.chip.person' {
+  return chip.key === FILTER_TEAM ? 'filter.chip.team' : 'filter.chip.person';
 }
 
 /** A chip's ✕, named for what it removes: `Ukloni filtar smjena: Smjena B`. */
@@ -172,9 +171,22 @@ export function filterRemoveMessageKey(chip: FilterChip): 'filter.remove.team' |
   return chip.key === FILTER_TEAM ? 'filter.remove.team' : 'filter.remove.person';
 }
 
-/** Whether any filter is on: the summary's `Poništi filtre` shows only then. */
+/** Whether any filter is on: `Očisti sve` shows only then. */
 export function hasActiveFilter(model: FilterBarModel): boolean {
   return model.activeCount > 0;
+}
+
+/**
+ * The chips drawn under the summary card (story 15.7): the active ones only,
+ * each removable — an unset filter is picked in the *Filtri* sheet.
+ */
+export function activeChipsOf(model: FilterBarModel): readonly FilterChip[] {
+  return model.chips.filter((chip) => chip.value !== null);
+}
+
+/** The count `Filtri`'s Badge shows: how many filters are on, `null` (no Badge) with none. */
+export function filterBadgeCountOf(activeCount: number): number | null {
+  return activeCount > 0 ? activeCount : null;
 }
 
 /**
@@ -193,26 +205,40 @@ export function filterRemovalOf(model: FilterBarModel, key: FilterKey): FilterCh
   return key === FILTER_TEAM ? { smjena: null, osoba: model.person } : { smjena: model.team, osoba: null };
 }
 
-/** The Smjena radio group's value for every team: no team id is ever `*`. */
+/** The Smjena picker's `Sve smjene` option: no team id is ever `*`. */
 export const ALL_TEAMS_OPTION = '*';
 
-/** The Smjena radio group's value while *Kalendar* shows a person: no option at all reads chosen. */
+/** The Smjena picker's choice while *Kalendar* shows a person: no option at all reads chosen. */
 export const NO_TEAM_OPTION = '';
 
-/** The radio value the phone sheet's Smjena choice reads: the team, every team, or — a person replacing the team — none. */
-export function teamOptionOf(model: FilterBarModel): string {
+/**
+ * The option the sheet's Smjena picker marks chosen: the team, `null` for
+ * `Sve smjene`, or — a person replacing the team in *Kalendar* — none at all
+ * ({@link NO_TEAM_OPTION}, which no option carries).
+ */
+export function teamPickedOf(model: FilterBarModel): string | null {
   if (model.team !== null) return model.team;
 
-  return !model.combine && model.person !== null ? NO_TEAM_OPTION : ALL_TEAMS_OPTION;
-}
-
-/** What choosing a radio value of the phone sheet's Smjena choice changes. */
-export function teamOptionChoiceOf(model: FilterBarModel, value: string): FilterChange {
-  return filterChoiceOf(model, FILTER_TEAM, value === ALL_TEAMS_OPTION || value === NO_TEAM_OPTION ? null : value);
+  return !model.combine && model.person !== null ? NO_TEAM_OPTION : null;
 }
 
 /** The Osoba search as it opens: empty, so every person is listed. */
 export const NO_SEARCH = '';
+
+/**
+ * Whether a key pressed on a picker's list belongs in its search (story 15.7):
+ * a printable character, Space excepted — Space presses the option — and none
+ * typed with a modifier, which is a shortcut.
+ */
+export function typesIntoSearch(key: string, modified: boolean): boolean {
+  return key.length === 1 && key !== ' ' && !modified;
+}
+
+/** How an open picker keeps its field in view in the sheet's scroll: as little as it takes. */
+export const KEEP_IN_VIEW: ScrollIntoViewOptions = { block: 'nearest' };
+
+/** The focus target "the first chip drawn" (story 15.7): no chip's key is empty. */
+export const FIRST_CHIP = '';
 
 /** Whether a key in the Osoba search enters the list below it: ↓. */
 export function entersPickerList(key: string): boolean {
@@ -237,57 +263,46 @@ export function modelStateKeyOf(model: FilterBarModel): string {
 export const FILTERS_CLEARED: FilterChange = { smjena: null, osoba: null };
 
 /**
- * Where focus goes after a chip's ✕: the chip after it, or else the first
- * chip — Smjena, which is drawn again whenever the person is gone. The
- * component falls back to `Filtri` where that chip is not drawn (a phone shows
- * only active chips).
+ * Where focus goes after a chip's ✕ (story 15.7): the next active chip, which
+ * the change keeps; `null` — `Filtri` — after the last one. Only active chips
+ * are drawn, and the component falls back to `Filtri` as well wherever the
+ * chip named is not drawn.
  */
-export function focusAfterRemovalOf(model: FilterBarModel, key: FilterKey): FilterKey {
-  const index = model.chips.findIndex((chip) => chip.key === key);
+export function focusAfterRemovalOf(model: FilterBarModel, key: FilterKey): FilterKey | null {
+  const active = activeChipsOf(model);
+  const index = active.findIndex((chip) => chip.key === key);
 
-  return model.chips[index + 1]?.key ?? FILTER_TEAM;
+  return index === -1 ? null : (active[index + 1]?.key ?? null);
 }
 
 /**
  * OPTION CHIPS (story 7.13): a bar of chips each choosing one value from a
- * fixed list — *Ljudi*'s Razina, Smjena and Status — drawn by the same chip,
- * picker and phone sheet as the two above. A screen hands the component the
+ * fixed list — *Ljudi*'s Razina, Smjena and Status, *Godišnji*'s Smjena and
+ * Stanje — drawn by the same summary card, chips and *Filtri* sheet as the two
+ * above (story 15.7). A screen hands the component the
  * chips' keys and whether each is set; what a press changes stays the
  * screen's own rule.
  */
 export interface OptionChipState {
   readonly key: string;
-  /** Set: drawn active, with its ✕, and shown on a phone. */
+  /** Set: drawn as a removable chip, and counted in `Filtri`'s Badge. */
   readonly active: boolean;
 }
 
-/** How many option chips are set: `Filtri · N`. */
+/** How many option chips are set: `Filtri`'s Badge. */
 export function optionChipsActiveCount(chips: readonly OptionChipState[]): number {
   return chips.filter((chip) => chip.active).length;
 }
 
 /**
- * Where focus goes after an option chip's ✕: the chip after it, or else the
- * first — as {@link focusAfterRemovalOf}. The component falls back to
- * `Filtri` where that chip is not drawn (a phone shows only set chips).
+ * Where focus goes after an option chip's ✕: the next set chip, as
+ * {@link focusAfterRemovalOf}; `null` — `Filtri` — after the last one.
  */
 export function focusAfterOptionRemovalOf(chips: readonly OptionChipState[], key: string): string | null {
-  const index = chips.findIndex((chip) => chip.key === key);
+  const set = chips.filter((chip) => chip.active);
+  const index = set.findIndex((chip) => chip.key === key);
 
-  return chips[index + 1]?.key ?? chips[0]?.key ?? null;
-}
-
-/** Which edge of its chip a picker opens under: `start` (left) or `end` (right). */
-export type OptionPickerAlign = 'start' | 'end';
-
-/**
- * Where an option chip's picker opens, from 640 px: under the first chip's
- * left edge, which is where the row begins below 1024 px, and under every
- * later chip's right edge, so a picker opened near the end of the row stays
- * inside the card.
- */
-export function optionPickerAlignOf(chips: readonly OptionChipState[], key: string): OptionPickerAlign {
-  return chips[0]?.key === key ? 'start' : 'end';
+  return index === -1 ? null : (set[index + 1]?.key ?? null);
 }
 
 /**
@@ -303,11 +318,20 @@ function folded(text: string): string {
     .replace(/dj/g, 'd');
 }
 
-/** The people whose name holds `query`, trimmed, case and diacritics ignored; all of them for none. */
-export function peopleMatching(people: readonly FilterPersonOption[], query: string): readonly FilterPersonOption[] {
+/**
+ * The options whose name (`nameOf`) holds `query`, trimmed, case and
+ * diacritics ignored; all of them, the same array, for none. Every picker of
+ * the *Filtri* sheet searches through it (story 15.7).
+ */
+export function optionsMatching<T>(options: readonly T[], query: string, nameOf: (option: T) => string): readonly T[] {
   const wanted = folded(query.trim());
 
-  return wanted === '' ? people : people.filter((person) => folded(person.name).includes(wanted));
+  return wanted === '' ? options : options.filter((option) => folded(nameOf(option)).includes(wanted));
+}
+
+/** The people whose name holds `query`, as {@link optionsMatching}. */
+export function peopleMatching(people: readonly FilterPersonOption[], query: string): readonly FilterPersonOption[] {
+  return optionsMatching(people, query, (person) => person.name);
 }
 
 /** One group of the Osoba picker: a team's people, or the people on none (`teamName: null`, `Bez smjene`). */

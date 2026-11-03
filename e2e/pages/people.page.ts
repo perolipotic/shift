@@ -149,7 +149,7 @@ export class PeoplePage extends BasePage {
 
   // ---------------------------------------------- the list's filters (7.13)
 
-  /** The shared filter bar's parts: the chips' group, the summary, `Poništi filtre`, `Filtri` and its sheet. */
+  /** The shared filter bar's parts: the summary card, `Filtri`, the chips, `Očisti sve` and the sheet. */
   get filters(): FilterBarParts {
     return new FilterBarParts(this.page);
   }
@@ -159,12 +159,12 @@ export class PeoplePage extends BasePage {
     return this.page.getByRole('searchbox', { name: hr.ljudi.search, exact: true });
   }
 
-  /** The Razina chip, whatever it reads. */
+  /** The Razina chip, drawn while a level is chosen. */
   get levelChip(): Locator {
     return this.filters.bar.getByRole('button', { name: new RegExp(`^${escapeRegExp(hr.ljudi.chip.levelAll.replace(/\S+$/, ''))}`) });
   }
 
-  /** The Status chip, whatever it reads. */
+  /** The Status chip, drawn while it is not `svi` (`aktivni` by default). */
   get statusChip(): Locator {
     return this.filters.bar.getByRole('button', { name: new RegExp(`^${escapeRegExp(hr.ljudi.chip.status.replace('{value}', ''))}`) });
   }
@@ -179,16 +179,21 @@ export class PeoplePage extends BasePage {
     return this.page.getByRole('button', { name: fill(hr.ljudi.chip.removeStatus, { value: hr.ljudi.statusValue[value] }), exact: true });
   }
 
-  /** A status option in the Status chip's picker (from 640 px). */
+  /** A status option in the Status field's picker, in the *Filtri* sheet. */
   statusOption(value: keyof typeof hr.ljudi.statusFilter): Locator {
     return this.page
       .getByRole('dialog', { name: hr.ljudi.chip.statusPicker, exact: true })
       .getByRole('button', { name: new RegExp(`^${escapeRegExp(hr.ljudi.statusFilter[value])}\\s*\\d`) });
   }
 
-  /** A status radio in the phone's filter sheet. */
-  sheetStatus(value: keyof typeof hr.ljudi.statusFilter): Locator {
-    return this.filters.sheet.getByRole('radio', { name: new RegExp(`^${escapeRegExp(hr.ljudi.statusFilter[value])}\\s*\\d`) });
+  /** The *Filtri* sheet's Status field. */
+  get statusField(): Locator {
+    return this.filters.field(hr.ljudi.status.heading);
+  }
+
+  /** The Status field's accessible name while `value` is chosen. */
+  statusFieldName(value: keyof typeof hr.ljudi.statusFilter): string {
+    return this.filters.fieldName(hr.ljudi.status.heading, hr.ljudi.statusFilter[value]);
   }
 
   /** The status column's words for a scheduled change from `date` (ISO): `Od 05.10.: neaktivno`. */
