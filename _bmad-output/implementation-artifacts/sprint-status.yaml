@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 11-03-2026 16:18
+last_updated: 11-03-2026 19:09
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -621,11 +621,12 @@ development_status:
   epic-15: in-progress
   15-1-pilot-kalendar-and-the-shell-in-glass: done
   15-2-every-primitive-and-layered-surface-in-glass: done
-  15-3-member-surfaces-read-in-glass: review
-  15-4-admin-surfaces-read-in-glass: review
+  15-3-member-surfaces-read-in-glass: done  # #257
+  15-4-admin-surfaces-read-in-glass: done  # #258
   15-5-glass-holds-in-dark-without-blur-and-on-a-low-end-phone: backlog
   15-6-week-view-and-day-view: backlog   # optional, outside v1 (D6): only after a PRD edit
-  15-7-every-filter-is-one-summary-bar-a-filtri-sheet-and-chips: review
+  15-7-every-filter-is-one-summary-bar-a-filtri-sheet-and-chips: done  # #259
+  15-7b-the-month-is-a-compact-header-control: backlog  # split from 15.7 (2026-11-03, deferred-work)
   epic-15-retrospective: optional
 action_items:
   - id: "epic-4-retro-item-1-fix-c1-a-sati-name-for-a-member-no-longe"
