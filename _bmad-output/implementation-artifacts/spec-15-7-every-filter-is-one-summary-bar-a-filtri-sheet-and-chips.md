@@ -44,6 +44,8 @@ context:
 - "one summary bar is drawn as a glass-reading card" — **REINTERPRETED** as an opaque reading Card: glass rule "cards, tables, lists never carry backdrop-filter", and the Popover/sheet must not sit in a blurred ancestor.
 - "every filter surface: *Kalendar*, *Sati* and *Ljudi*" — **WIDENED** to *Godišnji*'s overview, which shares `OptionFilterBar` (PO choice, 2026-11-03).
 - "a searchable Command list" — **NARROWED** to the app's own `OptionList` with a search field, no `cmdk` (PO choice).
+- "with `Očisti sve` while any filter is on" — **NARROWED** on *Ljudi*: the default `Status: aktivni` is a drawn chip that counts in the Badge, without `Očisti sve`, which shows only while the list differs from its defaults (7.13 behaviour kept; PO, 2026-11-03).
+- "DESIGN.md (*month toolbar*, …) … updated" — **DEFERRED** in part: the *month toolbar* section is updated with the month control in story 15.7b (deferred-work, 2026-11-03); here only its sheet wording changes.
 
 </frozen-after-approval>
 
