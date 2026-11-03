@@ -268,10 +268,14 @@ export const KEY_SOURCES = [
     // FORTY-THREE SINCE STORY 7.17: the page renders the directory's title —
     // `nav.ljudi` a second time — and its lede. The directory's own words are
     // its set's, below.
+    //
+    // FORTY-TWO SINCE STORY 15.7: `Filtri` and its count moved into the shared
+    // summary card (`@/components/filter-bar`, counted in the Kalendar set),
+    // and the option bar's own part gained its pickers' search label.
     name: 'the member list',
     file: MEMBER_LIST,
     keys: translationKeys,
-    strings: 43,
+    strings: 42,
   },
   {
     // STORY 1.7a. EIGHT on the team list: its heading, the link back
@@ -798,7 +802,14 @@ export const KEY_SOURCES = [
     // picker's phone sheet — its title and close (E792) — and its footer — the
     // key hint and `Ovaj mjesec` (E795); and *Moj raspored*'s sentence, with
     // the team and without (E822).
-    strings: 171,
+    // ONE HUNDRED AND SEVENTY-FOUR SINCE STORY 15.7: the filter bar's sheet
+    // became fields with searchable pickers — `Poništi filtre` gave way to
+    // `Očisti sve` and `Filtri · N` to the Badge's name, a team's person count
+    // is drawn once (the picker's), and the Smjena label (the search's), the
+    // option search's label, `Nema rezultata` and `Sve osobe` (the Osoba
+    // field's value) arrived. ONE HUNDRED AND SEVENTY-FIVE with the Smjena
+    // field's value while a person replaces the team (`Zamijenjeno osobom`).
+    strings: 175,
   },
   {
     // B449: what an empty day or month says — inactive, or on no team — for
@@ -897,10 +908,13 @@ export const KEY_SOURCES = [
     // the two words a screen reader hears for an empty mark — `nema` for the
     // leave and `bez smjene` for the team. The leave's glyph still comes off
     // `leaveShownOf`, a key source.
+    //
+    // ONE HUNDRED AND FIFTEEN SINCE STORY 15.7: the shared filter bar's
+    // four more, counted in the Kalendar set too.
     name: 'the Sati destination',
     file: SATI,
     keys: translationKeys,
-    strings: 111,
+    strings: 115,
   },
   {
     // STORY 5.2c. THREE on Godišnji: its own `nav.godisnji` heading, the
@@ -1163,10 +1177,12 @@ export const KEY_SOURCES = [
     // STORY 7.5: the filter bar's model — the summary line's five forms, a
     // chip's four (a team or a person, chosen or `sve`), a ✕'s two names,
     // and the twelve months in the locative an empty table's sentence reads.
+    // TWENTY-ONE SINCE STORY 15.7: only an active chip is drawn, so a chip
+    // has two forms, never `sve`.
     name: 'the filter bar rules',
     file: FILTER_BAR_KEYS,
     keys: messageKeyUnions,
-    strings: 23,
+    strings: 21,
   },
   {
     // STORY 4.3: the export's sheet — its eight `t()` calls: the five fixed

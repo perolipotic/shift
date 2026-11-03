@@ -2,15 +2,15 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import { initLocalization, t } from '@/lib/i18n';
 import {
-  ALL_TEAMS_OPTION,
   NO_TEAM_OPTION,
+  activeChipsOf,
   entersPickerList,
+  filterBadgeCountOf,
   filterChipMessageKey,
   filterRemoveMessageKey,
   filterSummaryMessageKey,
   filterSummaryValuesOf,
-  teamOptionChoiceOf,
-  teamOptionOf,
+  teamPickedOf,
   filterStateKeyOf,
   modelStateKeyOf,
   FILTERS_CLEARED,
@@ -25,13 +25,14 @@ import {
   peopleGroupsOf,
   peopleMatching,
   pickerIndexAfter,
+  typesIntoSearch,
   yearOfMonthText,
   type FilterBarInput,
   type FilterPersonOption,
   type FilterTeamOption,
   focusAfterOptionRemovalOf,
-  optionPickerAlignOf,
   optionChipsActiveCount,
+  optionsMatching,
 } from '@/utils/filter-bar';
 
 /**
@@ -84,14 +85,19 @@ describe('the chips and the summary', () => {
     expect(model.summary).toEqual({ kind: 'all', teams: 4, people: 17 });
     expect(hasActiveFilter(model)).toBe(false);
     expect(t('filter.summary.all', { teams: 4, people: 17 })).toBe('Prikazano: sve smjene (4) · 17 osoba');
-    expect(model.chips.map((chip) => t(filterChipMessageKey(chip), { value: chip.value }))).toEqual([
-      'Smjena: sve',
-      'Osoba: sve',
-    ]);
+    // Story 15.7: an unset chip is never drawn, so its key is the active form only.
+    expect(model.chips.map((chip) => filterChipMessageKey(chip))).toEqual(['filter.chip.team', 'filter.chip.person']);
+    expect(t('filter.teamReplaced')).toBe('Zamijenjeno osobom');
     expect(t(filterSummaryMessageKey(model.summary), filterSummaryValuesOf(model.summary))).toBe(
       'Prikazano: sve smjene (4) · 17 osoba',
     );
     expect(t('filter.open')).toBe('Filtri');
+    // Story 15.7: no chip is drawn and `Filtri` carries no Badge.
+    expect(activeChipsOf(model)).toEqual([]);
+    expect(filterBadgeCountOf(model.activeCount)).toBeNull();
+    expect(t('filter.clearAll')).toBe('Očisti sve');
+    expect(t('filter.noMatch')).toBe('Nema rezultata');
+    expect(t('filter.optionSearch', { label: 'Smjena' })).toBe('Pretraži: Smjena');
   });
 
   it('Kalendar, team: the chip names it, and the summary counts its people of all', () => {
@@ -110,7 +116,9 @@ describe('the chips and the summary', () => {
 
     expect(t(filterChipMessageKey(team!), { value: team!.value })).toBe('Smjena: Smjena B');
     expect(t(filterRemoveMessageKey(team!), { value: team!.value })).toBe('Ukloni filtar smjena: Smjena B');
-    expect(t('filter.openCount', { count: model.activeCount })).toBe('Filtri · 1');
+    expect(t('filter.openActive', { count: model.activeCount })).toBe('Filtri, aktivno: 1');
+    expect(filterBadgeCountOf(model.activeCount)).toBe(1);
+    expect(activeChipsOf(model)).toEqual([{ key: FILTER_TEAM, value: 'Smjena B' }]);
   });
 
   it('Kalendar, person: the Smjena chip is hidden, and the summary names their team', () => {
@@ -197,15 +205,13 @@ describe('what a press changes', () => {
   });
 
   it("the phone sheet's Smjena radio reads the team, every team, or none while Kalendar shows a person", () => {
-    expect(teamOptionOf(kalendar())).toBe(ALL_TEAMS_OPTION);
-    expect(teamOptionOf(kalendar({ team: 'b', shownCount: 4 }))).toBe('b');
-    expect(teamOptionOf(kalendar({ person: 'luka', shownCount: 1 }))).toBe(NO_TEAM_OPTION);
-    expect(teamOptionOf(sati({ person: 'luka', shownCount: 1 }))).toBe(ALL_TEAMS_OPTION);
-    expect(teamOptionChoiceOf(sati({ person: 'luka', shownCount: 1 }), 'b')).toEqual({ smjena: 'b', osoba: 'luka' });
-    expect(teamOptionChoiceOf(sati({ team: 'b', shownCount: 4 }), ALL_TEAMS_OPTION)).toEqual({
-      smjena: null,
-      osoba: null,
-    });
+    // The sheet's Smjena picker marks the team, `Sve smjene` (`null`), or —
+    // a person replacing the team in Kalendar — nothing at all.
+    expect(teamPickedOf(kalendar())).toBeNull();
+    expect(teamPickedOf(kalendar({ team: 'b', shownCount: 4 }))).toBe('b');
+    expect(teamPickedOf(kalendar({ person: 'luka', shownCount: 1 }))).toBe(NO_TEAM_OPTION);
+    expect(teamPickedOf(sati({ person: 'luka', shownCount: 1 }))).toBeNull();
+    expect(filterChoiceOf(sati({ person: 'luka', shownCount: 1 }), FILTER_TEAM, 'b')).toEqual({ smjena: 'b', osoba: 'luka' });
     expect(entersPickerList('ArrowDown')).toBe(true);
     expect(entersPickerList('Enter')).toBe(false);
   });
@@ -231,14 +237,16 @@ describe('the state a change leaves', () => {
 });
 
 describe('focus after a ✕', () => {
-  it('moves to the next chip, or else to the first', () => {
+  it('moves to the next active chip, or else to Filtri (story 15.7)', () => {
     const both = sati({ team: 'b', person: 'luka', shownCount: 0 });
 
     expect(focusAfterRemovalOf(both, FILTER_TEAM)).toBe(FILTER_PERSON);
-    expect(focusAfterRemovalOf(both, FILTER_PERSON)).toBe(FILTER_TEAM);
-    // Kalendar: the person's chip is the only one; Smjena comes back first.
-    expect(focusAfterRemovalOf(kalendar({ person: 'luka', shownCount: 1 }), FILTER_PERSON)).toBe(FILTER_TEAM);
-    expect(focusAfterRemovalOf(kalendar({ team: 'b', shownCount: 4 }), FILTER_TEAM)).toBe(FILTER_PERSON);
+    expect(focusAfterRemovalOf(both, FILTER_PERSON)).toBeNull();
+    // Kalendar: the person's chip is the only one drawn, so Filtri.
+    expect(focusAfterRemovalOf(kalendar({ person: 'luka', shownCount: 1 }), FILTER_PERSON)).toBeNull();
+    expect(focusAfterRemovalOf(kalendar({ team: 'b', shownCount: 4 }), FILTER_TEAM)).toBeNull();
+    // A chip that is not drawn passes focus to Filtri.
+    expect(focusAfterRemovalOf(kalendar(), FILTER_TEAM)).toBeNull();
   });
 });
 
@@ -254,6 +262,16 @@ describe('the Osoba picker', () => {
     expect(peopleMatching([OLD], 'duro').map((person) => person.id)).toEqual(['old']);
     expect(peopleMatching([OLD], 'đurić').map((person) => person.id)).toEqual(['old']);
     expect(peopleMatching(PEOPLE, 'zzz')).toEqual([]);
+  });
+
+  it('searches any option list the same way, through the one fold (story 15.7)', () => {
+    const levels = [{ label: 'Član' }, { label: 'Administrator' }, { label: 'Zapovjednik' }];
+    const nameOf = (option: { label: string }) => option.label;
+
+    expect(optionsMatching(levels, '', nameOf)).toBe(levels);
+    expect(optionsMatching(levels, 'clan', nameOf)).toEqual([{ label: 'Član' }]);
+    expect(optionsMatching(levels, ' ADMIN ', nameOf)).toEqual([{ label: 'Administrator' }]);
+    expect(optionsMatching(levels, 'zzz', nameOf)).toEqual([]);
   });
 
   it('groups by team in the Smjena order, an archived team after them, Bez smjene last', () => {
@@ -273,6 +291,15 @@ describe('the Osoba picker', () => {
     expect(pickerIndexAfter('End', 0, 3)).toBe(2);
     expect(pickerIndexAfter('Enter', 0, 3)).toBeNull();
     expect(pickerIndexAfter('ArrowDown', 0, 0)).toBeNull();
+  });
+
+  it('sends a printable character typed on the list to its search, never Space, a named key or a shortcut (story 15.7)', () => {
+    expect(typesIntoSearch('a', false)).toBe(true);
+    expect(typesIntoSearch('Š', false)).toBe(true);
+    expect(typesIntoSearch(' ', false)).toBe(false);
+    expect(typesIntoSearch('ArrowDown', false)).toBe(false);
+    expect(typesIntoSearch('Enter', false)).toBe(false);
+    expect(typesIntoSearch('a', true)).toBe(false);
   });
 });
 
@@ -300,21 +327,16 @@ describe('option chips count what is set and pass focus on after a removal (stor
     { key: 'status', active: true },
   ];
 
-  it('counts the set chips for Filtri · N', () => {
+  it("counts the set chips for Filtri's Badge", () => {
     expect(optionChipsActiveCount(chips)).toBe(2);
     expect(optionChipsActiveCount([])).toBe(0);
   });
 
-  it('moves focus to the chip after the removed one, else to the first', () => {
-    expect(focusAfterOptionRemovalOf(chips, 'level')).toBe('team');
+  it('moves focus to the next set chip after the removed one, else to Filtri', () => {
     expect(focusAfterOptionRemovalOf(chips, 'team')).toBe('status');
-    expect(focusAfterOptionRemovalOf(chips, 'status')).toBe('level');
+    expect(focusAfterOptionRemovalOf(chips, 'status')).toBeNull();
+    // Level is not set, so not drawn: nothing of it to pass focus on from.
+    expect(focusAfterOptionRemovalOf(chips, 'level')).toBeNull();
     expect(focusAfterOptionRemovalOf([], 'status')).toBeNull();
-  });
-
-  it('opens the first picker from its left edge and every later one from its right', () => {
-    expect(optionPickerAlignOf(chips, 'level')).toBe('start');
-    expect(optionPickerAlignOf(chips, 'team')).toBe('end');
-    expect(optionPickerAlignOf(chips, 'status')).toBe('end');
   });
 });

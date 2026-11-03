@@ -127,6 +127,9 @@ const SETTINGS_PAGE = join(srcRoot, ...SETTINGS_SCREEN_PARTS.page);
 /** The *Godišnji* screen's page, which only composes (story 5.2c). */
 const GODISNJI_PAGE = join(srcRoot, ...LEAVE_SCREEN_PARTS.page);
 
+/** Story 7.13: the option-chip bar *Ljudi* and *Godišnji* draw, beside the shared filter bar. */
+const SHARED_OPTION_FILTER_BAR = join(srcRoot, 'components', 'option-filter-bar.tsx');
+
 /** The *Za odluku* screen's page, which only composes (story 5.3b). */
 const ZA_ODLUKU_PAGE = join(srcRoot, ...CONFLICTS_QUEUE_PARTS.page);
 
@@ -585,8 +588,9 @@ describe('the screen is read at all, so every sweep below means something', () =
     expect(nav).toMatch(/if \(month === null\) \{\s*return <div className="[^"]*animate-pulse[^"]*" \/>;/);
   });
 
-  it('filters Kalendar and Sati through one chip bar, never a Select (story 7.5)', () => {
+  it('filters Kalendar and Sati through one summary bar, chips and a Filtri sheet, never a Select (stories 7.5, 15.7)', () => {
     const bar = source(SHARED_FILTER_BAR);
+    const optionBar = source(SHARED_OPTION_FILTER_BAR);
 
     // No `<Select` in either filter: both draw the one shared bar.
     for (const file of [SHARED_FILTER_BAR, CALENDAR_FILTERS, HOURS_FILTERS]) {
@@ -595,26 +599,51 @@ describe('the screen is read at all, so every sweep below means something', () =
     expect(source(CALENDAR_FILTERS)).toMatch(/<FilterBar\b/);
     expect(source(HOURS_FILTERS)).toMatch(/<FilterBar\b/);
     // A ✕ is named by an expression — the filter and its value — never a literal.
-    expect(bar).toMatch(/removeLabel=\{t\(filterRemoveMessageKey\(chip\), \{ value: chip\.value \}\)\}/);
-    expect(bar).toMatch(/aria-label=\{removeLabel\}/);
+    expect(bar).toMatch(/removeLabel: t\(filterRemoveMessageKey\(chip\), \{ value: chip\.value \}\)/);
+    expect(bar).toMatch(/aria-label=\{chip\.removeLabel\}/);
     // STORY 7.13: *Ljudi* draws the same chips through the option-chip bar.
     expect(source(MEMBER_LIST)).toMatch(/<OptionFilterBar\b/);
     expect(source(MEMBER_LIST), 'the member list draws a Select again').not.toMatch(/<Select\b|<select\b/);
-    // A chip says it opens a dialog, and while open names the picker it opened.
-    // On a phone it opens the sheet, and says so: expanded and controlling it.
+    // STORY 15.7: ONE PATTERN AT EVERY WIDTH. Both bars draw the summary card,
+    // the active chips and the side sheet; no chip opens a picker of its own,
+    // and nothing is hidden below 640 px or chosen by the phone store.
+    for (const [name, text] of [
+      ['the filter bar', bar],
+      ['the option bar', optionBar],
+    ] as const) {
+      expect(text, `${name} draws no summary card`).toMatch(/<FilterSummaryCard\b/);
+      expect(text, `${name} draws no active chips`).toMatch(/<ActiveChips\b/);
+      expect(text, `${name} has no side sheet`).toMatch(/<SheetDialog\b[^>]*\sside>/);
+      expect(text, `${name} picks a value outside the sheet`).toMatch(/<FilterField\b/);
+      expect(text, `${name} reads the phone store again`).not.toMatch(/\busePhone\b/);
+      expect(text, `${name} hides a control below 640 px`).not.toMatch(/\bsm:hidden\b|\bmax-sm:hidden\b/);
+      expect(text, `${name} closes on the 640 px breakpoint`).not.toContain('useCloseWhenWide');
+    }
+    // The summary card is an opaque reading Card with the status line, and
+    // `Filtri` carries a Badge with its count — never `destructive`.
+    expect(bar).toMatch(/<Card className="[^"]*"/);
+    expect(bar).toMatch(/<p role="status"/);
+    expect(bar).toMatch(/aria-label=\{badge === null \? undefined : t\('filter\.openActive', \{ count: badge \}\)\}/);
+    expect(bar).toMatch(/<Badge aria-hidden className="tabular-nums">/);
+    expect(bar, 'the Badge is destructive').not.toMatch(/variant="destructive"/);
+    // A chip's body opens the sheet, and says so — only the control that
+    // opened it is expanded and controls it.
     expect(bar).toMatch(
-      /aria-haspopup="dialog"\s+aria-expanded=\{expanded\}\s+aria-controls=\{open \? pickerId : \(controls \?\? undefined\)\}/,
+      /aria-haspopup="dialog"\s+aria-expanded=\{expandedBy\(chip\.key\)\}\s+aria-controls=\{expandedBy\(chip\.key\) \? sheetId : undefined\}/,
     );
-    expect(bar).toMatch(/expanded=\{isPhone \? sheetOpen : open === chip\.key\}/);
-    // The breakpoint is the shared one, read through ONE store, never a feature's.
+    expect(bar).toMatch(/aria-expanded=\{expanded\}\s+aria-controls=\{expanded \? sheetId : undefined\}/);
+    // The sheet sits outside the chips' group, in the bar's one root.
+    expect(bar).toMatch(/<\/div>\s*<SheetDialog\b/);
+    // A field opens its picker in the opaque Popover, never a glass one in the glass sheet.
+    expect(bar).toMatch(/<Popover\b[\s\S]{0,240}?\sopaque\s*>/);
+    // The sheet closes where it changes edge, read through the shared hook.
     expect(bar).toMatch(/from '@\/hooks\/viewport'/);
+    expect(bar).toMatch(/useCloseWhenCrossing\(sheetOpen, closeSheet\)/);
     expect(bar, 'the bar reaches into a feature for the breakpoint').not.toMatch(/from '@\/features\//);
     // Focus waits for the change to render, never a frame poll.
     expect(bar, 'focus is polled again').not.toContain('requestAnimationFrame');
-    // The summary is a status line, not a banner, and the sheet the native Dialog.
-    expect(bar).toMatch(/<p role="status"/);
+    // The sheet is the native Dialog.
     expect(bar).toMatch(/<Dialog\b/);
-    expect(bar).toMatch(/useCloseWhenWide\(sheetOpen, closeSheet\)/);
     // Sati's old `?tim=` is redirected to `?smjena=`, replacing the entry.
     expect(source(SATI_PAGE)).toMatch(/beforeLoad:[\s\S]{0,200}?legacyHoursSearchOf\(/);
     expect(source(SATI_PAGE)).toMatch(/throw redirect\(\{ to: '\/sati', search: legacy, replace: true \}\)/);

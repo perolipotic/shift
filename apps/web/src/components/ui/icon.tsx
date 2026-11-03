@@ -39,6 +39,7 @@ import envelope from "@phosphor-icons/core/fill/envelope-fill.svg?raw"
 import eye from "@phosphor-icons/core/fill/eye-fill.svg?raw"
 import eyeSlash from "@phosphor-icons/core/fill/eye-slash-fill.svg?raw"
 import floppyDisk from "@phosphor-icons/core/fill/floppy-disk-fill.svg?raw"
+import funnelSimple from "@phosphor-icons/core/fill/funnel-simple-fill.svg?raw"
 import house from "@phosphor-icons/core/fill/house-fill.svg?raw"
 import info from "@phosphor-icons/core/fill/info-fill.svg?raw"
 import key from "@phosphor-icons/core/fill/key-fill.svg?raw"
@@ -199,6 +200,7 @@ export const Envelope = glyph(envelope, "envelope")
 export const Eye = glyph(eye, "eye")
 export const EyeSlash = glyph(eyeSlash, "eye-slash")
 export const FloppyDisk = glyph(floppyDisk, "floppy-disk")
+export const FunnelSimple = glyph(funnelSimple, "funnel-simple")
 export const House = glyph(house, "house")
 export const Info = glyph(info, "info")
 export const Key = glyph(key, "key")

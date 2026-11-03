@@ -487,9 +487,7 @@ test.describe("the phone's sticky head (deferred-work E816)", () => {
     // A person chosen: their day list is long and has no scroller of its own,
     // so the page scrolls the filter bar well under the head.
     await calendarPage.goto('?prikaz=sve');
-    await calendarPage.filters.filtriButton.click();
-    await calendarPage.filters.sheetPerson(fixture.member.name).click();
-    await calendarPage.filters.sheetShowAny.click();
+    await calendarPage.filters.choosePerson(fixture.member.name);
     const chip = calendarPage.filters.removePerson(fixture.member.name);
     await expect(chip).toBeVisible();
     await expect(calendarPage.stickySummary).toHaveCount(0);

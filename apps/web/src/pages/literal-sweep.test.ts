@@ -154,8 +154,9 @@ describe('the exempted attribute keeps the promise that exempted it', () => {
     expect(ariaHaspopupValues(source(CHROME))).toEqual(['dialog']);
     // Story 7.4: the month toolbar's trigger, on both Kalendar and Sati.
     expect(ariaHaspopupValues(source(SHARED_MONTH_NAV))).toEqual(['dialog']);
-    // Story 7.5: `Filtri`, which opens the sheet, and a chip, which opens its picker.
-    expect(ariaHaspopupValues(source(SHARED_FILTER_BAR))).toEqual(['dialog', 'dialog']);
+    // Story 15.7: `Filtri` and an active chip's body, which open the sheet,
+    // and a sheet field, which opens its picker.
+    expect(ariaHaspopupValues(source(SHARED_FILTER_BAR))).toEqual(['dialog', 'dialog', 'dialog']);
   });
 
   it('reads aria-invalid in the quoted syntax, and finds none where there is none', () => {
