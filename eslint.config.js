@@ -831,9 +831,10 @@ export default [
   // ------------------------------------------------ node + browser: e2e
   // The Playwright suite runs under Node, and its `page.evaluate` callbacks run
   // in the page, so both sets of globals are real here. The remote smoke
-  // (`smoke/`) is the same kind of file.
+  // (`smoke/`) and the glass performance run (`perf/`, story 15.5) are the
+  // same kind of file.
   {
-    files: ['e2e/**/*.ts', 'smoke/**/*.ts'],
+    files: ['e2e/**/*.ts', 'smoke/**/*.ts', 'perf/**/*.ts'],
     languageOptions: {
       globals: { ...globals.node, ...globals.browser },
     },

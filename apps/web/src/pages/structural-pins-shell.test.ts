@@ -697,7 +697,7 @@ describe('the chrome the layout wraps every destination in', () => {
 
   it('writes no glass in a screen: no backdrop filter outside the glass utilities (stories 15.1, 15.2)', () => {
     // Glass is a token and primitive treatment, never a class string a screen
-    // spells (DESIGN.md; UX-DR53, written by 15.5). The three `@utility glass-*`
+    // spells (DESIGN.md; UX-DR53, since story 15.5). The three `@utility glass-*`
     // blocks in `index.css` are the only `backdrop-filter`s in the
     // application; story 15.2 added `glass-panel` for the layered surfaces.
     const css = readFileSync(join(srcRoot, 'index.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');

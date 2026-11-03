@@ -324,8 +324,9 @@
   --elevation-sh: 0 1px 3px oklch(0 0 0 / 30%), 0 4px 16px oklch(0 0 0 / 22%);
   --elevation-sh-lg: 0 8px 32px oklch(0 0 0 / 45%);
 
-  /* Glass (story 15.1): DESIGN.md `glass.dark`, proposed values that story
-   * 15.5 tunes. The blobs are drawn at 45 %. */
+  /* Glass (story 15.1): DESIGN.md `glass.dark`, final since story 15.5, which
+   * measured every required pair against the worst backdrop
+   * (`theme-contrast.test.ts` records the ratios). The blobs are drawn at 45 %. */
   --glass: oklch(0.2077 0.0398 265.75 / 58%);
   --glass-over-content: oklch(0.2077 0.0398 265.75 / 80%);
   --glass-reading: oklch(0.2432 0.0444 259.63 / 92%);
@@ -657,7 +658,7 @@
  * included, still beats that on a ringed cell. */
 /* One shell entry's states (story 7.3, moved to the glass set by story 15.1):
  * the hover, the focus ring, and the current treatment — a `glass-active`
- * pill (white in light; a translucent white tint in dark, tuned in 15.5) with
+ * pill (white in light; a 12 % white tint in dark, measured by 15.5) with
  * a soft lift AND semibold AND underlined, never
  * colour alone (UX-DR37), since a hovered row takes a lighter pill of the same
  * shape. The text is `foreground` on glass, never `muted-foreground`. The ring
@@ -696,9 +697,11 @@
  * and leaves `border` to the organization's 2 px accent edge.
  *
  * FALLBACKS RENDER SOLID: with no blur support, and for anybody who asked the
- * OS for less transparency, the panel is the opaque `--card`; under forced
- * colours it is `Canvas` with a `CanvasText` border, in system colour keywords
- * because colours are not ours to choose there. */
+ * OS for less transparency, the panel is the opaque `--card` with its hairline
+ * in `--border` (story 15.5: the white glass hairline would vanish on a white
+ * card), exactly as `glass-panel`'s; under forced colours it is `Canvas` with a
+ * `CanvasText` border, in system colour keywords because colours are not ours
+ * to choose there. `theme-applied.test.ts` pins all three in the built sheet. */
 @utility glass-chrome {
   background-color: var(--glass);
   box-shadow:
@@ -709,10 +712,16 @@
 
   @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
     background-color: var(--card);
+    box-shadow:
+      inset 0 0 0 1px var(--border),
+      var(--glass-shadow);
   }
 
   @media (prefers-reduced-transparency: reduce) {
     background-color: var(--card);
+    box-shadow:
+      inset 0 0 0 1px var(--border),
+      var(--glass-shadow);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
@@ -735,10 +744,16 @@
 
   @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
     background-color: var(--card);
+    box-shadow:
+      inset 0 0 0 1px var(--border),
+      var(--glass-shadow);
   }
 
   @media (prefers-reduced-transparency: reduce) {
     background-color: var(--card);
+    box-shadow:
+      inset 0 0 0 1px var(--border),
+      var(--glass-shadow);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }

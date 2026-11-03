@@ -18,7 +18,13 @@ import { cn } from "@/lib/utils"
 // the ring with NO offset — an offset is an opaque band, and glass has no one
 // colour to paint it in, so `--ring` is drawn straight against the glass,
 // where `test/theme-contrast.test.ts` measures it against every glass
-// backdrop. The sidebar's profile card is its one consumer.
+// backdrop. The sidebar's profile card and the rotation save bar's *Odbaci
+// promjene* (story 15.4) are its consumers.
+//
+// UNDER FORCED COLOURS `chrome` DRAWS A 1px `ButtonText` BORDER (story 15.5).
+// There the glass pill and the hover are repainted away, and a borderless
+// button on `Canvas` reads as bare text. Only there: a transparent border in
+// every mode would shift each chrome button by 1px.
 //
 // THE BORDERED VARIANTS DRAW A 3:1 BOUNDARY. `outline` and `dashed` use
 // `--input`, the token held to 3:1 against the page, a card and every glass
@@ -47,7 +53,7 @@ const buttonVariants = cva(
         ghost: "hover:bg-accent hover:text-accent-foreground",
         link: "text-primary underline-offset-4 hover:underline",
         chrome:
-          "border-0 bg-transparent text-foreground hover:bg-glass-active/60 hover:text-foreground focus-visible:ring-offset-0",
+          "border-0 bg-transparent text-foreground hover:bg-glass-active/60 hover:text-foreground focus-visible:ring-offset-0 forced-colors:border forced-colors:border-[ButtonText]",
       },
       size: {
         default: "h-9 px-4 py-2",

@@ -26,4 +26,6 @@ playwright-report/
 # the remote smoke's own (playwright.smoke.config.ts)
 test-results-smoke/
 playwright-report-smoke/
+# the glass performance run's own (playwright.perf.config.ts, story 15.5)
+test-results-perf/
 blob-report/

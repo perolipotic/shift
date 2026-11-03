@@ -83,6 +83,11 @@ export class CalendarPage extends BasePage {
     return this.monthPicker.getByRole('button', { name: new RegExp(`^${escapeRegExp(heading)}(?:, |$)`) });
   }
 
+  /** The month's sticky head (`StickyHead`): glass over content on a phone. */
+  get stickyHead(): Locator {
+    return this.page.locator('[data-sticky-head]');
+  }
+
   /**
    * The phone's sticky head's one-line filter summary (deferred-work E816),
    * drawn once the filter bar has scrolled under the head. `aria-hidden`, as

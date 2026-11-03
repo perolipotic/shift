@@ -36,6 +36,29 @@ function builtCss(): string {
   return readFileSync(builtSheet(), 'utf8');
 }
 
+/** Every `@media` block whose query names `forced-colors: active` (alone or
+ *  combined with another feature), brace-balanced, with where its body lies. */
+function forcedColourBodies(css: string): { readonly from: number; readonly to: number; readonly body: string }[] {
+  const bodies: { from: number; to: number; body: string }[] = [];
+  const opener = /@media [^{]*forced-colors:\s*active[^{]*\{/g;
+
+  for (const found of css.matchAll(opener)) {
+    const from = (found.index ?? 0) + found[0].length;
+    let depth = 1;
+    let at = from;
+
+    while (depth > 0 && at < css.length) {
+      if (css[at] === '{') depth += 1;
+      if (css[at] === '}') depth -= 1;
+      at += 1;
+    }
+    if (depth !== 0) throw new Error(`an unbalanced forced-colours block at ${String(found.index)}`);
+    bodies.push({ from, to: at - 1, body: css.slice(from, at - 1) });
+  }
+
+  return bodies;
+}
+
 /**
  * Freshness, asserted before content.
  *
@@ -255,18 +278,56 @@ describe('the built stylesheet carries the glass and the tabular figures', () =>
     expect(rule?.[1]).not.toContain('backdrop-filter');
   });
 
-  it.skipIf(notBuilt)('emits every glass-panel fallback: no blur support, reduced transparency, forced colours (story 15.2)', () => {
-    const css = builtCss();
+  // Story 15.2 pinned the panel's three fallbacks; story 15.5 made the
+  // chrome's identical (the opaque card keeps a `--border` hairline, since the
+  // white glass hairline vanishes on a white card) and pins all three
+  // utilities, so no glass surface can lose its solid fallback unnoticed.
+  // `max-sm:glass-over-content` is the phone's sticky month head (`StickyHead`):
+  // the variant must carry the same fallbacks inside its breakpoint.
+  it.skipIf(notBuilt).each(['glass-chrome', 'glass-over-content', 'glass-panel', 'max-sm\\:glass-over-content'])(
+    'emits every %s fallback: no blur support, reduced transparency, forced colours',
+    (name) => {
+      const css = builtCss();
+      const hairline = 'box-shadow:inset 0 0 0 1px var\\(--border\\), ?var\\(--glass-shadow\\)';
+      // The utility's own rule inside the block, also when a minifier groups
+      // it with other selectors (`.a,.glass-chrome{…}`).
+      const block = (opener: string): string =>
+        new RegExp(`${opener}\\{[^{}]*?\\.${name.replaceAll('\\', '\\\\')}(?:,[^{}]*)?\\{([^}]*)\\}`).exec(css)?.[1] ?? '';
 
-    expect(css, 'no opaque panel without blur support').toMatch(
-      /@supports not \([^{]*backdrop-filter[^{]*\{\s*\.glass-panel\{[^}]*background-color:var\(--card\)[^}]*inset 0 0 0 1px var\(--border\)/,
-    );
-    expect(css, 'no opaque panel under reduced transparency').toMatch(
-      /@media \(prefers-reduced-transparency:\s*reduce\)\{\s*\.glass-panel\{[^}]*backdrop-filter:none[^}]*background-color:var\(--card\)|@media \(prefers-reduced-transparency:\s*reduce\)\{\s*\.glass-panel\{[^}]*background-color:var\(--card\)[^}]*backdrop-filter:none/,
-    );
-    expect(css, 'no Canvas panel with a CanvasText border under forced colours').toMatch(
-      /@media \(forced-colors:\s*active\)\{\s*\.glass-panel\{[^}]*background-color:canvas[^}]*border:1px solid canvastext/i,
-    );
+      const noBlur = block('@supports not \\([^{]*backdrop-filter[^{]*');
+      const reduced = block('@media \\(prefers-reduced-transparency:\\s*reduce\\)');
+      const forced = block('@media \\(forced-colors:\\s*active\\)');
+
+      expect(noBlur, `no opaque ${name} without blur support`).toContain('background-color:var(--card)');
+      expect(noBlur, `${name} keeps the glass hairline without blur support`).toMatch(new RegExp(hairline));
+      expect(reduced, `no opaque ${name} under reduced transparency`).toContain('background-color:var(--card)');
+      expect(reduced, `${name} keeps the glass hairline under reduced transparency`).toMatch(new RegExp(hairline));
+      expect(reduced, `${name} still blurs under reduced transparency`).toMatch(/(?:^|;)backdrop-filter:none/);
+      expect(forced.toLowerCase(), `no Canvas ${name} under forced colours`).toContain('background-color:canvas');
+      expect(forced.toLowerCase(), `no CanvasText border on ${name} under forced colours`).toContain('border:1px solid canvastext');
+      expect(forced, `${name} still blurs under forced colours`).toMatch(/(?:^|;)backdrop-filter:none/);
+    },
+  );
+
+  it.skipIf(notBuilt)('gives the chrome Button a ButtonText border under forced colours only (story 15.5)', () => {
+    // Under forced colours the glass pill and the hover are repainted away,
+    // and a borderless *Odbaci promjene* on `Canvas` would read as bare text.
+    const css = builtCss();
+    const blocks = forcedColourBodies(css);
+    const inside = blocks.map(({ body }) => body).join('\n');
+    // Cut by position, not by text, so an identical body elsewhere is kept.
+    let outside = '';
+    let at = 0;
+    for (const { from, to } of blocks) {
+      outside += css.slice(at, from);
+      at = to;
+    }
+    outside += css.slice(at);
+
+    expect(inside).toMatch(/\.forced-colors\\:border\{[^}]*border-width:1px/);
+    expect(inside.toLowerCase()).toMatch(/\.forced-colors\\:border-\\\[buttontext\\\]\{border-color:buttontext\}/);
+    // And the chrome variant's border nowhere outside forced colours.
+    expect(outside).not.toMatch(/\.forced-colors\\:border/);
   });
 
   it.skipIf(notBuilt)('draws a covered panel opaque and unblurred (story 15.2)', () => {

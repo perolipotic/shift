@@ -1035,6 +1035,49 @@ describe('every slot the ramp can return is measured in both themes (story 2.2b,
   });
 });
 
+/* The glass chrome's grounds, shared by the chrome block and the dark record
+ * (story 15.5). See the chrome block's comment for what is measured. */
+const GLASS_SURFACES = ['glass', 'glass-over-content'] as const;
+type GlassSurface = (typeof GLASS_SURFACES)[number];
+
+/** What can be under a glass surface, already composited to opaque. */
+function chromeBackdrops(theme: Theme, surface: GlassSurface): { name: string; colour: Color | Rgb }[] {
+  const page = colour(theme, 'background');
+  const under: { name: string; colour: Color | Rgb }[] = [
+    { name: 'the page', colour: page },
+    ...(['glass-blob-1', 'glass-blob-2', 'glass-blob-3'] as const).map((blob) => ({
+      name: blob,
+      colour: composite(colour(theme, blob), page),
+    })),
+  ];
+
+  if (surface === 'glass-over-content') {
+    // Every opaque fill a scrolled screen can pass under the bar: the card,
+    // every cell, the ink button, a primary fill (the pressed mode, a chosen
+    // month), the conflict red and a muted row.
+    for (const fill of ['card', ...FILLS, 'ink', 'primary', 'destructive', 'muted'] as const) {
+      under.push({ name: fill, colour: colour(theme, fill) });
+    }
+  }
+
+  return under;
+}
+
+/** The glass over each backdrop. */
+function chromeGrounds(theme: Theme, surface: GlassSurface): { name: string; colour: Rgb }[] {
+  return chromeBackdrops(theme, surface).map(({ name, colour: under }) => ({
+    name,
+    colour: composite(colour(theme, surface), under as Color),
+  }));
+}
+
+function chromeWorst(measure: (ground: Rgb) => number, theme: Theme, surface: GlassSurface): { ratio: number; on: string } {
+  return chromeGrounds(theme, surface)
+    .map(({ name, colour: ground }) => ({ ratio: measure(ground), on: name }))
+    .reduce((low, next) => (next.ratio < low.ratio ? next : low));
+}
+
+
 /**
  * THE GLASS CHROME, MEASURED AGAINST ITS WORST BACKDROP (story 15.1, direction
  * G; the proposal's rule 4).
@@ -1062,45 +1105,8 @@ describe('every slot the ramp can return is measured in both themes (story 2.2b,
  * accent is a 2 px edge on the glass.
  */
 describe('the glass chrome reads against its worst backdrop (story 15.1)', () => {
-  const GLASS_SURFACES = ['glass', 'glass-over-content'] as const;
-  type GlassSurface = (typeof GLASS_SURFACES)[number];
-
-  /** What can be under a glass surface, already composited to opaque. */
-  function backdrops(theme: Theme, surface: GlassSurface): { name: string; colour: Color | Rgb }[] {
-    const page = colour(theme, 'background');
-    const under: { name: string; colour: Color | Rgb }[] = [
-      { name: 'the page', colour: page },
-      ...(['glass-blob-1', 'glass-blob-2', 'glass-blob-3'] as const).map((blob) => ({
-        name: blob,
-        colour: composite(colour(theme, blob), page),
-      })),
-    ];
-
-    if (surface === 'glass-over-content') {
-      // Every opaque fill a scrolled screen can pass under the bar: the card,
-      // every cell, the ink button, a primary fill (the pressed mode, a chosen
-      // month), the conflict red and a muted row.
-      for (const fill of ['card', ...FILLS, 'ink', 'primary', 'destructive', 'muted'] as const) {
-        under.push({ name: fill, colour: colour(theme, fill) });
-      }
-    }
-
-    return under;
-  }
-
-  /** The glass over each backdrop. */
-  function grounds(theme: Theme, surface: GlassSurface): { name: string; colour: Rgb }[] {
-    return backdrops(theme, surface).map(({ name, colour: under }) => ({
-      name,
-      colour: composite(colour(theme, surface), under as Color),
-    }));
-  }
-
-  function worst(measure: (ground: Rgb) => number, theme: Theme, surface: GlassSurface): { ratio: number; on: string } {
-    return grounds(theme, surface)
-      .map(({ name, colour: ground }) => ({ ratio: measure(ground), on: name }))
-      .reduce((low, next) => (next.ratio < low.ratio ? next : low));
-  }
+  const backdrops = chromeBackdrops;
+  const worst = chromeWorst;
 
   const cases = THEMES.flatMap((theme) => GLASS_SURFACES.map((surface) => ({ theme, surface })));
 
@@ -1168,6 +1174,22 @@ describe('the glass chrome reads against its worst backdrop (story 15.1)', () =>
     expect(found.ratio, `${accent} on ${surface} over ${found.on} (${theme}) measured ${found.ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(
       AA_LARGE,
     );
+  });
+
+  it.each(THEMES)('a primary fill and the ink button stand off the over-content glass at 3:1 in %s (story 15.5)', (theme) => {
+    // Controls drawn ON the sticky head and the save bar: the mode switch's
+    // pressed option is a `primary` fill (`calendar-mode-switch.tsx`), and the
+    // save bar's *Spremi* is the ink button. Their labels sit on their own
+    // opaque fill (measured in the brand and ink blocks); their boundary
+    // against the glass is the fill itself, held to the 1.4.11 threshold.
+    for (const fill of ['primary', 'ink'] as const) {
+      const found = worst((ground) => ratio(colour(theme, fill), ground), theme, 'glass-over-content');
+
+      expect(
+        found.ratio,
+        `${fill} on glass-over-content over ${found.on} (${theme}) measured ${found.ratio.toFixed(2)}:1`,
+      ).toBeGreaterThanOrEqual(AA_LARGE);
+    }
   });
 
   it.each(THEMES)('every accent\'s lockup letter reads on its own opaque fill in %s', (theme) => {
@@ -1268,6 +1290,50 @@ describe('the ink action and the re-tuned primary read (story 15.1, D3)', () => 
   });
 });
 
+/* The layered panel's grounds, shared by the panel block and the dark record
+ * (story 15.5). See the panel block's comment for what is measured. */
+/** The scrim a Dialog's `::backdrop` lays over the page. */
+const panelScrim = (theme: Theme): Color => colour(theme, 'glass-scrim');
+const panelGlass = (theme: Theme): Color => colour(theme, 'glass-reading');
+
+/** Every opaque colour a panel can float over, and each under the scrim. */
+function panelBackdrops(theme: Theme): { name: string; colour: Color | Rgb }[] {
+  const page = colour(theme, 'background');
+  const under: { name: string; colour: Color | Rgb }[] = [
+    { name: 'the page', colour: page },
+    ...(['glass-blob-1', 'glass-blob-2', 'glass-blob-3'] as const).map((blob) => ({
+      name: blob,
+      colour: composite(colour(theme, blob), page),
+    })),
+    // `band-dark`: a Timeline stretch or an IconTile can sit under a
+    // popover (story 15.2 review).
+    ...(['card', ...FILLS, 'ink', 'primary', 'destructive', 'muted', 'band-dark'] as const).map((fill) => ({
+      name: fill,
+      colour: colour(theme, fill),
+    })),
+  ];
+
+  return [
+    ...under,
+    ...under.map(({ name, colour: below }) => ({
+      name: `${name} under the scrim`,
+      colour: composite(panelScrim(theme), below as Color),
+    })),
+  ];
+}
+
+/** The panel over each backdrop. */
+function panelGrounds(theme: Theme): { name: string; colour: Rgb }[] {
+  return panelBackdrops(theme).map(({ name, colour: below }) => ({ name, colour: composite(panelGlass(theme), below as Color) }));
+}
+
+function panelWorst(theme: Theme, measure: (ground: Rgb) => number): { ratio: number; on: string } {
+  return panelGrounds(theme)
+    .map(({ name, colour: ground }) => ({ ratio: measure(ground), on: name }))
+    .reduce((low, next) => (next.ratio < low.ratio ? next : low));
+}
+
+
 /**
  * THE LAYERED SURFACES, MEASURED AGAINST THEIR WORST BACKDROP (story 15.2).
  *
@@ -1297,46 +1363,10 @@ describe('the layered surfaces read against their worst backdrop (story 15.2)', 
   const root = fileURLToPath(new URL('..', import.meta.url));
   const ui = (file: string): string => readFileSync(join(root, 'apps', 'web', 'src', 'components', 'ui', file), 'utf8');
 
-  /** The scrim a Dialog's `::backdrop` lays over the page. */
-  const scrim = (theme: Theme): Color => colour(theme, 'glass-scrim');
-  const panel = (theme: Theme): Color => colour(theme, 'glass-reading');
-
-  /** Every opaque colour a panel can float over, and each under the scrim. */
-  function backdrops(theme: Theme): { name: string; colour: Color | Rgb }[] {
-    const page = colour(theme, 'background');
-    const under: { name: string; colour: Color | Rgb }[] = [
-      { name: 'the page', colour: page },
-      ...(['glass-blob-1', 'glass-blob-2', 'glass-blob-3'] as const).map((blob) => ({
-        name: blob,
-        colour: composite(colour(theme, blob), page),
-      })),
-      // `band-dark`: a Timeline stretch or an IconTile can sit under a
-      // popover (story 15.2 review).
-      ...(['card', ...FILLS, 'ink', 'primary', 'destructive', 'muted', 'band-dark'] as const).map((fill) => ({
-        name: fill,
-        colour: colour(theme, fill),
-      })),
-    ];
-
-    return [
-      ...under,
-      ...under.map(({ name, colour: below }) => ({
-        name: `${name} under the scrim`,
-        colour: composite(scrim(theme), below as Color),
-      })),
-    ];
-  }
-
-  /** The panel over each backdrop. */
-  function grounds(theme: Theme): { name: string; colour: Rgb }[] {
-    return backdrops(theme).map(({ name, colour: below }) => ({ name, colour: composite(panel(theme), below as Color) }));
-  }
-
-  function worst(theme: Theme, measure: (ground: Rgb) => number): { ratio: number; on: string } {
-    return grounds(theme)
-      .map(({ name, colour: ground }) => ({ ratio: measure(ground), on: name }))
-      .reduce((low, next) => (next.ratio < low.ratio ? next : low));
-  }
+  const scrim = panelScrim;
+  const panel = panelGlass;
+  const backdrops = panelBackdrops;
+  const worst = panelWorst;
 
   it('draws Dialog and Popover as the glass panel over a tinted scrim, read from the primitives', () => {
     const dialog = ui('dialog.tsx');
@@ -1532,5 +1562,78 @@ describe('Button chrome draws its ring straight on the glass (story 15.2)', () =
       expect(ratio(colour(theme, 'foreground'), ground)).toBeGreaterThanOrEqual(AA_BODY);
       expect(ratio(colour(theme, 'foreground'), hovered)).toBeGreaterThanOrEqual(AA_BODY);
     }
+  });
+});
+
+/**
+ * THE DARK GLASS VALUES ARE FINAL, RECORDED AT THEIR MEASURED WORST CASE
+ * (story 15.5, UX-DR53).
+ *
+ * 15.1 shipped the dark glass as proposed values. 15.5 measured every required
+ * pair against the worst backdrop the blocks above sweep and kept them: each
+ * clears its threshold, so a retune would only move margins. The ratios are
+ * pinned here, with the three thin margins the 15.2 review handed on, so the
+ * numbers DESIGN.md and UX-DR53 quote stay true and a token edit that moves
+ * one shows up as a diff, not as a silent pass.
+ *
+ * The dark scrim (.55) is a tint: the panel's grounds include every backdrop
+ * under it, so its pairs below already account for it.
+ *
+ * DISABLED AND PENDING CONTROLS ARE EXEMPT. WCAG 1.4.3 and 1.4.11 exclude
+ * inactive user-interface components, so the save bar's `opacity-50` buttons
+ * are measured and recorded here, not floored: a `chrome` label at 50 % on
+ * the over-content glass reads 3.06:1 in light and 3.30:1 in dark, worst over
+ * the ink button.
+ */
+describe('the dark glass values are final, recorded at their measured worst ratios (story 15.5)', () => {
+  const onChrome = (surface: GlassSurface, measure: (ground: Rgb) => number): number =>
+    chromeWorst(measure, 'dark', surface).ratio;
+  const pill = (ground: Rgb): Rgb => composite(colour('dark', 'glass-active'), ground as Color);
+  const on = (token: string) => (ground: Rgb): number => ratio(colour('dark', token), ground);
+
+  it('records the chrome beside content (`glass`)', () => {
+    expect(onChrome('glass', on('foreground'))).toBeCloseTo(13.64, 1);
+    expect(onChrome('glass', on('ring'))).toBeCloseTo(13.27, 1);
+    expect(onChrome('glass', (ground) => ratio(colour('dark', 'foreground'), pill(ground)))).toBeCloseTo(9.52, 1);
+  });
+
+  it('records the chrome content scrolls under (`glass-over-content`)', () => {
+    expect(onChrome('glass-over-content', on('foreground'))).toBeCloseTo(7.99, 1);
+    expect(onChrome('glass-over-content', on('ring'))).toBeCloseTo(7.78, 1);
+    expect(onChrome('glass-over-content', (ground) => ratio(colour('dark', 'foreground'), pill(ground)))).toBeCloseTo(
+      5.62,
+      1,
+    );
+    expect(onChrome('glass-over-content', on('primary'))).toBeCloseTo(3.57, 1);
+    expect(onChrome('glass-over-content', on('ink'))).toBeCloseTo(8.99, 1);
+  });
+
+  it('records the layered panel (`glass-reading`, with the scrim)', () => {
+    expect(panelWorst('dark', on('foreground')).ratio).toBeCloseTo(10.63, 1);
+    expect(panelWorst('dark', on('muted-foreground')).ratio).toBeCloseTo(5.11, 1);
+    expect(panelWorst('dark', on('primary')).ratio).toBeCloseTo(4.75, 1);
+    expect(panelWorst('dark', on('ring')).ratio).toBeCloseTo(10.34, 1);
+  });
+
+  it('records the three thin margins the 15.2 review handed on', () => {
+    // Light `muted-foreground` on the panel, dark `input` on the panel, and the
+    // light ring beside the input border on the panel. None of the values
+    // moved, so neither did the ratios.
+    expect(panelWorst('light', (ground) => ratio(colour('light', 'muted-foreground'), ground)).ratio).toBeCloseTo(4.51, 2);
+    expect(panelWorst('dark', (ground) => ratio(composite(colour('dark', 'input'), ground), ground)).ratio).toBeCloseTo(
+      3.08,
+      2,
+    );
+    expect(
+      panelWorst('light', (ground) => ratio(colour('light', 'ring'), composite(colour('light', 'input'), ground))).ratio,
+    ).toBeCloseTo(3.22, 2);
+  });
+
+  it('records the disabled label it exempts, so the comment above stays true', () => {
+    const half = (theme: Theme) => (ground: Rgb): number =>
+      ratio(composite({ ...rgb(colour(theme, 'foreground')), alpha: 0.5 }, ground as Color), ground);
+
+    expect(chromeWorst(half('light'), 'light', 'glass-over-content').ratio).toBeCloseTo(3.06, 1);
+    expect(chromeWorst(half('dark'), 'dark', 'glass-over-content').ratio).toBeCloseTo(3.3, 1);
   });
 });

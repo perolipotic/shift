@@ -1,0 +1,16 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    // `dom` for the same reason as `e2e/tsconfig.json`: Playwright's page types.
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "types": ["node"],
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    // The perf run reuses `e2e/utils/*.ts` by its `.ts` path, as the smoke does.
+    "allowImportingTsExtensions": true
+  },
+  "//": "The glass performance run's project (`playwright.perf.config.ts`, story 15.5), run by the root `typecheck` script.",
+  "include": ["**/*.ts", "../playwright.perf.config.ts"]
+}

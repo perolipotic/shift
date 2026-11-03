@@ -1172,7 +1172,7 @@
   summary: `apps/web/components.json` still names `"iconLibrary": "lucide"`, so a component added with the shadcn CLI imports `lucide-react`, which the new lint ban and the facade sweep reject; point generated components at `@/components/ui/icon` (or document the repoint) in 15.2.
   evidence: Raised by the 15.1 review (Verification Gap, Edge Case Hunter); lucide-react was removed and banned outside `components/ui/icon.tsx`.
 - source_spec: `_bmad-output/implementation-artifacts/spec-15-1-pilot-kalendar-and-the-shell-in-glass.md`
-  summary: Dark `primary` on the dark card is a known contrast gap for links and selection text on cards; 15.2 (primitives) or 15.5 (dark tuning) re-measures and re-tunes it.
+  summary: RESOLVED by 15.2, verified by 15.5 (2026-11-03) — 15.2 re-tuned dark `primary` to `#3FA0FA`, pinned in `theme-contrast` at 4.5:1 or more on the card untinted (5.90:1 as DESIGN.md records it); 15.5 re-ran that pin and it holds. Original: Dark `primary` on the dark card is a known contrast gap for links and selection text on cards; 15.2 (primitives) or 15.5 (dark tuning) re-measures and re-tunes it.
   evidence: Noted in the new `theme-contrast` glass block during 15.1; dark `primary` was left unchanged because no pair the pilot measures failed.
 
 ## Deferred from: review of spec-retro-9-item-17-leave-request-rules.md (2026-10-30)
@@ -1190,7 +1190,7 @@
 ## Deferred from: code review of spec-15-2-every-primitive-and-layered-surface-in-glass.md (2026-10-30)
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-15-2-every-primitive-and-layered-surface-in-glass.md`
-  summary: Several glass-panel pairs sit only a few hundredths above their thresholds. Story 15.5 must re-measure them whenever it tunes the dark scrim, the blobs, ink or the glass alphas:
+  summary: RESOLVED by 15.5 (2026-11-03) — 15.5 kept every glass value, so none of these moved, and `theme-contrast` now records all three at their measured ratios (4.51, 3.08, 3.22), so a future tune shows up as a diff. Original: Several glass-panel pairs sit only a few hundredths above their thresholds. Story 15.5 must re-measure them whenever it tunes the dark scrim, the blobs, ink or the glass alphas:
     - light `muted-foreground` on the panel, about 4.51–4.53:1;
     - dark `--input` on the panel, 3.08:1;
     - light ring beside the input, 3.22:1.
@@ -1199,7 +1199,7 @@
 ## Deferred from: code review of spec-15-3-member-surfaces-read-in-glass.md (2026-11-02)
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-15-3-member-surfaces-read-in-glass.md`
-  summary: Under forced colours the sign-in panel's ink tile (`bg-ink text-ink-foreground`) is overridden by the system palette; nothing pins that the tile and its icon stay perceivable on `Canvas`. 15.5 pins the glass fallbacks and should cover it.
+  summary: RESOLVED by 15.5 (2026-11-03) — the tile turns `Canvas` and its `currentColor` icon `CanvasText`, so it stays perceivable; `e2e/tests/layout/glass-fallbacks.spec.ts` pins it. Original: Under forced colours the sign-in panel's ink tile (`bg-ink text-ink-foreground`) is overridden by the system palette; nothing pins that the tile and its icon stay perceivable on `Canvas`. 15.5 pins the glass fallbacks and should cover it.
   evidence: Raised by the 15.3 review (Blind Hunter); the forced-colours spec covers the shell and sheets only.
 
 ## Deferred from: code review of spec-15-4-admin-surfaces-read-in-glass.md (2026-11-02)
@@ -1208,5 +1208,11 @@
   summary: From `sm` up, offline with unsaved changes, the sticky rotation save bar carries an extra full-width `OfflineWriteNote` row, so the bar can be taller than the `scroll-padding-bottom` (7rem since 15.4, 6rem before) and a control focused near the bottom can land under it. Size the padding for the offline row too, or measure the bar's height.
   evidence: Raised by the 15.4 review (Edge Case Hunter, Blind Hunter). Existed before 15.4: the note row was already in the bar with 6rem of padding. 15.4 added 1rem for the float and kept the margin.
 - source_spec: `_bmad-output/implementation-artifacts/spec-15-4-admin-surfaces-read-in-glass.md`
-  summary: Story 15.5 should check the rotation save bar's states on `glass-over-content`: the disabled and pending buttons (`opacity-50`), and the forced-colours fallback, where the `chrome` *Odbaci promjene* has no border on `Canvas`.
+  summary: RESOLVED by 15.5 (2026-11-03) — the disabled and pending buttons are inactive, so WCAG exempts them; measured and recorded in `theme-contrast` (a `chrome` label at 50 % reads 3.06:1 light, 3.30:1 dark). Button `chrome` draws a 1 px `ButtonText` border under forced colours only, pinned in the built sheet and in `rotation-save-bar.spec.ts`. Original: Story 15.5 should check the rotation save bar's states on `glass-over-content`: the disabled and pending buttons (`opacity-50`), and the forced-colours fallback, where the `chrome` *Odbaci promjene* has no border on `Canvas`.
   evidence: Raised by the 15.4 review (Blind Hunter). 15.5 owns the glass fallbacks and the worst-case backdrop measurements.
+
+## Deferred from: planning of spec-15-5-glass-holds-in-dark-without-blur-and-on-a-low-end-phone.md (2026-11-02)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-15-5-glass-holds-in-dark-without-blur-and-on-a-low-end-phone.md`
+  summary: OWNER the product owner. The glass performance budget, and NFR-22, are not yet measured on a real low-end Android (epic 15.5 AC "measured on a low-end Android, and the trace is linked from the PR", narrowed). 15.5 measures a proxy, `pnpm test:perf` at 6× CPU throttling on a phone viewport. A human runs Chrome remote debugging on a low-end Android over `dvd-demo`, records a Performance trace of scrolling *Kalendar* (admin, all teams) across two months, times a cold load of the month grid (NFR-22, 2 s), and links the trace from the PR and here (append `TRACE: <link>, <device>, <date>` to this entry). 15.5 is not `done` until that trace is linked or the product owner waives it.
+  evidence: An agent cannot drive a physical device. If the real trace shows a frame over 50 ms in paint or composite, glass turns solid on that class of device by the fallback token path (proposal §4.4 rule 7).
