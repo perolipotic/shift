@@ -13,6 +13,13 @@ export const PHONE_MEDIA_QUERY = '(max-width: 639px)';
 /** At or above Tailwind's `sm:` (640 px): the sidebar's width. */
 export const WIDE_QUERY = '(min-width: 640px)';
 
+/**
+ * At or above Tailwind's `lg:` (1024 px): where the filter sheet docks at the
+ * side rather than the bottom (story 15.7). Crossing it either way closes the
+ * sheet, so it never jumps from one edge to the other while open.
+ */
+export const SIDE_SHEET_QUERY = '(min-width: 1024px)';
+
 /** As much of a `MediaQueryList` as the phone store reads. */
 export interface PhoneMediaQuery {
   readonly matches: boolean;

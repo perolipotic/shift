@@ -27,6 +27,11 @@ import { cn } from "@/lib/utils"
 // rounded on top, padded clear of the safe area. Screens pass `docked` and
 // never restyle the panel.
 //
+// `docked side` IS THE FILTER SHEET (story 15.7): the same bottom sheet
+// below 1024 px, and from `lg:` a full-height panel at the right edge, rounded
+// on its inner side and padded clear of the top and bottom safe areas — classes
+// only, so the one sheet primitive is still restyled once, here.
+//
 // ONE BLURRED PANEL AT A TIME. A dialog opened over another (a change from the
 // day detail) marks every open panel beneath it `data-covered`, and
 // `glass-panel` draws a covered panel opaque and unblurred: a phone shows the
@@ -76,13 +81,27 @@ export interface DialogProps
   dismissible?: boolean
   /** The phone's bottom sheet: docked to the bottom edge, full width. */
   docked?: boolean
+  /**
+   * With `docked`: that bottom sheet below 1024 px, and from it a
+   * full-height panel at the right edge (the filter sheet, story 15.7).
+   */
+  side?: boolean
 }
+
+/** The bottom sheet's geometry. */
+const DOCKED_BOTTOM =
+  "mb-0 mt-auto w-full max-w-none rounded-b-none rounded-t-2xl pb-[env(safe-area-inset-bottom,0px)]"
+
+/** From 1024 px, the side sheet's geometry, over the bottom one. */
+const DOCKED_SIDE =
+  "lg:mr-0 lg:mt-0 lg:ml-auto lg:h-dvh lg:max-h-dvh lg:w-[26rem] lg:rounded-tr-none lg:rounded-bl-2xl lg:pt-[env(safe-area-inset-top,0px)]"
 
 function Dialog({
   open,
   onOpenChange,
   dismissible = true,
   docked = false,
+  side = false,
   className,
   children,
   ...props
@@ -153,9 +172,8 @@ function Dialog({
       }}
       className={cn(
         "glass-panel p-0 text-foreground backdrop:bg-glass-scrim",
-        docked
-          ? "mb-0 mt-auto w-full max-w-none rounded-b-none rounded-t-2xl pb-[env(safe-area-inset-bottom,0px)]"
-          : "m-auto w-[calc(100%-2rem)] max-w-lg rounded-lg",
+        docked ? DOCKED_BOTTOM : "m-auto w-[calc(100%-2rem)] max-w-lg rounded-lg",
+        docked && side && DOCKED_SIDE,
         className
       )}
       {...props}
@@ -250,7 +268,7 @@ function ConfirmDialog({
   onCancel,
   children,
   ...props
-}: Omit<DialogProps, "open" | "onOpenChange" | "dismissible" | "docked"> & {
+}: Omit<DialogProps, "open" | "onOpenChange" | "dismissible" | "docked" | "side"> & {
   busy: boolean
   onCancel: () => void
 }) {

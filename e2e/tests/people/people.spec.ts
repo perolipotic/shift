@@ -3,7 +3,7 @@ import { sortControlName } from '../../pages/sort-control.ts';
 import { leaveYearStartOf } from '../../utils/database-helper.ts';
 import { ADMIN_STATE } from '../../utils/run-fixture.ts';
 import { addDays, dayMonth, fullDate } from '../../utils/dates.ts';
-import { fill, hr, plural } from '../../utils/i18n.ts';
+import { escapeRegExp, fill, hr, plural } from '../../utils/i18n.ts';
 import { expectNoHorizontalScroll, expectNoInnerHorizontalScroll, expectTouchTargets } from '../../utils/layout.ts';
 import { uniqueMember } from '../../utils/members.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
@@ -385,24 +385,28 @@ test.describe('the member list filters by status and states it in a column', () 
     // ✕ SHOWS EVERYONE, in the URL; the inactive read `Neaktivno`.
     await peoplePage.removeStatus('active').click();
     await expect(page).toHaveURL(/[?&]status=svi\b/);
-    await expect(peoplePage.statusChip).toHaveAccessibleName(peoplePage.statusChipText('all'));
+    // `svi` is no filter: its chip goes, and focus moves to `Filtri`, no set
+    // chip coming after it (story 15.7).
+    await expect(peoplePage.statusChip).toHaveCount(0);
     await expect(peoplePage.memberRow(away)).toContainText(hr.ljudi.status.cellInactive);
-    // Focus moves on to the first chip, the one after the last being none.
-    await expect(peoplePage.levelChip).toBeFocused();
+    await expect(peoplePage.filters.filtriButton).toBeFocused();
 
     // A RELOAD SHOWS THE SAME.
     await page.reload();
     await expect(peoplePage.memberRow(away)).toContainText(hr.ljudi.status.cellInactive);
 
-    // THE PICKER NARROWS TO THE INACTIVE.
-    await peoplePage.statusChip.click();
-    await peoplePage.statusOption('inactive').click();
+    // THE PICKER NARROWS TO THE INACTIVE, in the sheet, writing the URL at once.
+    await peoplePage.filters.openSheet();
+    await peoplePage.filters.pickIn(hr.ljudi.status.heading, peoplePage.statusOption('inactive'));
     await expect(page).toHaveURL(/[?&]status=neaktivni\b/);
-    await expect(peoplePage.statusChip).toBeFocused();
+    await expect(peoplePage.statusField).toBeFocused();
+    await expect(peoplePage.statusField).toHaveAccessibleName(peoplePage.statusFieldName('inactive'));
+    await peoplePage.filters.showResults();
+    await expect(peoplePage.statusChip).toHaveAccessibleName(peoplePage.statusChipText('inactive'));
     await expect(peoplePage.memberRow(away)).toBeVisible();
     await expect(peoplePage.memberRow(fixture.member.name)).toHaveCount(0);
 
-    // THE RESET: `Poništi filtre` returns `/ljudi`, focus to the search.
+    // THE RESET: `Očisti sve` returns `/ljudi`, focus to the search.
     await peoplePage.filters.clearButton.click();
     await expect(page).toHaveURL('/ljudi');
     await expect(peoplePage.searchInput).toBeFocused();
@@ -438,7 +442,7 @@ test.describe('the member list filters by status and states it in a column', () 
     await expect(peoplePage.statusChip).toHaveAccessibleName(peoplePage.statusChipText('active'));
     await expect(peoplePage.memberRow(fixture.member.name)).toBeVisible();
     await expect(page).not.toHaveURL(/smjena=/);
-    await expect(peoplePage.filters.bar.getByRole('button', { name: hr.filter.chip.teamAll, exact: true })).toBeVisible();
+    await expect(peoplePage.filters.bar.getByRole('button', { name: new RegExp(`^${escapeRegExp(hr.filter.team)}: `) })).toHaveCount(0);
   });
 
   test('opens a searched link, and Back after a chip and typing restores the box and the rows', async ({
@@ -469,6 +473,52 @@ test.describe('the member list filters by status and states it in a column', () 
     await expect(peoplePage.memberRow(fixture.admin.name)).toHaveCount(0);
   });
 
+  test('docks the Filtri sheet at the right at 1280 px, and Escape in a picker closes the picker only', async ({
+    page,
+    peoplePage,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await peoplePage.goto();
+    await expect(peoplePage.statusChip).toBeVisible();
+    const filters = peoplePage.filters;
+
+    // Only the opener says it is expanded.
+    await peoplePage.statusChip.click();
+    await expect(filters.sheet).toBeVisible();
+    await expect(peoplePage.statusChip).toHaveAttribute('aria-expanded', 'true');
+    await expect(filters.filtriButton).toHaveAttribute('aria-expanded', 'false');
+    await expect(peoplePage.statusField).toBeFocused();
+    const box = await filters.sheet.boundingBox();
+    expect(box!.x + box!.width).toBeGreaterThanOrEqual(1280 - 1);
+    expect(box!.height).toBeGreaterThanOrEqual(800 - 1);
+
+    await peoplePage.statusField.click();
+    const picker = filters.picker(hr.ljudi.chip.statusPicker);
+    await expect(picker).toBeVisible();
+    // The "all" option stays listed whatever is typed.
+    await filters.optionSearch(hr.ljudi.status.heading).fill('neak');
+    await expect(peoplePage.statusOption('inactive')).toBeVisible();
+    await expect(peoplePage.statusOption('all')).toBeVisible();
+    await expect(peoplePage.statusOption('active')).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await expect(picker).toHaveCount(0);
+    await expect(filters.sheet).toBeVisible();
+    await expect(peoplePage.statusField).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(filters.sheet).toBeHidden();
+    await expect(filters.filtriButton).toBeFocused();
+  });
+
+  test('docks the Filtri sheet at the bottom at 390 px', async ({ page, peoplePage }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await peoplePage.goto();
+    await expect(peoplePage.statusChip).toBeVisible();
+    await peoplePage.filters.filtriButton.click();
+    const box = await peoplePage.filters.sheet.boundingBox();
+    expect(box!.y + box!.height).toBeGreaterThanOrEqual(844 - 1);
+    expect(box!.width).toBeGreaterThanOrEqual(390 - 1);
+  });
+
   test('puts the inactive chips behind Filtri at 390 px, and each row is one link with its status', async ({
     page,
     peoplePage,
@@ -479,34 +529,36 @@ test.describe('the member list filters by status and states it in a column', () 
     await peoplePage.goto();
     await expect(peoplePage.list).toBeVisible();
     await expectNoHorizontalScroll(page);
-    // ONLY THE SET CHIP IS DRAWN: Status, behind `Filtri · 1`.
-    await expect(peoplePage.filters.filtriButton).toHaveAccessibleName(fill(hr.filter.openCount, { count: '1' }));
+    // ONLY THE SET CHIP IS DRAWN: Status, counted in `Filtri`'s Badge, with no `Očisti sve`.
+    await expect(peoplePage.filters.filtriButton).toHaveAccessibleName(peoplePage.filters.filtriName(1));
     await expect(peoplePage.statusChip).toBeVisible();
-    await expect(peoplePage.levelChip).toBeHidden();
+    await expect(peoplePage.levelChip).toHaveCount(0);
+    await expect(peoplePage.filters.clearButton).toHaveCount(0);
 
     const leavingRow = peoplePage.listRow(leaving);
     await expect(leavingRow.getByRole('link')).toHaveCount(1);
     await expect(peoplePage.listLabel(leavingRow, hr.ljudi.status.heading)).toHaveCount(1);
     await expect(leavingRow).toContainText(peoplePage.scheduledStatusText(later, false));
 
-    // THE SHEET: one radio group per chip; a choice writes the URL at once.
+    // THE SHEET: one field per chip; a choice writes the URL at once.
     await peoplePage.filters.filtriButton.click();
     await expect(peoplePage.filters.sheet).toBeVisible();
-    await peoplePage.sheetStatus('all').click();
+    await peoplePage.filters.pickIn(hr.ljudi.status.heading, peoplePage.statusOption('all'));
     await expect(page).toHaveURL(/[?&]status=svi\b/);
     await peoplePage.filters.sheetShowAny.click();
     await expect(peoplePage.filters.sheet).toBeHidden();
-    await expect(peoplePage.filters.filtriButton).toHaveAccessibleName(hr.filter.open);
+    await expect(peoplePage.filters.filtriButton).toBeFocused();
+    await expect(peoplePage.filters.filtriButton).toHaveAccessibleName(peoplePage.filters.filtriName(0));
     await expect(peoplePage.listRow(away)).toContainText(hr.ljudi.status.cellInactive);
     await expectNoHorizontalScroll(page);
 
     // THE SHEET'S `Poništi` returns the defaults and leaves focus in the sheet.
     await peoplePage.filters.filtriButton.click();
-    await peoplePage.sheetStatus('all').click();
+    await peoplePage.filters.pickIn(hr.ljudi.status.heading, peoplePage.statusOption('all'));
     await expect(page).toHaveURL(/[?&]status=svi\b/);
     await peoplePage.filters.sheetReset.click();
     await expect(page).toHaveURL('/ljudi');
-    await expect(peoplePage.sheetStatus('active')).toBeChecked();
+    await expect(peoplePage.statusField).toHaveAccessibleName(peoplePage.statusFieldName('active'));
     await expect(peoplePage.filters.sheetReset).toBeFocused();
     expect(await peoplePage.filters.sheet.evaluate((sheet) => sheet.contains(document.activeElement))).toBe(true);
   });

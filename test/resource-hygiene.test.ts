@@ -1191,13 +1191,19 @@ const SANCTIONED_SCREEN_KEYS = [
   // team), `Poništi filtre`, the phone sheet's title, close, headings, note,
   // `Poništi`, and the empty table's sentences (the generic one for a filter
   // alone included), its way out and the twelve months in the locative. `Smjena` is the Team throughout.
+  // STORY 15.7: `Filtri · N` gave way to the count Badge's name, `Filtri,
+  // aktivno: N`; the active chips' `Očisti sve`, and the sheet pickers'
+  // search label and their `Nema rezultata` arrived.
   'filter.label',
   'filter.open',
-  'filter.openCount',
+  'filter.openActive',
+  'filter.clearAll',
+  'filter.optionSearch',
+  'filter.noMatch',
+  'filter.teamReplaced',
   'filter.chip.team',
   'filter.chip.teamAll',
   'filter.chip.person',
-  'filter.chip.personAll',
   'filter.remove.team',
   'filter.remove.person',
   'filter.teamPicker',

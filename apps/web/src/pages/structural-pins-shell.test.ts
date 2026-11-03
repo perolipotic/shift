@@ -744,6 +744,13 @@ describe('the chrome the layout wraps every destination in', () => {
     expect(dialog, 'the docked geometry is not the primitive’s').toContain(
       '"mb-0 mt-auto w-full max-w-none rounded-b-none rounded-t-2xl pb-[env(safe-area-inset-bottom,0px)]"',
     );
+    // STORY 15.7: `side` docks the filter sheet at the right from 1024 px,
+    // over the same bottom sheet below it, classes only and the safe areas kept.
+    expect(dialog, 'the side geometry is not the primitive’s').toContain(
+      '"lg:mr-0 lg:mt-0 lg:ml-auto lg:h-dvh lg:max-h-dvh lg:w-[26rem] lg:rounded-tr-none lg:rounded-bl-2xl lg:pt-[env(safe-area-inset-top,0px)]"',
+    );
+    expect(dialog).toContain('docked && side && DOCKED_SIDE');
+    expect(sheetDialog, 'the filter sheet does not dock at the side').toMatch(/\sside=\{side\}/);
     expect(popover).toContain('glass-panel');
     expect(css, 'the scrim blurs').not.toMatch(/::backdrop[^{]*\{[^}]*backdrop-filter/);
 

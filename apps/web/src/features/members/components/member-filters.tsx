@@ -15,6 +15,7 @@ import {
   CHIP_TEAM,
   LEVEL_FILTERS,
   MEMBERS_ERROR_ID,
+  STATUS_ALL,
   STATUS_FILTERS,
   isNarrowed,
   levelFilterMessageKey,
@@ -62,6 +63,7 @@ export function MemberFilters({ list }: { readonly list: MemberList }): ReactNod
         count: t('filter.personCount', { count: narrowed.counts[level] }),
       })),
       chosen: filters.level,
+      allId: ALL_LEVELS,
     },
     {
       key: CHIP_TEAM,
@@ -76,6 +78,7 @@ export function MemberFilters({ list }: { readonly list: MemberList }): ReactNod
         count: t('filter.personCount', { count: option.count }),
       })),
       chosen: team,
+      allId: ALL_TEAMS,
     },
     {
       key: CHIP_STATUS,
@@ -90,6 +93,7 @@ export function MemberFilters({ list }: { readonly list: MemberList }): ReactNod
         count: t('filter.personCount', { count: narrowed.statuses[status] }),
       })),
       chosen: filters.status,
+      allId: STATUS_ALL,
     },
   ];
 

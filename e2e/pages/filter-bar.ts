@@ -4,11 +4,11 @@ import { escapeRegExp, fill, hr, plural } from '../utils/i18n.ts';
 
 const filter = hr.filter;
 
-/** `Smjena: ` — what every Smjena chip's name starts with, chosen or `sve`. */
-const TEAM_CHIP = new RegExp(`^${escapeRegExp(filter.chip.teamAll.replace(/\S+$/, ''))}`);
+/** `Smjena: ` — what the Smjena chip's name starts with. */
+const TEAM_CHIP = new RegExp(`^${escapeRegExp(filter.chip.team.replace('{value}', ''))}`);
 
-/** `Osoba: ` — what every Osoba chip's name starts with. */
-const PERSON_CHIP = new RegExp(`^${escapeRegExp(filter.chip.personAll.replace(/\S+$/, ''))}`);
+/** `Osoba: ` — what the Osoba chip's name starts with. */
+const PERSON_CHIP = new RegExp(`^${escapeRegExp(filter.chip.person.replace('{value}', ''))}`);
 
 /** `Prikazano:` — what every summary starts with. */
 const SUMMARY = new RegExp(`^${escapeRegExp(filter.summary.all.split(' ')[0] ?? '')}`);
@@ -16,8 +16,10 @@ const SUMMARY = new RegExp(`^${escapeRegExp(filter.summary.all.split(' ')[0] ?? 
 /** `Sve smjene` — the Smjena picker's first option, whatever it counts. */
 const ALL_TEAMS = new RegExp(`^${escapeRegExp(filter.allTeams.replace(/ \(\{count\}\)$/, ''))}`);
 
-/** `Filtri` or `Filtri · 2`. */
-const FILTRI = new RegExp(`^${escapeRegExp(filter.open)}(?: · \\d+)?$`);
+/** `Filtri`, or `Filtri, aktivno: 2` while filters are on (story 15.7). */
+const FILTRI = new RegExp(
+  `^${escapeRegExp(filter.open)}(?:${escapeRegExp(filter.openActive.replace(/^[^,]*/, '')).replace(escapeRegExp('{count}'), '\\d+')})?$`,
+);
 
 /**
  * An ICU message with simple `{name}` placeholders and at most one plural
@@ -47,11 +49,13 @@ function anyCountOf(message: string, values: Readonly<Record<string, string>> = 
 }
 
 /**
- * THE SHARED FILTER BAR'S LOCATORS (story 7.5): the one bar *Kalendar*'s
- * *Sve smjene* and *Sati*'s organization table both render — two chips, their
- * ✕, the pickers, the summary line, `Poništi filtre`, and below 640 px
- * `Filtri` and its sheet. Locators and actions only, never an assertion
- * (`e2e/README.md`).
+ * THE SHARED FILTER BAR'S LOCATORS (stories 7.5, 15.7): the one pattern
+ * *Kalendar*'s *Sve smjene*, *Sati*'s organization table, *Ljudi* and
+ * *Godišnji*'s overview render at every width — the summary card with its
+ * `role="status"` line and `Filtri`, one removable chip per active filter,
+ * `Očisti sve`, and the *Filtri* sheet, where each filter is a field whose
+ * value is picked in a searchable picker. Locators and actions only, never
+ * an assertion (`e2e/README.md`).
  */
 export class FilterBarParts {
   private readonly page: Page;
@@ -60,37 +64,37 @@ export class FilterBarParts {
     this.page = page;
   }
 
-  /** The chips' group, named `Filtri`. */
+  /** The bar's group, named `Filtri`: the summary card, the chips and the sheet. */
   get bar(): Locator {
     return this.page.getByRole('group', { name: filter.label, exact: true });
   }
 
   /**
-   * The bar's last control drawn — the Osoba chip from 640 px, `Filtri` on a
-   * phone with no filter on: the one before the grid in tab order.
+   * The bar's last control drawn — `Očisti sve` while a filter is on, else
+   * `Filtri`: the one before the content in tab order.
    */
   get lastControl(): Locator {
     return this.bar.getByRole('button').filter({ visible: true }).last();
   }
 
-  /** The Smjena chip, whatever it reads. */
+  /** The active Smjena chip's body (drawn only while a team is chosen). */
   get teamChip(): Locator {
     return this.bar.getByRole('button', { name: TEAM_CHIP });
   }
 
-  /** The Osoba chip, whatever it reads. */
+  /** The active Osoba chip's body (drawn only while a person is chosen). */
   get personChip(): Locator {
     return this.bar.getByRole('button', { name: PERSON_CHIP });
   }
 
-  /** The Smjena chip's text for `team`, or `Smjena: sve`. */
-  teamChipText(team: string | null): string {
-    return team === null ? filter.chip.teamAll : fill(filter.chip.team, { value: team });
+  /** The Smjena chip's text for `team`. */
+  teamChipText(team: string): string {
+    return fill(filter.chip.team, { value: team });
   }
 
-  /** The Osoba chip's text for `person`, or `Osoba: sve`. */
-  personChipText(person: string | null): string {
-    return person === null ? filter.chip.personAll : fill(filter.chip.person, { value: person });
+  /** The Osoba chip's text for `person`. */
+  personChipText(person: string): string {
+    return fill(filter.chip.person, { value: person });
   }
 
   /** The Smjena chip's ✕ while `team` is chosen. */
@@ -108,19 +112,73 @@ export class FilterBarParts {
     return this.page.getByRole('status').filter({ hasText: SUMMARY });
   }
 
-  /** The summary's `Poništi filtre`, the first one on the page (the bar precedes the content). */
+  /** `Očisti sve`, after the chips. */
   get clearButton(): Locator {
-    return this.page.getByRole('button', { name: filter.clear, exact: true }).first();
+    return this.bar.getByRole('button', { name: filter.clearAll, exact: true });
+  }
+
+  /** `Filtri`, or `Filtri, aktivno: N`, in the summary card. */
+  get filtriButton(): Locator {
+    return this.bar.getByRole('button', { name: FILTRI });
+  }
+
+  /** `Filtri`'s name for `count` filters on: `Filtri` with none. */
+  filtriName(count: number): string {
+    return count === 0 ? filter.open : fill(filter.openActive, { count: String(count) });
+  }
+
+  // ---------------------------------------------------------- the sheet
+
+  /** The *Filtri* sheet. */
+  get sheet(): Locator {
+    return this.page.getByRole('dialog', { name: filter.sheetTitle, exact: true });
+  }
+
+  /** A field of the sheet, by its label (`Smjena`): named by the label and the value chosen. */
+  field(label: string): Locator {
+    return this.sheet
+      .getByRole('button', { name: new RegExp(`^${escapeRegExp(label)} `) })
+      .and(this.page.locator('[aria-haspopup="dialog"]'));
+  }
+
+  /** The Smjena field. */
+  get teamField(): Locator {
+    return this.field(filter.team);
+  }
+
+  /** The Osoba field. */
+  get personField(): Locator {
+    return this.field(filter.person);
+  }
+
+  /** A field's accessible name: its label, then the value chosen. */
+  fieldName(label: string, value: string): string {
+    return `${label} ${value}`;
+  }
+
+  /** A picker, open, by its name: `Odaberi smjenu`. */
+  picker(name: string): Locator {
+    return this.page.getByRole('dialog', { name, exact: true });
   }
 
   /** The Smjena picker, open. */
   get teamPicker(): Locator {
-    return this.page.getByRole('dialog', { name: filter.teamPicker, exact: true });
+    return this.picker(filter.teamPicker);
   }
 
   /** The Osoba picker, open. */
   get personPicker(): Locator {
-    return this.page.getByRole('dialog', { name: filter.personPicker, exact: true });
+    return this.picker(filter.personPicker);
+  }
+
+  /** A picker's search for the field labelled `label`: `Pretraži: Smjena`. */
+  optionSearch(label: string): Locator {
+    return this.page.getByRole('searchbox', { name: fill(filter.optionSearch, { label }), exact: true });
+  }
+
+  /** `Nema rezultata`, in an open picker. */
+  get noMatch(): Locator {
+    return this.page.getByText(filter.noMatch, { exact: true });
   }
 
   /** `Sve smjene (4)` in the Smjena picker. */
@@ -138,7 +196,7 @@ export class FilterBarParts {
     return this.teamPicker.getByRole('button').filter({ hasNotText: ALL_TEAMS });
   }
 
-  /** The Osoba picker's search, `Traži osobu (17)`, wherever it is drawn (picker or sheet). */
+  /** The Osoba picker's search, `Traži osobu (17)`. */
   get personSearch(): Locator {
     return this.page.getByRole('searchbox', { name: new RegExp(`^${escapeRegExp(filter.search.replace(/ \(\{count\}\)$/, ''))}`) });
   }
@@ -174,40 +232,6 @@ export class FilterBarParts {
     return this.personPicker.getByText(name, { exact: true });
   }
 
-  /** Opens the Smjena picker and chooses `team`. */
-  async chooseTeam(team: string): Promise<void> {
-    await this.teamChip.click();
-    await this.teamOption(team).click();
-  }
-
-  /** Opens the Osoba picker and chooses `person`. */
-  async choosePerson(person: string): Promise<void> {
-    await this.personChip.click();
-    await this.personOption(person).click();
-  }
-
-  // ---------------------------------------------------------- phone sheet
-
-  /** `Filtri` or `Filtri · N`, below 640 px. */
-  get filtriButton(): Locator {
-    return this.bar.getByRole('button', { name: FILTRI });
-  }
-
-  /** The phone's filter sheet. */
-  get sheet(): Locator {
-    return this.page.getByRole('dialog', { name: filter.sheetTitle, exact: true });
-  }
-
-  /** A team's radio in the sheet. */
-  sheetTeam(team: string): Locator {
-    return this.sheet.getByRole('radio', { name: new RegExp(`^${escapeRegExp(team)}\\s*\\d`) });
-  }
-
-  /** A person in the sheet's Osoba list. */
-  sheetPerson(person: string): Locator {
-    return this.sheet.getByRole('button', { name: person, exact: true });
-  }
-
   /** `Prikaži {n} osoba`, whatever it counts. */
   get sheetShowAny(): Locator {
     return this.sheet.getByRole('button', { name: anyCountOf(filter.sheetShow) });
@@ -223,8 +247,48 @@ export class FilterBarParts {
     return this.sheet.getByRole('button', { name: filter.sheetReset, exact: true });
   }
 
+  /** The sheet's close. */
+  get sheetClose(): Locator {
+    return this.sheet.getByRole('button', { name: filter.sheetClose, exact: true });
+  }
+
   /** The sheet's note that a person replaces the team (Kalendar). */
   get replaceNote(): Locator {
     return this.sheet.getByText(filter.replaceNote, { exact: true });
+  }
+
+  // ---------------------------------------------------------- actions
+
+  /** Opens the sheet through `Filtri`, unless it is open already. */
+  async openSheet(): Promise<void> {
+    if (await this.sheet.isVisible()) return;
+    await this.filtriButton.click();
+    await this.sheet.waitFor();
+  }
+
+  /** Closes the sheet through `Prikaži …`, and waits for it to go. */
+  async showResults(): Promise<void> {
+    await this.sheetShowAny.click();
+    await this.sheet.waitFor({ state: 'hidden' });
+  }
+
+  /** In the open sheet, opens the field labelled `label` and presses `option` in its picker. */
+  async pickIn(label: string, option: Locator): Promise<void> {
+    await this.field(label).click();
+    await option.click();
+  }
+
+  /** Opens the sheet, chooses `team` in the Smjena picker, and closes the sheet. */
+  async chooseTeam(team: string): Promise<void> {
+    await this.openSheet();
+    await this.pickIn(filter.team, this.teamOption(team));
+    await this.showResults();
+  }
+
+  /** Opens the sheet, chooses `person` in the Osoba picker, and closes the sheet. */
+  async choosePerson(person: string): Promise<void> {
+    await this.openSheet();
+    await this.pickIn(filter.person, this.personOption(person));
+    await this.showResults();
   }
 }

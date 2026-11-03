@@ -319,14 +319,17 @@ test.describe("the admin's overview (story 7.15)", () => {
     const oneRecord = /\{records, plural, one \{([^{}]*)\}/.exec(overview.summary)?.[1]?.replace('#', '1') ?? '';
     expect(oneRecord).not.toBe('');
     await expect(leavePage.filters.summary).toContainText(oneRecord);
-    await leavePage.stateChip.click();
-    await leavePage.stateOption('onLeave').click();
+    // Picked in the *Filtri* sheet (story 15.7), which writes the URL at once.
+    await leavePage.filters.openSheet();
+    await leavePage.filters.pickIn(overview.stateHeading, leavePage.stateOption('onLeave'));
     await expect(page).toHaveURL(/stanje=na-godisnjem/);
+    await leavePage.filters.showResults();
     await expect(leavePage.stateChip).toHaveAccessibleName(leavePage.stateChipText('onLeave'));
     await expect(leavePage.tableRow(member.name)).toBeVisible();
     await leavePage.stateChip.click();
-    await leavePage.stateOption('unrecorded').click();
+    await leavePage.filters.pickIn(overview.stateHeading, leavePage.stateOption('unrecorded'));
     await expect(page).toHaveURL(/stanje=bez-upisa/);
+    await leavePage.filters.showResults();
     await expect(leavePage.text(hr.filter.empty.filtered)).toBeVisible();
     await expect(leavePage.tableRow(member.name)).toHaveCount(0);
     // ITS WAY OUT clears the chips and the search, and focus goes to the search.

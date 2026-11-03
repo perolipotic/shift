@@ -47,6 +47,7 @@ export function LeaveOverviewFilters({ screen }: { readonly screen: LeaveOvervie
         count: t('filter.personCount', { count: option.count }),
       })),
       chosen: team,
+      allId: ALL_TEAMS,
     },
     {
       key: OVERVIEW_CHIP_STATE,
@@ -61,6 +62,7 @@ export function LeaveOverviewFilters({ screen }: { readonly screen: LeaveOvervie
         count: ready === null ? null : t('filter.personCount', { count: ready.states[state] }),
       })),
       chosen: filters.state,
+      allId: OVERVIEW_STATE_ALL,
     },
   ];
 
