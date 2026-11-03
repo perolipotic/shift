@@ -163,6 +163,10 @@ Behavioural. Visual contrast requirements are in `DESIGN.md`.
 - **Assistive technology** gets meaningful labels on every calendar cell: date, team, shift type, times, and any modifier — not a colour swatch and not a bare letter.
 - **Both themes verified**, since a member may be in either without having chosen (the default follows the device).
 - **No horizontal page scroll** at any width; wide content scrolls within its own container.
+- **Glass never costs legibility** (story 15.5, UX-DR53). Text and boundaries on glass are measured against the worst thing that can sit under it, not the page alone: the blobs, and for chrome that content scrolls under and for a dialog every opaque fill, the ink button and the scrim. Text holds 4.5:1, boundaries, icons and the focus ring 3:1, in both themes.
+- **Glass turns solid when it should.** A browser without `backdrop-filter`, and anyone who asked the OS for reduced transparency, gets opaque surfaces with a visible hairline. Under forced colours (Windows High Contrast) every glass surface is `Canvas` with a `CanvasText` border, the current destination keeps its underline, and a borderless glass button gains a `ButtonText` border so it still reads as a button.
+- **Disabled and pending controls are exempt** from the contrast floor, as WCAG allows (inactive components); their measured values are recorded in DESIGN.md glass rule 4.
+- **A low-end phone scrolls glass smoothly.** No frame spends over 50 ms in paint or composite while *Kalendar* scrolls, and the month still renders within two seconds (NFR-22); see DESIGN.md glass rule 7 for the measurement, a desktop proxy until a real low-end Android trace is taken.
 - Target is WCAG 2.1 AA without formal audit in MVP. `[ASSUMPTION — carried from SPEC.]`
 
 ## Inspiration & Anti-patterns

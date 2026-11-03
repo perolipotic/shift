@@ -623,7 +623,7 @@ development_status:
   15-2-every-primitive-and-layered-surface-in-glass: done
   15-3-member-surfaces-read-in-glass: done  # #257
   15-4-admin-surfaces-read-in-glass: done  # #258
-  15-5-glass-holds-in-dark-without-blur-and-on-a-low-end-phone: backlog
+  15-5-glass-holds-in-dark-without-blur-and-on-a-low-end-phone: review
   15-6-week-view-and-day-view: backlog   # optional, outside v1 (D6): only after a PRD edit
   15-7-every-filter-is-one-summary-bar-a-filtri-sheet-and-chips: done  # #259
   15-7b-the-month-is-a-compact-header-control: backlog  # split from 15.7 (2026-11-03, deferred-work)

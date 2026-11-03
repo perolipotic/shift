@@ -11,6 +11,17 @@ import { BasePage } from './base.page.ts';
 export class LoginPage extends BasePage {
   readonly path = '/prijava';
 
+  /** The brand panel's ink tile icon (from `lg` up). It is decorative
+   *  (`aria-hidden`), so it is found by the icon facade's stable hook. */
+  get brandTileIcon(): Locator {
+    return this.page.locator('[data-icon="calendar-blank"]');
+  }
+
+  /** The brand panel's product name (from `lg` up). */
+  get brandName(): Locator {
+    return this.page.getByText(hr.auth.brand.name, { exact: true });
+  }
+
   /** The sign-in form's h1. */
   get signInHeading(): Locator {
     return this.heading(hr.auth.heading);

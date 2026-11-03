@@ -577,7 +577,7 @@ export function AppChrome({ children }: AppChromeProps) {
         // all of it in the `shell-entry` utility (`index.css`), which *Više*
         // carries too, so the two cannot drift:
         // the active entry is a `glass-active` pill (story 15.1; white in
-        // light, a translucent white tint in dark, tuned in 15.5), and it
+        // light, a 12 % white tint in dark, measured by 15.5), and it
         // is ALSO semibold and underlined where its neighbours are neither.
         // The pill alone is not enough: a hovered neighbour takes a lighter
         // pill of the same shape, so the weight and the underline are what

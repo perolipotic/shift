@@ -337,6 +337,59 @@ test.describe('from 640 px up', () => {
   });
 });
 
+test.describe('from 640 px up, under forced colours (story 15.5)', () => {
+  test.use({ viewport: { width: 1280, height: 720 } });
+
+  test('Odbaci promjene keeps a 1 px ButtonText border, where the glass pill is repainted away', async ({
+    page,
+    fixture,
+    rotationPage,
+  }) => {
+    const rotation = await setUp(fixture.slug);
+
+    await openBuilder(rotationPage);
+    await rotationPage.addStep(rotation.steps[0]);
+    await expect(rotationPage.discardButton).toBeVisible();
+
+    const border = () =>
+      rotationPage.discardButton.evaluate((element) => {
+        const probe = document.createElement('div');
+        probe.style.cssText = 'border: 1px solid ButtonText; background-color: Canvas; forced-color-adjust: none;';
+        document.body.append(probe);
+        const keywords = getComputedStyle(probe);
+        const buttonText = keywords.borderTopColor;
+        const canvas = keywords.backgroundColor;
+        probe.remove();
+        const style = getComputedStyle(element);
+
+        return {
+          colours: [style.borderTopColor, style.borderRightColor, style.borderBottomColor, style.borderLeftColor],
+          widths: [style.borderTopWidth, style.borderRightWidth, style.borderBottomWidth, style.borderLeftWidth],
+          buttonText,
+          canvas,
+        };
+      });
+
+    // Normally borderless: the chrome variant's pill and hover carry it.
+    await page.emulateMedia({ forcedColors: 'none' });
+    expect((await border()).widths, 'the chrome button draws a border outside forced colours').toEqual([
+      '0px',
+      '0px',
+      '0px',
+      '0px',
+    ]);
+
+    await page.emulateMedia({ forcedColors: 'active' });
+    const forced = await border();
+
+    expect(forced.buttonText, 'ButtonText and Canvas resolve alike, so nothing is tested').not.toBe(forced.canvas);
+    for (const [index, colour] of forced.colours.entries()) {
+      expect(colour, `border side ${String(index)} is not ButtonText`).toBe(forced.buttonText);
+      expect(forced.widths[index], `border side ${String(index)} is not 1 px`).toBe('1px');
+    }
+  });
+});
+
 test.describe('with no version in force', () => {
   test.use({ viewport: { width: 1280, height: 720 } });
 

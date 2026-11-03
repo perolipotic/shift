@@ -4,7 +4,7 @@
 
 ## Goal
 
-Users said the app looks old-fashioned. Epic 15 moves every screen to direction G, "Staklo": floating glass chrome over a pale page with static blobs, Outfit type, Phosphor `fill` icons and ink default actions, in both themes. It changes no behaviour, data, routes or copy. A user still finds each answer in one glance, and nothing a conflict, a slot or a number says may change. 15.1 (pilot, accepted by the PO on a phone) and 15.2 (primitives and layered panels) are done, and 15.3 and 15.4 (member and admin surfaces) have merged. Still to do: 15.7, one filter pattern on every filtered surface, which the PO added after the pilot, and 15.5, the dark, fallback and low-end hardening.
+Users said the app looks old-fashioned. Epic 15 moves every screen to direction G, "Staklo": floating glass chrome over a pale page with static blobs, Outfit type, Phosphor `fill` icons and ink default actions, in both themes. It changes no behaviour, data, routes or copy. A user still finds each answer in one glance, and nothing a conflict, a slot or a number says may change. 15.1 (pilot, accepted by the PO on a phone), 15.2 (primitives and layered panels), 15.3 and 15.4 (member and admin surfaces) and 15.7 (one filter pattern on every filtered surface, which the PO added after the pilot) have merged. 15.5, the dark, fallback and low-end hardening, pins the glass rules as UX-DR53; its real low-end Android trace stays with the product owner (deferred-work). Still to do: 15.7b, the month control.
 
 ## Stories
 
