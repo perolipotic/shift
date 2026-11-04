@@ -2470,7 +2470,7 @@ Added 2026-10-30 by `sprint-change-proposal-2026-10-30-glass-redesign.md` (decis
 | 15.3 | Member surfaces read in glass: sign-in, Danas, Sati, Godišnji, Ljudi, error pages | 15.2 |
 | 15.4 | Admin surfaces read in glass: Za odluku, decisions, member page, day detail, rotation, Organizacija | 15.2 |
 | 15.5 | Glass holds in the dark theme, without blur support, and on a low-end phone | 15.3, 15.4 |
-| 15.6 | *(optional, outside v1 unless D6)* A week view on the desktop and a day view on the phone | 15.1, PRD edit |
+| ~~15.6~~ | *(moved out of Epic 15 on 2026-11-04; outside v1 unless D6)* A week view on the desktop and a day view on the phone | 15.1, PRD edit |
 | 15.7 | Every filter is one summary bar, a *Filtri* sheet and removable chips, and the month is a compact header control | 15.2 |
 
 ### Story 15.1: Pilot: *Kalendar* and the shell in glass, on real data, on a phone
@@ -2511,7 +2511,9 @@ Covers Za odluku (tabs, rows), the resolution and request decision screens (reso
 - The performance budget (§4.4) is measured on a low-end Android, and the trace is linked from the PR. NFR-22 still holds.
 - EXPERIENCE.md §Accessibility Floor and the new UX-DR53 are written.
 
-### Story 15.6 (optional): A week view on the desktop and a day view on the phone
+### Moved out (formerly Story 15.6): A week view on the desktop and a day view on the phone
+
+The product owner moved this out of Epic 15 on 2026-11-04 (epic 15 retrospective). A later epic picks it up after the PRD edit.
 
 This is new functionality: a Dan/Tjedan/Mjesec switch, a seven-column week of shift cards, and a phone day agenda with a week strip, per-team coverage (`4 od 5`) and avatars. It needs the PRD's out-of-scope line amended and a new FR, so it is not part of the redesign.
 

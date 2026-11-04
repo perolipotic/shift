@@ -618,13 +618,14 @@ development_status:
   14-3-the-change-history-exports-to-pdf: backlog
   epic-14-retrospective: optional
 
-  epic-15: in-progress
+  epic-15: done  # accepted with open items by the product owner, 2026-11-04 (retro)
   15-1-pilot-kalendar-and-the-shell-in-glass: done
   15-2-every-primitive-and-layered-surface-in-glass: done
   15-3-member-surfaces-read-in-glass: done  # #257
   15-4-admin-surfaces-read-in-glass: done  # #258
-  15-5-glass-holds-in-dark-without-blur-and-on-a-low-end-phone: review
-  15-6-week-view-and-day-view: backlog   # optional, outside v1 (D6): only after a PRD edit
+  15-5-glass-holds-in-dark-without-blur-and-on-a-low-end-phone: done  # #261; real-device trace waived by the product owner, 2026-11-04
+  # 15.6 (week view and day view) moved out of Epic 15 on 2026-11-04 by the product
+  # owner: outside v1 (D6), it needs a PRD edit and a new FR; a later epic picks it up.
   15-7-every-filter-is-one-summary-bar-a-filtri-sheet-and-chips: done  # #259
   15-7b-the-month-is-a-compact-header-control: done  # #262, split from 15.7 (2026-11-03)
   epic-15-retrospective: done
@@ -841,7 +842,7 @@ action_items:
     action: "A2: link the real low-end Android trace for 15.5 (Kalendar scroll and
       cold load on dvd-demo) or waive it, then mark 15.5 done"
     owner: "Perolipotic (product owner)"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-15-retro-2026-11-04.md"
   - id: "epic-15-retro-item-31-a3-require-the-ci-passed-check-in-the-pr"
     epic: 15
@@ -852,8 +853,9 @@ action_items:
     ref: "_bmad-output/implementation-artifacts/epic-15-retro-2026-11-04.md"
   - id: "epic-15-retro-item-32-a4-local-e2e-off-port-5173-a-supported-p"
     epic: 15
-    action: "A4: local e2e off port 5173: a supported port override with admin-auth
-      origin, or CI as the e2e gate; a stop rule for local e2e loops in bmad-build"
+    action: "A4: CI is the e2e gate when 5173 is taken (product owner, 2026-11-04);
+      drop the temporary-Vite-on-5174 e2e path from the spec template and add a stop
+      rule for local e2e loops to the bmad-build customization"
     owner: "Dev (bmad-build customization)"
     status: open
     ref: "_bmad-output/implementation-artifacts/epic-15-retro-2026-11-04.md"
