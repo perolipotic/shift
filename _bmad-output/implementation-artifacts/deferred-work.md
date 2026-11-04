@@ -1239,3 +1239,12 @@
     4. `SheetDialog` lives outside `components/ui`, and `components/filter-bar.tsx` has grown into one large file; move `SheetDialog` into `components/ui` and split the filter bar into a folder.
   evidence: Epic 15 retro §Diff-scope review R5–R8, confirmed by the parent at HEAD e247c6b.
 
+
+## Deferred from: planning of spec-11-1-the-staffing-rule-and-the-minimum-members-setting.md (2026-11-04)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-11-1-the-staffing-rule-and-the-minimum-members-setting.md`
+  summary: Story 13.5 should keep R10.1's half-day clause in `domain/staffing`: a member on a Half-day Record counts as AT WORK, not absent. In 11.1 every leave record subtracts its member from people at work, because no half-day record exists yet. Decide in story 13.5.
+  evidence: R10.1 ("A Member on a Half-day Record counts as at work") cannot be asserted before half days are representable. Epic 13.5's ACs do not mention staffing, so without this entry a half day would silently make a shift short-staffed. Any Absence Type (13.1/13.2) already counts as absent with no change, since the rule reads every leave record.
+- source_spec: `_bmad-output/implementation-artifacts/spec-11-1-the-staffing-rule-and-the-minimum-members-setting.md`
+  summary: Stories 11.2 and 11.3 should each assert "empty reports nothing" on their own surface. With *Najmanje ljudi u smjeni* empty, *Što se mijenja* shows no short-staffed block (11.2), and the calendar shows no short-staffed mark and no legend entry for it (11.3). Decide in stories 11.2 and 11.3.
+  evidence: Epic 11.1's AC "empty reports nothing" is asserted only at the domain level in 11.1 (`shortStaffedShiftsOf` returns nothing for `null`), because 11.1 has no reporting surface (spec deviation 2). Only 11.4's epic ACs restate it ("the card is not shown"); 11.2's and 11.3's do not. Raised by the 11.1 review (Epic AC Auditor).

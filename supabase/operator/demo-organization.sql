@@ -100,7 +100,7 @@ begin
   insert into organizations (
     slug, name, organization_type, timezone, locale,
     leave_year_start_month, leave_year_start_day,
-    uses_fire_ranks
+    uses_fire_ranks, minimum_members
   ) values (
     demo_slug,
     'DVD Kaštel Novi (demo)',
@@ -109,7 +109,9 @@ begin
     'hr',
     1,
     1,
-    true
+    true,
+    -- Minimum members (0048, story 11.1): the pilot's value.
+    3
   )
   returning id into demo_organization;
 

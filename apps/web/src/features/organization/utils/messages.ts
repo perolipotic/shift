@@ -8,6 +8,7 @@ import {
 } from '@/features/organization/services/logo';
 import {
   ORGANIZATION_INVALID,
+  ORGANIZATION_MINIMUM_MEMBERS_INVALID,
   ORGANIZATION_NAME_BLANK,
   ORGANIZATION_NAME_TOO_LONG,
   ORGANIZATION_REFUSED,
@@ -61,6 +62,7 @@ export function organizationMessageKey(
   | 'organization.error.name'
   | 'organization.error.nameTooLong'
   | 'organization.error.invalid'
+  | 'organization.error.minimumMembers'
   | 'organization.error.logoRefused'
   | 'organization.error.logoUnreadable'
   | 'organization.error.logoTooLarge'
@@ -71,6 +73,7 @@ export function organizationMessageKey(
   if (failure === ORGANIZATION_NAME_BLANK) return 'organization.error.name';
   if (failure === ORGANIZATION_NAME_TOO_LONG) return 'organization.error.nameTooLong';
   if (failure === ORGANIZATION_INVALID) return 'organization.error.invalid';
+  if (failure === ORGANIZATION_MINIMUM_MEMBERS_INVALID) return 'organization.error.minimumMembers';
   if (failure === LOGO_REFUSED) return 'organization.error.logoRefused';
   // A SEPARATE MESSAGE from the one above, and the separation is the whole
   // reason the read has its own code: `logoRefused` tells somebody they need an

@@ -65,8 +65,10 @@ The derivation lives in one pure package that cannot reach for data. The store e
   | Leave allowance | **Current-state** | CAP-15 — allowance minus used equals balance at all times |
   | Team position | **Versioned** (on the team-membership version) | a promotion takes effect from a date; the roster for a past date shows the position then held (added 2026-09-25, sprint change) |
   | Member fire rank | **Current-state** | descriptive only, like shift type name; nothing derived reads it (added 2026-09-25, sprint change) |
+  | Minimum members | **Current-state** | FR-70 — changing it changes the short-staffed state of past and future shifts alike, as moving an hour band re-reports band hours; `organizations.minimum_members`, nullable, empty reports nothing (added 2026-11-04, story 11.1) |
 
   A new rule kind is unclassified until it appears in this table.
+- **Amended 2026-11-04 (story 11.1).** The table gains the minimum-members row, current-state, as `0048` ships it: one nullable `smallint` on `organizations` (`>= 1`), with no history and no default (DI-8). `domain/staffing` derives short-staffed shifts from it on read (R10.1–R10.5); no table stores a count or a state (AD-1).
 
 ### AD-3 — Illegal states are made unrepresentable, not validated
 
@@ -380,6 +382,7 @@ shift/
 | CAP-18 Installable, reads offline | the static build's manifest and service worker; offline reads come from the persisted query cache in IndexedDB, never the worker, under AD-13's offline amendment (story 8.2: *Danas* and *Kalendar*; 8.2b: *Sati*, *Godišnji*, *Ljudi* and `/smjene/$id`, and the role guard answers offline from the role cached on the device — with none it fails closed at once, never pending; 8.2c: *Raspored*, the resolution page and the member page `/ljudi/$id`; 8.2d: *Organizacija*, *Satni pojasi*, *Postavke rotacije* and *Ljudi/smjene*, each with its `$id` editor — every surface now reads offline; 8.2e: no surface offers a read retry offline; 8.3a: offline, every write control on the work surfaces, the sign-in and the set-password submit — the erasure retries included — is `aria-disabled` behind one write gate (`lib/offline/use-write-gate.ts`) with a stated reason, and each write function guards on the same clock; nothing is sent, queued or checked, and *Odjava* falls back to a local sign-out that always deletes the device copy; 8.3b: the settings surfaces' writes — *Organizacija*, *Satni pojasi*, *Postavke rotacije* with the rotation builder and the override review, and *Ljudi/smjene* — behind the same gate, their `ErasureDialog`s included, so every write control in the app is gated) | AD-14, AD-13 |
 | CAP-19 Leave requests | `leave_requests`, `leave_request_decisions`, `withdraw_leave_request`, `decide_leave_request` (0040, story 9.2); the member's form, the decision screen and the merged *Za odluku* are stories 9.3–9.5 | AD-3, AD-4, AD-10, AD-11 |
 | CAP-20 Notifications | `notification_outbox`, `claim_notifications`, `settle_notification`, the `notify` cron job (0042) and the `notify` Edge Function (story 10.1: the leave decision by email; 10.2–10.4 the other events, settings and push) | AD-14, AD-17, AD-18 |
+| CAP-21 Minimum members per shift | `organizations.minimum_members` (0048, story 11.1), `domain/staffing`; the save blocks, the calendar mark and the *Danas* card are stories 11.2–11.4 | AD-1, AD-2, AD-7, AD-8 |
 
 ## Deferred
 

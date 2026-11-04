@@ -55,7 +55,7 @@ insert into organizations (
   slug, name, short_name, description, address, contact_email,
   organization_type, timezone, locale,
   leave_year_start_month, leave_year_start_day,
-  uses_fire_ranks
+  uses_fire_ranks, minimum_members
 ) values (
   'dvd-kastel-novi',
   'DVD Kaštel Novi',
@@ -70,7 +70,10 @@ insert into organizations (
   1,
   -- Member rank: the pilot organises its crews by fire rank (0014). UJ-5
   -- keeps the default and has no ranks.
-  true
+  true,
+  -- Minimum members (0048, story 11.1): the pilot's teams of four need 3
+  -- (R10.5). UJ-5 leaves it empty, so both states are seeded.
+  3
 );
 
 do $$

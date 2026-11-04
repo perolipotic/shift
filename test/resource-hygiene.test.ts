@@ -2236,6 +2236,15 @@ const SANCTIONED_SCREEN_KEYS = [
   'organization.emailNotificationsHint',
   'organization.emailNotificationsStatusOn',
   'organization.emailNotificationsStatusOff',
+  // STORY 11.1. Minimum members on *Organizacija*: the card, its `Uredi`,
+  // not set, the hint, the two saved lines and the dialog's refusal.
+  'organization.editMinimumMembers',
+  'organization.minimumMembers',
+  'organization.minimumMembersNotSet',
+  'organization.minimumMembersHint',
+  'organization.minimumMembersStatusSet',
+  'organization.minimumMembersStatusNotSet',
+  'organization.error.minimumMembers',
   // STORY 10.4. The push section of the settings screen: this device's
   // on/off, and what it says on iOS before install, without support, and
   // with the permission blocked.
@@ -2441,6 +2450,22 @@ const MEMBER_ERASURE_COLLISION_KEYS: readonly string[] = [
 ];
 
 /**
+ * Story 11.1, *Najmanje ljudi u smjeni* on *Organizacija*: the epic's own
+ * label (FR-70). `smjen` names a team's rostered shift there, as
+ * {@link QUEUE_COLLISION_KIND_KEY}'s *odsutnost u smjeni* does, and
+ * `tip… smjen…` is refused. FIVE KEYS: the card's heading (the dialog's title
+ * and the field's label too), its `Uredi`'s name, the hint and the two saved
+ * lines.
+ */
+const MINIMUM_MEMBERS_KEYS: readonly string[] = [
+  'organization.minimumMembers',
+  'organization.editMinimumMembers',
+  'organization.minimumMembersHint',
+  'organization.minimumMembersStatusSet',
+  'organization.minimumMembersStatusNotSet',
+];
+
+/**
  * The rotation builder's override review (story 3.5c): the admin amends an
  * override's SHIFT TYPE there, so it says the term — `Tip smjene` is the
  * amend's field — and, being the builder's, the TEAM too, as `smjena` (an
@@ -2502,7 +2527,8 @@ function teamTermOutOfTurn(key: string, message: string): boolean {
     key !== DEACTIVATION_CONSEQUENCE_KEY &&
     key !== PEOPLE_DESCRIPTION_KEY &&
     key !== QUEUE_COLLISION_KIND_KEY &&
-    !MEMBER_ERASURE_COLLISION_KEYS.includes(key)
+    !MEMBER_ERASURE_COLLISION_KEYS.includes(key) &&
+    !MINIMUM_MEMBERS_KEYS.includes(key)
   ) {
     return lowered.includes('smjen');
   }

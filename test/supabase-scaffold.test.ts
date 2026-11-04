@@ -911,6 +911,9 @@ describe('the access-control migration', () => {
       // logo write as a shape disjoint from the five, so a save of the identity
       // fields cannot carry it.
       'logo_path',
+      // STORY 11.1. Minimum members, a TENTH column on its own disjoint write
+      // shape: the staffing setting, nullable, current-state (0048).
+      'minimum_members',
       'name',
       'organization_type',
       'timezone',
@@ -1236,6 +1239,16 @@ describe('the access-control migration', () => {
       /add column uses_fire_ranks boolean not null default false/,
     );
     expect(statements).toMatch(/add column fire_rank text\s+check \(fire_rank in \(/);
+  });
+
+  it('gives every organization a nullable minimum-members setting with a positive check (0048)', () => {
+    // STORY 11.1. Source text only; the refusals are `test/rls-isolation.test.ts`.
+    const statements = migrationStatements();
+
+    expect(statements).toMatch(
+      /add column minimum_members smallint\s+constraint organizations_minimum_members_check check \(minimum_members >= 1\);/,
+    );
+    expect(statements).toMatch(/grant update \(minimum_members\) on table public\.organizations to authenticated/);
   });
 
   it('gives every organization an email switch that defaults on, and filters the outbox in one trigger (0044)', () => {

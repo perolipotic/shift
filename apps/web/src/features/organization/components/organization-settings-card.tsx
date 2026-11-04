@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Notice } from '@/components/ui/notice';
 import { t } from '@/lib/i18n';
 import { OrganizationEmailNotificationsCard } from '@/features/organization/components/organization-email-notifications-card';
+import { OrganizationMinimumMembersCard } from '@/features/organization/components/organization-minimum-members-card';
 import { OrganizationFireRanksCard } from '@/features/organization/components/organization-fire-ranks-card';
 import { OrganizationHourBandsCard } from '@/features/organization/components/organization-hour-bands-card';
 import { OrganizationProfileCard } from '@/features/organization/components/organization-profile-card';
@@ -83,6 +84,7 @@ export function OrganizationSettingsCard({
         <OrganizationTimeCard settings={settings} organization={organization} />
         <OrganizationFireRanksCard settings={settings} organization={organization} />
         <OrganizationEmailNotificationsCard settings={settings} organization={organization} />
+        <OrganizationMinimumMembersCard settings={settings} organization={organization} />
         <OrganizationHourBandsCard hourBands={hourBands} />
       </>
     );

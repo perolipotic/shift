@@ -30,6 +30,8 @@ export const SETTINGS_SCREEN_PARTS = {
   // STORY 10.3: the organization's email-notifications switch, on the fire
   // ranks' terms.
   emailNotifications: ['features', 'organization', 'components', 'organization-email-notifications-card.tsx'],
+  // STORY 11.1: minimum members, a fact and a number field in its own dialog.
+  minimumMembers: ['features', 'organization', 'components', 'organization-minimum-members-card.tsx'],
   // Deferred work from 7.18: the *Satni pojasi* facts card and the hook
   // holding its one read of the bands.
   hourBands: ['features', 'organization', 'components', 'organization-hour-bands-card.tsx'],
@@ -65,11 +67,15 @@ export const SETTINGS_SCREEN_EXEMPT: readonly { readonly file: string; readonly 
   },
   {
     file: 'utils/dialogs.ts',
-    why: 'the six dialog names (story 7.18; the sixth since story 10.3); identifiers that say which dialog is open, never a string the page renders',
+    why: 'the seven dialog names (story 7.18; the sixth since story 10.3, the seventh since story 11.1); identifiers that say which dialog is open, never a string the page renders',
   },
   {
     file: 'utils/email-notifications.ts',
     why: 'the email-notifications switch’s values and labels (story 10.3); a key source of its own (EMAIL_NOTIFICATIONS_KEYS)',
+  },
+  {
+    file: 'utils/minimum-members.ts',
+    why: 'the minimum-members entry rule (story 11.1), executed by minimum-members.test.ts; it renders no string',
   },
   {
     file: 'utils/leave-start.ts',

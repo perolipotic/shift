@@ -110,7 +110,7 @@ async function demoSnapshot(client: Client): Promise<string> {
           'name', name, 'short_name', short_name, 'type', organization_type,
           'timezone', timezone, 'locale', locale,
           'leave_year', array[leave_year_start_month, leave_year_start_day],
-          'uses_fire_ranks', uses_fire_ranks) from demo),
+          'uses_fire_ranks', uses_fire_ranks, 'minimum_members', minimum_members) from demo),
        'members', (select jsonb_agg(jsonb_build_object(
           'name', m.name, 'username', m.username, 'email', m.email, 'role', m.role,
           'fire_rank', m.fire_rank, 'leave', m.leave_allowance_days, 'address', u.email)
@@ -293,6 +293,7 @@ describe('the demo organization script', () => {
         leave_year_start_day: number;
         uses_fire_ranks: boolean;
         email_notifications: boolean;
+        minimum_members: number | null;
       }>('select * from organizations where slug = $1', [DEMO_SLUG]);
 
       expect(organization.length).toBe(1);
@@ -306,6 +307,8 @@ describe('the demo organization script', () => {
         uses_fire_ranks: true,
         // Story 10.3 (0044): the demo sends email, as every organization does by default.
         email_notifications: true,
+        // Story 11.1 (0048): the demo needs 3 people per working shift, the pilot's value.
+        minimum_members: 3,
       });
       const organizationId = organization[0]?.id;
 

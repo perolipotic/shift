@@ -131,6 +131,16 @@ export {
 } from './warnings.js';
 
 export {
+  SHORT_STAFFED,
+  newlyShortStaffedOf,
+  peopleAtWorkOn,
+  shortStaffedShiftsOf,
+  type ShortStaffedShift,
+  type Staffing,
+  type StaffingInput,
+} from './staffing.js';
+
+export {
   adjacentMonth,
   datesOfMonth,
   memberScheduleOfMonth,

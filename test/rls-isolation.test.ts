@@ -2255,6 +2255,9 @@ describe('organizations admits exactly one write path, and it is the settings su
         // a shape disjoint from the five fields — so a save of the identity
         // fields cannot carry a stale path over a logo uploaded seconds earlier.
         'logo_path',
+        // STORY 11.1. `0048` adds minimum members with its own column grant,
+        // written on its own disjoint shape.
+        'minimum_members',
         'name',
         'organization_type',
         'timezone',
@@ -23205,4 +23208,94 @@ describe('the decision follows every event\'s recipient rules, and the claim and
       });
     });
   });
+});
+
+// -------------------------------------------------------- minimum members
+
+/**
+ * STORY 11.1. `0048_minimum_members.sql`: `organizations.minimum_members`, a
+ * nullable `smallint` under `organizations_minimum_members_check` (>= 1), with
+ * its own column grant. The pilot seeds 3 and UJ-5 leaves it empty. The SQL
+ * cases run in rolled-back transactions; the REST case commits and restores
+ * the seeded value.
+ */
+describe('minimum members (0048)', () => {
+  const SEEDED_MINIMUM_MEMBERS: Readonly<Record<string, number | null>> = {
+    [PILOT.slug]: 3,
+    [SECOND_FIXTURE.slug]: null,
+  };
+
+  async function minimumMembersOf(client: Client, organization: string): Promise<number | null | undefined> {
+    const { rows } = await client.query<{ minimum: number | null }>(
+      'select minimum_members as minimum from organizations where id = $1',
+      [organization],
+    );
+    return rows[0]?.minimum;
+  }
+
+  it.skipIf(noDatabase).each(FIXTURES)('$slug holds its seeded value', ({ slug }) => {
+    return inRolledBackTransaction(async (client) => {
+      expect(await minimumMembersOf(client, await organizationId(client, slug))).toBe(SEEDED_MINIMUM_MEMBERS[slug]);
+    });
+  });
+
+  it.skipIf(noDatabase).each([0, -1])('refuses %i by the named check', (value) => {
+    return inRolledBackTransaction(async (client) => {
+      const own = await organizationId(client, PILOT.slug);
+      await client.query('savepoint before_refusal');
+      const failure = await client
+        .query('update organizations set minimum_members = $1 where id = $2', [value, own])
+        .then(() => null, (error: unknown) => error as { code?: string; constraint?: string });
+      expect(failure?.code).toBe('23514');
+      expect(failure?.constraint).toBe('organizations_minimum_members_check');
+      await client.query('rollback to savepoint before_refusal');
+      expect(await minimumMembersOf(client, own)).toBe(3);
+    });
+  });
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'lets the $slug admin set and clear it, and refuses the member-role session',
+    async ({ slug, admin, member }) => {
+      const client = await connect();
+      const seeded = SEEDED_MINIMUM_MEMBERS[slug] ?? null;
+      let own: string | undefined;
+      try {
+        own = await organizationId(client, slug);
+        expect(
+          await minimumMembersOf(client, own),
+          `${slug} does not hold its seeded value — a previous run did not restore it`,
+        ).toBe(seeded);
+
+        const refusedWrite = await rest(`organizations?id=eq.${own}`, {
+          token: await tokenFor(member, slug),
+          method: 'PATCH',
+          body: { minimum_members: 7 },
+        });
+        expect(refusedWrite.status, 'a refused update affects zero rows and raises nothing').toBe(204);
+        expect(await minimumMembersOf(client, own), `a ${slug} member-role session wrote it`).toBe(seeded);
+
+        const set = await rest(`organizations?id=eq.${own}`, {
+          token: await tokenFor(admin, slug),
+          method: 'PATCH',
+          body: { minimum_members: 7 },
+        });
+        expect(set.status).toBe(204);
+        expect(await minimumMembersOf(client, own)).toBe(7);
+
+        const cleared = await rest(`organizations?id=eq.${own}`, {
+          token: await tokenFor(admin, slug),
+          method: 'PATCH',
+          body: { minimum_members: null },
+        });
+        expect(cleared.status).toBe(204);
+        expect(await minimumMembersOf(client, own)).toBeNull();
+      } finally {
+        if (own !== undefined) {
+          await client.query('update organizations set minimum_members = $1 where id = $2', [seeded, own]);
+        }
+        await client.end();
+      }
+    },
+    20_000,
+  );
 });

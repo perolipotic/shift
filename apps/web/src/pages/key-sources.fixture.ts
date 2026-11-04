@@ -203,7 +203,10 @@ export const KEY_SOURCES = [
   // the dialog's group) and the hint. Its two option names and its status
   // line reach `t()` through `emailNotificationsMessageKey` and
   // `emailNotificationsStatusMessageKey`.
-  { name: 'the organization settings surface', file: SETTINGS, keys: translationKeys, strings: 65 },
+  // SEVENTY-FIVE SINCE STORY 11.1: the minimum-members card's heading and
+  // dialog title, `Uredi` and its name, the fact's label (twice: the fact and
+  // the field's label), not set, the hint, and the two saved lines.
+  { name: 'the organization settings surface', file: SETTINGS, keys: translationKeys, strings: 75 },
   {
     // EIGHT on the member list since story 1.5b, up from five, and the number is
     // still small because most of what this screen says is read off a table
@@ -1583,10 +1586,11 @@ export const KEY_SOURCES = [
     // branch this entry exists to abolish.
     //
     // TEN SINCE 0036: a name over the maximum.
+    // ELEVEN SINCE 0048 (story 11.1): minimum members that is no whole number from 1.
     name: 'the organization failure-to-message mapping',
     file: ORGANIZATION_MESSAGE_KEYS,
     keys: messageKeyUnion,
-    strings: 10,
+    strings: 11,
   },
   // SIX literal keys on the chrome — the navigation landmark's name twice (one
   // per bar), the collapse's two state-dependent names, the exit and the retry —
