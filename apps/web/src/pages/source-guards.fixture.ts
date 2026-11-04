@@ -991,7 +991,10 @@ export const SCREENS = [
   // summary card, an active chip's body and its ✕, `Očisti sve`, a sheet
   // field's value button (written once in `FilterField`), a picker option,
   // and the sheet's `Poništi` and `Prikaži` — one more than the chip bar.
-  { name: 'the Kalendar destination', file: KALENDAR, expectedFields: 6, expectedButtons: 35 },
+  // THIRTY-FOUR SINCE STORY 15.7b: the month control is ‹ month › only — its
+  // `Ovaj mjesec` off the current month is gone, and the way back is the
+  // picker footer's.
+  { name: 'the Kalendar destination', file: KALENDAR, expectedFields: 6, expectedButtons: 34 },
   // STORY 4.1b. THREE on Sati: the month navigation it shares with the
   // calendar — the previous month, `Ovaj mjesec` and the next month. The
   // figures are read, never pressed.
@@ -1018,7 +1021,9 @@ export const SCREENS = [
   // TWENTY-THREE BUTTONS SINCE DEFERRED-WORK E795: the month picker footer's `Ovaj mjesec`.
   // TWENTY-FOUR SINCE STORY 15.7: the shared filter bar's one more, counted
   // in the Kalendar set too.
-  { name: 'the Sati destination', file: SATI, expectedFields: 1, expectedButtons: 24 },
+  // TWENTY-THREE SINCE STORY 15.7b: the month control's `Ovaj mjesec` off the
+  // current month is gone, counted in the Kalendar set too.
+  { name: 'the Sati destination', file: SATI, expectedFields: 1, expectedButtons: 23 },
   // STORY 5.2c. ONE on Godišnji: the retry its unavailable alert offers. The
   // three figures are read, never pressed, and nothing here writes: a member
   // requests no leave (story 5.3 is conflicts, not requests).

@@ -10,6 +10,7 @@ import { useHours } from '@/features/hours/hooks/use-hours';
 import { useHoursExplanation } from '@/features/hours/hooks/use-hours-explanation';
 import { hoursSearchOf, legacyHoursSearchOf, type HoursSearch } from '@/features/hours/services/hours-search';
 import { HOURS_MONTH_HEADING_ID } from '@/features/hours/services/my-hours';
+import { usePhone } from '@/hooks/viewport';
 import { t } from '@/lib/i18n';
 import { appLayoutRoute } from '@/pages/_app';
 
@@ -29,7 +30,11 @@ import { appLayoutRoute } from '@/pages/_app';
  * and sort live in the URL beside the month.
  *
  * The month is chosen in the URL (`?mjesec=2026-09`), as on the calendar, and
- * moved through the month navigation the two screens share. The figures come
+ * moved through the month control the two screens share — ONE `MonthNav`,
+ * its slot chosen by `usePhone()` (story 15.7b): from 640 px at the right of
+ * the `PageHeader` row, beside the `<h1>`, and the Card opens on its content;
+ * below 640 px the `toolbar` of `HoursBody`, its sticky head. It shows
+ * exactly while `navShown`. The figures come
  * from the calendar's ONE snapshot, under its one key. A failed read is the
  * message alone; a month whose hours the domain refuses keeps its navigation,
  * the message in place of the figures (`myHoursSurfaceOf` decides which).
@@ -58,6 +63,9 @@ export function SatiScreen() {
     useHours(search, (next) => {
       void navigate({ search: next });
     });
+  // Story 15.7b: the one month control's slot — the page header from 640 px, the sticky head below.
+  const isPhone = usePhone();
+  const monthNav = navShown ? <MonthNav month={month} headingId={HOURS_MONTH_HEADING_ID} onShow={show} /> : null;
   // Story 7.14: the explanation dialog lives here, above every branch below, so it is never unmounted open.
   const explanation = useHoursExplanation(explain, {
     figuresShown: navShown && refusal === null && (view !== null || organization !== null),
@@ -76,15 +84,15 @@ export function SatiScreen() {
             <h1>{t('nav.sati')}</h1>
           </PageTitle>
         )}
+        {isPhone ? null : monthNav}
       </PageHeader>
       <OfflineNote offline={offline} />
       {navShown ? (
-        <Card className="min-w-0">
+        // From 640 px no head opens the Card (the month is in the page header), so the content takes the top inset.
+        <Card className="min-w-0 sm:pt-4">
           <HoursBody
             toolbar={
-              <div className="flex min-w-0 flex-wrap items-center gap-2 px-4 py-2 sm:gap-3 sm:py-4">
-                <MonthNav month={month} headingId={HOURS_MONTH_HEADING_ID} onShow={show} />
-              </div>
+              isPhone ? <div className="flex min-w-0 flex-wrap items-center gap-2 px-4 py-2">{monthNav}</div> : null
             }
             refusal={refusal}
             view={view}

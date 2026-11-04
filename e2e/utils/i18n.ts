@@ -38,6 +38,14 @@ export const MONTH_TRIGGER_NAME = new RegExp(
   `^${escapeRegExp(hr.kalendar.chooseMonth).replace(/\\\{\w+\\\}/g, '.+')}`,
 );
 
+/**
+ * The trigger's name on the current month (story 15.7b): the same name,
+ * followed by ", ovaj mjesec" — said, never drawn.
+ */
+export const THIS_MONTH_TRIGGER_NAME = new RegExp(
+  `${MONTH_TRIGGER_NAME.source}, ${escapeRegExp(hr.kalendar.thisMonthLabel)}$`,
+);
+
 /** The plural categories and exact selectors (`=0`, `=1`, …) ICU allows. */
 const PLURAL_SELECTOR = /^(?:=\d+|zero|one|two|few|many|other)$/;
 
