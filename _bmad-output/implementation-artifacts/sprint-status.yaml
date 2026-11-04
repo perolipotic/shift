@@ -835,7 +835,7 @@ action_items:
       bar, epic-15-context, components/README variants, EXPERIENCE.md lucide, spec
       15.5 status, two deferred entries resolved, 15.1 D8 line, 15.7b change log"
     owner: "Dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-15-retro-2026-11-04.md"
   - id: "epic-15-retro-item-30-a2-link-the-real-low-end-android-trace-f"
     epic: 15
@@ -849,7 +849,7 @@ action_items:
     action: "A3: require the CI passed check in the Protect main ruleset and get main
       green at HEAD, so a red main blocks merges"
     owner: "Perolipotic"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-15-retro-2026-11-04.md"
   - id: "epic-15-retro-item-32-a4-local-e2e-off-port-5173-a-supported-p"
     epic: 15
@@ -873,7 +873,7 @@ action_items:
       fallback e2e over the Filtri sheet, 15.7b placeholder test, SheetDialog to components/ui
       and filter-bar split"
     owner: "Dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-15-retro-2026-11-04.md"
   - id: "epic-15-retro-item-35-a7-diagnose-the-ci-infra-failures-on-mai"
     epic: 15

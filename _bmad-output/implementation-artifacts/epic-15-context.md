@@ -4,17 +4,18 @@
 
 ## Goal
 
-Users said the app looks old-fashioned. Epic 15 moves every screen to direction G, "Staklo": floating glass chrome over a pale page with static blobs, Outfit type, Phosphor `fill` icons and ink default actions, in both themes. It changes no behaviour, data, routes or copy. A user still finds each answer in one glance, and nothing a conflict, a slot or a number says may change. 15.1 (pilot, accepted by the PO on a phone), 15.2 (primitives and layered panels), 15.3 and 15.4 (member and admin surfaces) and 15.7 (one filter pattern on every filtered surface, which the PO added after the pilot) have merged. 15.5, the dark, fallback and low-end hardening, pins the glass rules as UX-DR53; its real low-end Android trace stays with the product owner (deferred-work). Still to do: 15.7b, the month control.
+Users said the app looks old-fashioned. Epic 15 moves every screen to direction G, "Staklo": floating glass chrome over a pale page with static blobs, Outfit type, Phosphor `fill` icons and ink default actions, in both themes. It changes no behaviour, data, routes or copy. A user still finds each answer in one glance, and nothing a conflict, a slot or a number says may change. The epic is done (accepted with open items by the PO, 2026-11-04 retro): 15.1 (pilot, accepted by the PO on a phone), 15.2 (primitives and layered panels), 15.3 and 15.4 (member and admin surfaces), 15.5 (dark, fallback and low-end hardening, UX-DR53; the real low-end Android trace was waived by the PO), 15.7 (one filter pattern on every filtered surface, which the PO added after the pilot) and 15.7b (the compact month control) have merged. 15.6 moved out of the epic.
 
 ## Stories
 
 - Story 15.1: Pilot: *Kalendar* and the shell in glass, on real data, on a phone (done)
 - Story 15.2: Every primitive and layered surface in glass, restyled once (done)
-- Story 15.3: Member surfaces read in glass (merged)
-- Story 15.4: Admin surfaces read in glass (merged)
-- Story 15.5: Glass holds in the dark theme, without blur support, and on a low-end phone
-- Story 15.6 (optional, outside v1): A week view on the desktop and a day view on the phone
-- Story 15.7: Every filter is one summary bar, a *Filtri* sheet and removable chips, and the month is a compact header control
+- Story 15.3: Member surfaces read in glass (done)
+- Story 15.4: Admin surfaces read in glass (done)
+- Story 15.5: Glass holds in the dark theme, without blur support, and on a low-end phone (done)
+- Story 15.7: Every filter is one summary bar, a *Filtri* sheet and removable chips (done)
+- Story 15.7b: The month is a compact header control (done, split from 15.7)
+- Moved out (formerly 15.6, outside v1): A week view on the desktop and a day view on the phone
 
 ## Requirements & Constraints
 
@@ -59,8 +60,8 @@ Users said the app looks old-fashioned. Epic 15 moves every screen to direction 
   - Each value is picked in a Popover with a searchable Command list: options carry muted tabular counts, and the chosen one is marked. Search ignores diacritics.
   - The footer has one `Poništi` and one live `Prikaži {n}`.
   - Every opening starts with an empty search. The sheet closes on `Prikaži…`, on Escape, or when the viewport crosses the breakpoint.
-- **Month control** on *Kalendar* and *Sati* — MOVED to story 15.7b (2026-11-03, the product owner's split; deferred-work): the compact header control and the removal of the `Ovaj mjesec` Badge ship there, not in 15.7. It becomes a compact header control beside the page title: 44 px ‹ and › around the month name, which opens the month picker.
-  - The `Ovaj mjesec` Badge is removed. Returning to the current month stays one action, the picker footer's `Ovaj mjesec`.
+- **Month control** on *Kalendar* and *Sati* (story 15.7b, split from 15.7 on 2026-11-03): a compact control, 44 px ‹ and › around the month name, which opens the month picker. From 640 px it sits in the page header beside the title; below 640 px it stays in the Card's sticky glass head.
+  - The `Ovaj mjesec` Badge and the off-month `Ovaj mjesec` button are removed. Returning to the current month stays one action, the picker footer's `Ovaj mjesec`.
   - Keep the picker as it is: the year ‹ ›, a 4×3 grid of months, ← → ↑ ↓ and Enter, and PgUp/PgDn within the toolbar. Below 640 px it is a bottom sheet. Focus moves to the month button at a bound.
   - The visually hidden month heading stays.
 - **Kept behaviour** from stories 7.4, 7.5 and 7.13:

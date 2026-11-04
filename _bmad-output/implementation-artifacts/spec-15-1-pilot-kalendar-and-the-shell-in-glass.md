@@ -117,6 +117,8 @@ context:
 
 - **Loop 1 (2026-10-30), review finding (Edge Case Hunter, confirmed in the SVG sources):** Phosphor `clock-fill`, `circle-dashed-fill` and `record-fill` are each a solid disc with 16/256-unit knockouts. At 12–16 px those knockouts are about 0.75–1 px, so the leave and uncovered marks (and the duty-block leg states) drew as near-identical solid dots and were no longer told apart by shape. The M-count test still passed. **Amended:** the frozen Approach, Always and AC lines now state the `bold` exception for small status marks (human decision: option 1). **Known-bad state avoided:** status marks that differ only by an invisible knockout, and a test that passes on SVG source text and not on what is drawn. **KEEP:** everything else as built, namely the tokens and glass utilities, the shell, the Kalendar changes, the docs, the fill-only facade on `@phosphor-icons/core` (not `@phosphor-icons/react`, which cost +31.3 kB gzip), and the re-tuned values (`glass-over-content` light .80, `--input` #78879D, the hour-band flag on `bg-card`).
 
+- **D8 gate (recorded 2026-11-04, epic 15 retro S6):** the product owner gave the go on a phone and merged PR #249; no PR comment recorded it at the time.
+
 ## Design Notes
 
 The shell gets a new glass set while `--sidebar*` stays navy. This keeps the pilot's blast radius to the shell and *Kalendar*. Sign-in, Timeline and the Dialog backdrop move in 15.2 and 15.3, which then retire `--sidebar*`. Primary's re-tune and the radii are global by nature, so every screen shifts slightly. That is expected, and the product owner sees it.

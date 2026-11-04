@@ -1160,7 +1160,7 @@
 ## Deferred from: planning of spec-15-1-pilot-kalendar-and-the-shell-in-glass.md (2026-10-30)
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-15-1-pilot-kalendar-and-the-shell-in-glass.md`
-  summary: *Kalendar*'s filter sheet and month-picker popover take the new tokens but no glass panel in the pilot (epic 15.1 AC "filter chips and sheet … in G", narrowed); 15.2 glasses the Dialog, Popover and docked-sheet primitives.
+  summary: RESOLVED by 15.2 (650556a) — the Dialog, Popover and docked sheet are `glass-panel`. Original: *Kalendar*'s filter sheet and month-picker popover take the new tokens but no glass panel in the pilot (epic 15.1 AC "filter chips and sheet … in G", narrowed); 15.2 glasses the Dialog, Popover and docked-sheet primitives.
   evidence: The sheet and popover are the shared Dialog/Popover primitives; glassing them in 15.1 would restyle every dialog in the app inside the pilot gate.
 - source_spec: `_bmad-output/implementation-artifacts/spec-15-1-pilot-kalendar-and-the-shell-in-glass.md`
   summary: RESOLVED by 15.3 — the sign-in panel is `glass-chrome` and the eight `--sidebar*` tokens are deleted (15.2 had moved every other consumer). `--sidebar*` keeps its navy values after 15.1 for the sign-in panel, Timeline `dark`, IconTile `dark`, the Dialog `::backdrop` and Button `sidebar`; 15.2/15.3 move those consumers to the glass/chrome set and retire `--sidebar*` (D5).
@@ -1169,7 +1169,7 @@
 ## Deferred from: code review of spec-15-1-pilot-kalendar-and-the-shell-in-glass.md (2026-10-30)
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-15-1-pilot-kalendar-and-the-shell-in-glass.md`
-  summary: `apps/web/components.json` still names `"iconLibrary": "lucide"`, so a component added with the shadcn CLI imports `lucide-react`, which the new lint ban and the facade sweep reject; point generated components at `@/components/ui/icon` (or document the repoint) in 15.2.
+  summary: RESOLVED by 15.2 (650556a) — `apps/web/components.json` names `"iconLibrary": "phosphor"`. Original: `apps/web/components.json` still names `"iconLibrary": "lucide"`, so a component added with the shadcn CLI imports `lucide-react`, which the new lint ban and the facade sweep reject; point generated components at `@/components/ui/icon` (or document the repoint) in 15.2.
   evidence: Raised by the 15.1 review (Verification Gap, Edge Case Hunter); lucide-react was removed and banned outside `components/ui/icon.tsx`.
 - source_spec: `_bmad-output/implementation-artifacts/spec-15-1-pilot-kalendar-and-the-shell-in-glass.md`
   summary: RESOLVED by 15.2, verified by 15.5 (2026-11-03) — 15.2 re-tuned dark `primary` to `#3FA0FA`, pinned in `theme-contrast` at 4.5:1 or more on the card untinted (5.90:1 as DESIGN.md records it); 15.5 re-ran that pin and it holds. Original: Dark `primary` on the dark card is a known contrast gap for links and selection text on cards; 15.2 (primitives) or 15.5 (dark tuning) re-measures and re-tunes it.
@@ -1228,3 +1228,14 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-15-7-every-filter-is-one-summary-bar-a-filtri-sheet-and-chips.md`
   summary: No executed test checks that `Filtri`, a chip's body and ✕, `Očisti sve` and the sheet's fields are disabled and carry `aria-describedby` = the refusal's id while *Ljudi* or *Godišnji* is unanswered; only source-text pins read the screens' `disabled` prop.
   evidence: Raised by the 15.7 review (Verification Gap). Since 15.7 `Filtri` is the only way into the filters at every width, so removing `disabled` from `FilterSummaryCard` would ship green. Needs an e2e that holds the list unanswered (e.g. a delayed or failed read), or a render test once render tests land.
+
+## Deferred from: epic 15 retrospective (2026-11-04, A6)
+
+- source_spec: `_bmad-output/implementation-artifacts/epic-15-retro-2026-11-04.md`
+  summary: Four test and structure gaps the epic 15 diff-scope review found (R5–R8), none a defect:
+    1. no e2e checks that *Sati*'s phone sticky head repeats the active filters once the bar has scrolled away (`hours-body.tsx`; *Kalendar*'s is covered in `layout.spec.ts`);
+    2. the 15.5 fallback e2e (`glass-fallbacks.spec.ts`) never opens the *Filtri* sheet (bottom or side) or its opaque Popover; only the built-CSS pins cover them;
+    3. no test checks 15.7b's loading placeholder in the month control's slot (`month-nav.tsx`, `month === null`); the e2e "the toolbar stands in" never asserts it;
+    4. `SheetDialog` lives outside `components/ui`, and `components/filter-bar.tsx` has grown into one large file; move `SheetDialog` into `components/ui` and split the filter bar into a folder.
+  evidence: Epic 15 retro §Diff-scope review R5–R8, confirmed by the parent at HEAD e247c6b.
+
