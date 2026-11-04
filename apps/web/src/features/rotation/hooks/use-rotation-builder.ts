@@ -79,6 +79,7 @@ import { writesOnline } from '@/lib/offline/use-write-gate';
 import { claimedOrganizationOf } from '@/lib/supabase/claims';
 import { supabaseClient } from '@/lib/supabase/client';
 import { focusLater } from '@/utils/focus-later';
+import { useDraftShortStaffed } from '@/features/rotation/hooks/use-draft-short-staffed';
 
 /**
  * The rotation builder's state, its one read and every handler (stories
@@ -282,12 +283,21 @@ export function useRotationBuilder() {
   // — a save or a cancel is refused with the existing unavailable outcome.
   const fromCache = freshness.kind === FRESHNESS_OFFLINE;
   const today = snapshot === null ? null : rotationTodayOf(snapshot, new Date());
-  const draft = snapshot === null || today === null ? null : shownDraftOf(stored, snapshot, today);
+  // MEMOIZED (story 11.2): one object per stored draft, snapshot and today, so
+  // what derives from it — the short-staffed report — follows its values.
+  const draft = useMemo(
+    () => (snapshot === null || today === null ? null : shownDraftOf(stored, snapshot, today)),
+    [stored, snapshot, today],
+  );
   // With no draft only section 1 exists: laid out as step 1, and no stepper.
   const shown = shownStepperOf(stepper, draft !== null);
 
   /** Whether the admin holds unsaved changes: their own draft for this organization (story 5.5c). */
   const unsaved = snapshot !== null && unsavedDraftOf(stored, snapshot.organizationId);
+
+  // STORY 11.2: what saving the draft would newly leave short of people, over
+  // the erasure check's own "after" — a preview from the cache, never a gate.
+  const shortStaffed = useDraftShortStaffed(unsaved, snapshot, draft, today);
 
   /** What an edit, or a discard, clears: a message describes the last save only. */
   function clearRaised(): void {
@@ -895,6 +905,7 @@ export function useRotationBuilder() {
     cycles,
     pending,
     unsaved,
+    shortStaffed,
     outcome,
     scheduled,
     cancelShown,

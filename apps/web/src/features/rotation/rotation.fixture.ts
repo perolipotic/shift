@@ -329,6 +329,9 @@ export function calendarOrganizationRow(
     versions = null as readonly Row[] | null,
     statuses = [] as readonly Row[],
     usesFireRanks = false as unknown,
+    // STORY 11.2: Minimum Members on the same row; absent by default, as a
+    // row read before 0048 would be, so it reads as not set.
+    minimumMembers = undefined as unknown,
   } = {},
 ): Row {
   const first = rows.teams[0]?.['id'];
@@ -346,6 +349,7 @@ export function calendarOrganizationRow(
     ...organizationRow(rows, timezone),
     name,
     uses_fire_ranks: usesFireRanks,
+    ...(minimumMembers === undefined ? {} : { minimum_members: minimumMembers }),
     hour_bands: rows.bands ?? [],
     members,
     team_membership_versions: versions ?? stamped,

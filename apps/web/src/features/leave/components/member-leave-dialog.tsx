@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { LeaveConflictLines } from '@/features/leave/components/leave-conflict-lines';
+import { ShortStaffedBlock } from '@/features/staffing/components/short-staffed-block';
 import { LeaveReplacementLines } from '@/features/leave/components/member-leave-records';
 import type { LeaveDialogOpening, MemberLeave } from '@/features/leave/hooks/use-member-leave';
 import type { LeaveRecord } from '@/features/leave/services/leave-list';
@@ -52,6 +53,7 @@ export function MemberLeaveDialog({ leave }: { readonly leave: MemberLeave }): R
     invalidField,
     amendGuard,
     conflicts,
+    shortStaffed,
     recordPending,
     amendPending,
     formDisabled,
@@ -145,6 +147,8 @@ export function MemberLeaveDialog({ leave }: { readonly leave: MemberLeave }): R
         <LeaveReplacementLines guard={amendGuard} />
         {/* STORY 7.12: the conflicts, beside them, neutral and never a gate. */}
         <LeaveConflictLines conflicts={conflicts} amend={target !== null} />
+        {/* STORY 11.2: the shifts the range would newly leave short of people, never a gate. */}
+        <ShortStaffedBlock report={shortStaffed} />
       </div>
     );
   }

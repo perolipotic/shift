@@ -323,6 +323,16 @@ export const FEATURE_PUBLIC = {
     'services/list', // calendar, rotation, pages
     'services/write', // pages
   ],
+  // Story 11.2: every save that can newly leave a working shift short of people
+  // says so in its *Što se mijenja* — one report (`short-staffed`) over each
+  // surface's own "after", one block that words it, and the organization's
+  // leave observed under its shared key while the minimum is set. The
+  // resolution screen's strips state people at work against the minimum.
+  staffing: [
+    'components/short-staffed-block', // calendar, conflicts, leave, members, rotation
+    'hooks/use-staffing-leave', // calendar, leave, members, rotation
+    'services/short-staffed', // calendar, conflicts, leave, members, rotation
+  ],
   // Story 6.1b: *Danas*'s retry reads the team line's key again with the rest.
   teams: [
     'services/dependents', // conflicts, hour-bands, leave, members

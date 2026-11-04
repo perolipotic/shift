@@ -5,6 +5,8 @@ import type { CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { changeContextOf, type DayDetail } from '@/features/calendar/utils/day-detail';
 import { previewMemberNameOf, type ChangePreview, type TypeFact } from '@/features/calendar/utils/change-preview';
 import { durationMessageKey } from '@/features/hour-bands/services/list';
+import { ShortStaffedBlock } from '@/features/staffing/components/short-staffed-block';
+import type { ShortStaffedReport } from '@/features/staffing/services/short-staffed';
 import { t } from '@/lib/i18n';
 import { formatList } from '@/lib/i18n/format';
 import { durationValuesOf } from '@/utils/time';
@@ -48,16 +50,20 @@ function deltaShown(deltaMinutes: number): string {
  * worded from `@/features/calendar/utils/change-preview`'s codes and
  * operands — the type from and to, who leaves and who arrives, and each
  * member's hours that move, those moving alike in one line. An `<output>`, so
- * it is announced politely as it fills; empty until a choice is made.
+ * it is announced politely as it fills; empty until a choice is made. Since
+ * story 11.2 it ends with the short-staffed block: what the choice would
+ * newly leave short of people that day, or that it cannot be checked now.
  */
 export function ChangePreviewOutput({
   id,
   preview,
   snapshot,
+  shortStaffed,
 }: {
   readonly id: string;
   readonly preview: ChangePreview | null;
   readonly snapshot: CalendarSnapshot | null;
+  readonly shortStaffed: ShortStaffedReport | null;
 }): ReactNode {
   const out = preview?.roster?.out ?? null;
   const put = preview?.roster?.in ?? null;
@@ -94,6 +100,7 @@ export function ChangePreviewOutput({
           </span>
         </>
       )}
+      <ShortStaffedBlock report={shortStaffed} />
     </output>
   );
 }

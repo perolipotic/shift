@@ -4,6 +4,14 @@ import type { CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { memberScheduleInputOf, shiftLegOn } from '@/features/calendar/utils/month';
 import { MEMBER_CHANGE_STATUS, memberChangeSnapshotOf } from '@/features/members/services/member-erasures';
 import { DEACTIVATE, type REACTIVATE } from '@/features/members/services/wire';
+import {
+  configurationReportOf,
+  horizonWindowOf,
+  minimumOfCalendar,
+  unknownReportOf,
+  type ShortStaffedReport,
+  type StaffingLeaveSource,
+} from '@/features/staffing/services/short-staffed';
 import { isIsoDate } from '@/lib/i18n/format';
 
 /**
@@ -135,4 +143,52 @@ export function shownDeactivationConsequenceOf(
   }
 
   return deactivationConsequenceOf(snapshot, memberId, day, today);
+}
+
+/**
+ * THE ONE RULE the member page's two short-staffed blocks are worked out by
+ * (story 11.2): only while a dialog's offer is open, `day` is a valid date on
+ * or after its minimum (a date the preflight would refuse states nothing) and
+ * the organization's today is known — the dialog then shows its question or
+ * its *Što se mijenja*. The status dialog and the team dialog both read it,
+ * so the 366-day report is never worked out for a dialog that does not show it.
+ */
+export function shortStaffedAskedOf(
+  offer: { readonly minimum: string } | null,
+  day: string,
+  today: string | null,
+): boolean {
+  return offer !== null && today !== null && isIsoDate(day) && day >= offer.minimum;
+}
+
+/**
+ * What the deactivation would newly leave short of people (story 11.2), on
+ * the consequence's own terms ({@link shownDeactivationConsequenceOf}): only
+ * for a DEACTIVATION offer on a valid date from its minimum, over the guard's
+ * one "after" (`memberChangeSnapshotOf`) and the organization's leave as
+ * observed, from `day` over the horizon — so each working shift ahead that the
+ * member leaves under the minimum. `null` — no block — while the setting is
+ * empty, for a reactivation, or a change the guard would refuse; unknown
+ * (logged) on a `RangeError`. Never a gate.
+ */
+export function shownDeactivationShortStaffedOf(
+  snapshot: CalendarSnapshot | null,
+  memberId: string,
+  offer: { readonly change: typeof DEACTIVATE | typeof REACTIVATE; readonly minimum: string } | null,
+  day: string,
+  today: string | null,
+  leave: StaffingLeaveSource | null,
+): ShortStaffedReport | null {
+  if (snapshot === null || minimumOfCalendar(snapshot) === null) return null;
+  if (offer === null || offer.change !== DEACTIVATE || today === null || !shortStaffedAskedOf(offer, day, today)) return null;
+
+  try {
+    const applied = memberChangeSnapshotOf(snapshot, { kind: MEMBER_CHANGE_STATUS, memberId, active: false, day }, today);
+
+    return applied.ok ? configurationReportOf(snapshot, applied.after, horizonWindowOf(day), leave) : null;
+  } catch (cause) {
+    if (!(cause instanceof RangeError)) throw cause;
+
+    return unknownReportOf(cause);
+  }
 }

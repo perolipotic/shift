@@ -2,6 +2,7 @@ import { useQuery, useQueryClient, type QueryKey } from '@tanstack/react-query';
 import { useEffect, useRef, useState, type FormEvent, type RefObject } from 'react';
 import { flushSync } from 'react-dom';
 
+import { CALENDAR_KEY } from '@/features/calendar/services/snapshot';
 import type { BrandAccentKey } from '@/features/organization/utils/accent';
 import {
   LOGO_UNAVAILABLE,
@@ -465,14 +466,19 @@ export function useOrganizationSettings() {
     // out of `FormData`.
     const entered = enteredMinimumMembers(new FormData(event.currentTarget).get(ORGANIZATION_MINIMUM_MEMBERS_FIELD));
 
-    await write(MINIMUM_MEMBERS_DIALOG, (row) =>
-      entered.ok
-        ? updateOrganization(organizationTable(), row.id, { minimumMembers: entered.value })
-        : Promise.resolve({
-            ok: false,
-            code: ORGANIZATION_MINIMUM_MEMBERS_INVALID,
-            field: ORGANIZATION_MINIMUM_MEMBERS_FIELD,
-          }),
+    // STORY 11.2: the calendar snapshot carries the minimum too (every save's
+    // short-staffed report reads it there), so a landed write re-reads it.
+    await write(
+      MINIMUM_MEMBERS_DIALOG,
+      (row) =>
+        entered.ok
+          ? updateOrganization(organizationTable(), row.id, { minimumMembers: entered.value })
+          : Promise.resolve({
+              ok: false,
+              code: ORGANIZATION_MINIMUM_MEMBERS_INVALID,
+              field: ORGANIZATION_MINIMUM_MEMBERS_FIELD,
+            }),
+      [CALENDAR_KEY],
     );
   }
 

@@ -1246,5 +1246,28 @@
   summary: Story 13.5 should keep R10.1's half-day clause in `domain/staffing`: a member on a Half-day Record counts as AT WORK, not absent. In 11.1 every leave record subtracts its member from people at work, because no half-day record exists yet. Decide in story 13.5.
   evidence: R10.1 ("A Member on a Half-day Record counts as at work") cannot be asserted before half days are representable. Epic 13.5's ACs do not mention staffing, so without this entry a half day would silently make a shift short-staffed. Any Absence Type (13.1/13.2) already counts as absent with no change, since the rule reads every leave record.
 - source_spec: `_bmad-output/implementation-artifacts/spec-11-1-the-staffing-rule-and-the-minimum-members-setting.md`
-  summary: Stories 11.2 and 11.3 should each assert "empty reports nothing" on their own surface. With *Najmanje ljudi u smjeni* empty, *Što se mijenja* shows no short-staffed block (11.2), and the calendar shows no short-staffed mark and no legend entry for it (11.3). Decide in stories 11.2 and 11.3.
+  summary: RESOLVED in part (the *Što se mijenja* half) by 11.2 (2026-11-04) — every 11.2 surface asserts it: with the setting empty its report is `null` before the organization's leave is looked at (no block, no line, no extra read), in `short-staffed.test.ts`, `surfaces.test.ts`, `leave-request-review.test.ts` and `e2e/tests/people/short-staffed.spec.ts`. Still open for story 11.3: with *Najmanje ljudi u smjeni* empty, the calendar shows no short-staffed mark and no legend entry for it. Decide in story 11.3.
   evidence: Epic 11.1's AC "empty reports nothing" is asserted only at the domain level in 11.1 (`shortStaffedShiftsOf` returns nothing for `null`), because 11.1 has no reporting surface (spec deviation 2). Only 11.4's epic ACs restate it ("the card is not shown"); 11.2's and 11.3's do not. Raised by the 11.1 review (Epic AC Auditor).
+
+## Deferred from: planning of spec-11-2-every-save-that-can-cause-it-shows-a-short-staffed-shift.md (2026-11-04)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-11-2-every-save-that-can-cause-it-shows-a-short-staffed-shift.md`
+  summary: Two saves that can newly make a working shift short-staffed do not show the short-staffed block yet. They are the override review after a rotation save (story 3.5c, which confirms or amends pending shift-type and roster overrides) and the cancel of a scheduled rotation (story 5.5g). Each already builds an erasure "after" (`override-review-erasures.ts`, `cancelledCalendarSnapshotOf`), so `shortStaffedReportOf` can diff it as 11.2's surfaces do. Needs an owner story.
+  evidence: Story 11.2's epic AC lists the leave dialog, request approval, the roster and type dialogs, conflict resolution, deactivation and rotation save. Neither of these two has a *Što se mijenja* to host the block, so 11.2 narrows to the listed surfaces plus the team move and the day-detail removals (spec Epic AC Deviations).
+
+## Deferred from: epic 11 build (2026-11-04)
+
+- source_spec: none (epic 11 build; observed on PR #268, story 11.1)
+  summary: In CI the edge runtime of `supabase functions serve` exited 135 mid-request on PR #268 (run 41848732577, first attempt). `scripts/ci/serve-admin-auth.sh` restarted it within 5 s, but the in-flight member creation was lost and `first-sign-in.spec.ts` failed until a rerun. Options: retry admin-auth calls on a gateway 503 in the e2e page objects, or upgrade the Supabase CLI (CI pins v2.116.0; v3.0.0 is out).
+  evidence: Observed by the epic 11 build on PR #268's first CI attempt; the rerun passed with no change, so the failure is the runtime's, not the code's.
+
+## Deferred from: code review of spec-11-2-every-save-that-can-cause-it-shows-a-short-staffed-shift.md (2026-11-04)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-11-2-every-save-that-can-cause-it-shows-a-short-staffed-shift.md`
+  summary: Only the leave dialog and the day-detail roster dialog have an e2e for the short-staffed block. Nothing exercises these in the browser:
+    1. the deactivation and team-move dialogs;
+    2. the request decision screen;
+    3. the rotation builder's block;
+    4. the resolution strip's `rade n od najmanje m`;
+    5. the unknown line and `i još {n}`.
+  evidence: Raised by the 11.2 review (Verification Gap). Each surface's pure model is unit-tested in `staffing/surfaces.test.ts`, but the hook-to-component wiring is not. Render tests are deferred project-wide, so a wiring regression on these surfaces would ship green.

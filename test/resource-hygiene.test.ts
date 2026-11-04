@@ -153,6 +153,10 @@ const SANCTIONED_PLURAL_KEYS = [
   // 0041: the pending leave requests a deactivation closes — `1 zahtjev`,
   // `2 zahtjeva`, `5 zahtjeva` — and that cancelling it does not reopen them.
   'ljudi.status.deactivateRequests',
+  // STORY 11.2: people at work against Minimum Members, in the short-staffed
+  // block and the resolution strip — `radi 1`, `rade 2`, `radi 5 od najmanje
+  // 6`, and `ne radi nitko` at zero, the verb agreeing.
+  'popunjenost.atWork',
   // STORY 4.1b: how many shifts the viewer works in the month and in each
   // band — `0 smjena`, `1 smjena`, `2 smjene`, `21 smjena` — and the note on
   // the ones with no times, shown only when there is one.
@@ -1057,6 +1061,8 @@ const SANCTIONED_SCREEN_KEYS = [
   'rotation.builder.previewCycles',
   'rotation.builder.save',
   'rotation.builder.saveNote',
+  // STORY 11.2: the builder's *Što se mijenja*, over the short-staffed block.
+  'rotation.builder.changes',
   // STORY 5.5c: the save bar's region label, its "Odbaci promjene", and its
   // hint with and without the rotation in force.
   'rotation.builder.saveBar.label',
@@ -2245,6 +2251,14 @@ const SANCTIONED_SCREEN_KEYS = [
   'organization.minimumMembersStatusSet',
   'organization.minimumMembersStatusNotSet',
   'organization.error.minimumMembers',
+  // STORY 11.2. The short-staffed block in every *Što se mijenja* a save that
+  // can cause one has: its heading, a row, `i još {n}`, the neutral line when
+  // it cannot be checked, and a resolution strip's words for a short shift.
+  'popunjenost.heading',
+  'popunjenost.row',
+  'popunjenost.more',
+  'popunjenost.unknown',
+  'popunjenost.short',
   // STORY 10.4. The push section of the settings screen: this device's
   // on/off, and what it says on iOS before install, without support, and
   // with the permission blocked.
@@ -2466,6 +2480,15 @@ const MINIMUM_MEMBERS_KEYS: readonly string[] = [
 ];
 
 /**
+ * Story 11.2, the short-staffed block: `smjen` names a team's rostered shift
+ * there, as {@link MINIMUM_MEMBERS_KEYS}' label does, and `tip… smjen…` is
+ * refused. TWO KEYS: the block's heading (*Premalo ljudi u smjeni*) and its
+ * neutral line when it cannot be checked (*Popunjenost smjena sada ne mogu
+ * provjeriti.*). The rest of `popunjenost.*` names no team.
+ */
+const SHORT_STAFFED_KEYS: readonly string[] = ['popunjenost.heading', 'popunjenost.unknown'];
+
+/**
  * The rotation builder's override review (story 3.5c): the admin amends an
  * override's SHIFT TYPE there, so it says the term — `Tip smjene` is the
  * amend's field — and, being the builder's, the TEAM too, as `smjena` (an
@@ -2528,7 +2551,8 @@ function teamTermOutOfTurn(key: string, message: string): boolean {
     key !== PEOPLE_DESCRIPTION_KEY &&
     key !== QUEUE_COLLISION_KIND_KEY &&
     !MEMBER_ERASURE_COLLISION_KEYS.includes(key) &&
-    !MINIMUM_MEMBERS_KEYS.includes(key)
+    !MINIMUM_MEMBERS_KEYS.includes(key) &&
+    !SHORT_STAFFED_KEYS.includes(key)
   ) {
     return lowered.includes('smjen');
   }

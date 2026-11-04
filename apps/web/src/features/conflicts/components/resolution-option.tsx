@@ -1,6 +1,6 @@
 import type { ReactNode, RefObject } from 'react';
 
-import { CircleDashedBold } from '@/components/ui/icon';
+import { CircleDashedBold, UsersThree } from '@/components/ui/icon';
 import { RadioCard } from '@/components/ui/radio-group';
 import {
   OPTION_ACCEPT_UNCOVERED,
@@ -24,6 +24,8 @@ import {
   workHoursMessageKey,
   type ResolutionView,
 } from '@/features/conflicts/services/resolution-screen';
+import { atWorkText } from '@/features/staffing/components/short-staffed-block';
+import type { CoverageAgainstMinimum } from '@/features/staffing/services/short-staffed';
 import { t } from '@/lib/i18n';
 
 /**
@@ -36,6 +38,38 @@ function StripTerm({ label, children }: { readonly label: string; readonly child
       <span className="text-xs text-muted-foreground">{label}</span>
       <span className="text-xs sm:text-sm">{children}</span>
     </span>
+  );
+}
+
+/**
+ * A card's coverage term (story 5.4b): covered of the roster — or, while
+ * Minimum Members is set (story 11.2), the people at work over the option's
+ * own after against the minimum, `rade 2 od najmanje 3`, and for a shift
+ * still short the people glyph and its words, so it never rests on colour.
+ */
+function CoverageTerm({
+  view,
+  covered,
+  staffing,
+}: {
+  readonly view: ResolutionView;
+  readonly covered: number;
+  readonly staffing: CoverageAgainstMinimum | null;
+}): ReactNode {
+  if (staffing === null) {
+    return <span className="font-semibold tabular-nums">{t(coverageMessageKey(), { covered, total: view.total })}</span>;
+  }
+
+  return (
+    <>
+      <span className="font-semibold tabular-nums">{atWorkText(staffing.atWork, staffing.minimum)}</span>
+      {staffing.short ? (
+        <span className="inline-flex min-w-0 items-center gap-1">
+          <UsersThree aria-hidden className="size-3.5 shrink-0" />
+          <span className="min-w-0 break-words">{t('popunjenost.short')}</span>
+        </span>
+      ) : null}
+    </>
   );
 }
 
@@ -61,9 +95,7 @@ export function AcceptUncoveredOption({
       aria-describedby={RESOLUTION_ACCEPT_DESCRIBED_BY}
       footer={
         <LeaveStrip view={view} id={RESOLUTION_ACCEPT_STRIP_ID}>
-          <span className="font-semibold tabular-nums">
-            {t(coverageMessageKey(), { covered: view.covered, total: view.total })}
-          </span>
+          <CoverageTerm view={view} covered={view.covered} staffing={view.staffing?.accept ?? null} />
           <span className="inline-flex min-w-0 items-center gap-1">
             <CircleDashedBold aria-hidden className="size-3.5 shrink-0" />
             <span className="min-w-0 break-words">{t('zaOdluku.resolution.uncovered')}</span>
@@ -93,13 +125,23 @@ export function ReplaceMemberOption({
   view,
   optionRef,
   replacementName,
+  replacementId,
 }: {
   readonly view: ResolutionView;
   /** The card, where Spremi pressed with nobody to pick sends focus. */
   readonly optionRef: RefObject<HTMLButtonElement | null>;
   /** The candidate picked, or `null` while nobody is. */
   readonly replacementName: string | null;
+  /** The candidate picked, by id, whose own after the coverage follows (story 11.2); `null` while nobody is. */
+  readonly replacementId: string | null;
 }): ReactNode {
+  const staffing =
+    view.staffing === null
+      ? null
+      : replacementId === null
+        ? view.staffing.replace
+        : (view.staffing.replaceBy[replacementId] ?? view.staffing.replace);
+
   return (
     <RadioCard
       ref={optionRef}
@@ -108,9 +150,7 @@ export function ReplaceMemberOption({
       aria-describedby={RESOLUTION_REPLACE_DESCRIBED_BY}
       footer={
         <LeaveStrip view={view} id={RESOLUTION_REPLACE_STRIP_ID}>
-          <span className="font-semibold tabular-nums">
-            {t(coverageMessageKey(), { covered: view.replaceCovered, total: view.total })}
-          </span>
+          <CoverageTerm view={view} covered={view.replaceCovered} staffing={staffing} />
           {replacementName === null ? null : (
             <span className="min-w-0 break-words">
               {t('zaOdluku.resolution.replacementShown', { name: replacementName })}
@@ -158,9 +198,7 @@ export function AmendLeaveOption({ view }: { readonly view: ResolutionView }): R
           balanceDays={amend.balanceDays}
           balanceChange={t('zaOdluku.resolution.balanceGained', { count: amend.gainedDays })}
         >
-          <span className="font-semibold tabular-nums">
-            {t(coverageMessageKey(), { covered: view.replaceCovered, total: view.total })}
-          </span>
+          <CoverageTerm view={view} covered={view.replaceCovered} staffing={view.staffing?.amend ?? null} />
           <span className="min-w-0 break-words">{t('zaOdluku.resolution.amendWorks', { name: view.memberName })}</span>
         </ConsequenceStrip>
       }

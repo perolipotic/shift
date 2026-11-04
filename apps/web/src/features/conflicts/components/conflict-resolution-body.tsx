@@ -194,6 +194,7 @@ function ResolutionReady({ state, view }: { readonly state: ConflictResolutionSt
             view={view}
             optionRef={replaceOption}
             replacementName={choice === OPTION_REPLACE_MEMBER ? (replacement?.name ?? null) : null}
+            replacementId={choice === OPTION_REPLACE_MEMBER ? pickedId : null}
           />
           <AmendLeaveOption view={view} />
         </RadioGroup>

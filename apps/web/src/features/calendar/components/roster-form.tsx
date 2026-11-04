@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { Select } from '@/components/ui/select';
 import { ChangeContextDescription, ChangePreviewOutput } from '@/features/calendar/components/change-preview-output';
+import { ShortStaffedBlock } from '@/features/staffing/components/short-staffed-block';
 import type { RosterFormState } from '@/features/calendar/hooks/use-roster-form';
 import { ROSTER_CHANGE_REMOVAL, ROSTER_CHANGE_SAVE } from '@/features/calendar/services/roster-erasures';
 import { rosterDoneMessageKey, rosterWriteMessageKey } from '@/features/calendar/services/roster-write';
@@ -115,6 +116,7 @@ export function RosterSetForm({
     chooseIn,
     chooseOut,
     preview,
+    shortStaffed,
     saveButton,
     unchecked,
     clearUnchecked,
@@ -246,7 +248,7 @@ export function RosterSetForm({
           className="h-11 w-full"
         />
       </div>
-      <ChangePreviewOutput id={ROSTER_PREVIEW_ID} preview={preview} snapshot={snapshot} />
+      <ChangePreviewOutput id={ROSTER_PREVIEW_ID} preview={preview} snapshot={snapshot} shortStaffed={shortStaffed} />
       {failure === null ? null : (
         <Notice id={ROSTER_SET_ERROR_ID} role="alert">
           {t(rosterWriteMessageKey(failure))}
@@ -470,7 +472,8 @@ export function RosterRemoveConfirm({
   /** The override form's write is in flight. */
   readonly busy: boolean;
 }): ReactNode {
-  const { target, pending, removeFailure, removeCancel, removeConfirm, cancelRemove, removeChange } = form;
+  const { target, pending, removeFailure, removeCancel, removeConfirm, cancelRemove, removeChange, removeShortStaffed } =
+    form;
   const gate = useWriteGate();
 
   if (target === null) return null;
@@ -484,6 +487,10 @@ export function RosterRemoveConfirm({
           date: target.date,
         })}
       </p>
+      {/* STORY 11.2: what the removal would newly leave short of people, politely, never a gate. */}
+      <output className="grid min-w-0 gap-1 text-sm empty:hidden">
+        <ShortStaffedBlock report={removeShortStaffed} />
+      </output>
       {removeFailure === null ? null : (
         <Notice id={ROSTER_REMOVE_ERROR_ID} role="alert">
           {t(rosterWriteMessageKey(removeFailure))}

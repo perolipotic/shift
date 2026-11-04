@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { Select } from '@/components/ui/select';
 import { ChangeContextDescription, ChangePreviewOutput } from '@/features/calendar/components/change-preview-output';
+import { ShortStaffedBlock } from '@/features/staffing/components/short-staffed-block';
 import type { OverrideFormState } from '@/features/calendar/hooks/use-override-form';
 import {
   OVERRIDE_REMOVED,
@@ -69,6 +70,7 @@ export function OverrideSetForm({
     clearUnchecked,
     chooseType,
     preview,
+    shortStaffed,
     closeChange,
   } = form;
   const reasonRefused = failure === OVERRIDE_REFUSED_REASON;
@@ -140,7 +142,7 @@ export function OverrideSetForm({
           className="h-11 w-full"
         />
       </div>
-      <ChangePreviewOutput id={OVERRIDE_PREVIEW_ID} preview={preview} snapshot={snapshot} />
+      <ChangePreviewOutput id={OVERRIDE_PREVIEW_ID} preview={preview} snapshot={snapshot} shortStaffed={shortStaffed} />
       {failure === null ? null : (
         <Notice id={OVERRIDE_SET_ERROR_ID} role="alert">
           {t(overrideWriteMessageKey(failure))}
@@ -374,7 +376,7 @@ export function OverrideRemoveConfirm({
   /** The roster form's write is in flight (story 3.6b). */
   readonly busy: boolean;
 }): ReactNode {
-  const { confirming, pending, removeFailure, removeCancel, removeConfirm, cancelRemove, remove } = form;
+  const { confirming, pending, removeFailure, removeCancel, removeConfirm, cancelRemove, remove, removeShortStaffed } = form;
   const override = overrideRemovalTargetOf(detail);
   const gate = useWriteGate();
 
@@ -391,6 +393,10 @@ export function OverrideRemoveConfirm({
               type: override.projectedTypeName,
             })}
       </p>
+      {/* STORY 11.2: what the removal would newly leave short of people, politely, never a gate. */}
+      <output className="grid min-w-0 gap-1 text-sm empty:hidden">
+        <ShortStaffedBlock report={removeShortStaffed} />
+      </output>
       {removeFailure === null ? null : (
         <Notice id={OVERRIDE_REMOVE_ERROR_ID} role="alert">
           {t(overrideWriteMessageKey(removeFailure))}

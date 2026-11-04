@@ -27,7 +27,11 @@ import {
   type RosterSaveChange,
 } from '@/features/calendar/services/roster-erasures';
 import { CALENDAR_KEY, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
-import { rosterPreviewOf } from '@/features/calendar/utils/change-preview';
+import {
+  rosterPreviewOf,
+  rosterRemovalShortStaffedOf,
+  rosterShortStaffedOf,
+} from '@/features/calendar/utils/change-preview';
 import {
   ROSTER_NOBODY,
   ROSTER_REFUSED_REASON,
@@ -38,6 +42,7 @@ import {
   type DayDetail,
 } from '@/features/calendar/utils/day-detail';
 import { DAY_DETAIL_HEADING_ID } from '@/features/calendar/utils/element-ids';
+import { useStaffingLeave } from '@/features/staffing/hooks/use-staffing-leave';
 import type { CandidateLeave } from '@/features/calendar/utils/replacement-candidates';
 import { useErasureConfirmation } from '@/features/conflicts/hooks/use-erasure-confirmation';
 import { useErasureReads } from '@/features/conflicts/hooks/use-erasure-reads';
@@ -260,8 +265,25 @@ export function useRosterForm(
     setChosenOut(id);
   }, []);
 
+  // STORY 11.2: what the choice, or the confirmed removal, would newly leave
+  // short of people on the date — the erasure check's own "after", over the
+  // organization's leave the calendar already observes. Never a gate.
+  const staffingLeave = useStaffingLeave(snapshot);
+  const shortStaffed = useMemo(
+    () => rosterShortStaffedOf(snapshot, detail, chosenOut, chosenIn, staffingLeave),
+    [snapshot, detail, chosenOut, chosenIn, staffingLeave],
+  );
+
   const target = rosterRemovalTargetOf(detail, confirming);
   const lost = confirming !== null && target === null && !pending;
+  // KEYED ON STABLE FIELDS: `target` is a new object on every render, so the
+  // memo follows the day's date and the confirmed change's id (which names its team).
+  const removeId = target?.change.id ?? null;
+  const removeDate = detail?.isoDate ?? null;
+  const removeShortStaffed = useMemo(
+    () => rosterRemovalShortStaffedOf(snapshot, removeDate, removeId, staffingLeave),
+    [snapshot, removeDate, removeId, staffingLeave],
+  );
   const overlap = useMemo(() => rosterOverlapShownOf(snapshot, detail, chosenIn), [snapshot, detail, chosenIn]);
   const chooseIn = useCallback((id: string): void => {
     setChosenIn(id);
@@ -760,6 +782,8 @@ export function useRosterForm(
     closeChange,
     chooseOut,
     preview,
+    shortStaffed,
+    removeShortStaffed,
     offersRemove: offers.remove,
     saveRoster,
     openRemove,
