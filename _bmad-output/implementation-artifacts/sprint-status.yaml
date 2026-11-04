@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 11-04-2026 09:48
+last_updated: 11-04-2026 10:05
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -627,7 +627,7 @@ development_status:
   15-6-week-view-and-day-view: backlog   # optional, outside v1 (D6): only after a PRD edit
   15-7-every-filter-is-one-summary-bar-a-filtri-sheet-and-chips: done  # #259
   15-7b-the-month-is-a-compact-header-control: done  # #262, split from 15.7 (2026-11-03)
-  epic-15-retrospective: optional
+  epic-15-retrospective: done
 action_items:
   - id: "epic-4-retro-item-1-fix-c1-a-sati-name-for-a-member-no-longe"
     epic: 4
@@ -828,3 +828,55 @@ action_items:
     owner: "Dev"
     status: done
     ref: "_bmad-output/implementation-artifacts/epic-10-retro-2026-10-30.md"
+  - id: "epic-15-retro-item-29-a1-docs-and-spec-reconciliation-epics-md"
+    epic: 15
+    action: "A1: docs and spec reconciliation: epics.md 15.7b story and opaque summary
+      bar, epic-15-context, components/README variants, EXPERIENCE.md lucide, spec
+      15.5 status, two deferred entries resolved, 15.1 D8 line, 15.7b change log"
+    owner: "Dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-15-retro-2026-11-04.md"
+  - id: "epic-15-retro-item-30-a2-link-the-real-low-end-android-trace-f"
+    epic: 15
+    action: "A2: link the real low-end Android trace for 15.5 (Kalendar scroll and
+      cold load on dvd-demo) or waive it, then mark 15.5 done"
+    owner: "Perolipotic (product owner)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-15-retro-2026-11-04.md"
+  - id: "epic-15-retro-item-31-a3-require-the-ci-passed-check-in-the-pr"
+    epic: 15
+    action: "A3: require the CI passed check in the Protect main ruleset and get main
+      green at HEAD, so a red main blocks merges"
+    owner: "Perolipotic"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-15-retro-2026-11-04.md"
+  - id: "epic-15-retro-item-32-a4-local-e2e-off-port-5173-a-supported-p"
+    epic: 15
+    action: "A4: local e2e off port 5173: a supported port override with admin-auth
+      origin, or CI as the e2e gate; a stop rule for local e2e loops in bmad-build"
+    owner: "Dev (bmad-build customization)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-15-retro-2026-11-04.md"
+  - id: "epic-15-retro-item-33-a5-process-stories-touching-the-hot-file"
+    epic: 15
+    action: "A5: process: stories touching the hot files (index.css, components/ui,
+      chrome.tsx, theme-contrast, structural pins) never run in parallel from one
+      baseline"
+    owner: "Perolipotic (sprint planning)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-15-retro-2026-11-04.md"
+  - id: "epic-15-retro-item-34-a6-one-deferred-work-entry-for-r5-r8-sat"
+    epic: 15
+    action: "A6: one deferred-work entry for R5-R8: Sati sticky-head summary e2e,
+      fallback e2e over the Filtri sheet, 15.7b placeholder test, SheetDialog to components/ui
+      and filter-bar split"
+    owner: "Dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-15-retro-2026-11-04.md"
+  - id: "epic-15-retro-item-35-a7-diagnose-the-ci-infra-failures-on-mai"
+    epic: 15
+    action: "A7: diagnose the CI infra failures on main: Supabase port 54322 already
+      in use, admin-auth 503 in the deployment smoke"
+    owner: "Dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-15-retro-2026-11-04.md"
