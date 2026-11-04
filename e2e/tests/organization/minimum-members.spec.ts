@@ -1,5 +1,5 @@
 import { ADMIN_STATE, readFixture } from '../../utils/run-fixture.ts';
-import { minimumMembersOf, setMinimumMembersInSql } from '../../utils/database-helper.ts';
+import { holdRotation, minimumMembersOf, setMinimumMembersInSql, type RotationHold } from '../../utils/database-helper.ts';
 import { fill, hr } from '../../utils/i18n.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
 
@@ -11,8 +11,28 @@ const organization = hr.organization;
  * Story 11.1: *Najmanje ljudi u smjeni* on *Organizacija*. The run's
  * organization is shared, so each case sets the setting in SQL first and
  * restores it after; the file runs serially, so no case races another.
+ *
+ * UNDER THE RUN'S ROTATION HOLD (story 11.3): while the setting is set, every
+ * working shift under it is marked short-staffed on the calendar grid, which
+ * would add `Premalo ljudi` to the cell labels and legends the calendar specs
+ * pin exactly. Each of those seeds its rotation under `holdRotation`, as the
+ * short-staffed specs set the minimum under it, so holding it here too keeps
+ * the setting from changing under them.
  */
 test.describe.configure({ mode: 'serial' });
+
+let hold: RotationHold | null = null;
+
+test.beforeEach(async () => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
+  hold = holdRotation(readFixture().slug);
+  await hold.ready;
+});
+
+test.afterEach(async () => {
+  await hold?.release();
+  hold = null;
+});
 
 test('sets the minimum, then clears it, and the card and the database say so', async ({ organizationPage }) => {
   const fixture = readFixture();

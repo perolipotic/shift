@@ -699,6 +699,59 @@ describe('the conflict marker is perceivable on the cells it marks', () => {
   });
 });
 
+describe('the short-staffed warning is perceivable and is not the conflict (story 11.3)', () => {
+  /**
+   * `--warning` draws short-staffed's 3 px bar inside a cell's bottom edge,
+   * the short-staffed block's border and its glyph: a non-text element on
+   * every fill a cell can have, and on the `card` and the `muted` box the
+   * block sits on. So WCAG 1.4.11's 3:1 against each of them, in both themes
+   * (light worst 3.30:1, dark worst 4.71:1 at the time of writing). It has no
+   * foreground: no text ever sits on it.
+   *
+   * And it must never read as a conflict: UX-DR4 reserves `destructive`, and
+   * short-staffed is a warning, not a collision. CIEDE2000 25 or more from it
+   * (25.2 light, 26.1 dark), the threshold the curated accents are held to.
+   * The accents themselves are held ΔE 10 from it in the signals block below.
+   */
+  const PERCEPTIBLY_DIFFERENT = 25;
+  const difference = differenceCiede2000();
+  const SURFACES = [...FILLS, 'card', 'muted'] as const;
+  const cases = THEMES.flatMap((theme) => SURFACES.map((surface) => ({ theme, surface })));
+
+  it.each(cases)('warning reads as an edge on $surface in $theme', ({ theme, surface }) => {
+    const measured = ratio(colour(theme, 'warning'), colour(theme, surface));
+
+    expect(measured, `warning on ${surface} (${theme}) measured ${measured.toFixed(2)}:1`).toBeGreaterThanOrEqual(AA_LARGE);
+  });
+
+  it.each(THEMES)('warning is perceptibly not destructive in %s', (theme) => {
+    const measured = difference(colour(theme, 'warning'), colour(theme, 'destructive'));
+
+    expect(
+      measured,
+      `warning measured ΔE ${measured.toFixed(2)} against destructive (${theme})`,
+    ).toBeGreaterThanOrEqual(PERCEPTIBLY_DIFFERENT);
+  });
+
+  it('pins the worst ratios it was chosen at', () => {
+    const worst = (theme: Theme): number => Math.min(...SURFACES.map((surface) => ratio(colour(theme, 'warning'), colour(theme, surface))));
+
+    expect(worst('light')).toBeCloseTo(3.3, 1);
+    expect(worst('dark')).toBeCloseTo(4.71, 1);
+  });
+
+  it('measures a warning that drifted toward the conflict as too close, so the thresholds are not vacuous', () => {
+    // NON-VACUITY: an orange pulled 15° toward red at the same lightness and
+    // chroma is the drift this block exists to refuse, and a light orange the
+    // fill sweep must refuse on the light fills.
+    const drifted = { mode: 'oklch', l: 0.609, c: 0.1393, h: 43 } as Color;
+    const pale = { mode: 'oklch', l: 0.75, c: 0.1393, h: 58 } as Color;
+
+    expect(difference(drifted, colour('light', 'destructive'))).toBeLessThan(PERCEPTIBLY_DIFFERENT);
+    expect(ratio(pale, colour('light', 'shift-slot-1'))).toBeLessThan(AA_LARGE);
+  });
+});
+
 describe('a working shift never reads as a free day (story 7.1)', () => {
   /**
    * The UX review of 2026-10-01 measured dark *Noć* (slot-2, #171F29) against
@@ -902,6 +955,8 @@ describe('no curated accent is mistakable for any other signal either', () => {
     'modifier-overridden',
     'modifier-uncovered',
     'modifier-uncovered-foreground',
+    // Story 11.3: short-staffed's bar and glyph.
+    'warning',
   ] as const;
 
   const cases = THEMES.flatMap((theme) =>
@@ -1440,6 +1495,46 @@ describe('the layered surfaces read against their worst backdrop (story 15.2)', 
       besideInput.ratio,
       `ring beside the input border over ${besideInput.on} (${theme}) measured ${besideInput.ratio.toFixed(2)}:1`,
     ).toBeGreaterThanOrEqual(AA_LARGE);
+  });
+
+  /**
+   * STORY 11.3: the day detail's line and the resolution strip draw
+   * `text-warning` glyphs straight on the Dialog's glass — a non-text mark,
+   * so 3:1 against the panel over every backdrop.
+   *
+   * MEASURED SHORT IN LIGHT over the three darkest opaque fills a Dialog can
+   * float over — `band-dark` 2.89:1, `ink` 2.90:1, `shift-slot-2` 2.96:1
+   * (2.90–2.94 under the scrim) — and 3:1 or more over everything else
+   * (`primary` under the scrim 3.08:1 next). The token was NOT retuned: the
+   * shortfall is recorded here for a human decision. Dark clears it
+   * everywhere (worst `ink`, 5.63:1). These cases fail if the gap closes or
+   * widens, so neither can happen silently.
+   */
+  const WARNING_SHORT_IN_LIGHT = new Set(['band-dark', 'ink', 'shift-slot-2']);
+  const besideWarning = (name: string): string => name.replace(/ under the scrim$/, '');
+
+  it.each(THEMES)('the short-staffed warning glyph is discernible on the panel in %s (story 11.3)', (theme) => {
+    const grounds = panelGrounds(theme).filter(
+      ({ name }) => theme === 'dark' || !WARNING_SHORT_IN_LIGHT.has(besideWarning(name)),
+    );
+    const found = grounds
+      .map(({ name, colour: ground }) => ({ ratio: ratio(colour(theme, 'warning'), ground), on: name }))
+      .reduce((low, next) => (next.ratio < low.ratio ? next : low));
+
+    expect(
+      found.ratio,
+      `warning on the panel over ${found.on} (${theme}) measured ${found.ratio.toFixed(2)}:1`,
+    ).toBeGreaterThanOrEqual(AA_LARGE);
+  });
+
+  it('records where light warning falls short on the panel: the three darkest fills, at their measured ratios', () => {
+    const short = panelGrounds('light')
+      .map(({ name, colour: ground }) => ({ name, ratio: ratio(colour('light', 'warning'), ground) }))
+      .filter(({ ratio: measured }) => measured < AA_LARGE);
+
+    expect(new Set(short.map(({ name }) => besideWarning(name)))).toEqual(WARNING_SHORT_IN_LIGHT);
+    expect(Math.min(...short.map(({ ratio: measured }) => measured))).toBeCloseTo(2.89, 2);
+    expect(worst('dark', (ground) => ratio(colour('dark', 'warning'), ground)).ratio).toBeCloseTo(5.63, 1);
   });
 
   it.each(THEMES)('the opaque fallback (no blur, reduced transparency) is the card, measured in %s', (theme) => {

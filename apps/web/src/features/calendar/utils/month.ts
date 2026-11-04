@@ -11,7 +11,9 @@ import {
   rosterOn,
   scheduleOfMonth,
   shiftTypeVersionOn,
+  shortStaffedShiftsOf,
   type Collision,
+  type CollisionLeaveRecord,
   type CollisionResolution,
   type DutyLeg,
   type LeaveRange,
@@ -25,6 +27,7 @@ import {
   MODIFIER_CONFLICT,
   MODIFIER_LEAVE,
   MODIFIER_OVERRIDDEN,
+  MODIFIER_SHORT_STAFFED,
   MODIFIER_UNCOVERED,
   type CalendarModifier,
 } from '@/features/calendar/utils/modifiers';
@@ -51,6 +54,7 @@ import {
   slotColourClassOf,
   type ShiftTypeRow,
 } from '@/features/shift-types/services/list';
+import { staffingInputOf } from '@/features/staffing/services/short-staffed';
 import { splitTeams, type TeamRow } from '@/features/teams/services/list';
 import { instantMicrosOf } from '@/features/rotation/services/list';
 import {
@@ -514,13 +518,15 @@ export interface CalendarCell {
   readonly range: string | null;
   /**
    * The marks the cell carries (`@/features/calendar/utils/modifiers`), in
-   * canonical order — conflict, overridden, leave, uncovered: `conflict`
+   * canonical order — conflict, overridden, leave, uncovered, shortStaffed: `conflict`
    * where a collision falls on it (story 5.3c, {@link CalendarMarks}),
    * `overridden` where a shift-type override replaced the projected type
    * (story 3.5a) or a roster override changed who works it (story 3.6a),
    * `leave` where leave covers it (story 5.3c), and `uncovered` on an
    * admin's grid cell whose shift a member's conflict was accepted as
-   * uncovered on (story 5.4b). A cell with no rotation in effect carries none.
+   * uncovered on (story 5.4b), and `shortStaffed` on an admin's grid cell
+   * whose working shift has fewer people at work than the organization's
+   * minimum (story 11.3). A cell with no rotation in effect carries none.
    */
   readonly modifiers: readonly CalendarModifier[];
 }
@@ -546,13 +552,21 @@ export interface CalendarMarks {
   readonly uncovered: readonly CollisionResolution[];
   /** Each member's live leave ranges, by member id: only the viewer's own for a member. */
   readonly leave: ReadonlyMap<string, readonly LeaveRange[]>;
+  /**
+   * STORY 11.3: the organization's live leave records the staffing rule reads,
+   * for an admin while *Najmanje ljudi u smjeni* is set; `null` for a member
+   * (who reads no other member's leave) and while the setting is empty, so
+   * nothing is short-staffed. The month derives its short-staffed shifts from
+   * these and the snapshot (`shortStaffedShiftsOf`), never stores them.
+   */
+  readonly staffingLeave: readonly CollisionLeaveRecord[] | null;
 }
 
 /** No modifiers: a cell with no rotation in effect, which has no schedule to mark. */
 const NO_MODIFIERS: readonly CalendarModifier[] = [];
 
 /** No collision and no leave: a calendar with nothing to mark. */
-export const NO_MARKS: CalendarMarks = { collisions: [], uncovered: [], leave: new Map() };
+export const NO_MARKS: CalendarMarks = { collisions: [], uncovered: [], leave: new Map(), staffingLeave: null };
 
 /** The key a grid cell's collisions are found under: its team and date. */
 function teamDateKeyOf(teamId: string, date: string): string {
@@ -571,10 +585,16 @@ interface MarksLookup {
   readonly uncoveredTeamDates: ReadonlySet<string>;
   readonly memberTeamDates: ReadonlySet<string>;
   readonly leave: ReadonlyMap<string, readonly LeaveRange[]>;
+  /** The team and date of every short-staffed shift of the grid's month (story 11.3); none for a day list. */
+  readonly shortStaffedTeamDates: ReadonlySet<string>;
 }
 
-function marksLookupOf(marks: CalendarMarks): MarksLookup {
+function marksLookupOf(
+  marks: CalendarMarks,
+  shortStaffed: readonly { readonly teamId: string; readonly date: string }[] = [],
+): MarksLookup {
   return {
+    shortStaffedTeamDates: new Set(shortStaffed.map((shift) => teamDateKeyOf(shift.teamId, shift.date))),
     teamDates: new Set(marks.collisions.map((collision) => teamDateKeyOf(collision.teamId, collision.date))),
     uncoveredTeamDates: new Set(marks.uncovered.map((key) => teamDateKeyOf(key.teamId, key.date))),
     memberTeamDates: new Set(
@@ -595,19 +615,21 @@ interface CellMarks {
   readonly leave: boolean;
   readonly overridden: boolean;
   readonly uncovered: boolean;
+  readonly shortStaffed: boolean;
 }
 
 /**
  * THE ONE PLACE A CELL'S MARKS ARE SET, in canonical order: conflict, then
- * overridden, then leave, then uncovered.
+ * overridden, then leave, then uncovered, then short-staffed.
  */
-function cellModifiersOf({ conflict, leave, overridden, uncovered }: CellMarks): readonly CalendarModifier[] {
+function cellModifiersOf({ conflict, leave, overridden, uncovered, shortStaffed }: CellMarks): readonly CalendarModifier[] {
   const modifiers: CalendarModifier[] = [];
 
   if (conflict) modifiers.push(MODIFIER_CONFLICT);
   if (overridden) modifiers.push(MODIFIER_OVERRIDDEN);
   if (leave) modifiers.push(MODIFIER_LEAVE);
   if (uncovered) modifiers.push(MODIFIER_UNCOVERED);
+  if (shortStaffed) modifiers.push(MODIFIER_SHORT_STAFFED);
 
   return modifiers;
 }
@@ -615,13 +637,21 @@ function cellModifiersOf({ conflict, leave, overridden, uncovered }: CellMarks):
 /**
  * A grid cell's marks: conflict AND leave where any collision falls on its
  * team and date — the grid names the shift, not the person on leave — and
- * uncovered where a conflict on it was accepted as uncovered (story 5.4b).
+ * uncovered where a conflict on it was accepted as uncovered (story 5.4b),
+ * and short-staffed where the staffing rule finds its working shift short
+ * (story 11.3).
  */
 function gridCellMarksOf(lookup: MarksLookup, teamId: string, date: string, overridden: boolean): CellMarks {
   const key = teamDateKeyOf(teamId, date);
   const collided = lookup.teamDates.has(key);
 
-  return { conflict: collided, leave: collided, overridden, uncovered: lookup.uncoveredTeamDates.has(key) };
+  return {
+    conflict: collided,
+    leave: collided,
+    overridden,
+    uncovered: lookup.uncoveredTeamDates.has(key),
+    shortStaffed: lookup.shortStaffedTeamDates.has(key),
+  };
 }
 
 /**
@@ -641,6 +671,8 @@ function memberCellMarksOf(
     leave: onLeave(lookup, memberId, date),
     overridden,
     uncovered: false,
+    // Story 11.3: the grid's alone, as `uncovered` is.
+    shortStaffed: false,
   };
 }
 
@@ -1203,12 +1235,15 @@ export function calendarMonthOf(
     snapshot,
     schedule.flatMap((row) => row.cells.map((cell) => cell.shiftTypeId)),
   );
-  const marked = marksLookupOf({ ...marks, uncovered: uncoveredOnRosterOf(snapshot, schedule, marks.uncovered) });
   // ACTIVE IN THE MONTH SHOWN: a member active on at least one of its dates,
   // by the domain's rule over their status versions (story 3.4a) — the same
   // membership rule as a Sati row, so a Sati name always opens that member.
   // One list feeds both the Osoba picker and `chosenPersonOf`.
   const dates = datesOfMonth(month);
+  const marked = marksLookupOf(
+    { ...marks, uncovered: uncoveredOnRosterOf(snapshot, schedule, marks.uncovered) },
+    shortStaffedOfMonth(snapshot, marks.staffingLeave, dates),
+  );
   const people = snapshot.members.filter((member) => dates.some((date) => activeOn(member.statuses, date)));
   const person = chosenPersonOf(search, people);
   const chosen = person === null ? chosenTeamOf(search, teams) : null;
@@ -1268,6 +1303,29 @@ export function calendarMonthOf(
             days: dayListOutcomeOf(snapshot, { ...chosenOne.member, memberId: chosenOne.member.id }, month, today, marks),
           },
   };
+}
+
+/**
+ * STORY 11.3: the month's short-staffed shifts, from the snapshot and the
+ * organization's leave the admin's marks carry, through the staffing rule's
+ * own recipe (`staffingInputOf`, the active teams and the snapshot's minimum)
+ * and the domain's `shortStaffedShiftsOf` — no arithmetic here (AD-7). None
+ * for a member or while the setting is empty (`staffingLeave` is `null`).
+ *
+ * @throws RangeError on any precondition of `shortStaffedShiftsOf`, which
+ *   `calendarMonthOutcomeOf` turns into the read failure.
+ */
+function shortStaffedOfMonth(
+  snapshot: CalendarSnapshot,
+  staffingLeave: readonly CollisionLeaveRecord[] | null,
+  dates: readonly string[],
+): readonly { readonly teamId: string; readonly date: string }[] {
+  const from = dates[0];
+  const to = dates.at(-1);
+
+  if (staffingLeave === null || from === undefined || to === undefined) return [];
+
+  return shortStaffedShiftsOf(staffingInputOf(snapshot, staffingLeave), from, to);
 }
 
 /**

@@ -63,6 +63,7 @@ import uploadSimple from "@phosphor-icons/core/fill/upload-simple-fill.svg?raw"
 import user from "@phosphor-icons/core/fill/user-fill.svg?raw"
 import users from "@phosphor-icons/core/fill/users-fill.svg?raw"
 import usersThree from "@phosphor-icons/core/fill/users-three-fill.svg?raw"
+import usersThreeBold from "@phosphor-icons/core/bold/users-three-bold.svg?raw"
 import warningCircle from "@phosphor-icons/core/fill/warning-circle-fill.svg?raw"
 import warning from "@phosphor-icons/core/fill/warning-fill.svg?raw"
 import wifiSlash from "@phosphor-icons/core/fill/wifi-slash-fill.svg?raw"
@@ -115,7 +116,8 @@ import x from "@phosphor-icons/core/fill/x-fill.svg?raw"
  * MagnifyingGlass, Send → PaperPlaneRight, Trash2 → Trash, Undo2 →
  * ArrowUUpLeft, Upload → UploadSimple, UsersRound → UsersThree. The rest kept
  * their name. Leave (`ClockBold`) and uncovered (`CircleDashedBold`) are told
- * apart by drawn shape: a ring with a clock's hands against a dashed ring.
+ * apart by drawn shape: a ring with a clock's hands against a dashed ring;
+ * short-staffed (`UsersThreeBold`, story 11.3) is three figures, no ring.
  */
 
 export type IconProps = Omit<SVGProps<SVGSVGElement>, "children" | "ref" | "dangerouslySetInnerHTML"> & {
@@ -230,9 +232,11 @@ export const X = glyph(x, "x")
 
 // THE STATUS MARKS, in Phosphor `bold` (story 15.1, human decision
 // 2026-10-30): the calendar's leave and uncovered marks (and the consequence
-// strip's uncovered coverage, which is the same mark) and the duty block's
-// three leg states. Nothing but a status mark takes these.
+// strip's uncovered coverage, which is the same mark), its short-staffed mark
+// (story 11.3) and the duty block's three leg states. Nothing but a status
+// mark takes these.
 export const CheckCircleBold = glyph(checkCircleBold, "check-circle-bold")
 export const CircleDashedBold = glyph(circleDashedBold, "circle-dashed-bold")
 export const ClockBold = glyph(clockBold, "clock-bold")
 export const RecordBold = glyph(recordBold, "record-bold")
+export const UsersThreeBold = glyph(usersThreeBold, "users-three-bold")

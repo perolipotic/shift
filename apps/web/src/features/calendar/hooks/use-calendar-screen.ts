@@ -33,7 +33,7 @@ import {
   type CalendarSearch,
 } from '@/features/calendar/utils/month';
 import { translateCellLabel } from '@/features/calendar/utils/cell-label';
-import { dayConflictsOf, type DayConflict } from '@/features/calendar/utils/day-detail';
+import { DAY_WORKING, dayConflictsOf, type DayConflict } from '@/features/calendar/utils/day-detail';
 import { candidateLeaveOf } from '@/features/calendar/utils/replacement-candidates';
 import { cachedRoleOf, calendarSkeletonShapeOf, earlyCalendarModeOf } from '@/features/calendar/utils/skeleton';
 import { gridFocusKeyOf } from '@/features/calendar/utils/screen-keys';
@@ -65,6 +65,7 @@ import {
 import { useReplacementLinkRefresh } from '@/features/conflicts/hooks/use-replacement-link-refresh';
 import { hoursLeaveKeysOf } from '@/features/hours/services/hours-conflicts';
 import { MEMBER_ROLE_KEY } from '@/features/navigation/services/role';
+import { dayStaffingOf } from '@/features/staffing/services/short-staffed';
 import { FRESHNESS_OFFLINE, ZONE_FROM_CALENDAR } from '@/lib/offline/freshness';
 import { useSnapshotFreshness } from '@/lib/offline/use-snapshot-freshness';
 import { supabaseClient } from '@/lib/supabase/client';
@@ -108,8 +109,10 @@ function noRoleOnServer(): null {
  * its unresolved conflicts (`dayConflicts`, the marks' own collisions — none
  * for a member), the live leave the roster dialog groups its candidates by
  * (`candidateLeave`), and the decided-leave keys its previews count hours with
- * as *Sati* does (`leaveKeys`, an admin's alone). Each is derived once per
- * answer; one that cannot be derived is none, logged.
+ * as *Sati* does (`leaveKeys`, an admin's alone), and (story 11.3) its people
+ * at work against *Najmanje ljudi u smjeni* (`dayStaffing`, an admin's alone
+ * while the setting is set, from the leave the marks carry). Each is derived
+ * once per answer; one that cannot be derived is none, logged.
  *
  * ONE SNAPSHOT, ONLINE OR NOT (story 8.2). Every read is seen through the
  * month's freshness (`useSnapshotFreshness` over `calendarSurfaceKeysOf`):
@@ -329,6 +332,17 @@ export function useCalendarScreen(
         : dayConflictsOf(snapshot, marks.collisions, marks.leave, detail),
     [snapshot, marks, detail, readsResolutions],
   );
+  // STORY 11.3: the open working day's people at work against the minimum,
+  // from the same snapshot and leave the month's short-staffed marks are
+  // derived from; none for a member, while the setting is empty, or on a day
+  // that is not working.
+  const dayStaffing = useMemo(
+    () =>
+      snapshot === null || marks === null || detail === null || detail.kind !== DAY_WORKING
+        ? null
+        : dayStaffingOf(snapshot, marks.staffingLeave, detail.teamId, detail.isoDate),
+    [snapshot, marks, detail],
+  );
   // Built once per month shown, not on every focus move.
   const labels = useMemo(() => (month === null ? null : gridCellLabelsOf(month, translateCellLabel)), [month]);
 
@@ -468,6 +482,7 @@ export function useCalendarScreen(
     gridRef,
     detail,
     dayConflicts,
+    dayStaffing,
     candidateLeave,
     leaveKeys,
     retry,

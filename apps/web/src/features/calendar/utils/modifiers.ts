@@ -1,24 +1,26 @@
 
-import { CircleDashedBold, ClockBold, type IconComponent } from '@/components/ui/icon';
+import { CircleDashedBold, ClockBold, UsersThreeBold, type IconComponent } from '@/components/ui/icon';
 import type { CalendarDay, CalendarMonth } from '@/features/calendar/utils/month';
 
 /**
  * The calendar's modifier vocabulary (story 3.2b, UX-DR8, UX-DR12): a FIXED
- * set of four marks any cell can carry, alone or together — conflict,
- * overridden, leave and uncovered — each with a glyph, a fill or ring and a
- * label. Later stories only NAME the marks a cell carries (3.5 writes
+ * set of five marks any cell can carry, alone or together — conflict,
+ * overridden, leave, uncovered and short-staffed — each with a glyph, a ring,
+ * hatch or edge and a label. Later stories only NAME the marks a cell carries (3.5 writes
  * `modifiers: ['overridden']`); the look, the legend and the words are here,
  * once.
  *
  * NEVER COLOUR ALONE: every modifier has a glyph and a label beside its
  * treatment, and a cell's label for assistive technology names each one.
  *
- * ALL FOUR ARE DERIVED, in `@/features/calendar/utils/month`: `overridden`,
+ * ALL FIVE ARE DERIVED, in `@/features/calendar/utils/month`: `overridden`,
  * where a shift-type override replaced the projected type (story 3.5a) or a
  * roster override changed who works it (story 3.6a); `conflict` and `leave`,
  * from the collisions and the live leave the viewer may see (story 5.3c); and
  * `uncovered`, on an admin's grid cell whose conflict was accepted as
- * uncovered (story 5.4b).
+ * uncovered (story 5.4b); and `shortStaffed`, on an admin's grid cell whose
+ * working shift has fewer people at work than *Najmanje ljudi u smjeni*
+ * (story 11.3, the domain's `shortStaffedShiftsOf`).
  *
  * TWO GLYPHS ARE TEXT AND TWO ARE ICONS (story 5.3c, human): `⚠` and `✎` stay
  * text; leave and uncovered are the icons `ClockBold` and `CircleDashedBold`
@@ -27,31 +29,43 @@ import type { CalendarDay, CalendarMonth } from '@/features/calendar/utils/month
  * the fill marks are solid discs whose knockouts vanish at 12 px, while the
  * bold outlines differ by drawn shape — a ring with hands against a dashed
  * ring — which `test/typography-coverage.test.ts` proves on the rasterized
- * marks. Every glyph is `aria-hidden` and drawn in
- * the cell's own foreground (`currentColor`), as its hatch is.
+ * marks. Short-staffed's `UsersThreeBold` (story 11.3) is three figures, told
+ * apart from both by the same proof. Every glyph is `aria-hidden` and drawn in
+ * the cell's own foreground (`currentColor`), as its hatch is — short-staffed's
+ * too: its `warning` token is the edge's bar, never the glyph, since a
+ * warning-coloured glyph cannot reach 3:1 on every fill.
  *
  * PURE, and executed by the node suite (AD-15): `pages/kalendar.tsx` renders
  * what these rules return.
  */
 
-/** The four modifiers' ids. `destructive` is conflict's alone; no other mark uses it. */
+/**
+ * The five modifiers' ids. `destructive` is conflict's alone, and `warning`
+ * short-staffed's alone; no other mark uses either.
+ */
 export const MODIFIER_CONFLICT = 'conflict';
 export const MODIFIER_OVERRIDDEN = 'overridden';
 export const MODIFIER_LEAVE = 'leave';
 export const MODIFIER_UNCOVERED = 'uncovered';
+export const MODIFIER_SHORT_STAFFED = 'shortStaffed';
 
-/** The four modifiers, in their canonical order. */
+/** The five modifiers, in their canonical order. */
 export const CALENDAR_MODIFIER_IDS = [
   MODIFIER_CONFLICT,
   MODIFIER_OVERRIDDEN,
   MODIFIER_LEAVE,
   MODIFIER_UNCOVERED,
+  MODIFIER_SHORT_STAFFED,
 ] as const;
 
 export type CalendarModifier = (typeof CALENDAR_MODIFIER_IDS)[number];
 
-/** How a modifier is drawn: a 2 px inset ring, or a hatch over the type's own fill. */
-export type ModifierTreatment = 'ring' | 'hatch';
+/**
+ * How a modifier is drawn: a 2 px inset ring, a hatch over the type's own
+ * fill, or an edge — short-staffed's 3 px `warning` bar inside the bottom
+ * edge, innermost of every band (story 11.3).
+ */
+export type ModifierTreatment = 'ring' | 'hatch' | 'edge';
 
 /** A glyph drawn as text. */
 export const GLYPH_TEXT = 'text';
@@ -105,6 +119,12 @@ export const CALENDAR_MODIFIERS: readonly CalendarModifierEntry[] = [
     treatment: 'hatch',
     labelKey: modifierMessageKey(MODIFIER_UNCOVERED),
   },
+  {
+    id: MODIFIER_SHORT_STAFFED,
+    glyph: { kind: GLYPH_ICON, icon: UsersThreeBold },
+    treatment: 'edge',
+    labelKey: modifierMessageKey(MODIFIER_SHORT_STAFFED),
+  },
 ];
 
 /** The label a modifier is named by, in the legend and in a cell's label. Exhaustive. */
@@ -114,7 +134,8 @@ export function modifierMessageKey(
   | 'kalendar.modifier.conflict'
   | 'kalendar.modifier.overridden'
   | 'kalendar.modifier.leave'
-  | 'kalendar.modifier.uncovered' {
+  | 'kalendar.modifier.uncovered'
+  | 'kalendar.modifier.shortStaffed' {
   switch (modifier) {
     case MODIFIER_CONFLICT:
       return 'kalendar.modifier.conflict';
@@ -124,6 +145,8 @@ export function modifierMessageKey(
       return 'kalendar.modifier.leave';
     case MODIFIER_UNCOVERED:
       return 'kalendar.modifier.uncovered';
+    case MODIFIER_SHORT_STAFFED:
+      return 'kalendar.modifier.shortStaffed';
     default: {
       const unhandled: never = modifier;
 
@@ -141,10 +164,19 @@ export function noRotationMessageKey(): 'kalendar.noRotation' {
  * The rings, precomposed in `index.css` over the existing tokens: conflict's
  * `destructive` ring outermost, overridden's inside it, so both stay visible
  * together as nested 2 px bands.
+ *
+ * STORY 11.3: short-staffed's EDGE, the 3 px `warning` bar inside the bottom
+ * edge, is an inset box-shadow too, precomposed with the rings so it is always
+ * the innermost band: alone, and inside each ring and both. Seven utilities,
+ * one per subset that draws anything.
  */
 export const RING_CONFLICT_CLASS = 'modifier-ring-conflict';
 export const RING_OVERRIDDEN_CLASS = 'modifier-ring-overridden';
 export const RING_BOTH_CLASS = 'modifier-ring-conflict-overridden';
+export const EDGE_SHORT_STAFFED_CLASS = 'modifier-edge-short-staffed';
+export const RING_CONFLICT_SHORT_STAFFED_CLASS = 'modifier-ring-conflict-short-staffed';
+export const RING_OVERRIDDEN_SHORT_STAFFED_CLASS = 'modifier-ring-overridden-short-staffed';
+export const RING_BOTH_SHORT_STAFFED_CLASS = 'modifier-ring-conflict-overridden-short-staffed';
 
 /**
  * The hatches, `background-image` layers over the type's `bg-*` base fill:
@@ -175,7 +207,15 @@ export interface ModifierTreatmentShown {
   readonly glyphText: string;
 }
 
-function ringClassOf(conflict: boolean, overridden: boolean): string | null {
+/** The one box-shadow utility for the rings and the edge together: seven, or none. */
+function ringClassOf(conflict: boolean, overridden: boolean, shortStaffed: boolean): string | null {
+  if (shortStaffed) {
+    if (conflict && overridden) return RING_BOTH_SHORT_STAFFED_CLASS;
+    if (conflict) return RING_CONFLICT_SHORT_STAFFED_CLASS;
+    if (overridden) return RING_OVERRIDDEN_SHORT_STAFFED_CLASS;
+
+    return EDGE_SHORT_STAFFED_CLASS;
+  }
   if (conflict && overridden) return RING_BOTH_CLASS;
   if (conflict) return RING_CONFLICT_CLASS;
   if (overridden) return RING_OVERRIDDEN_CLASS;
@@ -192,15 +232,15 @@ function hatchClassOf(leave: boolean, uncovered: boolean): string | null {
 }
 
 /**
- * The classes and glyphs of any subset of the four, composed: both rings stay
- * visible together, both hatches stay visible together, and each overlays the
- * type's base fill rather than replacing it.
+ * The classes and glyphs of any subset of the five, composed: both rings stay
+ * visible together with the edge inside them, both hatches stay visible
+ * together, and each overlays the type's base fill rather than replacing it.
  */
 export function modifierTreatmentOf(modifiers: readonly CalendarModifier[]): ModifierTreatmentShown {
   const shown = canonicalModifiersOf(modifiers);
   const has = (modifier: CalendarModifier): boolean => shown.includes(modifier);
   const classes = [
-    ringClassOf(has(MODIFIER_CONFLICT), has(MODIFIER_OVERRIDDEN)),
+    ringClassOf(has(MODIFIER_CONFLICT), has(MODIFIER_OVERRIDDEN), has(MODIFIER_SHORT_STAFFED)),
     hatchClassOf(has(MODIFIER_LEAVE), has(MODIFIER_UNCOVERED)),
   ].filter((name) => name !== null);
 

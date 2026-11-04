@@ -620,11 +620,18 @@ test.describe('the calendar while its read is pending, on a phone, as a member',
   });
 });
 
-/** The six modifier treatments, as `modifiers.ts` names them. */
+/**
+ * The ten modifier treatments, as `modifiers.ts` names them: story 11.3 added
+ * short-staffed's edge, alone and precomposed with each ring.
+ */
 const TREATMENTS = [
   { name: 'modifier-ring-conflict', kind: 'ring' },
   { name: 'modifier-ring-overridden', kind: 'ring' },
   { name: 'modifier-ring-conflict-overridden', kind: 'ring' },
+  { name: 'modifier-edge-short-staffed', kind: 'edge' },
+  { name: 'modifier-ring-conflict-short-staffed', kind: 'ring' },
+  { name: 'modifier-ring-overridden-short-staffed', kind: 'ring' },
+  { name: 'modifier-ring-conflict-overridden-short-staffed', kind: 'ring' },
   { name: 'modifier-hatch-leave', kind: 'hatch' },
   { name: 'modifier-hatch-uncovered', kind: 'hatch' },
   { name: 'modifier-hatch-leave-uncovered', kind: 'hatch' },
@@ -641,6 +648,8 @@ interface Drawn {
   readonly outline: string;
   /** `width top-style left-style`; `0px …` is no border. */
   readonly border: string;
+  /** `width style` of the bottom border alone: short-staffed's forced-colours edge (story 11.3). */
+  readonly edge: string;
   /** How deep the outline reaches into the box, and the box's thinnest padding. */
   readonly outlineDepth: number;
   readonly outlineWidth: number;
@@ -662,6 +671,7 @@ async function drawnTreatments(page: Page): Promise<Drawn[]> {
           backgroundImage: style.backgroundImage,
           outline: `${style.outlineStyle} ${style.outlineWidth}`,
           border: `${style.borderTopWidth} ${style.borderTopStyle} ${style.borderLeftStyle}`,
+          edge: `${style.borderBottomWidth} ${style.borderBottomStyle}`,
           outlineDepth: -parseFloat(style.outlineOffset),
           outlineWidth: parseFloat(style.outlineWidth),
           padding: Math.min(parseFloat(style.paddingTop), parseFloat(style.paddingLeft)),
@@ -740,10 +750,11 @@ test.describe('the calendar under forced colours', () => {
     await page.emulateMedia({ forcedColors: 'none' });
     for (const [index, drawn] of (await drawnTreatments(page)).entries()) {
       const kind = TREATMENTS[index]?.kind;
-      if (kind === 'ring') expect(drawn.boxShadow, drawn.name).not.toBe('none');
-      else expect(drawn.backgroundImage, drawn.name).not.toBe('none');
+      if (kind === 'hatch') expect(drawn.backgroundImage, drawn.name).not.toBe('none');
+      else expect(drawn.boxShadow, drawn.name).not.toBe('none');
       expect(drawn.outline, drawn.name).toMatch(/^none /);
       expect(drawn.border, drawn.name).toMatch(/^0px /);
+      expect(drawn.edge, drawn.name).toMatch(/^0px /);
     }
 
     // Forced: the browser drops both, and each keeps its own fallback.
@@ -756,12 +767,21 @@ test.describe('the calendar under forced colours', () => {
         // Inset, and no deeper than the cell's padding, so it never covers the label.
         expect(drawn.outlineWidth, `${drawn.name} reaches past its inset`).toBeLessThanOrEqual(drawn.outlineDepth);
         expect(drawn.outlineDepth, `${drawn.name} covers the label`).toBeLessThanOrEqual(drawn.padding);
+        // Story 11.3: a ring with the edge keeps a solid bottom band 3 px deeper than itself.
+        if (drawn.name.endsWith('-short-staffed')) {
+          expect(drawn.edge, `${drawn.name} has no edge`).toBe(`${String(drawn.outlineDepth + 3)}px solid`);
+        }
+      } else if (kind === 'edge') {
+        expect(drawn.outline, drawn.name).toMatch(/^none /);
+        expect(drawn.edge, `${drawn.name} has no edge`).toBe('3px solid');
       } else {
         expect(drawn.border, `${drawn.name} has no border`).toMatch(/^[1-9]\d*px (dotted|dashed) /);
       }
     }
     // Still told apart from each other.
-    const rings = forced.filter((_, index) => TREATMENTS[index]?.kind === 'ring').map((drawn) => drawn.outline);
+    const rings = forced
+      .filter((_, index) => TREATMENTS[index]?.kind !== 'hatch')
+      .map((drawn) => `${drawn.outline} ${drawn.edge}`);
     const hatches = forced.filter((_, index) => TREATMENTS[index]?.kind === 'hatch').map((drawn) => drawn.border);
     expect(new Set(rings).size).toBe(rings.length);
     expect(new Set(hatches).size).toBe(hatches.length);
@@ -771,7 +791,10 @@ test.describe('the calendar under forced colours', () => {
     await calendarPage.goto();
     await expect(calendarPage.monthHeading()).toBeVisible();
 
-    const rings = TREATMENTS.filter((treatment) => treatment.kind === 'ring').map((treatment) => treatment.name);
+    // The three rings alone: the short-staffed ones draw the same outline plus their edge.
+    const rings = TREATMENTS.filter((treatment) => treatment.kind === 'ring' && !treatment.name.endsWith('-short-staffed')).map(
+      (treatment) => treatment.name,
+    );
     const bare = `${CELL_PADDING}`;
     const nonworking = `${CELL_PADDING} ${NONWORKING_CLASSES}`;
 

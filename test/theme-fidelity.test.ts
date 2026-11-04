@@ -69,7 +69,7 @@ function tokens(): Map<string, string> {
   return cached;
 }
 
-/** The 24 brand names, derived rather than hard-coded so a DESIGN.md rename
+/** The 25 brand names, derived rather than hard-coded so a DESIGN.md rename
  *  changes the case list instead of silently skipping a token.
  *
  *  A key is a DARK VALUE only when the name it suffixes is itself declared:
@@ -85,12 +85,13 @@ function tokenNames(): string[] {
 describe('DESIGN.md is readable and complete', () => {
   // Without this, an unparsed front matter would make every case below vacuous.
   // STORY 15.2: 48 and 24, with the hour band's `band-dark` pair.
-  it('parses all 48 declared colour values', () => {
-    expect(tokens().size).toBe(48);
+  // STORY 11.3: 50 and 25, with the short-staffed `warning`.
+  it('parses all 50 declared colour values', () => {
+    expect(tokens().size).toBe(50);
   });
 
-  it('yields the 24 token names the rest of the suite expects', () => {
-    expect(tokenNames()).toHaveLength(24);
+  it('yields the 25 token names the rest of the suite expects', () => {
+    expect(tokenNames()).toHaveLength(25);
   });
 });
 

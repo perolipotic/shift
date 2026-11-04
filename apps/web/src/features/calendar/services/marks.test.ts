@@ -470,7 +470,7 @@ describe('the leave read, never hidden', () => {
 });
 
 describe('the refusal and its retry', () => {
-  const ready = { kind: MARKS_READY, marks: { collisions: [], uncovered: [], leave: new Map() } } as const;
+  const ready = { kind: MARKS_READY, marks: { collisions: [], uncovered: [], leave: new Map(), staffingLeave: null } } as const;
 
   it('refuses with a retry when the snapshot read failed or is paused, whatever else', () => {
     expect(calendarRefusalOf(CALENDAR_UNAVAILABLE, null, null)).toEqual({ refusal: CALENDAR_UNAVAILABLE, retryable: true });

@@ -3,6 +3,7 @@ import type { ReactNode, SyntheticEvent } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { UsersThree } from '@/components/ui/icon';
 import {
   DAY_DETAIL_DIALOG_ID,
   DAY_NO_ROTATION,
@@ -44,6 +45,8 @@ import type { OverrideFormState } from '@/features/calendar/hooks/use-override-f
 import type { RosterFormState } from '@/features/calendar/hooks/use-roster-form';
 import type { CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { candidateContinuousMessageKey, candidateContinuousOf } from '@/features/calendar/utils/replacement-candidates';
+import { atWorkText } from '@/features/staffing/components/short-staffed-block';
+import type { CoverageAgainstMinimum } from '@/features/staffing/services/short-staffed';
 import { positionsShown, rosterLineOf, rosterPositionMessageKey } from '@/features/members/utils/position';
 import { ranksShown, rosterRankMessageKey } from '@/features/members/utils/rank';
 import {
@@ -96,6 +99,27 @@ function renderRoster(shown: DayDetail, usesFireRanks: boolean): ReactNode {
         );
       })}
     </ul>
+  );
+}
+
+/**
+ * STORY 11.3: the working day's people at work against *Najmanje ljudi u
+ * smjeni*, one line under *Sastav* — `rade 3 od najmanje 3`, or, while the
+ * shift is short, the people glyph in `warning` and `Premalo ljudi: rade 2 od
+ * najmanje 3`, so the words carry it, never the colour. Nothing for a member
+ * or while the setting is empty (`null`).
+ */
+function renderStaffing(staffing: CoverageAgainstMinimum | null): ReactNode {
+  if (staffing === null) return null;
+
+  const atWork = atWorkText(staffing.atWork, staffing.minimum);
+
+  // `data-day-staffing`, true while short: the line's stable hook for the e2e suite.
+  return (
+    <p data-day-staffing={staffing.short} className="flex min-w-0 items-center gap-1.5 text-sm tabular-nums">
+      {staffing.short ? <UsersThree aria-hidden className="size-4 shrink-0 text-warning" /> : null}
+      <span className="min-w-0 break-words">{staffing.short ? t('popunjenost.dayShort', { atWork }) : atWork}</span>
+    </p>
   );
 }
 
@@ -325,7 +349,8 @@ function renderConflicts(conflicts: readonly DayConflict[]): ReactNode {
 /**
  * The day detail's body (story 7.9: facts only, no form): the type and its
  * times — or why there is none — the day's unresolved conflicts for an admin,
- * the roster, *Izmjene*, and what the last write said. A day with no rotation
+ * the roster with its people at work against the minimum (story 11.3, an
+ * admin's while the setting is set), *Izmjene*, and what the last write said. A day with no rotation
  * never has an override applied: one there is pending review (story 3.5c).
  */
 function renderDetail(
@@ -334,6 +359,7 @@ function renderDetail(
   conflicts: readonly DayConflict[],
   form: OverrideFormState,
   roster: RosterFormState,
+  staffing: CoverageAgainstMinimum | null,
 ): ReactNode {
   const said = (
     <>
@@ -373,6 +399,7 @@ function renderDetail(
         <h3 id={DAY_DETAIL_ROSTER_ID} className="font-heading text-base font-semibold">
           {t('kalendar.detail.roster')}
         </h3>
+        {renderStaffing(staffing)}
         {renderRoster(shown, usesFireRanks)}
       </div>
       {renderChanges(shown, form, roster)}
@@ -445,6 +472,7 @@ export function DayDetailDialog({
   detail,
   snapshot,
   conflicts,
+  staffing,
   form,
   roster,
   onClose,
@@ -454,6 +482,8 @@ export function DayDetailDialog({
   readonly snapshot: CalendarSnapshot | null;
   /** The day's unresolved conflicts (story 7.9): an admin's marks', none for a member. */
   readonly conflicts: readonly DayConflict[];
+  /** The working day's people at work against the minimum (story 11.3): an admin's while it is set, else `null`. */
+  readonly staffing: CoverageAgainstMinimum | null;
   readonly form: OverrideFormState;
   readonly roster: RosterFormState;
   readonly onClose: () => void;
@@ -514,7 +544,7 @@ export function DayDetailDialog({
             <DialogHeader closeLabel={t('kalendar.detail.close')} onClose={closeUnlessPending}>
               <DialogTitle id={DAY_DETAIL_HEADING_ID} tabIndex={-1}>{t('kalendar.detail.title', { team: detail.teamName, date: detail.date })}</DialogTitle>
             </DialogHeader>
-            {renderDetail(detail, snapshot.usesFireRanks, conflicts, form, roster)}
+            {renderDetail(detail, snapshot.usesFireRanks, conflicts, form, roster, staffing)}
             {renderFooter(form, roster)}
           </>
         )}

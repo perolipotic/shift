@@ -388,6 +388,7 @@ describe('the next seven days', () => {
       collisions: [],
       uncovered: [],
       leave: new Map([[VIEWER_MEMBER, records]]),
+      staffingLeave: null,
     };
 
     return calendarDayListOf(snapshot, snapshot.viewer, date.slice(0, 7), today, marks)?.find((day) => day.date === date);

@@ -418,10 +418,13 @@ export const KEY_SOURCES = [
     // SIXTY-TWO SINCE STORY 9.5: *Treba tebe*'s rows name their kind
     // (*Odsutnost u smjeni*, *Zahtjev za godišnji odmor*), and a pending
     // request's row its range and its member or the words for one who is gone.
+    //
+    // SIXTY-FOUR SINCE STORY 11.3: *Ovaj tjedan*'s short-staffed cell adds
+    // `premalo ljudi` to its name, and the legend lists the mark.
     name: 'the Danas destination',
     file: DANAS,
     keys: translationKeys,
-    strings: 62,
+    strings: 64,
   },
   {
     // STORY 6.1a: today's three cases, the next shift's two headings, and
@@ -818,7 +821,10 @@ export const KEY_SOURCES = [
     // ONE HUNDRED AND SEVENTY-THREE SINCE STORY 15.7b: the month control's
     // `ovaj mjesec` Badge and its `Ovaj mjesec` button off the current month
     // are gone; both keys stay, in the trigger's name and the picker footer.
-    strings: 173,
+    // ONE HUNDRED AND SEVENTY-FOUR SINCE STORY 11.3: the day detail's people
+    // at work line, `Premalo ljudi: {atWork}` while the shift is short (the
+    // figure itself is the short-staffed block's `popunjenost.atWork`).
+    strings: 174,
   },
   {
     // B449: what an empty day or month says — inactive, or on no team — for
@@ -831,12 +837,13 @@ export const KEY_SOURCES = [
   },
   {
     // STORY 3.2b: the four marks' labels and the no-rotation label a cell's
-    // full label reads. `memberListKeys`, because the module holds TWO
-    // `\w*MessageKey` unions and `messageKeyUnion` reads only the first.
+    // full label reads; story 11.3 added short-staffed's, the fifth.
+    // `memberListKeys`, because the module holds TWO `\w*MessageKey` unions
+    // and `messageKeyUnion` reads only the first.
     name: 'the calendar modifier vocabulary',
     file: CALENDAR_MODIFIER_KEYS,
     keys: memberListKeys,
-    strings: 5,
+    strings: 6,
   },
   {
     // STORY 4.1b. TWELVE on Sati: its own `nav.sati` heading; the shared month

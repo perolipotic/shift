@@ -306,6 +306,13 @@
   --modifier-uncovered: oklch(0.5762 0.1151 75.47 / 0.22);
   --modifier-uncovered-foreground: oklch(0.4756 0.0932 76.04);
   --modifier-overridden: oklch(0.582 0.1334 289.32);
+  /* Story 11.3: short-staffed's own signal, the 3 px bar inside a cell's
+   * bottom edge (`modifier-edge-short-staffed`), the short-staffed block's
+   * border and its glyphs. No foreground: no text ever sits on it. Orange,
+   * between `destructive` (~20°) and the amber signals (68-95°), held 3:1 on
+   * every cell fill, `card` and `muted`, and ΔE2000 25 from `destructive`
+   * (`theme-contrast.test.ts`). DESIGN.md `warning` #BF6A14. */
+  --warning: oklch(0.609 0.1393 58.03);
 
   /* The curated brand accents (story 1.4c, UX-DR5; retuned by visual refresh A) */
   --brand-blue: oklch(0.545 0.255 280);
@@ -390,6 +397,8 @@
   --modifier-uncovered: oklch(0.7758 0.1401 78.65 / 0.16);
   --modifier-uncovered-foreground: oklch(0.7803 0.1157 78.08);
   --modifier-overridden: oklch(0.6843 0.1236 290.86);
+  /* Story 11.3: DESIGN.md `warning-dark` #F59145. */
+  --warning: oklch(0.7492 0.1502 54.92);
 
   /* The curated brand accents (story 1.4c, UX-DR5) */
   --brand-blue: oklch(0.77 0.115 266);
@@ -462,6 +471,7 @@
   --color-modifier-uncovered: var(--modifier-uncovered);
   --color-modifier-uncovered-foreground: var(--modifier-uncovered-foreground);
   --color-modifier-overridden: var(--modifier-overridden);
+  --color-warning: var(--warning);
   --color-brand-blue: var(--brand-blue);
   --color-brand-blue-foreground: var(--brand-blue-foreground);
   --color-brand-green: var(--brand-green);
@@ -851,6 +861,64 @@
   @media (forced-colors: active) {
     outline: 4px double CanvasText !important;
     outline-offset: -4px !important;
+  }
+}
+
+/* STORY 11.3: short-staffed's EDGE, a 3 px `--warning` bar inside the cell's
+ * bottom edge. An inset box-shadow, PRECOMPOSED with the rings above so it is
+ * always the innermost band: listed after them, it reaches the ring's depth
+ * plus 3 px, and the rings, painted over it, keep their whole band. So
+ * conflict's `destructive` band is never covered, and the bar never reads as
+ * a ring. The seven utilities are every subset of {conflict, overridden,
+ * short-staffed} that draws anything; `ringClassOf` picks one.
+ *
+ * FORCED COLOURS drop the shadow: the bar becomes a solid `CanvasText`
+ * BOTTOM BORDER, `!important` so a hatch's own border (all four sides, no
+ * `!important`) yields its bottom side to it. Under a ring's inset outline the
+ * border is the ring's depth deeper, so 3 px of it still shows inside the
+ * outline. */
+@utility modifier-edge-short-staffed {
+  box-shadow: inset 0 -3px 0 0 var(--warning);
+
+  @media (forced-colors: active) {
+    border-block-end: 3px solid CanvasText !important;
+  }
+}
+
+@utility modifier-ring-conflict-short-staffed {
+  box-shadow:
+    inset 0 0 0 2px var(--destructive),
+    inset 0 -5px 0 0 var(--warning);
+
+  @media (forced-colors: active) {
+    outline: 2px solid CanvasText !important;
+    outline-offset: -2px !important;
+    border-block-end: 5px solid CanvasText !important;
+  }
+}
+
+@utility modifier-ring-overridden-short-staffed {
+  box-shadow:
+    inset 0 0 0 2px var(--modifier-overridden),
+    inset 0 -5px 0 0 var(--warning);
+
+  @media (forced-colors: active) {
+    outline: 2px dashed Highlight !important;
+    outline-offset: -2px !important;
+    border-block-end: 5px solid CanvasText !important;
+  }
+}
+
+@utility modifier-ring-conflict-overridden-short-staffed {
+  box-shadow:
+    inset 0 0 0 2px var(--destructive),
+    inset 0 0 0 4px var(--modifier-overridden),
+    inset 0 -7px 0 0 var(--warning);
+
+  @media (forced-colors: active) {
+    outline: 4px double CanvasText !important;
+    outline-offset: -4px !important;
+    border-block-end: 7px solid CanvasText !important;
   }
 }
 

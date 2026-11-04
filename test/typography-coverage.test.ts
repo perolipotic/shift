@@ -403,9 +403,13 @@ describe('the calendar draws leave and uncovered as icons, never as uncovered te
   it('draws them with the facade\'s bold Clock and CircleDashed (story 15.1)', () => {
     const vocabulary = readFileSync(join(sourceRoot, 'features', 'calendar', 'utils', 'modifiers.ts'), 'utf8');
 
-    expect(vocabulary).toMatch(/import \{ CircleDashedBold, ClockBold, type IconComponent \} from '@\/components\/ui\/icon';/);
+    expect(vocabulary).toMatch(
+      /import \{ CircleDashedBold, ClockBold, UsersThreeBold, type IconComponent \} from '@\/components\/ui\/icon';/,
+    );
     expect(vocabulary).toMatch(/glyph: \{ kind: GLYPH_ICON, icon: ClockBold \}/);
     expect(vocabulary).toMatch(/glyph: \{ kind: GLYPH_ICON, icon: CircleDashedBold \}/);
+    // Story 11.3: short-staffed is the third icon mark.
+    expect(vocabulary).toMatch(/glyph: \{ kind: GLYPH_ICON, icon: UsersThreeBold \}/);
   });
 
 });
@@ -439,12 +443,13 @@ describe('the small status marks are told apart by drawn shape (story 15.1)', ()
   /** A mark fills at most this share of what a solid disc fills. */
   const NOT_A_DOT = 0.7; // record-bold (a ring around a dot) is 0.60–0.62; the fill clock 0.84–0.94
 
-  it('imports the bold files for the leave mark, the uncovered mark and the three duty legs', () => {
+  it('imports the bold files for the leave, uncovered and short-staffed marks and the three duty legs', () => {
     for (const [name, file] of [
       ['clockBold', 'clock-bold'],
       ['circleDashedBold', 'circle-dashed-bold'],
       ['checkCircleBold', 'check-circle-bold'],
       ['recordBold', 'record-bold'],
+      ['usersThreeBold', 'users-three-bold'],
     ] as const) {
       expect(facade()).toContain(`import ${name} from "@phosphor-icons/core/bold/${file}.svg?raw"`);
     }
@@ -464,10 +469,30 @@ describe('the small status marks are told apart by drawn shape (story 15.1)', ()
     expect(difference(mask('fill/clock-fill.svg', size), mask('fill/circle-dashed-fill.svg', size))).toBeLessThan(DISTINCT);
   });
 
+  it.each(SIZES)('the short-staffed mark differs by shape from leave and uncovered at %i px (story 11.3)', (size) => {
+    // A cell can carry all three: three figures must not read as the clock
+    // or the dashed ring beside them.
+    const short = mask('bold/users-three-bold.svg', size);
+
+    for (const other of ['bold/clock-bold.svg', 'bold/circle-dashed-bold.svg']) {
+      expect(difference(short, mask(other, size)), `short-staffed and ${other} are too alike at ${String(size)} px`).toBeGreaterThanOrEqual(
+        DISTINCT,
+      );
+    }
+    // Non-vacuity: a mark is never distinct from itself.
+    expect(difference(short, mask('bold/users-three-bold.svg', size))).toBeLessThan(DISTINCT);
+  });
+
   it.each(SIZES)('no status mark is a near-solid disc at %i px', (size) => {
     const dot = fillRatio(disc(size));
 
-    for (const file of ['bold/clock-bold.svg', 'bold/circle-dashed-bold.svg', 'bold/check-circle-bold.svg', 'bold/record-bold.svg']) {
+    for (const file of [
+      'bold/clock-bold.svg',
+      'bold/circle-dashed-bold.svg',
+      'bold/check-circle-bold.svg',
+      'bold/record-bold.svg',
+      'bold/users-three-bold.svg',
+    ]) {
       expect(fillRatio(mask(file, size)) / dot, `${file} draws as a dot at ${String(size)} px`).toBeLessThan(NOT_A_DOT);
     }
     expect(fillRatio(mask('fill/clock-fill.svg', size)) / dot, 'the fill clock no longer measures as a dot').toBeGreaterThan(
@@ -514,7 +539,7 @@ describe('every icon comes from the one facade, in Phosphor fill or, for status 
     expect(offenders).toEqual([]);
   });
 
-  it('draws only Phosphor fill files, and bold for the four status marks, and depends on no other icon package', () => {
+  it('draws only Phosphor fill files, and bold for the five status marks, and depends on no other icon package', () => {
     const facade = readFileSync(FACADE, 'utf8');
     const imports = [...facade.matchAll(/from\s+"(@phosphor-icons\/[^"]+)"/g)].map((match) => match[1] ?? '');
     const manifest = JSON.parse(readFileSync(join(repoRoot, 'apps', 'web', 'package.json'), 'utf8')) as {
@@ -524,7 +549,7 @@ describe('every icon comes from the one facade, in Phosphor fill or, for status 
     expect(imports.length, 'the facade imports no icon at all').toBeGreaterThan(40);
     expect(imports.filter((specifier) => !/^@phosphor-icons\/core\/(fill|bold)\/[a-z-]+-\1\.svg\?raw$/.test(specifier))).toEqual([]);
     expect(imports.filter((specifier) => specifier.includes('/bold/')).sort()).toEqual(
-      ['check-circle', 'circle-dashed', 'clock', 'record'].map((name) => `@phosphor-icons/core/bold/${name}-bold.svg?raw`),
+      ['check-circle', 'circle-dashed', 'clock', 'record', 'users-three'].map((name) => `@phosphor-icons/core/bold/${name}-bold.svg?raw`),
     );
     for (const specifier of imports) {
       const file = specifier.replace(/^@phosphor-icons\/core\//, '').replace(/\?raw$/, '');
