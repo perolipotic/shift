@@ -34,6 +34,7 @@ import {
   MEMBER_LIST,
   MEMBER_LIST_KEYS,
   MEMBER_MOVE_PREVIEW_KEYS,
+  STAFFING_BLOCK,
   MEMBER_WRITE_KEYS,
   memberListKeys,
   memberWriteKeys,
@@ -629,8 +630,10 @@ export const KEY_SOURCES = [
     // dialog, the next entry.
     // NINETY SINCE THE STACKED OFFSETS (UX-DR17): the phone's row labels the
     // team and the anchor's type with the column heads' keys again.
+    // NINETY-ONE SINCE STORY 11.2: *Što se mijenja* over the short-staffed
+    // block above the save bar; the block's own words are its entry's.
     keys: translationKeys,
-    strings: 90,
+    strings: 91,
   },
   {
     // STORY 7.18: the history behind a header button — the button and the
@@ -1021,10 +1024,13 @@ export const KEY_SOURCES = [
     // no longer applies holds the key, and its link to the calendar.
     // FORTY SINCE D726: the third card's line naming the days a later start
     // drops, and the line saying some of them are past.
+    // FORTY-ONE SINCE STORY 11.2: a strip's words for a shift still short of
+    // people. The term against the minimum is the short-staffed block's own
+    // `atWorkText`, counted with the block.
     name: 'the conflict resolution screen',
     file: RESOLUTION,
     keys: translationKeys,
-    strings: 40,
+    strings: 41,
   },
   {
     // STORY 5.4b: the facts line with and without times, who else works or
@@ -1504,6 +1510,15 @@ export const KEY_SOURCES = [
     file: MEMBER_LIST_KEYS,
     keys: memberListKeys,
     strings: 31,
+  },
+  {
+    // STORY 11.2: the short-staffed block every save that can cause one draws
+    // in its *Što se mijenja* — its heading, a row, people at work against the
+    // minimum, `i još {n}`, and the neutral line when it cannot be checked.
+    name: 'the short-staffed block',
+    file: STAFFING_BLOCK,
+    keys: translationKeys,
+    strings: 5,
   },
   {
     // DECISION 16, the deferred-work sweep: the team dialog's last shift in

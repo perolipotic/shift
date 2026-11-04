@@ -593,6 +593,11 @@ describe('the accent control offers a curated set and nothing else', () => {
     // snapshot, and a write's declared dependents (the email switch's
     // `/obavijesti` read).
     expect(occurrences(source(SETTINGS_HOOK), 'invalidateQueries('), 'a write invalidates outside the runner').toBe(2);
+    // STORY 11.2: the calendar snapshot carries Minimum Members, so the
+    // minimum's save declares it among its dependents.
+    expect(/MINIMUM_MEMBERS_DIALOG,[\s\S]*?\[CALENDAR_KEY\],\s*\);/.test(source(SETTINGS_HOOK)), 'the minimum’s save leaves the calendar stale').toBe(
+      true,
+    );
   });
 
   it('marks and focuses the control a refused save names, and only that one', () => {

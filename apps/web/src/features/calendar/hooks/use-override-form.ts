@@ -18,7 +18,12 @@ import {
   type OverrideWriteFailure,
 } from '@/features/calendar/services/override-write';
 import { CALENDAR_KEY, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
-import { overridePreviewOf } from '@/features/calendar/utils/change-preview';
+import {
+  overridePreviewOf,
+  overrideRemovalShortStaffedOf,
+  overrideShortStaffedOf,
+} from '@/features/calendar/utils/change-preview';
+import { useStaffingLeave } from '@/features/staffing/hooks/use-staffing-leave';
 import {
   OVERRIDE_NO_TYPE,
   OVERRIDE_REFUSED_REASON,
@@ -264,6 +269,20 @@ export function useOverrideForm(
   // drawn is the calendar read again (by a refusal's re-read, a retry's
   // fresh reads, or another write), never a guess — see the effect below.
   const lost = confirming && override === null && !pending;
+  // STORY 11.2: what the type chosen, or the confirmed removal, would newly
+  // leave short of people on the date — the erasure check's own "after", over
+  // the organization's leave the calendar already observes. Never a gate.
+  const staffingLeave = useStaffingLeave(snapshot);
+  const shortStaffed = useMemo(
+    () => overrideShortStaffedOf(snapshot, detail, chosenType, staffingLeave),
+    [snapshot, detail, chosenType, staffingLeave],
+  );
+  const overrideId = confirming ? (override?.id ?? null) : null;
+  const removeDate = detail?.isoDate ?? null;
+  const removeShortStaffed = useMemo(
+    () => overrideRemovalShortStaffedOf(snapshot, removeDate, overrideId, staffingLeave),
+    [snapshot, removeDate, overrideId, staffingLeave],
+  );
 
   /** Whether the day a write started for is still the one open. */
   function stillOn(startedFor: string | null): boolean {
@@ -847,6 +866,8 @@ export function useOverrideForm(
     closeChange,
     chooseType,
     preview,
+    shortStaffed,
+    removeShortStaffed,
     offersRemove: offers.remove,
     submit,
     openRemove,

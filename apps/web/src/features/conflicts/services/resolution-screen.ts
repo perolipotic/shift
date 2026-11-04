@@ -49,6 +49,12 @@ import { positionsShown, rosterPositionMessageKey } from '@/features/members/uti
 import { previousIsoDate } from '@/lib/i18n/format';
 import { ranksShown, rosterRankMessageKey } from '@/features/members/utils/rank';
 import { durationValuesOf, type DurationValues } from '@/utils/time';
+import { ROSTER_CHANGE_SAVE, rosterChangeSnapshotOf } from '@/features/calendar/services/roster-erasures';
+import {
+  coverageAgainstMinimumOf,
+  minimumOfCalendar,
+  type CoverageAgainstMinimum,
+} from '@/features/staffing/services/short-staffed';
 
 /**
  * One conflict's resolution screen (story 5.4b; CAP-16, UX-DR10, UX-DR11,
@@ -334,6 +340,100 @@ export function resolutionAmendOf(input: LeaveRecordsInput, record: LeaveRecord,
   };
 }
 
+/**
+ * The three cards' coverage against the minimum (story 11.2). Never partial:
+ * either every figure is known, or the whole is `null` and every card keeps
+ * the shipped term, so the two formats never mix on one screen.
+ */
+export interface ResolutionStaffing {
+  readonly accept: CoverageAgainstMinimum;
+  /** The replace card before a pick: someone not on leave put on. */
+  readonly replace: CoverageAgainstMinimum;
+  /** The replace card once a candidate is picked, by their id: their own after, on leave or not. */
+  readonly replaceBy: Readonly<Record<string, CoverageAgainstMinimum>>;
+  readonly amend: CoverageAgainstMinimum;
+}
+
+/** The id the replace card's after puts on the shift before a pick: no member's, so on no leave and active. */
+export const STAFFING_REPLACEMENT_ID = 'staffing-replacement';
+
+/**
+ * The replace card's figure with `memberInId` put on in the absent member's
+ * place: the roster change the replacement writes, as the calendar's erasure
+ * "after" builds it (`rosterChangeSnapshotOf`), through the domain's
+ * `peopleAtWorkOn`. A candidate on leave that day is not counted — the
+ * domain subtracts them. `null` for a change the write would refuse, or on a
+ * `RangeError` (logged).
+ */
+function replacedCoverageOf(
+  snapshot: CalendarSnapshot,
+  records: readonly OrganizationLeaveRecord[],
+  collision: Collision,
+  memberInId: string,
+): CoverageAgainstMinimum | null {
+  try {
+    const replaced = rosterChangeSnapshotOf(snapshot, {
+      kind: ROSTER_CHANGE_SAVE,
+      teamId: collision.teamId,
+      date: collision.date,
+      memberOutId: collision.memberId,
+      memberInId,
+    });
+
+    return replaced.ok ? coverageAgainstMinimumOf(replaced.after, records, collision.teamId, collision.date) : null;
+  } catch (cause) {
+    if (!(cause instanceof RangeError)) throw cause;
+
+    console.error(cause);
+
+    return null;
+  }
+}
+
+/**
+ * {@link ResolutionStaffing} for `collision` over the organization's
+ * `records`, or `null` while the minimum is empty — and `null` too when any
+ * one figure cannot be derived (a refused change, a `RangeError`, a shift that
+ * is not working), so every card falls back to the shipped term together.
+ * Every figure is the domain's, over each option's own after: accept leaves
+ * the day as read; replace puts someone on in the absent member's place — a
+ * placeholder before a pick, and each candidate in `candidateIds` once picked;
+ * amend is the records with this one's range amended, or without it.
+ */
+export function resolutionStaffingOf(
+  snapshot: CalendarSnapshot,
+  records: readonly OrganizationLeaveRecord[],
+  collision: Collision,
+  record: LeaveRecord,
+  target: ResolutionAmendTarget,
+  candidateIds: readonly string[] = [],
+): ResolutionStaffing | null {
+  if (minimumOfCalendar(snapshot) === null) return null;
+
+  const accept = coverageAgainstMinimumOf(snapshot, records, collision.teamId, collision.date);
+  const replace = replacedCoverageOf(snapshot, records, collision, STAFFING_REPLACEMENT_ID);
+  const others = records.filter((one) => one.id !== record.id);
+  const amended =
+    target.kind === AMEND_REMOVES
+      ? others
+      : [...others, { id: record.id, memberId: collision.memberId, from: target.range.from, to: target.range.to }];
+  const amend = coverageAgainstMinimumOf(snapshot, amended, collision.teamId, collision.date);
+
+  if (accept === null || replace === null || amend === null) return null;
+
+  const replaceBy: Record<string, CoverageAgainstMinimum> = {};
+
+  for (const id of candidateIds) {
+    const figure = replacedCoverageOf(snapshot, records, collision, id);
+
+    if (figure === null) return null;
+
+    replaceBy[id] = figure;
+  }
+
+  return { accept, replace, replaceBy, amend };
+}
+
 /** The screen, ready to render. */
 export interface ResolutionView {
   readonly key: string;
@@ -395,6 +495,14 @@ export interface ResolutionView {
   readonly leaveRecordId: string;
   /** The third card's target and figures (story 5.4d). */
   readonly amend: ResolutionAmend;
+  /**
+   * Each card's coverage against Minimum Members (story 11.2): the people at
+   * work over that option's own after — as read (accept), with a replacement
+   * on (replace), with the amended range (amend) — from the domain's
+   * `peopleAtWorkOn`. `null` while the setting is empty: the strips stay as
+   * shipped. A card whose figure cannot be derived is `null` too.
+   */
+  readonly staffing: ResolutionStaffing | null;
   /**
    * Whether a live resolution still holds this conflict's key although it is
    * unresolved (story 5.5d): a replacement whose override no longer applies.
@@ -666,6 +774,7 @@ function resolutionScreenFrom(
   const dateShown = detail.date;
   const typeName = detail.typeName ?? type.name;
   const key = collisionKeyOf(collision);
+  const amend = resolutionAmendOf(base.input, record.record, collision.date);
   // Unresolved, yet a live row holds this key: a replacement the snapshot holds pending or inert.
   const held = liveResolutionsOf(snapshot, resolutionRows).some(
     (resolution) => collisionKeyOf(resolution) === key && heldByReplacement(snapshot, resolution),
@@ -703,7 +812,15 @@ function resolutionScreenFrom(
       replaceCovered: coworkers.length + 1,
       dayMonth: dayMonthOf(collision.date),
       leaveRecordId: record.record.id,
-      amend: resolutionAmendOf(base.input, record.record, collision.date),
+      amend,
+      staffing: resolutionStaffingOf(
+        snapshot,
+        records,
+        collision,
+        record.record,
+        amend.target,
+        candidates.flatMap((group) => group.candidates.map((candidate) => candidate.id)),
+      ),
       held,
       heldCalendar: heldCalendarSearchOf(collision),
       organizationId: snapshot.organizationId,

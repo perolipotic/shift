@@ -10,6 +10,7 @@ import { CaretLeft, Check, X } from '@/components/ui/icon';
 import { Notice } from '@/components/ui/notice';
 import { PageHeader, PageTitle } from '@/components/ui/page-header';
 import { LeaveConflictLines } from '@/features/leave/components/leave-conflict-lines';
+import { ShortStaffedBlock } from '@/features/staffing/components/short-staffed-block';
 import type { LeaveRequestReviewState } from '@/features/leave/hooks/use-leave-request-review';
 import {
   PREVIEW_BASE,
@@ -79,7 +80,7 @@ function RequestPreview({ preview }: { readonly preview: ReviewPreview }): React
     return <p className="text-sm text-muted-foreground">{t(preview.key)}</p>;
   }
 
-  const { figures, inYearDays, conflicts } = preview;
+  const { figures, inYearDays, conflicts, shortStaffed } = preview;
 
   return (
     <div className="grid min-w-0 gap-2">
@@ -99,6 +100,8 @@ function RequestPreview({ preview }: { readonly preview: ReviewPreview }): React
         <p className="text-sm font-medium">{t('godisnji.request.exceeds', { count: figures.balanceAfterDays })}</p>
       ) : null}
       <LeaveConflictLines conflicts={conflicts} amend={false} />
+      {/* STORY 11.2: the shifts approval would newly leave short of people, never a gate. */}
+      <ShortStaffedBlock report={shortStaffed} />
     </div>
   );
 }

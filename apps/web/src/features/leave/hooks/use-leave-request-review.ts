@@ -69,6 +69,7 @@ import {
 import { refreshAfterWrite } from '@/features/teams/services/dependents';
 import { ZONE_FROM_CALENDAR, offlineNoteOf } from '@/lib/offline/freshness';
 import { useSnapshotFreshness } from '@/lib/offline/use-snapshot-freshness';
+import { useStaffingLeave } from '@/features/staffing/hooks/use-staffing-leave';
 import { writesOnline } from '@/lib/offline/use-write-gate';
 import { supabaseClient } from '@/lib/supabase/client';
 import { focusLater } from '@/utils/focus-later';
@@ -179,6 +180,9 @@ export function useLeaveRequestReview(requestId: string) {
     ZONE_FROM_CALENDAR,
   );
   const calendarState = calendarSurfaceStateOf(answerFor(CALENDAR_KEY, calendarRead));
+  // STORY 11.2: the organization's leave for the short-staffed report, observed
+  // under its shared key only for a pending request and while the minimum is set.
+  const staffingLeave = useStaffingLeave(previewMemberId === null ? null : calendarState.snapshot);
   const derived = leaveRequestReviewOf(
     {
       request: answerFor(LEAVE_REQUEST_KEY(requestId), requestRead),
@@ -190,6 +194,7 @@ export function useLeaveRequestReview(requestId: string) {
       actors: answerFor(ACTING_ADMINS_KEY, actorsRead),
       // THE RAW OBSERVER'S fetch flag (the fetch-flag rule, `use-snapshot-freshness`).
       calendarRefreshing: calendarRead.isFetching,
+      staffingLeave,
     },
     requestId,
     new Date(),

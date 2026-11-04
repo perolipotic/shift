@@ -18,6 +18,7 @@ import { RotationHistoryDialog } from '@/features/rotation/components/rotation-h
 import { RotationNotices } from '@/features/rotation/components/rotation-notices';
 import { RotationPatternCard } from '@/features/rotation/components/rotation-pattern-card';
 import { RotationPreviewCard } from '@/features/rotation/components/rotation-preview-card';
+import { RotationShortStaffed } from '@/features/rotation/components/rotation-short-staffed';
 import { RotationSaveBar } from '@/features/rotation/components/rotation-save-bar';
 import { RotationStepActions, RotationStepBar } from '@/features/rotation/components/rotation-stepper';
 import { useRotationBuilder } from '@/features/rotation/hooks/use-rotation-builder';
@@ -360,6 +361,7 @@ export function RotationSection({
         </div>
       )}
       {draft === null ? null : <RotationStepActions builder={builder} />}
+      {draft === null ? null : <RotationShortStaffed builder={builder} />}
       {draft === null ? null : <RotationSaveBar builder={builder} current={draft} gate={saveGate} />}
     </>
   );

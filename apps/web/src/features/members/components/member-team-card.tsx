@@ -20,6 +20,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { Select } from '@/components/ui/select';
+import { ShortStaffedBlock } from '@/features/staffing/components/short-staffed-block';
 import { t } from '@/lib/i18n';
 import { keepFocusOnAlert } from '@/utils/retry-focus';
 import type { MemberEdit } from '@/features/members/hooks/use-member-edit';
@@ -440,8 +441,10 @@ export function MemberTeamDialog({ edit }: { readonly edit: MemberEdit }): React
         {/* COMPUTED, as the status dialog's consequence is: a polite live
             region, always there, so a line that arrives or changes with the
             team or the date is announced. Neutral text: it never gates the save. */}
-        <output aria-live="polite" className="block">
+        <output aria-live="polite" className="grid gap-2">
           {renderPreview()}
+          {/* STORY 11.2: each working shift ahead the move newly leaves short of people. */}
+          <ShortStaffedBlock report={teamDialog.shortStaffed} />
         </output>
         {teamRefusal === null ? null : (
           <Notice id={MEMBER_TEAM_ERROR_ID} role="alert">

@@ -385,7 +385,8 @@ describe('the screen is read at all, so every sweep below means something', () =
     // rules, and the organization's email-notifications switch labels.
     // EIGHTY-THREE SINCE STORY 10.4: the push section's rules.
     // EIGHTY-FOUR SINCE 0047: the leave request record change.
-    expect(KEY_SOURCES).toHaveLength(84);
+    // EIGHTY-FIVE SINCE STORY 11.2: the short-staffed block.
+    expect(KEY_SOURCES).toHaveLength(85);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"

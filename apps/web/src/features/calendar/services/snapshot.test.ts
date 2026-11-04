@@ -152,6 +152,8 @@ describe('the read', () => {
     expect(outcome.snapshot.rosterOverrides).toEqual([]);
     expect(outcome.snapshot.timeZone).toBe('Europe/Zagreb');
     expect(outcome.snapshot.usesFireRanks).toBe(false);
+    // STORY 11.2: a row without the column (before 0048) reads as not set.
+    expect(outcome.snapshot.minimumMembers).toBeNull();
     expect(outcome.snapshot.organizationName).toBe(FIXTURE_ORGANIZATION_NAME);
     expect(outcome.snapshot.teams).toHaveLength(teams);
     expect(outcome.snapshot.types).toHaveLength(types);
@@ -206,8 +208,9 @@ describe('the read', () => {
       'organization_id,member_id,active,effective_from',
     ]);
     // The organization's own columns: its id, zone, name (story 4.3: the hours
-    // export's file name) and whether it uses ranks.
-    expect(CALENDAR_COLUMNS.startsWith('id,timezone,name,uses_fire_ranks,teams(')).toBe(true);
+    // export's file name), whether it uses ranks and, since story 11.2, its
+    // Minimum Members.
+    expect(CALENDAR_COLUMNS.startsWith('id,timezone,name,uses_fire_ranks,minimum_members,teams(')).toBe(true);
     expect(CALENDAR_COLUMNS).not.toMatch(/auth_user_id|email/);
     expect(CALENDAR_COLUMNS).not.toContain('created_by');
     const assignments = /rotation_assignments\(([^)]*)\)/.exec(CALENDAR_COLUMNS)?.[1] ?? '';
@@ -278,6 +281,24 @@ describe('the read', () => {
     ]) {
       expect(await read(tableOf(answerOf({ ...PILOT, bands })), session)).toEqual(REFUSED);
     }
+  });
+
+  it.each([
+    { minimum: 3, expected: 3 },
+    { minimum: 1, expected: 1 },
+    { minimum: null, expected: null },
+    { minimum: 0, expected: null },
+    { minimum: -2, expected: null },
+    { minimum: 2.5, expected: null },
+    { minimum: '3', expected: null },
+  ])('reads Minimum Members $minimum leniently as $expected, never a refusal (story 11.2)', async ({ minimum, expected }) => {
+    const outcome = await read(
+      tableOf({ data: [calendarOrganizationRow(PILOT, { minimumMembers: minimum })], error: null, count: 1 }),
+    );
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.snapshot.minimumMembers).toBe(expected);
   });
 
   it('orders the types by creation, whatever order they arrive in', async () => {

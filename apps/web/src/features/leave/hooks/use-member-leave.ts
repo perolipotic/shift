@@ -18,7 +18,7 @@ import {
   type LeaveRecord,
   type LeaveRecordsTable,
 } from '@/features/leave/services/leave-list';
-import { leaveConflictsOf, type LeaveConflicts } from '@/features/leave/services/leave-conflicts';
+import { LEAVE_CANDIDATE_ID, leaveConflictsOf, type LeaveConflicts } from '@/features/leave/services/leave-conflicts';
 import {
   LEAVE_AMEND_ACTION,
   LEAVE_FROM_FIELD,
@@ -74,6 +74,8 @@ import {
 import { LEAVE_WRITE_DEPENDENTS, NO_DEPENDENTS, refreshAfterWrite } from '@/features/teams/services/dependents';
 import { ZONE_FROM_CALENDAR } from '@/lib/offline/freshness';
 import { useSnapshotFreshness } from '@/lib/offline/use-snapshot-freshness';
+import { useStaffingLeave } from '@/features/staffing/hooks/use-staffing-leave';
+import { leaveChangeReportOf, type ShortStaffedReport } from '@/features/staffing/services/short-staffed';
 import { supabaseClient } from '@/lib/supabase/client';
 import { focusLater } from '@/utils/focus-later';
 import { writesOnline } from '@/lib/offline/use-write-gate';
@@ -352,6 +354,27 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
           )
         : null,
     [resolutionsAnswer, snapshot, memberId, liveRecords, opening, rangeFrom, rangeTo, calendarFetching],
+  );
+  // STORY 11.2: the organization's leave, observed under its shared key only
+  // while the minimum is set — the member page reads none of its own.
+  const staffingLeave = useStaffingLeave(snapshot);
+  /**
+   * What the ready range in the open dialog would newly leave short of people
+   * (story 11.2): the organization's leave plus the candidate, or with the
+   * amended range, over the new range. Null while none is ready, or the
+   * setting is empty. A note, never a gate.
+   */
+  const shortStaffed = useMemo<ShortStaffedReport | null>(
+    () =>
+      snapshot !== null && opening !== null && rangeFrom !== null && rangeTo !== null
+        ? leaveChangeReportOf(snapshot, staffingLeave, {
+            memberId,
+            targetId: opening.target?.id ?? null,
+            candidateId: LEAVE_CANDIDATE_ID,
+            next: { from: rangeFrom, to: rangeTo },
+          })
+        : null,
+    [snapshot, staffingLeave, memberId, opening, rangeFrom, rangeTo],
   );
   /** What the open removal would clear (story 7.12); null while no confirmation is open. */
   const removeConflicts = useMemo<LeaveConflicts | null>(
@@ -902,6 +925,7 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
     removeCancel,
     amendButtonRef,
     conflicts,
+    shortStaffed,
     removeConflicts,
     memberName,
     change,

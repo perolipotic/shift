@@ -16,7 +16,12 @@ import {
   teamChangeOf,
   type MemberChangeRefusal,
 } from '@/features/members/services/member-erasures';
-import { shownTeamMovePreviewOf } from '@/features/members/services/team-move-preview';
+import { shortStaffedAskedOf } from '@/features/members/services/deactivation-consequence';
+import {
+  shownTeamMovePreviewOf,
+  shownTeamMoveShortStaffedOf,
+} from '@/features/members/services/team-move-preview';
+import { useStaffingLeave } from '@/features/staffing/hooks/use-staffing-leave';
 import {
   MEMBER_TEAM_STALE,
   MEMBER_TEAM_TABLE,
@@ -184,6 +189,21 @@ export function useMemberTeam(screen: MemberScreen) {
   const movePreview = useMemo(
     () => shownTeamMovePreviewOf(calendarSnapshot, id, teamDialogOffer, pickedTeam, teamDayEntered, today),
     [calendarSnapshot, id, teamDialogOffer, pickedTeam, teamDayEntered, today],
+  );
+  // STORY 11.2: each working shift ahead the move would newly leave short of
+  // people, from the same snapshot, over the organization's leave — observed
+  // under its shared key only while the minimum is set and the dialog is open.
+  // ONE RULE with the status dialog's (`shortStaffedAskedOf`): only while the
+  // dialog is open on a date it would send, and a team — or no team — is picked.
+  const moveAsked =
+    pickedTeam !== TEAM_UNPICKED_VALUE && shortStaffedAskedOf(teamDialogOffer, teamDayEntered, today);
+  const staffingLeave = useStaffingLeave(moveAsked ? calendarSnapshot : null);
+  const shortStaffed = useMemo(
+    () =>
+      moveAsked
+        ? shownTeamMoveShortStaffedOf(calendarSnapshot, id, teamDialogOffer, pickedTeam, teamDayEntered, today, staffingLeave)
+        : null,
+    [moveAsked, calendarSnapshot, id, teamDialogOffer, pickedTeam, teamDayEntered, today, staffingLeave],
   );
 
   // THE DIALOG'S OFFER GONE ON A RE-READ (story 7.11): the move it was opened
@@ -685,6 +705,7 @@ export function useMemberTeam(screen: MemberScreen) {
       picker: teamPicker,
       /** Decision 16's *Što se mijenja* for the team picked and the date typed, or `null`. */
       preview: movePreview,
+      shortStaffed,
       enterDay: enterTeamDay,
       open: openTeam,
       close: closeTeam,

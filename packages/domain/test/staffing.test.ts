@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import {
+  isShortStaffed,
   newlyShortStaffedOf,
   peopleAtWorkOn,
   scheduleOfMonth,
@@ -292,6 +293,16 @@ describe.each(FIXTURES)('newlyShortStaffedOf under $fixture (R10.4)', (fx) => {
     const frozen = JSON.stringify([oneOff, twoOff]);
     newlyShortStaffedOf(oneOff, twoOff, `${MONTH}-01`, `${MONTH}-31`);
     expect(JSON.stringify([oneOff, twoOff])).toBe(frozen);
+  });
+});
+
+describe('isShortStaffed (R10.2, story 11.2)', () => {
+  it('is fewer at work than the minimum, and never with the setting empty', () => {
+    expect(isShortStaffed(2, 3)).toBe(true);
+    expect(isShortStaffed(0, 1)).toBe(true);
+    expect(isShortStaffed(3, 3)).toBe(false);
+    expect(isShortStaffed(4, 3)).toBe(false);
+    expect(isShortStaffed(0, null)).toBe(false);
   });
 });
 

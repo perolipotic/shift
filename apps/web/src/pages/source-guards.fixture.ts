@@ -481,6 +481,8 @@ export const ROTATION_SECTION: readonly string[] = [
   join(srcRoot, 'features', 'rotation', 'components', 'rotation-pattern-card.tsx'),
   join(srcRoot, 'features', 'rotation', 'components', 'rotation-preview-card.tsx'),
   join(srcRoot, 'features', 'rotation', 'components', 'rotation-save-bar.tsx'),
+  // STORY 11.2: *Što se mijenja* above the save bar, over the short-staffed block.
+  join(srcRoot, 'features', 'rotation', 'components', 'rotation-short-staffed.tsx'),
 ];
 
 /**
@@ -664,6 +666,9 @@ export const MEMBER_FACTS_KEYS = join(srcRoot, 'features', 'members', 'utils', '
 
 /** Decision 16's *Što se mijenja*: the team dialog's two lines, each with or without a range. */
 export const MEMBER_MOVE_PREVIEW_KEYS = join(srcRoot, 'features', 'members', 'services', 'team-move-preview.ts');
+
+/** Story 11.2: the short-staffed block, drawn in every *Što se mijenja* a save that can cause one has. */
+export const STAFFING_BLOCK = join(srcRoot, 'features', 'staffing', 'components', 'short-staffed-block.tsx');
 
 /** The fixed position list as data (team position), and its label mapping. */
 export const POSITION_KEYS = join(srcRoot, 'features', 'members', 'utils', 'position.ts');

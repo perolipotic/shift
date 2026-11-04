@@ -1,10 +1,22 @@
 import { memberHoursOfMonth, monthOf, type CollisionResolution } from '@shift/domain';
 
-import { ROSTER_CHANGE_SAVE, rosterChangeSnapshotOf } from '@/features/calendar/services/roster-erasures';
+import { ROSTER_CHANGE_REMOVAL, ROSTER_CHANGE_SAVE, rosterChangeSnapshotOf } from '@/features/calendar/services/roster-erasures';
 import type { CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { OVERRIDE_NO_TYPE, ROSTER_NOBODY, dayDetailOf, type DayDetail } from '@/features/calendar/utils/day-detail';
-import { OVERRIDE_CHANGE_SET, overrideChangeSnapshotOf } from '@/features/conflicts/services/override-erasures';
+import {
+  OVERRIDE_CHANGE_REMOVE,
+  OVERRIDE_CHANGE_SET,
+  overrideChangeSnapshotOf,
+} from '@/features/conflicts/services/override-erasures';
 import { memberHoursInputOf } from '@/features/hours/services/my-hours';
+import {
+  configurationReportOf,
+  dayWindowOf,
+  minimumOfCalendar,
+  unknownReportOf,
+  type ShortStaffedReport,
+  type StaffingLeaveSource,
+} from '@/features/staffing/services/short-staffed';
 
 /**
  * WHAT A CHANGE OF ONE DAY WOULD DO, before it is saved (story 7.9): the
@@ -218,4 +230,102 @@ export function rosterPreviewOf(
 /** A member a preview names, through the snapshot's members; `null` for one it does not hold. */
 export function previewMemberNameOf(snapshot: CalendarSnapshot | null, memberId: string): string | null {
   return snapshot?.members.find((member) => member.id === memberId)?.name ?? null;
+}
+
+// ------------------------------------------- the short-staffed block (11.2)
+
+/**
+ * The short-staffed report of `applied`, the erasure check's own "after" of a
+ * change of the day `detail` (story 11.2): the shifts of that date it newly
+ * leaves short of people, over the organization's live leave as observed.
+ * `null` — no block — while the minimum is empty, before the leave is looked
+ * at, or for a change the write would refuse anyway. Unknown on a `RangeError`
+ * building the after, as on one of the report.
+ */
+function dayReportOf(
+  snapshot: CalendarSnapshot,
+  date: string,
+  leave: StaffingLeaveSource | null,
+  apply: () => { readonly ok: true; readonly after: CalendarSnapshot } | { readonly ok: false },
+): ShortStaffedReport | null {
+  if (minimumOfCalendar(snapshot) === null) return null;
+
+  let applied: ReturnType<typeof apply>;
+
+  try {
+    applied = apply();
+  } catch (cause) {
+    if (!(cause instanceof RangeError)) throw cause;
+
+    return unknownReportOf(cause);
+  }
+
+  return applied.ok ? configurationReportOf(snapshot, applied.after, dayWindowOf(date), leave) : null;
+}
+
+/** What setting `shiftTypeId` on the day would leave short-staffed; `null` on {@link overridePreviewOf}'s terms. */
+export function overrideShortStaffedOf(
+  snapshot: CalendarSnapshot | null,
+  detail: DayDetail | null,
+  shiftTypeId: string,
+  leave: StaffingLeaveSource | null,
+): ShortStaffedReport | null {
+  if (snapshot === null || detail === null) return null;
+  if (shiftTypeId === OVERRIDE_NO_TYPE || shiftTypeId === detail.projectedShiftTypeId) return null;
+
+  return dayReportOf(snapshot, detail.isoDate, leave, () =>
+    overrideChangeSnapshotOf(snapshot, { kind: OVERRIDE_CHANGE_SET, teamId: detail.teamId, date: detail.isoDate, shiftTypeId }),
+  );
+}
+
+/** What removing the day's override `overrideId` would leave short-staffed. */
+export function overrideRemovalShortStaffedOf(
+  snapshot: CalendarSnapshot | null,
+  /** The day's date, `YYYY-MM-DD`; `null` while no day is open. */
+  date: string | null,
+  overrideId: string | null,
+  leave: StaffingLeaveSource | null,
+): ShortStaffedReport | null {
+  if (snapshot === null || date === null || overrideId === null) return null;
+
+  return dayReportOf(snapshot, date, leave, () =>
+    overrideChangeSnapshotOf(snapshot, { kind: OVERRIDE_CHANGE_REMOVE, overrideId }),
+  );
+}
+
+/** What the roster change would leave short-staffed; `null` on {@link rosterPreviewOf}'s terms. */
+export function rosterShortStaffedOf(
+  snapshot: CalendarSnapshot | null,
+  detail: DayDetail | null,
+  memberOutId: string,
+  memberInId: string,
+  leave: StaffingLeaveSource | null,
+): ShortStaffedReport | null {
+  if (snapshot === null || detail === null) return null;
+  if (memberOutId === memberInId) return null;
+
+  return dayReportOf(snapshot, detail.isoDate, leave, () =>
+    rosterChangeSnapshotOf(snapshot, {
+      kind: ROSTER_CHANGE_SAVE,
+      teamId: detail.teamId,
+      date: detail.isoDate,
+      memberOutId: memberOutId === ROSTER_NOBODY ? null : memberOutId,
+      memberInId: memberInId === ROSTER_NOBODY ? null : memberInId,
+    }),
+  );
+}
+
+/** What removing the roster change `overrideId` of the day would leave short-staffed. */
+export function rosterRemovalShortStaffedOf(
+  snapshot: CalendarSnapshot | null,
+  /** The day's date, `YYYY-MM-DD`; `null` while no day is open. */
+  date: string | null,
+  overrideId: string | null,
+  leave: StaffingLeaveSource | null,
+): ShortStaffedReport | null {
+  if (snapshot === null || date === null || overrideId === null) return null;
+
+  return dayReportOf(snapshot, date, leave, () =>
+    rosterChangeSnapshotOf(snapshot, { kind: ROSTER_CHANGE_REMOVAL, overrideId }),
+  );
 }

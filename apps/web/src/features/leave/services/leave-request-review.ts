@@ -3,7 +3,7 @@ import type { LeavePreview } from '@shift/domain';
 
 import type { CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { actorNamesOf } from '@/features/conflicts/services/resolved-conflicts';
-import { leaveConflictsOf, type LeaveConflicts } from '@/features/leave/services/leave-conflicts';
+import { LEAVE_CANDIDATE_ID, leaveConflictsOf, type LeaveConflicts } from '@/features/leave/services/leave-conflicts';
 import { LEAVE_RECORDS_KEY, type LeaveRecordsState } from '@/features/leave/services/leave-list';
 import {
   REQUEST_APPROVED,
@@ -45,6 +45,11 @@ import {
 } from '@/features/teams/services/dependents';
 import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
 import { formatDate, formatTime } from '@/lib/i18n/format';
+import {
+  leaveChangeReportOf,
+  type ShortStaffedReport,
+  type StaffingLeaveSource,
+} from '@/features/staffing/services/short-staffed';
 
 /**
  * STORY 9.4: one leave request on its admin decision screen
@@ -100,6 +105,11 @@ export interface LeaveRequestReviewSources {
   readonly actors: ReviewReadAnswer;
   /** The calendar snapshot is being re-read: the collisions it would derive are about to change. */
   readonly calendarRefreshing: boolean;
+  /**
+   * The organization's live leave, for the short-staffed report (story 11.2):
+   * observed only while the minimum is set, `null` otherwise or when not handed.
+   */
+  readonly staffingLeave?: StaffingLeaveSource | null;
 }
 
 /** Still waiting on a read: the skeleton. */
@@ -145,6 +155,8 @@ export type ReviewPreview =
       readonly inYearDays: number | null;
       /** What approval would create; null when the range shares a date with the member's leave (the overlap note says so). */
       readonly conflicts: LeaveConflicts | null;
+      /** What approval would newly leave short of people (story 11.2); null while the setting is empty. */
+      readonly shortStaffed: ShortStaffedReport | null;
     };
 
 /** A closed request's line: who decided and when, or the date it was withdrawn. */
@@ -276,6 +288,13 @@ function previewOf(
       { target: null, next: state.range },
       sources.calendarRefreshing,
     ),
+    // STORY 11.2: the organization's leave plus the requested range, over that range.
+    shortStaffed: leaveChangeReportOf(snapshot, sources.staffingLeave ?? null, {
+      memberId: request.memberId,
+      targetId: null,
+      candidateId: LEAVE_CANDIDATE_ID,
+      next: state.range,
+    }),
   };
 }
 

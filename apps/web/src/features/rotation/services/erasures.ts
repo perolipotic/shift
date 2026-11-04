@@ -9,7 +9,21 @@ import {
   type ErasuresOutcome,
 } from '@/features/conflicts/services/erasures';
 import { rotationTeamsOf, type RotationSnapshot } from '@/features/rotation/services/list';
-import { draftAssignmentOf, draftStepsOf, normalizedDraftOf, type RotationDraft } from '@/features/rotation/utils/draft';
+import {
+  draftAssignmentOf,
+  draftRefusalOf,
+  draftStepsOf,
+  normalizedDraftOf,
+  type RotationDraft,
+} from '@/features/rotation/utils/draft';
+import {
+  configurationReportOf,
+  horizonWindowOf,
+  minimumOfCalendar,
+  unknownReportOf,
+  type ShortStaffedReport,
+  type StaffingLeaveSource,
+} from '@/features/staffing/services/short-staffed';
 import { splitTeams } from '@/features/teams/services/list';
 
 /**
@@ -127,6 +141,49 @@ export function rotationErasuresOutcomeOf(
   resolutionRows: readonly unknown[],
 ): RotationErasuresOutcome {
   return erasuresOutcomeOf(() => rotationErasuresOf(calendar, rotation, entered, recordRows, resolutionRows));
+}
+
+// ------------------------------------------------- the short-staffed block (11.2)
+
+/**
+ * What saving `entered` would newly leave short of people (story 11.2): the
+ * erasure check's own "after" ({@link draftCalendarSnapshotOf}) over the
+ * organization's leave as observed, from the draft's effective date over the
+ * horizon. `null` — no block — while the setting is empty, a read is missing,
+ * or the save would be refused before any check (`draftRefusalOf`: no steps,
+ * a past date, a change already scheduled…). Unknown (logged) when the two
+ * reads disagree on the active teams, or on any other `RangeError`. Never a
+ * gate: the save goes through its own erasure check as it always did.
+ */
+export function draftShortStaffedOf(
+  calendar: CalendarSnapshot | null,
+  rotation: RotationSnapshot | null,
+  entered: RotationDraft | null,
+  today: string | null,
+  leave: StaffingLeaveSource | null,
+): ShortStaffedReport | null {
+  if (calendar === null || rotation === null || entered === null || today === null) return null;
+  if (minimumOfCalendar(calendar) === null) return null;
+
+  try {
+    // ONE NORMALISED DRAFT for the refusal, the after and the window, as the save binds it.
+    const draft = normalizedDraftOf(entered, rotationTeamsOf(rotation));
+
+    if (draftRefusalOf(rotation, draft, today) !== null) return null;
+
+    sameActiveTeamsOf(calendar, rotation);
+
+    return configurationReportOf(
+      calendar,
+      draftCalendarSnapshotOf(calendar, rotation, draft),
+      horizonWindowOf(draft.effectiveFrom),
+      leave,
+    );
+  } catch (cause) {
+    if (!(cause instanceof RangeError)) throw cause;
+
+    return unknownReportOf(cause);
+  }
 }
 
 // ------------------------------------------------------------ the cancel (5.5g)

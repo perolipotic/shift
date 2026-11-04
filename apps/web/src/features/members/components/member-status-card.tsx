@@ -19,6 +19,7 @@ import { IconTile } from '@/components/ui/icon-tile';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
+import { ShortStaffedBlock } from '@/features/staffing/components/short-staffed-block';
 import { t } from '@/lib/i18n';
 import { formatIsoDayMonth, isIsoDate } from '@/lib/i18n/format';
 import type { MemberEdit } from '@/features/members/hooks/use-member-edit';
@@ -267,7 +268,7 @@ export function MemberStatusDialog({ edit }: { readonly edit: MemberEdit }): Rea
             there while the question is, so a line that arrives or changes
             with the date is announced. Plain weight. */}
         {offered.change === DEACTIVATE ? (
-          <output aria-live="polite" className="block">
+          <output aria-live="polite" className="grid gap-2">
             {consequence === null
               ? null
               : t(deactivationConsequenceMessageKey(consequence.duties), {
@@ -277,6 +278,8 @@ export function MemberStatusDialog({ edit }: { readonly edit: MemberEdit }): Rea
                   month: t(monthInMessageKey(consequence.month)),
                   duties: consequence.duties,
                 })}
+            {/* STORY 11.2: each working shift ahead it newly leaves short of people. */}
+            <ShortStaffedBlock report={asked ? statusDialog.shortStaffed : null} />
           </output>
         ) : null}
         {/* Retro 8–9, C1 + C4: the member's pending leave requests the

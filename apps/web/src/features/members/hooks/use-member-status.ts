@@ -12,7 +12,12 @@ import {
   type MemberScreen,
 } from '@/features/members/hooks/member-edit-context';
 import { organizationLeaveRequestsReadOptions } from '@/features/leave/hooks/use-organization-leave-requests';
-import { shownDeactivationConsequenceOf } from '@/features/members/services/deactivation-consequence';
+import {
+  shortStaffedAskedOf,
+  shownDeactivationConsequenceOf,
+  shownDeactivationShortStaffedOf,
+} from '@/features/members/services/deactivation-consequence';
+import { useStaffingLeave } from '@/features/staffing/hooks/use-staffing-leave';
 import { deactivationClosedRequestsOf } from '@/features/members/services/deactivation-requests';
 import { MEMBERS_LIST_KEY, membersTodayOf, type MemberListRow } from '@/features/members/services/list';
 import { memberErasureCheckOf, statusChangeOf } from '@/features/members/services/member-erasures';
@@ -169,6 +174,22 @@ export function useMemberStatus(screen: MemberScreen) {
   const consequence = useMemo(
     () => shownDeactivationConsequenceOf(statusCalendar, id, statusDialogOffer, statusDayEntered, today),
     [statusCalendar, id, statusDialogOffer, statusDayEntered, today],
+  );
+  // STORY 11.2: each working shift ahead the deactivation would newly leave
+  // short of people, from the same held snapshot, over the organization's
+  // leave — observed under its shared key only while the minimum is set and
+  // a deactivation's dialog is open. A block, never a gate.
+  // ONE RULE with the team dialog's (`shortStaffedAskedOf`): only while a
+  // deactivation's question is asked, on a date the dialog would send.
+  const statusAsked =
+    statusDialogOffer?.change === DEACTIVATE && shortStaffedAskedOf(statusDialogOffer, statusDayEntered, today);
+  const staffingLeave = useStaffingLeave(statusAsked ? statusCalendar : null);
+  const shortStaffed = useMemo(
+    () =>
+      statusAsked
+        ? shownDeactivationShortStaffedOf(statusCalendar, id, statusDialogOffer, statusDayEntered, today, staffingLeave)
+        : null,
+    [statusAsked, statusCalendar, id, statusDialogOffer, statusDayEntered, today, staffingLeave],
   );
 
   // THE REQUESTS A DEACTIVATION CLOSES (retro 8–9, C1 + C4): the member's
@@ -636,6 +657,7 @@ export function useMemberStatus(screen: MemberScreen) {
       day: statusDayEntered,
       /** A deactivation's consequence in numbers on the entered day, or `null` (story 7.13c). */
       consequence,
+      shortStaffed,
       /** The member's pending leave requests a deactivation from the entered day closes, or `null` when unknown (0041). */
       closedRequests,
       enterDay: enterStatusDay,

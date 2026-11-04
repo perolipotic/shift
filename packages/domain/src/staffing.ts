@@ -73,6 +73,16 @@ export interface ShortStaffedShift {
 }
 
 /**
+ * THE SHORT-STAFFED PREDICATE (R10.2), for a working shift's people at work:
+ * fewer than the minimum. A `null` minimum (the setting empty) is never short.
+ * The one comparison every caller reads — the report here, a resolution
+ * strip's coverage term in the web layer (story 11.2) — so it lives once (AD-7).
+ */
+export function isShortStaffed(atWork: number, minimum: number | null): boolean {
+  return minimum !== null && atWork < minimum;
+}
+
+/**
  * @throws RangeError when `minimumMembers` is neither `null` nor a whole
  *   number of at least 1.
  */
@@ -184,7 +194,7 @@ export function shortStaffedShiftsOf(input: StaffingInput, from: string, to: str
   const minimum = input.minimumMembers;
   if (minimum === null) return [];
   return staffedShiftsOf(input, from, to)
-    .filter((shift) => shift.atWork < minimum)
+    .filter((shift) => isShortStaffed(shift.atWork, minimum))
     .map((shift) => ({ code: SHORT_STAFFED, date: shift.date, teamId: shift.teamId, shiftTypeId: shift.shiftTypeId, atWork: shift.atWork, minimum }));
 }
 

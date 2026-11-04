@@ -57,6 +57,16 @@ import {
   viewerRow,
   viewerSession,
 } from '@/features/rotation/rotation.fixture';
+import { SHORT_STAFFED_KNOWN } from '@/features/staffing/services/short-staffed';
+import {
+  STAFFING_FIXTURES,
+  firstWorkingDayOf,
+  leaveRead,
+  leaveRow,
+  member,
+  staffingSnapshotOf,
+} from '@/features/staffing/staffing.fixture';
+import { nextIsoDate } from '@/lib/i18n/format';
 
 /**
  * Story 9.4's decision screen, executed (AD-15) over a real snapshot: the
@@ -447,5 +457,52 @@ describe('what a decision re-reads, besides the request itself', () => {
     ]);
     expect(decisionRefreshKeysOf(REQUEST_DENIED, VIEWER_MEMBER)).toEqual([]);
     expect(decisionRefreshKeysOf(REQUEST_FAILED, VIEWER_MEMBER)).toEqual([]);
+  });
+});
+
+describe('the short-staffed block approval would cause (story 11.2)', () => {
+  it.each(STAFFING_FIXTURES)('$name: the organization’s leave plus the requested range, over that range; nothing while the setting is empty', async (fixture) => {
+    const four = await staffingSnapshotOf(fixture, { size: 4, minimum: 3 });
+    const unset = await staffingSnapshotOf(fixture, { size: 4, minimum: null });
+    const { date } = firstWorkingDayOf(four, fixture);
+    const members = {
+      members: [0, 1, 2, 3].map((index) => ({ id: member(index), name: `Član ${String(index)}`, leaveAllowanceDays: 20 })),
+      refusal: null,
+      loading: false,
+      paused: false,
+    };
+    const request = answered([requestRow({ from: date, toExclusive: nextIsoDate(date) ?? date })]);
+    const previewOf = (review: LeaveRequestReview): ReviewPreview => {
+      if (review.kind !== REVIEW_PENDING) throw new Error(review.kind);
+
+      return review.preview;
+    };
+    const shown = previewOf(
+      leaveRequestReviewOf(
+        sourcesOf({
+          request,
+          members,
+          calendar: { snapshot: four, loading: false },
+          staffingLeave: leaveRead([leaveRow('00000000-0000-4000-8000-00000000e001', member(1), date, date)]),
+        }),
+        REQUEST,
+        NOW,
+      ),
+    );
+    const none = previewOf(
+      leaveRequestReviewOf(
+        sourcesOf({ request, members, calendar: { snapshot: unset, loading: false }, staffingLeave: null }),
+        REQUEST,
+        NOW,
+      ),
+    );
+
+    if (shown.kind !== PREVIEW_READY || none.kind !== PREVIEW_READY) throw new Error('not ready');
+    expect(shown.shortStaffed).toMatchObject({
+      kind: SHORT_STAFFED_KNOWN,
+      rows: [{ date, teamId: fixture.team, atWork: 2, minimum: 3 }],
+      more: 0,
+    });
+    expect(none.shortStaffed).toBeNull();
   });
 });

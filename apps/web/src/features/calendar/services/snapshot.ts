@@ -115,7 +115,7 @@ export const CALENDAR_KEY = ['calendar'] as const;
  * row of another tenant.
  */
 export const CALENDAR_COLUMNS =
-  `${ORGANIZATION_ZONE_COLUMNS},name,uses_fire_ranks,` +
+  `${ORGANIZATION_ZONE_COLUMNS},name,uses_fire_ranks,minimum_members,` +
   `teams(${TEAMS_COLUMNS}),` +
   `${SHIFT_TYPES_EMBED},` +
   `hour_bands(${HOUR_BANDS_COLUMNS}),` +
@@ -279,6 +279,14 @@ export interface CalendarSnapshot {
   readonly timeZone: string;
   /** Whether the organization uses fire ranks: rank is shown where it does, and never used. */
   readonly usesFireRanks: boolean;
+  /**
+   * The organization's Minimum Members (story 11.2; `0048`), read on the same
+   * row: a whole number from 1, or `null` when the setting is empty. A missing
+   * or invalid value — a cache written before 0048 included — is `null`, as
+   * the organization snapshot's `minimumMembersOf` reads it. Only the
+   * staffing report (`@/features/staffing/services/short-staffed`) reads it.
+   */
+  readonly minimumMembers: number | null;
   /** Every team, archived ones included; the month shows the active ones. */
   readonly teams: readonly TeamRow[];
   /** Every shift type, archived ones included, in creation order. */
@@ -370,6 +378,15 @@ function unavailable(reason: CalendarRefusal, detail?: unknown): CalendarOutcome
   return { ok: false, code: CALENDAR_UNAVAILABLE };
 }
 
+/**
+ * Minimum Members as answered: a whole number from 1, or `null` for anything
+ * else — empty, missing (a row or cache from before 0048) or invalid. Never a
+ * refusal: a value the staffing report cannot use reports nothing.
+ */
+export function calendarMinimumMembersOf(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 ? value : null;
+}
+
 function embedded(organization: Record<string, unknown>, relation: string): readonly unknown[] | null {
   const rows = organization[relation];
 
@@ -457,6 +474,7 @@ export async function readCalendar(
   const organizationName = textAt(organization, 'name');
   const timeZone = textAt(organization, 'timezone');
   const usesFireRanks = organization['uses_fire_ranks'];
+  const minimumMembers = calendarMinimumMembersOf(organization['minimum_members']);
   const teamRows = embedded(organization, 'teams');
   const typeRows = embedded(organization, 'shift_types');
   const bandRows = embedded(organization, 'hour_bands');
@@ -603,6 +621,7 @@ export async function readCalendar(
       organizationName,
       timeZone,
       usesFireRanks,
+      minimumMembers,
       teams,
       types,
       bands,

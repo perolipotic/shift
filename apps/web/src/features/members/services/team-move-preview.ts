@@ -2,8 +2,17 @@ import { adjacentMonth, memberScheduleOfMonth, membershipOn, monthOf, type Membe
 
 import type { CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { memberScheduleInputOf, typeRangeOn } from '@/features/calendar/utils/month';
+import { shortStaffedAskedOf } from '@/features/members/services/deactivation-consequence';
 import { MEMBER_CHANGE_MOVE, memberChangeSnapshotOf } from '@/features/members/services/member-erasures';
 import { chosenTeam, type TeamMoveOffer } from '@/features/members/services/write';
+import {
+  configurationReportOf,
+  horizonWindowOf,
+  minimumOfCalendar,
+  unknownReportOf,
+  type ShortStaffedReport,
+  type StaffingLeaveSource,
+} from '@/features/staffing/services/short-staffed';
 import { formatIsoDayMonth, formatIsoWeekdayShortName, isIsoDate } from '@/lib/i18n/format';
 
 /**
@@ -177,6 +186,52 @@ export function shownTeamMovePreviewOf(
   if (choice === undefined) return null;
 
   return teamMovePreviewOf(snapshot, memberId, choice?.id ?? null, day, today);
+}
+
+/**
+ * What the move would newly leave short of people (story 11.2), on the
+ * preview's own terms ({@link shownTeamMovePreviewOf}): the guard's one
+ * "after" (`memberChangeSnapshotOf`) over the organization's leave as
+ * observed, from `day` over the horizon. `null` — no block — while the
+ * setting is empty, nothing is picked on a valid date, the move is to the same
+ * team, or the guard would refuse it; unknown (logged) on a `RangeError`.
+ * Never a gate.
+ */
+export function shownTeamMoveShortStaffedOf(
+  snapshot: CalendarSnapshot | null,
+  memberId: string,
+  offer: TeamMoveOffer | null,
+  picked: string,
+  day: string,
+  today: string | null,
+  leave: StaffingLeaveSource | null,
+): ShortStaffedReport | null {
+  if (snapshot === null || minimumOfCalendar(snapshot) === null) return null;
+  if (offer === null || today === null || !shortStaffedAskedOf(offer, day, today)) return null;
+
+  const choice = chosenTeam(picked, offer);
+
+  if (choice === undefined) return null;
+
+  const teamId = choice?.id ?? null;
+
+  try {
+    const member = snapshot.members.find((candidate) => candidate.id === memberId);
+
+    if (member === undefined || (membershipOn(member.memberships, day)?.teamId ?? null) === teamId) return null;
+
+    const applied = memberChangeSnapshotOf(
+      snapshot,
+      { kind: MEMBER_CHANGE_MOVE, memberId, teamId, position: null, day },
+      today,
+    );
+
+    return applied.ok ? configurationReportOf(snapshot, applied.after, horizonWindowOf(day), leave) : null;
+  } catch (cause) {
+    if (!(cause instanceof RangeError)) throw cause;
+
+    return unknownReportOf(cause);
+  }
 }
 
 /** Which side of the move a line is: the last shift in the team left, or the first in the team joined. */

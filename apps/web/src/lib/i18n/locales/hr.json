@@ -1256,6 +1256,7 @@
       "cycleCount": "{count, plural, one {# ciklus} few {# ciklusa} other {# ciklusa}}",
       "save": "Spremi rotaciju",
       "saveNote": "Rotacija vrijedi od odabranog datuma. Dani prije njega zadržavaju dosadašnju rotaciju.",
+      "changes": "Što se mijenja",
       "saveBar": {
         "label": "Spremanje rotacije",
         "discard": "Odbaci promjene",
@@ -1714,5 +1715,13 @@
       "body": "{organizationName}: {memberName} traži godišnji odmor {startDate}–{endDate}. Zahtjev čeka tvoju odluku: {link}"
     },
     "footer": "Obavijesti e-poštom možeš isključiti u aplikaciji, pod Obavijesti: {link}"
+  },
+  "popunjenost": {
+    "heading": "Premalo ljudi u smjeni",
+    "row": "{team}, {date} {type}: {atWork}",
+    "atWork": "{atWork, plural, =0 {ne radi nitko} one {radi #} few {rade #} other {radi #}} od najmanje {minimum}",
+    "more": "i još {count}",
+    "unknown": "Popunjenost smjena sada ne mogu provjeriti.",
+    "short": "premalo ljudi"
   }
 }
