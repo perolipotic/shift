@@ -144,7 +144,7 @@ jobs:
       # seed.sql are applied by start. A runner of its own, so the E2E job's
       # organizations never meet this job's organization counts.
       - name: Start local Supabase
-        run: pnpm exec supabase start -x "$SUPABASE_UNUSED_SERVICES"
+        run: bash scripts/ci/start-supabase.sh "$SUPABASE_UNUSED_SERVICES"
 
       # The build-gated root tests read apps/web/dist and fail on a stale one.
       - name: Build
@@ -220,7 +220,7 @@ jobs:
       # supabase/functions/.env, which cannot exist until the stack's keys do.
       # `supabase functions serve` below reads the file written after start.
       - name: Start local Supabase (edge runtime left to functions serve)
-        run: pnpm exec supabase start -x "edge-runtime,$SUPABASE_UNUSED_SERVICES"
+        run: bash scripts/ci/start-supabase.sh "edge-runtime,$SUPABASE_UNUSED_SERVICES"
 
       - name: Write apps/web/.env.local and supabase/functions/.env
         run: node scripts/ci/write-local-env.mjs
@@ -234,7 +234,7 @@ jobs:
       - name: Serve admin-auth and the app
         id: serve
         run: |
-          nohup pnpm exec supabase functions serve admin-auth > "$RUNNER_TEMP/functions.log" 2>&1 &
+          nohup bash scripts/ci/serve-admin-auth.sh > "$RUNNER_TEMP/functions.log" 2>&1 &
           nohup pnpm --filter @shift/web exec vite --host 127.0.0.1 --port 5173 --strictPort > "$RUNNER_TEMP/vite.log" 2>&1 &
           # Up means any answer below 404: the function answers 401 without a
           # JWT once served; before that the gateway answers 5xx.
@@ -298,6 +298,7 @@ jobs:
         if: always()
         run: |
           pkill -f 'vite --host 127.0.0.1 --port 5173' || true
+          pkill -f 'serve-admin-auth.sh' || true
           pkill -f 'supabase functions serve admin-auth' || true
 
   # One HTML report for the whole suite, merged from the shards' blob reports,
