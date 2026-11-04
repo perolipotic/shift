@@ -2471,7 +2471,8 @@ Added 2026-10-30 by `sprint-change-proposal-2026-10-30-glass-redesign.md` (decis
 | 15.4 | Admin surfaces read in glass: Za odluku, decisions, member page, day detail, rotation, Organizacija | 15.2 |
 | 15.5 | Glass holds in the dark theme, without blur support, and on a low-end phone | 15.3, 15.4 |
 | ~~15.6~~ | *(moved out of Epic 15 on 2026-11-04; outside v1 unless D6)* A week view on the desktop and a day view on the phone | 15.1, PRD edit |
-| 15.7 | Every filter is one summary bar, a *Filtri* sheet and removable chips, and the month is a compact header control | 15.2 |
+| 15.7 | Every filter is one summary bar, a *Filtri* sheet and removable chips | 15.2 |
+| 15.7b | The month is a compact header control *(split from 15.7, 2026-11-03)* | 15.7 |
 
 ### Story 15.1: Pilot: *Kalendar* and the shell in glass, on real data, on a phone
 
@@ -2531,16 +2532,14 @@ Added 2026-10-30 at the product owner's request after the 15.1 pilot. The refere
 
 **Given** a filtered surface (*Kalendar*, *Sati*, *Ljudi*)
 **When** it renders
-**Then** one summary bar is drawn as a glass-reading card: an icon, the muted tabular summary (`Prikazano: sve smjene (4) · 17 osoba`), and a `Filtri` Button carrying a Badge with the number of active filters, at least 44 px
+**Then** one summary bar is drawn as an opaque reading card: an icon, the muted tabular summary (`Prikazano: sve smjene (4) · 17 osoba`), and a `Filtri` Button carrying a Badge with the number of active filters, at least 44 px
 **And** under it each active filter is a removable chip (`Smjena: B ✕`), with `Očisti sve` while any filter is on. A chip is told apart by its words and its ✕, never by colour alone.
 
 **Given** the `Filtri` button
 **When** it is pressed
 **Then** a Sheet opens: docked at the bottom on a phone, at the side from 1024 px. It holds every filter of that surface. Each value is picked through a Popover with a searchable Command list (a search field, options with their muted tabular counts, the chosen one marked). There is one `Prikaži {n}` and one `Poništi`.
 
-**Given** the month control on *Kalendar* and *Sati*
-**When** it renders
-**Then** it is a compact header control beside the page title: ‹ and › as 44 px icon buttons around the month name, which opens the month picker. The current month's `Ovaj mjesec` Badge is removed (PO, 2026-10-30, "maybe": planning confirms it). Returning to the current month stays one action, in the month picker.
+*The month control moved to Story 15.7b (the product owner's split, 2026-11-03).*
 
 **Given** filter state in the URL, the counts, the keyboard and screen readers
 **When** the redesign ships
@@ -2549,3 +2548,28 @@ Added 2026-10-30 at the product owner's request after the 15.1 pilot. The refere
 **Given** this story ships
 **When** it is merged
 **Then** DESIGN.md (*month toolbar*, *Filter chip row*, *Filter sheet*), EXPERIENCE.md and the UX-DRs it changes are updated in the same change.
+
+### Story 15.7b: The month is a compact header control
+
+As an admin or a member who moves between months,
+I want the month control to be small and beside the page title,
+So that it reads as part of the glass header and not as a heavy toolbar.
+
+Split from Story 15.7 at the product owner's choice (2026-11-03). Spec: `spec-15-7b-the-month-is-a-compact-header-control.md`.
+
+**Depends on:** 15.7.
+
+**Acceptance Criteria:**
+
+**Given** the month control on *Kalendar* and *Sati*
+**When** it renders
+**Then** it is a compact header control: ‹ and › as 44 px icon buttons around the month name, which opens the month picker. From 640 px it sits in the page header beside the title; below 640 px it stays in the Card's sticky glass head.
+**And** the current month's `Ovaj mjesec` Badge and the separate off-month `Ovaj mjesec` button are removed (PO, 2026-11-03). Returning to the current month stays one action: the picker footer's `Ovaj mjesec`.
+
+**Given** the month behaviour of story 7.4
+**When** the control is redesigned
+**Then** PgUp/PgDn, the picker (year ‹ ›, the 4×3 grid, its keys, a bottom sheet below 640 px), the visually hidden month heading, the URL and the copy are kept, and exactly one month control renders per screen.
+
+**Given** this story ships
+**When** it is merged
+**Then** DESIGN.md (*month toolbar*), EXPERIENCE.md and UX-DR30 are updated in the same change.

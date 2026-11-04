@@ -74,6 +74,10 @@ context:
 - Given the keyboard only, when stepping, picking and returning to the current month, then focus never lands on `body`.
 - Given the change, then lint, typecheck, unit, the root suite (after build) and the touched e2e are green.
 
+## Spec Change Log
+
+- **Verification (2026-11-04, epic 15 retro S7):** the local e2e run against a temporary Vite on port 5174 looped for about 10 hours and was stopped. CI was the e2e gate, with the product owner's approval, and PR #262 went green there; an admin e2e at 1280 px was added for the Card with no empty head.
+
 ## Design Notes
 
 **Resizing across 640 px** remounts `MonthNav` in the other slot, so focus on it is lost and an open picker closes, as crossing already closes it today. Accepted: it needs a live resize with focus on the control, and a portal to keep one mount would cost more than it saves.
