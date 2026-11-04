@@ -62,10 +62,11 @@ export function HoursNotice({
  * only draws it. A figure's ⓘ (story 7.14) asks for its explanation through
  * `onExplain`; the screen holds the dialog, above this and every branch.
  *
- * `toolbar`, the screen's month navigation, heads every branch: on a phone it
- * is a sticky head (`StickyHead`, deferred-work E816), as on *Kalendar*, and
+ * `toolbar`, the screen's month navigation on a phone, heads every branch as
+ * a sticky head (`StickyHead`, deferred-work E816), as on *Kalendar*, and
  * the organization's filter bar follows in flow, repeated in the head as one
- * line once it has scrolled under it.
+ * line once it has scrolled under it. From 640 px the month sits in the page
+ * header (story 15.7b), `toolbar` is `null` and no head is drawn.
  */
 export function HoursBody({
   toolbar,
@@ -77,7 +78,7 @@ export function HoursBody({
   onPress,
   onExplain,
 }: {
-  /** The month navigation, drawn first, in the sticky head. */
+  /** The month navigation, drawn first, in the sticky head; `null` draws no head (from 640 px, story 15.7b). */
   readonly toolbar: ReactNode;
   readonly refusal: HoursFailure | null;
   readonly view: MyHoursView | null;
@@ -94,11 +95,12 @@ export function HoursBody({
   // Story 7.6: which form the organization's month takes. The sort and the
   // filters live in the URL, so crossing 640 px keeps both.
   const isPhone = usePhone();
+  const head = toolbar === null ? null : <StickyHead>{toolbar}</StickyHead>;
 
   if (refusal !== null) {
     return (
       <>
-        <StickyHead>{toolbar}</StickyHead>
+        {head}
         <div className="px-4 pb-4">
           <HoursNotice refusal={refusal} />
         </div>
@@ -109,7 +111,9 @@ export function HoursBody({
   if (organization !== null) {
     return (
       <>
-        <StickyHead summary={activeFilterSummaryOf(organization.filters)}>{toolbar}</StickyHead>
+        {toolbar === null ? null : (
+          <StickyHead summary={activeFilterSummaryOf(organization.filters)}>{toolbar}</StickyHead>
+        )}
         <OrganizationHoursFilters view={organization} filtersRef={filtersRef} onChange={onChange} />
         {organizationName === null ? null : (
           <OrganizationHoursExport view={organization} organizationName={organizationName} />
@@ -138,7 +142,7 @@ export function HoursBody({
   if (view === null) {
     return (
       <>
-        <StickyHead>{toolbar}</StickyHead>
+        {head}
         <HoursSkeleton />
       </>
     );
@@ -146,7 +150,7 @@ export function HoursBody({
 
   return (
     <>
-      <StickyHead>{toolbar}</StickyHead>
+      {head}
       <HoursSummary
         view={view}
         onExplain={(figure) => {

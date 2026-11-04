@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode } from 'react';
 
 import { SheetDialog } from '@/components/filter-bar';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { CaretDown, CaretLeft, CaretRight } from '@/components/ui/icon';
@@ -41,13 +40,19 @@ export interface MonthNavMonth {
 }
 
 /**
- * The month toolbar, shared by *Kalendar* and *Sati* (story 4.1b, one
- * toolbar since story 7.4): ‹ month ▾ › in one group named "Mjesec", the
- * month a button that opens a twelve-month picker. PgUp and PgDn step the
- * month while focus is in the group, and do nothing where the ‹ › they
- * stand for are disabled. On the current month an "ovaj mjesec" label sits in
- * the trigger; on any other, `Ovaj mjesec` follows the group as a button. A
- * placeholder bar while no month is shown.
+ * The month control, shared by *Kalendar* and *Sati* (story 4.1b, one
+ * toolbar since story 7.4, a compact header control since story 15.7b):
+ * ‹ month ▾ › and nothing else, in one group named "Mjesec", the month a
+ * button that opens a twelve-month picker. PgUp and PgDn step the month while
+ * focus is in the group, and do nothing where the ‹ › they stand for are
+ * disabled. No label and no `Ovaj mjesec` button beside it: the way back to
+ * the current month is the picker footer's `Ovaj mjesec`, and the trigger's
+ * name alone says ", ovaj mjesec" on it. A placeholder bar while no month is
+ * shown.
+ *
+ * Where it sits is the screen's choice (story 15.7b): from 640 px in the
+ * `PageHeader` row beside the `<h1>`, below it in the Card's sticky head. A
+ * screen renders exactly one, its slot chosen by `usePhone()`.
  *
  * The heading stays, visually hidden: it carries `headingId`, names the grid
  * and the day list, and takes focus by it — the calendar's when a closed day
@@ -198,7 +203,7 @@ export function MonthNav({
             ref={trigger}
             type="button"
             variant="outline"
-            className="h-11 gap-1 px-2 sm:min-w-44 sm:gap-2 sm:px-3"
+            className="h-11 gap-1 px-2 tabular-nums sm:min-w-44 sm:gap-2 sm:px-3"
             aria-haspopup="dialog"
             aria-expanded={open}
             aria-controls={open ? (isPhone ? sheetId : pickerId) : undefined}
@@ -208,11 +213,7 @@ export function MonthNav({
               else setOpenOn(month.month);
             }}
           >
-            {/* On a phone the label sits under the month, so ‹ month › fits 320 px. */}
-            <span className="flex flex-col items-center leading-tight sm:flex-row sm:gap-2">
-              <span className="font-bold">{t('kalendar.monthHeading', { month: month.monthName, year: month.year })}</span>
-              {month.isCurrent ? <Badge variant="outline">{t('kalendar.thisMonthLabel')}</Badge> : null}
-            </span>
+            <span className="font-bold">{t('kalendar.monthHeading', { month: month.monthName, year: month.year })}</span>
             <CaretDown aria-hidden />
           </Button>
           <Button
@@ -247,19 +248,6 @@ export function MonthNav({
           {isPhone ? picker : null}
         </div>
       </SheetDialog>
-      {month.isCurrent ? null : (
-        <Button
-          type="button"
-          variant="outline"
-          className="h-11"
-          onClick={() => {
-            onShow(null);
-            focusTrigger();
-          }}
-        >
-          {t('kalendar.current')}
-        </Button>
-      )}
     </>
   );
 }

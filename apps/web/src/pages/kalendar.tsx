@@ -22,6 +22,7 @@ import {
   type CalendarSearch,
 } from '@/features/calendar/utils/month';
 import { calendarMessageKey } from '@/features/calendar/services/snapshot';
+import { usePhone } from '@/hooks/viewport';
 import { t } from '@/lib/i18n';
 import { appLayoutRoute } from '@/pages/_app';
 import { keepFocusOnAlert } from '@/utils/retry-focus';
@@ -52,8 +53,8 @@ import { keepFocusOnAlert } from '@/utils/retry-focus';
  * a mark is on screen. The day list stays a plain list.
  *
  * ONE TEAM (story 3.3a), `?smjena=<team id>`, and ONE PERSON (story 3.3b),
- * `?osoba=<member id>`: *Sve smjene* narrowed by the shared filter bar under
- * the month toolbar (story 7.5) — Smjena and Osoba chips, a summary of what is
+ * `?osoba=<member id>`: *Sve smjene* narrowed by the shared filter bar at the
+ * top of the Card (story 7.5) — Smjena and Osoba chips, a summary of what is
  * shown and one `Poništi filtre`. A person chosen replaces the grid with their
  * day list, headed with their name, and wins over a team. The state lives in
  * the URL alone, and the bar waits for the month, so a loading screen shows
@@ -61,10 +62,15 @@ import { keepFocusOnAlert } from '@/utils/retry-focus';
  * sentence in their place: whose schedule it is, the viewer's team, and that
  * the filters belong to *Sve smjene* (deferred-work E822).
  *
- * ON A PHONE the month toolbar is a sticky head at the top of the viewport
- * while the month scrolls (`StickyHead`, deferred-work E816); the filter bar
- * follows in flow, and once it has scrolled under the head, the head shows the
- * active filters as one line.
+ * THE MONTH CONTROL (story 15.7b) is ONE `MonthNav`, its slot chosen by
+ * `usePhone()`: from 640 px a compact header control at the right of the
+ * `PageHeader` row, beside the `<h1>`, and the Card opens on the mode switch;
+ * below 640 px it stays in the Card's sticky head at the top of the viewport
+ * while the month scrolls (`StickyHead`, deferred-work E816), the mode switch
+ * beside it. Never two at once: their ids, heading and picker state would
+ * collide. The filter bar follows the head in flow, and once it has scrolled
+ * under the head, the head shows the active filters as one line. With the
+ * read refused there is no month control, in either slot.
  *
  * ONE DAY (story 3.4b): a grid cell — clicked, or Enter or Space on it — and a
  * day-list day on a team open a Dialog of that team on that date: facts only
@@ -110,6 +116,10 @@ export function KalendarScreen() {
     });
   });
   const { snapshot, loading, refusal, month, mode } = screen;
+  // Story 15.7b: the one month control's slot — the page header from 640 px, the sticky head below.
+  const isPhone = usePhone();
+  const monthNav =
+    refusal !== null ? null : <MonthNav month={month} headingId={MONTH_HEADING_ID} onShow={screen.show} />;
   // The active filters as one line, for the phone's sticky head (deferred-work E816).
   const filterSummary =
     month === null || mode !== MODE_SVE ? null : calendarFilterSummaryOf(month);
@@ -135,6 +145,7 @@ export function KalendarScreen() {
         <PageTitle asChild>
           <h1>{t('nav.kalendar')}</h1>
         </PageTitle>
+        {isPhone ? null : monthNav}
       </PageHeader>
       <OfflineNote offline={screen.offline} />
       {refusal === null ? null : (
@@ -155,12 +166,16 @@ export function KalendarScreen() {
       )}
       {refusal !== null ? null : (
         <Card className="min-w-0">
-          <StickyHead summary={filterSummary}>
-            <div className="flex min-w-0 flex-wrap items-center gap-2 px-4 py-2 sm:gap-3 sm:py-4">
-              <MonthNav month={month} headingId={MONTH_HEADING_ID} onShow={screen.show} />
-              {mode === null ? null : <CalendarModeSwitch chosen={mode} onChoose={screen.choose} />}
-            </div>
-          </StickyHead>
+          {/* From 640 px the head's row holds the mode switch alone; the month is in the page header.
+              Until the mode is known there it has nothing to hold, so no empty row opens the Card. */}
+          {!isPhone && mode === null ? null : (
+            <StickyHead summary={filterSummary}>
+              <div className="flex min-w-0 flex-wrap items-center gap-2 px-4 py-2 sm:gap-3 sm:py-4">
+                {isPhone ? monthNav : null}
+                {mode === null ? null : <CalendarModeSwitch chosen={mode} onChoose={screen.choose} />}
+              </div>
+            </StickyHead>
+          )}
           {month === null || mode !== MODE_SVE ? null : <CalendarFilters shown={month} onFilter={screen.filter} />}
           {ownNote === null ? null : (
             <p className="min-w-0 px-4 pb-4 pt-2 text-sm text-muted-foreground sm:pt-0">{ownNote}</p>

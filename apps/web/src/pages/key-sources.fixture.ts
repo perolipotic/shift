@@ -809,7 +809,10 @@ export const KEY_SOURCES = [
     // option search's label, `Nema rezultata` and `Sve osobe` (the Osoba
     // field's value) arrived. ONE HUNDRED AND SEVENTY-FIVE with the Smjena
     // field's value while a person replaces the team (`Zamijenjeno osobom`).
-    strings: 175,
+    // ONE HUNDRED AND SEVENTY-THREE SINCE STORY 15.7b: the month control's
+    // `ovaj mjesec` Badge and its `Ovaj mjesec` button off the current month
+    // are gone; both keys stay, in the trigger's name and the picker footer.
+    strings: 173,
   },
   {
     // B449: what an empty day or month says — inactive, or on no team — for
@@ -911,10 +914,13 @@ export const KEY_SOURCES = [
     //
     // ONE HUNDRED AND FIFTEEN SINCE STORY 15.7: the shared filter bar's
     // four more, counted in the Kalendar set too.
+    //
+    // ONE HUNDRED AND THIRTEEN SINCE STORY 15.7b: the month control's Badge
+    // and its `Ovaj mjesec` button are gone, counted in the Kalendar set too.
     name: 'the Sati destination',
     file: SATI,
     keys: translationKeys,
-    strings: 115,
+    strings: 113,
   },
   {
     // STORY 5.2c. THREE on Godišnji: its own `nav.godisnji` heading, the

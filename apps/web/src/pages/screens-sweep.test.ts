@@ -555,14 +555,29 @@ describe('the screen is read at all, so every sweep below means something', () =
     }
   });
 
-  it('draws the month as one toolbar, shared by Kalendar and Sati (story 7.4)', () => {
+  it('draws the month as one compact control, shared by Kalendar and Sati (stories 7.4, 15.7b)', () => {
     const nav = source(SHARED_MONTH_NAV);
     const keys = source(MONTH_KEYS);
 
-    // `Ovaj mjesec` is never a disabled button on the current month: it is a
-    // label there, and a button only off it.
+    // Story 15.7b: ‹ month › only. No `ovaj mjesec` Badge in the trigger and
+    // no `Ovaj mjesec` button off the current month: the way back is the
+    // picker footer's, and the current month is said by the trigger's name.
+    expect(nav, 'a Badge came back into the month control').not.toMatch(/\bBadge\b/);
+    expect(nav, 'an Ovaj mjesec button came back off the current month').not.toMatch(/month\.isCurrent \? null : \(\s*<Button/);
     expect(nav, 'Ovaj mjesec is disabled on the current month again').not.toMatch(/disabled=\{month\.isCurrent\}/);
-    expect(nav).toMatch(/\{month\.isCurrent \? null : \(\s*<Button/);
+    expect(occurrences(nav, "t('kalendar.current')"), 'Ovaj mjesec is drawn outside the picker footer').toBe(1);
+    expect(nav).toMatch(/aria-label=\{month\.isCurrent \? `\$\{triggerName\}, \$\{t\('kalendar\.thisMonthLabel'\)\}` : triggerName\}/);
+    // One control per screen, its slot chosen by `usePhone()`: the page header
+    // from 640 px, the sticky head below — never two at once.
+    for (const page of [KALENDAR_PAGE, SATI_PAGE]) {
+      const screen = source(page);
+
+      expect(occurrences(screen, '<MonthNav '), `${page} draws the month control twice`).toBe(1);
+      expect(screen, `${page} no longer chooses the month's slot by usePhone`).toMatch(/const isPhone = usePhone\(\);/);
+      expect(screen, `${page} no longer puts the month in the page header from 640 px`).toMatch(
+        /\{isPhone \? null : monthNav\}\s*<\/PageHeader>/,
+      );
+    }
     // One group named "Mjesec", and the month is a button that opens a dialog.
     expect(nav).toMatch(/role="group"\s+aria-label=\{t\('kalendar\.month'\)\}/);
     expect(ariaHaspopupValues(nav)).toEqual(['dialog']);

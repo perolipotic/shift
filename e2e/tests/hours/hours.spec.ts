@@ -67,6 +67,7 @@ import { sortControlName } from '../../pages/sort-control.ts';
  */
 
 const sati = hr.sati;
+const kalendar = hr.kalendar;
 const organization = hr.sati.organization;
 const hours = hr.organization.hourBands.duration.hours;
 
@@ -364,9 +365,9 @@ test.describe('as a member', () => {
     await expect(hoursPage.untimedNote).toHaveCount(0);
     // No leave, so no shift in conflict: nothing is added (story 5.3d).
     await expect(hoursPage.conflictsLine).toHaveCount(0);
-    // On the current month, "ovaj mjesec" is a label, not a button (story 7.4).
-    await expect(hoursPage.thisMonthLabel).toBeVisible();
-    await expect(hoursPage.currentButton).toHaveCount(0);
+    // On the current month the trigger's name says so; nothing is drawn beside it (story 15.7b).
+    await expect(hoursPage.currentMonthTrigger).toBeVisible();
+    await expect(hoursPage.currentButtons).toHaveCount(0);
   });
 
   test('the explanation of the total lists the shifts, and every way of closing it returns focus to its ⓘ (story 7.14)', async ({
@@ -440,14 +441,18 @@ test.describe('as a member', () => {
     const next = nextMonth(rotation.today.slice(0, 7));
     await hoursPage.nextButton.click();
     await expect(page).toHaveURL(new RegExp(`mjesec=${next}`));
-    await expect(hoursPage.currentButton).toBeEnabled();
+    // Off the current month too, no Ovaj mjesec outside the picker (story 15.7b).
+    await expect(hoursPage.currentButtons).toHaveCount(0);
+    // At 390 px the control is the sticky head's.
+    await expect(hoursPage.stickyHead.getByRole('group', { name: kalendar.month, exact: true })).toBeVisible();
     await expect(hoursPage.figureIn(hoursPage.totalTile, hoursOf(workingShiftsIn(next, rotation.today)))).toBeVisible();
     await expectNoHorizontalScroll(page);
-    await hoursPage.currentButton.click();
+    await hoursPage.monthTrigger.click();
+    await hoursPage.pickerCurrent.click();
     await expect(hoursPage.monthHeading(monthHeading(rotation.today))).toBeVisible();
-    // Focus lands on the shared toolbar's trigger, never <body> (story 7.4).
+    // Focus lands on the shared control's trigger, never <body> (story 7.4).
     await expect(hoursPage.monthTrigger).toBeFocused();
-    await expect(hoursPage.thisMonthLabel).toBeVisible();
+    await expect(hoursPage.currentMonthTrigger).toBeVisible();
   });
 });
 
@@ -469,10 +474,48 @@ test.describe('the shared month toolbar on Sati (story 7.4)', () => {
     await expect(hoursPage.pickerMonth(monthHeading('2026-08-01'))).toBeFocused();
     await expect(hoursPage.pickerMonth(monthHeading('2026-08-01'))).toHaveAttribute('aria-current', 'true');
   });
+
+  test('from 640 px the month control sits in the page header beside the title, and the Card has no head (story 15.7b)', async ({
+    page,
+    hoursPage,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await hoursPage.goto('?mjesec=2026-07');
+    await expect(hoursPage.monthToolbar).toBeVisible();
+    await expect(hoursPage.currentButtons).toHaveCount(0);
+    await expect(hoursPage.pageHeader.getByRole('group', { name: kalendar.month, exact: true })).toBeVisible();
+    // No empty head opens the Card on the desktop.
+    await expect(hoursPage.stickyHead).toHaveCount(0);
+
+    const title = await hoursPage.anyHeading.boundingBox();
+    const control = await hoursPage.monthToolbar.boundingBox();
+    expect(title, 'the title has no box').not.toBeNull();
+    expect(control, 'the month control has no box').not.toBeNull();
+    expect(control!.y, 'the control is below the title row').toBeLessThan(title!.y + title!.height);
+    expect(control!.y + control!.height, 'the control is above the title row').toBeGreaterThan(title!.y);
+    expect(control!.x, 'the control is not right of the title').toBeGreaterThan(title!.x + title!.width);
+
+    // Back to the current month by the picker footer, focus on the trigger.
+    await hoursPage.monthTrigger.click();
+    await hoursPage.pickerCurrent.click();
+    await expect(page).not.toHaveURL(/mjesec=/);
+    await expect(hoursPage.currentMonthTrigger).toBeFocused();
+  });
 });
 
 test.describe('as an admin', () => {
   test.use({ storageState: ADMIN_STATE });
+
+  test('the organization table opens its Card with no empty head, the month in the page header (story 15.7b)', async ({
+    page,
+    hoursPage,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await hoursPage.goto('?mjesec=2026-07');
+    await expect(hoursPage.organizationTable).toBeVisible();
+    await expect(hoursPage.pageHeader.getByRole('group', { name: kalendar.month, exact: true })).toBeVisible();
+    await expect(hoursPage.stickyHead).toHaveCount(0);
+  });
 
   test("the table's row for the member equals what the member reads, and filters, sorts, keeps them across months and links", async ({
     browser,

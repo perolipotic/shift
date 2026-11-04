@@ -258,12 +258,14 @@ test.describe('month navigation', () => {
     await expect(calendarPage.monthHeading(monthHeading(next))).toBeVisible();
     await expect(await calendarPage.cellOf(fixture.team.name, next)).toContainText(expectedType(rotation, next));
 
-    await calendarPage.currentButton.click();
+    // Back to the current month through the picker footer's Ovaj mjesec (story 15.7b).
+    await calendarPage.monthTrigger.click();
+    await calendarPage.pickerCurrent.click();
     await expect(calendarPage.monthHeading(monthHeading(rotation.today))).toBeVisible();
-    // On the current month, "ovaj mjesec" is a label in the trigger, not a
-    // disabled button (story 7.4), and focus is on the trigger, never <body>.
-    await expect(calendarPage.thisMonthLabel).toBeVisible();
-    await expect(calendarPage.currentButton).toHaveCount(0);
+    // On the current month the trigger's name says so, no button is drawn
+    // beside it, and focus is on the trigger, never <body>.
+    await expect(calendarPage.currentMonthTrigger).toBeVisible();
+    await expect(calendarPage.currentButtons).toHaveCount(0);
     await expect(calendarPage.monthTrigger).toBeFocused();
 
     // Whatever a navigation might have fetched has landed before the count is read.
@@ -291,23 +293,50 @@ test.describe('month navigation', () => {
 });
 
 /**
- * Story 7.4: the month is one toolbar, ‹ month ▾ ›, shared with *Sati*. PgUp
+ * Story 7.4: the month is one control, ‹ month ▾ ›, shared with *Sati*. PgUp
  * and PgDn step it from anywhere in the group; the month opens a picker of
- * twelve months with the year's ‹ ›; `Ovaj mjesec` is a button only off the
- * current month. No rotation is needed: the toolbar reads none.
+ * twelve months with the year's ‹ ›. Since story 15.7b it is only that: no
+ * label and no `Ovaj mjesec` beside it — the way back is the picker footer's —
+ * and from 640 px it sits in the page header beside the title. No rotation is
+ * needed: the control reads none.
  */
 test.describe('the month toolbar', () => {
   test.use({ storageState: ADMIN_STATE });
 
-  test('on the current month the trigger carries the label and no Ovaj mjesec button is drawn', async ({
+  test('on the current month the trigger names it, and no label or Ovaj mjesec button is drawn', async ({
     calendarPage,
   }) => {
     await calendarPage.goto();
     await expect(calendarPage.monthToolbar).toBeVisible();
     await expect(calendarPage.monthTrigger).toHaveAttribute('aria-haspopup', 'dialog');
     await expect(calendarPage.monthTrigger).toHaveAttribute('aria-expanded', 'false');
-    await expect(calendarPage.thisMonthLabel).toBeVisible();
-    await expect(calendarPage.currentButton).toHaveCount(0);
+    await expect(calendarPage.currentMonthTrigger).toBeVisible();
+    await expect(calendarPage.monthTrigger.getByText(kalendar.thisMonthLabel)).toHaveCount(0);
+    await expect(calendarPage.currentButtons).toHaveCount(0);
+  });
+
+  test('from 640 px the month control sits in the page header beside the title, outside the Card (story 15.7b)', async ({
+    page,
+    calendarPage,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await calendarPage.goto('?mjesec=2026-07&prikaz=sve');
+    await expect(calendarPage.monthToolbar).toBeVisible();
+    // Off the current month there is still no Ovaj mjesec outside the picker.
+    await expect(calendarPage.currentButtons).toHaveCount(0);
+    await expect(calendarPage.pageHeader.getByRole('group', { name: kalendar.month, exact: true })).toBeVisible();
+    await expect(calendarPage.stickyHead.getByRole('group', { name: kalendar.month, exact: true })).toHaveCount(0);
+    // The head's row holds the mode switch alone.
+    await expect(calendarPage.stickyHead.getByRole('group', { name: kalendar.mode.label })).toBeVisible();
+
+    // The same row as the h1, at its right end.
+    const title = await calendarPage.anyHeading.boundingBox();
+    const control = await calendarPage.monthToolbar.boundingBox();
+    expect(title, 'the title has no box').not.toBeNull();
+    expect(control, 'the month control has no box').not.toBeNull();
+    expect(control!.y, 'the control is below the title row').toBeLessThan(title!.y + title!.height);
+    expect(control!.y + control!.height, 'the control is above the title row').toBeGreaterThan(title!.y);
+    expect(control!.x, 'the control is not right of the title').toBeGreaterThan(title!.x + title!.width);
   });
 
   test('PgDn and PgUp in the toolbar step the month, and focus stays where it was', async ({ page, calendarPage }) => {
@@ -372,14 +401,23 @@ test.describe('the month toolbar', () => {
     await expect(page).toHaveURL(/mjesec=2026-07/);
   });
 
-  test('Ovaj mjesec returns to the current month with focus on the trigger', async ({ page, calendarPage }) => {
+  test('the picker footer\'s Ovaj mjesec returns to the current month by the keyboard, focus on the trigger', async ({
+    page,
+    calendarPage,
+  }) => {
     await calendarPage.goto('?mjesec=2026-07&prikaz=sve');
-    await calendarPage.currentButton.click();
+    await expect(calendarPage.currentButtons).toHaveCount(0);
+    await calendarPage.monthTrigger.focus();
+    await page.keyboard.press('Enter');
+    await expect(calendarPage.pickerMonth(monthHeading('2026-07-01'))).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(calendarPage.pickerCurrent).toBeFocused();
+    await page.keyboard.press('Enter');
 
     await expect(page).not.toHaveURL(/mjesec=/);
     await expect(page).toHaveURL(/prikaz=sve/);
-    await expect(calendarPage.thisMonthLabel).toBeVisible();
-    await expect(calendarPage.currentButton).toHaveCount(0);
+    await expect(calendarPage.currentMonthTrigger).toBeVisible();
+    await expect(calendarPage.currentButtons).toHaveCount(0);
     await expect(calendarPage.monthTrigger).toBeFocused();
   });
 
@@ -397,8 +435,8 @@ test.describe('the month toolbar', () => {
 
     await expect(page).not.toHaveURL(/mjesec=/);
     await expect(page).toHaveURL(/prikaz=sve/);
-    await expect(calendarPage.thisMonthLabel).toBeVisible();
-    await expect(calendarPage.currentButton).toHaveCount(0);
+    await expect(calendarPage.currentMonthTrigger).toBeVisible();
+    await expect(calendarPage.currentButtons).toHaveCount(0);
     await expect(calendarPage.monthTrigger).toBeFocused();
   });
 
@@ -479,7 +517,7 @@ test.describe('the month toolbar', () => {
     await expect(page).not.toHaveURL(/mjesec=/);
     await expect(page).toHaveURL(/prikaz=sve/);
     await expect(calendarPage.monthPicker).toHaveCount(0);
-    await expect(calendarPage.thisMonthLabel).toBeVisible();
+    await expect(calendarPage.currentMonthTrigger).toBeVisible();
     await expect(calendarPage.monthTrigger).toBeFocused();
   });
 
@@ -488,9 +526,10 @@ test.describe('the month toolbar', () => {
     calendarPage,
   }) => {
     await page.setViewportSize({ width: 320, height: 720 });
-    // The current month: the widest trigger, with its "ovaj mjesec" label.
+    // The current month, its trigger in the sticky head (story 15.7b).
     await calendarPage.goto();
-    await expect(calendarPage.thisMonthLabel).toBeVisible();
+    await expect(calendarPage.currentMonthTrigger).toBeVisible();
+    await expect(calendarPage.stickyHead.getByRole('group', { name: kalendar.month, exact: true })).toBeVisible();
     await expectNoHorizontalScroll(page);
     const shown = (await calendarPage.monthHeading().innerText()).trim();
     await calendarPage.monthTrigger.click();

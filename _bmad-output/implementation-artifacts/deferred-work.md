@@ -1220,7 +1220,7 @@
 ## Deferred from: story 15.7 scope split (2026-11-03)
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-15-7-every-filter-is-one-summary-bar-a-filtri-sheet-and-chips.md`
-  summary: Story 15.7b — the month control on *Kalendar* and *Sati* becomes a compact header control beside the page title (‹ and › as 44 px icon buttons around the month name, which opens the month picker), and the `Ovaj mjesec` Badge is removed (the product owner confirmed the removal on 2026-11-03); returning to the current month stays one action, in the month picker. DESIGN.md *month toolbar* is updated with it.
+  summary: RESOLVED by 15.7b (2026-11-04) — Story 15.7b — the month control on *Kalendar* and *Sati* becomes a compact header control beside the page title (‹ and › as 44 px icon buttons around the month name, which opens the month picker), and the `Ovaj mjesec` Badge is removed (the product owner confirmed the removal on 2026-11-03); returning to the current month stays one action, in the month picker. DESIGN.md *month toolbar* is updated with it.
   evidence: Split from story 15.7 at the product owner's choice (2026-11-03): the filter pattern and the month control are separately shippable, and the filter pattern alone spans four surfaces. Epic 15.7's third AC moves here.
 
 ## Deferred from: code review of spec-15-7-every-filter-is-one-summary-bar-a-filtri-sheet-and-chips.md (2026-11-03)

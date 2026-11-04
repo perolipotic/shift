@@ -1,6 +1,6 @@
 import type { Download, Locator } from '@playwright/test';
 
-import { MONTH_TRIGGER_NAME, escapeRegExp, fill, hr, plural } from '../utils/i18n.ts';
+import { MONTH_TRIGGER_NAME, THIS_MONTH_TRIGGER_NAME, escapeRegExp, fill, hr, plural } from '../utils/i18n.ts';
 import { BasePage } from './base.page.ts';
 import { FilterBarParts } from './filter-bar.ts';
 import { sortControlIn, sortOptionIn, sortPickerIn } from './sort-control.ts';
@@ -62,19 +62,42 @@ export class HoursPage extends BasePage {
     return this.page.getByRole('button', { name: kalendar.next });
   }
 
-  /** `Ovaj mjesec`, drawn only off the current month (story 7.4). */
-  get currentButton(): Locator {
+  /**
+   * Every `Ovaj mjesec` button on the page. Since story 15.7b the only one is
+   * the picker footer's, so while the picker is closed there is none.
+   */
+  get currentButtons(): Locator {
     return this.page.getByRole('button', { name: kalendar.current, exact: true });
   }
 
-  /** The shared month toolbar's trigger (story 7.4). */
-  get monthTrigger(): Locator {
-    return this.page.getByRole('group', { name: kalendar.month, exact: true }).getByRole('button', { name: MONTH_TRIGGER_NAME });
+  /** The shared month control (stories 7.4, 15.7b): ‹ month ▾ › in one group named "Mjesec". */
+  get monthToolbar(): Locator {
+    return this.page.getByRole('group', { name: kalendar.month, exact: true });
   }
 
-  /** The "ovaj mjesec" label inside the trigger on the current month. */
-  get thisMonthLabel(): Locator {
-    return this.monthTrigger.getByText(kalendar.thisMonthLabel, { exact: true });
+  /** The shared month control's trigger (story 7.4). */
+  get monthTrigger(): Locator {
+    return this.monthToolbar.getByRole('button', { name: MONTH_TRIGGER_NAME });
+  }
+
+  /** The trigger while it names the current month: its name ends in ", ovaj mjesec" (story 15.7b). */
+  get currentMonthTrigger(): Locator {
+    return this.monthToolbar.getByRole('button', { name: THIS_MONTH_TRIGGER_NAME });
+  }
+
+  /** The picker footer's `Ovaj mjesec` (deferred-work E795), the way back to the current month. */
+  get pickerCurrent(): Locator {
+    return this.monthPicker.getByRole('button', { name: kalendar.current, exact: true });
+  }
+
+  /** The page header's row: the `<h1>` and, from 640 px, the month control (story 15.7b). */
+  get pageHeader(): Locator {
+    return this.anyHeading.locator('xpath=..');
+  }
+
+  /** The month's sticky head (`StickyHead`), drawn only below 640 px on *Sati* since story 15.7b. */
+  get stickyHead(): Locator {
+    return this.page.locator('[data-sticky-head]');
   }
 
   /** The month picker, open (story 7.4). */

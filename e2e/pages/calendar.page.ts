@@ -1,7 +1,7 @@
 import { expect, type Locator } from '@playwright/test';
 
 import { dayMonth, weekdayOf } from '../utils/dates.ts';
-import { MONTH_TRIGGER_NAME, escapeRegExp, fill, hr, plural } from '../utils/i18n.ts';
+import { MONTH_TRIGGER_NAME, THIS_MONTH_TRIGGER_NAME, escapeRegExp, fill, hr, plural } from '../utils/i18n.ts';
 import { BasePage } from './base.page.ts';
 import { ErasureDialogParts } from './erasure-dialog.ts';
 import { FilterBarParts } from './filter-bar.ts';
@@ -42,24 +42,35 @@ export class CalendarPage extends BasePage {
     return this.page.getByRole('button', { name: kalendar.previous });
   }
 
-  /** `Ovaj mjesec`, drawn only off the current month (story 7.4). */
-  get currentButton(): Locator {
+  /**
+   * Every `Ovaj mjesec` button on the page. Since story 15.7b the only one is
+   * the picker footer's, so while the picker is closed there is none.
+   */
+  get currentButtons(): Locator {
     return this.page.getByRole('button', { name: kalendar.current, exact: true });
   }
 
-  /** The month toolbar (story 7.4): ‹ month ▾ › in one group named "Mjesec". */
+  /** The month control (stories 7.4, 15.7b): ‹ month ▾ › in one group named "Mjesec". */
   get monthToolbar(): Locator {
     return this.page.getByRole('group', { name: kalendar.month, exact: true });
   }
 
-  /** The month toolbar's trigger, which opens the month picker. */
+  /** The month control's trigger, which opens the month picker. */
   get monthTrigger(): Locator {
     return this.monthToolbar.getByRole('button', { name: MONTH_TRIGGER_NAME });
   }
 
-  /** The "ovaj mjesec" label inside the trigger on the current month. */
-  get thisMonthLabel(): Locator {
-    return this.monthTrigger.getByText(kalendar.thisMonthLabel, { exact: true });
+  /**
+   * The trigger while it names the current month: its accessible name ends
+   * in ", ovaj mjesec" (story 15.7b; no label is drawn).
+   */
+  get currentMonthTrigger(): Locator {
+    return this.monthToolbar.getByRole('button', { name: THIS_MONTH_TRIGGER_NAME });
+  }
+
+  /** The page header's row: the `<h1>` and, from 640 px, the month control (story 15.7b). */
+  get pageHeader(): Locator {
+    return this.anyHeading.locator('xpath=..');
   }
 
   /** The month picker, open. */
