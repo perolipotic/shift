@@ -13,6 +13,8 @@ import { useRenderableLogo } from '@/features/organization/hooks/logo-url';
 import {
   ORGANIZATION_LEAVE_DAY_FIELD,
   ORGANIZATION_LEAVE_MONTH_FIELD,
+  ORGANIZATION_MINIMUM_MEMBERS_FIELD,
+  ORGANIZATION_MINIMUM_MEMBERS_INVALID,
   ORGANIZATION_NAME_FIELD,
   ORGANIZATION_SNAPSHOT_KEY,
   organizationTable,
@@ -37,6 +39,7 @@ import {
   ORGANIZATION_LEAVE_DAY_FIELD_ID,
   ORGANIZATION_LEAVE_MONTH_FIELD_ID,
   ORGANIZATION_LOGO_CHOOSE_ID,
+  ORGANIZATION_MINIMUM_MEMBERS_FIELD_ID,
   ORGANIZATION_NAME_FIELD_ID,
   ORGANIZATION_READ_RETRY_ID,
 } from '@/features/organization/utils/element-ids';
@@ -46,10 +49,12 @@ import {
   FIRE_RANKS_DIALOG,
   LEAVE_YEAR_DIALOG,
   LOGO_DIALOG,
+  MINIMUM_MEMBERS_DIALOG,
   NAME_DIALOG,
   type OrganizationDialog,
 } from '@/features/organization/utils/dialogs';
 import { ORGANIZATION_ERROR_ID, offersReadRetry } from '@/features/organization/utils/messages';
+import { enteredMinimumMembers } from '@/features/organization/utils/minimum-members';
 import { NOTIFICATION_SETTINGS_KEY } from '@/features/notifications/services/settings';
 import { offlineNoteOf } from '@/lib/offline/freshness';
 import { useSnapshotFreshness } from '@/lib/offline/use-snapshot-freshness';
@@ -76,6 +81,7 @@ const REFUSED_FIELD_IDS: Partial<Record<OrganizationField, string>> = {
   name: ORGANIZATION_NAME_FIELD_ID,
   leaveYearStartDay: ORGANIZATION_LEAVE_DAY_FIELD_ID,
   leaveYearStartMonth: ORGANIZATION_LEAVE_MONTH_FIELD_ID,
+  minimumMembers: ORGANIZATION_MINIMUM_MEMBERS_FIELD_ID,
 };
 
 /**
@@ -144,6 +150,7 @@ export function useOrganizationSettings() {
   const leaveYearOpener = useRef<HTMLButtonElement>(null);
   const fireRanksOpener = useRef<HTMLButtonElement>(null);
   const emailNotificationsOpener = useRef<HTMLButtonElement>(null);
+  const minimumMembersOpener = useRef<HTMLButtonElement>(null);
   const openers: Readonly<Record<OrganizationDialog, RefObject<HTMLButtonElement | null>>> = {
     name: nameOpener,
     logo: logoOpener,
@@ -151,6 +158,7 @@ export function useOrganizationSettings() {
     leaveYear: leaveYearOpener,
     fireRanks: fireRanksOpener,
     emailNotifications: emailNotificationsOpener,
+    minimumMembers: minimumMembersOpener,
   };
   // A REF as well as state: state drives the busy dialog, and state is stale
   // inside a handler already called once this tick.
@@ -279,7 +287,7 @@ export function useOrganizationSettings() {
   }
 
   /**
-   * Runs one dialog's write, the same way for all six. A refusal keeps the
+   * Runs one dialog's write, the same way for all seven. A refusal keeps the
    * dialog open and focuses the control it names; a landed write closes it,
    * says so on its card and returns focus to its opener.
    */
@@ -444,6 +452,31 @@ export function useOrganizationSettings() {
   }
 
   /**
+   * The minimum-members dialog's Spremi (story 11.1), on its own disjoint
+   * write: the number, or `null` for an empty field, which clears it. An entry
+   * that is no such number is refused HERE, through the same refusal path a
+   * database refusal takes — the field marked and focused, the dialog open —
+   * and nothing is sent.
+   */
+  async function saveMinimumMembers(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+
+    // Read before the write disables the field: a disabled control is left
+    // out of `FormData`.
+    const entered = enteredMinimumMembers(new FormData(event.currentTarget).get(ORGANIZATION_MINIMUM_MEMBERS_FIELD));
+
+    await write(MINIMUM_MEMBERS_DIALOG, (row) =>
+      entered.ok
+        ? updateOrganization(organizationTable(), row.id, { minimumMembers: entered.value })
+        : Promise.resolve({
+            ok: false,
+            code: ORGANIZATION_MINIMUM_MEMBERS_INVALID,
+            field: ORGANIZATION_MINIMUM_MEMBERS_FIELD,
+          }),
+    );
+  }
+
+  /**
    * Reads the row again after a failed read — the retry the read's message
    * asks for. A second press while the read is in flight does nothing.
    *
@@ -490,6 +523,7 @@ export function useOrganizationSettings() {
     saveAccent,
     saveFireRanks,
     saveEmailNotifications,
+    saveMinimumMembers,
   };
 }
 

@@ -774,6 +774,12 @@ stop push instead, unset `VAPID_PRIVATE_KEY` (push rows are then retried as
 to 10.4's is safe: it ignores `push_devices_for_send` and sends to the claim's
 `subscriptions`, without `0046`'s handover check.
 
+**Migration `0048` before the SPA of story 11.1.** `0048` adds
+`organizations.minimum_members` (nullable, `>= 1`, its own column grant), which
+`ORGANIZATION_COLUMNS` now selects: an SPA deployed first asks for a column the
+database lacks, PostgREST refuses the read, and every signed-in screen loses its
+organization. `db push`, then the SPA. No function changes.
+
 With the pipeline enabled (§8), merging to `main` is what promotes: staging is
 deployed and smoked, then production waits for an approval, and each deploy
 pushes migrations **before** it publishes the SPA. Without it, nothing publishes

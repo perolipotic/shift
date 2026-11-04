@@ -12,6 +12,8 @@ export const ORGANIZATION_TIME_HEADING_ID = 'organization-time-heading';
 export const ORGANIZATION_FIRE_RANKS_HEADING_ID = 'organization-fire-ranks-heading';
 /** The email-notifications card (story 10.3). */
 export const ORGANIZATION_EMAIL_NOTIFICATIONS_HEADING_ID = 'organization-email-notifications-heading';
+/** The minimum-members card (story 11.1). */
+export const ORGANIZATION_MINIMUM_MEMBERS_HEADING_ID = 'organization-minimum-members-heading';
 /** The *Satni pojasi* facts card (deferred work from 7.18): a summary, and the way to the editor. */
 export const ORGANIZATION_HOUR_BANDS_HEADING_ID = 'organization-hour-bands-heading';
 
@@ -23,6 +25,7 @@ export const ORGANIZATION_DIALOG_CARD_HEADING_IDS = {
   leaveYear: ORGANIZATION_TIME_HEADING_ID,
   fireRanks: ORGANIZATION_FIRE_RANKS_HEADING_ID,
   emailNotifications: ORGANIZATION_EMAIL_NOTIFICATIONS_HEADING_ID,
+  minimumMembers: ORGANIZATION_MINIMUM_MEMBERS_HEADING_ID,
 } as const;
 
 /**
@@ -49,6 +52,10 @@ export const ORGANIZATION_NAME_FIELD_ID = 'organization-name';
 export const ORGANIZATION_LEAVE_DAY_FIELD_ID = 'organization-leave-day';
 export const ORGANIZATION_LEAVE_MONTH_FIELD_ID = 'organization-leave-month';
 export const ORGANIZATION_LOGO_FIELD_ID = 'organization-logo';
+/** Minimum members' number field (story 11.1). */
+export const ORGANIZATION_MINIMUM_MEMBERS_FIELD_ID = 'organization-minimum-members';
+/** The line under it that says what empty means. */
+export const ORGANIZATION_MINIMUM_MEMBERS_HINT_ID = 'organization-minimum-members-hint';
 /** `Odaberi sliku`, where focus goes after a refused upload: the pick to retry. */
 export const ORGANIZATION_LOGO_CHOOSE_ID = 'organization-logo-choose';
 
@@ -72,6 +79,8 @@ export const ORGANIZATION_EMAIL_NOTIFICATIONS_HINT_ID = 'organization-email-noti
 export const ORGANIZATION_ACCENT_REFUSED_DESCRIPTION = `${ORGANIZATION_ACCENT_RULE_ID} ${ORGANIZATION_DIALOG_ERROR_ID}`;
 export const ORGANIZATION_FIRE_RANKS_REFUSED_DESCRIPTION = `${ORGANIZATION_FIRE_RANKS_HINT_ID} ${ORGANIZATION_DIALOG_ERROR_ID}`;
 export const ORGANIZATION_EMAIL_NOTIFICATIONS_REFUSED_DESCRIPTION = `${ORGANIZATION_EMAIL_NOTIFICATIONS_HINT_ID} ${ORGANIZATION_DIALOG_ERROR_ID}`;
+/** Story 11.1: minimum members' field, described by its hint and, after a refusal, the refusal too. */
+export const ORGANIZATION_MINIMUM_MEMBERS_REFUSED_DESCRIPTION = `${ORGANIZATION_MINIMUM_MEMBERS_HINT_ID} ${ORGANIZATION_DIALOG_ERROR_ID}`;
 
 /** Each dialog's title, which names the dialog; all six are mounted at once. */
 export const ORGANIZATION_DIALOG_HEADING_IDS = {
@@ -81,4 +90,5 @@ export const ORGANIZATION_DIALOG_HEADING_IDS = {
   leaveYear: 'organization-leave-year-dialog-heading',
   fireRanks: 'organization-fire-ranks-dialog-heading',
   emailNotifications: 'organization-email-notifications-dialog-heading',
+  minimumMembers: 'organization-minimum-members-dialog-heading',
 } as const;

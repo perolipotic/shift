@@ -113,9 +113,13 @@ export const ORGANIZATION_READ_STALE_MS = 300000;
  *
  * `email_notifications` joined for story 10.3 (`0044`): the organization's
  * switch for every email it sends, edited on this screen.
+ *
+ * `minimum_members` joined for story 11.1 (`0048`): how many people a working
+ * shift needs, or empty, edited on this screen. The migration ships before
+ * the SPA, because a select naming a column the database lacks is refused.
  */
 export const ORGANIZATION_COLUMNS =
-  'id,slug,name,organization_type,timezone,locale,leave_year_start_month,leave_year_start_day,logo_path,brand_accent,uses_fire_ranks,email_notifications';
+  'id,slug,name,organization_type,timezone,locale,leave_year_start_month,leave_year_start_day,logo_path,brand_accent,uses_fire_ranks,email_notifications,minimum_members';
 
 /**
  * The organization, as everything downstream sees it.
@@ -160,6 +164,22 @@ export interface OrganizationSnapshot {
    * the outbox takes no email row for any of its members.
    */
   readonly emailNotifications: boolean;
+  /**
+   * How many people a working shift needs (`0048`, story 11.1), or `null`
+   * when the organization has not set it — and then nothing is short-staffed.
+   * A snapshot cached before `0048` lacks it; every reader takes a missing
+   * value as `null` ({@link minimumMembersOf}).
+   */
+  readonly minimumMembers: number | null;
+}
+
+/**
+ * The minimum members a snapshot carries, with a snapshot restored from a
+ * cache written before `0048` (no such field) read as not set.
+ */
+export function minimumMembersOf(snapshot: Pick<OrganizationSnapshot, 'minimumMembers'>): number | null {
+  const value = (snapshot as { readonly minimumMembers?: unknown }).minimumMembers;
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 ? value : null;
 }
 
 /**
@@ -185,6 +205,7 @@ export interface OrganizationNameEdit {
   readonly brandAccent?: never;
   readonly usesFireRanks?: never;
   readonly emailNotifications?: never;
+  readonly minimumMembers?: never;
 }
 
 /**
@@ -202,6 +223,7 @@ export interface OrganizationLeaveYearEdit {
   readonly brandAccent?: never;
   readonly usesFireRanks?: never;
   readonly emailNotifications?: never;
+  readonly minimumMembers?: never;
 }
 
 /**
@@ -226,6 +248,7 @@ export interface OrganizationLogoEdit {
   readonly brandAccent?: never;
   readonly usesFireRanks?: never;
   readonly emailNotifications?: never;
+  readonly minimumMembers?: never;
 }
 
 /**
@@ -271,6 +294,7 @@ export interface OrganizationAccentEdit {
   readonly logoPath?: never;
   readonly usesFireRanks?: never;
   readonly emailNotifications?: never;
+  readonly minimumMembers?: never;
 }
 
 /**
@@ -298,6 +322,7 @@ export interface OrganizationFireRanksEdit {
   readonly logoPath?: never;
   readonly brandAccent?: never;
   readonly emailNotifications?: never;
+  readonly minimumMembers?: never;
 }
 
 /**
@@ -318,10 +343,33 @@ export interface OrganizationEmailNotificationsEdit {
   readonly logoPath?: never;
   readonly brandAccent?: never;
   readonly usesFireRanks?: never;
+  readonly minimumMembers?: never;
 }
 
 /**
- * One of the six writes, and NEVER two of them.
+ * Minimum members (story 11.1), written on its own — a SIXTH disjoint shape,
+ * for the fire-rank setting's reason. `null` is a value, not an omission: it
+ * is how an organization clears the setting.
+ */
+export interface OrganizationMinimumMembersEdit {
+  readonly minimumMembers: number | null;
+  /** None of these, ever. See {@link OrganizationWrite}. */
+  readonly id?: never;
+  readonly slug?: never;
+  readonly locale?: never;
+  readonly name?: never;
+  readonly organizationType?: never;
+  readonly timezone?: never;
+  readonly leaveYearStartMonth?: never;
+  readonly leaveYearStartDay?: never;
+  readonly logoPath?: never;
+  readonly brandAccent?: never;
+  readonly usesFireRanks?: never;
+  readonly emailNotifications?: never;
+}
+
+/**
+ * One of the seven writes, and NEVER two of them.
  *
  * The `?: never` members on every side are what make "disjoint" a fact the
  * compiler checks rather than a claim a comment makes. Without them a value
@@ -337,7 +385,8 @@ export type OrganizationWrite =
   | OrganizationLogoEdit
   | OrganizationAccentEdit
   | OrganizationFireRanksEdit
-  | OrganizationEmailNotificationsEdit;
+  | OrganizationEmailNotificationsEdit
+  | OrganizationMinimumMembersEdit;
 
 /**
  * Which of the two a write is: the one that actually carries a logo path.
@@ -379,6 +428,14 @@ function isEmailNotificationsEdit(write: OrganizationWrite): write is Organizati
 }
 
 /**
+ * The one that carries minimum members (story 11.1). `!== undefined`, as the
+ * accent's guard: `null` is the meaningful "clear it".
+ */
+function isMinimumMembersEdit(write: OrganizationWrite): write is OrganizationMinimumMembersEdit {
+  return 'minimumMembers' in write && write.minimumMembers !== undefined;
+}
+
+/**
  * The name write, recognised POSITIVELY: the one that carries a name.
  *
  * `!== undefined` for the reason its siblings use it: `exactOptionalProperty
@@ -413,6 +470,12 @@ export const ORGANIZATION_NAME_BLANK = 'ORGANIZATION_NAME_BLANK';
 export const ORGANIZATION_NAME_TOO_LONG = 'ORGANIZATION_NAME_TOO_LONG';
 /** Some other shape on the table refused the value — a leave-year day out of range. */
 export const ORGANIZATION_INVALID = 'ORGANIZATION_INVALID';
+/**
+ * Minimum members is not a whole number from 1 to 32767 (story 11.1): refused
+ * by the dialog before anything is sent, or by `0048`'s
+ * `organizations_minimum_members_check`.
+ */
+export const ORGANIZATION_MINIMUM_MEMBERS_INVALID = 'ORGANIZATION_MINIMUM_MEMBERS_INVALID';
 /** The service could not be reached, or answered with something that is not a row. */
 export const ORGANIZATION_UNAVAILABLE = 'ORGANIZATION_UNAVAILABLE';
 
@@ -421,6 +484,7 @@ export type OrganizationFailure =
   | typeof ORGANIZATION_NAME_BLANK
   | typeof ORGANIZATION_NAME_TOO_LONG
   | typeof ORGANIZATION_INVALID
+  | typeof ORGANIZATION_MINIMUM_MEMBERS_INVALID
   | typeof ORGANIZATION_UNAVAILABLE;
 
 /**
@@ -431,12 +495,14 @@ export const ORGANIZATION_NAME_FIELD = 'name';
 export const ORGANIZATION_LEAVE_DAY_FIELD = 'leaveYearStartDay';
 export const ORGANIZATION_LEAVE_MONTH_FIELD = 'leaveYearStartMonth';
 export const ORGANIZATION_ACCENT_FIELD = 'brandAccent';
+export const ORGANIZATION_MINIMUM_MEMBERS_FIELD = 'minimumMembers';
 
 export type OrganizationField =
   | typeof ORGANIZATION_NAME_FIELD
   | typeof ORGANIZATION_LEAVE_DAY_FIELD
   | typeof ORGANIZATION_LEAVE_MONTH_FIELD
-  | typeof ORGANIZATION_ACCENT_FIELD;
+  | typeof ORGANIZATION_ACCENT_FIELD
+  | typeof ORGANIZATION_MINIMUM_MEMBERS_FIELD;
 
 /**
  * A refusal carries `field` ONLY when the constraint that raised it maps to a
@@ -512,6 +578,8 @@ const ONE_ROW = 1;
  */
 const CHECK_VIOLATION = '23514';
 const NAME_CHECK_CONSTRAINT = 'organizations_name_check';
+/** `0048`'s check on minimum members, named explicitly with PostgreSQL's own spelling. */
+const MINIMUM_MEMBERS_CHECK_CONSTRAINT = 'organizations_minimum_members_check';
 /** `0036`'s one maximum name length, on this table. */
 const NAME_LENGTH_CONSTRAINT = 'organizations_name_length';
 
@@ -530,6 +598,8 @@ export const ORGANIZATION_CONSTRAINT_FIELDS: readonly (readonly [string, Organiz
   ['organizations_leave_year_start_day_check', ORGANIZATION_LEAVE_DAY_FIELD],
   ['organizations_leave_year_start_month_check', ORGANIZATION_LEAVE_MONTH_FIELD],
   ['organizations_brand_accent_check', ORGANIZATION_ACCENT_FIELD],
+  // `0048` names its check explicitly, the name PostgreSQL would have given it.
+  [MINIMUM_MEMBERS_CHECK_CONSTRAINT, ORGANIZATION_MINIMUM_MEMBERS_FIELD],
 ];
 
 /** A PostgREST answer's rows, or an empty list — `null` data is not a row. */
@@ -603,6 +673,13 @@ export function organizationSnapshotOf(row: unknown): OrganizationSnapshot | nul
     brandAccent: textAt(fields, 'brand_accent'),
     usesFireRanks,
     emailNotifications,
+    // NULLABLE, and lenient where the booleans are strict: the column is
+    // nullable, so "not set" is a real answer, and a value this build would
+    // never write (or a row from a source that lacks the column, such as a
+    // fixture) reads as that answer rather than blanking the organization for
+    // every screen. A database before `0048` refuses the select outright, so it
+    // never reaches here; `DEPLOY.md` orders `0048` before the SPA.
+    minimumMembers: minimumMembersOf({ minimumMembers: fields['minimum_members'] as number | null }),
   };
 }
 
@@ -648,6 +725,9 @@ export function organizationEditColumns(
   // ONE COLUMN on the email-notifications switch (story 10.3), likewise.
   if (isEmailNotificationsEdit(write)) return { email_notifications: write.emailNotifications };
 
+  // ONE COLUMN on minimum members (story 11.1); `null` is sent, which clears it.
+  if (isMinimumMembersEdit(write)) return { minimum_members: write.minimumMembers };
+
   // ONE COLUMN on the name (story 7.18). It used to travel with the type, the
   // zone and the leave year's start, filled in from the cached snapshot, so a
   // rename on a stale cache wrote another admin's older values back. Now no
@@ -691,6 +771,7 @@ function failureOf(error: PostgrestFailure): OrganizationFailure {
 
   if (violated === NAME_CHECK_CONSTRAINT) return ORGANIZATION_NAME_BLANK;
   if (violated === NAME_LENGTH_CONSTRAINT) return ORGANIZATION_NAME_TOO_LONG;
+  if (violated === MINIMUM_MEMBERS_CHECK_CONSTRAINT) return ORGANIZATION_MINIMUM_MEMBERS_INVALID;
 
   return ORGANIZATION_INVALID;
 }

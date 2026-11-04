@@ -63,6 +63,21 @@ export class OrganizationPage extends BasePage {
     return this.dialog(organization.emailNotifications);
   }
 
+  /** The minimum-members card's `Uredi` (story 11.1). */
+  get minimumMembersOpener(): Locator {
+    return this.page.getByRole('button', { name: organization.editMinimumMembers, exact: true });
+  }
+
+  /** The minimum-members dialog (story 11.1). */
+  get minimumMembersDialog(): Locator {
+    return this.dialog(organization.minimumMembers);
+  }
+
+  /** The minimum-members card (story 11.1). */
+  get minimumMembersRegion(): Locator {
+    return this.page.getByRole('region', { name: organization.minimumMembers, exact: true });
+  }
+
   /** *Vrijeme i godina*: the zone, locked, and the leave year. */
   get timeRegion(): Locator {
     return this.page.getByRole('region', { name: organization.timeHeading });

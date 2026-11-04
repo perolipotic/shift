@@ -17,6 +17,7 @@ import {
   selectElements,
   SETTINGS,
   SETTINGS_EMAIL_NOTIFICATIONS,
+  SETTINGS_MINIMUM_MEMBERS,
   SETTINGS_FIRE_RANKS,
   SETTINGS_HOOK,
   SETTINGS_LOGO,
@@ -81,7 +82,8 @@ describe('every field on the settings surface carries an accessible name', () =>
     const ids = fields.map((element) => /\bid=\{(\w+)\}/.exec(element)?.[1] ?? null);
     const targets = [...screen.matchAll(/<Label htmlFor=\{(\w+)\}/g)].map((found) => found[1] ?? '');
 
-    expect(inputElements(screen)).toHaveLength(1);
+    // TWO since story 11.1: minimum members' number field.
+    expect(inputElements(screen)).toHaveLength(2);
     expect(selectElements(screen), 'a control became a select again').toHaveLength(2);
     expect(ids, 'a field carries no id constant, so no <Label> can name it').not.toContain(null);
     expect(new Set(ids).size, 'two fields share one id').toBe(ids.length);
@@ -104,8 +106,11 @@ describe('every field on the settings surface carries an accessible name', () =>
       /\{failure === null \? null : \(\s*<Notice id=\{ORGANIZATION_DIALOG_ERROR_ID\} role="alert">/,
     );
     for (const field of [...inputElements(screen), ...selectElements(screen), ...bareInputElements(screen)]) {
-      expect(field, 'a field describes nothing, or names its refusal unconditionally').toContain(
-        'aria-describedby={failure === null ? undefined : ORGANIZATION_DIALOG_ERROR_ID}',
+      // STORY 11.1: minimum members' field has a hint, so it is described by the
+      // hint always and by the hint and the refusal after one, as the radio
+      // groups are; every other field names the refusal only.
+      expect(field, 'a field describes nothing, or names its refusal unconditionally').toMatch(
+        /aria-describedby=\{failure === null \? (undefined : ORGANIZATION_DIALOG_ERROR_ID|ORGANIZATION_MINIMUM_MEMBERS_HINT_ID : ORGANIZATION_MINIMUM_MEMBERS_REFUSED_DESCRIPTION)\}/,
       );
     }
   });
@@ -218,6 +223,8 @@ describe('the settings page is facts, and each change opens its own dialog (stor
     SETTINGS_FIRE_RANKS,
     // Story 10.3.
     SETTINGS_EMAIL_NOTIFICATIONS,
+    // Story 11.1.
+    SETTINGS_MINIMUM_MEMBERS,
   ];
 
   it('mounts no form outside the one dialog form every change draws', () => {
@@ -235,7 +242,8 @@ describe('the settings page is facts, and each change opens its own dialog (stor
       occurrences(source(SETTINGS), '<OrganizationChangeDialog'),
       'a change has no dialog, or two',
       // SIX SINCE STORY 10.3: the email-notifications switch.
-    ).toBe(6);
+      // SEVEN SINCE STORY 11.1: minimum members.
+    ).toBe(7);
   });
 
   it('keeps each dialog mounted and drives it through open, so every close returns focus', () => {
@@ -267,7 +275,8 @@ describe('the settings page is facts, and each change opens its own dialog (stor
 
     // SIX OPENERS, ONE PER DIALOG; `ProfileRow` takes *Profil*'s three by prop.
     // SIX SINCE STORY 10.3: the email-notifications card's own.
-    expect(openers.sort()).toEqual(['emailNotifications', 'fireRanks', 'leaveYear']);
+    // SEVEN SINCE STORY 11.1: minimum members' card.
+    expect(openers.sort()).toEqual(['emailNotifications', 'fireRanks', 'leaveYear', 'minimumMembers']);
     expect(source(SETTINGS_PROFILE)).toContain('<Button ref={opener}');
     for (const opener of ['openers.name', 'openers.logo', 'openers.accent']) {
       expect(source(SETTINGS_PROFILE), `${opener} opens nothing`).toContain(`opener={${opener}}`);

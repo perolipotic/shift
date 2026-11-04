@@ -14,6 +14,8 @@ import {
   ORGANIZATION_INVALID,
   ORGANIZATION_LEAVE_DAY_FIELD,
   ORGANIZATION_LEAVE_MONTH_FIELD,
+  ORGANIZATION_MINIMUM_MEMBERS_FIELD,
+  ORGANIZATION_MINIMUM_MEMBERS_INVALID,
   ORGANIZATION_NAME_FIELD,
   ORGANIZATION_READ_STALE_MS,
   ORGANIZATION_NAME_BLANK,
@@ -21,6 +23,7 @@ import {
   ORGANIZATION_REFUSED,
   ORGANIZATION_SNAPSHOT_KEY,
   ORGANIZATION_UNAVAILABLE,
+  minimumMembersOf,
   organizationEditColumns,
   organizationSnapshotOf,
   organizationSnapshotQueryOptions,
@@ -129,6 +132,8 @@ const PILOT_ROW = {
   uses_fire_ranks: true,
   // Story 10.3 (`0044`): every organization sends email until it says not to.
   email_notifications: true,
+  // Story 11.1 (`0048`): the pilot's teams of four need 3.
+  minimum_members: 3,
 };
 
 /** The name dialog's write (story 7.18): the name and nothing else. */
@@ -256,7 +261,29 @@ describe('one PostgREST row becomes the canonical snapshot', () => {
       brandAccent: null,
       usesFireRanks: true,
       emailNotifications: true,
+      minimumMembers: 3,
     });
+  });
+
+  it('carries minimum members as a whole number from 1, and reads anything else as not set (story 11.1)', () => {
+    // NULLABLE (`0048`): empty is "not set". A value this build would never
+    // write, or none at all from a database before `0048`, reads as not set
+    // rather than blanking the organization for every screen.
+    expect(organizationSnapshotOf({ ...PILOT_ROW, minimum_members: null })?.minimumMembers).toBeNull();
+    expect(organizationSnapshotOf({ ...PILOT_ROW, minimum_members: 12 })?.minimumMembers).toBe(12);
+    // A row from a source without the column (a fixture); a live database
+    // before `0048` refuses the select instead (`DEPLOY.md`).
+    const { minimum_members: _dropped, ...withoutColumn } = PILOT_ROW;
+    expect(organizationSnapshotOf(withoutColumn)?.minimumMembers).toBeNull();
+    for (const value of [0, -1, 2.5, '3', true]) {
+      expect(organizationSnapshotOf({ ...PILOT_ROW, minimum_members: value })?.minimumMembers).toBeNull();
+    }
+  });
+
+  it('reads a snapshot cached before 0048, which lacks the field, as not set', () => {
+    const { minimumMembers: _dropped, ...cached } = organizationSnapshotOf(PILOT_ROW)!;
+    expect(minimumMembersOf(cached as never)).toBeNull();
+    expect(minimumMembersOf({ minimumMembers: 3 })).toBe(3);
   });
 
   it('carries the fire-rank setting as the boolean it is, and refuses anything else', () => {
@@ -387,7 +414,7 @@ describe('the read returns one snapshot or one code', () => {
     // `id` is here because every write addresses the row by it.
     const columns = ORGANIZATION_COLUMNS.split(',');
 
-    for (const column of ['id', 'logo_path', 'brand_accent', 'uses_fire_ranks', 'email_notifications']) {
+    for (const column of ['id', 'logo_path', 'brand_accent', 'uses_fire_ranks', 'email_notifications', 'minimum_members']) {
       expect(columns, `the snapshot stops reading ${column}`).toContain(column);
     }
     // Spelled `snake_case`, because PostgREST speaks columns: a `camelCase`
@@ -574,6 +601,8 @@ describe('the update writes the edited fields and answers with the row', () => {
     ['the cleared accent', { brandAccent: null }],
     ['the fire-rank setting', { usesFireRanks: true }],
     ['the email-notifications switch', { emailNotifications: false }],
+    ['minimum members', { minimumMembers: 3 }],
+    ['cleared minimum members', { minimumMembers: null }],
   ] as const)('never writes the type or the zone with %s (FR-7, FR-8)', (_, write) => {
     const written = Object.keys(organizationEditColumns(write));
 
@@ -776,6 +805,30 @@ describe('the update writes the edited fields and answers with the row', () => {
     expect(withRanks).toBeDefined();
   });
 
+  it('sends minimum members alone, null included, as a sixth disjoint write (story 11.1)', async () => {
+    for (const value of [3, null]) {
+      expect(organizationEditColumns({ minimumMembers: value })).toEqual({ minimum_members: value });
+
+      const log = recorder();
+      const outcome = await updateOrganization(
+        answering({ data: [PILOT_ROW], error: null }, log),
+        PILOT_ROW.id,
+        { minimumMembers: value },
+      );
+
+      expect(outcome.ok).toBe(true);
+      expect(log.updated).toEqual([{ minimum_members: value }]);
+    }
+
+    // @ts-expect-error the minimum-members write may not carry the name
+    const withFields: OrganizationWrite = { ...EDITS, minimumMembers: 3 };
+    // @ts-expect-error the minimum-members write may not carry the email switch
+    const withEmail: OrganizationWrite = { emailNotifications: true, minimumMembers: 3 };
+
+    expect(withFields).toBeDefined();
+    expect(withEmail).toBeDefined();
+  });
+
   it('types the setting write apart from EVERY other snapshot field', () => {
     // The doc's claim, made executable: each `@ts-expect-error` below is a
     // `pnpm typecheck` failure the moment the field stops being excluded.
@@ -798,6 +851,8 @@ describe('the update writes the edited fields and answers with the row', () => {
       { usesFireRanks: true, logoPath: 'x' },
       // @ts-expect-error not the email-notifications switch
       { usesFireRanks: true, emailNotifications: true },
+      // @ts-expect-error not minimum members
+      { usesFireRanks: true, minimumMembers: 3 },
     ];
     const snapshotFields = Object.keys(organizationSnapshotOf(PILOT_ROW) ?? {}).filter(
       (field) => field !== 'usesFireRanks',
@@ -930,6 +985,23 @@ describe('the update writes the edited fields and answers with the row', () => {
     expect(
       await updateOrganization(answering(LEAVE_DAY_OUT_OF_RANGE), PILOT_ROW.id, LEAVE_YEAR),
     ).toEqual({ ok: false, code: ORGANIZATION_INVALID, field: ORGANIZATION_LEAVE_DAY_FIELD });
+  });
+
+  it('reports a refused minimum members as its own message, on its field (story 11.1)', async () => {
+    const refused: PostgrestAnswer = {
+      data: null,
+      error: {
+        code: '23514',
+        message: 'new row for relation "organizations" violates check constraint "organizations_minimum_members_check"',
+        details: 'Failing row contains (…).',
+      },
+    };
+
+    expect(await updateOrganization(answering(refused), PILOT_ROW.id, { minimumMembers: 0 })).toEqual({
+      ok: false,
+      code: ORGANIZATION_MINIMUM_MEMBERS_INVALID,
+      field: ORGANIZATION_MINIMUM_MEMBERS_FIELD,
+    });
   });
 
   it('does not report a blank name because a typed value spells the name check', async () => {
@@ -1105,11 +1177,15 @@ describe('a check violation is attributed to the control its constraint names', 
     ).toBeNull();
   });
 
-  it('maps five constraints to four distinct controls, the name\'s two checks to the name', () => {
+  it('maps six constraints to five distinct controls, the name\'s two checks to the name', () => {
     // 0036 added the name's length check beside its blank check; both mark
     // the one name control, and every other constraint a control of its own.
-    expect(ORGANIZATION_CONSTRAINT_FIELDS).toHaveLength(5);
-    expect(new Set(ORGANIZATION_CONSTRAINT_FIELDS.map(([, field]) => field)).size).toBe(4);
+    // 0048 (story 11.1) adds minimum members' check, which marks its field.
+    expect(ORGANIZATION_CONSTRAINT_FIELDS).toHaveLength(6);
+    expect(new Set(ORGANIZATION_CONSTRAINT_FIELDS.map(([, field]) => field)).size).toBe(5);
+    expect(refusedOrganizationFieldOf(violating('organizations_minimum_members_check'))).toBe(
+      ORGANIZATION_MINIMUM_MEMBERS_FIELD,
+    );
     expect(
       ORGANIZATION_CONSTRAINT_FIELDS.filter(([, field]) => field === ORGANIZATION_NAME_FIELD).map(([name]) => name),
     ).toEqual(['organizations_name_check', 'organizations_name_length']);
@@ -1147,6 +1223,7 @@ describe('a failed read offers a retry only where trying again can help', () => 
     ORGANIZATION_NAME_BLANK,
     ORGANIZATION_NAME_TOO_LONG,
     ORGANIZATION_INVALID,
+    ORGANIZATION_MINIMUM_MEMBERS_INVALID,
   ];
 
   it.each(OTHERS)(
@@ -1163,6 +1240,7 @@ describe('every failure code has its own message key', () => {
     ORGANIZATION_NAME_BLANK,
     ORGANIZATION_NAME_TOO_LONG,
     ORGANIZATION_INVALID,
+    ORGANIZATION_MINIMUM_MEMBERS_INVALID,
     ORGANIZATION_UNAVAILABLE,
   ];
 
@@ -1170,7 +1248,7 @@ describe('every failure code has its own message key', () => {
     expect(organizationMessageKey(code)).toMatch(/^organization\.error\./);
   });
 
-  it('maps the five codes to five distinct keys', () => {
+  it('maps the six codes to six distinct keys', () => {
     // The mutation a per-code loop cannot see: a mapping that returned one key
     // for everything satisfies every case above while a refused save and an
     // outage say the same thing.
@@ -1184,6 +1262,7 @@ describe('every failure code has its own message key', () => {
     expect(organizationMessageKey(ORGANIZATION_NAME_BLANK)).toBe('organization.error.name');
     expect(organizationMessageKey(ORGANIZATION_NAME_TOO_LONG)).toBe('organization.error.nameTooLong');
     expect(organizationMessageKey(ORGANIZATION_INVALID)).toBe('organization.error.invalid');
+    expect(organizationMessageKey(ORGANIZATION_MINIMUM_MEMBERS_INVALID)).toBe('organization.error.minimumMembers');
     expect(organizationMessageKey(ORGANIZATION_UNAVAILABLE)).toBe(
       'organization.error.unavailable',
     );

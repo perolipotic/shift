@@ -612,6 +612,7 @@ describe('replacing a logo points the row at the key and then writes the object'
     logo_path: null,
     uses_fire_ranks: false,
     email_notifications: true,
+    minimum_members: null,
   };
 
   function snapshot(): OrganizationSnapshot {

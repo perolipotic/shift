@@ -139,6 +139,8 @@ export const SETTINGS_LOGO = join(srcRoot, ...SETTINGS_SCREEN_PARTS.logo);
 export const SETTINGS_FIRE_RANKS = join(srcRoot, ...SETTINGS_SCREEN_PARTS.fireRanks);
 /** Story 10.3: the email-notifications card and its dialog. */
 export const SETTINGS_EMAIL_NOTIFICATIONS = join(srcRoot, ...SETTINGS_SCREEN_PARTS.emailNotifications);
+/** Story 11.1: the minimum-members card and its dialog. */
+export const SETTINGS_MINIMUM_MEMBERS = join(srcRoot, ...SETTINGS_SCREEN_PARTS.minimumMembers);
 
 /**
  * Story 1.4a's settings surface: the first destination that is not a
@@ -799,7 +801,9 @@ export const SCREENS = [
   // the count moving.
   // NINE BUTTONS since the *Satni pojasi* card's `Otvori` (deferred work from 7.18).
   // TEN since story 10.3: the email-notifications card's `Uredi`.
-  { name: 'the organization settings surface', file: SETTINGS, expectedFields: 3, expectedButtons: 10 },
+  // FOUR FIELDS AND ELEVEN BUTTONS since story 11.1: minimum members' number
+  // field and its card's `Uredi`.
+  { name: 'the organization settings surface', file: SETTINGS, expectedFields: 4, expectedButtons: 11 },
   // THREE on the member list, and the count is what keeps a fourth from
   // arriving unreviewed: the search field, the permission-level filter, and ONE
   // `<Button>` — the sort control, written once inside a map over
@@ -1425,6 +1429,10 @@ export const STRUCTURAL_ATTRIBUTES = new Set([
   'type',
   'method',
   'autoComplete',
+  // ADDED by story 11.1, a loosening named rather than waved through:
+  // `inputMode` takes its value from the closed HTML vocabulary (`numeric`,
+  // `decimal`, `tel`, …) that picks a touch keyboard, and never renders.
+  'inputMode',
   'autoCapitalize',
   'autoCorrect',
   'aria-describedby',

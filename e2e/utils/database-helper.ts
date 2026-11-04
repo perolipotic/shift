@@ -1901,3 +1901,38 @@ export async function removePushEndpointInSql(endpoint: string): Promise<void> {
     await client.end();
   }
 }
+
+/**
+ * Story 11.1: sets the run organization's `minimum_members` and answers what it
+ * was, so the caller can restore it.
+ */
+export async function setMinimumMembersInSql(slug: string, minimum: number | null): Promise<number | null> {
+  const client = await connect();
+  try {
+    const before = await client.query<{ minimum: number | null }>(
+      'select minimum_members as minimum from organizations where slug = $1',
+      [slug],
+    );
+    const row = before.rows[0];
+    if (row === undefined) throw new Error(`E2E: no organization ${slug}`);
+    await client.query('update organizations set minimum_members = $2 where slug = $1', [slug, minimum]);
+
+    return row.minimum;
+  } finally {
+    await client.end();
+  }
+}
+
+/** Story 11.1: the run organization's `minimum_members` as stored. */
+export async function minimumMembersOf(slug: string): Promise<number | null | undefined> {
+  const client = await connect();
+  try {
+    const { rows } = await client.query<{ minimum: number | null }>(
+      'select minimum_members as minimum from organizations where slug = $1',
+      [slug],
+    );
+    return rows[0]?.minimum;
+  } finally {
+    await client.end();
+  }
+}
