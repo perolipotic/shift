@@ -374,3 +374,32 @@ export function coverageAgainstMinimumOf(
     return null;
   }
 }
+
+// ------------------------------------------------- the calendar's day detail
+
+/**
+ * STORY 11.3: the day detail's line under *Sastav*, `rade 2 od najmanje 3`,
+ * for `teamId`'s working shift on `date`, from the calendar's own snapshot and
+ * the organization's leave its marks carry (`staffingLeave`) — the same
+ * records the month's short-staffed marks are derived from, so the line and
+ * the cell agree. `short` adds the glyph and `Premalo ljudi:`.
+ *
+ * `null` — no line — for a member and while the setting is empty
+ * (`staffingLeave` is `null` then), on a team that is not active (an archived
+ * team's day opened from the person view: the grid, which draws the active
+ * teams alone, never marks it, so the line never says it either), on a shift
+ * that is not working, and on a `RangeError` (logged), through
+ * {@link coverageAgainstMinimumOf}: the domain's `peopleAtWorkOn` and
+ * `isShortStaffed`, no arithmetic here (AD-7).
+ */
+export function dayStaffingOf(
+  calendar: CalendarSnapshot,
+  staffingLeave: readonly CollisionLeaveRecord[] | null,
+  teamId: string,
+  date: string,
+): CoverageAgainstMinimum | null {
+  if (staffingLeave === null) return null;
+  if (!splitTeams(calendar.teams).active.some((team) => team.id === teamId)) return null;
+
+  return coverageAgainstMinimumOf(calendar, staffingLeave, teamId, date);
+}

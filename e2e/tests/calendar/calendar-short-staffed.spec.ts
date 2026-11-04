@@ -10,13 +10,14 @@ import {
   removeTeamInSql,
   seedExtraTeam,
   seedLeaveMember,
+  seedLeaveRecord,
   seedTeamRotation,
   setMinimumMembersInSql,
   type RotationHold,
   type SeededRotation,
 } from '../../utils/database-helper.ts';
 import { addDays, dayMonth } from '../../utils/dates.ts';
-import { fill, hr } from '../../utils/i18n.ts';
+import { escapeRegExp, fill, hr, icu } from '../../utils/i18n.ts';
 import { ADMIN_STATE } from '../../utils/run-fixture.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
 
@@ -31,6 +32,12 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * taking that member off today + 4 (a Dan) leaves nobody at work: `Smjena …,
  * dd.mm. Dan: ne radi nitko od najmanje 1`. The setting is set in SQL for the
  * case and restored after it; everything written is removed in `afterEach`.
+ *
+ * Story 11.3 on the grid and the day detail: a team of four with two of them
+ * on leave on a Dan, the minimum at 3, is marked short-staffed — the cell's
+ * label ends `Premalo ljudi`, the legend lists it, and the detail says
+ * `Premalo ljudi: rade 2 od najmanje 3`. With the setting empty, none of them
+ * does.
  */
 
 test.use({ storageState: ADMIN_STATE, viewport: { width: 1280, height: 900 } });
@@ -130,6 +137,129 @@ test('taking the only member off a Dan shows the short-staffed block, and the sa
     await expect(form).toHaveCount(0);
     await expect(calendarPage.statusIn(detail)).toContainText(rosterChange.saved);
     await expect(calendarPage.rosterChangesIn(detail)).toContainText(fill(rosterChange.removed, { name: person.name }));
+  } finally {
+    await setMinimumMembersInSql(fixture.slug, was);
+  }
+});
+
+/**
+ * Story 11.3's setup: the hold, a team of the test's own on the seeded
+ * rotation from today with four fresh members, and `away` of them (two by
+ * default) on leave over today + 4 (a Dan).
+ */
+async function teamOfFourTwoOnLeave(slug: string, away = 2): Promise<{
+  readonly team: { readonly id: string; readonly name: string };
+  readonly rotation: SeededRotation;
+  readonly date: string;
+}> {
+  hold = holdRotation(slug);
+  await hold.ready;
+  const own: { readonly slug: string; members: string[]; teams: string[] } = { slug, members: [], teams: [] };
+  written = own;
+  const suffix = randomBytes(3).toString('hex');
+  const team = await seedExtraTeam(slug, `Smjena ${suffix}`);
+  own.teams.push(team.id);
+  seed = await seedTeamRotation(slug, team.id, suffix);
+  const rotation = seed;
+  const date = addDays(rotation.today, 4);
+  for (let index = 0; index < 4; index += 1) {
+    const person = await seedLeaveMember(slug, team.id, rotation.today, 20);
+    own.members.push(person.id);
+    if (index < away) await seedLeaveRecord(slug, person.id, date, date);
+  }
+
+  return { team, rotation, date };
+}
+
+const SHORT = hr.kalendar.modifier.shortStaffed;
+
+/** The day detail's people-at-work line, by its stable hook: any, the short one, or the one that is not. */
+function staffingLineIn(detail: Locator, short?: boolean): Locator {
+  return detail.locator(short === undefined ? '[data-day-staffing]' : `[data-day-staffing="${String(short)}"]`);
+}
+
+test('a shift two of four are away from, the minimum at 3, is marked on the grid, the legend and the detail', async ({
+  fixture,
+  calendarPage,
+}) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
+  const { team, rotation, date } = await teamOfFourTwoOnLeave(fixture.slug);
+  const was = await setMinimumMembersInSql(fixture.slug, 3);
+  try {
+    await calendarPage.goto(`?prikaz=sve&mjesec=${date.slice(0, 7)}`);
+    const cell = await calendarPage.cellOf(team.name, date);
+
+    // THE CELL: its full label ends with the mark's name — after the type, its
+    // times and the conflict and leave the two records raise — and it carries
+    // the glyph and the edge, in a ring precomposed with it.
+    await expect(cell).toHaveAccessibleName(
+      new RegExp(`, ${escapeRegExp(rotation.steps[0])}, ${escapeRegExp(rotation.ranges[0] ?? '')}(, [^,]+)*, ${escapeRegExp(SHORT)}$`),
+    );
+    await expect(cell.locator('svg[data-icon="users-three-bold"]')).toHaveCount(1);
+    await expect(cell.locator('[class*="-short-staffed"]')).toHaveCount(1);
+
+    // THE LEGEND names it.
+    await expect(calendarPage.legendOf().heading).toBeVisible();
+    expect(await calendarPage.legendNames()).toContain(SHORT);
+
+    // THE DETAIL states it in numbers, under *Sastav*.
+    await cell.click();
+    const detail = calendarPage.detailOf(team.name, date);
+    await expect(detail).toBeVisible();
+    await expect(staffingLineIn(detail)).toHaveCount(1);
+    await expect(staffingLineIn(detail, true)).toHaveText(
+      fill(staffing.dayShort, { atWork: icu(staffing.atWork, { atWork: 2, minimum: 3 }) }),
+    );
+    await expect(staffingLineIn(detail, true).locator('[data-icon]')).toHaveCount(1);
+    await expect(detail.getByRole('alert')).toHaveCount(0);
+  } finally {
+    await setMinimumMembersInSql(fixture.slug, was);
+  }
+});
+
+test('with the setting empty, the same shift carries no mark, no legend entry and no line', async ({ fixture, calendarPage }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
+  const { team, date } = await teamOfFourTwoOnLeave(fixture.slug);
+  const was = await setMinimumMembersInSql(fixture.slug, null);
+  try {
+    await calendarPage.goto(`?prikaz=sve&mjesec=${date.slice(0, 7)}`);
+    const cell = await calendarPage.cellOf(team.name, date);
+
+    // The conflict and leave marks are there, so the legend is: only short-staffed is not.
+    await expect(cell).toHaveAccessibleName(new RegExp(`, ${escapeRegExp(hr.kalendar.modifier.leave)}$`));
+    await expect(cell).not.toHaveAccessibleName(new RegExp(`, ${escapeRegExp(SHORT)}(,|$)`));
+    await expect(cell.locator('svg[data-icon="users-three-bold"]')).toHaveCount(0);
+    await expect(calendarPage.legendOf().heading).toBeVisible();
+    expect(await calendarPage.legendNames()).not.toContain(SHORT);
+
+    await cell.click();
+    const detail = calendarPage.detailOf(team.name, date);
+    await expect(detail).toBeVisible();
+    await expect(calendarPage.rosterHeadingIn(detail)).toBeVisible();
+    await expect(staffingLineIn(detail)).toHaveCount(0);
+  } finally {
+    await setMinimumMembersInSql(fixture.slug, was);
+  }
+});
+
+test('one of four away, the minimum at 3: no mark, and the detail states the bare line', async ({ fixture, calendarPage }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
+  const { team, date } = await teamOfFourTwoOnLeave(fixture.slug, 1);
+  const was = await setMinimumMembersInSql(fixture.slug, 3);
+  try {
+    await calendarPage.goto(`?prikaz=sve&mjesec=${date.slice(0, 7)}`);
+    const cell = await calendarPage.cellOf(team.name, date);
+
+    await expect(cell).not.toHaveAccessibleName(new RegExp(`, ${escapeRegExp(SHORT)}(,|$)`));
+    await expect(cell.locator('svg[data-icon="users-three-bold"]')).toHaveCount(0);
+
+    await cell.click();
+    const detail = calendarPage.detailOf(team.name, date);
+    await expect(detail).toBeVisible();
+    await expect(staffingLineIn(detail)).toHaveCount(1);
+    await expect(staffingLineIn(detail, false)).toHaveText(icu(staffing.atWork, { atWork: 3, minimum: 3 }));
+    await expect(staffingLineIn(detail, false).locator('[data-icon]')).toHaveCount(0);
+    await expect(detail.getByText(SHORT, { exact: false })).toHaveCount(0);
   } finally {
     await setMinimumMembersInSql(fixture.slug, was);
   }

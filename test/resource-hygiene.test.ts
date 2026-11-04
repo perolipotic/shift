@@ -1179,6 +1179,8 @@ const SANCTIONED_SCREEN_KEYS = [
   'kalendar.modifier.overridden',
   'kalendar.modifier.leave',
   'kalendar.modifier.uncovered',
+  // STORY 11.3: the fifth mark, short-staffed.
+  'kalendar.modifier.shortStaffed',
   // STORY 5.3c: the unavailable alert's retry, which reads the schedule and
   // the leave the marks stand on again.
   'kalendar.retry',
@@ -2027,6 +2029,10 @@ const SANCTIONED_SCREEN_KEYS = [
   'danas.admin.week.legend',
   'danas.admin.week.legendType',
   'danas.admin.week.legendConflict',
+  // STORY 11.3: a short-staffed week cell's name ends `premalo ljudi`, and the
+  // legend lists the mark beside its glyph.
+  'danas.admin.week.cellShortStaffed',
+  'danas.admin.week.legendShortStaffed',
   'danas.admin.week.link',
   'danas.admin.unavailable',
   // STORY 7.11: the member page as facts and dialogs. The header — the
@@ -2259,6 +2265,9 @@ const SANCTIONED_SCREEN_KEYS = [
   'popunjenost.more',
   'popunjenost.unknown',
   'popunjenost.short',
+  // STORY 11.3. The day detail's line while the shift is short:
+  // `Premalo ljudi: rade 2 od najmanje 3`.
+  'popunjenost.dayShort',
   // STORY 10.4. The push section of the settings screen: this device's
   // on/off, and what it says on iOS before install, without support, and
   // with the permission blocked.

@@ -150,6 +150,7 @@ async function snapshotOf(
     rosterOverrides = [] as readonly Row[],
     statuses = [] as readonly Row[],
     people = PEOPLE,
+    minimum = undefined as unknown,
   } = {},
 ): Promise<CalendarSnapshot> {
   const own = viewerTeam === null ? [] : [membershipRow(viewerTeam, SEEDED)];
@@ -163,6 +164,7 @@ async function snapshotOf(
             ...people.map(([id, , team]) => memberMembershipRow(id, team, SEEDED)),
           ],
           statuses,
+          minimumMembers: minimum,
         }),
       ],
       error: null,
@@ -641,6 +643,43 @@ describe('Ovaj tjedan', () => {
       { letter: 'D', name: 'Dan' },
     ]);
     expect(week.anyConflict).toBe(true);
+    // The setting empty: nothing short-staffed anywhere in the week.
+    expect(week.rows.flatMap((row) => row.cells).some((cell) => cell.shortStaffed)).toBe(false);
+    expect(week.rows.flatMap((row) => row.cells).some((cell) => cell.modifiers.includes('shortStaffed'))).toBe(false);
+    expect(week.anyShortStaffed).toBe(false);
+  });
+
+  it('carries the calendar\'s short-staffed mark, its name and its legend entry while the minimum is set (story 11.3)', async () => {
+    // Team A has four members; on 01.10. (Noć) Ana and Cvita are away, so two
+    // are at work against a minimum of 3. On 04.10. (Dan) only Ana is: three.
+    const snapshot = await snapshotOf({ minimum: 3 });
+    const { week } = viewOf(snapshot, SEVEN);
+    const a = week.rows.find((row) => row.teamId === A);
+    const short = a?.cells[0];
+    const enough = a?.cells[3];
+    const day = week.days[0];
+
+    if (short === undefined || enough === undefined || day === undefined) throw new Error('no cell');
+
+    expect(short.modifiers).toContain('shortStaffed');
+    expect(short.shortStaffed).toBe(true);
+    expect(enough.letter).toBe('D');
+    expect(enough.shortStaffed).toBe(false);
+    expect(enough.modifiers).not.toContain('shortStaffed');
+    expect(week.anyShortStaffed).toBe(true);
+    // The name the grid gives it: the cell's words, then the mark's.
+    const name = t(weekCellMessageKey(short), {
+      weekday: day.weekday,
+      date: day.dayMonth,
+      team: a?.teamName,
+      type: short.name,
+      range: short.range,
+    });
+
+    expect(t('danas.admin.week.cellShortStaffed', { cell: name })).toBe(
+      'četvrtak 01.10., Smjena A, Noć 19:00–07:00, čeka odluku, premalo ljudi',
+    );
+    expect(t('danas.admin.week.legendShortStaffed')).toBe('premalo ljudi');
   });
 
   it('names a cell in words: the day, the team, the type and range, and the conflict', () => {

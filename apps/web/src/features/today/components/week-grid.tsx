@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router';
 import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 
 import { Card } from '@/components/ui/card';
+import { UsersThreeBold } from '@/components/ui/icon';
 import {
   GRID_CELL_SELECTOR,
   GRID_ORIGIN,
@@ -25,21 +26,26 @@ function clampedStop(stop: GridPosition, rows: number, columns: number): GridPos
   };
 }
 
-/** A cell's full name in words: the day, the team, the type with its range, and the conflict. */
+/**
+ * A cell's full name in words: the day, the team, the type with its range,
+ * the conflict, and (story 11.3) `premalo ljudi` when it is short-staffed.
+ */
 function cellName(cell: WeekCell, day: WeekDay, teamName: string): string {
-  return t(weekCellMessageKey(cell), {
+  const name = t(weekCellMessageKey(cell), {
     weekday: day.weekday,
     date: day.dayMonth,
     team: teamName,
     type: cell.name ?? t('kalendar.noRotation'),
     range: cell.range,
   });
+
+  return cell.shortStaffed ? t('danas.admin.week.cellShortStaffed', { cell: name }) : name;
 }
 
 /**
  * *Ovaj tjedan* (story 6.3): every active team across today and the six days
- * after it, each cell the calendar's own, then the legend of the letters and
- * ⚠, and the way to the calendar.
+ * after it, each cell the calendar's own, then the legend of the letters,
+ * ⚠ and (story 11.3) the short-staffed glyph, and the way to the calendar.
  *
  * KALENDAR'S GRID MODEL (`@/features/calendar/utils/grid-keys`): an ARIA grid
  * with ONE tab stop, a roving `tabIndex`, and the arrows, Home and End moving
@@ -95,6 +101,7 @@ export function WeekGrid({ week }: { readonly week: Week }): ReactNode {
         >
           <span className="flex items-center gap-0.5">
             {cell.conflict ? <span className="[font-variant-emoji:text]">{CONFLICT_GLYPH}</span> : null}
+            {cell.shortStaffed ? <UsersThreeBold aria-hidden className="size-3 shrink-0" /> : null}
             <span>{cell.letter ?? NO_ROTATION_SHOWN}</span>
           </span>
         </div>
@@ -164,6 +171,12 @@ export function WeekGrid({ week }: { readonly week: Week }): ReactNode {
             {week.anyConflict ? (
               <li className="[font-variant-emoji:text]">
                 {t('danas.admin.week.legendConflict', { glyph: CONFLICT_GLYPH })}
+              </li>
+            ) : null}
+            {week.anyShortStaffed ? (
+              <li className="inline-flex items-center gap-1">
+                <UsersThreeBold aria-hidden className="size-3 shrink-0" />
+                <span>{t('danas.admin.week.legendShortStaffed')}</span>
               </li>
             ) : null}
           </ul>

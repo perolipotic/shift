@@ -1353,16 +1353,17 @@ describe('the calendar only reads, and projects nothing of its own', () => {
     }
   });
 
-  it('derives all four modifiers, in one place (stories 3.5a, 5.3c, 5.4b): overridden, conflict, leave and uncovered', () => {
+  it('derives all five modifiers, in one place (stories 3.5a, 5.3c, 5.4b, 11.3): overridden, conflict, leave, uncovered and short-staffed', () => {
     // Story 3.2b's vocabulary names every mark; story 3.5a derives the first,
     // `overridden`, in `month.ts` from the domain's `overridden` flag, and
     // the screen draws its glyph beside the day detail's override block — TWO
     // in the day detail dialog. Story 5.3c derives `conflict` and `leave` in
     // `month.ts` from the marks `services/marks.ts` builds, and story 5.4b
-    // `uncovered` there too, from the same marks' accepted-uncovered keys. No
-    // string literal names any mark.
+    // `uncovered` there too, from the same marks' accepted-uncovered keys.
+    // Story 11.3 derives `shortStaffed` there from the staffing rule over the
+    // marks' leave. No string literal names any mark.
     const NAMED: Readonly<Record<string, Readonly<Record<string, number>>>> = {
-      [MONTH]: { MODIFIER_OVERRIDDEN: 2, MODIFIER_CONFLICT: 2, MODIFIER_LEAVE: 2, MODIFIER_UNCOVERED: 2 },
+      [MONTH]: { MODIFIER_OVERRIDDEN: 2, MODIFIER_CONFLICT: 2, MODIFIER_LEAVE: 2, MODIFIER_UNCOVERED: 2, MODIFIER_SHORT_STAFFED: 2 },
       // STORY 7.9: and the day's unresolved conflicts, beside their heading, with the cell's own `⚠`.
       [SHOWS_OWNER]: { MODIFIER_OVERRIDDEN: 2, MODIFIER_CONFLICT: 2 },
     };
@@ -1370,8 +1371,8 @@ describe('the calendar only reads, and projects nothing of its own', () => {
     for (const file of files.filter((one) => one !== MODIFIERS)) {
       const text = stripped(file);
 
-      expect(text, file).not.toMatch(/'(conflict|overridden|leave|uncovered)'/);
-      for (const name of ['MODIFIER_OVERRIDDEN', 'MODIFIER_CONFLICT', 'MODIFIER_LEAVE', 'MODIFIER_UNCOVERED']) {
+      expect(text, file).not.toMatch(/'(conflict|overridden|leave|uncovered|shortStaffed)'/);
+      for (const name of ['MODIFIER_OVERRIDDEN', 'MODIFIER_CONFLICT', 'MODIFIER_LEAVE', 'MODIFIER_UNCOVERED', 'MODIFIER_SHORT_STAFFED']) {
         const named = text.match(new RegExp(`\\b${name}\\b`, 'g'))?.length ?? 0;
 
         expect(named, `${name} in ${file}`).toBe(NAMED[file]?.[name] ?? 0);
@@ -1389,7 +1390,7 @@ describe('the calendar only reads, and projects nothing of its own', () => {
     expect(month).toMatch(/const NO_MODIFIERS: readonly CalendarModifier\[\] = \[\];/);
     expect(month.match(/\bconst modifiers = cellModifiersOf\(marks\);/g)).toHaveLength(1);
     expect(month.match(/^\s+modifiers,$/gm)).toHaveLength(1);
-    expect(month.match(/\bmodifiers\.push\(/g)).toHaveLength(4);
+    expect(month.match(/\bmodifiers\.push\(/g)).toHaveLength(5);
   });
 
   it.each(files)('%s has no modulo, no write and no read of rank or position', (file) => {

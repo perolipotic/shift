@@ -10,6 +10,7 @@ import type { CalendarMarks } from '@/features/calendar/utils/month';
 import { resolutionsOf, unresolvedOf, type LeaveRowsAnswer } from '@/features/conflicts/services/conflicts-queue';
 import { acceptedUncoveredOf } from '@/features/conflicts/services/resolutions';
 import { leaveRecordsOf, organizationLeaveRecordsOf } from '@/features/leave/services/leave-list';
+import { minimumOfCalendar } from '@/features/staffing/services/short-staffed';
 
 /**
  * The calendar's conflict and leave marks (story 5.3c; UX-DR8, Q21), as a
@@ -29,6 +30,12 @@ import { leaveRecordsOf, organizationLeaveRecordsOf } from '@/features/leave/ser
  * UNCOVERED (story 5.4b). An admin's marks also carry the keys the same
  * resolution rows accepted as uncovered, which mark their shift's grid cell
  * uncovered. A member's carry none.
+ *
+ * SHORT-STAFFED (story 11.3). An admin's marks also carry the organization's
+ * parsed leave records (`staffingLeave`) while *Najmanje ljudi u smjeni* is
+ * set, from which the month derives its short-staffed grid cells through the
+ * staffing rule. `null` while the setting is empty, and always for a member,
+ * whose leave read is their own: nothing is short-staffed for them.
  *
  * NEVER A MONTH WITHOUT ITS MARKS. The calendar waits for its reads: a leave
  * or resolution read that failed, is paused offline, or answered a row that
@@ -93,6 +100,7 @@ export function calendarMarksOf(
       collisions: [],
       uncovered: [],
       leave: new Map([[viewer.memberId, own.map(({ from, to }) => ({ from, to }))]]),
+      staffingLeave: null,
     };
   }
 
@@ -116,6 +124,7 @@ export function calendarMarksOf(
     collisions: unresolvedOf(snapshot, records, resolutionRows),
     uncovered: acceptedUncoveredOf(resolutionsOf(snapshot, resolutionRows)),
     leave,
+    staffingLeave: minimumOfCalendar(snapshot) === null ? null : records,
   };
 }
 

@@ -10,7 +10,7 @@ import {
 
 import type { CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { calendarMarksOf } from '@/features/calendar/services/marks';
-import { MODIFIER_CONFLICT } from '@/features/calendar/utils/modifiers';
+import { MODIFIER_CONFLICT, MODIFIER_SHORT_STAFFED } from '@/features/calendar/utils/modifiers';
 import {
   CALENDAR_CELL_CLASS,
   NO_ROTATION_CELL_CLASS,
@@ -288,6 +288,12 @@ export interface WeekCell {
   readonly range: string | null;
   /** Whether an unresolved conflict falls on it: exactly where the queue lists one. */
   readonly conflict: boolean;
+  /**
+   * Whether the calendar marks its working shift short-staffed (story 11.3):
+   * the grid's own mark, so the week draws its glyph, names it and lists it
+   * in the legend, never the edge's colour alone.
+   */
+  readonly shortStaffed: boolean;
   /** The calendar's own fill and shape. */
   readonly className: string;
   /** The calendar's own marks, for the ring and hatch. */
@@ -314,6 +320,8 @@ export interface Week {
   readonly legend: readonly WeekLegendEntry[];
   /** Whether any cell carries ⚠, so the legend names it. */
   readonly anyConflict: boolean;
+  /** Whether any cell is short-staffed (story 11.3), so the legend names it. */
+  readonly anyShortStaffed: boolean;
 }
 
 /** The ready screen. */
@@ -706,6 +714,7 @@ function emptyWeekCellOf(date: string): WeekCell {
     name: null,
     range: null,
     conflict: false,
+    shortStaffed: false,
     className: `${CALENDAR_CELL_CLASS} ${NO_ROTATION_CELL_CLASS}`,
     modifiers: [],
   };
@@ -726,6 +735,7 @@ export function weekOf(dates: readonly string[], months: ReadonlyMap<string, Cal
   const legend: WeekLegendEntry[] = [];
   const seen = new Set<string>();
   let anyConflict = false;
+  let anyShortStaffed = false;
 
   const rows = first.columns.map((team) => ({
     teamId: team.id,
@@ -740,7 +750,10 @@ export function weekOf(dates: readonly string[], months: ReadonlyMap<string, Cal
 
       const conflict = cell.modifiers.includes(MODIFIER_CONFLICT);
 
+      const shortStaffed = cell.modifiers.includes(MODIFIER_SHORT_STAFFED);
+
       anyConflict ||= conflict;
+      anyShortStaffed ||= shortStaffed;
 
       if (cell.letter !== null && cell.name !== null && !seen.has(`${cell.letter}\u0000${cell.name}`)) {
         seen.add(`${cell.letter}\u0000${cell.name}`);
@@ -753,6 +766,7 @@ export function weekOf(dates: readonly string[], months: ReadonlyMap<string, Cal
         name: cell.name,
         range: cell.range,
         conflict,
+        shortStaffed,
         className: cell.className,
         modifiers: cell.modifiers,
       };
@@ -770,6 +784,7 @@ export function weekOf(dates: readonly string[], months: ReadonlyMap<string, Cal
     rows,
     legend,
     anyConflict,
+    anyShortStaffed,
   };
 }
 

@@ -25,9 +25,10 @@ export const STYLESHEET = join(repoRoot, 'apps', 'web', 'src', 'index.css');
 export const DARK_SELECTOR = ':root[data-theme="dark"]';
 
 /**
- * The 32 brand token names: DESIGN.md's `colors:` front matter (24 names:
+ * The 33 brand token names: DESIGN.md's `colors:` front matter (25 names:
  * story 7.1 added `shift-nonworking-border`, the unused `modifier-leave`
- * pair was retired, and story 15.2 added the hour band's `band-dark` pair),
+ * pair was retired, story 15.2 added the hour band's `band-dark` pair, and
+ * story 11.3 the short-staffed `warning`),
  * plus the four curated accents story 1.4c adds.
  *
  * BUILT rather than written out, and the expansion is what the accents extend:
@@ -44,9 +45,10 @@ export const DARK_SELECTOR = ':root[data-theme="dark"]';
  * and no more. `theme-contrast.test.ts` is what measures the accents, in both
  * themes, and what holds each of them away from `destructive`'s hue.
  *
- * Two names have no foreground and join through the `concat` instead:
- * `modifier-overridden` (a ring colour) and `shift-nonworking-border` (story
- * 7.1, the non-working cell's hairline).
+ * Three names have no foreground and join through the `concat` instead:
+ * `modifier-overridden` (a ring colour), `shift-nonworking-border` (story
+ * 7.1, the non-working cell's hairline) and `warning` (story 11.3, the
+ * short-staffed bar and glyph: no text ever sits on it).
  */
 export const BRAND_TOKENS: string[] = [
   'primary',
@@ -67,7 +69,7 @@ export const BRAND_TOKENS: string[] = [
   'brand-violet',
 ]
   .flatMap((name) => [name, `${name}-foreground`])
-  .concat('modifier-overridden', 'shift-nonworking-border');
+  .concat('modifier-overridden', 'shift-nonworking-border', 'warning');
 
 /** The 20 shadcn/ui neutral base names, less `primary` and `destructive`,
  *  which the brand delta supplies instead, and less the eight `sidebar*`

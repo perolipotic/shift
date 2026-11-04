@@ -396,6 +396,7 @@ function dayLookupOf(snapshot: CalendarSnapshot, today: string, records: readonl
     collisions: [],
     uncovered: [],
     leave: new Map([[viewer.memberId, records.map(({ from, to }) => ({ from, to }))]]),
+    staffingLeave: null,
   };
   const months = new Map<string, ReadonlyMap<string, CalendarDay>>();
 

@@ -3,18 +3,22 @@ import { fileURLToPath } from 'node:url';
 
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { CircleDashedBold, ClockBold } from '@/components/ui/icon';
+import { CircleDashedBold, ClockBold, UsersThreeBold } from '@/components/ui/icon';
 import {
   CALENDAR_MODIFIERS,
   CALENDAR_MODIFIER_IDS,
+  EDGE_SHORT_STAFFED_CLASS,
   GLYPH_ICON,
   GLYPH_TEXT,
   HATCH_BOTH_CLASS,
   HATCH_LEAVE_CLASS,
   HATCH_UNCOVERED_CLASS,
   RING_BOTH_CLASS,
+  RING_BOTH_SHORT_STAFFED_CLASS,
   RING_CONFLICT_CLASS,
+  RING_CONFLICT_SHORT_STAFFED_CLASS,
   RING_OVERRIDDEN_CLASS,
+  RING_OVERRIDDEN_SHORT_STAFFED_CLASS,
   LABEL_SEPARATOR,
   cellLabelOf,
   dayListLabelsOf,
@@ -31,7 +35,8 @@ import {
 import { initLocalization, t } from '@/lib/i18n';
 
 /**
- * Story 3.2b's modifier vocabulary, executed (AD-15): the fixed four, their
+ * Story 3.2b's modifier vocabulary, executed (AD-15): the fixed five (story
+ * 11.3 added short-staffed), their
  * glyphs and labels, every subset composing, the legend and the cell label —
  * every row of the spec's matrix that is not the keyboard's.
  */
@@ -42,7 +47,7 @@ beforeAll(async () => {
   await initLocalization();
 });
 
-/** Every subset of the four, the empty one included. */
+/** Every subset of the five, the empty one included. */
 function subsets(): readonly (readonly CalendarModifier[])[] {
   return Array.from({ length: 2 ** CALENDAR_MODIFIER_IDS.length }, (_, mask) =>
     CALENDAR_MODIFIER_IDS.filter((_, index) => (mask >> index) & 1),
@@ -50,8 +55,8 @@ function subsets(): readonly (readonly CalendarModifier[])[] {
 }
 
 describe('the vocabulary', () => {
-  it('is the four marks, in canonical order, each with its glyph, treatment and label', () => {
-    expect(CALENDAR_MODIFIERS.map((entry) => entry.id)).toEqual(['conflict', 'overridden', 'leave', 'uncovered']);
+  it('is the five marks, in canonical order, each with its glyph, treatment and label', () => {
+    expect(CALENDAR_MODIFIERS.map((entry) => entry.id)).toEqual(['conflict', 'overridden', 'leave', 'uncovered', 'shortStaffed']);
     // Story 5.3c (human): ⚠ and ✎ stay text; leave and uncovered are icons (Phosphor
     // `fill` through `@/components/ui/icon` since story 15.1).
     expect(CALENDAR_MODIFIERS.map((entry) => entry.glyph)).toEqual([
@@ -59,19 +64,22 @@ describe('the vocabulary', () => {
       { kind: GLYPH_TEXT, text: '✎' },
       { kind: GLYPH_ICON, icon: ClockBold },
       { kind: GLYPH_ICON, icon: CircleDashedBold },
+      { kind: GLYPH_ICON, icon: UsersThreeBold },
     ]);
-    expect(CALENDAR_MODIFIERS.map((entry) => entry.treatment)).toEqual(['ring', 'ring', 'hatch', 'hatch']);
+    expect(CALENDAR_MODIFIERS.map((entry) => entry.treatment)).toEqual(['ring', 'ring', 'hatch', 'hatch', 'edge']);
     expect(CALENDAR_MODIFIERS.map((entry) => entry.labelKey)).toEqual([
       'kalendar.modifier.conflict',
       'kalendar.modifier.overridden',
       'kalendar.modifier.leave',
       'kalendar.modifier.uncovered',
+      'kalendar.modifier.shortStaffed',
     ]);
     expect(CALENDAR_MODIFIERS.map((entry) => t(entry.labelKey))).toEqual([
       'Čeka odluku',
       'Izmijenjeno',
       'Godišnji',
       'Nepokriveno',
+      'Premalo ljudi',
     ]);
   });
 
@@ -86,20 +94,32 @@ describe('the vocabulary', () => {
     expect(modifierTreatmentOf([modifier]).glyphs).toEqual([glyphOf(modifier)]);
   });
 
-  it('draws every class from a utility in index.css, over the existing tokens, destructive for conflict alone', () => {
+  it('draws every class from a utility in index.css, over its tokens, destructive for conflict and warning for short-staffed alone', () => {
     const css = readFileSync(fileURLToPath(new URL('../../../index.css', import.meta.url)), 'utf8');
     const utilities = new Map(
       [...css.matchAll(/@utility (modifier-[a-z-]+) \{([\s\S]*?)\n\}/g)].map((found) => [found[1], found[2] ?? '']),
     );
 
-    for (const name of [RING_CONFLICT_CLASS, RING_OVERRIDDEN_CLASS, RING_BOTH_CLASS, HATCH_LEAVE_CLASS, HATCH_UNCOVERED_CLASS, HATCH_BOTH_CLASS]) {
+    for (const name of [
+      RING_CONFLICT_CLASS,
+      RING_OVERRIDDEN_CLASS,
+      RING_BOTH_CLASS,
+      EDGE_SHORT_STAFFED_CLASS,
+      RING_CONFLICT_SHORT_STAFFED_CLASS,
+      RING_OVERRIDDEN_SHORT_STAFFED_CLASS,
+      RING_BOTH_SHORT_STAFFED_CLASS,
+      HATCH_LEAVE_CLASS,
+      HATCH_UNCOVERED_CLASS,
+      HATCH_BOTH_CLASS,
+    ]) {
       const body = utilities.get(name);
 
       expect(body, `${name} is not a utility`).toBeDefined();
-      // A ring is drawn in its reserved token; a hatch, since story 5.3c, in
-      // the cell's own foreground — never a fixed tint.
-      if (name.startsWith('modifier-ring-')) {
-        expect(body, name).toMatch(/var\(--(destructive|modifier-overridden)\)/);
+      // A ring or edge is drawn in its reserved token; a hatch, since story
+      // 5.3c, in the cell's own foreground — never a fixed tint.
+      if (name.startsWith('modifier-ring-') || name.startsWith('modifier-edge-')) {
+        expect(body, name).toMatch(/var\(--(destructive|modifier-overridden|warning)\)/);
+        expect(body?.includes('--warning'), name).toBe(name.includes('short-staffed'));
       } else {
         expect(body, name).toMatch(/color-mix\(in oklch, currentColor \d+%, transparent\)/);
         expect(body, name).not.toMatch(/var\(--modifier-/);
@@ -110,6 +130,17 @@ describe('the vocabulary', () => {
     }
     // The rings nest: conflict's band outermost, overridden's inside it.
     expect(utilities.get(RING_BOTH_CLASS)).toMatch(/2px var\(--destructive\)[\s\S]*4px var\(--modifier-overridden\)/);
+    // The edge is the innermost band: listed last, the rings' depth plus 3 px.
+    expect(utilities.get(EDGE_SHORT_STAFFED_CLASS)).toMatch(/box-shadow: inset 0 -3px 0 0 var\(--warning\);/);
+    expect(utilities.get(RING_CONFLICT_SHORT_STAFFED_CLASS)).toMatch(
+      /2px var\(--destructive\),\s*inset 0 -5px 0 0 var\(--warning\);/,
+    );
+    expect(utilities.get(RING_OVERRIDDEN_SHORT_STAFFED_CLASS)).toMatch(
+      /2px var\(--modifier-overridden\),\s*inset 0 -5px 0 0 var\(--warning\);/,
+    );
+    expect(utilities.get(RING_BOTH_SHORT_STAFFED_CLASS)).toMatch(
+      /2px var\(--destructive\),\s*inset 0 0 0 4px var\(--modifier-overridden\),\s*inset 0 -7px 0 0 var\(--warning\);/,
+    );
     // The hatches layer at their own angles.
     expect(utilities.get(HATCH_LEAVE_CLASS)).toContain('-45deg');
     expect(utilities.get(HATCH_UNCOVERED_CLASS)).toMatch(/\(\s*45deg/);
@@ -121,7 +152,34 @@ describe('the vocabulary', () => {
     expect(modifierTreatmentOf(['overridden']).className).toBe(RING_OVERRIDDEN_CLASS);
     expect(modifierTreatmentOf(['leave']).className).toBe(HATCH_LEAVE_CLASS);
     expect(modifierTreatmentOf(['uncovered']).className).toBe(HATCH_UNCOVERED_CLASS);
+    expect(modifierTreatmentOf(['shortStaffed']).className).toBe(EDGE_SHORT_STAFFED_CLASS);
     expect(modifierTreatmentOf([]).className).toBe('');
+  });
+
+  it('composes the edge inside every ring: seven box-shadow classes (story 11.3)', () => {
+    expect(modifierTreatmentOf(['shortStaffed', 'conflict']).className).toBe(RING_CONFLICT_SHORT_STAFFED_CLASS);
+    expect(modifierTreatmentOf(['shortStaffed', 'overridden']).className).toBe(RING_OVERRIDDEN_SHORT_STAFFED_CLASS);
+    expect(modifierTreatmentOf(['overridden', 'shortStaffed', 'conflict']).className).toBe(RING_BOTH_SHORT_STAFFED_CLASS);
+    // The matrix's composed row: short + conflict + overridden, three glyphs.
+    expect(modifierTreatmentOf(['overridden', 'shortStaffed', 'conflict']).glyphs).toEqual([
+      { kind: GLYPH_TEXT, text: '⚠' },
+      { kind: GLYPH_TEXT, text: '✎' },
+      { kind: GLYPH_ICON, icon: UsersThreeBold },
+    ]);
+    expect(
+      new Set(subsets().map((subset) => modifierTreatmentOf(subset).className.split(' ').find((name) => !name.startsWith('modifier-hatch-')) ?? '')),
+    ).toEqual(
+      new Set([
+        '',
+        RING_CONFLICT_CLASS,
+        RING_OVERRIDDEN_CLASS,
+        RING_BOTH_CLASS,
+        EDGE_SHORT_STAFFED_CLASS,
+        RING_CONFLICT_SHORT_STAFFED_CLASS,
+        RING_OVERRIDDEN_SHORT_STAFFED_CLASS,
+        RING_BOTH_SHORT_STAFFED_CLASS,
+      ]),
+    );
   });
 });
 
@@ -156,18 +214,19 @@ describe('composing', () => {
       const reversed = [...subset].reverse();
       const shown = modifierTreatmentOf([...reversed, ...reversed]);
       const classes = shown.className === '' ? [] : shown.className.split(' ');
-      const rings = classes.filter((name) => name.startsWith('modifier-ring-'));
+      const rings = classes.filter((name) => name.startsWith('modifier-ring-') || name.startsWith('modifier-edge-'));
       const hatches = classes.filter((name) => name.startsWith('modifier-hatch-'));
       const has = (modifier: CalendarModifier) => subset.includes(modifier);
 
       expect(shown.modifiers).toEqual(subset);
       expect(shown.glyphs).toEqual(subset.map((modifier) => glyphOf(modifier)));
       expect(classes).toHaveLength(rings.length + hatches.length);
-      expect(rings).toHaveLength(has('conflict') || has('overridden') ? 1 : 0);
+      expect(rings).toHaveLength(has('conflict') || has('overridden') || has('shortStaffed') ? 1 : 0);
       expect(hatches).toHaveLength(has('leave') || has('uncovered') ? 1 : 0);
       // Each ring or hatch present is the one naming every mark of its kind.
       expect(rings[0]?.includes('conflict') ?? false).toBe(has('conflict'));
       expect(rings[0]?.includes('overridden') ?? false).toBe(has('overridden'));
+      expect(rings[0]?.includes('short-staffed') ?? false).toBe(has('shortStaffed'));
       expect(hatches[0]?.includes('leave') ?? false).toBe(has('leave'));
       expect(hatches[0]?.includes('uncovered') ?? false).toBe(has('uncovered'));
     },
@@ -187,6 +246,7 @@ describe('the legend', () => {
     expect(
       legendOf([{ modifiers: ['uncovered', 'conflict'] }, null, { modifiers: ['leave', 'conflict'] }]),
     ).toEqual(['conflict', 'leave', 'uncovered']);
+    expect(legendOf([{ modifiers: ['shortStaffed'] }, { modifiers: ['conflict'] }])).toEqual(['conflict', 'shortStaffed']);
   });
 });
 
@@ -213,6 +273,9 @@ describe('the cell label', () => {
     expect(
       cellLabelOf({ ...day, name: 'Noć', range: '19:00–07:00', modifiers: ['leave', 'conflict'] }, translate),
     ).toBe('subota 26.09., Smjena A, Noć, 19:00–07:00, Čeka odluku, Godišnji');
+    expect(
+      cellLabelOf({ ...day, name: 'Dan', range: '07:00–19:00', modifiers: ['shortStaffed'] }, translate),
+    ).toBe('subota 26.09., Smjena A, Dan, 07:00–19:00, Premalo ljudi');
   });
 });
 

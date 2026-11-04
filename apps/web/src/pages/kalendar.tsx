@@ -187,6 +187,7 @@ export function KalendarScreen() {
         detail={screen.detail}
         snapshot={snapshot}
         conflicts={screen.dayConflicts}
+        staffing={screen.dayStaffing}
         form={overrideForm}
         roster={rosterForm}
         onClose={screen.closeDay}

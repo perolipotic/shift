@@ -59,8 +59,9 @@ describe('the token lists are the size everything else assumes', () => {
   // as the one to avoid: a hard-coded count that admits the new tokens without
   // anybody deciding to let them in leaves them swept by nothing.
   // STORY 15.2: thirty-two, with the hour band's `band-dark` pair.
-  it('has 32 brand tokens', () => {
-    expect(BRAND_TOKENS).toHaveLength(32);
+  // STORY 11.3: thirty-three, with the short-staffed `warning` (no foreground).
+  it('has 33 brand tokens', () => {
+    expect(BRAND_TOKENS).toHaveLength(33);
   });
 
   // STORY 15.3: twenty, the eight `sidebar*` tokens retired.
@@ -320,14 +321,19 @@ describe('the calendar modifiers survive forced colours', () => {
    * outline, a hatch a border, in a system colour keyword. The class names are
    * read from `modifiers.ts`, the one place the screen takes them from, so a
    * treatment added there without a fallback here fails.
+   *
+   * STORY 11.3: short-staffed's EDGE (`modifier-edge-short-staffed`, and the
+   * three rings precomposed with it) is a box-shadow too; its fallback is a
+   * solid bottom border, `!important` so a hatch's own border yields its
+   * bottom side, and the ring's depth deeper under a ring's inset outline.
    */
   const repoRoot = fileURLToPath(new URL('..', import.meta.url));
   const modifiers = readFileSync(
     join(repoRoot, 'apps', 'web', 'src', 'features', 'calendar', 'utils', 'modifiers.ts'),
     'utf8',
   );
-  const treatments = [...modifiers.matchAll(/export const (RING|HATCH)_\w+_CLASS = '([\w-]+)';/g)].map(
-    ([, kind, name]) => ({ kind: kind === 'RING' ? 'ring' : 'hatch', name: name ?? '' }),
+  const treatments = [...modifiers.matchAll(/export const (RING|EDGE|HATCH)_\w+_CLASS = '([\w-]+)';/g)].map(
+    ([, kind, name]) => ({ kind: kind === 'RING' ? 'ring' : kind === 'EDGE' ? 'edge' : 'hatch', name: name ?? '' }),
   );
   const SYSTEM_COLOUR = /\b(CanvasText|Highlight|LinkText|ButtonText)\b/;
 
@@ -353,11 +359,15 @@ describe('the calendar modifiers survive forced colours', () => {
     return /@media\s*\(forced-colors:\s*active\)\s*\{([^{}]*)\}/.exec(utility(name))?.[1]?.trim() ?? null;
   }
 
-  it('reads the six treatments off modifiers.ts', () => {
+  it('reads the ten treatments off modifiers.ts', () => {
     expect(treatments.map((treatment) => treatment.name)).toEqual([
       'modifier-ring-conflict',
       'modifier-ring-overridden',
       'modifier-ring-conflict-overridden',
+      'modifier-edge-short-staffed',
+      'modifier-ring-conflict-short-staffed',
+      'modifier-ring-overridden-short-staffed',
+      'modifier-ring-conflict-overridden-short-staffed',
       'modifier-hatch-leave',
       'modifier-hatch-uncovered',
       'modifier-hatch-leave-uncovered',
@@ -370,14 +380,18 @@ describe('the calendar modifiers survive forced colours', () => {
 
     expect(body, `no @utility ${name}`).not.toBe('');
     expect(body, `${name} no longer draws with what forced colours drop`).toMatch(
-      kind === 'ring' ? /box-shadow:/ : /background-image:/,
+      kind === 'hatch' ? /background-image:/ : /box-shadow:/,
     );
     expect(declarations, `${name} has no @media (forced-colors: active) fallback`).not.toBeNull();
-    const property = kind === 'ring' ? 'outline' : 'border';
+    const properties = kind === 'ring' ? ['outline'] : kind === 'edge' ? ['border-block-end'] : ['border'];
 
-    expect(declarations, `${name}'s fallback draws no ${property}`).toMatch(
-      new RegExp(`(^|;)\\s*${property}:\\s*\\d+px (solid|dashed|dotted|double) `),
-    );
+    // A ring precomposed with the edge draws both.
+    if (name.endsWith('-short-staffed') && kind === 'ring') properties.push('border-block-end');
+    for (const property of properties) {
+      expect(declarations, `${name}'s fallback draws no ${property}`).toMatch(
+        new RegExp(`(^|;)\\s*${property}:\\s*\\d+px (solid|dashed|dotted|double) `),
+      );
+    }
     expect(declarations, `${name}'s fallback names no system colour`).toMatch(SYSTEM_COLOUR);
     expect(declarations, `${name}'s fallback reaches for a token forced colours override`).not.toMatch(/var\(/);
   });
@@ -396,10 +410,22 @@ describe('the calendar modifiers survive forced colours', () => {
   );
 
   it('keeps the treatments apart under forced colours too', () => {
-    for (const kind of ['ring', 'hatch']) {
-      const shown = treatments.filter((treatment) => treatment.kind === kind).map(({ name }) => fallback(name));
+    for (const kinds of [['ring', 'edge'], ['hatch']]) {
+      const shown = treatments.filter((treatment) => kinds.includes(treatment.kind)).map(({ name }) => fallback(name));
 
-      expect(new Set(shown).size, `two ${kind} fallbacks draw the same`).toBe(shown.length);
+      expect(new Set(shown).size, `two ${kinds.join('/')} fallbacks draw the same`).toBe(shown.length);
     }
   });
+
+  it.each(treatments.filter((treatment) => treatment.name.endsWith('-short-staffed')))(
+    'draws $name\'s edge over a hatch\'s border, and deep enough to show inside its ring (story 11.3)',
+    ({ name }) => {
+      const declarations = fallback(name) ?? '';
+      const edge = /(?:^|;)\s*border-block-end:\s*(\d+)px solid CanvasText !important/.exec(declarations);
+      const ring = /(?:^|;)\s*outline:\s*(\d+)px/.exec(declarations);
+
+      expect(edge, `${name}'s edge is not a solid CanvasText bottom border that wins over a hatch`).not.toBeNull();
+      expect(Number(edge?.[1]) - Number(ring?.[1] ?? 0), `${name}'s edge shows less than 3 px inside its ring`).toBe(3);
+    },
+  );
 });

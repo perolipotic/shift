@@ -31,9 +31,11 @@ function rowText(row: ShortStaffedRow): string {
  *
  * A BLOCK, NOT A QUIET LINE: a heading with the icon facade's people glyph,
  * then each shift by date and team, the first five and `i još {n}`. Words and
- * a shape carry it, never colour alone. NEUTRAL — never `destructive`, never
- * the accent, never an alert — and never a gate: the save beside it stays as
- * it was. Nothing at all while the setting is empty (`null`) or the change
+ * a shape carry it, never colour alone. Never `destructive`, never the
+ * accent, never an alert, and never a gate: the save beside it stays as it
+ * was. Since story 11.3 its border and glyph take short-staffed's own
+ * `warning` token (3:1 on `muted`, `theme-contrast.test.ts`); every text
+ * stays `foreground`. Nothing at all while the setting is empty (`null`) or the change
  * makes no shift short.
  */
 export function ShortStaffedBlock({ report }: { readonly report: ShortStaffedReport | null }): ReactNode {
@@ -46,9 +48,9 @@ export function ShortStaffedBlock({ report }: { readonly report: ShortStaffedRep
   if (report.rows.length === 0) return null;
 
   return (
-    <span data-short-staffed="" className="grid min-w-0 gap-1 rounded-md border bg-muted p-3 text-sm">
+    <span data-short-staffed="" className="grid min-w-0 gap-1 rounded-md border border-warning bg-muted p-3 text-sm text-foreground">
       <span className="flex min-w-0 items-center gap-1.5 font-medium">
-        <UsersThree aria-hidden className="size-4 shrink-0" />
+        <UsersThree aria-hidden className="size-4 shrink-0 text-warning" />
         <span className="min-w-0 break-words">{t('popunjenost.heading')}</span>
       </span>
       {report.rows.map((row) => (
