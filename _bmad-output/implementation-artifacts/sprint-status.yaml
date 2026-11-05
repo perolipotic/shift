@@ -857,7 +857,7 @@ action_items:
       drop the temporary-Vite-on-5174 e2e path from the spec template and add a stop
       rule for local e2e loops to the bmad-build customization"
     owner: "Dev (bmad-build customization)"
-    status: in-progress
+    status: done  # bmad-build fact: LOCAL E2E HAS A STOP RULE
     ref: "_bmad-output/implementation-artifacts/epic-15-retro-2026-11-04.md"
   - id: "epic-15-retro-item-33-a5-process-stories-touching-the-hot-file"
     epic: 15
@@ -865,7 +865,7 @@ action_items:
       chrome.tsx, theme-contrast, structural pins) never run in parallel from one
       baseline"
     owner: "Perolipotic (sprint planning)"
-    status: in-progress
+    status: done  # bmad-build fact: HOT FILES ARE SEQUENTIAL
     ref: "_bmad-output/implementation-artifacts/epic-15-retro-2026-11-04.md"
   - id: "epic-15-retro-item-34-a6-one-deferred-work-entry-for-r5-r8-sat"
     epic: 15
@@ -887,7 +887,7 @@ action_items:
     action: "A1: fix or regenerate epic-11-context.md (all four stories shipped; the
       Danas card as shipped: the week, directly after Treba tebe)"
     owner: "Dev"
-    status: open
+    status: done  # epic-11-context.md updated as shipped
     ref: "_bmad-output/implementation-artifacts/epic-11-retro-2026-11-05.md"
   - id: "epic-11-retro-item-37-a2-fix-the-rotation-builder-showing-the"
     epic: 11
@@ -903,14 +903,14 @@ action_items:
     action: "A3: bmad-build rule: a colour token spec lists every surface the token
       is drawn on, glass included, and pins each in theme-contrast.test.ts"
     owner: "Dev (bmad-build customization)"
-    status: open
+    status: done  # bmad-build fact: A COLOUR TOKEN'S CONTRAST SPEC LISTS EVERY SURFACE
     ref: "_bmad-output/implementation-artifacts/epic-11-retro-2026-11-05.md"
   - id: "epic-11-retro-item-39-a4-write-retro-15-a5-hot-file-stories-ne"
     epic: 11
     action: "A4: write retro 15 A5 (hot-file stories never run in parallel from one
       baseline) into the sprint-planning or bmad-build customization"
     owner: "Perolipotic (sprint planning)"
-    status: open
+    status: done  # bmad-build fact: HOT FILES ARE SEQUENTIAL
     ref: "_bmad-output/implementation-artifacts/epic-11-retro-2026-11-05.md"
   - id: "epic-11-retro-item-40-a5-one-deferred-work-entry-fold-the-thre"
     epic: 11
@@ -918,7 +918,7 @@ action_items:
       pin Pokrivenost present to peopleAtWorkOn and rename STAFFING_SHORT; a card-equals-marks
       test across a month boundary"
     owner: "Dev"
-    status: open
+    status: done  # deferred-work entry: epic 11 retrospective, action A5
     ref: "_bmad-output/implementation-artifacts/epic-11-retro-2026-11-05.md"
   - id: "epic-11-retro-item-41-a6-warning-on-glass-option-b-glyph-in-fo"
     epic: 11
