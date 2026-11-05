@@ -46,8 +46,10 @@ function StripTerm({ label, children }: { readonly label: string; readonly child
  * Minimum Members is set (story 11.2), the people at work over the option's
  * own after against the minimum, `rade 2 od najmanje 3`, and for a shift
  * still short the people glyph and its words, so it never rests on colour.
- * The glyph takes short-staffed's `warning` token (story 11.3); the words stay
- * the strip's own text colour.
+ * The glyph is `foreground`, not short-staffed's `warning`: the strip sits on
+ * the Dialog's glass, where light `warning` falls short of 3:1 over the
+ * darkest fills (Epic 11 retro A6, option b); the words stay the strip's own
+ * text colour.
  */
 function CoverageTerm({
   view,
@@ -67,7 +69,7 @@ function CoverageTerm({
       <span className="font-semibold tabular-nums">{atWorkText(staffing.atWork, staffing.minimum)}</span>
       {staffing.short ? (
         <span className="inline-flex min-w-0 items-center gap-1">
-          <UsersThree aria-hidden className="size-3.5 shrink-0 text-warning" />
+          <UsersThree aria-hidden className="size-3.5 shrink-0 text-foreground" />
           <span className="min-w-0 break-words">{t('popunjenost.short')}</span>
         </span>
       ) : null}

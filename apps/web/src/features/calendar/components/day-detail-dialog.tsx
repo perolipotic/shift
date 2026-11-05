@@ -105,9 +105,11 @@ function renderRoster(shown: DayDetail, usesFireRanks: boolean): ReactNode {
 /**
  * STORY 11.3: the working day's people at work against *Najmanje ljudi u
  * smjeni*, one line under *Sastav* — `rade 3 od najmanje 3`, or, while the
- * shift is short, the people glyph in `warning` and `Premalo ljudi: rade 2 od
- * najmanje 3`, so the words carry it, never the colour. Nothing for a member
- * or while the setting is empty (`null`).
+ * shift is short, the people glyph and `Premalo ljudi: rade 2 od najmanje 3`,
+ * so the words carry it, never the colour. The glyph is `foreground`, not
+ * `warning`: it sits on the Dialog's glass, where light `warning` falls short
+ * of 3:1 over the darkest fills (Epic 11 retro A6, option b). Nothing for a
+ * member or while the setting is empty (`null`).
  */
 function renderStaffing(staffing: CoverageAgainstMinimum | null): ReactNode {
   if (staffing === null) return null;
@@ -117,7 +119,7 @@ function renderStaffing(staffing: CoverageAgainstMinimum | null): ReactNode {
   // `data-day-staffing`, true while short: the line's stable hook for the e2e suite.
   return (
     <p data-day-staffing={staffing.short} className="flex min-w-0 items-center gap-1.5 text-sm tabular-nums">
-      {staffing.short ? <UsersThree aria-hidden className="size-4 shrink-0 text-warning" /> : null}
+      {staffing.short ? <UsersThree aria-hidden className="size-4 shrink-0 text-foreground" /> : null}
       <span className="min-w-0 break-words">{staffing.short ? t('popunjenost.dayShort', { atWork }) : atWork}</span>
     </p>
   );

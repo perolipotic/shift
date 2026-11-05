@@ -1,9 +1,8 @@
-import { isShortStaffed, newlyShortStaffedOf, peopleAtWorkOn, type CollisionLeaveRecord, type StaffingInput } from '@shift/domain';
+import { isShortStaffed, newlyShortStaffedOf, peopleAtWorkOn, type CollisionLeaveRecord } from '@shift/domain';
 
-import { calendarMinimumMembersOf, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
+import { minimumOfCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { readsOrganizationLeave } from '@/features/calendar/services/snapshot-skew';
-import { dayMonthOf } from '@/features/calendar/utils/month';
-import { collisionInputOf } from '@/features/conflicts/services/conflicts-queue';
+import { dayMonthOf, staffingInputOf } from '@/features/calendar/utils/month';
 import { organizationLeaveRecordsOf, type OrganizationLeaveRecord } from '@/features/leave/services/leave-list';
 import { splitTeams } from '@/features/teams/services/list';
 import { nextIsoDate } from '@/lib/i18n/format';
@@ -18,9 +17,10 @@ import { nextIsoDate } from '@/lib/i18n/format';
  * them; "after" is the same as the save would leave them — each surface's own,
  * and always the one its erasure check (or, for a leave save, its conflict
  * preview) already builds: nothing is projected here. Both go through one
- * input recipe ({@link staffingInputOf}, `collisionInputOf`'s, with the active
- * teams and the minimum), and the domain's `newlyShortStaffedOf` decides: no
- * staffing arithmetic lives here (AD-7).
+ * input recipe ({@link staffingInputOf}: `snapshotScheduleInputOf`, as
+ * `collisionInputOf`'s, with the active teams and the minimum), and the
+ * domain's `newlyShortStaffedOf` decides: no staffing arithmetic lives here
+ * (AD-7).
  *
  * THE SETTING EMPTY REPORTS NOTHING: `null` — no block, no line — before any
  * leave is looked at, so a surface reads the organization's leave only while
@@ -101,12 +101,12 @@ export interface StaffingLeaveSource {
 }
 
 /**
- * The snapshot's Minimum Members: a whole number from 1, or `null`. A snapshot
- * cached before story 11.2 carries no such field and reads as not set.
+ * The snapshot's Minimum Members and the staffing rule's one input recipe,
+ * re-exported from their homes beside `calendarMinimumMembersOf` and
+ * `snapshotScheduleInputOf` (Epic 11 retro A2, R2), so `calendar/utils/month`
+ * reads them without importing this module back.
  */
-export function minimumOfCalendar(calendar: CalendarSnapshot): number | null {
-  return calendarMinimumMembersOf((calendar as { readonly minimumMembers?: unknown }).minimumMembers);
-}
+export { minimumOfCalendar, staffingInputOf };
 
 /**
  * Whether a surface over `calendar` reads the organization's leave for the
@@ -115,20 +115,6 @@ export function minimumOfCalendar(calendar: CalendarSnapshot): number | null {
  */
 export function readsStaffingLeaveOf(calendar: CalendarSnapshot | null): boolean {
   return calendar !== null && readsOrganizationLeave(calendar.viewer.role) && minimumOfCalendar(calendar) !== null;
-}
-
-/**
- * What the staffing rule derives from, mirroring `collisionInputOf`: the
- * snapshot's schedule fields through the queue's one recipe, `records` as the
- * leave, the ACTIVE teams (archived ones show no shift) in the calendar's
- * order, and the snapshot's minimum.
- */
-export function staffingInputOf(calendar: CalendarSnapshot, records: readonly CollisionLeaveRecord[]): StaffingInput {
-  return {
-    ...collisionInputOf(calendar, records.map(({ id, memberId, from, to }) => ({ id, memberId, from, to }))),
-    teamIds: splitTeams(calendar.teams).active.map((team) => team.id),
-    minimumMembers: minimumOfCalendar(calendar),
-  };
 }
 
 /** The member a leave row names, when it names one as text. */

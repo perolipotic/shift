@@ -6,6 +6,7 @@ import { differenceCiede2000, differenceEuclidean, displayable, rgb, wcagContras
 import { describe, expect, it } from 'vitest';
 
 import { NONWORKING_TOKEN, rampSlotOf, rampTokenOf } from '../apps/web/src/features/shift-types/utils/ramp.ts';
+import { collectFiles } from './source-scan';
 import {
   BASE_TOKENS,
   BRAND_TOKENS,
@@ -738,6 +739,139 @@ describe('the short-staffed warning is perceivable and is not the conflict (stor
 
     expect(worst('light')).toBeCloseTo(3.3, 1);
     expect(worst('dark')).toBeCloseTo(4.71, 1);
+  });
+
+  /**
+   * THE *DANAS* CARD'S EDGE (story 11.4; Epic 11 retro A6). Above zero the
+   * card draws a 4 px `border-l-warning` edge on the opaque `bg-card`, so the
+   * edge is held to 3:1 against `card` in both themes (light 3.97:1, dark
+   * 7.01:1). Its OUTER side is the page, under the static blobs: there light
+   * `warning` clears the page (3.38:1) and `glass-blob-3` (3.21:1) but falls
+   * short over `glass-blob-1` (2.61:1) and `glass-blob-2` (2.71:1); dark
+   * clears all four (worst `glass-blob-3`, 6.51:1). The shortfall is recorded
+   * at its measured ratios, not fixed — the card's own fill is the edge's
+   * reading surface, and retuning `warning` is a human decision — and these
+   * cases fail if it closes or widens.
+   */
+  const edgeOuter = (theme: Theme): { name: string; ratio: number }[] => {
+    const page = colour(theme, 'background');
+
+    return [
+      { name: 'the page', colour: page as Color | Rgb },
+      ...(['glass-blob-1', 'glass-blob-2', 'glass-blob-3'] as const).map((blob) => ({
+        name: blob,
+        colour: composite(colour(theme, blob), page),
+      })),
+    ].map(({ name, colour: ground }) => ({ name, ratio: ratio(colour(theme, 'warning'), ground as Color) }));
+  };
+
+  const webSource = (...path: string[]): string =>
+    readFileSync(fileURLToPath(new URL(`../apps/web/src/${path.join('/')}`, import.meta.url)), 'utf8');
+  /** The class tokens of the first `className="…"` / `className={cn('…'…)}` string literals in `element`. */
+  const classTokensOf = (element: string): Set<string> =>
+    new Set([...element.matchAll(/(["'])([^"']*)\1/g)].flatMap((match) => (match[2] as string).split(/\s+/)).filter(Boolean));
+
+  it('the Danas card is an opaque Card whose edge is warning and whose glyph is foreground', () => {
+    const card = webSource('features', 'today', 'components', 'short-staffed-card.tsx');
+    const cardElement = card.match(/<Card\b[^>]*>/)?.[0] ?? '';
+    const glyph = card.match(/<UsersThree\b[^>]*\/>/)?.[0] ?? '';
+
+    expect(classTokensOf(cardElement).has('border-l-warning')).toBe(true);
+    expect(classTokensOf(glyph).has('text-foreground')).toBe(true);
+    expect(classTokensOf(glyph).has('text-warning')).toBe(false);
+
+    // `Card`'s OWN base classes: the opaque `bg-card`, never a glass utility.
+    const primitive = webSource('components', 'ui', 'card.tsx');
+    const base = primitive.match(/const Card = React\.forwardRef[\s\S]*?className=\{cn\(\s*"([^"]*)"/)?.[1];
+
+    expect(base, 'the Card primitive\'s base class string').toBeDefined();
+    const tokens = new Set((base ?? '').split(/\s+/));
+
+    expect(tokens.has('bg-card')).toBe(true);
+    expect([...tokens].filter((token) => token.startsWith('glass-') || token.startsWith('bg-glass'))).toEqual([]);
+  });
+
+  it.each(THEMES)('the Danas card edge reads against the card in %s', (theme) => {
+    const measured = ratio(colour(theme, 'warning'), colour(theme, 'card'));
+
+    expect(measured, `warning edge on card (${theme}) measured ${measured.toFixed(2)}:1`).toBeGreaterThanOrEqual(AA_LARGE);
+  });
+
+  it('records the Danas card edge against the page and each blob, at its measured ratios', () => {
+    const pinned = (theme: Theme): Record<string, number> =>
+      Object.fromEntries(edgeOuter(theme).map(({ name, ratio: measured }) => [name, Number(measured.toFixed(2))]));
+
+    expect(Number(ratio(colour('light', 'warning'), colour('light', 'card')).toFixed(2))).toBe(3.97);
+    expect(Number(ratio(colour('dark', 'warning'), colour('dark', 'card')).toFixed(2))).toBe(7.01);
+    expect(pinned('light')).toEqual({ 'the page': 3.38, 'glass-blob-1': 2.61, 'glass-blob-2': 2.71, 'glass-blob-3': 3.21 });
+    expect(pinned('dark')).toEqual({ 'the page': 8.14, 'glass-blob-1': 6.63, 'glass-blob-2': 7.08, 'glass-blob-3': 6.51 });
+    // The known shortfall: light, over the two cooler blobs alone.
+    expect(edgeOuter('light').filter(({ ratio: measured }) => measured < AA_LARGE).map(({ name }) => name)).toEqual([
+      'glass-blob-1',
+      'glass-blob-2',
+    ]);
+    expect(edgeOuter('dark').every(({ ratio: measured }) => measured >= AA_LARGE)).toBe(true);
+  });
+
+  /**
+   * THE SHORT-STAFFED BLOCK'S BORDER (story 11.2/11.3; Epic 11 retro A6
+   * review). The block is `border-warning` on the opaque `bg-muted`, so its
+   * INNER side is held to 3:1 against `muted` in both themes. It is rendered
+   * inside glass Dialogs (the leave, roster and type dialogs, the removal and
+   * cancel confirmations), so its OUTER side meets the `glass-panel` over every
+   * backdrop the panel can float over (`panelGrounds`). Inner: light 3.63:1,
+   * dark 6.10:1. Outer: light falls short over `band-dark` 2.89:1, `ink`
+   * 2.90:1 and `shift-slot-2` 2.96:1 (2.90–2.94:1 under the scrim) and clears
+   * every other ground (next `primary` under the scrim, 3.08:1); dark clears
+   * all (worst `ink`, 5.63:1). Recorded at its measured ratios, not fixed;
+   * these cases fail if the shortfall closes or widens.
+   */
+  const blockOuter = (theme: Theme): { name: string; ratio: number }[] =>
+    panelGrounds(theme).map(({ name, colour: ground }) => ({ name, ratio: ratio(colour(theme, 'warning'), ground) }));
+
+  it('the short-staffed block is a warning border on the muted fill, with the warning glyph', () => {
+    const block = webSource('features', 'staffing', 'components', 'short-staffed-block.tsx');
+    const element = block.match(/<span\s+data-short-staffed[^>]*>/)?.[0] ?? '';
+    const tokens = classTokensOf(element);
+
+    expect(tokens.has('border-warning')).toBe(true);
+    expect(tokens.has('bg-muted')).toBe(true);
+    expect((block.match(/<UsersThree\b[^>]*\/>/g) ?? []).some((glyph) => classTokensOf(glyph).has('text-warning'))).toBe(true);
+  });
+
+  it.each(THEMES)('the short-staffed block border reads against muted in %s', (theme) => {
+    const measured = ratio(colour(theme, 'warning'), colour(theme, 'muted'));
+
+    expect(measured, `warning border on muted (${theme}) measured ${measured.toFixed(2)}:1`).toBeGreaterThanOrEqual(AA_LARGE);
+  });
+
+  it('records the short-staffed block border against the glass panel, at its measured ratios', () => {
+    const pinnedShort = (theme: Theme): Record<string, number> =>
+      Object.fromEntries(
+        blockOuter(theme)
+          .filter(({ ratio: measured }) => measured < AA_LARGE)
+          .map(({ name, ratio: measured }) => [name, Number(measured.toFixed(2))]),
+      );
+    const worstOf = (theme: Theme): { name: string; ratio: number } =>
+      blockOuter(theme).reduce((low, next) => (next.ratio < low.ratio ? next : low));
+
+    expect(Number(ratio(colour('light', 'warning'), colour('light', 'muted')).toFixed(2))).toBe(3.63);
+    expect(Number(ratio(colour('dark', 'warning'), colour('dark', 'muted')).toFixed(2))).toBe(6.1);
+    // The known shortfall: light, over the three darkest opaque fills a Dialog
+    // can float over, with and without the scrim; every other ground clears
+    // 3:1 (next `primary` under the scrim, 3.08:1). Dark clears all (worst `ink`).
+    expect(pinnedShort('light')).toEqual({
+      'band-dark': 2.89,
+      'band-dark under the scrim': 2.9,
+      ink: 2.9,
+      'ink under the scrim': 2.9,
+      'shift-slot-2': 2.96,
+      'shift-slot-2 under the scrim': 2.94,
+    });
+    expect(Number(blockOuter('light').filter(({ ratio: measured }) => measured >= AA_LARGE).reduce((low, next) => (next.ratio < low.ratio ? next : low)).ratio.toFixed(2))).toBe(3.08);
+    expect(pinnedShort('dark')).toEqual({});
+    expect(worstOf('dark').name).toBe('ink');
+    expect(Number(worstOf('dark').ratio.toFixed(2))).toBe(5.63);
   });
 
   it('measures a warning that drifted toward the conflict as too close, so the thresholds are not vacuous', () => {
@@ -1498,43 +1632,43 @@ describe('the layered surfaces read against their worst backdrop (story 15.2)', 
   });
 
   /**
-   * STORY 11.3: the day detail's line and the resolution strip draw
-   * `text-warning` glyphs straight on the Dialog's glass — a non-text mark,
-   * so 3:1 against the panel over every backdrop.
-   *
-   * MEASURED SHORT IN LIGHT over the three darkest opaque fills a Dialog can
-   * float over — `band-dark` 2.89:1, `ink` 2.90:1, `shift-slot-2` 2.96:1
-   * (2.90–2.94 under the scrim) — and 3:1 or more over everything else
-   * (`primary` under the scrim 3.08:1 next). The token was NOT retuned: the
-   * shortfall is recorded here for a human decision. Dark clears it
-   * everywhere (worst `ink`, 5.63:1). These cases fail if the gap closes or
-   * widens, so neither can happen silently.
+   * STORY 11.3 PUT `text-warning` GLYPHS STRAIGHT ON THE DIALOG'S GLASS — the
+   * day detail's line and the resolution strip — where light `warning`
+   * measured 2.89 / 2.90 / 2.96:1 over `band-dark`, `ink` and `shift-slot-2`
+   * (the Epic 11 retro's S3). Option (b), product owner 2026-11-05 (retro A6):
+   * those glyphs, and the *Danas* card's, are drawn in `foreground`, which the
+   * panel block above already holds to 4.5:1 over every backdrop; `warning`
+   * is never a glyph on glass. Pinned from the source over every `.tsx`:
+   * `text-warning` appears in the short-staffed block alone, whose glyph sits
+   * on the block's opaque `muted` fill (the 11.3 block measures it, and the
+   * block border's glass-panel side), so a `warning` glyph cannot come back
+   * onto glass unmeasured.
    */
-  const WARNING_SHORT_IN_LIGHT = new Set(['band-dark', 'ink', 'shift-slot-2']);
-  const besideWarning = (name: string): string => name.replace(/ under the scrim$/, '');
+  it('text-warning is drawn by the short-staffed block alone, on its muted fill (Epic 11 retro A6)', () => {
+    const src = join(root, 'apps', 'web', 'src');
+    const files = collectFiles(src, (file) => file.endsWith('.tsx'));
+    const BLOCK = join(src, 'features', 'staffing', 'components', 'short-staffed-block.tsx');
 
-  it.each(THEMES)('the short-staffed warning glyph is discernible on the panel in %s (story 11.3)', (theme) => {
-    const grounds = panelGrounds(theme).filter(
-      ({ name }) => theme === 'dark' || !WARNING_SHORT_IN_LIGHT.has(besideWarning(name)),
-    );
-    const found = grounds
-      .map(({ name, colour: ground }) => ({ ratio: ratio(colour(theme, 'warning'), ground), on: name }))
-      .reduce((low, next) => (next.ratio < low.ratio ? next : low));
+    expect(files.length).toBeGreaterThan(50);
+    expect(files).toContain(BLOCK);
+    expect(files.filter((file) => file !== BLOCK && /\btext-warning\b/.test(readFileSync(file, 'utf8'))).map((file) => file.slice(src.length + 1))).toEqual([]);
 
-    expect(
-      found.ratio,
-      `warning on the panel over ${found.on} (${theme}) measured ${found.ratio.toFixed(2)}:1`,
-    ).toBeGreaterThanOrEqual(AA_LARGE);
-  });
+    const glyphs = readFileSync(BLOCK, 'utf8').match(/<UsersThree\b[^>]*\/>/g) ?? [];
 
-  it('records where light warning falls short on the panel: the three darkest fills, at their measured ratios', () => {
-    const short = panelGrounds('light')
-      .map(({ name, colour: ground }) => ({ name, ratio: ratio(colour('light', 'warning'), ground) }))
-      .filter(({ ratio: measured }) => measured < AA_LARGE);
+    expect(glyphs.some((glyph) => /\btext-warning\b/.test(glyph))).toBe(true);
 
-    expect(new Set(short.map(({ name }) => besideWarning(name)))).toEqual(WARNING_SHORT_IN_LIGHT);
-    expect(Math.min(...short.map(({ ratio: measured }) => measured))).toBeCloseTo(2.89, 2);
-    expect(worst('dark', (ground) => ratio(colour('dark', 'warning'), ground)).ratio).toBeCloseTo(5.63, 1);
+    // The three glass surfaces draw their glyph in `foreground`.
+    for (const path of [
+      ['calendar', 'components', 'day-detail-dialog.tsx'],
+      ['conflicts', 'components', 'resolution-option.tsx'],
+      ['today', 'components', 'short-staffed-card.tsx'],
+    ]) {
+      const source = readFileSync(join(src, 'features', ...path), 'utf8');
+      const onGlass = source.match(/<UsersThree\b[^>]*\/>/g) ?? [];
+
+      expect(onGlass.length, path.join('/')).toBeGreaterThan(0);
+      expect(onGlass.every((glyph) => /\btext-foreground\b/.test(glyph)), path.join('/')).toBe(true);
+    }
   });
 
   it.each(THEMES)('the opaque fallback (no blur, reduced transparency) is the card, measured in %s', (theme) => {
