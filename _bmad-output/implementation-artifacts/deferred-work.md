@@ -1297,3 +1297,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-epic-11-retro-followups.md`
   summary: `calendar/utils/modifiers.ts` and `calendar/utils/month.ts` form a type-only import loop; `test/import-cycles.test.ts` ignores wholly type-only statements (erased at build), so it does not flag it. Move the shared types out of one of them if type-only loops should also be banned.
   evidence: Found while writing the A2 R2 cycle walk; with type-only imports counted, the walk fails on this pre-existing loop. It is no runtime hazard (no TDZ), so it stays deferred.
+
+## Deferred from: epic 11 retrospective (2026-11-05), action A5
+
+- source_spec: `_bmad-output/implementation-artifacts/epic-11-retro-2026-11-05.md` (findings R4, R5, R6)
+  summary: Three small staffing clean-ups, one future story or a sweep bundle. (1) R4: the minimum is parsed three times — `minimumMembersOf` (`organization/services/snapshot.ts`) and `calendarMinimumMembersOf` (`calendar/services/snapshot.ts`) share one body and `minimumOfCalendar` wraps the second; fold them into one parser. (2) R5: *Pokrivenost danas* counts `present` with its own arithmetic (`total - absent.length`) while the *Premalo ljudi* card uses `peopleAtWorkOn`; pin coverage `present` to `peopleAtWorkOn(...).atWork` in a test, and rename `STAFFING_SHORT` (it means "anyone absent", which now collides with "short-staffed"). (3) R6: add a card-equals-marks test whose week crosses a month boundary with the minimum set (the existing month-crossing week tests in `admin-today.test.ts` set no minimum).
+  evidence: All three agree by construction today; none is a user-visible defect. Retro verdict: defer (A5).

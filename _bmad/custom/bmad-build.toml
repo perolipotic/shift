@@ -10,6 +10,12 @@ persistent_facts = [
   # Epic 10 retro, action A13 (P2, P3; epic 8-9 retro item 8 / epic-9-retro-item-23).
   "SPINE AMENDMENTS ARE TASKS. A spec that amends an architecture decision (AD-x), or cites an AD amendment as its justification, carries an Execution task that edits `_bmad-output/planning-artifacts/architecture/architecture-shift-2026-09-02/ARCHITECTURE-SPINE.md` in the same change, adding an `Amended <date> (<story>)` clause to that AD. Citing an amendment that no task writes is a defect.",
   "DEFERRALS ADDRESSED TO A STORY ARE ITS INPUTS. A `deferred-work.md` entry that says \"decide in story X\" (or \"X should …\", or names X as where it lands) is copied into X's spec as a required input, listed in the spec (Boundaries or Design Notes) with its answer. Story X cannot reach `done` while such an entry is unanswered: either the spec answers it, or the human records a new owner in the entry.",
+  # Epic 15 retro A4 (item 32): CI is the e2e gate when port 5173 is taken.
+  "LOCAL E2E HAS A STOP RULE. Never start a second Vite on another port to run e2e locally. If port 5173 is held by another checkout or session, do not run local e2e at all: CI is the e2e gate. If a local e2e run fails twice on the same test for an environmental reason (port, shared stack, timing), stop and leave it to CI instead of looping.",
+  # Epic 15 retro A5 (item 33) / epic 11 retro A4 (item 39).
+  "HOT FILES ARE SEQUENTIAL. Stories that touch the hot files (`apps/web/src/index.css`, `apps/web/src/components/ui/*`, `chrome.tsx`, `test/theme-contrast.test.ts`, the structural pin tests, `hr.json`) never run in parallel from one baseline. Start the next such story from the previous one's merge, and say so in the spec's baseline line.",
+  # Epic 11 retro A3 (item 38).
+  "A COLOUR TOKEN'S CONTRAST SPEC LISTS EVERY SURFACE. A spec that adds or moves a colour token lists every surface the token is drawn on or against, glass surfaces (Dialog, Popover, Sheet, the chrome) included, with each one's measured ratio. Each one is pinned in `test/theme-contrast.test.ts`, a known shortfall is pinned exactly, and none may be found only in review.",
   "RESOLVED DEFERRALS ARE MARKED IN THE SAME CHANGE. A story that resolves a `deferred-work.md` entry, wholly or in part, prefixes that entry with `RESOLVED by <story> (<date>) — `, or for a part `RESOLVED in part (<which part>) by <story> (<date>) — ` naming what stays open, in the same change that resolves it.",
 ]
 
