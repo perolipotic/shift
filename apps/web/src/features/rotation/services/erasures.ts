@@ -194,8 +194,9 @@ export interface BuilderCalendarRead {
 
 /**
  * The calendar snapshot the builder's short-staffed line derives from: the
- * read's data while there is a draft to save (`unsaved`) and the read has not
- * failed, else `null` — pending, failed or absent alike. The leave read
+ * read's data while there is a draft to save (`unsaved`; for the cancel's
+ * block, a cancel shown) and the read has not failed, else `null` — pending,
+ * failed or absent alike. The leave read
  * (`useStaffingLeave`) keys off this too, so with no snapshot no leave is read.
  */
 export function builderCalendarOf(unsaved: boolean, calendarRead: BuilderCalendarRead): CalendarSnapshot | null {
@@ -272,6 +273,28 @@ function scheduledVersionsOf(
 }
 
 /**
+ * ONE SCHEDULED CHANGE: the cancel deletes the rotation read's versions on
+ * `scheduled`, and its "after" ({@link cancelledCalendarSnapshotOf}) removes
+ * the calendar read's. Two reads that disagree on the active teams, or on
+ * those versions — which teams, or what each version is — cannot be checked.
+ * The cancel's erasure check and its short-staffed block (Epic 11 retro A7)
+ * both stand on it.
+ *
+ * @throws RangeError when they disagree.
+ */
+function sameScheduledChangeOf(calendar: CalendarSnapshot, rotation: RotationSnapshot, scheduled: string): void {
+  sameActiveTeamsOf(calendar, rotation);
+
+  const active = new Set(rotationTeamsOf(rotation).map((team) => team.id));
+  const drawn = scheduledVersionsOf(calendar.assignments, active, scheduled);
+  const bound = scheduledVersionsOf(rotation.assignments, active, scheduled);
+
+  if (drawn.length !== bound.length || drawn.some((version, index) => version !== bound[index])) {
+    throw new RangeError('the rotation and the calendar disagree on the scheduled versions');
+  }
+}
+
+/**
  * Every unresolved conflict cancelling the change scheduled on `scheduled`
  * would erase, from that date on, ordered by date and then team, from the
  * calendar snapshot, the organization's leave and resolution rows as read,
@@ -291,20 +314,7 @@ export function rotationCancelErasuresOf(
   recordRows: readonly unknown[],
   resolutionRows: readonly unknown[],
 ): readonly ErasureRow[] {
-  sameActiveTeamsOf(calendar, rotation);
-
-  // ONE SCHEDULED CHANGE: the cancel deletes the rotation read's versions on
-  // the date, and the diff removes the calendar read's. Two reads that
-  // disagree on them — which teams, or what each version is — cannot be
-  // checked.
-  const active = new Set(rotationTeamsOf(rotation).map((team) => team.id));
-
-  const drawn = scheduledVersionsOf(calendar.assignments, active, scheduled);
-  const bound = scheduledVersionsOf(rotation.assignments, active, scheduled);
-
-  if (drawn.length !== bound.length || drawn.some((version, index) => version !== bound[index])) {
-    throw new RangeError('the rotation and the calendar disagree on the scheduled versions');
-  }
+  sameScheduledChangeOf(calendar, rotation, scheduled);
 
   return erasuresOf(calendar, cancelledCalendarSnapshotOf(calendar, scheduled), scheduled, recordRows, resolutionRows);
 }
@@ -321,4 +331,48 @@ export function rotationCancelErasuresOutcomeOf(
   resolutionRows: readonly unknown[],
 ): RotationErasuresOutcome {
   return erasuresOutcomeOf(() => rotationCancelErasuresOf(calendar, rotation, scheduled, recordRows, resolutionRows));
+}
+
+// ------------------------------------------- the cancel's short-staffed block (A7)
+
+/**
+ * WHAT CANCELLING THE CHANGE SCHEDULED ON `scheduled` WOULD NEWLY LEAVE SHORT
+ * OF PEOPLE (Epic 11 retro A7; story 11.2's report on the surface it
+ * deferred): the cancel's erasure "after" ({@link cancelledCalendarSnapshotOf})
+ * over the organization's leave as observed, from `scheduled` over the
+ * horizon, as a pure view model (AD-15) the cancel's confirmation draws.
+ *
+ * `null` — no block — with no cancel shown (`scheduled` `null`), no rotation,
+ * while the calendar read is pending or failed (R1: the minimum lives in that
+ * snapshot), and with the minimum empty, before any leave is looked at. The
+ * unknown line while the leave is not known. Unknown (logged) when the two
+ * reads disagree on the active teams or on the scheduled versions
+ * ({@link sameScheduledChangeOf}), or on any other `RangeError`. Never a
+ * gate: the cancel goes through its own erasure check as it always did.
+ */
+export function cancelShortStaffedOf(
+  calendarRead: BuilderCalendarRead,
+  rotation: RotationSnapshot | null,
+  scheduled: string | null,
+  leave: StaffingLeaveSource | null,
+): ShortStaffedReport | null {
+  const calendar = builderCalendarOf(scheduled !== null, calendarRead);
+
+  if (calendar === null || rotation === null || scheduled === null) return null;
+  if (minimumOfCalendar(calendar) === null) return null;
+
+  try {
+    sameScheduledChangeOf(calendar, rotation, scheduled);
+
+    return configurationReportOf(
+      calendar,
+      cancelledCalendarSnapshotOf(calendar, scheduled),
+      horizonWindowOf(scheduled),
+      leave,
+    );
+  } catch (cause) {
+    if (!(cause instanceof RangeError)) throw cause;
+
+    return unknownReportOf(cause);
+  }
 }

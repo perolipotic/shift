@@ -79,6 +79,7 @@ import { writesOnline } from '@/lib/offline/use-write-gate';
 import { claimedOrganizationOf } from '@/lib/supabase/claims';
 import { supabaseClient } from '@/lib/supabase/client';
 import { focusLater } from '@/utils/focus-later';
+import { useCancelShortStaffed } from '@/features/rotation/hooks/use-cancel-short-staffed';
 import { useDraftShortStaffed } from '@/features/rotation/hooks/use-draft-short-staffed';
 
 /**
@@ -880,6 +881,8 @@ export function useRotationBuilder() {
       : scheduledChangeOf(snapshot, today);
   /** The cancel's confirmation, while the snapshot still schedules the very date it was armed for. */
   const cancelShown = cancelArmed !== null && scheduled !== null && scheduled.effectiveFrom === cancelArmed;
+  /** EPIC 11 RETRO A7: what the cancel would newly leave short of people, while its confirmation is shown. */
+  const cancelShortStaffed = useCancelShortStaffed(cancelShown ? scheduled.effectiveFrom : null, snapshot);
 
   // NEVER ARMED WITH NO CONFIRMATION RENDERED (story 5.5g): once the date it
   // was armed for is no longer scheduled — cancelled elsewhere, in effect, or
@@ -909,6 +912,7 @@ export function useRotationBuilder() {
     outcome,
     scheduled,
     cancelShown,
+    cancelShortStaffed,
     cancelled,
     cancelErasedCount,
     erasedCount,

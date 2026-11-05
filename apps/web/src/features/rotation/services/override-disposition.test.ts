@@ -43,6 +43,7 @@ import {
   OVERRIDE_REVIEW_UNAVAILABLE,
   amendDefaultsOf,
   amendEntryOf,
+  amendOpensWithOf,
   amendShiftTypeOverride,
   confirmShiftTypeOverride,
   discardShiftTypeOverride,
@@ -612,6 +613,21 @@ describe("the roster amend's preflight and its defaults (0039)", () => {
     expect(offeredIn(groups, 'm-other')).toBe(true);
     expect(offeredIn(groups, 'm-in')).toBe(false);
     expect(reviewOffersOf(row)).toEqual({ confirm: true, amend: true });
+  });
+
+  it('opens again with what was entered while it is still offered, else with the defaults (Epic 11 retro A7)', () => {
+    const entered = { choiceId: 'm-other', reason: 'Zamjena' };
+
+    // Still offered: what was entered.
+    expect(amendOpensWithOf(row, groups, entered)).toEqual(entered);
+    // No longer offered: the defaults, its own reason included.
+    expect(amendOpensWithOf(row, groups, { choiceId: 'm-gone', reason: 'Zamjena' })).toEqual({
+      choiceId: 'm-other',
+      reason: 'Bolovanje',
+    });
+    // Nothing entered: the defaults.
+    expect(amendOpensWithOf(row, groups, undefined)).toEqual(reviewAmendDefaultsOf(row, groups));
+    expect(amendOpensWithOf(row, groups, undefined)).toEqual({ choiceId: 'm-other', reason: 'Bolovanje' });
   });
 
   it("offers a shift-type row's types as one group", () => {

@@ -1,9 +1,11 @@
-import { onlineManager, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useEffectEvent, useRef, useState, type FormEvent } from 'react';
+import { onlineManager, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useEffectEvent, useMemo, useRef, useState, type FormEvent } from 'react';
 
+import { calendarSnapshotQueryOptions } from '@/features/calendar/hooks/use-calendar-snapshot';
 import { useErasureConfirmation } from '@/features/conflicts/hooks/use-erasure-confirmation';
 import { useErasureReads } from '@/features/conflicts/hooks/use-erasure-reads';
 import { CHECK_REFUSED, CHECK_UNAVAILABLE } from '@/features/conflicts/services/erasure-check';
+import { builderCalendarOf } from '@/features/rotation/services/erasures';
 import { ROTATION_KEY, type RotationSnapshot } from '@/features/rotation/services/list';
 import {
   DISPOSITION_AMENDED,
@@ -14,6 +16,7 @@ import {
   DISPOSITION_GONE,
   DISPOSITION_REASON,
   REVIEW_SHIFT_TYPE,
+  amendOpensWithOf,
   amendReviewed,
   confirmReviewed,
   discardReviewed,
@@ -38,6 +41,11 @@ import {
   staleRefusalOf,
   type ReviewChange,
 } from '@/features/rotation/services/override-review-erasures';
+import {
+  reviewAmendShortStaffedOf,
+  reviewRowsShortStaffedOf,
+} from '@/features/rotation/services/override-review-short-staffed';
+import { useStaffingLeave } from '@/features/staffing/hooks/use-staffing-leave';
 import { ROTATION_SAVE_DEPENDENTS, refreshAfterWrite } from '@/features/teams/services/dependents';
 import { writesOnline } from '@/lib/offline/use-write-gate';
 import { supabaseClient } from '@/lib/supabase/client';
@@ -88,6 +96,9 @@ interface CheckedAmend {
 export type ReviewUnchecked =
   | { readonly kind: typeof DISPOSITION_CONFIRMED; readonly row: ReviewRow }
   | { readonly kind: typeof DISPOSITION_AMENDED };
+
+/** No rows: one constant, so the blocks' memo holds while there is no review. */
+const NO_ROWS: readonly ReviewRow[] = [];
 
 /**
  * IZMJENE ZA PREGLED'S STATE AND WIRING (story 3.5c; story 5.5h): every
@@ -148,6 +159,11 @@ export type ReviewUnchecked =
  * Its amend changes WHO ARRIVES: opening it reads the calendar, the leave and
  * the resolutions afresh (the check's own reads) under the latch, and offers
  * the calendar's candidates for that shift.
+ *
+ * THE SHORT-STAFFED BLOCKS (Epic 11 retro A7): under each row whose confirm
+ * would newly leave a shift short, and in the amend's dialog for the choice
+ * made there, from `override-review-short-staffed` over the cached calendar.
+ * Never a gate: no button, latch or write path reads them.
  */
 export function useOverrideReview({
   snapshot,
@@ -198,12 +214,42 @@ export function useOverrideReview({
   const confirmation = useErasureConfirmation<CheckedDisposition>(pending, () =>
     firstEnabledOf<HTMLElement>(openedFrom.current, () => heading.current),
   );
-  const review = snapshot === null ? null : overrideReviewOf(snapshot);
-  const rows = review?.ok === true ? review.rows : [];
+  // Memoized per snapshot, so the rows' short-staffed blocks below are worked out only when a read changes.
+  const review = useMemo(() => (snapshot === null ? null : overrideReviewOf(snapshot)), [snapshot]);
+  const rows = review?.ok === true ? review.rows : NO_ROWS;
   const disabled = pending || busy;
   /** The rows as last drawn, read after an await: a row is looked up again by id before it is armed. */
   const rowsNow = useRef(rows);
   const seenSaves = useRef(savedTimes);
+  /**
+   * The amend's choice as last changed, for the dialog it was changed in: the
+   * Select stays uncontrolled, and a choice made in another opening of the
+   * amend (a new `armed`) no longer stands — the dialog's own opening choice
+   * does ({@link amendOpensWithOf}).
+   */
+  const [chosen, setChosen] = useState<{ readonly armed: Armed; readonly choiceId: string } | null>(null);
+
+  // EPIC 11 RETRO A7: WHAT A CONFIRM OR AN AMEND WOULD NEWLY LEAVE SHORT OF
+  // PEOPLE, over the erasure check's own "after" on the CACHED calendar —
+  // observed under its one key while the review lists rows, and the
+  // organization's leave under its shared key only while the minimum is set
+  // too. Pending or failed, the calendar is `null`, and so is every block (R1).
+  // A preview, never a gate: every write below runs its own fresh check.
+  const listed = rows.length > 0;
+  const calendarRead = useQuery({ ...calendarSnapshotQueryOptions(), enabled: listed });
+  const calendar = builderCalendarOf(listed, { isError: calendarRead.isError, data: calendarRead.data });
+  const leave = useStaffingLeave(calendar);
+  const rowShortStaffed = useMemo(() => reviewRowsShortStaffedOf(calendar, rows, leave), [calendar, rows, leave]);
+  const amendChoice =
+    armed?.kind !== DISPOSITION_AMENDED
+      ? null
+      : chosen !== null && chosen.armed === armed
+        ? chosen.choiceId
+        : (amendOpensWithOf(armed.row, armed.groups, armed.entered).choiceId ?? null);
+  const amendShortStaffed = useMemo(
+    () => (armed?.kind === DISPOSITION_AMENDED ? reviewAmendShortStaffedOf(calendar, armed.row, amendChoice, leave) : null),
+    [calendar, armed, amendChoice, leave],
+  );
 
   useEffect(() => {
     rowsNow.current = rows;
@@ -863,6 +909,11 @@ export function useOverrideReview({
     if (entered !== null) void amend(row, entered, groups);
   }
 
+  /** The amend's type or member was changed: its short-staffed block follows the choice (Epic 11 retro A7). */
+  function chooseAmend(choiceId: string): void {
+    if (armed?.kind === DISPOSITION_AMENDED) setChosen({ armed, choiceId });
+  }
+
   /** A field of the amend changed: a refusal to check what was entered before no longer stands. */
   function clearUnchecked(): void {
     if (unchecked?.kind === DISPOSITION_AMENDED) setUnchecked(null);
@@ -927,6 +978,9 @@ export function useOverrideReview({
     disarm,
     submitAmend,
     clearUnchecked,
+    chooseAmend,
+    rowShortStaffed,
+    amendShortStaffed,
     retry,
     backFromErasures,
     confirmReviewErasures,

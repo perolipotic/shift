@@ -793,7 +793,12 @@ describe('the member list reads once, under one key', () => {
     const component = source(ROTATION_OVERRIDE_REVIEW);
     const hook = source(ROTATION_OVERRIDE_REVIEW_HOOK);
 
-    expect(occurrences(review, 'useQuery('), 'the review reads a second time').toBe(0);
+    // EPIC 11 RETRO A7, DELIBERATELY: one observation, and only one — the
+    // calendar snapshot under its own key, while rows are listed, for the
+    // short-staffed blocks (with the organization's leave through
+    // `useStaffingLeave`). Never a second read of the review's own data.
+    expect(occurrences(review, 'useQuery('), 'the review reads a second time').toBe(1);
+    expect(hook).toContain('useQuery({ ...calendarSnapshotQueryOptions(), enabled: listed })');
     expect(occurrences(review, 'queryKey:')).toBe(occurrences(review, 'queryKey: ROTATION_KEY'));
     expect(hook).toContain('invalidateQueries({ queryKey: ROTATION_KEY })');
     expect(hook).toContain('refreshAfterWrite(queryClient, ROTATION_KEY, ROTATION_SAVE_DEPENDENTS)');

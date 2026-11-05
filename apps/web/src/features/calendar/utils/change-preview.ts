@@ -240,9 +240,11 @@ export function previewMemberNameOf(snapshot: CalendarSnapshot | null, memberId:
  * leaves short of people, over the organization's live leave as observed.
  * `null` — no block — while the minimum is empty, before the leave is looked
  * at, or for a change the write would refuse anyway. Unknown on a `RangeError`
- * building the after, as on one of the report.
+ * building the after, as on one of the report. Shared with the rotation
+ * builder's override review (Epic 11 retro A7), whose confirm and amend are
+ * changes of one day too.
  */
-function dayReportOf(
+export function dayReportOf(
   snapshot: CalendarSnapshot,
   date: string,
   leave: StaffingLeaveSource | null,

@@ -427,6 +427,20 @@ export function reviewAmendDefaultsOf(
   return { choiceId: groups.flatMap((group) => group.options)[0]?.id, reason: row.reason };
 }
 
+/**
+ * What the amend's fields open with: what was `entered`, when it is opened
+ * again and its choice is still offered; else {@link reviewAmendDefaultsOf}.
+ * The dialog's uncontrolled fields start here, and so does the choice its
+ * short-staffed block is worked out for (Epic 11 retro A7).
+ */
+export function amendOpensWithOf(
+  row: ReviewRow,
+  groups: readonly AmendOptionGroup[],
+  entered: { readonly choiceId: string; readonly reason: string } | undefined,
+): { readonly choiceId: string | undefined; readonly reason: string } {
+  return entered !== undefined && offeredIn(groups, entered.choiceId) ? entered : reviewAmendDefaultsOf(row, groups);
+}
+
 /** The reason's bounds once surrounding white space is trimmed, as 0019's check reads them. */
 export const DISPOSITION_REASON_MAX = 200;
 
