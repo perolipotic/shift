@@ -421,10 +421,14 @@ export const KEY_SOURCES = [
     //
     // SIXTY-FOUR SINCE STORY 11.3: *Ovaj tjedan*'s short-staffed cell adds
     // `premalo ljudi` to its name, and the legend lists the mark.
+    //
+    // SEVENTY SINCE STORY 11.4: *Premalo ljudi*'s heading, count, calm line
+    // with the minimum, a row, `i još {n}` and its link to the calendar. A
+    // row's people at work are the short-staffed block's `popunjenost.atWork`.
     name: 'the Danas destination',
     file: DANAS,
     keys: translationKeys,
-    strings: 64,
+    strings: 70,
   },
   {
     // STORY 6.1a: today's three cases, the next shift's two headings, and

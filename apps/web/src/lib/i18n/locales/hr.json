@@ -132,6 +132,14 @@
         "today": "danas",
         "open": "Otvori Za odluku ({count})"
       },
+      "shortStaffed": {
+        "heading": "Premalo ljudi",
+        "count": "{count, plural, one {# smjena} few {# smjene} other {# smjena}} ovaj tjedan",
+        "calm": "{minimum, plural, one {Svaka smjena ovaj tjedan ima najmanje # čovjeka.} few {Svaka smjena ovaj tjedan ima najmanje # čovjeka.} other {Svaka smjena ovaj tjedan ima najmanje # ljudi.}}",
+        "row": "{weekday} {date} · {team} · {type}: {atWork}",
+        "more": "i još {count}",
+        "open": "Otvori kalendar"
+      },
       "coverage": {
         "heading": "Pokrivenost danas",
         "shiftTimed": "{type} {range} · {team}",

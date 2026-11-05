@@ -7,6 +7,7 @@ import { AbsentCard } from '@/features/today/components/absent-card';
 import { AdminTodaySkeleton } from '@/features/today/components/admin-today-skeleton';
 import { CoverageCard } from '@/features/today/components/coverage-card';
 import { NeedsYouCard } from '@/features/today/components/needs-you-card';
+import { ShortStaffedCountCard } from '@/features/today/components/short-staffed-card';
 import { WeekGrid } from '@/features/today/components/week-grid';
 import { useAdminToday } from '@/features/today/hooks/use-admin-today';
 import { ADMIN_TODAY_LOADING, ADMIN_TODAY_UNAVAILABLE } from '@/features/today/services/admin-today';
@@ -14,7 +15,8 @@ import { t } from '@/lib/i18n';
 import { keepFocusOnAlert } from '@/utils/retry-focus';
 
 /**
- * *Danas* for an admin (story 6.3), in this order: *Treba tebe*, *Pokrivenost
+ * *Danas* for an admin (story 6.3), in this order: *Treba tebe*, *Premalo
+ * ljudi* while *Najmanje ljudi u smjeni* is set (story 11.4), *Pokrivenost
  * danas*, *Odsutni danas* and *Ovaj tjedan*. The skeleton while the reads are
  * unanswered; one alert with a retry, and no figure, when a read failed or
  * what it answered cannot be trusted. `adminTodayOf` decides which; this only
@@ -77,6 +79,7 @@ export function AdminTodayBody({
   return (
     <>
       <NeedsYouCard needsYou={view.needsYou} />
+      {view.shortStaffed === null ? null : <ShortStaffedCountCard card={view.shortStaffed} />}
       <CoverageCard coverage={view.coverage} />
       <AbsentCard absences={view.absences} />
       <WeekGrid week={view.week} />

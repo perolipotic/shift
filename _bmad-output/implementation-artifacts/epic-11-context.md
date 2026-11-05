@@ -4,7 +4,7 @@
 
 ## Goal
 
-An organization sets one number, how many people a working shift needs (*Najmanje ljudi u smjeni*). Wherever a working shift falls below it, the app says so plainly and in numbers: before every save that would cause it, on the admin's calendar day, and as a count on admin *Danas*. It warns and never blocks, because the admin may have no one else to send. With the setting empty, nothing is reported anywhere. This was added to v1 by the 2026-10-10 scope expansion (CAP-21); it narrows the earlier non-goal "no minimum-staffing rules" to exactly this one number.
+An organization sets one number, how many people a working shift needs (*Najmanje ljudi u smjeni*). Wherever a working shift falls below it, the app says so plainly and in numbers: before every save that would cause it, on the admin's calendar day, and as a count on admin *Danas*. It warns and never blocks, because the admin may have no one else to send. With the setting empty, nothing is reported anywhere. The 2026-10-10 scope expansion (CAP-21) added it to v1, narrowing the earlier non-goal "no minimum-staffing rules" to exactly this one number. Stories 11.1–11.3 have shipped; 11.4 (the admin *Danas* card) remains.
 
 ## Stories
 
@@ -15,40 +15,42 @@ An organization sets one number, how many people a working shift needs (*Najmanj
 
 ## Requirements & Constraints
 
-- **People at work** on a working Scheduled Shift = its Shift Roster after Roster Overrides, minus every member covered that date by a Leave Record of any absence type, with replacements placed by an override counted. A member on a half day counts as at work (half days arrive in Epic 13).
-- **Short-staffed** ⟺ the shift is working AND people at work < Minimum Members. Non-working shifts are never short-staffed. Empty setting ⟹ nothing is short-staffed.
-- Derived on read, never stored, never "resolved": it ends only when the roster, the absence or the setting changes.
-- Never blocks a save. A write that can change it reports the shifts it would newly make short-staffed, as `{ code: 'SHORT_STAFFED', date, team, atWork, minimum }`.
-- Worked example (must hold against both fixtures): a team of four on a working shift, minimum 3. One on leave → 3 at work, not short. Two on leave → 2, short. One of those two replaced by an override → 3, not short. Minimum empty → never short.
-- The setting is organization data: a positive whole number or empty, no core default. The demo seed sets 3 (the pilot's value).
-- Changing the setting changes the state of past and future shifts alike.
-- A member deactivated from a date leaves their future shifts short-staffed where the count falls below the setting (answers the deactivation open question).
-- Never reads fire rank or team position; those stay inert.
-- Reporting surfaces (11.2): leave record/amend, leave-request approval, roster and shift-type overrides, every conflict resolution (in the consequence strip's coverage term), member deactivation, rotation save; later swap approval (Epic 12). The report names date, team, people at work and the minimum, as a block in *Što se mijenja*, not a quiet line.
-- Calendar (11.3): an admin's calendar only, glyph + legend, never colour alone; day detail states people at work against the minimum.
-- Danas (11.4): count of short-staffed shifts ahead, shown at zero, linked to their dates; not shown when the setting is empty.
+- **People at work** on a working Scheduled Shift = its Shift Roster after Roster Overrides, minus every member absent that date by a Leave Record of any absence type, with replacements placed by an override counted. A member on a half day counts as at work (half days arrive in Epic 13).
+- **Short-staffed** ⟺ the shift is working AND people at work < Minimum Members. Non-working shifts are never short-staffed. Empty setting ⟹ nothing is short-staffed, and no extra read is made.
+- Derived on read, never stored, never "resolved": it ends only when the roster, the absence or the setting changes. Changing the setting changes past and future shifts alike.
+- Never blocks a save. Never reads fire rank or team position.
+- Worked example (holds against both fixtures): a team of four on a working shift, minimum 3. One on leave → 3 at work, not short. Two on leave → 2, short. One of those replaced by an override → 3, not short. Minimum empty → never short.
+- The setting is organization data: a positive whole number or empty, no core default. The demo seed sets 3.
+- A member deactivated from a date leaves their future shifts short-staffed where the count falls below the setting.
+- **Admin Danas (11.4):** while the setting is set, a card beside *Za odluku* counts the short-staffed shifts ahead, is shown at zero (hiding a zero is indistinguishable from not having loaded), and links to their dates. With the setting empty the card is not shown. The count must equal the calendar's marks from the same snapshot (dashboard figures equal their detail views).
+- Each story updates the DESIGN.md / EXPERIENCE.md / UX-DR lines it changes in the same change; for 11.4 that is the admin *Danas* entry in EXPERIENCE.md and UX-DR48 (whose Danas-card clause is still marked "planned"), and UX-DR23's standing-state exception for Danas (also marked planned).
 
 ## Technical Decisions
 
-- **AD-1:** no column may hold a value the domain can compute; only the setting is stored.
-- **AD-2:** Minimum Members is a **current-state** rule (like hour bands); story 11.1 adds its row to the spine's AD-2 table, in the same change.
-- **AD-7:** the rule lives in a new pure module `packages/domain` → `staffing`, zero runtime deps, no React/Supabase/I/O, shape `(snapshot, exception layer, window) → derived values`. Recomputing it anywhere else is a defect.
+- **AD-1:** no column holds a computable value; only `organizations.minimum_members` (nullable `smallint`, `>= 1`, migration `0048`) is stored. No count or state is stored anywhere.
+- **AD-2:** Minimum Members is a **current-state** rule (like hour bands); its row is in the spine's AD-2 table (shipped by 11.1).
+- **AD-7:** the rule lives only in the pure `packages/domain` → `staffing` module (zero runtime deps, no React/Supabase/I/O). Shipped derivations: `peopleAtWorkOn`, `shortStaffedShiftsOf` (the calendar marks), `newlyShortStaffedOf` (the save blocks). Recomputing the rule anywhere else is a defect; the Danas count must reuse what the calendar uses.
 - **AD-8:** the domain returns codes and operands (`SHORT_STAFFED`, `atWork`, `minimum`), never prose; i18n resolves them.
-- **AD-13:** a surface derives every figure from one snapshot; 11.4's count must equal the calendar marks from the same snapshot, and admin *Danas* coverage moves onto `dayDetailOf` (closing AD-13's recorded exception).
+- **AD-13 (one snapshot per surface):** every figure on a surface comes from one shared query key per fact, read through the detail view's own query options, so a figure equals its detail view by construction. Its recorded exception — admin *Danas* coverage computed by its own `coverageOf` in `admin-today.ts` — is closed by 11.4: *Pokrivenost danas* must derive from the day detail's `dayDetailOf`, so it equals the day detail by construction. 11.4 should then remove the exception note from AD-13.
+- Writes invalidate their surface's snapshot key and every dependent key (AD-13 mutation rule); no optimistic updates for conflict or staffing state.
 - **AD-15:** Vitest in node, no jsdom; every rule asserted against both the pilot and the UJ-5 security fixture.
-- Organization writes are direct PostgREST under RLS (AD-9/AD-10); migrations forward-only in `supabase/migrations`.
+- Organization writes are direct PostgREST under RLS; migrations forward-only in `supabase/migrations`.
 
 ## UX & Interaction Patterns
 
-- *Organizacija* is a page of fact cards; each change opens its own small dialog with one Spremi beside Odustani, sending only what it shows.
-- Warnings state consequences in numbers (`rade 2 od najmanje 3`, `Smjena B, 14.10. Dan: rade 2 od najmanje 3`).
-- A new `warning` token is reserved for short-staffed: light and dark, contrast-verified, never `destructive`, never the accent (UX-DR4, UX-DR48). It is the fifth `shift-cell` modifier and state glyph, with a legend entry (UX-DR8, UX-DR12).
-- Short-staffed is the second named exception (after conflicts) to "warnings never persist as standing banners" (UX-DR23).
-- Each story updates the DESIGN.md / EXPERIENCE.md / UX-DR lines it changes in the same change.
+- **Wording:** numbers, not adjectives — `rade 2 od najmanje 3` (`radi 1`, `ne radi nitko` at zero); a save row reads `Smjena B, 14.10. Dan: rade 2 od najmanje 3`; the mark's name is *Premalo ljudi* / `premalo ljudi`.
+- **`warning` token** (light `#BF6A14`, dark `#F59145`, no foreground): reserved for short-staffed only — the cell's 3 px bottom bar, the block's border and its glyph. Never `destructive`, never the accent, never text on it; words beside it stay `foreground`. Contrast is pinned in `test/theme-contrast.test.ts`.
+- **Glyph:** Phosphor `UsersThree` (cell: `UsersThreeBold` in the cell's own foreground) through the icon facade; never colour alone; a persistent legend entry wherever the mark renders (five-mark state vocabulary).
+- **Calendar (shipped 11.3):** admin month grid only (not person view, *Moj raspored* or day lists); admin *Danas*'s *Ovaj tjedan* week already shows the same mark beside the letter, with a legend entry while any shown cell is short. Day detail adds one line under *Sastav* on every working shift of an active team while the setting is set: `rade 3 od najmanje 3`, or `Premalo ljudi: rade 2 od najmanje 3` with the glyph in `warning`.
+- **Save blocks (shipped 11.2):** a *Premalo ljudi u smjeni* block in *Što se mijenja*, inside the existing polite live region, from the surface's own "after" snapshot; first five rows then `i još {n}`; never an alert. If leave can't be read or derivation fails: `Popunjenost smjena sada ne mogu provjeriti.` Consequence-strip coverage term states people at work vs. minimum.
+- **Standing state:** short-staffed is the second named exception (after conflicts) to "warnings never persist as standing banners" — it stands on the calendar and on admin *Danas* while it lasts.
+- **Admin *Danas* layout:** *Treba tebe* (the *Za odluku* count at every value incl. 0, `destructive` edge + ⚠ above zero, ending `Otvori Za odluku ({count})`), then *Pokrivenost danas* (per working team: type, range, team, phase, `{present} od {total} članova`, each rostered member on leave with the decision, or `✓ puna smjena`; teams off on one line; link to calendar), then *Odsutni danas*, then *Ovaj tjedan*. The 11.4 card sits beside *Za odluku* and every summary links to its list view.
+- Empty states state what is true; a zero count is still shown.
 
 ## Cross-Story Dependencies
 
-- 11.2 and 11.3 depend on 11.1 (the domain rule and the setting); 11.4 depends on 11.3.
-- Epic 9's request approval preview gains the short-staffed result once Epic 11 lands (via 11.2).
+- 11.2 and 11.3 depend on 11.1; 11.4 depends on 11.3 (reuses its calendar derivation so the count equals the marks).
+- Epic 9's request approval preview already carries the short-staffed block (via 11.2).
 - Epic 12's swap approval (12.4) runs the staffing check, depending on 11.1.
-- Epic 13 adds absence types and half days; the staffing rule must count any absence type as absent and a half day as at work.
+- Epic 13 adds absence types and half days; the rule must count any absence type as absent and a half day as at work.
+- Deferred from 11.2: the override review after a rotation save and the rotation cancel do not show the block yet.

@@ -1277,3 +1277,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-11-3-the-calendar-day-marks-a-short-staffed-shift.md`
   summary: Product owner to decide — light `warning` (#BF6A14) reads under 3:1 on the Dialog's glass panel over its three darkest backdrops (`band-dark` 2.89, `ink` 2.90, `shift-slot-2` 2.96, with and without the scrim), where the day detail's and the resolution strip's `text-warning` glyph sits. Retune the token, draw the glyph in `foreground` on glass, or accept the gap (the glyph is `aria-hidden` and always beside the words that carry the meaning).
   evidence: Measured by the 11.3 review patch in `test/theme-contrast.test.ts`, which pins the gap exactly (light worst 2.89, dark worst 5.63) so it fails if the gap closes or widens; dark passes everywhere. The spec pinned 3:1 on cell fills, `card` and `muted` only; the glass surface was found in review.
+
+## Deferred from: code review of spec-11-4-admin-danas-counts-short-staffed-shifts.md (2026-11-05)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-11-4-admin-danas-counts-short-staffed-shifts.md`
+  summary: Story 11.4's *Premalo ljudi* card on admin *Danas* draws `warning` on a glass `Card` (the 4 px left edge and the `UsersThree` glyph above zero), a new place `test/theme-contrast.test.ts` does not measure; fold it into the product owner's open 11.3 decision on light `warning` over glass (retune, `foreground` glyph, or accept), and pin whichever is chosen for the card too.
+  evidence: Raised by the 11.4 review (Blind Hunter). The 11.3 review measured light `warning` at 2.89–2.96:1 on the Dialog's glass over the darkest backdrops; the Card's glass recipe differs and was never measured. The glyph is `aria-hidden` and the count and heading carry the meaning, so this is a contrast gap, not a lost signal.

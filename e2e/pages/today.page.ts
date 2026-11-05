@@ -1,6 +1,6 @@
 import type { Locator } from '@playwright/test';
 
-import { escapeRegExp, fill, hr, plural } from '../utils/i18n.ts';
+import { escapeRegExp, fill, hr, icu, plural } from '../utils/i18n.ts';
 import { BasePage } from './base.page.ts';
 
 const danas = hr.danas;
@@ -23,6 +23,7 @@ function leadOf(message: string): string {
  * link to its conflict) and "Otvori Za odluku (n)"; *Pokrivenost danas*;
  * *Odsutni danas*; and *Ovaj tjedan*, a grid in a scrolling region whose
  * cells are named in words — each block with its way to its list view.
+ * While the minimum is set, *Premalo ljudi* after *Treba tebe* (story 11.4).
  */
 export class TodayPage extends BasePage {
   readonly path = '/danas';
@@ -151,6 +152,26 @@ export class TodayPage extends BasePage {
         : fill(admin.needsYou.open, { count: String(count) });
 
     return this.page.getByRole('link', typeof name === 'string' ? { name, exact: true } : { name });
+  }
+
+  /** *Premalo ljudi* (story 11.4), shown only while *Najmanje ljudi u smjeni* is set. */
+  get shortStaffedCard(): Locator {
+    return this.card(admin.shortStaffed.heading);
+  }
+
+  /** *Premalo ljudi*'s count, `1 smjena ovaj tjedan`, for `count`. */
+  shortStaffedCount(count: number): Locator {
+    return this.shortStaffedCard.getByText(plural(admin.shortStaffed.count, count), { exact: true });
+  }
+
+  /** *Premalo ljudi*'s calm line at zero, naming `minimum` in its plural form. */
+  shortStaffedCalm(minimum: number): Locator {
+    return this.shortStaffedCard.getByText(icu(admin.shortStaffed.calm, { minimum }), { exact: true });
+  }
+
+    /** *Premalo ljudi*'s rows, each the link to its day detail on *Kalendar*, in order. */
+  get shortStaffedRowLinks(): Locator {
+    return this.shortStaffedCard.getByRole('list').getByRole('link');
   }
 
   /** *Pokrivenost danas*. */
