@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 11-05-2026 09:00
+last_updated: 11-05-2026 12:08
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -590,12 +590,12 @@ development_status:
   10-4-web-push-reaches-members-without-email: done
   epic-10-retrospective: done
 
-  epic-11: in-progress
+  epic-11: done  # accepted with open items by the product owner, 2026-11-05 (retro)
   11-1-the-staffing-rule-and-the-minimum-members-setting: done  # #268
   11-2-every-save-that-can-cause-it-shows-a-short-staffed-shift: done  # #269
-  11-3-the-calendar-day-marks-a-short-staffed-shift: done
-  11-4-admin-danas-counts-short-staffed-shifts: done
-  epic-11-retrospective: optional
+  11-3-the-calendar-day-marks-a-short-staffed-shift: done  # #270
+  11-4-admin-danas-counts-short-staffed-shifts: done  # #271
+  epic-11-retrospective: done
 
   epic-12: backlog
   12-1-the-swap-request-record: backlog
@@ -683,7 +683,7 @@ action_items:
     action: "Process L1/L2: branch protection on main with Test and E2E required;
       no merge while a story is in review"
     owner: "Perolipotic"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-5-6-7-retro-2026-10-09.md"
   - id: "epic-7-retro-item-9-fix-c1-danas-treats-yesterday-dated-shif"
     epic: 7
@@ -813,7 +813,7 @@ action_items:
     action: "A12: fix the time-of-day flake in today.spec.ts:529 and make a red main
       block merges"
     owner: "Dev"
-    status: in-progress
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-10-retro-2026-10-30.md"
   - id: "epic-10-retro-item-27-a13-bmad-build-customization-ad-amendmen"
     epic: 10
@@ -857,7 +857,7 @@ action_items:
       drop the temporary-Vite-on-5174 e2e path from the spec template and add a stop
       rule for local e2e loops to the bmad-build customization"
     owner: "Dev (bmad-build customization)"
-    status: open
+    status: in-progress
     ref: "_bmad-output/implementation-artifacts/epic-15-retro-2026-11-04.md"
   - id: "epic-15-retro-item-33-a5-process-stories-touching-the-hot-file"
     epic: 15
@@ -865,7 +865,7 @@ action_items:
       chrome.tsx, theme-contrast, structural pins) never run in parallel from one
       baseline"
     owner: "Perolipotic (sprint planning)"
-    status: open
+    status: in-progress
     ref: "_bmad-output/implementation-artifacts/epic-15-retro-2026-11-04.md"
   - id: "epic-15-retro-item-34-a6-one-deferred-work-entry-for-r5-r8-sat"
     epic: 15
@@ -882,3 +882,56 @@ action_items:
     owner: "Dev"
     status: done  # fixed by PR #267 (661a185)
     ref: "_bmad-output/implementation-artifacts/epic-15-retro-2026-11-04.md"
+  - id: "epic-11-retro-item-36-a1-fix-or-regenerate-epic-11-context-md"
+    epic: 11
+    action: "A1: fix or regenerate epic-11-context.md (all four stories shipped; the
+      Danas card as shipped: the week, directly after Treba tebe)"
+    owner: "Dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-11-retro-2026-11-05.md"
+  - id: "epic-11-retro-item-37-a2-fix-the-rotation-builder-showing-the"
+    epic: 11
+    action: "A2: fix the rotation builder showing the short-staffed unknown line with
+      the setting empty (R1), with a hook-level test, and break the month.ts / short-staffed.ts
+      import cycle by moving staffingInputOf and minimumOfCalendar to a leaf module
+      (R2)"
+    owner: "Dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-11-retro-2026-11-05.md"
+  - id: "epic-11-retro-item-38-a3-bmad-build-rule-a-colour-token-spec-l"
+    epic: 11
+    action: "A3: bmad-build rule: a colour token spec lists every surface the token
+      is drawn on, glass included, and pins each in theme-contrast.test.ts"
+    owner: "Dev (bmad-build customization)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-11-retro-2026-11-05.md"
+  - id: "epic-11-retro-item-39-a4-write-retro-15-a5-hot-file-stories-ne"
+    epic: 11
+    action: "A4: write retro 15 A5 (hot-file stories never run in parallel from one
+      baseline) into the sprint-planning or bmad-build customization"
+    owner: "Perolipotic (sprint planning)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-11-retro-2026-11-05.md"
+  - id: "epic-11-retro-item-40-a5-one-deferred-work-entry-fold-the-thre"
+    epic: 11
+    action: "A5: one deferred-work entry: fold the three minimum parsers into one;
+      pin Pokrivenost present to peopleAtWorkOn and rename STAFFING_SHORT; a card-equals-marks
+      test across a month boundary"
+    owner: "Dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-11-retro-2026-11-05.md"
+  - id: "epic-11-retro-item-41-a6-warning-on-glass-option-b-glyph-in-fo"
+    epic: 11
+    action: "A6: warning on glass, option (b): glyph in foreground on glass (day-detail
+      line, resolution strip, Danas card glyph), warning stays on the cell bar, block
+      border and card edge; measure and pin the card edge on its glass"
+    owner: "Dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-11-retro-2026-11-05.md"
+  - id: "epic-11-retro-item-42-a7-one-small-follow-up-story-in-the-a2-b"
+    epic: 11
+    action: "A7: one small follow-up story in the A2 batch shows the short-staffed
+      block on the override review after a rotation save and on the rotation cancel"
+    owner: "Dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-11-retro-2026-11-05.md"
