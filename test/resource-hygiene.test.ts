@@ -224,6 +224,11 @@ const SANCTIONED_PLURAL_KEYS = [
   // many of a shift's roster are present (`3 od 4 člana`, `5 od 5 članova`).
   'danas.admin.needsYou.pastLine',
   'danas.admin.coverage.members',
+  // STORY 11.4: *Premalo ljudi*'s count (`1 smjena`, `2 smjene`, `5 smjena`
+  // ovaj tjedan) and its calm line at zero, naming the minimum (`najmanje 3
+  // čovjeka`, `najmanje 5 ljudi`).
+  'danas.admin.shortStaffed.count',
+  'danas.admin.shortStaffed.calm',
   // STORY 7.12: the leave dialog's conflict preview — how many conflicts a
   // save creates and where each is resolved, an amend's cleared, kept and new
   // groups, and the conflicts a removal clears.
@@ -1993,6 +1998,13 @@ const SANCTIONED_SCREEN_KEYS = [
   'danas.admin.needsYou.past',
   'danas.admin.needsYou.today',
   'danas.admin.needsYou.open',
+  // STORY 11.4: *Premalo ljudi*, after *Treba tebe* while the minimum is set —
+  // its heading, a row, `i još {n}` and its calendar link. Its count and calm
+  // line are plurals.
+  'danas.admin.shortStaffed.heading',
+  'danas.admin.shortStaffed.row',
+  'danas.admin.shortStaffed.more',
+  'danas.admin.shortStaffed.open',
   'danas.admin.coverage.heading',
   'danas.admin.coverage.shiftTimed',
   'danas.admin.coverage.shift',

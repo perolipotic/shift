@@ -1,3 +1,4 @@
+import { peopleAtWorkOn } from '@shift/domain';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -32,6 +33,7 @@ import {
   BADGE_PAST,
   BADGE_TODAY,
   NEEDS_YOU_ROWS,
+  SHORT_STAFFED_TODAY_ROWS,
   PHASE_ENDED,
   PHASE_RUNNING,
   PHASE_STARTS,
@@ -56,6 +58,7 @@ import {
   coverageStaffingMessageKey,
   needsYouBadgeMessageKey,
   needsYouShiftMessageKey,
+  shortStaffedCardOf,
   showsAdminToday,
   weekCellMessageKey,
   weekOf,
@@ -70,7 +73,20 @@ import {
   todayViewOf,
   type Today,
 } from '@/features/today/services/today';
-import { calendarMonthOutcomeOf, type CalendarMonth } from '@/features/calendar/utils/month';
+import { DAY_NO_ROTATION, DAY_OFF, dayDetailOf } from '@/features/calendar/utils/day-detail';
+import { MODIFIER_SHORT_STAFFED } from '@/features/calendar/utils/modifiers';
+import { NO_MARKS, calendarMonthOutcomeOf, calendarOpenDayOf, type CalendarMonth } from '@/features/calendar/utils/month';
+import { atWorkText } from '@/features/staffing/components/short-staffed-block';
+import { staffingInputOf } from '@/features/staffing/services/short-staffed';
+import {
+  STAFFING_FIXTURES,
+  firstWorkingDayOf,
+  leaveRow,
+  member,
+  staffingSnapshotOf,
+  type StaffingFixture,
+} from '@/features/staffing/staffing.fixture';
+import { datesFrom } from '@/utils/dates';
 import { initLocalization, t } from '@/lib/i18n';
 import { nextIsoDate } from '@/lib/i18n/format';
 import {
@@ -516,6 +532,49 @@ describe('Pokrivenost danas', () => {
 
     expect(noc).toMatchObject({ present: 4, total: 4, absent: [], staffing: STAFFING_FULL });
     expect(viewOf(snapshot, rows, [resolutionOf(ANA, TODAY, A, 'replace_member', 'ro-fran')]).needsYou.count).toBe(0);
+  });
+
+  it('reads kind, type, range and roster through the day detail: a replacement by roster override matches dayDetailOf (story 11.4)', async () => {
+    const snapshot = await snapshotOf({
+      rosterOverrides: [calendarRosterOverrideRow('ro-fran', A, TODAY, ANA, FRAN)],
+    });
+    const rows = [leaveOf('leave-fran', FRAN, TODAY, TODAY)];
+    const { coverage } = viewOf(snapshot, rows);
+
+    for (const row of coverage.rows) {
+      const detail = dayDetailOf(snapshot, row.teamId, TODAY);
+
+      expect([row.shiftTypeName, row.range, row.total]).toEqual([detail?.typeName, detail?.range, detail?.roster.length]);
+    }
+
+    const teams = ['pilot-smjena-a', 'pilot-smjena-b', 'pilot-smjena-c', 'pilot-smjena-d'];
+    const kindOf = (teamId: string) => dayDetailOf(snapshot, teamId, TODAY)?.kind;
+
+    const namesOf = (kind: string) =>
+      teams.filter((id) => kindOf(id) === kind).map((id) => dayDetailOf(snapshot, id, TODAY)?.teamName);
+
+    expect(coverage.off).toEqual(namesOf(DAY_OFF));
+    expect(coverage.noRotation).toEqual(namesOf(DAY_NO_ROTATION));
+    // Ana is off A's Noć and Fran on it: Fran, on leave, is the one absent.
+    const [noc] = coverage.rows;
+
+    expect(dayDetailOf(snapshot, A, TODAY)?.roster.map((one) => one.id)).toContain(FRAN);
+    expect(noc).toMatchObject({ teamId: A, present: 3, total: 4, staffing: STAFFING_SHORT });
+    expect(noc?.absent).toEqual([{ memberId: FRAN, name: 'Fran Franić', state: ABSENT_UNRESOLVED }]);
+  });
+
+  it('two absent on one shift, one of them put on by a roster override: in the day detail\'s roster order', async () => {
+    const snapshot = await snapshotOf({
+      rosterOverrides: [calendarRosterOverrideRow('ro-fran', A, TODAY, DORA, FRAN)],
+    });
+    const rows = [leaveOf('leave-fran', FRAN, TODAY, TODAY), leaveOf('leave-ana', ANA, TODAY, TODAY)];
+    const [noc] = viewOf(snapshot, rows).coverage.rows;
+    const roster = dayDetailOf(snapshot, A, TODAY)?.roster.map((one) => one.id) ?? [];
+
+    // The order is the day detail's (name order) on purpose: the row equals that day's detail (AD-13).
+    expect(noc?.absent.map((one) => one.memberId)).toEqual(roster.filter((id) => id === ANA || id === FRAN));
+    expect(noc?.absent.map((one) => one.name)).toEqual(['Ana Anić', 'Fran Franić']);
+    expect(noc).toMatchObject({ present: 2, total: 4, staffing: STAFFING_SHORT });
   });
 
   it('says a timed and an untimed row', () => {
@@ -1007,5 +1066,193 @@ describe('the words', () => {
       'Dan 07:00–19:00 · Smjena C',
     );
     expect(t(needsYouShiftMessageKey({ times: null }), { type: 'Dan', team: 'Smjena C' })).toBe('Dan · Smjena C');
+  });
+});
+
+/**
+ * STORY 11.4's matrix, executed over real snapshots of both fixtures: the
+ * *Premalo ljudi* card counts the short-staffed shifts of the week *Ovaj
+ * tjedan* draws, and that count is always the number of the week's cells the
+ * calendar marks short-staffed.
+ */
+describe.each(STAFFING_FIXTURES)('Premalo ljudi ($name)', (fixture) => {
+  const ONE = '00000000-0000-4000-8000-00000000e001';
+
+  /**
+   * The fixture's first team alone active: every other team is archived, so
+   * its empty rosters (short under any minimum) count for nothing.
+   */
+  async function soloOf(fixtureOf: StaffingFixture, minimum: unknown): Promise<CalendarSnapshot> {
+    const snapshot = await staffingSnapshotOf(fixtureOf, { size: 4, minimum });
+
+    return {
+      ...snapshot,
+      teams: snapshot.teams.map((team) => (team.id === fixtureOf.team ? team : { ...team, archived: true })),
+    };
+  }
+
+  /** The dates from `from`, over `days` days, on which `teamId` (the fixture's first team by default) works a working shift. */
+  function workingDatesOf(snapshot: CalendarSnapshot, from: string, days: number, teamId = fixture.team): readonly string[] {
+    return datesFrom(from, days).filter((date) => peopleAtWorkOn(staffingInputOf(snapshot, []), teamId, date) !== null);
+  }
+
+  /** Two of the team's four on leave on each of `dates`. */
+  function twoAwayOn(dates: readonly string[]): readonly unknown[] {
+    return dates.flatMap((date, index) => [
+      leaveRow(`00000000-0000-4000-8000-0000000e1${String(index).padStart(3, '0')}`, member(1), date, date),
+      leaveRow(`00000000-0000-4000-8000-0000000e2${String(index).padStart(3, '0')}`, member(2), date, date),
+    ]);
+  }
+
+  /** How many of the week's cells carry the calendar's short-staffed mark. */
+  function weekMarkedOf(view: AdminTodayView): number {
+    return view.week.rows.flatMap((row) => row.cells).filter((cell) => cell.modifiers.includes(MODIFIER_SHORT_STAFFED)).length;
+  }
+
+  it('Short: two away on two dates this week — count 2, two rows linking to their day details', async () => {
+    const snapshot = await soloOf(fixture, 3);
+    const today = firstWorkingDayOf(snapshot, fixture).date;
+    const dates = workingDatesOf(snapshot, today, ADMIN_WEEK_DAYS).slice(0, 2);
+
+    expect(dates).toHaveLength(2);
+
+    const view = viewOf(snapshot, twoAwayOn(dates), [], zagreb(today, '12:00'));
+    const card = view.shortStaffed;
+
+    if (card === null) throw new Error('no card');
+
+    expect(card.count).toBe(2);
+    expect(card.count).toBe(weekMarkedOf(view));
+    expect(card.minimum).toBe(3);
+    expect(card.more).toBe(0);
+    expect(card.rows.map((row) => [row.date, row.teamId, row.atWork, row.minimum])).toEqual(
+      dates.map((date) => [date, fixture.team, 2, 3]),
+    );
+    const [first] = card.rows;
+    const firstDate = dates[0] ?? '';
+
+    if (first === undefined) throw new Error('no row');
+
+    // On *Sve smjene*, as *Otvori kalendar*, with the day detail open.
+    expect(first.calendar).toEqual({ mjesec: firstDate.slice(0, 7), prikaz: 'sve', dan: firstDate, danSmjena: fixture.team });
+    expect(calendarOpenDayOf(first.calendar)).toEqual({ teamId: fixture.team, date: firstDate });
+    expect(first.teamName).toBe(fixture.teamName);
+    expect(first.shiftTypeName).toBe(dayDetailOf(snapshot, fixture.team, firstDate)?.typeName);
+    expect(
+      t('danas.admin.shortStaffed.row', {
+        weekday: first.weekday,
+        date: first.dayMonth,
+        team: first.teamName,
+        type: first.shiftTypeName,
+        atWork: atWorkText(first.atWork, first.minimum),
+      }),
+    ).toBe(`${first.weekday} ${first.dayMonth} · ${fixture.teamName} · ${first.shiftTypeName}: rade 2 od najmanje 3`);
+    expect(t('danas.admin.shortStaffed.count', { count: card.count })).toBe('2 smjene ovaj tjedan');
+  });
+
+  it('Many: 5 short — the earliest three by date then team order, then `i još 2`', async () => {
+    // Two teams active: the fixture's second team holds only the replacement,
+    // so each of its working shifts is short; the first team is made short on
+    // as many of its working dates as bring the week to exactly 5.
+    const full = await staffingSnapshotOf(fixture, { size: 4, minimum: 3 });
+    const snapshot: CalendarSnapshot = {
+      ...full,
+      teams: full.teams.map((team) =>
+        team.id === fixture.team || team.id === fixture.otherTeam ? team : { ...team, archived: true },
+      ),
+    };
+    const today = firstWorkingDayOf(snapshot, fixture).date;
+    const need = 5 - workingDatesOf(snapshot, today, ADMIN_WEEK_DAYS, fixture.otherTeam).length;
+
+    expect(need).toBeGreaterThanOrEqual(0);
+
+    const ours = workingDatesOf(snapshot, today, ADMIN_WEEK_DAYS).slice(0, need);
+
+    expect(ours).toHaveLength(need);
+
+    const view = viewOf(snapshot, twoAwayOn(ours), [], zagreb(today, '12:00'));
+    const card = view.shortStaffed;
+
+    if (card === null) throw new Error('no card');
+
+    expect(card.count).toBe(5);
+    expect(card.count).toBe(weekMarkedOf(view));
+    expect(card.rows).toHaveLength(SHORT_STAFFED_TODAY_ROWS);
+    expect(card.rows).toHaveLength(3);
+    expect(card.more).toBe(2);
+    // Soonest first, then in the week's team order.
+    const order = view.week.rows.map((row) => row.teamId);
+    const keys = card.rows.map((row) => [row.date, order.indexOf(row.teamId)] as const);
+
+    expect([...keys].sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : x[1] - y[1]))).toEqual(keys);
+    expect(t('danas.admin.shortStaffed.more', { count: card.more })).toBe('i još 2');
+  });
+
+  it('Zero: the minimum set and none short — 0, the calm line naming the minimum', async () => {
+    const snapshot = await soloOf(fixture, 3);
+    const today = firstWorkingDayOf(snapshot, fixture).date;
+    const view = viewOf(snapshot, [], [], zagreb(today, '12:00'));
+
+    expect(view.shortStaffed).toEqual({ count: 0, minimum: 3, rows: [], more: 0 });
+    expect(weekMarkedOf(view)).toBe(0);
+    expect(t('danas.admin.shortStaffed.count', { count: 0 })).toBe('0 smjena ovaj tjedan');
+    expect(t('danas.admin.shortStaffed.calm', { minimum: 3 })).toBe('Svaka smjena ovaj tjedan ima najmanje 3 čovjeka.');
+  });
+
+  it('Empty setting: no card at all, whatever the leave', async () => {
+    const snapshot = await soloOf(fixture, null);
+    const today = firstWorkingDayOf(snapshot, fixture).date;
+    const dates = workingDatesOf(snapshot, today, ADMIN_WEEK_DAYS).slice(0, 2);
+
+    expect(viewOf(snapshot, twoAwayOn(dates), [], zagreb(today, '12:00')).shortStaffed).toBeNull();
+  });
+
+  it('Beyond the week: short only after today + 6 — count 0', async () => {
+    const snapshot = await soloOf(fixture, 3);
+    const today = firstWorkingDayOf(snapshot, fixture).date;
+    const later = workingDatesOf(snapshot, today, 40).filter((date) => !datesFrom(today, ADMIN_WEEK_DAYS).includes(date));
+    const beyond = later.slice(0, 1);
+
+    expect(beyond).toHaveLength(1);
+
+    const view = viewOf(snapshot, twoAwayOn(beyond), [], zagreb(today, '12:00'));
+
+    expect(view.shortStaffed?.count).toBe(0);
+    expect(weekMarkedOf(view)).toBe(0);
+  });
+
+  it('Refused data: a record the staffing rule refuses throws a RangeError, and the whole screen is unavailable, logged', async () => {
+    const snapshot = await soloOf(fixture, 3);
+    const today = firstWorkingDayOf(snapshot, fixture).date;
+    const tomorrow = datesFrom(today, 2)[1] ?? today;
+    const marks = {
+      ...NO_MARKS,
+      // Ends (today) before it starts (tomorrow).
+      staffingLeave: [{ id: ONE, memberId: member(1), from: tomorrow, to: today }],
+    };
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    expect(() => shortStaffedCardOf(snapshot, marks, datesFrom(today, ADMIN_WEEK_DAYS))).toThrow(RangeError);
+    // The same records refuse the month too.
+    expect(calendarMonthOutcomeOf(snapshot, { mjesec: today.slice(0, 7) }, today, marks).ok).toBe(false);
+    // Through the whole path: the same refused record as the leave read answers it is the screen's unavailable, logged.
+    const refused = { id: ONE, member_id: member(1), during: `[${tomorrow},${today})` };
+
+    expect(adminTodayOf(sourcesOf(snapshot, [refused]), zagreb(today, '12:00'))).toEqual({ kind: ADMIN_TODAY_UNAVAILABLE });
+    expect(logged).toHaveBeenCalled();
+    // No staffing leave in the marks (a member's, or the setting empty) is no card, before the minimum is read.
+    expect(shortStaffedCardOf(snapshot, NO_MARKS, datesFrom(today, ADMIN_WEEK_DAYS))).toBeNull();
+  });
+});
+
+describe('Premalo ljudi, the words', () => {
+  it('says the count and the minimum in all three Croatian forms', () => {
+    expect(t('danas.admin.shortStaffed.count', { count: 1 })).toBe('1 smjena ovaj tjedan');
+    expect(t('danas.admin.shortStaffed.count', { count: 5 })).toBe('5 smjena ovaj tjedan');
+    expect(t('danas.admin.shortStaffed.count', { count: 22 })).toBe('22 smjene ovaj tjedan');
+    expect(t('danas.admin.shortStaffed.calm', { minimum: 1 })).toBe('Svaka smjena ovaj tjedan ima najmanje 1 čovjeka.');
+    expect(t('danas.admin.shortStaffed.calm', { minimum: 5 })).toBe('Svaka smjena ovaj tjedan ima najmanje 5 ljudi.');
+    expect(t('danas.admin.shortStaffed.heading')).toBe('Premalo ljudi');
+    expect(t('danas.admin.shortStaffed.open')).toBe('Otvori kalendar');
   });
 });

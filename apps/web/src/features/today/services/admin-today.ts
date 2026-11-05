@@ -3,25 +3,27 @@ import {
   collisionKeyOf,
   deriveShiftTimes,
   membershipOn,
-  rosterOn,
   shiftTypeVersionOn,
+  shortStaffedShiftsOf,
   type MembershipVersion,
 } from '@shift/domain';
 
 import type { CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { calendarMarksOf } from '@/features/calendar/services/marks';
+import { DAY_NO_ROTATION, DAY_OFF, dayDetailOf } from '@/features/calendar/utils/day-detail';
 import { MODIFIER_CONFLICT, MODIFIER_SHORT_STAFFED } from '@/features/calendar/utils/modifiers';
 import {
   CALENDAR_CELL_CLASS,
+  MODE_SVE,
   NO_ROTATION_CELL_CLASS,
   calendarMonthOutcomeOf,
+  calendarSearchTo,
   calendarTodayOf,
   dayMonthOf,
-  rosterStandingOfCalendar,
   weekdayOf,
-  workingShiftTypeIdsOf,
   type CalendarMarks,
   type CalendarMonth,
+  type CalendarSearch,
 } from '@/features/calendar/utils/month';
 import {
   CONFLICTS_LOADING,
@@ -38,6 +40,7 @@ import {
 import { ACCEPT_UNCOVERED, REPLACE_MEMBER } from '@/features/conflicts/services/resolutions';
 import { organizationLeaveRecordsOf, type OrganizationLeaveRecord } from '@/features/leave/services/leave-list';
 import type { MemberRole } from '@/features/navigation/utils/destinations';
+import { minimumOfCalendar, staffingInputOf } from '@/features/staffing/services/short-staffed';
 import {
   CASE_DUTY,
   CASE_FREE,
@@ -68,11 +71,21 @@ import { datesFrom, dayAfter } from '@/utils/dates';
  * the queue's rows, of either kind, so the card equals *Za odluku* at every
  * count, 0 included.
  *
- * THE CALENDAR'S OWN DERIVATIONS for the rest. The week and today's coverage
- * are `calendarMonthOutcomeOf`'s cells under the admin's marks
+ * THE CALENDAR'S OWN DERIVATIONS for the rest. The week is
+ * `calendarMonthOutcomeOf`'s cells under the admin's marks
  * (`calendarMarksOf`, which derives every collision through the queue's
- * `unresolvedOf`), so a ⚠ in the week is exactly a queue row. Who works a
- * shift is the domain's `rosterOn`, with the roster overrides in force.
+ * `unresolvedOf`), so a ⚠ in the week is exactly a queue row; the coverage
+ * names the teams in that month's column order.
+ *
+ * *POKRIVENOST DANAS* IS THE DAY DETAIL'S (story 11.4, AD-13): each team's
+ * kind, type, range and roster are `dayDetailOf`'s for today, the very answer
+ * the calendar's day detail draws, so the two agree by construction.
+ *
+ * *PREMALO LJUDI* IS THE CALENDAR'S MARK (story 11.4): while *Najmanje ljudi
+ * u smjeni* is set, the week's short-staffed shifts are
+ * `shortStaffedShiftsOf(staffingInputOf(snapshot, marks.staffingLeave))` over
+ * the week's dates — the calls the month makes for its marks — so the count
+ * equals the week's marked cells. No staffing arithmetic here (AD-7).
  *
  * NEVER A PARTIAL SCREEN. A read that failed or is paused is the queue's
  * unavailable; a row that cannot be trusted or any `RangeError` of the
@@ -102,6 +115,9 @@ export const ADMIN_TODAY_READY = 'ready';
 
 /** How many of the queue's rows *Treba tebe* lists. */
 export const NEEDS_YOU_ROWS = 3;
+
+/** How many of the week's short-staffed shifts *Premalo ljudi* lists (story 11.4); the rest are counted. */
+export const SHORT_STAFFED_TODAY_ROWS = 3;
 
 /** How many days the week shows: today and the six after it. */
 export const ADMIN_WEEK_DAYS = 7;
@@ -324,10 +340,45 @@ export interface Week {
   readonly anyShortStaffed: boolean;
 }
 
+/** One short-staffed shift of the week, as *Premalo ljudi* lists it (story 11.4). */
+export interface ShortStaffedTodayRow {
+  /** The date and the team: the row's identity. */
+  readonly key: string;
+  readonly date: string;
+  readonly teamId: string;
+  /** `četvrtak` */
+  readonly weekday: string;
+  /** `01.10.` */
+  readonly dayMonth: string;
+  readonly teamName: string;
+  readonly shiftTypeName: string;
+  readonly atWork: number;
+  readonly minimum: number;
+  /** The calendar's search that opens this team's day detail on this date, on *Sve smjene*. */
+  readonly calendar: CalendarSearch;
+}
+
+/**
+ * *Premalo ljudi* (story 11.4): the week's short-staffed shifts — the ones
+ * *Ovaj tjedan* marks — counted, with the earliest listed.
+ */
+export interface ShortStaffedCard {
+  /** Every short-staffed shift from today to the week's last day; 0 is shown. */
+  readonly count: number;
+  /** *Najmanje ljudi u smjeni*, which the calm line names at zero. */
+  readonly minimum: number;
+  /** At most {@link SHORT_STAFFED_TODAY_ROWS}, soonest first and then in team order. */
+  readonly rows: readonly ShortStaffedTodayRow[];
+  /** How many more there are beyond `rows`: the `i još {n}`. */
+  readonly more: number;
+}
+
 /** The ready screen. */
 export interface AdminTodayView {
   readonly today: string;
   readonly needsYou: NeedsYou;
+  /** `null` while *Najmanje ljudi u smjeni* is empty: then there is no card. */
+  readonly shortStaffed: ShortStaffedCard | null;
   readonly coverage: Coverage;
   readonly absences: Absences;
   readonly week: Week;
@@ -403,6 +454,7 @@ export function adminTodayViewOf(
   return {
     today,
     needsYou: needsYouOf(queueRows, count, today),
+    shortStaffed: shortStaffedCardOf(snapshot, marks, dates),
     coverage: coverageOf(snapshot, todayMonth, records, resolutionRows, collisionRowsOf(queueRows), today, now),
     absences: absencesOf(snapshot, records, today),
     week: weekOf(dates, months, today),
@@ -511,6 +563,59 @@ export function needsYouOf(queueRows: readonly QueueRow[], count: number, today:
 }
 
 /**
+ * *Premalo ljudi* (story 11.4): the short-staffed shifts of the week's
+ * `dates`, derived as the month derives its marks — `shortStaffedShiftsOf`
+ * over `staffingInputOf(snapshot, marks.staffingLeave)` from the first date
+ * to the last — counted, the first {@link SHORT_STAFFED_TODAY_ROWS} named (the domain's
+ * order: soonest first, then team order) and each linked to its day detail.
+ * `null` while the setting is empty (`staffingLeave` is `null` then).
+ *
+ * @throws RangeError on any precondition of `shortStaffedShiftsOf`, a team or
+ *   type the snapshot lacks, or a date that cannot be formatted.
+ */
+export function shortStaffedCardOf(
+  snapshot: CalendarSnapshot,
+  marks: CalendarMarks,
+  dates: readonly string[],
+): ShortStaffedCard | null {
+  const minimum = minimumOfCalendar(snapshot);
+  const from = dates[0];
+  const to = dates.at(-1);
+
+  if (marks.staffingLeave === null || minimum === null) return null;
+  if (from === undefined || to === undefined) throw new RangeError('the week has no dates');
+
+  const shifts = shortStaffedShiftsOf(staffingInputOf(snapshot, marks.staffingLeave), from, to);
+  const teams = new Map(snapshot.teams.map((team) => [team.id, team.name]));
+  const types = new Map(snapshot.types.map((type) => [type.id, type.name]));
+  const rows = shifts.slice(0, SHORT_STAFFED_TODAY_ROWS).map((shift): ShortStaffedTodayRow => {
+    const teamName = teams.get(shift.teamId);
+    const shiftTypeName = types.get(shift.shiftTypeId);
+
+    if (teamName === undefined) throw new RangeError(`team ${shift.teamId} is not in the snapshot`);
+    if (shiftTypeName === undefined) throw new RangeError(`shift type ${shift.shiftTypeId} is not in the snapshot`);
+
+    return {
+      key: JSON.stringify([shift.date, shift.teamId]),
+      date: shift.date,
+      teamId: shift.teamId,
+      weekday: weekdayOf(shift.date),
+      dayMonth: dayMonthOf(shift.date),
+      teamName,
+      shiftTypeName,
+      atWork: shift.atWork,
+      minimum: shift.minimum,
+      calendar: calendarSearchTo(
+        { mjesec: shift.date.slice(0, 7), prikaz: MODE_SVE },
+        { dan: { date: shift.date, teamId: shift.teamId } },
+      ),
+    };
+  });
+
+  return { count: shifts.length, minimum, rows, more: shifts.length - rows.length };
+}
+
+/**
  * Where a shift of `startMinute`–`endMinute` dated today is at `minute` of
  * today: not started, under way until its end (a span past midnight runs to
  * the end of the day and beyond), or over.
@@ -535,15 +640,17 @@ function onLeave(records: readonly OrganizationLeaveRecord[], memberId: string, 
 
 /**
  * *Pokrivenost danas*: one row per active team whose type today is a working
- * one, in team order — its type and range, its phase at the organization's
- * minute, who of its roster (`rosterOn`, the overrides in force) is present,
- * and each one absent on leave with what was decided: on the queue, accepted
- * as uncovered, or resolved. An absent member a replacement stands in for is
- * not counted: the replacement is on the roster. The active teams on a
- * non-working type are named as off.
+ * one, in team order (`month.columns`) — its kind, type, range and roster as
+ * the day detail derives them (`dayDetailOf`, story 11.4: the overrides in
+ * force applied), its phase at the organization's minute, who of that roster
+ * is present, and each one absent on leave with what was decided: on the
+ * queue, accepted as uncovered, or resolved. An absent member a replacement
+ * stands in for is not counted: the replacement is on the roster. The active
+ * teams on a non-working type are named as off, and those with no rotation
+ * apart.
  *
  * @throws RangeError when a resolution row cannot be trusted, or on any
- *   precondition of the domain.
+ *   precondition of the domain or of `dayDetailOf`.
  */
 function coverageOf(
   snapshot: CalendarSnapshot,
@@ -554,46 +661,45 @@ function coverageOf(
   today: string,
   now: Date,
 ): Coverage {
-  const working = new Set(workingShiftTypeIdsOf(snapshot));
   const types = new Map(snapshot.types.map((type) => [type.id, type]));
-  const names = new Map(snapshot.members.map((member) => [member.id, member.name]));
   const unresolved = new Set(queueRows.filter((row) => row.date === today).map((row) => row.key));
   const decided = new Map(
     resolutionsOf(snapshot, resolutionRows).map((resolution) => [collisionKeyOf(resolution), resolution.kind]),
   );
-  const inForce = rosterStandingOfCalendar(snapshot).inForce;
   const minute = organizationWallClock(now, snapshot.timeZone).minute;
-  const cells = rowOn(month, today).cells;
   const rows: CoverageRow[] = [];
   const off: string[] = [];
   const noRotation: string[] = [];
 
   for (const team of month.columns) {
-    const cell = cells.find((candidate) => candidate.teamId === team.id);
+    const detail = dayDetailOf(snapshot, team.id, today);
 
-    if (cell === undefined || cell.shiftTypeId === null || cell.name === null) {
+    if (detail === null) throw new RangeError(`team ${team.id} is not in the snapshot`);
+
+    if (detail.kind === DAY_NO_ROTATION) {
       noRotation.push(team.name);
       continue;
     }
 
-    if (!working.has(cell.shiftTypeId)) {
+    if (detail.kind === DAY_OFF) {
       off.push(team.name);
       continue;
     }
 
-    const type = types.get(cell.shiftTypeId);
+    const type = detail.shiftTypeId === null ? undefined : types.get(detail.shiftTypeId);
 
-    if (type === undefined) throw new RangeError(`shift type ${cell.shiftTypeId} is not in the snapshot`);
+    if (type === undefined || detail.typeName === null) {
+      throw new RangeError(`the working type of team ${team.id} on ${today} is not in the snapshot`);
+    }
 
     const version = shiftTypeVersionOn(type.versions, today);
-    const roster = rosterOn(snapshot.members, inForce, team.id, today).roster;
     const absent: CoverageAbsent[] = [];
     let replaced = 0;
 
-    for (const entry of roster) {
-      if (!onLeave(records, entry.memberId, today)) continue;
+    for (const entry of detail.roster) {
+      if (!onLeave(records, entry.id, today)) continue;
 
-      const key = collisionKeyOf({ memberId: entry.memberId, date: today, teamId: team.id });
+      const key = collisionKeyOf({ memberId: entry.id, date: today, teamId: team.id });
       const kind = decided.get(key);
 
       if (!unresolved.has(key) && kind === REPLACE_MEMBER) {
@@ -601,24 +707,22 @@ function coverageOf(
         continue;
       }
 
-      const name = names.get(entry.memberId);
-
-      if (name === undefined) throw new RangeError(`member ${entry.memberId} is not in the snapshot`);
+      if (entry.name === null) throw new RangeError(`member ${entry.id} is not in the snapshot`);
 
       absent.push({
-        memberId: entry.memberId,
-        name,
+        memberId: entry.id,
+        name: entry.name,
         state: unresolved.has(key) ? ABSENT_UNRESOLVED : kind === ACCEPT_UNCOVERED ? ABSENT_ACCEPTED : ABSENT_RESOLVED,
       });
     }
 
-    const total = roster.length - replaced;
+    const total = detail.roster.length - replaced;
 
     rows.push({
       teamId: team.id,
       teamName: team.name,
-      shiftTypeName: cell.name,
-      range: cell.range,
+      shiftTypeName: detail.typeName,
+      range: detail.range,
       phase: version === null ? null : coveragePhaseOf(version.startMinute, version.endMinute, minute),
       present: total - absent.length,
       total,

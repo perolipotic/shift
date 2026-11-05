@@ -28,6 +28,8 @@ export const TODAY_SCREEN_PARTS = {
   adminHook: ['features', 'today', 'hooks', 'use-admin-today.ts'],
   adminBody: ['features', 'today', 'components', 'admin-today-body.tsx'],
   needsYouCard: ['features', 'today', 'components', 'needs-you-card.tsx'],
+  // Story 11.4: *Premalo ljudi*, after *Treba tebe* while the minimum is set.
+  shortStaffedCard: ['features', 'today', 'components', 'short-staffed-card.tsx'],
   coverageCard: ['features', 'today', 'components', 'coverage-card.tsx'],
   absentCard: ['features', 'today', 'components', 'absent-card.tsx'],
   weekGrid: ['features', 'today', 'components', 'week-grid.tsx'],
