@@ -18,6 +18,7 @@ import {
   rotationWriteMessageKey,
 } from '@/features/rotation/services/write';
 import { ROTATION_SCHEDULED } from '@/features/rotation/utils/draft';
+import { ShortStaffedBlock } from '@/features/staffing/components/short-staffed-block';
 import {
   warningTextOf,
   warningsSummaryOf,
@@ -53,6 +54,7 @@ export function RotationNotices({
     outcome,
     scheduled,
     cancelShown,
+    cancelShortStaffed,
     cancelled,
     cancelErasedCount,
     erasedCount,
@@ -87,7 +89,8 @@ export function RotationNotices({
   /**
    * The cancel's confirmation, in a modal open for as long as it is rendered;
    * Escape or the backdrop dismiss it except while the delete is outstanding.
-   * Neutral, never `destructive`.
+   * Neutral, never `destructive`. Above its footer, the short-staffed block
+   * (Epic 11 retro A7).
    */
   function renderCancelConfirmation(change: ScheduledChange): ReactNode {
     return (
@@ -126,6 +129,13 @@ export function RotationNotices({
             </Button>
           </Notice>
         ) : null}
+        {/* EPIC 11 RETRO A7: what the cancel would newly leave short of people,
+            over its erasure check's own "after". ALWAYS MOUNTED, a polite live
+            region, so a block that arrives with the reads is announced; empty,
+            it takes no space. Never a gate: the footer below is unchanged. */}
+        <div aria-live="polite" className="grid min-w-0 gap-2 empty:hidden">
+          <ShortStaffedBlock report={cancelShortStaffed} />
+        </div>
         <OfflineWriteNote gate={cancelGate} />
         <DialogFooter>
           <Button

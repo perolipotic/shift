@@ -183,6 +183,10 @@ export const FEATURE_PUBLIC = {
     // for the rotation builder's review of a pending roster override, as the
     // shift-type one's lives in `conflicts`. Its refusal codes come with it.
     'services/roster-erasures', // rotation
+    // Epic 11 retro A7: one day's short-staffed report over a change's erasure
+    // "after" (`dayReportOf`), for the rotation builder's review of a pending
+    // override, whose confirm and amend change one day as the day detail's do.
+    'utils/change-preview', // rotation
   ],
   // Story 5.3c: the calendar's marks derive every collision through
   // *Raspored*'s own recipe (`collisionInputOf`), never a second one. Story

@@ -12,6 +12,7 @@ import { Notice } from '@/components/ui/notice';
 import { Select } from '@/components/ui/select';
 import { candidateGroupMessageKey } from '@/features/calendar/utils/replacement-candidates';
 import { ErasureDialog } from '@/features/conflicts/components/erasure-dialog';
+import { ShortStaffedBlock } from '@/features/staffing/components/short-staffed-block';
 import type { ErasureRow } from '@/features/conflicts/services/erasures';
 import { t } from '@/lib/i18n';
 import {
@@ -28,9 +29,8 @@ import {
   DISPOSITION_REASON,
   REVIEW_SHIFT_TYPE,
   dispositionDoneMessageKey,
+  amendOpensWithOf,
   dispositionMessageKey,
-  offeredIn,
-  reviewAmendDefaultsOf,
   reviewOffersOf,
   type AmendOptionGroup,
   type DispositionTypeOption,
@@ -107,6 +107,9 @@ export function OverrideReview({
     disarm,
     submitAmend,
     clearUnchecked,
+    chooseAmend,
+    rowShortStaffed,
+    amendShortStaffed,
     retry,
   } = state;
   // STORY 8.3b: offline, every write here is gated before its erasure check
@@ -224,6 +227,12 @@ export function OverrideReview({
             {t('rotation.builder.overrides.discard')}
           </Button>
         </div>
+        {/* EPIC 11 RETRO A7: only when this row's confirm would newly leave a
+            shift short. Its own polite live region, always mounted; empty, it
+            takes no space. Never a gate: the buttons above are unchanged. */}
+        <div aria-live="polite" className="grid min-w-0 gap-2 empty:hidden">
+          <ShortStaffedBlock report={rowShortStaffed.get(row.id) ?? null} />
+        </div>
       </li>
     );
   }
@@ -261,8 +270,7 @@ export function OverrideReview({
     // choice is still offered; else the override's own type when it may be
     // chosen (the first member offered, for a roster override), and its own
     // reason.
-    const defaults =
-      entered !== undefined && offeredIn(groups, entered.choiceId) ? entered : reviewAmendDefaultsOf(row, groups);
+    const defaults = amendOpensWithOf(row, groups, entered);
     const roster = row.layer !== REVIEW_SHIFT_TYPE;
 
     return (
@@ -308,6 +316,10 @@ export function OverrideReview({
               aria-invalid={typeRefused}
               aria-describedby={typeRefused ? OVERRIDE_AMEND_ERROR_ID : undefined}
               className="h-11"
+              // EPIC 11 RETRO A7: still uncontrolled; the short-staffed block below follows the choice.
+              onChange={(event) => {
+                chooseAmend(event.currentTarget.value);
+              }}
             >
               {groups.map(renderOptionGroup)}
             </Select>
@@ -335,6 +347,12 @@ export function OverrideReview({
           )}
           {/* STORY 5.5h: an amend that could not check what it would erase amended nothing. */}
           {unchecked?.kind === DISPOSITION_AMENDED ? renderUnchecked(amendGate) : null}
+          {/* EPIC 11 RETRO A7: what the amend, as currently chosen, would newly
+              leave short of people — or the unknown line. A polite live region,
+              always mounted. Never a gate. */}
+          <div aria-live="polite" className="grid min-w-0 gap-2 empty:hidden">
+            <ShortStaffedBlock report={amendShortStaffed} />
+          </div>
           <OfflineWriteNote gate={amendGate} />
           <DialogFooter>
             <Button className="h-11" type="button" variant="outline" disabled={pending} onClick={disarm}>

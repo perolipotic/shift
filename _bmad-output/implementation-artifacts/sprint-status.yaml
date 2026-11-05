@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 11-05-2026 12:08
+last_updated: 11-05-2026 14:30
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -933,5 +933,5 @@ action_items:
     action: "A7: one small follow-up story in the A2 batch shows the short-staffed
       block on the override review after a rotation save and on the rotation cancel"
     owner: "Dev"
-    status: open  # split out: deferred-work.md "Deferred from: planning of spec-epic-11-retro-followups.md"
+    status: done  # spec-epic-11-retro-a7-save-surfaces (cancel confirmation, review rows and amend dialog)
     ref: "_bmad-output/implementation-artifacts/epic-11-retro-2026-11-05.md"
