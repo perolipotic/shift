@@ -896,7 +896,7 @@ action_items:
       import cycle by moving staffingInputOf and minimumOfCalendar to a leaf module
       (R2)"
     owner: "Dev"
-    status: open
+    status: done  # spec-epic-11-retro-followups (R1 builderShortStaffedOf; R2 test/import-cycles.test.ts)
     ref: "_bmad-output/implementation-artifacts/epic-11-retro-2026-11-05.md"
   - id: "epic-11-retro-item-38-a3-bmad-build-rule-a-colour-token-spec-l"
     epic: 11
@@ -926,12 +926,12 @@ action_items:
       line, resolution strip, Danas card glyph), warning stays on the cell bar, block
       border and card edge; measure and pin the card edge on its glass"
     owner: "Dev"
-    status: open
+    status: done  # spec-epic-11-retro-followups (card is opaque bg-card; edge pinned vs card and page/blobs)
     ref: "_bmad-output/implementation-artifacts/epic-11-retro-2026-11-05.md"
   - id: "epic-11-retro-item-42-a7-one-small-follow-up-story-in-the-a2-b"
     epic: 11
     action: "A7: one small follow-up story in the A2 batch shows the short-staffed
       block on the override review after a rotation save and on the rotation cancel"
     owner: "Dev"
-    status: open
+    status: open  # split out: deferred-work.md "Deferred from: planning of spec-epic-11-retro-followups.md"
     ref: "_bmad-output/implementation-artifacts/epic-11-retro-2026-11-05.md"

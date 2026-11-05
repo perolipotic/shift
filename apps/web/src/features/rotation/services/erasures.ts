@@ -186,6 +186,48 @@ export function draftShortStaffedOf(
   }
 }
 
+/** The builder's calendar read, as far as the short-staffed line reads it: TanStack's answer. */
+export interface BuilderCalendarRead {
+  readonly isError: boolean;
+  readonly data: CalendarSnapshot | undefined;
+}
+
+/**
+ * The calendar snapshot the builder's short-staffed line derives from: the
+ * read's data while there is a draft to save (`unsaved`) and the read has not
+ * failed, else `null` — pending, failed or absent alike. The leave read
+ * (`useStaffingLeave`) keys off this too, so with no snapshot no leave is read.
+ */
+export function builderCalendarOf(unsaved: boolean, calendarRead: BuilderCalendarRead): CalendarSnapshot | null {
+  return unsaved && !calendarRead.isError ? (calendarRead.data ?? null) : null;
+}
+
+/**
+ * THE ROTATION BUILDER'S SHORT-STAFFED LINE (story 11.2; Epic 11 retro A2, R1):
+ * what `useDraftShortStaffed` shows, decided here so it is tested without a
+ * DOM (AD-15). `null` — no *Što se mijenja*, no line — with no draft to save,
+ * and while the calendar snapshot is pending, failed or absent: the minimum
+ * lives in that snapshot, so until it is in, the setting may be empty, and
+ * "empty setting: no block, no line" holds (a failed read logs its own
+ * failure). Once it is in, {@link draftShortStaffedOf} decides: `null` with
+ * the minimum empty, the unknown line while the leave is not known, else the
+ * report.
+ */
+export function builderShortStaffedOf(
+  unsaved: boolean,
+  calendarRead: BuilderCalendarRead,
+  rotation: RotationSnapshot | null,
+  draft: RotationDraft | null,
+  today: string | null,
+  leave: StaffingLeaveSource | null,
+): ShortStaffedReport | null {
+  const calendar = builderCalendarOf(unsaved, calendarRead);
+
+  if (calendar === null || draft === null) return null;
+
+  return draftShortStaffedOf(calendar, rotation, draft, today, leave);
+}
+
 // ------------------------------------------------------------ the cancel (5.5g)
 
 /**

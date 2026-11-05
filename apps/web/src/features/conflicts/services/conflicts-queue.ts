@@ -2,7 +2,7 @@ import { collisionKeyOf, collisionsOf, unresolvedCollisionsOf, type Collision, t
 
 import type { CalendarSnapshot, CalendarSurfaceState } from '@/features/calendar/services/snapshot';
 import { unknownSnapshotIdsOf } from '@/features/calendar/services/snapshot-skew';
-import { calendarTodayOf, memberScheduleInputOf, typeRangeOn } from '@/features/calendar/utils/month';
+import { calendarTodayOf, snapshotScheduleInputOf, typeRangeOn } from '@/features/calendar/utils/month';
 import { organizationLeaveRecordsOf, type OrganizationLeaveRecord } from '@/features/leave/services/leave-list';
 import {
   REQUEST_PENDING,
@@ -269,25 +269,16 @@ export function requestRowsOf(
 
 /**
  * What `collisionsOf` derives from: the snapshot's schedule fields through
- * the one recipe — they do not depend on whose input it is, so the viewer's
- * stands for all — and every live record.
+ * the one recipe (`snapshotScheduleInputOf`, which the staffing rule's
+ * `staffingInputOf` spreads too) — they do not depend on whose input it is —
+ * and every live record.
  */
 export function collisionInputOf(
   snapshot: CalendarSnapshot,
   records: readonly OrganizationLeaveRecord[],
 ): CollisionInput {
-  const { assignments, steps, overrides, members, rosterOverrides, workingShiftTypeIds } = memberScheduleInputOf(
-    snapshot,
-    snapshot.viewer,
-  );
-
   return {
-    assignments,
-    steps,
-    overrides,
-    members,
-    rosterOverrides,
-    workingShiftTypeIds,
+    ...snapshotScheduleInputOf(snapshot),
     leaveRecords: records.map(({ id, memberId, from, to }) => ({ id, memberId, from, to })),
   };
 }

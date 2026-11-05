@@ -20,6 +20,7 @@ import {
   type MemberScheduleInput,
   type MembershipVersion,
   type OverrideStanding,
+  type StaffingInput,
   type StatusVersion,
 } from '@shift/domain';
 
@@ -37,6 +38,7 @@ import {
   type CalendarReadFailure,
   type CalendarRosterOverride,
   type CalendarSnapshot,
+  minimumOfCalendar,
 } from '@/features/calendar/services/snapshot';
 import {
   formatIsoDayMonth,
@@ -54,7 +56,6 @@ import {
   slotColourClassOf,
   type ShiftTypeRow,
 } from '@/features/shift-types/services/list';
-import { staffingInputOf } from '@/features/staffing/services/short-staffed';
 import { splitTeams, type TeamRow } from '@/features/teams/services/list';
 import { instantMicrosOf } from '@/features/rotation/services/list';
 import {
@@ -1058,6 +1059,27 @@ export function snapshotScheduleInputOf(snapshot: CalendarSnapshot): SnapshotSch
     members: snapshot.members,
     rosterOverrides: rosterStandingOfCalendar(snapshot).inForce,
     workingShiftTypeIds: workingShiftTypeIdsOf(snapshot),
+  };
+}
+
+/**
+ * STORY 11.2: what the staffing rule derives from — the ONE input recipe of
+ * the save report, the calendar's marks, the day detail's line and admin
+ * *Danas*'s card: the snapshot's schedule fields ({@link snapshotScheduleInputOf},
+ * which `collisionInputOf` spreads too), `records` as the leave, the ACTIVE
+ * teams (archived ones show no shift) in the calendar's order, and the
+ * snapshot's minimum.
+ *
+ * Here, not in `staffing/services/short-staffed` (which re-exports it), so
+ * this module imports nothing that imports it back (Epic 11 retro A2, R2;
+ * `test/import-cycles.test.ts`).
+ */
+export function staffingInputOf(calendar: CalendarSnapshot, records: readonly CollisionLeaveRecord[]): StaffingInput {
+  return {
+    ...snapshotScheduleInputOf(calendar),
+    leaveRecords: records.map(({ id, memberId, from, to }) => ({ id, memberId, from, to })),
+    teamIds: splitTeams(calendar.teams).active.map((team) => team.id),
+    minimumMembers: minimumOfCalendar(calendar),
   };
 }
 

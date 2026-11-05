@@ -14,13 +14,14 @@ import { AMEND_ENDS, AMEND_REMOVES, AMEND_STARTS } from '@/features/leave/servic
 import { shownDeactivationShortStaffedOf } from '@/features/members/services/deactivation-consequence';
 import { shownTeamMoveShortStaffedOf } from '@/features/members/services/team-move-preview';
 import { DEACTIVATE, REACTIVATE, TEAM_MOVE, type TeamMoveOffer } from '@/features/members/services/write';
-import { draftShortStaffedOf } from '@/features/rotation/services/erasures';
+import { builderShortStaffedOf, draftShortStaffedOf } from '@/features/rotation/services/erasures';
 import { readRotation, type RotationSnapshot } from '@/features/rotation/services/list';
 import { answerOf, rotationTableOf } from '@/features/rotation/rotation.fixture';
 import { prefillOf, withEffectiveFrom, withTeamStep } from '@/features/rotation/utils/draft';
 import {
   SHORT_STAFFED_KNOWN,
   SHORT_STAFFED_SHOWN_ROWS,
+  SHORT_STAFFED_UNKNOWN_REPORT,
   dayWindowOf,
   leaveChangeReportOf,
   staffingRecordsOf,
@@ -251,6 +252,53 @@ describe.each(STAFFING_FIXTURES)('$name', (fixture) => {
       expect(draftShortStaffedOf(empty, rotation, draft, TODAY, UNTOUCHABLE)).toBeNull();
       // A draft the save would refuse before any check says nothing.
       expect(draftShortStaffedOf(four, rotation, withEffectiveFrom(draft, '2026-09-01'), TODAY, leave)).toBeNull();
+    });
+
+    describe('the builder’s line (Epic 11 retro A2, R1)', () => {
+      const PENDING = { isError: false, data: undefined };
+      const FAILED = { isError: true, data: undefined };
+      const LEAVE_PENDING: StaffingLeaveSource = { isPending: true, isError: false, data: undefined };
+      let draft: ReturnType<typeof prefillOf>;
+
+      beforeAll(() => {
+        draft = withTeamStep(withEffectiveFrom(prefillOf(rotation, TODAY), '2026-10-01'), fixture.team, 2);
+      });
+
+      it('says nothing while the calendar is pending, whatever the minimum turns out to be', () => {
+        expect(builderShortStaffedOf(true, PENDING, rotation, draft, TODAY, UNTOUCHABLE)).toBeNull();
+        expect(builderShortStaffedOf(true, PENDING, rotation, draft, TODAY, null)).toBeNull();
+      });
+
+      it('says nothing when the calendar read failed, with the minimum set or empty', () => {
+        // A failed read may still hold stale data: it is not trusted either way.
+        expect(builderShortStaffedOf(true, FAILED, rotation, draft, TODAY, UNTOUCHABLE)).toBeNull();
+        expect(builderShortStaffedOf(true, { isError: true, data: four }, rotation, draft, TODAY, UNTOUCHABLE)).toBeNull();
+        expect(builderShortStaffedOf(true, { isError: true, data: empty }, rotation, draft, TODAY, UNTOUCHABLE)).toBeNull();
+      });
+
+      it('the minimum set and the leave pending: the unknown line', () => {
+        expect(builderShortStaffedOf(true, { isError: false, data: four }, rotation, draft, TODAY, LEAVE_PENDING)).toEqual(
+          SHORT_STAFFED_UNKNOWN_REPORT,
+        );
+      });
+
+      it('the calendar in with the minimum empty: nothing, and no leave looked at', () => {
+        expect(builderShortStaffedOf(true, { isError: false, data: empty }, rotation, draft, TODAY, UNTOUCHABLE)).toBeNull();
+      });
+
+      it('no draft to save: nothing', () => {
+        expect(builderShortStaffedOf(false, { isError: false, data: four }, rotation, draft, TODAY, UNTOUCHABLE)).toBeNull();
+        expect(builderShortStaffedOf(true, { isError: false, data: four }, rotation, null, TODAY, UNTOUCHABLE)).toBeNull();
+      });
+
+      it('the calendar and the leave in: the report, as the save would derive it', () => {
+        const leave = leaveRead([leaveRow(ONE, member(1), '2026-10-01', '2026-10-31'), leaveRow(TWO, member(2), '2026-10-01', '2026-10-31')]);
+
+        expect(builderShortStaffedOf(true, { isError: false, data: four }, rotation, draft, TODAY, leave)).toEqual(
+          draftShortStaffedOf(four, rotation, draft, TODAY, leave),
+        );
+        expect(rowsOf(builderShortStaffedOf(true, { isError: false, data: four }, rotation, draft, TODAY, leave)).length).toBeGreaterThan(0);
+      });
     });
   });
 

@@ -387,6 +387,18 @@ export function calendarMinimumMembersOf(value: unknown): number | null {
   return typeof value === 'number' && Number.isInteger(value) && value >= 1 ? value : null;
 }
 
+/**
+ * The snapshot's Minimum Members: a whole number from 1, or `null`. A snapshot
+ * cached before story 11.2 carries no such field and reads as not set.
+ *
+ * Here, beside its parser, so `calendar/utils/month.ts` reads it without
+ * importing the staffing feature (Epic 11 retro A2, R2: no import cycle);
+ * `staffing/services/short-staffed` re-exports it for its importers.
+ */
+export function minimumOfCalendar(calendar: CalendarSnapshot): number | null {
+  return calendarMinimumMembersOf((calendar as { readonly minimumMembers?: unknown }).minimumMembers);
+}
+
 function embedded(organization: Record<string, unknown>, relation: string): readonly unknown[] | null {
   const rows = organization[relation];
 

@@ -37,11 +37,15 @@ function renderRow(row: ShortStaffedTodayRow): ReactNode {
  * *Premalo ljudi* (story 11.4): the short-staffed shifts of the week *Ovaj
  * tjedan* draws, the same at every count. The count always shows, `0 smjena
  * ovaj tjedan` included; above zero a `warning` left edge and the people
- * glyph in `warning`, and the earliest rows, each opening its day detail,
+ * glyph in `foreground`, and the earliest rows, each opening its day detail,
  * then `i još {n}`; at zero neutral, with a check and the sentence that
  * states what is true. It always ends with the way to the calendar. Every
- * text stays `foreground` or `muted-foreground`: the token is the edge and
- * the glyph alone. Only drawn while *Najmanje ljudi u smjeni* is set.
+ * text and the glyph stay `foreground` or `muted-foreground`: the token is
+ * the edge alone (Epic 11 retro A6, option b). The card is the opaque
+ * `bg-card`, and the edge is held to 3:1 against it in
+ * `test/theme-contrast.test.ts`, which records its shortfall against the
+ * page and the blobs on its outer side. Only drawn while *Najmanje ljudi u
+ * smjeni* is set.
  */
 export function ShortStaffedCountCard({ card }: { readonly card: ShortStaffedCard }): ReactNode {
   const headingId = useId();
@@ -52,7 +56,7 @@ export function ShortStaffedCountCard({ card }: { readonly card: ShortStaffedCar
       <section aria-labelledby={headingId} className="grid min-w-0 gap-3 p-4 sm:p-6">
         <div className="flex min-w-0 items-start gap-3">
           {short ? (
-            <UsersThree aria-hidden className="mt-1 size-6 shrink-0 text-warning" />
+            <UsersThree aria-hidden className="mt-1 size-6 shrink-0 text-foreground" />
           ) : (
             <CheckCircle aria-hidden className="mt-1 size-6 shrink-0" />
           )}
