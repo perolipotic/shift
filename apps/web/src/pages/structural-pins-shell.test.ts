@@ -1288,8 +1288,9 @@ describe('no read retry offline, on any surface (story 8.2e)', () => {
     );
   });
 
-  // STORY 12.3: the viewer's own swaps are one of *Danas*'s and a member's
-  // *Kalendar*'s reads, so each surface's retry re-reads them too.
+  // STORY 12.3: the viewer's own swaps are one of *Danas*'s reads, and a
+  // member's *Kalendar* reads them beside its month (never gating it, product
+  // owner 2026-11-06), so each surface's retry re-reads them too.
   it.each([
     'features/today/hooks/use-today.ts',
     'features/today/hooks/use-admin-today.ts',
@@ -1303,6 +1304,18 @@ describe('no read retry offline, on any surface (story 8.2e)', () => {
       (keys ?? '').split(',').map((key) => key.trim()),
       'the retry does not re-read the viewer\'s own swaps',
     ).toContain('MY_SWAP_REQUESTS_KEY');
+  });
+
+  // STORY 12.3 (product owner, 2026-11-06): a member's *Kalendar* reads its
+  // own swaps raw, beside the month's one snapshot, so a failed swaps read
+  // hides the day detail's mark and never makes *Kalendar* unavailable.
+  it('keeps the viewer\'s own swaps out of Kalendar\'s snapshot, a failure being unknown', () => {
+    const hook = source(join(srcRoot, 'features/calendar/hooks/use-calendar-screen.ts'));
+    const tuples = /useSnapshotFreshness\(\s*calendarSurfaceKeysOf\(readsRole\),\s*\[([\s\S]*?)\],\s*ZONE_FROM_CALENDAR/.exec(hook)?.[1];
+
+    expect(tuples, 'no freshness over the month\'s reads').toBeDefined();
+    expect(tuples).not.toContain('MY_SWAP_REQUESTS_KEY');
+    expect(hook).toContain('const swapRows = swapsRead.isError ? undefined : swapsRead.data;');
   });
 
   it('hands the builder read retry\'s focus to its alert', () => {

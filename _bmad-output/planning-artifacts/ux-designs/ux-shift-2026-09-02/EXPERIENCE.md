@@ -57,7 +57,7 @@ sources:
 | Admin dashboard | CAP-17 | UJ-1, UJ-4 |
 | Calendar — *Moj raspored* mode | CAP-11, CAP-13 | UJ-2 |
 | Calendar — *Sve smjene* mode | CAP-13 | UJ-1, UJ-3 |
-| Day detail *(facts only; a member's own working shift from today on offers *Predloži zamjenu* in its footer, a link to the swap proposal, story 12.2; on a shift they already proposed in an open swap the footer reads *Zamjena predložena · {kolega}* instead, and the swap proposal shows a notice in place of the form, story 12.3)* | CAP-11, CAP-12, CAP-22 | UJ-3 |
+| Day detail *(facts only; a member's own working shift from today on offers *Predloži zamjenu* in its footer, a link to the swap proposal, story 12.2; on a shift they already proposed in an open swap the footer reads *Zamjena predložena · {kolega}* instead, and the swap proposal shows a notice in place of the form; a failed read of the member's swaps only hides that mark, never *Kalendar*, story 12.3)* | CAP-11, CAP-12, CAP-22 | UJ-3 |
 | My hours (*Moji sati*) | CAP-14 | UJ-2 |
 | Organization hours | CAP-14 | UJ-4 |
 | My leave *(the figures and the member's own requests, soonest first, each with its cost and its status word; story 9.3)* | CAP-15 | UJ-2 |

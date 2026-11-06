@@ -163,7 +163,9 @@ export function useCalendarScreen(
     enabled: readsAdmin,
   });
   // STORY 12.3: a member's own swaps, for the day detail's mark on a shift
-  // they already proposed; an admin proposes none, and reads none here.
+  // they already proposed; an admin proposes none, and reads none here. NOT
+  // ONE OF THE MONTH'S READS (product owner, 2026-11-06): it never gates
+  // *Kalendar*, and a failure only hides the mark (see `proposals` below).
   const swapsRead = useMySwapRequestsRead(readsRole !== null && !readsAdmin);
   // STORY 8.2: the month's reads are one snapshot, decided from these very
   // observer results (`useSnapshotFreshness`); a read off the month's keys —
@@ -175,7 +177,6 @@ export function useCalendarScreen(
       [ORGANIZATION_LEAVE_RECORDS_KEY, organizationLeave],
       [MY_LEAVE_RECORDS_KEY, ownLeave],
       [ORGANIZATION_CONFLICT_RESOLUTIONS_KEY, resolutionsRead],
-      [MY_SWAP_REQUESTS_KEY, swapsRead],
     ],
     ZONE_FROM_CALENDAR,
   );
@@ -356,9 +357,10 @@ export function useCalendarScreen(
     [snapshot, marks, detail],
   );
   // STORY 12.3: the viewer's open proposals (the proposer's side), `null`
-  // while the read is unknown — the link is then offered as before, and
-  // 0049's 23505 stays the backstop.
-  const swapRows = answerFor(MY_SWAP_REQUESTS_KEY, swapsRead).data;
+  // while the read is unknown — not yet answered, or failed even over cached
+  // rows — and the link is then offered as before, with 0049's 23505 the
+  // backstop. Read raw, off the month's snapshot, so it never gates the grid.
+  const swapRows = swapsRead.isError ? undefined : swapsRead.data;
   const proposals = useMemo(
     () => (snapshot === null ? null : openSwapProposalsOf(swapRows, snapshot.viewer.memberId)),
     [snapshot, swapRows],

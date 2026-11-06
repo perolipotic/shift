@@ -35,9 +35,11 @@ describe('Danas reads everything Kalendar reads, for each role', () => {
     expect(todaySurfaceKeysOf(null).map(text)).toContain(text(CALENDAR_KEY));
   });
 
-  it('reads by role exactly what the screen enables: a member their own leave and swaps, an admin the organization\'s', () => {
-    // STORY 12.3: a member's own swaps, which the day detail marks a proposed shift by.
-    expect(calendarSurfaceKeysOf('member_role')).toEqual([CALENDAR_KEY, MY_LEAVE_RECORDS_KEY, MY_SWAP_REQUESTS_KEY]);
+  it('reads by role exactly what the screen enables: a member their own leave, an admin the organization\'s', () => {
+    // STORY 12.3 (product owner, 2026-11-06): a member's own swaps only mark a
+    // proposed shift, so they are never one of the month's gating reads.
+    expect(calendarSurfaceKeysOf('member_role')).toEqual([CALENDAR_KEY, MY_LEAVE_RECORDS_KEY]);
+    expect(calendarSurfaceKeysOf('member_role').map(text)).not.toContain(text(MY_SWAP_REQUESTS_KEY));
     expect(calendarSurfaceKeysOf('admin')).toEqual([
       CALENDAR_KEY,
       ORGANIZATION_LEAVE_RECORDS_KEY,

@@ -64,8 +64,11 @@ context:
 - **The day detail mark.**
   - `swapOfferedOf` and `ownSwapShiftOf` take the viewer's open swaps.
   - On a shift the viewer has proposed in an open swap (the proposer side only), the footer shows *Zamjena predložena · {kolega}* instead of the link, and the form shows a notice instead of a form.
-  - While the read is unknown, the link is offered as before, and 23505 stays the backstop.
-- **Offline.** The key joins both *Danas* surface-key sets and the calendar's freshness. It is read as one snapshot.
+  - While the read is unknown, the link is offered as before, and 23505 stays the backstop. Unknown includes a read that has not answered and a read that failed, even over cached rows; this holds for the calendar's mark and for the proposal form.
+- **Offline and failure.**
+  - The key joins both *Danas* surface-key sets and is read as part of *Danas*'s one snapshot.
+  - It is NOT one of the member *Kalendar*'s reads: the calendar reads it beside its snapshot, and its freshness never waits on it. A failed swap read there only hides the *Zamjena predložena* mark (the day detail then offers *Predloži zamjenu* as before) and never makes *Kalendar* unavailable.
+  - Amended with the user's approval, 2026-11-06, after review: until then the key also joined the calendar's freshness, so a failed swap read took down the whole member *Kalendar*.
 - **Docs.** In EXPERIENCE.md: the member *Danas* line, the admin *Danas* line and the Day detail row. In epics.md: UX-DR47.
 
 **Ask First:**
@@ -91,6 +94,7 @@ context:
 | Stale | Given shift no longer the proposer's | No *Prihvati*; *Odbij* stays | — |
 | Past | Open swap, a date before today | *Datum je prošao*; no *Prihvati* | — |
 | Marked | The viewer proposed this shift | Footer mark, no link; the form shows a notice | — |
+| Swaps read fails | Member *Kalendar*, swap read errors | Grid shown; no mark; *Predloži zamjenu* offered as before | — |
 | Offline | Any card button | Gated, with the note | Nothing sent |
 | No swaps | — | No card | — |
 
@@ -156,6 +160,13 @@ context:
 **Acceptance Criteria:**
 - Given CI, when `pnpm test` and the e2e suite run, then every new case passes, with none skipped.
 - Given `grep -rn swap_request apps packages`, when it runs, then the only hits are the 12.2 writer and the 12.3 reader.
+
+## Spec Change Log
+
+- **2026-11-06, after review (user-approved change to the frozen block).**
+  - Trigger: the edge-case and verification-gap reviewers found that `MY_SWAP_REQUESTS_KEY` in the member *Kalendar*'s freshness made one failed swap read take down the whole *Kalendar*. A device still offline after an update, before the key had ever been read, also lost *Kalendar*.
+  - Amended: the "Offline and failure" boundary and a new matrix row. The key stays in *Danas*'s one snapshot. The calendar reads it raw, beside its snapshot, and treats an errored read as unknown.
+  - KEEP: the *Danas* keys, the proposal form's "failed is unknown" rule, and the mark's from-today rule.
 
 ## Design Notes
 
