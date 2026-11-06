@@ -51,6 +51,10 @@ export const CALENDAR_SCREEN_PARTS = {
   skeleton: ['features', 'calendar', 'components', 'calendar-skeleton.tsx'],
   cellLabel: ['features', 'calendar', 'utils', 'cell-label.ts'],
   screenKeys: ['features', 'calendar', 'utils', 'screen-keys.ts'],
+  // Story 12.2: the status line a landed swap proposal returns to the month
+  // with, and the hook that takes it off the history entry. Neither writes.
+  swapProposedHook: ['features', 'swaps', 'hooks', 'use-swap-proposed.ts'],
+  swapProposedLine: ['features', 'swaps', 'components', 'swap-proposed-line.tsx'],
 } as const;
 
 /**

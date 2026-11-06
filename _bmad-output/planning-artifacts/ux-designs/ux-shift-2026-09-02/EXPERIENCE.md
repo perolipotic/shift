@@ -57,11 +57,12 @@ sources:
 | Admin dashboard | CAP-17 | UJ-1, UJ-4 |
 | Calendar — *Moj raspored* mode | CAP-11, CAP-13 | UJ-2 |
 | Calendar — *Sve smjene* mode | CAP-13 | UJ-1, UJ-3 |
-| Day detail | CAP-11, CAP-12 | UJ-3 |
+| Day detail *(facts only; a member's own working shift from today on offers *Predloži zamjenu* in its footer, a link to the swap proposal; story 12.2)* | CAP-11, CAP-12, CAP-22 | UJ-3 |
 | My hours (*Moji sati*) | CAP-14 | UJ-2 |
 | Organization hours | CAP-14 | UJ-4 |
 | My leave *(the figures and the member's own requests, soonest first, each with its cost and its status word; story 9.3)* | CAP-15 | UJ-2 |
 | Request leave *(`/godisnji/zatrazi`, from *Zatraži godišnji* on a member's Godišnji: od–do from today on — an earlier first day is refused on *Od*, past leave being an admin's to record (0047) — the cost, the in-year charge and the balance after it, never a gate, and one *Pošalji*; story 9.3)* | CAP-15 | UJ-2 |
+| Request swap *(`/kalendar/zamjena?dan=…&smjena=…`, a member's alone, from *Predloži zamjenu* in the day detail of their own working shift from today on: a colleague, an optional shift of theirs in return through the end of the month after the date, who works which date and each one's hour delta per month, never a gate, and one *Pošalji*; an admin is sent to *Kalendar*; story 12.2)* | CAP-22 | UJ-2 |
 | Leave management *(the overview on Godišnji, story 7.15; recorded on the member page)* | CAP-15 | UJ-3 |
 | Conflicts queue — *Za odluku* *(tabs: Čeka odluku, the default, and Odlučeno)* | CAP-16 | UJ-3, UJ-4 |
 | Conflict resolution | CAP-16 | UJ-3 |

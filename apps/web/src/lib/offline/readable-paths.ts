@@ -1,6 +1,7 @@
 /**
  * The destinations that read offline, as ROUTE PATTERNS (stories 8.2, 8.2b,
- * 8.2c, 8.2d): `/` (which forwards to *Danas*), *Danas*, *Kalendar*, *Sati*,
+ * 8.2c, 8.2d): `/` (which forwards to *Danas*), *Danas*, *Kalendar* (and
+ * its swap proposal, story 12.2), *Sati*,
  * *Godišnji*, *Ljudi* (the admin's table and the members' directory), one
  * team's roster `/smjene/$id`, the admin's work surfaces (story 8.2c):
  * *Za odluku* (and its old `/raspored` URLs, story 9.1), one conflict's
@@ -20,6 +21,9 @@ export const OFFLINE_READABLE_PATHS: readonly string[] = [
   '/',
   '/danas',
   '/kalendar',
+  // Story 12.2: a member's swap proposal, read as one snapshot under the
+  // as-of note; its *Pošalji* is gated offline.
+  '/kalendar/zamjena',
   '/sati',
   '/godisnji',
   // Story 9.3: the request form, read as one snapshot under the as-of note;

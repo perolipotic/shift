@@ -87,7 +87,58 @@ function typeFactOf(snapshot: CalendarSnapshot, day: DayDetail): TypeFact | null
 }
 
 /**
- * The hours each member on either roster gains or loses, grouped by delta.
+ * One member's hours of one month as a change moves them (story 12.2): the
+ * `after` month's total less the `before` month's, in minutes; `0` included.
+ */
+export interface MemberMonthDelta {
+  readonly memberId: string;
+  /** `YYYY-MM`. */
+  readonly month: string;
+  readonly deltaMinutes: number;
+}
+
+/**
+ * THE ONE HOUR DELTA, over any number of changes and months (story 12.2): for
+ * each of `memberIds` and each of `months`, in that order, what
+ * `memberHoursOfMonth` says after less what it says before, through *Sati*'s
+ * own input (`memberHoursInputOf`) with the leave keys `leaveKeysOf` gives
+ * that member. A member the snapshots do not hold has no history to count
+ * hours by, and is left out. The day detail's previews group these by delta;
+ * the swap proposal names each member and month.
+ *
+ * @throws RangeError on any precondition of `memberHoursOfMonth`.
+ */
+export function memberMonthDeltasOf(
+  before: CalendarSnapshot,
+  after: CalendarSnapshot,
+  memberIds: readonly string[],
+  months: readonly string[],
+  leaveKeysOf: (memberId: string) => readonly CollisionResolution[],
+): readonly MemberMonthDelta[] {
+  const deltas: MemberMonthDelta[] = [];
+
+  for (const id of memberIds) {
+    const member = before.members.find((one) => one.id === id) ?? after.members.find((one) => one.id === id);
+
+    if (member === undefined) continue;
+
+    const history = { memberId: member.id, memberships: member.memberships, statuses: member.statuses };
+    const leaveKeys = leaveKeysOf(member.id);
+
+    for (const month of months) {
+      const minutesIn = (snapshot: CalendarSnapshot) =>
+        memberHoursOfMonth(memberHoursInputOf(snapshot, history, leaveKeys), month).totalMinutes;
+
+      deltas.push({ memberId: member.id, month, deltaMinutes: minutesIn(after) - minutesIn(before) });
+    }
+  }
+
+  return deltas;
+}
+
+/**
+ * The hours each member on either roster gains or loses, grouped by delta:
+ * {@link memberMonthDeltasOf} for the month of the date, the zeros left out.
  *
  * @throws RangeError on any precondition of `memberHoursOfMonth`.
  */
@@ -102,23 +153,13 @@ function hourDeltasOf(
   const ids = [...new Set([...dayBefore.roster, ...dayAfter.roster].map((member) => member.id))];
   const groups = new Map<number, string[]>();
 
-  for (const id of ids) {
-    const member = before.members.find((one) => one.id === id) ?? after.members.find((one) => one.id === id);
+  for (const { memberId, deltaMinutes } of memberMonthDeltasOf(before, after, ids, [month], () => leaveKeys)) {
+    if (deltaMinutes === 0) continue;
 
-    // A member the snapshot does not hold has no history to count hours by.
-    if (member === undefined) continue;
+    const group = groups.get(deltaMinutes);
 
-    const history = { memberId: member.id, memberships: member.memberships, statuses: member.statuses };
-    const minutesIn = (snapshot: CalendarSnapshot) =>
-      memberHoursOfMonth(memberHoursInputOf(snapshot, history, leaveKeys), month).totalMinutes;
-    const delta = minutesIn(after) - minutesIn(before);
-
-    if (delta === 0) continue;
-
-    const group = groups.get(delta);
-
-    if (group === undefined) groups.set(delta, [member.id]);
-    else group.push(member.id);
+    if (group === undefined) groups.set(deltaMinutes, [memberId]);
+    else group.push(memberId);
   }
 
   return [...groups.entries()]

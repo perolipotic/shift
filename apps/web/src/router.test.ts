@@ -40,6 +40,7 @@ import { currentSessionForReads } from '@/lib/supabase/offline-session';
 import { DanasScreen, danasRoute } from '@/pages/danas';
 import { GodisnjiScreen, godisnjiRoute } from '@/pages/godisnji';
 import { GodisnjiZatraziScreen, godisnjiZatraziRoute } from '@/pages/godisnji.zatrazi';
+import { KalendarZamjenaScreen, kalendarZamjenaRoute } from '@/pages/kalendar.zamjena';
 import { ObavijestiScreen, obavijestiRoute } from '@/pages/obavijesti';
 import { indexRoute } from '@/pages/index';
 import { KalendarScreen, kalendarRoute } from '@/pages/kalendar';
@@ -426,6 +427,7 @@ describe('the shell route tree', () => {
       // STORY 9.3. The member's leave request form, reached from Godišnji only.
       '/_app/godisnji/zatrazi',
       '/_app/kalendar',
+      '/_app/kalendar/zamjena',
       '/_app/ljudi',
       // TWO ROUTES THAT ARE NOT DESTINATIONS (story 1.5b). Both nest under the
       // same pathless layout as the eight, so the session guard covers them
@@ -1649,6 +1651,7 @@ describe('the signed-in layout guards every destination once, and is pathless', 
         '/',
         '/danas',
         '/kalendar',
+        '/kalendar/zamjena',
         '/sati',
         '/godisnji',
         '/godisnji/zatrazi',
@@ -1671,6 +1674,8 @@ describe('the signed-in layout guards every destination once, and is pathless', 
       for (const path of [
         '/danas',
         '/kalendar',
+        // Story 12.2: the swap proposal, read as one snapshot under the as-of note.
+        '/kalendar/zamjena',
         '/sati',
         '/godisnji',
         // Story 9.3: the request form, read as one snapshot under the as-of note.
@@ -2791,6 +2796,30 @@ describe('the leave request form is not a destination and carries no guard of it
     expect(DESTINATION_ROUTES.map((destination) => destination.path)).not.toContain('/godisnji/zatrazi');
     expect(ROLE_GUARDED_PATHS).not.toContain('/godisnji/zatrazi');
     expect(LEVEL_GUARDED_ROUTES.map((guarded) => guarded.path)).not.toContain('/godisnji/zatrazi');
+  });
+});
+
+describe('the swap proposal is not a destination and carries no guard of its own (story 12.2)', () => {
+  it('resolves /kalendar/zamjena inside the signed-in layout, to its own screen', () => {
+    expect(match('/kalendar/zamjena').map((matched) => matched.routeId)).toEqual([
+      '__root__',
+      '/_app',
+      '/_app/kalendar/zamjena',
+    ]);
+    expect((kalendarZamjenaRoute.options as { component?: unknown }).component).toBe(KalendarZamjenaScreen);
+  });
+
+  it("carries no beforeLoad: the role is the calendar snapshot's, read on the screen, and an admin is sent to /kalendar", () => {
+    expect((kalendarZamjenaRoute.options as { beforeLoad?: unknown }).beforeLoad).toBeUndefined();
+  });
+
+  it('is in neither destination list, nor any guarded list', () => {
+    for (const role of MEMBER_ROLES) {
+      expect(destinationsFor(role).map((destination) => destination.path)).not.toContain('/kalendar/zamjena');
+    }
+    expect(DESTINATION_ROUTES.map((destination) => destination.path)).not.toContain('/kalendar/zamjena');
+    expect(ROLE_GUARDED_PATHS).not.toContain('/kalendar/zamjena');
+    expect(LEVEL_GUARDED_ROUTES.map((guarded) => guarded.path)).not.toContain('/kalendar/zamjena');
   });
 });
 

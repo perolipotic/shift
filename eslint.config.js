@@ -161,19 +161,23 @@ export const FEATURE_PUBLIC = {
   // from rows that cannot be trusted, and re-read it once, by the marks' own
   // rule (`snapshot-skew`, `use-snapshot-skew-refresh`); `readsOrganizationLeave`
   // lives there too.
+  // Story 12.2: the swap proposal asks the day detail's own question of its
+  // URL (`swapOfferedOf`, `dayDetailOf`), builds its "after" with the roster
+  // change's (`rosterChangeSnapshotOf`) and counts hours with the change
+  // preview's one delta (`memberMonthDeltasOf`), over the calendar snapshot.
   calendar: [
     'components/calendar-cell', // today
-    'hooks/use-calendar-snapshot', // conflicts, hours, leave, members, today
+    'hooks/use-calendar-snapshot', // conflicts, hours, leave, members, swaps, today
     'hooks/use-snapshot-skew-refresh', // conflicts, hours, today
     'components/modifier-glyphs', // today
     'services/marks', // today
-    'services/snapshot', // conflicts, hours, leave, members, pages, rotation, teams, today
+    'services/snapshot', // conflicts, hours, leave, members, pages, rotation, swaps, teams, today
     'services/snapshot-skew', // conflicts, hours, today
-    'utils/day-detail', // conflicts
+    'utils/day-detail', // conflicts, swaps
     'utils/empty-day', // today
     'utils/grid-keys', // today
     'utils/modifiers', // conflicts, hours, today
-    'utils/month', // conflicts, hours, leave, members, pages, today
+    'utils/month', // conflicts, hours, leave, members, pages, swaps, today
     'utils/skeleton', // today
     // Story 5.4c: the replacement candidates, grouped once, for the conflict
     // screen's second card (and story 7.9's roster dialog). Story 7.9: their
@@ -182,11 +186,11 @@ export const FEATURE_PUBLIC = {
     // 0039: the roster change's erasure "after", confirm and amend included,
     // for the rotation builder's review of a pending roster override, as the
     // shift-type one's lives in `conflicts`. Its refusal codes come with it.
-    'services/roster-erasures', // rotation
+    'services/roster-erasures', // rotation, swaps
     // Epic 11 retro A7: one day's short-staffed report over a change's erasure
     // "after" (`dayReportOf`), for the rotation builder's review of a pending
     // override, whose confirm and amend change one day as the day detail's do.
-    'utils/change-preview', // rotation
+    'utils/change-preview', // rotation, swaps
   ],
   // Story 5.3c: the calendar's marks derive every collision through
   // *Raspored*'s own recipe (`collisionInputOf`), never a second one. Story
@@ -227,13 +231,13 @@ export const FEATURE_PUBLIC = {
     'services/override-erasures', // calendar, rotation
     'services/replacement-effect', // hours, leave
     'services/resolution-screen', // leave
-    'services/resolutions', // calendar, hours, leave, teams, today
+    'services/resolutions', // calendar, hours, leave, swaps, teams, today
     'services/resolved-conflicts', // leave
   ],
   'hour-bands': [
     // The generic time helpers (`minuteOfTime`, `durationValuesOf`)
     // moved to `utils/time`, so shift-types no longer reaches this module.
-    'services/list', // calendar, conflicts, hours, organization, today, pages
+    'services/list', // calendar, conflicts, hours, organization, swaps, today, pages
     'services/write', // pages
   ],
   // Story 6.1b: *Danas*'s hours tile is *Sati*'s own surface for the
@@ -243,7 +247,7 @@ export const FEATURE_PUBLIC = {
   // through *Sati*'s own input (`memberHoursInputOf`) and leave-hours keys
   // (`hoursLeaveKeysOf`), never a second recipe.
   hours: [
-    'services/hours-conflicts', // calendar, today
+    'services/hours-conflicts', // calendar, swaps, today
     // Epic 4 retro P1: *Sati*'s URL, moved out of `my-hours`; the route parses with it.
     'services/hours-search', // pages, today
     'services/my-hours', // calendar, pages, today
@@ -291,8 +295,8 @@ export const FEATURE_PUBLIC = {
     // without reaching into this one.
     'services/list', // conflicts, leave, teams, today, pages
     'services/surface-keys', // leave (public: the member page's key set)
-    'utils/position', // calendar, conflicts, teams
-    'utils/rank', // calendar, conflicts, organization, teams
+    'utils/position', // calendar, conflicts, swaps, teams
+    'utils/rank', // calendar, conflicts, organization, swaps, teams
   ],
   // SINCE STORY 6.3: *Danas* reads the chrome's cached role under its key, never
   // a read of its own, and narrows it as the calendar does.
@@ -337,9 +341,16 @@ export const FEATURE_PUBLIC = {
     'hooks/use-staffing-leave', // calendar, leave, members, rotation
     'services/short-staffed', // calendar, conflicts, leave, members, rotation
   ],
+  // Story 12.2: `/kalendar/zamjena` reads its search and its role gate's
+  // states through the proposal's rules, and names its main region by the
+  // surface's heading id.
+  swaps: [
+    'services/swap-proposal', // pages
+    'utils/element-ids', // pages
+  ],
   // Story 6.1b: *Danas*'s retry reads the team line's key again with the rest.
   teams: [
-    'services/dependents', // conflicts, hour-bands, leave, members
+    'services/dependents', // conflicts, hour-bands, leave, members, swaps
     'services/list', // calendar, members, rotation, pages
     'services/roster', // pages, today
     'services/write', // pages

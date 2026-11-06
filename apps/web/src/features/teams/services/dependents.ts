@@ -152,6 +152,15 @@ export const LEAVE_REQUEST_WRITE_DEPENDENTS: readonly QueryKey[] = [
 ];
 
 /**
+ * A swap proposed (story 12.2): the surface re-reads its own calendar
+ * snapshot, and nothing else. A PROPOSED SWAP DERIVES NOTHING (R9.1, 0049): no
+ * schedule, roster, hours or queue reads it, and no screen reads
+ * a swap yet, so no key is named. 12.3 and 12.4 add the swap keys
+ * here when their reads land.
+ */
+export const SWAP_REQUEST_WRITE_DEPENDENTS: readonly QueryKey[] = [];
+
+/**
  * A leave request rejected (story 9.4): only the decision is recorded and the
  * request closed, so the request keys alone.
  */

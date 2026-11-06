@@ -1219,6 +1219,9 @@ describe('no read retry offline, on any surface (story 8.2e)', () => {
     ['features/conflicts/hooks/use-conflict-resolution.ts', /retryable: clock\.online && screen\.kind === RESOLUTION_UNAVAILABLE,/],
     // Story 9.4: one leave request's decision screen.
     ['features/leave/hooks/use-leave-request-review.ts', /retryable: clock\.online && screen\.kind === REVIEW_UNAVAILABLE,/],
+    // Story 12.2: the swap proposal's role gate, and its form's snapshot.
+    ['features/swaps/hooks/use-swap-proposal.ts', /retryable: clock\.online && view === SWAP_VIEW_UNAVAILABLE,/],
+    ['features/swaps/hooks/use-swap-proposal.ts', /retryable: clock\.online && calendar\.refusal !== null,/],
     ['features/members/hooks/use-member-edit.ts', /readRetryable: clock\.online && /],
     ['features/members/hooks/use-member-edit.ts', /teamsRetryable: clock\.online && teamsState\.refusal !== null,/],
     ['features/leave/hooks/use-member-leave.ts', /retryable: clock\.online && base\.kind === LEAVE_UNAVAILABLE,/],
@@ -1248,6 +1251,9 @@ describe('no read retry offline, on any surface (story 8.2e)', () => {
     ['features/conflicts/components/conflict-resolution-body.tsx', 'onClick={retry}'],
     // Story 9.4: one leave request's decision screen's retry.
     ['features/leave/components/leave-request-review-body.tsx', 'onClick={state.retry}'],
+    // Story 12.2: the swap proposal's retry, and the page's while the role cannot be read.
+    ['features/swaps/components/swap-proposal-form.tsx', 'onClick={form.retry}'],
+    ['pages/kalendar.zamjena.tsx', 'onClick={retry}'],
     ['features/members/components/member-basics-card.tsx', 'onClick={edit.retryMembers}'],
     ['features/members/components/member-team-card.tsx', 'onClick={edit.retryTeams}'],
     ['features/leave/components/member-leave-card.tsx', 'onClick={leave.retry}'],

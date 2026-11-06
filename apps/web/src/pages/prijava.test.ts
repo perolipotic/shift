@@ -19,6 +19,7 @@ import {
   KALENDAR,
   labelTargets,
   LEAVE_REQUEST,
+  SWAP_PROPOSAL,
   LEAVE_REQUEST_REVIEW,
   MEMBER_CREATE,
   MEMBER_EDIT,
@@ -465,6 +466,17 @@ const IN_FLIGHT_HANDLERS = [
     effect: 'decideLeaveRequest(',
     inFlight: 'deciding',
     handler: 'decide',
+    pending: 'setPending',
+    failure: 'setFailure',
+  },
+  {
+    // STORY 12.2: a member's swap proposal, *Pošalji*, with its own ref; a
+    // landed send returns to *Kalendar*, a refusal stays with its alert.
+    name: "the swap proposal's send",
+    file: SWAP_PROPOSAL,
+    effect: 'sendSwapProposal(',
+    inFlight: 'sending',
+    handler: 'send',
     pending: 'setPending',
     failure: 'setFailure',
   },
@@ -1109,7 +1121,8 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // STILL THIRTY SINCE STORY 7.18: the settings surface's `submit` became
     // the dialogs' one runner, `write`.
     // THIRTY-THREE SINCE STORY 9.4: the leave request decision's decide.
-    expect(IN_FLIGHT_HANDLERS.length, 'an awaiting handler is swept by nothing').toBe(33);
+    // THIRTY-FOUR SINCE STORY 12.2: the swap proposal's send.
+    expect(IN_FLIGHT_HANDLERS.length, 'an awaiting handler is swept by nothing').toBe(34);
     expect(
       IN_FLIGHT_HANDLERS.map((entry) => `${entry.handler}/${entry.inFlight}`).sort(),
       'the in-flight handler names drifted from the handlers that hold them',
@@ -1132,6 +1145,7 @@ describe('the screen reaches the authentication seam rather than faking one', ()
       'removeChange/writing',
       'save/recording',
       'saveTimes/writing',
+      'send/sending',
       'send/sending',
       'submit/creating',
       'submit/creating',

@@ -6,6 +6,7 @@ import { godisnjiRoute } from '@/pages/godisnji';
 import { godisnjiZatraziRoute } from '@/pages/godisnji.zatrazi';
 import { indexRoute } from '@/pages/index';
 import { kalendarRoute } from '@/pages/kalendar';
+import { kalendarZamjenaRoute } from '@/pages/kalendar.zamjena';
 import { ljudiMemberRoute } from '@/pages/ljudi.$id';
 import { ljudiNoviRoute } from '@/pages/ljudi.novi';
 import { ljudiSmjenaRoute } from '@/pages/ljudi.smjene.$id';
@@ -48,6 +49,11 @@ import { currentSessionForReads } from '@/lib/supabase/offline-session';
 const appDestinations = appLayoutRoute.addChildren([
   danasRoute,
   kalendarRoute,
+  // STORY 12.2: a member's swap proposal, on 1.7a's terms — nested under the
+  // layout, absent from the destinations (the `Kalendar` tab lights for it).
+  // No `beforeLoad`: the role is the calendar snapshot's, and an admin is
+  // sent to `/kalendar` from the screen.
+  kalendarZamjenaRoute,
   satiRoute,
   godisnjiRoute,
   // STORY 9.3: the member's leave request form, on 1.7a's terms — nested

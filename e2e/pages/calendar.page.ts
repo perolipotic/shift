@@ -859,4 +859,31 @@ export class CalendarPage extends BasePage {
   personNoTeam(name: string): Locator {
     return this.text(fill(kalendar.person.noTeam, { name }));
   }
+
+  // ------------------------------------------------ the swap proposal (12.2)
+
+  /** The day detail's *Predloži zamjenu*, a link to `/kalendar/zamjena`. */
+  get swapAction(): Locator {
+    return this.page.getByRole('link', { name: kalendar.swap.action });
+  }
+
+  /** Opens the swap proposal for `teamId` on `date` by its URL. */
+  async gotoSwap(date: string, teamId: string): Promise<void> {
+    await this.page.goto(`/kalendar/zamjena?dan=${date}&smjena=${teamId}`);
+  }
+
+  /** The swap proposal's colleague field. */
+  get swapColleague(): Locator {
+    return this.page.getByLabel(kalendar.swap.colleague, { exact: true });
+  }
+
+  /** The swap proposal's return shift field. */
+  get swapReturn(): Locator {
+    return this.page.getByLabel(kalendar.swap.returnShift, { exact: true });
+  }
+
+  /** The swap proposal's *Pošalji*. */
+  get swapSendButton(): Locator {
+    return this.page.getByRole('button', { name: kalendar.swap.submit, exact: true });
+  }
 }
