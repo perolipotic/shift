@@ -176,13 +176,12 @@ test.describe('a member proposes a swap', () => {
       { addresseeId: colleague.id, teamId: proposerTeam.id, date: given, returnTeamId: null, returnDate: null, open: true },
     ]);
 
-    // DUPLICATE: a second open proposal of the same shift is refused, named, and the choice kept.
+    // DUPLICATE (story 12.3): a shift already proposed in an open swap shows a notice naming the
+    // colleague, and no form, so no second proposal can be sent (0049's 23505 stays the backstop).
     await calendarPage.gotoSwap(given, proposerTeam.id);
-    await calendarPage.swapColleague.selectOption(colleague.id);
-    await calendarPage.swapSendButton.click();
-    await expect(calendarPage.alertWith(swap.duplicate)).toBeVisible();
-    await expect(page).toHaveURL(/\/kalendar\/zamjena\?/);
-    await expect(calendarPage.swapColleague).toHaveValue(colleague.id);
+    await expect(calendarPage.text(fill(swap.alreadyProposed, { name: colleague.name }))).toBeVisible();
+    await expect(calendarPage.swapColleague).toHaveCount(0);
+    await expect(calendarPage.swapSendButton).toHaveCount(0);
     expect(await swapRequestsOfInSql(fixture.slug, proposer.id)).toHaveLength(1);
   });
 
