@@ -936,7 +936,7 @@ describe('the access-control layer is present, so nothing below passes vacuously
       );
       expect(
         policies.map((row) => row.policyname),
-        'stories 1.3a, 1.4a, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a, 3.5a, 3.6a, 5.1b, 5.4a, 9.2, 10.3, 10.4 and 0025 own exactly these policies; a missing one refuses silently and looks like a working refusal',
+        'stories 1.3a, 1.4a, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a, 3.5a, 3.6a, 5.1b, 5.4a, 9.2, 10.3, 10.4, 12.1 and 0025 own exactly these policies; a missing one refuses silently and looks like a working refusal',
       ).toEqual([
         // STORY 5.4a: read and insert alone, and both an active admin's only;
         // a member reads their own live rows through `my_conflict_resolutions`.
@@ -1019,6 +1019,15 @@ describe('the access-control layer is present, so nothing below passes vacuously
         'shift_types_insert_by_own_active_admin',
         'shift_types_select_own_organization',
         'shift_types_update_by_own_active_admin',
+        // STORY 12.1: 9.2's three on swaps — a decision is read alone, by an
+        // active admin for the organization and an active member for the swaps
+        // they are part of; a swap is inserted by any active account as its
+        // own proposer. No update and no delete: the answer and the close are
+        // `answer_swap_request`'s, `withdraw_swap_request`'s and
+        // `decide_swap_request`'s.
+        'swap_request_decisions_select_own_organization',
+        'swap_requests_insert_own_by_active_member',
+        'swap_requests_select_own_organization',
         // STORY 1.7b: the status table's three, for the same reason — a
         // membership version is appended, and cancelled only before it has
         // decided any day.
@@ -1038,6 +1047,7 @@ describe('the access-control layer is present, so nothing below passes vacuously
             and proname in (
               'amend_leave_record',
               'amend_roster_override',
+              'answer_swap_request',
               'amend_shift_type_override',
               'calendar_members',
               'calendar_people',
@@ -1048,6 +1058,7 @@ describe('the access-control layer is present, so nothing below passes vacuously
               'current_member_access',
               'custom_access_token_hook',
               'decide_leave_request',
+              'decide_swap_request',
               'leave_overview_records',
               'member_active_from',
               'member_active_on',
@@ -1071,10 +1082,12 @@ describe('the access-control layer is present, so nothing below passes vacuously
               'rotation_steps_in_view',
               'shift_type_latest_version',
               'shift_type_times_on',
+              'swap_parties_active',
               'team_in_use',
               'team_membership_latest_version',
               'team_roster',
-              'withdraw_leave_request'
+              'withdraw_leave_request',
+              'withdraw_swap_request'
             )
           order by proname`,
       );
@@ -1092,6 +1105,9 @@ describe('the access-control layer is present, so nothing below passes vacuously
         // STORY 3.5c: the atomic amend — soft-remove and insert in one
         // transaction, both attributed to the caller.
         'amend_shift_type_override',
+        // STORY 12.1: the addressee's accept or decline of a proposed swap;
+        // a decline closes it.
+        'answer_swap_request',
         // STORY 3.4a: the one reading the calendar learns every colleague's
         // id, name and rank through, active or not. It REPLACED 3.3b's
         // `calendar_people`, which is gone — asked for above, and absent.
@@ -1114,6 +1130,10 @@ describe('the access-control layer is present, so nothing below passes vacuously
         // leave request — the leave record, the decision and the close in one
         // transaction.
         'decide_leave_request',
+        // STORY 12.1: an active admin's approval or rejection of an accepted
+        // swap — the roster overrides, the decision and the close in one
+        // transaction.
+        'decide_swap_request',
         // STORY 7.15: the one an active admin reads the organization's live
         // leave records through, shaped as 5.2c's, refusing anybody else.
         'leave_overview_records',
@@ -1159,6 +1179,9 @@ describe('the access-control layer is present, so nothing below passes vacuously
         // STORY 2.2a: the two readers the version and archive policies call.
         'shift_type_latest_version',
         'shift_type_times_on',
+        // STORY 12.1 (F1): the swap insert policy's narrow definer, whether
+        // the swap puts an inactive member on a shift.
+        'swap_parties_active',
         'team_in_use',
         'team_membership_latest_version',
         // STORY 1.8: the one reading a member-role session learns a colleague's
@@ -1167,6 +1190,9 @@ describe('the access-control layer is present, so nothing below passes vacuously
         // STORY 9.2: a member's attributed close of their own pending leave
         // request, with no decision.
         'withdraw_leave_request',
+        // STORY 12.1: either party's attributed close of an open swap before
+        // an admin decides it, with no decision.
+        'withdraw_swap_request',
       ]);
     } finally {
       await client.end();
@@ -23293,6 +23319,1261 @@ describe('minimum members (0048)', () => {
         if (own !== undefined) {
           await client.query('update organizations set minimum_members = $1 where id = $2', [seeded, own]);
         }
+        await client.end();
+      }
+    },
+    20_000,
+  );
+});
+
+// -------------------------------------------- story 12.1: the swap request record
+
+/**
+ * STORY 12.1 (`0049`). A member proposes to give one shift of theirs (a team
+ * and a date) to a colleague, and optionally to take one of the colleague's in
+ * return, by inserting a `swap_requests` row as its own proposer alone (AD-10's
+ * self-owned row). The addressee accepts or declines through
+ * `answer_swap_request`; either party withdraws through
+ * `withdraw_swap_request` (the addressee once accepted); an active admin
+ * approves or rejects an accepted swap through `decide_swap_request`, the
+ * approval writing the roster overrides, the decision and the close in one
+ * transaction. A proposed or accepted swap derives nothing (R9.1). Every SQL
+ * case runs in a rolled-back transaction; the REST case commits inside year
+ * 2047 and deletes what it wrote in `finally`.
+ */
+
+/** The given and return shift dates the SQL cases use: far ahead, clear of every seeded override. */
+const SWAP_GIVEN = '2046-10-12';
+const SWAP_RETURN = '2046-10-14';
+
+interface SwapProposal {
+  readonly organization: string;
+  readonly proposer: string;
+  readonly addressee: string;
+  readonly team: string;
+  readonly date: string;
+  readonly returnTeam?: string | null;
+  readonly returnDate?: string | null;
+}
+
+/** One swap, written as whoever the connection currently is: the seven columns a session may name. */
+async function insertSwap(client: Client, swap: SwapProposal): Promise<string> {
+  const { rows } = await client.query<{ id: string }>(
+    `insert into swap_requests (organization_id, proposer_id, addressee_id, team_id, date, return_team_id, return_date)
+     values ($1, $2, $3, $4, $5::date, $6, $7::date)
+     returning id::text as id`,
+    [swap.organization, swap.proposer, swap.addressee, swap.team, swap.date, swap.returnTeam ?? null, swap.returnDate ?? null],
+  );
+  const id = rows[0]?.id;
+  if (id === undefined) throw new Error('the swap insert returned no id');
+  return id;
+}
+
+/** `answer_swap_request(id, answer)`, as whoever the connection currently is. */
+async function answerSwap(client: Client, id: string, answer: string | null): Promise<void> {
+  await client.query('select public.answer_swap_request($1::uuid, $2)', [id, answer]);
+}
+
+/** `withdraw_swap_request(id)`, as whoever the connection currently is. */
+async function withdrawSwap(client: Client, id: string): Promise<void> {
+  await client.query('select public.withdraw_swap_request($1::uuid)', [id]);
+}
+
+/** `decide_swap_request(id, outcome, reason)`, as whoever the connection currently is: the given shift's override id, or null. */
+async function decideSwap(client: Client, id: string, outcome: string | null, reason = 'Zamjena smjena.'): Promise<string | null> {
+  const { rows } = await client.query<{ id: string | null }>(
+    'select public.decide_swap_request($1::uuid, $2, $3)::text as id',
+    [id, outcome, reason],
+  );
+  const answer = rows[0];
+  if (answer === undefined) throw new Error('the swap decision answered no row');
+  return answer.id;
+}
+
+/** The ids of the swaps the connection currently sees. */
+async function visibleSwaps(client: Client): Promise<string[]> {
+  const { rows } = await client.query<{ id: string }>('select id::text as id from swap_requests order by id');
+  return rows.map((row) => row.id);
+}
+
+/** The request ids of the swap decisions the connection currently sees. */
+async function visibleSwapDecisions(client: Client): Promise<string[]> {
+  const { rows } = await client.query<{ id: string }>(
+    'select request_id::text as id from swap_request_decisions order by request_id',
+  );
+  return rows.map((row) => row.id);
+}
+
+interface SwapState {
+  answer: string | null;
+  answeredBy: string | null;
+  closedBy: string | null;
+  closed: boolean;
+  outcome: string | null;
+  override: string | null;
+  returnOverride: string | null;
+  decidedBy: string | null;
+}
+
+/** One swap's answer, close and decision, as the owner sees them. */
+async function swapState(client: Client, id: string): Promise<SwapState> {
+  const { rows } = await client.query<SwapState>(
+    `select r.answer,
+            r.answered_by::text as "answeredBy",
+            r.closed_by::text as "closedBy",
+            r.closed_at is not null as closed,
+            d.outcome,
+            d.roster_override_id::text as override,
+            d.return_roster_override_id::text as "returnOverride",
+            d.decided_by::text as "decidedBy"
+       from swap_requests r
+       left join swap_request_decisions d on d.request_id = r.id
+      where r.id = $1`,
+    [id],
+  );
+  const found = rows[0];
+  if (found === undefined) throw new Error(`swap request ${id} is not in the database`);
+  return found;
+}
+
+const PROPOSED: SwapState = {
+  answer: null,
+  answeredBy: null,
+  closedBy: null,
+  closed: false,
+  outcome: null,
+  override: null,
+  returnOverride: null,
+  decidedBy: null,
+};
+
+const accepted = (by: string): SwapState => ({ ...PROPOSED, answer: 'accepted', answeredBy: by });
+
+/** The fixture's admin, member (the proposer) and bystander (the addressee), and two live teams. */
+async function swapCast(
+  client: Client,
+  fixture: { slug: string; admin: string; member: string; bystander: string },
+): Promise<{ owner: MemberRow; self: MemberRow; other: MemberRow; organization: string; team: string; returnTeam: string }> {
+  const owner = await memberByUsername(client, fixture.slug, fixture.admin);
+  const self = await memberByUsername(client, fixture.slug, fixture.member);
+  const other = await memberByUsername(client, fixture.slug, fixture.bystander);
+  const [team, returnTeam] = await twoLiveTeamsOf(client, owner.organizationId);
+  return { owner, self, other, organization: owner.organizationId, team, returnTeam };
+}
+
+/** One swap written as the OWNER, past every policy (a past date, an inactive party): a starting state, never the write a case is about. */
+async function insertedSwapAsOwner(client: Client, swap: SwapProposal & { readonly by: string }): Promise<string> {
+  const { rows } = await client.query<{ id: string }>(
+    `insert into swap_requests (organization_id, proposer_id, addressee_id, team_id, date, return_team_id, return_date, created_by)
+     values ($1, $2, $3, $4, $5::date, $6, $7::date, $8)
+     returning id::text as id`,
+    [swap.organization, swap.proposer, swap.addressee, swap.team, swap.date, swap.returnTeam ?? null, swap.returnDate ?? null, swap.by],
+  );
+  const id = rows[0]?.id;
+  if (id === undefined) throw new Error('the owner swap insert returned no id');
+  return id;
+}
+
+/** A swap closed as the deactivation trigger closes one, by `by`. */
+const closedOnSwapDeactivation = (by: string, answer: SwapState = PROPOSED): SwapState => ({
+  ...answer,
+  closedBy: by,
+  closed: true,
+  outcome: 'deactivated',
+  override: null,
+  returnOverride: null,
+  decidedBy: by,
+});
+
+describe('a member proposes a swap as its own proposer, the colleague answers, either withdraws, and only an admin decides it (story 12.1)', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'stores a $fixture swap, with and without a return shift, proposed and attributed, and shows it to both parties and the admin alone',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { owner, self, other, organization, team, returnTeam } = await swapCast(client, fixture);
+        const third = await addThrowawayMember(client, organization);
+
+        await actAs(client, self.authUserId, organization);
+        const cover = await insertSwap(client, { organization, proposer: self.id, addressee: other.id, team, date: SWAP_GIVEN });
+        const swap = await insertSwap(client, {
+          organization,
+          proposer: self.id,
+          addressee: other.id,
+          team: returnTeam,
+          date: SWAP_GIVEN,
+          returnTeam: team,
+          returnDate: SWAP_RETURN,
+        });
+        const asSelf = await visibleSwaps(client);
+        await actAs(client, other.authUserId, organization);
+        const asAddressee = await visibleSwaps(client);
+        await actAs(client, owner.authUserId, organization);
+        const asAdmin = await visibleSwaps(client);
+        await actAs(client, third.authUserId, organization);
+        const asThird = await visibleSwaps(client);
+        await actAsOwner(client);
+
+        const { rows } = await client.query<{ createdBy: string; recent: boolean; returnDate: string | null }>(
+          `select created_by::text as "createdBy", created_at > now() - interval '1 minute' as recent,
+                  return_date::text as "returnDate"
+             from swap_requests where id = any($1::uuid[]) order by return_date nulls first`,
+          [[cover, swap]],
+        );
+        expect(rows, fixture.slug).toEqual([
+          { createdBy: self.authUserId, recent: true, returnDate: null },
+          { createdBy: self.authUserId, recent: true, returnDate: SWAP_RETURN },
+        ]);
+        for (const id of [cover, swap]) {
+          expect(await swapState(client, id), `${fixture.slug}: a new swap is not proposed`).toEqual(PROPOSED);
+        }
+        expect(asSelf, fixture.slug).toEqual([cover, swap].sort());
+        expect(asAddressee, `${fixture.slug}: the addressee does not read the swap`).toEqual([cover, swap].sort());
+        expect(asAdmin, `${fixture.slug}: the admin does not read the organization's swaps`).toEqual(
+          expect.arrayContaining([cover, swap]),
+        );
+        expect(asThird, `${fixture.slug}: a third member read a colleague's swap`).toEqual([]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture swap for a colleague, one naming its attribution, answer or close, and one by an inactive or unclaimed account (42501)',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { owner, self, other, organization, team } = await swapCast(client, fixture);
+        const base = { organization, proposer: self.id, addressee: other.id, team, date: SWAP_GIVEN };
+        const named = (column: string, value: string) =>
+          client.query(
+            `insert into swap_requests (organization_id, proposer_id, addressee_id, team_id, date, ${column})
+             values ($1, $2, $3, $4, $5::date, $6)`,
+            [organization, self.id, other.id, team, SWAP_GIVEN, value],
+          );
+
+        await actAs(client, self.authUserId, organization);
+        const codes: Record<string, string> = {};
+        codes['colleague'] = (
+          await refusedThenContinue(client, () => insertSwap(client, { ...base, proposer: other.id, addressee: self.id }))
+        ).code;
+        codes['created_by'] = (await refusedThenContinue(client, () => named('created_by', owner.authUserId))).code;
+        codes['answer'] = (await refusedThenContinue(client, () => named('answer', 'accepted'))).code;
+        codes['answered_by'] = (await refusedThenContinue(client, () => named('answered_by', other.authUserId))).code;
+        codes['closed_at'] = (await refusedThenContinue(client, () => named('closed_at', '2046-01-01T00:00:00Z'))).code;
+        await actAs(client, owner.authUserId, organization);
+        codes['admin for a colleague'] = (await refusedThenContinue(client, () => insertSwap(client, base))).code;
+        await actAs(client, self.authUserId, null);
+        codes['no claim'] = (await refusedThenContinue(client, () => insertSwap(client, base))).code;
+        await actAsOwner(client);
+        await client.query("update auth.users set banned_until = now() + interval '1 day' where id = $1", [
+          self.authUserId,
+        ]);
+        await actAs(client, self.authUserId, organization);
+        codes['inactive'] = (await refusedThenContinue(client, () => insertSwap(client, base))).code;
+        await actAsOwner(client);
+
+        expect(codes, fixture.slug).toEqual({
+          colleague: '42501',
+          created_by: '42501',
+          answer: '42501',
+          answered_by: '42501',
+          closed_at: '42501',
+          'admin for a colleague': '42501',
+          'no claim': '42501',
+          inactive: '42501',
+        });
+        const { rows } = await client.query<{ total: number }>(
+          'select count(*)::int as total from swap_requests where organization_id = $1',
+          [organization],
+        );
+        expect(rows[0]?.total, `${fixture.slug}: a refused swap was stored`).toBe(0);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture swap of a past date (42501), to oneself, of the given shift in return or with half a return shift (23514), and stores one from today',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { self, other, organization, team, returnTeam } = await swapCast(client, fixture);
+        const today = await organizationDay(client, organization);
+        const yesterday = await organizationDay(client, organization, -1);
+        const base = { organization, proposer: self.id, addressee: other.id, team, date: today };
+
+        await actAs(client, self.authUserId, organization);
+        const pastGiven = await refusedThenContinue(client, () => insertSwap(client, { ...base, date: yesterday }));
+        const pastReturn = await refusedThenContinue(client, () =>
+          insertSwap(client, { ...base, returnTeam, returnDate: yesterday }),
+        );
+        const toSelf = await refusedThenContinue(client, () => insertSwap(client, { ...base, addressee: self.id }));
+        const sameShift = await refusedThenContinue(client, () =>
+          insertSwap(client, { ...base, returnTeam: team, returnDate: today }),
+        );
+        const halfReturn = await refusedThenContinue(client, () => insertSwap(client, { ...base, returnTeam }));
+        const fromToday = await insertSwap(client, { ...base, returnTeam: team, returnDate: await organizationDay(client, organization, 1) });
+        await actAsOwner(client);
+
+        expect(pastGiven.code, fixture.slug).toBe('42501');
+        expect(pastReturn.code, fixture.slug).toBe('42501');
+        expect(toSelf, fixture.slug).toMatchObject({ code: '23514' });
+        expect(toSelf.message, fixture.slug).toContain('swap_requests_members_distinct');
+        expect(sameShift.code, fixture.slug).toBe('23514');
+        expect(sameShift.message, fixture.slug).toContain('swap_requests_return_not_given');
+        expect(halfReturn.code, fixture.slug).toBe('23514');
+        expect(halfReturn.message, fixture.slug).toContain('swap_requests_return_complete');
+        expect(await swapState(client, fromToday), fixture.slug).toEqual(PROPOSED);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a second open $fixture swap of one given shift or one return shift (23505), and stores it once the first is closed',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { self, other, organization, team, returnTeam } = await swapCast(client, fixture);
+        const third = await addThrowawayMember(client, organization);
+        const base = { organization, proposer: self.id, addressee: other.id, team, date: SWAP_GIVEN };
+
+        await actAs(client, self.authUserId, organization);
+        const first = await insertSwap(client, base);
+        const again = await refusedThenContinue(client, () => insertSwap(client, base));
+        const toAnother = await refusedThenContinue(client, () => insertSwap(client, { ...base, addressee: third.id }));
+        await withdrawSwap(client, first);
+        const afterClose = await insertSwap(client, base);
+        const withReturn = await insertSwap(client, {
+          ...base,
+          team: returnTeam,
+          returnTeam: team,
+          returnDate: SWAP_RETURN,
+        });
+        await actAs(client, third.authUserId, organization);
+        // The third member asks the same addressee for the same return shift.
+        const sameReturn = await refusedThenContinue(client, () =>
+          insertSwap(client, { organization, proposer: third.id, addressee: other.id, team, date: SWAP_GIVEN, returnTeam: team, returnDate: SWAP_RETURN }),
+        );
+        await actAsOwner(client);
+
+        expect(again.code, fixture.slug).toBe('23505');
+        expect(again.message, fixture.slug).toContain('swap_requests_open_given_key');
+        expect(toAnother.code, `${fixture.slug}: one shift is offered to two colleagues at once`).toBe('23505');
+        expect(sameReturn.code, fixture.slug).toBe('23505');
+        expect(sameReturn.message, fixture.slug).toContain('swap_requests_open_return_key');
+        expect(await swapState(client, afterClose), fixture.slug).toEqual(PROPOSED);
+        expect(await swapState(client, withReturn), fixture.slug).toEqual(PROPOSED);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'lets the $fixture addressee accept or decline (a decline closes), and refuses the proposer, the admin, a second answer (P0002), a bad answer (22023) and an inactive caller (42501)',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { owner, self, other, organization, team, returnTeam } = await swapCast(client, fixture);
+
+        await actAs(client, self.authUserId, organization);
+        const toAccept = await insertSwap(client, { organization, proposer: self.id, addressee: other.id, team, date: SWAP_GIVEN });
+        const toDecline = await insertSwap(client, { organization, proposer: self.id, addressee: other.id, team: returnTeam, date: SWAP_GIVEN });
+        const untouched = await insertSwap(client, { organization, proposer: self.id, addressee: other.id, team, date: SWAP_RETURN });
+        const byProposer = await refusedThenContinue(client, () => answerSwap(client, untouched, 'accepted'));
+        await actAs(client, owner.authUserId, organization);
+        const byAdmin = await refusedThenContinue(client, () => answerSwap(client, untouched, 'accepted'));
+        await actAs(client, other.authUserId, organization);
+        const badAnswer = await refusedThenContinue(client, () => answerSwap(client, untouched, 'maybe'));
+        const nullAnswer = await refusedThenContinue(client, () => answerSwap(client, untouched, null));
+        await answerSwap(client, toAccept, 'accepted');
+        await answerSwap(client, toDecline, 'declined');
+        const twice = await refusedThenContinue(client, () => answerSwap(client, toAccept, 'declined'));
+        const afterDecline = await refusedThenContinue(client, () => answerSwap(client, toDecline, 'accepted'));
+        const unknown = await refusedThenContinue(client, () => answerSwap(client, crypto.randomUUID(), 'accepted'));
+        await actAs(client, other.authUserId, null);
+        const noClaim = await refusedThenContinue(client, () => answerSwap(client, untouched, 'accepted'));
+        await actAsOwner(client);
+        await client.query("update auth.users set banned_until = now() + interval '1 day' where id = $1", [
+          other.authUserId,
+        ]);
+        await actAs(client, other.authUserId, organization);
+        const inactive = await refusedThenContinue(client, () => answerSwap(client, untouched, 'accepted'));
+        await actAsOwner(client);
+
+        expect(await swapState(client, toAccept), fixture.slug).toEqual(accepted(other.authUserId));
+        expect(await swapState(client, toDecline), `${fixture.slug}: a decline did not close the swap`).toEqual({
+          ...PROPOSED,
+          answer: 'declined',
+          answeredBy: other.authUserId,
+          closedBy: other.authUserId,
+          closed: true,
+        });
+        for (const [label, refusal] of [
+          ['proposer', byProposer],
+          ['admin', byAdmin],
+          ['twice', twice],
+          ['after decline', afterDecline],
+          ['unknown', unknown],
+        ] as const) {
+          expect(refusal, `${fixture.slug}: ${label}`).toMatchObject({ code: 'P0002', message: 'SWAP_REQUEST_NOT_OPEN' });
+        }
+        expect(badAnswer, fixture.slug).toMatchObject({ code: '22023', message: 'SWAP_REQUEST_ANSWER_UNKNOWN' });
+        expect(nullAnswer, fixture.slug).toMatchObject({ code: '22023', message: 'SWAP_REQUEST_ANSWER_UNKNOWN' });
+        expect(noClaim, fixture.slug).toMatchObject({ code: '42501', message: 'SWAP_REQUEST_ANSWER_REFUSED' });
+        expect(inactive, fixture.slug).toMatchObject({ code: '42501', message: 'SWAP_REQUEST_ANSWER_REFUSED' });
+        expect(await swapState(client, untouched), `${fixture.slug}: a refused answer touched the swap`).toEqual(PROPOSED);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'lets the $fixture proposer withdraw a proposed or accepted swap and the addressee an accepted one, and refuses the addressee before accepting, a third member and the admin (P0002) and an inactive caller (42501)',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { owner, self, other, organization, team, returnTeam } = await swapCast(client, fixture);
+        const third = await addThrowawayMember(client, organization);
+        const shift = (t: string, date: string) => ({ organization, proposer: self.id, addressee: other.id, team: t, date });
+
+        await actAs(client, self.authUserId, organization);
+        const proposedByProposer = await insertSwap(client, shift(team, '2046-10-01'));
+        const acceptedByProposer = await insertSwap(client, shift(team, '2046-10-02'));
+        const acceptedByAddressee = await insertSwap(client, shift(team, '2046-10-03'));
+        const proposed = await insertSwap(client, shift(returnTeam, '2046-10-04'));
+        await actAs(client, other.authUserId, organization);
+        await answerSwap(client, acceptedByProposer, 'accepted');
+        await answerSwap(client, acceptedByAddressee, 'accepted');
+        const addresseeBeforeAccepting = await refusedThenContinue(client, () => withdrawSwap(client, proposed));
+        await withdrawSwap(client, acceptedByAddressee);
+        await actAs(client, self.authUserId, organization);
+        await withdrawSwap(client, proposedByProposer);
+        await withdrawSwap(client, acceptedByProposer);
+        const again = await refusedThenContinue(client, () => withdrawSwap(client, proposedByProposer));
+        await actAs(client, third.authUserId, organization);
+        const byThird = await refusedThenContinue(client, () => withdrawSwap(client, proposed));
+        await actAs(client, owner.authUserId, organization);
+        const byAdmin = await refusedThenContinue(client, () => withdrawSwap(client, proposed));
+        await actAs(client, self.authUserId, null);
+        const noClaim = await refusedThenContinue(client, () => withdrawSwap(client, proposed));
+        await actAsOwner(client);
+        await client.query("update auth.users set banned_until = now() + interval '1 day' where id = $1", [
+          self.authUserId,
+        ]);
+        await actAs(client, self.authUserId, organization);
+        const inactive = await refusedThenContinue(client, () => withdrawSwap(client, proposed));
+        await actAsOwner(client);
+
+        const withdrawnBy = (by: string, answer: SwapState) => ({ ...answer, closedBy: by, closed: true });
+        expect(await swapState(client, proposedByProposer), fixture.slug).toEqual(withdrawnBy(self.authUserId, PROPOSED));
+        expect(await swapState(client, acceptedByProposer), fixture.slug).toEqual(
+          withdrawnBy(self.authUserId, accepted(other.authUserId)),
+        );
+        expect(await swapState(client, acceptedByAddressee), fixture.slug).toEqual(
+          withdrawnBy(other.authUserId, accepted(other.authUserId)),
+        );
+        for (const [label, refusal] of [
+          ['addressee before accepting', addresseeBeforeAccepting],
+          ['again', again],
+          ['third member', byThird],
+          ['admin', byAdmin],
+        ] as const) {
+          expect(refusal, `${fixture.slug}: ${label}`).toMatchObject({ code: 'P0002', message: 'SWAP_REQUEST_NOT_OPEN' });
+        }
+        expect(noClaim, fixture.slug).toMatchObject({ code: '42501', message: 'SWAP_REQUEST_WITHDRAWAL_REFUSED' });
+        expect(inactive, fixture.slug).toMatchObject({ code: '42501', message: 'SWAP_REQUEST_WITHDRAWAL_REFUSED' });
+        expect(await swapState(client, proposed), `${fixture.slug}: a refused withdrawal touched the swap`).toEqual(PROPOSED);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture member who decides, writes a decision or closes a swap directly (42501), an inactive admin, and an admin deciding a proposed swap (P0002) or naming a bad outcome (22023)',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { owner, self, other, organization, team, returnTeam } = await swapCast(client, fixture);
+        const inactive = await addThrowawayAdmin(client, organization);
+        const day = await organizationDay(client, organization);
+        await ownerVersion(client, { organization, member: inactive.id, active: false, from: day, by: owner.authUserId });
+
+        await actAs(client, self.authUserId, organization);
+        const id = await insertSwap(client, { organization, proposer: self.id, addressee: other.id, team, date: SWAP_GIVEN });
+        const proposed = await insertSwap(client, { organization, proposer: self.id, addressee: other.id, team: returnTeam, date: SWAP_GIVEN });
+        await actAs(client, other.authUserId, organization);
+        await answerSwap(client, id, 'accepted');
+        const codes: Record<string, Refusal> = {};
+        codes['decide'] = await refusedThenContinue(client, () => decideSwap(client, id, 'approved'));
+        codes['decision row'] = await refusedThenContinue(client, () =>
+          client.query(
+            `insert into swap_request_decisions (organization_id, request_id, outcome) values ($1, $2, 'rejected')`,
+            [organization, id],
+          ),
+        );
+        codes['close'] = await refusedThenContinue(client, () =>
+          client.query('update swap_requests set closed_by = $2, closed_at = now() where id = $1', [id, other.authUserId]),
+        );
+        codes['answer'] = await refusedThenContinue(client, () =>
+          client.query(`update swap_requests set answer = 'declined' where id = $1`, [id]),
+        );
+        codes['delete'] = await refusedThenContinue(client, () => client.query('delete from swap_requests where id = $1', [id]));
+        await actAs(client, inactive.authUserId, organization);
+        codes['inactive admin'] = await refusedThenContinue(client, () => decideSwap(client, id, 'approved'));
+        await actAs(client, owner.authUserId, null);
+        codes['no claim'] = await refusedThenContinue(client, () => decideSwap(client, id, 'approved'));
+        await actAs(client, owner.authUserId, organization);
+        const notAccepted = await refusedThenContinue(client, () => decideSwap(client, proposed, 'approved'));
+        const badOutcome = await refusedThenContinue(client, () => decideSwap(client, id, 'deactivated'));
+        const nullOutcome = await refusedThenContinue(client, () => decideSwap(client, id, null));
+        await actAsOwner(client);
+
+        expect(Object.fromEntries(Object.entries(codes).map(([label, refusal]) => [label, refusal.code])), fixture.slug).toEqual({
+          decide: '42501',
+          'decision row': '42501',
+          close: '42501',
+          answer: '42501',
+          delete: '42501',
+          'inactive admin': '42501',
+          'no claim': '42501',
+        });
+        for (const label of ['decide', 'inactive admin', 'no claim']) {
+          expect(codes[label]?.message, `${fixture.slug}: ${label}`).toBe('SWAP_REQUEST_DECISION_REFUSED');
+        }
+        expect(notAccepted, fixture.slug).toMatchObject({ code: 'P0002', message: 'SWAP_REQUEST_NOT_OPEN' });
+        expect(badOutcome, fixture.slug).toMatchObject({ code: '22023', message: 'SWAP_REQUEST_OUTCOME_UNKNOWN' });
+        expect(nullOutcome, fixture.slug).toMatchObject({ code: '22023', message: 'SWAP_REQUEST_OUTCOME_UNKNOWN' });
+        expect(await swapState(client, id), `${fixture.slug}: a refused write touched the swap`).toEqual(accepted(other.authUserId));
+        expect(await swapState(client, proposed), fixture.slug).toEqual(PROPOSED);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'approves an accepted $fixture swap into two roster overrides, a decision and a close all attributed to the admin, and both parties read the decision',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { owner, self, other, organization, team, returnTeam } = await swapCast(client, fixture);
+        const third = await addThrowawayMember(client, organization);
+
+        await actAs(client, self.authUserId, organization);
+        const id = await insertSwap(client, {
+          organization,
+          proposer: self.id,
+          addressee: other.id,
+          team,
+          date: SWAP_GIVEN,
+          returnTeam,
+          returnDate: SWAP_RETURN,
+        });
+        const cover = await insertSwap(client, { organization, proposer: self.id, addressee: other.id, team: returnTeam, date: SWAP_GIVEN });
+        await actAs(client, other.authUserId, organization);
+        await answerSwap(client, id, 'accepted');
+        await answerSwap(client, cover, 'accepted');
+        await actAs(client, owner.authUserId, organization);
+        const override = await decideSwap(client, id, 'approved', 'Zamjena smjena.');
+        const coverOverride = await decideSwap(client, cover, 'approved', 'Pokrivanje smjene.');
+        const twice = await refusedThenContinue(client, () => decideSwap(client, id, 'rejected'));
+        const asAdmin = await visibleSwapDecisions(client);
+        await actAs(client, self.authUserId, organization);
+        const asProposer = await visibleSwapDecisions(client);
+        const withdrawal = await refusedThenContinue(client, () => withdrawSwap(client, id));
+        await actAs(client, other.authUserId, organization);
+        const asAddressee = await visibleSwapDecisions(client);
+        await actAs(client, third.authUserId, organization);
+        const asThird = await visibleSwapDecisions(client);
+        await actAsOwner(client);
+
+        const state = await swapState(client, id);
+        expect(override, `${fixture.slug}: the approval returned no override`).not.toBeNull();
+        expect(state, fixture.slug).toEqual({
+          ...accepted(other.authUserId),
+          closedBy: owner.authUserId,
+          closed: true,
+          outcome: 'approved',
+          override,
+          returnOverride: expect.any(String),
+          decidedBy: owner.authUserId,
+        });
+        const { rows } = await client.query<Record<string, unknown>>(
+          `select id::text as id, team_id::text as team, date::text as date, member_out_id::text as "out",
+                  member_in_id::text as "in", reason, created_by::text as "createdBy", removed_at is null as live
+             from roster_overrides where id = any($1::uuid[]) order by date, team_id`,
+          [[override, state.returnOverride, coverOverride]],
+        );
+        const expected = [
+          { id: override, team, date: SWAP_GIVEN, out: self.id, in: other.id, reason: 'Zamjena smjena.', createdBy: owner.authUserId, live: true },
+          { id: coverOverride, team: returnTeam, date: SWAP_GIVEN, out: self.id, in: other.id, reason: 'Pokrivanje smjene.', createdBy: owner.authUserId, live: true },
+          { id: state.returnOverride, team: returnTeam, date: SWAP_RETURN, out: other.id, in: self.id, reason: 'Zamjena smjena.', createdBy: owner.authUserId, live: true },
+        ];
+        expect(rows, fixture.slug).toEqual(expect.arrayContaining(expected));
+        expect(rows.length, fixture.slug).toBe(3);
+        const coverState = await swapState(client, cover);
+        expect(coverState.override, fixture.slug).toBe(coverOverride);
+        expect(coverState.returnOverride, `${fixture.slug}: a one-way cover wrote a return override`).toBeNull();
+        expect(twice, fixture.slug).toMatchObject({ code: 'P0002', message: 'SWAP_REQUEST_NOT_OPEN' });
+        expect(withdrawal, fixture.slug).toMatchObject({ code: 'P0002', message: 'SWAP_REQUEST_NOT_OPEN' });
+        expect(asAdmin, fixture.slug).toEqual(expect.arrayContaining([id, cover]));
+        expect(asProposer, `${fixture.slug}: the proposer does not read the decision`).toEqual([id, cover].sort());
+        expect(asAddressee, `${fixture.slug}: the addressee does not read the decision`).toEqual([id, cover].sort());
+        expect(asThird, `${fixture.slug}: a third member read a colleague's decision`).toEqual([]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'aborts a $fixture approval a live override collides with (23505) and leaves the swap accepted, to be rejected with a decision and no override',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { owner, self, other, organization, team } = await swapCast(client, fixture);
+
+        await actAs(client, self.authUserId, organization);
+        const id = await insertSwap(client, { organization, proposer: self.id, addressee: other.id, team, date: SWAP_GIVEN });
+        await actAs(client, other.authUserId, organization);
+        await answerSwap(client, id, 'accepted');
+        await actAs(client, owner.authUserId, organization);
+        // An admin's own override already takes the proposer off that shift.
+        await insertRosterOverride(client, { organization, team, date: SWAP_GIVEN, out: self.id, in: null, reason: 'Bolovanje.' });
+        const collides = await refusedThenContinue(client, () => decideSwap(client, id, 'approved'));
+        await actAsOwner(client);
+        const afterAbort = await swapState(client, id);
+        await actAs(client, owner.authUserId, organization);
+        const rejected = await decideSwap(client, id, 'rejected');
+        await actAsOwner(client);
+
+        expect(collides.code, fixture.slug).toBe('23505');
+        expect(collides.message, fixture.slug).toContain('roster_overrides_live_member_out_key');
+        expect(afterAbort, `${fixture.slug}: an aborted approval closed or decided the swap`).toEqual(accepted(other.authUserId));
+        expect(rejected, fixture.slug).toBeNull();
+        expect(await swapState(client, id), fixture.slug).toEqual({
+          ...accepted(other.authUserId),
+          closedBy: owner.authUserId,
+          closed: true,
+          outcome: 'rejected',
+          decidedBy: owner.authUserId,
+        });
+        const { rows } = await client.query<{ total: number }>(
+          `select count(*)::int as total from roster_overrides where team_id = $1 and date = $2::date and member_in_id = $3`,
+          [team, SWAP_GIVEN, other.id],
+        );
+        expect(rows[0]?.total, `${fixture.slug}: an aborted approval or a rejection wrote an override`).toBe(0);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'aborts a $fixture approval with a reason 0026 refuses (23514), and lets an admin who is a party decide the swap',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { owner, self, organization, team } = await swapCast(client, fixture);
+
+        await actAs(client, owner.authUserId, organization);
+        const id = await insertSwap(client, { organization, proposer: owner.id, addressee: self.id, team, date: SWAP_GIVEN });
+        await actAs(client, self.authUserId, organization);
+        await answerSwap(client, id, 'accepted');
+        await actAs(client, owner.authUserId, organization);
+        const blank = await refusedThenContinue(client, () => decideSwap(client, id, 'approved', '   '));
+        const override = await decideSwap(client, id, 'approved');
+        await actAsOwner(client);
+
+        expect(blank.code, fixture.slug).toBe('23514');
+        expect(blank.message, fixture.slug).toContain('roster_overrides_reason_length');
+        expect(override, fixture.slug).not.toBeNull();
+        expect((await swapState(client, id)).outcome, fixture.slug).toBe('approved');
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'closes an open $fixture swap as deactivated when its proposer or addressee is deactivated on or before a swap date, and leaves one wholly before it open',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { owner, self, other, organization, team, returnTeam } = await swapCast(client, fixture);
+        const third = await addThrowawayMember(client, organization);
+        const day = (offset: number) => organizationDay(client, organization, offset);
+
+        await actAs(client, self.authUserId, organization);
+        const proposerSide = await insertSwap(client, { organization, proposer: self.id, addressee: third.id, team, date: await day(10) });
+        await actAs(client, other.authUserId, organization);
+        // Given before the addressee's deactivation, returned after it: closed.
+        const returnReaches = await insertSwap(client, {
+          organization,
+          proposer: other.id,
+          addressee: third.id,
+          team,
+          date: await day(3),
+          returnTeam,
+          returnDate: await day(30),
+        });
+        // Wholly before it: stays open.
+        const before = await insertSwap(client, { organization, proposer: other.id, addressee: third.id, team: returnTeam, date: await day(5) });
+        await actAs(client, third.authUserId, organization);
+        await answerSwap(client, returnReaches, 'accepted');
+        await actAs(client, owner.authUserId, organization);
+        await insertVersion(client, { organization, member: self.id, active: false, from: await day(10) });
+        await insertVersion(client, { organization, member: third.id, active: false, from: await day(20) });
+        await actAs(client, other.authUserId, organization);
+        const decisions = await visibleSwapDecisions(client);
+        await actAsOwner(client);
+
+        const deactivated = { closedBy: owner.authUserId, closed: true, outcome: 'deactivated', override: null, returnOverride: null, decidedBy: owner.authUserId };
+        expect(await swapState(client, proposerSide), fixture.slug).toEqual({ ...PROPOSED, ...deactivated });
+        expect(await swapState(client, returnReaches), fixture.slug).toEqual({ ...accepted(third.authUserId), ...deactivated });
+        expect(await swapState(client, before), `${fixture.slug}: a swap wholly before the deactivation was closed`).toEqual(PROPOSED);
+        expect(decisions, `${fixture.slug}: the party does not read the deactivated decision`).toEqual([returnReaches]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'changes neither $fixture calendar_roster_overrides() nor the outbox while a swap is proposed or accepted, and the approval tells both members and not the admin',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { owner, self, other, organization, team, returnTeam } = await swapCast(client, fixture);
+        for (const [row, username] of [[owner, fixture.admin], [self, fixture.member], [other, fixture.bystander]] as const) {
+          await client.query('update members set email = $2 where id = $1', [row.id, `${username}@example.org`]);
+        }
+        const outboxCount = async () =>
+          (await client.query<{ total: number }>('select count(*)::int as total from notification_outbox where organization_id = $1', [organization])).rows[0]?.total;
+
+        await actAs(client, owner.authUserId, organization);
+        const calendarBefore = await calendarRosterOverridesOf(client);
+        await actAsOwner(client);
+        const outboxBefore = await outboxCount();
+        await actAs(client, self.authUserId, organization);
+        const id = await insertSwap(client, {
+          organization,
+          proposer: self.id,
+          addressee: other.id,
+          team,
+          date: SWAP_GIVEN,
+          returnTeam,
+          returnDate: SWAP_RETURN,
+        });
+        await actAs(client, other.authUserId, organization);
+        await answerSwap(client, id, 'accepted');
+        const calendarAccepted = await calendarRosterOverridesOf(client);
+        await actAs(client, owner.authUserId, organization);
+        const calendarAfter = await calendarRosterOverridesOf(client);
+        await actAsOwner(client);
+        const outboxAfter = await outboxCount();
+        await actAs(client, owner.authUserId, organization);
+        const override = await decideSwap(client, id, 'approved');
+        await actAsOwner(client);
+        const returnOverride = (await swapState(client, id)).returnOverride;
+
+        expect(calendarAfter, `${fixture.slug}: an accepted swap reads as a roster override`).toEqual(calendarBefore);
+        expect(calendarAccepted.map((row) => row['id']), fixture.slug).toEqual(calendarBefore.map((row) => row['id']));
+        expect(outboxAfter, `${fixture.slug}: a proposed or accepted swap wrote the outbox`).toBe(outboxBefore);
+        const { rows } = await client.query<{ subject: string; code: string; recipient: string }>(
+          `select subject_id::text as subject, code, recipient_member_id::text as recipient
+             from notification_outbox where subject_id = any($1::uuid[]) and channel = 'email'
+            order by code, subject_id`,
+          [[override, returnOverride]],
+        );
+        expect(rows, fixture.slug).toEqual(
+          expect.arrayContaining([
+            { subject: override, code: 'ROSTER_PUT_ON', recipient: other.id },
+            { subject: override, code: 'ROSTER_TAKEN_OFF', recipient: self.id },
+            { subject: returnOverride, code: 'ROSTER_PUT_ON', recipient: self.id },
+            { subject: returnOverride, code: 'ROSTER_TAKEN_OFF', recipient: other.id },
+          ]),
+        );
+        expect(rows.length, fixture.slug).toBe(4);
+        expect(rows.map((row) => row.recipient), `${fixture.slug}: the approving admin was told`).not.toContain(owner.id);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'aborts a $fixture approval with no reason (23502) and leaves the swap accepted',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { owner, self, other, organization, team } = await swapCast(client, fixture);
+
+        await actAs(client, self.authUserId, organization);
+        const id = await insertSwap(client, { organization, proposer: self.id, addressee: other.id, team, date: SWAP_GIVEN });
+        await actAs(client, other.authUserId, organization);
+        await answerSwap(client, id, 'accepted');
+        await actAs(client, owner.authUserId, organization);
+        const noReason = await refusedThenContinue(client, () =>
+          client.query(`select public.decide_swap_request($1::uuid, 'approved', null)`, [id]),
+        );
+        await actAsOwner(client);
+
+        expect(noReason.code, fixture.slug).toBe('23502');
+        expect(await swapState(client, id), `${fixture.slug}: an aborted approval closed or decided the swap`).toEqual(
+          accepted(other.authUserId),
+        );
+        const { rows } = await client.query<{ total: number }>(
+          'select count(*)::int as total from roster_overrides where team_id = $1 and date = $2::date and member_in_id = $3',
+          [team, SWAP_GIVEN, other.id],
+        );
+        expect(rows[0]?.total, `${fixture.slug}: an aborted approval wrote an override`).toBe(0);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'closes a $fixture swap whose return date alone reaches the deactivation',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { owner, self, other, organization, team, returnTeam } = await swapCast(client, fixture);
+        const day = (offset: number) => organizationDay(client, organization, offset);
+
+        await actAs(client, self.authUserId, organization);
+        const returnOnly = await insertSwap(client, {
+          organization,
+          proposer: self.id,
+          addressee: other.id,
+          team,
+          date: await day(5),
+          returnTeam,
+          returnDate: await day(15),
+        });
+        await actAs(client, owner.authUserId, organization);
+        await insertVersion(client, { organization, member: self.id, active: false, from: await day(10) });
+        await actAsOwner(client);
+
+        expect(await swapState(client, returnOnly), fixture.slug).toEqual(closedOnSwapDeactivation(owner.authUserId));
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'closes nothing of a $fixture member on a reactivation',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { owner, self, other, organization, team } = await swapCast(client, fixture);
+        const day = (offset: number) => organizationDay(client, organization, offset);
+        await ownerVersion(client, { organization, member: self.id, active: false, from: await day(0), by: owner.authUserId });
+        // Written after the deactivation, as the owner: open over dates the reactivation brings back.
+        const later = await insertedSwapAsOwner(client, {
+          organization,
+          proposer: self.id,
+          addressee: other.id,
+          team,
+          date: await day(20),
+          by: self.authUserId,
+        });
+
+        await actAs(client, owner.authUserId, organization);
+        await insertVersion(client, { organization, member: self.id, active: true, from: await day(5) });
+        await actAsOwner(client);
+
+        expect(await swapState(client, later), fixture.slug).toEqual(PROPOSED);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'judges a $fixture swap by its earliest date reached when the owner writes a deactivation before a later reactivation',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { owner, self, other, organization, team, returnTeam } = await swapCast(client, fixture);
+        const day = (offset: number) => organizationDay(client, organization, offset);
+        const swap = async (date: number, returnDate?: number, onTeam = team) =>
+          insertedSwapAsOwner(client, {
+            organization,
+            proposer: self.id,
+            addressee: other.id,
+            team: onTeam,
+            date: await day(date),
+            ...(returnDate === undefined ? {} : { returnTeam: onTeam === team ? returnTeam : team, returnDate: await day(returnDate) }),
+            by: self.authUserId,
+          });
+        const covered = await swap(12);
+        // Given inside the inactive stretch, returned after the reactivation:
+        // the earliest date it reaches (the given one) is judged, so it closes.
+        const straddling = await swap(15, 25, returnTeam);
+        const after = await swap(25, 27);
+
+        // Out of date order, as only the owner can: the reactivation first, then the deactivation before it.
+        await ownerVersion(client, { organization, member: self.id, active: true, from: await day(20), by: owner.authUserId });
+        await ownerVersion(client, { organization, member: self.id, active: false, from: await day(10), by: owner.authUserId });
+
+        expect(await swapState(client, covered), fixture.slug).toEqual(closedOnSwapDeactivation(owner.authUserId));
+        expect(await swapState(client, straddling), fixture.slug).toEqual(closedOnSwapDeactivation(owner.authUserId));
+        expect(await swapState(client, after), `${fixture.slug}: a swap the reactivation governs was closed`).toEqual(PROPOSED);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'shows a $fixture party inactive today, by a version or a ban, no swap and no decision, their own included',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { owner, self, organization, team, returnTeam } = await swapCast(client, fixture);
+        const by = owner.authUserId;
+        const inactiveAdmin = await addThrowawayAdmin(client, organization);
+        const inactiveMember = await addThrowawayMember(client, organization);
+
+        // As the owner, past every policy: each inactive party proposes one
+        // swap and is asked in another, and one of each pair is rejected.
+        const pairs = [
+          [inactiveAdmin, inactiveMember],
+          [inactiveMember, self],
+          [self, inactiveAdmin],
+        ] as const;
+        const ids: string[] = [];
+        for (const [proposer, addressee] of pairs) {
+          for (const onTeam of [team, returnTeam]) {
+            ids.push(
+              await insertedSwapAsOwner(client, {
+                organization,
+                proposer: proposer.id,
+                addressee: addressee.id,
+                team: onTeam,
+                date: SWAP_GIVEN,
+                by: proposer.authUserId,
+              }),
+            );
+          }
+        }
+        for (const decided of ids.filter((_, index) => index % 2 === 1)) {
+          await client.query('update swap_requests set closed_by = $2, closed_at = now() where id = $1', [decided, by]);
+          await client.query(
+            `insert into swap_request_decisions (organization_id, request_id, outcome, decided_by)
+             values ($1, $2, 'rejected', $3)`,
+            [organization, decided, by],
+          );
+        }
+        // Inactive by a version effective today (which also closes their
+        // open swaps, each with a `deactivated` decision) ...
+        const day = await organizationDay(client, organization);
+        for (const deactivated of [inactiveAdmin, inactiveMember]) {
+          await ownerVersion(client, { organization, member: deactivated.id, active: false, from: day, by });
+        }
+        // ... and the fixture member the other way: banned.
+        await client.query("update auth.users set banned_until = now() + interval '1 day' where id = $1", [
+          self.authUserId,
+        ]);
+
+        const read: Record<string, { swaps: string[]; decisions: string[] }> = {};
+        for (const [label, reader] of [
+          ['inactive admin', inactiveAdmin],
+          ['inactive member', inactiveMember],
+          ['banned member', self],
+        ] as const) {
+          await actAs(client, reader.authUserId, organization);
+          read[label] = { swaps: await visibleSwaps(client), decisions: await visibleSwapDecisions(client) };
+          await actAsOwner(client);
+        }
+        // The control: the active admin reads every swap and every decision.
+        await actAs(client, owner.authUserId, organization);
+        const asAdmin = { swaps: await visibleSwaps(client), decisions: await visibleSwapDecisions(client) };
+        await actAsOwner(client);
+
+        const nothing = { swaps: [], decisions: [] };
+        expect(read, fixture.slug).toEqual({ 'inactive admin': nothing, 'inactive member': nothing, 'banned member': nothing });
+        expect(asAdmin.swaps, `${fixture.slug}: the control read is empty, so the case proves nothing`).toEqual(
+          expect.arrayContaining(ids),
+        );
+        expect(asAdmin.decisions, `${fixture.slug}: the control read no decision`).toEqual(expect.arrayContaining(ids));
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture swap that puts a member inactive on its date on a shift, a scheduled deactivation included (42501), and stores one before it (F1)',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { owner, self, other, organization, team, returnTeam } = await swapCast(client, fixture);
+        const day = (offset: number) => organizationDay(client, organization, offset);
+        const third = await addThrowawayMember(client, organization);
+        // Scheduled: the addressee from day 10, the third member (a proposer
+        // below) from day 10 too. Both are active today and still sign in.
+        await ownerVersion(client, { organization, member: other.id, active: false, from: await day(10), by: owner.authUserId });
+        await ownerVersion(client, { organization, member: third.id, active: false, from: await day(10), by: owner.authUserId });
+
+        const [day3, day5, day8, day10, day12] = [await day(3), await day(5), await day(8), await day(10), await day(12)];
+
+        await actAs(client, self.authUserId, organization);
+        const onTheDay = await refusedThenContinue(client, () =>
+          insertSwap(client, { organization, proposer: self.id, addressee: other.id, team, date: day10 }),
+        );
+        const after = await refusedThenContinue(client, () =>
+          insertSwap(client, { organization, proposer: self.id, addressee: other.id, team, date: day12 }),
+        );
+        const before = await insertSwap(client, { organization, proposer: self.id, addressee: other.id, team, date: day5 });
+        await actAs(client, third.authUserId, organization);
+        // The proposer takes the return shift on a date they are inactive.
+        const returnInactive = await refusedThenContinue(client, () =>
+          insertSwap(client, {
+            organization,
+            proposer: third.id,
+            addressee: self.id,
+            team,
+            date: day3,
+            returnTeam,
+            returnDate: day12,
+          }),
+        );
+        const returnBefore = await insertSwap(client, {
+          organization,
+          proposer: third.id,
+          addressee: self.id,
+          team: returnTeam,
+          date: day3,
+          returnTeam: team,
+          returnDate: day8,
+        });
+        await actAsOwner(client);
+
+        expect(onTheDay.code, fixture.slug).toBe('42501');
+        expect(after.code, fixture.slug).toBe('42501');
+        expect(returnInactive.code, fixture.slug).toBe('42501');
+        expect(await swapState(client, before), `${fixture.slug}: a swap before the deactivation was refused`).toEqual(PROPOSED);
+        expect(await swapState(client, returnBefore), fixture.slug).toEqual(PROPOSED);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture approval that puts a member inactive on its date on a shift (55000 SWAP_REQUEST_MEMBER_INACTIVE), leaves it accepted, and lets it be rejected (F1)',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { owner, self, other, organization, team, returnTeam } = await swapCast(client, fixture);
+        const day = (offset: number) => organizationDay(client, organization, offset);
+
+        // The deactivations FIRST, as the owner: the close trigger fires on
+        // them, before any swap exists, so it closes nothing. The swaps,
+        // written after as the owner (past the policy's F1 refusal), stay
+        // open, as a swap sent before a status changed would be.
+        await ownerVersion(client, { organization, member: other.id, active: false, from: await day(10), by: owner.authUserId });
+        await ownerVersion(client, { organization, member: self.id, active: false, from: await day(20), by: owner.authUserId });
+        // The addressee inactive on the given date.
+        const addresseeInactive = await insertedSwapAsOwner(client, {
+          organization,
+          proposer: self.id,
+          addressee: other.id,
+          team,
+          date: await day(12),
+          by: self.authUserId,
+        });
+        // The proposer inactive on the return date; the addressee active on the given one.
+        const proposerInactive = await insertedSwapAsOwner(client, {
+          organization,
+          proposer: self.id,
+          addressee: other.id,
+          team: returnTeam,
+          date: await day(5),
+          returnTeam: team,
+          returnDate: await day(22),
+          by: self.authUserId,
+        });
+        // Both still active today, so the addressee accepts through the definer.
+        await actAs(client, other.authUserId, organization);
+        await answerSwap(client, addresseeInactive, 'accepted');
+        await answerSwap(client, proposerInactive, 'accepted');
+        await actAs(client, owner.authUserId, organization);
+        const givenRefusal = await refusedThenContinue(client, () => decideSwap(client, addresseeInactive, 'approved'));
+        const returnRefusal = await refusedThenContinue(client, () => decideSwap(client, proposerInactive, 'approved'));
+        await actAsOwner(client);
+        const afterRefusal = await swapState(client, addresseeInactive);
+        const afterReturnRefusal = await swapState(client, proposerInactive);
+        await actAs(client, owner.authUserId, organization);
+        const rejected = await decideSwap(client, addresseeInactive, 'rejected');
+        await actAsOwner(client);
+
+        for (const refusal of [givenRefusal, returnRefusal]) {
+          expect(refusal, fixture.slug).toMatchObject({ code: '55000', message: 'SWAP_REQUEST_MEMBER_INACTIVE' });
+        }
+        expect(afterRefusal, `${fixture.slug}: a refused approval closed or decided the swap`).toEqual(accepted(other.authUserId));
+        expect(afterReturnRefusal, fixture.slug).toEqual(accepted(other.authUserId));
+        expect(rejected, fixture.slug).toBeNull();
+        expect(await swapState(client, addresseeInactive), fixture.slug).toEqual({
+          ...accepted(other.authUserId),
+          closedBy: owner.authUserId,
+          closed: true,
+          outcome: 'rejected',
+          decidedBy: owner.authUserId,
+        });
+        const { rows } = await client.query<{ total: number }>(
+          `select count(*)::int as total from roster_overrides
+            where member_in_id = any($1::uuid[]) and date = any($2::date[]) and created_at >= now()`,
+          [[self.id, other.id], [await day(5), await day(12), await day(22)]],
+        );
+        expect(rows[0]?.total, `${fixture.slug}: a refused approval wrote an override`).toBe(0);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(CROSS_TENANT)(
+    'shows a $fixture caller no $otherFixture swap or decision, refuses a swap naming its member or team, and answers, withdraws or decides none of it',
+    async ({ slug, admin, member, otherSlug }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const [team] = await twoLiveTeamsOf(client, organization);
+        const foreignFixture = FIXTURES.find((entry) => entry.slug === otherSlug);
+        const foreignOwner = await memberByUsername(client, otherSlug, foreignFixture?.admin ?? '');
+        const foreignMember = await memberByUsername(client, otherSlug, foreignFixture?.member ?? '');
+        const foreignOther = await memberByUsername(client, otherSlug, foreignFixture?.bystander ?? '');
+        const foreignOrganization = foreignOwner.organizationId;
+        const [foreignTeam, foreignReturn] = await twoLiveTeamsOf(client, foreignOrganization);
+
+        await actAs(client, foreignMember.authUserId, foreignOrganization);
+        const foreignOpen = await insertSwap(client, {
+          organization: foreignOrganization,
+          proposer: foreignMember.id,
+          addressee: foreignOther.id,
+          team: foreignTeam,
+          date: SWAP_GIVEN,
+        });
+        const foreignDecided = await insertSwap(client, {
+          organization: foreignOrganization,
+          proposer: foreignMember.id,
+          addressee: foreignOther.id,
+          team: foreignReturn,
+          date: SWAP_GIVEN,
+        });
+        await actAs(client, foreignOther.authUserId, foreignOrganization);
+        await answerSwap(client, foreignOpen, 'accepted');
+        await answerSwap(client, foreignDecided, 'accepted');
+        await actAs(client, foreignOwner.authUserId, foreignOrganization);
+        await decideSwap(client, foreignDecided, 'rejected');
+
+        const seen: string[] = [];
+        for (const reader of [self, owner]) {
+          for (const claim of [reader.organizationId, foreignOrganization, null]) {
+            await actAs(client, reader.authUserId, claim);
+            seen.push(...(await visibleSwaps(client)), ...(await visibleSwapDecisions(client)));
+          }
+        }
+        await actAs(client, self.authUserId, organization);
+        const foreignAddressee = await refusedThenContinue(client, () =>
+          insertSwap(client, { organization, proposer: self.id, addressee: foreignOther.id, team, date: SWAP_GIVEN }),
+        );
+        const foreignTeamInsert = await refusedThenContinue(client, () =>
+          insertSwap(client, { organization, proposer: self.id, addressee: owner.id, team: foreignTeam, date: SWAP_GIVEN }),
+        );
+        const foreignReturnTeam = await refusedThenContinue(client, () =>
+          insertSwap(client, { organization, proposer: self.id, addressee: owner.id, team, date: SWAP_GIVEN, returnTeam: foreignTeam, returnDate: SWAP_RETURN }),
+        );
+        const foreignTenant = await refusedThenContinue(client, () =>
+          insertSwap(client, { organization: foreignOrganization, proposer: foreignMember.id, addressee: foreignOther.id, team: foreignTeam, date: SWAP_RETURN }),
+        );
+        const answer = await refusedThenContinue(client, () => answerSwap(client, foreignOpen, 'declined'));
+        const withdrawal = await refusedThenContinue(client, () => withdrawSwap(client, foreignOpen));
+        await actAs(client, owner.authUserId, organization);
+        const decision = await refusedThenContinue(client, () => decideSwap(client, foreignOpen, 'approved'));
+        await actAsOwner(client);
+
+        expect(seen, `${slug} read a ${otherSlug} swap or decision`).not.toContain(foreignOpen);
+        expect(seen, `${slug} read a ${otherSlug} swap or decision`).not.toContain(foreignDecided);
+        expect(foreignAddressee.code, slug).toBe('23503');
+        expect(foreignTeamInsert.code, slug).toBe('23503');
+        expect(foreignReturnTeam.code, slug).toBe('23503');
+        expect(foreignTenant.code, slug).toBe('42501');
+        expect(answer, slug).toMatchObject({ code: 'P0002', message: 'SWAP_REQUEST_NOT_OPEN' });
+        expect(withdrawal, slug).toMatchObject({ code: 'P0002', message: 'SWAP_REQUEST_NOT_OPEN' });
+        expect(decision, slug).toMatchObject({ code: 'P0002', message: 'SWAP_REQUEST_NOT_OPEN' });
+        expect(await swapState(client, foreignOpen), `${slug} touched a ${otherSlug} swap`).toEqual(accepted(foreignOther.authUserId));
+      });
+    },
+  );
+
+  it.skipIf(noApi)('refuses an anonymous caller the three definers, the policy helper and the table', async () => {
+    for (const [path, body] of [
+      ['rpc/answer_swap_request', { p_request_id: crypto.randomUUID(), p_answer: 'accepted' }],
+      ['rpc/withdraw_swap_request', { p_request_id: crypto.randomUUID() }],
+      ['rpc/decide_swap_request', { p_request_id: crypto.randomUUID(), p_outcome: 'approved', p_reason: 'Zamjena.' }],
+      [
+        'rpc/swap_parties_active',
+        {
+          p_organization: crypto.randomUUID(),
+          p_proposer: crypto.randomUUID(),
+          p_addressee: crypto.randomUUID(),
+          p_given: '2047-03-02',
+          p_returned: null,
+        },
+      ],
+    ] as const) {
+      const response = await rest(path, { method: 'POST', body });
+      expect(response.status, `an anonymous caller reached ${path}`).toBe(401);
+      expect((await restRefusal(response)).code, path).toBe('42501');
+    }
+    const insert = await rest('swap_requests', {
+      method: 'POST',
+      body: {
+        organization_id: crypto.randomUUID(),
+        proposer_id: crypto.randomUUID(),
+        addressee_id: crypto.randomUUID(),
+        team_id: crypto.randomUUID(),
+        date: '2047-03-02',
+      },
+    });
+    expect(insert.status, 'an anonymous caller inserted a swap').toBe(401);
+    expect((await restRefusal(insert)).code).toBe('42501');
+  });
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'lets the $fixture member propose over PostgREST, the colleague accept and the member withdraw, and refuses a swap for a colleague and the member\'s decision',
+    async ({ slug, admin, member, bystander }) => {
+      const client = await connect();
+      let cleanup: string[] = [];
+      const year2047 = ['2047-01-01', '2048-01-01'];
+      const sweep = async () => {
+        await client.query(
+          `delete from swap_request_decisions where request_id in
+             (select id from swap_requests where proposer_id = any($1::uuid[]) and date >= $2::date and date < $3::date)`,
+          [cleanup, ...year2047],
+        );
+        await client.query(
+          'delete from swap_requests where proposer_id = any($1::uuid[]) and date >= $2::date and date < $3::date',
+          [cleanup, ...year2047],
+        );
+      };
+      try {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const other = await memberByUsername(client, slug, bystander);
+        const organization = owner.organizationId;
+        const [team] = await twoLiveTeamsOf(client, organization);
+        cleanup = [self.id, other.id];
+        // Leftovers of an interrupted run, before anything is written.
+        await sweep();
+
+        const token = await tokenFor(member, slug);
+        const own = await rest('swap_requests', {
+          token,
+          method: 'POST',
+          body: { organization_id: organization, proposer_id: self.id, addressee_id: other.id, team_id: team, date: '2047-09-10' },
+          prefer: 'return=representation',
+        });
+        expect(own.status, slug).toBe(201);
+        const [created] = (await own.json()) as Record<string, unknown>[];
+        expect(created?.['created_by'], `${slug}: the swap is not attributed to the proposer`).toBe(self.authUserId);
+        expect(created?.['answer'], slug).toBeNull();
+        expect(created?.['closed_at'], slug).toBeNull();
+
+        const colleague = await rest('swap_requests', {
+          token,
+          method: 'POST',
+          body: { organization_id: organization, proposer_id: other.id, addressee_id: self.id, team_id: team, date: '2047-09-11' },
+        });
+        expect(colleague.status, slug).toBe(403);
+        expect((await restRefusal(colleague)).code, slug).toBe('42501');
+
+        const accept = await rest('rpc/answer_swap_request', {
+          token: await tokenFor(bystander, slug),
+          method: 'POST',
+          body: { p_request_id: created?.['id'], p_answer: 'accepted' },
+        });
+        expect(accept.status, slug).toBe(204);
+
+        const decide = await rest('rpc/decide_swap_request', {
+          token,
+          method: 'POST',
+          body: { p_request_id: created?.['id'], p_outcome: 'approved', p_reason: 'Zamjena.' },
+        });
+        expect(decide.status, slug).toBe(403);
+        expect(await restRefusal(decide), slug).toEqual({ code: '42501', message: 'SWAP_REQUEST_DECISION_REFUSED' });
+
+        const withdraw = await rest('rpc/withdraw_swap_request', {
+          token,
+          method: 'POST',
+          body: { p_request_id: created?.['id'] },
+        });
+        expect(withdraw.status, slug).toBe(204);
+        const { rows } = await client.query<{ answer: string | null; closedBy: string | null }>(
+          'select answer, closed_by::text as "closedBy" from swap_requests where id = $1',
+          [created?.['id']],
+        );
+        expect(rows, slug).toEqual([{ answer: 'accepted', closedBy: self.authUserId }]);
+      } finally {
+        if (cleanup.length > 0) await sweep();
         await client.end();
       }
     },

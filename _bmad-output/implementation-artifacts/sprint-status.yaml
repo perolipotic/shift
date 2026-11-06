@@ -597,8 +597,8 @@ development_status:
   11-4-admin-danas-counts-short-staffed-shifts: done  # #271
   epic-11-retrospective: done
 
-  epic-12: backlog
-  12-1-the-swap-request-record: backlog
+  epic-12: in-progress
+  12-1-the-swap-request-record: done
   12-2-a-member-proposes-a-swap-from-the-day-detail: backlog
   12-3-the-colleague-accepts-or-declines: backlog
   12-4-an-admin-decides-a-swap-on-its-own-screen: backlog
