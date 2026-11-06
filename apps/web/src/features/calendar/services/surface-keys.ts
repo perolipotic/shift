@@ -5,11 +5,13 @@ import { readsOrganizationLeave } from '@/features/calendar/services/snapshot-sk
 import { ORGANIZATION_CONFLICT_RESOLUTIONS_KEY } from '@/features/conflicts/services/resolutions';
 import { MY_LEAVE_RECORDS_KEY, ORGANIZATION_LEAVE_RECORDS_KEY } from '@/features/leave/services/leave-list';
 import type { MemberRole } from '@/features/navigation/utils/destinations';
+import { MY_SWAP_REQUESTS_KEY } from '@/features/swaps/services/my-swaps';
 
 /**
  * *Kalendar*'s reads as one snapshot (story 8.2): the keys its freshness is
  * decided over, by the viewer's role once the snapshot names it. The
- * calendar snapshot alone before that; then a member's own leave, or an
+ * calendar snapshot alone before that; then a member's own leave and (story
+ * 12.3) own swaps, which the day detail marks a proposed shift by, or an
  * admin's organization leave and resolutions — exactly the reads
  * `useCalendarScreen` enables. Every one of them is a key *Danas* reads for
  * the same role (`todaySurfaceKeysOf`), so a *Danas* read online is what
@@ -20,5 +22,5 @@ export function calendarSurfaceKeysOf(role: MemberRole | null): readonly QueryKe
 
   return readsOrganizationLeave(role)
     ? [CALENDAR_KEY, ORGANIZATION_LEAVE_RECORDS_KEY, ORGANIZATION_CONFLICT_RESOLUTIONS_KEY]
-    : [CALENDAR_KEY, MY_LEAVE_RECORDS_KEY];
+    : [CALENDAR_KEY, MY_LEAVE_RECORDS_KEY, MY_SWAP_REQUESTS_KEY];
 }

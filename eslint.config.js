@@ -344,7 +344,14 @@ export const FEATURE_PUBLIC = {
   // Story 12.2: `/kalendar/zamjena` reads its search and its role gate's
   // states through the proposal's rules, and names its main region by the
   // surface's heading id.
+  // Story 12.3: *Danas* draws *Zamjene* on both bodies and observes its read
+  // (`use-my-swaps`) for its one snapshot; *Kalendar*'s day detail marks a
+  // shift the member already proposed, off the same read; and the swaps key
+  // (`my-swaps`) joins both surfaces' key sets and a swap write's dependents.
   swaps: [
+    'components/my-swaps-card', // today
+    'hooks/use-my-swaps', // calendar, today
+    'services/my-swaps', // calendar, teams, today
     'services/swap-proposal', // pages
     'utils/element-ids', // pages
   ],

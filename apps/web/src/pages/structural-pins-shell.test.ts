@@ -1288,6 +1288,23 @@ describe('no read retry offline, on any surface (story 8.2e)', () => {
     );
   });
 
+  // STORY 12.3: the viewer's own swaps are one of *Danas*'s and a member's
+  // *Kalendar*'s reads, so each surface's retry re-reads them too.
+  it.each([
+    'features/today/hooks/use-today.ts',
+    'features/today/hooks/use-admin-today.ts',
+    'features/calendar/hooks/use-calendar-screen.ts',
+  ])('re-reads the viewer\'s own swaps from the read retry in %s', (file) => {
+    // The retry's key list, wherever the key stands in it and however the list ends.
+    const keys = /function retry\(\): void \{\s*for \(const queryKey of \[([^\]]*)\]\)/.exec(source(join(srcRoot, file)))?.[1];
+
+    expect(keys, 'no retry over a key list').toBeDefined();
+    expect(
+      (keys ?? '').split(',').map((key) => key.trim()),
+      'the retry does not re-read the viewer\'s own swaps',
+    ).toContain('MY_SWAP_REQUESTS_KEY');
+  });
+
   it('hands the builder read retry\'s focus to its alert', () => {
     // Its press is an inline arrow, which the opening-tag reader cuts at `=>`.
     expect(source(join(srcRoot, 'features/rotation/components/rotation-notices.tsx'))).toMatch(

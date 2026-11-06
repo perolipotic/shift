@@ -101,7 +101,9 @@ export const DEVICE_SNAPSHOT_THROTTLE_MS = 1000;
  *     requests on *Godišnji* and the request form (story 9.3);
  *   - `organization-leave-requests` — `ORGANIZATION_LEAVE_REQUESTS_KEY`, every
  *     request of the organization, which *Za odluku*, its resolution page and
- *     the admin's *Danas* read (story 9.5).
+ *     the admin's *Danas* read (story 9.5);
+ *   - `my-swap-requests` — `MY_SWAP_REQUESTS_KEY`, the viewer's own swaps,
+ *     which *Danas*'s *Zamjene* and a member's *Kalendar* read (story 12.3).
  */
 export const PERSISTED_KEY_ROOTS: readonly string[] = [
   'calendar',
@@ -123,6 +125,7 @@ export const PERSISTED_KEY_ROOTS: readonly string[] = [
   'rotation',
   'my-leave-requests',
   'organization-leave-requests',
+  'my-swap-requests',
 ];
 
 /**

@@ -679,6 +679,11 @@ const SOURCES = [
   join(webRoot, 'src', 'features', 'swaps', 'components', 'swap-proposal-form.tsx'),
   join(webRoot, 'src', 'features', 'swaps', 'components', 'swap-proposed-line.tsx'),
   join(webRoot, 'src', 'features', 'swaps', 'services', 'swap-proposal.ts'),
+  // Story 12.3: *Zamjene* on *Danas* — its card and hook, and its rules
+  // module, which words the status, the outcomes and the refusals.
+  join(webRoot, 'src', 'features', 'swaps', 'components', 'my-swaps-card.tsx'),
+  join(webRoot, 'src', 'features', 'swaps', 'hooks', 'use-my-swaps.ts'),
+  join(webRoot, 'src', 'features', 'swaps', 'services', 'my-swaps.ts'),
   // Story 10.3: the notification settings — the page, its hook, card and
   // rules module. The organization's switch card is read off its feature's
   // folders with the settings surface.

@@ -34,6 +34,10 @@ export const TODAY_SCREEN_PARTS = {
   absentCard: ['features', 'today', 'components', 'absent-card.tsx'],
   weekGrid: ['features', 'today', 'components', 'week-grid.tsx'],
   adminSkeleton: ['features', 'today', 'components', 'admin-today-skeleton.tsx'],
+  // Story 12.3: *Zamjene*, on both bodies — the swap feature's card and the
+  // hook holding its reads and its three buttons' one handler.
+  mySwapsCard: ['features', 'swaps', 'components', 'my-swaps-card.tsx'],
+  mySwapsHook: ['features', 'swaps', 'hooks', 'use-my-swaps.ts'],
 } as const;
 
 /**

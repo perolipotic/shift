@@ -23,6 +23,7 @@ import { useOrganizationLeaveRequests } from '@/features/leave/hooks/use-organiz
 import { ORGANIZATION_LEAVE_REQUESTS_KEY } from '@/features/leave/services/leave-request-list';
 import { MEMBER_ROLE_KEY } from '@/features/navigation/services/role';
 import type { MemberRole } from '@/features/navigation/utils/destinations';
+import { MY_SWAP_REQUESTS_KEY } from '@/features/swaps/services/my-swaps';
 import { ADMIN_TODAY_UNAVAILABLE, adminTodayOf } from '@/features/today/services/admin-today';
 import { todaySurfaceKeysOf } from '@/features/today/services/surface-keys';
 import { useMinuteTicker } from '@/hooks/minute-ticker';
@@ -186,6 +187,8 @@ export function useAdminToday() {
       ORGANIZATION_LEAVE_RECORDS_KEY,
       ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
       ORGANIZATION_LEAVE_REQUESTS_KEY,
+      // STORY 12.3: *Zamjene*'s read, which the admin body's snapshot decides over too.
+      MY_SWAP_REQUESTS_KEY,
     ]) {
       void queryClient.invalidateQueries({ queryKey });
     }

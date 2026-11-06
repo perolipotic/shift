@@ -3,6 +3,7 @@ import { useEffect, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Notice } from '@/components/ui/notice';
+import { MySwapsCard } from '@/features/swaps/components/my-swaps-card';
 import { AbsentCard } from '@/features/today/components/absent-card';
 import { AdminTodaySkeleton } from '@/features/today/components/admin-today-skeleton';
 import { CoverageCard } from '@/features/today/components/coverage-card';
@@ -11,11 +12,13 @@ import { ShortStaffedCountCard } from '@/features/today/components/short-staffed
 import { WeekGrid } from '@/features/today/components/week-grid';
 import { useAdminToday } from '@/features/today/hooks/use-admin-today';
 import { ADMIN_TODAY_LOADING, ADMIN_TODAY_UNAVAILABLE } from '@/features/today/services/admin-today';
+import { ADMIN_TODAY_SURFACE_KEYS } from '@/features/today/services/surface-keys';
 import { t } from '@/lib/i18n';
 import { keepFocusOnAlert } from '@/utils/retry-focus';
 
 /**
- * *Danas* for an admin (story 6.3), in this order: *Treba tebe*, *Premalo
+ * *Danas* for an admin (story 6.3), in this order: *Treba tebe*, *Zamjene*
+ * while the admin has a swap (story 12.3), *Premalo
  * ljudi* while *Najmanje ljudi u smjeni* is set (story 11.4), *Pokrivenost
  * danas*, *Odsutni danas* and *Ovaj tjedan*. The skeleton while the reads are
  * unanswered; one alert with a retry, and no figure, when a read failed or
@@ -79,6 +82,8 @@ export function AdminTodayBody({
   return (
     <>
       <NeedsYouCard needsYou={view.needsYou} />
+      {/* STORY 12.3: an admin may be asked to take a swap too: *Zamjene*, only while there is one. */}
+      <MySwapsCard surfaceKeys={ADMIN_TODAY_SURFACE_KEYS} />
       {view.shortStaffed === null ? null : <ShortStaffedCountCard card={view.shortStaffed} />}
       <CoverageCard coverage={view.coverage} />
       <AbsentCard absences={view.absences} />

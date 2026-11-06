@@ -15,7 +15,14 @@ import {
 } from '@/features/calendar/services/roster-erasures';
 import type { CalendarSnapshot, CalendarSurfaceState, CalendarViewer } from '@/features/calendar/services/snapshot';
 import { memberMonthDeltasOf, type MemberMonthDelta } from '@/features/calendar/utils/change-preview';
-import { DAY_WORKING, MEMBER_ROLE, dayDetailOf, swapOfferedOf, type DayDetail } from '@/features/calendar/utils/day-detail';
+import {
+  DAY_WORKING,
+  MEMBER_ROLE,
+  dayDetailOf,
+  swapOfferedOf,
+  type DayDetail,
+  type OpenSwapProposal,
+} from '@/features/calendar/utils/day-detail';
 import { memberScheduleInputOf } from '@/features/calendar/utils/month';
 import { hoursLeaveKeysOf } from '@/features/hours/services/hours-conflicts';
 import { compareText, formatIsoDate, isIsoDate } from '@/lib/i18n/format';
@@ -136,18 +143,31 @@ function dayOf(snapshot: CalendarSnapshot, teamId: string, date: string): DayDet
  * The viewer's own working shift `teamId` on `date` as the day detail derives
  * it, or `null`: no shift named, a date before `today`, an admin viewer, a
  * day that is not a working one, or a roster the viewer is not on — the
- * notice, and no form.
+ * notice, and no form. Since story 12.3 also a shift the viewer already
+ * proposed in an open swap (`proposals`; `null` while unknown, which refuses
+ * nothing): the surface then says so instead.
  */
 export function ownSwapShiftOf(
   snapshot: CalendarSnapshot,
   search: SwapSearch,
   today: string | null,
+  proposals: readonly OpenSwapProposal[] | null,
 ): DayDetail | null {
   if (search.dan === undefined || search.smjena === undefined) return null;
 
   const detail = dayOf(snapshot, search.smjena, search.dan);
 
-  return swapOfferedOf(snapshot, detail, today) ? detail : null;
+  return swapOfferedOf(snapshot, detail, today, proposals) ? detail : null;
+}
+
+/** The day detail of `shift`, or `null` for none or one that cannot be derived (the cause logged). */
+export function swapDayOf(snapshot: CalendarSnapshot, shift: SwapShiftKey): DayDetail | null {
+  return dayOf(snapshot, shift.teamId, shift.date);
+}
+
+/** Whether `memberId` is on the working roster of `shift` as the day detail derives it (`rosterOn`, the overrides in force). */
+export function swapShiftWorkedBy(snapshot: CalendarSnapshot, shift: SwapShiftKey, memberId: string): boolean {
+  return works(dayOf(snapshot, shift.teamId, shift.date), memberId);
 }
 
 // ------------------------------------------------------------ the options
@@ -164,26 +184,63 @@ export interface SwapColleague {
   readonly blocked: RosterChangeRefusal | null;
 }
 
-/** The given shift handed from the viewer to `colleagueId`, as the roster-change "after" applies it. */
-function givenApplied(snapshot: CalendarSnapshot, given: DayDetail, colleagueId: string): RosterChangeApplied {
+/** The given shift handed from `proposerId` (the viewer, unless named) to `colleagueId`, as the roster-change "after" applies it. */
+function givenApplied(
+  snapshot: CalendarSnapshot,
+  given: SwapShiftKey,
+  colleagueId: string,
+  proposerId: string = snapshot.viewer.memberId,
+): RosterChangeApplied {
   return rosterChangeSnapshotOf(snapshot, {
     kind: ROSTER_CHANGE_SAVE,
     teamId: given.teamId,
-    date: given.isoDate,
-    memberOutId: snapshot.viewer.memberId,
+    date: given.date,
+    memberOutId: proposerId,
     memberInId: colleagueId,
   });
 }
 
-/** The return shift handed from `colleagueId` to the viewer, over `after`. */
-function returnApplied(after: CalendarSnapshot, shift: SwapShiftKey, colleagueId: string): RosterChangeApplied {
+/** The return shift handed from `colleagueId` to `proposerId` (the viewer, unless named), over `after`. */
+function returnApplied(
+  after: CalendarSnapshot,
+  shift: SwapShiftKey,
+  colleagueId: string,
+  proposerId: string = after.viewer.memberId,
+): RosterChangeApplied {
   return rosterChangeSnapshotOf(after, {
     kind: ROSTER_CHANGE_SAVE,
     teamId: shift.teamId,
     date: shift.date,
     memberOutId: colleagueId,
-    memberInId: after.viewer.memberId,
+    memberInId: proposerId,
   });
+}
+
+/** A swap as 0049 stores it, whoever the viewer is: the two members, the given shift and any return shift. */
+export interface SwapParties {
+  readonly proposerId: string;
+  readonly addresseeId: string;
+  readonly given: SwapShiftKey;
+  readonly returnShift: SwapShiftKey | null;
+}
+
+/**
+ * The "after" of a stored swap (story 12.3): the preview's own two changes
+ * — the proposer off and the addressee on the given shift, then the
+ * addressee off and the proposer on the return shift — over the calendar's
+ * roster-change "after" (`rosterChangeSnapshotOf`), or its refusal.
+ */
+export function swapAppliedOf(snapshot: CalendarSnapshot, swap: SwapParties): RosterChangeApplied {
+  const first = givenApplied(snapshot, swap.given, swap.addresseeId, swap.proposerId);
+
+  if (!first.ok || swap.returnShift === null) return first;
+
+  return returnApplied(first.after, swap.returnShift, swap.addresseeId, swap.proposerId);
+}
+
+/** The given shift's key, from its day detail. */
+function givenKeyOf(given: DayDetail): SwapShiftKey {
+  return { teamId: given.teamId, date: given.isoDate };
 }
 
 /**
@@ -202,7 +259,7 @@ export function swapColleaguesOf(snapshot: CalendarSnapshot, given: DayDetail): 
       if (member.id === snapshot.viewer.memberId || rostered.has(member.id)) continue;
       if (!activeOn(member.statuses, given.isoDate)) continue;
 
-      const applied = givenApplied(snapshot, given, member.id);
+      const applied = givenApplied(snapshot, givenKeyOf(given), member.id);
 
       colleagues.push({
         id: member.id,
@@ -292,7 +349,7 @@ export function swapReturnOptionsOf(
   try {
     const history = { memberId: colleague.id, memberships: colleague.memberships, statuses: colleague.statuses };
     const teamOrder = new Map(snapshot.teams.map((team, index) => [team.id, index]));
-    const first = givenApplied(snapshot, given, colleague.id);
+    const first = givenApplied(snapshot, givenKeyOf(given), colleague.id);
     const options: SwapReturnOption[] = [];
     let month: string | null = monthOf(today);
 
@@ -381,7 +438,7 @@ export function swapPreviewOf(
 
   try {
     const proposerId = snapshot.viewer.memberId;
-    const first = givenApplied(snapshot, given, colleagueId);
+    const first = givenApplied(snapshot, givenKeyOf(given), colleagueId);
 
     if (!first.ok) return { kind: SWAP_PREVIEW_BLOCKED, code: first.code };
 
@@ -500,7 +557,8 @@ export function swapSendCheckOf(
   choice: SwapChoiceValues,
   today: string | null,
 ): SwapChoice {
-  const own = ownSwapShiftOf(snapshot, { dan: given.date, smjena: given.teamId }, today);
+  // The proposals are not asked here: an open one is 0049's 23505 to refuse.
+  const own = ownSwapShiftOf(snapshot, { dan: given.date, smjena: given.teamId }, today, null);
 
   if (own === null || today === null) return { ok: false, code: SWAP_GIVEN_GONE };
 

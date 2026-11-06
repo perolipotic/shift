@@ -19,6 +19,7 @@ import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
 import { MEMBER_NAME_KEY } from '@/features/navigation/services/profile';
 import { MEMBER_ROLE_KEY } from '@/features/navigation/services/role';
 import { ROTATION_KEY } from '@/features/rotation/services/list';
+import { MY_SWAP_REQUESTS_KEY } from '@/features/swaps/services/my-swaps';
 import { OWN_TEAM_KEY, TEAM_ROSTERS_KEY } from '@/features/teams/services/roster';
 
 /**
@@ -152,13 +153,13 @@ export const LEAVE_REQUEST_WRITE_DEPENDENTS: readonly QueryKey[] = [
 ];
 
 /**
- * A swap proposed (story 12.2): the surface re-reads its own calendar
- * snapshot, and nothing else. A PROPOSED SWAP DERIVES NOTHING (R9.1, 0049): no
- * schedule, roster, hours or queue reads it, and no screen reads
- * a swap yet, so no key is named. 12.3 and 12.4 add the swap keys
- * here when their reads land.
+ * A swap proposed (story 12.2), answered or withdrawn (story 12.3): the
+ * viewer's own swaps, which *Danas*'s *Zamjene*, the day detail's mark and
+ * the proposal surface read. A PROPOSED OR ACCEPTED SWAP DERIVES NOTHING
+ * (R9.1, 0049): no schedule, roster, hours or queue reads it, so no other key
+ * is named. 12.4 adds the queue's keys here when its read lands.
  */
-export const SWAP_REQUEST_WRITE_DEPENDENTS: readonly QueryKey[] = [];
+export const SWAP_REQUEST_WRITE_DEPENDENTS: readonly QueryKey[] = [MY_SWAP_REQUESTS_KEY];
 
 /**
  * A leave request rejected (story 9.4): only the decision is recorded and the

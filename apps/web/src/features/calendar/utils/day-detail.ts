@@ -1265,18 +1265,66 @@ export function changeContextOf(detail: DayDetail): ChangeContext {
 export const MEMBER_ROLE: CalendarViewer['role'] = 'member_role';
 
 /**
+ * One of the viewer's own OPEN swap proposals (story 12.3): the given shift
+ * — a team on a date, `YYYY-MM-DD` — and the colleague asked. The proposer's
+ * side alone: a swap the viewer was asked about marks nothing here.
+ */
+export interface OpenSwapProposal {
+  readonly teamId: string;
+  readonly date: string;
+  readonly addresseeId: string;
+}
+
+/** The day detail's mark: the viewer already proposed this shift, to `colleagueName` (`null` when the snapshot does not name them). */
+export interface SwapProposalMark {
+  readonly colleagueName: string | null;
+}
+
+/**
+ * The viewer's open proposal of this very shift (story 12.3), or `null`: none,
+ * a viewer who is not member-role, no day, a day before the organization's
+ * `today` (`null` while unknown) — the link's own date rule
+ * ({@link swapOfferedOf}) — or the proposals unknown (`null`, the read
+ * paused, failed or not yet answered — the link is then offered as before,
+ * and 0049's 23505 stays the backstop).
+ */
+export function swapProposalMarkOf(
+  snapshot: CalendarSnapshot | null,
+  detail: DayDetail | null,
+  today: string | null,
+  proposals: readonly OpenSwapProposal[] | null,
+): SwapProposalMark | null {
+  if (snapshot === null || detail === null || today === null || proposals === null) return null;
+  if (snapshot.viewer.role !== MEMBER_ROLE || detail.isoDate < today) return null;
+
+  const proposal = proposals.find((one) => one.teamId === detail.teamId && one.date === detail.isoDate);
+
+  if (proposal === undefined) return null;
+
+  return { colleagueName: memberNameOf(snapshot, proposal.addresseeId) };
+}
+
+/**
  * Whether the day detail offers *Predloži zamjenu* (story 12.2): to a
  * member-role viewer alone, on a working day whose roster — the overrides in
  * force applied, `rosterOn`'s, as {@link dayDetailOf} lists it — includes the
  * viewer, from the organization's `today` on (`YYYY-MM-DD`; `null` while it
  * is unknown, which offers nothing). An admin changes a roster directly. The
  * swap surface asks the same question of its URL, so a link and the form it
- * opens never disagree.
+ * opens never disagree. SINCE STORY 12.3 never on a shift the viewer already
+ * proposed in an open swap ({@link swapProposalMarkOf}): the footer marks it
+ * instead. `proposals` unknown (`null`) offers the link as before.
  */
-export function swapOfferedOf(snapshot: CalendarSnapshot | null, detail: DayDetail | null, today: string | null): boolean {
+export function swapOfferedOf(
+  snapshot: CalendarSnapshot | null,
+  detail: DayDetail | null,
+  today: string | null,
+  proposals: readonly OpenSwapProposal[] | null,
+): boolean {
   if (snapshot === null || detail === null || today === null) return false;
   if (snapshot.viewer.role !== MEMBER_ROLE) return false;
   if (detail.kind !== DAY_WORKING || detail.isoDate < today) return false;
+  if (swapProposalMarkOf(snapshot, detail, today, proposals) !== null) return false;
 
   return detail.roster.some((member) => member.id === snapshot.viewer.memberId);
 }

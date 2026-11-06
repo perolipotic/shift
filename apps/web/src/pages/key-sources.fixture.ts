@@ -61,6 +61,7 @@ import {
   LEAVE_REQUEST_REVIEW_KEYS,
   SWAP_PROPOSAL,
   SWAP_PROPOSAL_KEYS,
+  MY_SWAPS_KEYS,
   ROTATION_DISPOSITION_KEYS,
   ROTATION_HISTORY_DIALOG,
   ROTATION_HISTORY_KEYS,
@@ -427,10 +428,21 @@ export const KEY_SOURCES = [
     // SEVENTY SINCE STORY 11.4: *Premalo ljudi*'s heading, count, calm line
     // with the minimum, a row, `i još {n}` and its link to the calendar. A
     // row's people at work are the short-staffed block's `popunjenost.atWork`.
+    //
+    // NINETY-THREE SINCE STORY 12.3: *Zamjene* — its heading; a row's shift,
+    // its colleague line from either side and its return shift from either
+    // side, an unknown colleague; *Datum je prošao* and the stale line; the
+    // addressee's consequence in the proposal preview's words (its heading,
+    // both "who works" lines, the hours line, no change, the signed delta
+    // less or more, and the leave note); *Prihvati*, *Odbij* and *Povuci*,
+    // each with its accessible name. The status words and the outcome lines
+    // come through `@/features/swaps/services/my-swaps`, a key source.
+    // NINETY-FIVE SINCE THE 12.3 REVIEW: the stale line for a row that can
+    // only be withdrawn, and an unknown team's words.
     name: 'the Danas destination',
     file: DANAS,
     keys: translationKeys,
-    strings: 70,
+    strings: 95,
   },
   {
     // STORY 6.1a: today's three cases, the next shift's two headings, and
@@ -835,7 +847,10 @@ export const KEY_SOURCES = [
     // proposal returns to the month with. ONE HUNDRED AND SEVENTY-FIVE SINCE
     // ITS REVIEW: the line's two messages, with and without a return shift,
     // are chosen in `@/features/swaps/services/swap-proposal`, a key source.
-    strings: 175,
+    // ONE HUNDRED AND SEVENTY-SEVEN SINCE STORY 12.3: the footer's mark on a
+    // shift the viewer already proposed, *Zamjena predložena · {kolega}*, and
+    // an unknown colleague's words.
+    strings: 177,
   },
   {
     // STORY 12.2. On the swap proposal: its heading (twice, once while the
@@ -849,10 +864,12 @@ export const KEY_SOURCES = [
     // unavailable alert twice with its retry twice, an unknown member, and
     // the notice for a shift that is not the viewer's. The refusals come
     // through `@/features/swaps/services/swap-proposal`, a key source.
+    // THIRTY-NINE SINCE STORY 12.3: the notice for a shift the viewer already
+    // proposed in an open swap, naming the colleague, or an unknown one.
     name: 'the swap proposal',
     file: SWAP_PROPOSAL,
     keys: translationKeys,
-    strings: 37,
+    strings: 39,
   },
   {
     // STORY 12.2: the refusals a send says, off `swapSendMessageKey` — NINE
@@ -863,6 +880,16 @@ export const KEY_SOURCES = [
     file: SWAP_PROPOSAL_KEYS,
     keys: messageKeyUnions,
     strings: 11,
+  },
+  {
+    // STORY 12.3: *Zamjene*'s eight status words (`swapWordMessageKey`), and
+    // what *Prihvati*, *Odbij* and *Povuci* say when they land
+    // (`swapActedMessageKey`) and when they are refused
+    // (`swapActFailureMessageKey`).
+    name: 'the swaps card rules',
+    file: MY_SWAPS_KEYS,
+    keys: messageKeyUnions,
+    strings: 14,
   },
   {
     // B449: what an empty day or month says — inactive, or on no team — for

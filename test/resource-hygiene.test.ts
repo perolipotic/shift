@@ -2339,6 +2339,46 @@ const SANCTIONED_SCREEN_KEYS = [
   'kalendar.swap.unavailable',
   'kalendar.swap.sent',
   'kalendar.swap.sentWithReturn',
+  // STORY 12.3. The colleague answers, and either member withdraws: the day
+  // detail's mark on a shift the viewer already proposed and the proposal
+  // surface's notice for it; *Zamjene* on *Danas* — its heading, a row's
+  // shift, colleague and return lines from either side, the eight status
+  // words, *Datum je prošao*, the stale line, *Prihvati*, *Odbij* and
+  // *Povuci* with their accessible names, and what each says landed or
+  // refused. The addressee's consequence reuses the proposal preview's words.
+  // No "konflikt" anywhere (story 9.1).
+  'kalendar.swap.proposedMark',
+  'kalendar.swap.alreadyProposed',
+  'danas.swaps.heading',
+  'danas.swaps.shift',
+  'danas.swaps.toColleague',
+  'danas.swaps.fromColleague',
+  'danas.swaps.returnYours',
+  'danas.swaps.returnTheirs',
+  'danas.swaps.status.waitingYou',
+  'danas.swaps.status.waitingColleague',
+  'danas.swaps.status.waitingDecision',
+  'danas.swaps.status.declined',
+  'danas.swaps.status.withdrawn',
+  'danas.swaps.status.approved',
+  'danas.swaps.status.rejected',
+  'danas.swaps.status.deactivated',
+  'danas.swaps.past',
+  'danas.swaps.stale',
+  'danas.swaps.staleWithdraw',
+  'danas.swaps.unknownTeam',
+  'danas.swaps.accept',
+  'danas.swaps.decline',
+  'danas.swaps.withdraw',
+  'danas.swaps.acceptName',
+  'danas.swaps.declineName',
+  'danas.swaps.withdrawName',
+  'danas.swaps.accepted',
+  'danas.swaps.declined',
+  'danas.swaps.withdrawn',
+  'danas.swaps.notOpen',
+  'danas.swaps.denied',
+  'danas.swaps.failed',
 ];
 
 /** Everything the resource file is permitted to hold, together. */

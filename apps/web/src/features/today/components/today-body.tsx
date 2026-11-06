@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Notice } from '@/components/ui/notice';
+import { MySwapsCard } from '@/features/swaps/components/my-swaps-card';
 import { HoursTile } from '@/features/today/components/hours-tile';
 import { LeaveTile } from '@/features/today/components/leave-tile';
 import { NextShiftCard } from '@/features/today/components/next-shift-card';
@@ -17,6 +18,7 @@ import {
   type Today,
 } from '@/features/today/services/today';
 import type { TodayTiles } from '@/features/today/services/today-tiles';
+import { MEMBER_TODAY_SURFACE_KEYS } from '@/features/today/services/surface-keys';
 import { t } from '@/lib/i18n';
 import { keepFocusOnAlert } from '@/utils/retry-focus';
 
@@ -25,7 +27,8 @@ import { keepFocusOnAlert } from '@/utils/retry-focus';
  * where reading again can help, and no case when a read failed or what it
  * answered cannot be trusted; the viewer's own sentence when they have no
  * membership; and otherwise today's card (closing on the viewer's team
- * today), the next shift and the week —
+ * today), the next shift, since story 12.3 *Zamjene* while there is a swap,
+ * and the week —
  * then, since story 6.1b, the hours and leave tiles side by side (in one
  * Card since story 15.3), each
  * resolving on its own. `todayOf` and `todayTilesOf` decide which; this only
@@ -78,6 +81,8 @@ export function TodayBody({
     <>
       <TodayCard todayCase={view.todayCase} ownTeam={view.ownTeam} />
       <NextShiftCard next={view.next} returning={view.returning} />
+      {/* STORY 12.3: *Zamjene*, only while the viewer has a swap to show. */}
+      <MySwapsCard surfaceKeys={MEMBER_TODAY_SURFACE_KEYS} />
       <WeekList week={view.week} />
       {/* STORY 15.3: the two tiles share one Card. `StatTile` is a figure
           INSIDE a card, and bare on the page backdrop it read as a loose
