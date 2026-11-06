@@ -411,17 +411,26 @@ function renderDetail(
 }
 
 /**
- * The day detail's footer (story 7.9), an admin's alone: "Promijeni sastav"
- * on a working day and "Promijeni tip smjene" where a type may be set, each
- * opening its own dialog. Nothing here starts a write.
+ * The day detail's footer (story 7.9): an admin's "Promijeni sastav" on a
+ * working day and "Promijeni tip smjene" where a type may be set, each
+ * opening its own dialog; since story 12.2 a member's *Predloži zamjenu* on
+ * their own working shift from today on, a link to `/kalendar/zamjena`.
+ * Nothing here starts a write: the day detail stays facts only.
  */
-function renderFooter(form: OverrideFormState, roster: RosterFormState): ReactNode {
-  if (!roster.offersSet && !form.offersSet) return null;
+function renderFooter(detail: DayDetail, form: OverrideFormState, roster: RosterFormState, swapOffered: boolean): ReactNode {
+  if (!roster.offersSet && !form.offersSet && !swapOffered) return null;
 
   const busy = form.pending || roster.pending;
 
   return (
     <DialogFooter>
+      {swapOffered ? (
+        <Button asChild className="h-11" variant="outline">
+          <Link to="/kalendar/zamjena" search={{ dan: detail.isoDate, smjena: detail.teamId }}>
+            {t('kalendar.swap.action')}
+          </Link>
+        </Button>
+      ) : null}
       {roster.offersSet ? (
         <Button
           ref={roster.openButton}
@@ -477,6 +486,7 @@ export function DayDetailDialog({
   staffing,
   form,
   roster,
+  swapOffered = false,
   onClose,
   onClosedByBrowser,
 }: {
@@ -488,6 +498,8 @@ export function DayDetailDialog({
   readonly staffing: CoverageAgainstMinimum | null;
   readonly form: OverrideFormState;
   readonly roster: RosterFormState;
+  /** Story 12.2: whether the footer offers *Predloži zamjenu* (`swapOfferedOf`): a member's own working shift from today on. */
+  readonly swapOffered?: boolean;
   readonly onClose: () => void;
   readonly onClosedByBrowser: () => void;
 }): ReactNode {
@@ -547,7 +559,7 @@ export function DayDetailDialog({
               <DialogTitle id={DAY_DETAIL_HEADING_ID} tabIndex={-1}>{t('kalendar.detail.title', { team: detail.teamName, date: detail.date })}</DialogTitle>
             </DialogHeader>
             {renderDetail(detail, snapshot.usesFireRanks, conflicts, form, roster, staffing)}
-            {renderFooter(form, roster)}
+            {renderFooter(detail, form, roster, swapOffered)}
           </>
         )}
       </Dialog>

@@ -26,6 +26,7 @@ import type {
   CalendarOverride,
   CalendarRosterOverride,
   CalendarSnapshot,
+  CalendarViewer,
 } from '@/features/calendar/services/snapshot';
 import {
   CANDIDATE_GROUPS,
@@ -1256,4 +1257,26 @@ export function changeContextOf(detail: DayDetail): ChangeContext {
     date: detail.date,
     type: detail.typeName === null ? null : { name: detail.typeName, range: detail.range },
   };
+}
+
+// ------------------------------------------- proposing a swap (story 12.2)
+
+/** The member role, as the calendar snapshot names it: the one definition the swap surface shares. */
+export const MEMBER_ROLE: CalendarViewer['role'] = 'member_role';
+
+/**
+ * Whether the day detail offers *Predloži zamjenu* (story 12.2): to a
+ * member-role viewer alone, on a working day whose roster — the overrides in
+ * force applied, `rosterOn`'s, as {@link dayDetailOf} lists it — includes the
+ * viewer, from the organization's `today` on (`YYYY-MM-DD`; `null` while it
+ * is unknown, which offers nothing). An admin changes a roster directly. The
+ * swap surface asks the same question of its URL, so a link and the form it
+ * opens never disagree.
+ */
+export function swapOfferedOf(snapshot: CalendarSnapshot | null, detail: DayDetail | null, today: string | null): boolean {
+  if (snapshot === null || detail === null || today === null) return false;
+  if (snapshot.viewer.role !== MEMBER_ROLE) return false;
+  if (detail.kind !== DAY_WORKING || detail.isoDate < today) return false;
+
+  return detail.roster.some((member) => member.id === snapshot.viewer.memberId);
 }

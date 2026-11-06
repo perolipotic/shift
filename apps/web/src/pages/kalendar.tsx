@@ -22,6 +22,8 @@ import {
   type CalendarSearch,
 } from '@/features/calendar/utils/month';
 import { calendarMessageKey } from '@/features/calendar/services/snapshot';
+import { SwapProposedLine } from '@/features/swaps/components/swap-proposed-line';
+import { useSwapProposed } from '@/features/swaps/hooks/use-swap-proposed';
 import { usePhone } from '@/hooks/viewport';
 import { t } from '@/lib/i18n';
 import { appLayoutRoute } from '@/pages/_app';
@@ -101,6 +103,11 @@ import { keepFocusOnAlert } from '@/utils/retry-focus';
  * under the as-of note (`OfflineNote`, under the heading), its time the
  * oldest of the month's reads; with any read missing, the one alert instead.
  *
+ * A SWAP PROPOSED (story 12.2): a member's day detail on their own working
+ * shift links to `/kalendar/zamjena`; a landed proposal returns here, on its
+ * month, with one polite status line naming the date, the shift and the
+ * colleague (`useSwapProposed`).
+ *
  * The session guard is NOT here. It is registered once on the pathless `_app`
  * layout this route nests under.
  */
@@ -130,6 +137,8 @@ export function KalendarScreen() {
       : month.ownTeamName === null
         ? t('kalendar.ownNoteNoTeam')
         : t('kalendar.ownNote', { team: month.ownTeamName });
+  // STORY 12.2: the polite line a landed swap proposal returns with.
+  const { proposed: swapProposed, lineField: swapLine } = useSwapProposed();
   const overrideForm = useOverrideForm(snapshot, screen.detail, screen.leaveKeys);
   const rosterForm = useRosterForm(
     snapshot,
@@ -148,6 +157,7 @@ export function KalendarScreen() {
         {isPhone ? null : monthNav}
       </PageHeader>
       <OfflineNote offline={screen.offline} />
+      <SwapProposedLine proposed={swapProposed} lineField={swapLine} />
       {refusal === null ? null : (
         <div className="grid min-w-0 gap-2">
           <Notice role="alert">{t(calendarMessageKey(refusal))}</Notice>
@@ -190,6 +200,7 @@ export function KalendarScreen() {
         staffing={screen.dayStaffing}
         form={overrideForm}
         roster={rosterForm}
+        swapOffered={screen.swapOffered}
         onClose={screen.closeDay}
         onClosedByBrowser={screen.closedByBrowser}
       />

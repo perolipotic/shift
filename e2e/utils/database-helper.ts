@@ -380,9 +380,9 @@ export async function seedMemberStatusVersions(
 
 /**
  * Deletes a member {@link seedLeaveMember} wrote (story 5.5a's cleanup), with
- * everything that names them: their conflict resolutions, leave requests with
- * their decisions, and leave records — no such key cascades (0028, 0031,
- * 0040) — and then their auth user, from which
+ * everything that names them: their conflict resolutions, swap requests and
+ * leave requests with their decisions, and leave records — no such key
+ * cascades (0028, 0031, 0040, 0049) — and then their auth user, from which
  * the member row and its versions cascade. Run it after the rotation seed is
  * removed, so no roster override names them. Safe to call twice: a member
  * already gone is nothing to do. REFUSES any member whose username is not one
@@ -415,6 +415,19 @@ export async function removeLeaveMemberInSql(slug: string, memberId: string): Pr
                              select id from leave_records where organization_id = $1 and member_id = $2)`,
       scope,
     );
+    // Story 12.2: the swaps they proposed or were proposed (0049), and the
+    // decisions on them, whose member keys do not cascade — the decisions
+    // first, which name the request.
+    await client.query(
+      `delete from swap_request_decisions d using swap_requests r
+        where d.organization_id = r.organization_id and d.request_id = r.id
+          and r.organization_id = $1 and (r.proposer_id = $2 or r.addressee_id = $2)`,
+      scope,
+    );
+    await client.query(
+      'delete from swap_requests where organization_id = $1 and (proposer_id = $2 or addressee_id = $2)',
+      scope,
+    );
     // Story 9.3: their leave requests and the decisions on them (0040), whose
     // keys do not cascade — the decisions first, which name both a request
     // and the leave an approval created.
@@ -440,6 +453,49 @@ export async function removeLeaveMemberInSql(slug: string, memberId: string): Pr
   } catch (cause) {
     await client.query('rollback').catch(() => undefined);
     throw cause;
+  } finally {
+    await client.end();
+  }
+}
+
+/** One swap proposal as 0049 stores it (story 12.2): the given shift, the addressee and the return shift. */
+export interface StoredSwapRequest {
+  readonly addresseeId: string;
+  readonly teamId: string;
+  readonly date: string;
+  readonly returnTeamId: string | null;
+  readonly returnDate: string | null;
+  readonly open: boolean;
+}
+
+/** The swap requests `proposerId` proposed in the run organization (story 12.2), oldest first. Read only. */
+export async function swapRequestsOfInSql(slug: string, proposerId: string): Promise<StoredSwapRequest[]> {
+  const client = await connect();
+  try {
+    const found = await client.query<{
+      addressee_id: string;
+      team_id: string;
+      date: string;
+      return_team_id: string | null;
+      return_date: string | null;
+      open: boolean;
+    }>(
+      `select r.addressee_id, r.team_id, to_char(r.date, 'YYYY-MM-DD') as date, r.return_team_id,
+              to_char(r.return_date, 'YYYY-MM-DD') as return_date, r.closed_at is null as open
+         from swap_requests r join organizations o on o.id = r.organization_id
+        where o.slug = $1 and r.proposer_id = $2
+        order by r.created_at, r.id`,
+      [slug, proposerId],
+    );
+
+    return found.rows.map((row) => ({
+      addresseeId: row.addressee_id,
+      teamId: row.team_id,
+      date: row.date,
+      returnTeamId: row.return_team_id,
+      returnDate: row.return_date,
+      open: row.open,
+    }));
   } finally {
     await client.end();
   }

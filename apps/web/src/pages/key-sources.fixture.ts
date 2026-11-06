@@ -59,6 +59,8 @@ import {
   RESOLUTION_WRITE_KEYS,
   LEAVE_REQUEST_REVIEW,
   LEAVE_REQUEST_REVIEW_KEYS,
+  SWAP_PROPOSAL,
+  SWAP_PROPOSAL_KEYS,
   ROTATION_DISPOSITION_KEYS,
   ROTATION_HISTORY_DIALOG,
   ROTATION_HISTORY_KEYS,
@@ -828,7 +830,39 @@ export const KEY_SOURCES = [
     // ONE HUNDRED AND SEVENTY-FOUR SINCE STORY 11.3: the day detail's people
     // at work line, `Premalo ljudi: {atWork}` while the shift is short (the
     // figure itself is the short-staffed block's `popunjenost.atWork`).
-    strings: 174,
+    // ONE HUNDRED AND SEVENTY-SIX SINCE STORY 12.2: a member's *Predloži
+    // zamjenu* in the day detail's footer, and the status line a landed swap
+    // proposal returns to the month with. ONE HUNDRED AND SEVENTY-FIVE SINCE
+    // ITS REVIEW: the line's two messages, with and without a return shift,
+    // are chosen in `@/features/swaps/services/swap-proposal`, a key source.
+    strings: 175,
+  },
+  {
+    // STORY 12.2. On the swap proposal: its heading (twice, once while the
+    // role is read), lede and back link; the given shift's label and line, a
+    // type with its times; the colleague's label, placeholder and empty
+    // line; the return shift's label, none, hint and option line; an option
+    // a live roster key holds; the preview's prompt, blocked line, heading,
+    // both "who works" lines, both hours lines, a month, no change and the
+    // signed delta's duration, less or more, and the given shift's type
+    // fallback; *Pošalji*, *Odustani*, the
+    // unavailable alert twice with its retry twice, an unknown member, and
+    // the notice for a shift that is not the viewer's. The refusals come
+    // through `@/features/swaps/services/swap-proposal`, a key source.
+    name: 'the swap proposal',
+    file: SWAP_PROPOSAL,
+    keys: translationKeys,
+    strings: 37,
+  },
+  {
+    // STORY 12.2: the refusals a send says, off `swapSendMessageKey` — NINE
+    // since its review (no colleague, a colleague or a choice no longer
+    // offered) — and the status line's two messages, off
+    // `swapProposedMessageKey`.
+    name: 'the swap proposal rules',
+    file: SWAP_PROPOSAL_KEYS,
+    keys: messageKeyUnions,
+    strings: 11,
   },
   {
     // B449: what an empty day or month says — inactive, or on no team — for

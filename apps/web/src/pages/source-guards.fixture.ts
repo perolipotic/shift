@@ -13,6 +13,7 @@ import {
 import { HOURS_SCREEN_PARTS } from '@/features/hours/hours-screen.fixture';
 import { LEAVE_REQUEST_PARTS, LEAVE_SCREEN_PARTS } from '@/features/leave/leave-screen.fixture';
 import { NOTIFICATIONS_SCREEN_PARTS } from '@/features/notifications/notifications-screen.fixture';
+import { SWAP_PROPOSAL_PARTS } from '@/features/swaps/swaps-screen.fixture';
 import { TODAY_SCREEN_PARTS } from '@/features/today/today-screen.fixture';
 import {
   HOUR_BAND_EDIT_PARTS,
@@ -534,6 +535,14 @@ export const KALENDAR: readonly string[] = Object.values(CALENDAR_SCREEN_PARTS).
 
 export const CALENDAR_SNAPSHOT_KEYS = join(srcRoot, 'features', 'calendar', 'services', 'snapshot.ts');
 
+/** Story 12.2: the swap proposal's files, page first. */
+export const SWAP_PROPOSAL: readonly string[] = Object.values(SWAP_PROPOSAL_PARTS).map((parts) =>
+  join(srcRoot, ...parts),
+);
+
+/** Story 12.2: the swap proposal's rules — the refusals a send says. */
+export const SWAP_PROPOSAL_KEYS = join(srcRoot, 'features', 'swaps', 'services', 'swap-proposal.ts');
+
 /** The month navigation *Kalendar* and *Sati* share (story 4.1b): a part of both sets. */
 export const SHARED_MONTH_NAV = join(srcRoot, ...CALENDAR_SCREEN_PARTS.monthNav);
 
@@ -1003,7 +1012,15 @@ export const SCREENS = [
   // THIRTY-FOUR SINCE STORY 15.7b: the month control is ‹ month › only — its
   // `Ovaj mjesec` off the current month is gone, and the way back is the
   // picker footer's.
-  { name: 'the Kalendar destination', file: KALENDAR, expectedFields: 6, expectedButtons: 34 },
+  // THIRTY-FIVE SINCE STORY 12.2: a member's *Predloži zamjenu* in the day
+  // detail's footer, a `<Button asChild>` link to the swap proposal.
+  { name: 'the Kalendar destination', file: KALENDAR, expectedFields: 6, expectedButtons: 35 },
+  // STORY 12.2. On the swap proposal: the colleague and return `<Select>`s,
+  // *Pošalji*, *Odustani* (a `<Button asChild>` link back to Kalendar), the
+  // snapshot's unavailable alert's retry, *Natrag na Kalendar* above the title
+  // (written once, drawn in every state), and the page's own retry when the
+  // calendar cannot name the role.
+  { name: 'the swap proposal', file: SWAP_PROPOSAL, expectedFields: 2, expectedButtons: 5 },
   // STORY 4.1b. THREE on Sati: the month navigation it shares with the
   // calendar — the previous month, `Ovaj mjesec` and the next month. The
   // figures are read, never pressed.

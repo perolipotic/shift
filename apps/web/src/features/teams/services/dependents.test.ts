@@ -50,6 +50,7 @@ import {
   ROSTER_WRITE_DEPENDENTS,
   ROTATION_CANCEL_DEPENDENTS,
   ROTATION_SAVE_DEPENDENTS,
+  SWAP_REQUEST_WRITE_DEPENDENTS,
   TEAM_CHANGE_DEPENDENTS,
   TEAM_CREATE_DEPENDENTS,
   refreshAfterWrite,
@@ -410,6 +411,13 @@ describe('the reads a team or membership write makes stale', () => {
       // The calendar snapshot the override is drawn in, and the leave and
       // resolutions the erasure check and the queue derive from with it.
       stale: [CALENDAR_KEY, ORGANIZATION_LEAVE_RECORDS_KEY, LEAVE_OVERVIEW_RECORDS_KEY, ORGANIZATION_CONFLICT_RESOLUTIONS_KEY],
+    },
+    {
+      write: 'a swap proposed (story 12.2)',
+      own: CALENDAR_KEY,
+      dependents: SWAP_REQUEST_WRITE_DEPENDENTS,
+      // The surface's own snapshot alone: a proposed swap derives nothing (R9.1).
+      stale: [CALENDAR_KEY],
     },
     {
       write: 'a refusal',

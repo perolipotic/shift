@@ -33,7 +33,7 @@ import {
   type CalendarSearch,
 } from '@/features/calendar/utils/month';
 import { translateCellLabel } from '@/features/calendar/utils/cell-label';
-import { DAY_WORKING, dayConflictsOf, type DayConflict } from '@/features/calendar/utils/day-detail';
+import { DAY_WORKING, dayConflictsOf, swapOfferedOf, type DayConflict } from '@/features/calendar/utils/day-detail';
 import { candidateLeaveOf } from '@/features/calendar/utils/replacement-candidates';
 import { cachedRoleOf, calendarSkeletonShapeOf, earlyCalendarModeOf } from '@/features/calendar/utils/skeleton';
 import { gridFocusKeyOf } from '@/features/calendar/utils/screen-keys';
@@ -343,6 +343,9 @@ export function useCalendarScreen(
         : dayStaffingOf(snapshot, marks.staffingLeave, detail.teamId, detail.isoDate),
     [snapshot, marks, detail],
   );
+  // STORY 12.2: *Predloži zamjenu* in the open day's footer — a member's own
+  // working shift, from the organization's today on.
+  const swapOffered = swapOfferedOf(snapshot, detail, today);
   // Built once per month shown, not on every focus move.
   const labels = useMemo(() => (month === null ? null : gridCellLabelsOf(month, translateCellLabel)), [month]);
 
@@ -483,6 +486,7 @@ export function useCalendarScreen(
     detail,
     dayConflicts,
     dayStaffing,
+    swapOffered,
     candidateLeave,
     leaveKeys,
     retry,

@@ -1,7 +1,8 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { readCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
-import { overridePreviewOf, rosterPreviewOf } from '@/features/calendar/utils/change-preview';
+import { ROSTER_CHANGE_SAVE, rosterChangeSnapshotOf } from '@/features/calendar/services/roster-erasures';
+import { memberMonthDeltasOf, overridePreviewOf, rosterPreviewOf } from '@/features/calendar/utils/change-preview';
 import { OVERRIDE_NO_TYPE, ROSTER_NOBODY, dayDetailOf, type DayDetail } from '@/features/calendar/utils/day-detail';
 import { initLocalization } from '@/lib/i18n';
 import {
@@ -209,5 +210,61 @@ describe('the roster preview (story 7.9)', () => {
     expect(rosterPreviewOf(broken, dayOf(snapshot, B), IVO, KARLO, [])).toBeNull();
     expect(error).toHaveBeenCalled();
     error.mockRestore();
+  });
+});
+
+describe('the one hour delta, over several changes and months (story 12.2)', () => {
+  /** `snapshot` with each roster change of `changes` applied in turn, as the save's "after" builds it. */
+  function afterOf(
+    changes: readonly { readonly teamId: string; readonly date: string; readonly out: string; readonly in: string }[],
+  ): CalendarSnapshot {
+    return changes.reduce((current, change) => {
+      const applied = rosterChangeSnapshotOf(current, {
+        kind: ROSTER_CHANGE_SAVE,
+        teamId: change.teamId,
+        date: change.date,
+        memberOutId: change.out,
+        memberInId: change.in,
+      });
+
+      if (!applied.ok) throw new Error(applied.code);
+
+      return applied.after;
+    }, snapshot);
+  }
+
+  it('is the roster preview’s own figure for one change and one month, zeros included', () => {
+    const after = afterOf([{ teamId: B, date: DATE, out: IVO, in: KARLO }]);
+
+    expect(memberMonthDeltasOf(snapshot, after, [IVO, KARLO, ANA], ['2026-09'], () => [])).toEqual([
+      { memberId: IVO, month: '2026-09', deltaMinutes: -TWELVE_HOURS },
+      { memberId: KARLO, month: '2026-09', deltaMinutes: TWELVE_HOURS },
+      { memberId: ANA, month: '2026-09', deltaMinutes: 0 },
+    ]);
+  });
+
+  it('sums two changes, month by month, member by member', () => {
+    // Ivo gives B's Noć of 09-10 to Karlo, and takes Karlo's A shift of 10-02 in return.
+    const october = '2026-10-01';
+    const after = afterOf([
+      { teamId: B, date: DATE, out: IVO, in: KARLO },
+      { teamId: A, date: october, out: KARLO, in: IVO },
+    ]);
+
+    expect(memberMonthDeltasOf(snapshot, after, [IVO, KARLO], ['2026-09', '2026-10'], () => [])).toEqual([
+      { memberId: IVO, month: '2026-09', deltaMinutes: -TWELVE_HOURS },
+      { memberId: IVO, month: '2026-10', deltaMinutes: TWELVE_HOURS },
+      { memberId: KARLO, month: '2026-09', deltaMinutes: TWELVE_HOURS },
+      { memberId: KARLO, month: '2026-10', deltaMinutes: -TWELVE_HOURS },
+    ]);
+  });
+
+  it('counts each member’s own leave keys, and leaves out a member the snapshots do not hold', () => {
+    const after = afterOf([{ teamId: B, date: DATE, out: IVO, in: KARLO }]);
+    const keys = (memberId: string) => (memberId === IVO ? [{ memberId: IVO, date: DATE, teamId: B }] : []);
+
+    expect(memberMonthDeltasOf(snapshot, after, [IVO, 'nobody'], ['2026-09'], keys)).toEqual([
+      { memberId: IVO, month: '2026-09', deltaMinutes: 0 },
+    ]);
   });
 });

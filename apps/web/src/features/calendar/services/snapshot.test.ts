@@ -1318,6 +1318,9 @@ describe('the calendar only reads, and projects nothing of its own', () => {
   const monthNav = `${srcRoot}${CALENDAR_SCREEN_PARTS.monthNav.join('/')}`;
   // STORY 7.5: the filter bar, shared with *Sati* from `@/components`.
   const filterBar = `${srcRoot}${CALENDAR_SCREEN_PARTS.filterBar.join('/')}`;
+  // STORY 12.2: the swap proposal's status line on the month, and its hook, from the swaps feature.
+  const swapProposedHook = `${srcRoot}${CALENDAR_SCREEN_PARTS.swapProposedHook.join('/')}`;
+  const swapProposedLine = `${srcRoot}${CALENDAR_SCREEN_PARTS.swapProposedLine.join('/')}`;
   const files = [
     ...readdirSync(directory, { recursive: true, encoding: 'utf8' })
       .map(slashed)
@@ -1326,6 +1329,8 @@ describe('the calendar only reads, and projects nothing of its own', () => {
     route,
     monthNav,
     filterBar,
+    swapProposedHook,
+    swapProposedLine,
   ];
   const stripped = (file: string) =>
     readFileSync(file, 'utf8')

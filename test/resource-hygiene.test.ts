@@ -2292,6 +2292,53 @@ const SANCTIONED_SCREEN_KEYS = [
   'postavkeObavijesti.pushStatusOn',
   'postavkeObavijesti.pushStatusOff',
   'postavkeObavijesti.pushNotConfigured',
+  // STORY 12.2. A member proposes a swap: *Predloži zamjenu* in the day
+  // detail's footer and the surface's heading, back link and lede; the given
+  // shift, the colleague and return fields with their options, hint and the
+  // line an option a live roster key holds reads; the preview's prompt, its
+  // blocked line, heading, both "who works" lines, both hours lines, a month
+  // in the locative (`filter.monthIn.*`), "no change" and the note when the
+  // viewer's leave cannot be read; *Pošalji* and *Odustani*; the nine
+  // refusals; the notice
+  // for a shift that is not the viewer's, the unavailable line, and the
+  // status line on *Kalendar*, with the return shift where there was one.
+  // No "konflikt" anywhere (story 9.1).
+  'kalendar.swap.action',
+  'kalendar.swap.heading',
+  'kalendar.swap.back',
+  'kalendar.swap.lede',
+  'kalendar.swap.given',
+  'kalendar.swap.shiftLine',
+  'kalendar.swap.colleague',
+  'kalendar.swap.colleagueNone',
+  'kalendar.swap.noColleagues',
+  'kalendar.swap.returnShift',
+  'kalendar.swap.returnNone',
+  'kalendar.swap.returnHint',
+  'kalendar.swap.taken',
+  'kalendar.swap.chooseColleague',
+  'kalendar.swap.blocked',
+  'kalendar.swap.previewHeading',
+  'kalendar.swap.worksInstead',
+  'kalendar.swap.youWorkInstead',
+  'kalendar.swap.hoursYou',
+  'kalendar.swap.hoursOf',
+  'kalendar.swap.leaveUnknown',
+  'kalendar.swap.noChange',
+  'kalendar.swap.submit',
+  'kalendar.swap.cancel',
+  'kalendar.swap.duplicate',
+  'kalendar.swap.denied',
+  'kalendar.swap.invalid',
+  'kalendar.swap.failed',
+  'kalendar.swap.givenGone',
+  'kalendar.swap.returnGone',
+  'kalendar.swap.noColleague',
+  'kalendar.swap.colleagueGone',
+  'kalendar.swap.notOwn',
+  'kalendar.swap.unavailable',
+  'kalendar.swap.sent',
+  'kalendar.swap.sentWithReturn',
 ];
 
 /** Everything the resource file is permitted to hold, together. */

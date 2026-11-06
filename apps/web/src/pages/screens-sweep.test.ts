@@ -315,7 +315,8 @@ describe('the screen is read at all, so every sweep below means something', () =
     // THIRTY-FIVE SINCE STORY 9.3: the leave request form.
     // THIRTY-SIX SINCE STORY 9.4: the leave request decision screen.
     // THIRTY-SEVEN SINCE STORY 10.3: the notification settings screen.
-    expect(SCREENS).toHaveLength(37);
+    // THIRTY-EIGHT SINCE STORY 12.2: the swap proposal.
+    expect(SCREENS).toHaveLength(38);
     //
     // FORTY-NINE SINCE STORY 3.6b: `@/features/calendar/services/roster-write`.
     //
@@ -386,7 +387,8 @@ describe('the screen is read at all, so every sweep below means something', () =
     // EIGHTY-THREE SINCE STORY 10.4: the push section's rules.
     // EIGHTY-FOUR SINCE 0047: the leave request record change.
     // EIGHTY-FIVE SINCE STORY 11.2: the short-staffed block.
-    expect(KEY_SOURCES).toHaveLength(85);
+    // EIGHTY-SEVEN SINCE STORY 12.2: the swap proposal and its rules.
+    expect(KEY_SOURCES).toHaveLength(87);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
@@ -502,11 +504,21 @@ describe('the screen is read at all, so every sweep below means something', () =
     expect(KALENDAR, 'the shared month navigation left the set').toContain(SHARED_MONTH_NAV);
     // STORY 7.5: so is the filter bar, shared from `@/components/filter-bar`.
     expect(KALENDAR, 'the shared filter bar left the set').toContain(SHARED_FILTER_BAR);
+    // STORY 12.2: the swap proposal's status line and its hook live in the
+    // swaps feature, and are in the set still.
+    const swapParts = [CALENDAR_SCREEN_PARTS.swapProposedHook, CALENDAR_SCREEN_PARTS.swapProposedLine].map((parts) =>
+      join(srcRoot, ...parts),
+    );
+
+    for (const part of swapParts) expect(KALENDAR, 'the swap status line left the set').toContain(part);
     expect(
       found.filter((file) => !exempt.has(file)).sort(),
       'the calendar file set and the feature folders disagree',
     ).toEqual(
-      KALENDAR.filter((file) => file !== KALENDAR_PAGE && file !== SHARED_MONTH_NAV && file !== SHARED_FILTER_BAR).sort(),
+      KALENDAR.filter(
+        (file) =>
+          file !== KALENDAR_PAGE && file !== SHARED_MONTH_NAV && file !== SHARED_FILTER_BAR && !swapParts.includes(file),
+      ).sort(),
     );
   });
 

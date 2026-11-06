@@ -358,8 +358,9 @@ const TEAMS_SOURCES_REQUIRED = [
 const CALENDAR_SOURCES_REQUIRED = [
   ...Object.values(CALENDAR_SCREEN_PARTS)
     // The month navigation is shared with *Sati* from `components/` since story
-    // 4.1b, and listed in `SOURCES` by name.
-    .filter((parts) => parts[0] === 'features')
+    // 4.1b, and listed in `SOURCES` by name; so, since story 12.2, are the
+    // swap proposal's status line and its hook, from the swaps feature.
+    .filter((parts) => parts[0] === 'features' && parts[1] === 'calendar')
     .map((parts) => join(webRoot, 'src', ...parts)),
   ...['month.ts', 'modifiers.ts', 'grid-keys.ts', 'day-detail.ts'].map((name) =>
     join(webRoot, 'src', 'features', 'calendar', 'utils', name),
@@ -669,6 +670,15 @@ const SOURCES = [
   join(webRoot, 'src', 'features', 'leave', 'components', 'my-leave-requests.tsx'),
   join(webRoot, 'src', 'features', 'leave', 'services', 'leave-request-list.ts'),
   join(webRoot, 'src', 'features', 'leave', 'services', 'leave-request-write.ts'),
+  // Story 12.2: the swap proposal — its page, hook and form, the status line
+  // *Kalendar* shows after a send and its hook, its element ids, and its
+  // rules module, which words the refusals.
+  join(webRoot, 'src', 'pages', 'kalendar.zamjena.tsx'),
+  join(webRoot, 'src', 'features', 'swaps', 'hooks', 'use-swap-proposal.ts'),
+  join(webRoot, 'src', 'features', 'swaps', 'hooks', 'use-swap-proposed.ts'),
+  join(webRoot, 'src', 'features', 'swaps', 'components', 'swap-proposal-form.tsx'),
+  join(webRoot, 'src', 'features', 'swaps', 'components', 'swap-proposed-line.tsx'),
+  join(webRoot, 'src', 'features', 'swaps', 'services', 'swap-proposal.ts'),
   // Story 10.3: the notification settings — the page, its hook, card and
   // rules module. The organization's switch card is read off its feature's
   // folders with the settings surface.
