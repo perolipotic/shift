@@ -6,6 +6,8 @@ import { describe, expect, it } from 'vitest';
 
 import { NAME_WHITESPACE } from '../apps/web/src/utils/name.ts';
 
+import { collectFiles } from './source-scan.ts';
+
 /**
  * The Supabase scaffold's shape: forward-only migrations, a seed carrying both
  * fixtures, and exactly two Edge Functions (AD-14, AD-15).
@@ -481,7 +483,7 @@ describe('the access-control migration', () => {
     ).toEqual([]);
   });
 
-  it('declares exactly the fifty-two policies stories 1.3a, 1.4a, 1.4b, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a, 3.5a, 3.6a, 5.1b, 5.4a, 9.2, 10.3, 10.4, 0025 and 0036 reviewed, and no fifty-third', () => {
+  it('declares exactly the fifty-five policies stories 1.3a, 1.4a, 1.4b, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a, 3.5a, 3.6a, 5.1b, 5.4a, 9.2, 10.3, 10.4, 12.1, 0025 and 0036 reviewed, and no fifty-sixth', () => {
     // EXTENDED BY STORY 1.4a, exactly as this comment asked: `0004_organization
     // _settings.sql` adds `organizations_update_by_own_active_admin`, built by
     // copying `members_update_by_own_active_admin`, and its name is added here
@@ -615,6 +617,15 @@ describe('the access-control migration', () => {
       'shift_types_insert_by_own_active_admin',
       'shift_types_select_own_organization',
       'shift_types_update_by_own_active_admin',
+      // STORY 12.1, and THREE, as 9.2's: a decision is read alone, and only
+      // `decide_swap_request` and the deactivation close write one; a swap is
+      // inserted by any active account as its own proposer (AD-10's
+      // self-owned row) and read by an active admin or by either party. No
+      // update and no delete policy: the answer and the close are the three
+      // definers'.
+      'swap_request_decisions_select_own_organization',
+      'swap_requests_insert_own_by_active_member',
+      'swap_requests_select_own_organization',
       // STORY 1.7b, and THREE for the reason the status table has three: a
       // membership version is appended, cancelled only while it is not yet in
       // effect, and never changed.
@@ -3128,6 +3139,225 @@ describe('the access-control migration', () => {
       /(policy [a-z_]+ on public\.leave_records|on table public\.leave_records)\b/i,
     );
     expect(migration, 'story 9.2 puts a trigger on leave_records').not.toMatch(/trigger \w+[\s\S]{0,80}on public\.leave_records\b/i);
+  });
+
+  it('lets a member propose a swap as its own proposer, answers, withdraws and decides it through three definers alone, and stores no status (story 12.1)', () => {
+    const statements = migrationStatements();
+    const requests = columnsOf('swap_requests');
+    expect(requests.columns, 'swap_requests stores something beyond its reviewed columns').toEqual([
+      'organization_id',
+      'id',
+      'proposer_id',
+      'addressee_id',
+      'team_id',
+      'date',
+      'return_team_id',
+      'return_date',
+      'created_by',
+      'created_at',
+      'answer',
+      'answered_by',
+      'answered_at',
+      'closed_by',
+      'closed_at',
+    ]);
+    expect(requests.body, 'the swap stores a status, a cost or an hour figure').not.toMatch(/status|cost|hours|balance/);
+    expect(requests.body, 'a swap may name its proposer as addressee').toMatch(/check \(proposer_id <> addressee_id\)/);
+    expect(requests.body, 'a return shift may be half-named').toMatch(
+      /check \(\(return_team_id is null\) = \(return_date is null\)\)/,
+    );
+    expect(requests.body, 'the return shift may be the given shift').toMatch(
+      /\(return_team_id, return_date\) is distinct from \(team_id, date\)/,
+    );
+    expect(requests.body, 'an answer may be half-recorded').toMatch(
+      /check \(\(answer is null\) = \(answered_by is null\) and \(answer is null\) = \(answered_at is null\)\)/,
+    );
+    expect(requests.body, 'a close may be half-recorded').toMatch(/check \(\(closed_by is null\) = \(closed_at is null\)\)/);
+    expect(requests.body, 'a declined swap may stay open').toMatch(
+      /check \(answer is distinct from 'declined' or closed_at is not null\)/,
+    );
+    expect(statements, 'two open swaps of one given shift may stand').toMatch(
+      /create unique index swap_requests_open_given_key\s+on swap_requests \(organization_id, proposer_id, team_id, date\)\s+where closed_at is null;/,
+    );
+    expect(statements, 'two open swaps of one return shift may stand').toMatch(
+      /create unique index swap_requests_open_return_key\s+on swap_requests \(organization_id, addressee_id, return_team_id, return_date\)\s+where closed_at is null/,
+    );
+    const decisions = columnsOf('swap_request_decisions');
+    expect(decisions.columns).toEqual([
+      'organization_id',
+      'request_id',
+      'outcome',
+      'roster_override_id',
+      'return_roster_override_id',
+      'decided_by',
+      'decided_at',
+    ]);
+    expect(decisions.body, 'a swap may be decided twice').toMatch(/request_id uuid primary key/);
+    expect(decisions.body).toMatch(/decided_by uuid not null default auth\.uid\(\)/);
+    expect(decisions.body).toMatch(/decided_at timestamptz not null default now\(\)/);
+    expect(decisions.body).toMatch(/check \(\(outcome = 'approved'\) = \(roster_override_id is not null\)\)/);
+    expect(decisions.body).toMatch(/check \(return_roster_override_id is null or outcome = 'approved'\)/);
+
+    const insert = policyBody('swap_requests_insert_own_by_active_member');
+    expect(insert, 'the swap policy does not pin the tenant').toMatch(/organization_id = nullif/);
+    expect(insert, 'the swap policy does not re-read active state').toContain('access.is_active');
+    expect(insert, 'the proposer is not the caller\'s own row').toMatch(
+      /member\.id = swap_requests\.proposer_id\s+and member\.auth_user_id = \(select auth\.uid\(\)\)/,
+    );
+    expect(insert, 'the attribution is not pinned to the caller').toMatch(/created_by = \(select auth\.uid\(\)\)/);
+    expect(insert, 'a past given shift is admitted').toMatch(/date >= public\.organization_today\(organization_id\)/);
+    expect(insert, 'a past return shift is admitted').toMatch(
+      /return_date is null or return_date >= public\.organization_today\(organization_id\)/,
+    );
+    expect(insert, 'a swap may put an inactive member on a shift (F1)').toMatch(
+      /and public\.swap_parties_active\(organization_id, proposer_id, addressee_id, date, return_date\)/,
+    );
+    const select = policyBody('swap_requests_select_own_organization');
+    expect(select, 'a party does not read their own swap').toMatch(
+      /member\.id in \(swap_requests\.proposer_id, swap_requests\.addressee_id\)\s+and member\.auth_user_id = \(select auth\.uid\(\)\)/,
+    );
+    for (const table of ['swap_requests', 'swap_request_decisions']) {
+      const policies = policyDeclarations(statements).filter((declaration) =>
+        new RegExp(`on public\\.${table}\\b`, 'i').test(declaration),
+      );
+      for (const verb of ['update', 'delete', 'all']) {
+        expect(
+          policies.filter((declaration) => new RegExp(`\\bfor ${verb}\\b`, 'i').test(declaration)),
+          `a policy opens ${verb} on ${table}`,
+        ).toEqual([]);
+      }
+      expect(statements).toMatch(
+        new RegExp(`revoke insert, update, delete, truncate, references, trigger on table public\\.${table}\\s+from anon, authenticated;`, 'i'),
+      );
+    }
+    expect(statements, 'a session may write a decision').not.toMatch(/grant[^;]*on table public\.swap_request_decisions\b/i);
+    expect(statements, 'the seven facts are not the only insertable swap columns').toMatch(
+      /grant insert \(organization_id, proposer_id, addressee_id, team_id, date, return_team_id, return_date\) on table public\.swap_requests\s+to authenticated;/i,
+    );
+
+    const migration = stripLineComments(readFileSync(join(supabaseRoot, 'migrations', '0049_swap_requests.sql'), 'utf8'));
+    const definers = [
+      ['answer_swap_request', 'uuid, text', 'p_request_id uuid, p_answer text', 'SWAP_REQUEST_ANSWER_REFUSED'],
+      ['withdraw_swap_request', 'uuid', 'p_request_id uuid', 'SWAP_REQUEST_WITHDRAWAL_REFUSED'],
+      ['decide_swap_request', 'uuid, text, text', 'p_request_id uuid, p_outcome text, p_reason text', 'SWAP_REQUEST_DECISION_REFUSED'],
+    ] as const;
+    const bodyOf = (name: string, parameters: string) =>
+      new RegExp(`create function public\\.${name}\\(${parameters}\\)[\\s\\S]*?\\$\\$;`, 'i').exec(migration)?.[0];
+    for (const [name, signature, parameters, refusal] of definers) {
+      const body = bodyOf(name, parameters);
+      expect(body, `${name} is not declared`).toBeDefined();
+      expect(body, name).toMatch(/security definer/i);
+      expect(body, name).toMatch(/set search_path = ''/);
+      expect(body, `${name} does not lock before its first check`).toMatch(
+        /pg_catalog\.pg_advisory_xact_lock\([\s\S]*?'shift\.organization_writes:'/,
+      );
+      expect(body?.indexOf('pg_advisory_xact_lock')).toBeLessThan(body?.indexOf(refusal) ?? 0);
+      expect(body, name).toMatch(new RegExp(`errcode = 'insufficient_privilege',\\s+message = '${refusal}'`));
+      expect(body, name).toMatch(/errcode = 'no_data_found',\s+message = 'SWAP_REQUEST_NOT_OPEN'/);
+      expect(body, `${name} hard-deletes`).not.toMatch(/\bdelete\b/i);
+      for (const role of ['public', 'anon', 'service_role']) {
+        expect(migration).toContain(`revoke execute on function public.${name}(${signature}) from ${role};`);
+      }
+      expect(migration).toContain(`grant execute on function public.${name}(${signature}) to authenticated;`);
+    }
+    const answer = bodyOf('answer_swap_request', 'p_request_id uuid, p_answer text');
+    expect(answer, 'a bad answer is not 22023 by name').toMatch(
+      /errcode = 'invalid_parameter_value',\s+message = 'SWAP_REQUEST_ANSWER_UNKNOWN'/,
+    );
+    expect(answer, 'someone other than the addressee answers').toMatch(
+      /member\.id = r\.addressee_id\s+and member\.auth_user_id = auth\.uid\(\)/,
+    );
+    const decide = bodyOf('decide_swap_request', 'p_request_id uuid, p_outcome text, p_reason text');
+    expect(decide, 'a bad outcome is not 22023 by name').toMatch(
+      /errcode = 'invalid_parameter_value',\s+message = 'SWAP_REQUEST_OUTCOME_UNKNOWN'/,
+    );
+    expect(decide, 'a swap no addressee accepted is decided').toMatch(/r\.answer = 'accepted'/);
+    expect(decide, 'the approval does not take the proposer off and put the addressee on').toMatch(
+      /insert into public\.roster_overrides \(organization_id, team_id, date, member_out_id, member_in_id, reason\)\s+values \(claimed, swap\.team_id, swap\.date, swap\.proposer_id, swap\.addressee_id, p_reason\)/,
+    );
+    expect(decide, 'the approval does not reverse the return shift').toMatch(
+      /values \(claimed, swap\.return_team_id, swap\.return_date, swap\.addressee_id, swap\.proposer_id, p_reason\)/,
+    );
+    expect(decide, 'an override refusal is swallowed').not.toMatch(/\bexception\s+when\b/i);
+    expect(decide, 'an approval may put an inactive member on a shift (F1)').toMatch(
+      /errcode = 'object_not_in_prerequisite_state',\s+message = 'SWAP_REQUEST_MEMBER_INACTIVE'/,
+    );
+    expect(
+      decide?.indexOf('SWAP_REQUEST_MEMBER_INACTIVE'),
+      'the inactive check runs after an override is written',
+    ).toBeLessThan(decide?.indexOf('insert into public.roster_overrides') ?? 0);
+    expect(decide, 'the inactive check is not the approval\'s alone').toMatch(
+      /if p_outcome = 'approved' then\s+if public\.member_inactive_within\(swap\.addressee_id/,
+    );
+    const parties = bodyOf(
+      'swap_parties_active',
+      '\\s*p_organization uuid,\\s+p_proposer uuid,\\s+p_addressee uuid,\\s+p_given date,\\s+p_returned date\\s*',
+    );
+    expect(parties, 'swap_parties_active is not declared').toBeDefined();
+    expect(parties).toMatch(/\bvolatile\b/i);
+    expect(parties).toMatch(/security definer/i);
+    expect(parties).toMatch(/set search_path = ''/);
+    expect(parties, 'the helper answers about another tenant').toMatch(
+      /if claimed is null or p_organization is distinct from claimed then\s+return false;/,
+    );
+    expect(parties, 'the helper judges a member of another organization').toMatch(/member\.organization_id = claimed\s+and member\.id = p_addressee/);
+    expect(parties, 'the helper writes').not.toMatch(/\b(insert|update|delete)\b/i);
+    for (const role of ['public', 'anon', 'service_role']) {
+      expect(migration).toContain(`revoke execute on function public.swap_parties_active(uuid, uuid, uuid, date, date) from ${role};`);
+    }
+    expect(migration).toContain('grant execute on function public.swap_parties_active(uuid, uuid, uuid, date, date) to authenticated;');
+    for (const role of ['public', 'anon', 'authenticated', 'service_role']) {
+      expect(migration).toContain(`revoke execute on function public.close_swap_requests_on_deactivation() from ${role};`);
+    }
+    expect(migration, 'the close on deactivation does not fire on an inactive version alone').toMatch(
+      /create trigger member_status_versions_close_swap_requests\s+after insert on public\.member_status_versions\s+for each row\s+when \(not new\.active\)/,
+    );
+    expect(migration, 'swap_requests does not take 0023\'s lock').toMatch(
+      /create trigger swap_requests_serialize_organization_writes\s+before insert or update or delete on public\.swap_requests\s+for each statement\s+execute function public\.serialize_organization_writes\(\);/,
+    );
+    expect(
+      [...migration.matchAll(/create trigger \w+\s+(?:before|after) [a-z ]+ on public\.(\w+)/gi)].map((match) => match[1]),
+      'story 12.1 puts a trigger on another table than its own and the status versions',
+    ).toEqual(['swap_requests', 'member_status_versions']);
+    // Every trigger any migration declares on the two swap tables, by name
+    // and timing: the lock alone, statement level. A row-level BEFORE trigger,
+    // on any event and in any order of events, is a refusing trigger 12.1
+    // may not add (AD-3); an AFTER trigger is a later story's to list here.
+    const swapTriggers = sqlStatements(statements)
+      .map((statement) =>
+        /^create (?:or replace )?trigger (\w+)\s+(before|after|instead of)\s+([\s\S]*?)\s+on public\.(swap_requests|swap_request_decisions)\b([\s\S]*)$/i.exec(
+          statement,
+        ),
+      )
+      .filter((match) => match !== null)
+      .map((match) => ({
+        name: match[1] ?? '',
+        timing: (match[2] ?? '').toLowerCase(),
+        table: match[4] ?? '',
+        row: /for each row/i.test(match[5] ?? ''),
+      }));
+    expect(
+      swapTriggers.filter((trigger) => trigger.timing === 'before' && trigger.row),
+      'a row-level BEFORE trigger refuses a swap write',
+    ).toEqual([]);
+    expect(swapTriggers, 'the swap tables carry a trigger other than the lock').toEqual([
+      { name: 'swap_requests_serialize_organization_writes', timing: 'before', table: 'swap_requests', row: false },
+    ]);
+    expect(migration, 'story 12.1 writes outbox code').not.toMatch(/notify_members|notification_outbox/);
+    expect(migration, 'story 12.1 changes roster_overrides, leave_requests or the access helper').not.toMatch(
+      /alter table public\.(roster_overrides|leave_requests)|function public\.current_member_access/i,
+    );
+  });
+
+  it('reads no swap request in apps or packages until 12.2 (R9.1)', () => {
+    const sources = ['apps', 'packages'].flatMap((root) =>
+      collectFiles(join(repoRoot, root), (file) => /\.(ts|tsx|js|mjs|sql)$/.test(file)),
+    );
+    expect(sources.length, 'no source was scanned').toBeGreaterThan(0);
+    expect(
+      sources.filter((file) => readFileSync(file, 'utf8').includes('swap_request')),
+      'a reader of swap_requests ships before its story',
+    ).toEqual([]);
   });
 
   it('keeps a team name unique among active teams only, and never blank', () => {

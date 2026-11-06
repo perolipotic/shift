@@ -699,7 +699,7 @@ describe('every organization table carries row level security, and only its revi
               'rotation_assignments', 'shift_type_overrides', 'roster_overrides',
               'leave_records', 'conflict_resolutions', 'leave_requests',
               'leave_request_decisions', 'notification_outbox', 'notification_settings',
-              'push_subscriptions'
+              'push_subscriptions', 'swap_requests', 'swap_request_decisions'
             )
           order by relname`,
       );
@@ -734,6 +734,9 @@ describe('every organization table carries row level security, and only its revi
         'shift_type_overrides',
         'shift_type_versions',
         'shift_types',
+        // STORY 12.1 (0049): the swap requests and their decisions.
+        'swap_request_decisions',
+        'swap_requests',
         'team_membership_versions',
         'teams',
       ]);
@@ -1684,6 +1687,132 @@ describe('every organization table carries row level security, and only its revi
     }
   });
 
+  it.skipIf(noDatabase)('holds no privilege on swap_requests but read and a seven-column insert, and none but read on its decisions (story 12.1)', async () => {
+    // As 9.2's: `authenticated` reads (narrowed by the policy to an active
+    // admin's organization or the swaps a member is part of) and inserts the
+    // seven facts of a proposal; no session names its attribution, its answer
+    // or its close, updates or deletes one, or writes a decision at all.
+    // `anon` holds nothing.
+    const client = await connect();
+    try {
+      const requests = await heldPrivileges(client, 'swap_requests', [
+        'organization_id',
+        'id',
+        'proposer_id',
+        'addressee_id',
+        'team_id',
+        'date',
+        'return_team_id',
+        'return_date',
+        'created_by',
+        'created_at',
+        'answer',
+        'answered_by',
+        'answered_at',
+        'closed_by',
+        'closed_at',
+      ]);
+      expect(requests.tables).toEqual(['authenticated:SELECT']);
+      expect(requests.columns, 'the writable swap columns changed, or anon holds one').toEqual([
+        'authenticated:INSERT:addressee_id',
+        'authenticated:INSERT:date',
+        'authenticated:INSERT:organization_id',
+        'authenticated:INSERT:proposer_id',
+        'authenticated:INSERT:return_date',
+        'authenticated:INSERT:return_team_id',
+        'authenticated:INSERT:team_id',
+      ]);
+      const decisions = await heldPrivileges(client, 'swap_request_decisions', [
+        'organization_id',
+        'request_id',
+        'outcome',
+        'roster_override_id',
+        'return_roster_override_id',
+        'decided_by',
+        'decided_at',
+      ]);
+      expect(decisions.tables).toEqual(['authenticated:SELECT']);
+      expect(decisions.columns, 'a session may write a decision column, or anon holds one').toEqual([]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it.skipIf(noDatabase)('keys a swap to its tenant\'s members and teams and a decision to its swap and overrides, keeps one open swap per shift, and cascades from the organization alone (story 12.1)', async () => {
+    const client = await connect();
+    try {
+      const { rows: keys } = await client.query<{ table: string; definition: string }>(
+        `select conrelid::regclass::text as table, pg_get_constraintdef(oid) as definition
+           from pg_constraint
+          where contype in ('f', 'x', 'u', 'p', 'c')
+            and conrelid in ('public.swap_requests'::regclass, 'public.swap_request_decisions'::regclass)
+          order by 1, 2`,
+      );
+      expect(keys.map((row) => `${row.table}: ${row.definition}`).sort()).toEqual([
+        "swap_request_decisions: CHECK (((outcome = 'approved'::text) = (roster_override_id IS NOT NULL)))",
+        "swap_request_decisions: CHECK (((return_roster_override_id IS NULL) OR (outcome = 'approved'::text)))",
+        "swap_request_decisions: CHECK ((outcome = ANY (ARRAY['approved'::text, 'rejected'::text, 'deactivated'::text])))",
+        'swap_request_decisions: FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE',
+        'swap_request_decisions: FOREIGN KEY (organization_id, request_id) REFERENCES swap_requests(organization_id, id)',
+        'swap_request_decisions: FOREIGN KEY (organization_id, return_roster_override_id) REFERENCES roster_overrides(organization_id, id)',
+        'swap_request_decisions: FOREIGN KEY (organization_id, roster_override_id) REFERENCES roster_overrides(organization_id, id)',
+        'swap_request_decisions: PRIMARY KEY (request_id)',
+        // One override backs at most one decision; a rejection's null repeats.
+        'swap_request_decisions: UNIQUE (organization_id, return_roster_override_id)',
+        'swap_request_decisions: UNIQUE (organization_id, roster_override_id)',
+        'swap_requests: CHECK ((((answer IS NULL) = (answered_by IS NULL)) AND ((answer IS NULL) = (answered_at IS NULL))))',
+        "swap_requests: CHECK (((answer IS DISTINCT FROM 'declined'::text) OR (closed_at IS NOT NULL)))",
+        'swap_requests: CHECK (((closed_by IS NULL) = (closed_at IS NULL)))',
+        "swap_requests: CHECK (((return_date IS NULL) OR (isfinite(return_date) AND (return_date >= '0001-01-01'::date) AND (return_date < '10000-01-01'::date))))",
+        'swap_requests: CHECK (((return_team_id IS NULL) = (return_date IS NULL)))',
+        'swap_requests: CHECK (((return_team_id IS NULL) OR ((return_team_id IS DISTINCT FROM team_id) OR (return_date IS DISTINCT FROM date))))',
+        "swap_requests: CHECK ((answer = ANY (ARRAY['accepted'::text, 'declined'::text])))",
+        "swap_requests: CHECK ((isfinite(date) AND (date >= '0001-01-01'::date) AND (date < '10000-01-01'::date)))",
+        'swap_requests: CHECK ((proposer_id <> addressee_id))',
+        'swap_requests: FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE',
+        'swap_requests: FOREIGN KEY (organization_id, addressee_id) REFERENCES members(organization_id, id)',
+        'swap_requests: FOREIGN KEY (organization_id, proposer_id) REFERENCES members(organization_id, id)',
+        'swap_requests: FOREIGN KEY (organization_id, return_team_id) REFERENCES teams(organization_id, id)',
+        'swap_requests: FOREIGN KEY (organization_id, team_id) REFERENCES teams(organization_id, id)',
+        'swap_requests: PRIMARY KEY (id)',
+        'swap_requests: UNIQUE (organization_id, id)',
+      ]);
+      const { rows: indexes } = await client.query<{ indexdef: string }>(
+        `select indexdef from pg_indexes
+          where schemaname = 'public' and tablename in ('swap_requests', 'swap_request_decisions')
+          order by 1`,
+      );
+      expect(indexes.map((row) => row.indexdef), 'the swap indexes changed').toEqual([
+        'CREATE INDEX swap_request_decisions_organization_id_idx ON public.swap_request_decisions USING btree (organization_id)',
+        'CREATE INDEX swap_requests_organization_addressee_idx ON public.swap_requests USING btree (organization_id, addressee_id)',
+        'CREATE INDEX swap_requests_organization_id_idx ON public.swap_requests USING btree (organization_id)',
+        'CREATE INDEX swap_requests_organization_proposer_idx ON public.swap_requests USING btree (organization_id, proposer_id)',
+        'CREATE UNIQUE INDEX swap_request_decisions_pkey ON public.swap_request_decisions USING btree (request_id)',
+        'CREATE UNIQUE INDEX swap_request_decisions_return_roster_override_key ON public.swap_request_decisions USING btree (organization_id, return_roster_override_id)',
+        'CREATE UNIQUE INDEX swap_request_decisions_roster_override_key ON public.swap_request_decisions USING btree (organization_id, roster_override_id)',
+        // One open swap per given shift, and per return shift.
+        'CREATE UNIQUE INDEX swap_requests_open_given_key ON public.swap_requests USING btree (organization_id, proposer_id, team_id, date) WHERE (closed_at IS NULL)',
+        'CREATE UNIQUE INDEX swap_requests_open_return_key ON public.swap_requests USING btree (organization_id, addressee_id, return_team_id, return_date) WHERE ((closed_at IS NULL) AND (return_team_id IS NOT NULL))',
+        'CREATE UNIQUE INDEX swap_requests_organization_id_id_key ON public.swap_requests USING btree (organization_id, id)',
+        'CREATE UNIQUE INDEX swap_requests_pkey ON public.swap_requests USING btree (id)',
+      ]);
+      const { rows: triggers } = await client.query<{ definition: string }>(
+        `select pg_get_triggerdef(oid) as definition
+           from pg_trigger
+          where (tgrelid in ('public.swap_requests'::regclass, 'public.swap_request_decisions'::regclass)
+                 or tgname = 'member_status_versions_close_swap_requests')
+            and not tgisinternal
+          order by 1`,
+      );
+      expect(triggers.map((row) => row.definition), 'story 12.1 takes the lock on swaps and the close on deactivation, and no refusing trigger').toEqual([
+        'CREATE TRIGGER member_status_versions_close_swap_requests AFTER INSERT ON public.member_status_versions FOR EACH ROW WHEN ((NOT new.active)) EXECUTE FUNCTION close_swap_requests_on_deactivation()',
+        'CREATE TRIGGER swap_requests_serialize_organization_writes BEFORE INSERT OR DELETE OR UPDATE ON public.swap_requests FOR EACH STATEMENT EXECUTE FUNCTION serialize_organization_writes()',
+      ]);
+    } finally {
+      await client.end();
+    }
+  });
+
   it.skipIf(noDatabase)('keys the offset to a step of the same pattern, and cascades from nothing but the organization', async () => {
     // AD-3's shape: the offset key is THREE columns, so an offset outside the
     // cycle is unrepresentable. Every key toward another rule is NO ACTION;
@@ -1963,6 +2092,18 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // 0041. The close on deactivation updates `leave_requests` and writes
     // `leave_request_decisions` past row level security, which no session may.
     { name: 'close_leave_requests_on_deactivation', argumentCount: 0 },
+    // STORY 12.1. The addressee's answer, either party's withdrawal and the
+    // admin's decision of a swap, closing it past the table's missing update
+    // grant and writing the decision and its roster overrides past theirs, on
+    // 9.2's attributes; and 0041's close on deactivation, for swaps.
+    { name: 'answer_swap_request', argumentCount: 2 },
+    { name: 'withdraw_swap_request', argumentCount: 1 },
+    { name: 'decide_swap_request', argumentCount: 3 },
+    { name: 'close_swap_requests_on_deactivation', argumentCount: 0 },
+    // STORY 12.1 (F1). The swap insert policy's helper reads the status
+    // history through 0041's reader, which no session may call, past row
+    // level security.
+    { name: 'swap_parties_active', argumentCount: 5 },
     // STORY 10.1. The outbox has no policy and no table privilege, so the
     // claim, the settle and the decision's outbox insert reach it past row
     // level security; the cron job's invoker reads Vault, on the same
@@ -2103,6 +2244,15 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // function refuses every caller but its own population.
     { name: 'withdraw_leave_request', argumentCount: 1, expected: ['authenticated'] },
     { name: 'decide_leave_request', argumentCount: 2, expected: ['authenticated'] },
+    // STORY 12.1. The answer, the withdrawal and the decision of a swap, on
+    // 9.2's terms; each function refuses every caller but its own population.
+    { name: 'answer_swap_request', argumentCount: 2, expected: ['authenticated'] },
+    { name: 'withdraw_swap_request', argumentCount: 1, expected: ['authenticated'] },
+    { name: 'decide_swap_request', argumentCount: 3, expected: ['authenticated'] },
+    // STORY 12.1 (F1). The insert policy calls it as the querying role, so the
+    // request role holds EXECUTE; it answers only about the claimed
+    // organization's members.
+    { name: 'swap_parties_active', argumentCount: 5, expected: ['authenticated'] },
     // STORY 5.4a. The member's own conflict resolutions, on 5.2c's terms.
     { name: 'my_conflict_resolutions', argumentCount: 0, expected: ['authenticated'] },
     // STORY 5.4c. The replacement, on 5.2a's amend's terms; six arguments since 0038.
@@ -2133,6 +2283,8 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // reader only its definers call, as the owner.
     { name: 'close_leave_requests_on_deactivation', argumentCount: 0, expected: [] },
     { name: 'member_inactive_within', argumentCount: 2, expected: [] },
+    // STORY 12.1's close on deactivation, on 0041's terms.
+    { name: 'close_swap_requests_on_deactivation', argumentCount: 0, expected: [] },
     // STORY 10.1. The claim and the settle are the `notify` function's, which
     // calls them with the secret key: `service_role` alone. No session may
     // read an address or mark a notification sent.

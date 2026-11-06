@@ -1165,6 +1165,14 @@ describe('the remaining definers take the organization lock before their admin c
       sql: `select public.decide_leave_request($1::uuid, 'approved')`,
       message: 'LEAVE_REQUEST_DECISION_REFUSED',
     },
+    // 0049: the swap's decision, behind the same lock. (The answer and the
+    // withdrawal admit any active account, so a demotion does not refuse
+    // them; their lock is proved by the races below.)
+    {
+      fn: 'decide_swap_request',
+      sql: `select public.decide_swap_request($1::uuid, 'approved', 'x')`,
+      message: 'SWAP_REQUEST_DECISION_REFUSED',
+    },
   ] as const;
 
   for (const { fn, sql, message } of CALLS) {
@@ -1194,6 +1202,199 @@ describe('the remaining definers take the organization lock before their admin c
         expect(await second.outcome).toMatchObject({ ok: false, code: '42501', message });
       });
     });
+  }
+});
+
+describe('a decision, an answer and a withdrawal of one swap wait for each other (0049)', () => {
+  /** A committed swap of `proposer`'s shift to `addressee`, inserted as the owner, accepted when asked. */
+  async function addSwap(
+    client: Client,
+    organization: string,
+    team: string,
+    proposer: Account,
+    addressee: Account,
+    accepted: boolean,
+  ): Promise<string> {
+    return insertedId(
+      client,
+      `insert into swap_requests (organization_id, proposer_id, addressee_id, team_id, date, created_by,
+                                  answer, answered_by, answered_at)
+       values ($1, $2, $3, $4, '2046-03-02', $5,
+               case when $6 then 'accepted' end, case when $6 then $7::uuid end, case when $6 then now() end)
+       returning id`,
+      [organization, proposer.id, addressee.id, team, proposer.authUserId, accepted, addressee.authUserId],
+    );
+  }
+
+  const decide = (client: Client, swap: string): Promise<{ rowCount: number | null }> =>
+    client.query(`select public.decide_swap_request($1::uuid, 'approved', 'Zamjena.')`, [swap]);
+  const answer = (client: Client, swap: string): Promise<{ rowCount: number | null }> =>
+    client.query(`select public.answer_swap_request($1::uuid, 'accepted')`, [swap]);
+  const decline = (client: Client, swap: string): Promise<{ rowCount: number | null }> =>
+    client.query(`select public.answer_swap_request($1::uuid, 'declined')`, [swap]);
+  const withdraw = (client: Client, swap: string): Promise<{ rowCount: number | null }> =>
+    client.query('select public.withdraw_swap_request($1::uuid)', [swap]);
+
+  // Each pair: the two writes, who makes each, and whether the swap starts
+  // accepted (a decision needs one) or proposed (an answer needs one).
+  const PAIRS = [
+    { first: 'decision', second: 'withdrawal', accepted: true },
+    { first: 'withdrawal', second: 'decision', accepted: true },
+    { first: 'answer', second: 'withdrawal', accepted: false },
+    { first: 'withdrawal', second: 'answer', accepted: false },
+    // A decline closes the swap in the same call, so it races a withdrawal
+    // the way a decision does.
+    { first: 'decline', second: 'withdrawal', accepted: false },
+    { first: 'withdrawal', second: 'decline', accepted: false },
+  ] as const;
+
+  for (const { first, second, accepted } of PAIRS) {
+    for (const t1Ends of ['commit', 'rollback'] as const) {
+      // An acceptance that commits leaves the swap open and accepted, so the
+      // proposer's withdrawal after it still lands; every other committed
+      // first write (a decline included) closes the swap, and the second
+      // finds it closed.
+      const secondLands = t1Ends === 'rollback' || first === 'answer';
+      it.skipIf(noDatabase)(
+        secondLands
+          ? `lets the ${second} that waited for ${t1Ends === 'commit' ? 'an' : 'a rolled-back'} ${first} of the same swap land`
+          : `refuses the ${second} that waited for a ${first} of the same swap (P0002)`,
+        async () => {
+          const { organization, admin, proposer, addressee, swap } = await fixture(async (client) => {
+            const organization = await addOrganization(client);
+            const admin = await addAccount(client, organization, 'admin');
+            const proposer = await addAccount(client, organization, 'member_role');
+            const addressee = await addAccount(client, organization, 'member_role');
+            const team = await addTeam(client, organization, admin.authUserId);
+            return {
+              organization,
+              admin,
+              proposer,
+              addressee,
+              swap: await addSwap(client, organization, team, proposer, addressee, accepted),
+            };
+          });
+          const write = { decision: decide, answer, decline, withdrawal: withdraw } as const;
+          const writer = { decision: admin, answer: addressee, decline: addressee, withdrawal: proposer } as const;
+
+          await race(async (t1, t2, observer) => {
+            await t1.query('begin');
+            await actAs(t1, writer[first], organization);
+            expect((await write[first](t1, swap)).rowCount).toBe(1);
+
+            const pid = await backendPid(t2);
+            await t2.query('begin');
+            await actAs(t2, writer[second], organization);
+            const waiting = pending(write[second](t2, swap));
+            await waitUntilBlocked(observer, pid, organization, waiting);
+
+            await t1.query(t1Ends);
+
+            if (secondLands) {
+              expect(await waiting.outcome).toEqual({ ok: true, rowCount: 1 });
+            } else {
+              expect(await waiting.outcome).toMatchObject({
+                ok: false,
+                code: 'P0002',
+                message: 'SWAP_REQUEST_NOT_OPEN',
+              });
+            }
+          });
+        },
+      );
+    }
+  }
+});
+
+describe('a deactivation and an approval of one swap wait for each other (0049)', () => {
+  /** A committed, accepted swap of `proposer`'s shift to `addressee`, inserted as the owner. */
+  async function addAcceptedSwap(
+    client: Client,
+    organization: string,
+    team: string,
+    proposer: Account,
+    addressee: Account,
+  ): Promise<string> {
+    return insertedId(
+      client,
+      `insert into swap_requests (organization_id, proposer_id, addressee_id, team_id, date, created_by,
+                                  answer, answered_by, answered_at)
+       values ($1, $2, $3, $4, '2046-03-02', $5, 'accepted', $6, now())
+       returning id`,
+      [organization, proposer.id, addressee.id, team, proposer.authUserId, addressee.authUserId],
+    );
+  }
+
+  const approve = (client: Client, swap: string): Promise<{ rowCount: number | null }> =>
+    client.query(`select public.decide_swap_request($1::uuid, 'approved', 'Zamjena.')`, [swap]);
+
+  for (const first of ['deactivation', 'approval'] as const) {
+    for (const t1Ends of ['commit', 'rollback'] as const) {
+      const second = first === 'deactivation' ? 'approval' : 'deactivation';
+      it.skipIf(noDatabase)(
+        first === 'deactivation' && t1Ends === 'commit'
+          ? 'refuses the approval that waited for a deactivation of the proposer that closed the swap (P0002)'
+          : `lets the ${second} that waited for ${t1Ends === 'commit' ? 'an' : 'a rolled-back'} ${first} of the same swap land`,
+        async () => {
+          const { organization, admin, proposer, swap, today } = await fixture(async (client) => {
+            const organization = await addOrganization(client);
+            const admin = await addAccount(client, organization, 'admin');
+            const proposer = await addAccount(client, organization, 'member_role');
+            const addressee = await addAccount(client, organization, 'member_role');
+            const team = await addTeam(client, organization, admin.authUserId);
+            return {
+              organization,
+              admin,
+              proposer,
+              swap: await addAcceptedSwap(client, organization, team, proposer, addressee),
+              today: await organizationDay(client, organization, 0),
+            };
+          });
+          const deactivate = (client: Client) =>
+            insertStatus(client, { organization, member: proposer.id, active: false, from: today });
+          const write = { deactivation: deactivate, approval: (client: Client) => approve(client, swap) } as const;
+
+          await race(async (t1, t2, observer) => {
+            await t1.query('begin');
+            await actAs(t1, admin, organization);
+            expect((await write[first](t1)).rowCount).toBe(1);
+
+            const pid = await backendPid(t2);
+            await t2.query('begin');
+            await actAs(t2, admin, organization);
+            const waiting = pending(write[second](t2));
+            await waitUntilBlocked(observer, pid, organization, waiting);
+
+            await t1.query(t1Ends);
+
+            if (first === 'deactivation' && t1Ends === 'commit') {
+              expect(await waiting.outcome).toMatchObject({ ok: false, code: 'P0002', message: 'SWAP_REQUEST_NOT_OPEN' });
+            } else {
+              expect(await waiting.outcome).toEqual({ ok: true, rowCount: 1 });
+            }
+            // The decision the swap ends with. T2 is still open when it
+            // landed, so it reads its own write; when it was refused, the
+            // observer reads what T1 committed.
+            if (first === 'deactivation' && t1Ends === 'commit') {
+              const { rows } = await observer.query<{ outcome: string }>(
+                'select outcome from swap_request_decisions where request_id = $1',
+                [swap],
+              );
+              expect(rows.map((row) => row.outcome)).toEqual(['deactivated']);
+            } else {
+              const { rows } = await t2.query<{ outcome: string }>(
+                'select outcome from swap_request_decisions where request_id = $1',
+                [swap],
+              );
+              // The approval wins unless it was rolled back before the
+              // deactivation that waited for it closed the swap.
+              const expected = first === 'approval' && t1Ends === 'rollback' ? 'deactivated' : 'approved';
+              expect(rows.map((row) => row.outcome), 'a deactivation that waited for an approval changed the decision').toEqual([expected]);
+            }
+          });
+        },
+      );
+    }
   }
 });
 
@@ -1711,6 +1912,9 @@ describe('every write verb 0023, 0035 and 0036 name waits on the lock', () => {
         { table: 'shift_types', trigger: 'shift_types_refuse_write_by_stale_admin', type: 1 | 2 | 16, columns: ['archived'] },
         { table: 'shift_types', trigger: 'shift_types_refuse_write_while_in_rotation', type: 1 | 2 | 16, columns: ['archived'] },
         { table: 'shift_types', trigger: 'shift_types_serialize_organization_writes', type: 2 | 16, columns: ['archived'] },
+        // 0049: the swap requests take the lock, as 0040's requests do, and no
+        // refusing trigger.
+        { table: 'swap_requests', trigger: 'swap_requests_serialize_organization_writes', type: 2 | 4 | 8 | 16, columns: null },
         { table: 'team_membership_versions', trigger: 'team_membership_versions_refuse_truncate', type: 2 | 32, columns: null },
         { table: 'team_membership_versions', trigger: 'team_membership_versions_refuse_write_by_stale_admin', type: 1 | 2 | 4 | 8 | 16, columns: null },
         { table: 'team_membership_versions', trigger: 'team_membership_versions_serialize_organization_writes', type: 2 | 4 | 8 | 16, columns: null },

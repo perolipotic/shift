@@ -1097,7 +1097,7 @@
   summary: Admins get no email when a new collision appears in *Za odluku*; only new leave requests notify them (epic 10.2 AC "a new item in Za odluku … every admin receives one email", narrowed).
   evidence: Collisions are derived in the browser and never stored (AD-4, 0031 header, packages/domain/src/collisions.ts); no SQL engine and no added-collision diff exist, so no request can write the outbox row for one under AD-18 without projecting a roster. Needs an architecture decision (client-asserted event, or a stored collision fact).
 - source_spec: `_bmad-output/implementation-artifacts/spec-10-2-email-tells-people-what-concerns-them.md`
-  summary: Swap-driven shift changes notify nobody yet (epic 10.2 AC "their shifts change by … a swap", deferred).
+  summary: RESOLVED in part (shift changes, through 0043's roster trigger) by story 12.1 (2026-11-05) — an approved swap writes ordinary roster overrides (`decide_swap_request`, 0049), so 0043's `notify_roster_override` tells both members `ROSTER_PUT_ON` / `ROSTER_TAKEN_OFF`, and never the approving admin. STILL OPEN: the swap proposed, answered and decided events (entries below, owners 12.3 and 12.4). Original: Swap-driven shift changes notify nobody yet (epic 10.2 AC "their shifts change by … a swap", deferred).
   evidence: Swaps ship in Epic 12, which reuses this outbox for swap-proposed, swap-decided and swap-driven shift-change events.
 
 ## Deferred from: code review of spec-10-2-email-tells-people-what-concerns-them.md (2026-10-29)
@@ -1303,3 +1303,21 @@
 - source_spec: `_bmad-output/implementation-artifacts/epic-11-retro-2026-11-05.md` (findings R4, R5, R6)
   summary: Three small staffing clean-ups, one future story or a sweep bundle. (1) R4: the minimum is parsed three times — `minimumMembersOf` (`organization/services/snapshot.ts`) and `calendarMinimumMembersOf` (`calendar/services/snapshot.ts`) share one body and `minimumOfCalendar` wraps the second; fold them into one parser. (2) R5: *Pokrivenost danas* counts `present` with its own arithmetic (`total - absent.length`) while the *Premalo ljudi* card uses `peopleAtWorkOn`; pin coverage `present` to `peopleAtWorkOn(...).atWork` in a test, and rename `STAFFING_SHORT` (it means "anyone absent", which now collides with "short-staffed"). (3) R6: add a card-equals-marks test whose week crosses a month boundary with the minimum set (the existing month-crossing week tests in `admin-today.test.ts` set no minimum).
   evidence: All three agree by construction today; none is a user-visible defect. Retro verdict: defer (A5).
+
+## Deferred from: planning of spec-12-1-the-swap-request-record.md (2026-11-05)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-12-1-the-swap-request-record.md`
+  summary: A swap writes no notification of its own yet: the addressee is not told a swap was proposed to them, the proposer is not told it was accepted or declined, both members are not told it was approved or rejected, and the admins are not told a new accepted swap waits in *Za odluku*. Owners: 12.3 (proposed to the addressee, answered to the proposer, waits-for-a-decision to every admin) and 12.4 (decided, to both members). 0049 adds no outbox code (spec Never).
+  evidence: Epic 12 context, Notifications (deferred from 10.2). The shift changes an approval causes already notify through 0043's roster trigger (the 10.2 entry above). Each new code is written by the transaction that asserts its fact (AD-18): an AFTER trigger on `swap_requests` (insert, answer) and on `swap_request_decisions`, on 0043's pattern, never to the session's own member.
+- source_spec: `_bmad-output/implementation-artifacts/spec-12-1-the-swap-request-record.md`
+  summary: FR-66's send-time refusal is the browser's alone: a given shift that is not a working shift on the proposer's roster, or a return shift not on the addressee's, is refused by the 12.2 form's domain check, never by the database. A direct API call can store such a swap. 12.4's screen runs the stale check and AD-5's erasure diff before it approves, but both are the browser's: an admin's direct `rpc/decide_swap_request` call bypasses the stale check and the erasure diff, as every direct roster override insert already bypasses the diff. Such an approval writes overrides the domain treats as inert when they do not apply (0026). Owners: 12.2 (the send-time check) and 12.4 (the stale check and the diff on the approval screen).
+  evidence: Accepted at the 12.1 spec checkpoint (Epic AC Deviations, product owner 2026-11-05). AD-1 and AD-3: the database never projects a roster, and no new refusing trigger is allowed.
+
+## Deferred from: code review of spec-12-1-the-swap-request-record.md (2026-11-06)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-12-1-the-swap-request-record.md`
+  summary: An open swap whose dates have passed stays proposed or accepted and holds its keys (`swap_requests_open_given_key`, `swap_requests_open_return_key`); nothing closes it. The readers in 12.3 and 12.4 must decide how an expired open swap is shown (to the addressee on *Danas*, in *Za odluku*), or whether it is closed. Owners: 12.3 and 12.4.
+  evidence: Raised by the 12.1 review. 0049 checks dates on insert alone (the policy's `organization_today`), and an open swap may still be answered and decided after its dates pass, as 0047 allows for a pending leave request.
+- source_spec: `_bmad-output/implementation-artifacts/spec-12-1-the-swap-request-record.md`
+  summary: An approved swap whose roster override is later amended or removed shows no change in *Odlučeno*: the decision names the override ids, but nothing derives what became of them. 12.4 should decide whether it needs an equivalent of 0047's `leave_record_change` (a computed field on `swap_request_decisions`). Owner: 12.4.
+  evidence: Raised by the 12.1 review. The overrides are ordinary rows an admin may amend (`amend_roster_override`, 0039) or remove (`remove_roster_override`) afterwards; the swap keeps its `approved` decision.
