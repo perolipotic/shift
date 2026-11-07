@@ -1805,11 +1805,15 @@ describe('every organization table carries row level security, and only its revi
           order by 1`,
       );
       // Story 12.3b (0050): the two notification triggers, AFTER and per row,
-      // beside 12.1's lock and close. Still no refusing trigger.
-      expect(triggers.map((row) => row.definition), 'story 12.1 takes the lock on swaps and the close on deactivation, 12.3b notifies, and no refusing trigger').toEqual([
+      // beside 12.1's lock and close. Story 12.4b (0051): two more, the
+      // admins on an accept and both members on a decision. Still no
+      // refusing trigger.
+      expect(triggers.map((row) => row.definition), 'story 12.1 takes the lock on swaps and the close on deactivation, 12.3b and 12.4b notify, and no refusing trigger').toEqual([
         'CREATE TRIGGER member_status_versions_close_swap_requests AFTER INSERT ON public.member_status_versions FOR EACH ROW WHEN ((NOT new.active)) EXECUTE FUNCTION close_swap_requests_on_deactivation()',
+        "CREATE TRIGGER swap_request_decisions_notify_insert AFTER INSERT ON public.swap_request_decisions FOR EACH ROW WHEN ((new.outcome = ANY (ARRAY['approved'::text, 'rejected'::text]))) EXECUTE FUNCTION private.notify_swap_request_decision()",
         'CREATE TRIGGER swap_requests_notify_answer AFTER UPDATE OF answer ON public.swap_requests FOR EACH ROW WHEN (((old.answer IS NULL) AND (new.answer IS NOT NULL))) EXECUTE FUNCTION private.notify_swap_request()',
         'CREATE TRIGGER swap_requests_notify_insert AFTER INSERT ON public.swap_requests FOR EACH ROW WHEN (((new.closed_at IS NULL) AND (new.answer IS NULL))) EXECUTE FUNCTION private.notify_swap_request()',
+        "CREATE TRIGGER swap_requests_notify_waiting AFTER UPDATE OF answer ON public.swap_requests FOR EACH ROW WHEN (((old.answer IS NULL) AND (new.answer = 'accepted'::text) AND (new.closed_at IS NULL))) EXECUTE FUNCTION private.notify_swap_request_decision()",
         'CREATE TRIGGER swap_requests_serialize_organization_writes BEFORE INSERT OR DELETE OR UPDATE ON public.swap_requests FOR EACH STATEMENT EXECUTE FUNCTION serialize_organization_writes()',
       ]);
     } finally {
@@ -2313,6 +2317,8 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'notify_leave_request', argumentCount: 0, expected: [], schema: 'private' },
     // STORY 12.3b (0050). The swap notification trigger, on 0043's terms.
     { name: 'notify_swap_request', argumentCount: 0, expected: [], schema: 'private' },
+    // STORY 12.4b (0051). The swap's admin-step notification trigger, likewise.
+    { name: 'notify_swap_request_decision', argumentCount: 0, expected: [], schema: 'private' },
     // STORY 10.3 (0044). The outbox filter (a definer: it reads another
     // member's setting) and the settings row's `updated_at` stamp, triggers
     // callable by nobody.

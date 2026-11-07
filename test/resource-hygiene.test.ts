@@ -2284,6 +2284,14 @@ const SANCTIONED_SCREEN_KEYS = [
   'obavijesti.swapRequestAccepted.body',
   'obavijesti.swapRequestDeclined.subject',
   'obavijesti.swapRequestDeclined.body',
+  // STORY 12.4b: an accepted swap waiting for every admin, and its decision
+  // to both members, rendered by `notify` as above.
+  'obavijesti.swapRequestWaiting.subject',
+  'obavijesti.swapRequestWaiting.body',
+  'obavijesti.swapRequestApproved.subject',
+  'obavijesti.swapRequestApproved.body',
+  'obavijesti.swapRequestRejected.subject',
+  'obavijesti.swapRequestRejected.body',
   // STORY 10.3. The line every email ends with, linking to `/obavijesti`.
   'obavijesti.footer',
   // STORY 10.3. The notification settings screen, its *Više* row, and the
@@ -2652,15 +2660,18 @@ const MINIMUM_MEMBERS_KEYS: readonly string[] = [
 const SHORT_STAFFED_KEYS: readonly string[] = ['popunjenost.heading', 'popunjenost.unknown'];
 
 /**
- * Story 12.3b, the swap notifications: `smjen` names the swapped shift (a
- * team's rostered shift, *zamjena smjene {date}*), as on *Danas*'s *Zamjene*
- * card, and `tip… smjen…` is refused. THREE KEYS, the bodies; the subjects
- * name no shift.
+ * Stories 12.3b and 12.4b, the swap notifications: `smjen` names the swapped
+ * shift (a team's rostered shift, *zamjena smjene {date}*, *preuzima smjenu
+ * {date}*), as on *Danas*'s *Zamjene* card, and `tip… smjen…` is refused. SIX
+ * KEYS, the bodies; the subjects name no shift.
  */
 const SWAP_NOTIFICATION_KEYS: readonly string[] = [
   'obavijesti.swapRequestProposed.body',
   'obavijesti.swapRequestAccepted.body',
   'obavijesti.swapRequestDeclined.body',
+  'obavijesti.swapRequestWaiting.body',
+  'obavijesti.swapRequestApproved.body',
+  'obavijesti.swapRequestRejected.body',
 ];
 
 /**

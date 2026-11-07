@@ -272,7 +272,7 @@ describe('notify renders from a pinned copy of the obavijesti namespace', () => 
       const rendered = render(
         code,
         'hr',
-        { startDate: '2046-03-02', endDate: '2046-03-06', date: '2046-03-02', effectiveFrom: '2046-03-02', shiftTypeName: 'Dnevna', memberName: 'Ana Kovač', requestId: REQUEST_ID },
+        { startDate: '2046-03-02', endDate: '2046-03-06', date: '2046-03-02', effectiveFrom: '2046-03-02', shiftTypeName: 'Dnevna', memberName: 'Ana Kovač', proposerName: 'Ana Kovač', addresseeName: 'Ivo Babić', requestId: REQUEST_ID },
         TARGET,
       );
       if (!rendered.ok) throw new Error(`${code} did not render`);
@@ -462,6 +462,30 @@ const EVERY_CODE: readonly {
     subject: 'Zamjena 02.03.2046 je odbijena',
     text: `${ORGANIZATION_NAME}: tvoj prijedlog zamjene smjene 02.03.2046 je odbijen. Pogledaj u aplikaciji: {link}`,
   },
+  // Story 12.4b (0051): an accepted swap waits for every admin, with both
+  // names (admins only, as LEAVE_REQUEST_CREATED); its decision goes to both
+  // members, with the date only (Q5).
+  {
+    code: 'SWAP_REQUEST_WAITING',
+    operands: { requestId: REQUEST_ID, proposerName: 'Ana Kovač', addresseeName: 'Ivo Babić', date: '2046-03-02' },
+    path: `/za-odluku/zamjena/${REQUEST_ID}`,
+    subject: 'Nova zamjena za odluku: Ana Kovač → Ivo Babić',
+    text: `${ORGANIZATION_NAME}: Ivo Babić preuzima smjenu 02.03.2046 od Ana Kovač. Zamjena čeka tvoju odluku: {link}`,
+  },
+  {
+    code: 'SWAP_REQUEST_APPROVED',
+    operands: { date: '2046-03-02' },
+    path: '/danas',
+    subject: 'Zamjena 02.03.2046 je odobrena',
+    text: `${ORGANIZATION_NAME}: zamjena smjene 02.03.2046 je odobrena. Pogledaj u aplikaciji: {link}`,
+  },
+  {
+    code: 'SWAP_REQUEST_REJECTED',
+    operands: { date: '2046-03-02' },
+    path: '/danas',
+    subject: 'Zamjena 02.03.2046 nije odobrena',
+    text: `${ORGANIZATION_NAME}: zamjena smjene 02.03.2046 nije odobrena. Pogledaj u aplikaciji: {link}`,
+  },
 ];
 
 describe("notify renders every 10.2 code with the organization's name and its sign-in link", () => {
@@ -490,7 +514,8 @@ describe("notify renders every 10.2 code with the organization's name and its si
     expect(url.searchParams.get('povratak')).toBe(path);
   });
 
-  it.each(EVERY_CODE.filter((entry) => entry.code !== 'LEAVE_REQUEST_CREATED'))(
+  // The two admin-bound codes name a member: only an admin receives them.
+  it.each(EVERY_CODE.filter((entry) => !['LEAVE_REQUEST_CREATED', 'SWAP_REQUEST_WAITING'].includes(entry.code)))(
     'names no other member and no absence in $code, which a member-role account receives (Q5)',
     ({ code }) => {
       const message = OBAVIJESTI[MESSAGE_OF_CODE[code] ?? 'leaveRequestApproved'];
@@ -513,8 +538,8 @@ describe("notify renders every 10.2 code with the organization's name and its si
     expect(typed.ok && typed.text).toContain('za 02.03.2046 vrijedi 2046-03-02 umjesto');
   });
 
-  it.each(['SWAP_REQUEST_PROPOSED', 'SWAP_REQUEST_ACCEPTED', 'SWAP_REQUEST_DECLINED'])(
-    'renders %s with a return shift exactly as without one, and checks returnDate as a date (12.3b)',
+  it.each(['SWAP_REQUEST_PROPOSED', 'SWAP_REQUEST_ACCEPTED', 'SWAP_REQUEST_DECLINED', 'SWAP_REQUEST_APPROVED', 'SWAP_REQUEST_REJECTED'])(
+    'renders %s with a return shift exactly as without one, and checks returnDate as a date (12.3b, 12.4b)',
     (code) => {
       const without = render(code, 'hr', { date: '2046-03-02' }, TARGET);
 
@@ -537,6 +562,23 @@ describe("notify renders every 10.2 code with the organization's name and its si
       code: OPERANDS_INVALID,
     });
     expect(render('LEAVE_REQUEST_CREATED', 'hr', { ...operands, requestId: '../ljudi' }, TARGET)).toEqual({
+      ok: false,
+      code: OPERANDS_INVALID,
+    });
+  });
+
+  it('refuses a swap waiting for a decision whose operands name no swap id to link to (12.4b)', () => {
+    const { operands } = EVERY_CODE.find((entry) => entry.code === 'SWAP_REQUEST_WAITING') ?? { operands: {} };
+
+    expect(render('SWAP_REQUEST_WAITING', 'hr', { ...operands, requestId: undefined }, TARGET)).toEqual({
+      ok: false,
+      code: OPERANDS_INVALID,
+    });
+    expect(render('SWAP_REQUEST_WAITING', 'hr', { ...operands, requestId: '../ljudi' }, TARGET)).toEqual({
+      ok: false,
+      code: OPERANDS_INVALID,
+    });
+    expect(renderPush('SWAP_REQUEST_WAITING', 'hr', { ...operands, requestId: 'not-a-uuid' }, TARGET)).toEqual({
       ok: false,
       code: OPERANDS_INVALID,
     });

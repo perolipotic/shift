@@ -96,6 +96,18 @@ export const OBAVIJESTI = {
     subject: 'Zamjena {date} je odbijena',
     body: '{organizationName}: tvoj prijedlog zamjene smjene {date} je odbijen. Pogledaj u aplikaciji: {link}',
   },
+  swapRequestWaiting: {
+    subject: 'Nova zamjena za odluku: {proposerName} → {addresseeName}',
+    body: '{organizationName}: {addresseeName} preuzima smjenu {date} od {proposerName}. Zamjena čeka tvoju odluku: {link}',
+  },
+  swapRequestApproved: {
+    subject: 'Zamjena {date} je odobrena',
+    body: '{organizationName}: zamjena smjene {date} je odobrena. Pogledaj u aplikaciji: {link}',
+  },
+  swapRequestRejected: {
+    subject: 'Zamjena {date} nije odobrena',
+    body: '{organizationName}: zamjena smjene {date} nije odobrena. Pogledaj u aplikaciji: {link}',
+  },
   footer: 'Obavijesti e-poštom možeš isključiti u aplikaciji, pod Obavijesti: {link}',
 } as const;
 
@@ -138,14 +150,17 @@ export const MESSAGE_OF_CODE: Readonly<Record<string, MessageKey>> = {
   SWAP_REQUEST_PROPOSED: 'swapRequestProposed',
   SWAP_REQUEST_ACCEPTED: 'swapRequestAccepted',
   SWAP_REQUEST_DECLINED: 'swapRequestDeclined',
+  SWAP_REQUEST_WAITING: 'swapRequestWaiting',
+  SWAP_REQUEST_APPROVED: 'swapRequestApproved',
+  SWAP_REQUEST_REJECTED: 'swapRequestRejected',
 };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * The in-app path of the surface a message links to, from the row's operands
- * (the request's id for a new request), or `null` when the operands do not
- * name one.
+ * (the request's id for a new leave request or a swap waiting for a
+ * decision), or `null` when the operands do not name one.
  */
 export function linkPathOf(key: MessageKey, operands: Readonly<Record<string, unknown>>): string | null {
   switch (key) {
@@ -170,10 +185,16 @@ export function linkPathOf(key: MessageKey, operands: Readonly<Record<string, un
     case 'swapRequestProposed':
     case 'swapRequestAccepted':
     case 'swapRequestDeclined':
+    case 'swapRequestApproved':
+    case 'swapRequestRejected':
       return '/danas';
     case 'leaveRequestCreated': {
       const id = operands['requestId'];
       return typeof id === 'string' && UUID.test(id) ? `/za-odluku/zahtjev/${id.toLowerCase()}` : null;
+    }
+    case 'swapRequestWaiting': {
+      const id = operands['requestId'];
+      return typeof id === 'string' && UUID.test(id) ? `/za-odluku/zamjena/${id.toLowerCase()}` : null;
     }
   }
 }
