@@ -33,7 +33,13 @@ import {
   type CalendarSearch,
 } from '@/features/calendar/utils/month';
 import { translateCellLabel } from '@/features/calendar/utils/cell-label';
-import { DAY_WORKING, dayConflictsOf, swapOfferedOf, type DayConflict } from '@/features/calendar/utils/day-detail';
+import {
+  DAY_WORKING,
+  dayConflictsOf,
+  swapOfferedOf,
+  swapProposalMarkOf,
+  type DayConflict,
+} from '@/features/calendar/utils/day-detail';
 import { candidateLeaveOf } from '@/features/calendar/utils/replacement-candidates';
 import { cachedRoleOf, calendarSkeletonShapeOf, earlyCalendarModeOf } from '@/features/calendar/utils/skeleton';
 import { gridFocusKeyOf } from '@/features/calendar/utils/screen-keys';
@@ -66,6 +72,8 @@ import { useReplacementLinkRefresh } from '@/features/conflicts/hooks/use-replac
 import { hoursLeaveKeysOf } from '@/features/hours/services/hours-conflicts';
 import { MEMBER_ROLE_KEY } from '@/features/navigation/services/role';
 import { dayStaffingOf } from '@/features/staffing/services/short-staffed';
+import { useMySwapRequestsRead } from '@/features/swaps/hooks/use-my-swaps';
+import { MY_SWAP_REQUESTS_KEY, openSwapProposalsOf } from '@/features/swaps/services/my-swaps';
 import { FRESHNESS_OFFLINE, ZONE_FROM_CALENDAR } from '@/lib/offline/freshness';
 import { useSnapshotFreshness } from '@/lib/offline/use-snapshot-freshness';
 import { supabaseClient } from '@/lib/supabase/client';
@@ -154,6 +162,11 @@ export function useCalendarScreen(
     ),
     enabled: readsAdmin,
   });
+  // STORY 12.3: a member's own swaps, for the day detail's mark on a shift
+  // they already proposed; an admin proposes none, and reads none here. NOT
+  // ONE OF THE MONTH'S READS (product owner, 2026-11-06): it never gates
+  // *Kalendar*, and a failure only hides the mark (see `proposals` below).
+  const swapsRead = useMySwapRequestsRead(readsRole !== null && !readsAdmin);
   // STORY 8.2: the month's reads are one snapshot, decided from these very
   // observer results (`useSnapshotFreshness`); a read off the month's keys —
   // the other role's leave, a member's disabled resolutions — passes raw.
@@ -343,9 +356,20 @@ export function useCalendarScreen(
         : dayStaffingOf(snapshot, marks.staffingLeave, detail.teamId, detail.isoDate),
     [snapshot, marks, detail],
   );
+  // STORY 12.3: the viewer's open proposals (the proposer's side), `null`
+  // while the read is unknown — not yet answered, or failed even over cached
+  // rows — and the link is then offered as before, with 0049's 23505 the
+  // backstop. Read raw, off the month's snapshot, so it never gates the grid.
+  const swapRows = swapsRead.isError ? undefined : swapsRead.data;
+  const proposals = useMemo(
+    () => (snapshot === null ? null : openSwapProposalsOf(swapRows, snapshot.viewer.memberId)),
+    [snapshot, swapRows],
+  );
   // STORY 12.2: *Predloži zamjenu* in the open day's footer — a member's own
-  // working shift, from the organization's today on.
-  const swapOffered = swapOfferedOf(snapshot, detail, today);
+  // working shift, from the organization's today on; since story 12.3 never
+  // on a shift they already proposed, which the footer marks instead.
+  const swapOffered = swapOfferedOf(snapshot, detail, today, proposals);
+  const swapProposed = swapProposalMarkOf(snapshot, detail, today, proposals);
   // Built once per month shown, not on every focus move.
   const labels = useMemo(() => (month === null ? null : gridCellLabelsOf(month, translateCellLabel)), [month]);
 
@@ -356,6 +380,7 @@ export function useCalendarScreen(
       ORGANIZATION_LEAVE_RECORDS_KEY,
       MY_LEAVE_RECORDS_KEY,
       ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
+      MY_SWAP_REQUESTS_KEY,
     ]) {
       // A read already in flight is left to land: repeated presses never restart it.
       void client.invalidateQueries({ queryKey }, { cancelRefetch: false });
@@ -487,6 +512,7 @@ export function useCalendarScreen(
     dayConflicts,
     dayStaffing,
     swapOffered,
+    swapProposed,
     candidateLeave,
     leaveKeys,
     retry,

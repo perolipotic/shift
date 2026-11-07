@@ -5,11 +5,14 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 
 import { useCalendarSnapshot } from '@/features/calendar/hooks/use-calendar-snapshot';
 import { CALENDAR_KEY, calendarSurfaceStateOf } from '@/features/calendar/services/snapshot';
+import { swapProposalMarkOf, type OpenSwapProposal } from '@/features/calendar/utils/day-detail';
 import {
   MY_CONFLICT_RESOLUTIONS_KEY,
   myConflictResolutionsQueryOptions,
   type MyConflictResolutionsRpc,
 } from '@/features/conflicts/services/resolutions';
+import { useMySwapRequestsRead } from '@/features/swaps/hooks/use-my-swaps';
+import { MY_SWAP_REQUESTS_KEY, openSwapProposalsOf } from '@/features/swaps/services/my-swaps';
 import {
   SWAP_COLLEAGUE_GONE,
   SWAP_FAILED,
@@ -22,6 +25,7 @@ import {
   SWAP_VIEW_UNAVAILABLE,
   ownSwapShiftOf,
   sendSwapProposal,
+  swapDayOf,
   swapChoiceOf,
   swapChoiceOnColleague,
   swapColleaguesOf,
@@ -95,7 +99,11 @@ export function useSwapProposalView() {
  * The viewer's own resolutions are read beside it for the leave keys their
  * *Sati* counts (`swapLeaveKeysOf`), and never gate the form: while they
  * cannot be read — paused offline with none cached, or failed — the preview
- * counts no leave and says so, and the retry reads them again too.
+ * counts no leave and says so, and the retry reads them again too. SINCE
+ * STORY 12.3 the viewer's own swaps are read beside it too, never gating it:
+ * a shift they already proposed in an open swap shows a notice instead of
+ * the form, and while that read is unknown the form is offered as before
+ * (0049's 23505 stays the backstop).
  *
  * THE FIELDS ARE CONTROLLED, from the choice held here, so each shows what
  * would be sent, and a refusal keeps every chosen value. A choice the options
@@ -114,6 +122,7 @@ export function useSwapProposal(search: SwapSearch) {
   const navigate = useNavigate();
   const calendarRead = useCalendarSnapshot();
   const resolutionsRead = useQuery(myConflictResolutionsQueryOptions(() => supabaseClient() as unknown as MyConflictResolutionsRpc));
+  const swapsRead = useMySwapRequestsRead();
   const { freshness, clock, answerFor } = useSnapshotFreshness(
     SWAP_SURFACE_KEYS,
     [[CALENDAR_KEY, calendarRead]],
@@ -147,7 +156,28 @@ export function useSwapProposal(search: SwapSearch) {
     () => (snapshot === null ? { keys: [], known: false } : swapLeaveKeysOf(snapshot, resolutionRows)),
     [snapshot, resolutionRows],
   );
-  const given = useMemo(() => (snapshot === null ? null : ownSwapShiftOf(snapshot, search, today)), [snapshot, search, today]);
+  // UNKNOWN UNLESS ANSWERED: a failed read is no answer, even over cached rows
+  // (the offer then stands, and 0049's 23505 is the backstop).
+  const swapRows = swapsRead.isError ? undefined : swapsRead.data;
+  const liveProposals = useMemo(
+    () => (snapshot === null ? null : openSwapProposalsOf(swapRows, snapshot.viewer.memberId)),
+    [snapshot, swapRows],
+  );
+  // HELD FROM A LANDED SEND TO THE NAVIGATION: the send's own re-read of the
+  // swaps would otherwise find the new proposal and swap the form for the
+  // notice (and drop focus) before the surface is left.
+  const [held, setHeld] = useState<{ readonly proposals: readonly OpenSwapProposal[] | null } | null>(null);
+  const proposals = held === null ? liveProposals : held.proposals;
+  const given = useMemo(
+    () => (snapshot === null ? null : ownSwapShiftOf(snapshot, search, today, proposals)),
+    [snapshot, search, today, proposals],
+  );
+  // STORY 12.3: the shift the URL names, already proposed by the viewer in an open swap.
+  const alreadyProposed = useMemo(() => {
+    if (snapshot === null || search.dan === undefined || search.smjena === undefined) return null;
+
+    return swapProposalMarkOf(snapshot, swapDayOf(snapshot, { teamId: search.smjena, date: search.dan }), today, proposals);
+  }, [snapshot, search, today, proposals]);
   const colleagues = useMemo(
     () => (snapshot === null || given === null ? [] : swapColleaguesOf(snapshot, given)),
     [snapshot, given],
@@ -233,6 +263,8 @@ export function useSwapProposal(search: SwapSearch) {
 
       // A REFUSAL KEEPS EVERY CHOSEN VALUE: nothing here resets the fields.
       if (!outcome.ok) setFailure(outcome.code);
+      // A LANDED SEND holds the proposals as they stood until the navigation.
+      else setHeld({ proposals: liveProposals });
 
       try {
         await refreshAfterWrite(queryClient, CALENDAR_KEY, outcome.ok ? SWAP_REQUEST_WRITE_DEPENDENTS : NO_DEPENDENTS);
@@ -267,6 +299,7 @@ export function useSwapProposal(search: SwapSearch) {
   function retry(): void {
     void queryClient.invalidateQueries({ queryKey: CALENDAR_KEY });
     void queryClient.invalidateQueries({ queryKey: MY_CONFLICT_RESOLUTIONS_KEY });
+    void queryClient.invalidateQueries({ queryKey: MY_SWAP_REQUESTS_KEY });
   }
 
   return {
@@ -274,6 +307,7 @@ export function useSwapProposal(search: SwapSearch) {
     loading,
     today,
     given,
+    alreadyProposed,
     colleagues,
     colleagueValue,
     returnOptions,

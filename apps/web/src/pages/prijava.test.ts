@@ -11,6 +11,7 @@ import {
   componentFunction,
   describedByIds,
   finallyBlock,
+  DANAS,
   GODISNJI,
   HOUR_BAND_EDIT,
   HOUR_BAND_LIST,
@@ -479,6 +480,21 @@ const IN_FLIGHT_HANDLERS = [
     handler: 'send',
     pending: 'setPending',
     failure: 'setFailure',
+  },
+  {
+    // STORY 12.3: *Prihvati*, *Odbij* and *Povuci* on *Danas*'s *Zamjene*,
+    // one handler and one ref for all three, one at a time; its refusal its
+    // own, its alert naming the swap's shift.
+    name: "Danas's swap answer and withdrawal",
+    file: DANAS,
+    effect: 'actOnSwapRequest(',
+    inFlight: 'acting',
+    handler: 'act',
+    // One state for the acting row, cleared in the finally (no separate flag):
+    // the row's id, so it is cleared with `null`.
+    pending: 'setPendingId',
+    cleared: 'setPendingId(null)',
+    failure: 'setRefusal',
   },
 ];
 
@@ -1122,11 +1138,13 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // the dialogs' one runner, `write`.
     // THIRTY-THREE SINCE STORY 9.4: the leave request decision's decide.
     // THIRTY-FOUR SINCE STORY 12.2: the swap proposal's send.
-    expect(IN_FLIGHT_HANDLERS.length, 'an awaiting handler is swept by nothing').toBe(34);
+    // THIRTY-FIVE SINCE STORY 12.3: *Zamjene*'s answer and withdrawal.
+    expect(IN_FLIGHT_HANDLERS.length, 'an awaiting handler is swept by nothing').toBe(35);
     expect(
       IN_FLIGHT_HANDLERS.map((entry) => `${entry.handler}/${entry.inFlight}`).sort(),
       'the in-flight handler names drifted from the handlers that hold them',
     ).toEqual([
+      'act/acting',
       'amend/amending',
       'archive/writing',
       'archive/writing',
@@ -1472,7 +1490,10 @@ describe('the screen reaches the authentication seam rather than faking one', ()
 
   it.each(IN_FLIGHT_HANDLERS)(
     'clears the in-flight state inside the finally on $name, not merely near one',
-    ({ file, inFlight, handler: named, pending }) => {
+    (entry) => {
+      const { file, inFlight, handler: named, pending } = entry;
+      // A pending STATE that names the acting row is cleared with `null`, not `false`.
+      const cleared = 'cleared' in entry && typeof entry.cleared === 'string' ? entry.cleared : `${pending}(false)`;
       // The assertion this replaces matched `/\}\s*finally\s*\{/` against the
       // whole file, which is the existence of the keyword and nothing about what
       // it does. Deleting `setPending(false)` from inside it passed — and left
@@ -1494,7 +1515,7 @@ describe('the screen reaches the authentication seam rather than faking one', ()
       // THE SETTER NAME COMES FROM THE ENTRY, for the reason the ref name does:
       // two handlers on one screen hold two different pending flags, and a
       // hard-coded `setPending` is true of one of them by accident.
-      expect(block, 'the finally does not re-enable the control').toContain(`${pending}(false)`);
+      expect(block, 'the finally does not re-enable the control').toContain(cleared);
       expect(block, 'the finally does not clear the in-flight ref').toContain(
         `${inFlight}.current = false`,
       );

@@ -243,4 +243,33 @@ export class TodayPage extends BasePage {
   get adminUnavailableAlert(): Locator {
     return this.page.getByRole('alert').filter({ hasText: admin.unavailable });
   }
+
+  /** *Zamjene* (story 12.3), on either body while the viewer has a swap. */
+  get swapsCard(): Locator {
+    return this.card(danas.swaps.heading);
+  }
+
+  /** *Zamjene*'s status line (a landed action) that holds `text`. */
+  swapsStatusWith(text: string): Locator {
+    return this.swapsCard.getByRole('status').filter({ hasText: text });
+  }
+
+  /** *Zamjene*'s alert (a refused action) that holds `text`. */
+  swapsAlertWith(text: string): Locator {
+    return this.swapsCard.getByRole('alert').filter({ hasText: text });
+  }
+
+  /** A message in *Zamjene*, matched whole. */
+  swapsText(message: string): Locator {
+    return this.swapsCard.getByText(message, { exact: true });
+  }
+
+  /**
+   * One of *Zamjene*'s buttons by its accessible name (story 12.3):
+   * `message` is `acceptName`, `declineName` or `withdrawName`, filled with
+   * the given shift's day as the card names it and its team.
+   */
+  swapButton(message: string, day: string, team: string): Locator {
+    return this.page.getByRole('button', { name: fill(message, { day, team }), exact: true });
+  }
 }

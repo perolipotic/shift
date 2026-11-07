@@ -187,6 +187,40 @@
         "link": "Otvori kalendar"
       },
       "unavailable": "Pregled trenutačno nije moguće učitati. Pokušaj ponovno."
+    },
+    "swaps": {
+      "heading": "Zamjene",
+      "shift": "{day} · {team}",
+      "toColleague": "Tvoju smjenu preuzima: {name}",
+      "fromColleague": "{name} ti nudi ovu smjenu",
+      "returnYours": "Zauzvrat preuzimaš {day} · {team}",
+      "returnTheirs": "Zauzvrat {name} preuzima tvoju smjenu {day} · {team}",
+      "status": {
+        "waitingYou": "Čeka tvoj odgovor",
+        "waitingColleague": "Čeka odgovor kolege",
+        "waitingDecision": "Čeka odluku",
+        "declined": "Odbijena",
+        "withdrawn": "Povučena",
+        "approved": "Odobrena",
+        "rejected": "Nije odobrena",
+        "deactivated": "Zatvorena deaktivacijom"
+      },
+      "past": "Datum je prošao",
+      "stale": "Smjene su se u međuvremenu promijenile, pa ovu zamjenu više ne možeš prihvatiti.",
+      "accept": "Prihvati",
+      "decline": "Odbij",
+      "withdraw": "Povuci",
+      "acceptName": "Prihvati zamjenu {day} · {team}",
+      "declineName": "Odbij zamjenu {day} · {team}",
+      "withdrawName": "Povuci zamjenu {day} · {team}",
+      "accepted": "Zamjena {day} · {team} je prihvaćena i čeka odluku administratora.",
+      "declined": "Zamjena {day} · {team} je odbijena.",
+      "withdrawn": "Zamjena {day} · {team} je povučena.",
+      "notOpen": "Zamjena {day} · {team} više nije otvorena za to.",
+      "denied": "Ne možeš to učiniti sa zamjenom {day} · {team}.",
+      "failed": "Zamjena {day} · {team} nije spremljena. Pokušaj ponovno.",
+      "staleWithdraw": "Smjene su se u međuvremenu promijenile, pa se zamjena više ne može primijeniti; možeš je povući.",
+      "unknownTeam": "Nepoznata smjena"
     }
   },
   "filter": {
@@ -485,7 +519,9 @@
       "notOwn": "Ovo nije tvoja radna smjena od danas nadalje, pa za nju ne možeš predložiti zamjenu.",
       "unavailable": "Zamjenu trenutačno nije moguće predložiti. Pokušaj ponovno.",
       "sent": "Prijedlog zamjene za {date} · {team} je poslan. Kolega: {name}. Prijedlog čeka odgovor kolege.",
-      "sentWithReturn": "Prijedlog zamjene za {date} · {team} je poslan. Kolega: {name}. Zauzvrat preuzimaš {returnDate} · {returnTeam}. Prijedlog čeka odgovor kolege."
+      "sentWithReturn": "Prijedlog zamjene za {date} · {team} je poslan. Kolega: {name}. Zauzvrat preuzimaš {returnDate} · {returnTeam}. Prijedlog čeka odgovor kolege.",
+      "proposedMark": "Zamjena predložena · {name}",
+      "alreadyProposed": "Za ovu smjenu već postoji tvoj otvoreni prijedlog zamjene. Kolega: {name}. Prijedlog možeš povući na stranici Danas."
     }
   },
   "godisnji": {

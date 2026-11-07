@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { ROSTER_TAKEN } from '@/features/calendar/services/roster-erasures';
 import { readCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
-import { DAY_WORKING, dayDetailOf, swapOfferedOf, type DayDetail } from '@/features/calendar/utils/day-detail';
+import { DAY_WORKING, dayDetailOf, swapOfferedOf, swapProposalMarkOf, type DayDetail } from '@/features/calendar/utils/day-detail';
 import {
   PILOT,
   SEEDED,
@@ -159,7 +159,7 @@ function dayOf(snapshot: CalendarSnapshot, teamId: string, date = DATE): DayDeta
 }
 
 function givenOf(snapshot: CalendarSnapshot): DayDetail {
-  const given = ownSwapShiftOf(snapshot, { dan: DATE, smjena: A }, TODAY);
+  const given = ownSwapShiftOf(snapshot, { dan: DATE, smjena: A }, TODAY, null);
 
   if (given === null) throw new Error('not the viewer’s shift');
 
@@ -175,31 +175,31 @@ beforeAll(async () => {
 
 describe('the link and the given shift (story 12.2)', () => {
   it('Link: a member, on their own working shift from today on, is offered Predloži zamjenu', () => {
-    expect(swapOfferedOf(snapshot, dayOf(snapshot, A), TODAY)).toBe(true);
-    expect(swapOfferedOf(snapshot, dayOf(snapshot, A), DATE)).toBe(true);
+    expect(swapOfferedOf(snapshot, dayOf(snapshot, A), TODAY, null)).toBe(true);
+    expect(swapOfferedOf(snapshot, dayOf(snapshot, A), DATE, null)).toBe(true);
   });
 
   it('No link: an admin, a day off, a past day, someone else’s shift, or no today yet', async () => {
     const admin = await snapshotOf({ role: 'admin' });
 
-    expect(swapOfferedOf(admin, dayOf(admin, A), TODAY)).toBe(false);
-    expect(swapOfferedOf(snapshot, dayOf(snapshot, C), TODAY)).toBe(false);
+    expect(swapOfferedOf(admin, dayOf(admin, A), TODAY, null)).toBe(false);
+    expect(swapOfferedOf(snapshot, dayOf(snapshot, C), TODAY, null)).toBe(false);
     expect(dayOf(snapshot, C).kind).not.toBe(DAY_WORKING);
-    expect(swapOfferedOf(snapshot, dayOf(snapshot, A), '2026-09-11')).toBe(false);
-    expect(swapOfferedOf(snapshot, dayOf(snapshot, B), TODAY)).toBe(false);
-    expect(swapOfferedOf(snapshot, dayOf(snapshot, A), null)).toBe(false);
-    expect(swapOfferedOf(null, null, TODAY)).toBe(false);
+    expect(swapOfferedOf(snapshot, dayOf(snapshot, A), '2026-09-11', null)).toBe(false);
+    expect(swapOfferedOf(snapshot, dayOf(snapshot, B), TODAY, null)).toBe(false);
+    expect(swapOfferedOf(snapshot, dayOf(snapshot, A), null, null)).toBe(false);
+    expect(swapOfferedOf(null, null, TODAY, null)).toBe(false);
   });
 
   it('Not mine: a URL for a shift not on the viewer’s roster, or none, names no given shift', async () => {
-    expect(ownSwapShiftOf(snapshot, { dan: DATE, smjena: B }, TODAY)).toBeNull();
-    expect(ownSwapShiftOf(snapshot, { dan: DATE }, TODAY)).toBeNull();
-    expect(ownSwapShiftOf(snapshot, { dan: DATE, smjena: 'no-such-team' }, TODAY)).toBeNull();
+    expect(ownSwapShiftOf(snapshot, { dan: DATE, smjena: B }, TODAY, null)).toBeNull();
+    expect(ownSwapShiftOf(snapshot, { dan: DATE }, TODAY, null)).toBeNull();
+    expect(ownSwapShiftOf(snapshot, { dan: DATE, smjena: 'no-such-team' }, TODAY, null)).toBeNull();
 
     // Taken off by a roster change in force: no longer theirs.
     const off = await snapshotOf({ rosterOverrides: [calendarRosterOverrideRow('ro-off', A, DATE, VIEWER_MEMBER, null)] });
 
-    expect(ownSwapShiftOf(off, { dan: DATE, smjena: A }, TODAY)).toBeNull();
+    expect(ownSwapShiftOf(off, { dan: DATE, smjena: A }, TODAY, null)).toBeNull();
     expect(givenOf(snapshot).teamId).toBe(A);
   });
 
@@ -207,8 +207,39 @@ describe('the link and the given shift (story 12.2)', () => {
     // B works Noć on 09-10; Luka (not on B) out is inert, so a plain addition puts the viewer on.
     const added = await snapshotOf({ rosterOverrides: [calendarRosterOverrideRow('ro-on', B, DATE, null, VIEWER_MEMBER)] });
 
-    expect(swapOfferedOf(added, dayOf(added, B), TODAY)).toBe(true);
-    expect(ownSwapShiftOf(added, { dan: DATE, smjena: B }, TODAY)?.teamId).toBe(B);
+    expect(swapOfferedOf(added, dayOf(added, B), TODAY, null)).toBe(true);
+    expect(ownSwapShiftOf(added, { dan: DATE, smjena: B }, TODAY, null)?.teamId).toBe(B);
+  });
+
+  it('Marked (story 12.3): a shift the viewer already proposed in an open swap offers no link and no form', () => {
+    const detail = dayOf(snapshot, A);
+    const proposed = [{ teamId: A, date: DATE, addresseeId: ANA }];
+
+    expect(swapOfferedOf(snapshot, detail, TODAY, proposed)).toBe(false);
+    expect(swapProposalMarkOf(snapshot, detail, TODAY, proposed)).toEqual({ colleagueName: 'Ana Babić' });
+    expect(ownSwapShiftOf(snapshot, { dan: DATE, smjena: A }, TODAY, proposed)).toBeNull();
+    // Another shift, or none proposed: offered as before; unknown (`null`) too.
+    expect(swapOfferedOf(snapshot, detail, TODAY, [{ teamId: A, date: '2026-09-14', addresseeId: ANA }])).toBe(true);
+    expect(swapOfferedOf(snapshot, detail, TODAY, [])).toBe(true);
+    expect(swapProposalMarkOf(snapshot, detail, TODAY, null)).toBeNull();
+    expect(swapProposalMarkOf(snapshot, detail, TODAY, [])).toBeNull();
+    // A colleague the snapshot does not hold is marked without a name.
+    expect(swapProposalMarkOf(snapshot, detail, TODAY, [{ teamId: A, date: DATE, addresseeId: 'gone' }])).toEqual({ colleagueName: null });
+  });
+
+  it('Marked: never before the organization’s today, the link’s own date rule', () => {
+    const detail = dayOf(snapshot, A);
+    const proposed = [{ teamId: A, date: DATE, addresseeId: ANA }];
+
+    expect(swapProposalMarkOf(snapshot, detail, '2026-09-11', proposed)).toBeNull();
+    expect(swapProposalMarkOf(snapshot, detail, DATE, proposed)).toEqual({ colleagueName: 'Ana Babić' });
+    expect(swapProposalMarkOf(snapshot, detail, null, proposed)).toBeNull();
+  });
+
+  it('Marked: an admin is never marked', async () => {
+    const admin = await snapshotOf({ role: 'admin' });
+
+    expect(swapProposalMarkOf(admin, dayOf(admin, A), TODAY, [{ teamId: A, date: DATE, addresseeId: ANA }])).toBeNull();
   });
 
   it('reads the URL only where it has the right shape', () => {

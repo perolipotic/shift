@@ -502,6 +502,78 @@ export async function swapRequestsOfInSql(slug: string, proposerId: string): Pro
 }
 
 /**
+ * Seeds an open swap proposal in SQL (story 12.3), as the proposer would
+ * have sent it: `created_by` is the proposer's own account, as 0049's insert
+ * policy pins it. The superuser bypasses the policy, and the statement lock
+ * still fires. Returns the swap's id. {@link removeLeaveMemberInSql}, run for
+ * either member, deletes it — every `swap_request_decisions` row on a swap
+ * where that member is the proposer or the addressee first, then those
+ * `swap_requests` rows, in its one transaction.
+ */
+export async function seedSwapRequestInSql(
+  slug: string,
+  swap: {
+    readonly proposerId: string;
+    readonly addresseeId: string;
+    readonly teamId: string;
+    readonly date: string;
+    readonly returnTeamId?: string | null;
+    readonly returnDate?: string | null;
+  },
+): Promise<string> {
+  const client = await connect();
+  try {
+    const inserted = await client.query<{ id: string }>(
+      `insert into swap_requests (organization_id, proposer_id, addressee_id, team_id, date, return_team_id, return_date, created_by)
+       select o.id, $2, $3, $4, $5::date, $6, $7::date, m.auth_user_id
+         from organizations o join members m on m.organization_id = o.id and m.id = $2
+        where o.slug = $1
+       returning id`,
+      [slug, swap.proposerId, swap.addresseeId, swap.teamId, swap.date, swap.returnTeamId ?? null, swap.returnDate ?? null],
+    );
+    const id = inserted.rows[0]?.id;
+
+    if (id === undefined) throw new Error('seedSwapRequestInSql: no swap was inserted');
+
+    return id;
+  } finally {
+    await client.end();
+  }
+}
+
+/**
+ * One swap's derived state as 0049 stores it (story 12.3): its answer,
+ * whether it is still open, and whether a `swap_request_decisions` row
+ * exists for it (`decided`; an answer or a withdrawal writes none).
+ */
+export interface StoredSwapState {
+  readonly answer: string | null;
+  readonly open: boolean;
+  readonly decided: boolean;
+}
+
+/** The answer, the close and whether a decision exists for swap `id` of the run organization, in SQL (story 12.3). */
+export async function swapRequestStateInSql(slug: string, id: string): Promise<StoredSwapState> {
+  const client = await connect();
+  try {
+    const found = await client.query<{ answer: string | null; open: boolean; decided: boolean }>(
+      `select r.answer, r.closed_at is null as open,
+              exists (select 1 from swap_request_decisions d where d.organization_id = r.organization_id and d.request_id = r.id) as decided
+         from swap_requests r join organizations o on o.id = r.organization_id
+        where o.slug = $1 and r.id = $2`,
+      [slug, id],
+    );
+    const row = found.rows[0];
+
+    if (row === undefined) throw new Error('swapRequestStateInSql: no such swap');
+
+    return { answer: row.answer, open: row.open, decided: row.decided };
+  } finally {
+    await client.end();
+  }
+}
+
+/**
  * Makes a member {@link seedLeaveMember} wrote an ADMIN of the run
  * organization, in SQL (story 6.3): an admin of the test's own, on the test's
  * own team, so the shared fixture admin is never put on a team under a

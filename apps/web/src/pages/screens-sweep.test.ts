@@ -388,7 +388,8 @@ describe('the screen is read at all, so every sweep below means something', () =
     // EIGHTY-FOUR SINCE 0047: the leave request record change.
     // EIGHTY-FIVE SINCE STORY 11.2: the short-staffed block.
     // EIGHTY-SEVEN SINCE STORY 12.2: the swap proposal and its rules.
-    expect(KEY_SOURCES).toHaveLength(87);
+    // EIGHTY-EIGHT SINCE STORY 12.3: *Zamjene*'s rules.
+    expect(KEY_SOURCES).toHaveLength(88);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
@@ -742,10 +743,18 @@ describe('the screen is read at all, so every sweep below means something', () =
       expect(source(file).trim().length, `${file} is all but empty`).toBeGreaterThan(150);
     }
     expect(DANAS[0], 'the page is read first').toBe(DANAS_PAGE);
+    // STORY 12.3: *Zamjene* is the swap feature's card and hook, drawn on
+    // both bodies — the set's only parts outside the today feature.
+    const outside = DANAS.filter((file) => file !== DANAS_PAGE && !file.startsWith(`${TODAY_FEATURE}/`));
+
+    expect(outside.map((file) => file.slice(file.lastIndexOf('/features/') + 1)).sort(), 'the Danas set reaches past the today feature').toEqual([
+      'features/swaps/components/my-swaps-card.tsx',
+      'features/swaps/hooks/use-my-swaps.ts',
+    ]);
     expect(
       found.filter((file) => !exempt.has(file)).sort(),
       'the Danas file set and the feature folders disagree',
-    ).toEqual(DANAS.filter((file) => file !== DANAS_PAGE).sort());
+    ).toEqual(DANAS.filter((file) => file !== DANAS_PAGE && !outside.includes(file)).sort());
   });
 
   it('sweeps every part of the Za odluku screens, so a new file cannot escape the sets', () => {

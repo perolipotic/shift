@@ -184,6 +184,17 @@ export function SwapProposalFormBody({ form }: { readonly form: SwapProposalForm
     );
   }
 
+  // STORY 12.3: a shift the viewer already proposed in an open swap: a notice, and no form.
+  if (given === null && form.alreadyProposed !== null) {
+    return (
+      <p className="text-sm">
+        {t('kalendar.swap.alreadyProposed', {
+          name: form.alreadyProposed.colleagueName ?? t('kalendar.detail.unknownMember'),
+        })}
+      </p>
+    );
+  }
+
   // A shift that is not the viewer's own working shift from today on: a notice, and no form.
   if (given === null) {
     return <p className="text-sm">{t('kalendar.swap.notOwn')}</p>;

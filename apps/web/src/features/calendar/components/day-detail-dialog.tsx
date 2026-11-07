@@ -17,6 +17,7 @@ import {
   inOptionOf,
   outOptionOf,
   type RosterLineTranslate,
+  type SwapProposalMark,
 } from '@/features/calendar/utils/day-detail';
 import { MODIFIER_CONFLICT, MODIFIER_OVERRIDDEN, modifierTreatmentOf } from '@/features/calendar/utils/modifiers';
 import {
@@ -414,16 +415,29 @@ function renderDetail(
  * The day detail's footer (story 7.9): an admin's "Promijeni sastav" on a
  * working day and "Promijeni tip smjene" where a type may be set, each
  * opening its own dialog; since story 12.2 a member's *Predloži zamjenu* on
- * their own working shift from today on, a link to `/kalendar/zamjena`.
- * Nothing here starts a write: the day detail stays facts only.
+ * their own working shift from today on, a link to `/kalendar/zamjena`; since
+ * story 12.3, on a shift they already proposed in an open swap, the mark
+ * *Zamjena predložena · {kolega}* in the link's place. Nothing here starts a
+ * write: the day detail stays facts only.
  */
-function renderFooter(detail: DayDetail, form: OverrideFormState, roster: RosterFormState, swapOffered: boolean): ReactNode {
-  if (!roster.offersSet && !form.offersSet && !swapOffered) return null;
+function renderFooter(
+  detail: DayDetail,
+  form: OverrideFormState,
+  roster: RosterFormState,
+  swapOffered: boolean,
+  swapProposed: SwapProposalMark | null,
+): ReactNode {
+  if (!roster.offersSet && !form.offersSet && !swapOffered && swapProposed === null) return null;
 
   const busy = form.pending || roster.pending;
 
   return (
     <DialogFooter>
+      {swapProposed === null ? null : (
+        <p className="flex min-h-11 items-center text-sm">
+          {t('kalendar.swap.proposedMark', { name: swapProposed.colleagueName ?? t('kalendar.detail.unknownMember') })}
+        </p>
+      )}
       {swapOffered ? (
         <Button asChild className="h-11" variant="outline">
           <Link to="/kalendar/zamjena" search={{ dan: detail.isoDate, smjena: detail.teamId }}>
@@ -487,6 +501,7 @@ export function DayDetailDialog({
   form,
   roster,
   swapOffered = false,
+  swapProposed = null,
   onClose,
   onClosedByBrowser,
 }: {
@@ -500,6 +515,8 @@ export function DayDetailDialog({
   readonly roster: RosterFormState;
   /** Story 12.2: whether the footer offers *Predloži zamjenu* (`swapOfferedOf`): a member's own working shift from today on. */
   readonly swapOffered?: boolean;
+  /** Story 12.3: the viewer's open proposal of this shift (`swapProposalMarkOf`), marked in the link's place. */
+  readonly swapProposed?: SwapProposalMark | null;
   readonly onClose: () => void;
   readonly onClosedByBrowser: () => void;
 }): ReactNode {
@@ -559,7 +576,7 @@ export function DayDetailDialog({
               <DialogTitle id={DAY_DETAIL_HEADING_ID} tabIndex={-1}>{t('kalendar.detail.title', { team: detail.teamName, date: detail.date })}</DialogTitle>
             </DialogHeader>
             {renderDetail(detail, snapshot.usesFireRanks, conflicts, form, roster, staffing)}
-            {renderFooter(detail, form, roster, swapOffered)}
+            {renderFooter(detail, form, roster, swapOffered, swapProposed)}
           </>
         )}
       </Dialog>

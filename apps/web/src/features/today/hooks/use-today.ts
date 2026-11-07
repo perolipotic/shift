@@ -32,6 +32,8 @@ import {
   organizationTable,
   organizationSnapshotQueryOptions,
 } from '@/features/organization/services/snapshot';
+import { useMySwapRequestsRead } from '@/features/swaps/hooks/use-my-swaps';
+import { MY_SWAP_REQUESTS_KEY } from '@/features/swaps/services/my-swaps';
 import { useTodayRole } from '@/features/today/hooks/use-admin-today';
 import { todaySurfaceKeysOf } from '@/features/today/services/surface-keys';
 import {
@@ -71,6 +73,11 @@ const CURRENT_MONTH: HoursSearch = {};
  * the organization snapshot under `ORGANIZATION_SNAPSHOT_KEY`, the calendar
  * and the own leave. No organization-wide leave or resolution read.
  *
+ * THE VIEWER'S OWN SWAPS (story 12.3), for every role, under
+ * `MY_SWAP_REQUESTS_KEY`: *Zamjene* lists them on both bodies, and draws them
+ * through its own hook; they are observed here so the page's one snapshot
+ * waits for them, and its retry reads them again.
+ *
  * ONE SNAPSHOT, ONLINE OR NOT (story 8.2). Every read is seen through the
  * surface's freshness (`useSnapshotFreshness` over `todaySurfaceKeysOf`, an
  * admin's body's keys included): online, a read older than this session's
@@ -95,6 +102,7 @@ export function useToday() {
   const organizationRead = useQuery(
     organizationSnapshotQueryOptions(organizationTable),
   );
+  const swapsRead = useMySwapRequestsRead();
   // THE ROLE THE PAGE PICKS ITS BODY BY (`role` below, through
   // `useTodayRole` in `DanasScreen`) is the role the keys follow, so an
   // admin's body's reads are always among them. Read off the cached snapshot
@@ -109,6 +117,7 @@ export function useToday() {
       [MY_CONFLICT_RESOLUTIONS_KEY, resolutionsRead],
       [MEMBERS_LIST_KEY, membersRead],
       [ORGANIZATION_SNAPSHOT_KEY, organizationRead],
+      [MY_SWAP_REQUESTS_KEY, swapsRead],
     ],
     ZONE_FROM_CALENDAR,
   );
@@ -217,6 +226,7 @@ export function useToday() {
       MY_CONFLICT_RESOLUTIONS_KEY,
       MEMBERS_LIST_KEY,
       ORGANIZATION_SNAPSHOT_KEY,
+      MY_SWAP_REQUESTS_KEY,
     ]) {
       void queryClient.invalidateQueries({ queryKey });
     }

@@ -201,6 +201,7 @@ export function KalendarScreen() {
         form={overrideForm}
         roster={rosterForm}
         swapOffered={screen.swapOffered}
+        swapProposed={screen.swapProposed}
         onClose={screen.closeDay}
         onClosedByBrowser={screen.closedByBrowser}
       />

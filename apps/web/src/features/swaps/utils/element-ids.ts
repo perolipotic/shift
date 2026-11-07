@@ -21,3 +21,6 @@ export const SWAP_PREVIEW_ID = 'swap-proposal-preview';
 
 /** A refused send's alert. */
 export const SWAP_ERROR_ID = 'swap-proposal-error';
+
+/** *Zamjene* on *Danas* (story 12.3): the card's heading, which names its section and its list. */
+export const MY_SWAPS_HEADING_ID = 'my-swaps-heading';

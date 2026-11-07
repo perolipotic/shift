@@ -5,6 +5,7 @@ import { calendarSurfaceKeysOf } from '@/features/calendar/services/surface-keys
 import { ORGANIZATION_CONFLICT_RESOLUTIONS_KEY } from '@/features/conflicts/services/resolutions';
 import { MY_LEAVE_RECORDS_KEY, ORGANIZATION_LEAVE_RECORDS_KEY } from '@/features/leave/services/leave-list';
 import type { MemberRole } from '@/features/navigation/utils/destinations';
+import { MY_SWAP_REQUESTS_KEY } from '@/features/swaps/services/my-swaps';
 import { todaySurfaceKeysOf } from '@/features/today/services/surface-keys';
 import { PERSISTED_KEY_ROOTS } from '@/lib/offline/persistence';
 
@@ -35,7 +36,10 @@ describe('Danas reads everything Kalendar reads, for each role', () => {
   });
 
   it('reads by role exactly what the screen enables: a member their own leave, an admin the organization\'s', () => {
+    // STORY 12.3 (product owner, 2026-11-06): a member's own swaps only mark a
+    // proposed shift, so they are never one of the month's gating reads.
     expect(calendarSurfaceKeysOf('member_role')).toEqual([CALENDAR_KEY, MY_LEAVE_RECORDS_KEY]);
+    expect(calendarSurfaceKeysOf('member_role').map(text)).not.toContain(text(MY_SWAP_REQUESTS_KEY));
     expect(calendarSurfaceKeysOf('admin')).toEqual([
       CALENDAR_KEY,
       ORGANIZATION_LEAVE_RECORDS_KEY,

@@ -3349,41 +3349,72 @@ describe('the access-control migration', () => {
     );
   });
 
-  it('reads no swap request in apps or packages: 12.2 only inserts one (R9.1)', () => {
-    // STORY 12.2: the proposal form's one write names the table, and nothing
-    // else in apps or packages does. It inserts and never reads: no select,
-    // no rpc, no update or delete. 12.3 is the first story that reads it.
+  it('names a swap request in one writer and one reader alone, and derives nothing from it (R9.1)', () => {
+    // STORY 12.2: the proposal form's one write names the table. STORY 12.3:
+    // the viewer's own swaps are read once, and answered and withdrawn
+    // through 0049's two definers, from one reader. Nothing else in apps or
+    // packages names the table, its decisions or a swap definer — so no
+    // schedule, hours, collision or queue figure can read a swap (R9.1), and
+    // 12.4's decision is not called yet.
     const swaps = join(repoRoot, 'apps', 'web', 'src', 'features', 'swaps');
     const writer = join(swaps, 'services', 'swap-proposal.ts');
+    const reader = join(swaps, 'services', 'my-swaps.ts');
     // The writer's own test, which stubs the insert; no other test is exempt.
-    const writerTest = join(swaps, 'services', 'swap-proposal.test.ts');
-    const hook = join(swaps, 'hooks', 'use-swap-proposal.ts');
+    // The reader's test names every table and call through the reader's constants.
+    const exempt = [join(swaps, 'services', 'swap-proposal.test.ts')];
+    const sendHook = join(swaps, 'hooks', 'use-swap-proposal.ts');
+    const readHook = join(swaps, 'hooks', 'use-my-swaps.ts');
     const sources = ['apps', 'packages'].flatMap((root) =>
-      collectFiles(join(repoRoot, root), (file) => /\.(ts|tsx|js|mjs|sql)$/.test(file) && file !== writerTest),
+      collectFiles(join(repoRoot, root), (file) => /\.(ts|tsx|js|mjs|sql)$/.test(file) && !exempt.includes(file)),
     );
 
     expect(sources.length, 'no source was scanned').toBeGreaterThan(0);
     expect(
-      sources.filter((file) => readFileSync(file, 'utf8').includes('swap_request')),
-      'a reader of swap_requests ships before its story',
-    ).toEqual([writer]);
+      sources.filter((file) => readFileSync(file, 'utf8').includes('swap_request')).sort(),
+      'a swap request is named past its writer and its reader',
+    ).toEqual([writer, reader].sort());
 
-    const source = readFileSync(writer, 'utf8');
+    // THE WRITER inserts, and never reads or changes a swap.
+    const written = readFileSync(writer, 'utf8');
 
-    expect(source).toMatch(/export const SWAP_REQUESTS_TABLE = 'swap_requests';/);
-    expect(source.match(/\.insert\(/g), 'the proposal inserts once').toHaveLength(1);
-    expect(source, 'the proposal reads or changes a swap').not.toMatch(/\.(select|rpc|update|delete|upsert)\(/);
+    expect(written).toMatch(/export const SWAP_REQUESTS_TABLE = 'swap_requests';/);
+    expect(written.match(/\.insert\(/g), 'the proposal inserts once').toHaveLength(1);
+    expect(written, 'the proposal reads or changes a swap').not.toMatch(/\.(select|rpc|update|delete|upsert)\(/);
 
-    // THE ONE CALLER: the form's hook names the table only to hand it to the insert.
-    const users = sources.filter((file) => /\bSWAP_REQUESTS_TABLE\b/.test(readFileSync(file, 'utf8')));
-    const wiring = readFileSync(hook, 'utf8');
+    // THE READER: one select with its decision, two definer calls, no write of its own.
+    const read = readFileSync(reader, 'utf8');
 
-    expect(users.sort(), 'the table is named past the writer and its one caller').toEqual([writer, hook].sort());
-    expect(wiring.match(/\bSWAP_REQUESTS_TABLE\b/g), 'the hook names the table past its import and its one send').toHaveLength(2);
-    expect(wiring, 'the hook names the table outside its one send').toMatch(
+    expect(read.match(/\.select\(/g), 'the reader selects once').toHaveLength(1);
+    expect(read.match(/\.rpc\(/g), 'the reader calls more or fewer than the answer and the withdrawal').toHaveLength(2);
+    expect(read, 'the reader writes a swap row itself').not.toMatch(/\.(insert|update|delete|upsert)\(/);
+    expect(read).toContain("export const ANSWER_SWAP_REQUEST_FUNCTION = 'answer_swap_request';");
+    expect(read).toContain("export const WITHDRAW_SWAP_REQUEST_FUNCTION = 'withdraw_swap_request';");
+    expect(read).toContain("export const DECISIONS_EMBED = 'swap_request_decisions';");
+    expect(read, '12.4\'s decision is called before its story').not.toContain('decide_swap_request');
+    expect(read, 'the reader names the table other than through the writer\'s constant').not.toMatch(/'swap_requests'/);
+    expect(read).toContain('export const MY_SWAPS_TABLE = SWAP_REQUESTS_TABLE;');
+
+    // THE CALLERS: each hook names its table once past its import, inside its one call.
+    const tableUsers = sources.filter((file) => /\bSWAP_REQUESTS_TABLE\b/.test(readFileSync(file, 'utf8')));
+    const sendWiring = readFileSync(sendHook, 'utf8');
+
+    expect(tableUsers.sort(), 'the table is named past the writer, the reader and the send').toEqual([writer, reader, sendHook].sort());
+    expect(sendWiring.match(/\bSWAP_REQUESTS_TABLE\b/g), 'the send names the table past its import and its one send').toHaveLength(2);
+    expect(sendWiring, 'the send names the table outside its one send').toMatch(
       /sendSwapProposal\(\s*(?:\/\/[^\n]*\n\s*)?supabaseClient\(\)\.from\(SWAP_REQUESTS_TABLE\) as unknown as SwapRequestInsertTable,/,
     );
-    expect(wiring, 'the hook reads or changes a swap').not.toMatch(/\.(select|rpc|update|delete|upsert)\(/);
+    expect(sendWiring, 'the send hook reads or changes a swap').not.toMatch(/\.(select|rpc|update|delete|upsert)\(/);
+
+    const readUsers = sources.filter((file) => /\bMY_SWAPS_TABLE\b/.test(readFileSync(file, 'utf8')));
+    const readWiring = readFileSync(readHook, 'utf8');
+
+    expect(readUsers.sort(), 'the read\'s table is named past the reader and its one hook').toEqual([reader, readHook].sort());
+    expect(readWiring.match(/\bMY_SWAPS_TABLE\b/g), 'the read hook names the table past its import and its one read').toHaveLength(2);
+    expect(readWiring).toMatch(
+      /mySwapRequestsQueryOptions\(\(\) => supabaseClient\(\)\.from\(MY_SWAPS_TABLE\) as unknown as MySwapsTable, memberId\)/,
+    );
+    expect(readWiring, 'the read hook reads or changes a swap itself').not.toMatch(/\.(select|insert|update|delete|upsert)\(/);
+    expect(readWiring.match(/actOnSwapRequest\(/g), 'the read hook answers or withdraws outside its one handler').toHaveLength(1);
   });
 
   it('keeps a team name unique among active teams only, and never blank', () => {

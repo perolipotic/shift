@@ -13,7 +13,10 @@ import type { MemberRole } from '@/features/navigation/utils/destinations';
  * admin's organization leave and resolutions — exactly the reads
  * `useCalendarScreen` enables. Every one of them is a key *Danas* reads for
  * the same role (`todaySurfaceKeysOf`), so a *Danas* read online is what
- * *Kalendar* reads offline; `surface-keys.test.ts` pins that.
+ * *Kalendar* reads offline; `surface-keys.test.ts` pins that. A member's own
+ * swaps (story 12.3) are read too, but deliberately NOT here (product owner,
+ * 2026-11-06): they only mark a proposed shift in the day detail, so a failed
+ * swaps read hides that mark and never makes *Kalendar* unavailable.
  */
 export function calendarSurfaceKeysOf(role: MemberRole | null): readonly QueryKey[] {
   if (role === null) return [CALENDAR_KEY];

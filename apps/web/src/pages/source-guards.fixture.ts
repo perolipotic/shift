@@ -543,6 +543,9 @@ export const SWAP_PROPOSAL: readonly string[] = Object.values(SWAP_PROPOSAL_PART
 /** Story 12.2: the swap proposal's rules — the refusals a send says. */
 export const SWAP_PROPOSAL_KEYS = join(srcRoot, 'features', 'swaps', 'services', 'swap-proposal.ts');
 
+/** Story 12.3: *Zamjene*'s rules — a row's word, and what an action says landed or refused. */
+export const MY_SWAPS_KEYS = join(srcRoot, 'features', 'swaps', 'services', 'my-swaps.ts');
+
 /** The month navigation *Kalendar* and *Sati* share (story 4.1b): a part of both sets. */
 export const SHARED_MONTH_NAV = join(srcRoot, ...CALENDAR_SCREEN_PARTS.monthNav);
 
@@ -960,7 +963,9 @@ export const SCREENS = [
   // unavailable notice's retry and *Poništi pretragu*. No line is a link and
   // nothing writes.
   { name: 'the member directory', file: MEMBER_DIRECTORY, expectedFields: 1, expectedButtons: 2 },
-  { name: 'the Danas destination', file: DANAS, expectedFields: 0, expectedButtons: 2 },
+  // FIVE SINCE STORY 12.3: *Zamjene*'s *Prihvati*, *Odbij* and *Povuci*,
+  // each written once inside the map over the swaps.
+  { name: 'the Danas destination', file: DANAS, expectedFields: 0, expectedButtons: 5 },
   // STORY 3.1. THREE on Kalendar: the previous month, `Ovaj mjesec` and the
   // next month. The grid is a table and offers nothing (day detail is 3.4).
   // STORY 3.2a: five — the previous and next months, `Ovaj mjesec`, and the
