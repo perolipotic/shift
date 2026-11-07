@@ -2229,6 +2229,14 @@ const SANCTIONED_SCREEN_KEYS = [
   'obavijesti.rotationChangeCancelled.body',
   'obavijesti.leaveRequestCreated.subject',
   'obavijesti.leaveRequestCreated.body',
+  // STORY 12.3b: a swap proposed to the addressee, and its answer to the
+  // proposer, rendered by `notify` as above.
+  'obavijesti.swapRequestProposed.subject',
+  'obavijesti.swapRequestProposed.body',
+  'obavijesti.swapRequestAccepted.subject',
+  'obavijesti.swapRequestAccepted.body',
+  'obavijesti.swapRequestDeclined.subject',
+  'obavijesti.swapRequestDeclined.body',
   // STORY 10.3. The line every email ends with, linking to `/obavijesti`.
   'obavijesti.footer',
   // STORY 10.3. The notification settings screen, its *Više* row, and the
@@ -2597,6 +2605,18 @@ const MINIMUM_MEMBERS_KEYS: readonly string[] = [
 const SHORT_STAFFED_KEYS: readonly string[] = ['popunjenost.heading', 'popunjenost.unknown'];
 
 /**
+ * Story 12.3b, the swap notifications: `smjen` names the swapped shift (a
+ * team's rostered shift, *zamjena smjene {date}*), as on *Danas*'s *Zamjene*
+ * card, and `tip… smjen…` is refused. THREE KEYS, the bodies; the subjects
+ * name no shift.
+ */
+const SWAP_NOTIFICATION_KEYS: readonly string[] = [
+  'obavijesti.swapRequestProposed.body',
+  'obavijesti.swapRequestAccepted.body',
+  'obavijesti.swapRequestDeclined.body',
+];
+
+/**
  * The rotation builder's override review (story 3.5c): the admin amends an
  * override's SHIFT TYPE there, so it says the term — `Tip smjene` is the
  * amend's field — and, being the builder's, the TEAM too, as `smjena` (an
@@ -2660,7 +2680,8 @@ function teamTermOutOfTurn(key: string, message: string): boolean {
     key !== QUEUE_COLLISION_KIND_KEY &&
     !MEMBER_ERASURE_COLLISION_KEYS.includes(key) &&
     !MINIMUM_MEMBERS_KEYS.includes(key) &&
-    !SHORT_STAFFED_KEYS.includes(key)
+    !SHORT_STAFFED_KEYS.includes(key) &&
+    !SWAP_NOTIFICATION_KEYS.includes(key)
   ) {
     return lowered.includes('smjen');
   }

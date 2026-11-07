@@ -53,18 +53,15 @@ import {
   PUSH_SUBSCRIPTION_GONE,
   PUSH_SUBSCRIPTION_INVALID,
   PUSH_TTL_SECONDS,
-  createHandler,
-  deliveryOfStatus,
-  deviceOutcomeOfStatus,
-  pushEncryptorOf,
-  settlementOfDevices,
   readConfiguration,
-  sameSecret,
   type Fetch,
   type OutboxClient,
   type PushEncryptor,
   type RpcAnswer,
 } from '../supabase/functions/notify/handler.ts';
+import { deliveryOfStatus } from '../supabase/functions/notify/email.ts';
+import { deviceOutcomeOfStatus, pushEncryptorOf, settlementOfDevices } from '../supabase/functions/notify/push.ts';
+import { createHandler, sameSecret } from '../supabase/functions/notify/run.ts';
 import {
   MESSAGE_OF_CODE,
   MESSAGE_UNKNOWN,
@@ -442,6 +439,29 @@ const EVERY_CODE: readonly {
     subject: 'Novi zahtjev za godišnji: Ana Kovač',
     text: `${ORGANIZATION_NAME}: Ana Kovač traži godišnji odmor 02.03.2046–06.03.2046. Zahtjev čeka tvoju odluku: {link}`,
   },
+  // Story 12.3b (0050): a swap proposed to the addressee, and its answer to
+  // the proposer. The date only: no name, no team, no shift type (Q5).
+  {
+    code: 'SWAP_REQUEST_PROPOSED',
+    operands: { date: '2046-03-02' },
+    path: '/danas',
+    subject: 'Predložena ti je zamjena 02.03.2046',
+    text: `${ORGANIZATION_NAME}: predložena ti je zamjena smjene 02.03.2046. Odgovori u aplikaciji: {link}`,
+  },
+  {
+    code: 'SWAP_REQUEST_ACCEPTED',
+    operands: { date: '2046-03-02' },
+    path: '/danas',
+    subject: 'Zamjena 02.03.2046 je prihvaćena',
+    text: `${ORGANIZATION_NAME}: tvoj prijedlog zamjene smjene 02.03.2046 je prihvaćen i čeka odluku. Pogledaj u aplikaciji: {link}`,
+  },
+  {
+    code: 'SWAP_REQUEST_DECLINED',
+    operands: { date: '2046-03-02' },
+    path: '/danas',
+    subject: 'Zamjena 02.03.2046 je odbijena',
+    text: `${ORGANIZATION_NAME}: tvoj prijedlog zamjene smjene 02.03.2046 je odbijen. Pogledaj u aplikaciji: {link}`,
+  },
 ];
 
 describe("notify renders every 10.2 code with the organization's name and its sign-in link", () => {
@@ -492,6 +512,22 @@ describe("notify renders every 10.2 code with the organization's name and its si
     expect(rendered).toMatchObject({ ok: true, subject: 'Novi zahtjev za godišnji: 2046-02-30' });
     expect(typed.ok && typed.text).toContain('za 02.03.2046 vrijedi 2046-03-02 umjesto');
   });
+
+  it.each(['SWAP_REQUEST_PROPOSED', 'SWAP_REQUEST_ACCEPTED', 'SWAP_REQUEST_DECLINED'])(
+    'renders %s with a return shift exactly as without one, and checks returnDate as a date (12.3b)',
+    (code) => {
+      const without = render(code, 'hr', { date: '2046-03-02' }, TARGET);
+
+      expect(render(code, 'hr', { date: '2046-03-02', returnDate: '2046-03-09' }, TARGET)).toEqual(without);
+      expect(renderPush(code, 'hr', { date: '2046-03-02', returnDate: '2046-03-09' }, TARGET)).toEqual(
+        renderPush(code, 'hr', { date: '2046-03-02' }, TARGET),
+      );
+      expect(render(code, 'hr', { date: '2046-03-02', returnDate: '2046-02-30' }, TARGET)).toEqual({
+        ok: false,
+        code: OPERANDS_INVALID,
+      });
+    },
+  );
 
   it('refuses a new request whose operands name no request id to link to', () => {
     const { operands } = EVERY_CODE.find((entry) => entry.code === 'LEAVE_REQUEST_CREATED') ?? { operands: {} };
@@ -925,8 +961,38 @@ describe('notify may not think: it reaches the database through its four RPCs al
     .filter((name) => name.endsWith('.ts'))
     .map((name) => ({ name, source: readFileSync(join(notifyRoot, name), 'utf8') }));
 
-  it('holds the four files the spec names', () => {
-    expect(sources.map(({ name }) => name).sort()).toEqual(['deno-runtime.d.ts', 'handler.ts', 'index.ts', 'messages.ts']);
+  it('holds the files the specs name (story 12.3b split handler.ts into handler, email, push and run)', () => {
+    expect(sources.map(({ name }) => name).sort()).toEqual([
+      'deno-runtime.d.ts',
+      'email.ts',
+      'handler.ts',
+      'index.ts',
+      'messages.ts',
+      'push.ts',
+      'run.ts',
+    ]);
+  });
+
+  it('layers its modules with no cycle: each imports only the ones below it (story 12.3b)', () => {
+    // Every local specifier, single- or double-quoted: `from './x.ts'`, a
+    // side-effect `import './x.ts'` and a dynamic `import('./x.ts')`.
+    const imports = (name: string): string[] =>
+      [
+        ...new Set(
+          [
+            ...(sources.find((entry) => entry.name === name)?.source ?? '').matchAll(
+              /(?:\bfrom\s+|\bimport\s*\(?\s*)(['"])\.\/([\w.-]+)\1/g,
+            ),
+          ].map((match) => match[2] ?? ''),
+        ),
+      ].sort();
+
+    expect(imports('messages.ts')).toEqual([]);
+    expect(imports('handler.ts')).toEqual([]);
+    expect(imports('email.ts')).toEqual(['handler.ts', 'messages.ts']);
+    expect(imports('push.ts')).toEqual(['handler.ts', 'messages.ts']);
+    expect(imports('run.ts')).toEqual(['email.ts', 'handler.ts', 'push.ts']);
+    expect(imports('index.ts')).toEqual(['handler.ts', 'push.ts', 'run.ts']);
   });
 
   it.each(sources)('$name reads no table directly and imports no domain code', ({ source }) => {
@@ -941,12 +1007,13 @@ describe('notify may not think: it reaches the database through its four RPCs al
       'delete_push_subscription',
       'push_devices_for_send',
     ]);
-    // Every RPC the handler names is one of the four, and each is named
-    // where it is called.
-    const handler = sources.find(({ name }) => name === 'handler.ts')?.source ?? '';
-    const called = [...handler.matchAll(/client\.rpc\((\w+)/g)].map((match) => match[1]);
+    // Every RPC any module names is one of the four, and each is named
+    // where it is called (story 12.3b: every module is scanned, not
+    // `handler.ts` alone).
+    const all = sources.map(({ source }) => source).join('\n');
+    const called = [...all.matchAll(/client\.rpc\((\w+)/g)].map((match) => match[1]);
     expect(new Set(called)).toEqual(new Set(['CLAIM_RPC', 'SETTLE_RPC', 'DELETE_SUBSCRIPTION_RPC', 'PUSH_DEVICES_RPC']));
-    expect(handler.match(/\.rpc\(/g)?.length).toBe(called.length);
+    expect(all.match(/\.rpc\(/g)?.length).toBe(called.length);
   });
 
   it('reads the VAPID keys in notify alone, and sends push through web-push in index.ts only (AD-17)', () => {
@@ -956,7 +1023,9 @@ describe('notify may not think: it reaches the database through its four RPCs al
     expect(index).toContain('generateRequestDetails');
     // The builder only: the send is the handler's own fetch, asserted here.
     expect(index).not.toContain('sendNotification');
-    expect(handler).not.toMatch(/from\s+['"]npm:web-push/);
+    for (const { name, source } of sources) {
+      if (name !== 'index.ts') expect(source, name).not.toMatch(/from\s+['"]npm:web-push/);
+    }
     for (const name of ['VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY', 'VAPID_SUBJECT']) expect(handler).toContain(`'${name}'`);
   });
 });

@@ -3320,9 +3320,10 @@ describe('the access-control migration', () => {
       'story 12.1 puts a trigger on another table than its own and the status versions',
     ).toEqual(['swap_requests', 'member_status_versions']);
     // Every trigger any migration declares on the two swap tables, by name
-    // and timing: the lock alone, statement level. A row-level BEFORE trigger,
-    // on any event and in any order of events, is a refusing trigger 12.1
-    // may not add (AD-3); an AFTER trigger is a later story's to list here.
+    // and timing: the lock, statement level, and (story 12.3b, 0050) the two
+    // AFTER row triggers that notify. A row-level BEFORE trigger, on any event
+    // and in any order of events, is a refusing trigger no story may add
+    // (AD-3); an AFTER trigger is a later story's to list here.
     const swapTriggers = sqlStatements(statements)
       .map((statement) =>
         /^create (?:or replace )?trigger (\w+)\s+(before|after|instead of)\s+([\s\S]*?)\s+on public\.(swap_requests|swap_request_decisions)\b([\s\S]*)$/i.exec(
@@ -3340,9 +3341,53 @@ describe('the access-control migration', () => {
       swapTriggers.filter((trigger) => trigger.timing === 'before' && trigger.row),
       'a row-level BEFORE trigger refuses a swap write',
     ).toEqual([]);
-    expect(swapTriggers, 'the swap tables carry a trigger other than the lock').toEqual([
+    expect(swapTriggers, 'the swap tables carry a trigger other than the lock and 0050\'s two notifications').toEqual([
       { name: 'swap_requests_serialize_organization_writes', timing: 'before', table: 'swap_requests', row: false },
+      { name: 'swap_requests_notify_insert', timing: 'after', table: 'swap_requests', row: true },
+      { name: 'swap_requests_notify_answer', timing: 'after', table: 'swap_requests', row: true },
     ]);
+
+    // STORY 12.3b (0050): one definer trigger function on two AFTER triggers,
+    // callable by nobody, writing through `notify_members` alone.
+    const notifications = stripLineComments(
+      readFileSync(join(supabaseRoot, 'migrations', '0050_swap_request_notifications.sql'), 'utf8'),
+    );
+    const notifier = /create function private\.notify_swap_request\(\) returns trigger[\s\S]*?\$\$;/i.exec(notifications)?.[0];
+    expect(notifier, 'notify_swap_request is not declared').toBeDefined();
+    expect(notifier).toMatch(/security definer/i);
+    expect(notifier).toMatch(/set search_path = ''/);
+    expect(notifier, 'a swap row bypasses notify_members').not.toMatch(/notification_outbox/);
+    expect(notifier?.match(/private\.notify_members\(/g), 'the proposal and the answer each write once').toHaveLength(2);
+    for (const code of ['SWAP_REQUEST_PROPOSED', 'SWAP_REQUEST_ACCEPTED', 'SWAP_REQUEST_DECLINED']) {
+      expect(notifier).toContain(`'${code}'`);
+    }
+    expect(notifier, 'an operand names a member, a team or a shift type (Q5)').not.toMatch(/'(memberName|teamName|shiftTypeName|name)'/);
+    expect(notifier, 'the past rule does not read the organization\'s today').toMatch(
+      /today date := public\.organization_today\(new\.organization_id\);/,
+    );
+    expect(notifier, 'a swap is not live by its given date or its return date').toMatch(
+      /live boolean := new\.date >= today or \(new\.return_date is not null and new\.return_date >= today\);/,
+    );
+    expect(notifier, 'a wholly past swap is told').toMatch(/if today is null or not live then\s+return null;\s+end if;/);
+    expect(notifier, 'the given date is not an ISO operand').toMatch(
+      /'date', pg_catalog\.to_char\(new\.date, 'YYYY-MM-DD'\)/,
+    );
+    expect(notifier, 'the return date is not an ISO operand').toMatch(
+      /'returnDate', pg_catalog\.to_char\(new\.return_date, 'YYYY-MM-DD'\)/,
+    );
+    expect(notifier, 'an answer other than accepted or declined falls through to a code').toMatch(
+      /case new\.answer\s+when 'accepted' then 'SWAP_REQUEST_ACCEPTED'\s+when 'declined' then 'SWAP_REQUEST_DECLINED'\s+end;\s+if code is null then\s+return null;/,
+    );
+    expect(notifications, 'the proposal is not told on an open, unanswered insert alone').toMatch(
+      /create trigger swap_requests_notify_insert\s+after insert on public\.swap_requests\s+for each row\s+when \(new\.closed_at is null and new\.answer is null\)\s+execute function private\.notify_swap_request\(\);/,
+    );
+    expect(notifications, 'the answer is not told on null → set alone').toMatch(
+      /create trigger swap_requests_notify_answer\s+after update of answer on public\.swap_requests\s+for each row\s+when \(old\.answer is null and new\.answer is not null\)\s+execute function private\.notify_swap_request\(\);/,
+    );
+    expect(notifications).toContain(
+      'revoke execute on function private.notify_swap_request() from public, anon, authenticated, service_role;',
+    );
+    expect(notifications, '0050 changes notify_members, 0049 or an earlier function').not.toMatch(/create or replace|alter table|drop /i);
     expect(migration, 'story 12.1 writes outbox code').not.toMatch(/notify_members|notification_outbox/);
     expect(migration, 'story 12.1 changes roster_overrides, leave_requests or the access helper').not.toMatch(
       /alter table public\.(roster_overrides|leave_requests)|function public\.current_member_access/i,
