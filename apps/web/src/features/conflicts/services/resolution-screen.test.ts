@@ -44,6 +44,8 @@ import {
   refetchingAfterFailure,
   LEAVE_REQUEST_APPROVED_SAVED,
   LEAVE_REQUEST_REJECTED_SAVED,
+  SWAP_APPROVED_SAVED,
+  SWAP_REJECTED_SAVED,
   resolutionSavedLineOf,
   resolutionSavedMessageKey,
   resolutionSavedOf,
@@ -60,6 +62,7 @@ import {
   type ResolutionView,
 } from '@/features/conflicts/services/resolution-screen';
 import { LEAVE_HANDOFF_ORIGIN_STATE, LEAVE_HANDOFF_STATE, leaveHandoffOf, withLeaveHandoff } from '@/features/leave/services/leave-section';
+import { swapRowOf } from '@/features/swaps/organization-swaps.fixture';
 import { initLocalization, t } from '@/lib/i18n';
 import { snapshotAnswerOf, snapshotFreshnessOf, type FreshnessClock, type ReadAnswer } from '@/lib/offline/freshness';
 import {
@@ -196,6 +199,7 @@ function sourcesOf(
     records: settled(rows),
     resolutions: settled(resolutionRows),
     requests: settled([]),
+    swaps: settled([]),
     members: {
       members: snapshot.members.map((member) => ({ id: member.id, leaveAllowanceDays: 19 })),
       refusal: null,
@@ -840,7 +844,7 @@ describe("a leave request's decision rides the same status line (story 9.4)", ()
       memberName: VIEWER_NAME,
     });
 
-    if (line.request) throw new Error('a request line');
+    if (line.request || line.swap) throw new Error('a request or swap line');
 
     expect(t(line.key, line.values)).toBe(
       `Odluka je spremljena: Dan · Smjena A · četvrtak 10.09.2026 · ${VIEWER_NAME}, prihvaćeno kao nepokriveno.`,
@@ -1041,5 +1045,64 @@ describe('amending the leave (story 5.4d)', () => {
     const one = amendViewOn('2026-09-10', [rowOf('record-one', '2026-09-10', '2026-09-11')]);
 
     expect(amendHandoffOf(one, params)).toEqual({ kind: 'remove', recordId: 'record-one', origin: params });
+  });
+});
+
+describe('the way back counts waiting swaps too (story 12.4)', () => {
+  /** Ante gives A's shift on 2026-09-13 to Karlo, accepted and open. */
+  const waiting = swapRowOf({ id: 'swap-1', proposer_id: ANTE, addressee_id: KARLO, team_id: A });
+
+  it('names collisions and waiting swaps in the back link, while K od N stays over the collisions', () => {
+    const view = viewOf(resolutionScreenOf(sourcesOf(pilot, [WORKED], [], { swaps: settled([waiting]) }), paramsOn('2026-09-11'), NOW));
+
+    expect([view.position, view.collisionCount, view.queueCount]).toEqual([2, 3, 4]);
+  });
+
+  it.each([
+    ['failed online', { data: undefined, isError: true, isPending: true, fetchStatus: 'idle' }],
+    ['pending online', PENDING],
+    ['paused', { data: [], isError: false, isPending: false, fetchStatus: 'paused' }],
+  ] as const)('stands without the swaps read (%s): the way back names no number, never a partial one', (_, swaps) => {
+    const view = viewOf(resolutionScreenOf(sourcesOf(pilot, [WORKED], [], { swaps }), paramsOn('2026-09-11'), NOW));
+
+    expect([view.position, view.collisionCount, view.queueCount]).toEqual([2, 3, null]);
+  });
+
+  it('names no number while a swap names a member the snapshot does not hold yet (a skew)', () => {
+    const newer = { ...waiting, addressee_id: '00000000-0000-4000-8000-0000000000ff' };
+    const view = viewOf(resolutionScreenOf(sourcesOf(pilot, [WORKED], [], { swaps: settled([newer]) }), paramsOn('2026-09-11'), NOW));
+
+    expect(view.queueCount).toBeNull();
+  });
+});
+
+describe("a swap's decision rides the same status line (story 12.4)", () => {
+  const approved = { kind: SWAP_APPROVED_SAVED, proposerName: 'Ivo Horvat', addresseeName: 'Karlo Jelić', date: '13.09.2026' } as const;
+
+  it('reads back from router state, and names both members and the date', () => {
+    const rejected = { ...approved, kind: SWAP_REJECTED_SAVED } as const;
+
+    expect(resolutionSavedOf(withResolutionSaved({ __TSR_index: 2 }, approved))).toEqual(approved);
+    expect(resolutionSavedOf(withResolutionSaved({}, rejected))).toEqual(rejected);
+    expect(resolutionSavedMessageKey(approved.kind)).toBe('zaOdluku.savedSwapApproved');
+    expect(resolutionSavedMessageKey(rejected.kind)).toBe('zaOdluku.savedSwapRejected');
+
+    const approvedLine = resolutionSavedLineOf(approved);
+    const rejectedLine = resolutionSavedLineOf(rejected);
+
+    if (!approvedLine.swap || !rejectedLine.swap) throw new Error('not a swap line');
+
+    expect(t(approvedLine.key, approvedLine.values)).toBe('Zamjena odobrena: Ivo Horvat → Karlo Jelić, 13.09.2026.');
+    expect(t(rejectedLine.key, rejectedLine.values)).toBe('Zamjena nije odobrena: Ivo Horvat → Karlo Jelić, 13.09.2026.');
+  });
+
+  it('reads nothing from a malformed swap line', () => {
+    for (const saved of [
+      { ...approved, proposerName: 3 },
+      { ...approved, addresseeName: '' },
+      { ...approved, date: undefined },
+    ]) {
+      expect(resolutionSavedOf({ resolutionSaved: saved })).toBeNull();
+    }
   });
 });

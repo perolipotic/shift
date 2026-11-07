@@ -29,6 +29,7 @@ import { organizationLogoKey } from '@/features/organization/services/logo';
 import { ROTATION_KEY } from '@/features/rotation/services/list';
 import { SHIFT_TYPES_LIST_KEY } from '@/features/shift-types/services/list';
 import { MY_SWAP_REQUESTS_KEY } from '@/features/swaps/services/my-swaps';
+import { ORGANIZATION_SWAP_REQUESTS_KEY } from '@/features/swaps/services/organization-swaps';
 import { TEAMS_LIST_KEY } from '@/features/teams/services/list';
 import { OWN_TEAM_KEY, TEAM_ROSTER_KEY } from '@/features/teams/services/roster';
 import { queryClient } from '@/lib/query-client';
@@ -139,6 +140,7 @@ describe('what is kept on the device', () => {
         MY_LEAVE_REQUESTS_KEY,
         ORGANIZATION_LEAVE_REQUESTS_KEY,
         MY_SWAP_REQUESTS_KEY,
+        ORGANIZATION_SWAP_REQUESTS_KEY,
       ].map((key) => {
         expect(key).toHaveLength(1);
 

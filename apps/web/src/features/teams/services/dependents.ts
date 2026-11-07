@@ -20,6 +20,7 @@ import { MEMBER_NAME_KEY } from '@/features/navigation/services/profile';
 import { MEMBER_ROLE_KEY } from '@/features/navigation/services/role';
 import { ROTATION_KEY } from '@/features/rotation/services/list';
 import { MY_SWAP_REQUESTS_KEY } from '@/features/swaps/services/my-swaps';
+import { ORGANIZATION_SWAP_REQUESTS_KEY } from '@/features/swaps/services/organization-swaps';
 import { OWN_TEAM_KEY, TEAM_ROSTERS_KEY } from '@/features/teams/services/roster';
 
 /**
@@ -155,11 +156,16 @@ export const LEAVE_REQUEST_WRITE_DEPENDENTS: readonly QueryKey[] = [
 /**
  * A swap proposed (story 12.2), answered or withdrawn (story 12.3): the
  * viewer's own swaps, which *Danas*'s *Zamjene*, the day detail's mark and
- * the proposal surface read. A PROPOSED OR ACCEPTED SWAP DERIVES NOTHING
- * (R9.1, 0049): no schedule, roster, hours or queue reads it, so no other key
- * is named. 12.4 adds the queue's keys here when its read lands.
+ * the proposal surface read, and (story 12.4) the organization's swaps, which
+ * *Za odluku*, *Odlučeno* and the admin's *Danas* count and list — an admin
+ * can be a party, and an accept or a withdrawal adds or takes away a queue
+ * item. A PROPOSED OR ACCEPTED SWAP DERIVES NOTHING (R9.1, 0049): no
+ * schedule, roster, hours or collision figure reads it, so no other key is
+ * named.
  */
-export const SWAP_REQUEST_WRITE_DEPENDENTS: readonly QueryKey[] = [MY_SWAP_REQUESTS_KEY];
+export const SWAP_REQUEST_WRITE_DEPENDENTS: readonly QueryKey[] = [MY_SWAP_REQUESTS_KEY, ORGANIZATION_SWAP_REQUESTS_KEY];
+
+
 
 /**
  * A leave request rejected (story 9.4): only the decision is recorded and the
@@ -275,6 +281,22 @@ export const ROSTER_WRITE_DEPENDENTS: readonly QueryKey[] = [
   LEAVE_OVERVIEW_RECORDS_KEY,
   ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
   MY_CONFLICT_RESOLUTIONS_KEY,
+];
+
+/**
+ * A swap decided by an admin (story 12.4), approved or rejected, or refused:
+ * both swap reads; and, since an approval writes two ordinary roster
+ * overrides as the approving admin (R9.2), everything a calendar roster
+ * change makes stale — the calendar snapshot, which every schedule, the
+ * hours (*Sati*) and the queue's collisions derive from, and the
+ * organization's live leave and resolutions, the queue's other reads and the
+ * ones its erasure check stands on. One list for every outcome: a rejection
+ * or a refusal re-reads more than it changed, never less.
+ */
+export const SWAP_REQUEST_DECISION_DEPENDENTS: readonly QueryKey[] = [
+  CALENDAR_KEY,
+  ...ROSTER_WRITE_DEPENDENTS,
+  ...SWAP_REQUEST_WRITE_DEPENDENTS,
 ];
 
 /**

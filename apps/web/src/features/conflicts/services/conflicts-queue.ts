@@ -13,6 +13,7 @@ import { leaveRangeValuesOf } from '@/features/leave/services/leave-section';
 import { effectiveResolutionsOf } from '@/features/conflicts/services/replacement-effect';
 import { conflictResolutionsOf, type ConflictResolution } from '@/features/conflicts/services/resolutions';
 import { formatIsoDate } from '@/lib/i18n/format';
+import { waitingSwapsOf, type SwapShiftNamed } from '@/features/swaps/services/organization-swaps';
 
 /**
  * *Za odluku* for an admin: the conflicts queue (story 5.3b; CAP-16, R6.8,
@@ -44,6 +45,13 @@ import { formatIsoDate } from '@/lib/i18n/format';
  * request's id. A PENDING REQUEST DERIVES NOTHING: it is listed, never fed
  * to `collisionsOf`.
  *
+ * SWAPS BESIDE THEM (story 12.4; AD-4's third set). Every open swap a
+ * colleague has accepted waits for an admin (0049), and joins the same count
+ * as an item of its own kind. It is dated by the EARLIER of its dates and
+ * takes the same order; on one date, collisions, then leave requests, then
+ * swaps, each by when it was sent, then by id. AN ACCEPTED SWAP DERIVES
+ * NOTHING (R9.1): it is listed, never fed to `collisionsOf` or a schedule.
+ *
  * NEVER A PARTIAL LIST. A read that failed or is paused offline, a record
  * row that does not parse, belongs to nobody in the snapshot or shares a date
  * with another of the same member, a resolution row that cannot be trusted,
@@ -72,8 +80,10 @@ export const CONFLICTS_READY = 'ready';
 export const ITEM_COLLISION = 'collision';
 /** A queue item that is a pending leave request: *Zahtjev za godišnji odmor* (story 9.5). */
 export const ITEM_REQUEST = 'request';
+/** A queue item that is an accepted swap waiting for an admin: *Zamjena smjene* (story 12.4). */
+export const ITEM_SWAP = 'swap';
 
-export type QueueItemKind = typeof ITEM_COLLISION | typeof ITEM_REQUEST;
+export type QueueItemKind = typeof ITEM_COLLISION | typeof ITEM_REQUEST | typeof ITEM_SWAP;
 
 /** One conflict as the queue shows it. */
 export interface ConflictRow {
@@ -131,14 +141,37 @@ export interface RequestRow {
   readonly createdAt: string | null;
 }
 
-/** One item of *Čeka odluku*: a collision or a pending request (story 9.5). */
-export type QueueRow = ConflictRow | RequestRow;
+/** One accepted swap waiting for an admin, as the queue shows it (story 12.4). */
+export interface SwapRow {
+  readonly kind: typeof ITEM_SWAP;
+  /** `swap:` and the swap's id: unique per row, and never another kind's key. */
+  readonly key: string;
+  /** What the row's decision screen is opened by. */
+  readonly requestId: string;
+  /** The earlier of its dates, `YYYY-MM-DD`: what the row is ordered by. */
+  readonly date: string;
+  /** `12.09.2026`. */
+  readonly dateShown: string;
+  /** Either date before the organization's today: drawn as a past row. */
+  readonly past: boolean;
+  readonly proposerName: string;
+  readonly addresseeName: string;
+  /** The shift the proposer gives. */
+  readonly given: SwapShiftNamed;
+  /** The addressee's shift the proposer takes in return, or `null` for a one-way cover. */
+  readonly returnShift: SwapShiftNamed | null;
+  /** When it was sent: swaps on one date are ordered by it, oldest first, then by id. */
+  readonly createdAt: string | null;
+}
+
+/** One item of *Čeka odluku*: a collision, a pending request (story 9.5) or a waiting swap (story 12.4). */
+export type QueueRow = ConflictRow | RequestRow | SwapRow;
 
 /** The queue, ready to render. */
 export interface ConflictsQueueView {
-  /** How many items wait for a decision: unresolved collisions and pending requests, shown at zero too. */
+  /** How many items wait for a decision: unresolved collisions, pending requests and waiting swaps, shown at zero too. */
   readonly count: number;
-  /** Upcoming soonest first, then past most recent first; on one date, collisions before requests. */
+  /** Upcoming soonest first, then past most recent first; on one date, collisions, then requests, then swaps. */
   readonly rows: readonly QueueRow[];
 }
 
@@ -173,13 +206,13 @@ export function queueOrderOf(collisions: readonly Collision[], today: string): r
   return [...upcoming, ...past];
 }
 
-/** The instant a request was sent, in ms; a request with none sorts after every other. */
-function sentAt(row: RequestRow): number {
+/** The instant a request or swap was sent, in ms; one with none sorts after every other. */
+function sentAt(row: RequestRow | SwapRow): number {
   return row.createdAt === null ? Number.POSITIVE_INFINITY : Date.parse(row.createdAt);
 }
 
-/** Two requests by when they were sent, oldest first, then by id. */
-function bySentThenId(first: RequestRow, second: RequestRow): number {
+/** Two requests, or two swaps, by when they were sent, oldest first, then by id. */
+function bySentThenId(first: RequestRow | SwapRow, second: RequestRow | SwapRow): number {
   const [a, b] = [sentAt(first), sentAt(second)];
 
   if (a !== b) return a < b ? -1 : 1;
@@ -193,18 +226,24 @@ function bySentThenId(first: RequestRow, second: RequestRow): number {
  * start. Upcoming items (dated `today` or later) soonest first, then past
  * items most recent first; on one date, collisions before requests, the
  * collisions in the order they came in and the requests by when they were
- * sent (oldest first; one with no instant last), then by id.
+ * sent (oldest first; one with no instant last), then by id. Since story
+ * 12.4 `swaps` too, each dated by the earlier of its dates: on one date after
+ * the requests, by when they were sent, then by id.
  */
 export function mergedQueueOrderOf(
   collisions: readonly ConflictRow[],
   requests: readonly RequestRow[],
   today: string,
+  swaps: readonly SwapRow[] = [],
 ): readonly QueueRow[] {
   const ranked: { readonly row: QueueRow; readonly rank: number }[] = [
     ...collisions.map((row, index) => ({ row, rank: index })),
     ...[...requests]
       .sort(bySentThenId)
       .map((row, index) => ({ row, rank: collisions.length + index })),
+    ...[...swaps]
+      .sort(bySentThenId)
+      .map((row, index) => ({ row, rank: collisions.length + requests.length + index })),
   ];
   const ascending = (first: (typeof ranked)[number], second: (typeof ranked)[number]): number =>
     first.row.date < second.row.date ? -1 : first.row.date > second.row.date ? 1 : first.rank - second.rank;
@@ -265,6 +304,29 @@ export function requestRowsOf(
       createdAt: request.createdAt,
     };
   });
+}
+
+/**
+ * The accepted swaps waiting for an admin as the queue's rows (story 12.4),
+ * against `today` and the snapshot's names.
+ *
+ * @throws RangeError when a swap row cannot be trusted, names a member or
+ *   team the snapshot lacks, or a date cannot be formatted.
+ */
+export function swapRowsOf(snapshot: CalendarSnapshot, swapRows: readonly unknown[], today: string): readonly SwapRow[] {
+  return waitingSwapsOf(snapshot, swapRows, today).map((swap) => ({
+    kind: ITEM_SWAP,
+    key: `swap:${swap.requestId}`,
+    requestId: swap.requestId,
+    date: swap.date,
+    dateShown: swap.dateShown,
+    past: swap.past,
+    proposerName: swap.proposerName,
+    addresseeName: swap.addresseeName,
+    given: swap.given,
+    returnShift: swap.returnShift,
+    createdAt: swap.createdAt,
+  }));
 }
 
 /**
@@ -335,8 +397,9 @@ export function unresolvedOf(
 }
 
 /**
- * The queue from the snapshot, the organization's record, resolution and
- * request rows as read, and `today` in the organization's zone.
+ * The queue from the snapshot, the organization's record, resolution,
+ * request and (story 12.4) swap rows as read, and `today` in the
+ * organization's zone.
  *
  * @throws RangeError when a row cannot be trusted ({@link organizationLeaveRecordsOf}, {@link resolutionsOf}),
  *   on any precondition of `collisionsOf`, or when a collision names a
@@ -349,6 +412,7 @@ export function conflictsQueueViewOf(
   resolutionRows: readonly unknown[],
   today: string,
   requestRows: readonly unknown[],
+  swapRows: readonly unknown[],
 ): ConflictsQueueView {
   const records = organizationLeaveRecordsOf(
     rows,
@@ -397,7 +461,12 @@ export function conflictsQueueViewOf(
 
     return row;
   });
-  const merged = mergedQueueOrderOf(shown, requestRowsOf(snapshot, requestRows, today), today);
+  const merged = mergedQueueOrderOf(
+    shown,
+    requestRowsOf(snapshot, requestRows, today),
+    today,
+    swapRowsOf(snapshot, swapRows, today),
+  );
 
   return { count: merged.length, rows: merged };
 }
@@ -416,9 +485,10 @@ export function conflictsQueueOutcomeOf(
   resolutionRows: readonly unknown[],
   today: string,
   requestRows: readonly unknown[],
+  swapRows: readonly unknown[],
 ): ConflictsQueueOutcome {
   try {
-    return { ok: true, view: conflictsQueueViewOf(snapshot, rows, resolutionRows, today, requestRows) };
+    return { ok: true, view: conflictsQueueViewOf(snapshot, rows, resolutionRows, today, requestRows, swapRows) };
   } catch (cause) {
     if (!(cause instanceof RangeError)) throw cause;
 
@@ -437,7 +507,9 @@ export function conflictsQueueOutcomeOf(
  * refused — never a number the queue would not state. Null too when
  * `requestRows` is null: the request read is not usable (failed, paused
  * offline, uncached or still pending), and the count cannot be stated
- * without it (retro 8–9 item 18).
+ * without it (retro 8–9 item 18). Null too when `swapRows` is null (story
+ * 12.4): the swap read is not usable, and the count is refused, never a
+ * partial one.
  */
 export function queueCountOf(
   snapshot: CalendarSnapshot,
@@ -445,12 +517,13 @@ export function queueCountOf(
   resolutionRows: readonly unknown[],
   requestRows: readonly unknown[] | null,
   today: string,
+  swapRows: readonly unknown[] | null,
 ): number | null {
-  if (requestRows === null) return null;
+  if (requestRows === null || swapRows === null) return null;
 
-  if (unknownSnapshotIdsOf(snapshot, rows, resolutionRows, requestRows).length > 0) return null;
+  if (unknownSnapshotIdsOf(snapshot, rows, resolutionRows, requestRows, swapRows).length > 0) return null;
 
-  const outcome = conflictsQueueOutcomeOf(snapshot, rows, resolutionRows, today, requestRows);
+  const outcome = conflictsQueueOutcomeOf(snapshot, rows, resolutionRows, today, requestRows, swapRows);
 
   return outcome.ok ? outcome.view.count : null;
 }
@@ -473,7 +546,7 @@ export function queueReadFailed(answer: LeaveRowsAnswer): boolean {
   return readFailed(answer);
 }
 
-/** The four reads the queue stands on, each as far as it is read here. */
+/** The five reads the queue stands on, each as far as it is read here. */
 export interface ConflictsQueueSources {
   readonly calendar: CalendarSurfaceState;
   readonly records: LeaveRowsAnswer;
@@ -481,12 +554,14 @@ export interface ConflictsQueueSources {
   readonly resolutions: LeaveRowsAnswer;
   /** The organization's leave request rows, every status (story 9.5): the pending ones are items. */
   readonly requests: LeaveRowsAnswer;
+  /** The organization's swap rows, every status (story 12.4): the accepted, open ones are items. */
+  readonly swaps: LeaveRowsAnswer;
   /** Whether the calendar snapshot is being read again: a skew then waits for it ({@link conflictsQueueOf}). */
   readonly snapshotFetching?: boolean;
 }
 
 /**
- * What *Za odluku* shows from its four reads at `now`: unavailable when any
+ * What *Za odluku* shows from its five reads at `now`: unavailable when any
  * read failed or is paused offline — first, so a failure is never hidden
  * behind another's skeleton — a failed refetch over cached data included;
  * loading while any is pending; otherwise the guarded queue. Rows naming a
@@ -496,13 +571,14 @@ export interface ConflictsQueueSources {
  * it — and never logged.
  */
 export function conflictsQueueOf(sources: ConflictsQueueSources, now: Date): ConflictsQueue {
-  const { calendar, records, resolutions, requests } = sources;
+  const { calendar, records, resolutions, requests, swaps } = sources;
   const failed =
     calendar.refusal !== null ||
     (!calendar.loading && calendar.snapshot === null) ||
     readFailed(records) ||
     readFailed(resolutions) ||
-    readFailed(requests);
+    readFailed(requests) ||
+    readFailed(swaps);
 
   if (failed) return { kind: CONFLICTS_UNAVAILABLE };
 
@@ -510,19 +586,34 @@ export function conflictsQueueOf(sources: ConflictsQueueSources, now: Date): Con
   const rows = records.data;
   const resolutionRows = resolutions.data;
   const requestRows = requests.data;
+  const swapRows = swaps.data;
 
-  if (snapshot === null || rows === undefined || resolutionRows === undefined || requestRows === undefined) {
+  if (
+    snapshot === null ||
+    rows === undefined ||
+    resolutionRows === undefined ||
+    requestRows === undefined ||
+    swapRows === undefined
+  ) {
     return { kind: CONFLICTS_LOADING };
   }
 
   // STORY 9.5: a request naming a member the snapshot lacks is a skew too —
   // `calendar_members` answers inactive members, so the snapshot is older
-  // than the member — never a member drawn as gone.
-  if (unknownSnapshotIdsOf(snapshot, rows, resolutionRows, requestRows).length > 0) {
+  // than the member — never a member drawn as gone. STORY 12.4: so is a swap
+  // naming a member or team the snapshot lacks.
+  if (unknownSnapshotIdsOf(snapshot, rows, resolutionRows, requestRows, swapRows).length > 0) {
     return sources.snapshotFetching === true ? { kind: CONFLICTS_LOADING } : { kind: CONFLICTS_UNAVAILABLE };
   }
 
-  const outcome = conflictsQueueOutcomeOf(snapshot, rows, resolutionRows, calendarTodayOf(snapshot, now), requestRows);
+  const outcome = conflictsQueueOutcomeOf(
+    snapshot,
+    rows,
+    resolutionRows,
+    calendarTodayOf(snapshot, now),
+    requestRows,
+    swapRows,
+  );
 
   return outcome.ok ? { kind: CONFLICTS_READY, view: outcome.view } : { kind: CONFLICTS_UNAVAILABLE };
 }

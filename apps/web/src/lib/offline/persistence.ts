@@ -103,7 +103,10 @@ export const DEVICE_SNAPSHOT_THROTTLE_MS = 1000;
  *     request of the organization, which *Za odluku*, its resolution page and
  *     the admin's *Danas* read (story 9.5);
  *   - `my-swap-requests` — `MY_SWAP_REQUESTS_KEY`, the viewer's own swaps,
- *     which *Danas*'s *Zamjene* and a member's *Kalendar* read (story 12.3).
+ *     which *Danas*'s *Zamjene* and a member's *Kalendar* read (story 12.3);
+ *   - `organization-swap-requests` — `ORGANIZATION_SWAP_REQUESTS_KEY`, every
+ *     swap of the organization, which *Za odluku*, its resolution page, a
+ *     swap's decision screen and the admin's *Danas* read (story 12.4).
  */
 export const PERSISTED_KEY_ROOTS: readonly string[] = [
   'calendar',
@@ -126,6 +129,7 @@ export const PERSISTED_KEY_ROOTS: readonly string[] = [
   'my-leave-requests',
   'organization-leave-requests',
   'my-swap-requests',
+  'organization-swap-requests',
 ];
 
 /**

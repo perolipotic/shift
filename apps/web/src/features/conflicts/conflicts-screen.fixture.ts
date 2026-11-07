@@ -19,6 +19,8 @@ export const CONFLICTS_QUEUE_PARTS = {
   skeleton: ['features', 'conflicts', 'components', 'conflicts-skeleton.tsx'],
   tabs: ['features', 'conflicts', 'components', 'conflicts-tabs.tsx'],
   resolved: ['features', 'conflicts', 'components', 'resolved-list.tsx'],
+  // STORY 12.4: a swap's shifts, written once for the queue, Odlučeno and Danas's *Treba tebe*.
+  swapShifts: ['features', 'conflicts', 'components', 'swap-shifts.tsx'],
 } as const;
 
 export const CONFLICT_RESOLUTION_PARTS = {
@@ -42,6 +44,20 @@ export const LEAVE_REQUEST_REVIEW_PARTS = {
   page: ['pages', 'za-odluku.zahtjev.$requestId.tsx'],
   hook: ['features', 'leave', 'hooks', 'use-leave-request-review.ts'],
   body: ['features', 'leave', 'components', 'leave-request-review-body.tsx'],
+} as const;
+
+/**
+ * STORY 12.4: ONE SWAP'S DECISION SCREEN (`/za-odluku/zamjena/$requestId`), a
+ * *Za odluku* screen whose parts live in the swaps feature, beside the swap's
+ * other modules: the page, the hook holding its reads, the erasure check and
+ * the decision, and the body (with its erasure confirmation). Disjoint from
+ * every set above. Its rules are `features/swaps/services/swap-decision.ts`,
+ * a key source of its own.
+ */
+export const SWAP_DECISION_PARTS = {
+  page: ['pages', 'za-odluku.zamjena.$requestId.tsx'],
+  hook: ['features', 'swaps', 'hooks', 'use-swap-decision.ts'],
+  body: ['features', 'swaps', 'components', 'swap-decision-body.tsx'],
 } as const;
 
 /**

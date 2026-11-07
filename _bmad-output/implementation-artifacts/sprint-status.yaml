@@ -601,8 +601,9 @@ development_status:
   12-1-the-swap-request-record: done
   12-2-a-member-proposes-a-swap-from-the-day-detail: done
   12-3-the-colleague-accepts-or-declines: done  # #278
-  12-3b-swap-proposed-and-answered-notifications: review  # split from 12.3 (2026-11-06)
-  12-4-an-admin-decides-a-swap-on-its-own-screen: backlog
+  12-3b-swap-proposed-and-answered-notifications: done  # #279
+  12-4-an-admin-decides-a-swap-on-its-own-screen: review
+  12-4b-swap-waiting-and-decided-notifications: backlog  # split from 12.4 (2026-11-07)
   epic-12-retrospective: optional
 
   epic-13: backlog

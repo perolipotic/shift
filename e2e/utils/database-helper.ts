@@ -415,9 +415,18 @@ export async function removeLeaveMemberInSql(slug: string, memberId: string): Pr
                              select id from leave_records where organization_id = $1 and member_id = $2)`,
       scope,
     );
+    // Story 12.3b: the notifications their swaps wrote to the OTHER party
+    // (0050), which no recipient key of this member removes.
+    await client.query(
+      `delete from notification_outbox
+        where organization_id = $1
+          and subject_id in (select id from swap_requests
+                              where organization_id = $1 and (proposer_id = $2 or addressee_id = $2))`,
+      scope,
+    );
     // Story 12.2: the swaps they proposed or were proposed (0049), and the
     // decisions on them, whose member keys do not cascade — the decisions
-    // first, which name the request.
+    // first, which name the request and an approval's roster overrides.
     await client.query(
       `delete from swap_request_decisions d using swap_requests r
         where d.organization_id = r.organization_id and d.request_id = r.id
@@ -426,6 +435,29 @@ export async function removeLeaveMemberInSql(slug: string, memberId: string): Pr
     );
     await client.query(
       'delete from swap_requests where organization_id = $1 and (proposer_id = $2 or addressee_id = $2)',
+      scope,
+    );
+    // Story 12.4: an approval's roster overrides take this member off or put
+    // them on (0049's `decide_swap_request`), and their member keys do not
+    // cascade. Any other approved swap naming those overrides goes first (it
+    // cannot exist for a member only these tests write, but the key would
+    // refuse the delete), then the replacements' resolutions linked to them
+    // (0032), then the overrides.
+    await client.query(
+      `delete from swap_request_decisions d using roster_overrides o
+        where d.organization_id = o.organization_id
+          and o.id in (d.roster_override_id, d.return_roster_override_id)
+          and o.organization_id = $1 and (o.member_out_id = $2 or o.member_in_id = $2)`,
+      scope,
+    );
+    await client.query(
+      `delete from conflict_resolutions c using roster_overrides o
+        where c.organization_id = o.organization_id and c.roster_override_id = o.id
+          and o.organization_id = $1 and (o.member_out_id = $2 or o.member_in_id = $2)`,
+      scope,
+    );
+    await client.query(
+      'delete from roster_overrides where organization_id = $1 and (member_out_id = $2 or member_in_id = $2)',
       scope,
     );
     // Story 9.3: their leave requests and the decisions on them (0040), whose
@@ -1497,10 +1529,24 @@ export async function seedOtherPattern(
 export async function removeTeamInSql(slug: string, teamId: string): Promise<void> {
   const client = await connect();
   try {
+    await client.query('begin');
+    const scope = [slug, teamId];
+    // Story 12.4: a swap names its given and return team by a key that does
+    // not cascade (0049). Its notifications (0050), then its decision, then
+    // the swap itself.
+    const naming = `select r.id from swap_requests r join organizations o on o.id = r.organization_id
+                     where o.slug = $1 and (r.team_id = $2 or r.return_team_id = $2)`;
+    await client.query(`delete from notification_outbox where subject_id in (${naming})`, scope);
+    await client.query(`delete from swap_request_decisions where request_id in (${naming})`, scope);
+    await client.query(`delete from swap_requests where id in (${naming})`, scope);
     await client.query(
       `delete from teams where id = $2 and organization_id = (select id from organizations where slug = $1)`,
-      [slug, teamId],
+      scope,
     );
+    await client.query('commit');
+  } catch (cause) {
+    await client.query('rollback').catch(() => undefined);
+    throw cause;
   } finally {
     await client.end();
   }
@@ -1788,6 +1834,27 @@ export async function removeSeededRotation(seeded: SeededRotation): Promise<void
     // Before the overrides: a replacement's resolution keys to its override (0032).
     await client.query('delete from conflict_resolutions where organization_id = $1 and roster_override_id is not null', [
       seeded.organizationId,
+    ]);
+    // Before the overrides, too: an approved swap's decision keys to the
+    // overrides its approval wrote (0049, no cascade). The decision goes, and
+    // its swap with it (and the swap's notifications, 0050), so no closed
+    // swap is left that reads as withdrawn.
+    await client.query(
+      `delete from notification_outbox
+        where organization_id = $1
+          and subject_id in (select request_id from swap_request_decisions
+                              where organization_id = $1 and roster_override_id is not null)`,
+      [seeded.organizationId],
+    );
+    const approved = await client.query<{ request_id: string }>(
+      `delete from swap_request_decisions
+        where organization_id = $1 and roster_override_id is not null
+        returning request_id`,
+      [seeded.organizationId],
+    );
+    await client.query('delete from swap_requests where organization_id = $1 and id = any($2::uuid[])', [
+      seeded.organizationId,
+      approved.rows.map((row) => row.request_id),
     ]);
     await client.query('delete from roster_overrides where organization_id = $1', [seeded.organizationId]);
     await client.query('delete from rotation_assignments where organization_id = $1 and pattern_id = $2', scope);

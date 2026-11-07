@@ -33,6 +33,7 @@ import { ACTING_ADMINS_KEY } from '@/features/conflicts/services/resolved-confli
 import { ROTATION_KEY } from '@/features/rotation/services/list';
 import { SHIFT_TYPES_LIST_KEY } from '@/features/shift-types/services/list';
 import { MY_SWAP_REQUESTS_KEY } from '@/features/swaps/services/my-swaps';
+import { ORGANIZATION_SWAP_REQUESTS_KEY } from '@/features/swaps/services/organization-swaps';
 import {
   CONFLICT_REPLACE_TAKEN_DEPENDENTS,
   CONFLICT_REPLACE_WRITE_DEPENDENTS,
@@ -51,6 +52,7 @@ import {
   ROSTER_WRITE_DEPENDENTS,
   ROTATION_CANCEL_DEPENDENTS,
   ROTATION_SAVE_DEPENDENTS,
+  SWAP_REQUEST_DECISION_DEPENDENTS,
   SWAP_REQUEST_WRITE_DEPENDENTS,
   TEAM_CHANGE_DEPENDENTS,
   TEAM_CREATE_DEPENDENTS,
@@ -125,6 +127,8 @@ const CLASSIFIED: Readonly<Record<string, readonly QueryKey[]>> = {
   NOTIFICATION_SETTINGS_KEY: [NOTIFICATION_SETTINGS_KEY],
   // Story 12.3: the viewer's own swaps, which only a swap write names.
   MY_SWAP_REQUESTS_KEY: [MY_SWAP_REQUESTS_KEY],
+  // Story 12.4: every swap of the organization, which Za odluku, Odlučeno and the admin's Danas read.
+  ORGANIZATION_SWAP_REQUESTS_KEY: [ORGANIZATION_SWAP_REQUESTS_KEY],
 };
 
 /**
@@ -419,15 +423,33 @@ describe('the reads a team or membership write makes stale', () => {
       write: 'a swap proposed (story 12.2)',
       own: CALENDAR_KEY,
       dependents: SWAP_REQUEST_WRITE_DEPENDENTS,
-      // The surface's own snapshot and the viewer's own swaps: a proposed swap derives nothing else (R9.1).
-      stale: [CALENDAR_KEY, MY_SWAP_REQUESTS_KEY],
+      // The surface's own snapshot and both swap reads: a proposed swap derives nothing else (R9.1).
+      stale: [CALENDAR_KEY, MY_SWAP_REQUESTS_KEY, ORGANIZATION_SWAP_REQUESTS_KEY],
     },
     {
       write: 'a swap answered or withdrawn (story 12.3)',
       own: MY_SWAP_REQUESTS_KEY,
       dependents: SWAP_REQUEST_WRITE_DEPENDENTS,
-      // The viewer's own swaps alone: an accepted swap derives nothing (R9.1).
-      stale: [MY_SWAP_REQUESTS_KEY],
+      // Both swap reads alone (story 12.4: an accept or a withdrawal moves the
+      // queue's count): an accepted swap derives nothing (R9.1).
+      stale: [MY_SWAP_REQUESTS_KEY, ORGANIZATION_SWAP_REQUESTS_KEY],
+    },
+    {
+      write: 'a swap decided by an admin (story 12.4)',
+      own: ORGANIZATION_SWAP_REQUESTS_KEY,
+      dependents: SWAP_REQUEST_DECISION_DEPENDENTS,
+      // Both swap reads, and everything a calendar roster change makes stale:
+      // the approval writes two ordinary roster overrides (R9.2), which the
+      // schedule, the hours and the queue's collisions derive from.
+      stale: [
+        CALENDAR_KEY,
+        ORGANIZATION_LEAVE_RECORDS_KEY,
+        LEAVE_OVERVIEW_RECORDS_KEY,
+        MY_CONFLICT_RESOLUTIONS_KEY,
+        ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
+        MY_SWAP_REQUESTS_KEY,
+        ORGANIZATION_SWAP_REQUESTS_KEY,
+      ],
     },
     {
       write: 'a refusal',

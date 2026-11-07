@@ -23,7 +23,9 @@ import { useOrganizationLeaveRequests } from '@/features/leave/hooks/use-organiz
 import { ORGANIZATION_LEAVE_REQUESTS_KEY } from '@/features/leave/services/leave-request-list';
 import { MEMBER_ROLE_KEY } from '@/features/navigation/services/role';
 import type { MemberRole } from '@/features/navigation/utils/destinations';
+import { useOrganizationSwapRequests } from '@/features/swaps/hooks/use-organization-swaps';
 import { MY_SWAP_REQUESTS_KEY } from '@/features/swaps/services/my-swaps';
+import { ORGANIZATION_SWAP_REQUESTS_KEY } from '@/features/swaps/services/organization-swaps';
 import { ADMIN_TODAY_UNAVAILABLE, adminTodayOf } from '@/features/today/services/admin-today';
 import { todaySurfaceKeysOf } from '@/features/today/services/surface-keys';
 import { useMinuteTicker } from '@/hooks/minute-ticker';
@@ -59,15 +61,16 @@ export function useTodayRole(snapshotRole: MemberRole | null): MemberRole | null
  * every decision is `@/features/today/services/admin-today`'s, which the node
  * suite executes.
  *
- * *ZA ODLUKU*'S FOUR READS (AD-13), through the queue's own query options:
+ * *ZA ODLUKU*'S FIVE READS (AD-13), through the queue's own query options:
  * the calendar snapshot under `CALENDAR_KEY`, the organization's live leave
  * under `ORGANIZATION_LEAVE_RECORDS_KEY`, its live resolutions under
- * `ORGANIZATION_CONFLICT_RESOLUTIONS_KEY` and its leave requests under
- * `ORGANIZATION_LEAVE_REQUESTS_KEY` (story 9.5). One cache entry per key,
+ * `ORGANIZATION_CONFLICT_RESOLUTIONS_KEY`, its leave requests under
+ * `ORGANIZATION_LEAVE_REQUESTS_KEY` (story 9.5) and its swaps under
+ * `ORGANIZATION_SWAP_REQUESTS_KEY` (story 12.4). One cache entry per key,
  * shared with *Za odluku* and *Kalendar*; a decision saved there — or a
- * request sent or withdrawn — re-reads them, and the count here changes only
- * then. No figure is optimistic, and nothing is stored: the screen is
- * derived from the four answers at every minute.
+ * request or swap sent, answered or withdrawn — re-reads them, and the count
+ * here changes only then. No figure is optimistic, and nothing is stored: the
+ * screen is derived from the five answers at every minute.
  *
  * NOT `useConflictsQueue`, which steps the router's state for *Za odluku*'s
  * status line.
@@ -94,6 +97,7 @@ export function useAdminToday() {
     ),
   );
   const requestsRead = useOrganizationLeaveRequests();
+  const swapsRead = useOrganizationSwapRequests();
   // The page's role, as `useToday` reads it: an admin's, while this body is mounted.
   const pageRole = useTodayRole(calendarRead.data === undefined ? null : calendarRead.data.viewer.role);
   const { clock, answerOf } = useSnapshotFreshness(
@@ -103,6 +107,7 @@ export function useAdminToday() {
       [ORGANIZATION_LEAVE_RECORDS_KEY, recordsRead],
       [ORGANIZATION_CONFLICT_RESOLUTIONS_KEY, resolutionsRead],
       [ORGANIZATION_LEAVE_REQUESTS_KEY, requestsRead],
+      [ORGANIZATION_SWAP_REQUESTS_KEY, swapsRead],
     ],
     ZONE_FROM_CALENDAR,
   );
@@ -110,6 +115,7 @@ export function useAdminToday() {
   const records = answerOf(recordsRead);
   const resolutions = answerOf(resolutionsRead);
   const requests = answerOf(requestsRead);
+  const swaps = answerOf(swapsRead);
   const calendarState = calendarSurfaceStateOf(calendar);
   const snapshot = calendarState.snapshot;
   const refusal = calendarState.refusal;
@@ -131,10 +137,15 @@ export function useAdminToday() {
   const requestsIsError = requests.isError;
   const requestsIsPending = requests.isPending;
   const requestsFetchStatus = requests.fetchStatus;
+  const swapRows = swaps.data;
+  const swapsIsError = swaps.isError;
+  const swapsIsPending = swaps.isPending;
+  const swapsFetchStatus = swaps.fetchStatus;
 
   // As the queue: a row naming a member or team the snapshot does not hold yet re-reads it once.
   // STORY 9.5: a request row naming a member the snapshot does not hold yet too.
-  useSnapshotSkewRefresh(snapshotSkewOf(snapshot, rows, resolutionRows, requestRows));
+  // STORY 12.4: and a swap row naming a member or team it does not hold yet.
+  useSnapshotSkewRefresh(snapshotSkewOf(snapshot, rows, resolutionRows, requestRows, swapRows));
   // Derived once per answer and per minute, not on every render: the
   // collisions walk every record, and the week draws up to two months.
   const adminToday = useMemo(
@@ -154,6 +165,12 @@ export function useAdminToday() {
             isError: requestsIsError,
             isPending: requestsIsPending,
             fetchStatus: requestsFetchStatus,
+          },
+          swaps: {
+            data: swapRows,
+            isError: swapsIsError,
+            isPending: swapsIsPending,
+            fetchStatus: swapsFetchStatus,
           },
           snapshotFetching,
         },
@@ -175,6 +192,10 @@ export function useAdminToday() {
       requestsIsError,
       requestsIsPending,
       requestsFetchStatus,
+      swapRows,
+      swapsIsError,
+      swapsIsPending,
+      swapsFetchStatus,
       snapshotFetching,
       now,
     ],
@@ -187,6 +208,8 @@ export function useAdminToday() {
       ORGANIZATION_LEAVE_RECORDS_KEY,
       ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
       ORGANIZATION_LEAVE_REQUESTS_KEY,
+      // STORY 12.4: the swaps waiting for an admin, which *Treba tebe* counts.
+      ORGANIZATION_SWAP_REQUESTS_KEY,
       // STORY 12.3: *Zamjene*'s read, which the admin body's snapshot decides over too.
       MY_SWAP_REQUESTS_KEY,
     ]) {

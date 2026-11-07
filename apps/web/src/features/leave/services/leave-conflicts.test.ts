@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { readCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
-import { conflictsQueueOutcomeOf } from '@/features/conflicts/services/conflicts-queue';
+import { collisionRowsOf, conflictsQueueOutcomeOf } from '@/features/conflicts/services/conflicts-queue';
 import type { LeaveRecord } from '@/features/leave/services/leave-list';
 import {
   LEAVE_CONFLICTS_KNOWN,
@@ -79,11 +79,11 @@ function linesOf(conflicts: LeaveConflicts | null) {
 
 /** How many unresolved conflicts *Za odluku* lists for the viewer over `records`. */
 function queuedCount(records: readonly LeaveRecord[], resolutionRows: readonly unknown[] = []): number {
-  const outcome = conflictsQueueOutcomeOf(snapshot, records.map(storedRow), resolutionRows, '2026-09-01', []);
+  const outcome = conflictsQueueOutcomeOf(snapshot, records.map(storedRow), resolutionRows, '2026-09-01', [], []);
 
   if (!outcome.ok) throw new Error(outcome.code);
 
-  return outcome.view.rows.filter((row) => row.memberId === VIEWER_MEMBER).length;
+  return collisionRowsOf(outcome.view.rows).filter((row) => row.memberId === VIEWER_MEMBER).length;
 }
 
 let snapshot: CalendarSnapshot;

@@ -222,6 +222,8 @@ export const FEATURE_PUBLIC = {
   // to the queue through its one status-line slot (`withResolutionSaved`).
   conflicts: [
     'components/erasure-dialog', // calendar, members, rotation
+    // Story 12.4: a swap's shifts in words, as the queue and Odlučeno name them, for *Treba tebe*.
+    'components/swap-shifts', // today
     'hooks/use-erasure-confirmation', // calendar, members, rotation
     'hooks/use-erasure-reads', // calendar, members, rotation
     'hooks/use-replacement-link-refresh', // calendar, hours, today
@@ -348,10 +350,16 @@ export const FEATURE_PUBLIC = {
   // (`use-my-swaps`) for its one snapshot; *Kalendar*'s day detail marks a
   // shift the member already proposed, off the same read; and the swaps key
   // (`my-swaps`) joins both surfaces' key sets and a swap write's dependents.
+  // Story 12.4: the organization's swaps (`organization-swaps`) are *Za
+  // odluku*'s third kind of item — its queue, *Odlučeno*, its resolution
+  // page's count and the admin's *Danas* read them through one binding
+  // (`use-organization-swaps`), and a swap write's dependents name its key.
   swaps: [
     'components/my-swaps-card', // today
     'hooks/use-my-swaps', // calendar, today
+    'hooks/use-organization-swaps', // conflicts, today
     'services/my-swaps', // calendar, teams, today
+    'services/organization-swaps', // conflicts, teams, today
     'services/swap-proposal', // pages
     'utils/element-ids', // pages
   ],

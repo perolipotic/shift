@@ -18,11 +18,13 @@ import {
   CONFLICTS_READY,
   ITEM_COLLISION,
   ITEM_REQUEST,
+  ITEM_SWAP,
   collisionRowsOf,
   conflictsQueueOf,
   type ConflictsQueueSources,
   type LeaveRowsAnswer,
 } from '@/features/conflicts/services/conflicts-queue';
+import { swapRowOf } from '@/features/swaps/organization-swaps.fixture';
 import {
   ABSENT_ACCEPTED,
   ABSENT_UNRESOLVED,
@@ -226,10 +228,17 @@ function sourcesOf(
   rows: readonly unknown[],
   resolutionRows: readonly unknown[] = [],
   requestRows: readonly unknown[] = [],
+  swapRows: readonly unknown[] = [],
 ): ConflictsQueueSources {
   const calendar: CalendarSurfaceState = { snapshot, refusal: null, loading: false };
 
-  return { calendar, records: answered(rows), resolutions: answered(resolutionRows), requests: answered(requestRows) };
+  return {
+    calendar,
+    records: answered(rows),
+    resolutions: answered(resolutionRows),
+    requests: answered(requestRows),
+    swaps: answered(swapRows),
+  };
 }
 
 /** The ready view, as the hook builds it. */
@@ -303,7 +312,7 @@ describe('Treba tebe', () => {
       '1 na datum koji je prošao · najraniji 30.09.',
     );
     expect(needsYou.rows).toHaveLength(NEEDS_YOU_ROWS);
-    expect(needsYou.rows.map((row) => [row.date, row.memberName, row.badge])).toEqual([
+    expect(needsYou.rows.map((row) => [row.date, row.kind === ITEM_SWAP ? null : row.memberName, row.badge])).toEqual([
       ['2026-09-30', 'Bruno Brnić', BADGE_PAST],
       ['2026-10-01', 'Ana Anić', BADGE_TODAY],
       ['2026-10-01', 'Cvita Cvitić', BADGE_TODAY],
@@ -411,6 +420,62 @@ describe('Treba tebe', () => {
 
       expect(adminTodayOf({ ...sourcesOf(pilot, []), requests: failed }, AT_1420)).toEqual({ kind: ADMIN_TODAY_UNAVAILABLE });
       expect(adminTodayOf({ ...sourcesOf(pilot, []), requests: paused }, AT_1420)).toEqual({ kind: ADMIN_TODAY_UNAVAILABLE });
+    });
+  });
+
+  describe('swaps waiting for an admin (story 12.4)', () => {
+    /** Ana gives B's shift on `date` to Bruno, accepted and open. */
+    const swapOf = (id: string, date: string): Row =>
+      swapRowOf({ id, proposer_id: ANA, addressee_id: BRUNO, team_id: B, date });
+    const shownOf = (rows: readonly unknown[], swapRows: readonly unknown[]) => {
+      const shown = adminTodayOf(sourcesOf(pilot, rows, [], [], swapRows), AT_1420);
+
+      if (shown.kind !== ADMIN_TODAY_READY) throw new Error(shown.kind);
+
+      return shown.view.needsYou;
+    };
+
+    it('Waits: counts an accepted swap with the collisions, the same count as the queue, with a row of its own', () => {
+      const swaps = [swapOf('swap-past', '2026-09-29')];
+      const needsYou = shownOf(SEVEN, swaps);
+      const queue = conflictsQueueOf(sourcesOf(pilot, SEVEN, [], [], swaps), AT_1420);
+
+      if (queue.kind !== CONFLICTS_READY) throw new Error(queue.kind);
+
+      expect(needsYou.count).toBe(8);
+      expect(needsYou.count).toBe(queue.view.count);
+      expect(needsYou.rows[0]).toEqual({
+        kind: ITEM_SWAP,
+        key: 'swap:swap-past',
+        requestId: 'swap-past',
+        date: '2026-09-29',
+        weekday: 'utorak',
+        dayMonth: '29.09.',
+        proposerName: 'Ana Anić',
+        addresseeName: 'Bruno Brnić',
+        given: { date: '2026-09-29', dateShown: '29.09.2026', teamName: expect.any(String) },
+        returnShift: null,
+        badge: BADGE_PAST,
+      });
+    });
+
+    it('equals Za odluku at zero, and with only a swap', () => {
+      for (const swaps of [[], [swapOf('swap-1', '2026-10-04')]]) {
+        const queue = conflictsQueueOf(sourcesOf(pilot, [], [], [], swaps), AT_1420);
+
+        if (queue.kind !== CONFLICTS_READY) throw new Error(queue.kind);
+
+        expect(shownOf([], swaps).count).toBe(queue.view.count);
+        expect(shownOf([], swaps).count).toBe(swaps.length);
+      }
+    });
+
+    it('Read fails: a failed or paused swaps read makes the whole card unavailable, never a partial count', () => {
+      const failed: LeaveRowsAnswer = { isPending: false, isError: true, fetchStatus: 'idle', data: [] };
+      const paused: LeaveRowsAnswer = { isPending: false, isError: false, fetchStatus: 'paused', data: [] };
+
+      expect(adminTodayOf({ ...sourcesOf(pilot, []), swaps: failed }, AT_1420)).toEqual({ kind: ADMIN_TODAY_UNAVAILABLE });
+      expect(adminTodayOf({ ...sourcesOf(pilot, []), swaps: paused }, AT_1420)).toEqual({ kind: ADMIN_TODAY_UNAVAILABLE });
     });
   });
 
@@ -875,9 +940,11 @@ describe('the four reads', () => {
       clock: FreshnessClock,
       // Story 9.5: the requests read, in the same state as the resolutions unless a case says otherwise.
       requests: ReadAnswer<readonly unknown[]> = resolutions,
+      // Story 12.4: the swaps read, likewise.
+      swaps: ReadAnswer<readonly unknown[]> = resolutions,
     ) => {
       const freshness = snapshotFreshnessOf(
-        [calendar, records, resolutions, requests],
+        [calendar, records, resolutions, requests, swaps],
         clock.freshAfter,
         clock.online,
         clock.reconnected,
@@ -893,6 +960,7 @@ describe('the four reads', () => {
             records: answerOf(records),
             resolutions: answerOf(resolutions),
             requests: answerOf(requests),
+            swaps: answerOf(swaps),
             snapshotFetching: mappedCalendar.fetchStatus === 'fetching',
           },
           AT_1420,

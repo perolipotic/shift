@@ -16,6 +16,7 @@ import {
   conflictsQueueOutcomeOf,
   ITEM_COLLISION,
   ITEM_REQUEST,
+  ITEM_SWAP,
   collisionRowsOf,
   mergedQueueOrderOf,
   queueOrderOf,
@@ -25,9 +26,11 @@ import {
   type ConflictsQueueView,
   type LeaveRowsAnswer,
   type RequestRow,
+  type SwapRow,
 } from '@/features/conflicts/services/conflicts-queue';
 import { REPLACEMENT_LINK_MISMATCH } from '@/features/conflicts/services/replacement-effect';
 import { organizationLeaveRecordsOf } from '@/features/leave/services/leave-list';
+import { CLOSED_AT, SENT_AT, decidedSwapRowOf, swapRowOf } from '@/features/swaps/organization-swaps.fixture';
 import { initLocalization, t } from '@/lib/i18n';
 import {
   PILOT,
@@ -123,7 +126,7 @@ function viewOf(
   today: string,
   resolutionRows: readonly unknown[] = [],
 ): { readonly count: number; readonly rows: readonly ConflictRow[] } {
-  const outcome = conflictsQueueOutcomeOf(snapshot, rows, resolutionRows, today, []);
+  const outcome = conflictsQueueOutcomeOf(snapshot, rows, resolutionRows, today, [], []);
 
   if (!outcome.ok) throw new Error(outcome.code);
 
@@ -296,7 +299,7 @@ describe('the order', () => {
     // 22:30 UTC on the 10th is already the 11th in Zagreb: the 10th (Dan) is
     // PAST there, though the UTC date would still call it today.
     const queue = conflictsQueueOf(
-      { calendar: { snapshot: pilot, refusal: null, loading: false }, records: answered([WORKED]), resolutions: answered([]), requests: answered([]) },
+      { calendar: { snapshot: pilot, refusal: null, loading: false }, records: answered([WORKED]), resolutions: answered([]), requests: answered([]), swaps: answered([]) },
       new Date('2026-09-10T22:30:00Z'),
     );
 
@@ -313,7 +316,7 @@ describe('the order', () => {
     // 02:00 UTC on the 11th is still the 10th in New York: the 10th is today, not past.
     const behind: CalendarSnapshot = { ...pilot, timeZone: 'America/New_York' };
     const queue = conflictsQueueOf(
-      { calendar: { snapshot: behind, refusal: null, loading: false }, records: answered([WORKED]), resolutions: answered([]), requests: answered([]) },
+      { calendar: { snapshot: behind, refusal: null, loading: false }, records: answered([WORKED]), resolutions: answered([]), requests: answered([]), swaps: answered([]) },
       new Date('2026-09-11T02:00:00Z'),
     );
 
@@ -448,7 +451,7 @@ describe('corrupt data refuses the whole queue', () => {
   ])('refuses %s, and logs it', (_name, rows) => {
     const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    expect(conflictsQueueOutcomeOf(pilot, rows, [], '2026-09-01', [])).toEqual({ ok: false, code: CONFLICTS_UNAVAILABLE });
+    expect(conflictsQueueOutcomeOf(pilot, rows, [], '2026-09-01', [], [])).toEqual({ ok: false, code: CONFLICTS_UNAVAILABLE });
     expect(logged).toHaveBeenCalledWith(CONFLICTS_UNAVAILABLE, expect.any(RangeError));
   });
 });
@@ -463,7 +466,7 @@ describe('the four reads', () => {
 
   it('is ready once both answered', () => {
     const queue = conflictsQueueOf(
-      { calendar: { ...ready, snapshot: pilot }, records: answered([WORKED]), resolutions: answered([]), requests: answered([]) },
+      { calendar: { ...ready, snapshot: pilot }, records: answered([WORKED]), resolutions: answered([]), requests: answered([]), swaps: answered([]) },
       nowOn('2026-09-01'),
     );
 
@@ -474,13 +477,13 @@ describe('the four reads', () => {
     const pending: LeaveRowsAnswer = { isPending: true, isError: false, fetchStatus: 'fetching', data: undefined };
 
     expect(
-      conflictsQueueOf({ calendar: { ...ready, loading: true }, records: answered([]), resolutions: answered([]), requests: answered([]) }, nowOn('2026-09-01')),
+      conflictsQueueOf({ calendar: { ...ready, loading: true }, records: answered([]), resolutions: answered([]), requests: answered([]), swaps: answered([]) }, nowOn('2026-09-01')),
     ).toEqual({ kind: CONFLICTS_LOADING });
     expect(
-      conflictsQueueOf({ calendar: { ...ready, snapshot: pilot }, records: pending, resolutions: answered([]), requests: answered([]) }, nowOn('2026-09-01')),
+      conflictsQueueOf({ calendar: { ...ready, snapshot: pilot }, records: pending, resolutions: answered([]), requests: answered([]), swaps: answered([]) }, nowOn('2026-09-01')),
     ).toEqual({ kind: CONFLICTS_LOADING });
     expect(
-      conflictsQueueOf({ calendar: { ...ready, snapshot: pilot }, records: answered([WORKED]), resolutions: pending, requests: answered([]) }, nowOn('2026-09-01')),
+      conflictsQueueOf({ calendar: { ...ready, snapshot: pilot }, records: answered([WORKED]), resolutions: pending, requests: answered([]), swaps: answered([]) }, nowOn('2026-09-01')),
     ).toEqual({ kind: CONFLICTS_LOADING });
   });
 
@@ -492,7 +495,7 @@ describe('the four reads', () => {
   ] as const)('is unavailable when %s, ahead of any skeleton', (_name, calendar, records) => {
     const state: CalendarSurfaceState = { ...calendar, snapshot: calendar.refusal === null && !calendar.loading ? pilot : null };
 
-    expect(conflictsQueueOf({ calendar: state, records, resolutions: answered([]), requests: answered([]) }, nowOn('2026-09-01'))).toEqual({
+    expect(conflictsQueueOf({ calendar: state, records, resolutions: answered([]), requests: answered([]), swaps: answered([]) }, nowOn('2026-09-01'))).toEqual({
       kind: CONFLICTS_UNAVAILABLE,
     });
   });
@@ -512,7 +515,7 @@ describe('the four reads', () => {
     ['a resolution of a newer member', [WORKED], [resolutionOf('newer-member', '2026-09-11', teamOf(PILOT, 0))]],
   ])('is unavailable, unlogged, for %s, and loading while the snapshot is read again', (_name, rows, resolutionRows) => {
     const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const sources = { calendar: { ...ready, snapshot: pilot }, records: answered(rows), resolutions: answered(resolutionRows), requests: answered([]) };
+    const sources = { calendar: { ...ready, snapshot: pilot }, records: answered(rows), resolutions: answered(resolutionRows), requests: answered([]), swaps: answered([]) };
 
     expect(conflictsQueueOf(sources, nowOn('2026-09-01'))).toEqual({ kind: CONFLICTS_UNAVAILABLE });
     expect(conflictsQueueOf({ ...sources, snapshotFetching: true }, nowOn('2026-09-01'))).toEqual({ kind: CONFLICTS_LOADING });
@@ -611,6 +614,7 @@ describe('resolutions (story 5.4a)', () => {
         [resolutionOf(VIEWER_MEMBER, '2026-09-10', a, 'replace_member', 'ro-ana')],
         '2026-09-01',
         [],
+        [],
       );
 
       expect(outcome.ok).toBe(true);
@@ -641,7 +645,7 @@ describe('resolutions (story 5.4a)', () => {
   ])('refuses the whole queue for %s, and logs it', (_name, resolutionRows) => {
     const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    expect(conflictsQueueOutcomeOf(pilot, [WORKED], resolutionRows, '2026-09-01', [])).toEqual({ ok: false, code: CONFLICTS_UNAVAILABLE });
+    expect(conflictsQueueOutcomeOf(pilot, [WORKED], resolutionRows, '2026-09-01', [], [])).toEqual({ ok: false, code: CONFLICTS_UNAVAILABLE });
     expect(logged).toHaveBeenCalledWith(CONFLICTS_UNAVAILABLE, expect.any(RangeError));
   });
 
@@ -651,7 +655,7 @@ describe('resolutions (story 5.4a)', () => {
     ['paused offline', { isPending: false, isError: false, fetchStatus: 'paused', data: [] }],
   ] as const)('is unavailable when the resolutions read %s, never a count without them', (_name, resolutions) => {
     expect(
-      conflictsQueueOf({ calendar: { snapshot: pilot, refusal: null, loading: false }, records: answered([WORKED]), resolutions, requests: answered([]) }, nowOn('2026-09-01')),
+      conflictsQueueOf({ calendar: { snapshot: pilot, refusal: null, loading: false }, records: answered([WORKED]), resolutions, requests: answered([]), swaps: answered([]) }, nowOn('2026-09-01')),
     ).toEqual({ kind: CONFLICTS_UNAVAILABLE });
   });
 });
@@ -687,7 +691,7 @@ function mergedOf(
   requestRows: readonly unknown[],
   today: string,
 ): ConflictsQueueView {
-  const outcome = conflictsQueueOutcomeOf(pilot, rows, resolutionRows, today, requestRows);
+  const outcome = conflictsQueueOutcomeOf(pilot, rows, resolutionRows, today, requestRows, []);
 
   if (!outcome.ok) throw new Error(outcome.code);
 
@@ -817,7 +821,7 @@ describe('pending leave requests beside collisions (story 9.5)', () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     expect(
-      conflictsQueueOutcomeOf(pilot, [], [], '2026-09-01', [{ ...requestOf('req-1', '2026-09-12', '2026-09-14'), created_at: 'never' }]),
+      conflictsQueueOutcomeOf(pilot, [], [], '2026-09-01', [{ ...requestOf('req-1', '2026-09-12', '2026-09-14'), created_at: 'never' }], []),
     ).toEqual({ ok: false, code: CONFLICTS_UNAVAILABLE });
   });
 
@@ -828,20 +832,21 @@ describe('pending leave requests beside collisions (story 9.5)', () => {
       records: answered([]),
       resolutions: answered([]),
       requests: answered([requestOf('req-newer', '2026-09-12', '2026-09-14', { memberId: 'newer-member' })]),
+      swaps: answered([]),
     };
 
     expect(conflictsQueueOf(sources, nowOn('2026-09-01'))).toEqual({ kind: CONFLICTS_UNAVAILABLE });
     expect(conflictsQueueOf({ ...sources, snapshotFetching: true }, nowOn('2026-09-01'))).toEqual({ kind: CONFLICTS_LOADING });
     expect(unknownSnapshotIdsOf(pilot, [], [], sources.requests.data)).toEqual(['member:newer-member']);
-    expect(queueCountOf(pilot, [], [], sources.requests.data ?? [], '2026-09-01')).toBeNull();
+    expect(queueCountOf(pilot, [], [], sources.requests.data ?? [], '2026-09-01', [])).toBeNull();
     expect(logged).not.toHaveBeenCalled();
   });
 
   it('states the same count through queueCountOf as the queue does', () => {
     const requests = [requestOf('req-1', '2026-09-12', '2026-09-14')];
 
-    expect(queueCountOf(pilot, [WORKED], [], requests, '2026-09-01')).toBe(mergedOf([WORKED], [], requests, '2026-09-01').count);
-    expect(queueCountOf(pilot, [WORKED], [], requests, '2026-09-01')).toBe(4);
+    expect(queueCountOf(pilot, [WORKED], [], requests, '2026-09-01', [])).toBe(mergedOf([WORKED], [], requests, '2026-09-01').count);
+    expect(queueCountOf(pilot, [WORKED], [], requests, '2026-09-01', [])).toBe(4);
   });
 
   it.each([
@@ -853,7 +858,7 @@ describe('pending leave requests beside collisions (story 9.5)', () => {
   ])('refuses the whole queue for %s, and logs it', (_name, requestRows) => {
     const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    expect(conflictsQueueOutcomeOf(pilot, [WORKED], [], '2026-09-01', requestRows)).toEqual({ ok: false, code: CONFLICTS_UNAVAILABLE });
+    expect(conflictsQueueOutcomeOf(pilot, [WORKED], [], '2026-09-01', requestRows, [])).toEqual({ ok: false, code: CONFLICTS_UNAVAILABLE });
     expect(logged).toHaveBeenCalledWith(CONFLICTS_UNAVAILABLE, expect.any(RangeError));
   });
 
@@ -864,7 +869,7 @@ describe('pending leave requests beside collisions (story 9.5)', () => {
   ] as const)('Read fails: the whole queue is unavailable when the requests read %s, never a partial list', (_name, requests) => {
     expect(
       conflictsQueueOf(
-        { calendar: { snapshot: pilot, refusal: null, loading: false }, records: answered([WORKED]), resolutions: answered([]), requests },
+        { calendar: { snapshot: pilot, refusal: null, loading: false }, records: answered([WORKED]), resolutions: answered([]), requests, swaps: answered([]) },
         nowOn('2026-09-01'),
       ),
     ).toEqual({ kind: CONFLICTS_UNAVAILABLE });
@@ -878,6 +883,7 @@ describe('pending leave requests beside collisions (story 9.5)', () => {
           records: answered([WORKED]),
           resolutions: answered([]),
           requests: { isPending: true, isError: false, fetchStatus: 'fetching', data: undefined },
+          swaps: answered([]),
         },
         nowOn('2026-09-01'),
       ),
@@ -901,5 +907,169 @@ describe('pending leave requests beside collisions (story 9.5)', () => {
     const merged = mergedQueueOrderOf([], [request('z', '2026-09-12'), request('y', '2026-09-01'), request('x', '2026-09-12'), request('w', '2026-09-05')], '2026-09-10');
 
     expect(merged.map((row) => row.key)).toEqual(['request:x', 'request:z', 'request:w', 'request:y']);
+  });
+});
+
+describe('accepted swaps beside collisions and requests (story 12.4)', () => {
+  const a = teamOf(PILOT, 0);
+  const b = teamOf(PILOT, 1);
+  /** Ana gives B's shift on `date` to the viewer, accepted unless told otherwise. */
+  const swapOf = (id: string, date: string, overrides: Row = {}): Row =>
+    swapRowOf({ id, proposer_id: ANA, addressee_id: VIEWER_MEMBER, team_id: b, date, ...overrides });
+
+  /** The queue over the five reads, every one answered. */
+  function queueOf(rows: readonly unknown[], requestRows: readonly unknown[], swapRows: readonly unknown[], today: string) {
+    const outcome = conflictsQueueOutcomeOf(pilot, rows, [], today, requestRows, swapRows);
+
+    if (!outcome.ok) throw new Error(outcome.code);
+
+    return outcome.view;
+  }
+
+  it('Waits: an accepted swap is one item, `1 čeka odluku`, naming both members and the shift, opened by its id', () => {
+    const view = queueOf([], [], [swapOf('swap-1', '2026-09-13')], '2026-09-01');
+
+    expect(view.count).toBe(1);
+    expect(t('zaOdluku.count', { count: view.count })).toBe('1 čeka odluku');
+    expect(view.rows).toEqual([
+      {
+        kind: ITEM_SWAP,
+        key: 'swap:swap-1',
+        requestId: 'swap-1',
+        date: '2026-09-13',
+        dateShown: '13.09.2026',
+        past: false,
+        proposerName: 'Ana Anić',
+        addresseeName: VIEWER_NAME,
+        given: { date: '2026-09-13', dateShown: '13.09.2026', teamName: expect.any(String) },
+        returnShift: null,
+        createdAt: SENT_AT,
+      },
+    ]);
+    expect(t('zaOdluku.kind.swap')).toBe('Zamjena smjene');
+  });
+
+  it('lists only an open, accepted swap: never a proposed, withdrawn, declined or decided one (R9.1: none derives anything)', () => {
+    const view = queueOf(
+      [],
+      [],
+      [
+        swapOf('proposed', '2026-09-13', { answer: null }),
+        swapOf('withdrawn', '2026-09-13', { closed_at: CLOSED_AT }),
+        swapOf('declined', '2026-09-17', { answer: 'declined', closed_at: CLOSED_AT }),
+        { ...decidedSwapRowOf('rejected'), id: 'rejected', proposer_id: ANA, addressee_id: VIEWER_MEMBER, team_id: b },
+      ],
+      '2026-09-01',
+    );
+
+    expect(view).toEqual({ count: 0, rows: [] });
+  });
+
+  it('dates a swap by the earlier of its dates, and orders it after collisions and requests on one date, by when it was sent, then by id', () => {
+    const view = queueOf(
+      [WORKED],
+      [requestOf('req-1', '2026-09-10', '2026-09-11')],
+      [
+        swapOf('swap-late', '2026-09-17', { return_team_id: a, return_date: '2026-09-10', created_at: '2026-09-06T08:00:00Z' }),
+        swapOf('swap-early', '2026-09-13', { return_team_id: a, return_date: '2026-09-10', created_at: '2026-09-05T08:00:00Z' }),
+      ],
+      '2026-09-01',
+    );
+
+    expect(view.count).toBe(6);
+    expect(view.rows.filter((row) => row.date === '2026-09-10').map((row) => row.key)).toEqual([
+      collisionRowsOf(view.rows)[0]?.key,
+      'request:req-1',
+      'swap:swap-early',
+      'swap:swap-late',
+    ]);
+  });
+
+  it('Past: a swap with a date before today is a past row, still counted', () => {
+    const view = queueOf([], [], [swapOf('swap-1', '2026-09-13')], '2026-09-14');
+
+    expect(view.count).toBe(1);
+    expect(view.rows[0]?.past).toBe(true);
+  });
+
+  it('merges by date alone, whatever order the swaps arrive in', () => {
+    const swap = (requestId: string, date: string): SwapRow => ({
+      kind: ITEM_SWAP,
+      key: `swap:${requestId}`,
+      requestId,
+      date,
+      dateShown: date,
+      past: date < '2026-09-10',
+      proposerName: 'Ana Anić',
+      addresseeName: VIEWER_NAME,
+      given: { date, dateShown: date, teamName: 'Smjena B' },
+      returnShift: null,
+      createdAt: null,
+    });
+    const merged = mergedQueueOrderOf([], [], '2026-09-10', [swap('z', '2026-09-12'), swap('y', '2026-09-01'), swap('x', '2026-09-12')]);
+
+    expect(merged.map((row) => row.key)).toEqual(['swap:x', 'swap:z', 'swap:y']);
+  });
+
+  it('states the same count through queueCountOf as the queue does, and none while the swap read is not usable', () => {
+    const swaps = [swapOf('swap-1', '2026-09-13')];
+
+    expect(queueCountOf(pilot, [WORKED], [], [], '2026-09-01', swaps)).toBe(queueOf([WORKED], [], swaps, '2026-09-01').count);
+    expect(queueCountOf(pilot, [WORKED], [], [], '2026-09-01', swaps)).toBe(4);
+    expect(queueCountOf(pilot, [WORKED], [], [], '2026-09-01', null)).toBeNull();
+  });
+
+  it('Stale snapshot: a swap naming a member or team the snapshot does not hold yet is a skew — unavailable, unlogged, loading while it is read again', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const sources: ConflictsQueueSources = {
+      calendar: { snapshot: pilot, refusal: null, loading: false },
+      records: answered([]),
+      resolutions: answered([]),
+      requests: answered([]),
+      swaps: answered([swapOf('swap-1', '2026-09-13', { addressee_id: 'newer-member' })]),
+    };
+
+    expect(conflictsQueueOf(sources, nowOn('2026-09-01'))).toEqual({ kind: CONFLICTS_UNAVAILABLE });
+    expect(conflictsQueueOf({ ...sources, snapshotFetching: true }, nowOn('2026-09-01'))).toEqual({ kind: CONFLICTS_LOADING });
+    expect(queueCountOf(pilot, [], [], [], '2026-09-01', sources.swaps.data ?? [])).toBeNull();
+    expect(logged).not.toHaveBeenCalled();
+  });
+
+  it('refuses the whole queue, logged, for a swap row it cannot trust — never a partial list', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    expect(conflictsQueueOutcomeOf(pilot, [WORKED], [], '2026-09-01', [], [swapOf('swap-1', '2026-09-13', { answer: 'declined' })])).toEqual({
+      ok: false,
+      code: CONFLICTS_UNAVAILABLE,
+    });
+    expect(logged).toHaveBeenCalledWith(CONFLICTS_UNAVAILABLE, expect.any(RangeError));
+  });
+
+  it.each([
+    ['failed', { isPending: true, isError: true, fetchStatus: 'idle', data: undefined }],
+    ['failed on a refetch over cached rows', { isPending: false, isError: true, fetchStatus: 'idle', data: [] }],
+    ['paused offline', { isPending: false, isError: false, fetchStatus: 'paused', data: [] }],
+  ] as const)('Read fails: the whole queue is unavailable when the swaps read %s, never a partial count', (_name, swaps) => {
+    expect(
+      conflictsQueueOf(
+        { calendar: { snapshot: pilot, refusal: null, loading: false }, records: answered([WORKED]), resolutions: answered([]), requests: answered([]), swaps },
+        nowOn('2026-09-01'),
+      ),
+    ).toEqual({ kind: CONFLICTS_UNAVAILABLE });
+  });
+
+  it('is loading while the swaps read is pending', () => {
+    expect(
+      conflictsQueueOf(
+        {
+          calendar: { snapshot: pilot, refusal: null, loading: false },
+          records: answered([WORKED]),
+          resolutions: answered([]),
+          requests: answered([]),
+          swaps: { isPending: true, isError: false, fetchStatus: 'fetching', data: undefined },
+        },
+        nowOn('2026-09-01'),
+      ),
+    ).toEqual({ kind: CONFLICTS_LOADING });
   });
 });

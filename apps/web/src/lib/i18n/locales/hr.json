@@ -622,7 +622,8 @@
     "past": "Prošli datum",
     "kind": {
       "collision": "Odsutnost u smjeni",
-      "request": "Zahtjev za godišnji odmor"
+      "request": "Zahtjev za godišnji odmor",
+      "swap": "Zamjena smjene"
     },
     "tabs": {
       "label": "Stavke za odluku",
@@ -650,6 +651,8 @@
     "savedReplace": "Odluka je spremljena: {type} · {team} · {date} · {member}, zamjena: {replacement}.",
     "savedRequestApproved": "Zahtjev odobren: {member}, {from}–{to}.",
     "savedRequestRejected": "Zahtjev odbijen: {member}, {from}–{to}.",
+    "savedSwapApproved": "Zamjena odobrena: {proposer} → {addressee}, {date}.",
+    "savedSwapRejected": "Zamjena nije odobrena: {proposer} → {addressee}, {date}.",
     "request": {
       "heading": "Zahtjev za godišnji odmor",
       "missing": "Zahtjev ne postoji.",
@@ -665,6 +668,48 @@
       "memberInactive": "Osoba nije aktivna na sve datume ovog zahtjeva. Odobrenje nije moguće, a zahtjev možeš odbiti.",
       "denied": "Nemaš ovlasti odlučiti o ovom zahtjevu.",
       "failed": "Odluku nije bilo moguće spremiti. Pokušaj ponovno."
+    },
+    "swap": {
+      "heading": "Zamjena smjene",
+      "missing": "Zamjena ne postoji.",
+      "unavailable": "Zamjenu trenutačno nije moguće učitati. Pokušaj ponovno.",
+      "parties": "{proposer} → {addressee}",
+      "shift": "{date} · {team}",
+      "shifts": "{given} · zauzvrat {back}",
+      "status": {
+        "waitingDecision": "Čeka odluku",
+        "waitingColleague": "Čeka odgovor kolege",
+        "approved": "Odobrena",
+        "rejected": "Nije odobrena",
+        "deactivated": "Zatvorena deaktivacijom",
+        "withdrawn": "Povučena",
+        "declined": "Odbijena"
+      },
+      "previewHeading": "Što se mijenja nakon odobrenja",
+      "worksInstead": "{day} · {team}: {out} → {in}",
+      "hours": "{name} – sati {month} {year}.: {delta}",
+      "onLeave": "{name} ima godišnji odmor {day}, a zamjena tu osobu stavlja na smjenu.",
+      "previewUnknown": "Što zamjena mijenja trenutačno nije moguće izračunati.",
+      "past": "Datum je prošao",
+      "stale": "Smjene su se u međuvremenu promijenile, pa se ova zamjena više ne može primijeniti. Odobrenje nije moguće, a zamjenu možeš odbiti.",
+      "approve": "Odobri",
+      "reject": "Odbij",
+      "approvalReason": "Odobrena zamjena",
+      "changedLater": "Zamjena je naknadno izmijenjena u kalendaru.",
+      "notWaiting": "Zamjena više ne čeka odluku.",
+      "denied": "Nemaš ovlasti odlučiti o ovoj zamjeni.",
+      "memberInactive": "Netko od članova nije aktivan na datum zamjene. Odobrenje nije moguće, a zamjenu možeš odbiti.",
+      "taken": "Raspored te smjene je u međuvremenu promijenjen. Odobrenje nije moguće, a zamjenu možeš odbiti.",
+      "archived": "Smjena ove zamjene je arhivirana. Odobrenje nije moguće, a zamjenu možeš odbiti.",
+      "failed": "Odluku nije bilo moguće spremiti. Pokušaj ponovno.",
+      "unchecked": "Ne mogu provjeriti što bi zamjena uklonila s popisa Za odluku.",
+      "retry": "Pokušaj ponovno",
+      "erasures": {
+        "title": "{count, plural, one {Zamjena uklanja # stavku koja čeka odluku} few {Zamjena uklanja # stavke koje čekaju odluku} other {Zamjena uklanja # stavki koje čekaju odluku}}",
+        "lede": "{count, plural, one {Ova zamjena uklanja uzrok # stavke koja čeka odluku.} few {Ova zamjena uklanja uzrok # stavke koje čekaju odluku.} other {Ova zamjena uklanja uzrok # stavki koje čekaju odluku.}} Prije odobrenja odluči za svaku.",
+        "kept": "Zadržana stavka: ovakvu zamjenu ne možeš odobriti. Vrati se na zamjenu ili je odbij.",
+        "back": "Natrag na zamjenu"
+      }
     },
     "resolution": {
       "back": "Za odluku · {count, plural, one {# čeka odluku} few {# čekaju odluku} other {# čeka odluku}}",

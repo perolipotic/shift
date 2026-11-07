@@ -62,6 +62,8 @@ import {
   SWAP_PROPOSAL,
   SWAP_PROPOSAL_KEYS,
   MY_SWAPS_KEYS,
+  SWAP_DECISION,
+  SWAP_DECISION_KEYS,
   ROTATION_DISPOSITION_KEYS,
   ROTATION_HISTORY_DIALOG,
   ROTATION_HISTORY_KEYS,
@@ -439,10 +441,13 @@ export const KEY_SOURCES = [
     // come through `@/features/swaps/services/my-swaps`, a key source.
     // NINETY-FIVE SINCE THE 12.3 REVIEW: the stale line for a row that can
     // only be withdrawn, and an unknown team's words.
+    // NINETY-SEVEN SINCE STORY 12.4: *Treba tebe*'s swap row — its kind
+    // (*Zamjena smjene*) and the proposer → the colleague. Its shifts are the
+    // queue's own `SwapShifts`, counted on *Za odluku*.
     name: 'the Danas destination',
     file: DANAS,
     keys: translationKeys,
-    strings: 95,
+    strings: 97,
   },
   {
     // STORY 6.1a: today's three cases, the next shift's two headings, and
@@ -892,6 +897,31 @@ export const KEY_SOURCES = [
     strings: 14,
   },
   {
+    // STORY 12.4. On one swap's decision screen, through `t('…')`: the way
+    // back, the heading, the missing and unavailable lines with the retry,
+    // the parties, a shift and the two shifts, the preview's heading, its
+    // who-works lines, each member's hours with a month, no change and the
+    // signed delta's duration, less or more, the leave and double-booking
+    // warnings, the preview that cannot be derived, the past and stale lines,
+    // the decided line with its admin (or one no longer a member), the
+    // unchecked refusal and its retry, *Odbij* and *Odobri* with the
+    // approval's reason, and the erasure confirmation's words. The status
+    // words and the refusals come through the rules below.
+    name: 'the swap decision screen',
+    file: SWAP_DECISION,
+    keys: translationKeys,
+    strings: 40,
+  },
+  {
+    // STORY 12.4: the decision screen's seven status words, off
+    // `swapStatusMessageKey`, and its seven refusals, off
+    // `swapDecisionFailureMessageKey`.
+    name: 'the swap decision rules',
+    file: SWAP_DECISION_KEYS,
+    keys: messageKeyUnions,
+    strings: 14,
+  },
+  {
     // B449: what an empty day or month says — inactive, or on no team — for
     // a day, the viewer's month and a chosen person's. `memberListKeys`, for
     // the module's TWO unions.
@@ -1076,7 +1106,14 @@ export const KEY_SOURCES = [
     // who decided it and when, with the words for an admin no longer there.
     // THIRTY-SIX SINCE 0041: a request closed on its member's deactivation,
     // *Zatvoren deaktivacijom*, as its own outcome.
-    strings: 36,
+    // FORTY-EIGHT SINCE STORY 12.4: a waiting swap's row on Čeka odluku and a
+    // decided swap's on Odlučeno — each its kind (*Zamjena smjene*) and the
+    // proposer → the colleague — the swap's shifts written once
+    // (`SwapShifts`: a shift, and the given and return shifts together), and
+    // on Odlučeno its three outcomes (*Odobrena*, *Nije odobrena*,
+    // *Zatvorena deaktivacijom*) and *Zamjena je naknadno izmijenjena u
+    // kalendaru.*
+    strings: 48,
   },
   {
     // STORY 5.4b. On one conflict's screen, through `t('…')`: the way back
@@ -1120,10 +1157,11 @@ export const KEY_SOURCES = [
     // calendar's public `utils/replacement-candidates`, counted there.
     // TWENTY-TWO SINCE STORY 9.4: the status line for a leave request
     // approved or rejected on its own screen, in the same slot.
+    // TWENTY-FOUR SINCE STORY 12.4: and for a swap approved or rejected.
     name: 'the conflict resolution rules',
     file: RESOLUTION_SCREEN_KEYS,
     keys: messageKeyUnions,
-    strings: 22,
+    strings: 24,
   },
   {
     // STORY 9.4. On one leave request's decision screen, through `t('…')`:

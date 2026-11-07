@@ -2,6 +2,7 @@ import type { Locator } from '@playwright/test';
 
 import { escapeRegExp, fill, hr, plural } from '../utils/i18n.ts';
 import { BasePage } from './base.page.ts';
+import { ErasureDialogParts } from './erasure-dialog.ts';
 
 const zaOdluku = hr.zaOdluku;
 
@@ -266,5 +267,59 @@ export class LeaveRequestReviewPage extends BasePage {
   /** The closed line of a decided request, exactly: `{admin} · 20.10.2026 u 14:05`, as it was stored. */
   decidedLine(actor: string, date: string, time: string): Locator {
     return this.line(fill(request.decided, { actor, date, time }));
+  }
+}
+
+const swapDecision = zaOdluku.swap;
+
+/**
+ * `/za-odluku/zamjena/$requestId`: one swap's decision screen (story 12.4) —
+ * the way back, both members and the shifts, what approval does, and *Odbij*
+ * and *Odobri*; read-only for a swap no longer waiting. Its row on *Za
+ * odluku* is found by the members it names ({@link SwapDecisionPage.queueRows}).
+ */
+export class SwapDecisionPage extends BasePage {
+  readonly path = '/za-odluku/zamjena';
+
+  /** Opens the screen of the swap `requestId`. */
+  async gotoSwap(requestId: string): Promise<void> {
+    await this.page.goto(`${this.path}/${requestId}`);
+  }
+
+  /** The screen's h1. */
+  get swapHeading(): Locator {
+    return this.heading(swapDecision.heading, { exact: true });
+  }
+
+  /** *Odobri*. */
+  get approveButton(): Locator {
+    return this.page.getByRole('main').getByRole('button', { name: swapDecision.approve, exact: true });
+  }
+
+  /** *Odbij*. */
+  get rejectButton(): Locator {
+    return this.page.getByRole('main').getByRole('button', { name: swapDecision.reject, exact: true });
+  }
+
+  /** A line of the screen's main region, by its exact words. */
+  line(words: string): Locator {
+    return this.page.getByRole('main').getByText(words, { exact: true });
+  }
+
+  /** The approval's erasure confirmation (AD-5): the shared dialog in the swap screen's words. */
+  get erasures(): ErasureDialogParts {
+    return new ErasureDialogParts(this.page, {
+      title: swapDecision.erasures.title,
+      confirm: hr.kalendar.detail.rosterChange.erasures.confirm,
+      keep: hr.kalendar.detail.rosterChange.erasures.keep,
+      back: swapDecision.erasures.back,
+      kept: swapDecision.erasures.kept,
+      save: swapDecision.approve,
+    });
+  }
+
+  /** *Za odluku*'s rows naming `parties` (`Ivo → Karlo`), in the queue's region. */
+  queueRows(parties: string): Locator {
+    return this.page.getByRole('main').getByRole('region').getByRole('listitem').filter({ hasText: parties });
   }
 }
