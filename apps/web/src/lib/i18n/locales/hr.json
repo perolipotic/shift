@@ -1856,6 +1856,18 @@
       "subject": "Zamjena {date} je odbijena",
       "body": "{organizationName}: tvoj prijedlog zamjene smjene {date} je odbijen. Pogledaj u aplikaciji: {link}"
     },
+    "swapRequestWaiting": {
+      "subject": "Nova zamjena za odluku: {proposerName} → {addresseeName}",
+      "body": "{organizationName}: zamjena smjene {date}, {proposerName} → {addresseeName}. Čeka tvoju odluku: {link}"
+    },
+    "swapRequestApproved": {
+      "subject": "Zamjena {date} je odobrena",
+      "body": "{organizationName}: zamjena smjene {date} je odobrena. Pogledaj u aplikaciji: {link}"
+    },
+    "swapRequestRejected": {
+      "subject": "Zamjena {date} nije odobrena",
+      "body": "{organizationName}: zamjena smjene {date} nije odobrena. Pogledaj u aplikaciji: {link}"
+    },
     "footer": "Obavijesti e-poštom možeš isključiti u aplikaciji, pod Obavijesti: {link}"
   },
   "popunjenost": {

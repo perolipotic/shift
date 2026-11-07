@@ -3320,8 +3320,9 @@ describe('the access-control migration', () => {
       'story 12.1 puts a trigger on another table than its own and the status versions',
     ).toEqual(['swap_requests', 'member_status_versions']);
     // Every trigger any migration declares on the two swap tables, by name
-    // and timing: the lock, statement level, and (story 12.3b, 0050) the two
-    // AFTER row triggers that notify. A row-level BEFORE trigger, on any event
+    // and timing: the lock, statement level, (story 12.3b, 0050) the two
+    // AFTER row triggers that notify, and (story 12.4b, 0051) the two that
+    // notify the admin step. A row-level BEFORE trigger, on any event
     // and in any order of events, is a refusing trigger no story may add
     // (AD-3); an AFTER trigger is a later story's to list here.
     const swapTriggers = sqlStatements(statements)
@@ -3341,10 +3342,12 @@ describe('the access-control migration', () => {
       swapTriggers.filter((trigger) => trigger.timing === 'before' && trigger.row),
       'a row-level BEFORE trigger refuses a swap write',
     ).toEqual([]);
-    expect(swapTriggers, 'the swap tables carry a trigger other than the lock and 0050\'s two notifications').toEqual([
+    expect(swapTriggers, 'the swap tables carry a trigger other than the lock and the notifications of 0050 and 0051').toEqual([
       { name: 'swap_requests_serialize_organization_writes', timing: 'before', table: 'swap_requests', row: false },
       { name: 'swap_requests_notify_insert', timing: 'after', table: 'swap_requests', row: true },
       { name: 'swap_requests_notify_answer', timing: 'after', table: 'swap_requests', row: true },
+      { name: 'swap_requests_notify_waiting', timing: 'after', table: 'swap_requests', row: true },
+      { name: 'swap_request_decisions_notify_insert', timing: 'after', table: 'swap_request_decisions', row: true },
     ]);
 
     // STORY 12.3b (0050): one definer trigger function on two AFTER triggers,
@@ -3388,6 +3391,66 @@ describe('the access-control migration', () => {
       'revoke execute on function private.notify_swap_request() from public, anon, authenticated, service_role;',
     );
     expect(notifications, '0050 changes notify_members, 0049 or an earlier function').not.toMatch(/create or replace|alter table|drop /i);
+
+    // STORY 12.4b (0051): one definer trigger function on two AFTER triggers,
+    // callable by nobody, writing through `notify_members` alone: the admins
+    // on an accept, both members on an approval or a rejection.
+    const decisionNotifications = stripLineComments(
+      readFileSync(join(supabaseRoot, 'migrations', '0051_swap_request_decision_notifications.sql'), 'utf8'),
+    );
+    const decisionNotifier = /create function private\.notify_swap_request_decision\(\) returns trigger[\s\S]*?\$\$;/i.exec(
+      decisionNotifications,
+    )?.[0];
+    expect(decisionNotifier, 'notify_swap_request_decision is not declared').toBeDefined();
+    expect(decisionNotifier).toMatch(/security definer/i);
+    expect(decisionNotifier).toMatch(/set search_path = ''/);
+    expect(decisionNotifier, 'a swap row bypasses notify_members').not.toMatch(/notification_outbox/);
+    expect(decisionNotifier?.match(/private\.notify_members\(/g), 'the waiting and the decided notices each write once').toHaveLength(2);
+    for (const code of ['SWAP_REQUEST_WAITING', 'SWAP_REQUEST_APPROVED', 'SWAP_REQUEST_REJECTED']) {
+      expect(decisionNotifier).toContain(`'${code}'`);
+    }
+    expect(decisionNotifier, 'the function does not branch on the table that fired it').toMatch(
+      /if tg_table_name = 'swap_requests' then\s+swap := new;/,
+    );
+    expect(decisionNotifier, 'the decision does not read its swap in its own organization').toMatch(
+      /from public\.swap_requests r\s+where r\.organization_id = new\.organization_id\s+and r\.id = new\.request_id;/,
+    );
+    expect(decisionNotifier, 'the past rule does not read the organization\'s today').toMatch(
+      /today := public\.organization_today\(swap\.organization_id\);/,
+    );
+    expect(decisionNotifier, 'a swap is not live by its given date or its return date').toMatch(
+      /live := swap\.date >= today or \(swap\.return_date is not null and swap\.return_date >= today\);/,
+    );
+    expect(decisionNotifier, 'a wholly past swap is told').toMatch(/if today is null or not live then\s+return null;\s+end if;/);
+    expect(decisionNotifier, 'the waiting notice does not go to every admin (0043\'s set)').toMatch(
+      /where m\.organization_id = swap\.organization_id\s+and m\.role = 'admin';/,
+    );
+    expect(decisionNotifier, 'the waiting notice\'s operands are not the swap, both names and the date').toMatch(
+      /'SWAP_REQUEST_WAITING', swap\.id, admins,\s+pg_catalog\.jsonb_build_object\(\s+'requestId', swap\.id::text,\s+'proposerName', proposer,\s+'addresseeName', addressee,\s+'date', pg_catalog\.to_char\(swap\.date, 'YYYY-MM-DD'\)\s+\)/,
+    );
+    expect(decisionNotifier, 'an outcome other than approved or rejected falls through to a code').toMatch(
+      /case new\.outcome\s+when 'approved' then 'SWAP_REQUEST_APPROVED'\s+when 'rejected' then 'SWAP_REQUEST_REJECTED'\s+end;\s+if code is null then\s+return null;/,
+    );
+    const decided = decisionNotifier?.slice(decisionNotifier.indexOf('case new.outcome')) ?? '';
+    expect(decided, 'the decision is not told to both members by the swap\'s id').toMatch(
+      /private\.notify_members\(\s+swap\.organization_id, code, swap\.id, array\[swap\.proposer_id, swap\.addressee_id\],/,
+    );
+    expect(decided, 'a decision operand names a member, a team or a shift type (Q5)').not.toMatch(
+      /'(memberName|proposerName|addresseeName|teamName|shiftTypeName|name|requestId)'/,
+    );
+    expect(decided, 'the return date is not an ISO operand').toMatch(
+      /'returnDate', pg_catalog\.to_char\(swap\.return_date, 'YYYY-MM-DD'\)/,
+    );
+    expect(decisionNotifications, 'the waiting notice is not told on an accept of an open swap alone').toMatch(
+      /create trigger swap_requests_notify_waiting\s+after update of answer on public\.swap_requests\s+for each row\s+when \(old\.answer is null and new\.answer = 'accepted' and new\.closed_at is null\)\s+execute function private\.notify_swap_request_decision\(\);/,
+    );
+    expect(decisionNotifications, 'the decision is told on a deactivation close').toMatch(
+      /create trigger swap_request_decisions_notify_insert\s+after insert on public\.swap_request_decisions\s+for each row\s+when \(new\.outcome in \('approved', 'rejected'\)\)\s+execute function private\.notify_swap_request_decision\(\);/,
+    );
+    expect(decisionNotifications).toContain(
+      'revoke execute on function private.notify_swap_request_decision() from public, anon, authenticated, service_role;',
+    );
+    expect(decisionNotifications, '0051 changes notify_members, 0049, 0050 or an earlier function').not.toMatch(/create or replace|alter table|drop /i);
     expect(migration, 'story 12.1 writes outbox code').not.toMatch(/notify_members|notification_outbox/);
     expect(migration, 'story 12.1 changes roster_overrides, leave_requests or the access helper').not.toMatch(
       /alter table public\.(roster_overrides|leave_requests)|function public\.current_member_access/i,

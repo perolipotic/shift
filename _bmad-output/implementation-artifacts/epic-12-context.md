@@ -11,7 +11,9 @@ Today, members arrange swaps between themselves by phone, and the rota never fin
 - Story 12.1: The swap request record
 - Story 12.2: A member proposes a swap from the day detail
 - Story 12.3: The colleague accepts or declines
+- Story 12.3b: Swap proposed and answered notifications (split from 12.3, 0050)
 - Story 12.4: An admin decides a swap on its own screen
+- Story 12.4b: Swap waiting and decided notifications (split from 12.4 on 2026-11-07, 0051)
 
 ## Requirements & Constraints
 
@@ -48,7 +50,8 @@ Today, members arrange swaps between themselves by phone, and the rota never fin
 
 ## Cross-Story Dependencies
 
+- 12.3b depends on 12.3; 12.4b depends on 12.4 (the `/za-odluku/zamjena/$requestId` route its admin notice links to) and on 12.3b (0050's pattern and the `notify` split).
 - 12.1 depends on 9.2 (the request pattern and the self-owned policy). 12.2 depends on 12.1, 12.3 on 12.2, and 12.4 on 12.3 and on 11.1 (the staffing rule, shipped).
 - 12.4 reuses Epic 3/5's roster override write path and its AD-5 guard. It also reuses 9.4's decision screen and 9.5's queue and *Odlučeno*.
-- Epic 10's outbox gains the swap events listed under Notifications (deferred from 10.2).
+- Epic 10's outbox gains the swap events listed under Notifications (deferred from 10.2): 12.3b (0050) the proposed and answered notices; 12.4b (0051) the waits-for-a-decision notice to admins and the decided notice to both members.
 - Epic 14's change history will read the swap's attributed rows.

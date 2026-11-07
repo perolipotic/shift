@@ -415,8 +415,9 @@ export async function removeLeaveMemberInSql(slug: string, memberId: string): Pr
                              select id from leave_records where organization_id = $1 and member_id = $2)`,
       scope,
     );
-    // Story 12.3b: the notifications their swaps wrote to the OTHER party
-    // (0050), which no recipient key of this member removes.
+    // Stories 12.3b and 12.4b: the notifications their swaps wrote to the
+    // OTHER party and to the admins (0050, 0051), which no recipient key of
+    // this member removes.
     await client.query(
       `delete from notification_outbox
         where organization_id = $1
@@ -1532,8 +1533,8 @@ export async function removeTeamInSql(slug: string, teamId: string): Promise<voi
     await client.query('begin');
     const scope = [slug, teamId];
     // Story 12.4: a swap names its given and return team by a key that does
-    // not cascade (0049). Its notifications (0050), then its decision, then
-    // the swap itself.
+    // not cascade (0049). Its notifications (0050, 0051), then its decision,
+    // then the swap itself.
     const naming = `select r.id from swap_requests r join organizations o on o.id = r.organization_id
                      where o.slug = $1 and (r.team_id = $2 or r.return_team_id = $2)`;
     await client.query(`delete from notification_outbox where subject_id in (${naming})`, scope);
@@ -1837,8 +1838,8 @@ export async function removeSeededRotation(seeded: SeededRotation): Promise<void
     ]);
     // Before the overrides, too: an approved swap's decision keys to the
     // overrides its approval wrote (0049, no cascade). The decision goes, and
-    // its swap with it (and the swap's notifications, 0050), so no closed
-    // swap is left that reads as withdrawn.
+    // its swap with it (and the swap's notifications, 0050 and 0051), so no
+    // closed swap is left that reads as withdrawn.
     await client.query(
       `delete from notification_outbox
         where organization_id = $1
