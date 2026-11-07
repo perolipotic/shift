@@ -2661,8 +2661,7 @@ const SHORT_STAFFED_KEYS: readonly string[] = ['popunjenost.heading', 'popunjeno
 
 /**
  * Stories 12.3b and 12.4b, the swap notifications: `smjen` names the swapped
- * shift (a team's rostered shift, *zamjena smjene {date}*, *preuzima smjenu
- * {date}*), as on *Danas*'s *Zamjene* card, and `tip… smjen…` is refused. SIX
+ * shift (a team's rostered shift, *zamjena smjene {date}*), as on *Danas*'s *Zamjene* card, and `tip… smjen…` is refused. SIX
  * KEYS, the bodies; the subjects name no shift.
  */
 const SWAP_NOTIFICATION_KEYS: readonly string[] = [

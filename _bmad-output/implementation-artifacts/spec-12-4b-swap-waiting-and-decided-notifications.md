@@ -2,7 +2,7 @@
 title: 'Admins are told a swap waits for them, and both members are told it was decided'
 type: 'feature'
 created: '2026-11-07'
-status: 'in-review'
+status: 'done'
 baseline_commit: 'e80a4a9bc3575ecf3ea7d38e8224635adf83fa5b'
 review_loop_iteration: 0
 context:
@@ -28,7 +28,7 @@ context:
 - **Recipient rules** are `notify_members`'s: never the session's own member, active today, email only with an address, push only with a device, and the email switch. An admin who is a party is an admin like any other.
 - **A wholly past swap notifies nobody**, by 0050's `live` rule (the given date, or the return date if any, ≥ `organization_today`).
 - **Messages**, written in `hr.json` `obavijesti` first, then copied to `messages.ts`:
-  - `swapRequestWaiting`: "Nova zamjena za odluku: {proposerName} → {addresseeName}" / "{organizationName}: {addresseeName} preuzima smjenu {date} od {proposerName}. Zamjena čeka tvoju odluku: {link}". It links to `/za-odluku/zamjena/{requestId}`, and a missing or non-UUID `requestId` gives `OPERANDS_INVALID`, as `leaveRequestCreated` does.
+  - `swapRequestWaiting`: "Nova zamjena za odluku: {proposerName} → {addresseeName}" / "{organizationName}: zamjena smjene {date}, {proposerName} → {addresseeName}. Čeka tvoju odluku: {link}". It links to `/za-odluku/zamjena/{requestId}`, and a missing or non-UUID `requestId` gives `OPERANDS_INVALID`, as `leaveRequestCreated` does.
   - `swapRequestApproved`: "Zamjena {date} je odobrena" / "{organizationName}: zamjena smjene {date} je odobrena. Pogledaj u aplikaciji: {link}". It links to `/danas`.
   - `swapRequestRejected`: "Zamjena {date} nije odobrena" / "{organizationName}: zamjena smjene {date} nije odobrena. Pogledaj u aplikaciji: {link}". It links to `/danas`.
 - 0043's `ROSTER_PUT_ON` / `ROSTER_TAKEN_OFF` notices for the approval's overrides stay as they are (product owner, 2026-11-07).
@@ -57,6 +57,7 @@ context:
 
 - **Reinterpreted.** 10.2 says: "their shifts change by … a swap … Then they receive one email". An approval writes `SWAP_REQUEST_APPROVED` and 0043's roster notice, which is one per override. The product owner chose to keep both on 2026-11-07. A leave approval suppresses `LEAVE_RECORDED`; a swap approval does not.
 - **Narrowed.** 10.2 says: "a new item in *Za odluku* … every admin … receives one email". This holds under `notify_members`'s rules (active today, never the writer's own member), as for `LEAVE_REQUEST_CREATED`.
+- **Narrowed.** A swap whose dates are all past still enters *Za odluku* but notifies no admin (0043's rule, product owner 2026-11-07).
 
 </frozen-after-approval>
 
@@ -87,6 +88,10 @@ context:
 **Acceptance Criteria:**
 - Given the change, when typecheck, lint and the no-DB tests run, then they pass.
 - Given CI's migrated stack, when rls-isolation and provisioning run, then every matrix row holds on both fixtures.
+
+## Spec Change Log
+
+- 2026-11-07, after review (PR #281): the product owner authorized and approved two edits to the frozen block. (1) The `swapRequestWaiting` body was "{addresseeName} preuzima smjenu {date} od {proposerName}…", which put a nominative name after *od* ("od Ana Kovač", where Croatian needs the genitive). It is now "zamjena smjene {date}, {proposerName} → {addresseeName}. Čeka tvoju odluku: {link}", with no preposition before a name; the subject is unchanged. (2) Epic AC Deviations gains the past-swap narrowing of 10.2's admin AC, which the epic AC auditor found unlisted. KEEP: the migration and the past rule are unchanged; only the text and the documentation moved.
 
 ## Design Notes
 

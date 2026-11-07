@@ -470,7 +470,7 @@ const EVERY_CODE: readonly {
     operands: { requestId: REQUEST_ID, proposerName: 'Ana Kovač', addresseeName: 'Ivo Babić', date: '2046-03-02' },
     path: `/za-odluku/zamjena/${REQUEST_ID}`,
     subject: 'Nova zamjena za odluku: Ana Kovač → Ivo Babić',
-    text: `${ORGANIZATION_NAME}: Ivo Babić preuzima smjenu 02.03.2046 od Ana Kovač. Zamjena čeka tvoju odluku: {link}`,
+    text: `${ORGANIZATION_NAME}: zamjena smjene 02.03.2046, Ana Kovač → Ivo Babić. Čeka tvoju odluku: {link}`,
   },
   {
     code: 'SWAP_REQUEST_APPROVED',

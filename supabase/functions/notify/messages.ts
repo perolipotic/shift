@@ -98,7 +98,7 @@ export const OBAVIJESTI = {
   },
   swapRequestWaiting: {
     subject: 'Nova zamjena za odluku: {proposerName} → {addresseeName}',
-    body: '{organizationName}: {addresseeName} preuzima smjenu {date} od {proposerName}. Zamjena čeka tvoju odluku: {link}',
+    body: '{organizationName}: zamjena smjene {date}, {proposerName} → {addresseeName}. Čeka tvoju odluku: {link}',
   },
   swapRequestApproved: {
     subject: 'Zamjena {date} je odobrena',
