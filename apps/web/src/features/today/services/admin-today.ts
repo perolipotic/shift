@@ -30,6 +30,7 @@ import {
   CONFLICTS_READY,
   ITEM_COLLISION,
   ITEM_REQUEST,
+  ITEM_SWAP,
   collisionRowsOf,
   conflictsQueueOf,
   resolutionsOf,
@@ -41,6 +42,7 @@ import { ACCEPT_UNCOVERED, REPLACE_MEMBER } from '@/features/conflicts/services/
 import { organizationLeaveRecordsOf, type OrganizationLeaveRecord } from '@/features/leave/services/leave-list';
 import type { MemberRole } from '@/features/navigation/utils/destinations';
 import { minimumOfCalendar, staffingInputOf } from '@/features/staffing/services/short-staffed';
+import type { SwapShiftNamed } from '@/features/swaps/services/organization-swaps';
 import {
   CASE_DUTY,
   CASE_FREE,
@@ -64,12 +66,13 @@ import { datesFrom, dayAfter } from '@/utils/dates';
  * `CALENDAR_KEY`, the organization's live leave under
  * `ORGANIZATION_LEAVE_RECORDS_KEY`, its live resolutions under
  * `ORGANIZATION_CONFLICT_RESOLUTIONS_KEY` and its leave requests under
- * `ORGANIZATION_LEAVE_REQUESTS_KEY` (story 9.5) — the four *Za odluku* reads, through
- * the same query options — and `conflictsQueueOf` decides loading,
+ * `ORGANIZATION_LEAVE_REQUESTS_KEY` (story 9.5) and its swaps under
+ * `ORGANIZATION_SWAP_REQUESTS_KEY` (story 12.4) — the five *Za odluku* reads,
+ * through the same query options — and `conflictsQueueOf` decides loading,
  * unavailable and ready. The count IS the queue's `view.count` — unresolved
- * collisions and pending requests — and every row of *Treba tebe* is one of
- * the queue's rows, of either kind, so the card equals *Za odluku* at every
- * count, 0 included.
+ * collisions, pending requests and waiting swaps — and every row of *Treba
+ * tebe* is one of the queue's rows, of any kind, so the card equals *Za
+ * odluku* at every count, 0 included.
  *
  * THE CALENDAR'S OWN DERIVATIONS for the rest. The week is
  * `calendarMonthOutcomeOf`'s cells under the admin's marks
@@ -170,12 +173,32 @@ export interface NeedsYouRequestRow {
   readonly badge: NeedsYouBadge | null;
 }
 
-/** One of the queue's rows, as *Treba tebe* lists it: a collision or a pending request. */
-export type NeedsYouRow = NeedsYouCollisionRow | NeedsYouRequestRow;
+/** One of the queue's waiting swaps, as *Treba tebe* lists it (story 12.4). */
+export interface NeedsYouSwapRow {
+  readonly kind: typeof ITEM_SWAP;
+  readonly key: string;
+  /** What opens the row's decision screen. */
+  readonly requestId: string;
+  /** The earlier of its dates. */
+  readonly date: string;
+  /** `srijeda` */
+  readonly weekday: string;
+  /** `30.09.` */
+  readonly dayMonth: string;
+  readonly proposerName: string;
+  readonly addresseeName: string;
+  readonly given: SwapShiftNamed;
+  readonly returnShift: SwapShiftNamed | null;
+  /** `prošlo`, `danas`, or none for a later date. */
+  readonly badge: NeedsYouBadge | null;
+}
+
+/** One of the queue's rows, as *Treba tebe* lists it: a collision, a pending request or a waiting swap. */
+export type NeedsYouRow = NeedsYouCollisionRow | NeedsYouRequestRow | NeedsYouSwapRow;
 
 /** *Treba tebe*: the queue's count, its past share and its earliest rows. */
 export interface NeedsYou {
-  /** The queue's `view.count`: every unresolved conflict and pending request, past ones included. */
+  /** The queue's `view.count`: every unresolved conflict, pending request and waiting swap, past ones included. */
   readonly count: number;
   /** How many of them are dated before today: a subset of `count`, never an addition. */
   readonly pastCount: number;
@@ -390,7 +413,7 @@ export type AdminToday =
   | { readonly kind: typeof ADMIN_TODAY_READY; readonly view: AdminTodayView };
 
 /**
- * What *Danas* shows an admin from the queue's four reads at `now`: the
+ * What *Danas* shows an admin from the queue's five reads at `now`: the
  * queue's own gating first — unavailable when a read failed or is paused, or
  * the queue refused its rows; loading while a read is pending — and then
  * {@link adminTodayViewOf}, unavailable when it throws a `RangeError`, logged.
@@ -528,6 +551,22 @@ export function needsYouOf(queueRows: readonly QueueRow[], count: number, today:
     earliestPast: earliest === undefined ? null : dayMonthOf(earliest.date),
     rows: ordered.slice(0, NEEDS_YOU_ROWS).map((row): NeedsYouRow => {
       const badge = row.past ? BADGE_PAST : row.date === today ? BADGE_TODAY : null;
+
+      if (row.kind === ITEM_SWAP) {
+        return {
+          kind: ITEM_SWAP,
+          key: row.key,
+          requestId: row.requestId,
+          date: row.date,
+          weekday: weekdayOf(row.date),
+          dayMonth: dayMonthOf(row.date),
+          proposerName: row.proposerName,
+          addresseeName: row.addresseeName,
+          given: row.given,
+          returnShift: row.returnShift,
+          badge,
+        };
+      }
 
       if (row.kind === ITEM_REQUEST) {
         return {

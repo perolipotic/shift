@@ -4,7 +4,8 @@ import { useId, type ReactNode } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { CaretRight, CheckCircle, Warning } from '@/components/ui/icon';
-import { ITEM_REQUEST } from '@/features/conflicts/services/conflicts-queue';
+import { SwapShifts } from '@/features/conflicts/components/swap-shifts';
+import { ITEM_REQUEST, ITEM_SWAP } from '@/features/conflicts/services/conflicts-queue';
 import {
   needsYouBadgeMessageKey,
   needsYouShiftMessageKey,
@@ -30,9 +31,34 @@ function dateLineOf(row: NeedsYouRow, kind: string): ReactNode {
  * item's kind; for a collision the type and team and the member, the whole
  * row the link to its resolution screen; for a pending leave request (story
  * 9.5) the member and then the range, the whole row the link to its decision
- * screen — drawn as *Za odluku*'s request row is, with the same chevron.
+ * screen — drawn as *Za odluku*'s request row is, with the same chevron; for
+ * a waiting swap (story 12.4) the proposer → the colleague and the shifts,
+ * the whole row the link to the swap's decision screen.
  */
 function renderRow(row: NeedsYouRow): ReactNode {
+  if (row.kind === ITEM_SWAP) {
+    return (
+      <li key={row.key} className="min-w-0">
+        <Link
+          to="/za-odluku/zamjena/$requestId"
+          params={{ requestId: row.requestId }}
+          className="flex min-h-11 min-w-0 items-center gap-3 rounded-md border bg-card p-3 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <span className="grid min-w-0 flex-1 gap-0.5">
+            {dateLineOf(row, t('zaOdluku.kind.swap'))}
+            <span className="min-w-0 break-words font-medium">
+              {t('zaOdluku.swap.parties', { proposer: row.proposerName, addressee: row.addresseeName })}
+            </span>
+            <span className="min-w-0 break-words text-sm text-muted-foreground tabular-nums">
+              <SwapShifts given={row.given} returnShift={row.returnShift} />
+            </span>
+          </span>
+          <CaretRight aria-hidden className="size-4 shrink-0" />
+        </Link>
+      </li>
+    );
+  }
+
   if (row.kind === ITEM_REQUEST) {
     return (
       <li key={row.key} className="min-w-0">

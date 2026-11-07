@@ -1288,6 +1288,18 @@ describe('no read retry offline, on any surface (story 8.2e)', () => {
     );
   });
 
+  // STORY 12.4: the organization's swaps are one of the queue's reads too, so
+  // every surface that counts the queue re-reads them from its retry.
+  it.each([
+    'features/conflicts/hooks/use-conflicts-queue.ts',
+    'features/conflicts/hooks/use-conflict-resolution.ts',
+    'features/today/hooks/use-admin-today.ts',
+  ])('re-reads the organization\'s swaps from the read retry in %s', (file) => {
+    expect(source(join(srcRoot, file))).toMatch(
+      /function retry\(\): void \{\s*for \(const queryKey of \[[^\]]*ORGANIZATION_SWAP_REQUESTS_KEY,[^\]]*\]\)/,
+    );
+  });
+
   // STORY 12.3: the viewer's own swaps are one of *Danas*'s reads, and a
   // member's *Kalendar* reads them beside its month (never gating it, product
   // owner 2026-11-06), so each surface's retry re-reads them too.

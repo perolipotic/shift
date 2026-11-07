@@ -75,6 +75,7 @@ import { SmjenaScreen, smjenaRoute } from '@/pages/smjene.$id';
 import { ZaOdlukuScreen, zaOdlukuRoute } from '@/pages/za-odluku';
 import { ZaOdlukuCollisionScreen, zaOdlukuCollisionRoute } from '@/pages/za-odluku.$memberId.$date.$teamId';
 import { ZaOdlukuRequestScreen, zaOdlukuRequestRoute } from '@/pages/za-odluku.zahtjev.$requestId';
+import { ZaOdlukuSwapScreen, zaOdlukuSwapRoute } from '@/pages/za-odluku.zamjena.$requestId';
 import type { AppRouterContext } from '@/pages/__root';
 import { rootRoute } from '@/pages/__root';
 import { READ_TIMED_OUT, withinTimeBudget } from '@/utils/time-budget';
@@ -320,6 +321,14 @@ const LEVEL_GUARDED_ROUTES = [
     route: zaOdlukuRequestRoute,
     component: ZaOdlukuRequestScreen,
   },
+  // STORY 12.4: one swap's decision screen, admin-only, a copy of the same
+  // guard, and not a destination.
+  {
+    id: '/_app/za-odluku/zamjena/$requestId',
+    path: '/za-odluku/zamjena/$requestId',
+    route: zaOdlukuSwapRoute,
+    component: ZaOdlukuSwapScreen,
+  },
   // STORY 9.1: the queue's old URLs. No screen of their own: past the guard an
   // admin is redirected to the `/za-odluku` twin, which the cases below
   // assert instead of a component.
@@ -467,6 +476,8 @@ describe('the shell route tree', () => {
       '/_app/za-odluku/$memberId/$date/$teamId',
       // STORY 9.4. One leave request's decision screen, reached by URL until 9.5.
       '/_app/za-odluku/zahtjev/$requestId',
+      // STORY 12.4. One swap's decision screen, reached from the queue and Danas.
+      '/_app/za-odluku/zamjena/$requestId',
       // STORY 7.8. The first sign-in's set-password step: a root route, outside
       // the layout whose guard sends a flagged session to it.
       '/postavi-lozinku',
@@ -1660,6 +1671,7 @@ describe('the signed-in layout guards every destination once, and is pathless', 
         '/za-odluku',
         '/za-odluku/$memberId/$date/$teamId',
         '/za-odluku/zahtjev/$requestId',
+        '/za-odluku/zamjena/$requestId',
         '/raspored',
         '/raspored/$memberId/$date/$teamId',
         '/ljudi/$id',
@@ -1686,6 +1698,8 @@ describe('the signed-in layout guards every destination once, and is pathless', 
         '/za-odluku/member-1/2026-10-21/team-1',
         // Story 9.4: one leave request's decision screen.
         '/za-odluku/zahtjev/request-1',
+        // Story 12.4: one swap's decision screen.
+        '/za-odluku/zamjena/request-1',
         // Story 9.1: the old URLs, so an offline bookmark reaches their redirect.
         '/raspored',
         '/raspored/member-1/2026-10-21/team-1',
@@ -2394,8 +2408,9 @@ describe('/ljudi decides its content by permission level, and the admin screens 
       // TWELVE SINCE STORY 5.4b. ELEVEN AGAIN SINCE STORY 7.17: `/ljudi` is
       // role-scoped, and driven by the cases above instead. THIRTEEN SINCE
       // STORY 9.1: the queue's two old URLs, now redirects. FOURTEEN SINCE
-      // STORY 9.4: one leave request's decision screen.
-      expect(LEVEL_GUARDED_ROUTES).toHaveLength(14);
+      // STORY 9.4: one leave request's decision screen. FIFTEEN SINCE STORY
+      // 12.4: one swap's decision screen.
+      expect(LEVEL_GUARDED_ROUTES).toHaveLength(15);
       for (const { path, route } of LEVEL_GUARDED_ROUTES) {
         expect(
           (route.options as { beforeLoad?: unknown }).beforeLoad,
@@ -2772,6 +2787,32 @@ describe("a leave request's decision screen is admin-only and not a destination 
       expect(destinationsFor(role).map((destination) => destination.path)).not.toContain('/za-odluku/zahtjev/$requestId');
     }
     expect(DESTINATION_ROUTES.map((destination) => destination.path)).not.toContain('/za-odluku/zahtjev/$requestId');
+  });
+});
+
+describe("a swap's decision screen is admin-only and not a destination (story 12.4)", () => {
+  it('resolves /za-odluku/zamjena/$requestId inside the signed-in layout, to its own screen, never as a conflict', () => {
+    expect(match('/za-odluku/zamjena/11111111-1111-4111-8111-111111111111').map((matched) => matched.routeId)).toEqual([
+      '__root__',
+      '/_app',
+      '/_app/za-odluku/zamjena/$requestId',
+    ]);
+    expect((zaOdlukuSwapRoute.options as { component?: unknown }).component).toBe(ZaOdlukuSwapScreen);
+    // A conflict's four segments still resolve to its own screen.
+    expect(match('/za-odluku/zamjena/2026-10-02/t-1').at(-1)?.routeId).toBe('/_app/za-odluku/$memberId/$date/$teamId');
+  });
+
+  it("carries the queue's admin guard", () => {
+    expect((zaOdlukuSwapRoute.options as { beforeLoad?: unknown }).beforeLoad).toBe(
+      (zaOdlukuRoute.options as { beforeLoad?: unknown }).beforeLoad,
+    );
+  });
+
+  it('is in neither destination list, so the Za odluku tab lights for it', () => {
+    for (const role of MEMBER_ROLES) {
+      expect(destinationsFor(role).map((destination) => destination.path)).not.toContain('/za-odluku/zamjena/$requestId');
+    }
+    expect(DESTINATION_ROUTES.map((destination) => destination.path)).not.toContain('/za-odluku/zamjena/$requestId');
   });
 });
 

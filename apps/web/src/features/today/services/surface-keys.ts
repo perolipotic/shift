@@ -12,6 +12,7 @@ import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
 import type { MemberRole } from '@/features/navigation/utils/destinations';
 import { ORGANIZATION_SNAPSHOT_KEY } from '@/features/organization/services/snapshot';
 import { MY_SWAP_REQUESTS_KEY } from '@/features/swaps/services/my-swaps';
+import { ORGANIZATION_SWAP_REQUESTS_KEY } from '@/features/swaps/services/organization-swaps';
 
 /**
  * What `useToday` reads for every role: the calendar, the own leave and
@@ -30,8 +31,9 @@ const OWN_KEYS: readonly QueryKey[] = [
 /**
  * *Danas*'s reads as one snapshot (story 8.2): the keys its freshness is
  * decided over. `useToday`'s six for every role; for an admin, also
- * `useAdminToday`'s organization leave, resolutions and leave requests (story
- * 9.5: *Treba tebe* counts pending requests), since the page shows
+ * `useAdminToday`'s organization leave, resolutions, leave requests (story
+ * 9.5: *Treba tebe* counts pending requests) and swaps (story 12.4: and the
+ * swaps waiting for an admin), since the page shows
  * both hooks' figures and they are one surface. The role is the snapshot's
  * or the chrome's cached one; the member's keys while neither answers.
  */
@@ -47,6 +49,7 @@ const ADMIN_KEYS: readonly QueryKey[] = [
   ORGANIZATION_LEAVE_RECORDS_KEY,
   ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
   ORGANIZATION_LEAVE_REQUESTS_KEY,
+  ORGANIZATION_SWAP_REQUESTS_KEY,
 ];
 
 /** The member body's snapshot (story 12.3), which *Zamjene* decides its reads over there. */

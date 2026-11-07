@@ -7,6 +7,7 @@ import { overrideStandingOfCalendar, typeRangeOn, workingShiftTypeIdsOf } from '
 import {
   ITEM_COLLISION,
   ITEM_REQUEST,
+  ITEM_SWAP,
   liveResolutionsOf,
   queueReadFailed,
   type LeaveRowsAnswer,
@@ -20,6 +21,7 @@ import {
   type LeaveRecordChange,
 } from '@/features/leave/services/leave-request-list';
 import { leaveRangeValuesOf } from '@/features/leave/services/leave-section';
+import { decidedSwapsOf, type SwapOutcome, type SwapShiftNamed } from '@/features/swaps/services/organization-swaps';
 import { formatDate, formatIsoDate, formatTime } from '@/lib/i18n/format';
 
 /**
@@ -54,6 +56,15 @@ import { formatDate, formatIsoDate, formatTime } from '@/lib/i18n/format';
  * admin and instant its decision row stores (`decided_by`, `decided_at`). A withdrawn request was never decided
  * and is not listed; a pending one waits on *Čeka odluku*. Still a read of
  * stored decisions only — never a history.
+ *
+ * DECIDED SWAPS BESIDE THEM (story 12.4, UX-DR52): every approved or
+ * rejected swap of the organization, and every one closed on a member's
+ * deactivation, from the queue's own swap read, with its outcome, both
+ * members, the shifts, and the deciding admin and instant its decision row
+ * stores. An approved swap whose override is no longer live in the snapshot
+ * — amended or removed since — says so (derived on read; the entry is still
+ * the stored decision). A withdrawn or declined swap was never decided and
+ * is not listed.
  *
  * ORDER: most recently decided first, by the instant, then by key.
  * NEVER A PARTIAL LIST, as the queue's: an untrustworthy row refuses the tab.
@@ -119,8 +130,31 @@ export interface ResolvedRequestRow {
   readonly decidedAt: string;
 }
 
-/** One entry of *Odlučeno*: a resolved conflict or a decided request (story 9.5). */
-export type ResolvedRow = ResolvedConflictRow | ResolvedRequestRow;
+/** One decided swap as the tab shows it (story 12.4). */
+export interface ResolvedSwapRow {
+  readonly item: typeof ITEM_SWAP;
+  /** `swap:` and the swap's id: unique per row, and never another kind's key. */
+  readonly key: string;
+  /** Approved, rejected, or closed on a member's deactivation. */
+  readonly outcome: SwapOutcome;
+  /** An approved swap whose override was amended or removed in the calendar since; false otherwise. */
+  readonly changedLater: boolean;
+  /** The earlier of its dates, `05.10.2026`: the row's leading date. */
+  readonly dateShown: string;
+  readonly proposerName: string;
+  readonly addresseeName: string;
+  readonly given: SwapShiftNamed;
+  readonly returnShift: SwapShiftNamed | null;
+  /** The deciding admin's name, or `null` when they are no longer a member. */
+  readonly actorName: string | null;
+  /** `12.09.2026`, in the organization's zone. */
+  readonly decidedOn: string;
+  /** `19:00`, in the organization's zone. */
+  readonly decidedAt: string;
+}
+
+/** One entry of *Odlučeno*: a resolved conflict, a decided request (story 9.5) or a decided swap (story 12.4). */
+export type ResolvedRow = ResolvedConflictRow | ResolvedRequestRow | ResolvedSwapRow;
 
 export interface ResolvedConflictsView {
   readonly rows: readonly ResolvedRow[];
@@ -270,8 +304,38 @@ function decidedRequestsOf(
 }
 
 /**
+ * The decided swaps among the swap rows as read (story 12.4), each with its
+ * instant, named from the snapshot and the acting admins.
+ *
+ * @throws RangeError when a swap row cannot be trusted, or names a member or team the snapshot lacks.
+ */
+function resolvedSwapsOf(
+  snapshot: CalendarSnapshot,
+  swapRows: readonly unknown[],
+  actors: ReadonlyMap<string, string>,
+): readonly { readonly at: number; readonly shown: ResolvedSwapRow }[] {
+  return decidedSwapsOf(snapshot, swapRows, actors).map((swap) => ({
+    at: swap.at,
+    shown: {
+      item: ITEM_SWAP,
+      key: `swap:${swap.requestId}`,
+      outcome: swap.outcome,
+      changedLater: swap.changedLater,
+      dateShown: swap.dateShown,
+      proposerName: swap.proposerName,
+      addresseeName: swap.addresseeName,
+      given: swap.given,
+      returnShift: swap.returnShift,
+      actorName: swap.actorName,
+      decidedOn: swap.decidedOn,
+      decidedAt: swap.decidedAt,
+    },
+  }));
+}
+
+/**
  * The tab from the snapshot, the leave rows, the resolution rows, the
- * member rows and the request rows as read.
+ * member rows, the request rows and (story 12.4) the swap rows as read.
  *
  * @throws RangeError when a row cannot be trusted, a resolution lacks its
  *   instant or author, or on any precondition of the derivation.
@@ -282,6 +346,7 @@ export function resolvedConflictsViewOf(
   resolutionRows: readonly unknown[],
   actorRows: readonly unknown[],
   requestRows: readonly unknown[],
+  swapRows: readonly unknown[],
 ): ResolvedConflictsView {
   const records = organizationLeaveRecordsOf(
     leaveRows,
@@ -352,6 +417,7 @@ export function resolvedConflictsViewOf(
   const all: { readonly at: number; readonly shown: ResolvedRow }[] = [
     ...entries,
     ...decidedRequestsOf(snapshot, requestRows, actors),
+    ...resolvedSwapsOf(snapshot, swapRows, actors),
   ];
 
   all.sort((first, second) => second.at - first.at || (first.shown.key < second.shown.key ? -1 : 1));
@@ -428,9 +494,13 @@ export function resolvedConflictsOutcomeOf(
   resolutionRows: readonly unknown[],
   actorRows: readonly unknown[],
   requestRows: readonly unknown[],
+  swapRows: readonly unknown[],
 ): ResolvedConflictsOutcome {
   try {
-    return { ok: true, view: resolvedConflictsViewOf(snapshot, leaveRows, resolutionRows, actorRows, requestRows) };
+    return {
+      ok: true,
+      view: resolvedConflictsViewOf(snapshot, leaveRows, resolutionRows, actorRows, requestRows, swapRows),
+    };
   } catch (cause) {
     if (!(cause instanceof RangeError)) throw cause;
 
@@ -445,13 +515,15 @@ export type ResolvedConflicts =
   | { readonly kind: typeof RESOLVED_UNAVAILABLE }
   | { readonly kind: typeof RESOLVED_READY; readonly view: ResolvedConflictsView };
 
-/** The five reads the tab stands on. */
+/** The six reads the tab stands on. */
 export interface ResolvedConflictsSources {
   readonly calendar: CalendarSurfaceState;
   readonly records: LeaveRowsAnswer;
   readonly resolutions: LeaveRowsAnswer;
   /** The organization's leave requests (story 9.5): the decided ones are listed. */
   readonly requests: LeaveRowsAnswer;
+  /** The organization's swaps (story 12.4): the decided ones are listed. */
+  readonly swaps: LeaveRowsAnswer;
   readonly actors: LeaveRowsAnswer;
   /** Whether the calendar snapshot is being read again: a skew then waits for it, as the queue's. */
   readonly snapshotFetching?: boolean;
@@ -464,13 +536,14 @@ export interface ResolvedConflictsSources {
  * again, otherwise unavailable with its retry, never logged.
  */
 export function resolvedConflictsOf(sources: ResolvedConflictsSources): ResolvedConflicts {
-  const { calendar, records, resolutions, requests, actors } = sources;
+  const { calendar, records, resolutions, requests, swaps, actors } = sources;
   const failed =
     calendar.refusal !== null ||
     (!calendar.loading && calendar.snapshot === null) ||
     queueReadFailed(records) ||
     queueReadFailed(resolutions) ||
     queueReadFailed(requests) ||
+    queueReadFailed(swaps) ||
     queueReadFailed(actors);
 
   if (failed) return { kind: RESOLVED_UNAVAILABLE };
@@ -480,16 +553,24 @@ export function resolvedConflictsOf(sources: ResolvedConflictsSources): Resolved
     records.data === undefined ||
     resolutions.data === undefined ||
     requests.data === undefined ||
+    swaps.data === undefined ||
     actors.data === undefined
   ) {
     return { kind: RESOLVED_LOADING };
   }
 
-  if (unknownSnapshotIdsOf(calendar.snapshot, records.data, resolutions.data, requests.data).length > 0) {
+  if (unknownSnapshotIdsOf(calendar.snapshot, records.data, resolutions.data, requests.data, swaps.data).length > 0) {
     return sources.snapshotFetching === true ? { kind: RESOLVED_LOADING } : { kind: RESOLVED_UNAVAILABLE };
   }
 
-  const outcome = resolvedConflictsOutcomeOf(calendar.snapshot, records.data, resolutions.data, actors.data, requests.data);
+  const outcome = resolvedConflictsOutcomeOf(
+    calendar.snapshot,
+    records.data,
+    resolutions.data,
+    actors.data,
+    requests.data,
+    swaps.data,
+  );
 
   return outcome.ok ? { kind: RESOLVED_READY, view: outcome.view } : { kind: RESOLVED_UNAVAILABLE };
 }

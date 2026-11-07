@@ -56,15 +56,14 @@ export function ConflictsBody({
   /** The unavailable alert's read retry, or `null` for none: never offline (story 8.2e). */
   readonly onRetry: (() => void) | null;
 }): ReactNode {
-  // STORY 9.4: a leave request's decision rides in the same slot, named by its own line.
+  // STORY 9.4: a leave request's decision rides in the same slot, named by its own line; since story 12.4, a swap's too.
   const line = saved === null ? null : resolutionSavedLineOf(saved);
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
       {line === null ? null : (
         <Notice role="status" ref={savedField} tabIndex={-1} className="outline-none">
-          {/* NARROWED FIRST: `t()`'s typed values check one key's variables at a time, so the union is split. */}
-          {line.request ? t(line.key, line.values) : t(line.key, line.values)}
+          {t(line.key, line.values)}
         </Notice>
       )}
       <ConflictsTabs tab={tab} unresolvedCount={queue.kind === CONFLICTS_READY ? queue.view.count : null} onTab={onTab} />

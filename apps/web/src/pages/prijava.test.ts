@@ -22,6 +22,7 @@ import {
   LEAVE_REQUEST,
   SWAP_PROPOSAL,
   LEAVE_REQUEST_REVIEW,
+  SWAP_DECISION,
   MEMBER_CREATE,
   MEMBER_EDIT,
   namedHandler,
@@ -495,6 +496,45 @@ const IN_FLIGHT_HANDLERS = [
     pending: 'setPendingId',
     cleared: 'setPendingId(null)',
     failure: 'setRefusal',
+  },
+  {
+    // STORY 12.4: *Odobri* on a waiting swap's decision screen — the erasure
+    // check over fresh reads, then the decision, handed to `write`, under one
+    // `deciding` ref; its refused outcome is read off the writer.
+    name: "the swap decision screen's approval",
+    file: SWAP_DECISION,
+    effect: 'decideSwapRequest(',
+    inFlight: 'deciding',
+    handler: 'approve',
+    writers: [{ name: 'write', failure: 'setFailure' }],
+    pending: 'setPending',
+    cleared: 'setPending(null)',
+    failure: 'setFailure',
+  },
+  {
+    // STORY 12.4: *Odbij*, the decision alone, under the same ref and writer.
+    name: "the swap decision screen's rejection",
+    file: SWAP_DECISION,
+    effect: 'decideSwapRequest(',
+    inFlight: 'deciding',
+    handler: 'reject',
+    writers: [{ name: 'write', failure: 'setFailure' }],
+    pending: 'setPending',
+    cleared: 'setPending(null)',
+    failure: 'setFailure',
+  },
+  {
+    // STORY 12.4: the approval's erasure confirmation's own save, which
+    // re-derives the check and then writes, under the same ref and writer.
+    name: "the swap decision screen's erasure confirmation",
+    file: SWAP_DECISION,
+    effect: 'decideSwapRequest(',
+    inFlight: 'deciding',
+    handler: 'confirmErasures',
+    writers: [{ name: 'write', failure: 'setFailure' }],
+    pending: 'setPending',
+    cleared: 'setPending(null)',
+    failure: 'setFailure',
   },
 ];
 
@@ -1139,24 +1179,29 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // THIRTY-THREE SINCE STORY 9.4: the leave request decision's decide.
     // THIRTY-FOUR SINCE STORY 12.2: the swap proposal's send.
     // THIRTY-FIVE SINCE STORY 12.3: *Zamjene*'s answer and withdrawal.
-    expect(IN_FLIGHT_HANDLERS.length, 'an awaiting handler is swept by nothing').toBe(35);
+    // THIRTY-EIGHT SINCE STORY 12.4: the swap decision screen's approval,
+    // rejection and erasure confirmation.
+    expect(IN_FLIGHT_HANDLERS.length, 'an awaiting handler is swept by nothing').toBe(38);
     expect(
       IN_FLIGHT_HANDLERS.map((entry) => `${entry.handler}/${entry.inFlight}`).sort(),
       'the in-flight handler names drifted from the handlers that hold them',
     ).toEqual([
       'act/acting',
       'amend/amending',
+      'approve/deciding',
       'archive/writing',
       'archive/writing',
       'cancelTimes/writing',
       'changeStatus/statusing',
       'changeTeam/teaming',
+      'confirmErasures/deciding',
       'confirmErasures/writing',
       'confirmOverrideErasures/writing',
       'confirmStatusErasures/statusing',
       'confirmTeamErasures/teaming',
       'decide/deciding',
       'issue/resetting',
+      'reject/deciding',
       'remove/removing',
       'remove/writing',
       'remove/writing',

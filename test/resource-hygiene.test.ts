@@ -238,6 +238,10 @@ const SANCTIONED_PLURAL_KEYS = [
   'ljudi.leaveRecord.conflictsKept',
   'ljudi.leaveRecord.conflictsNew',
   'ljudi.leaveRecord.removeClears',
+  // STORY 12.4: the swap approval's erasure confirmation — its title and
+  // lede, how many items waiting for a decision the swap would erase.
+  'zaOdluku.swap.erasures.title',
+  'zaOdluku.swap.erasures.lede',
 ];
 
 /** The flat screen strings the application is permitted to ship, by the story
@@ -1867,6 +1871,49 @@ const SANCTIONED_SCREEN_KEYS = [
   // *Odlučeno* and *Danas*: *Odsutnost u smjeni* and *Zahtjev za godišnji odmor*.
   'zaOdluku.kind.collision',
   'zaOdluku.kind.request',
+  // STORY 12.4: an accepted swap waiting for an admin is the queue's third
+  // kind, *Zamjena smjene*, on *Čeka odluku*, *Odlučeno* and *Danas*; its
+  // rows, its decision screen (the preview's warnings, past and stale lines,
+  // *Odobri* and *Odbij* with the approval's reason, the refusals, the
+  // erasure confirmation's own words) and the queue's status line for an
+  // approval or a rejection.
+  'zaOdluku.kind.swap',
+  'zaOdluku.savedSwapApproved',
+  'zaOdluku.savedSwapRejected',
+  'zaOdluku.swap.heading',
+  'zaOdluku.swap.missing',
+  'zaOdluku.swap.unavailable',
+  'zaOdluku.swap.parties',
+  'zaOdluku.swap.shift',
+  'zaOdluku.swap.shifts',
+  'zaOdluku.swap.status.waitingDecision',
+  'zaOdluku.swap.status.waitingColleague',
+  'zaOdluku.swap.status.approved',
+  'zaOdluku.swap.status.rejected',
+  'zaOdluku.swap.status.deactivated',
+  'zaOdluku.swap.status.withdrawn',
+  'zaOdluku.swap.status.declined',
+  'zaOdluku.swap.previewHeading',
+  'zaOdluku.swap.worksInstead',
+  'zaOdluku.swap.hours',
+  'zaOdluku.swap.onLeave',
+  'zaOdluku.swap.previewUnknown',
+  'zaOdluku.swap.past',
+  'zaOdluku.swap.stale',
+  'zaOdluku.swap.approve',
+  'zaOdluku.swap.reject',
+  'zaOdluku.swap.approvalReason',
+  'zaOdluku.swap.changedLater',
+  'zaOdluku.swap.notWaiting',
+  'zaOdluku.swap.denied',
+  'zaOdluku.swap.memberInactive',
+  'zaOdluku.swap.taken',
+  'zaOdluku.swap.archived',
+  'zaOdluku.swap.failed',
+  'zaOdluku.swap.unchecked',
+  'zaOdluku.swap.retry',
+  'zaOdluku.swap.erasures.kept',
+  'zaOdluku.swap.erasures.back',
   'zaOdluku.request.heading',
   'zaOdluku.request.missing',
   'zaOdluku.request.unavailable',
@@ -2617,6 +2664,23 @@ const SWAP_NOTIFICATION_KEYS: readonly string[] = [
 ];
 
 /**
+ * Story 12.4, an admin decides a swap: `smjen` names the swapped shift (a
+ * team's rostered shift, *Zamjena smjene*), as on *Danas*'s *Zamjene* card
+ * and in the swap notifications, and `tip… smjen…` is refused. SIX KEYS:
+ * the queue item's kind, the decision screen's heading, the leave warning
+ * (*stavlja na smjenu*), and the stale, taken and archived refusals that
+ * name the swap's shifts.
+ */
+const SWAP_DECISION_KEYS: readonly string[] = [
+  'zaOdluku.kind.swap',
+  'zaOdluku.swap.heading',
+  'zaOdluku.swap.onLeave',
+  'zaOdluku.swap.stale',
+  'zaOdluku.swap.taken',
+  'zaOdluku.swap.archived',
+];
+
+/**
  * The rotation builder's override review (story 3.5c): the admin amends an
  * override's SHIFT TYPE there, so it says the term — `Tip smjene` is the
  * amend's field — and, being the builder's, the TEAM too, as `smjena` (an
@@ -2681,7 +2745,8 @@ function teamTermOutOfTurn(key: string, message: string): boolean {
     !MEMBER_ERASURE_COLLISION_KEYS.includes(key) &&
     !MINIMUM_MEMBERS_KEYS.includes(key) &&
     !SHORT_STAFFED_KEYS.includes(key) &&
-    !SWAP_NOTIFICATION_KEYS.includes(key)
+    !SWAP_NOTIFICATION_KEYS.includes(key) &&
+    !SWAP_DECISION_KEYS.includes(key)
   ) {
     return lowered.includes('smjen');
   }

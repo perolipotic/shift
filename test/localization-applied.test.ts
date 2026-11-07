@@ -729,6 +729,12 @@ const SOURCES = [
   join(webRoot, 'src', 'features', 'leave', 'components', 'leave-request-review-body.tsx'),
   join(webRoot, 'src', 'features', 'leave', 'components', 'leave-conflict-lines.tsx'),
   join(webRoot, 'src', 'features', 'leave', 'services', 'leave-request-review.ts'),
+  // Story 12.4: one swap's decision screen — its page, hook and body, and its
+  // rules module, which words the status and the refusals.
+  join(webRoot, 'src', 'pages', 'za-odluku.zamjena.$requestId.tsx'),
+  join(webRoot, 'src', 'features', 'swaps', 'hooks', 'use-swap-decision.ts'),
+  join(webRoot, 'src', 'features', 'swaps', 'components', 'swap-decision-body.tsx'),
+  join(webRoot, 'src', 'features', 'swaps', 'services', 'swap-decision.ts'),
   // The root route: no string of its own, but it registers the not-found
   // component, so it is wiring the built chunk depends on, as `/` is.
   join(webRoot, 'src', 'pages', '__root.tsx'),

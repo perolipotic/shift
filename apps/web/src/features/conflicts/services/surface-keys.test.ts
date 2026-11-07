@@ -8,6 +8,7 @@ import { ORGANIZATION_LEAVE_RECORDS_KEY } from '@/features/leave/services/leave-
 import { ORGANIZATION_LEAVE_REQUESTS_KEY } from '@/features/leave/services/leave-request-list';
 import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
 import { ORGANIZATION_SNAPSHOT_KEY } from '@/features/organization/services/snapshot';
+import { ORGANIZATION_SWAP_REQUESTS_KEY } from '@/features/swaps/services/organization-swaps';
 import { persistsKey } from '@/lib/offline/persistence';
 
 /** Story 8.2c: *Za odluku* by its tab, and one conflict's resolution page, each one snapshot, every key kept on the device. */
@@ -15,12 +16,13 @@ import { persistsKey } from '@/lib/offline/persistence';
 const text = (key: readonly unknown[]): string => JSON.stringify(key);
 
 describe("Za odluku's keys", () => {
-  it('are the calendar, the organization leave, its resolutions and its requests on Čeka odluku', () => {
+  it('are the calendar, the organization leave, its resolutions, its requests and (story 12.4) its swaps on Čeka odluku', () => {
     expect(rasporedSurfaceKeysOf(TAB_UNRESOLVED)).toEqual([
       CALENDAR_KEY,
       ORGANIZATION_LEAVE_RECORDS_KEY,
       ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
       ORGANIZATION_LEAVE_REQUESTS_KEY,
+      ORGANIZATION_SWAP_REQUESTS_KEY,
     ]);
   });
 
@@ -30,6 +32,7 @@ describe("Za odluku's keys", () => {
       ORGANIZATION_LEAVE_RECORDS_KEY,
       ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
       ORGANIZATION_LEAVE_REQUESTS_KEY,
+      ORGANIZATION_SWAP_REQUESTS_KEY,
       ACTING_ADMINS_KEY,
     ]);
   });
@@ -56,15 +59,17 @@ describe("the resolution page's keys", () => {
     for (const key of RESOLUTION_SURFACE_KEYS) expect(persistsKey(key), text(key)).toBe(true);
   });
 
-  it("keep the back link count's request read on the device, though it is not one of them", () => {
-    expect(RESOLUTION_SURFACE_KEYS).not.toContainEqual(ORGANIZATION_LEAVE_REQUESTS_KEY);
-    expect(persistsKey(ORGANIZATION_LEAVE_REQUESTS_KEY), text(ORGANIZATION_LEAVE_REQUESTS_KEY)).toBe(true);
+  it("keep the back link count's request and swap reads on the device, though they are not among them", () => {
+    for (const key of [ORGANIZATION_LEAVE_REQUESTS_KEY, ORGANIZATION_SWAP_REQUESTS_KEY]) {
+      expect(RESOLUTION_SURFACE_KEYS).not.toContainEqual(key);
+      expect(persistsKey(key), text(key)).toBe(true);
+    }
   });
 });
 
 describe("the resolution page's count keys (retro 8–9 item 18)", () => {
-  it('are the leave requests alone', () => {
-    expect(RESOLUTION_COUNT_KEYS).toEqual([ORGANIZATION_LEAVE_REQUESTS_KEY]);
+  it('are the leave requests and (story 12.4) the swaps alone', () => {
+    expect(RESOLUTION_COUNT_KEYS).toEqual([ORGANIZATION_LEAVE_REQUESTS_KEY, ORGANIZATION_SWAP_REQUESTS_KEY]);
   });
 
   it('are all kept on the device', () => {

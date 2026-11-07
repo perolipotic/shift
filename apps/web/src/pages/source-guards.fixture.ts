@@ -9,6 +9,7 @@ import {
   CONFLICTS_QUEUE_PARTS,
   CONFLICT_RESOLUTION_PARTS,
   LEAVE_REQUEST_REVIEW_PARTS,
+  SWAP_DECISION_PARTS,
 } from '@/features/conflicts/conflicts-screen.fixture';
 import { HOURS_SCREEN_PARTS } from '@/features/hours/hours-screen.fixture';
 import { LEAVE_REQUEST_PARTS, LEAVE_SCREEN_PARTS } from '@/features/leave/leave-screen.fixture';
@@ -545,6 +546,15 @@ export const SWAP_PROPOSAL_KEYS = join(srcRoot, 'features', 'swaps', 'services',
 
 /** Story 12.3: *Zamjene*'s rules — a row's word, and what an action says landed or refused. */
 export const MY_SWAPS_KEYS = join(srcRoot, 'features', 'swaps', 'services', 'my-swaps.ts');
+
+/**
+ * Story 12.4's one swap, decided on its own screen: a fourth *Za odluku* set
+ * in `conflicts-screen.fixture.ts`, its parts in the swaps feature.
+ */
+export const SWAP_DECISION: readonly string[] = Object.values(SWAP_DECISION_PARTS).map((parts) => join(srcRoot, ...parts));
+
+/** Story 12.4's rules: the decision screen's status words and its refusals, off `\w*MessageKey` unions. */
+export const SWAP_DECISION_KEYS = join(srcRoot, 'features', 'swaps', 'services', 'swap-decision.ts');
 
 /** The month navigation *Kalendar* and *Sati* share (story 4.1b): a part of both sets. */
 export const SHARED_MONTH_NAV = join(srcRoot, ...CALENDAR_SCREEN_PARTS.monthNav);
@@ -1097,6 +1107,12 @@ export const SCREENS = [
   // *Odbij* and *Odobri*. No confirmation, no reason field (Epic 9 has none)
   // and no bulk action, which is what the count keeps true.
   { name: 'the leave request decision screen', file: LEAVE_REQUEST_REVIEW, expectedFields: 0, expectedButtons: 4 },
+  // STORY 12.4. On one swap's decision screen: *Natrag na Za odluku* (written
+  // once, drawn in every state), the unavailable alert's retry, the retry
+  // beside the refusal when what an approval would erase cannot be checked,
+  // and *Odbij* and *Odobri*. No reason field and no bulk action; the erasure
+  // confirmation's own controls are the shared `ErasureDialog`'s, counted there.
+  { name: 'the swap decision screen', file: SWAP_DECISION, expectedFields: 0, expectedButtons: 5 },
   // STORY 10.3. ONE on *Obavijesti*: the unavailable alert's retry. The email
   // on/off is a radio group, never a `<Button>`, and the address is shown,
   // never a field: the count is what notices an address input arriving.

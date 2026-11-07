@@ -59,6 +59,8 @@ import {
 } from '@/features/leave/services/leave-list';
 import { useOrganizationLeaveRequests } from '@/features/leave/hooks/use-organization-leave-requests';
 import { ORGANIZATION_LEAVE_REQUESTS_KEY } from '@/features/leave/services/leave-request-list';
+import { useOrganizationSwapRequests } from '@/features/swaps/hooks/use-organization-swaps';
+import { ORGANIZATION_SWAP_REQUESTS_KEY } from '@/features/swaps/services/organization-swaps';
 import { withLeaveHandoff } from '@/features/leave/services/leave-section';
 import {
   MEMBERS_LIST_KEY,
@@ -141,11 +143,12 @@ import { writesOnline } from '@/lib/offline/use-write-gate';
  * cached snapshot is drawn under the as-of note; a save then fails as any
  * write without a connection does (8.3 states it before the press).
  *
- * THE COUNT'S OWN READ (retro 8–9 item 18): the organization's leave requests
- * (story 9.5) only give the back link its count, so they are not one of the
- * page's reads. Their freshness is decided over their key alone: offline,
- * cached rows still give the count; failed, paused, uncached or pending, the
- * page stands and the back link names no number.
+ * THE COUNT'S OWN READS (retro 8–9 item 18): the organization's leave
+ * requests (story 9.5) and its swaps (story 12.4) only give the back link its
+ * count, so they are not among the page's reads. Their freshness is decided
+ * over their two keys alone: offline, cached rows still give the count;
+ * either failed, paused, uncached or pending, the page stands and the back
+ * link names no number.
  */
 export function useConflictResolution(params: ResolutionParams) {
   const queryClient = useQueryClient();
@@ -220,19 +223,28 @@ export function useConflictResolution(params: ResolutionParams) {
   // RETRO 8–9 ITEM 18: the request read's own freshness, so it never decides
   // the page — only whether the back link names a count. An online stale read
   // is answered as pending (no old count); offline, its cached rows count.
-  const requests = useSnapshotFreshness(
+  // STORY 12.4: and its swaps, the queue's third kind of item.
+  const swapsRead = useOrganizationSwapRequests();
+  const countReads = useSnapshotFreshness(
     RESOLUTION_COUNT_KEYS,
-    [[ORGANIZATION_LEAVE_REQUESTS_KEY, requestsRead]],
+    [
+      [ORGANIZATION_LEAVE_REQUESTS_KEY, requestsRead],
+      [ORGANIZATION_SWAP_REQUESTS_KEY, swapsRead],
+    ],
     ZONE_FROM_CALENDAR,
-  ).answerOf(requestsRead);
+  );
+  const requests = countReads.answerOf(requestsRead);
+  const swaps = countReads.answerOf(swapsRead);
   const calendarState = calendarSurfaceStateOf(calendar);
 
   // STORY 5.5d: a replacement naming an override the snapshot does not hold yet re-reads it once.
   useReplacementLinkRefresh(calendarState.snapshot, resolutions.data);
   // STORY 9.5: as the queue, a leave, resolution or request row naming a member
   // or team the snapshot does not hold yet re-reads it once — the way back's
-  // count is the queue's, which waits for it.
-  useSnapshotSkewRefresh(snapshotSkewOf(calendarState.snapshot, records.data, resolutions.data, requests.data));
+  // count is the queue's, which waits for it. STORY 12.4: a swap row too.
+  useSnapshotSkewRefresh(
+    snapshotSkewOf(calendarState.snapshot, records.data, resolutions.data, requests.data, swaps.data),
+  );
 
   const derived = resolutionScreenOf(
     {
@@ -240,9 +252,10 @@ export function useConflictResolution(params: ResolutionParams) {
       records,
       resolutions,
       requests,
+      swaps,
       members: membersSurfaceStateOf(members),
       organization,
-      // The page's five only: a request refetch never blanks the page.
+      // The page's five only: a request or swap refetch never blanks the page.
       refetching: refetchingAfterFailure([calendar, records, resolutions, members, organization]),
     },
     params,
@@ -286,6 +299,7 @@ export function useConflictResolution(params: ResolutionParams) {
       ORGANIZATION_LEAVE_RECORDS_KEY,
       ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
       ORGANIZATION_LEAVE_REQUESTS_KEY,
+      ORGANIZATION_SWAP_REQUESTS_KEY,
       MEMBERS_LIST_KEY,
       ORGANIZATION_SNAPSHOT_KEY,
     ]) {

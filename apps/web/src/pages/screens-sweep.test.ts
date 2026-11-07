@@ -316,7 +316,8 @@ describe('the screen is read at all, so every sweep below means something', () =
     // THIRTY-SIX SINCE STORY 9.4: the leave request decision screen.
     // THIRTY-SEVEN SINCE STORY 10.3: the notification settings screen.
     // THIRTY-EIGHT SINCE STORY 12.2: the swap proposal.
-    expect(SCREENS).toHaveLength(38);
+    // THIRTY-NINE SINCE STORY 12.4: the swap decision screen.
+    expect(SCREENS).toHaveLength(39);
     //
     // FORTY-NINE SINCE STORY 3.6b: `@/features/calendar/services/roster-write`.
     //
@@ -389,7 +390,8 @@ describe('the screen is read at all, so every sweep below means something', () =
     // EIGHTY-FIVE SINCE STORY 11.2: the short-staffed block.
     // EIGHTY-SEVEN SINCE STORY 12.2: the swap proposal and its rules.
     // EIGHTY-EIGHT SINCE STORY 12.3: *Zamjene*'s rules.
-    expect(KEY_SOURCES).toHaveLength(88);
+    // NINETY SINCE STORY 12.4: the swap decision screen and its rules.
+    expect(KEY_SOURCES).toHaveLength(90);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"

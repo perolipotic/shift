@@ -24,3 +24,12 @@ export const SWAP_ERROR_ID = 'swap-proposal-error';
 
 /** *Zamjene* on *Danas* (story 12.3): the card's heading, which names its section and its list. */
 export const MY_SWAPS_HEADING_ID = 'my-swaps-heading';
+
+/** A swap's decision screen (story 12.4): its heading, which names the page's main region. */
+export const SWAP_DECISION_HEADING_ID = 'swap-decision-heading';
+
+/** The decision screen's preview, a polite live region. */
+export const SWAP_DECISION_PREVIEW_ID = 'swap-decision-preview';
+
+/** The decision screen's erasure confirmation: the prefix of its title, lede and kept hint. */
+export const SWAP_DECISION_ERASURES_ID = 'swap-decision-erasures';

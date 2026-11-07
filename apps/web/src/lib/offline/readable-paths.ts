@@ -5,8 +5,8 @@
  * *Godišnji*, *Ljudi* (the admin's table and the members' directory), one
  * team's roster `/smjene/$id`, the admin's work surfaces (story 8.2c):
  * *Za odluku* (and its old `/raspored` URLs, story 9.1), one conflict's
- * resolution page, one leave request's decision screen (story 9.4) and one
- * member's page, and the
+ * resolution page, one leave request's decision screen (story 9.4), one
+ * swap's decision screen (story 12.4) and one member's page, and the
  * settings surfaces (story 8.2d): *Ljudi/smjene*, *Organizacija*, *Satni
  * pojasi* and *Postavke rotacije*, each with its `$id` editor. Every surface
  * now reads offline. Their guards — `_app`'s, and `/`'s — read the session
@@ -36,6 +36,9 @@ export const OFFLINE_READABLE_PATHS: readonly string[] = [
   // Story 9.4: one leave request's decision screen, read as one snapshot
   // under the as-of note; its *Odobri* and *Odbij* are gated offline.
   '/za-odluku/zahtjev/$requestId',
+  // Story 12.4: one swap's decision screen, on the same terms; its *Odobri*
+  // and *Odbij* are gated offline.
+  '/za-odluku/zamjena/$requestId',
   // Story 9.1: the queue's old URLs, which only redirect to the pair above.
   // Listed so an old bookmark opened offline with an expired token still
   // reaches *Za odluku* rather than the sign-in.

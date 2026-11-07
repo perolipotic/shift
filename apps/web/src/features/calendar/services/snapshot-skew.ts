@@ -30,6 +30,10 @@ export function readsOrganizationLeave(role: MemberRole): boolean {
 const MEMBER_COLUMN = 'member_id';
 /** The team a resolution row names. */
 const TEAM_COLUMN = 'team_id';
+/** The two members a swap row names (story 12.4). */
+const SWAP_MEMBER_COLUMNS = ['proposer_id', 'addressee_id'] as const;
+/** The two teams a swap row names: the given shift's, and the return shift's when there is one. */
+const SWAP_TEAM_COLUMNS = ['team_id', 'return_team_id'] as const;
 
 /** The text at `column` of a row that is a record, or `null`: anything else is the parser's to refuse. */
 function idAt(row: unknown, column: string): string | null {
@@ -48,12 +52,15 @@ function idAt(row: unknown, column: string): string | null {
  * the snapshot. STORY 9.5: an admin's leave request rows too — `calendar_members`
  * answers inactive members as well, so a request naming a member the snapshot
  * lacks is a snapshot older than the member, never a member who is gone.
+ * STORY 12.4: an admin's swap rows too — both members (`proposer_id`,
+ * `addressee_id`) and both teams (`team_id`, `return_team_id`).
  */
 export function unknownSnapshotIdsOf(
   snapshot: CalendarSnapshot,
   leaveRows: readonly unknown[] | undefined,
   resolutionRows: readonly unknown[] | undefined,
   requestRows?: readonly unknown[] | undefined,
+  swapRows?: readonly unknown[] | undefined,
 ): readonly string[] {
   const admin = readsOrganizationLeave(snapshot.viewer.role);
   const members = new Set(snapshot.members.map((member) => member.id));
@@ -72,6 +79,20 @@ export function unknownSnapshotIdsOf(
     if (teamId !== null && !teams.has(teamId)) unknown.add(`team:${teamId}`);
   }
 
+  for (const row of admin ? (swapRows ?? []) : []) {
+    for (const column of SWAP_MEMBER_COLUMNS) {
+      const memberId = idAt(row, column);
+
+      if (memberId !== null && !members.has(memberId)) unknown.add(`member:${memberId}`);
+    }
+
+    for (const column of SWAP_TEAM_COLUMNS) {
+      const teamId = idAt(row, column);
+
+      if (teamId !== null && !teams.has(teamId)) unknown.add(`team:${teamId}`);
+    }
+  }
+
   return [...unknown].sort();
 }
 
@@ -87,6 +108,9 @@ export function snapshotSkewOf(
   leaveRows: readonly unknown[] | undefined,
   resolutionRows: readonly unknown[] | undefined,
   requestRows?: readonly unknown[] | undefined,
+  swapRows?: readonly unknown[] | undefined,
 ): string {
-  return snapshot === null ? NO_SKEW : unknownSnapshotIdsOf(snapshot, leaveRows, resolutionRows, requestRows).join(' ');
+  return snapshot === null
+    ? NO_SKEW
+    : unknownSnapshotIdsOf(snapshot, leaveRows, resolutionRows, requestRows, swapRows).join(' ');
 }

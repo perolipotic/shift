@@ -11,6 +11,19 @@ import {
   swapShiftWorkedBy,
   type SwapShiftKey,
 } from '@/features/swaps/services/swap-proposal';
+import {
+  DECISIONS_EMBED,
+  SWAP_ACCEPTED,
+  SWAP_APPROVED,
+  SWAP_DEACTIVATED,
+  SWAP_DECLINED,
+  SWAP_PROPOSED,
+  SWAP_REJECTED,
+  SWAP_WITHDRAWN,
+  swapOpen,
+  swapStatusOf,
+  type SwapStatus,
+} from '@/features/swaps/services/organization-swaps';
 import { formatIsoDate, isIsoDate } from '@/lib/i18n/format';
 
 /**
@@ -44,9 +57,6 @@ import { formatIsoDate, isIsoDate } from '@/lib/i18n/format';
 
 /** The one query key the viewer's own swaps are read under. */
 export const MY_SWAP_REQUESTS_KEY = ['my-swap-requests'] as const;
-
-/** The decisions embedded through their composite key (0049). */
-export const DECISIONS_EMBED = 'swap_request_decisions';
 
 /** The columns read: the swap's own facts, its answer and close, and its decision's outcome. */
 export const MY_SWAP_REQUESTS_COLUMNS = `id,proposer_id,addressee_id,team_id,date,return_team_id,return_date,answer,closed_at,${DECISIONS_EMBED}(outcome)`;
@@ -166,29 +176,22 @@ export function mySwapRequestsQueryOptions(table: () => MySwapsTable, memberId: 
 
 // ----------------------------------------------------------------- the status
 
-/** Open, no answer yet. */
-export const SWAP_PROPOSED = 'proposed';
-/** Open and accepted: waits for an admin. */
-export const SWAP_ACCEPTED = 'accepted';
-/** Declined by the addressee (closed in the same call). */
-export const SWAP_DECLINED = 'declined';
-/** Closed by either member with no decision. */
-export const SWAP_WITHDRAWN = 'withdrawn';
-/** Approved by an admin. */
-export const SWAP_APPROVED = 'approved';
-/** Rejected by an admin. */
-export const SWAP_REJECTED = 'rejected';
-/** Closed on a member's deactivation (0049's `deactivated` decision). */
-export const SWAP_DEACTIVATED = 'deactivated';
-
-export type SwapStatus =
-  | typeof SWAP_PROPOSED
-  | typeof SWAP_ACCEPTED
-  | typeof SWAP_DECLINED
-  | typeof SWAP_WITHDRAWN
-  | typeof SWAP_APPROVED
-  | typeof SWAP_REJECTED
-  | typeof SWAP_DEACTIVATED;
+// THE STATUS lives in the organization's read (`./organization-swaps`), a low
+// module the queue imports without reaching the proposal's rules (story
+// 12.4); the viewer's own read derives it the same way, and re-exports it.
+export {
+  DECISIONS_EMBED,
+  SWAP_ACCEPTED,
+  SWAP_APPROVED,
+  SWAP_DEACTIVATED,
+  SWAP_DECLINED,
+  SWAP_PROPOSED,
+  SWAP_REJECTED,
+  SWAP_WITHDRAWN,
+  swapOpen,
+  swapStatusOf,
+  type SwapStatus,
+} from '@/features/swaps/services/organization-swaps';
 
 /** One swap as 0049 stores it, its status derived. */
 export interface MySwap {
@@ -198,57 +201,6 @@ export interface MySwap {
   readonly given: SwapShiftKey;
   readonly returnShift: SwapShiftKey | null;
   readonly status: SwapStatus;
-}
-
-/** Whether the swap is still open: proposed, or accepted and waiting for an admin. */
-export function swapOpen(status: SwapStatus): boolean {
-  return status === SWAP_PROPOSED || status === SWAP_ACCEPTED;
-}
-
-/** A decision embed as a list: PostgREST answers it as a list, one object or null; all three are taken. */
-function decisionsOf(embedded: unknown): readonly unknown[] {
-  if (Array.isArray(embedded)) return embedded;
-
-  return embedded === null || embedded === undefined ? [] : [embedded];
-}
-
-/**
- * The status 0049 derives, or `null` when the row cannot say: open with a
- * decision, open and declined, an unknown answer or outcome, more than one
- * decision, an approval or rejection of a swap that was never accepted, or a
- * deactivation close of a declined one.
- */
-export function swapStatusOf(closedAt: unknown, answer: unknown, decisions: unknown): SwapStatus | null {
-  const decided = decisionsOf(decisions);
-
-  if (answer !== null && answer !== undefined && answer !== SWAP_ACCEPTED && answer !== SWAP_DECLINED) return null;
-  if (decided.length > 1) return null;
-
-  if (closedAt === null || closedAt === undefined) {
-    if (decided.length > 0) return null;
-    if (answer === SWAP_ACCEPTED) return SWAP_ACCEPTED;
-
-    return answer === SWAP_DECLINED ? null : SWAP_PROPOSED;
-  }
-
-  if (typeof closedAt !== 'string' || closedAt === '') return null;
-
-  const [decision] = decided;
-
-  if (decision !== undefined) {
-    const outcome = isRecord(decision) ? decision['outcome'] : undefined;
-
-    // An admin decides an accepted swap alone (12.4's definer); the
-    // deactivation close (`close_swap_requests_on_deactivation`) closes any
-    // open swap, proposed or accepted, but never a declined one, which is
-    // already closed. Any other pairing is a row 0049 cannot write.
-    if (outcome === SWAP_APPROVED || outcome === SWAP_REJECTED) return answer === SWAP_ACCEPTED ? outcome : null;
-    if (outcome === SWAP_DEACTIVATED) return answer === SWAP_DECLINED ? null : outcome;
-
-    return null;
-  }
-
-  return answer === SWAP_DECLINED ? SWAP_DECLINED : SWAP_WITHDRAWN;
 }
 
 function idOf(value: unknown): string | null {

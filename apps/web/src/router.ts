@@ -28,6 +28,7 @@ import { satiRoute } from '@/pages/sati';
 import { smjenaRoute } from '@/pages/smjene.$id';
 import { zaOdlukuCollisionRoute } from '@/pages/za-odluku.$memberId.$date.$teamId';
 import { zaOdlukuRequestRoute } from '@/pages/za-odluku.zahtjev.$requestId';
+import { zaOdlukuSwapRoute } from '@/pages/za-odluku.zamjena.$requestId';
 import { zaOdlukuRoute } from '@/pages/za-odluku';
 import { routeMemberRole } from '@/features/navigation/services/role';
 import { knownPathOf } from '@/features/auth/services/return-target';
@@ -70,6 +71,10 @@ const appDestinations = appLayoutRoute.addChildren([
   // nested under the layout, absent from the destinations (the `Za odluku`
   // tab lights for it), with the admin guard `/za-odluku` carries.
   zaOdlukuRequestRoute,
+  // STORY 12.4: one swap's decision screen, on the same terms — nested under
+  // the layout, absent from the destinations (the `Za odluku` tab lights for
+  // it), with the admin guard `/za-odluku` carries.
+  zaOdlukuSwapRoute,
   // STORY 9.1: the queue's old URLs, `/raspored` and one conflict under it.
   // They render nothing: past the admin guard each redirects to its
   // `/za-odluku` twin with the same params, replacing the entry.

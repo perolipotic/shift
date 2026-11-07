@@ -604,8 +604,8 @@ export function swapLeaveKeysOf(snapshot: CalendarSnapshot, rows: readonly unkno
 
 // ----------------------------------------------------------------- the write
 
-/** The table a proposal is inserted into (0049). */
-export const SWAP_REQUESTS_TABLE = 'swap_requests';
+/** The table a proposal is inserted into (0049): the one constant every reader and writer names it by. */
+export { SWAP_REQUESTS_TABLE } from '@/features/swaps/services/organization-swaps';
 
 const UNIQUE_VIOLATION = '23505';
 const INSUFFICIENT_PRIVILEGE = '42501';

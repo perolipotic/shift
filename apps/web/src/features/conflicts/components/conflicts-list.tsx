@@ -6,10 +6,14 @@ import { CaretRight } from '@/components/ui/icon';
 import {
   CONFLICTS_COUNT_HEADING_ID,
   ITEM_COLLISION,
+  ITEM_REQUEST,
   type ConflictRow,
   type ConflictsQueueView,
+  type QueueRow,
   type RequestRow,
+  type SwapRow,
 } from '@/features/conflicts/services/conflicts-queue';
+import { SwapShifts } from '@/features/conflicts/components/swap-shifts';
 import { cn } from '@/lib/utils';
 import { t } from '@/lib/i18n';
 
@@ -93,9 +97,55 @@ function RequestItem({ row }: { readonly row: RequestRow }): ReactNode {
 }
 
 /**
+ * One accepted swap waiting for an admin (*Zamjena smjene*, story 12.4): the
+ * earlier of its dates, the proposer → the colleague, and the shift given —
+ * and the one taken in return. The whole row is the link to the swap's own
+ * decision screen. No hours or preview here: those are the decision screen's.
+ */
+function SwapItem({ row }: { readonly row: SwapRow }): ReactNode {
+  return (
+    <li className="min-w-0">
+      <Link
+        to="/za-odluku/zamjena/$requestId"
+        params={{ requestId: row.requestId }}
+        className={cn(
+          'flex min-h-11 min-w-0 items-center gap-3 rounded-md border bg-card p-3 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          row.past && 'border-dashed bg-transparent text-muted-foreground',
+        )}
+      >
+        <span className="grid min-w-0 flex-1 gap-1">
+          <DateLine dateShown={row.dateShown} past={row.past} kind={t('zaOdluku.kind.swap')} />
+          <span className={cn('min-w-0 break-words', !row.past && 'font-medium')}>
+            {t('zaOdluku.swap.parties', { proposer: row.proposerName, addressee: row.addresseeName })}
+          </span>
+          <span className="min-w-0 break-words text-sm text-muted-foreground tabular-nums">
+            <SwapShifts given={row.given} returnShift={row.returnShift} />
+          </span>
+        </span>
+        <CaretRight aria-hidden className="size-4 shrink-0" />
+      </Link>
+    </li>
+  );
+}
+
+/** One row of the queue, of whichever kind. */
+function QueueItem({ row }: { readonly row: QueueRow }): ReactNode {
+  if (row.kind === ITEM_COLLISION) {
+    return <ConflictItem row={row} />;
+  }
+
+  if (row.kind === ITEM_REQUEST) {
+    return <RequestItem row={row} />;
+  }
+
+  return <SwapItem row={row} />;
+}
+
+/**
  * The queue: its count, always — `0 čeka odluku` included — and
- * then the rows in the order the view model gave them — collisions and
- * pending requests under one count (story 9.5) — or the true sentence an
+ * then the rows in the order the view model gave them — collisions,
+ * pending requests (story 9.5) and waiting swaps (story 12.4) under one
+ * count — or the true sentence an
  * empty queue states.
  */
 export function ConflictsList({ view }: { readonly view: ConflictsQueueView }): ReactNode {
@@ -108,9 +158,9 @@ export function ConflictsList({ view }: { readonly view: ConflictsQueueView }): 
         <p className="text-sm text-muted-foreground">{t('zaOdluku.empty')}</p>
       ) : (
         <ul className="flex min-w-0 flex-col gap-2">
-          {view.rows.map((row) =>
-            row.kind === ITEM_COLLISION ? <ConflictItem key={row.key} row={row} /> : <RequestItem key={row.key} row={row} />,
-          )}
+          {view.rows.map((row) => (
+            <QueueItem key={row.key} row={row} />
+          ))}
         </ul>
       )}
     </section>

@@ -144,6 +144,11 @@ export class TodayPage extends BasePage {
     return this.needsYouCard.getByRole('list').getByRole('link');
   }
 
+  /** *Treba tebe*'s row links holding `text` (story 12.4: a swap's row, by the members it names). */
+  needsYouRowLinksWith(text: string): Locator {
+    return this.needsYouRowLinks.filter({ hasText: text });
+  }
+
   /** "Otvori Za odluku (n)" for `count`, or whatever it counts. */
   openConflictsLink(count?: number): Locator {
     const name =

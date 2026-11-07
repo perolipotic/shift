@@ -70,8 +70,8 @@ import {
  * that names nothing, or a member no longer on leave that date — is
  * {@link RESOLUTION_MISSING}: the screen says it is no longer open, and links
  * back. The way back names the WHOLE queue's count (story 9.5): its
- * collisions and its pending leave requests, as *Za odluku* and *Danas* count
- * them; `K od N` and ‹ › stay over the collisions alone. Nothing here decides whether a collision exists; the domain does.
+ * collisions, its pending leave requests and (story 12.4) its waiting swaps,
+ * as *Za odluku* and *Danas* count them; `K od N` and ‹ › stay over the collisions alone. Nothing here decides whether a collision exists; the domain does.
  *
  * THE FACTS AND THE STRIP are read off the same answers: the shift type and
  * its times on the date, the team, the absent member with rank and position
@@ -205,11 +205,20 @@ export const LEAVE_REQUEST_REJECTED_SAVED = 'leave_request_rejected';
 /** The two request decisions the queue's status line can name (story 9.4). */
 export type LeaveRequestSavedKind = typeof LEAVE_REQUEST_APPROVED_SAVED | typeof LEAVE_REQUEST_REJECTED_SAVED;
 
+/** A swap approved on its decision screen (story 12.4), as the queue's status line names it. */
+export const SWAP_APPROVED_SAVED = 'swap_approved';
+/** A swap rejected on its decision screen (story 12.4). */
+export const SWAP_REJECTED_SAVED = 'swap_rejected';
+
+/** The two swap decisions the queue's status line can name (story 12.4). */
+export type SwapSavedKind = typeof SWAP_APPROVED_SAVED | typeof SWAP_REJECTED_SAVED;
+
 /**
  * The outcomes a landed decision can name on the queue: stories 5.4b and
- * 5.4c, and since story 9.4 a leave request's approval and rejection.
+ * 5.4c, since story 9.4 a leave request's approval and rejection, and since
+ * story 12.4 a swap's.
  */
-export type ResolutionSavedKind = typeof ACCEPT_UNCOVERED | typeof REPLACE_MEMBER | LeaveRequestSavedKind;
+export type ResolutionSavedKind = typeof ACCEPT_UNCOVERED | typeof REPLACE_MEMBER | LeaveRequestSavedKind | SwapSavedKind;
 
 /** What every landed decision names on the queue: the shift, the date and the member, as shown. */
 interface ResolutionSavedFacts {
@@ -226,7 +235,8 @@ interface ResolutionSavedFacts {
 export type ResolutionSaved =
   | (ResolutionSavedFacts & { readonly kind: typeof ACCEPT_UNCOVERED })
   | (ResolutionSavedFacts & { readonly kind: typeof REPLACE_MEMBER; readonly replacementName: string })
-  | LeaveRequestSaved;
+  | LeaveRequestSaved
+  | SwapSaved;
 
 /**
  * A leave request decided on its own screen (story 9.4), in the same slot:
@@ -237,6 +247,18 @@ export interface LeaveRequestSaved {
   readonly memberName: string;
   readonly from: string;
   readonly to: string;
+}
+
+/**
+ * A swap decided on its own screen (story 12.4), in the same slot: the
+ * outcome, both members' names, and the earlier of its dates as shown,
+ * (`12.09.2026`).
+ */
+export interface SwapSaved {
+  readonly kind: SwapSavedKind;
+  readonly proposerName: string;
+  readonly addresseeName: string;
+  readonly date: string;
 }
 
 // THE DATE RULE lives beside the leave card that re-applies it on arrival (story 5.4d).
@@ -543,6 +565,11 @@ export interface ResolutionSources {
    * pending, the screen stands and the back link names no number.
    */
   readonly requests: LeaveRowsAnswer;
+  /**
+   * The organization's swaps (story 12.4): the accepted, open ones join the
+   * back link's count, on the request read's terms — never the screen's.
+   */
+  readonly swaps: LeaveRowsAnswer;
   /** The member list: the allowance. */
   readonly members: LeaveMembersSource;
   /** The organization snapshot: where the leave year begins. */
@@ -649,7 +676,7 @@ export function resolutionPlaceOf(
  * decides whether the back link names a count (null while it is not usable).
  */
 export function resolutionScreenOf(sources: ResolutionSources, params: ResolutionParams, now: Date): ResolutionScreen {
-  const { calendar, records, resolutions, requests, members, organization } = sources;
+  const { calendar, records, resolutions, requests, swaps, members, organization } = sources;
 
   // A failed read being read again is loading, not the refusal (as *Sati*'s
   // `hoursConflictsStateOf`): TanStack Query keeps `isError` while the retry
@@ -670,15 +697,16 @@ export function resolutionScreenOf(sources: ResolutionSources, params: Resolutio
   const snapshot = calendar.snapshot;
   const rows = records.data;
   const resolutionRows = resolutions.data;
-  // The count's own read: rows only when usable, otherwise null — no number.
+  // The count's own reads: rows only when usable, otherwise null — no number.
   const requestRows = queueReadFailed(requests) || requests.data === undefined ? null : requests.data;
+  const swapRows = queueReadFailed(swaps) || swaps.data === undefined ? null : swaps.data;
 
   if (snapshot === null || rows === undefined || resolutionRows === undefined) {
     return { kind: RESOLUTION_LOADING };
   }
 
   try {
-    return resolutionScreenFrom(sources, snapshot, rows, resolutionRows, requestRows, params, now);
+    return resolutionScreenFrom(sources, snapshot, rows, resolutionRows, requestRows, swapRows, params, now);
   } catch (cause) {
     if (!(cause instanceof RangeError)) throw cause;
 
@@ -701,6 +729,7 @@ function resolutionScreenFrom(
   rows: readonly unknown[],
   resolutionRows: readonly unknown[],
   requestRows: readonly unknown[] | null,
+  swapRows: readonly unknown[] | null,
   params: ResolutionParams,
   now: Date,
 ): ResolutionScreen {
@@ -714,8 +743,8 @@ function resolutionScreenFrom(
   const today = calendarTodayOf(snapshot, now);
   const { ordered, index } = resolutionPlaceOf(snapshot, records, resolutionRows, params, today);
   const collision = ordered[index];
-  // THE QUEUE'S OWN COUNT, from the queue model itself: the conflicts and the pending requests.
-  const queueCount = queueCountOf(snapshot, rows, resolutionRows, requestRows, today);
+  // THE QUEUE'S OWN COUNT, from the queue model itself: the conflicts, the pending requests and the waiting swaps.
+  const queueCount = queueCountOf(snapshot, rows, resolutionRows, requestRows, today, swapRows);
 
   if (collision === undefined) return { kind: RESOLUTION_MISSING, queueCount };
 
@@ -1081,16 +1110,18 @@ export function resolutionSavedOf(state: unknown): ResolutionSaved | null {
 
   if (typeof saved !== 'object' || saved === null) return null;
 
-  const { kind, shiftTypeName, teamName, dateShown, memberName, replacementName, from, to } = saved as Record<
-    string,
-    unknown
-  >;
+  const { kind, shiftTypeName, teamName, dateShown, memberName, replacementName, from, to, proposerName, addresseeName, date } =
+    saved as Record<string, unknown>;
+  const filled = (value: unknown): value is string => typeof value === 'string' && value !== '';
 
   // STORY 9.4: a leave request's decision names the member and the range alone.
   if (kind === LEAVE_REQUEST_APPROVED_SAVED || kind === LEAVE_REQUEST_REJECTED_SAVED) {
-    const filled = (value: unknown): value is string => typeof value === 'string' && value !== '';
-
     return filled(memberName) && filled(from) && filled(to) ? { kind, memberName, from, to } : null;
+  }
+
+  // STORY 12.4: a swap's decision names both members and the given shift's date.
+  if (kind === SWAP_APPROVED_SAVED || kind === SWAP_REJECTED_SAVED) {
+    return filled(proposerName) && filled(addresseeName) && filled(date) ? { kind, proposerName, addresseeName, date } : null;
   }
 
   if (
@@ -1114,11 +1145,19 @@ export function resolutionSavedOf(state: unknown): ResolutionSaved | null {
 /** The queue's status line for a landed decision, by its outcome. Exhaustive. */
 export function resolutionSavedMessageKey(
   kind: ResolutionSavedKind,
-): 'zaOdluku.saved' | 'zaOdluku.savedReplace' | 'zaOdluku.savedRequestApproved' | 'zaOdluku.savedRequestRejected' {
+):
+  | 'zaOdluku.saved'
+  | 'zaOdluku.savedReplace'
+  | 'zaOdluku.savedRequestApproved'
+  | 'zaOdluku.savedRequestRejected'
+  | 'zaOdluku.savedSwapApproved'
+  | 'zaOdluku.savedSwapRejected' {
   if (kind === ACCEPT_UNCOVERED) return 'zaOdluku.saved';
   if (kind === REPLACE_MEMBER) return 'zaOdluku.savedReplace';
   if (kind === LEAVE_REQUEST_APPROVED_SAVED) return 'zaOdluku.savedRequestApproved';
   if (kind === LEAVE_REQUEST_REJECTED_SAVED) return 'zaOdluku.savedRequestRejected';
+  if (kind === SWAP_APPROVED_SAVED) return 'zaOdluku.savedSwapApproved';
+  if (kind === SWAP_REJECTED_SAVED) return 'zaOdluku.savedSwapRejected';
 
   const unhandled: never = kind;
 
@@ -1127,11 +1166,13 @@ export function resolutionSavedMessageKey(
 
 /**
  * The queue's status line as `t()` takes it: its key and the values that key
- * reads — a conflict's facts, or a leave request's member and range (`request`).
+ * reads — a conflict's facts, a leave request's member and range
+ * (`request`), or a swap's members and date (`swap`, story 12.4).
  */
 export type ResolutionSavedLine =
   | {
       readonly request: false;
+      readonly swap: false;
       readonly key: 'zaOdluku.saved' | 'zaOdluku.savedReplace';
       readonly values: {
         readonly type: string;
@@ -1143,30 +1184,64 @@ export type ResolutionSavedLine =
     }
   | {
       readonly request: true;
+      readonly swap: false;
       readonly key: 'zaOdluku.savedRequestApproved' | 'zaOdluku.savedRequestRejected';
       readonly values: { readonly member: string; readonly from: string; readonly to: string };
+    }
+  | {
+      readonly request: false;
+      readonly swap: true;
+      readonly key: 'zaOdluku.savedSwapApproved' | 'zaOdluku.savedSwapRejected';
+      readonly values: { readonly proposer: string; readonly addressee: string; readonly date: string };
     };
 
 /**
- * The queue's status line for a landed decision (stories 5.4b, 5.4c, 9.4):
- * a conflict's names the shift, the team, the date and the member — and a
- * replacement its name — and a leave request's the member and the range.
+ * The queue's status line for a landed decision (stories 5.4b, 5.4c, 9.4,
+ * 12.4): a conflict's names the shift, the team, the date and the member —
+ * and a replacement its name — a leave request's the member and the range,
+ * and a swap's both members and the given shift's date.
  */
 export function resolutionSavedLineOf(saved: ResolutionSaved): ResolutionSavedLine {
   switch (saved.kind) {
     case LEAVE_REQUEST_APPROVED_SAVED:
-      return { request: true, key: 'zaOdluku.savedRequestApproved', values: { member: saved.memberName, from: saved.from, to: saved.to } };
+      return {
+        request: true,
+        swap: false,
+        key: 'zaOdluku.savedRequestApproved',
+        values: { member: saved.memberName, from: saved.from, to: saved.to },
+      };
     case LEAVE_REQUEST_REJECTED_SAVED:
-      return { request: true, key: 'zaOdluku.savedRequestRejected', values: { member: saved.memberName, from: saved.from, to: saved.to } };
+      return {
+        request: true,
+        swap: false,
+        key: 'zaOdluku.savedRequestRejected',
+        values: { member: saved.memberName, from: saved.from, to: saved.to },
+      };
+    case SWAP_APPROVED_SAVED:
+      return {
+        request: false,
+        swap: true,
+        key: 'zaOdluku.savedSwapApproved',
+        values: { proposer: saved.proposerName, addressee: saved.addresseeName, date: saved.date },
+      };
+    case SWAP_REJECTED_SAVED:
+      return {
+        request: false,
+        swap: true,
+        key: 'zaOdluku.savedSwapRejected',
+        values: { proposer: saved.proposerName, addressee: saved.addresseeName, date: saved.date },
+      };
     case ACCEPT_UNCOVERED:
       return {
         request: false,
+        swap: false,
         key: 'zaOdluku.saved',
         values: { type: saved.shiftTypeName, team: saved.teamName, date: saved.dateShown, member: saved.memberName },
       };
     case REPLACE_MEMBER:
       return {
         request: false,
+        swap: false,
         key: 'zaOdluku.savedReplace',
         values: {
           type: saved.shiftTypeName,
