@@ -23729,17 +23729,17 @@ describe('a member proposes a swap as its own proposer, the colleague answers, e
 
         await actAs(client, self.authUserId, organization);
         const proposedByProposer = await insertSwap(client, shift(team, '2046-10-01'));
-        const acceptedByProposer = await insertSwap(client, shift(team, '2046-10-02'));
-        const acceptedByAddressee = await insertSwap(client, shift(team, '2046-10-03'));
+        const acceptedThenWithdrawnByProposer = await insertSwap(client, shift(team, '2046-10-02'));
+        const acceptedThenWithdrawnByAddressee = await insertSwap(client, shift(team, '2046-10-03'));
         const proposed = await insertSwap(client, shift(returnTeam, '2046-10-04'));
         await actAs(client, other.authUserId, organization);
-        await answerSwap(client, acceptedByProposer, 'accepted');
-        await answerSwap(client, acceptedByAddressee, 'accepted');
+        await answerSwap(client, acceptedThenWithdrawnByProposer, 'accepted');
+        await answerSwap(client, acceptedThenWithdrawnByAddressee, 'accepted');
         const addresseeBeforeAccepting = await refusedThenContinue(client, () => withdrawSwap(client, proposed));
-        await withdrawSwap(client, acceptedByAddressee);
+        await withdrawSwap(client, acceptedThenWithdrawnByAddressee);
         await actAs(client, self.authUserId, organization);
         await withdrawSwap(client, proposedByProposer);
-        await withdrawSwap(client, acceptedByProposer);
+        await withdrawSwap(client, acceptedThenWithdrawnByProposer);
         const again = await refusedThenContinue(client, () => withdrawSwap(client, proposedByProposer));
         await actAs(client, third.authUserId, organization);
         const byThird = await refusedThenContinue(client, () => withdrawSwap(client, proposed));
@@ -23757,10 +23757,10 @@ describe('a member proposes a swap as its own proposer, the colleague answers, e
 
         const withdrawnBy = (by: string, answer: SwapState) => ({ ...answer, closedBy: by, closed: true });
         expect(await swapState(client, proposedByProposer), fixture.slug).toEqual(withdrawnBy(self.authUserId, PROPOSED));
-        expect(await swapState(client, acceptedByProposer), fixture.slug).toEqual(
+        expect(await swapState(client, acceptedThenWithdrawnByProposer), fixture.slug).toEqual(
           withdrawnBy(self.authUserId, accepted(other.authUserId)),
         );
-        expect(await swapState(client, acceptedByAddressee), fixture.slug).toEqual(
+        expect(await swapState(client, acceptedThenWithdrawnByAddressee), fixture.slug).toEqual(
           withdrawnBy(other.authUserId, accepted(other.authUserId)),
         );
         for (const [label, refusal] of [
@@ -24015,20 +24015,39 @@ describe('a member proposes a swap as its own proposer, the colleague answers, e
   );
 
   it.skipIf(noDatabase).each(FIXTURES)(
-    'changes neither $fixture calendar_roster_overrides() nor the outbox while a swap is proposed or accepted, and the approval tells both members and not the admin',
+    'changes no $fixture calendar_roster_overrides() while a swap is proposed or accepted, tells the addressee of the proposal and the proposer of the accept alone (0050), and the approval tells both members and not the admin',
     async (fixture) => {
       await inRolledBackTransaction(async (client) => {
         const { owner, self, other, organization, team, returnTeam } = await swapCast(client, fixture);
         for (const [row, username] of [[owner, fixture.admin], [self, fixture.member], [other, fixture.bystander]] as const) {
           await client.query('update members set email = $2 where id = $1', [row.id, `${username}@example.org`]);
         }
-        const outboxCount = async () =>
-          (await client.query<{ total: number }>('select count(*)::int as total from notification_outbox where organization_id = $1', [organization])).rows[0]?.total;
+        // Every row of the organization but the swap's own, by one predicate
+        // before and after (a null subject counts both times): the proposal
+        // and the answer write the swap's rows and nothing else.
+        const otherRows = async (swap: string) =>
+          (
+            await client.query<{ total: number }>(
+              `select count(*)::int as total from notification_outbox
+                where organization_id = $1 and subject_id is distinct from $2::uuid`,
+              [organization, swap],
+            )
+          ).rows[0]?.total;
+        const swapRows = async (swap: string) =>
+          (
+            await client.query<{ code: string; recipient: string }>(
+              `select code, recipient_member_id::text as recipient from notification_outbox
+                where subject_id = $1 and channel = 'email' order by code`,
+              [swap],
+            )
+          ).rows;
 
         await actAs(client, owner.authUserId, organization);
         const calendarBefore = await calendarRosterOverridesOf(client);
         await actAsOwner(client);
-        const outboxBefore = await outboxCount();
+        // No swap has this id yet, so the predicate excludes nothing: the same
+        // set the later count reads, the swap's own rows aside.
+        const outboxBefore = await otherRows('00000000-0000-0000-0000-000000000000');
         await actAs(client, self.authUserId, organization);
         const id = await insertSwap(client, {
           organization,
@@ -24039,13 +24058,16 @@ describe('a member proposes a swap as its own proposer, the colleague answers, e
           returnTeam,
           returnDate: SWAP_RETURN,
         });
+        await actAsOwner(client);
+        const proposed = await swapRows(id);
         await actAs(client, other.authUserId, organization);
         await answerSwap(client, id, 'accepted');
         const calendarAccepted = await calendarRosterOverridesOf(client);
         await actAs(client, owner.authUserId, organization);
         const calendarAfter = await calendarRosterOverridesOf(client);
         await actAsOwner(client);
-        const outboxAfter = await outboxCount();
+        const answered = await swapRows(id);
+        const outboxAfter = await otherRows(id);
         await actAs(client, owner.authUserId, organization);
         const override = await decideSwap(client, id, 'approved');
         await actAsOwner(client);
@@ -24053,7 +24075,14 @@ describe('a member proposes a swap as its own proposer, the colleague answers, e
 
         expect(calendarAfter, `${fixture.slug}: an accepted swap reads as a roster override`).toEqual(calendarBefore);
         expect(calendarAccepted.map((row) => row['id']), fixture.slug).toEqual(calendarBefore.map((row) => row['id']));
-        expect(outboxAfter, `${fixture.slug}: a proposed or accepted swap wrote the outbox`).toBe(outboxBefore);
+        expect(proposed, `${fixture.slug}: the proposal is not the addressee's row alone`).toEqual([
+          { code: 'SWAP_REQUEST_PROPOSED', recipient: other.id },
+        ]);
+        expect(answered, `${fixture.slug}: the accept is not the proposer's row alone`).toEqual([
+          { code: 'SWAP_REQUEST_ACCEPTED', recipient: self.id },
+          { code: 'SWAP_REQUEST_PROPOSED', recipient: other.id },
+        ]);
+        expect(outboxAfter, `${fixture.slug}: a proposed or accepted swap wrote a row about anything else`).toBe(outboxBefore);
         const { rows } = await client.query<{ subject: string; code: string; recipient: string }>(
           `select subject_id::text as subject, code, recipient_member_id::text as recipient
              from notification_outbox where subject_id = any($1::uuid[]) and channel = 'email'
@@ -24070,6 +24099,8 @@ describe('a member proposes a swap as its own proposer, the colleague answers, e
         );
         expect(rows.length, fixture.slug).toBe(4);
         expect(rows.map((row) => row.recipient), `${fixture.slug}: the approving admin was told`).not.toContain(owner.id);
+        // 12.4 owns the decision's notice: the approval wrote no swap row.
+        expect(await swapRows(id), `${fixture.slug}: the decision wrote a swap row`).toEqual(answered);
       });
     },
   );
@@ -24505,6 +24536,13 @@ describe('a member proposes a swap as its own proposer, the colleague answers, e
       let cleanup: string[] = [];
       const year2047 = ['2047-01-01', '2048-01-01'];
       const sweep = async () => {
+        // 0050: the proposal and the accept commit their outbox rows with the
+        // swap; deleted with it so no pending row outlives the case.
+        await client.query(
+          `delete from notification_outbox where subject_id in
+             (select id from swap_requests where proposer_id = any($1::uuid[]) and date >= $2::date and date < $3::date)`,
+          [cleanup, ...year2047],
+        );
         await client.query(
           `delete from swap_request_decisions where request_id in
              (select id from swap_requests where proposer_id = any($1::uuid[]) and date >= $2::date and date < $3::date)`,
@@ -24578,5 +24616,297 @@ describe('a member proposes a swap as its own proposer, the colleague answers, e
       }
     },
     20_000,
+  );
+});
+
+/**
+ * STORY 12.3b (`0050`). A swap proposed to a member, and its answer to the
+ * proposer, are notified: `private.notify_swap_request()` on two AFTER
+ * triggers writes `SWAP_REQUEST_PROPOSED` to the addressee on an open insert,
+ * and `SWAP_REQUEST_ACCEPTED` or `SWAP_REQUEST_DECLINED` to the proposer when
+ * the answer is set, through `notify_members` and its recipient rules. A
+ * withdrawal, a deactivation close and a decision write nothing (12.4), and a
+ * wholly past swap notifies nobody. Every case runs in a rolled-back
+ * transaction.
+ */
+describe('a swap proposed to a member, and its answer to the proposer, are notified (0050)', () => {
+  const P256DH = `B${'k'.repeat(86)}`;
+  const AUTH = 'a'.repeat(22);
+
+  async function setEmail(client: Client, member: string, email: string | null): Promise<void> {
+    await client.query('update members set email = $2 where id = $1', [member, email]);
+  }
+
+  /** A device for `member`, written as the owner (the registration's own rules are 0045's suite). */
+  async function device(client: Client, member: MemberRow, name: string): Promise<void> {
+    await client.query(
+      `insert into push_subscriptions (organization_id, member_id, endpoint, p256dh, auth)
+       values ($1, $2, $3, $4, $5)`,
+      [member.organizationId, member.id, `https://fcm.googleapis.com/fcm/send/0050-${member.id}-${name}`, P256DH, AUTH],
+    );
+  }
+
+  /** One swap's rows as `channel:code:recipient`, sorted, as the owner. */
+  async function rowsOf(client: Client, swap: string): Promise<string[]> {
+    const { rows } = await client.query<{ row: string }>(
+      `select channel || ':' || code || ':' || recipient_member_id::text as row
+         from notification_outbox where subject_id = $1 order by 1`,
+      [swap],
+    );
+    return rows.map(({ row }) => row);
+  }
+
+  /** One swap's operands by code, as the owner. */
+  async function operandsOf(client: Client, swap: string): Promise<Record<string, unknown>[]> {
+    const { rows } = await client.query<{ code: string; operands: Record<string, unknown> }>(
+      `select code, operands from notification_outbox where subject_id = $1 and channel = 'email' order by code`,
+      [swap],
+    );
+    return rows.map(({ code, operands }) => ({ code, ...operands }));
+  }
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'tells the $fixture addressee of a proposal and the proposer of a decline, by email and by push, and never the member who wrote it',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { self, other, organization, team } = await swapCast(client, fixture);
+        await setEmail(client, self.id, `${fixture.member}@example.org`);
+        await setEmail(client, other.id, `${fixture.bystander}@example.org`);
+        // Both writers have an address and a device, so the exact lists below
+        // show that neither is written to for their own write.
+        await device(client, self, 'proposer');
+        await device(client, other, 'addressee');
+
+        await actAs(client, self.authUserId, organization);
+        const id = await insertSwap(client, { organization, proposer: self.id, addressee: other.id, team, date: SWAP_GIVEN });
+        await actAsOwner(client);
+        const proposed = await rowsOf(client, id);
+        await actAs(client, other.authUserId, organization);
+        await answerSwap(client, id, 'declined');
+        await actAsOwner(client);
+
+        expect(proposed, fixture.slug).toEqual([
+          `email:SWAP_REQUEST_PROPOSED:${other.id}`,
+          `push:SWAP_REQUEST_PROPOSED:${other.id}`,
+        ]);
+        expect(await rowsOf(client, id), fixture.slug).toEqual([
+          `email:SWAP_REQUEST_DECLINED:${self.id}`,
+          `email:SWAP_REQUEST_PROPOSED:${other.id}`,
+          `push:SWAP_REQUEST_DECLINED:${self.id}`,
+          `push:SWAP_REQUEST_PROPOSED:${other.id}`,
+        ]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'writes nothing beyond the proposal and accept rows when a $fixture swap is withdrawn, proposed or accepted, by either member, or closed by a deactivation',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { owner, self, other, organization, team, returnTeam } = await swapCast(client, fixture);
+        const third = await addThrowawayMember(client, organization);
+        for (const member of [self, other, third]) await setEmail(client, member.id, `${member.id}@example.org`);
+        const day = (offset: number) => organizationDay(client, organization, offset);
+
+        await actAs(client, self.authUserId, organization);
+        const proposedWithdrawn = await insertSwap(client, { organization, proposer: self.id, addressee: other.id, team, date: SWAP_GIVEN });
+        const acceptedThenWithdrawnByAddressee = await insertSwap(client, { organization, proposer: self.id, addressee: other.id, team: returnTeam, date: SWAP_GIVEN });
+        const acceptedThenWithdrawnByProposer = await insertSwap(client, { organization, proposer: self.id, addressee: other.id, team, date: SWAP_RETURN });
+        const closedOnDeactivation = await insertSwap(client, { organization, proposer: self.id, addressee: third.id, team: returnTeam, date: SWAP_RETURN });
+        await actAs(client, other.authUserId, organization);
+        await answerSwap(client, acceptedThenWithdrawnByAddressee, 'accepted');
+        await answerSwap(client, acceptedThenWithdrawnByProposer, 'accepted');
+        await actAsOwner(client);
+        const swaps = [proposedWithdrawn, acceptedThenWithdrawnByAddressee, acceptedThenWithdrawnByProposer, closedOnDeactivation];
+        const before = await Promise.all(swaps.map((swap) => rowsOf(client, swap)));
+
+        await actAs(client, self.authUserId, organization);
+        await withdrawSwap(client, proposedWithdrawn);
+        await withdrawSwap(client, acceptedThenWithdrawnByProposer);
+        await actAs(client, other.authUserId, organization);
+        await withdrawSwap(client, acceptedThenWithdrawnByAddressee);
+        await actAs(client, owner.authUserId, organization);
+        await insertVersion(client, { organization, member: third.id, active: false, from: await day(1) });
+        await actAsOwner(client);
+
+        expect((await swapState(client, closedOnDeactivation)).outcome, `${fixture.slug}: the deactivation did not close the swap`).toBe('deactivated');
+        expect(before.map((rows) => rows.length), `${fixture.slug}: the proposals and accepts were not told`).toEqual([1, 2, 2, 1]);
+        for (const [index, swap] of swaps.entries()) {
+          expect(await rowsOf(client, swap), `${fixture.slug}: a close wrote a row`).toEqual(before[index]);
+        }
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'writes nothing for a wholly past $fixture swap, proposed or answered, and tells of one whose return date is still ahead',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { owner, self, other, organization, team, returnTeam } = await swapCast(client, fixture);
+        await setEmail(client, self.id, `${fixture.member}@example.org`);
+        await setEmail(client, other.id, `${fixture.bystander}@example.org`);
+        const day = (offset: number) => organizationDay(client, organization, offset);
+
+        // As the owner, past the insert policy's date rule, with no session
+        // member: an open swap whose dates have passed (0049 lets it be answered).
+        const past = await insertedSwapAsOwner(client, {
+          organization,
+          proposer: self.id,
+          addressee: other.id,
+          team,
+          date: await day(-3),
+          returnTeam,
+          returnDate: await day(-1),
+          by: owner.authUserId,
+        });
+        const live = await insertedSwapAsOwner(client, {
+          organization,
+          proposer: self.id,
+          addressee: other.id,
+          team,
+          date: await day(-2),
+          returnTeam,
+          returnDate: await day(5),
+          by: owner.authUserId,
+        });
+        // No return shift: yesterday is wholly past, today is not.
+        const pastCover = await insertedSwapAsOwner(client, {
+          organization,
+          proposer: self.id,
+          addressee: other.id,
+          team: returnTeam,
+          date: await day(-1),
+          by: owner.authUserId,
+        });
+        const todayCover = await insertedSwapAsOwner(client, {
+          organization,
+          proposer: self.id,
+          addressee: other.id,
+          team: returnTeam,
+          date: await day(0),
+          by: owner.authUserId,
+        });
+        const pastProposed = await rowsOf(client, past);
+        const liveProposed = await rowsOf(client, live);
+        const pastCoverProposed = await rowsOf(client, pastCover);
+        const todayCoverProposed = await rowsOf(client, todayCover);
+        await actAs(client, other.authUserId, organization);
+        await answerSwap(client, past, 'accepted');
+        await answerSwap(client, live, 'accepted');
+        await answerSwap(client, pastCover, 'accepted');
+        await answerSwap(client, todayCover, 'declined');
+        await actAsOwner(client);
+
+        expect(pastProposed, `${fixture.slug}: a wholly past proposal was told`).toEqual([]);
+        expect(await rowsOf(client, past), `${fixture.slug}: a wholly past answer was told`).toEqual([]);
+        expect(pastCoverProposed, `${fixture.slug}: yesterday's cover was told`).toEqual([]);
+        expect(await rowsOf(client, pastCover), `${fixture.slug}: yesterday's cover answer was told`).toEqual([]);
+        expect(todayCoverProposed, `${fixture.slug}: today's cover was not told`).toEqual([`email:SWAP_REQUEST_PROPOSED:${other.id}`]);
+        expect(await rowsOf(client, todayCover), fixture.slug).toEqual([
+          `email:SWAP_REQUEST_DECLINED:${self.id}`,
+          `email:SWAP_REQUEST_PROPOSED:${other.id}`,
+        ]);
+        expect(liveProposed, fixture.slug).toEqual([`email:SWAP_REQUEST_PROPOSED:${other.id}`]);
+        expect(await rowsOf(client, live), fixture.slug).toEqual([
+          `email:SWAP_REQUEST_ACCEPTED:${self.id}`,
+          `email:SWAP_REQUEST_PROPOSED:${other.id}`,
+        ]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'writes no $fixture row to a recipient with neither an address nor a device, and a push row alone to one with a device and no address',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { self, other, organization, team } = await swapCast(client, fixture);
+        await setEmail(client, self.id, null);
+        await setEmail(client, other.id, null);
+        await device(client, self, 'proposer');
+
+        await actAs(client, self.authUserId, organization);
+        const id = await insertSwap(client, { organization, proposer: self.id, addressee: other.id, team, date: SWAP_GIVEN });
+        await actAsOwner(client);
+        const proposed = await rowsOf(client, id);
+        await actAs(client, other.authUserId, organization);
+        await answerSwap(client, id, 'accepted');
+        await actAsOwner(client);
+
+        expect(proposed, `${fixture.slug}: an addressee with no address and no device was written to`).toEqual([]);
+        expect(await rowsOf(client, id), fixture.slug).toEqual([`push:SWAP_REQUEST_ACCEPTED:${self.id}`]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'carries a $fixture returnDate only with a return shift, and the given date always',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { self, other, organization, team, returnTeam } = await swapCast(client, fixture);
+        await setEmail(client, self.id, `${fixture.member}@example.org`);
+        await setEmail(client, other.id, `${fixture.bystander}@example.org`);
+
+        await actAs(client, self.authUserId, organization);
+        const cover = await insertSwap(client, { organization, proposer: self.id, addressee: other.id, team, date: SWAP_GIVEN });
+        const swap = await insertSwap(client, {
+          organization,
+          proposer: self.id,
+          addressee: other.id,
+          team: returnTeam,
+          date: SWAP_GIVEN,
+          returnTeam: team,
+          returnDate: SWAP_RETURN,
+        });
+        await actAs(client, other.authUserId, organization);
+        await answerSwap(client, cover, 'accepted');
+        await answerSwap(client, swap, 'declined');
+        await actAsOwner(client);
+
+        expect(await operandsOf(client, cover), fixture.slug).toEqual([
+          { code: 'SWAP_REQUEST_ACCEPTED', date: SWAP_GIVEN },
+          { code: 'SWAP_REQUEST_PROPOSED', date: SWAP_GIVEN },
+        ]);
+        expect(await operandsOf(client, swap), fixture.slug).toEqual([
+          { code: 'SWAP_REQUEST_DECLINED', date: SWAP_GIVEN, returnDate: SWAP_RETURN },
+          { code: 'SWAP_REQUEST_PROPOSED', date: SWAP_GIVEN, returnDate: SWAP_RETURN },
+        ]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'writes no $fixture row for a refused proposal or a refused answer',
+    async (fixture) => {
+      await inRolledBackTransaction(async (client) => {
+        const { self, other, organization, team } = await swapCast(client, fixture);
+        await setEmail(client, self.id, `${fixture.member}@example.org`);
+        await setEmail(client, other.id, `${fixture.bystander}@example.org`);
+        const proposals = async () =>
+          (
+            await client.query<{ total: number }>(
+              `select count(*)::int as total from notification_outbox
+                where organization_id = $1 and code like 'SWAP_REQUEST_%'`,
+              [organization],
+            )
+          ).rows[0]?.total;
+
+        await actAs(client, self.authUserId, organization);
+        const id = await insertSwap(client, { organization, proposer: self.id, addressee: other.id, team, date: SWAP_GIVEN });
+        await actAsOwner(client);
+        const before = await proposals();
+        await actAs(client, self.authUserId, organization);
+        // The same given shift again (23505), and the proposer answering their own (P0002).
+        const twice = await refusedThenContinue(client, () =>
+          insertSwap(client, { organization, proposer: self.id, addressee: other.id, team, date: SWAP_GIVEN }),
+        );
+        const ownAnswer = await refusedThenContinue(client, () => answerSwap(client, id, 'accepted'));
+        await actAsOwner(client);
+
+        expect(twice.code, fixture.slug).toBe('23505');
+        expect(ownAnswer.code, fixture.slug).toBe('P0002');
+        expect(await proposals(), `${fixture.slug}: a refused write left a row`).toBe(before);
+        expect(await rowsOf(client, id), fixture.slug).toEqual([`email:SWAP_REQUEST_PROPOSED:${other.id}`]);
+      });
+    },
   );
 });

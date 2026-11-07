@@ -1,22 +1,25 @@
 /**
  * notify — the Deno wiring, and nothing else (AD-14, amended by story 10.1).
  *
- * Every decision lives in `handler.ts`, which imports nothing Deno-specific
- * and is asserted from Vitest (AD-15). This file reads the environment, builds
- * the secret-key client and serves.
+ * Every decision lives in `handler.ts`, `email.ts`, `push.ts`, `run.ts` and
+ * `messages.ts`, which import nothing Deno-specific and are asserted from
+ * Vitest (AD-15).
+ * This file reads the environment, builds the secret-key client and serves.
  *
  * AD-17 (amended): the Resend key, and from story 10.4 the VAPID key pair and
  * its subject, are read here and nowhere else. The secret key is read here
  * too, for ONE use: calling `claim_notifications`, `settle_notification` and
  * (story 10.4) `delete_push_subscription`, which only `service_role` may
- * execute. `handler.ts` narrows the client to `rpc`, so a
+ * execute. `handler.ts`'s `OutboxClient` narrows the client to `rpc`, so a
  * direct table read or write is unrepresentable.
  */
 
 import { createClient } from 'npm:@supabase/supabase-js@2.113.0';
 import webpush from 'npm:web-push@3.6.7';
 
-import { createHandler, pushEncryptorOf, readConfiguration } from './handler.ts';
+import { readConfiguration } from './handler.ts';
+import { pushEncryptorOf } from './push.ts';
+import { createHandler } from './run.ts';
 
 /**
  * `admin-auth/deno-runtime.d.ts` declares the global `Deno` for the one

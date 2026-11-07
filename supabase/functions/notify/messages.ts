@@ -84,6 +84,18 @@ export const OBAVIJESTI = {
     subject: 'Novi zahtjev za godišnji: {memberName}',
     body: '{organizationName}: {memberName} traži godišnji odmor {startDate}–{endDate}. Zahtjev čeka tvoju odluku: {link}',
   },
+  swapRequestProposed: {
+    subject: 'Predložena ti je zamjena {date}',
+    body: '{organizationName}: predložena ti je zamjena smjene {date}. Odgovori u aplikaciji: {link}',
+  },
+  swapRequestAccepted: {
+    subject: 'Zamjena {date} je prihvaćena',
+    body: '{organizationName}: tvoj prijedlog zamjene smjene {date} je prihvaćen i čeka odluku. Pogledaj u aplikaciji: {link}',
+  },
+  swapRequestDeclined: {
+    subject: 'Zamjena {date} je odbijena',
+    body: '{organizationName}: tvoj prijedlog zamjene smjene {date} je odbijen. Pogledaj u aplikaciji: {link}',
+  },
   footer: 'Obavijesti e-poštom možeš isključiti u aplikaciji, pod Obavijesti: {link}',
 } as const;
 
@@ -123,6 +135,9 @@ export const MESSAGE_OF_CODE: Readonly<Record<string, MessageKey>> = {
   ROTATION_CHANGES: 'rotationChanges',
   ROTATION_CHANGE_CANCELLED: 'rotationChangeCancelled',
   LEAVE_REQUEST_CREATED: 'leaveRequestCreated',
+  SWAP_REQUEST_PROPOSED: 'swapRequestProposed',
+  SWAP_REQUEST_ACCEPTED: 'swapRequestAccepted',
+  SWAP_REQUEST_DECLINED: 'swapRequestDeclined',
 };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -152,6 +167,10 @@ export function linkPathOf(key: MessageKey, operands: Readonly<Record<string, un
     case 'rotationChanges':
     case 'rotationChangeCancelled':
       return '/kalendar';
+    case 'swapRequestProposed':
+    case 'swapRequestAccepted':
+    case 'swapRequestDeclined':
+      return '/danas';
     case 'leaveRequestCreated': {
       const id = operands['requestId'];
       return typeof id === 'string' && UUID.test(id) ? `/za-odluku/zahtjev/${id.toLowerCase()}` : null;
@@ -200,7 +219,7 @@ const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
  * formatted as dates. A name (a member's, a shift type's) is text, however
  * much it looks like a date.
  */
-const DATE_OPERANDS: ReadonlySet<string> = new Set(['startDate', 'endDate', 'date', 'effectiveFrom']);
+const DATE_OPERANDS: ReadonlySet<string> = new Set(['startDate', 'endDate', 'date', 'effectiveFrom', 'returnDate']);
 
 /**
  * `2026-09-23` → `23.09.2026`, as `apps/web`'s `formatIsoDate`. `null` for a
