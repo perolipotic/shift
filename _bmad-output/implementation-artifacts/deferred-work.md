@@ -1358,7 +1358,7 @@
 ## Deferred from: code review of spec-12-3b-swap-proposed-and-answered-notifications.md (2026-11-07)
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-12-3b-swap-proposed-and-answered-notifications.md`
-  summary: The e2e cleanup (`e2e/utils/database-helper.ts`, `removeLeaveMemberInSql`) deletes outbox rows only by recipient, so the `SWAP_REQUEST_*` rows 0050 writes for a swap an e2e spec creates between fixture (non-throwaway) members stay behind. Add a delete by subject (the swap's id), as leave requests are cleaned up.
+  summary: RESOLVED by story 12.4 (2026-11-07) — `removeLeaveMemberInSql` deletes the outbox rows whose subject is a swap the member is party to, and `removeTeamInSql` and `removeSeededRotation` delete those of the swaps they remove. Original: The e2e cleanup (`e2e/utils/database-helper.ts`, `removeLeaveMemberInSql`) deletes outbox rows only by recipient, so the `SWAP_REQUEST_*` rows 0050 writes for a swap an e2e spec creates between fixture (non-throwaway) members stay behind. Add a delete by subject (the swap's id), as leave requests are cleaned up.
   evidence: Raised by the 12.3b implementation. The harness was off-limits to this story (shared stack rule); leftover rows are pending deliveries to fixture members, harmless unless a spec counts the outbox.
 
 ## Deferred from: planning of spec-12-4-an-admin-decides-a-swap-on-its-own-screen.md (2026-11-07)
