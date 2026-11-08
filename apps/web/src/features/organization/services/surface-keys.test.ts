@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { ABSENCE_TYPES_LIST_KEY } from '@/features/absence-types/services/list';
 import { HOUR_BANDS_LIST_KEY } from '@/features/hour-bands/services/list';
 import {
   ORGANIZATION_REFUSED,
@@ -16,14 +17,14 @@ import {
 import { ZONE_NOT_NEEDED, zoneFromReads } from '@/lib/offline/freshness';
 import { persistsKey } from '@/lib/offline/persistence';
 
-/** Story 8.2d: *Organizacija* — the row and the hour bands — one snapshot, every key kept on the device. */
+/** Story 8.2d: *Organizacija* — the row, the hour bands and (13.1b) the absence types — one snapshot, every key kept on the device. */
 
 const text = (key: readonly unknown[]): string => JSON.stringify(key);
 const organization = { ok: true, snapshot: { timezone: 'Europe/Zagreb' } } as unknown as OrganizationOutcome;
 
 describe("Organizacija's keys", () => {
-  it('are the organization and the hour bands', () => {
-    expect(ORGANIZATION_SURFACE_KEYS).toEqual([ORGANIZATION_SNAPSHOT_KEY, HOUR_BANDS_LIST_KEY]);
+  it('are the organization, the hour bands and the absence types (story 13.1b)', () => {
+    expect(ORGANIZATION_SURFACE_KEYS).toEqual([ORGANIZATION_SNAPSHOT_KEY, HOUR_BANDS_LIST_KEY, ABSENCE_TYPES_LIST_KEY]);
   });
 
   it('are all kept on the device', () => {

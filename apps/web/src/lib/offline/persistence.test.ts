@@ -1,6 +1,7 @@
 import { QueryClient } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { ABSENCE_TYPES_LIST_KEY } from '@/features/absence-types/services/list';
 import { CALENDAR_KEY } from '@/features/calendar/services/snapshot';
 import { ERASURE_CHECK_KEY_PART as FEATURE_ERASURE_CHECK_KEY_PART } from '@/features/conflicts/hooks/use-erasure-reads';
 import { ACTING_ADMINS_KEY } from '@/features/conflicts/services/resolved-conflicts';
@@ -141,6 +142,7 @@ describe('what is kept on the device', () => {
         ORGANIZATION_LEAVE_REQUESTS_KEY,
         MY_SWAP_REQUESTS_KEY,
         ORGANIZATION_SWAP_REQUESTS_KEY,
+        ABSENCE_TYPES_LIST_KEY,
       ].map((key) => {
         expect(key).toHaveLength(1);
 

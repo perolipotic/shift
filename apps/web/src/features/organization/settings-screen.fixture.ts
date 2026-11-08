@@ -36,6 +36,10 @@ export const SETTINGS_SCREEN_PARTS = {
   // holding its one read of the bands.
   hourBands: ['features', 'organization', 'components', 'organization-hour-bands-card.tsx'],
   hourBandsHook: ['features', 'organization', 'hooks', 'use-organization-hour-bands.ts'],
+  // STORY 13.1b: the *Vrste odsutnosti* card, with its one dialog, and the
+  // hook holding its read and its two writes.
+  absenceTypes: ['features', 'organization', 'components', 'organization-absence-types-card.tsx'],
+  absenceTypesHook: ['features', 'organization', 'hooks', 'use-organization-absence-types.ts'],
   accentLabel: ['features', 'organization', 'utils', 'accent-label.ts'],
 } as const;
 

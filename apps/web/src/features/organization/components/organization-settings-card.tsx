@@ -3,12 +3,14 @@ import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Notice } from '@/components/ui/notice';
 import { t } from '@/lib/i18n';
+import { OrganizationAbsenceTypesCard } from '@/features/organization/components/organization-absence-types-card';
 import { OrganizationEmailNotificationsCard } from '@/features/organization/components/organization-email-notifications-card';
 import { OrganizationMinimumMembersCard } from '@/features/organization/components/organization-minimum-members-card';
 import { OrganizationFireRanksCard } from '@/features/organization/components/organization-fire-ranks-card';
 import { OrganizationHourBandsCard } from '@/features/organization/components/organization-hour-bands-card';
 import { OrganizationProfileCard } from '@/features/organization/components/organization-profile-card';
 import { OrganizationTimeCard } from '@/features/organization/components/organization-time-card';
+import type { OrganizationAbsenceTypes } from '@/features/organization/hooks/use-organization-absence-types';
 import type { OrganizationHourBands } from '@/features/organization/hooks/use-organization-hour-bands';
 import type { OrganizationSettings } from '@/features/organization/hooks/use-organization-settings';
 import { ORGANIZATION_READ_RETRY_ID } from '@/features/organization/utils/element-ids';
@@ -17,12 +19,13 @@ import { keepFocusOnAlert } from '@/utils/retry-focus';
 
 /**
  * The settings page's body (stories 1.4a-1.4c and member rank; facts and
- * dialogs since story 7.18): the read's message and retry, then four cards of
- * facts — *Profil*, *Vrijeme i godina*, *Vatrogasni činovi i položaji* and
- * *Obavijesti e-poštom* (story 10.3) —
- * each change behind its own dialog with one Spremi, and a fifth, *Satni
- * pojasi*, a summary of the hour bands with the way to their editor. No
- * field is mounted on the page.
+ * dialogs since story 7.18): the read's message and retry, then seven cards:
+ * five of facts — *Profil*, *Vrijeme i godina*, *Vatrogasni činovi i
+ * položaji*, *Obavijesti e-poštom* (story 10.3) and *Najmanje ljudi u smjeni*
+ * (story 11.1) — each change behind its own dialog with one Spremi; a sixth,
+ * *Satni pojasi*, a summary of the hour bands with the way to their editor;
+ * and a seventh, *Vrste odsutnosti* (story 13.1b), the absence types with one
+ * dialog to add a type or edit one. No field is mounted on the page.
  *
  * WHAT IS DELIBERATELY NOT HERE:
  *
@@ -47,9 +50,11 @@ import { keepFocusOnAlert } from '@/utils/retry-focus';
 export function OrganizationSettingsCard({
   settings,
   hourBands,
+  absenceTypes,
 }: {
   readonly settings: OrganizationSettings;
   readonly hourBands: OrganizationHourBands;
+  readonly absenceTypes: OrganizationAbsenceTypes;
 }): ReactNode {
   const { snapshot, answered, organization, readFailure, readRetry, readAttempts, retryRead } = settings;
 
@@ -86,6 +91,7 @@ export function OrganizationSettingsCard({
         <OrganizationEmailNotificationsCard settings={settings} organization={organization} />
         <OrganizationMinimumMembersCard settings={settings} organization={organization} />
         <OrganizationHourBandsCard hourBands={hourBands} />
+        <OrganizationAbsenceTypesCard absenceTypes={absenceTypes} />
       </>
     );
   }

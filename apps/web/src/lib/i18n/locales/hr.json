@@ -1268,6 +1268,36 @@
         "saveUnavailable": "Spremanje trenutačno nije moguće. Pokušaj ponovno.",
         "unknown": "Ovaj pojas ne postoji u organizaciji."
       }
+    },
+    "absenceTypes": {
+      "heading": "Vrste odsutnosti",
+      "add": "Dodaj",
+      "addLabel": "Dodaj vrstu odsutnosti",
+      "edit": "Uredi",
+      "editLabel": "Uredi vrstu odsutnosti {name}",
+      "addHeading": "Nova vrsta odsutnosti",
+      "editHeading": "Uređivanje vrste odsutnosti",
+      "name": "Naziv",
+      "drawsLabel": "Dani godišnjeg odmora",
+      "draws": "Troši dane godišnjeg",
+      "doesNotDraw": "Ne troši dane godišnjeg",
+      "annualHint": "Godišnji odmor uvijek troši dane godišnjeg. Može mu se promijeniti samo naziv.",
+      "close": "Zatvori",
+      "cancel": "Odustani",
+      "save": "Spremi",
+      "added": "Vrsta odsutnosti je dodana.",
+      "saved": "Promjene su spremljene.",
+      "error": {
+        "unavailable": "Vrste odsutnosti trenutačno nije moguće učitati. Pokušaj ponovno.",
+        "nameEmpty": "Naziv vrste odsutnosti ne može biti prazan.",
+        "nameTooLong": "Naziv vrste odsutnosti može imati najviše 100 znakova.",
+        "nameTaken": "Vrsta odsutnosti s tim nazivom već postoji u organizaciji.",
+        "drawsRequired": "Odaberi troši li ova vrsta dane godišnjeg.",
+        "annualDraws": "Godišnji odmor uvijek troši dane godišnjeg.",
+        "stale": "Vrsta odsutnosti se u međuvremenu promijenila. Provjeri popis i pokušaj ponovno.",
+        "refused": "Promjena nije spremljena. Odjavi se i prijavi ponovno.",
+        "saveUnavailable": "Spremanje trenutačno nije moguće. Pokušaj ponovno."
+      }
     }
   },
   "rotation": {

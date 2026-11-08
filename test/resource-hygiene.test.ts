@@ -2454,6 +2454,36 @@ const SANCTIONED_SCREEN_KEYS = [
   'danas.swaps.notOpen',
   'danas.swaps.denied',
   'danas.swaps.failed',
+  // STORY 13.1b. *Vrste odsutnosti* on *Organizacija*: the card, its `Dodaj`
+  // and each row's `Uredi`, the one add-or-edit dialog, what a row says about
+  // drawing, annual leave's hint, the two saved lines, the read failure and
+  // the eight write refusals.
+  'organization.absenceTypes.heading',
+  'organization.absenceTypes.add',
+  'organization.absenceTypes.addLabel',
+  'organization.absenceTypes.edit',
+  'organization.absenceTypes.editLabel',
+  'organization.absenceTypes.addHeading',
+  'organization.absenceTypes.editHeading',
+  'organization.absenceTypes.name',
+  'organization.absenceTypes.drawsLabel',
+  'organization.absenceTypes.draws',
+  'organization.absenceTypes.doesNotDraw',
+  'organization.absenceTypes.annualHint',
+  'organization.absenceTypes.close',
+  'organization.absenceTypes.cancel',
+  'organization.absenceTypes.save',
+  'organization.absenceTypes.added',
+  'organization.absenceTypes.saved',
+  'organization.absenceTypes.error.unavailable',
+  'organization.absenceTypes.error.nameEmpty',
+  'organization.absenceTypes.error.nameTooLong',
+  'organization.absenceTypes.error.nameTaken',
+  'organization.absenceTypes.error.drawsRequired',
+  'organization.absenceTypes.error.annualDraws',
+  'organization.absenceTypes.error.stale',
+  'organization.absenceTypes.error.refused',
+  'organization.absenceTypes.error.saveUnavailable',
 ];
 
 /** Everything the resource file is permitted to hold, together. */

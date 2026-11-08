@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { QueryClient, QueryObserver, environmentManager, onlineManager, type QueryKey } from '@tanstack/react-query';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { ABSENCE_TYPES_LIST_KEY } from '@/features/absence-types/services/list';
 import { CALENDAR_KEY } from '@/features/calendar/services/snapshot';
 import {
   MY_CONFLICT_RESOLUTIONS_KEY,
@@ -129,6 +130,9 @@ const CLASSIFIED: Readonly<Record<string, readonly QueryKey[]>> = {
   MY_SWAP_REQUESTS_KEY: [MY_SWAP_REQUESTS_KEY],
   // Story 12.4: every swap of the organization, which Za odluku, Odlučeno and the admin's Danas read.
   ORGANIZATION_SWAP_REQUESTS_KEY: [ORGANIZATION_SWAP_REQUESTS_KEY],
+  // Story 13.1b: the organization's absence types, which only *Vrste odsutnosti*'s
+  // own writes name: no leave figure, report or member surface reads a type yet.
+  ABSENCE_TYPES_LIST_KEY: [ABSENCE_TYPES_LIST_KEY],
 };
 
 /**
@@ -453,6 +457,13 @@ describe('the reads a team or membership write makes stale', () => {
         MY_SWAP_REQUESTS_KEY,
         ORGANIZATION_SWAP_REQUESTS_KEY,
       ],
+    },
+    {
+      write: 'an absence type added or edited (story 13.1b)',
+      own: ABSENCE_TYPES_LIST_KEY,
+      dependents: NO_DEPENDENTS,
+      // Its own list alone: nothing else reads a type yet (13.2).
+      stale: [ABSENCE_TYPES_LIST_KEY],
     },
     {
       write: 'a refusal',

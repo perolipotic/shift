@@ -7,6 +7,7 @@ import { PageActions, PageDescription, PageHeader, PageTitle } from '@/component
 import { t } from '@/lib/i18n';
 import { requireAdmin } from '@/features/navigation/services/admin-guard';
 import { OrganizationSettingsCard } from '@/features/organization/components/organization-settings-card';
+import { useOrganizationAbsenceTypes } from '@/features/organization/hooks/use-organization-absence-types';
 import { useOrganizationHourBands } from '@/features/organization/hooks/use-organization-hour-bands';
 import { useOrganizationSettings } from '@/features/organization/hooks/use-organization-settings';
 import { appLayoutRoute } from '@/pages/_app';
@@ -17,8 +18,9 @@ import { appLayoutRoute } from '@/pages/_app';
  * This file composes the screen: the header and the fact cards. Its state,
  * its organization read and its five writes, with the rationale for each, are
  * `useOrganizationSettings`; the *Satni pojasi* card's read of the bands is
- * `useOrganizationHourBands`; what the page deliberately does not offer is
- * `OrganizationSettingsCard`'s.
+ * `useOrganizationHourBands`; the *Vrste odsutnosti* card's read and its two
+ * writes are `useOrganizationAbsenceTypes` (story 13.1b); what the page
+ * deliberately does not offer is `OrganizationSettingsCard`'s.
  *
  * ADMIN ONLY (UX-DR32). The WRITES are enforced by the DATABASE:
  * `organizations_update_by_own_active_admin` (`0004`) is the whole of it: a
@@ -37,6 +39,7 @@ import { appLayoutRoute } from '@/pages/_app';
 export function OrganizacijaScreen() {
   const settings = useOrganizationSettings();
   const hourBands = useOrganizationHourBands();
+  const absenceTypes = useOrganizationAbsenceTypes();
 
   return (
     <main className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6">
@@ -69,7 +72,7 @@ export function OrganizacijaScreen() {
       {/* STORY 8.2d: the page's one as-of note while the cached cards are
           drawn offline; the hour bands card decides with them and adds none. */}
       <OfflineNote offline={settings.offline} />
-      <OrganizationSettingsCard settings={settings} hourBands={hourBands} />
+      <OrganizationSettingsCard settings={settings} hourBands={hourBands} absenceTypes={absenceTypes} />
     </main>
   );
 }

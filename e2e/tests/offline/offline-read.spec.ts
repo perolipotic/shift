@@ -1,7 +1,8 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 
-
+import type { OrganizationPage } from '../../pages/organization.page.ts';
 import {
+  ANNUAL_LEAVE_NAME,
   holdRotation,
   removeLeaveMemberInSql,
   removeLeaveRecordsInSql,
@@ -70,6 +71,16 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * connection dropped (*Kalendar*, the organization card) hands it to its
  * alert, and online the retry is back.
  */
+
+/**
+ * Story 13.1b: *Organizacija*'s *Vrste odsutnosti* card drawn whole: annual
+ * leave listed, drawing, and no read failure on the card.
+ */
+async function expectAbsenceTypesDrawn(organizationPage: OrganizationPage): Promise<void> {
+  await expect(organizationPage.absenceTypesRegion).toBeVisible();
+  await expect(organizationPage.absenceTypeRow(ANNUAL_LEAVE_NAME)).toContainText(hr.organization.absenceTypes.draws);
+  await expect(organizationPage.absenceTypesRegion.getByRole('alert')).toHaveCount(0);
+}
 
 test.describe('offline reading, as a member', () => {
   test.use({ storageState: MEMBER_STATE });
@@ -565,6 +576,7 @@ test.describe('offline reading of the settings surfaces (story 8.2d)', () => {
     await organizationPage.navigationLink(hr.nav.organizacija, { exact: true }).click();
     await expect(organizationPage.timeRegion).toBeVisible();
     await expect(organizationPage.hourBandsCovered).toBeVisible();
+    await expectAbsenceTypesDrawn(organizationPage);
     await expect(organizationPage.offlineNote, 'a fresh surface carries no note').toHaveCount(0);
 
     await organizationPage.hourBandsLink.click();
@@ -614,6 +626,8 @@ test.describe('offline reading of the settings surfaces (story 8.2d)', () => {
     await expect(organizationPage.offlineNote).toHaveCount(1);
     await expect(organizationPage.timeRegion).toBeVisible();
     await expect(organizationPage.hourBandsCovered).toBeVisible();
+    // Story 13.1b: the absence types are drawn from the same snapshot.
+    await expectAbsenceTypesDrawn(organizationPage);
     await expect(organizationPage.shellRetryButton).toHaveCount(0);
 
     await organizationPage.hourBandsLink.click();

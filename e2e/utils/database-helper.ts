@@ -1107,6 +1107,71 @@ export function holdFireRanks(slug: string): RotationHold {
   return holdLock(`e2e-fire-ranks:${slug}`, async () => undefined);
 }
 
+/** Annual leave's fixed id and seeded name (`0052`), which every organization holds. */
+const ANNUAL_LEAVE_ID = '00000000-0000-0000-0000-000000000001';
+export const ANNUAL_LEAVE_NAME = 'Godišnji odmor';
+
+/**
+ * The prefix every absence type `absence-types.spec.ts` adds starts with, so
+ * a hold can sweep what an earlier, interrupted attempt left behind.
+ */
+export const E2E_ABSENCE_TYPE_PREFIX = 'E2E vrsta';
+
+/**
+ * The run organization's absence types, held by ONE test at a time (story
+ * 13.1b), under the bounded advisory lock {@link holdRotation} uses. Once held,
+ * the types an earlier attempt added are removed and annual leave's name is
+ * restored ({@link cleanUpAbsenceTypesInSql}), so each test starts from the
+ * seeded list.
+ */
+export function holdAbsenceTypes(slug: string): RotationHold {
+  return holdLock(`e2e-absence-types:${slug}`, async (client) => {
+    await cleanUpAbsenceTypes(client, slug, []);
+  });
+}
+
+/**
+ * Deletes the run organization's absence types named in `names`, every one
+ * carrying {@link E2E_ABSENCE_TYPE_PREFIX}, and every one that is annual
+ * leave's seeded name by `private.name_key` (so a regression that let the
+ * duplicate ` godišnji odmor ` insert land leaks no row) — never annual leave
+ * itself, by its id; then sets
+ * annual leave's name back to its seeded one if a test renamed it. Run from a
+ * `finally` under {@link holdAbsenceTypes}. As the owner, past `0052`'s
+ * missing delete privilege: no session deletes a type, and the types a test
+ * adds carry no leave record. Idempotent.
+ */
+export async function cleanUpAbsenceTypesInSql(slug: string, names: readonly string[]): Promise<void> {
+  const client = await connect();
+  try {
+    await cleanUpAbsenceTypes(client, slug, names);
+  } finally {
+    await client.end();
+  }
+}
+
+async function cleanUpAbsenceTypes(client: pg.Client, slug: string, names: readonly string[]): Promise<void> {
+  await client.query(
+    `delete from absence_types t
+      using organizations o
+      where t.organization_id = o.id and o.slug = $1
+        and t.id <> $2::uuid
+        and (
+          t.name = any($3::text[])
+          or t.name like $4
+          or private.name_key(t.name) = private.name_key($5)
+        )`,
+    [slug, ANNUAL_LEAVE_ID, names, `${E2E_ABSENCE_TYPE_PREFIX}%`, ANNUAL_LEAVE_NAME],
+  );
+  await client.query(
+    `update absence_types t set name = $3
+      from organizations o
+      where t.organization_id = o.id and o.slug = $1
+        and t.id = $2::uuid and t.name <> $3`,
+    [slug, ANNUAL_LEAVE_ID, ANNUAL_LEAVE_NAME],
+  );
+}
+
 /**
  * A session-level advisory lock on `key`, polled for at most
  * {@link ROTATION_LOCK_WAIT_MS}, with `onHeld` run once it is held. The hold is
