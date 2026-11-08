@@ -699,7 +699,8 @@ describe('every organization table carries row level security, and only its revi
               'rotation_assignments', 'shift_type_overrides', 'roster_overrides',
               'leave_records', 'conflict_resolutions', 'leave_requests',
               'leave_request_decisions', 'notification_outbox', 'notification_settings',
-              'push_subscriptions', 'swap_requests', 'swap_request_decisions'
+              'push_subscriptions', 'swap_requests', 'swap_request_decisions',
+              'absence_types'
             )
           order by relname`,
       );
@@ -715,6 +716,8 @@ describe('every organization table carries row level security, and only its revi
       // STORY 9.2 the leave requests and their decisions, and STORY 10.1 the
       // notification outbox (on, with no policy at all).
       expect(rows.map((row) => row.relname)).toEqual([
+        // STORY 13.1 (0052): an organization's absence types.
+        'absence_types',
         'conflict_resolutions',
         'hour_bands',
         'leave_records',
@@ -1514,6 +1517,9 @@ describe('every organization table carries row level security, and only its revi
     // removal, or holds anything as `anon`.
     const client = await connect();
     try {
+      // STORY 13.1: `absence_type_id` is no session's to write until 13.2
+      // carries the type through amend and approval; it defaults to annual
+      // leave.
       const held = await heldPrivileges(client, 'leave_records', [
         'organization_id',
         'id',
@@ -1523,6 +1529,7 @@ describe('every organization table carries row level security, and only its revi
         'created_at',
         'removed_by',
         'removed_at',
+        'absence_type_id',
       ]);
       expect(held.tables).toEqual(['authenticated:SELECT']);
       expect(held.columns, 'the writable leave record columns changed, or anon holds one').toEqual([
@@ -1546,6 +1553,8 @@ describe('every organization table carries row level security, and only its revi
       expect(keys.map((row) => row.definition).sort()).toEqual([
         'EXCLUDE USING gist (member_id WITH =, during WITH &&) WHERE ((removed_at IS NULL))',
         'FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE',
+        // STORY 13.1 (0052): the record's type, of its own organization, no cascade.
+        'FOREIGN KEY (organization_id, absence_type_id) REFERENCES absence_types(organization_id, id)',
         'FOREIGN KEY (organization_id, member_id) REFERENCES members(organization_id, id)',
       ]);
       const { rows: indexes } = await client.query<{ indexdef: string }>(
@@ -1568,6 +1577,102 @@ describe('every organization table carries row level security, and only its revi
         'leave_records_notify_insert',
         'leave_records_notify_removal',
       ]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it.skipIf(noDatabase)('holds no privilege on absence_types but read and a three-column insert, a two-column update, and never delete (story 13.1)', async () => {
+    // As 2.1a's hour bands, less the delete: `authenticated` reads (narrowed
+    // by the policy to an active admin), inserts the tenant, name and flag,
+    // and updates the name and flag alone. No session deletes a type, names
+    // its id or `created_at`, or holds anything as `anon`.
+    const client = await connect();
+    try {
+      const held = await heldPrivileges(client, 'absence_types', [
+        'organization_id',
+        'id',
+        'name',
+        'draws_allowance',
+        'created_at',
+      ]);
+      expect(held.tables).toEqual(['authenticated:SELECT']);
+      expect(held.columns, 'the writable absence type columns changed, or anon holds one').toEqual([
+        'authenticated:INSERT:draws_allowance',
+        'authenticated:INSERT:name',
+        'authenticated:INSERT:organization_id',
+        'authenticated:UPDATE:draws_allowance',
+        'authenticated:UPDATE:name',
+      ]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it.skipIf(noDatabase)('keys absence types per organization, seeds annual leave in every one, and defaults every leave record to it (story 13.1)', async () => {
+    const client = await connect();
+    try {
+      const { rows: columns } = await client.query<{ column_name: string; is_nullable: string }>(
+        `select column_name, is_nullable from information_schema.columns
+          where table_schema = 'public' and table_name = 'absence_types'
+          order by ordinal_position`,
+      );
+      expect(columns.map((row) => row.column_name), 'Q5: an absence type is a name and a flag, no reason').toEqual([
+        'organization_id',
+        'id',
+        'name',
+        'draws_allowance',
+        'created_at',
+      ]);
+      expect(columns.every((row) => row.is_nullable === 'NO')).toBe(true);
+
+      const { rows: keys } = await client.query<{ definition: string }>(
+        `select pg_get_constraintdef(oid) as definition
+           from pg_constraint
+          where contype in ('p', 'f') and conrelid = 'public.absence_types'::regclass`,
+      );
+      expect(keys.map((row) => row.definition).sort()).toEqual([
+        'FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE',
+        'PRIMARY KEY (organization_id, id)',
+      ]);
+
+      const { rows: missing } = await client.query<{ slug: string }>(
+        `select o.slug from organizations o
+          where not exists (
+            select 1 from absence_types t
+             where t.organization_id = o.id
+               and t.id = '00000000-0000-0000-0000-000000000001'
+               and t.draws_allowance
+          )`,
+      );
+      expect(missing.map((row) => row.slug), 'an organization has no drawing annual leave').toEqual([]);
+
+      const { rows: other } = await client.query<{ count: number }>(
+        `select count(*)::int as count from leave_records
+          where absence_type_id <> '00000000-0000-0000-0000-000000000001'`,
+      );
+      expect(other[0]?.count, 'a leave record is not annual leave before 13.2').toBe(0);
+
+      const { rows: column } = await client.query<{ is_nullable: string; column_default: string }>(
+        `select is_nullable, column_default from information_schema.columns
+          where table_schema = 'public' and table_name = 'leave_records' and column_name = 'absence_type_id'`,
+      );
+      expect(column[0]).toEqual({
+        is_nullable: 'NO',
+        column_default: "'00000000-0000-0000-0000-000000000001'::uuid",
+      });
+
+      const { rows: triggers } = await client.query<{ definition: string }>(
+        `select pg_get_triggerdef(oid) as definition
+           from pg_trigger where tgrelid = 'public.organizations'::regclass and not tgisinternal`,
+      );
+      expect(triggers.map((row) => row.definition), 'organizations takes exactly the annual leave seed').toEqual([
+        'CREATE TRIGGER organizations_seed_absence_types AFTER INSERT ON public.organizations FOR EACH ROW EXECUTE FUNCTION private.seed_absence_types()',
+      ]);
+      const { rows: typeTriggers } = await client.query<{ tgname: string }>(
+        `select tgname from pg_trigger where tgrelid = 'public.absence_types'::regclass and not tgisinternal`,
+      );
+      expect(typeTriggers, 'absence_types takes a trigger').toEqual([]);
     } finally {
       await client.end();
     }
@@ -2144,6 +2249,9 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // reads the caller, `rotation_steps` and `shift_types` past row level
     // security, as 0036's do.
     { name: 'refuse_assignment_on_archived_type', argumentCount: 0 },
+    // STORY 13.1 (0052). The organization trigger seeds annual leave past the
+    // table's policies and privileges, which no creating path holds.
+    { name: 'seed_absence_types', argumentCount: 0, schema: 'private' },
   ];
 
   it.skipIf(noDatabase).each(ACCESS_CONTROL_FUNCTIONS)(
@@ -2319,6 +2427,9 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'notify_swap_request', argumentCount: 0, expected: [], schema: 'private' },
     // STORY 12.4b (0051). The swap's admin-step notification trigger, likewise.
     { name: 'notify_swap_request_decision', argumentCount: 0, expected: [], schema: 'private' },
+    // STORY 13.1 (0052). The organization trigger that seeds annual leave, on
+    // 0043's terms: run as the owner when it fires, and callable by nobody.
+    { name: 'seed_absence_types', argumentCount: 0, expected: [], schema: 'private' },
     // STORY 10.3 (0044). The outbox filter (a definer: it reads another
     // member's setting) and the settings row's `updated_at` stamp, triggers
     // callable by nobody.

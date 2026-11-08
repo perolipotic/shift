@@ -132,6 +132,9 @@ async function demoSnapshot(client: Client): Promise<string> {
        'hour_bands', (select jsonb_agg(jsonb_build_object('name', b.name, 'start', b.start_time)
           order by b.start_time)
           from hour_bands b join demo on demo.id = b.organization_id),
+       'absence_types', (select jsonb_agg(jsonb_build_object(
+          'id', a.id, 'name', a.name, 'draws', a.draws_allowance) order by a.id)
+          from absence_types a join demo on demo.id = a.organization_id),
        'shift_types', (select jsonb_agg(jsonb_build_object(
           'name', s.name, 'working', s.is_working, 'archived', s.archived,
           'by_admin', s.created_by = (select auth_user_id from admin),
@@ -199,6 +202,8 @@ async function othersFingerprint(client: Client): Promise<{ rows: number; digest
               where x.organization_id in (select id from others)
             union all select 'hour_bands', x.id::text, to_jsonb(x)::text from hour_bands x
               where x.organization_id in (select id from others)
+            union all select 'absence_types', x.organization_id::text || '/' || x.id::text, to_jsonb(x)::text
+              from absence_types x where x.organization_id in (select id from others)
             union all select 'shift_types', x.id::text, to_jsonb(x)::text from shift_types x
               where x.organization_id in (select id from others)
             union all select 'shift_type_versions', x.id::text, to_jsonb(x)::text from shift_type_versions x
@@ -675,6 +680,7 @@ describe('the demo organization script', () => {
           'teams',
           'memberships',
           'hour_bands',
+          'absence_types',
           'shift_types',
           'rotation_patterns',
           'rotation_assignments',
@@ -690,6 +696,7 @@ describe('the demo organization script', () => {
         teams: 4,
         memberships: 16,
         hour_bands: 2,
+        absence_types: 1,
         shift_types: 3,
         rotation_patterns: 1,
         rotation_assignments: 4,
@@ -700,6 +707,11 @@ describe('the demo organization script', () => {
         ((parsed['rotation_patterns'] as { steps: unknown[] }[] | undefined)?.[0]?.steps ?? []).length,
         'the demo pattern has no steps in the snapshot',
       ).toBe(4);
+      // STORY 13.1 (0052): the demo has annual leave, seeded by the
+      // organization trigger, and no other type.
+      expect(parsed['absence_types']).toEqual([
+        { id: '00000000-0000-0000-0000-000000000001', name: 'Godišnji odmor', draws: true },
+      ]);
       expect(parsed['organization']).not.toBeNull();
       expect(parsed['auth_users']).toBe(17);
 

@@ -146,10 +146,20 @@ const BLANK_TABLES = [
         name,
       ]),
   },
+  // STORY 13.1 (0052): absence type names follow the same rule.
+  {
+    table: 'absence_types',
+    constraint: 'absence_types_name_not_blank',
+    write: (client: Client, admin: Admin, name: string) =>
+      attempt(client, 'insert into absence_types (organization_id, name, draws_allowance) values ($1, $2, false)', [
+        admin.organizationId,
+        name,
+      ]),
+  },
 ];
 
 const UNIQUE_TABLES = BLANK_TABLES.filter((entry) =>
-  ['teams', 'hour_bands', 'shift_types'].includes(entry.table),
+  ['teams', 'hour_bands', 'shift_types', 'absence_types'].includes(entry.table),
 ).map((entry) => ({ ...entry, unique: `${entry.table}_organization_name_key` }));
 
 describe('every name check refuses a name of white space alone (0024)', () => {
@@ -330,7 +340,7 @@ describe('name_key is no RPC, and trims in linear time (0024)', () => {
     }
   });
 
-  it.skipIf(noDatabase)('lets a secret-key operator update any column of the five tables', async () => {
+  it.skipIf(noDatabase)('lets a secret-key operator update any column of every named table', async () => {
     // A check runs on EVERY update of its row, whatever column it names, and
     // it is permission-checked against the writer. So `service_role` must hold
     // USAGE on `private` and EXECUTE on `name_key`, or an operator update of a
@@ -347,7 +357,7 @@ describe('name_key is no RPC, and trims in linear time (0024)', () => {
         const { rowCount } = await client.query(`update ${table} set name = name where id = $1`, [id]);
         expect(rowCount, `${table} was not updated`).toBe(1);
       }
-      for (const table of ['teams', 'hour_bands', 'shift_types']) {
+      for (const table of ['teams', 'hour_bands', 'shift_types', 'absence_types']) {
         await client.query(`update ${table} set name = name where organization_id = $1`, [admin.organizationId]);
       }
       const { rowCount } = await client.query(
@@ -543,6 +553,8 @@ describe('the database and the client share one maximum name length (0036)', () 
           order by conname`,
       );
       expect(rows.map((row) => row.name)).toEqual([
+        // STORY 13.1 (0052).
+        'absence_types_name_length',
         'hour_bands_name_length',
         'members_name_length',
         'organizations_name_length',

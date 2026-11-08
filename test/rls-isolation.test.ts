@@ -936,8 +936,13 @@ describe('the access-control layer is present, so nothing below passes vacuously
       );
       expect(
         policies.map((row) => row.policyname),
-        'stories 1.3a, 1.4a, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a, 3.5a, 3.6a, 5.1b, 5.4a, 9.2, 10.3, 10.4, 12.1 and 0025 own exactly these policies; a missing one refuses silently and looks like a working refusal',
+        'stories 1.3a, 1.4a, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a, 3.5a, 3.6a, 5.1b, 5.4a, 9.2, 10.3, 10.4, 12.1, 13.1 and 0025 own exactly these policies; a missing one refuses silently and looks like a working refusal',
       ).toEqual([
+        // STORY 13.1 (0052): an active admin reads, defines and renames a type
+        // or sets its drawing flag. No delete, and no member-role read.
+        'absence_types_insert_by_own_active_admin',
+        'absence_types_select_by_own_active_admin',
+        'absence_types_update_by_own_active_admin',
         // STORY 5.4a: read and insert alone, and both an active admin's only;
         // a member reads their own live rows through `my_conflict_resolutions`.
         // No update and no delete: the lifetime rule soft-removes through
@@ -6958,6 +6963,58 @@ describe('a deactivated member loses access on the very next statement', () => {
         expect(deleted.rowCount, 'a deactivated admin kept deleting bands').toBe(0);
         expect(insertRefusal.code, 'a deactivated admin kept creating bands').toBe('42501');
         expect(await visibleHourBands(client, caller.organizationId)).toEqual(seededBandsOf(slug));
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'reads no absence type, and changes or creates none, after the $fixture admin is deactivated',
+    async ({ slug, admin }) => {
+      // STORY 13.1 (0052), the hour-band case: a column-free update and an
+      // insert without RETURNING reach the write policies' own `is_active`.
+      // No delete: no session holds that privilege at all.
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const typesVisible = async (): Promise<number> => {
+          const total = (
+            await client.query<{ total: number }>('select count(*)::int as total from absence_types')
+          ).rows[0]?.total;
+          if (total === undefined) throw new Error('the absence type count returned no row');
+          return total;
+        };
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const before = await typesVisible();
+        await actAsOwner(client);
+        expect(before, 'an active admin read no absence type').toBeGreaterThan(0);
+
+        await ownerVersion(client, {
+          organization: caller.organizationId,
+          member: caller.id,
+          active: false,
+          from: await organizationDay(client, caller.organizationId),
+          by: caller.authUserId,
+        });
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const after = await typesVisible();
+        const renamed = await client.query(`update absence_types set name = '${THROWAWAY} renamed'`);
+        const insertRefusal = await refusedThenContinue(client, () =>
+          client.query('insert into absence_types (organization_id, name, draws_allowance) values ($1, $2, false)', [
+            caller.organizationId,
+            `${THROWAWAY} after deactivation`,
+          ]),
+        );
+        await actAsOwner(client);
+
+        expect(after, 'a deactivated admin kept reading absence types').toBe(0);
+        expect(renamed.rowCount, 'a deactivated admin kept renaming absence types').toBe(0);
+        expect(insertRefusal.code, 'a deactivated admin kept creating absence types').toBe('42501');
+        const { rows } = await client.query<{ total: number }>(
+          'select count(*)::int as total from absence_types where name like $1',
+          [`${THROWAWAY}%`],
+        );
+        expect(rows[0]?.total).toBe(0);
       });
     },
   );
@@ -20220,20 +20277,28 @@ describe('every name is at most 100 characters (0036)', () => {
     { table: 'teams', constraint: 'teams_name_length' },
     { table: 'hour_bands', constraint: 'hour_bands_name_length' },
     { table: 'shift_types', constraint: 'shift_types_name_length' },
+    // STORY 13.1 (0052). Annual leave shares one id across organizations, so
+    // its row is pinned by `(organization_id, id)`.
+    { table: 'absence_types', constraint: 'absence_types_name_length' },
   ] as const;
 
   it.skipIf(noDatabase).each(NAMED)(
     'refuses a 101-character $table name with 23514 naming $constraint, and admits 100 counted in code points',
     async ({ table, constraint }) => {
       await inRolledBackTransaction(async (client) => {
-        const { rows } = await client.query<{ id: string }>(`select id from ${table} limit 1`);
-        const id = rows[0]?.id;
-        if (id === undefined) throw new Error(`no ${table} row to rename`);
+        const scoped = table === 'absence_types';
+        const { rows } = await client.query<{ id: string; organizationId: string | null }>(
+          `select id, ${scoped ? 'organization_id' : 'null::uuid'} as "organizationId" from ${table} limit 1`,
+        );
+        const row = rows[0];
+        if (row === undefined) throw new Error(`no ${table} row to rename`);
+        const where = scoped ? 'where id = $2 and organization_id = $3' : 'where id = $2';
+        const key = scoped ? [row.id, row.organizationId] : [row.id];
 
         // As the owner: the constraint binds every writer, not only a policy's.
-        const longest = await client.query(`update ${table} set name = $1 where id = $2`, ['🚒'.repeat(100), id]);
+        const longest = await client.query(`update ${table} set name = $1 ${where}`, ['🚒'.repeat(100), ...key]);
         const refusal = await refusedThenContinue(client, () =>
-          client.query(`update ${table} set name = $1 where id = $2`, ['z'.repeat(101), id]),
+          client.query(`update ${table} set name = $1 ${where}`, ['z'.repeat(101), ...key]),
         );
 
         expect(longest.rowCount, `${table}: 100 characters, 200 UTF-16 units`).toBe(1);
@@ -25296,6 +25361,264 @@ describe('an accepted swap is told to every admin, and its decision to both memb
           { date: await day(-2), returnDate: await day(5) },
           { date: await day(-2), returnDate: await day(5) },
         ]);
+      });
+    },
+  );
+});
+
+// ------------------------------------------------- story 13.1: absence types
+
+/**
+ * STORY 13.1 (`0052`). An organization's absence types are a name and whether
+ * a record of the type draws down the allowance. Annual leave has one fixed id
+ * in every organization, is seeded for every organization (existing ones by
+ * the migration, new ones by a trigger), always draws, and is the default type
+ * of every leave record. An active admin reads, defines and edits types; a
+ * member-role account reads none; nobody deletes one. Every case runs in a
+ * rolled-back transaction.
+ */
+const ANNUAL_LEAVE = '00000000-0000-0000-0000-000000000001';
+
+/** The types the current session can see, by name. */
+async function visibleAbsenceTypes(
+  client: Client,
+): Promise<readonly { organizationId: string; id: string; name: string; drawsAllowance: boolean }[]> {
+  const { rows } = await client.query<{ organizationId: string; id: string; name: string; drawsAllowance: boolean }>(
+    `select organization_id as "organizationId", id, name, draws_allowance as "drawsAllowance"
+       from absence_types order by organization_id, name`,
+  );
+  return rows;
+}
+
+describe('absence types are organization data, and every leave record is annual leave (story 13.1)', () => {
+  it.skipIf(noDatabase)('gives every organization one drawing annual leave, and every leave record names it', async () => {
+    await inRolledBackTransaction(async (client) => {
+      const { rows: organizations } = await client.query<{ id: string }>('select id from organizations');
+      expect(organizations.length).toBeGreaterThan(0);
+      const { rows: annual } = await client.query<{ organizationId: string }>(
+        `select organization_id as "organizationId" from absence_types
+          where id = $1 and draws_allowance`,
+        [ANNUAL_LEAVE],
+      );
+      expect(annual.map((row) => row.organizationId).sort()).toEqual(organizations.map((row) => row.id).sort());
+
+      // Live and removed records alike.
+      const { rows: records } = await client.query<{ total: number; annual: number }>(
+        `select count(*)::int as total,
+                count(*) filter (where absence_type_id = $1)::int as annual
+           from leave_records`,
+        [ANNUAL_LEAVE],
+      );
+      expect(records[0]?.annual, 'a leave record is not annual leave').toBe(records[0]?.total);
+    });
+  });
+
+  it.skipIf(noDatabase)('seeds annual leave in an organization the operator creates', async () => {
+    await inRolledBackTransaction(async (client) => {
+      const { rows } = await client.query<{ id: string }>(
+        `insert into organizations (
+           slug, name, organization_type, timezone, locale,
+           leave_year_start_month, leave_year_start_day
+         ) values ($1, 'Absence Probe', 'Some Type', 'UTC', 'en', 1, 1)
+         returning id`,
+        [`${THROWAWAY}-absence`],
+      );
+      const created = rows[0]?.id;
+      if (created === undefined) throw new Error('the organization insert returned no id');
+      const { rows: types } = await client.query<{ id: string; drawsAllowance: boolean }>(
+        `select id, draws_allowance as "drawsAllowance" from absence_types where organization_id = $1`,
+        [created],
+      );
+      expect(types).toEqual([{ id: ANNUAL_LEAVE, drawsAllowance: true }]);
+    });
+  });
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'lets the $fixture admin define a non-drawing type, rename one and set its flag, and see its own types alone',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        await actAs(client, caller.authUserId, caller.organizationId);
+
+        const { rows } = await client.query<{ id: string }>(
+          `insert into absence_types (organization_id, name, draws_allowance)
+           values ($1, 'Bolovanje', false) returning id`,
+          [caller.organizationId],
+        );
+        const sick = rows[0]?.id;
+        if (sick === undefined) throw new Error('the absence type insert returned no id');
+        const seen = await visibleAbsenceTypes(client);
+        expect(seen.every((row) => row.organizationId === caller.organizationId), `${slug} reads another tenant's types`).toBe(true);
+        expect(seen.map((row) => [row.id === ANNUAL_LEAVE ? 'annual' : row.name, row.drawsAllowance])).toEqual(
+          expect.arrayContaining([
+            ['annual', true],
+            ['Bolovanje', false],
+          ]),
+        );
+
+        const renamed = await client.query('update absence_types set name = $1 where organization_id = $2 and id = $3', [
+          `${THROWAWAY} annual`,
+          caller.organizationId,
+          ANNUAL_LEAVE,
+        ]);
+        const flagged = await client.query(
+          'update absence_types set draws_allowance = true where organization_id = $1 and id = $2',
+          [caller.organizationId, sick],
+        );
+        expect(renamed.rowCount, 'annual leave cannot be renamed').toBe(1);
+        expect(flagged.rowCount, 'a type\'s drawing flag cannot change').toBe(1);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture duplicate name, a blank one, and annual leave that does not draw',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        await actAs(client, caller.authUserId, caller.organizationId);
+        await client.query(`update absence_types set name = 'Godišnji odmor' where organization_id = $1 and id = $2`, [
+          caller.organizationId,
+          ANNUAL_LEAVE,
+        ]);
+
+        const duplicate = await refusedThenContinue(client, () =>
+          client.query('insert into absence_types (organization_id, name, draws_allowance) values ($1, $2, true)', [
+            caller.organizationId,
+            ' godišnji odmor ',
+          ]),
+        );
+        const blank = await refusedThenContinue(client, () =>
+          client.query('insert into absence_types (organization_id, name, draws_allowance) values ($1, $2, false)', [
+            caller.organizationId,
+            '   ',
+          ]),
+        );
+        const notDrawing = await refusedThenContinue(client, () =>
+          client.query('update absence_types set draws_allowance = false where organization_id = $1 and id = $2', [
+            caller.organizationId,
+            ANNUAL_LEAVE,
+          ]),
+        );
+        const forgedId = await refusedThenContinue(client, () =>
+          client.query(
+            'insert into absence_types (organization_id, id, name, draws_allowance) values ($1, gen_random_uuid(), $2, false)',
+            [caller.organizationId, `${THROWAWAY} forged`],
+          ),
+        );
+
+        expect(duplicate.code).toBe('23505');
+        expect(duplicate.message).toContain('absence_types_organization_name_key');
+        expect(blank.code).toBe('23514');
+        expect(blank.message).toContain('absence_types_name_not_blank');
+        expect(notDrawing.code).toBe('23514');
+        expect(notDrawing.message).toContain('absence_types_annual_draws');
+        expect(forgedId.code, 'a session named a type\'s id').toBe('42501');
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(CROSS_TENANT)(
+    'shows the $fixture member-role session no type, refuses its insert and the admin\'s for $otherFixture, and refuses every delete',
+    async ({ slug, admin, member, otherSlug }) => {
+      await inRolledBackTransaction(async (client) => {
+        const other = await organizationId(client, otherSlug);
+        const memberRole = await memberByUsername(client, slug, member);
+        await actAs(client, memberRole.authUserId, memberRole.organizationId);
+        expect(await visibleAbsenceTypes(client), `${slug}: a member-role account reads a type`).toEqual([]);
+        const memberInsert = await refusedThenContinue(client, () =>
+          client.query('insert into absence_types (organization_id, name, draws_allowance) values ($1, $2, false)', [
+            memberRole.organizationId,
+            `${THROWAWAY} member`,
+          ]),
+        );
+        const memberUpdate = await client.query('update absence_types set name = $1', [`${THROWAWAY} member`]);
+        expect(memberInsert.code).toBe('42501');
+        expect(memberUpdate.rowCount, `${slug}: a member-role account renamed a type`).toBe(0);
+
+        const caller = await memberByUsername(client, slug, admin);
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const foreign = await refusedThenContinue(client, () =>
+          client.query('insert into absence_types (organization_id, name, draws_allowance) values ($1, $2, false)', [
+            other,
+            `${THROWAWAY} foreign`,
+          ]),
+        );
+        const foreignUpdate = await client.query('update absence_types set name = $1 where organization_id = $2', [
+          `${THROWAWAY} foreign`,
+          other,
+        ]);
+        const deleted = await refusedThenContinue(client, () =>
+          client.query('delete from absence_types where organization_id = $1', [caller.organizationId]),
+        );
+        expect(foreign.code).toBe('42501');
+        expect(foreignUpdate.rowCount, `${slug}: an admin renamed ${otherSlug}'s type`).toBe(0);
+        expect(deleted.code, 'a type may be deleted').toBe('42501');
+        await actAsOwner(client);
+
+        const { rows } = await client.query<{ total: number }>(
+          'select count(*)::int as total from absence_types where name like $1',
+          [`${THROWAWAY}%`],
+        );
+        expect(rows[0]?.total).toBe(0);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(CROSS_TENANT)(
+    'refuses a $fixture leave record naming a $otherFixture type, even as the owner, by the composite key',
+    async ({ slug, member, otherSlug }) => {
+      await inRolledBackTransaction(async (client) => {
+        const subject = await memberByUsername(client, slug, member);
+        const other = await organizationId(client, otherSlug);
+        const { rows } = await client.query<{ id: string }>(
+          `insert into absence_types (organization_id, name, draws_allowance)
+           values ($1, $2, false) returning id`,
+          [other, `${THROWAWAY} foreign type`],
+        );
+        const foreignType = rows[0]?.id;
+        if (foreignType === undefined) throw new Error('the absence type insert returned no id');
+
+        const refusal = await refusedThenContinue(client, () =>
+          client.query(
+            `insert into leave_records (organization_id, member_id, during, absence_type_id, created_by)
+             values ($1, $2, '[2041-06-02,2041-06-04]'::daterange, $3, $4)`,
+            [subject.organizationId, subject.id, foreignType, subject.authUserId],
+          ),
+        );
+        expect(refusal.code, `${slug}: a leave record named ${otherSlug}'s type`).toBe('23503');
+        expect(refusal.message).toContain('leave_records_absence_type_fkey');
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'records a $fixture admin\'s leave naming no type as annual leave, and refuses naming one',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const subject = await memberByUsername(client, slug, member);
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const id = await insertLeave(client, {
+          organization: caller.organizationId,
+          member: subject.id,
+          during: '[2041-03-02,2041-03-04]',
+        });
+        const named = await refusedThenContinue(client, () =>
+          client.query(
+            `insert into leave_records (organization_id, member_id, during, absence_type_id)
+             values ($1, $2, '[2041-04-02,2041-04-04]'::daterange, $3)`,
+            [caller.organizationId, subject.id, ANNUAL_LEAVE],
+          ),
+        );
+        await actAsOwner(client);
+
+        const { rows } = await client.query<{ type: string }>(
+          'select absence_type_id::text as type from leave_records where id = $1',
+          [id],
+        );
+        expect(rows[0]?.type, `${slug}: a leave record naming no type is not annual leave`).toBe(ANNUAL_LEAVE);
+        expect(named.code, 'a session may write a leave record\'s type before 13.2').toBe('42501');
       });
     },
   );
