@@ -483,7 +483,7 @@ describe('the access-control migration', () => {
     ).toEqual([]);
   });
 
-  it('declares exactly the fifty-five policies stories 1.3a, 1.4a, 1.4b, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a, 3.5a, 3.6a, 5.1b, 5.4a, 9.2, 10.3, 10.4, 12.1, 0025 and 0036 reviewed, and no fifty-sixth', () => {
+  it('declares exactly the fifty-eight policies stories 1.3a, 1.4a, 1.4b, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a, 3.5a, 3.6a, 5.1b, 5.4a, 9.2, 10.3, 10.4, 12.1, 13.1, 0025 and 0036 reviewed, and no fifty-ninth', () => {
     // EXTENDED BY STORY 1.4a, exactly as this comment asked: `0004_organization
     // _settings.sql` adds `organizations_update_by_own_active_admin`, built by
     // copying `members_update_by_own_active_admin`, and its name is added here
@@ -513,6 +513,12 @@ describe('the access-control migration', () => {
     const declared = [...declaredSet].sort();
 
     expect(declared, 'the declared policy set changed').toEqual([
+      // STORY 13.1 (0052), and THREE: an active admin reads, defines and
+      // renames a type or sets its drawing flag. No delete policy: a type is
+      // never deleted. A member-role account reads none (13.2's).
+      'absence_types_insert_by_own_active_admin',
+      'absence_types_select_by_own_active_admin',
+      'absence_types_update_by_own_active_admin',
       // STORY 5.4a, and TWO: an active admin inserts and reads; a member reads
       // their own live rows through `my_conflict_resolutions()`. No update and
       // no delete policy: the lifetime rule soft-removes through 0031's
@@ -3031,6 +3037,138 @@ describe('the access-control migration', () => {
     );
     expect(statements, 'a migration grants anon something on leave_records').not.toMatch(
       /grant[^;]*on table public\.leave_records to[^;]*\banon\b/i,
+    );
+  });
+
+  it('stores an absence type as a name and a drawing flag, keyed per organization, with annual leave fixed, seeded and the default of every leave record (story 13.1)', () => {
+    // STORY 13.1 (0052, AD-2 current-state, Q5). Source text only; what each
+    // rule does is `test/rls-isolation.test.ts`, which runs in CI.
+    const annual = "'00000000-0000-0000-0000-000000000001'::uuid";
+    const types = columnsOf('absence_types');
+    expect(types.columns, 'absence_types stores something beyond its reviewed columns').toEqual([
+      'organization_id',
+      'id',
+      'name',
+      'draws_allowance',
+      'created_at',
+    ]);
+    expect(types.body, 'an absence type carries a reason, a note or a description (Q5)').not.toMatch(
+      /reason|diagnos|\bnote|description/,
+    );
+    expect(types.body).toMatch(/organization_id uuid not null references organizations \(id\) on delete cascade/);
+    expect(types.body).toMatch(/draws_allowance boolean not null,/);
+    expect(types.body, 'the key is not (organization_id, id)').toMatch(
+      /constraint absence_types_pkey primary key \(organization_id, id\)/,
+    );
+    expect(types.body, 'a blank name is admitted').toMatch(
+      /constraint absence_types_name_not_blank check \(private\.name_key\(name\) <> ''\)/,
+    );
+    expect(types.body, 'a name over 100 characters is admitted').toMatch(
+      /constraint absence_types_name_length check \(char_length\(name\) <= 100\)/,
+    );
+    expect(types.body, 'annual leave may stop drawing').toContain(
+      `check (id <> ${annual} or draws_allowance)`,
+    );
+
+    const migration = stripLineComments(
+      readFileSync(join(supabaseRoot, 'migrations', '0052_absence_types.sql'), 'utf8'),
+    );
+    expect(migration).toMatch(/alter table absence_types enable row level security;/);
+    expect(migration, 'a name is not unique per organization by name_key').toMatch(
+      /create unique index absence_types_organization_name_key\s+on public\.absence_types \(organization_id, private\.name_key\(name\)\);/,
+    );
+
+    // Annual leave in every organization: the backfill, and a definer trigger
+    // for every new one that refuses nothing.
+    expect(migration, 'existing organizations are not seeded with annual leave').toMatch(
+      new RegExp(
+        String.raw`insert into public\.absence_types \(organization_id, id, name, draws_allowance\)\s+select organization\.id, ${annual.replaceAll('(', '\\(').replaceAll(')', '\\)')}, '[^']+', true\s+from public\.organizations as organization;`,
+      ),
+    );
+    const seed = /create function private\.seed_absence_types\(\)[\s\S]*?\$\$;/.exec(migration)?.[0] ?? '';
+    expect(seed, 'the seeding function is not declared').not.toBe('');
+    expect(seed).toMatch(/returns trigger/);
+    expect(seed).toMatch(/security definer/);
+    expect(seed).toMatch(/set search_path = ''/);
+    expect(seed).toContain(`values (new.id, ${annual}, `);
+    expect(seed, 'the seeding trigger refuses something').not.toMatch(/raise/i);
+    expect(migration).toMatch(
+      /create trigger organizations_seed_absence_types\s+after insert on public\.organizations\s+for each row\s+execute function private\.seed_absence_types\(\);/,
+    );
+    expect(migration).toContain(
+      'revoke execute on function private.seed_absence_types() from public, anon, authenticated, service_role;',
+    );
+    expect(
+      migration.match(/create (or replace )?trigger/gi) ?? [],
+      '0052 takes a trigger beyond the organization seed (no trigger on leave_records, AD-3)',
+    ).toHaveLength(1);
+
+    // The type of every leave record: annual leave by default, of its own
+    // organization, never cascaded, and the seed comes before the key.
+    expect(migration, 'the leave record type is not annual leave by default').toContain(
+      `add column absence_type_id uuid not null default ${annual};`,
+    );
+    expect(migration, 'a leave record may name another tenant\'s type').toMatch(
+      /add constraint leave_records_absence_type_fkey\s+foreign key \(organization_id, absence_type_id\)\s+references public\.absence_types \(organization_id, id\);/,
+    );
+    expect(migration.indexOf('from public.organizations as organization')).toBeLessThan(
+      migration.indexOf('leave_records_absence_type_fkey'),
+    );
+    expect(migration).toMatch(
+      /create index \w+\s+on public\.leave_records \(organization_id, absence_type_id\);/,
+    );
+    expect(migration, 'leave_records gains a reason or free-text column (Q5)').not.toMatch(
+      /alter table public\.leave_records\s+add column (?!absence_type_id\b)/,
+    );
+  });
+
+  it('opens absence types to an active admin\'s read, insert and update alone, never delete, and keeps the leave record type unwritable (story 13.1)', () => {
+    const statements = migrationStatements();
+    const policies = policyDeclarations(statements).filter((declaration) =>
+      /on public\.absence_types\b/i.test(declaration),
+    );
+    expect(policies.length, 'absence_types does not carry exactly three policies').toBe(3);
+    for (const verb of ['delete', 'all']) {
+      expect(
+        policies.filter((declaration) => new RegExp(`\\bfor ${verb}\\b`, 'i').test(declaration)),
+        `a policy opens ${verb} on absence_types; a type is never deleted`,
+      ).toEqual([]);
+    }
+    for (const [name, verb, clauses] of [
+      ['absence_types_select_by_own_active_admin', 'select', 1],
+      ['absence_types_insert_by_own_active_admin', 'insert', 1],
+      ['absence_types_update_by_own_active_admin', 'update', 2],
+    ] as const) {
+      const body = policyBody(name);
+      expect(body, `${name} is not declared for ${verb}`).toMatch(new RegExp(`for ${verb}\\b`));
+      expect((body.match(/organization_id = nullif/g) ?? []).length, `${name} does not pin the tenant`).toBe(clauses);
+      expect(
+        (body.match(/access\.member_role = 'admin'/g) ?? []).length,
+        `${name} admits a member-role account`,
+      ).toBe(clauses);
+      expect((body.match(/access\.is_active/g) ?? []).length, `${name} does not re-read active state`).toBe(clauses);
+    }
+
+    expect(statements).toMatch(
+      /revoke insert, update, delete, truncate, references, trigger on table public\.absence_types\s+from authenticated;/,
+    );
+    expect(statements).toMatch(/revoke all on table public\.absence_types from anon;/);
+    expect(statements, 'authenticated may insert more than the tenant, name and flag').toMatch(
+      /grant insert \(organization_id, name, draws_allowance\) on table public\.absence_types to authenticated;/,
+    );
+    expect(statements, 'authenticated may update more than the name and flag').toMatch(
+      /grant update \(name, draws_allowance\) on table public\.absence_types to authenticated;/,
+    );
+    expect(statements, 'a migration grants delete on absence_types').not.toMatch(
+      /grant[^;]*\b(delete|all)\b[^;]*on table public\.absence_types\b/i,
+    );
+    expect(statements, 'a migration grants anon something on absence_types').not.toMatch(
+      /grant[^;]*on table public\.absence_types to[^;]*\banon\b/i,
+    );
+    // 13.1: no session writes a leave record's type until 13.2 carries it
+    // through amend and approval.
+    expect(statements, 'a session may write a leave record\'s type').not.toMatch(
+      /grant[^;]*\babsence_type_id\b[^;]*on table public\.leave_records\b/i,
     );
   });
 
