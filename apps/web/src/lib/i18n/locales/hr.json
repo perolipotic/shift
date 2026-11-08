@@ -1848,13 +1848,25 @@
       "subject": "Predložena ti je zamjena {date}",
       "body": "{organizationName}: predložena ti je zamjena smjene {date}. Odgovori u aplikaciji: {link}"
     },
+    "swapRequestProposedWithReturn": {
+      "subject": "Predložena ti je zamjena {date} (zauzvrat {returnDate})",
+      "body": "{organizationName}: predložena ti je zamjena smjene {date} (zauzvrat {returnDate}). Odgovori u aplikaciji: {link}"
+    },
     "swapRequestAccepted": {
       "subject": "Zamjena {date} je prihvaćena",
       "body": "{organizationName}: tvoj prijedlog zamjene smjene {date} je prihvaćen i čeka odluku. Pogledaj u aplikaciji: {link}"
     },
+    "swapRequestAcceptedWithReturn": {
+      "subject": "Zamjena {date} (zauzvrat {returnDate}) je prihvaćena",
+      "body": "{organizationName}: tvoj prijedlog zamjene smjene {date} (zauzvrat {returnDate}) je prihvaćen i čeka odluku. Pogledaj u aplikaciji: {link}"
+    },
     "swapRequestDeclined": {
       "subject": "Zamjena {date} je odbijena",
       "body": "{organizationName}: tvoj prijedlog zamjene smjene {date} je odbijen. Pogledaj u aplikaciji: {link}"
+    },
+    "swapRequestDeclinedWithReturn": {
+      "subject": "Zamjena {date} (zauzvrat {returnDate}) je odbijena",
+      "body": "{organizationName}: tvoj prijedlog zamjene smjene {date} (zauzvrat {returnDate}) je odbijen. Pogledaj u aplikaciji: {link}"
     },
     "swapRequestWaiting": {
       "subject": "Nova zamjena za odluku: {proposerName} → {addresseeName}",
@@ -1864,9 +1876,17 @@
       "subject": "Zamjena {date} je odobrena",
       "body": "{organizationName}: zamjena smjene {date} je odobrena. Pogledaj u aplikaciji: {link}"
     },
+    "swapRequestApprovedWithReturn": {
+      "subject": "Zamjena {date} (zauzvrat {returnDate}) je odobrena",
+      "body": "{organizationName}: zamjena smjene {date} (zauzvrat {returnDate}) je odobrena. Pogledaj u aplikaciji: {link}"
+    },
     "swapRequestRejected": {
       "subject": "Zamjena {date} nije odobrena",
       "body": "{organizationName}: zamjena smjene {date} nije odobrena. Pogledaj u aplikaciji: {link}"
+    },
+    "swapRequestRejectedWithReturn": {
+      "subject": "Zamjena {date} (zauzvrat {returnDate}) nije odobrena",
+      "body": "{organizationName}: zamjena smjene {date} (zauzvrat {returnDate}) nije odobrena. Pogledaj u aplikaciji: {link}"
     },
     "footer": "Obavijesti e-poštom možeš isključiti u aplikaciji, pod Obavijesti: {link}"
   },

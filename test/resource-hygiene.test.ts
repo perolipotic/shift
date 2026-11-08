@@ -2292,6 +2292,18 @@ const SANCTIONED_SCREEN_KEYS = [
   'obavijesti.swapRequestApproved.body',
   'obavijesti.swapRequestRejected.subject',
   'obavijesti.swapRequestRejected.body',
+  // EPIC 12 RETRO (R6): a two-way swap's notice, naming the return shift too,
+  // rendered by `notify` in place of its code's own message.
+  'obavijesti.swapRequestProposedWithReturn.subject',
+  'obavijesti.swapRequestProposedWithReturn.body',
+  'obavijesti.swapRequestAcceptedWithReturn.subject',
+  'obavijesti.swapRequestAcceptedWithReturn.body',
+  'obavijesti.swapRequestDeclinedWithReturn.subject',
+  'obavijesti.swapRequestDeclinedWithReturn.body',
+  'obavijesti.swapRequestApprovedWithReturn.subject',
+  'obavijesti.swapRequestApprovedWithReturn.body',
+  'obavijesti.swapRequestRejectedWithReturn.subject',
+  'obavijesti.swapRequestRejectedWithReturn.body',
   // STORY 10.3. The line every email ends with, linking to `/obavijesti`.
   'obavijesti.footer',
   // STORY 10.3. The notification settings screen, its *Više* row, and the
@@ -2661,8 +2673,9 @@ const SHORT_STAFFED_KEYS: readonly string[] = ['popunjenost.heading', 'popunjeno
 
 /**
  * Stories 12.3b and 12.4b, the swap notifications: `smjen` names the swapped
- * shift (a team's rostered shift, *zamjena smjene {date}*), as on *Danas*'s *Zamjene* card, and `tip… smjen…` is refused. SIX
- * KEYS, the bodies; the subjects name no shift.
+ * shift (a team's rostered shift, *zamjena smjene {date}*), as on *Danas*'s *Zamjene* card, and `tip… smjen…` is refused. ELEVEN
+ * KEYS, the bodies (since the epic 12 retro, R6, the five two-way variants
+ * too); the subjects name no shift.
  */
 const SWAP_NOTIFICATION_KEYS: readonly string[] = [
   'obavijesti.swapRequestProposed.body',
@@ -2671,6 +2684,11 @@ const SWAP_NOTIFICATION_KEYS: readonly string[] = [
   'obavijesti.swapRequestWaiting.body',
   'obavijesti.swapRequestApproved.body',
   'obavijesti.swapRequestRejected.body',
+  'obavijesti.swapRequestProposedWithReturn.body',
+  'obavijesti.swapRequestAcceptedWithReturn.body',
+  'obavijesti.swapRequestDeclinedWithReturn.body',
+  'obavijesti.swapRequestApprovedWithReturn.body',
+  'obavijesti.swapRequestRejectedWithReturn.body',
 ];
 
 /**

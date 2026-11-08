@@ -77,7 +77,10 @@ export const TEAM_CHANGE_DEPENDENTS: readonly QueryKey[] = [
  * that erased a conflict takes it out of the queue on the next read. Since
  * 0041 a deactivation closes the member's pending leave requests in the same
  * statement, so the organization's requests and every one request held are
- * re-read too, and *Za odluku* stops counting them.
+ * re-read too, and *Za odluku* stops counting them. Since 0049 it closes the
+ * member's open swaps the same way, so the viewer's own swaps (*Zamjene*) and
+ * the organization's swaps (*Za odluku*, *Odlučeno*, the decision screen) are
+ * re-read too.
  */
 export const MEMBERSHIP_WRITE_DEPENDENTS: readonly QueryKey[] = [
   OWN_TEAM_KEY,
@@ -88,6 +91,8 @@ export const MEMBERSHIP_WRITE_DEPENDENTS: readonly QueryKey[] = [
   ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
   ORGANIZATION_LEAVE_REQUESTS_KEY,
   LEAVE_REQUEST_ROOT_KEY,
+  MY_SWAP_REQUESTS_KEY,
+  ORGANIZATION_SWAP_REQUESTS_KEY,
 ];
 
 /**
@@ -164,8 +169,6 @@ export const LEAVE_REQUEST_WRITE_DEPENDENTS: readonly QueryKey[] = [
  * named.
  */
 export const SWAP_REQUEST_WRITE_DEPENDENTS: readonly QueryKey[] = [MY_SWAP_REQUESTS_KEY, ORGANIZATION_SWAP_REQUESTS_KEY];
-
-
 
 /**
  * A leave request rejected (story 9.4): only the decision is recorded and the

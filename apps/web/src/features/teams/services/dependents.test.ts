@@ -125,7 +125,7 @@ const CLASSIFIED: Readonly<Record<string, readonly QueryKey[]>> = {
   // write re-reads it (`saveEmailNotifications`), and each visit to
   // `/obavijesti` reads it again.
   NOTIFICATION_SETTINGS_KEY: [NOTIFICATION_SETTINGS_KEY],
-  // Story 12.3: the viewer's own swaps, which only a swap write names.
+  // Story 12.3: the viewer's own swaps, which a swap write and (0049) a membership write name.
   MY_SWAP_REQUESTS_KEY: [MY_SWAP_REQUESTS_KEY],
   // Story 12.4: every swap of the organization, which Za odluku, Odlučeno and the admin's Danas read.
   ORGANIZATION_SWAP_REQUESTS_KEY: [ORGANIZATION_SWAP_REQUESTS_KEY],
@@ -262,6 +262,9 @@ describe('the reads a team or membership write makes stale', () => {
         REQUEST_A,
         REQUEST_B,
         ORGANIZATION_LEAVE_REQUESTS_KEY,
+        // 0049: a deactivation closes the member's open swaps.
+        MY_SWAP_REQUESTS_KEY,
+        ORGANIZATION_SWAP_REQUESTS_KEY,
       ],
     },
     {

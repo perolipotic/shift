@@ -67,6 +67,7 @@ import {
   MESSAGE_UNKNOWN,
   OBAVIJESTI,
   OPERANDS_INVALID,
+  RETURN_VARIANT_OF,
   SETTINGS_PATH,
   formatIsoDate,
   render,
@@ -224,8 +225,11 @@ describe('notify renders from a pinned copy of the obavijesti namespace', () => 
     expect(OBAVIJESTI).toEqual(resource['obavijesti']);
   });
 
-  it('maps every code it renders to a message that exists, and only plain {name} placeholders', () => {
-    for (const key of Object.values(MESSAGE_OF_CODE)) {
+  it('maps every code it renders, and every two-way variant, to a message that exists, and only plain {name} placeholders', () => {
+    const variants = Object.values(RETURN_VARIANT_OF).filter((key) => key !== undefined);
+
+    expect(variants).toHaveLength(5);
+    for (const key of [...Object.values(MESSAGE_OF_CODE), ...variants]) {
       expect(OBAVIJESTI[key], key).toBeDefined();
       for (const message of [OBAVIJESTI[key].subject, OBAVIJESTI[key].body]) {
         // Plain interpolation only: no ICU argument a `{name}` renderer would
@@ -516,12 +520,23 @@ describe("notify renders every 10.2 code with the organization's name and its si
 
   // The two admin-bound codes name a member: only an admin receives them.
   it.each(EVERY_CODE.filter((entry) => !['LEAVE_REQUEST_CREATED', 'SWAP_REQUEST_WAITING'].includes(entry.code)))(
-    'names no other member and no absence in $code, which a member-role account receives (Q5)',
+    'names no other member and no absence in $code, nor in its two-way variant, which a member-role account receives (Q5)',
     ({ code }) => {
-      const message = OBAVIJESTI[MESSAGE_OF_CODE[code] ?? 'leaveRequestApproved'];
-      const placeholders = [...`${message.subject} ${message.body}`.matchAll(/\{(\w+)\}/g)].map((match) => match[1]);
+      const key = MESSAGE_OF_CODE[code] ?? 'leaveRequestApproved';
+      const variant = RETURN_VARIANT_OF[key];
 
-      expect(placeholders.filter((name) => !['organizationName', 'link', 'date', 'startDate', 'endDate', 'effectiveFrom', 'shiftTypeName'].includes(name ?? ''))).toEqual([]);
+      const allowed = ['organizationName', 'link', 'date', 'startDate', 'endDate', 'effectiveFrom', 'shiftTypeName'];
+      const checked = [
+        { message: OBAVIJESTI[key], names: allowed },
+        // Only a two-way variant may name the return date.
+        ...(variant === undefined ? [] : [{ message: OBAVIJESTI[variant], names: [...allowed, 'returnDate'] }]),
+      ];
+
+      for (const { message, names } of checked) {
+        const placeholders = [...`${message.subject} ${message.body}`.matchAll(/\{(\w+)\}/g)].map((match) => match[1]);
+
+        expect(placeholders.filter((name) => !names.includes(name ?? ''))).toEqual([]);
+      }
     },
   );
 
@@ -538,16 +553,67 @@ describe("notify renders every 10.2 code with the organization's name and its si
     expect(typed.ok && typed.text).toContain('za 02.03.2046 vrijedi 2046-03-02 umjesto');
   });
 
-  it.each(['SWAP_REQUEST_PROPOSED', 'SWAP_REQUEST_ACCEPTED', 'SWAP_REQUEST_DECLINED', 'SWAP_REQUEST_APPROVED', 'SWAP_REQUEST_REJECTED'])(
-    'renders %s with a return shift exactly as without one, and checks returnDate as a date (12.3b, 12.4b)',
-    (code) => {
-      const without = render(code, 'hr', { date: '2046-03-02' }, TARGET);
+  // Epic 12 retro R6: a two-way swap's notice names the return shift too, in
+  // the subject and the body, linking where the one-way notice does.
+  it.each([
+    {
+      code: 'SWAP_REQUEST_PROPOSED',
+      subject: 'Predložena ti je zamjena 02.03.2046 (zauzvrat 09.03.2046)',
+      text: `${ORGANIZATION_NAME}: predložena ti je zamjena smjene 02.03.2046 (zauzvrat 09.03.2046). Odgovori u aplikaciji: {link}`,
+    },
+    {
+      code: 'SWAP_REQUEST_ACCEPTED',
+      subject: 'Zamjena 02.03.2046 (zauzvrat 09.03.2046) je prihvaćena',
+      text: `${ORGANIZATION_NAME}: tvoj prijedlog zamjene smjene 02.03.2046 (zauzvrat 09.03.2046) je prihvaćen i čeka odluku. Pogledaj u aplikaciji: {link}`,
+    },
+    {
+      code: 'SWAP_REQUEST_DECLINED',
+      subject: 'Zamjena 02.03.2046 (zauzvrat 09.03.2046) je odbijena',
+      text: `${ORGANIZATION_NAME}: tvoj prijedlog zamjene smjene 02.03.2046 (zauzvrat 09.03.2046) je odbijen. Pogledaj u aplikaciji: {link}`,
+    },
+    {
+      code: 'SWAP_REQUEST_APPROVED',
+      subject: 'Zamjena 02.03.2046 (zauzvrat 09.03.2046) je odobrena',
+      text: `${ORGANIZATION_NAME}: zamjena smjene 02.03.2046 (zauzvrat 09.03.2046) je odobrena. Pogledaj u aplikaciji: {link}`,
+    },
+    {
+      code: 'SWAP_REQUEST_REJECTED',
+      subject: 'Zamjena 02.03.2046 (zauzvrat 09.03.2046) nije odobrena',
+      text: `${ORGANIZATION_NAME}: zamjena smjene 02.03.2046 (zauzvrat 09.03.2046) nije odobrena. Pogledaj u aplikaciji: {link}`,
+    },
+  ])('renders $code with a return shift naming both dates, by email and by push (12.3b, 12.4b; retro 12 R6)', ({ code, subject, text }) => {
+    const operands = { date: '2046-03-02', returnDate: '2046-03-09' };
 
-      expect(render(code, 'hr', { date: '2046-03-02', returnDate: '2046-03-09' }, TARGET)).toEqual(without);
-      expect(renderPush(code, 'hr', { date: '2046-03-02', returnDate: '2046-03-09' }, TARGET)).toEqual(
-        renderPush(code, 'hr', { date: '2046-03-02' }, TARGET),
-      );
+    expect(render(code, 'hr', operands, TARGET)).toEqual({
+      ok: true,
+      subject,
+      text: `${text.replace('{link}', linkTo('/danas'))}${FOOTER}`,
+    });
+    expect(renderPush(code, 'hr', operands, TARGET)).toEqual({
+      ok: true,
+      title: subject,
+      body: text.replace('{link}', linkTo('/danas')),
+      url: pathTo('/danas'),
+    });
+  });
+
+  it('renders SWAP_REQUEST_WAITING exactly as before, with or without a returnDate: it has no two-way variant (retro 12 R6)', () => {
+    const { operands } = EVERY_CODE.find((entry) => entry.code === 'SWAP_REQUEST_WAITING') ?? { operands: {} };
+
+    expect(RETURN_VARIANT_OF['swapRequestWaiting']).toBeUndefined();
+    expect(render('SWAP_REQUEST_WAITING', 'hr', { ...operands, returnDate: '2046-03-09' }, TARGET)).toEqual(
+      render('SWAP_REQUEST_WAITING', 'hr', operands, TARGET),
+    );
+  });
+
+  it.each(['SWAP_REQUEST_PROPOSED', 'SWAP_REQUEST_ACCEPTED', 'SWAP_REQUEST_DECLINED', 'SWAP_REQUEST_APPROVED', 'SWAP_REQUEST_REJECTED'])(
+    'checks %s\'s returnDate as a date: a malformed one renders nothing (12.3b, 12.4b)',
+    (code) => {
       expect(render(code, 'hr', { date: '2046-03-02', returnDate: '2046-02-30' }, TARGET)).toEqual({
+        ok: false,
+        code: OPERANDS_INVALID,
+      });
+      expect(renderPush(code, 'hr', { date: '2046-03-02', returnDate: '2046-02-30' }, TARGET)).toEqual({
         ok: false,
         code: OPERANDS_INVALID,
       });

@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 11-08-2026 07:48
+last_updated: 11-08-2026 09:56
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -943,7 +943,7 @@ action_items:
       (a deactivation closes swaps) and update the pinned dependents test; a stale:
       true unit case for the swap decision screen; drop the blank lines (R1, R9, R11)"
     owner: "Dev"
-    status: open
+    status: done  # spec-epic-12-retro-followups (swap keys in the membership dependents; stale decision screen case)
     ref: "_bmad-output/implementation-artifacts/epic-12-retro-2026-11-07.md"
   - id: "epic-12-retro-item-44-a2-name-the-return-shift-in-the-two-way"
     epic: 12
@@ -951,7 +951,7 @@ action_items:
       already written, no migration) and keep a closed swap on Zamjene until its last
       date passes (R5, R6)"
     owner: "Dev"
-    status: open
+    status: done  # spec-epic-12-retro-followups (two-way notices name the return shift; closed swaps until their last date)
     ref: "_bmad-output/implementation-artifacts/epic-12-retro-2026-11-07.md"
   - id: "epic-12-retro-item-45-a3-rewrite-ux-dr25-s-planned-swap-note-a"
     epic: 12
@@ -989,5 +989,5 @@ action_items:
       to 30 (a fifth shard only if shards routinely pass 15 minutes); note the cancelled
       main run for afc3641 (P5)"
     owner: "Dev"
-    status: open
+    status: done  # #282
     ref: "_bmad-output/implementation-artifacts/epic-12-retro-2026-11-07.md"
