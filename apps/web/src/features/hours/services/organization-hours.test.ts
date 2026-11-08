@@ -1,6 +1,7 @@
 import { leaveCostOf, memberHoursOfMonth, type Collision } from '@shift/domain';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { ANNUAL_LEAVE_ID } from '@/features/absence-types/services/list';
 import { CALENDAR_UNAVAILABLE, readCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { calendarDayListOf, calendarMonthOf, memberScheduleInputOf, monthHeaderOf } from '@/features/calendar/utils/month';
 import { HOURS_CONFLICTS_READY, NO_LEAVE_RECORDS, type HoursConflictsState, type LeaveRecordsByMember } from '@/features/hours/services/hours-conflicts';
@@ -10,6 +11,7 @@ import {
   memberHoursInputOf,
   myHoursOf,
   myHoursSurfaceOf,
+  OTHER_ABSENCE_COLUMN,
   type HoursFigure,
 } from '@/features/hours/services/my-hours';
 import {
@@ -204,7 +206,7 @@ describe('the rows', () => {
       expect(row.bands.map((band) => [band.bandId, minutesOf(band.hours), band.shiftCount])).toEqual(
         hours.bands.map((band) => [band.bandId, band.minutes, band.shiftCount]),
       );
-      expect(row.leave).toBeNull();
+      expect(row.leave[0]?.figure).toBeNull();
     }
 
     const own = myHoursOf(current, { mjesec: MONTH }, TODAY, NO_COLLISIONS, [], NO_LEAVE_RECORDS);
@@ -450,9 +452,9 @@ describe('the sort', () => {
     const byName = viewOf(pilot, NO_LEAVE_RECORDS).rows;
     const [first, second, third] = byName;
     const records = new Map([
-      [first!.memberId, [{ from: '2026-09-01', to: '2026-09-04' }]],
-      [second!.memberId, [{ from: '2026-09-01', to: '2026-09-20' }]],
-      [third!.memberId, [{ from: '2026-09-01', to: '2026-09-04' }]],
+      [first!.memberId, [{ from: '2026-09-01', to: '2026-09-04', absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true }]],
+      [second!.memberId, [{ from: '2026-09-01', to: '2026-09-20', absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true }]],
+      [third!.memberId, [{ from: '2026-09-01', to: '2026-09-04', absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true }]],
     ]);
     const sortedBy = (smjer: 'uzlazno' | 'silazno') => {
       const outcome = organizationHoursOf(pilot, { mjesec: MONTH, sort: 'dopust', smjer }, TODAY, NO_COLLISIONS, [], records);
@@ -479,8 +481,8 @@ describe('the sort', () => {
 
     // Each row is its own member's days, as Godišnji charges them.
     for (const row of down.rows) {
-      expect(row.leaveDays, row.name).toBe(daysOf(row.memberId));
-      expect(row.leave).toEqual(row.leaveDays === 0 ? null : { key: 'count.days', values: { count: row.leaveDays } });
+      expect(row.leave[0]!.days, row.name).toBe(daysOf(row.memberId));
+      expect(row.leave[0]?.figure).toEqual(row.leave[0]!.days === 0 ? null : { key: 'count.days', values: { count: row.leave[0]!.days } });
     }
     // The order, either way, is by days, and equal days (every member at 0 among them) read by name, ascending both ways.
     expect(down.rows.map((row) => row.memberId)).toEqual(
@@ -490,7 +492,7 @@ describe('the sort', () => {
       [...byName].sort((one, other) => daysOf(one.memberId) - daysOf(other.memberId)).map((row) => row.memberId),
     );
     expect(down.rows[0]!.memberId).toBe(second!.memberId);
-    expect(down.footer!.leave).toEqual({
+    expect(down.footer!.leave[0]?.figure).toEqual({
       key: 'count.days',
       values: { count: [...expectedDays.values()].reduce((sum, one) => sum + one, 0) },
     });
@@ -527,7 +529,7 @@ describe('the sort', () => {
     }
     // Its heading is a sortable one like any other.
     expect(hoursAriaSortOf({ key: SORT_CONFLICTS, direction: 'silazno' }, SORT_CONFLICTS)).toBe('descending');
-    expect(hoursSortOf({ sort: SORT_CONFLICTS }, [])).toEqual({ key: SORT_CONFLICTS, direction: 'uzlazno' });
+    expect(hoursSortOf({ sort: SORT_CONFLICTS }, [], [])).toEqual({ key: SORT_CONFLICTS, direction: 'uzlazno' });
   });
 
   it('writes no parameter for the default', () => {
@@ -711,7 +713,7 @@ describe('the matrix edges', () => {
 
       expect(minutes(footer.total)).toBe(view.rows.reduce((sum, row) => sum + row.hours.totalMinutes, 0));
       expect(footer.shiftCount).toBe(view.rows.reduce((sum, row) => sum + row.shiftCount, 0));
-      expect(footer.leave).toBeNull();
+      expect(footer.leave[0]?.figure).toBeNull();
       expect(footer.conflictCount).toBe(view.rows.reduce((sum, row) => sum + row.conflictCount, 0));
       expect(footer.bands.map((band) => band.bandId)).toEqual(view.bands.map((band) => band.bandId));
       footer.bands.forEach((band, index) => {
@@ -724,7 +726,7 @@ describe('the matrix edges', () => {
     const one = viewOf(pilot, NO_LEAVE_RECORDS, { mjesec: MONTH, osoba: ANA });
 
     expect(one.footer!.total).toEqual(one.rows[0]!.total);
-    expect(hoursFooterOf([], one.bands)).toBeNull();
+    expect(hoursFooterOf([], one.bands, one.leaveColumns)).toBeNull();
   });
 
   it('a RangeError for any row refuses the whole table, logged, never thrown', () => {
@@ -798,5 +800,109 @@ describe('the surface', () => {
       retryable: false,
       loading: false,
     });
+  });
+});
+
+describe('one days column per drawing absence type, and one for the rest (story 13.2)', () => {
+  const SICK = '00000000-0000-4000-8000-00000000d001';
+  const TRAINING = '00000000-0000-4000-8000-00000000d002';
+  const typeOf = (id: string, name: string, drawsAllowance: boolean) => ({
+    id,
+    organizationId: pilot.organizationId,
+    name,
+    drawsAllowance,
+  });
+  const mixedOf = (): CalendarSnapshot => ({
+    ...pilot,
+    absenceTypes: [typeOf(ANNUAL_LEAVE_ID, 'Godišnji odmor', true), typeOf(SICK, 'Bolovanje', false), typeOf(TRAINING, 'Edukacija', true)],
+  });
+  const recordsOf = (memberId: string): LeaveRecordsByMember =>
+    new Map([
+      [
+        memberId,
+        [
+          { from: '2026-09-01', to: '2026-09-04', absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true },
+          { from: '2026-09-07', to: '2026-09-11', absenceTypeId: SICK, drawsAllowance: false },
+          { from: '2026-09-14', to: '2026-09-18', absenceTypeId: TRAINING, drawsAllowance: true },
+        ],
+      ],
+    ]);
+
+  it('names the columns from the catalog, drawing first and Ostala odsutnost last, each its own figure and footer total', () => {
+    const snapshot = mixedOf();
+    const member = pilot.members.find((one) => one.id === ANA)!;
+    const input = memberScheduleInputOf(snapshot, { ...member, memberId: ANA });
+    const view = viewOf(snapshot, recordsOf(ANA));
+    const row = view.rows.find((one) => one.memberId === ANA)!;
+    const expected = [
+      leaveCostOf(input, '2026-09-01', '2026-09-04'),
+      leaveCostOf(input, '2026-09-14', '2026-09-18'),
+      leaveCostOf(input, '2026-09-07', '2026-09-11'),
+    ];
+
+    expect(view.leaveColumns.map((column) => [column.key, column.name, column.sortKey])).toEqual([
+      [ANNUAL_LEAVE_ID, 'Godišnji odmor', 'dopust'],
+      [TRAINING, 'Edukacija', `odsutnost-${TRAINING}`],
+      [OTHER_ABSENCE_COLUMN, null, 'ostala-odsutnost'],
+    ]);
+    expect(expected.every((days) => days > 0)).toBe(true);
+    expect(row.leave.map((cell) => cell.days)).toEqual(expected);
+    expect(row.leave.map((cell) => cell.figure?.values.count ?? null)).toEqual(expected);
+    // Every other row has none, so each footer total is this row's.
+    expect(view.footer!.leave.map((cell) => [cell.column.key, cell.days])).toEqual(
+      view.leaveColumns.map((column, index) => [column.key, expected[index]]),
+    );
+    expect(view.columnCount).toBe(5 + view.bands.length + 3);
+    // The hours do not move: a non-drawing record is still leave, never work.
+    expect(row.hours).toEqual(viewOf(pilot, NO_LEAVE_RECORDS).rows.find((one) => one.memberId === ANA)!.hours);
+  });
+
+  it('a fresh organization: one column, annual leave, under `dopust`, as before', () => {
+    const view = viewOf(pilot, NO_LEAVE_RECORDS);
+
+    expect(view.leaveColumns).toEqual([{ key: ANNUAL_LEAVE_ID, name: 'Godišnji odmor', sortKey: 'dopust' }]);
+    expect(view.columnCount).toBe(5 + view.bands.length + 1);
+  });
+
+  it('sorts by any leave column; a stale one falls back to the default', () => {
+    const snapshot = mixedOf();
+    const records = recordsOf(ANA);
+    const top = (search: HoursSearch) => viewOf(snapshot, records, { mjesec: MONTH, ...search });
+
+    for (const sort of ['dopust', `odsutnost-${TRAINING}`, 'ostala-odsutnost'] as const) {
+      const view = top({ sort, smjer: 'silazno' });
+
+      expect(view.sort, sort).toEqual({ key: sort, direction: 'silazno' });
+      expect(view.rows[0]!.memberId, sort).toBe(ANA);
+    }
+    // An id no type of the organization holds, and Ostala odsutnost with no type that does not draw.
+    expect(top({ sort: 'odsutnost-gone', smjer: 'silazno' }).sort).toEqual(DEFAULT_HOURS_SORT);
+    expect(viewOf(pilot, NO_LEAVE_RECORDS, { mjesec: MONTH, sort: 'ostala-odsutnost' }).sort).toEqual(DEFAULT_HOURS_SORT);
+    expect(viewOf(pilot, NO_LEAVE_RECORDS, { mjesec: MONTH, sort: 'ostala-odsutnost' }).search.sort).toBeUndefined();
+  });
+
+  it('a drawing type set not to draw takes its column away, and its sort falls back to the default', () => {
+    const flipped: CalendarSnapshot = {
+      ...pilot,
+      absenceTypes: [typeOf(ANNUAL_LEAVE_ID, 'Godišnji odmor', true), typeOf(TRAINING, 'Edukacija', false)],
+    };
+    const view = viewOf(flipped, NO_LEAVE_RECORDS, { mjesec: MONTH, sort: `odsutnost-${TRAINING}`, smjer: 'silazno' });
+
+    expect(view.leaveColumns.map((column) => column.sortKey)).toEqual(['dopust', 'ostala-odsutnost']);
+    expect(view.sort).toEqual(DEFAULT_HOURS_SORT);
+    expect(view.search.sort).toBeUndefined();
+  });
+
+  it('a record whose type the snapshot does not hold refuses the whole table, logged', () => {
+    const errors = quiet();
+    const records: LeaveRecordsByMember = new Map([
+      [ANA, [{ from: '2026-09-01', to: '2026-09-04', absenceTypeId: 'unknown', drawsAllowance: false }]],
+    ]);
+
+    expect(organizationHoursOf(pilot, { mjesec: MONTH }, TODAY, NO_COLLISIONS, [], records)).toEqual({
+      ok: false,
+      code: HOURS_UNAVAILABLE,
+    });
+    expect(errors).toHaveBeenCalledWith(HOURS_UNAVAILABLE, expect.any(RangeError));
   });
 });

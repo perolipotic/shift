@@ -171,6 +171,13 @@ describe.each(FIXTURES)('people at work under $fixture (R10.1, R10.2)', (fx) => 
     expect(peopleAtWorkOn(input, teamId, date)?.atWork).toBe(3);
   });
 
+  it('a record whose type does not draw the allowance still takes the member off work (story 13.2, CAP-23)', () => {
+    const input = inputOf(fx, {
+      leaveRecords: [{ id: 'l', memberId: memberIdOf(teamId, 0), from: date, to: date, drawsAllowance: false }],
+    });
+    expect(peopleAtWorkOn(input, teamId, date)?.atWork).toBe(3);
+  });
+
   it('a non-working day is never short-staffed, even with nobody at work', () => {
     const off = offDayOf(fx);
     const input = inputOf(fx, { members: [], minimumMembers: 99 });

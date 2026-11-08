@@ -16,22 +16,29 @@ import {
   hoursGuarded,
   hoursMessageKey,
   hoursSnapshotInputOf,
+  leaveCellOf,
+  leaveColumnNameOf,
+  leaveColumnsOf,
   leaveDaysFigureOf,
   leaveFigureOf,
   leaveIsEmpty,
   leaveShownOf,
   memberHoursInputOf,
+  OTHER_ABSENCE_COLUMN,
   myHoursOf,
   myHoursSurfaceOf,
   myHoursViewOf,
   type MyHoursView,
 } from '@/features/hours/services/my-hours';
 import { initLocalization, t } from '@/lib/i18n';
+import { ANNUAL_LEAVE_ID } from '@/features/absence-types/services/list';
+import { SORT_LEAVE, SORT_OTHER_ABSENCE } from '@/features/hours/services/hours-search';
 import {
   PILOT,
   TODAY,
   UJ5,
   VIEWER_MEMBER,
+  absenceTypeRow,
   bandRow,
   calendarOrganizationRow,
   calendarRosterOverrideRow,
@@ -63,10 +70,11 @@ async function snapshotOf(
   {
     viewers = null as readonly Record<string, unknown>[] | null,
     rosterOverrides = [] as readonly Record<string, unknown>[],
+    absenceTypes = null as readonly Record<string, unknown>[] | null,
   } = {},
 ): Promise<CalendarSnapshot> {
   const source = calendarTableOf(
-    { data: [calendarOrganizationRow(rows, { viewers })], error: null, count: 1 },
+    { data: [calendarOrganizationRow(rows, { viewers, absenceTypes })], error: null, count: 1 },
     membersAnswerOf(),
     overridesAnswerOf(),
     rosterOverridesAnswerOf(rosterOverrides),
@@ -100,6 +108,15 @@ afterEach(() => {
 
 let pilot: CalendarSnapshot;
 let uj5: CalendarSnapshot;
+
+/** The fixtures' one leave column, annual leave's, holding `days` (story 13.2). */
+function annualCells(days: number) {
+  const column = leaveColumnsOf(pilot)[0];
+
+  if (column === undefined) throw new Error('no annual leave column');
+
+  return [leaveCellOf(column, days)];
+}
 
 beforeAll(async () => {
   await initLocalization();
@@ -140,7 +157,7 @@ describe("the viewer's month", () => {
     }
     // No leave exists before Epic 5: the figure is empty, never `0 h`.
     expect(hours.leaveMinutes).toBe(0);
-    expect(view.leave).toBeNull();
+    expect(view.leave[0]?.figure).toBeNull();
     expect(t('sati.noFigure')).toBe('—');
     // C587: a screen reader hears a word, never "dash".
     expect(t('sati.noFigureWord')).toBe('nema');
@@ -290,7 +307,7 @@ describe('the matrix edges', () => {
       leaveMinutes: 0,
       untimedShiftCount: 0,
     };
-    const view = myHoursViewOf(pilot, monthHeaderOf(MONTH, TODAY), hours, 0, 0);
+    const view = myHoursViewOf(pilot, monthHeaderOf(MONTH, TODAY), hours, 0, annualCells(0));
 
     expect(view.bands.map((band) => shown(band.hours))).toEqual(['12 h 30 min', '45 min']);
     expect(shown(view.total)).toBe('13 h 15 min');
@@ -308,17 +325,18 @@ describe('the matrix edges', () => {
       leaveMinutes,
       untimedShiftCount: 0,
     });
-    const viewWith = (minutes: number, days: number) => myHoursViewOf(pilot, monthHeaderOf(MONTH, TODAY), hoursWith(minutes), 0, days);
+    const viewWith = (minutes: number, days: number) =>
+      myHoursViewOf(pilot, monthHeaderOf(MONTH, TODAY), hoursWith(minutes), 0, annualCells(days));
     const leaveOf = (minutes: number, days: number): string => {
-      const { key, values } = leaveShownOf(viewWith(minutes, days).leave);
+      const { key, values } = leaveShownOf(viewWith(minutes, days).leave[0]?.figure ?? null);
 
       return t(key, values);
     };
     const some = viewWith(750, 3);
 
-    expect(viewWith(0, 0).leave).toBeNull();
+    expect(viewWith(0, 0).leave[0]?.figure).toBeNull();
     expect(leaveOf(0, 0)).toBe('—');
-    expect(some.leave).toEqual({ key: 'count.days', values: { count: 3 } });
+    expect(some.leave[0]?.figure).toEqual({ key: 'count.days', values: { count: 3 } });
     // The domain's leave minutes are shown nowhere: leave is counted in days.
     expect(leaveOf(750, 3)).toBe('3 dana');
     expect(leaveOf(0, 3)).toBe('3 dana');
@@ -330,7 +348,7 @@ describe('the matrix edges', () => {
   });
 
   it('leave: a record over a month edge is counted in each month as Godišnji charges it, the months summing to its cost', () => {
-    const record = { from: '2026-09-25', to: '2026-10-06' };
+    const record = { from: '2026-09-25', to: '2026-10-06', absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true };
     const records = new Map([[VIEWER_MEMBER, [record]]]);
     const input = memberScheduleInputOf(pilot, pilot.viewer);
     const daysIn = (month: string): number | null => {
@@ -338,7 +356,7 @@ describe('the matrix edges', () => {
 
       if (!outcome.ok) throw new Error(outcome.code);
 
-      return outcome.view.leave?.values.count ?? null;
+      return outcome.view.leave[0]?.figure?.values.count ?? null;
     };
     const september = leaveCostOf(input, record.from, '2026-09-30');
     const october = leaveCostOf(input, '2026-10-01', record.to);
@@ -373,7 +391,7 @@ describe('the matrix edges', () => {
       untimedShiftCount: 0,
     };
 
-    expect(() => myHoursViewOf(pilot, monthHeaderOf(MONTH, TODAY), hours, 0, 0)).toThrow(RangeError);
+    expect(() => myHoursViewOf(pilot, monthHeaderOf(MONTH, TODAY), hours, 0, annualCells(0))).toThrow(RangeError);
   });
 
   it('a RangeError from the domain is the one failure, logged, and no figure', () => {
@@ -497,5 +515,114 @@ describe('the surface state', () => {
 
   it('reads the fixtures in the month today falls in', () => {
     expect(TODAY.slice(0, 7)).toBe(MONTH);
+  });
+});
+
+describe('leave by absence type (story 13.2)', () => {
+  const SICK = '00000000-0000-4000-8000-00000000d001';
+  const TRAINING = '00000000-0000-4000-8000-00000000d002';
+  const ZEBRA = '00000000-0000-4000-8000-00000000d003';
+  // A worked-example window of the pilot: 10.09–14.09 costs 3; 21.09–23.09 is in the same month.
+  const annual = { from: '2026-09-10', to: '2026-09-14', absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true };
+  const later = { from: '2026-09-21', to: '2026-09-23' };
+
+  function cellsOf(snapshot: CalendarSnapshot, records: LeaveRecordsByMember): readonly [string, number][] {
+    const outcome = myHoursOf(snapshot, { mjesec: MONTH }, TODAY, NO_COLLISIONS, [], records);
+
+    if (!outcome.ok) throw new Error(outcome.code);
+
+    return outcome.view.leave.map((cell) => [leaveColumnNameOf(cell.column), cell.days]);
+  }
+
+  it('a fresh organization: one column, named as annual leave is stored, and no Ostala odsutnost', async () => {
+    const renamed = await snapshotOf(PILOT, { absenceTypes: [absenceTypeRow(ANNUAL_LEAVE_ID, 'Godišnji', true)] });
+
+    expect(leaveColumnsOf(pilot)).toEqual([{ key: ANNUAL_LEAVE_ID, name: 'Godišnji odmor', sortKey: SORT_LEAVE }]);
+    expect(cellsOf(renamed, new Map([[VIEWER_MEMBER, [annual]]]))).toEqual([['Godišnji', 3]]);
+  });
+
+  it('mixed: annual leave in its column, a non-drawing type in Ostala odsutnost, which names no type', async () => {
+    const snapshot = await snapshotOf(PILOT, {
+      absenceTypes: [absenceTypeRow(SICK, 'Bolovanje', false), absenceTypeRow(ANNUAL_LEAVE_ID, 'Godišnji odmor', true)],
+    });
+    const sick = { ...later, absenceTypeId: SICK, drawsAllowance: false };
+    const input = memberScheduleInputOf(snapshot, snapshot.viewer);
+
+    expect(leaveColumnsOf(snapshot).map((column) => [column.key, column.name, column.sortKey])).toEqual([
+      [ANNUAL_LEAVE_ID, 'Godišnji odmor', SORT_LEAVE],
+      [OTHER_ABSENCE_COLUMN, null, SORT_OTHER_ABSENCE],
+    ]);
+    expect(cellsOf(snapshot, new Map([[VIEWER_MEMBER, [annual, sick]]]))).toEqual([
+      ['Godišnji odmor', 3],
+      ['Ostala odsutnost', leaveCostOf(input, later.from, later.to)],
+    ]);
+  });
+
+  it('two drawing types: annual leave first, the rest by name in Croatian collation, each its own column', async () => {
+    const snapshot = await snapshotOf(PILOT, {
+      absenceTypes: [
+        absenceTypeRow(ZEBRA, 'Zebra', true),
+        absenceTypeRow(TRAINING, 'Edukacija', true),
+        absenceTypeRow(ANNUAL_LEAVE_ID, 'Godišnji odmor', true),
+      ],
+    });
+    const training = { ...later, absenceTypeId: TRAINING, drawsAllowance: true };
+    const input = memberScheduleInputOf(snapshot, snapshot.viewer);
+
+    expect(leaveColumnsOf(snapshot).map((column) => column.sortKey)).toEqual([
+      SORT_LEAVE,
+      `odsutnost-${TRAINING}`,
+      `odsutnost-${ZEBRA}`,
+    ]);
+    expect(cellsOf(snapshot, new Map([[VIEWER_MEMBER, [annual, training]]]))).toEqual([
+      ['Godišnji odmor', 3],
+      ['Edukacija', leaveCostOf(input, later.from, later.to)],
+      ['Zebra', 0],
+    ]);
+  });
+
+  it('a record whose type is not in the snapshot makes Sati unavailable, logged, never guessed', () => {
+    const errors = quiet();
+    const outcome = myHoursOf(pilot, { mjesec: MONTH }, TODAY, NO_COLLISIONS, [], new Map([[VIEWER_MEMBER, [{ ...later, absenceTypeId: SICK, drawsAllowance: false }]]]));
+
+    expect(outcome).toEqual({ ok: false, code: HOURS_UNAVAILABLE });
+    expect(errors).toHaveBeenCalled();
+  });
+
+  it('a record whose own drawing flag the catalog contradicts makes Sati unavailable, so it never disagrees with the balance', async () => {
+    const errors = quiet();
+    const snapshot = await snapshotOf(PILOT, {
+      absenceTypes: [absenceTypeRow(ANNUAL_LEAVE_ID, 'Godišnji odmor', true), absenceTypeRow(SICK, 'Bolovanje', false)],
+    });
+    // Read while the type still drew; the catalog, read later, says it does not.
+    const stale = new Map([[VIEWER_MEMBER, [{ ...later, absenceTypeId: SICK, drawsAllowance: true }]]]);
+
+    expect(myHoursOf(snapshot, { mjesec: MONTH }, TODAY, NO_COLLISIONS, [], stale)).toEqual({ ok: false, code: HOURS_UNAVAILABLE });
+    expect(errors).toHaveBeenCalledWith(HOURS_UNAVAILABLE, expect.any(RangeError));
+  });
+
+  it('a catalog without annual leave (a member reading before 0053) makes Sati unavailable, never no leave column', async () => {
+    quiet();
+    const empty = await snapshotOf(PILOT, { absenceTypes: [] });
+
+    expect(() => leaveColumnsOf(empty)).toThrow(RangeError);
+    expect(myHoursOf(empty, { mjesec: MONTH }, TODAY, NO_COLLISIONS, [], NO_LEAVE_RECORDS)).toEqual({
+      ok: false,
+      code: HOURS_UNAVAILABLE,
+    });
+  });
+
+  it('a snapshot cached before 13.2, with no types, makes Sati unavailable until it is read again', () => {
+    quiet();
+    const { absenceTypes: _omitted, ...cached } = pilot;
+
+    expect(myHoursOf(cached, { mjesec: MONTH }, TODAY, NO_COLLISIONS, [], NO_LEAVE_RECORDS)).toEqual({
+      ok: false,
+      code: HOURS_UNAVAILABLE,
+    });
+  });
+
+  it('Ostala odsutnost reads through t(), never a stored name', () => {
+    expect(leaveColumnNameOf({ key: OTHER_ABSENCE_COLUMN, name: null, sortKey: SORT_OTHER_ABSENCE })).toBe('Ostala odsutnost');
   });
 });

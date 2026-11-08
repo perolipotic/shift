@@ -31,6 +31,12 @@ import {
 import { currentSession } from '@/lib/supabase/client';
 import { TEAMS_COLUMNS, teamRowOf, type TeamRow } from '@/features/teams/services/list';
 import { HOUR_BANDS_COLUMNS, hourBandRowOf, type HourBandRow } from '@/features/hour-bands/services/list';
+import {
+  ABSENCE_TYPES_COLUMNS,
+  absenceTypeRowOf,
+  orderedAbsenceTypes,
+  type AbsenceTypeRow,
+} from '@/features/absence-types/services/list';
 
 /**
  * The calendar snapshot: one organization's zone, teams, shift types with
@@ -100,6 +106,14 @@ import { HOUR_BANDS_COLUMNS, hourBandRowOf, type HourBandRow } from '@/features/
  * `hourBandRowOf`, and its `organization_id` is the tripwire the other
  * embeds carry. A band write invalidates `CALENDAR_KEY` too.
  *
+ * THE ABSENCE TYPES (story 13.2). Every absence type of the organization — a
+ * name and whether it draws down the allowance, nothing else — embedded as
+ * the hour bands are, so *Sati* names its leave columns from this same
+ * snapshot and adds no read. Each row is
+ * `@/features/absence-types/services/list`'s `absenceTypeRowOf`, its
+ * `organization_id` the same tripwire. Every active member reads them (0053).
+ * An absence type write invalidates `CALENDAR_KEY` too.
+ *
  * `select` AND THREE `rpc`s, AND NOTHING ELSE.
  */
 
@@ -119,6 +133,7 @@ export const CALENDAR_COLUMNS =
   `teams(${TEAMS_COLUMNS}),` +
   `${SHIFT_TYPES_EMBED},` +
   `hour_bands(${HOUR_BANDS_COLUMNS}),` +
+  `absence_types(${ABSENCE_TYPES_COLUMNS}),` +
   'rotation_steps(organization_id,id,pattern_id,position,shift_type_id),' +
   'rotation_assignments(organization_id,team_id,pattern_id,offset_step_id,anchor_date,effective_from,created_at),' +
   'members(organization_id,id,role,team_membership_versions(organization_id,team_id,effective_from)),' +
@@ -296,6 +311,14 @@ export interface CalendarSnapshot {
    * a valid configuration. Only *Sati* reads them: the calendar draws no band.
    */
   readonly bands: readonly HourBandRow[];
+  /**
+   * Every absence type of the organization (story 13.2), annual leave first,
+   * then by name in Croatian collation. A fresh read always sets it; it is
+   * ABSENT on a snapshot cached before 13.2, which *Sati* then refuses until
+   * it is read again. Only *Sati* reads it, through
+   * {@link absenceTypesOfCalendar}, never directly.
+   */
+  readonly absenceTypes?: readonly AbsenceTypeRow[];
   /** Every step of every pattern. */
   readonly steps: readonly RotationStep[];
   /** Every version of every team's rotation. */
@@ -357,6 +380,7 @@ type CalendarRefusal =
   | 'team'
   | 'type'
   | 'band'
+  | 'absenceType'
   | 'step'
   | 'assignment'
   | 'ids'
@@ -397,6 +421,28 @@ export function calendarMinimumMembersOf(value: unknown): number | null {
  */
 export function minimumOfCalendar(calendar: CalendarSnapshot): number | null {
   return calendarMinimumMembersOf((calendar as { readonly minimumMembers?: unknown }).minimumMembers);
+}
+
+/**
+ * The snapshot's absence types, or `null` for a snapshot cached before story
+ * 13.2, which carries none: *Sati* is then unavailable until it is read
+ * again, never a guess at which leave draws.
+ */
+export function absenceTypesOfCalendar(calendar: CalendarSnapshot): readonly AbsenceTypeRow[] | null {
+  const types = (calendar as { readonly absenceTypes?: unknown }).absenceTypes;
+
+  if (!Array.isArray(types)) return null;
+
+  // A cached element is re-checked lightly: a shape this build cannot read is no catalog.
+  const readable = (types as readonly unknown[]).every(
+    (type) =>
+      isRecord(type) &&
+      typeof type['id'] === 'string' &&
+      typeof type['name'] === 'string' &&
+      typeof type['drawsAllowance'] === 'boolean',
+  );
+
+  return readable ? (types as readonly AbsenceTypeRow[]) : null;
 }
 
 function embedded(organization: Record<string, unknown>, relation: string): readonly unknown[] | null {
@@ -490,6 +536,7 @@ export async function readCalendar(
   const teamRows = embedded(organization, 'teams');
   const typeRows = embedded(organization, 'shift_types');
   const bandRows = embedded(organization, 'hour_bands');
+  const absenceTypeRows = embedded(organization, 'absence_types');
   const stepRows = embedded(organization, 'rotation_steps');
   const assignmentRows = embedded(organization, 'rotation_assignments');
   const memberRows = embedded(organization, 'members');
@@ -501,6 +548,7 @@ export async function readCalendar(
   if (teamRows === null || typeRows === null || bandRows === null || stepRows === null || assignmentRows === null) {
     return unavailable('organization');
   }
+  if (absenceTypeRows === null) return unavailable('organization');
   if (memberRows === null || memberRows.length !== 1) return unavailable('viewer');
   if (membershipRows === null) return unavailable('memberships');
   if (statusRows === null) return unavailable('statuses');
@@ -541,6 +589,19 @@ export async function readCalendar(
   if (new Set(bands.map((band) => band.startMinute)).size !== bands.length) return unavailable('band');
 
   bands.sort((left, right) => left.startMinute - right.startMinute);
+
+  const absenceTypes: AbsenceTypeRow[] = [];
+
+  for (const row of absenceTypeRows) {
+    const type = absenceTypeRowOf(row);
+
+    if (type === null || type.organizationId !== organizationId) return unavailable('absenceType');
+
+    absenceTypes.push(type);
+  }
+
+  // One type per id: the schema's key, re-checked so a defect is the message.
+  if (new Set(absenceTypes.map((type) => type.id)).size !== absenceTypes.length) return unavailable('absenceType');
 
   const steps: RotationStep[] = [];
 
@@ -637,6 +698,7 @@ export async function readCalendar(
       teams,
       types,
       bands,
+      absenceTypes: orderedAbsenceTypes(absenceTypes),
       steps,
       assignments,
       assignmentStamps,

@@ -1,6 +1,7 @@
 import { MINUTES_PER_DAY, type Collision } from '@shift/domain';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { ANNUAL_LEAVE_ID } from '@/features/absence-types/services/list';
 import { readCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import {
   FILE_NAME_ORGANIZATION_MAX,
@@ -18,7 +19,7 @@ import {
 import { durationMessageKey } from '@/features/hour-bands/services/list';
 import { NO_LEAVE_RECORDS, type LeaveRecordsByMember } from '@/features/hours/services/hours-conflicts';
 import { hoursSearchOf, type HoursSearch } from '@/features/hours/services/hours-search';
-import { leaveFigureOf } from '@/features/hours/services/my-hours';
+import { leaveCellOf } from '@/features/hours/services/my-hours';
 import { bandMinutesOf, organizationHoursOf, type OrganizationHoursView } from '@/features/hours/services/organization-hours';
 import {
   HOURS_FORMAT_HOURS,
@@ -157,7 +158,7 @@ describe('the sheet', () => {
       t('sati.organization.shifts'),
       ...view.bands.map((band) => band.name),
       t('sati.organization.total'),
-      t('sati.organization.export.leaveDays'),
+      t('sati.organization.export.days', { name: 'Godišnji odmor' }),
       t('sati.organization.conflicts'),
     ]);
     expect(sheet.sheetName).toBe(t('sati.organization.export.sheetName'));
@@ -181,7 +182,7 @@ describe('the sheet', () => {
         // No collision without leave: a zero, never an empty cell.
         { kind: 'count', value: 0 },
       ]);
-      expect(row.leaveDays).toBe(0);
+      expect(row.leave[0]!.days).toBe(0);
     });
   });
 
@@ -242,7 +243,7 @@ describe('the sheet', () => {
   it('leave: one cell of days, a plain count, empty at 0, the number the row shows', () => {
     const view = viewOf(pilot, NO_LEAVE_RECORDS);
     const [first] = view.rows;
-    const rowWith = (days: number) => ({ ...first!, leaveDays: days, leave: leaveFigureOf(days) });
+    const rowWith = (days: number) => ({ ...first!, leave: [leaveCellOf(view.leaveColumns[0]!, days)] });
     const some = hoursExportOf({ ...view, rows: [rowWith(3)] }, pilot.organizationName);
     // The domain's leave minutes are shown nowhere, the file included.
     const decided = hoursExportOf(
@@ -251,13 +252,15 @@ describe('the sheet', () => {
     );
     const none = hoursExportOf({ ...view, rows: [first!] }, pilot.organizationName);
 
-    expect(first!.leave).toBeNull();
+    expect(first!.leave[0]?.figure).toBeNull();
     expect(none.rows[0]!.at(-2)).toEqual({ kind: 'empty' });
     expect(sheetDataOf(none)[1]!.at(-2)).toBeNull();
     expect(some.rows[0]!.at(-2)).toEqual({ kind: 'count', value: 3 });
     expect(sheetDataOf(some)[1]!.at(-2)).toEqual({ type: Number, value: 3 });
     expect(decided.rows[0]).toEqual(some.rows[0]);
-    expect(t('sati.organization.export.leaveDays')).toBe('Godišnji odmor (dani)');
+    // Story 13.2: the heading is the column's stored name with the unit, never a fixed one.
+    expect(t('sati.organization.export.days', { name: 'Godišnji odmor' })).toBe('Godišnji odmor (dani)');
+    expect(some.columns.at(-2)).toBe('Godišnji odmor (dani)');
     // Every other figure is unchanged by the leave.
     expect(some.rows[0]!.slice(0, -2)).toEqual(none.rows[0]!.slice(0, -2));
     expect(some.rows[0]!.at(-1)).toEqual(none.rows[0]!.at(-1));
@@ -265,14 +268,14 @@ describe('the sheet', () => {
 
   it('a recorded leave reads back as the row\'s days', () => {
     const memberId = viewOf(pilot, NO_LEAVE_RECORDS).rows[0]!.memberId;
-    const view = viewOf(pilot, new Map([[memberId, [{ from: `${MONTH}-05`, to: `${MONTH}-12` }]]]), { mjesec: MONTH });
+    const view = viewOf(pilot, new Map([[memberId, [{ from: `${MONTH}-05`, to: `${MONTH}-12`, absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true }]]]), { mjesec: MONTH });
     const index = view.rows.findIndex((row) => row.memberId === memberId);
     const row = view.rows[index]!;
     const sheet = hoursExportOf(view, pilot.organizationName);
 
-    expect(row.leaveDays).toBeGreaterThan(0);
-    expect(row.leave).toEqual({ key: 'count.days', values: { count: row.leaveDays } });
-    expect(sheet.rows[index]!.at(-2)).toEqual({ kind: 'count', value: row.leaveDays });
+    expect(row.leave[0]!.days).toBeGreaterThan(0);
+    expect(row.leave[0]?.figure).toEqual({ key: 'count.days', values: { count: row.leave[0]!.days } });
+    expect(sheet.rows[index]!.at(-2)).toEqual({ kind: 'count', value: row.leave[0]!.days });
   });
 
   it('no team: the cell is the text the screen shows', () => {
@@ -292,7 +295,7 @@ describe('the sheet', () => {
       t('sati.organization.team'),
       t('sati.organization.shifts'),
       t('sati.organization.total'),
-      t('sati.organization.export.leaveDays'),
+      t('sati.organization.export.days', { name: 'Godišnji odmor' }),
       t('sati.organization.conflicts'),
     ]);
     for (const row of sheet.rows) expect(row).toHaveLength(6);
@@ -329,7 +332,7 @@ describe('the sheet', () => {
       expect(cells[column]).toEqual({ kind: 'hours', value: above / MINUTES_PER_DAY, shape: hoursShapeOf(above) });
     }
     expect(minutes(cells.at(-3))).toBe(footer.totalMinutes);
-    expect(cells.at(-2)).toEqual(footer.leaveDays === 0 ? { kind: 'empty' } : { kind: 'count', value: footer.leaveDays });
+    expect(cells.at(-2)).toEqual(footer.leave[0]!.days === 0 ? { kind: 'empty' } : { kind: 'count', value: footer.leave[0]!.days });
     expect(cells.at(-1)).toEqual({ kind: 'count', value: footer.conflictCount });
     // The status line still counts the people, never the footer.
     expect(sheet.rows).toHaveLength(view.rows.length);
@@ -337,11 +340,11 @@ describe('the sheet', () => {
 
   it('the footer counts leave days as the screen does, and there is none with no row', () => {
     const memberId = viewOf(pilot, NO_LEAVE_RECORDS).rows[0]!.memberId;
-    const view = viewOf(pilot, new Map([[memberId, [{ from: `${MONTH}-05`, to: `${MONTH}-12` }]]]), { mjesec: MONTH });
+    const view = viewOf(pilot, new Map([[memberId, [{ from: `${MONTH}-05`, to: `${MONTH}-12`, absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true }]]]), { mjesec: MONTH });
     const sheet = hoursExportOf(view, pilot.organizationName);
 
-    expect(view.footer!.leaveDays).toBeGreaterThan(0);
-    expect(sheet.footer!.at(-2)).toEqual({ kind: 'count', value: view.footer!.leaveDays });
+    expect(view.footer!.leave[0]!.days).toBeGreaterThan(0);
+    expect(sheet.footer!.at(-2)).toEqual({ kind: 'count', value: view.footer!.leave[0]!.days });
     expect(hoursExportOf({ ...view, rows: [], footer: null }, pilot.organizationName).footer).toBeNull();
   });
 
@@ -362,7 +365,7 @@ describe('the sheet', () => {
     expect(footer[2]).toEqual({ type: Number, value: view.footer!.shiftCount, fontWeight: 'bold' });
     for (const [index, row] of rows.entries()) {
       const figures = row.slice(2, -2);
-      const leave = view.rows[index]!.leave;
+      const leave = view.rows[index]!.leave[0]?.figure ?? null;
 
       expect(row.slice(0, 2).map((cell) => (cell as { type: unknown }).type)).toEqual([String, String]);
       expect(figures.every((cell) => (cell as { type: unknown }).type === Number)).toBe(true);
@@ -503,5 +506,50 @@ describe('the action', () => {
 
     await expect(exportHours(broken, pilot.organizationName, () => Promise.resolve())).resolves.toBeNull();
     expect(errors).toHaveBeenLastCalledWith(HOURS_EXPORT_FAILED, expect.any(RangeError));
+  });
+});
+
+describe('the leave columns by absence type (story 13.2)', () => {
+  const SICK = '00000000-0000-4000-8000-00000000d001';
+  const TRAINING = '00000000-0000-4000-8000-00000000d002';
+
+  it('writes one `{name} (dani)` column per leave column, in the screen order, each row and the footer cell for cell', () => {
+    const snapshot: CalendarSnapshot = {
+      ...pilot,
+      absenceTypes: [
+        { id: ANNUAL_LEAVE_ID, organizationId: pilot.organizationId, name: 'Godišnji odmor', drawsAllowance: true },
+        { id: TRAINING, organizationId: pilot.organizationId, name: 'Edukacija', drawsAllowance: true },
+        { id: SICK, organizationId: pilot.organizationId, name: 'Bolovanje', drawsAllowance: false },
+      ],
+    };
+    const view = viewOf(
+      snapshot,
+      new Map([
+        [
+          ANA,
+          [
+            { from: '2026-09-01', to: '2026-09-04', absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true },
+            { from: '2026-09-07', to: '2026-09-11', absenceTypeId: SICK, drawsAllowance: false },
+          ],
+        ],
+      ]),
+    );
+    const sheet = hoursExportOf(view, snapshot.organizationName);
+    const leaveCount = view.leaveColumns.length;
+    const first = sheet.columns.length - 1 - leaveCount;
+
+    expect(sheet.columns.slice(first, -1)).toEqual(['Godišnji odmor (dani)', 'Edukacija (dani)', 'Ostala odsutnost (dani)']);
+    view.rows.forEach((row, index) => {
+      expect(sheet.rows[index]!.slice(first, -1)).toEqual(
+        row.leave.map((cell) => (cell.days === 0 ? { kind: 'empty' } : { kind: 'count', value: cell.days })),
+      );
+    });
+    expect(sheet.footer!.slice(first, -1)).toEqual(
+      view.footer!.leave.map((cell) => (cell.days === 0 ? { kind: 'empty' } : { kind: 'count', value: cell.days })),
+    );
+    // Ana's annual and other absence are each in their own column; no one has Edukacija.
+    const ana = view.rows.findIndex((row) => row.memberId === ANA);
+
+    expect(sheet.rows[ana]!.slice(first, -1).map((cell) => cell.kind)).toEqual(['count', 'empty', 'count']);
   });
 });

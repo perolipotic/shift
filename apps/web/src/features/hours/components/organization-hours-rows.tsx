@@ -1,4 +1,4 @@
-import { HOURS_FIGURE_BAND, HOURS_FIGURE_LEAVE, HOURS_FIGURE_TOTAL, type HoursFigureCode } from '@shift/domain';
+import { HOURS_FIGURE_BAND, HOURS_FIGURE_LEAVE, HOURS_FIGURE_TOTAL } from '@shift/domain';
 import { Link } from '@tanstack/react-router';
 import type { ReactNode, RefObject } from 'react';
 
@@ -11,7 +11,6 @@ import { LeaveFigure, TeamName } from '@/features/hours/components/hours-marks';
 import { EmptyResult } from '@/features/hours/components/organization-hours-empty';
 import {
   SORT_CONFLICTS,
-  SORT_LEAVE,
   SORT_NAME,
   SORT_SHIFTS,
   SORT_TEAM,
@@ -19,7 +18,8 @@ import {
   type HoursSearchChange,
   type HoursSortKey,
 } from '@/features/hours/services/hours-search';
-import { figureIsEmpty } from '@/features/hours/services/my-hours';
+import type { HoursExplainFigure } from '@/features/hours/services/hours-explanation';
+import { figureIsEmpty, leaveColumnNameOf } from '@/features/hours/services/my-hours';
 import { hoursSortDirectionArrowOf, type OrganizationHoursView } from '@/features/hours/services/organization-hours';
 import { t } from '@/lib/i18n';
 import type { SortControlColumn } from '@/utils/sort-control';
@@ -29,7 +29,7 @@ import type { SortControlColumn } from '@/utils/sort-control';
  * view model as stacked rows, so no figure can differ between the two forms.
  * A row is the name (the link to their calendar month, as in the table) with
  * `{team} · {n} smjena` under it, `Ukupno` over the total at the top right,
- * then a grid of three: a cell per band and the leave, each with its
+ * then a grid of three: a cell per band and per leave column (story 13.2), each with its
  * visible label, its hours and, for a band, its shifts. The shifts in
  * unresolved conflict show only above zero, as `⚠` and words, never colour.
  *
@@ -51,7 +51,7 @@ export function OrganizationHoursRows({
   readonly filtersRef: RefObject<FilterBarHandle | null>;
   readonly onChange: (change: HoursSearchChange) => void;
   readonly onPress: (key: HoursSortKey) => void;
-  readonly onExplain: (memberId: string, figure: HoursFigureCode) => void;
+  readonly onExplain: (memberId: string, figure: HoursExplainFigure) => void;
 }): ReactNode {
   const columns: readonly SortControlColumn<HoursSortKey>[] = [
     { key: SORT_NAME, label: t('sati.organization.member') },
@@ -59,7 +59,7 @@ export function OrganizationHoursRows({
     { key: SORT_SHIFTS, label: t('sati.organization.shifts') },
     ...view.bands.map((band) => ({ key: band.sortKey, label: band.name })),
     { key: SORT_TOTAL, label: t('sati.organization.total') },
-    { key: SORT_LEAVE, label: t('sati.organization.leave') },
+    ...view.leaveColumns.map((column) => ({ key: column.sortKey, label: leaveColumnNameOf(column) })),
     { key: SORT_CONFLICTS, label: t('sati.organization.conflicts') },
   ];
 
@@ -137,19 +137,25 @@ export function OrganizationHoursRows({
                       </span>
                     </StackedField>
                   ))}
-                  <StackedField label={t('sati.organization.leave')} className="rounded-md bg-muted px-2 py-1.5">
-                    <span className="flex items-center justify-between gap-1">
-                      <span className="font-semibold"><LeaveFigure leave={row.leave} /></span>
-                      {row.leave === null ? null : (
-                        <ExplainButton
-                          figureName={`${t('sati.organization.leave')}, ${row.name}`}
-                          onPress={() => {
-                            onExplain(row.memberId, { code: HOURS_FIGURE_LEAVE });
-                          }}
-                        />
-                      )}
-                    </span>
-                  </StackedField>
+                  {row.leave.map((cell) => (
+                    <StackedField
+                      label={leaveColumnNameOf(cell.column)}
+                      key={cell.column.key}
+                      className="rounded-md bg-muted px-2 py-1.5"
+                    >
+                      <span className="flex items-center justify-between gap-1">
+                        <span className="font-semibold"><LeaveFigure leave={cell.figure} /></span>
+                        {cell.figure === null ? null : (
+                          <ExplainButton
+                            figureName={`${leaveColumnNameOf(cell.column)}, ${row.name}`}
+                            onPress={() => {
+                              onExplain(row.memberId, { code: HOURS_FIGURE_LEAVE, column: cell.column.key });
+                            }}
+                          />
+                        )}
+                      </span>
+                    </StackedField>
+                  ))}
                 </StackedFields>
                 {row.conflictCount === 0 ? null : (
                   <StackedFields className="text-sm font-semibold">

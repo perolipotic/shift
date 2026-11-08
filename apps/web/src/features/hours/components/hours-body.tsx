@@ -1,4 +1,3 @@
-import type { HoursFigureCode } from '@shift/domain';
 import { useRef, type ReactNode } from 'react';
 
 import { activeFilterSummaryOf, type FilterBarHandle } from '@/components/filter-bar';
@@ -11,6 +10,7 @@ import { OrganizationHoursExport } from '@/features/hours/components/organizatio
 import { OrganizationHoursFilters } from '@/features/hours/components/organization-hours-filters';
 import { OrganizationHoursRows } from '@/features/hours/components/organization-hours-rows';
 import { OrganizationHoursTable } from '@/features/hours/components/organization-hours-table';
+import type { HoursExplainFigure } from '@/features/hours/services/hours-explanation';
 import type { HoursSearchChange, HoursSortKey } from '@/features/hours/services/hours-search';
 import { hoursMessageKey, type HoursFailure, type MyHoursView } from '@/features/hours/services/my-hours';
 import type { OrganizationHoursView } from '@/features/hours/services/organization-hours';
@@ -88,7 +88,7 @@ export function HoursBody({
   readonly onChange: (change: HoursSearchChange) => void;
   readonly onPress: (key: HoursSortKey) => void;
   /** A figure's ⓘ was chosen: `memberId` `null` is the viewer's own. */
-  readonly onExplain: (memberId: string | null, figure: HoursFigureCode) => void;
+  readonly onExplain: (memberId: string | null, figure: HoursExplainFigure) => void;
 }): ReactNode {
   // The filter bar's first chip: where the empty table's two actions put focus.
   const filtersRef = useRef<FilterBarHandle>(null);

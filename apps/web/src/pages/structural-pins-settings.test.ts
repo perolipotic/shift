@@ -752,3 +752,19 @@ describe('the accent control offers a curated set and nothing else', () => {
     );
   });
 });
+
+describe('an absence type write re-reads what reads a type (story 13.2)', () => {
+  const HOOK = join(srcRoot, 'features', 'organization', 'hooks', 'use-organization-absence-types.ts');
+
+  it('re-reads the calendar snapshot and every leave read after a landed write, and its own list alone after a stale refusal', () => {
+    const hook = source(HOOK);
+
+    expect(hook, 'a landed write does not name the absence type dependents').toContain(
+      'refreshAfterWrite(queryClient, ABSENCE_TYPES_LIST_KEY, ABSENCE_TYPE_WRITE_DEPENDENTS)',
+    );
+    expect(occurrences(hook, 'ABSENCE_TYPE_WRITE_DEPENDENTS)'), 'the dependents are named more than once').toBe(1);
+    expect(hook, 'a stale refusal re-reads more than its own list').toContain(
+      'refreshAfterWrite(queryClient, ABSENCE_TYPES_LIST_KEY, NO_DEPENDENTS)',
+    );
+  });
+});

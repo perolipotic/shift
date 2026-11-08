@@ -1,6 +1,7 @@
 import { leaveBalanceOf, leaveCostOf, leavePreviewOf } from '@shift/domain';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { ANNUAL_LEAVE_ID } from '@/features/absence-types/services/list';
 import { readCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { memberScheduleInputOf } from '@/features/calendar/utils/month';
 import {
@@ -79,6 +80,9 @@ import {
   viewerSession,
   type FixtureRows,
 } from '@/features/rotation/rotation.fixture';
+
+/** Story 13.2: a record of annual leave, which draws down the allowance. */
+const ANNUAL_RECORD = { absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true } as const;
 
 /**
  * Story 5.2c's view model, executed (AD-15): every row of the spec's matrix,
@@ -178,6 +182,21 @@ describe("the viewer's figures", () => {
     );
   });
 
+  it('charges only records whose type draws down the allowance (story 13.2): a non-drawing record is not used', () => {
+    const sick = { ...rowOf('record-sick', '2026-10-05', '2026-10-09'), absence_type_id: 'sick-type', draws_allowance: false };
+    const typed = { ...WORKED, absence_type_id: ANNUAL_LEAVE_ID, draws_allowance: true };
+    const leave = readyOf(myLeaveOf(sourcesOf(pilot, { records: rowsOf([typed, sick]) }), NOW));
+
+    expect(leave.balance).toEqual({ allowanceDays: 20, usedDays: 3, balanceDays: 17 });
+  });
+
+  it('is unavailable when a row carries a type it cannot trust (story 13.2)', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const broken = { ...WORKED, absence_type_id: 'sick-type' };
+
+    expect(myLeaveOf(sourcesOf(pilot, { records: rowsOf([broken]) }), NOW)).toEqual({ kind: MY_LEAVE_UNAVAILABLE });
+  });
+
   it('shows 20 / 0 / 20 with no records', () => {
     expect(readyOf(myLeaveOf(sourcesOf(pilot), NOW)).balance).toEqual({
       allowanceDays: 20,
@@ -208,8 +227,8 @@ describe("the viewer's figures", () => {
           organization: ORGANIZATION,
           records: {
             records: [
-              { id: 'record-worked', from: '2026-09-10', to: '2026-09-14' },
-              { id: 'record-later', from: '2026-10-05', to: '2026-10-07' },
+              { ...ANNUAL_RECORD, id: 'record-worked', from: '2026-09-10', to: '2026-09-14' },
+              { ...ANNUAL_RECORD, id: 'record-later', from: '2026-10-05', to: '2026-10-07' },
             ],
             loading: false,
             refreshing: false,
@@ -401,7 +420,7 @@ describe('the balance input the figures stand on (story 9.3)', () => {
     expect(leave.input).toEqual({
       input: memberScheduleInputOf(pilot, pilot.viewer),
       allowanceDays: 20,
-      records: [{ id: 'record-worked', from: '2026-09-10', to: '2026-09-14' }],
+      records: [{ ...ANNUAL_RECORD, id: 'record-worked', from: '2026-09-10', to: '2026-09-14' }],
       today: '2026-09-26',
       leaveYearStart: { month: 1, day: 1 },
     });

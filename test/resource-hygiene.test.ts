@@ -1561,12 +1561,15 @@ const SANCTIONED_SCREEN_KEYS = [
   'ljudi.erasures.unavailable',
   'ljudi.erasures.retry',
   // STORY 4.1b: *Sati* — the total's and the shift count's labels, the bands'
-  // heading, the leave row and the one failure. The hours themselves are the
-  // band screens' `organization.hourBands.duration.*` units.
+  // heading and the one failure. The hours themselves are the band screens'
+  // `organization.hourBands.duration.*` units. STORY 13.2 (DI-8): the leave
+  // row's fixed *Godišnji odmor* gave way to one row per drawing absence type,
+  // named by its stored name, and *Ostala odsutnost* for every type that does
+  // not draw, which names no type.
   'sati.total',
   'sati.shifts',
   'sati.bands',
-  'sati.leave',
+  'sati.otherAbsence',
   // The mark of an empty figure: a member's leave of 0 reads as an absence,
   // never as `0 h` (Epic 4 retro, R2).
   'sati.noFigure',
@@ -1583,7 +1586,6 @@ const SANCTIONED_SCREEN_KEYS = [
   'sati.organization.team',
   'sati.organization.shifts',
   'sati.organization.total',
-  'sati.organization.leave',
   'sati.organization.noTeam',
   'sati.organization.noTeamWord',
   'sati.organization.emptyMonth',
@@ -1595,9 +1597,11 @@ const SANCTIONED_SCREEN_KEYS = [
   'sati.organization.export.pending',
   'sati.organization.export.failed',
   'sati.organization.export.sheetName',
-  // LEAVE IN DAYS (2026-10-10): the file's leave heading names its unit,
-  // days, since a number format cannot inflect `dan/dana`.
-  'sati.organization.export.leaveDays',
+  // LEAVE IN DAYS (2026-10-10): the file's leave headings name their unit,
+  // days, since a number format cannot inflect `dan/dana`. STORY 13.2: one
+  // per leave column, `{name} (dani)`, the name organization data or
+  // *Ostala odsutnost* — never a type named in the resource (DI-8).
+  'sati.organization.export.days',
   'sati.organization.export.fileName',
   // STORY 5.3d: the organization table's and the file's column of shifts in
   // unresolved conflict, and the retry the unavailable message offers when a

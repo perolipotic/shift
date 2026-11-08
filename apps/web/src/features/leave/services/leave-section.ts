@@ -168,7 +168,9 @@ export function leaveRangeValuesOf(range: LeaveRange): { readonly from: string; 
 export function leaveRecordRowsOf(input: LeaveRecordsInput): readonly LeaveRecordRow[] {
   return input.records.map((record) => {
     const values = leaveRangeValuesOf(record);
-    const range = { from: record.from, to: record.to };
+    // The record's own drawing flag (story 13.2): a type that does not draw
+    // charges the balance nothing.
+    const range = { from: record.from, to: record.to, drawsAllowance: record.drawsAllowance };
     const others = input.records.filter((other) => other.id !== record.id);
 
     return {
@@ -177,7 +179,8 @@ export function leaveRecordRowsOf(input: LeaveRecordsInput): readonly LeaveRecor
       to: values.to,
       label: `${values.from}${RANGE_DASH}${values.to}`,
       costDays: leaveCostOf(input.input, record.from, record.to),
-      inYearDays: leaveInYearChargeOf(leavePreviewOf({ ...input, records: others, range })),
+      // A type that does not draw has no in-year charge to state: no part, never `0` (story 13.2).
+      inYearDays: record.drawsAllowance ? leaveInYearChargeOf(leavePreviewOf({ ...input, records: others, range })) : null,
     };
   });
 }
@@ -636,7 +639,7 @@ export function leaveAmendedOf(input: LeaveBalanceInput, fresh: readonly LeaveRe
   return savedAgainst(
     input,
     fresh.filter((record) => record.id !== id),
-    { from: replacement.from, to: replacement.to },
+    { from: replacement.from, to: replacement.to, drawsAllowance: replacement.drawsAllowance },
   );
 }
 

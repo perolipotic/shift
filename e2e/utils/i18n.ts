@@ -12,6 +12,15 @@ export function fill(message: string, values: Readonly<Record<string, string>>):
   return message.replace(/\{(\w+)\}/g, (placeholder, key: string) => values[key] ?? placeholder);
 }
 
+/**
+ * Story 13.2: *Sati*'s leave columns are named by organization data. Annual
+ * leave's column carries its seeded name (`0052`; `ANNUAL_LEAVE_NAME` in
+ * `database-helper.ts`, which the absence-types hold restores), and the file's
+ * heading is that name with the unit.
+ */
+export const ANNUAL_LEAVE_COLUMN = 'Godišnji odmor';
+export const ANNUAL_LEAVE_DAYS_HEADING = fill(hr.sati.organization.export.days, { name: ANNUAL_LEAVE_COLUMN });
+
 /** The destinations only an admin reaches (`features/navigation/utils/destinations.ts`). */
 export const ADMIN_DESTINATIONS = [hr.nav.zaOdluku, hr.nav.postavkeRotacije, hr.nav.organizacija] as const;
 

@@ -513,11 +513,12 @@ describe('the access-control migration', () => {
     const declared = [...declaredSet].sort();
 
     expect(declared, 'the declared policy set changed').toEqual([
-      // STORY 13.1 (0052), and THREE: an active admin reads, defines and
-      // renames a type or sets its drawing flag. No delete policy: a type is
-      // never deleted. A member-role account reads none (13.2's).
+      // STORY 13.1 (0052), and THREE: an active admin defines and renames a
+      // type or sets its drawing flag. No delete policy: a type is never
+      // deleted. STORY 13.2 (0053, PO Q2) replaces the admin-only read with
+      // one for every active member of the organization.
       'absence_types_insert_by_own_active_admin',
-      'absence_types_select_by_own_active_admin',
+      'absence_types_select_by_own_active_member',
       'absence_types_update_by_own_active_admin',
       // STORY 5.4a, and TWO: an active admin inserts and reads; a member reads
       // their own live rows through `my_conflict_resolutions()`. No update and
@@ -3122,11 +3123,15 @@ describe('the access-control migration', () => {
     );
   });
 
-  it('opens absence types to an active admin\'s read, insert and update alone, never delete, and keeps the leave record type unwritable (story 13.1)', () => {
+  it('opens absence types to an active member\'s read and an active admin\'s insert and update alone, never delete, and keeps the leave record type unwritable (stories 13.1, 13.2)', () => {
     const statements = migrationStatements();
-    const policies = policyDeclarations(statements).filter((declaration) =>
-      /on public\.absence_types\b/i.test(declaration),
+    // 0053 drops 0052's admin-only select; what stays declared is three.
+    const policies = policyDeclarations(statements).filter(
+      (declaration) =>
+        /on public\.absence_types\b/i.test(declaration) &&
+        !/^create policy absence_types_select_by_own_active_admin\b/i.test(declaration),
     );
+    expect(statements).toMatch(/drop policy absence_types_select_by_own_active_admin on public\.absence_types;/);
     expect(policies.length, 'absence_types does not carry exactly three policies').toBe(3);
     for (const verb of ['delete', 'all']) {
       expect(
@@ -3135,7 +3140,6 @@ describe('the access-control migration', () => {
       ).toEqual([]);
     }
     for (const [name, verb, clauses] of [
-      ['absence_types_select_by_own_active_admin', 'select', 1],
       ['absence_types_insert_by_own_active_admin', 'insert', 1],
       ['absence_types_update_by_own_active_admin', 'update', 2],
     ] as const) {
@@ -3165,11 +3169,60 @@ describe('the access-control migration', () => {
     expect(statements, 'a migration grants anon something on absence_types').not.toMatch(
       /grant[^;]*on table public\.absence_types to[^;]*\banon\b/i,
     );
-    // 13.1: no session writes a leave record's type until 13.2 carries it
+    // STORY 13.2 (0053, PO Q2): every active member of the token's
+    // organization reads the catalog, of either role.
+    const read = policyBody('absence_types_select_by_own_active_member');
+    expect(read, 'the catalog read is not a select').toMatch(/for select\b/);
+    expect((read.match(/organization_id = nullif/g) ?? []).length, 'the catalog read does not pin the tenant').toBe(1);
+    expect(read, 'the catalog read does not re-read active state').toMatch(/where access\.is_active\s*\)/);
+    expect(read, 'the catalog read is still admin-only').not.toMatch(/member_role/);
+    // 13.1: no session writes a leave record's type until 13.2b carries it
     // through amend and approval.
     expect(statements, 'a session may write a leave record\'s type').not.toMatch(
       /grant[^;]*\babsence_type_id\b[^;]*on table public\.leave_records\b/i,
     );
+  });
+
+  it('recreates both leave reads to carry each record\'s type and its drawing flag, and changes nothing else (story 13.2)', () => {
+    // STORY 13.2 (0053): the read side only. Source text; what each read
+    // returns is `test/rls-isolation.test.ts`, which runs in CI.
+    const migration = stripLineComments(
+      readFileSync(join(supabaseRoot, 'migrations', '0053_absence_type_reads.sql'), 'utf8'),
+    );
+    const returns =
+      /returns table \(\s*id uuid,\s*member_id uuid,\s*during daterange,\s*absence_type_id uuid,\s*draws_allowance boolean\s*\)/;
+    const typeJoin = /join public\.absence_types t\s+on t\.organization_id = r\.organization_id\s+and t\.id = r\.absence_type_id/;
+    for (const name of ['my_leave_records', 'leave_overview_records']) {
+      expect(migration, `${name} is not dropped before it is recreated`).toContain(`drop function public.${name}();`);
+      const read = new RegExp(`create function public\\.${name}\\(\\)[\\s\\S]*?\\$\\$;`).exec(migration)?.[0] ?? '';
+      expect(read, `${name} is not recreated`).not.toBe('');
+      expect(migration.indexOf(`drop function public.${name}();`)).toBeLessThan(migration.indexOf(read));
+      expect(read, `${name} does not return the type and its flag`).toMatch(returns);
+      expect(read, `${name} does not read the flag from the record's own type`).toMatch(typeJoin);
+      expect(read).toMatch(/\bstable\b/);
+      expect(read).toMatch(/security definer/);
+      expect(read).toMatch(/set search_path = ''/);
+      expect(read, `${name} reads a removed record`).toMatch(/and r\.removed_at is null/);
+      expect(read, `${name} returns an author or a removal`).not.toMatch(/\b(created_by|removed_by|auth_user_id)\b[^;]*from public\.leave_records/);
+      for (const role of ['public', 'anon', 'service_role']) {
+        expect(migration).toContain(`revoke execute on function public.${name}() from ${role};`);
+      }
+      expect(migration).toContain(`grant execute on function public.${name}() to authenticated;`);
+    }
+    const own = /create function public\.my_leave_records\(\)[\s\S]*?\$\$;/.exec(migration)?.[0] ?? '';
+    expect(own, "the member's read is not the caller's own member row").toMatch(/and m\.auth_user_id = \(select auth\.uid\(\)\)/);
+    expect(own, "the member's read lost the active caller pin").toMatch(/where access\.is_active/);
+    const overview = /create function public\.leave_overview_records\(\)[\s\S]*?\$\$;/.exec(migration)?.[0] ?? '';
+    expect(overview, 'the overview lost the active admin pin').toMatch(/and access\.is_active\s+and access\.member_role = 'admin'/);
+    expect(overview, 'the refusal is not 42501 LEAVE_OVERVIEW_REFUSED').toMatch(
+      /errcode = 'insufficient_privilege',\s*message = 'LEAVE_OVERVIEW_REFUSED'/,
+    );
+
+    expect(migration, '13.2 takes a trigger').not.toMatch(/create (or replace )?trigger/i);
+    expect(migration, '13.2 grants on a table (the write side is 13.2b)').not.toMatch(/\bgrant\b[^;]*\bon table\b/i);
+    expect(migration, '13.2 writes a row').not.toMatch(/\b(insert into|update public|delete from)\b/i);
+    expect((migration.match(/create function/gi) ?? []).length, '13.2 takes exactly the two recreated reads').toBe(2);
+    expect((migration.match(/create policy/gi) ?? []).length, '13.2 takes exactly the catalog read').toBe(1);
   });
 
   it('lets a member insert their own leave request, closes it through two definers alone, and refuses an overlap with leave by one named trigger (story 9.2)', () => {

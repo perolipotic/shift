@@ -5,6 +5,7 @@ import type { Locator, Page } from '@playwright/test';
 
 import {
   databaseNow,
+  holdAbsenceTypes,
   holdRotation,
   removeLeaveRecordsInSql,
   removeRotationChangesOver,
@@ -22,7 +23,7 @@ import {
   type SeededRotation,
 } from '../../utils/database-helper.ts';
 import { dayMonth } from '../../utils/dates.ts';
-import { escapeRegExp, fill, hr, plural } from '../../utils/i18n.ts';
+import { ANNUAL_LEAVE_COLUMN, ANNUAL_LEAVE_DAYS_HEADING, escapeRegExp, fill, hr, plural } from '../../utils/i18n.ts';
 import { expectNoHorizontalScroll } from '../../utils/layout.ts';
 import { ADMIN_STATE, MEMBER_STATE } from '../../utils/run-fixture.ts';
 import { leaveText } from '../../pages/hours.page.ts';
@@ -73,6 +74,20 @@ let seed: SeededRotation | null = null;
 let member: { readonly slug: string; readonly id: string } | null = null;
 /** Other members a test recorded leave for (story 5.4c's leave pick), removed with the test's own. */
 let othersOnLeave: { readonly slug: string; readonly id: string }[] = [];
+/**
+ * Story 13.2: Sati's leave columns and the file's headings are named by the
+ * run organization's absence types, which `absence-types.spec.ts` and
+ * `offline-write.spec.ts` change under `holdAbsenceTypes`. A test that asserts
+ * them takes the same lock first — before the rotation lock, always in that
+ * order — so no extra type and no renamed annual leave appears mid-test.
+ */
+let leaveColumnsHold: RotationHold | null = null;
+
+/** Takes the absence-types lock for this test; `afterEach` releases it last. */
+async function holdLeaveColumns(slug: string): Promise<void> {
+  leaveColumnsHold = holdAbsenceTypes(slug);
+  await leaveColumnsHold.ready;
+}
 
 test.afterEach(async () => {
   try {
@@ -85,6 +100,8 @@ test.afterEach(async () => {
     seed = null;
     await hold?.release();
     hold = null;
+    await leaveColumnsHold?.release();
+    leaveColumnsHold = null;
   }
 });
 
@@ -263,6 +280,7 @@ test('accepts a conflict as uncovered by keyboard: the queue drops it with a sta
   fixture,
 }) => {
   test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
+  await holdLeaveColumns(fixture.slug);
   const scenario = await scenarioOf(fixture.slug);
   const { team, seeded, today } = scenario;
   const sati = hr.sati.organization;
@@ -272,7 +290,7 @@ test('accepts a conflict as uncovered by keyboard: the queue drops it with a sta
   await hoursPage.goto();
   const row = hoursPage.organizationRow(seeded.name);
   await expect(row).toHaveCount(1);
-  await expect(await hoursPage.cellIn(row, sati.leave)).toHaveText(leaveDays);
+  await expect(await hoursPage.cellIn(row, ANNUAL_LEAVE_COLUMN)).toHaveText(leaveDays);
   // `15 smjena`: the count, then its noun.
   const shiftsOf = async (): Promise<number> =>
     Number(/^\d+/.exec(((await (await hoursPage.cellIn(row, sati.shifts)).textContent()) ?? '').trim())?.[0]);
@@ -336,13 +354,13 @@ test('accepts a conflict as uncovered by keyboard: the queue drops it with a sta
   await hoursPage.goto();
   await expect(row).toHaveCount(1);
   await expect.poll(shiftsOf).toBe(shiftsBefore - 1);
-  await expect(await hoursPage.cellIn(row, sati.leave)).toHaveText(leaveDays);
+  await expect(await hoursPage.cellIn(row, ANNUAL_LEAVE_COLUMN)).toHaveText(leaveDays);
 
   // THE .XLSX: the same day count, a plain number, under a heading that names days; no leave hours.
   const download = await hoursPage.exportDownload();
   const workbook = readXlsx(readFileSync(await download.path()));
   const [header, ...body] = workbook.rows;
-  const leaveColumn = (header ?? []).findIndex((one) => one?.type === 'text' && one.value === sati.export.leaveDays);
+  const leaveColumn = (header ?? []).findIndex((one) => one?.type === 'text' && one.value === ANNUAL_LEAVE_DAYS_HEADING);
   const own = body.find((cells) => cells[0]?.type === 'text' && cells[0].value === seeded.name);
   expect(leaveColumn).toBeGreaterThan(-1);
   expect(own?.[leaveColumn]).toEqual({ type: 'number', value: Number(/^\d+/.exec(leaveDays)?.[0]), format: null });
@@ -523,6 +541,7 @@ test('replaces the absent member by keyboard: the queue drops the conflict with 
   fixture,
 }) => {
   test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
+  await holdLeaveColumns(fixture.slug);
   const scenario = await scenarioOf(fixture.slug);
   const { team, seeded, today } = scenario;
   const dino = await replacementOf(fixture.slug, today);
@@ -540,7 +559,7 @@ test('replaces the absent member by keyboard: the queue drops the conflict with 
   };
   const dinoBefore = await shiftsOf(dinoRow);
   // And the absent member's leave days before the decision, which it must not change.
-  await expect(await hoursPage.cellIn(hoursPage.organizationRow(seeded.name), sati.leave)).toHaveText(leaveOf(scenario));
+  await expect(await hoursPage.cellIn(hoursPage.organizationRow(seeded.name), ANNUAL_LEAVE_COLUMN)).toHaveText(leaveOf(scenario));
 
   await conflictsPage.goto();
   const rows = conflictsPage.rowsOf(seeded.name);
@@ -623,9 +642,9 @@ test('replaces the absent member by keyboard: the queue drops the conflict with 
   await hoursPage.goto();
   const absentRow = hoursPage.organizationRow(seeded.name);
   await expect(absentRow).toHaveCount(1);
-  await expect(await hoursPage.cellIn(absentRow, sati.leave)).toHaveText(leaveOf(scenario));
+  await expect(await hoursPage.cellIn(absentRow, ANNUAL_LEAVE_COLUMN)).toHaveText(leaveOf(scenario));
   await expect.poll(() => shiftsOf(dinoRow)).toBe(dinoBefore + 1);
-  await expect(await hoursPage.cellIn(dinoRow, sati.leave)).toHaveText(leaveText(0));
+  await expect(await hoursPage.cellIn(dinoRow, ANNUAL_LEAVE_COLUMN)).toHaveText(leaveText(0));
 });
 
 test('a replacement already put on the shift meanwhile is named and leaves the list, and a conflict resolved meanwhile or whose leave was removed is no longer open', async ({
@@ -835,6 +854,7 @@ test('Removed override: removing the replacement in the calendar asks nothing, t
   fixture,
 }) => {
   test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
+  await holdLeaveColumns(fixture.slug);
   const scenario = await scenarioOf(fixture.slug);
   const { team, seeded, today } = scenario;
   const dino = await replacementOf(fixture.slug, today);
@@ -848,7 +868,7 @@ test('Removed override: removing the replacement in the calendar asks nothing, t
   await hoursPage.goto();
   const absentRow = hoursPage.organizationRow(seeded.name);
   await expect(absentRow).toHaveCount(1);
-  await expect(await hoursPage.cellIn(absentRow, sati.leave)).toHaveText(leaveOf(scenario));
+  await expect(await hoursPage.cellIn(absentRow, ANNUAL_LEAVE_COLUMN)).toHaveText(leaveOf(scenario));
   const conflictsCell = await hoursPage.cellIn(absentRow, sati.conflicts);
   const countOf = async (): Promise<number> => {
     const text = (await conflictsCell.textContent()) ?? '';
@@ -878,7 +898,7 @@ test('Removed override: removing the replacement in the calendar asks nothing, t
   // SATI: the absent member's shift is band hours again, and counted as a conflict; the leave days stand.
   await hoursPage.goto();
   await expect(absentRow).toHaveCount(1);
-  await expect(await hoursPage.cellIn(absentRow, sati.leave)).toHaveText(leaveOf(scenario));
+  await expect(await hoursPage.cellIn(absentRow, ANNUAL_LEAVE_COLUMN)).toHaveText(leaveOf(scenario));
   await expect.poll(countOf).toBe(before + 1);
 
   // THE QUEUE lists it again, and its screen holds nothing: 0033 ended the resolution with the override.

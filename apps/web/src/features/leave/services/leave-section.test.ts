@@ -1,6 +1,7 @@
 import { leaveBalanceOf, leaveCostOf, leavePreviewOf, type LeavePreview, type LeaveRange } from '@shift/domain';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { ANNUAL_LEAVE_ID } from '@/features/absence-types/services/list';
 import { readCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { memberScheduleInputOf } from '@/features/calendar/utils/month';
 import type { LeaveRecord, LeaveRecordsState } from '@/features/leave/services/leave-list';
@@ -91,6 +92,9 @@ import {
   type FixtureRows,
 } from '@/features/rotation/rotation.fixture';
 
+/** Story 13.2: a record of annual leave, which draws down the allowance. */
+const ANNUAL_RECORD = { absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true } as const;
+
 /**
  * Story 5.1c's view model, executed (AD-15): every row of the spec's matrix,
  * over both fixtures, and every figure compared against `@shift/domain`
@@ -151,7 +155,7 @@ function calendarOf(snapshot: CalendarSnapshot): LeaveCalendarSource {
 /** The ranges as live records, each with an id of its own unless it carries one. */
 function recordsOf(records: readonly (LeaveRange | LeaveRecord)[]): LeaveRecordsState {
   return {
-    records: records.map((record, index) => ('id' in record ? record : { id: `record-${String(index)}`, ...record })),
+    records: records.map((record, index) => ('id' in record ? record : { ...ANNUAL_RECORD, id: `record-${String(index)}`, ...record })),
     loading: false,
     refreshing: false,
   };
@@ -174,7 +178,7 @@ function readyOf(base: MemberLeaveBase): Extract<MemberLeaveBase, { kind: typeof
 }
 
 /** The pilot's worked example: 10.09–14.09 over Dan, Noć, Slobodno, Slobodno, Dan. */
-const WORKED: LeaveRecord = { id: 'record-worked', from: '2026-09-10', to: '2026-09-14' };
+const WORKED: LeaveRecord = { ...ANNUAL_RECORD, id: 'record-worked', from: '2026-09-10', to: '2026-09-14' };
 
 describe('the heading names the leave year the figures count (story 7.11)', () => {
   it('names the one year a calendar leave year begins and ends in', () => {
@@ -381,7 +385,7 @@ describe('the preview', () => {
   it('refuses a range the domain will not cost with its own reason on the od field, never the load failure', () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     // A breached precondition the base did not check: a record overlapping another.
-    const input = { ...baseOf().input, records: [WORKED, { id: 'record-overlapping', from: '2026-09-12', to: '2026-09-20' }] };
+    const input = { ...baseOf().input, records: [WORKED, { ...ANNUAL_RECORD, id: 'record-overlapping', from: '2026-09-12', to: '2026-09-20' }] };
 
     expect(leavePreviewStateOf(input, '2026-10-01', '2026-10-02')).toEqual({
       kind: LEAVE_PREVIEW_REASON,
@@ -531,7 +535,7 @@ describe('the records list', () => {
     );
   }
 
-  const LATER: LeaveRecord = { id: 'record-later', from: '2026-09-18', to: '2026-09-25' };
+  const LATER: LeaveRecord = { ...ANNUAL_RECORD, id: 'record-later', from: '2026-09-18', to: '2026-09-25' };
 
   it('lists two live records in their read order, soonest first, each with its range and what the domain says it costs', () => {
     // In the order `leaveRecordsOf` sorts them into (leave-list.test.ts), which the rows keep.
@@ -550,6 +554,17 @@ describe('the records list', () => {
     expect(base.rows[0]?.costDays).toBe(3);
     expect(base.rows[0]?.label).toBe(`${formatIsoDate(WORKED.from) ?? ''}–${formatIsoDate(WORKED.to) ?? ''}`);
     expect(base.rows[0]).toMatchObject(leaveRangeValuesOf(WORKED));
+  });
+
+  it('charges the balance nothing for a record whose type does not draw, while its row keeps its whole cost (story 13.2)', () => {
+    const sick: LeaveRecord = { ...LATER, absenceTypeId: 'sick-type', drawsAllowance: false };
+    const base = baseOf([WORKED, sick]);
+
+    expect(base.balance).toEqual(baseOf([WORKED]).balance);
+    expect(base.rows[1]?.costDays).toBeGreaterThan(0);
+    // No in-year part is stated for it: nothing is charged, so no `0 dana u ovoj godini`.
+    expect(base.rows[1]?.inYearDays).toBeNull();
+    expect(base.rows[0]?.inYearDays).toBeNull();
   });
 
   it('has no rows for a member with no live record, and the empty line says so', () => {
@@ -571,7 +586,7 @@ describe('the records list', () => {
 
   it('states the in-year part of a record crossing the leave year, on its row and in its removal prompt', () => {
     // Dan on 2026-12-27 (step 0): 27 Dan, 28 Noć, 29 Sl, 30 Sl, 31 Dan | 01 Noć.
-    const crossing: LeaveRecord = { id: 'record-crossing', from: '2026-12-27', to: '2027-01-01' };
+    const crossing: LeaveRecord = { ...ANNUAL_RECORD, id: 'record-crossing', from: '2026-12-27', to: '2027-01-01' };
     const row = baseOf([crossing]).rows[0];
 
     if (row === undefined) throw new Error('no row');
@@ -592,7 +607,7 @@ describe('the records list', () => {
 
   it('states an in-year part of 0 for a record wholly outside the current leave year', () => {
     // 2027-01-02 is Sl (step 2): Sl, Dan, Noć, Sl, Sl.
-    const row = baseOf([{ id: 'record-next-year', from: '2027-01-02', to: '2027-01-06' }]).rows[0];
+    const row = baseOf([{ ...ANNUAL_RECORD, id: 'record-next-year', from: '2027-01-02', to: '2027-01-06' }]).rows[0];
 
     if (row === undefined) throw new Error('no row');
 
@@ -653,7 +668,7 @@ describe('the records list', () => {
     expect(baseOf([]).balance).toEqual({ allowanceDays: 20, usedDays: 0, balanceDays: 20 });
 
     // 10.09–18.09: Dan, Noć, Sl, Sl, Dan, Noć, Sl, Sl, Dan.
-    const amended: LeaveRecord = { id: 'record-amended', from: '2026-09-10', to: '2026-09-18' };
+    const amended: LeaveRecord = { ...ANNUAL_RECORD, id: 'record-amended', from: '2026-09-10', to: '2026-09-18' };
     const preview = leavePreviewStateOf(baseOf([WORKED]).input, amended.from, amended.to, WORKED);
 
     if (preview.kind !== LEAVE_PREVIEW_READY) throw new Error(preview.kind);
@@ -666,7 +681,7 @@ describe('the records list', () => {
 
   it('says what a landed amend cost from the re-read records, found by the returned id', () => {
     const input = baseOf([WORKED], 4).input;
-    const replacement: LeaveRecord = { id: 'record-new', from: '2026-09-10', to: '2026-09-18' };
+    const replacement: LeaveRecord = { ...ANNUAL_RECORD, id: 'record-new', from: '2026-09-10', to: '2026-09-18' };
 
     expect(leaveAmendedOf(input, [replacement], replacement.id)).toEqual({ costDays: 5, overBalanceDays: -1 });
     expect(leaveAmendedOf(baseOf([WORKED]).input, [replacement], replacement.id)).toEqual({
@@ -674,12 +689,26 @@ describe('the records list', () => {
       overBalanceDays: null,
     });
     // Against the other fresh records: one costing 3 leaves 1 of 4, so 5 goes 4 over.
-    const other: LeaveRecord = { id: 'record-other', from: '2026-09-26', to: '2026-09-30' };
+    const other: LeaveRecord = { ...ANNUAL_RECORD, id: 'record-other', from: '2026-09-26', to: '2026-09-30' };
 
     expect(leaveAmendedOf(input, [replacement, other], replacement.id).overBalanceDays).toBe(
       leavePreviewOf({ ...input, records: [other], range: replacement }).balanceAfterDays,
     );
     expect(t('ljudi.leaveRecord.amended', { count: 5 })).toContain('5 dana');
+  });
+
+  it('never says an amended record of a non-drawing type went over the balance (story 13.2)', () => {
+    // A balance of 4 under a replacement costing 5: over it, were the type drawing.
+    const input = baseOf([WORKED], 4).input;
+    const replacement: LeaveRecord = {
+      id: 'record-new',
+      from: '2026-09-10',
+      to: '2026-09-18',
+      absenceTypeId: 'sick-type',
+      drawsAllowance: false,
+    };
+
+    expect(leaveAmendedOf(input, [replacement], replacement.id)).toEqual({ costDays: 5, overBalanceDays: null });
   });
 
   it('gives the plain amended line when the re-read did not answer or holds no record of the returned id', () => {
@@ -814,7 +843,7 @@ describe('the hand-off from a conflict (story 5.4d)', () => {
     const rows = rowsOf([WORKED]);
 
     expect(leaveHandoffOpeningOf(AMEND, VIEWER_MEMBER, rows)).toEqual({ kind: LEAVE_AMEND_ACTION, row: rows[0], range: AMEND.range });
-    const oneDay = rowsOf([{ id: WORKED.id, from: '2026-09-10', to: '2026-09-10' }]);
+    const oneDay = rowsOf([{ ...ANNUAL_RECORD, id: WORKED.id, from: '2026-09-10', to: '2026-09-10' }]);
 
     expect(leaveHandoffOpeningOf(REMOVE, VIEWER_MEMBER, oneDay)).toEqual({ kind: LEAVE_REMOVE_ACTION, row: oneDay[0] });
   });
@@ -836,7 +865,7 @@ describe('the hand-off from a conflict (story 5.4d)', () => {
     });
 
     // Handed over as 11.09–14.09, the record has since shrunk to 10.09–12.09: 11.09–12.09, never back to the 14th.
-    const shrunk = rowsOf([{ id: WORKED.id, from: '2026-09-10', to: '2026-09-12' }]);
+    const shrunk = rowsOf([{ ...ANNUAL_RECORD, id: WORKED.id, from: '2026-09-10', to: '2026-09-12' }]);
 
     expect(leaveHandoffOpeningOf(AMEND, VIEWER_MEMBER, shrunk)).toEqual({
       kind: LEAVE_AMEND_ACTION,
@@ -845,14 +874,14 @@ describe('the hand-off from a conflict (story 5.4d)', () => {
     });
 
     // Shrunk to the conflict's date alone: the removal.
-    const oneDay = rowsOf([{ id: WORKED.id, from: '2026-09-10', to: '2026-09-10' }]);
+    const oneDay = rowsOf([{ ...ANNUAL_RECORD, id: WORKED.id, from: '2026-09-10', to: '2026-09-10' }]);
 
     expect(leaveHandoffOpeningOf(AMEND, VIEWER_MEMBER, oneDay)).toEqual({ kind: LEAVE_REMOVE_ACTION, row: oneDay[0] });
   });
 
   it('Changed elsewhere: opens nothing once the record no longer covers the conflict\'s date', () => {
-    expect(leaveHandoffOpeningOf(AMEND, VIEWER_MEMBER, rowsOf([{ id: WORKED.id, from: '2026-09-11', to: '2026-09-14' }]))).toBeNull();
-    expect(leaveHandoffOpeningOf(REMOVE, VIEWER_MEMBER, rowsOf([{ id: WORKED.id, from: '2026-09-01', to: '2026-09-09' }]))).toBeNull();
+    expect(leaveHandoffOpeningOf(AMEND, VIEWER_MEMBER, rowsOf([{ ...ANNUAL_RECORD, id: WORKED.id, from: '2026-09-11', to: '2026-09-14' }]))).toBeNull();
+    expect(leaveHandoffOpeningOf(REMOVE, VIEWER_MEMBER, rowsOf([{ ...ANNUAL_RECORD, id: WORKED.id, from: '2026-09-01', to: '2026-09-09' }]))).toBeNull();
   });
 
   it('Missed: says so only for a hand-off about this member that opened nothing', () => {

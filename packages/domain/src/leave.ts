@@ -23,6 +23,13 @@
  * BALANCE (R4.5): `balance = allowance − used`, and it may go negative. An
  * over-balance range is flagged (R4.7), never refused.
  *
+ * ABSENCE TYPES (story 13.2, CAP-23): a record whose type does not draw the
+ * allowance ({@link LeaveRange.drawsAllowance} `false`) is never counted in
+ * `used`, and a previewed range of such a type charges nothing. Every other
+ * rule — the cost of a range, {@link leaveDaysOfMonth}, the overlap check, and
+ * the collisions and staffing that read these records — sees every record,
+ * whatever its type.
+ *
  * Ranges are inclusive `from`–`to` calendar dates, `from <= to`, at most
  * {@link MAX_LEAVE_RANGE_DAYS} days long, and may span months and leave years.
  * Dates are `YYYY-MM-DD` strings: no `Date`, no time zone. Records of one
@@ -49,6 +56,17 @@ export const MAX_LEAVE_RANGE_DAYS = 366;
 export interface LeaveRange {
   readonly from: string;
   readonly to: string;
+  /**
+   * Whether the record's absence type draws down the allowance (story 13.2).
+   * Absent means it does: every record written before absence types existed
+   * is annual leave. Only the balance reads it.
+   */
+  readonly drawsAllowance?: boolean;
+}
+
+/** Whether a record or range draws down the allowance: absent means it does (story 13.2). */
+export function drawsAllowance(range: LeaveRange): boolean {
+  return range.drawsAllowance !== false;
 }
 
 /** Where an organization's leave year begins: a month 1–12 and a day 1–28. */
@@ -316,10 +334,11 @@ function checkBalanceInput(balance: LeaveBalanceInput): LeaveRange {
   return leaveYearOf(balance.today, balance.leaveYearStart);
 }
 
-/** The balance of an already-checked input in `year`, counted by `costOf`. */
+/** The balance of an already-checked input in `year`, counted by `costOf`; only drawing records are used. */
 function balanceOf(costOf: (range: LeaveRange) => number, balance: LeaveBalanceInput, year: LeaveRange): LeaveBalance {
   let usedDays = 0;
   for (const record of balance.records) {
+    if (!drawsAllowance(record)) continue;
     const inYear = intersect(record, year);
     if (inYear !== null) usedDays += costOf(inYear);
   }
@@ -328,7 +347,7 @@ function balanceOf(costOf: (range: LeaveRange) => number, balance: LeaveBalanceI
 
 /**
  * The member's balance in the current leave year (R4.5, R4.6): the allowance,
- * the leave days of every record's dates inside the leave year containing
+ * the leave days of every DRAWING record's dates (story 13.2) inside the leave year containing
  * `today` — a record straddling the year's start or end counts only its dates
  * inside it — and the allowance less those, which may be negative.
  *
@@ -349,7 +368,7 @@ export function leaveBalanceOf(balance: LeaveBalanceInput): LeaveBalance {
  * What saving `range` would do (R4.2, R4.7): the balance before it, the
  * range's cost over every date, the part the balance is charged — its dates
  * inside the current leave year that no existing record covers, so no date
- * is charged twice — the balance after that charge, whether the charge is
+ * is charged twice, and nothing when the range does not draw the allowance — the balance after that charge, whether the charge is
  * positive and greater than the balance before it, and whether the range
  * overlaps an existing record. The flags are warnings; nothing here refuses.
  *
@@ -365,7 +384,9 @@ export function leavePreviewOf(preview: LeavePreviewInput): LeavePreview {
   const before = balanceOf((range) => costOf(range), preview, year);
   const costDays = costOf(preview.range);
   const inYear = intersect(preview.range, year);
-  const costInYearDays = inYear === null ? 0 : costOf(inYear, preview.records);
+  // A range of a type that does not draw the allowance charges nothing; its
+  // cost over every date is still reported (story 13.2).
+  const costInYearDays = inYear === null || !drawsAllowance(preview.range) ? 0 : costOf(inYear, preview.records);
 
   return {
     ...before,

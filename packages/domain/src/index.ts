@@ -78,6 +78,7 @@ export {
 } from './hours.js';
 
 export {
+  drawsAllowance,
   isLeaveDay,
   leaveBalanceOf,
   leaveCostOf,

@@ -1,5 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { ANNUAL_LEAVE_ID } from '@/features/absence-types/services/list';
 import { readCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { collisionRowsOf, conflictsQueueOutcomeOf } from '@/features/conflicts/services/conflicts-queue';
 import type { LeaveRecord } from '@/features/leave/services/leave-list';
@@ -32,6 +33,9 @@ import {
   viewerSession,
 } from '@/features/rotation/rotation.fixture';
 
+/** Story 13.2: a record of annual leave, which draws down the allowance. */
+const ANNUAL_RECORD = { absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true } as const;
+
 /**
  * Story 7.12's conflict preview, executed (AD-15) over a real snapshot: the
  * pilot's Smjena A, which works Dan on 02, 06, 10, 14 and 18 September and
@@ -44,9 +48,9 @@ const RECORD_ID = '00000000-0000-4000-8000-00000000a001';
 const OTHER_ID = '00000000-0000-4000-8000-00000000a002';
 
 /** 10.09–15.09: čet 10.09. Dan, pet 11.09. Noć, pon 14.09. Dan, uto 15.09. Noć. */
-const RECORD: LeaveRecord = { id: RECORD_ID, from: '2026-09-10', to: '2026-09-15' };
+const RECORD: LeaveRecord = { ...ANNUAL_RECORD, id: RECORD_ID, from: '2026-09-10', to: '2026-09-15' };
 /** 02.09–03.09, far from every range below: Dan, Noć. */
-const OTHER: LeaveRecord = { id: OTHER_ID, from: '2026-09-02', to: '2026-09-03' };
+const OTHER: LeaveRecord = { ...ANNUAL_RECORD, id: OTHER_ID, from: '2026-09-02', to: '2026-09-03' };
 
 const READ = (data: readonly unknown[] = []): ReplacementResolutionsSource => ({
   isPending: false,
@@ -140,7 +144,7 @@ describe('a new record', () => {
     const next = { from: '2026-09-10', to: '2026-09-15' };
     const conflicts = leaveConflictsOf(READ(), snapshot, VIEWER_MEMBER, [OTHER], { target: null, next });
 
-    expect(linesOf(conflicts).created).toHaveLength(queuedCount([OTHER, { id: RECORD_ID, ...next }]) - queuedCount([OTHER]));
+    expect(linesOf(conflicts).created).toHaveLength(queuedCount([OTHER, { ...ANNUAL_RECORD, id: RECORD_ID, ...next }]) - queuedCount([OTHER]));
   });
 
   it('New, none: a range over free days only creates nothing', () => {

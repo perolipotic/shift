@@ -16,8 +16,8 @@ import {
  *
  * The month, the team and the person are named as on the calendar, and read
  * and changed by the rules both screens share (`@/utils/search-params`).
- * Whether a team, a person or a band's column names something the snapshot
- * holds is `./organization-hours`'s decision: the parser cannot see the
+ * Whether a team, a person, a band's column or a leave column names something
+ * the snapshot holds is `./organization-hours`'s decision: the parser cannot see the
  * snapshot.
  */
 
@@ -44,16 +44,25 @@ export const SORT_NAME = 'ime';
 export const SORT_TEAM = 'tim';
 export const SORT_SHIFTS = 'smjene';
 export const SORT_TOTAL = 'ukupno';
+/** Annual leave's days column, as before story 13.2 (product-owner decision 2026-11-08, sort keys): `dopust` stays annual leave. */
 export const SORT_LEAVE = 'dopust';
 /** The shifts in unresolved conflict (story 5.3d), sortable since the Epic 5–7 cleanup (E909). */
 export const SORT_CONFLICTS = 'konflikti';
+/** *Ostala odsutnost*'s days column (story 13.2): every type that does not draw down the allowance. */
+export const SORT_OTHER_ABSENCE = 'ostala-odsutnost';
 
-const FIXED_SORT_KEYS = [SORT_NAME, SORT_TEAM, SORT_SHIFTS, SORT_TOTAL, SORT_LEAVE, SORT_CONFLICTS] as const;
+const FIXED_SORT_KEYS = [SORT_NAME, SORT_TEAM, SORT_SHIFTS, SORT_TOTAL, SORT_LEAVE, SORT_CONFLICTS, SORT_OTHER_ABSENCE] as const;
 
 /** A band's column, as `sort` names it: `pojas-<band id>`. */
 export const BAND_SORT_PREFIX = 'pojas-';
 
-export type HoursSortKey = (typeof FIXED_SORT_KEYS)[number] | `${typeof BAND_SORT_PREFIX}${string}`;
+/** Any other drawing absence type's days column (story 13.2), as `sort` names it: `odsutnost-<type id>`. */
+export const ABSENCE_SORT_PREFIX = 'odsutnost-';
+
+export type HoursSortKey =
+  | (typeof FIXED_SORT_KEYS)[number]
+  | `${typeof BAND_SORT_PREFIX}${string}`
+  | `${typeof ABSENCE_SORT_PREFIX}${string}`;
 
 /** The two directions, as `smjer` names them. */
 export const SORT_UP = 'uzlazno';
@@ -84,12 +93,19 @@ const HOURS_SEARCH_ORDER = [
   HOURS_DIRECTION_PARAM,
 ] as const;
 
-/** Whether a value is a column `sort` can name: a fixed one, or `pojas-<id>` with an id. */
+/** Whether a value is a column `sort` can name: a fixed one, `pojas-<id>` or `odsutnost-<id>` with an id. */
 export function isHoursSortKey(value: unknown): value is HoursSortKey {
   if (typeof value !== 'string') return false;
   if (FIXED_SORT_KEYS.some((key) => key === value)) return true;
 
-  return value.startsWith(BAND_SORT_PREFIX) && value.length > BAND_SORT_PREFIX.length;
+  return [BAND_SORT_PREFIX, ABSENCE_SORT_PREFIX].some(
+    (prefix) => value.startsWith(prefix) && value.length > prefix.length,
+  );
+}
+
+/** Whether a sort key names a leave column (story 13.2): annual leave's, another drawing type's or *Ostala odsutnost*. */
+export function isLeaveSortKey(key: HoursSortKey): boolean {
+  return key === SORT_LEAVE || key === SORT_OTHER_ABSENCE || key.startsWith(ABSENCE_SORT_PREFIX);
 }
 
 /** Whether a value is one of the two directions. */

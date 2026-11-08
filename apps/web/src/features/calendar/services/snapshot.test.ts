@@ -11,8 +11,10 @@ import {
 import type { Session } from '@supabase/supabase-js';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { ANNUAL_LEAVE_ID } from '@/features/absence-types/services/list';
 import {
   CALENDAR_COLUMNS,
+  absenceTypesOfCalendar,
   CALENDAR_COUNT,
   CALENDAR_FETCH_PAUSED,
   CALENDAR_KEY,
@@ -51,6 +53,7 @@ import {
   SEEDED_AT,
   UJ5,
   VIEWER_AUTH_USER,
+  absenceTypeRow,
   bandRow,
   VIEWER_MEMBER,
   VIEWER_NAME,
@@ -280,6 +283,64 @@ describe('the read', () => {
       [...(PILOT.bands ?? []), bandRow('pilot-band-dan', 'X', '03:00:00')],
     ]) {
       expect(await read(tableOf(answerOf({ ...PILOT, bands })), session)).toEqual(REFUSED);
+    }
+  });
+
+  it('carries every absence type, annual leave first then by name, with the tenant tripwire (story 13.2)', async () => {
+    expect(CALENDAR_COLUMNS).toContain(',absence_types(organization_id,id,name,draws_allowance),');
+    const sick = '00000000-0000-4000-8000-00000000d001';
+    const training = '00000000-0000-4000-8000-00000000d002';
+    const outcome = await read(
+      tableOf({
+        data: [
+          calendarOrganizationRow(PILOT, {
+            absenceTypes: [
+              absenceTypeRow(training, 'Edukacija', true),
+              absenceTypeRow(sick, 'Bolovanje', false),
+              absenceTypeRow(ANNUAL_LEAVE_ID, 'Godišnji odmor', true),
+            ],
+          }),
+        ],
+        error: null,
+        count: 1,
+      }),
+    );
+
+    if (!outcome.ok) throw new Error(outcome.code);
+    expect(absenceTypesOfCalendar(outcome.snapshot)?.map((type) => [type.id, type.name, type.drawsAllowance])).toEqual([
+      [ANNUAL_LEAVE_ID, 'Godišnji odmor', true],
+      [sick, 'Bolovanje', false],
+      [training, 'Edukacija', true],
+    ]);
+  });
+
+  it('refuses a missing, malformed, duplicated or other-tenant absence type (story 13.2)', async () => {
+    quiet();
+    const { absence_types: _omitted, ...withoutTypes } = calendarOrganizationRow(PILOT);
+    const annual = absenceTypeRow(ANNUAL_LEAVE_ID, 'Godišnji odmor', true);
+
+    expect(await read(tableOf({ data: [withoutTypes], error: null, count: 1 }), session)).toEqual(REFUSED);
+    for (const absenceTypes of [
+      [annual, absenceTypeRow('stranger', 'X', false, OTHER_ORGANIZATION)],
+      [annual, absenceTypeRow('no-flag', 'X', null)],
+      [annual, { ...absenceTypeRow('no-name', 'X', true), name: null }],
+      [annual, absenceTypeRow(ANNUAL_LEAVE_ID, 'Twin', true)],
+    ]) {
+      expect(
+        await read(tableOf({ data: [calendarOrganizationRow(PILOT, { absenceTypes })], error: null, count: 1 }), session),
+      ).toEqual(REFUSED);
+    }
+  });
+
+  it('reads a snapshot cached before 13.2, with no absence types, as none (story 13.2)', async () => {
+    const snapshot = await snapshotOf(PILOT);
+    const { absenceTypes: _omitted, ...cached } = snapshot;
+
+    expect(absenceTypesOfCalendar(snapshot)).toHaveLength(1);
+    expect(absenceTypesOfCalendar(cached)).toBeNull();
+    // A cached element this build cannot read is no catalog either.
+    for (const broken of [[{ id: 'x', name: 'X' }], [{ id: 'x', name: 1, drawsAllowance: true }], ['x']]) {
+      expect(absenceTypesOfCalendar({ ...cached, absenceTypes: broken } as unknown as CalendarSnapshot)).toBeNull();
     }
   });
 

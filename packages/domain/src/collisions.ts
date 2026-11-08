@@ -18,7 +18,10 @@
  * {@link isLeaveDay} and of the leave cost, per shift instead of per date, so
  * for every member the distinct collision dates are what
  * {@link leaveCostOf} charges over their records. Two working shifts of two
- * teams on one date are two collisions and one leave day.
+ * teams on one date are two collisions and one leave day. The equality is with
+ * the COST, not the balance: every record raises collisions whatever its
+ * absence type, while only a drawing type's are charged to the balance
+ * (story 13.2, CAP-23).
  *
  * A non-working shift raises nothing; a member taken off their shift by a
  * roster override raises nothing for it. A member on no team raises nothing

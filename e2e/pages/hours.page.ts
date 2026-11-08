@@ -1,6 +1,14 @@
 import type { Download, Locator } from '@playwright/test';
 
-import { MONTH_TRIGGER_NAME, THIS_MONTH_TRIGGER_NAME, escapeRegExp, fill, hr, plural } from '../utils/i18n.ts';
+import {
+  ANNUAL_LEAVE_COLUMN,
+  MONTH_TRIGGER_NAME,
+  THIS_MONTH_TRIGGER_NAME,
+  escapeRegExp,
+  fill,
+  hr,
+  plural,
+} from '../utils/i18n.ts';
 import { BasePage } from './base.page.ts';
 import { FilterBarParts } from './filter-bar.ts';
 import { sortControlIn, sortOptionIn, sortPickerIn } from './sort-control.ts';
@@ -127,12 +135,12 @@ export class HoursPage extends BasePage {
 
   /** The ⓘ beside the month's leave, on *Moji sati*: shown only when there is a leave. */
   get leaveExplainButton(): Locator {
-    return this.page.getByRole('button', { name: fill(sati.explain.open, { figure: sati.leave }) });
+    return this.page.getByRole('button', { name: fill(sati.explain.open, { figure: ANNUAL_LEAVE_COLUMN }) });
   }
 
   /** The ⓘ beside a member's leave in the admin's table: `Godišnji odmor, Ana Anić`. */
   rowLeaveExplainButton(name: string): Locator {
-    return this.page.getByRole('button', { name: fill(sati.explain.open, { figure: `${organization.leave}, ${name}` }) });
+    return this.page.getByRole('button', { name: fill(sati.explain.open, { figure: `${ANNUAL_LEAVE_COLUMN}, ${name}` }) });
   }
 
   /** The dialog of what composes the total, open (story 7.14). */
@@ -207,7 +215,7 @@ export class HoursPage extends BasePage {
 
   /** The leave row, apart from the bands. */
   get leaveRow(): Locator {
-    return this.tile(sati.leave);
+    return this.tile(ANNUAL_LEAVE_COLUMN);
   }
 
   /** A figure inside a tile or a row, matched whole. */
@@ -395,7 +403,10 @@ export class HoursPage extends BasePage {
       organization.team,
       organization.shifts,
       organization.total,
-      organization.leave,
+      ANNUAL_LEAVE_COLUMN,
+      // Story 13.2: the column of every type that does not draw, if another
+      // test has one in the organization; never a band.
+      hr.sati.otherAbsence,
       organization.conflicts,
     ];
     const bandLabels = new Set(labels.filter((label) => !fixed.includes(label)));

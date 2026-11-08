@@ -15,6 +15,7 @@ import { HOUR_BANDS_LIST_KEY } from '@/features/hour-bands/services/list';
 import {
   LEAVE_OVERVIEW_RECORDS_KEY,
   LEAVE_RECORDS_KEY,
+  LEAVE_RECORDS_ROOT_KEY,
   MY_LEAVE_RECORDS_KEY,
   ORGANIZATION_LEAVE_RECORDS_KEY,
 } from '@/features/leave/services/leave-list';
@@ -41,6 +42,7 @@ import {
   CONFLICT_RESOLUTION_GONE_DEPENDENTS,
   CONFLICT_RESOLUTION_HELD_DEPENDENTS,
   CONFLICT_RESOLUTION_WRITE_DEPENDENTS,
+  ABSENCE_TYPE_WRITE_DEPENDENTS,
   HOUR_BAND_WRITE_DEPENDENTS,
   LEAVE_REQUEST_APPROVAL_DEPENDENTS,
   LEAVE_REQUEST_REJECTION_DEPENDENTS,
@@ -106,6 +108,8 @@ const CLASSIFIED: Readonly<Record<string, readonly QueryKey[]>> = {
   SHIFT_TYPES_LIST_KEY: [SHIFT_TYPES_LIST_KEY],
   ORGANIZATION_SNAPSHOT_KEY: [ORGANIZATION_SNAPSHOT_KEY],
   LEAVE_RECORDS_KEY: [LEAVE_A, LEAVE_B],
+  // Story 13.2: every member's leave key under one prefix, which only an absence type write names.
+  LEAVE_RECORDS_ROOT_KEY: [LEAVE_RECORDS_ROOT_KEY],
   MY_LEAVE_RECORDS_KEY: [MY_LEAVE_RECORDS_KEY],
   ORGANIZATION_LEAVE_RECORDS_KEY: [ORGANIZATION_LEAVE_RECORDS_KEY],
   // Story 7.15: the admin's overview on *Godišnji*, beside the organization's records wherever they are named.
@@ -131,17 +135,18 @@ const CLASSIFIED: Readonly<Record<string, readonly QueryKey[]>> = {
   // Story 12.4: every swap of the organization, which Za odluku, Odlučeno and the admin's Danas read.
   ORGANIZATION_SWAP_REQUESTS_KEY: [ORGANIZATION_SWAP_REQUESTS_KEY],
   // Story 13.1b: the organization's absence types, which only *Vrste odsutnosti*'s
-  // own writes name: no leave figure, report or member surface reads a type yet.
+  // own writes name: *Sati* reads them off the calendar snapshot (story 13.2).
   ABSENCE_TYPES_LIST_KEY: [ABSENCE_TYPES_LIST_KEY],
 };
 
 /**
  * Every entry seeded before each case. The bare roster prefix is left out: no
  * read is ever made under it, only under a team's own key; and so is the bare
- * request prefix (story 9.4), for the same reason.
+ * request prefix (story 9.4), for the same reason, and the bare leave records
+ * prefix (story 13.2).
  */
 const EVERY_KEY: readonly QueryKey[] = Object.entries(CLASSIFIED)
-  .filter(([name]) => name !== 'TEAM_ROSTERS_KEY' && name !== 'LEAVE_REQUEST_ROOT_KEY')
+  .filter(([name]) => !['TEAM_ROSTERS_KEY', 'LEAVE_REQUEST_ROOT_KEY', 'LEAVE_RECORDS_ROOT_KEY'].includes(name))
   .flatMap(([, keys]) => keys);
 
 const SRC = fileURLToPath(new URL('../../../', import.meta.url));
@@ -459,11 +464,21 @@ describe('the reads a team or membership write makes stale', () => {
       ],
     },
     {
-      write: 'an absence type added or edited (story 13.1b)',
+      write: 'an absence type added or edited (stories 13.1b, 13.2)',
       own: ABSENCE_TYPES_LIST_KEY,
-      dependents: NO_DEPENDENTS,
-      // Its own list alone: nothing else reads a type yet (13.2).
-      stale: [ABSENCE_TYPES_LIST_KEY],
+      dependents: ABSENCE_TYPE_WRITE_DEPENDENTS,
+      // Its own list, the calendar snapshot whose types name Sati's leave
+      // columns, and every leave read, each carrying the drawing flag — every
+      // member's own through the one prefix.
+      stale: [
+        CALENDAR_KEY,
+        LEAVE_A,
+        LEAVE_B,
+        MY_LEAVE_RECORDS_KEY,
+        ORGANIZATION_LEAVE_RECORDS_KEY,
+        LEAVE_OVERVIEW_RECORDS_KEY,
+        ABSENCE_TYPES_LIST_KEY,
+      ],
     },
     {
       write: 'a refusal',

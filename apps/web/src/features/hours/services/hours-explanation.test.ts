@@ -6,10 +6,10 @@ import {
   leaveDaysOfMonth,
   memberHoursOfMonth,
   memberScheduleOfMonth,
-  type HoursFigureCode,
 } from '@shift/domain';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { ANNUAL_LEAVE_ID } from '@/features/absence-types/services/list';
 import { readCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { memberScheduleInputOf, monthHeaderOf } from '@/features/calendar/utils/month';
 import {
@@ -20,9 +20,17 @@ import {
   hoursExplanationOf,
   hoursSourceMessageKey,
   leaveDecisionMessageKey,
+  type HoursExplainFigure,
   type HoursExplanationView,
 } from '@/features/hours/services/hours-explanation';
-import { figureIsEmpty, figureOf, memberHoursInputOf, memberLeaveDatesOf } from '@/features/hours/services/my-hours';
+import type { LeaveRecordsByMember } from '@/features/hours/services/hours-conflicts';
+import {
+  OTHER_ABSENCE_COLUMN,
+  figureIsEmpty,
+  figureOf,
+  memberHoursInputOf,
+  memberLeaveDatesByColumnOf,
+} from '@/features/hours/services/my-hours';
 import { initLocalization, t } from '@/lib/i18n';
 import {
   PILOT,
@@ -69,7 +77,7 @@ let uj5: CalendarSnapshot;
 vi.mock('@/features/hours/services/my-hours', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/features/hours/services/my-hours')>();
 
-  return { ...actual, memberLeaveDatesOf: vi.fn(actual.memberLeaveDatesOf) };
+  return { ...actual, memberLeaveDatesByColumnOf: vi.fn(actual.memberLeaveDatesByColumnOf) };
 });
 
 afterEach(() => {
@@ -82,7 +90,7 @@ beforeAll(async () => {
   uj5 = await snapshotOf(UJ5);
 });
 
-function explained(snapshot: CalendarSnapshot, figure: HoursFigureCode, memberId: string | null = null): HoursExplanationView {
+function explained(snapshot: CalendarSnapshot, figure: HoursExplainFigure, memberId: string | null = null): HoursExplanationView {
   const view = hoursExplanationOf(snapshot, { memberId, figure }, HEADER, [], [], new Map(), []);
 
   if (view === null) throw new Error('refused');
@@ -91,7 +99,7 @@ function explained(snapshot: CalendarSnapshot, figure: HoursFigureCode, memberId
 }
 
 /** An hours equation: the total's or a band's. */
-function hoursOf(snapshot: CalendarSnapshot, figure: HoursFigureCode, memberId: string | null = null) {
+function hoursOf(snapshot: CalendarSnapshot, figure: HoursExplainFigure, memberId: string | null = null) {
   const view = explained(snapshot, figure, memberId);
 
   if (view.kind !== EXPLANATION_HOURS) throw new Error(view.kind);
@@ -100,8 +108,8 @@ function hoursOf(snapshot: CalendarSnapshot, figure: HoursFigureCode, memberId: 
 }
 
 /** The leave's equation over `records`. */
-function leaveOf(snapshot: CalendarSnapshot, records: ReadonlyMap<string, readonly { from: string; to: string }[]>) {
-  const view = hoursExplanationOf(snapshot, { memberId: null, figure: { code: HOURS_FIGURE_LEAVE } }, HEADER, [], [], records, []);
+function leaveOf(snapshot: CalendarSnapshot, records: LeaveRecordsByMember, column: string = ANNUAL_LEAVE_ID) {
+  const view = hoursExplanationOf(snapshot, { memberId: null, figure: { code: HOURS_FIGURE_LEAVE, column } }, HEADER, [], [], records, []);
 
   if (view === null) throw new Error('refused');
   if (view.kind !== EXPLANATION_LEAVE) throw new Error(view.kind);
@@ -116,9 +124,9 @@ describe('an explained figure is the figure on the view', () => {
   ])('%s: the total and each band equal the domain\'s figures, and the lines add up', (_name, snapshot) => {
     const shot = snapshot();
     const hours = memberHoursOfMonth(memberHoursInputOf(shot), MONTH);
-    const figures: readonly (readonly [HoursFigureCode, number])[] = [
+    const figures: readonly (readonly [HoursExplainFigure, number])[] = [
       [{ code: HOURS_FIGURE_TOTAL }, hours.totalMinutes],
-      ...hours.bands.map((band): readonly [HoursFigureCode, number] => [
+      ...hours.bands.map((band): readonly [HoursExplainFigure, number] => [
         { code: HOURS_FIGURE_BAND, bandId: band.bandId },
         band.minutes,
       ]),
@@ -152,7 +160,7 @@ describe('an explained figure is the figure on the view', () => {
     const band = pilot.bands[0]!;
 
     expect(explained(pilot, { code: HOURS_FIGURE_TOTAL }).figureName).toBe(t('sati.total'));
-    expect(explained(pilot, { code: HOURS_FIGURE_LEAVE }).figureName).toBe(t('sati.leave'));
+    expect(explained(pilot, { code: HOURS_FIGURE_LEAVE, column: ANNUAL_LEAVE_ID }).figureName).toBe('Godišnji odmor');
     expect(explained(pilot, { code: HOURS_FIGURE_BAND, bandId: band.id }).figureName).toBe(band.name);
     expect(explained(pilot, { code: HOURS_FIGURE_TOTAL }).context).toBe(`${HEADER.monthName} ${HEADER.year}.`);
   });
@@ -173,13 +181,13 @@ describe('the leave is explained in days', () => {
     ['UJ-5', () => uj5],
   ])('%s: a line per charged date with each shift\'s team and type, +1 dan each, = the domain\'s count', (_name, snapshot) => {
     const shot = snapshot();
-    const record = { from: '2026-09-05', to: '2026-09-12' };
+    const record = { from: '2026-09-05', to: '2026-09-12', absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true };
     const records = new Map([[VIEWER_MEMBER, [record]]]);
     const dates = leaveDaysOfMonth(memberScheduleInputOf(shot, shot.viewer), [record], MONTH);
     const view = leaveOf(shot, records);
 
     expect(dates.length).toBeGreaterThan(0);
-    expect(view.figureName).toBe(t('sati.leave'));
+    expect(view.figureName).toBe('Godišnji odmor');
     expect(view.lines.map((line) => line.key)).toEqual(dates);
     for (const line of view.lines) {
       expect(line.date).toMatch(/^\d{2}\.\d{2}\.2026$/);
@@ -192,7 +200,7 @@ describe('the leave is explained in days', () => {
   });
 
   it('has no line without a record', () => {
-    expect(explained(pilot, { code: HOURS_FIGURE_LEAVE }).lines).toEqual([]);
+    expect(explained(pilot, { code: HOURS_FIGURE_LEAVE, column: ANNUAL_LEAVE_ID }).lines).toEqual([]);
   });
 
   it('names each decision in words: the resolved queue\'s own', () => {
@@ -208,10 +216,10 @@ describe('the leave is explained in days', () => {
       (day) => !day.shifts.some((shift) => shift.shiftTypeId !== null && working.has(shift.shiftTypeId)),
     )!;
 
-    vi.mocked(memberLeaveDatesOf).mockReturnValueOnce([off.date]);
+    vi.mocked(memberLeaveDatesByColumnOf).mockReturnValueOnce([[off.date]]);
 
     expect(
-      hoursExplanationOf(pilot, { memberId: null, figure: { code: HOURS_FIGURE_LEAVE } }, HEADER, [], [], new Map(), []),
+      hoursExplanationOf(pilot, { memberId: null, figure: { code: HOURS_FIGURE_LEAVE, column: ANNUAL_LEAVE_ID } }, HEADER, [], [], new Map(), []),
     ).toBeNull();
     expect(errors).toHaveBeenCalledWith(expect.any(String), expect.any(RangeError));
   });
@@ -225,5 +233,39 @@ describe('an explanation the domain refuses is null, never a guess', () => {
       hoursExplanationOf(pilot, { memberId: null, figure: { code: HOURS_FIGURE_BAND, bandId: 'nope' } }, HEADER, [], [], new Map(), []),
     ).toBeNull();
     expect(hoursExplanationOf(pilot, { memberId: 'nobody', figure: { code: HOURS_FIGURE_TOTAL } }, HEADER, [], [], new Map(), [])).toBeNull();
+  });
+});
+
+describe('the leave is explained one leave column at a time (story 13.2)', () => {
+  const SICK = '00000000-0000-4000-8000-00000000d001';
+
+  it('names the column and lists only the dates of its own types', () => {
+    const snapshot: CalendarSnapshot = {
+      ...pilot,
+      absenceTypes: [
+        { id: ANNUAL_LEAVE_ID, organizationId: pilot.organizationId, name: 'Godišnji odmor', drawsAllowance: true },
+        { id: SICK, organizationId: pilot.organizationId, name: 'Bolovanje', drawsAllowance: false },
+      ],
+    };
+    const annual = { from: '2026-09-01', to: '2026-09-04', absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true };
+    const sick = { from: '2026-09-07', to: '2026-09-12', absenceTypeId: SICK, drawsAllowance: false };
+    const records = new Map([[VIEWER_MEMBER, [annual, sick]]]);
+    const input = memberScheduleInputOf(snapshot, snapshot.viewer);
+    const other = leaveOf(snapshot, records, OTHER_ABSENCE_COLUMN);
+    const annualView = leaveOf(snapshot, records);
+
+    expect(other.figureName).toBe('Ostala odsutnost');
+    expect(other.lines.map((line) => line.key)).toEqual(leaveDaysOfMonth(input, [sick], MONTH));
+    expect(annualView.figureName).toBe('Godišnji odmor');
+    expect(annualView.lines.map((line) => line.key)).toEqual(leaveDaysOfMonth(input, [annual], MONTH));
+  });
+
+  it('is unavailable for a column the snapshot does not make', () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    expect(
+      hoursExplanationOf(pilot, { memberId: null, figure: { code: HOURS_FIGURE_LEAVE, column: OTHER_ABSENCE_COLUMN } }, HEADER, [], [], new Map(), []),
+    ).toBeNull();
+    expect(errors).toHaveBeenCalledWith(expect.any(String), expect.any(RangeError));
   });
 });

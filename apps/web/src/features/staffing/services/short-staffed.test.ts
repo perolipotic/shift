@@ -1,6 +1,7 @@
 import { shortStaffedShiftsOf } from '@shift/domain';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { ANNUAL_LEAVE_ID } from '@/features/absence-types/services/list';
 import { ROSTER_CHANGE_REMOVAL, rosterChangeSnapshotOf } from '@/features/calendar/services/roster-erasures';
 import type { CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { LEAVE_CANDIDATE_ID } from '@/features/leave/services/leave-conflicts';
@@ -107,7 +108,9 @@ describe.each(STAFFING_FIXTURES)('$name', (fixture) => {
         four,
         leaveRead([leaveRow(ONE, member(1), day.date, day.date), leaveRow(TWO, 'created-since', day.date, day.date)]),
       ),
-    ).toEqual([{ id: ONE, memberId: member(1), from: day.date, to: day.date }]);
+    ).toEqual([
+      { id: ONE, memberId: member(1), from: day.date, to: day.date, absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true },
+    ]);
   });
 
   it('mirrors the queue recipe: the active teams, the leave as given and the minimum', () => {

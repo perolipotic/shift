@@ -2,6 +2,8 @@ import { randomBytes } from 'node:crypto';
 
 import pg from 'pg';
 
+import { ANNUAL_LEAVE_COLUMN } from './i18n.ts';
+
 /**
  * The database the E2E run provisions into: the Supabase CLI's fixed local
  * default, or `SUPABASE_DB_URL` when set to something — the same resolution
@@ -1107,9 +1109,13 @@ export function holdFireRanks(slug: string): RotationHold {
   return holdLock(`e2e-fire-ranks:${slug}`, async () => undefined);
 }
 
-/** Annual leave's fixed id and seeded name (`0052`), which every organization holds. */
+/**
+ * Annual leave's fixed id and seeded name (`0052`), which every organization
+ * holds. The name is also *Sati*'s annual leave column (story 13.2), declared
+ * once beside the resource file's labels.
+ */
 const ANNUAL_LEAVE_ID = '00000000-0000-0000-0000-000000000001';
-export const ANNUAL_LEAVE_NAME = 'Godišnji odmor';
+export const ANNUAL_LEAVE_NAME = ANNUAL_LEAVE_COLUMN;
 
 /**
  * The prefix every absence type `absence-types.spec.ts` adds starts with, so
