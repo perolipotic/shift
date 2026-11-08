@@ -1,6 +1,6 @@
 import { expect, type Locator } from '@playwright/test';
 
-import { hr } from '../utils/i18n.ts';
+import { fill, hr } from '../utils/i18n.ts';
 import { BasePage } from './base.page.ts';
 
 const organization = hr.organization;
@@ -96,6 +96,59 @@ export class OrganizationPage extends BasePage {
   /** The header's way to the hour band editor, a client-side link (story 2.1b). */
   get hourBandsLink(): Locator {
     return this.main.getByRole('link', { name: organization.hourBands.heading, exact: true });
+  }
+
+  /** *Vrste odsutnosti* (story 13.1b): the absence types card. */
+  get absenceTypesRegion(): Locator {
+    return this.page.getByRole('region', { name: organization.absenceTypes.heading, exact: true });
+  }
+
+  /** The card's `Dodaj`, which opens the add dialog. */
+  get absenceTypeAdd(): Locator {
+    return this.absenceTypesRegion.getByRole('button', { name: organization.absenceTypes.addLabel, exact: true });
+  }
+
+  /** A row's `Uredi`, named by its type. */
+  absenceTypeEdit(name: string): Locator {
+    return this.absenceTypesRegion.getByRole('button', {
+      name: fill(organization.absenceTypes.editLabel, { name }),
+      exact: true,
+    });
+  }
+
+  /** The row of the type named `name`. */
+  absenceTypeRow(name: string): Locator {
+    return this.absenceTypesRegion
+      .getByRole('listitem')
+      .filter({ has: this.page.getByText(name, { exact: true }) });
+  }
+
+  /** The add dialog. */
+  get absenceTypeAddDialog(): Locator {
+    return this.dialog(organization.absenceTypes.addHeading);
+  }
+
+  /** The edit dialog. */
+  get absenceTypeEditDialog(): Locator {
+    return this.dialog(organization.absenceTypes.editHeading);
+  }
+
+  /** The name field inside an absence type dialog. */
+  absenceTypeName(dialog: Locator): Locator {
+    return dialog.getByLabel(organization.absenceTypes.name, { exact: true });
+  }
+
+  /** One of the two drawing choices inside an absence type dialog. */
+  absenceTypeDraws(dialog: Locator, draws: boolean): Locator {
+    return dialog.getByRole('radio', {
+      name: draws ? organization.absenceTypes.draws : organization.absenceTypes.doesNotDraw,
+      exact: true,
+    });
+  }
+
+  /** The Spremi of an absence type dialog. */
+  absenceTypeSave(dialog: Locator): Locator {
+    return dialog.getByRole('button', { name: organization.absenceTypes.save, exact: true });
   }
 
   /** Every field mounted on the page outside a dialog's portal. */

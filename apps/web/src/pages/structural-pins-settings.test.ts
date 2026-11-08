@@ -49,6 +49,8 @@ const SETTINGS_ELEMENT_IDS = join(srcRoot, 'features', 'organization', 'utils', 
 
 /** The status line's name for the stored accent. */
 const SETTINGS_ACCENT_LABEL = join(srcRoot, ...SETTINGS_SCREEN_PARTS.accentLabel);
+/** Story 13.1b: the *Vrste odsutnosti* card, whose one add-or-edit dialog is its own hook's. */
+const SETTINGS_ABSENCE_TYPES = join(srcRoot, ...SETTINGS_SCREEN_PARTS.absenceTypes);
 
 /**
  * The one signed-URL read behind every lockup.
@@ -82,8 +84,9 @@ describe('every field on the settings surface carries an accessible name', () =>
     const ids = fields.map((element) => /\bid=\{(\w+)\}/.exec(element)?.[1] ?? null);
     const targets = [...screen.matchAll(/<Label htmlFor=\{(\w+)\}/g)].map((found) => found[1] ?? '');
 
-    // TWO since story 11.1: minimum members' number field.
-    expect(inputElements(screen)).toHaveLength(2);
+    // TWO since story 11.1: minimum members' number field. THREE since story
+    // 13.1b: an absence type's name.
+    expect(inputElements(screen)).toHaveLength(3);
     expect(selectElements(screen), 'a control became a select again').toHaveLength(2);
     expect(ids, 'a field carries no id constant, so no <Label> can name it').not.toContain(null);
     expect(new Set(ids).size, 'two fields share one id').toBe(ids.length);
@@ -108,9 +111,10 @@ describe('every field on the settings surface carries an accessible name', () =>
     for (const field of [...inputElements(screen), ...selectElements(screen), ...bareInputElements(screen)]) {
       // STORY 11.1: minimum members' field has a hint, so it is described by the
       // hint always and by the hint and the refusal after one, as the radio
-      // groups are; every other field names the refusal only.
+      // groups are; every other field names the refusal only. STORY 13.1b:
+      // the absence type dialog is its own hook's, with its own refusal id.
       expect(field, 'a field describes nothing, or names its refusal unconditionally').toMatch(
-        /aria-describedby=\{failure === null \? (undefined : ORGANIZATION_DIALOG_ERROR_ID|ORGANIZATION_MINIMUM_MEMBERS_HINT_ID : ORGANIZATION_MINIMUM_MEMBERS_REFUSED_DESCRIPTION)\}/,
+        /aria-describedby=\{failure === null \? (undefined : ORGANIZATION_DIALOG_ERROR_ID|undefined : ORGANIZATION_ABSENCE_TYPE_ERROR_ID|ORGANIZATION_MINIMUM_MEMBERS_HINT_ID : ORGANIZATION_MINIMUM_MEMBERS_REFUSED_DESCRIPTION)\}/,
       );
     }
   });
@@ -137,7 +141,11 @@ describe('every field on the settings surface carries an accessible name', () =>
     // seeds an uncontrolled field and never re-renders it away.
     for (const field of [...inputElements(source(SETTINGS)), ...selectElements(source(SETTINGS))]) {
       expect(field, 'a settings field is controlled').not.toMatch(/(?<![A-Za-z])value=\{/);
-      expect(field, 'a settings field is not seeded from the row').toContain('defaultValue={organization.');
+      // STORY 13.1b: an absence type's name is seeded from the type it edits,
+      // and empty for a new one.
+      expect(field, 'a settings field is not seeded from the row').toMatch(
+        /defaultValue=\{(organization\.|type === null \? NO_TEXT : type\.name\})/,
+      );
     }
   });
 
@@ -228,7 +236,11 @@ describe('the settings page is facts, and each change opens its own dialog (stor
   ];
 
   it('mounts no form outside the one dialog form every change draws', () => {
-    expect(occurrences(source(SETTINGS), '<form'), 'a second form arrived on the page').toBe(1);
+    // TWO since story 13.1b: the absence type dialog's, in its own card,
+    // driven by its own hook rather than the settings hook's dialogs.
+    expect(occurrences(source(SETTINGS), '<form'), 'a third form arrived on the page').toBe(2);
+    expect(occurrences(source(SETTINGS_ABSENCE_TYPES), '<form'), 'the absence type dialog draws no form').toBe(1);
+    expect(occurrences(source(SETTINGS_ABSENCE_TYPES), 'type="submit"'), 'the absence type dialog has two submits').toBe(1);
     expect(source(SETTINGS_DIALOG)).toContain('<form');
     // ONE SPREMI: the dialog form's only submit, beside its cancel.
     expect(occurrences(source(SETTINGS_DIALOG), 'type="submit"')).toBe(1);

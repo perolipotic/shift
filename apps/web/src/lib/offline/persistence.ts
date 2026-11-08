@@ -106,7 +106,9 @@ export const DEVICE_SNAPSHOT_THROTTLE_MS = 1000;
  *     which *Danas*'s *Zamjene* and a member's *Kalendar* read (story 12.3);
  *   - `organization-swap-requests` — `ORGANIZATION_SWAP_REQUESTS_KEY`, every
  *     swap of the organization, which *Za odluku*, its resolution page, a
- *     swap's decision screen and the admin's *Danas* read (story 12.4).
+ *     swap's decision screen and the admin's *Danas* read (story 12.4);
+ *   - `absenceTypes` — `ABSENCE_TYPES_LIST_KEY`, *Organizacija*'s *Vrste
+ *     odsutnosti* card, admin-only (story 13.1b).
  */
 export const PERSISTED_KEY_ROOTS: readonly string[] = [
   'calendar',
@@ -130,6 +132,7 @@ export const PERSISTED_KEY_ROOTS: readonly string[] = [
   'organization-leave-requests',
   'my-swap-requests',
   'organization-swap-requests',
+  'absenceTypes',
 ];
 
 /**

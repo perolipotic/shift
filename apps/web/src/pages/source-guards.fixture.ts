@@ -440,6 +440,11 @@ export const HOUR_BAND_LIST_KEYS = join(srcRoot, 'features', 'hour-bands', 'serv
 
 export const HOUR_BAND_WRITE_KEYS = join(srcRoot, 'features', 'hour-bands', 'services', 'write.ts');
 
+/** Story 13.1b: the absence type list's and write's rules, each a `\w*MessageKey` module. */
+export const ABSENCE_TYPE_LIST_KEYS = join(srcRoot, 'features', 'absence-types', 'services', 'list.ts');
+
+export const ABSENCE_TYPE_WRITE_KEYS = join(srcRoot, 'features', 'absence-types', 'services', 'write.ts');
+
 export const SHIFT_TYPE_LIST_HOOK = join(srcRoot, ...SHIFT_TYPE_LIST_PARTS.hook);
 
 export const SHIFT_TYPE_EDIT_HOOK = join(srcRoot, ...SHIFT_TYPE_EDIT_PARTS.hook);
@@ -830,7 +835,10 @@ export const SCREENS = [
   // TEN since story 10.3: the email-notifications card's `Uredi`.
   // FOUR FIELDS AND ELEVEN BUTTONS since story 11.1: minimum members' number
   // field and its card's `Uredi`.
-  { name: 'the organization settings surface', file: SETTINGS, expectedFields: 4, expectedButtons: 11 },
+  // FIVE FIELDS AND FIFTEEN BUTTONS since story 13.1b: the *Vrste odsutnosti*
+  // card's `Dodaj` and each row's `Uredi` (one element, mapped), and its
+  // dialog's name field, Odustani and Spremi.
+  { name: 'the organization settings surface', file: SETTINGS, expectedFields: 5, expectedButtons: 15 },
   // THREE on the member list, and the count is what keeps a fourth from
   // arriving unreviewed: the search field, the permission-level filter, and ONE
   // `<Button>` — the sort control, written once inside a map over

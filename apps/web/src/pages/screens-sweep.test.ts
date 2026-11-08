@@ -391,7 +391,8 @@ describe('the screen is read at all, so every sweep below means something', () =
     // EIGHTY-SEVEN SINCE STORY 12.2: the swap proposal and its rules.
     // EIGHTY-EIGHT SINCE STORY 12.3: *Zamjene*'s rules.
     // NINETY SINCE STORY 12.4: the swap decision screen and its rules.
-    expect(KEY_SOURCES).toHaveLength(90);
+    // NINETY-TWO SINCE STORY 13.1b: the absence type list's and write's rules.
+    expect(KEY_SOURCES).toHaveLength(92);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"

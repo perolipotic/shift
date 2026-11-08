@@ -122,6 +122,12 @@ const LABEL_MESSAGE =
  * Adding a module here is a deliberate widening of that feature's API.
  */
 export const FEATURE_PUBLIC = {
+  // Story 13.1b: *Organizacija*'s *Vrste odsutnosti* card reads and writes
+  // the types through their own list and write modules.
+  'absence-types': [
+    'services/list', // organization
+    'services/write', // organization
+  ],
   // Story 7.8: the signed-in layout holds a flagged session at the
   // set-password step through `mustSetPassword`, never a reading of its own.
   auth: [

@@ -16,6 +16,8 @@ export const ORGANIZATION_EMAIL_NOTIFICATIONS_HEADING_ID = 'organization-email-n
 export const ORGANIZATION_MINIMUM_MEMBERS_HEADING_ID = 'organization-minimum-members-heading';
 /** The *Satni pojasi* facts card (deferred work from 7.18): a summary, and the way to the editor. */
 export const ORGANIZATION_HOUR_BANDS_HEADING_ID = 'organization-hour-bands-heading';
+/** The *Vrste odsutnosti* card (story 13.1b): the types, and the one dialog that adds or edits one. */
+export const ORGANIZATION_ABSENCE_TYPES_HEADING_ID = 'organization-absence-types-heading';
 
 /** The card each dialog closes back onto, by its heading. */
 export const ORGANIZATION_DIALOG_CARD_HEADING_IDS = {
@@ -92,3 +94,20 @@ export const ORGANIZATION_DIALOG_HEADING_IDS = {
   emailNotifications: 'organization-email-notifications-dialog-heading',
   minimumMembers: 'organization-minimum-members-dialog-heading',
 } as const;
+
+/**
+ * The absence type dialog (story 13.1b), one for adding and editing: its
+ * title, the name field, the drawing choice's label, its first radio (where a
+ * refusal about the choice puts focus), the line that says why annual leave's
+ * choice is locked, the refusal, and Spremi. Its own ids, not the settings
+ * dialogs': it is a dialog of the card's own hook, open beside none of theirs.
+ */
+export const ORGANIZATION_ABSENCE_TYPE_DIALOG_HEADING_ID = 'organization-absence-type-dialog-heading';
+export const ORGANIZATION_ABSENCE_TYPE_NAME_FIELD_ID = 'organization-absence-type-name';
+export const ORGANIZATION_ABSENCE_TYPE_DRAWS_LABEL_ID = 'organization-absence-type-draws-label';
+export const ORGANIZATION_ABSENCE_TYPE_DRAWS_FIELD_ID = 'organization-absence-type-draws';
+export const ORGANIZATION_ABSENCE_TYPE_ANNUAL_HINT_ID = 'organization-absence-type-annual-hint';
+export const ORGANIZATION_ABSENCE_TYPE_ERROR_ID = 'organization-absence-type-error';
+export const ORGANIZATION_ABSENCE_TYPE_SAVE_ID = 'organization-absence-type-save';
+/** What annual leave's locked choice is described by after a refusal: the hint AND the refusal. */
+export const ORGANIZATION_ABSENCE_TYPE_ANNUAL_REFUSED_DESCRIPTION = `${ORGANIZATION_ABSENCE_TYPE_ANNUAL_HINT_ID} ${ORGANIZATION_ABSENCE_TYPE_ERROR_ID}`;

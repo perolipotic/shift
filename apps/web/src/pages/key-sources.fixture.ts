@@ -1,4 +1,6 @@
 import {
+  ABSENCE_TYPE_LIST_KEYS,
+  ABSENCE_TYPE_WRITE_KEYS,
   ACCENT_KEYS,
   AUTH_LAYOUT,
   CALENDAR_EMPTY_DAY_KEYS,
@@ -212,7 +214,12 @@ export const KEY_SOURCES = [
   // SEVENTY-FIVE SINCE STORY 11.1: the minimum-members card's heading and
   // dialog title, `Uredi` and its name, the fact's label (twice: the fact and
   // the field's label), not set, the hint, and the two saved lines.
-  { name: 'the organization settings surface', file: SETTINGS, keys: translationKeys, strings: 75 },
+  // EIGHTY-EIGHT SINCE STORY 13.1b: the *Vrste odsutnosti* card's heading,
+  // `Dodaj` and its name, `Uredi` and its name, the dialog's two titles, its
+  // close, the name's label, the drawing choice's label, annual leave's hint,
+  // Odustani and Spremi. What a row says about drawing, the refusals and the
+  // confirmations reach `t()` through the absence type modules.
+  { name: 'the organization settings surface', file: SETTINGS, keys: translationKeys, strings: 88 },
   {
     // EIGHT on the member list since story 1.5b, up from five, and the number is
     // still small because most of what this screen says is read off a table
@@ -1209,6 +1216,23 @@ export const KEY_SOURCES = [
     file: NOTIFICATIONS_KEYS,
     keys: messageKeyUnions,
     strings: 4,
+  },
+  {
+    // STORY 13.1b: what a row says about drawing (two) and the read failure,
+    // off `absenceTypeDrawsMessageKey` and `absenceTypesMessageKey`.
+    name: 'the absence type list rules',
+    file: ABSENCE_TYPE_LIST_KEYS,
+    keys: messageKeyUnions,
+    strings: 3,
+  },
+  {
+    // STORY 13.1b: eight refusals — the blank, long and taken name, no drawing
+    // choice, annual leave set not to draw, the stale card, the outright
+    // refusal and the service — and two confirmations, an add and an edit.
+    name: 'the absence type write rules',
+    file: ABSENCE_TYPE_WRITE_KEYS,
+    keys: messageKeyUnions,
+    strings: 10,
   },
   {
     // STORY 10.3: the organization's email-notifications switch — its two

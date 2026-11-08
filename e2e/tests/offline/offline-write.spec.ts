@@ -7,8 +7,12 @@ import type { RotationPage } from '../../pages/rotation.page.ts';
 import { LoginPage } from '../../pages/login.page.ts';
 import { SetPasswordPage } from '../../pages/set-password.page.ts';
 import {
+  ANNUAL_LEAVE_NAME,
   API_URL,
+  cleanUpAbsenceTypesInSql,
   databaseNow,
+  E2E_ABSENCE_TYPE_PREFIX,
+  holdAbsenceTypes,
   holdAtSetPasswordInSql,
   holdRotation,
   OFFLINE_MEMBER_USERNAME_PREFIX,
@@ -48,7 +52,8 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * submit.
  *
  * Story 8.3b, the settings surfaces: the Organizacija name's *Spremi*, the
- * hour band add, the shift type add, *Spremi rotaciju* (no erasure check
+ * hour band add, the absence type add with the card's *Dodaj* and *Uredi*
+ * (story 13.1b), the shift type add, *Spremi rotaciju* (no erasure check
  * starts) and the override review's *Potvrdi* (a seeded pending override),
  * and the team rename.
  *
@@ -569,6 +574,58 @@ test.describe('offline writes on the admin surfaces', () => {
     await expect(hourBandsPage.offlineNote).toHaveCount(0);
     expect(spy.writes(), 'the reconnect sent a write').toEqual([]);
     await expect(hourBandsPage.statusWith(bands.created)).toHaveCount(0);
+  });
+
+  test('the absence type add is gated offline, with Dodaj and Uredi, and the reconnect sends nothing (story 13.1b)', async ({
+    page,
+    fixture,
+    organizationPage,
+  }) => {
+    const types = hr.organization.absenceTypes;
+    const name = `${E2E_ABSENCE_TYPE_PREFIX} ${randomBytes(3).toString('hex')}`;
+    // The run's absence types, under their own hold; `afterEach` releases it.
+    hold = holdAbsenceTypes(fixture.slug);
+    await hold.ready;
+
+    try {
+      await organizationPage.goto();
+      await organizationPage.absenceTypeAdd.click();
+      const dialog = organizationPage.absenceTypeAddDialog;
+      await expect(dialog).toBeVisible();
+      await organizationPage.absenceTypeName(dialog).fill(name);
+      await organizationPage.absenceTypeDraws(dialog, false).check();
+      const save = organizationPage.absenceTypeSave(dialog);
+
+      const spy = spyOnApi(page);
+      await page.context().setOffline(true);
+      await expectGated(save, offlineWriteNoteIn(dialog));
+      await expect(offlineWriteNoteIn(dialog)).toHaveText(hr.offline.needsConnection);
+
+      await press(save);
+      await organizationPage.absenceTypeName(dialog).press('Enter');
+      await expect(dialog).toBeVisible();
+      await expect(organizationPage.absenceTypeName(dialog)).toHaveValue(name);
+      expect(spy.all(), 'a request left the page offline').toEqual([]);
+
+      // The card's openers, behind the dialog: gated too, under the card's own note.
+      await dialog.getByRole('button', { name: types.cancel, exact: true }).click();
+      await expect(dialog).toHaveCount(0);
+      const cardNote = offlineWriteNoteIn(organizationPage.absenceTypesRegion);
+      await expectGated(organizationPage.absenceTypeAdd, cardNote);
+      await expectGated(organizationPage.absenceTypeEdit(ANNUAL_LEAVE_NAME), cardNote);
+      await press(organizationPage.absenceTypeEdit(ANNUAL_LEAVE_NAME));
+      await expect(organizationPage.absenceTypeEditDialog, 'Uredi opened offline').toHaveCount(0);
+      expect(spy.all(), 'a request left the page offline').toEqual([]);
+
+      await page.context().setOffline(false);
+      await expectLifted(organizationPage.absenceTypeAdd, organizationPage.absenceTypesRegion);
+      await expect(organizationPage.offlineNote).toHaveCount(0);
+      expect(spy.writes(), 'the reconnect sent a write').toEqual([]);
+      await expect(organizationPage.statusWith(types.added)).toHaveCount(0);
+      await expect(organizationPage.absenceTypeRow(name)).toHaveCount(0);
+    } finally {
+      await cleanUpAbsenceTypesInSql(fixture.slug, [name]);
+    }
   });
 
   test('the shift type add is gated offline, and the reconnect sends nothing', async ({ page, rotationPage }) => {
