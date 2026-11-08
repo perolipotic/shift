@@ -25524,6 +25524,8 @@ describe('absence types are organization data, and every leave record is annual 
       await inRolledBackTransaction(async (client) => {
         const other = await organizationId(client, otherSlug);
         const memberRole = await memberByUsername(client, slug, member);
+        // Read as the owner before switching roles: a session cannot read auth.users.
+        const caller = await memberByUsername(client, slug, admin);
         await actAs(client, memberRole.authUserId, memberRole.organizationId);
         expect(await visibleAbsenceTypes(client), `${slug}: a member-role account reads a type`).toEqual([]);
         const memberInsert = await refusedThenContinue(client, () =>
@@ -25536,7 +25538,6 @@ describe('absence types are organization data, and every leave record is annual 
         expect(memberInsert.code).toBe('42501');
         expect(memberUpdate.rowCount, `${slug}: a member-role account renamed a type`).toBe(0);
 
-        const caller = await memberByUsername(client, slug, admin);
         await actAs(client, caller.authUserId, caller.organizationId);
         const foreign = await refusedThenContinue(client, () =>
           client.query('insert into absence_types (organization_id, name, draws_allowance) values ($1, $2, false)', [
