@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 11-07-2026 12:00
+last_updated: 11-08-2026 07:48
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -597,14 +597,14 @@ development_status:
   11-4-admin-danas-counts-short-staffed-shifts: done  # #271
   epic-11-retrospective: done
 
-  epic-12: in-progress
+  epic-12: done  # accepted with open items by the product owner, 2026-11-08 (retro)
   12-1-the-swap-request-record: done
   12-2-a-member-proposes-a-swap-from-the-day-detail: done
   12-3-the-colleague-accepts-or-declines: done  # #278
   12-3b-swap-proposed-and-answered-notifications: done  # #279
   12-4-an-admin-decides-a-swap-on-its-own-screen: done  # #280
-  12-4b-swap-waiting-and-decided-notifications: review  # split from 12.4 (2026-11-07)
-  epic-12-retrospective: optional
+  12-4b-swap-waiting-and-decided-notifications: done  # #281
+  epic-12-retrospective: done
 
   epic-13: backlog
   13-1-absence-types-are-organization-data: backlog
@@ -937,3 +937,57 @@ action_items:
     owner: "Dev"
     status: done  # spec-epic-11-retro-a7-save-surfaces (cancel confirmation, review rows and amend dialog)
     ref: "_bmad-output/implementation-artifacts/epic-11-retro-2026-11-05.md"
+  - id: "epic-12-retro-item-43-a1-add-my_swap_requests_key-and-organiza"
+    epic: 12
+    action: "A1: add MY_SWAP_REQUESTS_KEY and ORGANIZATION_SWAP_REQUESTS_KEY to MEMBERSHIP_WRITE_DEPENDENTS
+      (a deactivation closes swaps) and update the pinned dependents test; a stale:
+      true unit case for the swap decision screen; drop the blank lines (R1, R9, R11)"
+    owner: "Dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-12-retro-2026-11-07.md"
+  - id: "epic-12-retro-item-44-a2-name-the-return-shift-in-the-two-way"
+    epic: 12
+    action: "A2: name the return shift in the two-way swap notice copy (returnDate
+      already written, no migration) and keep a closed swap on Zamjene until its last
+      date passes (R5, R6)"
+    owner: "Dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-12-retro-2026-11-07.md"
+  - id: "epic-12-retro-item-45-a3-rewrite-ux-dr25-s-planned-swap-note-a"
+    epic: 12
+    action: "A3: rewrite UX-DR25's Planned swap note as shipped and update the spine's
+      CAP-22 row to stories 12.2-12.4b and migrations 0049-0051 (S1, S2)"
+    owner: "Dev"
+    status: done  # epic 12 retro commit (UX-DR25 as shipped; spine CAP-22 row)
+    ref: "_bmad-output/implementation-artifacts/epic-12-retro-2026-11-07.md"
+  - id: "epic-12-retro-item-46-a4-bmad-build-fact-the-strict-database-r"
+    epic: 12
+    action: "A4: bmad-build fact: the STRICT DATABASE RULE (no DB-connecting tests,
+      no migration applied in any form, no test-harness patch on the shared stack;
+      DB tests for a new migration run in CI only) (P1)"
+    owner: "Dev (bmad-build customization)"
+    status: done  # epic 12 retro commit (bmad-build fact: STRICT DATABASE RULE)
+    ref: "_bmad-output/implementation-artifacts/epic-12-retro-2026-11-07.md"
+  - id: "epic-12-retro-item-47-a5-bmad-build-facts-a-new-table-with-fks"
+    epic: 12
+    action: "A5: bmad-build facts: a new table with FKs extends the e2e cleanup in
+      FK order in the same change; a change to what a surface shows greps e2e/ for
+      the old behaviour (P2)"
+    owner: "Dev (bmad-build customization)"
+    status: done  # epic 12 retro commit (bmad-build facts: e2e cleanup in FK order; grep e2e for old behaviour)
+    ref: "_bmad-output/implementation-artifacts/epic-12-retro-2026-11-07.md"
+  - id: "epic-12-retro-item-48-a6-deferred-work-entries-for-r3-r4-r7-r8"
+    epic: 12
+    action: "A6: deferred-work entries for R3, R4, R7, R8, a shared useDecisionWrite
+      hook and the isRecord copies, and size notes for swap-proposal.ts and rls-isolation.test.ts"
+    owner: "Dev"
+    status: done  # epic 12 retro commit (deferred-work: epic 12 retrospective entries)
+    ref: "_bmad-output/implementation-artifacts/epic-12-retro-2026-11-07.md"
+  - id: "epic-12-retro-item-49-a7-measure-the-e2e-shard-durations-then"
+    epic: 12
+    action: "A7: measure the e2e shard durations, then raise the e2e job's timeout-minutes
+      to 30 (a fifth shard only if shards routinely pass 15 minutes); note the cancelled
+      main run for afc3641 (P5)"
+    owner: "Dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-12-retro-2026-11-07.md"

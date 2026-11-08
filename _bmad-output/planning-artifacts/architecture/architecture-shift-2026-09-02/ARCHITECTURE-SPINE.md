@@ -390,7 +390,7 @@ shift/
 | CAP-19 Leave requests | `leave_requests`, `leave_request_decisions`, `withdraw_leave_request`, `decide_leave_request` (0040, story 9.2); the member's form, the decision screen and the merged *Za odluku* are stories 9.3–9.5 | AD-3, AD-4, AD-10, AD-11 |
 | CAP-20 Notifications | `notification_outbox`, `claim_notifications`, `settle_notification`, the `notify` cron job (0042) and the `notify` Edge Function (story 10.1: the leave decision by email; 10.2–10.4 the other events, settings and push) | AD-14, AD-17, AD-18 |
 | CAP-21 Minimum members per shift | `organizations.minimum_members` (0048, story 11.1), `domain/staffing`; the save blocks, the calendar mark and the *Danas* card are stories 11.2–11.4 | AD-1, AD-2, AD-7, AD-8 |
-| CAP-22 Shift swaps | `swap_requests`, `swap_request_decisions`, `answer_swap_request`, `withdraw_swap_request`, `decide_swap_request`, the close on deactivation (0049, story 12.1); the proposal form, the answer and the decision screen are stories 12.2–12.4 | AD-1, AD-3, AD-4, AD-5, AD-9, AD-10, AD-11, AD-18 |
+| CAP-22 Shift swaps | `swap_requests`, `swap_request_decisions`, `answer_swap_request`, `withdraw_swap_request`, `decide_swap_request`, the close on deactivation (0049, story 12.1); the proposal form (12.2), the answer and *Povuci* on *Danas* (12.3), the decision screen and the swap's place in *Za odluku* and *Odlučeno* (12.4); the proposed and answered notices (0050, story 12.3b) and the waits-for-a-decision and decided notices (0051, story 12.4b), through `private.notify_members` | AD-1, AD-3, AD-4, AD-5, AD-9, AD-10, AD-11, AD-18 |
 
 ## Deferred
 
