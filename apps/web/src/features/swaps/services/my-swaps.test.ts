@@ -494,6 +494,17 @@ describe('the card’s rows (the I/O matrix)', () => {
     expect(rows.map((row) => [row.swap.id, row.word])).toEqual([['swap-1', SWAP_DECLINED]]);
   });
 
+  it('a closed two-way swap stays listed until its last date: given past and return ahead is listed, both past is not', () => {
+    // Given 09-13 (B), return 10-03 (A), declined and closed: its notice links /danas while the return shift is ahead.
+    const declined = rowOf({ team_id: B, date: '2026-09-13', return_team_id: A, return_date: '2026-10-03', answer: 'declined', closed_at: CLOSED });
+
+    expect(mySwapRowsOf(snapshot, swapsOf([declined]), '2026-09-20', []).map((row) => [row.swap.id, row.word, row.past])).toEqual([
+      ['swap-1', SWAP_DECLINED, false],
+    ]);
+    expect(mySwapRowsOf(snapshot, swapsOf([declined]), '2026-10-03', []).map((row) => row.swap.id)).toEqual(['swap-1']);
+    expect(mySwapRowsOf(snapshot, swapsOf([declined]), '2026-10-04', [])).toEqual([]);
+  });
+
   it('Stale for the proposer: their own shift no longer theirs flags the row, and Povuci stays', async () => {
     // A live change takes the viewer off A on 09-10: the shift they gave is no longer theirs.
     const off = await snapshotOf({ rosterOverrides: [calendarRosterOverrideRow('ro-off', A, DATE, VIEWER_MEMBER, null)] });

@@ -88,13 +88,25 @@ export const OBAVIJESTI = {
     subject: 'Predložena ti je zamjena {date}',
     body: '{organizationName}: predložena ti je zamjena smjene {date}. Odgovori u aplikaciji: {link}',
   },
+  swapRequestProposedWithReturn: {
+    subject: 'Predložena ti je zamjena {date} (zauzvrat {returnDate})',
+    body: '{organizationName}: predložena ti je zamjena smjene {date} (zauzvrat {returnDate}). Odgovori u aplikaciji: {link}',
+  },
   swapRequestAccepted: {
     subject: 'Zamjena {date} je prihvaćena',
     body: '{organizationName}: tvoj prijedlog zamjene smjene {date} je prihvaćen i čeka odluku. Pogledaj u aplikaciji: {link}',
   },
+  swapRequestAcceptedWithReturn: {
+    subject: 'Zamjena {date} (zauzvrat {returnDate}) je prihvaćena',
+    body: '{organizationName}: tvoj prijedlog zamjene smjene {date} (zauzvrat {returnDate}) je prihvaćen i čeka odluku. Pogledaj u aplikaciji: {link}',
+  },
   swapRequestDeclined: {
     subject: 'Zamjena {date} je odbijena',
     body: '{organizationName}: tvoj prijedlog zamjene smjene {date} je odbijen. Pogledaj u aplikaciji: {link}',
+  },
+  swapRequestDeclinedWithReturn: {
+    subject: 'Zamjena {date} (zauzvrat {returnDate}) je odbijena',
+    body: '{organizationName}: tvoj prijedlog zamjene smjene {date} (zauzvrat {returnDate}) je odbijen. Pogledaj u aplikaciji: {link}',
   },
   swapRequestWaiting: {
     subject: 'Nova zamjena za odluku: {proposerName} → {addresseeName}',
@@ -104,9 +116,17 @@ export const OBAVIJESTI = {
     subject: 'Zamjena {date} je odobrena',
     body: '{organizationName}: zamjena smjene {date} je odobrena. Pogledaj u aplikaciji: {link}',
   },
+  swapRequestApprovedWithReturn: {
+    subject: 'Zamjena {date} (zauzvrat {returnDate}) je odobrena',
+    body: '{organizationName}: zamjena smjene {date} (zauzvrat {returnDate}) je odobrena. Pogledaj u aplikaciji: {link}',
+  },
   swapRequestRejected: {
     subject: 'Zamjena {date} nije odobrena',
     body: '{organizationName}: zamjena smjene {date} nije odobrena. Pogledaj u aplikaciji: {link}',
+  },
+  swapRequestRejectedWithReturn: {
+    subject: 'Zamjena {date} (zauzvrat {returnDate}) nije odobrena',
+    body: '{organizationName}: zamjena smjene {date} (zauzvrat {returnDate}) nije odobrena. Pogledaj u aplikaciji: {link}',
   },
   footer: 'Obavijesti e-poštom možeš isključiti u aplikaciji, pod Obavijesti: {link}',
 } as const;
@@ -155,6 +175,23 @@ export const MESSAGE_OF_CODE: Readonly<Record<string, MessageKey>> = {
   SWAP_REQUEST_REJECTED: 'swapRequestRejected',
 };
 
+/**
+ * The message a two-way swap's notice renders with instead of its code's own
+ * (epic 12 retro, R6): the same text naming the return shift too. Chosen only
+ * when the operands carry a string `returnDate` (0050, 0051 write one for a
+ * two-way swap); a malformed one is refused as any other date operand. A
+ * variant rather than conditional text: the renderer refuses a missing operand
+ * and has no ICU, and a one-way notice renders exactly as before.
+ * `swapRequestWaiting` has none: 0051 writes no `returnDate` for it.
+ */
+export const RETURN_VARIANT_OF: Readonly<Partial<Record<MessageKey, MessageKey>>> = {
+  swapRequestProposed: 'swapRequestProposedWithReturn',
+  swapRequestAccepted: 'swapRequestAcceptedWithReturn',
+  swapRequestDeclined: 'swapRequestDeclinedWithReturn',
+  swapRequestApproved: 'swapRequestApprovedWithReturn',
+  swapRequestRejected: 'swapRequestRejectedWithReturn',
+};
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
@@ -187,6 +224,11 @@ export function linkPathOf(key: MessageKey, operands: Readonly<Record<string, un
     case 'swapRequestDeclined':
     case 'swapRequestApproved':
     case 'swapRequestRejected':
+    case 'swapRequestProposedWithReturn':
+    case 'swapRequestAcceptedWithReturn':
+    case 'swapRequestDeclinedWithReturn':
+    case 'swapRequestApprovedWithReturn':
+    case 'swapRequestRejectedWithReturn':
       return '/danas';
     case 'leaveRequestCreated': {
       const id = operands['requestId'];
@@ -311,8 +353,8 @@ type Composed =
 
 /** The parts one row renders to, shared by the email and the push. */
 function compose(code: string, locale: string | null, operands: unknown, target: RenderTarget): Composed {
-  const key = Object.hasOwn(MESSAGE_OF_CODE, code) ? MESSAGE_OF_CODE[code] : undefined;
-  if (key === undefined) return { ok: false, code: MESSAGE_UNKNOWN };
+  const codeKey = Object.hasOwn(MESSAGE_OF_CODE, code) ? MESSAGE_OF_CODE[code] : undefined;
+  if (codeKey === undefined) return { ok: false, code: MESSAGE_UNKNOWN };
 
   const language = languageOf(locale);
   const messages = MESSAGES_BY_LANGUAGE[language] ?? MESSAGES_BY_LANGUAGE[FALLBACK_LANGUAGE];
@@ -338,6 +380,9 @@ function compose(code: string, locale: string | null, operands: unknown, target:
       values[name] = value;
     }
   }
+
+  const variant = RETURN_VARIANT_OF[codeKey];
+  const key = variant !== undefined && typeof (operands as Record<string, unknown>)['returnDate'] === 'string' ? variant : codeKey;
 
   const path = linkPathOf(key, operands as Record<string, unknown>);
   if (path === null) return { ok: false, code: OPERANDS_INVALID };

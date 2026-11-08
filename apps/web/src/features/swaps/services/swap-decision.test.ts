@@ -226,6 +226,17 @@ describe('Waits: what the swap does, a warning and never a gate (R9.3)', () => {
     expect(screen.stale).toBe(false);
   });
 
+  it('is stale, and still waiting, once the given shift is no longer the proposer\'s', async () => {
+    // A roster override took Ivo off B's 13.09 since he proposed: the swap no longer describes the schedule.
+    const off = await adminSwapSnapshotOf({
+      rosterOverrides: [calendarRosterOverrideRow('ro-off', TEAM_B, '2026-09-13', IVO, null)],
+    });
+    const screen = swapDecisionOf(sourcesOf(undefined, {}, off), 'swap-1', NOW);
+
+    expect(screen.kind).toBe(SWAP_SCREEN_WAITING);
+    expect(waitingOf(screen)).toMatchObject({ past: false, stale: true });
+  });
+
   it('reports what it newly leaves short of people, from the earlier date to the later, with the minimum set', async () => {
     // Ivo takes A's Dan on 14.09 in return, while on leave that day: A then has one at work of the two required.
     const minimum = await adminSwapSnapshotOf({ minimumMembers: 2 });

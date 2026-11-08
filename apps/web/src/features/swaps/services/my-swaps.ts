@@ -20,6 +20,7 @@ import {
   SWAP_PROPOSED,
   SWAP_REJECTED,
   SWAP_WITHDRAWN,
+  swapLastDateOf,
   swapOpen,
   swapStatusOf,
   type SwapStatus,
@@ -39,7 +40,8 @@ import { formatIsoDate, isIsoDate } from '@/lib/i18n/format';
  * proposer or the addressee — an active admin reads every row of the
  * organization, so the filter applies to an admin too, and the parse still
  * refuses any row of anybody else. The card keeps every OPEN row, and a
- * CLOSED one while its given date is the organization's today or later.
+ * CLOSED one while its last date (the later of the given and the return
+ * date) is the organization's today or later.
  *
  * THE STATUS IS 0049's, DERIVED, NEVER STORED: open with no answer is
  * proposed; open and accepted waits for an admin; closed and declined is
@@ -440,8 +442,11 @@ function compareRows(left: MySwapRow, right: MySwapRow): number {
 
 /**
  * The card's rows (story 12.3): every OPEN swap of the viewer's, and a CLOSED
- * one while its given date is `today` or later; those that wait for the
- * viewer first, then the rest, soonest first.
+ * one while its LAST date (the later of the given and the return date) is
+ * `today` or later — so a decided two-way swap whose given date has passed
+ * stays listed while its return shift is ahead, as long as its notice links
+ * `/danas` (epic 12 retro, R5); those that wait for the viewer first, then the
+ * rest, soonest first.
  *
  *   - *Prihvati* and *Odbij* on a proposed swap, for the addressee — but
  *     *Prihvati* never on a stale or past one.
@@ -462,7 +467,7 @@ export function mySwapRowsOf(
   for (const swap of swaps) {
     const open = swapOpen(swap.status);
 
-    if (!open && swap.given.date < today) continue;
+    if (!open && swapLastDateOf(swap) < today) continue;
 
     const viewerIsAddressee = swap.addresseeId === viewerId;
     const colleagueId = viewerIsAddressee ? swap.proposerId : swap.addresseeId;
