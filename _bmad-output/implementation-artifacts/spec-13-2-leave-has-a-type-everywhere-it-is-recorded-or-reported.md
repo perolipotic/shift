@@ -73,6 +73,7 @@ No session can write a non-annual record until 13.2b, so every figure on screen 
 - AC 1 ("a radio card group chooses the type"): DEFERRED to 13.2b (PO split, 2026-11-08). See `deferred-work.md`.
 - AC 2 ("it raises a conflict"): met for every type. The UI keeps *Odsutnost u smjeni* and never says *konflikt*.
 - AC 3 (member reads *odsutan*, never the type): DEFERRED to 13.2b (the wording). Unchanged here: a member still reads only their own records (0028, 0030), and the catalog shows no person.
+- AC 4 ("one for the rest"): NARROWED. The *Ostala odsutnost* column is shown only when the organization has a non-drawing type (PO Q4, 2026-11-08; amendment approved by the PO 2026-11-09).
 - AC 5: NARROWED to UX-DR17 and its DESIGN.md / EXPERIENCE.md lines. UX-DR12, 47 and 50 go to 13.2b.
 
 </frozen-after-approval>
