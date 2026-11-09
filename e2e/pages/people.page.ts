@@ -598,7 +598,9 @@ export class PeoplePage extends BasePage {
       .or(this.leaveDialog)
       .locator('dl > div')
       .filter({ has: this.page.getByRole('term').getByText(label, { exact: true }) })
-      .getByRole('definition');
+      .getByRole('definition')
+      // Story 13.2b: *Bilo* and *Sada* add the type as a second definition; the figure is the first.
+      .first();
   }
 
   /** *Upiši godišnji* in the leave card's header (story 7.12): it opens the record dialog. */
