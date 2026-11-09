@@ -109,7 +109,8 @@ import {
  * THE ABSENCE TYPES (story 13.2). Every absence type of the organization — a
  * name and whether it draws down the allowance, nothing else — embedded as
  * the hour bands are, so *Sati* names its leave columns from this same
- * snapshot and adds no read. Each row is
+ * snapshot and adds no read; since 13.2b the leave dialog, the request form,
+ * the decision screen and *Danas* choose and name types from it too. Each row is
  * `@/features/absence-types/services/list`'s `absenceTypeRowOf`, its
  * `organization_id` the same tripwire. Every active member reads them (0053).
  * An absence type write invalidates `CALENDAR_KEY` too.
@@ -314,8 +315,10 @@ export interface CalendarSnapshot {
   /**
    * Every absence type of the organization (story 13.2), annual leave first,
    * then by name in Croatian collation. A fresh read always sets it; it is
-   * ABSENT on a snapshot cached before 13.2, which *Sati* then refuses until
-   * it is read again. Only *Sati* reads it, through
+   * ABSENT on a snapshot cached before 13.2, which every surface reading it
+   * refuses until it is read again. *Sati* reads it, and since 13.2b the
+   * leave dialog, the request form, the decision screen, the viewer's own
+   * requests and *Danas* name and choose types from it — always through
    * {@link absenceTypesOfCalendar}, never directly.
    */
   readonly absenceTypes?: readonly AbsenceTypeRow[];
@@ -428,7 +431,7 @@ export function minimumOfCalendar(calendar: CalendarSnapshot): number | null {
  * 13.2, which carries none: *Sati* is then unavailable until it is read
  * again, never a guess at which leave draws.
  */
-export function absenceTypesOfCalendar(calendar: CalendarSnapshot): readonly AbsenceTypeRow[] | null {
+export function absenceTypesOfCalendar(calendar: Pick<CalendarSnapshot, 'absenceTypes' | 'timeZone'>): readonly AbsenceTypeRow[] | null {
   const types = (calendar as { readonly absenceTypes?: unknown }).absenceTypes;
 
   if (!Array.isArray(types)) return null;

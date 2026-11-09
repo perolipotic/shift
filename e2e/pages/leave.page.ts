@@ -1,6 +1,6 @@
 import type { Locator } from '@playwright/test';
 
-import { escapeRegExp, fill, hr } from '../utils/i18n.ts';
+import { ANNUAL_LEAVE_COLUMN, escapeRegExp, fill, hr } from '../utils/i18n.ts';
 import { BasePage } from './base.page.ts';
 import { FilterBarParts } from './filter-bar.ts';
 import { sortControlIn, sortOptionIn, sortPickerIn } from './sort-control.ts';
@@ -188,10 +188,26 @@ export class LeavePage extends BasePage {
     return this.page.getByRole('button', { name: request.submit, exact: true });
   }
 
-  /** Enters od and do on the request form. */
+  /** The type card named `name`, exactly, on the request form (story 13.2b). */
+  requestTypeCard(name: string): Locator {
+    return this.requestTypeGroup.getByRole('radio').filter({ has: this.page.getByText(name, { exact: true }) });
+  }
+
+  /** The request form's absence type group (story 13.2b), named by its label. */
+  get requestTypeGroup(): Locator {
+    return this.page.getByRole('radiogroup', { name: request.type, exact: true });
+  }
+
+  /**
+   * Enters od and do on the request form. STORY 13.2b: when no type is chosen
+   * yet, annual leave is, by its seeded name (every organization holds it).
+   */
   async enterRequest(from: string, to: string): Promise<void> {
     await this.requestFrom.fill(from);
     await this.requestTo.fill(to);
+    if ((await this.requestTypeGroup.getByRole('radio', { checked: true }).count()) === 0) {
+      await this.requestTypeCard(ANNUAL_LEAVE_COLUMN).check();
+    }
   }
 
   /** *Moji zahtjevi za godišnji*: the list of the member's own requests. */

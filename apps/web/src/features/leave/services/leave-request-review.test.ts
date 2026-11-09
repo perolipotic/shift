@@ -165,6 +165,48 @@ function readyOf(preview: ReviewPreview): Extract<ReviewPreview, { kind: typeof 
 }
 
 describe('a pending request', () => {
+  // STORY 13.2b: the request's own type, named as a fact and previewed by.
+  it("names the request's type, and previews a non-drawing one by its flag: the balance after it the balance now", () => {
+    const annual = pendingOf(leaveRequestReviewOf(sourcesOf(), REQUEST, NOW));
+
+    expect(annual.facts.typeName).toBe('Godišnji odmor');
+    expect(readyOf(annual.preview).drawsAllowance).toBe(true);
+
+    const sick = { id: 'type-sick', organizationId: snapshot.organizationId, name: 'Bolovanje', drawsAllowance: false };
+    const typed = { ...snapshot, absenceTypes: [...(snapshot.absenceTypes ?? []), sick] };
+    const review = pendingOf(
+      leaveRequestReviewOf(
+        sourcesOf({
+          calendar: { snapshot: typed, loading: false },
+          request: answered([{ ...requestRow(), absence_type_id: 'type-sick' }]),
+        }),
+        REQUEST,
+        NOW,
+      ),
+    );
+    const preview = readyOf(review.preview);
+
+    expect(review.facts.typeName).toBe('Bolovanje');
+    expect(preview.drawsAllowance).toBe(false);
+    expect(preview.figures.costDays).toBe(readyOf(annual.preview).figures.costDays);
+    expect(preview.figures.balanceAfterDays).toBe(preview.figures.balanceDays);
+    expect(preview.inYearDays).toBeNull();
+    // Every type collides: approval's collisions are the same.
+    expect(preview.conflicts).toEqual(readyOf(annual.preview).conflicts);
+  });
+
+  it('is unavailable over a snapshot with no type catalog, or for a request of a type the catalog lacks', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { absenceTypes: _types, ...cached } = snapshot;
+
+    expect(
+      leaveRequestReviewOf(sourcesOf({ calendar: { snapshot: cached as CalendarSnapshot, loading: false } }), REQUEST, NOW).kind,
+    ).toBe(REVIEW_UNAVAILABLE);
+    expect(
+      leaveRequestReviewOf(sourcesOf({ request: answered([{ ...requestRow(), absence_type_id: 'type-gone' }]) }), REQUEST, NOW).kind,
+    ).toBe(REVIEW_UNAVAILABLE);
+  });
+
   it('names who asked and the range, with the admin leave dialog\'s figures for that range', () => {
     const review = pendingOf(leaveRequestReviewOf(sourcesOf(), REQUEST, NOW));
     const preview = readyOf(review.preview);
@@ -183,7 +225,7 @@ describe('a pending request', () => {
 
     if (base.kind !== 'ready') throw new Error('base not ready');
 
-    const dialog = leavePreviewStateOf(base.input, '2026-09-10', '2026-09-15');
+    const dialog = leavePreviewStateOf(base.input, '2026-09-10', '2026-09-15', { id: ANNUAL_LEAVE_ID, drawsAllowance: true });
 
     if (dialog.kind !== LEAVE_PREVIEW_READY) throw new Error('dialog not ready');
 

@@ -20,6 +20,7 @@ import {
   leaveListFailureOf,
   leaveRefusalMessageKey,
   leaveRemovePromptMessageKey,
+  leaveTypeNameOf,
   replacementLinesShown,
   type ReplacementGuard,
 } from '@/features/leave/services/leave-section';
@@ -119,6 +120,10 @@ export function MemberLeaveRecords({ leave }: { readonly leave: MemberLeave }): 
           >
             <div className="grid min-w-0 gap-0.5">
               <span className="text-sm font-medium tabular-nums">{row.label}</span>
+              {/* STORY 13.2b: the record's type, a fact for the admin; the card is unavailable when it is unknown. */}
+              <span className="break-words text-xs text-muted-foreground">
+                {leaveTypeNameOf(leave.absenceTypes, row.record.absenceTypeId)}
+              </span>
               <span className="text-xs text-muted-foreground tabular-nums">
                 {t('count.days', { count: row.costDays })}
               </span>

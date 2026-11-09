@@ -3176,11 +3176,76 @@ describe('the access-control migration', () => {
     expect((read.match(/organization_id = nullif/g) ?? []).length, 'the catalog read does not pin the tenant').toBe(1);
     expect(read, 'the catalog read does not re-read active state').toMatch(/where access\.is_active\s*\)/);
     expect(read, 'the catalog read is still admin-only').not.toMatch(/member_role/);
-    // 13.1: no session writes a leave record's type until 13.2b carries it
-    // through amend and approval.
-    expect(statements, 'a session may write a leave record\'s type').not.toMatch(
-      /grant[^;]*\babsence_type_id\b[^;]*on table public\.leave_records\b/i,
+    // 13.1 kept a leave record's type unwritable until 13.2b (0054) carries
+    // it through amend and approval; the grant is 0054's alone.
+    expect(
+      [...statements.matchAll(/grant[^;]*\babsence_type_id\b[^;]*on table public\.leave_records\b[^;]*;/gi)].length,
+      'a leave record\'s type is granted other than once (0054)',
+    ).toBe(1);
+  });
+
+  it('lets a session name the type of a record and a request, and carries it through approval and amend (story 13.2b)', () => {
+    // STORY 13.2b (0054): the write side. Source text; what each write does
+    // is `test/rls-isolation.test.ts`, which runs in CI.
+    const annual = "'00000000-0000-0000-0000-000000000001'::uuid";
+    const migration = stripLineComments(
+      readFileSync(join(supabaseRoot, 'migrations', '0054_absence_type_writes.sql'), 'utf8'),
     );
+    expect(migration, 'an admin may not name a record\'s type').toMatch(
+      /grant insert \(absence_type_id\) on table public\.leave_records to authenticated;/,
+    );
+    expect(migration, 'a member may not name a request\'s type').toMatch(
+      /grant insert \(absence_type_id\) on table public\.leave_requests to authenticated;/,
+    );
+    expect(migration, 'the request type is not annual leave by default').toContain(
+      `alter table public.leave_requests\n  add column absence_type_id uuid not null default ${annual};`,
+    );
+    expect(migration, 'a request may name another tenant\'s type, or cascades').toMatch(
+      /add constraint leave_requests_absence_type_fkey\s+foreign key \(organization_id, absence_type_id\)\s+references public\.absence_types \(organization_id, id\);/,
+    );
+    expect(migration).toMatch(/create index \w+\s+on public\.leave_requests \(organization_id, absence_type_id\);/);
+
+    const decide = /create or replace function public\.decide_leave_request\(p_request_id uuid, p_outcome text\)[\s\S]*?\$\$;/.exec(migration)?.[0] ?? '';
+    expect(decide, 'decide_leave_request is not re-created').not.toBe('');
+    expect(decide, 'the approval does not read the request\'s type').toMatch(
+      /returning r\.member_id, r\.during, r\.absence_type_id\s+into requested_member, requested_during, requested_type;/,
+    );
+    expect(decide, 'the approval does not copy the request\'s type').toMatch(
+      /insert into public\.leave_records \(organization_id, member_id, during, absence_type_id\)\s+values \(claimed, requested_member, requested_during, requested_type\)/,
+    );
+    expect(decide, 'the approval lost its named overlap refusal').toMatch(
+      /errcode = 'exclusion_violation',\s+message = 'LEAVE_REQUEST_APPROVAL_OVERLAPS_LEAVE'/,
+    );
+    expect(decide, 'the approval lost 0046\'s recipient rules').toMatch(/perform private\.notify_members\(/);
+
+    expect(migration, 'the three-argument amend is left beside the new one').toContain(
+      'drop function public.amend_leave_record(uuid, date, date);',
+    );
+    const amend = /create function public\.amend_leave_record\([\s\S]*?\$\$;/.exec(migration)?.[0] ?? '';
+    expect(amend, 'amend_leave_record is not recreated').not.toBe('');
+    expect(amend, 'the amend does not take an optional type').toMatch(
+      /p_record_id uuid,\s+p_from date,\s+p_to date,\s+p_absence_type_id uuid default null\s*\)/,
+    );
+    expect(amend, 'a null type does not keep the record\'s own').toContain('coalesce(p_absence_type_id, amended_type)');
+    expect(amend).toMatch(/security definer/);
+    expect(amend).toMatch(/set search_path = ''/);
+    expect(amend, 'the amend lost its lock').toMatch(/pg_catalog\.pg_advisory_xact_lock\(/);
+    expect(amend).toMatch(/errcode = 'insufficient_privilege',\s+message = 'LEAVE_RECORD_AMEND_REFUSED'/);
+    expect(amend).toMatch(/errcode = 'no_data_found',\s+message = 'LEAVE_RECORD_NOT_LIVE'/);
+    expect(amend, 'the amend lost 0043\'s one-notification flag').toMatch(
+      /set_config\('shift\.notify_suppress', 'amend', true\)/,
+    );
+    expect(amend, 'the amend no longer releases resolutions off the new range').toMatch(
+      /and not \(c\.date <@ replacement_during\)/,
+    );
+    for (const role of ['public', 'anon', 'service_role']) {
+      expect(migration).toContain(`revoke execute on function public.amend_leave_record(uuid, date, date, uuid) from ${role};`);
+    }
+    expect(migration).toContain('grant execute on function public.amend_leave_record(uuid, date, date, uuid) to authenticated;');
+
+    expect(migration, '13.2b takes a trigger').not.toMatch(/create (or replace )?trigger/i);
+    expect(migration, '13.2b takes a check on the type').not.toMatch(/\bcheck\s*\(/i);
+    expect(migration, '13.2b takes a policy').not.toMatch(/create policy/i);
   });
 
   it('recreates both leave reads to carry each record\'s type and its drawing flag, and changes nothing else (story 13.2)', () => {

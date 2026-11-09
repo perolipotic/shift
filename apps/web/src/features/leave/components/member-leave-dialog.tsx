@@ -6,6 +6,7 @@ import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogTitle } fr
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
+import { RadioCard, RadioGroup } from '@/components/ui/radio-group';
 import { LeaveConflictLines } from '@/features/leave/components/leave-conflict-lines';
 import { ShortStaffedBlock } from '@/features/staffing/components/short-staffed-block';
 import { LeaveReplacementLines } from '@/features/leave/components/member-leave-records';
@@ -20,14 +21,18 @@ import {
   LEAVE_READY,
   LEAVE_REASON_ID,
   LEAVE_TO_FIELD,
+  LEAVE_TYPE_FIELD,
+  LEAVE_TYPE_LABEL_ID,
   leaveDescribedByOf,
   leaveFormFailureOf,
-  leaveInYearChargeOf,
   leaveOverlapNoteShown,
+  leavePreviewInYearOf,
   leaveRangeValuesOf,
   leaveReasonMessageKey,
   leaveRefusalMessageKey,
   leaveRefusalValuesOf,
+  leaveTypeDrawsMessageKey,
+  leaveTypeNameOf,
 } from '@/features/leave/services/leave-section';
 import { t } from '@/lib/i18n';
 import { useWriteGate } from '@/lib/offline/use-write-gate';
@@ -39,7 +44,9 @@ import { useWriteGate } from '@/lib/offline/use-write-gate';
  * shows what the range costs, the balance after it and the conflicts it
  * creates — and, for an amend, *Bilo / Sada* and which conflicts clear and
  * which stay. None of it gates the save, an over-balance range included
- * (UX-DR23).
+ * (UX-DR23). Story 13.2b adds the absence type between the dates and the
+ * preview (UX-DR47, UX-DR50): one radio card per type of the organization,
+ * none preselected for a new record, the record's own for an amend.
  *
  * Every figure, reason and message is `@/features/leave/services/leave-section`'s
  * or `leave-conflicts`'s decision; this renders them. Each opening draws its
@@ -59,6 +66,9 @@ export function MemberLeaveDialog({ leave }: { readonly leave: MemberLeave }): R
     formDisabled,
     fromField,
     toField,
+    typeField,
+    absenceTypes,
+    typeId,
     memberName,
     recordDialog,
     amendDialog,
@@ -84,12 +94,16 @@ export function MemberLeaveDialog({ leave }: { readonly leave: MemberLeave }): R
 
     if (row === undefined) return null;
 
+    const typeName = leaveTypeNameOf(absenceTypes, row.record.absenceTypeId);
+
     return (
       <div className="grid min-w-0 gap-1">
         <dt className="text-xs text-muted-foreground">{t('ljudi.leaveRecord.before')}</dt>
         <dd className="break-words text-base font-semibold tabular-nums">
           {t('ljudi.leaveRecord.rangeCost', { from: row.from, to: row.to, cost: t('count.days', { count: row.costDays }) })}
         </dd>
+        {/* STORY 13.2b: the type the record holds, a fact for the admin. */}
+        {typeName === null ? null : <dd className="break-words text-sm text-muted-foreground">{typeName}</dd>}
       </div>
     );
   }
@@ -114,9 +128,11 @@ export function MemberLeaveDialog({ leave }: { readonly leave: MemberLeave }): R
     }
 
     const figures = preview.preview;
-    const inYear = leaveInYearChargeOf(figures);
+    // STORY 13.2b: a type that does not draw states no in-year part; its own line says why.
+    const inYear = leavePreviewInYearOf(preview);
     const cost = t('count.days', { count: figures.costDays });
     const range = leaveRangeValuesOf(preview.range);
+    const afterTypeName = leaveTypeNameOf(absenceTypes, preview.type.id);
 
     return (
       <div className="grid min-w-0 gap-2">
@@ -130,6 +146,10 @@ export function MemberLeaveDialog({ leave }: { readonly leave: MemberLeave }): R
             <dd className="break-words text-base font-semibold tabular-nums">
               {target === null ? cost : t('ljudi.leaveRecord.rangeCost', { from: range.from, to: range.to, cost })}
             </dd>
+            {/* STORY 13.2b: *Sada* names the chosen type as *Bilo* names the record's, so a type-only amend reads as one. */}
+            {target === null || afterTypeName === null ? null : (
+              <dd className="break-words text-sm text-muted-foreground">{afterTypeName}</dd>
+            )}
           </div>
           <div className="grid min-w-0 gap-1">
             <dt className="text-xs text-muted-foreground">{t('ljudi.leaveRecord.balanceAfter')}</dt>
@@ -137,6 +157,7 @@ export function MemberLeaveDialog({ leave }: { readonly leave: MemberLeave }): R
           </div>
         </dl>
         {inYear === null ? null : <p className="text-sm">{t('ljudi.leaveRecord.costInYear', { count: inYear })}</p>}
+        {preview.type.drawsAllowance ? null : <p className="text-sm">{t('ljudi.leaveRecord.balanceUnchanged')}</p>}
         {leaveOverlapNoteShown(figures, leaveFailure) ? (
           <p className="text-sm font-medium">{t('ljudi.leaveRecord.overlap')}</p>
         ) : null}
@@ -149,6 +170,40 @@ export function MemberLeaveDialog({ leave }: { readonly leave: MemberLeave }): R
         <LeaveConflictLines conflicts={conflicts} amend={target !== null} />
         {/* STORY 11.2: the shifts the range would newly leave short of people, never a gate. */}
         <ShortStaffedBlock report={shortStaffed} />
+      </div>
+    );
+  }
+
+  /**
+   * The absence type (story 13.2b, UX-DR50): one radio card per type, in the
+   * snapshot's order, each named by its stored name and whether it draws.
+   * Required, a single type too; marked and described by the reason after a
+   * save refused for want of one.
+   */
+  function renderTypes(): ReactNode {
+    if (absenceTypes === null) return null;
+
+    return (
+      <div className="grid min-w-0 gap-3">
+        <p id={LEAVE_TYPE_LABEL_ID} className="text-sm font-semibold leading-none">
+          {t('ljudi.leaveRecord.type')}
+        </p>
+        <RadioGroup
+          value={typeId}
+          onValueChange={leave.chooseType}
+          required
+          aria-labelledby={LEAVE_TYPE_LABEL_ID}
+          aria-invalid={invalidField === LEAVE_TYPE_FIELD}
+          aria-describedby={leaveDescribedByOf(LEAVE_TYPE_FIELD, leaveFailure, invalidField)}
+          className="grid-cols-1 sm:grid-cols-2"
+        >
+          {absenceTypes.map((type, index) => (
+            <RadioCard key={type.id} ref={index === 0 ? typeField : undefined} value={type.id}>
+              <span className="break-words text-sm font-semibold">{type.name}</span>
+              <span className="break-words text-sm text-muted-foreground">{t(leaveTypeDrawsMessageKey(type))}</span>
+            </RadioCard>
+          ))}
+        </RadioGroup>
       </div>
     );
   }
@@ -219,6 +274,7 @@ export function MemberLeaveDialog({ leave }: { readonly leave: MemberLeave }): R
               />
             </div>
           </div>
+          {renderTypes()}
           <div id={LEAVE_PREVIEW_ID} aria-live="polite" className="grid min-w-0 gap-2">
             {renderPreview(shown.target)}
           </div>

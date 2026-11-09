@@ -7,8 +7,10 @@ import { isIsoDate, previousIsoDate } from '@/lib/i18n/format';
  * (story 5.2a) — the leave feature's write module, in a `.ts` that renders
  * nothing (AD-15).
  *
- * WRITING IS 0028's PLAIN INSERT of the three facts: the organization, the
- * member and the inclusive range, sent as a `daterange` literal `[from,to]`.
+ * WRITING IS 0028's PLAIN INSERT of the facts: the organization, the member
+ * and the inclusive range, sent as a `daterange` literal `[from,to]`, and
+ * (story 13.2b, 0054) the absence type the admin chose. Another tenant's type
+ * is 0052's composite key's `23503`, an ordinary {@link LEAVE_FAILED}.
  * `created_by` and `created_at` come from their defaults, and the insert
  * policy admits an active admin of the claimed organization alone.
  *
@@ -136,7 +138,12 @@ export interface LeaveRecordRpc {
   ): PromiseLike<LeaveWriteAnswer>;
   rpc(
     fn: typeof AMEND_LEAVE_RECORD_FUNCTION,
-    args: { readonly p_record_id: string; readonly p_from: string; readonly p_to: string },
+    args: {
+      readonly p_record_id: string;
+      readonly p_from: string;
+      readonly p_to: string;
+      readonly p_absence_type_id: string;
+    },
   ): PromiseLike<LeaveAmendAnswer>;
 }
 
@@ -269,10 +276,11 @@ async function conflictOf(
 
 /**
  * Record leave for `memberId` from `from` to `to`, both `YYYY-MM-DD` and both
- * included. A date that is not a real calendar date is {@link LEAVE_FAILED}
- * without a request, so no malformed literal reaches the insert or the read.
- * A refused overlap answers {@link LEAVE_OVERLAP} with the earliest
- * conflicting record's dates when they can be read.
+ * included, of the absence type `absenceTypeId` (story 13.2b). A date that is
+ * not a real calendar date is {@link LEAVE_FAILED} without a request, so no
+ * malformed literal reaches the insert or the read. A refused overlap answers
+ * {@link LEAVE_OVERLAP} with the earliest conflicting record's dates when
+ * they can be read.
  */
 export async function recordLeave(
   table: LeaveTable,
@@ -280,6 +288,7 @@ export async function recordLeave(
   memberId: string,
   from: string,
   to: string,
+  absenceTypeId: string,
 ): Promise<LeaveWriteOutcome> {
   if (!isIsoDate(from) || !isIsoDate(to)) {
     console.error(LEAVE_FAILED, 'not a calendar date');
@@ -294,6 +303,7 @@ export async function recordLeave(
       organization_id: organizationId,
       member_id: memberId,
       during: rangeLiteralOf(from, to),
+      absence_type_id: absenceTypeId,
     });
   } catch (cause) {
     console.error(LEAVE_FAILED, cause);
@@ -384,8 +394,9 @@ export async function removeLeave(client: LeaveRecordRpc, recordId: string): Pro
 
 /**
  * Amend the leave record `recordId` of `memberId` to `from`–`to`, both
- * `YYYY-MM-DD` and both included: 0029's remove-and-insert in one
- * transaction, answering the replacement's id. A date that is not a real
+ * `YYYY-MM-DD` and both included, of the absence type `absenceTypeId` (story
+ * 13.2b, 0054; the record's own type when it is unchanged): 0029's
+ * remove-and-insert in one transaction, answering the replacement's id. A date that is not a real
  * calendar date is {@link LEAVE_FAILED} without a request. A refused overlap
  * answers {@link LEAVE_OVERLAP} with the earliest conflicting record's dates
  * when they can be read, never the amended record's; any refusal leaves the
@@ -407,6 +418,7 @@ export async function amendLeave(
   recordId: string,
   from: string,
   to: string,
+  absenceTypeId: string,
 ): Promise<LeaveAmendOutcome> {
   if (!isIsoDate(from) || !isIsoDate(to)) {
     console.error(LEAVE_FAILED, 'not a calendar date');
@@ -417,7 +429,12 @@ export async function amendLeave(
   let answered: LeaveAmendAnswer;
 
   try {
-    answered = await client.rpc(AMEND_LEAVE_RECORD_FUNCTION, { p_record_id: recordId, p_from: from, p_to: to });
+    answered = await client.rpc(AMEND_LEAVE_RECORD_FUNCTION, {
+      p_record_id: recordId,
+      p_from: from,
+      p_to: to,
+      p_absence_type_id: absenceTypeId,
+    });
   } catch (cause) {
     console.error(LEAVE_FAILED, cause);
 

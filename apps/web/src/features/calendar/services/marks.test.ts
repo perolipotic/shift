@@ -185,7 +185,7 @@ describe('the worked example, on the admin grid', () => {
     expect(marked).toEqual(COLLIDING_DATES.map((date) => [a, date]));
   });
 
-  it('draws ⚠, the ring and the hatch, and the legend shows Čeka odluku and Godišnji', () => {
+  it('draws ⚠, the ring and the hatch, and the legend shows Čeka odluku and Odsutnost', () => {
     const month = monthOf(pilot, [WORKED]);
     const treatment = modifierTreatmentOf(gridCellOf(month, teamOf(PILOT, 0), '2026-09-10').modifiers);
 
@@ -194,7 +194,7 @@ describe('the worked example, on the admin grid', () => {
     expect(treatment.glyphs).toHaveLength(2);
     expect(legendOf(month.rows.flatMap((row) => row.cells)).map((modifier) => translate(modifierMessageKey(modifier)))).toEqual([
       'Čeka odluku',
-      'Godišnji',
+      'Odsutnost',
     ]);
   });
 
@@ -203,7 +203,7 @@ describe('the worked example, on the admin grid', () => {
     const labels = gridCellLabelsOf(month, translate);
     const row = month.rows.findIndex((one) => one.date === '2026-09-10');
 
-    expect(labels[row]?.[0]).toBe('četvrtak 10.09., Smjena A, Dan, 07:00–19:00, Čeka odluku, Godišnji');
+    expect(labels[row]?.[0]).toBe('četvrtak 10.09., Smjena A, Dan, 07:00–19:00, Čeka odluku, Odsutnost');
   });
 
   it.each([
@@ -285,7 +285,7 @@ describe("the admin's member-centric views", () => {
         },
         translate,
       ),
-    ).toBe('subota 12.09., Smjena A, Slobodno, Godišnji');
+    ).toBe('subota 12.09., Smjena A, Slobodno, Odsutnost');
   });
 });
 
@@ -325,7 +325,7 @@ describe('an overridden cell that collides', () => {
     expect(treatment.className).toBe('modifier-ring-conflict-overridden modifier-hatch-leave');
     expect(treatment.glyphText).toBe('⚠✎');
     expect(gridCellLabelsOf(month, translate)[row]?.[0]).toBe(
-      'subota 12.09., Smjena A, Dan, 07:00–19:00, Čeka odluku, Izmijenjeno, Godišnji',
+      'subota 12.09., Smjena A, Dan, 07:00–19:00, Čeka odluku, Izmijenjeno, Odsutnost',
     );
   });
 });

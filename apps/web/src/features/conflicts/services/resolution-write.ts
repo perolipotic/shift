@@ -134,7 +134,7 @@ export interface ResolutionReplaceRpc {
 /** What a replacement adds to the target: who is put on, and why. */
 export interface ReplacementTarget extends ResolutionTarget {
   readonly replacementId: string;
-  /** Generated through `t()` by the caller: "Zamjena za {member} (godišnji)". */
+  /** Generated through `t()` by the caller: "Zamjena za {member} (odsutnost)" (story 13.2b: a noun, never the type, since a member may read it). */
   readonly reason: string;
 }
 

@@ -1,6 +1,10 @@
 import { randomBytes } from 'node:crypto';
 
 import {
+  ANNUAL_LEAVE_NAME,
+  E2E_ABSENCE_TYPE_PREFIX,
+  cleanUpAbsenceTypesInSql,
+  holdAbsenceTypes,
   holdRotation,
   leaveYearStartOf,
   removeLeaveRecordsInSql,
@@ -11,6 +15,7 @@ import {
   seedConflictResolution,
   seedExtraTeam,
   seedLeaveMember,
+  seedAbsenceType,
   seedLeaveRecord,
   seedTeamRotation,
   type RotationHold,
@@ -74,6 +79,11 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * an amend *Bilo / Sada* and which conflicts clear and which stay — and a
  * removal says how many unresolved conflicts it clears. A landed write
  * closes its dialog and returns focus to the opener; a cancel sends nothing.
+ *
+ * Story 13.2b: the dialog chooses the absence type, a radio card per type
+ * with none preselected. A non-drawing type's record previews and saves its
+ * days without changing the balance and its row names the type; an amend
+ * back to annual leave over the same range charges them.
  */
 
 test.use({ storageState: ADMIN_STATE });
@@ -95,6 +105,14 @@ let seed: SeededRotation | null = null;
  */
 let written: { slug: string; members: string[]; teams: string[] } = { slug: '', members: [], teams: [] };
 
+/**
+ * STORY 13.2b: the absence-types hold of a test that adds a type of its own,
+ * and the names it added — removed, with any leave of them, after the
+ * members and before this hold is released, last.
+ */
+let typesHold: RotationHold | null = null;
+let typesAdded: { slug: string; names: string[] } = { slug: '', names: [] };
+
 test.afterEach(async () => {
   try {
     if (seed !== null) await removeSeededRotation(seed);
@@ -107,8 +125,19 @@ test.afterEach(async () => {
       for (const id of own.members) await removeLeaveMemberInSql(own.slug, id);
       for (const id of own.teams) await removeTeamInSql(own.slug, id);
     } finally {
-      await hold?.release();
-      hold = null;
+      try {
+        await hold?.release();
+        hold = null;
+      } finally {
+        const added = typesAdded;
+        typesAdded = { slug: '', names: [] };
+        try {
+          if (added.names.length > 0) await cleanUpAbsenceTypesInSql(added.slug, added.names);
+        } finally {
+          await typesHold?.release();
+          typesHold = null;
+        }
+      }
     }
   }
 });
@@ -917,4 +946,68 @@ test('opening a removal re-reads the replacements, so one written since the page
   await peoplePage.removeLeaveButton(record.from, record.to).click();
   await expect(confirm).toBeVisible();
   await expect(confirm.getByRole('listitem')).toHaveText([peoplePage.replacementStaysLine(replacement.name, team.name, today)]);
+});
+
+test('records leave of a type that does not draw, which leaves the balance, and amends it back to annual leave (13.2b)', async ({
+  peoplePage,
+  fixture,
+}) => {
+  test.slow(); // two shared locks (`holdAbsenceTypes`, then `holdRotation`, as the hours specs take them)
+  typesHold = holdAbsenceTypes(fixture.slug);
+  await typesHold.ready;
+  const name = `${E2E_ABSENCE_TYPE_PREFIX} ${randomBytes(3).toString('hex')}`;
+  typesAdded = { slug: fixture.slug, names: [name] };
+  await seedAbsenceType(fixture.slug, name, false);
+  const { member, today, last, cost } = await seeded(fixture.slug, () => 20);
+  expect(cost, 'the range holds a working day').toBeGreaterThan(0);
+
+  await peoplePage.gotoMember(member.id);
+  await peoplePage.recordLeaveButton.click();
+  await expect(peoplePage.leaveRecordDialog).toBeVisible();
+  await peoplePage.leaveFromInput.fill(today);
+  await peoplePage.leaveToInput.fill(last);
+
+  // NOTHING PRESELECTED: the reason stands in for the preview, and Spremi marks and focuses the group.
+  await expect(peoplePage.leaveTypeGroup.getByRole('radio', { checked: true })).toHaveCount(0);
+  await expect(peoplePage.leaveTypeGroup.getByRole('radio').first()).toContainText(ANNUAL_LEAVE_NAME);
+  await expect(peoplePage.leavePreviewRegion).toHaveText(leave.typeUnchosen);
+  await peoplePage.saveLeaveButton.click();
+  await expect(peoplePage.leaveTypeGroup).toHaveAttribute('aria-invalid', 'true');
+  await expect(peoplePage.leaveTypeGroup.getByRole('radio').first()).toBeFocused();
+  await expect(peoplePage.leaveRecordDialog).toBeVisible();
+  await expect(peoplePage.leaveRecordRows).toHaveCount(0);
+
+  // A TYPE THAT DOES NOT DRAW: its days, the balance after it the balance now, and the line that says so.
+  await peoplePage.leaveTypeCard(name).check();
+  await expect(peoplePage.leaveTypeCard(name)).toContainText(hr.organization.absenceTypes.doesNotDraw);
+  await expect(peoplePage.leaveFigure(leave.cost)).toHaveText(plural(days, cost));
+  await expect(peoplePage.leaveFigure(leave.balanceAfter)).toHaveText(plural(days, 20));
+  await expect(peoplePage.leavePreviewRegion.getByText(leave.balanceUnchanged, { exact: true })).toBeVisible();
+  // Every type collides: the conflicts are the same as annual leave's.
+  await expect(peoplePage.leavePreviewRegion.getByText(plural(leave.conflictsCreated, cost), { exact: true })).toBeVisible();
+  await peoplePage.saveLeaveButton.click();
+  await expect(peoplePage.leaveDialog).toHaveCount(0);
+  await expect(peoplePage.leaveRecordRow(today, last)).toContainText(name);
+  await expect(peoplePage.leaveFigure(leave.used)).toHaveText(plural(days, 0));
+  await expect(peoplePage.leaveFigure(leave.balance)).toHaveText(plural(days, 20));
+
+  // THE AMEND starts on the record's type; the same range of the same type is no change.
+  await peoplePage.amendLeaveButton(today, last).click();
+  await expect(peoplePage.leaveAmendDialog(today, last)).toBeVisible();
+  await expect(peoplePage.leaveTypeCard(name)).toBeChecked();
+  await expect(peoplePage.leavePreviewRegion).toHaveText(leave.unchanged);
+
+  // A TYPE-ONLY AMEND back to annual leave: valid, and the days are charged.
+  await peoplePage.leaveTypeCard(ANNUAL_LEAVE_NAME).check();
+  await expect(peoplePage.leaveFigure(leave.balanceAfter)).toHaveText(plural(days, 20 - cost));
+  await expect(peoplePage.leavePreviewRegion.getByText(leave.balanceUnchanged, { exact: true })).toHaveCount(0);
+  await peoplePage.amendSaveButton.click();
+  await expect(peoplePage.leaveDialog).toHaveCount(0);
+  await expect(peoplePage.leaveRecordRow(today, last)).toContainText(ANNUAL_LEAVE_NAME);
+  await expect(peoplePage.leaveRecordRow(today, last)).not.toContainText(name);
+  await expect(peoplePage.leaveFigure(leave.used)).toHaveText(plural(days, cost));
+  await expect(peoplePage.leaveFigure(leave.balance)).toHaveText(plural(days, 20 - cost));
+  // NOTHING IS LEFT BEHIND: the annual replacement is the seeded member's, and
+  // `afterEach` deletes the member with all their leave (`removeLeaveMemberInSql`)
+  // before the type cleanup deletes what names the E2E type.
 });

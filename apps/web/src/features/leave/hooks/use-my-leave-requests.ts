@@ -226,6 +226,9 @@ export function useMyLeaveRequests(leave: MyLeave) {
   /** Read the requests again, from the list's unavailable line's retry. */
   function retry(): void {
     void queryClient.invalidateQueries({ queryKey: MY_LEAVE_REQUESTS_KEY });
+    // STORY 13.2b: the list is unavailable, too, when the calendar snapshot's
+    // type catalog is missing or lacks a request's type: read it again as well.
+    void queryClient.invalidateQueries({ queryKey: CALENDAR_KEY });
   }
 
   return {

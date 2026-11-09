@@ -135,6 +135,9 @@ function readyOf(today: Today): TodayView {
 function caseSentenceOf(view: TodayView): string {
   if (view.todayCase.kind === CASE_DUTY) throw new Error('a duty states itself in its duty-block');
 
+  // STORY 13.2b: the leave case names today's type, as the card states it.
+  if (view.todayCase.kind === CASE_LEAVE) return t('danas.today.leave', { type: view.todayCase.typeName });
+
   return t(todayCaseMessageKey(view.todayCase.kind));
 }
 
@@ -204,8 +207,8 @@ describe("today's one case", () => {
     const view = readyOf(todayViewOf(pilot, [rowOf('leave-1', '2026-09-28', '2026-10-05')], noonOf('2026-10-01')));
 
     // 30.09. Dan, 01.10. Noć and 04.10. Dan cost 3.
-    expect(view.todayCase).toEqual({ kind: CASE_LEAVE, from: '28.09.2026', to: '04.10.2026', costDays: 3 });
-    expect(caseSentenceOf(view)).toBe('Danas si na godišnjem odmoru');
+    expect(view.todayCase).toEqual({ kind: CASE_LEAVE, from: '28.09.2026', to: '04.10.2026', typeName: 'Godišnji odmor', costDays: 3 });
+    expect(caseSentenceOf(view)).toBe('Danas: Godišnji odmor');
     expect(view.returning).toBe(true);
     expect(view.next).toMatchObject({ date: '2026-10-05', inDays: 4, name: 'Noć', text: '05.10.2026' });
     expect(
@@ -225,8 +228,41 @@ describe("today's one case", () => {
     const view = readyOf(todayViewOf(pilot, rows, noonOf('2026-10-01')));
 
     // 1 (30.09.) + 2 (01.10., 04.10.).
-    expect(view.todayCase).toEqual({ kind: CASE_LEAVE, from: '28.09.2026', to: '04.10.2026', costDays: 3 });
+    expect(view.todayCase).toEqual({ kind: CASE_LEAVE, from: '28.09.2026', to: '04.10.2026', typeName: 'Godišnji odmor', costDays: 3 });
     expect(view.next).toMatchObject({ date: '2026-10-05', inDays: 4 });
+  });
+
+  // STORY 13.2b: the type of today's record, and only drawing records cost.
+  it("names a non-drawing record's type, and states no cost for it, while a drawing one joined to it still costs", () => {
+    const sick = { id: 'type-sick', organizationId: pilot.organizationId, name: 'Bolovanje', drawsAllowance: false };
+    const typed = { ...pilot, absenceTypes: [...(pilot.absenceTypes ?? []), sick] } as CalendarSnapshot;
+    const sickRow = { ...rowOf('leave-1', '2026-09-28', '2026-10-02'), absence_type_id: 'type-sick', draws_allowance: false };
+    const alone = readyOf(todayViewOf(typed, [sickRow], noonOf('2026-10-01')));
+
+    expect(alone.todayCase).toEqual({ kind: CASE_LEAVE, from: '28.09.2026', to: '01.10.2026', typeName: 'Bolovanje', costDays: 0 });
+    expect(caseSentenceOf(alone)).toBe('Danas: Bolovanje');
+
+    // Back to back with annual leave from 02.10.: one absence, today's type named, the annual days alone cost.
+    const joined = readyOf(todayViewOf(typed, [sickRow, rowOf('leave-2', '2026-10-02', '2026-10-05')], noonOf('2026-10-01')));
+    const annualOnly = readyOf(todayViewOf(pilot, [rowOf('leave-2', '2026-10-02', '2026-10-05')], noonOf('2026-10-02')));
+
+    expect(joined.todayCase).toMatchObject({ kind: CASE_LEAVE, from: '28.09.2026', to: '04.10.2026', typeName: 'Bolovanje' });
+    if (joined.todayCase.kind !== CASE_LEAVE || annualOnly.todayCase.kind !== CASE_LEAVE) throw new Error('not leave');
+    expect(joined.todayCase.costDays).toBe(annualOnly.todayCase.costDays);
+  });
+
+  it('is unavailable, with a retry, on leave over a snapshot cached before 13.2 or a record of an unknown type', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { absenceTypes: _types, ...cached } = pilot;
+    const unknown = { ...rowOf('leave-1', '2026-09-28', '2026-10-02'), absence_type_id: 'type-gone', draws_allowance: false };
+
+    expect(todayViewOf(cached as CalendarSnapshot, [rowOf('leave-1', '2026-09-28', '2026-10-02')], noonOf('2026-10-01'))).toEqual({
+      kind: TODAY_UNAVAILABLE,
+      retryable: true,
+    });
+    expect(todayViewOf(pilot, [unknown], noonOf('2026-10-01'))).toEqual({ kind: TODAY_UNAVAILABLE, retryable: true });
+    // Off leave, no type is named, so the catalog is not needed.
+    expect(todayViewOf(cached as CalendarSnapshot, [], noonOf('2026-09-28')).kind).toBe(TODAY_READY);
   });
 
   it('keeps a record after a gap out of today’s absence', () => {
@@ -234,7 +270,7 @@ describe("today's one case", () => {
     const view = readyOf(todayViewOf(pilot, rows, noonOf('2026-10-01')));
 
     // 28.09.–01.10., then 02.10. free of leave, then 03.10.–04.10.
-    expect(view.todayCase).toEqual({ kind: CASE_LEAVE, from: '28.09.2026', to: '01.10.2026', costDays: 2 });
+    expect(view.todayCase).toEqual({ kind: CASE_LEAVE, from: '28.09.2026', to: '01.10.2026', typeName: 'Godišnji odmor', costDays: 2 });
   });
 
   it('names a next shift whose type has no times by its name alone', async () => {
@@ -947,6 +983,7 @@ describe("today's 24 h duty (story 6.2)", () => {
         kind: CASE_LEAVE,
         from: '06.10.2026',
         to: '08.10.2026',
+        typeName: 'Godišnji odmor',
         costDays: 1,
       });
     });
@@ -961,7 +998,7 @@ describe("today's 24 h duty (story 6.2)", () => {
       const ended = readyOf(todayViewOf(takenOver, rows, zagrebOf('2026-10-02', '07:00')));
 
       // 02.10. and 03.10. are Smjena A's Slobodno pair: the leave costs nothing.
-      expect(ended.todayCase).toEqual({ kind: CASE_LEAVE, from: '02.10.2026', to: '03.10.2026', costDays: 0 });
+      expect(ended.todayCase).toEqual({ kind: CASE_LEAVE, from: '02.10.2026', to: '03.10.2026', typeName: 'Godišnji odmor', costDays: 0 });
       expect(ended.returning).toBe(true);
     });
 
@@ -970,7 +1007,7 @@ describe("today's 24 h duty (story 6.2)", () => {
       const view = readyOf(todayViewOf(pilot, rows, zagrebOf('2026-10-06', '07:30')));
 
       // 08.10.'s Dan is the only working day it covers.
-      expect(view.todayCase).toEqual({ kind: CASE_LEAVE, from: '06.10.2026', to: '08.10.2026', costDays: 1 });
+      expect(view.todayCase).toEqual({ kind: CASE_LEAVE, from: '06.10.2026', to: '08.10.2026', typeName: 'Godišnji odmor', costDays: 1 });
       expect(view.returning).toBe(true);
     });
 

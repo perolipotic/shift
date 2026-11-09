@@ -17,6 +17,7 @@ import {
   DRAWS_OPTIONS,
   absenceTypeSavedMessageKey,
   absenceTypeWriteMessageKey,
+  drawsHintShown,
   drawsLocked,
   drawsValue,
   initialDrawsChoice,
@@ -27,6 +28,7 @@ import {
   ORGANIZATION_ABSENCE_TYPES_HEADING_ID,
   ORGANIZATION_ABSENCE_TYPE_ANNUAL_HINT_ID,
   ORGANIZATION_ABSENCE_TYPE_ANNUAL_REFUSED_DESCRIPTION,
+  ORGANIZATION_ABSENCE_TYPE_DRAWS_HINT_ID,
   ORGANIZATION_ABSENCE_TYPE_DIALOG_HEADING_ID,
   ORGANIZATION_ABSENCE_TYPE_DRAWS_FIELD_ID,
   ORGANIZATION_ABSENCE_TYPE_DRAWS_LABEL_ID,
@@ -184,8 +186,18 @@ function AbsenceTypeForm({
   const gate = useWriteGate();
   // Annual leave's locked choice is described by its hint, and by the
   // refusal after one; the other choices by the refusal only.
-  const refusedDescription = locked ? ORGANIZATION_ABSENCE_TYPE_ANNUAL_REFUSED_DESCRIPTION : ORGANIZATION_ABSENCE_TYPE_ERROR_ID;
-  const quietDescription = locked ? ORGANIZATION_ABSENCE_TYPE_ANNUAL_HINT_ID : undefined;
+  // STORY 13.2b (Q8): editing any other type, a static line says what changing its flag does.
+  const hinted = drawsHintShown(type);
+  const refusedDescription = locked
+    ? ORGANIZATION_ABSENCE_TYPE_ANNUAL_REFUSED_DESCRIPTION
+    : hinted
+      ? `${ORGANIZATION_ABSENCE_TYPE_DRAWS_HINT_ID} ${ORGANIZATION_ABSENCE_TYPE_ERROR_ID}`
+      : ORGANIZATION_ABSENCE_TYPE_ERROR_ID;
+  const quietDescription = locked
+    ? ORGANIZATION_ABSENCE_TYPE_ANNUAL_HINT_ID
+    : hinted
+      ? ORGANIZATION_ABSENCE_TYPE_DRAWS_HINT_ID
+      : undefined;
   const drawsDescription = failure === null ? quietDescription : refusedDescription;
 
   return (
@@ -247,6 +259,11 @@ function AbsenceTypeForm({
         {locked ? (
           <p id={ORGANIZATION_ABSENCE_TYPE_ANNUAL_HINT_ID} className="text-sm text-muted-foreground">
             {t('organization.absenceTypes.annualHint')}
+          </p>
+        ) : null}
+        {hinted ? (
+          <p id={ORGANIZATION_ABSENCE_TYPE_DRAWS_HINT_ID} className="text-sm text-muted-foreground">
+            {t('organization.absenceTypes.drawsHint')}
           </p>
         ) : null}
       </div>

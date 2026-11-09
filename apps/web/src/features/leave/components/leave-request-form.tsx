@@ -7,13 +7,16 @@ import { ArrowLeft, PaperPlaneRight } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
+import { RadioCard, RadioGroup } from '@/components/ui/radio-group';
 import { MyLeaveSkeleton } from '@/features/leave/components/my-leave-skeleton';
 import type { useLeaveRequestForm } from '@/features/leave/hooks/use-leave-request-form';
 import {
   LEAVE_FROM_FIELD,
   LEAVE_PREVIEW_REASON,
   LEAVE_TO_FIELD,
-  leaveInYearChargeOf,
+  LEAVE_TYPE_FIELD,
+  leavePreviewInYearOf,
+  leaveTypeDrawsMessageKey,
   type LeaveField,
 } from '@/features/leave/services/leave-section';
 import {
@@ -22,6 +25,7 @@ import {
   LEAVE_REQUEST_PREVIEW_ID,
   LEAVE_REQUEST_REASON_ID,
   LEAVE_REQUEST_TO_ID,
+  LEAVE_REQUEST_TYPE_LABEL_ID,
   MY_LEAVE_LOADING,
   MY_LEAVE_READY,
   MY_LEAVE_UNAVAILABLE,
@@ -58,7 +62,10 @@ export function LeaveRequestBack(): ReactNode {
  * days, the part charged to the current leave year when the range crosses it,
  * the balance after it, and — as notes, NEVER A GATE — that it goes over the
  * balance or overlaps the member's own leave. Pending requests charge
- * nothing, so no figure here counts them. Offline *Pošalji* is gated and the
+ * nothing, so no figure here counts them. Story 13.2b: between the dates and
+ * the preview, one radio card per absence type of the organization, none
+ * preselected (UX-DR47, UX-DR50); a type that does not draw says the balance
+ * does not change. Offline *Pošalji* is gated and the
  * note says why. Every figure, reason and message is
  * `@/features/leave/services/my-leave`'s decision; this renders them.
  */
@@ -69,10 +76,11 @@ export function LeaveRequestFormBody({ form }: { readonly form: LeaveRequestForm
 
   if (leave.kind === MY_LEAVE_LOADING) return <MyLeaveSkeleton />;
 
-  if (leave.kind === MY_LEAVE_UNAVAILABLE) {
+  // STORY 13.2b: a snapshot cached before 13.2 holds no type to choose from; unavailable until read again.
+  if (leave.kind === MY_LEAVE_UNAVAILABLE || (leave.kind === MY_LEAVE_READY && leave.absenceTypes === null)) {
     return (
       <div className="grid min-w-0 gap-2">
-        <Notice role="alert">{t(myLeaveMessageKey(leave.kind))}</Notice>
+        <Notice role="alert">{t(myLeaveMessageKey(MY_LEAVE_UNAVAILABLE))}</Notice>
         {form.retryable ? (
           <Button
             ref={keepFocusOnAlert}
@@ -94,6 +102,7 @@ export function LeaveRequestFormBody({ form }: { readonly form: LeaveRequestForm
 
   // 0047: no date before the organization's today; past leave is an admin's to record.
   const earliest = myLeaveRequestEarliestOf(leave) ?? undefined;
+  const absenceTypes = leave.absenceTypes ?? [];
 
   /** What a field is described by: the od field by a standing refusal, a marked field by its reason. */
   function describedBy(field: LeaveField): string | undefined {
@@ -115,7 +124,8 @@ export function LeaveRequestFormBody({ form }: { readonly form: LeaveRequestForm
     }
 
     const figures = preview.preview;
-    const inYear = leaveInYearChargeOf(figures);
+    // STORY 13.2b: a type that does not draw states no in-year part; its own line says why.
+    const inYear = leavePreviewInYearOf(preview);
 
     return (
       <div className="grid min-w-0 gap-2">
@@ -130,6 +140,7 @@ export function LeaveRequestFormBody({ form }: { readonly form: LeaveRequestForm
           </div>
         </dl>
         {inYear === null ? null : <p className="text-sm">{t('godisnji.request.costInYear', { count: inYear })}</p>}
+        {preview.type.drawsAllowance ? null : <p className="text-sm">{t('godisnji.request.balanceUnchanged')}</p>}
         {figures.overlapsRecord ? <p className="text-sm font-medium">{t('godisnji.request.overlapNote')}</p> : null}
         {figures.exceedsBalance ? (
           <p className="text-sm font-medium">{t('godisnji.request.exceeds', { count: figures.balanceAfterDays })}</p>
@@ -183,6 +194,28 @@ export function LeaveRequestFormBody({ form }: { readonly form: LeaveRequestForm
               className="h-11 min-w-0"
             />
           </div>
+        </div>
+        {/* STORY 13.2b (UX-DR50): the type, required, a single type too; nothing preselected. */}
+        <div className="grid min-w-0 gap-3">
+          <p id={LEAVE_REQUEST_TYPE_LABEL_ID} className="text-sm font-semibold leading-none">
+            {t('godisnji.request.type')}
+          </p>
+          <RadioGroup
+            value={form.typeId}
+            onValueChange={form.chooseType}
+            required
+            aria-labelledby={LEAVE_REQUEST_TYPE_LABEL_ID}
+            aria-invalid={invalidField === LEAVE_TYPE_FIELD}
+            aria-describedby={describedBy(LEAVE_TYPE_FIELD)}
+            className="grid-cols-1 sm:grid-cols-2"
+          >
+            {absenceTypes.map((type, index) => (
+              <RadioCard key={type.id} ref={index === 0 ? form.typeField : undefined} value={type.id}>
+                <span className="break-words text-sm font-semibold">{type.name}</span>
+                <span className="break-words text-sm text-muted-foreground">{t(leaveTypeDrawsMessageKey(type))}</span>
+              </RadioCard>
+            ))}
+          </RadioGroup>
         </div>
         <div id={LEAVE_REQUEST_PREVIEW_ID} aria-live="polite" className="grid min-w-0 gap-2">
           {renderPreview()}

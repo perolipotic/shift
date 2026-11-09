@@ -12,7 +12,8 @@ import {
   type LeaveYearStart,
 } from '@shift/domain';
 
-import type { CalendarSnapshot } from '@/features/calendar/services/snapshot';
+import type { AbsenceTypeRow } from '@/features/absence-types/services/list';
+import { absenceTypesOfCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { calendarTodayOf, dayMonthOf, memberScheduleInputOf } from '@/features/calendar/utils/month';
 import {
   REPLACEMENT_APPLIED,
@@ -298,19 +299,28 @@ export const LEAVE_RANGE_REFUSED = 'refused';
 /** An amend to the range the record already holds: nothing to change, so it is not sent. */
 export const LEAVE_RANGE_UNCHANGED = 'unchanged';
 
+/** No absence type is chosen yet (story 13.2b): nothing is preselected, so nothing is previewed or sent. */
+export const LEAVE_TYPE_UNCHOSEN = 'typeUnchosen';
+
 export type LeaveRangeReason =
   | typeof LEAVE_RANGE_INCOMPLETE
   | typeof LEAVE_RANGE_REVERSED
   | typeof LEAVE_RANGE_TOO_LONG
   | typeof LEAVE_RANGE_REFUSED
-  | typeof LEAVE_RANGE_UNCHANGED;
+  | typeof LEAVE_RANGE_UNCHANGED
+  | typeof LEAVE_TYPE_UNCHOSEN;
 
 /** The od field. */
 export const LEAVE_FROM_FIELD = 'from';
 /** The do field. */
 export const LEAVE_TO_FIELD = 'to';
+/** The absence type's radio card group (story 13.2b). */
+export const LEAVE_TYPE_FIELD = 'type';
 
-export type LeaveField = typeof LEAVE_FROM_FIELD | typeof LEAVE_TO_FIELD;
+export type LeaveField = typeof LEAVE_FROM_FIELD | typeof LEAVE_TO_FIELD | typeof LEAVE_TYPE_FIELD;
+
+/** The type group's label id, which names the radio group (story 13.2b). */
+export const LEAVE_TYPE_LABEL_ID = 'member-leave-type-label';
 
 /** An empty date field: nothing entered yet, or cleared after a landed save. */
 export const LEAVE_NO_DATE = '';
@@ -352,6 +362,16 @@ export const LEAVE_REASON_ID = 'member-leave-reason';
 export const LEAVE_PREVIEW_REASON = 'reason';
 export const LEAVE_PREVIEW_READY = 'preview';
 
+/**
+ * The absence type a range is previewed and sent as (story 13.2b): its id,
+ * and whether it draws down the allowance, from the calendar snapshot's
+ * catalog.
+ */
+export interface LeaveTypeChoice {
+  readonly id: string;
+  readonly drawsAllowance: boolean;
+}
+
 export type LeavePreviewState =
   | {
       readonly kind: typeof LEAVE_PREVIEW_REASON;
@@ -359,40 +379,52 @@ export type LeavePreviewState =
       /** The field the reason is about, which a refused save focuses. */
       readonly field: LeaveField;
     }
-  | { readonly kind: typeof LEAVE_PREVIEW_READY; readonly range: LeaveRange; readonly preview: LeavePreview };
+  | {
+      readonly kind: typeof LEAVE_PREVIEW_READY;
+      /** The range, carrying the chosen type's drawing flag, as the domain costs it. */
+      readonly range: LeaveRange;
+      /** The chosen type, which the write sends (story 13.2b). */
+      readonly type: LeaveTypeChoice;
+      readonly preview: LeavePreview;
+    };
 
 /**
- * What the entered `from`–`to` would do, over a ready base: a reason in place
- * of a preview while either date is incomplete, an amend leaves the range as
- * it was, the range is reversed, it is longer than
- * {@link MAX_LEAVE_RANGE_DAYS}, or the domain refuses to cost it; otherwise
- * `leavePreviewOf`'s figures. Only a ready preview may be sent.
+ * What the entered `from`–`to` of the chosen `type` would do, over a ready
+ * base: a reason in place of a preview while either date is incomplete, the
+ * range is reversed, it is longer than {@link MAX_LEAVE_RANGE_DAYS}, no type
+ * is chosen (story 13.2b), an amend leaves both the range and the type as
+ * they were, or the domain refuses to cost it; otherwise `leavePreviewOf`'s
+ * figures, by the chosen type's drawing flag. Only a ready preview may be
+ * sent.
  *
  * AN AMEND (story 5.2b) previews against every record but the one amended:
  * its own dates are no overlap, and what it cost now is given back before the
- * new range is charged.
+ * new range is charged. A type-only amend (the same range, another type) is a
+ * change (story 13.2b).
  */
 export function leavePreviewStateOf(
   input: LeaveRecordsInput,
   from: string,
   to: string,
+  type: LeaveTypeChoice | null,
   amending: LeaveRecord | null = null,
 ): LeavePreviewState {
   if (!isIsoDate(from)) return { kind: LEAVE_PREVIEW_REASON, reason: LEAVE_RANGE_INCOMPLETE, field: LEAVE_FROM_FIELD };
   if (!isIsoDate(to)) return { kind: LEAVE_PREVIEW_REASON, reason: LEAVE_RANGE_INCOMPLETE, field: LEAVE_TO_FIELD };
-  if (amending !== null && from === amending.from && to === amending.to) {
-    return { kind: LEAVE_PREVIEW_REASON, reason: LEAVE_RANGE_UNCHANGED, field: LEAVE_FROM_FIELD };
-  }
   if (to < from) return { kind: LEAVE_PREVIEW_REASON, reason: LEAVE_RANGE_REVERSED, field: LEAVE_TO_FIELD };
   if (daysBetween(from, to) + 1 > MAX_LEAVE_RANGE_DAYS) {
     return { kind: LEAVE_PREVIEW_REASON, reason: LEAVE_RANGE_TOO_LONG, field: LEAVE_TO_FIELD };
   }
+  if (type === null) return { kind: LEAVE_PREVIEW_REASON, reason: LEAVE_TYPE_UNCHOSEN, field: LEAVE_TYPE_FIELD };
+  if (amending !== null && from === amending.from && to === amending.to && type.id === amending.absenceTypeId) {
+    return { kind: LEAVE_PREVIEW_REASON, reason: LEAVE_RANGE_UNCHANGED, field: LEAVE_FROM_FIELD };
+  }
 
-  const range = { from, to };
+  const range = { from, to, drawsAllowance: type.drawsAllowance };
   const records = amending === null ? input.records : input.records.filter((record) => record.id !== amending.id);
 
   try {
-    return { kind: LEAVE_PREVIEW_READY, range, preview: leavePreviewOf({ ...input, records, range }) };
+    return { kind: LEAVE_PREVIEW_READY, range, type, preview: leavePreviewOf({ ...input, records, range }) };
   } catch (cause) {
     console.error(LEAVE_RANGE_REFUSED, cause);
 
@@ -408,7 +440,8 @@ export function leaveReasonMessageKey(
   | 'ljudi.leaveRecord.reversed'
   | 'ljudi.leaveRecord.tooLong'
   | 'ljudi.leaveRecord.refused'
-  | 'ljudi.leaveRecord.unchanged' {
+  | 'ljudi.leaveRecord.unchanged'
+  | 'ljudi.leaveRecord.typeUnchosen' {
   switch (reason) {
     case LEAVE_RANGE_INCOMPLETE:
       return 'ljudi.leaveRecord.incomplete';
@@ -420,6 +453,8 @@ export function leaveReasonMessageKey(
       return 'ljudi.leaveRecord.refused';
     case LEAVE_RANGE_UNCHANGED:
       return 'ljudi.leaveRecord.unchanged';
+    case LEAVE_TYPE_UNCHOSEN:
+      return 'ljudi.leaveRecord.typeUnchosen';
     default: {
       const unhandled: never = reason;
 
@@ -435,6 +470,89 @@ export function leaveReasonMessageKey(
  */
 export function leaveInYearChargeOf(preview: LeavePreview): number | null {
   return preview.costInYearDays === preview.costDays ? null : preview.costInYearDays;
+}
+
+/**
+ * The in-year line a ready preview states (story 13.2b): none for a type that
+ * does not draw — the unchanged-balance line says it instead — else
+ * {@link leaveInYearChargeOf}'s.
+ */
+export function leavePreviewInYearOf(state: { readonly range: LeaveRange; readonly preview: LeavePreview }): number | null {
+  return state.range.drawsAllowance === false ? null : leaveInYearChargeOf(state.preview);
+}
+
+// ------------------------------------------------------------ the type (13.2b)
+
+/** What a type catalog that cannot be trusted logs: never shown. */
+export const LEAVE_TYPES_UNAVAILABLE = 'LEAVE_TYPES_UNAVAILABLE';
+
+/**
+ * The absence types a leave surface offers and names (story 13.2b): the
+ * calendar snapshot's catalog, in its order, when every id in `named` — the
+ * records or requests the surface shows — is in it. Null — the surface is
+ * unavailable, never a guess — for no snapshot, a snapshot cached before 13.2
+ * that carries no catalog, an empty catalog (no card could be chosen; every
+ * organization holds annual leave), or an id the catalog does not hold.
+ */
+export function leaveTypesOf(
+  snapshot: CalendarSnapshot | null,
+  named: readonly string[],
+): readonly AbsenceTypeRow[] | null {
+  if (snapshot === null) return null;
+
+  const types = absenceTypesOfCalendar(snapshot);
+
+  if (types === null || types.length === 0) {
+    console.error(LEAVE_TYPES_UNAVAILABLE, 'catalog');
+
+    return null;
+  }
+
+  const known = new Set(types.map((type) => type.id));
+
+  if (!named.every((id) => known.has(id))) {
+    console.error(LEAVE_TYPES_UNAVAILABLE, 'type');
+
+    return null;
+  }
+
+  return types;
+}
+
+/** The type of `id` in `types` as a choice, or null when none is chosen or it is not there. */
+export function leaveTypeChoiceOf(types: readonly AbsenceTypeRow[] | null, id: string | null): LeaveTypeChoice | null {
+  const type = id === null || types === null ? undefined : types.find((candidate) => candidate.id === id);
+
+  return type === undefined ? null : { id: type.id, drawsAllowance: type.drawsAllowance };
+}
+
+/** The stored name of type `id`, or null when `types` does not hold it. */
+export function leaveTypeNameOf(types: readonly AbsenceTypeRow[] | null, id: string): string | null {
+  return types?.find((type) => type.id === id)?.name ?? null;
+}
+
+/** What one type's card says under its name: whether it draws down the allowance (story 13.2b). */
+export function leaveTypeDrawsMessageKey(
+  type: AbsenceTypeRow,
+): 'organization.absenceTypes.draws' | 'organization.absenceTypes.doesNotDraw' {
+  // The *Vrste odsutnosti* card's own words for the flag (story 13.1b).
+  return type.drawsAllowance ? 'organization.absenceTypes.draws' : 'organization.absenceTypes.doesNotDraw';
+}
+
+/**
+ * The admin card's base with its type catalog (story 13.2b): a ready base
+ * whose snapshot carries no catalog, or one of whose records names a type
+ * the catalog lacks, is unavailable, never drawn with a guessed name.
+ */
+export function typedLeaveBaseOf(
+  base: MemberLeaveBase,
+  snapshot: CalendarSnapshot | null,
+): { readonly base: MemberLeaveBase; readonly types: readonly AbsenceTypeRow[] | null } {
+  if (base.kind !== LEAVE_READY) return { base, types: null };
+
+  const types = leaveTypesOf(snapshot, base.input.records.map((record) => record.absenceTypeId));
+
+  return types === null ? { base: { kind: LEAVE_UNAVAILABLE }, types: null } : { base, types };
 }
 
 // ------------------------------------------------------ the replacement guard

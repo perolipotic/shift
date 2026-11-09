@@ -1,6 +1,6 @@
 import { DUTY_RUNNING, activeOn, leaveCostOf, membershipOn, monthOf, type LeaveRange } from '@shift/domain';
 
-import type { CalendarSnapshot, CalendarSurfaceState } from '@/features/calendar/services/snapshot';
+import { absenceTypesOfCalendar, type CalendarSnapshot, type CalendarSurfaceState } from '@/features/calendar/services/snapshot';
 import {
   calendarDayListOf,
   calendarTodayOf,
@@ -126,9 +126,16 @@ export type TodayCase =
       readonly from: string;
       readonly to: string;
       /**
+       * The stored name of the absence type of TODAY's record (story 13.2b):
+       * the viewer's own, so theirs to see.
+       */
+      readonly typeName: string;
+      /**
        * What the absence costs in leave days (story 6.1b): the domain's
-       * `leaveCostOf` over each own record it joins, each on its own range,
-       * summed — only the days the viewer would have worked count.
+       * `leaveCostOf` over each own record it joins that DRAWS down the
+       * allowance (story 13.2b), each on its own range, summed — only the
+       * days the viewer would have worked count. Zero when none draws, and
+       * the card then states no cost.
        */
       readonly costDays: number;
     }
@@ -290,7 +297,17 @@ export function todayViewOf(snapshot: CalendarSnapshot, rows: readonly unknown[]
       todayCase = { kind: CASE_DUTY, duty: duty.duty };
       skip = duty.legKeys;
     } else {
-      todayCase = todayCaseOf(snapshot, days.on(today), leaveToday, working);
+      // STORY 13.2b: on leave today, the case names today's record's type. A
+      // snapshot cached before 13.2 holds no catalog: unavailable until read again.
+      const typeName = leaveToday === null ? null : leaveTypeNameOn(snapshot, records, today);
+
+      if (leaveToday !== null && typeName === null) {
+        console.error(TODAY_UNAVAILABLE, 'type');
+
+        return { kind: TODAY_UNAVAILABLE, retryable: true };
+      }
+
+      todayCase = todayCaseOf(snapshot, days.on(today), leaveToday, working, records, typeName ?? '');
     }
 
     return {
@@ -467,9 +484,24 @@ function isWorking(working: ReadonlySet<string>, shift: CalendarDay['shifts'][nu
 }
 
 /**
+ * The stored name of the type of the own record covering `date` (story
+ * 13.2b), or null when no record covers it, the snapshot holds no type
+ * catalog, or the catalog lacks the record's type.
+ */
+function leaveTypeNameOn(snapshot: CalendarSnapshot, records: readonly LeaveRecord[], date: string): string | null {
+  const record = leaveOn(records, date);
+  const types = absenceTypesOfCalendar(snapshot);
+
+  if (record === null || types === null) return null;
+
+  return types.find((type) => type.id === record.absenceTypeId)?.name ?? null;
+}
+
+/**
  * Today's one case: leave first, then working, then free. The leave's cost is
- * the domain's `leaveCostOf` over the viewer's schedule, each joined
- * record costed on its own range, never the merged one.
+ * the domain's `leaveCostOf` over the viewer's schedule, each joined DRAWING
+ * record (story 13.2b) costed on its own range, never the merged one; the
+ * leave names today's record's type, `typeName`.
  *
  * @throws RangeError on any precondition of `leaveCostOf`.
  */
@@ -478,6 +510,8 @@ function todayCaseOf(
   day: CalendarDay,
   leave: Absence | null,
   working: ReadonlySet<string>,
+  records: readonly LeaveRecord[],
+  typeName: string,
 ): TodayCase {
   if (leave !== null) {
     const from = formatIsoDate(leave.from);
@@ -486,9 +520,11 @@ function todayCaseOf(
     if (from === null || to === null) throw new RangeError(`the leave ${leave.from}–${leave.to} could not be formatted`);
 
     const input = memberScheduleInputOf(snapshot, snapshot.viewer);
-    const costDays = leave.records.reduce((sum, record) => sum + leaveCostOf(input, record.from, record.to), 0);
+    // The absence's joined records are exactly the own records inside it; only the drawing ones cost.
+    const drawing = records.filter((record) => leave.from <= record.from && record.to <= leave.to && record.drawsAllowance);
+    const costDays = drawing.reduce((sum, record) => sum + leaveCostOf(input, record.from, record.to), 0);
 
-    return { kind: CASE_LEAVE, from, to, costDays };
+    return { kind: CASE_LEAVE, from, to, typeName, costDays };
   }
 
   const shifts = day.shifts.filter((shift) => isWorking(working, shift));

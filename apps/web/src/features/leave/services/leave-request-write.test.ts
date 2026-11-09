@@ -26,6 +26,8 @@ import {
 /** Stories 9.3 and 9.4: the write side of the 0040 boundary of leave requests, executed (AD-15). */
 
 const MEMBER = 'member-1';
+/** The type the member chose (story 13.2b), sent as it is. */
+const SICK = 'type-sick';
 const ORGANIZATION = 'organization-1';
 
 afterEach(() => {
@@ -63,8 +65,10 @@ describe('the send', () => {
   it('inserts the three facts, the range as an inclusive daterange literal, the ids as given', async () => {
     const table = insertAnswering({ error: null });
 
-    expect(await sendLeaveRequest(table, ORGANIZATION, MEMBER, '2026-11-02', '2026-11-04')).toEqual({ ok: true });
-    expect(table.sent).toEqual([{ organization_id: ORGANIZATION, member_id: MEMBER, during: '[2026-11-02,2026-11-04]' }]);
+    expect(await sendLeaveRequest(table, ORGANIZATION, MEMBER, '2026-11-02', '2026-11-04', SICK)).toEqual({ ok: true });
+    expect(table.sent).toEqual([
+      { organization_id: ORGANIZATION, member_id: MEMBER, during: '[2026-11-02,2026-11-04]', absence_type_id: SICK },
+    ]);
   });
 
   it.each([
@@ -79,7 +83,7 @@ describe('the send', () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     expect(leaveRequestSendFailureOf(error)).toBe(code);
-    expect(await sendLeaveRequest(insertAnswering({ error }), ORGANIZATION, MEMBER, '2026-11-02', '2026-11-04')).toEqual({
+    expect(await sendLeaveRequest(insertAnswering({ error }), ORGANIZATION, MEMBER, '2026-11-02', '2026-11-04', SICK)).toEqual({
       ok: false,
       code,
     });
@@ -92,14 +96,14 @@ describe('the send', () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const table = insertAnswering({ error: null });
 
-    expect(await sendLeaveRequest(table, ORGANIZATION, MEMBER, from, to)).toEqual({ ok: false, code: REQUEST_FAILED });
+    expect(await sendLeaveRequest(table, ORGANIZATION, MEMBER, from, to, SICK)).toEqual({ ok: false, code: REQUEST_FAILED });
     expect(table.sent).toEqual([]);
   });
 
   it("fails on an answer with no error key, as leave-write's answeredErrorOf reads one", async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    expect(await sendLeaveRequest(insertAnswering({}), ORGANIZATION, MEMBER, '2026-11-02', '2026-11-04')).toEqual({
+    expect(await sendLeaveRequest(insertAnswering({}), ORGANIZATION, MEMBER, '2026-11-02', '2026-11-04', SICK)).toEqual({
       ok: false,
       code: REQUEST_FAILED,
     });
@@ -109,11 +113,11 @@ describe('the send', () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const throwing: LeaveRequestInsertTable = { insert: () => Promise.reject(new Error('network')) };
 
-    expect(await sendLeaveRequest(throwing, ORGANIZATION, MEMBER, '2026-11-02', '2026-11-04')).toEqual({
+    expect(await sendLeaveRequest(throwing, ORGANIZATION, MEMBER, '2026-11-02', '2026-11-04', SICK)).toEqual({
       ok: false,
       code: REQUEST_FAILED,
     });
-    expect(await sendLeaveRequest(insertAnswering(null), ORGANIZATION, MEMBER, '2026-11-02', '2026-11-04')).toEqual({
+    expect(await sendLeaveRequest(insertAnswering(null), ORGANIZATION, MEMBER, '2026-11-02', '2026-11-04', SICK)).toEqual({
       ok: false,
       code: REQUEST_FAILED,
     });

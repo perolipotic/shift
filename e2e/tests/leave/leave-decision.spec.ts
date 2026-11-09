@@ -6,6 +6,7 @@ import { LeaveRequestReviewPage } from '../../pages/conflicts.page.ts';
 import { LeavePage } from '../../pages/leave.page.ts';
 import { LoginPage } from '../../pages/login.page.ts';
 import {
+  ANNUAL_LEAVE_NAME,
   API_URL,
   closedRequestShownInSql,
   holdRotation,
@@ -131,6 +132,8 @@ test.describe("an admin's leave request decision screen", () => {
     await expect(review.line(member.name)).toBeVisible();
     await expect(review.line(status.pending)).toBeVisible();
     await expect(review.line(fill(request.range, { from: fullDate(from), to: fullDate(to) }))).toBeVisible();
+    // STORY 13.2b: the request's type, a fact for the admin.
+    await expect(review.line(fill(request.type, { type: ANNUAL_LEAVE_NAME }))).toBeVisible();
     await expect(review.figure(hr.godisnji.request.cost)).toHaveText(plural(days, 2));
     // THE DIALOG'S WORDING for what approval creates: its count, and each collision.
     await expect(review.line(plural(hr.ljudi.leaveRecord.conflictsCreated, 2))).toBeVisible();
