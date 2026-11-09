@@ -44,6 +44,12 @@ describe('the search', () => {
     expect(hoursSearchOf({ sort: SORT_CONFLICTS, smjer: 'silazno' })).toEqual({ sort: 'konflikti', smjer: 'silazno' });
   });
 
+  it('reads a leave column sort: `odsutnost-<id>` and `ostala-odsutnost`, and drops a bare prefix (story 13.2)', () => {
+    expect(hoursSearchOf({ sort: 'odsutnost-x' })).toEqual({ sort: 'odsutnost-x' });
+    expect(hoursSearchOf({ sort: 'ostala-odsutnost' })).toEqual({ sort: 'ostala-odsutnost' });
+    expect(hoursSearchOf({ sort: 'odsutnost-' })).toEqual({});
+  });
+
   it('names the team `smjena`, as the calendar does, and never reads the old `tim` (story 7.5)', () => {
     expect(HOURS_TEAM_PARAM).toBe('smjena');
     expect(hoursSearchOf({ tim: 't' })).toEqual({});

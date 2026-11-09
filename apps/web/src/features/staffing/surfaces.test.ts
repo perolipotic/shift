@@ -1,6 +1,7 @@
 import { peopleAtWorkOn } from '@shift/domain';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { ANNUAL_LEAVE_ID } from '@/features/absence-types/services/list';
 import type { CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import {
   overrideRemovalShortStaffedOf,
@@ -63,6 +64,9 @@ import {
 } from '@/features/staffing/staffing.fixture';
 import { initLocalization } from '@/lib/i18n';
 import { nextIsoDate, previousIsoDate } from '@/lib/i18n/format';
+
+/** Story 13.2: a record of annual leave, which draws down the allowance. */
+const ANNUAL_RECORD = { absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true } as const;
 
 /**
  * Story 11.2, surface by surface (AD-15): each save that can newly leave a
@@ -653,7 +657,7 @@ describe.each(STAFFING_FIXTURES)('$name', (fixture) => {
       if (records === null) throw new Error('records');
 
       const collision = { memberId: member(1), date: day.date, teamId: fixture.team, shiftTypeId: day.shiftTypeId, leaveRecordId: ONE };
-      const record = { id: ONE, from: day.date, to: day.date };
+      const record = { ...ANNUAL_RECORD, id: ONE, from: day.date, to: day.date };
 
       expect(resolutionStaffingOf(four, records, collision, record, { kind: AMEND_REMOVES })).toEqual({
         accept: { atWork: 2, minimum: 3, short: true },
@@ -675,7 +679,7 @@ describe.each(STAFFING_FIXTURES)('$name', (fixture) => {
       if (records === null) throw new Error('records');
 
       const collision = { memberId: member(1), date: day.date, teamId: fixture.team, shiftTypeId: day.shiftTypeId, leaveRecordId: ONE };
-      const record = { id: ONE, from: before, to: after };
+      const record = { ...ANNUAL_RECORD, id: ONE, from: before, to: after };
       const later = resolutionStaffingOf(four, records, collision, record, { kind: AMEND_STARTS, range: { from: after, to: after } });
       const earlier = resolutionStaffingOf(four, records, collision, record, { kind: AMEND_ENDS, range: { from: before, to: before } });
 
@@ -697,7 +701,7 @@ describe.each(STAFFING_FIXTURES)('$name', (fixture) => {
       if (records === null) throw new Error('records');
 
       const collision = { memberId: member(1), date: day.date, teamId: fixture.team, shiftTypeId: day.shiftTypeId, leaveRecordId: ONE };
-      const staffing = resolutionStaffingOf(four, records, collision, { id: ONE, from: day.date, to: day.date }, { kind: AMEND_REMOVES }, [
+      const staffing = resolutionStaffingOf(four, records, collision, { ...ANNUAL_RECORD, id: ONE, from: day.date, to: day.date }, { kind: AMEND_REMOVES }, [
         REPLACEMENT,
       ]);
 
@@ -720,7 +724,7 @@ describe.each(STAFFING_FIXTURES)('$name', (fixture) => {
 
       const collision = { memberId: member(1), date: day.date, teamId: fixture.team, shiftTypeId: day.shiftTypeId, leaveRecordId: ONE };
 
-      expect(resolutionStaffingOf(taken, records, collision, { id: ONE, from: day.date, to: day.date }, { kind: AMEND_REMOVES })).toBeNull();
+      expect(resolutionStaffingOf(taken, records, collision, { ...ANNUAL_RECORD, id: ONE, from: day.date, to: day.date }, { kind: AMEND_REMOVES })).toBeNull();
     });
   });
 });

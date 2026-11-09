@@ -7,6 +7,7 @@ import {
 } from '@/features/conflicts/services/resolutions';
 import {
   LEAVE_OVERVIEW_RECORDS_KEY,
+  LEAVE_RECORDS_ROOT_KEY,
   MY_LEAVE_RECORDS_KEY,
   ORGANIZATION_LEAVE_RECORDS_KEY,
 } from '@/features/leave/services/leave-list';
@@ -109,6 +110,22 @@ export const MEMBER_SAVE_DEPENDENTS: readonly QueryKey[] = [
 
 /** An hour band added, changed or removed (story 4.1b): the snapshot *Sati* derives band hours from. */
 export const HOUR_BAND_WRITE_DEPENDENTS: readonly QueryKey[] = [CALENDAR_KEY];
+
+/**
+ * An absence type added or edited (story 13.2): the calendar snapshot, which
+ * embeds every type and names *Sati*'s leave columns from them, and every
+ * leave read, each of which carries every record's current drawing flag —
+ * every member's own on the member page (`LEAVE_RECORDS_ROOT_KEY`, the prefix
+ * of `LEAVE_RECORDS_KEY`), the viewer's own (*Godišnji*, *Sati*, *Danas*),
+ * the organization's (*Za odluku*, *Sati*) and the admin's overview.
+ */
+export const ABSENCE_TYPE_WRITE_DEPENDENTS: readonly QueryKey[] = [
+  CALENDAR_KEY,
+  LEAVE_RECORDS_ROOT_KEY,
+  MY_LEAVE_RECORDS_KEY,
+  ORGANIZATION_LEAVE_RECORDS_KEY,
+  LEAVE_OVERVIEW_RECORDS_KEY,
+];
 
 /**
  * A leave record saved, amended or removed (stories 5.1c, 5.2b): its own key

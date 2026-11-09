@@ -1,7 +1,10 @@
-import type { HoursFigureCode } from '@shift/domain';
 import { useState } from 'react';
 
-import type { HoursExplainRequest, HoursExplanationView } from '@/features/hours/services/hours-explanation';
+import type {
+  HoursExplainFigure,
+  HoursExplainRequest,
+  HoursExplanationView,
+} from '@/features/hours/services/hours-explanation';
 import { usePhone } from '@/hooks/viewport';
 
 /** The explanation dialog's state: whether it is open, and what it shows. */
@@ -48,7 +51,7 @@ export function useHoursExplanation(
   // React's adjust-state-while-rendering: no effect, no frame with it open.
   if (orphaned) setState({ ...state, open: false });
 
-  function ask(memberId: string | null, figure: HoursFigureCode): void {
+  function ask(memberId: string | null, figure: HoursExplainFigure): void {
     setState({ open: true, phone: isPhone, explanation: explain({ memberId, figure }) });
   }
 

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   datesOfMonth,
   daysBetween,
+  drawsAllowance,
   isLeaveDay,
   leaveBalanceOf,
   leaveCostOf,
@@ -584,6 +585,69 @@ describe.each(FIXTURES)('the balance and the preview under $fixture (R4.5–R4.7
   it('does not flag a range that only touches a record', () => {
     const preview = leavePreviewOf({ ...base({ records: [{ from: '2026-09-10', to: '2026-09-12' }] }), range: { from: '2026-09-13', to: '2026-09-14' } });
     expect(preview.overlapsRecord).toBe(false);
+  });
+
+  // STORY 13.2 (CAP-23, Q9): only records of a drawing absence type use the
+  // allowance; every other rule sees every record.
+  it('counts only drawing records in the balance; an absent flag draws', () => {
+    const annual = { from: '2026-09-10', to: '2026-09-14' };
+    const sick = { from: '2026-10-01', to: '2026-10-31', drawsAllowance: false };
+    const training = { from: '2026-11-02', to: '2026-11-06', drawsAllowance: true };
+    const balance = leaveBalanceOf(base({ records: [annual, sick, training] }));
+    const expected = leaveCostOf(input, annual.from, annual.to) + leaveCostOf(input, training.from, training.to);
+    expect(leaveCostOf(input, sick.from, sick.to)).toBeGreaterThan(0);
+    expect(balance.usedDays).toBe(expected);
+    expect(balance.balanceDays).toBe(20 - expected);
+    expect(leaveBalanceOf(base({ records: [sick] }))).toEqual({ allowanceDays: 20, usedDays: 0, balanceDays: 20 });
+  });
+
+  it('still refuses two overlapping records whatever their type', () => {
+    const records = [
+      { from: '2026-09-10', to: '2026-09-14' },
+      { from: '2026-09-12', to: '2026-09-16', drawsAllowance: false },
+    ];
+    expect(() => leaveBalanceOf(base({ records }))).toThrow(/records 0 and 1/);
+  });
+
+  it('previews a non-drawing range: its cost is reported, it charges 0 and never exceeds', () => {
+    const range = { from: '2026-09-10', to: '2026-09-14', drawsAllowance: false };
+    const preview = leavePreviewOf({ ...base({ allowanceDays: 0 }), range });
+    expect(preview.costDays).toBe(3);
+    expect(preview.costInYearDays).toBe(0);
+    expect(preview.balanceAfterDays).toBe(0);
+    expect(preview.exceedsBalance).toBe(false);
+  });
+
+  it('flags a non-drawing range overlapping a record, and a drawing range overlapping a non-drawing record charges only the uncovered dates', () => {
+    const sick = [{ from: '2026-09-10', to: '2026-09-12', drawsAllowance: false }];
+    const overSick = leavePreviewOf({ ...base({ records: sick }), range: { from: '2026-09-11', to: '2026-09-18' } });
+    expect(overSick.overlapsRecord).toBe(true);
+    expect(overSick.usedDays).toBe(0);
+    expect(overSick.costInYearDays).toBe(leaveCostOf(input, '2026-09-13', '2026-09-18'));
+    const sickOverAnnual = leavePreviewOf({
+      ...base({ records: [{ from: '2026-09-10', to: '2026-09-12' }] }),
+      range: { from: '2026-09-11', to: '2026-09-18', drawsAllowance: false },
+    });
+    expect(sickOverAnnual.overlapsRecord).toBe(true);
+    expect(sickOverAnnual.costInYearDays).toBe(0);
+  });
+
+  it('charges the leave days of a month for every record, whatever its type', () => {
+    const records = [
+      { from: '2026-09-10', to: '2026-09-14', drawsAllowance: false },
+      { from: '2026-09-20', to: '2026-09-24' },
+    ];
+    expect(leaveDaysOfMonth(input, records, '2026-09')).toEqual(
+      leaveDaysOfMonth(input, records.map(({ from, to }) => ({ from, to })), '2026-09'),
+    );
+  });
+});
+
+describe('drawsAllowance (story 13.2)', () => {
+  it('reads an absent flag as drawing, and only false as not', () => {
+    expect(drawsAllowance({ from: '2026-09-10', to: '2026-09-10' })).toBe(true);
+    expect(drawsAllowance({ from: '2026-09-10', to: '2026-09-10', drawsAllowance: true })).toBe(true);
+    expect(drawsAllowance({ from: '2026-09-10', to: '2026-09-10', drawsAllowance: false })).toBe(false);
   });
 });
 

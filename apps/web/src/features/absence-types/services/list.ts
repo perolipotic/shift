@@ -7,9 +7,9 @@ import { compareText } from '@/lib/i18n/format';
  * *Organizacija*'s *Vrste odsutnosti* card derives from them (story 13.1b).
  *
  * `0052` holds a type as a NAME and whether a record of it DRAWS DOWN THE
- * ALLOWANCE, and nothing else (Q5: no reason, no free text). Only an active
- * admin reads the table; a member-role account reads no row, and no member
- * surface reads this key.
+ * ALLOWANCE, and nothing else (Q5: no reason, no free text). Since `0053`
+ * (story 13.2) every active member reads the table — the calendar snapshot
+ * embeds it for *Sati*'s leave columns — but no member surface reads this key.
  *
  * EVERYTHING THE CARD DECIDES IS HERE, for the reason
  * `@/features/hour-bands/services/list` gives: a `.tsx` is collected by no

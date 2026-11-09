@@ -1,13 +1,15 @@
-import { HOURS_FIGURE_BAND, HOURS_FIGURE_LEAVE, HOURS_FIGURE_TOTAL, type HoursFigureCode } from '@shift/domain';
+import { HOURS_FIGURE_BAND, HOURS_FIGURE_LEAVE, HOURS_FIGURE_TOTAL } from '@shift/domain';
 import type { ReactNode } from 'react';
 
 import { StatTile, StatTileLabel, StatTileValue } from '@/components/ui/stat-tile';
 import { CONFLICT_GLYPH } from '@/features/calendar/utils/modifiers';
 import { ExplainButton } from '@/features/hours/components/hours-explanation';
 import { LeaveFigure } from '@/features/hours/components/hours-marks';
+import type { HoursExplainFigure } from '@/features/hours/services/hours-explanation';
 import {
   HOURS_BANDS_HEADING_ID,
   figureIsEmpty,
+  leaveColumnNameOf,
   type MyHoursView,
 } from '@/features/hours/services/my-hours';
 import { t } from '@/lib/i18n';
@@ -15,7 +17,8 @@ import { t } from '@/lib/i18n';
 /**
  * The viewer's month of hours (story 4.1b): the total and the shift count, a
  * row per band in start order — its name as stored, its hours and the shifts
- * that overlap it — the leave row apart, and, only when there are any, the
+ * that overlap it — a leave row per leave column apart (story 13.2: one per
+ * drawing absence type, named as stored, and *Ostala odsutnost*), and, only when there are any, the
  * shifts with no times that no hour counts. Every figure is
  * `@/features/hours/services/my-hours`'s, in tabular numerals.
  *
@@ -31,7 +34,7 @@ export function HoursSummary({
   onExplain,
 }: {
   readonly view: MyHoursView;
-  readonly onExplain: (figure: HoursFigureCode) => void;
+  readonly onExplain: (figure: HoursExplainFigure) => void;
 }): ReactNode {
   return (
     <div className="flex min-w-0 flex-col gap-4 px-4 pb-4">
@@ -93,20 +96,28 @@ export function HoursSummary({
           </ul>
         </section>
       )}
-      <div className="flex min-h-11 min-w-0 items-center justify-between gap-3 border-t border-border pt-2">
-        <span className="min-w-0 break-words font-medium">{t('sati.leave')}</span>
-        <span className="flex shrink-0 items-center gap-1">
-          <span className="font-semibold tabular-nums"><LeaveFigure leave={view.leave} /></span>
-          {view.leave === null ? null : (
-            <ExplainButton
-              figureName={t('sati.leave')}
-              onPress={() => {
-                onExplain({ code: HOURS_FIGURE_LEAVE });
-              }}
-            />
-          )}
-        </span>
-      </div>
+      <ul className="divide-y divide-border border-t border-border">
+        {view.leave.map((cell) => {
+          const name = leaveColumnNameOf(cell.column);
+
+          return (
+            <li key={cell.column.key} className="flex min-h-11 min-w-0 items-center justify-between gap-3 py-2">
+              <span className="min-w-0 break-words font-medium">{name}</span>
+              <span className="flex shrink-0 items-center gap-1">
+                <span className="font-semibold tabular-nums"><LeaveFigure leave={cell.figure} /></span>
+                {cell.figure === null ? null : (
+                  <ExplainButton
+                    figureName={name}
+                    onPress={() => {
+                      onExplain({ code: HOURS_FIGURE_LEAVE, column: cell.column.key });
+                    }}
+                  />
+                )}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
       {view.untimedShiftCount === null ? null : (
         <p className="text-sm text-muted-foreground">{t('sati.untimed', { count: view.untimedShiftCount })}</p>
       )}

@@ -1,7 +1,7 @@
 import { MINUTES_PER_DAY } from '@shift/domain';
 
 import { durationMessageKey } from '@/features/hour-bands/services/list';
-import { leaveIsEmpty } from '@/features/hours/services/my-hours';
+import { leaveColumnNameOf, leaveIsEmpty, type HoursLeaveCell } from '@/features/hours/services/my-hours';
 import {
   bandMinutesOf,
   type HoursFooter,
@@ -29,10 +29,13 @@ import { formatIsoMonthName } from '@/lib/i18n/format';
  * the screen, while the cell stays a number and a column sums natively. The
  * one division is the only arithmetic.
  *
- * THE LEAVE IS ONE COLUMN OF DAYS (human, 2026-10-10): the row's charged
- * leave days, the domain's count, written as a number. Its heading names the
- * unit, as a number format cannot inflect `dan/dana`. No day is an empty
- * cell, as the screen draws it `—`. No leave hour is written anywhere.
+ * THE LEAVE IS IN DAYS (human, 2026-10-10), ONE COLUMN PER LEAVE COLUMN OF
+ * THE SCREEN (story 13.2): each row's charged days of that column, the
+ * domain's count, written as a number, in the screen's column order. Each
+ * heading is the column's name with the unit, `{name} (dani)` — a drawing
+ * type's stored name, or *Ostala odsutnost* — as a number format cannot
+ * inflect `dan/dana`. No day is an empty cell, as the screen draws it `—`. No
+ * leave hour is written anywhere. The file equals the screen (FR-42a).
  *
  * THE FOOTER IS THE SCREEN'S (FR-42a; E922): under the rows, *Ukupno za
  * prikazane osobe* and each column's total over the rows shown —
@@ -78,7 +81,10 @@ export type HoursExportCell =
 export interface HoursExport {
   readonly fileName: string;
   readonly sheetName: string;
-  /** The header row: Member, Team, shifts, one per band (its name as stored), Total, leave days, unresolved conflicts. */
+  /**
+   * The header row: Member, Team, shifts, one per band (its name as stored),
+   * Total, one per leave column (`{name} (dani)`), unresolved conflicts.
+   */
   readonly columns: readonly string[];
   /** One row per `view.rows` entry, in order; each as long as `columns`. */
   readonly rows: readonly (readonly HoursExportCell[])[];
@@ -132,6 +138,11 @@ function leaveDays(days: number): HoursExportCell {
   return leaveIsEmpty(days) ? { kind: 'empty' } : { kind: 'count', value: days };
 }
 
+/** A row's or the footer's leave cells, in the screen's column order. */
+function leaveCellsOf(cells: readonly HoursLeaveCell[]): readonly HoursExportCell[] {
+  return cells.map((cell) => leaveDays(cell.days));
+}
+
 /**
  * One table row as cells, the bands in `bandIds` order — each band's minutes
  * read by the table's own rule (`bandMinutesOf`), so the file and the screen
@@ -144,7 +155,7 @@ function cellsOf(row: OrganizationHoursRow, bandIds: readonly string[]): readonl
     { kind: 'count', value: row.shiftCount },
     ...bandIds.map((bandId) => hours(bandMinutesOf(row, bandId))),
     hours(row.hours.totalMinutes),
-    leaveDays(row.leaveDays),
+    ...leaveCellsOf(row.leave),
     // Story 5.3d: the state is the column and the number, 0 included — never a colour.
     { kind: 'count', value: row.conflictCount },
   ];
@@ -158,7 +169,7 @@ function footerCellsOf(footer: HoursFooter): readonly HoursExportCell[] {
     { kind: 'count', value: footer.shiftCount },
     ...footer.bands.map((band) => hours(band.minutes)),
     hours(footer.totalMinutes),
-    leaveDays(footer.leaveDays),
+    ...leaveCellsOf(footer.leave),
     { kind: 'count', value: footer.conflictCount },
   ];
 }
@@ -190,7 +201,7 @@ export function hoursExportOf(view: OrganizationHoursView, organizationName: str
       t('sati.organization.shifts'),
       ...view.bands.map((band) => band.name),
       t('sati.organization.total'),
-      t('sati.organization.export.leaveDays'),
+      ...view.leaveColumns.map((column) => t('sati.organization.export.days', { name: leaveColumnNameOf(column) })),
       t('sati.organization.conflicts'),
     ],
     rows: view.rows.map((row) => cellsOf(row, bandIds)),

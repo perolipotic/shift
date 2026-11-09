@@ -1032,10 +1032,17 @@ export const KEY_SOURCES = [
     //
     // ONE HUNDRED AND THIRTEEN SINCE STORY 15.7b: the month control's Badge
     // and its `Ovaj mjesec` button are gone, counted in the Kalendar set too.
+    //
+    // ONE HUNDRED AND SIX SINCE STORY 13.2: the fixed leave heading is gone
+    // (DI-8) — the summary's row label and its ⓘ's name, the table's heading
+    // and its ⓘ's name, the stacked rows' sort option, label and ⓘ's name,
+    // seven. Each leave column is named by `leaveColumnNameOf` in
+    // `@/features/hours/services/my-hours`, a key source: a drawing type's
+    // stored name, or *Ostala odsutnost*.
     name: 'the Sati destination',
     file: SATI,
     keys: translationKeys,
-    strings: 113,
+    strings: 106,
   },
   {
     // STORY 5.2c. THREE on Godišnji: its own `nav.godisnji` heading, the
@@ -1304,10 +1311,12 @@ export const KEY_SOURCES = [
     // a leave of 0 reads, off `leaveMessageKey`.
     // THREE SINCE LEAVE IN DAYS: a leave reads as its day count, `count.days`,
     // off the same union.
+    // FOUR SINCE STORY 13.2: *Ostala odsutnost*, the leave column of every
+    // type that does not draw, off `otherAbsenceMessageKey`.
     name: 'the hours rules',
     file: HOURS_KEYS,
     keys: messageKeyUnions,
-    strings: 3,
+    strings: 4,
   },
   {
     // STORY 4.2: why an admin's table is empty — nobody matches the filter,
@@ -1342,6 +1351,8 @@ export const KEY_SOURCES = [
     // STILL ELEVEN SINCE LEAVE IN DAYS: the leave column's heading names its
     // unit, days, in place of the table's own heading.
     // TWELVE SINCE E922: the footer row's label, the table's own.
+    // STILL TWELVE SINCE STORY 13.2: the one leave heading became one per
+    // leave column, `{name} (dani)`, a single key with the column's name.
     name: 'the hours export rules',
     file: HOURS_EXPORT_KEYS,
     keys: (text: string) => [...translationKeys(text), ...messageKeyUnions(text)],
@@ -1356,10 +1367,12 @@ export const KEY_SOURCES = [
     // REVIEW: a decided shift's leave line (`sati.explain.line` again, with
     // the decision as its source) and the two decisions' words, the resolved
     // queue's own, off `leaveDecisionMessageKey`.
+    // ELEVEN SINCE STORY 13.2: the leave's fixed name is gone; a leave column's
+    // dialog is named by `leaveColumnNameOf`, `@/features/hours/services/my-hours`'s.
     name: 'the hours explanation rules',
     file: HOURS_EXPLANATION_KEYS,
     keys: (text: string) => [...translationKeys(text), ...messageKeyUnions(text)],
-    strings: 12,
+    strings: 11,
   },
   {
     // STORY 5.1c: the leave card's four reasons for no preview (incomplete,

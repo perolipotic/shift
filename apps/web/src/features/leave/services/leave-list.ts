@@ -1,6 +1,7 @@
 import { queryOptions } from '@tanstack/react-query';
 import type { LeaveRange } from '@shift/domain';
 
+import { ANNUAL_LEAVE_ID } from '@/features/absence-types/services/list';
 import { leaveRangeOf } from '@/features/leave/services/leave-write';
 
 /**
@@ -21,14 +22,25 @@ export { LEAVE_RECORDS_TABLE } from '@/features/leave/services/leave-write';
  * NEVER A GUESS. A row of another member, a range that does not parse, or two
  * records sharing a date — which 0028 refuses — make the whole answer
  * unavailable, so no balance is ever drawn from rows that cannot be trusted.
+ *
+ * EVERY RECORD CARRIES ITS TYPE (story 13.2): the absence type it records and
+ * whether that type draws down the allowance, current-state, read with it —
+ * the select's spread embed and the two definer reads (0053) answer the same
+ * flat `absence_type_id` and `draws_allowance`. A row with NEITHER, a cache
+ * written before 13.2, is annual leave and draws, as every record then was;
+ * any other missing or malformed value makes the read unavailable.
  */
 
-/** The prefix every member's leave key starts with. */
-const LEAVE_RECORDS_KEY_PREFIX = 'leave-records';
+/**
+ * Every member's leave key, as one prefix: what a write that changes every
+ * member's records at once — an absence type's drawing flag (story 13.2) —
+ * re-reads them all under. No read is made under it alone.
+ */
+export const LEAVE_RECORDS_ROOT_KEY = ['leave-records'] as const;
 
 /** The one query key a member's live leave records are read under. */
 export function LEAVE_RECORDS_KEY(memberId: string): readonly ['leave-records', string] {
-  return [LEAVE_RECORDS_KEY_PREFIX, memberId] as const;
+  return [LEAVE_RECORDS_ROOT_KEY[0], memberId] as const;
 }
 
 /** Five minutes, the bound the other lists set; every leave write re-reads it. */
@@ -40,21 +52,31 @@ export const LEAVE_RECORDS_FETCH_PAUSED = 'paused';
 /** The records could not be read, or what came back cannot be trusted. */
 export const LEAVE_RECORDS_UNAVAILABLE = 'LEAVE_RECORDS_UNAVAILABLE';
 
-/** The columns read: the id an amend or a removal names, the member, as a tripwire, and the range. */
-export const LEAVE_RECORDS_COLUMNS = 'id,member_id,during';
+/**
+ * The columns read: the id an amend or a removal names, the member, as a
+ * tripwire, the range, and (story 13.2) the record's absence type and whether
+ * it draws down the allowance, spread flat as 0053's definer reads answer it.
+ */
+export const LEAVE_RECORDS_COLUMNS = 'id,member_id,during,absence_type_id,...absence_types(draws_allowance)';
 
 const ID_COLUMN = 'id';
 const MEMBER_COLUMN = 'member_id';
 const REMOVED_COLUMN = 'removed_at';
 const DURING_COLUMN = 'during';
+const TYPE_COLUMN = 'absence_type_id';
+const DRAWS_COLUMN = 'draws_allowance';
 
 /**
  * One live record: the inclusive range it records and its id, which an amend
- * or a removal names (story 5.2b). Still a `LeaveRange`, so the records go to
- * `packages/domain` as they are.
+ * or a removal names (story 5.2b), and (story 13.2) its absence type and
+ * whether that type draws down the allowance. Still a `LeaveRange`, so the
+ * records go to `packages/domain` as they are, and its balance counts only
+ * the drawing ones.
  */
 export interface LeaveRecord extends LeaveRange {
   readonly id: string;
+  readonly absenceTypeId: string;
+  readonly drawsAllowance: boolean;
 }
 
 export type LeaveRecordsOutcome =
@@ -87,9 +109,31 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
+ * A row's absence type and its drawing flag, or null. A row with neither (a
+ * cache written before story 13.2) is annual leave, which always draws; one
+ * with only one of them, a type that is not non-empty text or a flag that is
+ * not a boolean cannot be trusted.
+ */
+export function leaveRecordTypeOf(
+  row: Record<string, unknown>,
+): { readonly absenceTypeId: string; readonly drawsAllowance: boolean } | null {
+  const absenceTypeId = row[TYPE_COLUMN];
+  const drawsAllowance = row[DRAWS_COLUMN];
+
+  if (absenceTypeId === undefined && drawsAllowance === undefined) {
+    return { absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true };
+  }
+
+  if (typeof absenceTypeId !== 'string' || absenceTypeId === '' || typeof drawsAllowance !== 'boolean') return null;
+
+  return { absenceTypeId, drawsAllowance };
+}
+
+/**
  * The rows as the member's records, in start order, or null when any row is
  * another member's, carries no id or one another row carries, does not
- * parse, or shares a date with the one before it.
+ * parse, carries a type that cannot be trusted ({@link leaveRecordTypeOf}),
+ * or shares a date with the one before it.
  */
 export function leaveRecordsOf(rows: readonly unknown[], memberId: string): readonly LeaveRecord[] | null {
   const records: LeaveRecord[] = [];
@@ -108,7 +152,11 @@ export function leaveRecordsOf(rows: readonly unknown[], memberId: string): read
 
     if (range === null) return null;
 
-    records.push({ id, from: range.from, to: range.to });
+    const type = leaveRecordTypeOf(row);
+
+    if (type === null) return null;
+
+    records.push({ id, from: range.from, to: range.to, ...type });
   }
 
   records.sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));

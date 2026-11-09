@@ -5,6 +5,7 @@ import type { Browser, Page } from '@playwright/test';
 
 import { LoginPage } from '../../pages/login.page.ts';
 import {
+  holdAbsenceTypes,
   holdRotation,
   organizationNameOf,
   removeFormerMemberInSql,
@@ -21,7 +22,7 @@ import {
   type SeededRotation,
 } from '../../utils/database-helper.ts';
 import { ADMIN_STATE, MEMBER_STATE, RUN_TIMEZONE } from '../../utils/run-fixture.ts';
-import { escapeRegExp, fill, hr, plural } from '../../utils/i18n.ts';
+import { ANNUAL_LEAVE_COLUMN, ANNUAL_LEAVE_DAYS_HEADING, escapeRegExp, fill, hr, plural } from '../../utils/i18n.ts';
 import { expectNoHorizontalScroll, expectNoInnerHorizontalScroll } from '../../utils/layout.ts';
 import { chargedLeaveDates, chargedLeaveDays } from '../../utils/rotation.ts';
 import { hoursExportFileName, readXlsx, type XlsxCell } from '../../utils/xlsx.ts';
@@ -80,6 +81,15 @@ let former: { readonly slug: string; readonly id: string } | null = null;
 /** Members whose live records are soft-removed afterwards (story 5.3d). */
 let withLeave: { readonly slug: string; readonly id: string }[] = [];
 
+/**
+ * Story 13.2: Sati's leave columns, their headings and the file's are named by
+ * the run organization's absence types, which `absence-types.spec.ts` and
+ * `offline-write.spec.ts` change under `holdAbsenceTypes`. A test that asserts
+ * them takes the same lock first — before the rotation lock, always in that
+ * order — so no extra type and no renamed annual leave appears mid-test.
+ */
+let leaveColumnsHold: RotationHold | null = null;
+
 test.afterEach(async () => {
   try {
     for (const member of withLeave) await removeLeaveRecordsInSql(member.slug, member.id).catch(() => undefined);
@@ -93,9 +103,18 @@ test.afterEach(async () => {
       former = null;
       await hold?.release();
       hold = null;
+      await leaveColumnsHold?.release();
+      leaveColumnsHold = null;
     }
   }
 });
+
+
+/** Takes the absence-types lock for this test; `afterEach` releases it last. */
+async function holdLeaveColumns(slug: string): Promise<void> {
+  leaveColumnsHold = holdAbsenceTypes(slug);
+  await leaveColumnsHold.ready;
+}
 
 async function seeded(slug: string, teamId: string): Promise<SeededRotation> {
   hold = holdRotation(slug);
@@ -220,8 +239,16 @@ async function expectExportIsTable(hoursPage: HoursPage, fileName: string): Prom
   const workbook = readXlsx(readFileSync(await download.path()));
   expect(workbook.name).toBe(organization.export.sheetName);
   const [header, ...written] = workbook.rows;
-  const headings = screen.map((heading) => (heading === organization.leave ? organization.export.leaveDays : heading));
-  expect(header?.map((cell) => (cell?.type === 'text' ? cell.value : null))).toEqual(headings);
+  const fileHeadings = header?.map((cell) => (cell?.type === 'text' ? cell.value : null)) ?? [];
+  // Story 13.2: every leave column — annual leave's, any other drawing type's,
+  // Ostala odsutnost — is headed in the file by its screen name with the unit,
+  // `{name} (dani)`, and holds days; every other heading is the screen's own.
+  const leaveLabels = new Set(
+    screen.filter((label, column) => fileHeadings[column] === fill(organization.export.days, { name: label })),
+  );
+  expect(leaveLabels.has(ANNUAL_LEAVE_COLUMN), 'the file has annual leave\'s days column').toBe(true);
+  const headings = screen.map((heading) => (leaveLabels.has(heading) ? fill(organization.export.days, { name: heading }) : heading));
+  expect(fileHeadings).toEqual(headings);
   // E922: every row shown, then the footer row, as on the screen.
   expect(written).toHaveLength(shown.length + 1);
   const body = written.slice(0, shown.length);
@@ -231,7 +258,7 @@ async function expectExportIsTable(hoursPage: HoursPage, fileName: string): Prom
     // The conflicts, the last column, are never empty: no trailing cell is left out.
     expect(cells.length, `cells of row ${String(index)}`).toBe(headings.length);
     for (const [column, label] of screen.entries()) {
-      expectCellIsScreen(cells[column], label, texts[column] ?? '', `${label} of row ${String(index)}`);
+      expectCellIsScreen(cells[column], label, texts[column] ?? '', `${label} of row ${String(index)}`, leaveLabels.has(label));
     }
   }
   // THE ORDER IS THE SCREEN'S.
@@ -248,7 +275,7 @@ async function expectExportIsTable(hoursPage: HoursPage, fileName: string): Prom
   expect(footer[1] ?? null, 'the footer leaves Team empty').toBeNull();
   for (const [column, label] of screen.entries()) {
     if (column < 2) continue;
-    expectCellIsScreen(footer[column], label, totals[column - 1] ?? '', `${label} of the footer`);
+    expectCellIsScreen(footer[column], label, totals[column - 1] ?? '', `${label} of the footer`, leaveLabels.has(label));
     if (footer[column]?.type === 'number' && footer[column].format !== null) {
       const sum = body.reduce((minutes, cells) => minutes + (exportedMinutes(cells[column]) ?? 0), 0);
       expect(exportedMinutes(footer[column]), `${label} sums to its footer`).toBe(sum);
@@ -270,7 +297,13 @@ async function expectExportIsTable(hoursPage: HoursPage, fileName: string): Prom
  * 5.3d) numbers, the leave its days or absent, and a band or the total a
  * duration equal to the screen's minutes, in the format that reads as it.
  */
-function expectCellIsScreen(cell: XlsxCell | null | undefined, label: string, text: string, where: string): void {
+function expectCellIsScreen(
+  cell: XlsxCell | null | undefined,
+  label: string,
+  text: string,
+  where: string,
+  leave: boolean = label === ANNUAL_LEAVE_COLUMN,
+): void {
   if (label === organization.member || label === organization.team) {
     expect(cell, where).toEqual({ type: 'text', value: text });
   } else if (label === organization.conflicts) {
@@ -278,8 +311,9 @@ function expectCellIsScreen(cell: XlsxCell | null | undefined, label: string, te
     expect(cell, where).toEqual({ type: 'number', value: conflictsOf(text), format: null });
   } else if (label === organization.shifts) {
     expect(cell, where).toEqual({ type: 'number', value: Number(/^\d+/.exec(text)?.[0]), format: null });
-  } else if (label === organization.leave) {
-    // The leave: its days a plain number, absent at 0 (`—`), never a duration.
+  } else if (leave) {
+    // A leave column (story 13.2: each one, Ostala odsutnost included): its
+    // days a plain number, absent at 0 (`—`), never a duration.
     const days = leaveDaysOfFigure(text);
     expect(cell ?? null, where).toEqual(days === null ? null : { type: 'number', value: days, format: null });
   } else {
@@ -315,6 +349,7 @@ test.describe('as a member', () => {
     fixture,
   }) => {
     test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
+    await holdLeaveColumns(fixture.slug);
     const rotation = await seeded(fixture.slug, fixture.team.id);
     const month = rotation.today.slice(0, 7);
     const dan = daysAtStep(month, rotation.today, 0);
@@ -525,6 +560,7 @@ test.describe('as an admin', () => {
     fixture,
   }) => {
     test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
+    await holdLeaveColumns(fixture.slug);
     const rotation = await seeded(fixture.slug, fixture.team.id);
     const month = rotation.today.slice(0, 7);
     expect(workingShiftsIn(month, rotation.today), 'the seeded month holds a working shift').toBeGreaterThan(0);
@@ -567,7 +603,7 @@ test.describe('as an admin', () => {
     await expect(await hoursPage.cellIn(row, organization.total)).toHaveText(memberTotal);
     await expect(await hoursPage.cellIn(row, organization.shifts)).toHaveText(memberShifts);
     await expect(await hoursPage.cellIn(row, organization.team)).toHaveText(fixture.team.name);
-    await expect(await hoursPage.cellIn(row, organization.leave)).toHaveText(NO_LEAVE_TEXT);
+    await expect(await hoursPage.cellIn(row, ANNUAL_LEAVE_COLUMN)).toHaveText(NO_LEAVE_TEXT);
     // ONE COLUMN PER BAND, the member's bands exactly, each cell the member's figures.
     await expect(hoursPage.columnHeaders).toHaveText([
       organization.member,
@@ -575,7 +611,7 @@ test.describe('as an admin', () => {
       organization.shifts,
       ...memberBandNames,
       organization.total,
-      organization.leave,
+      ANNUAL_LEAVE_COLUMN,
       organization.conflicts,
     ]);
     // No leave on the run's member: a zero, shown.
@@ -945,6 +981,7 @@ test.describe('the filters on a phone, as an admin', () => {
     hoursPage,
     fixture,
   }) => {
+    await holdLeaveColumns(fixture.slug);
     // WHAT THE MEMBER READS on their own Sati, in a session of their own —
     // the figures their stacked row must repeat, band by band.
     const memberContext = await browser.newContext({ storageState: MEMBER_STATE });
@@ -976,12 +1013,12 @@ test.describe('the filters on a phone, as an admin', () => {
     // leave under their own labels, shown above the figure.
     const row = hoursPage.organizationListRow(fixture.member.name);
     await expect(row).toHaveCount(1);
-    for (const label of [organization.member, organization.team, organization.shifts, organization.total, organization.leave]) {
+    for (const label of [organization.member, organization.team, organization.shifts, organization.total, ANNUAL_LEAVE_COLUMN]) {
       await expect(hoursPage.listValue(row, label)).toHaveCount(1);
     }
     await expect(hoursPage.listValue(row, organization.total)).toHaveText(memberTotal);
     await expect(hoursPage.listLabel(row, organization.total)).toBeVisible();
-    await expect(hoursPage.listValue(row, organization.leave)).toHaveText(NO_LEAVE_TEXT);
+    await expect(hoursPage.listValue(row, ANNUAL_LEAVE_COLUMN)).toHaveText(NO_LEAVE_TEXT);
     // EVERY FIXTURE BAND under its own visible label, with the member's own
     // hours and shifts for it.
     for (const band of fixture.bands) {
@@ -1066,6 +1103,7 @@ test.describe('the conflict count, as an admin', () => {
     fixture,
   }) => {
     test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
+    await holdLeaveColumns(fixture.slug);
     const { today, team } = await seededTeam(fixture.slug);
     const member = await seedLeaveMember(fixture.slug, team.id, today, 20);
     withLeave.push({ slug: fixture.slug, id: member.id });
@@ -1106,7 +1144,7 @@ test.describe('the conflict count, as an admin', () => {
     const days = chargedLeaveDays(seed!, recorded.from, recorded.to, month);
     expect(days, "today's own Dan is a charged day").toBeGreaterThan(0);
     const leaveDays = leaveText(days);
-    await expect(await hoursPage.cellIn(row, organization.leave)).toHaveText(leaveDays);
+    await expect(await hoursPage.cellIn(row, ANNUAL_LEAVE_COLUMN)).toHaveText(leaveDays);
     // EVERY HOUR AS BEFORE: the shifts in conflict still count.
     const after = await row.textContent();
     expect(after, 'the row reads after the write').not.toBeNull();
@@ -1130,7 +1168,7 @@ test.describe('the conflict count, as an admin', () => {
     expect(countOf(fixture.member.name)).toEqual({ type: 'number', value: 0, format: null });
     expect(countOf(fixture.admin.name)).toEqual({ type: 'number', value: 0, format: null });
     // The leave days, the same number the row shows, under a heading that names days; no leave hours.
-    const leaveColumn = headings.indexOf(organization.export.leaveDays);
+    const leaveColumn = headings.indexOf(ANNUAL_LEAVE_DAYS_HEADING);
     expect(leaveColumn, 'the file has the leave days column').toBeGreaterThan(-1);
     expect(headings[leaveColumn + 1]).toBe(organization.conflicts);
     const leaveOf = (name: string) => {
@@ -1143,7 +1181,7 @@ test.describe('the conflict count, as an admin', () => {
 
     // THE LEAVE'S ⓘ: a line per charged date, `+1 dan` each, ⚠ on each in unresolved conflict, = the row's days.
     await hoursPage.rowLeaveExplainButton(member.name).click();
-    const leaveDialog = hoursPage.explanationOf(sati.leave);
+    const leaveDialog = hoursPage.explanationOf(ANNUAL_LEAVE_COLUMN);
     await expect(leaveDialog).toBeVisible();
     await expect(leaveDialog.getByRole('listitem')).toHaveCount(days);
     // The first line names the charged date's shift as `team · type`, the seeded pattern's type on that date.
@@ -1154,7 +1192,7 @@ test.describe('the conflict count, as an admin', () => {
     await expect(leaveDialog.getByRole('listitem').filter({ hasText: sati.explain.conflict })).toHaveCount(expected);
     await expect(leaveDialog.getByRole('listitem').filter({ hasText: plural(hr.count.days, 1) })).toHaveCount(days);
     await expect(leaveDialog.getByText(leaveDays, { exact: true })).toBeVisible();
-    await hoursPage.explanationCloseOf(sati.leave).click();
+    await hoursPage.explanationCloseOf(ANNUAL_LEAVE_COLUMN).click();
     await expect(leaveDialog).toBeHidden();
 
     // STORY 7.6, ON A PHONE: the member's stacked row says `⚠` and the
@@ -1178,7 +1216,7 @@ test.describe('the conflict count, as an admin', () => {
     await expect(await hoursPage.cellIn(row, organization.conflicts)).toHaveText(
       later === 0 ? '0' : `⚠${String(later)}`,
     );
-    await expect(await hoursPage.cellIn(row, organization.leave)).toHaveText(
+    await expect(await hoursPage.cellIn(row, ANNUAL_LEAVE_COLUMN)).toHaveText(
       leaveText(chargedLeaveDays(seed!, recorded.from, recorded.to, nextMonth(month))),
     );
     expect(await page.evaluate(() => (window as unknown as { noReload?: boolean }).noReload)).toBe(true);
@@ -1266,6 +1304,7 @@ test.describe('resolutions, as an admin', () => {
 
   test("a resolved conflict takes exactly one off the member's count in the table and the file", async ({ hoursPage, fixture }) => {
     test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
+    await holdLeaveColumns(fixture.slug);
     const { today, team } = await seededTeam(fixture.slug);
     const member = await seedLeaveMember(fixture.slug, team.id, today, 20);
     withLeave.push({ slug: fixture.slug, id: member.id });
@@ -1338,6 +1377,7 @@ test('a member with one of their own conflicts resolved reads exactly one fewer 
 
 test('a member with their own leave reads their own line of shifts in conflict and their leave in days', async ({ browser, fixture }) => {
   test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
+  await holdLeaveColumns(fixture.slug);
   const { today, team } = await seededTeam(fixture.slug);
   const member = await seedLeaveMember(fixture.slug, team.id, today, 20);
   withLeave.push({ slug: fixture.slug, id: member.id });
@@ -1354,10 +1394,10 @@ test('a member with their own leave reads their own line of shifts in conflict a
     await expect(hours.figureIn(hours.leaveRow, leaveText(days))).toBeVisible();
     // Its ⓘ lists them, each in unresolved conflict.
     await hours.leaveExplainButton.click();
-    const dialog = hours.explanationOf(sati.leave);
+    const dialog = hours.explanationOf(ANNUAL_LEAVE_COLUMN);
     await expect(dialog.getByRole('listitem')).toHaveCount(days);
     await expect(dialog.getByRole('listitem').filter({ hasText: sati.explain.conflict })).toHaveCount(expected);
-    await hours.explanationCloseOf(sati.leave).click();
+    await hours.explanationCloseOf(ANNUAL_LEAVE_COLUMN).click();
     await expect(dialog).toBeHidden();
     // Their own figures, never the table.
     await expect(hours.organizationTable).toHaveCount(0);

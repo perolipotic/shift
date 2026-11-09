@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { ANNUAL_LEAVE_ID } from '@/features/absence-types/services/list';
 import {
   LEAVE_OVERVIEW_RECORDS_FUNCTION,
   LEAVE_OVERVIEW_RECORDS_KEY,
@@ -43,6 +44,8 @@ const MEMBER = '00000000-0000-4000-8000-0000000000b2';
 const OTHER = '00000000-0000-4000-8000-0000000000b3';
 const FIRST = '00000000-0000-4000-8000-0000000000c1';
 const SECOND = '00000000-0000-4000-8000-0000000000c2';
+/** Story 13.2: a type that does not draw down the allowance; opaque, as every id. */
+const SICK = '00000000-0000-4000-8000-0000000000d1';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -92,15 +95,21 @@ describe('the read', () => {
     ]);
   });
 
-  it('asks for the id an amend or a removal names', () => {
-    expect(LEAVE_RECORDS_COLUMNS.split(',')).toEqual(['id', 'member_id', 'during']);
+  it('asks for the id an amend or a removal names, and (story 13.2) the type and its drawing flag, spread flat', () => {
+    expect(LEAVE_RECORDS_COLUMNS.split(',')).toEqual([
+      'id',
+      'member_id',
+      'during',
+      'absence_type_id',
+      '...absence_types(draws_allowance)',
+    ]);
   });
 
-  it('parses each canonical range into the inclusive dates it records, with its id, in start order', async () => {
+  it('parses each canonical range into the inclusive dates it records, with its id and type, in start order', async () => {
     const table = tableAnswering({
       data: [
-        { id: SECOND, member_id: MEMBER, during: '[2026-10-01,2026-10-04)' },
-        { id: FIRST, member_id: MEMBER, during: '[2026-09-10,2026-09-15)' },
+        { id: SECOND, member_id: MEMBER, during: '[2026-10-01,2026-10-04)', absence_type_id: SICK, draws_allowance: false },
+        { id: FIRST, member_id: MEMBER, during: '[2026-09-10,2026-09-15)', absence_type_id: ANNUAL_LEAVE_ID, draws_allowance: true },
       ],
       error: null,
     });
@@ -108,10 +117,27 @@ describe('the read', () => {
     expect(await readLeaveRecords(table, MEMBER)).toEqual({
       ok: true,
       records: [
-        { id: FIRST, from: '2026-09-10', to: '2026-09-14' },
-        { id: SECOND, from: '2026-10-01', to: '2026-10-03' },
+        { id: FIRST, from: '2026-09-10', to: '2026-09-14', absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true },
+        { id: SECOND, from: '2026-10-01', to: '2026-10-03', absenceTypeId: SICK, drawsAllowance: false },
       ],
     });
+  });
+
+  it('reads a row with neither type field, a cache written before 13.2, as annual leave that draws', () => {
+    expect(leaveRecordsOf([{ id: FIRST, member_id: MEMBER, during: '[2026-09-10,2026-09-15)' }], MEMBER)).toEqual([
+      { id: FIRST, from: '2026-09-10', to: '2026-09-14', absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true },
+    ]);
+  });
+
+  it.each([
+    ['a type with no flag', { absence_type_id: SICK }],
+    ['a flag with no type', { draws_allowance: false }],
+    ['an empty type', { absence_type_id: '', draws_allowance: true }],
+    ['a type that is no string', { absence_type_id: 7, draws_allowance: true }],
+    ['a flag that is no boolean', { absence_type_id: SICK, draws_allowance: 'false' }],
+    ['a null flag', { absence_type_id: SICK, draws_allowance: null }],
+  ] as const)('cannot trust a row with %s (story 13.2)', (_name, type) => {
+    expect(leaveRecordsOf([{ id: FIRST, member_id: MEMBER, during: '[2026-09-10,2026-09-15)', ...type }], MEMBER)).toBeNull();
   });
 
   it.each([
@@ -176,8 +202,8 @@ describe('the read', () => {
         MEMBER,
       ),
     ).toEqual([
-      { id: FIRST, from: '2026-09-10', to: '2026-09-14' },
-      { id: SECOND, from: '2026-09-15', to: '2026-09-15' },
+      { id: FIRST, from: '2026-09-10', to: '2026-09-14', absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true },
+      { id: SECOND, from: '2026-09-15', to: '2026-09-15', absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true },
     ]);
   });
 });
@@ -225,7 +251,7 @@ describe('the query', () => {
     ],
     [
       'a failed refetch over cached records',
-      { isPending: false, isError: true, fetchStatus: 'idle', data: [{ id: FIRST, from: '2026-09-10', to: '2026-09-14' }] },
+      { isPending: false, isError: true, fetchStatus: 'idle', data: [{ id: FIRST, from: '2026-09-10', to: '2026-09-14', absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true }] },
       { records: null, loading: false, refreshing: false },
     ],
     [
@@ -239,7 +265,7 @@ describe('the query', () => {
 });
 
 describe('the records after a write', () => {
-  const RECORDS = [{ id: FIRST, from: '2026-09-10', to: '2026-09-14' }];
+  const RECORDS = [{ id: FIRST, from: '2026-09-10', to: '2026-09-14', absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true }];
 
   it('answers the records only once the re-read has settled successfully', () => {
     expect(leaveRecordsAfterWriteOf({ status: 'success', fetchStatus: 'idle', data: RECORDS })).toEqual(RECORDS);
@@ -476,8 +502,8 @@ describe("the organization's records (story 5.3b)", () => {
 
   it("parses every member's rows into inclusive ranges, each with its member", () => {
     expect(organizationLeaveRecordsOf([B, A], [MEMBER, OTHER])).toEqual([
-      { id: SECOND, memberId: OTHER, from: '2026-09-12', to: '2026-09-12' },
-      { id: FIRST, memberId: MEMBER, from: '2026-09-10', to: '2026-09-14' },
+      { id: SECOND, memberId: OTHER, from: '2026-09-12', to: '2026-09-12', absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true },
+      { id: FIRST, memberId: MEMBER, from: '2026-09-10', to: '2026-09-14', absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true },
     ]);
   });
 

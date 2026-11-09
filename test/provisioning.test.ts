@@ -1584,7 +1584,7 @@ describe('every organization table carries row level security, and only its revi
 
   it.skipIf(noDatabase)('holds no privilege on absence_types but read and a three-column insert, a two-column update, and never delete (story 13.1)', async () => {
     // As 2.1a's hour bands, less the delete: `authenticated` reads (narrowed
-    // by the policy to an active admin), inserts the tenant, name and flag,
+    // by the policy to an active member since 13.2's 0053), inserts the tenant, name and flag,
     // and updates the name and flag alone. No session deletes a type, names
     // its id or `created_at`, or holds anything as `anon`.
     const client = await connect();
@@ -1673,6 +1673,32 @@ describe('every organization table carries row level security, and only its revi
         `select tgname from pg_trigger where tgrelid = 'public.absence_types'::regclass and not tgisinternal`,
       );
       expect(typeTriggers, 'absence_types takes a trigger').toEqual([]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it.skipIf(noDatabase)('returns each leave record\'s type and its drawing flag from both leave reads (story 13.2)', async () => {
+    // 0053 recreates `my_leave_records()` and `leave_overview_records()` with
+    // two more columns, and changes nothing else about either.
+    const client = await connect();
+    try {
+      const { rows } = await client.query<{ name: string; result: string }>(
+        `select p.proname as name, pg_get_function_result(p.oid) as result
+           from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+          where n.nspname = 'public' and p.proname in ('my_leave_records', 'leave_overview_records')
+          order by p.proname`,
+      );
+      expect(rows).toEqual([
+        {
+          name: 'leave_overview_records',
+          result: 'TABLE(id uuid, member_id uuid, during daterange, absence_type_id uuid, draws_allowance boolean)',
+        },
+        {
+          name: 'my_leave_records',
+          result: 'TABLE(id uuid, member_id uuid, during daterange, absence_type_id uuid, draws_allowance boolean)',
+        },
+      ]);
     } finally {
       await client.end();
     }

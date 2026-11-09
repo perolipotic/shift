@@ -111,14 +111,25 @@ export type HoursConflictsState =
       readonly leaveRecords: LeaveRecordsByMember;
     };
 
+/**
+ * One live leave record as *Sati* counts it (story 13.2): its range, its
+ * absence type, which names the column its days are counted in, and whether
+ * that type draws down the allowance, as the leave read answered it — always
+ * present, so *Sati* can refuse a catalog that disagrees with it.
+ */
+export interface HoursLeaveRecord extends LeaveRange {
+  readonly absenceTypeId: string;
+  readonly drawsAllowance: boolean;
+}
+
 /** Leave records by member id; a member with none is absent. */
-export type LeaveRecordsByMember = ReadonlyMap<string, readonly LeaveRange[]>;
+export type LeaveRecordsByMember = ReadonlyMap<string, readonly HoursLeaveRecord[]>;
 
 /** No leave records at all. */
 export const NO_LEAVE_RECORDS: LeaveRecordsByMember = new Map();
 
 /** A member's records in {@link LeaveRecordsByMember}: none for a member with none. */
-export function leaveRecordsIn(records: LeaveRecordsByMember, memberId: string): readonly LeaveRange[] {
+export function leaveRecordsIn(records: LeaveRecordsByMember, memberId: string): readonly HoursLeaveRecord[] {
   return records.get(memberId) ?? [];
 }
 
@@ -129,15 +140,18 @@ export interface HoursLeave {
   readonly leaveRecords: LeaveRecordsByMember;
 }
 
-/** Records as {@link LeaveRecordsByMember}: each member's ranges, in the order read. */
-function byMemberOf(records: readonly { readonly memberId: string; readonly from: string; readonly to: string }[]): LeaveRecordsByMember {
-  const byMember = new Map<string, LeaveRange[]>();
+/** Records as {@link LeaveRecordsByMember}: each member's ranges and types, in the order read. */
+function byMemberOf(
+  records: readonly (HoursLeaveRecord & { readonly memberId: string })[],
+): LeaveRecordsByMember {
+  const byMember = new Map<string, HoursLeaveRecord[]>();
 
-  for (const { memberId, from, to } of records) {
+  for (const { memberId, from, to, absenceTypeId, drawsAllowance } of records) {
+    const record: HoursLeaveRecord = { from, to, absenceTypeId, drawsAllowance };
     const own = byMember.get(memberId);
 
-    if (own === undefined) byMember.set(memberId, [{ from, to }]);
-    else own.push({ from, to });
+    if (own === undefined) byMember.set(memberId, [record]);
+    else own.push(record);
   }
 
   return byMember;

@@ -337,7 +337,8 @@ export function swapRowsOf(snapshot: CalendarSnapshot, swapRows: readonly unknow
  */
 export function collisionInputOf(
   snapshot: CalendarSnapshot,
-  records: readonly OrganizationLeaveRecord[],
+  // Every record collides whatever its absence type (story 13.2): only the range, the id and the member are read.
+  records: readonly Pick<OrganizationLeaveRecord, 'id' | 'memberId' | 'from' | 'to'>[],
 ): CollisionInput {
   return {
     ...snapshotScheduleInputOf(snapshot),

@@ -758,7 +758,7 @@ function resolutionScreenFrom(
       records: {
         records: records
           .filter((record) => record.memberId === collision.memberId)
-          .map(({ id, from, to }) => ({ id, from, to })),
+          .map(({ id, from, to, absenceTypeId, drawsAllowance }) => ({ id, from, to, absenceTypeId, drawsAllowance })),
         loading: false,
         refreshing: false,
       },

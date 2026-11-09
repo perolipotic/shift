@@ -173,6 +173,11 @@ describe('the worked example (R6.1): leave 10.09–14.09 over Dan, Noć, Slobodn
   it('agrees with the cost of 3', () => {
     expect(leaveCostOf(memberInputOf(input, memberId), '2026-09-10', '2026-09-14')).toBe(3);
   });
+
+  it('raises the same collisions for a record whose type does not draw the allowance (story 13.2, CAP-23)', () => {
+    const notDrawing = inputOf(pilot, [{ id: 'leave-1', memberId, from: '2026-09-10', to: '2026-09-14', drawsAllowance: false }]);
+    expect(collisionsOf(notDrawing)).toEqual(collisionsOf(input));
+  });
 });
 
 describe('UJ-5 (R6.1): 5 dates over Jutarnja, Popodnevna, Noćna, Slobodno, Slobodno raise 3', () => {

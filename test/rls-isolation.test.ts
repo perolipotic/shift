@@ -936,12 +936,13 @@ describe('the access-control layer is present, so nothing below passes vacuously
       );
       expect(
         policies.map((row) => row.policyname),
-        'stories 1.3a, 1.4a, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a, 3.5a, 3.6a, 5.1b, 5.4a, 9.2, 10.3, 10.4, 12.1, 13.1 and 0025 own exactly these policies; a missing one refuses silently and looks like a working refusal',
+        'stories 1.3a, 1.4a, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a, 3.5a, 3.6a, 5.1b, 5.4a, 9.2, 10.3, 10.4, 12.1, 13.1, 13.2 and 0025 own exactly these policies; a missing one refuses silently and looks like a working refusal',
       ).toEqual([
-        // STORY 13.1 (0052): an active admin reads, defines and renames a type
-        // or sets its drawing flag. No delete, and no member-role read.
+        // STORY 13.1 (0052): an active admin defines and renames a type or
+        // sets its drawing flag. No delete. STORY 13.2 (0053, PO Q2): every
+        // active member of the organization reads the catalog.
         'absence_types_insert_by_own_active_admin',
-        'absence_types_select_by_own_active_admin',
+        'absence_types_select_by_own_active_member',
         'absence_types_update_by_own_active_admin',
         // STORY 5.4a: read and insert alone, and both an active admin's only;
         // a member reads their own live rows through `my_conflict_resolutions`.
@@ -18334,11 +18335,12 @@ async function myLeaveRecords(client: Client): Promise<{ id: string; memberId: s
 }
 
 describe("a member reads their own live leave records alone, with no author and no removal (story 5.2c)", () => {
-  it.skipIf(noDatabase)('returns exactly id, member_id and during', async () => {
+  it.skipIf(noDatabase)('returns exactly id, member_id, during, absence_type_id and draws_allowance', async () => {
     const client = await connect();
     try {
       const { fields } = await client.query('select * from public.my_leave_records() limit 0');
-      expect(fields.map((field) => field.name)).toEqual(['id', 'member_id', 'during']);
+      // STORY 13.2 (0053): the record's type and whether it draws the allowance.
+      expect(fields.map((field) => field.name)).toEqual(['id', 'member_id', 'during', 'absence_type_id', 'draws_allowance']);
     } finally {
       await client.end();
     }
@@ -18479,13 +18481,23 @@ describe("a member reads their own live leave records alone, with no author and 
         expect(rows.length, `${slug}: no row came back`).toBeGreaterThan(0);
         for (const row of rows) {
           expect(row['member_id'], `${slug}: a row of another member`).toBe(self.id);
-          expect(Object.keys(row).sort(), `${slug}: a row carries more than its three columns`).toEqual([
+          expect(Object.keys(row).sort(), `${slug}: a row carries more than its five columns`).toEqual([
+            'absence_type_id',
+            'draws_allowance',
             'during',
             'id',
             'member_id',
           ]);
         }
-        expect(inYear, slug).toEqual([{ id: kept, member_id: self.id, during: '[2042-09-10,2042-09-15)' }]);
+        expect(inYear, slug).toEqual([
+          {
+            id: kept,
+            member_id: self.id,
+            during: '[2042-09-10,2042-09-15)',
+            absence_type_id: '00000000-0000-0000-0000-000000000001',
+            draws_allowance: true,
+          },
+        ]);
         // The client's own parser reads the range the function returns.
         expect(leaveRangeOf(inYear[0]?.['during']), slug).toEqual({ from: '2042-09-10', to: '2042-09-14' });
       } finally {
@@ -18526,11 +18538,12 @@ async function leaveOverviewRecords(client: Client): Promise<{ id: string; membe
 }
 
 describe("an active admin reads the organization's live leave records, and nobody else does (story 7.15)", () => {
-  it.skipIf(noDatabase)('returns exactly id, member_id and during', async () => {
+  it.skipIf(noDatabase)('returns exactly id, member_id, during, absence_type_id and draws_allowance', async () => {
     const client = await connect();
     try {
       const { fields } = await client.query('select * from public.leave_overview_records() limit 0');
-      expect(fields.map((field) => field.name)).toEqual(['id', 'member_id', 'during']);
+      // STORY 13.2 (0053): the record's type and whether it draws the allowance.
+      expect(fields.map((field) => field.name)).toEqual(['id', 'member_id', 'during', 'absence_type_id', 'draws_allowance']);
     } finally {
       await client.end();
     }
@@ -18700,14 +18713,22 @@ describe("an active admin reads the organization's live leave records, and nobod
         const range = response.headers.get('content-range') ?? '';
         expect(range.split('/')[1], `${slug}: the count is not exact`).toBe(String(rows.length));
         for (const row of rows) {
-          expect(Object.keys(row).sort(), `${slug}: a row carries more than its three columns`).toEqual([
+          expect(Object.keys(row).sort(), `${slug}: a row carries more than its five columns`).toEqual([
+            'absence_type_id',
+            'draws_allowance',
             'during',
             'id',
             'member_id',
           ]);
         }
         expect(rows.filter((row) => row['id'] === kept), slug).toEqual([
-          { id: kept, member_id: self.id, during: '[2043-09-10,2043-09-15)' },
+          {
+            id: kept,
+            member_id: self.id,
+            during: '[2043-09-10,2043-09-15)',
+            absence_type_id: '00000000-0000-0000-0000-000000000001',
+            draws_allowance: true,
+          },
         ]);
       } finally {
         if (cleanup.length > 0) {
@@ -25373,9 +25394,9 @@ describe('an accepted swap is told to every admin, and its decision to both memb
  * a record of the type draws down the allowance. Annual leave has one fixed id
  * in every organization, is seeded for every organization (existing ones by
  * the migration, new ones by a trigger), always draws, and is the default type
- * of every leave record. An active admin reads, defines and edits types; a
- * member-role account reads none; nobody deletes one. Every case runs in a
- * rolled-back transaction.
+ * of every leave record. An active admin defines and edits types; since 13.2
+ * (`0053`) every active member of the organization reads them; nobody deletes
+ * one. Every case runs in a rolled-back transaction.
  */
 const ANNUAL_LEAVE = '00000000-0000-0000-0000-000000000001';
 
@@ -25519,7 +25540,7 @@ describe('absence types are organization data, and every leave record is annual 
   );
 
   it.skipIf(noDatabase).each(CROSS_TENANT)(
-    'shows the $fixture member-role session no type, refuses its insert and the admin\'s for $otherFixture, and refuses every delete',
+    'shows the $fixture member-role session its own organization\'s types alone, refuses its insert and the admin\'s for $otherFixture, and refuses every delete',
     async ({ slug, admin, member, otherSlug }) => {
       await inRolledBackTransaction(async (client) => {
         const other = await organizationId(client, otherSlug);
@@ -25527,7 +25548,18 @@ describe('absence types are organization data, and every leave record is annual 
         // Read as the owner before switching roles: a session cannot read auth.users.
         const caller = await memberByUsername(client, slug, admin);
         await actAs(client, memberRole.authUserId, memberRole.organizationId);
-        expect(await visibleAbsenceTypes(client), `${slug}: a member-role account reads a type`).toEqual([]);
+        // STORY 13.2 (0053, PO Q2): an active member reads the catalog of the
+        // token's organization, and no other tenant's.
+        const visible = await visibleAbsenceTypes(client);
+        expect(
+          visible.map((type) => type.id),
+          `${slug}: a member-role account does not read annual leave`,
+        ).toContain(ANNUAL_LEAVE);
+        expect(
+          visible.filter((type) => type.organizationId !== memberRole.organizationId),
+          `${slug}: a member-role account reads another organization's type`,
+        ).toEqual([]);
+        expect(visible.map((type) => type.organizationId), `${slug}: ${otherSlug}'s types leaked`).not.toContain(other);
         const memberInsert = await refusedThenContinue(client, () =>
           client.query('insert into absence_types (organization_id, name, draws_allowance) values ($1, $2, false)', [
             memberRole.organizationId,
@@ -25619,7 +25651,65 @@ describe('absence types are organization data, and every leave record is annual 
           [id],
         );
         expect(rows[0]?.type, `${slug}: a leave record naming no type is not annual leave`).toBe(ANNUAL_LEAVE);
-        expect(named.code, 'a session may write a leave record\'s type before 13.2').toBe('42501');
+        expect(named.code, 'a session may write a leave record\'s type before 13.2b').toBe('42501');
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'returns each $fixture record\'s type and its current drawing flag from both leave reads (story 13.2)',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const subject = await memberByUsername(client, slug, member);
+        const organization = caller.organizationId;
+        // No session writes a record's type before 13.2b: the owner seeds it.
+        const { rows: types } = await client.query<{ id: string }>(
+          `insert into absence_types (organization_id, name, draws_allowance)
+           values ($1, $2, false) returning id::text as id`,
+          [organization, `${THROWAWAY} not drawing`],
+        );
+        const notDrawing = types[0]?.id;
+        if (notDrawing === undefined) throw new Error('the absence type insert returned no id');
+        const { rows: records } = await client.query<{ id: string; absenceTypeId: string }>(
+          `insert into leave_records (organization_id, member_id, during, absence_type_id, created_by)
+           values ($1, $2, '[2041-07-06,2041-07-08]'::daterange, $3, $4),
+                  ($1, $2, '[2041-08-03,2041-08-05]'::daterange, $5, $4)
+           returning id::text as id, absence_type_id::text as "absenceTypeId"`,
+          [organization, subject.id, notDrawing, caller.authUserId, ANNUAL_LEAVE],
+        );
+        const expected = records
+          .map((record) => ({
+            id: record.id,
+            absenceTypeId: record.absenceTypeId,
+            drawsAllowance: record.absenceTypeId === ANNUAL_LEAVE,
+          }))
+          .sort((left, right) => left.id.localeCompare(right.id));
+        const read = async (source: string) => {
+          const { rows } = await client.query<{ id: string; absenceTypeId: string; drawsAllowance: boolean }>(
+            `select id::text as id, absence_type_id::text as "absenceTypeId", draws_allowance as "drawsAllowance"
+               from ${source} where id = any($1::uuid[]) order by id::text`,
+            [records.map((record) => record.id)],
+          );
+          return rows;
+        };
+
+        await actAs(client, subject.authUserId, organization);
+        expect(await read('public.my_leave_records()'), `${slug}: the member's own read`).toEqual(expected);
+        await actAs(client, caller.authUserId, organization);
+        expect(await read('public.leave_overview_records()'), `${slug}: the overview`).toEqual(expected);
+
+        // The flag is current-state: it follows the type, not the record.
+        await actAsOwner(client);
+        await client.query('update absence_types set draws_allowance = true where organization_id = $1 and id = $2', [
+          organization,
+          notDrawing,
+        ]);
+        await actAs(client, caller.authUserId, organization);
+        expect(
+          (await read('public.leave_overview_records()')).every((row) => row.drawsAllowance),
+          `${slug}: the flag did not follow the type`,
+        ).toBe(true);
       });
     },
   );

@@ -19,10 +19,13 @@ import type { LeaveRecordsByMember } from '@/features/hours/services/hours-confl
 import {
   HOURS_UNAVAILABLE,
   figureOf,
+  leaveColumnNameOf,
+  leaveColumnsOf,
   leaveDaysFigureOf,
   memberHoursInputOf,
-  memberLeaveDatesOf,
+  memberLeaveDatesByColumnOf,
   type HoursFigure,
+  type LeaveColumn,
   type LeaveDaysFigure,
 } from '@/features/hours/services/my-hours';
 import { t } from '@/lib/i18n';
@@ -45,9 +48,12 @@ import { formatIsoDate, formatList } from '@/lib/i18n/format';
  * already holds (`hoursConflictsStateOf`'s), by the domain's own
  * `collisionKeyOf`. A resolved conflict is not among them, so it is not marked.
  *
- * THE LEAVE IS EXPLAINED IN DAYS, AND ONLY IN DAYS (human, 2026-10-10). Its
- * lines are the domain's charged leave dates (`leaveDaysOfMonth`, through
- * `memberLeaveDatesOf`), one per date, naming each working shift on it as
+ * THE LEAVE IS EXPLAINED IN DAYS, AND ONLY IN DAYS (human, 2026-10-10), ONE
+ * LEAVE COLUMN AT A TIME (story 13.2): the ⓘ of a column names it, and the
+ * dialog's title is that column's name — a drawing type's as stored, or
+ * *Ostala odsutnost*. Its lines are the domain's charged leave dates of that
+ * column (`leaveDaysOfMonth`, through `memberLeaveDatesByColumnOf`), one per
+ * date, naming each working shift on it as
  * `team · type`, paired per shift, and adding `+1 dan`. The figure is the
  * domain's own: the count of those dates, `= 3 dana`, which the lines sum to.
  * A shift a conflict decision moved to leave appears only as its date's day,
@@ -60,10 +66,18 @@ import { formatIsoDate, formatList } from '@/lib/i18n/format';
  * cannot be shown. The pairs are joined as the locale lists things.
  */
 
+/**
+ * Which figure an ⓘ explains: the domain's total or band, or (story 13.2)
+ * the leave of one leave column, by its key (`LeaveColumn.key`).
+ */
+export type HoursExplainFigure =
+  | Exclude<HoursFigureCode, { readonly code: typeof HOURS_FIGURE_LEAVE }>
+  | { readonly code: typeof HOURS_FIGURE_LEAVE; readonly column: string };
+
 /** Which figure, of whom: `memberId` `null` is the viewer's own. */
 export interface HoursExplainRequest {
   readonly memberId: string | null;
-  readonly figure: HoursFigureCode;
+  readonly figure: HoursExplainFigure;
 }
 
 /** An equation of hours: the total's or a band's. */
@@ -109,7 +123,7 @@ export interface LeaveExplanationLine extends ExplanationLineBase {
 
 /** What every dialog has: the figure's name and whose month. */
 interface ExplanationViewBase {
-  /** The figure's name: `Ukupno sati`, a band's name as stored, `Godišnji odmor`. */
+  /** The figure's name: `Ukupno sati`, a band's name as stored, a leave column's name. */
   readonly figureName: string;
   /** Whose figure and which month: `Ivan Horvat · Rujan 2026.`, the month alone for the viewer's own. */
   readonly context: string;
@@ -222,11 +236,15 @@ export function hoursExplanationOf(
     const monthText = t('sati.explain.month', { month: month.monthName, year: month.year });
     const context =
       member === null || request.memberId === null ? monthText : t('sati.explain.memberMonth', { name: member.name, month: monthText });
-    const figureName = figureNameOf(snapshot, request.figure);
-
     if (request.figure.code === HOURS_FIGURE_LEAVE) {
       // The leave read is not ready: the dialog's unavailable state, never a leave of no records.
       if (leaveRecords === null) return null;
+
+      const columns = leaveColumnsOf(snapshot);
+      const key = request.figure.column;
+      const column = columns.find((one) => one.key === key);
+
+      if (column === undefined) throw new RangeError(`leave column ${key} is not in the snapshot`);
 
       const decided: Decided = {
         leave: new Set(leaveKeys.map(collisionKeyOf)),
@@ -235,11 +253,13 @@ export function hoursExplanationOf(
 
       return {
         kind: EXPLANATION_LEAVE,
-        figureName,
+        figureName: leaveColumnNameOf(column),
         context,
-        ...leaveEquationOf(snapshot, history, leaveRecords, month.month, names, decided),
+        ...leaveEquationOf(snapshot, history, leaveRecords, month.month, names, decided, columns, column),
       };
     }
+
+    const figureName = figureNameOf(snapshot, request.figure);
 
     const explanation = explainMemberHours(memberHoursInputOf(snapshot, history, leaveKeys), month.month, request.figure);
     const lines = explanation.operands.map((operand): HoursExplanationLine => {
@@ -272,8 +292,9 @@ interface Decided {
 }
 
 /**
- * The leave's equation: one line per charged date of `month` — the domain's
- * dates, never a count made here — in date order. Each names the working
+ * The leave's equation for one leave column: one line per charged date of
+ * `month` in that column — the domain's dates, never a count made here — in
+ * date order. Each names the working
  * shifts on its date as `team · type`, paired per shift, with the decision as
  * the source word of a shift a conflict decision moved to leave, and adds
  * `1 dan`. The total is the domain's: the dates' count, which the lines sum
@@ -290,8 +311,10 @@ function leaveEquationOf(
   month: string,
   names: LineNames,
   decided: Decided,
+  columns: readonly LeaveColumn[],
+  column: LeaveColumn,
 ): { readonly total: LeaveDaysFigure; readonly lines: readonly LeaveExplanationLine[] } {
-  const charged = memberLeaveDatesOf(snapshot, history, leaveRecords, month);
+  const charged = memberLeaveDatesByColumnOf(snapshot, history, leaveRecords, month, columns)[columns.indexOf(column)] ?? [];
   const total = leaveDaysFigureOf(charged.length);
 
   if (charged.length === 0) return { total, lines: [] };
@@ -340,10 +363,12 @@ function leaveEquationOf(
   return { total, lines };
 }
 
-/** The figure's name: the total's and the leave's words, a band's name as stored. */
-function figureNameOf(snapshot: CalendarSnapshot, figure: HoursFigureCode): string {
+/** An hours figure's name: the total's words, a band's name as stored. */
+function figureNameOf(
+  snapshot: CalendarSnapshot,
+  figure: Exclude<HoursExplainFigure, { readonly code: typeof HOURS_FIGURE_LEAVE }>,
+): string {
   if (figure.code === HOURS_FIGURE_TOTAL) return t('sati.total');
-  if (figure.code === HOURS_FIGURE_LEAVE) return t('sati.leave');
 
   const band = snapshot.bands.find((one) => one.id === figure.bandId);
 

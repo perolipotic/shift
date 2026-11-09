@@ -7,7 +7,9 @@ import {
   type MemberHoursInput,
 } from '@shift/domain';
 
+import { isAnnualLeave, type AbsenceTypeRow } from '@/features/absence-types/services/list';
 import {
+  absenceTypesOfCalendar,
   calendarRetryStateOf,
   type CalendarQueryAnswer,
   type CalendarSnapshot,
@@ -30,10 +32,18 @@ import {
   leaveRecordsIn,
   leaveShiftsOf,
   type HoursConflictsState,
+  type HoursLeaveRecord,
   type LeaveRecordsByMember,
 } from '@/features/hours/services/hours-conflicts';
 import { durationValuesOf, type DurationValues } from '@/utils/time';
-import type { HoursSearch } from '@/features/hours/services/hours-search';
+import {
+  ABSENCE_SORT_PREFIX,
+  SORT_LEAVE,
+  SORT_OTHER_ABSENCE,
+  type HoursSearch,
+  type HoursSortKey,
+} from '@/features/hours/services/hours-search';
+import { t } from '@/lib/i18n';
 
 /**
  * *Sati*: the viewer's own month of hours (story 4.1b). A member sees their
@@ -58,7 +68,16 @@ import type { HoursSearch } from '@/features/hours/services/hours-search';
  * LEAVE IS COUNTED IN DAYS, AND ONLY IN DAYS (human, 2026-10-10). The leave
  * figure is the member's charged leave days in the month — the domain's
  * `leaveDaysOfMonth` over the leave records *Sati* already read, the count
- * *Godišnji* charges: `3 dana`. An accepted-uncovered or replaced shift is
+ * *Godišnji* charges: `3 dana`.
+ *
+ * ONE LEAVE COLUMN PER DRAWING TYPE, AND ONE FOR THE REST (story 13.2;
+ * UX-DR17). The days are split by the record's absence type, as the
+ * snapshot's catalog names it ({@link leaveColumnsOf}): a column per type
+ * that draws down the allowance — annual leave first, then the rest by name
+ * in Croatian collation, each named by its stored name — and *Ostala
+ * odsutnost* for every type that does not, only when the organization has
+ * one. No type is named in code (DI-8). A record whose type the snapshot does
+ * not hold makes *Sati* unavailable, never a guess. An accepted-uncovered or replaced shift is
  * out of every band, the total and the shift count, and appears only as its
  * leave day, never as hours. The domain's `leaveMinutes` is shown nowhere.
  *
@@ -196,26 +215,148 @@ export function leaveShownOf(leave: LeaveDaysFigure | null): LeaveShown {
   return { key: leaveMessageKey(leave), values: leave?.values ?? {} };
 }
 
+/** The key of the one column every type that does not draw down the allowance is counted in. */
+export const OTHER_ABSENCE_COLUMN = 'other';
+
+/** One leave column of *Sati* (story 13.2): a drawing absence type, or *Ostala odsutnost*. */
+export interface LeaveColumn {
+  /** The drawing type's id, or {@link OTHER_ABSENCE_COLUMN}. */
+  readonly key: string;
+  /** The type's name as stored; `null` for *Ostala odsutnost*, which names no type (DI-8). */
+  readonly name: string | null;
+  /** The `sort` value that sorts by it: `dopust` for annual leave, as before 13.2. */
+  readonly sortKey: HoursSortKey;
+}
+
 /**
- * The member's charged leave dates of `month` (`YYYY-MM`), in order: the
- * domain's `leaveDaysOfMonth` over their records and the calendar's schedule
- * recipe (`memberScheduleInputOf`), which the hours' `memberHoursInputOf`
- * builds on. Their count is the leave figure. `shared` as there.
+ * The leave columns the snapshot's absence types make (story 13.2): one per
+ * drawing type, in the catalog's order — annual leave first, then by name in
+ * Croatian collation — and *Ostala odsutnost* last, only when some type does
+ * not draw.
  *
- * @throws RangeError on any precondition of `leaveDaysOfMonth`.
+ * @throws RangeError for a snapshot cached before 13.2, which carries no
+ *   types, and for a catalog without annual leave (a member session reading
+ *   before 0053, which sees none): *Sati* is unavailable, never a table with
+ *   no leave column.
  */
-export function memberLeaveDatesOf(
+export function leaveColumnsOf(snapshot: CalendarSnapshot): readonly LeaveColumn[] {
+  const types = absenceTypesOfCalendar(snapshot);
+
+  if (types === null) throw new RangeError('the snapshot carries no absence types');
+  if (!types.some((type) => isAnnualLeave(type.id))) throw new RangeError('the snapshot holds no annual leave');
+
+  const columns: LeaveColumn[] = types
+    .filter((type) => type.drawsAllowance)
+    .map((type) => ({
+      key: type.id,
+      name: type.name,
+      sortKey: isAnnualLeave(type.id) ? SORT_LEAVE : (`${ABSENCE_SORT_PREFIX}${type.id}` as const),
+    }));
+
+  if (types.some((type) => !type.drawsAllowance)) {
+    columns.push({ key: OTHER_ABSENCE_COLUMN, name: null, sortKey: SORT_OTHER_ABSENCE });
+  }
+
+  return columns;
+}
+
+/** The words *Ostala odsutnost* reads as: the column of every type that does not draw. */
+export function otherAbsenceMessageKey(): 'sati.otherAbsence' {
+  return 'sati.otherAbsence';
+}
+
+/** A leave column's name: the type's as stored, or *Ostala odsutnost*. */
+export function leaveColumnNameOf(column: LeaveColumn): string {
+  return column.name ?? t(otherAbsenceMessageKey());
+}
+
+/**
+ * The member's charged leave dates of `month` (`YYYY-MM`) in each of
+ * `columns`, in the same order: the domain's `leaveDaysOfMonth` over the
+ * member's records of that column's types and the calendar's schedule recipe
+ * (`memberScheduleInputOf`), which the hours' `memberHoursInputOf` builds on.
+ * A record of a drawing type is counted in its type's column, any other in
+ * *Ostala odsutnost*. Records of one member never share a date, so the
+ * columns never count one date twice. `shared` as there.
+ *
+ * @throws RangeError for a record whose type the snapshot does not hold, or
+ *   whose drawing flag the snapshot's type contradicts, and on any
+ *   precondition of `leaveDaysOfMonth`.
+ */
+export function memberLeaveDatesByColumnOf(
   snapshot: CalendarSnapshot,
   history: CalendarMemberHistory,
   leaveRecords: LeaveRecordsByMember,
   month: string,
+  columns: readonly LeaveColumn[],
   shared?: SnapshotScheduleInput,
-): readonly string[] {
+): readonly (readonly string[])[] {
   const records = leaveRecordsIn(leaveRecords, history.memberId);
 
-  if (records.length === 0) return [];
+  if (records.length === 0) return columns.map(() => []);
 
-  return leaveDaysOfMonth(memberScheduleInputOf(snapshot, history, shared), records, month);
+  const types = new Map<string, AbsenceTypeRow>((absenceTypesOfCalendar(snapshot) ?? []).map((type) => [type.id, type]));
+  const groups = new Map<string, HoursLeaveRecord[]>(columns.map((column) => [column.key, []]));
+
+  for (const record of records) {
+    const type = types.get(record.absenceTypeId);
+
+    if (type === undefined) throw new RangeError(`absence type ${record.absenceTypeId} is not in the snapshot`);
+    // ONE SOURCE OF THE FLAG: the catalog and the leave read were fetched
+    // apart, so a type whose flag changed between them would put the record
+    // in one column here and another on the balance. Unavailable, never split.
+    if (type.drawsAllowance !== record.drawsAllowance) {
+      throw new RangeError(`absence type ${type.id} draws in the snapshot and the leave read differently`);
+    }
+
+    const group = groups.get(type.drawsAllowance ? type.id : OTHER_ABSENCE_COLUMN);
+
+    // Unreachable: the columns are made from the same catalog.
+    if (group === undefined) throw new RangeError(`absence type ${type.id} has no leave column`);
+
+    group.push(record);
+  }
+
+  const input = memberScheduleInputOf(snapshot, history, shared);
+
+  return columns.map((column) => {
+    const group = groups.get(column.key) ?? [];
+
+    return group.length === 0 ? [] : leaveDaysOfMonth(input, group, month);
+  });
+}
+
+/** One leave column's figure for one member, or a footer's: its days, 0 included, and its figure. */
+export interface HoursLeaveCell {
+  readonly column: LeaveColumn;
+  /** The charged days, 0 included: what the sort, the footer and the file read. */
+  readonly days: number;
+  /** The days as a figure, or `null` when there are none — drawn `—`. */
+  readonly figure: LeaveDaysFigure | null;
+}
+
+/** A column's days as its cell. */
+export function leaveCellOf(column: LeaveColumn, days: number): HoursLeaveCell {
+  return { column, days, figure: leaveFigureOf(days) };
+}
+
+/**
+ * The member's leave cells of `month`, one per column, in the same order
+ * ({@link memberLeaveDatesByColumnOf}).
+ *
+ * @throws RangeError as {@link memberLeaveDatesByColumnOf}.
+ */
+export function memberLeaveCellsOf(
+  snapshot: CalendarSnapshot,
+  history: CalendarMemberHistory,
+  leaveRecords: LeaveRecordsByMember,
+  month: string,
+  columns: readonly LeaveColumn[],
+  shared?: SnapshotScheduleInput,
+): readonly HoursLeaveCell[] {
+  const dates = memberLeaveDatesByColumnOf(snapshot, history, leaveRecords, month, columns, shared);
+
+  return columns.map((column, index) => leaveCellOf(column, dates[index]?.length ?? 0));
 }
 
 /** One band's row: its name as stored, its hours, and the shifts overlapping it. */
@@ -235,13 +376,14 @@ export interface MyHoursView {
   /** Every band, in start order, those with 0 h included; none with no bands. */
   readonly bands: readonly HoursBandRow[];
   /**
-   * The month's leave, or `null` when it is empty — drawn `—`, an absence
-   * rather than a claimed `0 dana`: the days *Godišnji* charges (R4.2:
-   * active, with a working shift, inside a leave record). A shift accepted as
-   * uncovered or replaced is out of the bands, the total and the shift count
-   * (5.4b, 5.4c), and counts only as its leave day.
+   * The month's leave, one cell per leave column (story 13.2), each `null`
+   * when empty — drawn `—`, an absence rather than a claimed `0 dana`: the
+   * days of a record of that column's types (R4.2: active, with a working
+   * shift, inside a leave record). A shift accepted as uncovered or replaced
+   * is out of the bands, the total and the shift count (5.4b, 5.4c), and
+   * counts only as its leave day.
    */
-  readonly leave: LeaveDaysFigure | null;
+  readonly leave: readonly HoursLeaveCell[];
   /**
    * Working shifts with no times on their date — counted as shifts, never in
    * hours — or `null` when there are none, so the note is not shown.
@@ -292,7 +434,7 @@ export function myHoursViewOf(
   header: MonthHeader,
   hours: MemberHours,
   conflictCount: number,
-  leaveDays: number,
+  leave: readonly HoursLeaveCell[],
 ): MyHoursView {
   const names = new Map(snapshot.bands.map((band) => [band.id, band.name]));
 
@@ -307,7 +449,7 @@ export function myHoursViewOf(
 
       return { bandId: band.bandId, name, hours: figureOf(band.minutes), shiftCount: band.shiftCount };
     }),
-    leave: leaveFigureOf(leaveDays),
+    leave,
     untimedShiftCount: hours.untimedShiftCount > 0 ? hours.untimedShiftCount : null,
     conflictCount: conflictCount > 0 ? conflictCount : null,
   };
@@ -318,7 +460,7 @@ export function myHoursViewOf(
  * the organization's (`calendarTodayOf`) — with their own conflicts of that
  * month counted from `collisions` and their accepted-uncovered shifts in
  * `leaveKeys` counted as leave (story 5.4b) and their charged leave days
- * counted over `leaveRecords`, GUARDED ({@link hoursGuarded}).
+ * counted over `leaveRecords` in each leave column, GUARDED ({@link hoursGuarded}).
  */
 export function myHoursOf(
   snapshot: CalendarSnapshot,
@@ -332,9 +474,9 @@ export function myHoursOf(
     const month = monthShownOf(search, today);
     const hours = memberHoursOfMonth(memberHoursInputOf(snapshot, snapshot.viewer, leaveKeys), month);
     const conflictCount = conflictCountOf(collisions, snapshot.viewer.memberId, month);
-    const leaveDays = memberLeaveDatesOf(snapshot, snapshot.viewer, leaveRecords, month).length;
+    const leave = memberLeaveCellsOf(snapshot, snapshot.viewer, leaveRecords, month, leaveColumnsOf(snapshot));
 
-    return myHoursViewOf(snapshot, monthHeaderOf(month, today), hours, conflictCount, leaveDays);
+    return myHoursViewOf(snapshot, monthHeaderOf(month, today), hours, conflictCount, leave);
   });
 }
 

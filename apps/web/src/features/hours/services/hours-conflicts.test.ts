@@ -1,6 +1,7 @@
 import { HOURS_FIGURE_LEAVE, HOURS_FIGURE_TOTAL, collisionsOf, leaveCostOf, type Collision, type CollisionResolution } from '@shift/domain';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { ANNUAL_LEAVE_ID } from '@/features/absence-types/services/list';
 import { CALENDAR_UNAVAILABLE, readCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { memberScheduleInputOf, monthHeaderOf } from '@/features/calendar/utils/month';
 import { collisionInputOf } from '@/features/conflicts/services/conflicts-queue';
@@ -34,6 +35,7 @@ import {
   hoursSnapshotStateOf,
   leaveShownOf,
   myHoursOf,
+  type HoursLeaveCell,
   type MyHoursView,
 } from '@/features/hours/services/my-hours';
 import {
@@ -129,7 +131,9 @@ const WORKED = rowOf('record-worked', '2026-09-10', '2026-09-15');
 /** Across the month's edge: 29.09–02.10. */
 const ACROSS = rowOf('record-across', '2026-09-29', '2026-10-03');
 /** WORKED as the records *Sati* hands on: the viewer's one range. */
-const WORKED_RECORDS: LeaveRecordsByMember = new Map([[VIEWER_MEMBER, [{ from: '2026-09-10', to: '2026-09-14' }]]]);
+const WORKED_RECORDS: LeaveRecordsByMember = new Map([
+  [VIEWER_MEMBER, [{ from: '2026-09-10', to: '2026-09-14', absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true }]],
+]);
 
 /** Only the worked example's two free days. */
 const FREE = rowOf('record-free', '2026-09-12', '2026-09-14');
@@ -184,8 +188,10 @@ function ownOf(
 }
 
 /** A leave as the screen reads it. */
-function shown(leave: Parameters<typeof leaveShownOf>[0]): string {
-  const { key, values } = leaveShownOf(leave);
+function shown(leave: readonly HoursLeaveCell[] | Parameters<typeof leaveShownOf>[0]): string {
+  // Story 13.2: a row's or a view's leave is one cell per column; the fixtures hold annual leave alone.
+  const figure = leave === null ? null : 'key' in leave ? leave : (leave[0]?.figure ?? null);
+  const { key, values } = leaveShownOf(figure);
 
   return t(key, values);
 }
@@ -228,16 +234,16 @@ describe('the worked example', () => {
     if (state.kind !== HOURS_CONFLICTS_READY) throw new Error(state.kind);
     const before = tableOf(admin, NO_COLLISIONS, SEPTEMBER, [], NO_LEAVE_RECORDS);
     const after = tableOf(admin, state.collisions, SEPTEMBER, state.leaveKeys, state.leaveRecords);
-    const hoursOf = ({ conflictCount: _count, leave: _leave, leaveDays: _days, ...figures }: OrganizationHoursRow) => figures;
+    const hoursOf = ({ conflictCount: _count, leave: _leave, ...figures }: OrganizationHoursRow) => figures;
 
     // No hours figure moves: band hours, total, shift count and the domain's leave minutes.
     expect(after.rows.map(hoursOf)).toEqual(before.rows.map(hoursOf));
     expect(rowOfMember(after, VIEWER_MEMBER).hours.leaveMinutes).toBe(0);
     // The leave is the charged days: 10.09, 11.09 and 14.09, each in unresolved conflict.
-    expect(rowOfMember(after, VIEWER_MEMBER).leaveDays).toBe(3);
+    expect(rowOfMember(after, VIEWER_MEMBER).leave[0]!.days).toBe(3);
     expect(shown(rowOfMember(after, VIEWER_MEMBER).leave)).toBe('3 dana');
     expect(rowOfMember(after, VIEWER_MEMBER).conflictCount).toBe(3);
-    expect(rowOfMember(after, ANA).leave).toBeNull();
+    expect(rowOfMember(after, ANA).leave[0]?.figure).toBeNull();
 
     // The member's own path: the same days, from their own records.
     const own = ready(member, [WORKED]);
@@ -685,8 +691,8 @@ describe('accepted as leaveKeys is leave, not work (story 5.4b)', () => {
 
     expect(after.conflictCount).toBe(2);
     // The leave is the charged days, the accepted date among them: never its hours.
-    expect(after.leaveDays).toBe(3);
-    expect(after.leave).toEqual({ key: 'count.days', values: { count: 3 } });
+    expect(after.leave[0]!.days).toBe(3);
+    expect(after.leave[0]?.figure).toEqual({ key: 'count.days', values: { count: 3 } });
     expect(shown(after.leave)).toBe('3 dana');
     expect(after.shiftCount).toBe(before.shiftCount - 1);
     expect(after.hours.totalMinutes).toBe(before.hours.totalMinutes - TWELVE_HOURS);
@@ -694,11 +700,11 @@ describe('accepted as leaveKeys is leave, not work (story 5.4b)', () => {
       before.hours.bands.map((band) => band.minutes).reduce((x, y) => x + y, 0) - TWELVE_HOURS,
     );
     expect(rowOfMember(view, ANA)).toEqual(rowOfMember(tableOf(admin, collisions, SEPTEMBER, [], NO_LEAVE_RECORDS), ANA));
-    expect(rowOfMember(view, ANA).leave).toBeNull();
+    expect(rowOfMember(view, ANA).leave[0]?.figure).toBeNull();
 
     const sheet = hoursExportOf(view, admin.organizationName);
     const index = view.rows.findIndex((row) => row.memberId === VIEWER_MEMBER);
-    const days = sheet.columns.findIndex((cell) => cell === t('sati.organization.export.leaveDays'));
+    const days = sheet.columns.findIndex((cell) => cell === t('sati.organization.export.days', { name: 'Godišnji odmor' }));
 
     expect(days).toBeGreaterThan(-1);
     expect(sheet.rows[index]![days]).toEqual({ kind: 'count', value: 3 });
@@ -711,7 +717,7 @@ describe('accepted as leaveKeys is leave, not work (story 5.4b)', () => {
     const view = ownOf(member, collisions, SEPTEMBER, leaveKeys, leaveRecords);
     const plain = ownOf(member, collisionsFrom(member, [WORKED]), SEPTEMBER, [], NO_LEAVE_RECORDS);
 
-    expect(view.leave).not.toBeNull();
+    expect(view.leave[0]?.figure).not.toBeNull();
     expect(shown(view.leave)).toBe('3 dana');
     expect(view.shiftCount).toBe(plain.shiftCount - 1);
     expect(view.conflictCount).toBe(2);
@@ -777,7 +783,7 @@ describe('replaced is leave too, and the replacement works it (story 5.4c)', () 
       const state = stateOf(snapshot, replaced);
       const view = hoursExplanationOf(
         snapshot,
-        { memberId: snapshot === replacedAdmin ? VIEWER_MEMBER : null, figure: { code: HOURS_FIGURE_LEAVE } },
+        { memberId: snapshot === replacedAdmin ? VIEWER_MEMBER : null, figure: { code: HOURS_FIGURE_LEAVE, column: ANNUAL_LEAVE_ID } },
         monthHeaderOf(SEPTEMBER, TODAY),
         state.leaveKeys,
         state.collisions,
@@ -800,7 +806,7 @@ describe('replaced is leave too, and the replacement works it (story 5.4c)', () 
     const charged = leaveCostOf(memberScheduleInputOf(replacedMember, replacedMember.viewer), '2026-09-10', '2026-09-14');
 
     expect(charged).toBeGreaterThan(0);
-    expect(view.leave).toEqual({ key: 'count.days', values: { count: charged } });
+    expect(view.leave[0]?.figure).toEqual({ key: 'count.days', values: { count: charged } });
   });
 
   describe('Hours: a replacement that no longer applies (story 5.5d)', () => {
@@ -835,8 +841,8 @@ describe('replaced is leave too, and the replacement works it (story 5.4c)', () 
       expect(absent.hours.leaveMinutes).toBe(0);
       expect(absent.conflictCount).toBe(3);
       // The leave still counts its three days, all in unresolved conflict again.
-      expect(own.leave).toEqual({ key: 'count.days', values: { count: 3 } });
-      expect(absent.leaveDays).toBe(3);
+      expect(own.leave[0]?.figure).toEqual({ key: 'count.days', values: { count: 3 } });
+      expect(absent.leave[0]!.days).toBe(3);
       expect(memberState.collisions).toHaveLength(adminState.collisions.length);
     });
   });
@@ -908,7 +914,7 @@ describe("the leave's ⓘ lists the charged dates, in days only (leave in days, 
 
     const view = hoursExplanationOf(
       snapshot,
-      { memberId, figure: { code: HOURS_FIGURE_LEAVE } },
+      { memberId, figure: { code: HOURS_FIGURE_LEAVE, column: ANNUAL_LEAVE_ID } },
       header,
       state.leaveKeys,
       state.collisions,
@@ -942,7 +948,7 @@ describe("the leave's ⓘ lists the charged dates, in days only (leave in days, 
     expect(view.lines[0]!.label).toBe('Smjena A · Dan · Prihvaćeno kao nepokriveno');
     for (const line of view.lines.slice(1)) expect(line.label).toMatch(/^Smjena A · (Dan|Noć)$/);
     expect(t(view.total.key, view.total.values)).toBe('3 dana');
-    expect(row.leaveDays).toBe(view.lines.length);
+    expect(row.leave[0]!.days).toBe(view.lines.length);
   });
 
   it('marks every charged date in unresolved conflict while nothing is decided', () => {
@@ -962,7 +968,7 @@ describe("the leave's ⓘ lists the charged dates, in days only (leave in days, 
   });
 
   it('is unavailable while the leave read is not ready, never a leave of no records', () => {
-    expect(hoursExplanationOf(admin, { memberId: VIEWER_MEMBER, figure: { code: HOURS_FIGURE_LEAVE } }, header, [], [], null, [])).toBeNull();
+    expect(hoursExplanationOf(admin, { memberId: VIEWER_MEMBER, figure: { code: HOURS_FIGURE_LEAVE, column: ANNUAL_LEAVE_ID } }, header, [], [], null, [])).toBeNull();
     expect(hoursExplanationOf(admin, { memberId: VIEWER_MEMBER, figure: { code: HOURS_FIGURE_TOTAL } }, header, [], [], null, [])).not.toBeNull();
   });
 });
@@ -976,9 +982,10 @@ describe("several members' records on the admin path (leave in days, 2026-10-10)
 
     if (state.kind !== HOURS_CONFLICTS_READY) throw new Error(state.kind);
 
+    // Each record keeps its type and its drawing flag (story 13.2): the rows carry none, so annual leave.
     expect(state.leaveRecords.get(ANA)).toEqual([
-      { from: '2026-09-10', to: '2026-09-14' },
-      { from: '2026-09-28', to: '2026-10-03' },
+      { from: '2026-09-10', to: '2026-09-14', absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true },
+      { from: '2026-09-28', to: '2026-10-03', absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true },
     ]);
 
     const anaInput = memberScheduleInputOf(admin, { ...admin.members.find((one) => one.id === ANA)!, memberId: ANA });
@@ -988,15 +995,15 @@ describe("several members' records on the admin path (leave in days, 2026-10-10)
     const october = tableOf(admin, state.collisions, OCTOBER, state.leaveKeys, state.leaveRecords);
 
     expect(anaSeptember).toBeGreaterThan(0);
-    expect(rowOfMember(september, VIEWER_MEMBER).leaveDays).toBe(3);
-    expect(rowOfMember(september, ANA).leaveDays).toBe(anaSeptember);
-    expect(rowOfMember(october, ANA).leaveDays).toBe(anaOctober);
-    expect(rowOfMember(october, VIEWER_MEMBER).leave).toBeNull();
+    expect(rowOfMember(september, VIEWER_MEMBER).leave[0]!.days).toBe(3);
+    expect(rowOfMember(september, ANA).leave[0]!.days).toBe(anaSeptember);
+    expect(rowOfMember(october, ANA).leave[0]!.days).toBe(anaOctober);
+    expect(rowOfMember(october, VIEWER_MEMBER).leave[0]?.figure).toBeNull();
     // The months of a record sum to its cost, as Godišnji charges it.
     expect(anaSeptember + anaOctober).toBe(
       leaveCostOf(anaInput, '2026-09-10', '2026-09-14') + leaveCostOf(anaInput, '2026-09-28', '2026-10-03'),
     );
-    expect(september.footer?.leave).toEqual({ key: 'count.days', values: { count: 3 + anaSeptember } });
+    expect(september.footer?.leave[0]?.figure).toEqual({ key: 'count.days', values: { count: 3 + anaSeptember } });
 
     const sorted = tableOf(admin, state.collisions, SEPTEMBER, state.leaveKeys, state.leaveRecords);
     const bySort = organizationHoursOf(
@@ -1009,8 +1016,8 @@ describe("several members' records on the admin path (leave in days, 2026-10-10)
     );
 
     if (!bySort.ok) throw new Error(bySort.code);
-    expect(bySort.view.rows.map((row) => row.leaveDays)).toEqual(
-      [...sorted.rows.map((row) => row.leaveDays)].sort((x, y) => y - x),
+    expect(bySort.view.rows.map((row) => row.leave[0]!.days)).toEqual(
+      [...sorted.rows.map((row) => row.leave[0]!.days)].sort((x, y) => y - x),
     );
   });
 });

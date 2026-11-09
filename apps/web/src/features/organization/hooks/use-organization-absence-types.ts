@@ -37,7 +37,7 @@ import {
   ORGANIZATION_ABSENCE_TYPE_NAME_FIELD_ID,
   ORGANIZATION_ABSENCE_TYPE_SAVE_ID,
 } from '@/features/organization/utils/element-ids';
-import { NO_DEPENDENTS, refreshAfterWrite } from '@/features/teams/services/dependents';
+import { ABSENCE_TYPE_WRITE_DEPENDENTS, NO_DEPENDENTS, refreshAfterWrite } from '@/features/teams/services/dependents';
 import { useSnapshotFreshness } from '@/lib/offline/use-snapshot-freshness';
 import { droppedOffline, writesOnline } from '@/lib/offline/use-write-gate';
 import { claimedOrganizationOf } from '@/lib/supabase/claims';
@@ -69,10 +69,12 @@ function byId(id: string): () => HTMLElement | null {
  * card is drawn with the others or the page is unavailable as one. The page's
  * as-of note is the settings hook's; the card adds none.
  *
- * WRITES TOUCH `absence_types` ONLY, and re-read only its key: no leave
- * figure, report or member surface reads a type yet (13.2), so a landed write
- * names no dependent. Every rule is `@/features/absence-types/services/*`'s;
- * this hook holds state and wiring only.
+ * WRITES TOUCH `absence_types` ONLY. A landed write re-reads its key and,
+ * since story 13.2, `ABSENCE_TYPE_WRITE_DEPENDENTS`: the calendar snapshot,
+ * whose types name *Sati*'s leave columns, and every leave read, which
+ * carries each record's drawing flag. A refusal re-reads its own key alone.
+ * Every rule is `@/features/absence-types/services/*`'s; this hook holds
+ * state and wiring only.
  */
 export function useOrganizationAbsenceTypes() {
   const queryClient = useQueryClient();
@@ -210,7 +212,7 @@ export function useOrganizationAbsenceTypes() {
       // NOT AWAITED: the write has landed, so the lock is released at once
       // (the `finally` below) and a Dodaj or Uredi pressed during the re-read
       // opens. ITS FAILURE IS NOT THE WRITE'S: a re-read that rejects is logged.
-      refreshAfterWrite(queryClient, ABSENCE_TYPES_LIST_KEY, NO_DEPENDENTS).catch((cause: unknown) => {
+      refreshAfterWrite(queryClient, ABSENCE_TYPES_LIST_KEY, ABSENCE_TYPE_WRITE_DEPENDENTS).catch((cause: unknown) => {
         console.error(ABSENCE_TYPE_WRITE_UNAVAILABLE, cause);
       });
     } catch (cause) {

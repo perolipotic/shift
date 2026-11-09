@@ -1,5 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { ANNUAL_LEAVE_ID } from '@/features/absence-types/services/list';
 import { readCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { LEAVE_CONFLICTS_KNOWN, LEAVE_CONFLICTS_UNKNOWN } from '@/features/leave/services/leave-conflicts';
 import type { LeaveRecord } from '@/features/leave/services/leave-list';
@@ -67,6 +68,9 @@ import {
   staffingSnapshotOf,
 } from '@/features/staffing/staffing.fixture';
 import { nextIsoDate } from '@/lib/i18n/format';
+
+/** Story 13.2: a record of annual leave, which draws down the allowance. */
+const ANNUAL_RECORD = { absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true } as const;
 
 /**
  * Story 9.4's decision screen, executed (AD-15) over a real snapshot: the
@@ -225,7 +229,7 @@ describe('a pending request', () => {
   });
 
   it('notes an overlap with live leave recorded since, and names no collision for it', () => {
-    const live: LeaveRecord = { id: '22222222-2222-4222-8222-222222222222', from: '2026-09-14', to: '2026-09-14' };
+    const live: LeaveRecord = { ...ANNUAL_RECORD, id: '22222222-2222-4222-8222-222222222222', from: '2026-09-14', to: '2026-09-14' };
     const preview = readyOf(
       pendingOf(leaveRequestReviewOf(sourcesOf({ records: { records: [live], loading: false, refreshing: false } }), REQUEST, NOW))
         .preview,

@@ -134,7 +134,8 @@ export function leaveConflictsOf(
   try {
     const resolved = resolutionsOf(snapshot, resolutions.data);
     const types = new Map(snapshot.types.map((type) => [type.id, type.name]));
-    const collisionsWith = (live: readonly LeaveRecord[], id: string): readonly Collision[] =>
+    // Every record collides whatever its absence type (story 13.2), so only the range and the id matter here.
+    const collisionsWith = (live: readonly Pick<LeaveRecord, 'id' | 'from' | 'to'>[], id: string): readonly Collision[] =>
       collisionsOf(collisionInputOf(snapshot, live.map((record) => ({ ...record, memberId })))).filter(
         (collision) => collision.leaveRecordId === id,
       );

@@ -27,7 +27,6 @@ import {
   BAND_SORT_PREFIX,
   SORT_CONFLICTS,
   SORT_DOWN,
-  SORT_LEAVE,
   SORT_NAME,
   SORT_SHIFTS,
   SORT_TEAM,
@@ -37,22 +36,25 @@ import {
   type HoursSearchChange,
   type HoursSortDirection,
   type HoursSortKey,
+  isLeaveSortKey,
 } from '@/features/hours/services/hours-search';
 import {
   hoursGuarded,
   hoursReadsOf,
   hoursSnapshotInputOf,
   figureOf,
-  leaveFigureOf,
+  leaveCellOf,
+  leaveColumnsOf,
   memberHoursInputOf,
-  memberLeaveDatesOf,
+  memberLeaveCellsOf,
   monthShownHeaderOf,
   myHoursSurfaceOf,
   myHoursViewOf,
   type HoursBandRow,
   type HoursFigure,
+  type HoursLeaveCell,
   type HoursOutcome,
-  type LeaveDaysFigure,
+  type LeaveColumn,
   type MyHoursSurface,
 } from '@/features/hours/services/my-hours';
 import { compareText } from '@/lib/i18n/format';
@@ -74,6 +76,11 @@ import type { SortAriaState, SortControlDirection } from '@/utils/sort-control';
  * figures are `myHoursViewOf`'s, so a member's own screen and the admin's row
  * for them cannot disagree. The only sum is the untimed shifts of the rows
  * shown, a count of shifts, never of hours.
+ *
+ * THE LEAVE IS ONE DAYS COLUMN PER DRAWING ABSENCE TYPE AND ONE FOR THE REST
+ * (story 13.2): `./my-hours`'s `leaveColumnsOf`, each with its own figure,
+ * sort, footer total and ⓘ. Annual leave sorts by `dopust`, as before; any
+ * other drawing type by `odsutnost-<id>`, the rest by `ostala-odsutnost`.
  *
  * EACH ROW CARRIES ITS CONFLICT COUNT (story 5.3d): the member's shifts in
  * unresolved conflict in the month, `./hours-conflicts`'s count over the
@@ -112,10 +119,8 @@ export interface OrganizationHoursRow {
   /** One cell per band column, in the same order: its hours and its shifts. */
   readonly bands: readonly HoursBandRow[];
   readonly total: HoursFigure;
-  /** The month's leave days, or `null` when there are none — drawn `—` (`MyHoursView.leave`). */
-  readonly leave: LeaveDaysFigure | null;
-  /** The month's charged leave days, 0 included: what the sort, the footer and the file read. */
-  readonly leaveDays: number;
+  /** One cell per leave column, in the same order (story 13.2; `MyHoursView.leave`). */
+  readonly leave: readonly HoursLeaveCell[];
   /** Working shifts with no times, counted as shifts and never in hours. */
   readonly untimedShiftCount: number;
   /** The month's working shifts in unresolved conflict, 0 included: the table and the file show a zero. */
@@ -143,10 +148,12 @@ export interface HoursFooter {
   /** The total's minutes, which the file writes as a duration. */
   readonly totalMinutes: number;
   readonly total: HoursFigure;
-  /** The leave days of the rows shown, 0 included: what the file reads. */
-  readonly leaveDays: number;
-  /** The leave days of the rows shown, or `null` when there are none, drawn `—` as a row's is. */
-  readonly leave: LeaveDaysFigure | null;
+  /**
+   * One per leave column, in the same order: the days of the rows shown, 0
+   * included, which the file reads, and the figure, `null` when there are
+   * none, drawn `—` as a row's is.
+   */
+  readonly leave: readonly HoursLeaveCell[];
   readonly conflictCount: number;
 }
 
@@ -159,14 +166,19 @@ export interface HoursSort {
 /** The order the table opens in: by name, ascending. */
 export const DEFAULT_HOURS_SORT: HoursSort = { key: SORT_NAME, direction: SORT_UP };
 
-/** The fixed columns the table draws besides a column per band: member, team, shifts, total, leave, conflicts. */
-const FIXED_COLUMN_COUNT = 6;
+/**
+ * The fixed columns the table draws besides a column per band and one per
+ * leave column: member, team, shifts, total, conflicts.
+ */
+const FIXED_COLUMN_COUNT = 5;
 
 /** The organization's month, ready to render. */
 export interface OrganizationHoursView {
   readonly header: MonthHeader;
   /** Every band, in start order; none with no bands. */
   readonly bands: readonly HoursBandColumn[];
+  /** Every leave column (story 13.2), in `leaveColumnsOf`'s order: never none, annual leave always draws. */
+  readonly leaveColumns: readonly LeaveColumn[];
   /** The rows shown: filtered, then sorted. */
   readonly rows: readonly OrganizationHoursRow[];
   /** How many rows the month has before any filter. */
@@ -182,8 +194,8 @@ export interface OrganizationHoursView {
   readonly person: string | null;
   /**
    * The search the table stands for: what every month, filter and sort
-   * change starts from. A STALE SORT (a band since removed) is dropped, as
-   * the table no longer has its column. A team or person that matches no
+   * change starts from. A STALE SORT (a band since removed, or a leave column
+   * since gone) is dropped, as the table no longer has its column. A team or person that matches no
    * row of this month is KEPT (Epic 4 retro, C5), as on the calendar: it
    * narrows nothing here, yet a month where it has a row applies it again.
    * Only an explicit filter change — which writes both keys — drops it.
@@ -193,7 +205,7 @@ export interface OrganizationHoursView {
   readonly untimedShiftCount: number | null;
   /** The total of the rows shown (story 7.14), or `null` while none is. */
   readonly footer: HoursFooter | null;
-  /** How many columns a row has: the fixed six and one per band. */
+  /** How many columns a row has: the fixed five, one per band and one per leave column. */
   readonly columnCount: number;
   /** What an empty table says, or `null` while it has a row. */
   readonly empty: HoursEmpty | null;
@@ -218,7 +230,8 @@ export function calendarLinkSearchOf(memberId: string, month: string): CalendarS
  * at least one of its dates, and any member with a shift in it — each with
  * their conflicts of the month counted from `collisions`, and their
  * accepted-uncovered shifts in `leaveKeys` counted as leave (story 5.4b),
- * and their charged leave days counted from `leaveRecords`.
+ * and their charged leave days counted from `leaveRecords` in each of
+ * `leaveColumns`.
  *
  * @throws RangeError on any precondition of the domain, a band the snapshot
  *   lacks, or a team the snapshot does not name.
@@ -230,6 +243,7 @@ export function organizationHoursRowsOf(
   collisions: readonly Collision[],
   leaveKeys: readonly CollisionResolution[],
   leaveRecords: LeaveRecordsByMember,
+  leaveColumns: readonly LeaveColumn[] = leaveColumnsOf(snapshot),
 ): readonly OrganizationHoursRow[] {
   const dates = datesOfMonth(month);
   const teams = new Map(snapshot.teams.map((team) => [team.id, team.name]));
@@ -254,8 +268,8 @@ export function organizationHoursRowsOf(
     if (teamId !== null && teamName === undefined) throw new RangeError(`team ${teamId} is not in the snapshot`);
 
     const conflictCount = conflictCountIn(counts, member.id);
-    const leaveDays = memberLeaveDatesOf(snapshot, history, leaveRecords, month, schedule).length;
-    const figures = myHoursViewOf(snapshot, header, hours, conflictCount, leaveDays);
+    const leave = memberLeaveCellsOf(snapshot, history, leaveRecords, month, leaveColumns, schedule);
+    const figures = myHoursViewOf(snapshot, header, hours, conflictCount, leave);
 
     rows.push({
       memberId: member.id,
@@ -265,7 +279,6 @@ export function organizationHoursRowsOf(
       bands: figures.bands,
       total: figures.total,
       leave: figures.leave,
-      leaveDays,
       untimedShiftCount: hours.untimedShiftCount,
       conflictCount,
       calendar: calendarLinkSearchOf(member.id, month),
@@ -295,6 +308,15 @@ export function bandMinutesOf(row: OrganizationHoursRow, bandId: string): number
   return row.hours.bands.find((band) => band.bandId === bandId)?.minutes ?? 0;
 }
 
+/**
+ * THE ONE READING OF A LEAVE COLUMN'S DAYS IN A ROW (story 13.2), by the
+ * column's sort key, shared by the sort: the row's cell for that column, and
+ * a column the row lacks is none — 0, never a throw.
+ */
+export function leaveDaysOf(row: OrganizationHoursRow, sortKey: HoursSortKey): number {
+  return row.leave.find((cell) => cell.column.sortKey === sortKey)?.days ?? 0;
+}
+
 /** The column's own order, ascending: a row with no team after every team. */
 function compareByKey(first: OrganizationHoursRow, second: OrganizationHoursRow, key: HoursSortKey): number {
   switch (key) {
@@ -310,11 +332,11 @@ function compareByKey(first: OrganizationHoursRow, second: OrganizationHoursRow,
       return compareValues(first.shiftCount, second.shiftCount);
     case SORT_TOTAL:
       return compareValues(first.hours.totalMinutes, second.hours.totalMinutes);
-    case SORT_LEAVE:
-      return compareValues(first.leaveDays, second.leaveDays);
     case SORT_CONFLICTS:
       return compareValues(first.conflictCount, second.conflictCount);
     default: {
+      if (isLeaveSortKey(key)) return compareValues(leaveDaysOf(first, key), leaveDaysOf(second, key));
+
       const bandId = key.slice(BAND_SORT_PREFIX.length);
 
       return compareValues(bandMinutesOf(first, bandId), bandMinutesOf(second, bandId));
@@ -351,19 +373,27 @@ export function hoursTeamsOf(rows: readonly OrganizationHoursRow[]): readonly Ho
 
 /**
  * The sort `search` names, when it names one the table has: a band's column
- * only while the band exists. No column is the name, in the direction
+ * only while the band exists, and a leave column (story 13.2) only while the
+ * organization's types make it. No column is the name, in the direction
  * `smjer` names (ascending by default). A STALE column — a band since
- * removed — is the whole default, name ascending: its direction was about a
- * column that is gone.
+ * removed, a type since set not to draw, *Ostala odsutnost* with no type left
+ * that does not draw — is the whole default, name ascending: its direction
+ * was about a column that is gone.
  */
-export function hoursSortOf(search: HoursSearch, bands: readonly HoursBandColumn[]): HoursSort {
+export function hoursSortOf(
+  search: HoursSearch,
+  bands: readonly HoursBandColumn[],
+  leaveColumns: readonly LeaveColumn[],
+): HoursSort {
   const wanted = search.sort;
 
   if (wanted === undefined) {
     return { key: DEFAULT_HOURS_SORT.key, direction: search.smjer ?? DEFAULT_HOURS_SORT.direction };
   }
 
-  const known = !wanted.startsWith(BAND_SORT_PREFIX) || bands.some((band) => band.sortKey === wanted);
+  const known = isLeaveSortKey(wanted)
+    ? leaveColumns.some((column) => column.sortKey === wanted)
+    : !wanted.startsWith(BAND_SORT_PREFIX) || bands.some((band) => band.sortKey === wanted);
 
   return known ? { key: wanted, direction: search.smjer ?? DEFAULT_HOURS_SORT.direction } : DEFAULT_HOURS_SORT;
 }
@@ -554,13 +584,13 @@ export function untimedShiftsOf(rows: readonly OrganizationHoursRow[]): number |
 export function hoursFooterOf(
   rows: readonly OrganizationHoursRow[],
   bands: readonly HoursBandColumn[],
+  leaveColumns: readonly LeaveColumn[],
 ): HoursFooter | null {
   if (rows.length === 0) return null;
 
   const sum = (minutesOf: (row: OrganizationHoursRow) => number): number =>
     rows.reduce((total, row) => total + minutesOf(row), 0);
   const totalMinutes = sum((row) => row.hours.totalMinutes);
-  const leaveDays = sum((row) => row.leaveDays);
 
   return {
     shiftCount: sum((row) => row.shiftCount),
@@ -571,8 +601,7 @@ export function hoursFooterOf(
     }),
     totalMinutes,
     total: figureOf(totalMinutes),
-    leaveDays,
-    leave: leaveFigureOf(leaveDays),
+    leave: leaveColumns.map((column) => leaveCellOf(column, sum((row) => leaveDaysOf(row, column.sortKey)))),
     conflictCount: sum((row) => row.conflictCount),
   };
 }
@@ -595,12 +624,13 @@ export function organizationHoursViewOf(
   const month = monthShownOf(search, today);
   const header = monthHeaderOf(month, today);
   const bands = snapshot.bands.map((band) => ({ bandId: band.id, name: band.name, sortKey: bandSortKeyOf(band.id) }));
-  const all = organizationHoursRowsOf(snapshot, month, header, collisions, leaveKeys, leaveRecords);
+  const leaveColumns = leaveColumnsOf(snapshot);
+  const all = organizationHoursRowsOf(snapshot, month, header, collisions, leaveKeys, leaveRecords, leaveColumns);
   const teams = hoursTeamsOf(all);
   const people = all.map((row) => ({ id: row.memberId, name: row.name }));
   const team = teams.find((one) => one.id === search.smjena)?.id ?? null;
   const person = people.find((one) => one.id === search.osoba)?.id ?? null;
-  const sort = hoursSortOf(search, bands);
+  const sort = hoursSortOf(search, bands, leaveColumns);
   const shown = all.filter(
     (row) => (team === null || row.team?.id === team) && (person === null || row.memberId === person),
   );
@@ -608,6 +638,7 @@ export function organizationHoursViewOf(
   return {
     header,
     bands,
+    leaveColumns,
     rows: sortedHoursRows(shown, sort),
     rowCount: all.length,
     sort,
@@ -624,8 +655,8 @@ export function organizationHoursViewOf(
       ...(sort.direction === DEFAULT_HOURS_SORT.direction ? {} : { smjer: sort.direction }),
     },
     untimedShiftCount: untimedShiftsOf(shown),
-    footer: hoursFooterOf(shown, bands),
-    columnCount: FIXED_COLUMN_COUNT + bands.length,
+    footer: hoursFooterOf(shown, bands, leaveColumns),
+    columnCount: FIXED_COLUMN_COUNT + bands.length + leaveColumns.length,
     empty: hoursEmptyOf(shown.length, all, team, person, month),
     filters: hoursFilterBarOf(all, teams, team, person, shown.length),
   };

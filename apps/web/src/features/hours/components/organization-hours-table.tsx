@@ -1,4 +1,4 @@
-import { HOURS_FIGURE_BAND, HOURS_FIGURE_LEAVE, HOURS_FIGURE_TOTAL, type HoursFigureCode } from '@shift/domain';
+import { HOURS_FIGURE_BAND, HOURS_FIGURE_LEAVE, HOURS_FIGURE_TOTAL } from '@shift/domain';
 import { Link } from '@tanstack/react-router';
 import type { ReactNode, RefObject } from 'react';
 
@@ -10,7 +10,6 @@ import { LeaveFigure, TeamName } from '@/features/hours/components/hours-marks';
 import { EmptyResult } from '@/features/hours/components/organization-hours-empty';
 import {
   SORT_CONFLICTS,
-  SORT_LEAVE,
   SORT_NAME,
   SORT_SHIFTS,
   SORT_TEAM,
@@ -18,7 +17,8 @@ import {
   type HoursSearchChange,
   type HoursSortKey,
 } from '@/features/hours/services/hours-search';
-import { figureIsEmpty } from '@/features/hours/services/my-hours';
+import type { HoursExplainFigure } from '@/features/hours/services/hours-explanation';
+import { figureIsEmpty, leaveColumnNameOf } from '@/features/hours/services/my-hours';
 import {
   hoursAriaSortOf,
   hoursSortArrowOf,
@@ -55,8 +55,10 @@ function SortHead({
 
 /**
  * Every member's month (story 4.2): Member, Team, shift count, a column per
- * band (its name as stored; the cell its hours over its shifts), Total,
- * Leave and the shifts in unresolved conflict (story 5.3d), every heading
+ * band (its name as stored; the cell its hours over its shifts), Total, a
+ * days column per leave column (story 13.2: each drawing absence type by its
+ * stored name, then *Ostala odsutnost*) and the shifts in unresolved conflict
+ * (story 5.3d), every heading
  * sortable (the conflicts since the Epic 5–7 cleanup) — `⚠` and the number
  * above 0, `0` at zero, the glyph hidden from readers. The name leads to the member's calendar
  * month, where the roster changes behind a figure show. It renders from
@@ -78,7 +80,7 @@ export function OrganizationHoursTable({
   readonly filtersRef: RefObject<FilterBarHandle | null>;
   readonly onChange: (change: HoursSearchChange) => void;
   readonly onPress: (key: HoursSortKey) => void;
-  readonly onExplain: (memberId: string, figure: HoursFigureCode) => void;
+  readonly onExplain: (memberId: string, figure: HoursExplainFigure) => void;
 }): ReactNode {
   return (
     <div className="flex min-w-0 flex-col gap-3 pb-4">
@@ -95,7 +97,16 @@ export function OrganizationHoursTable({
               <SortHead key={band.bandId} view={view} sortKey={band.sortKey} label={band.name} numeric onPress={onPress} />
             ))}
             <SortHead view={view} sortKey={SORT_TOTAL} label={t('sati.organization.total')} numeric onPress={onPress} />
-            <SortHead view={view} sortKey={SORT_LEAVE} label={t('sati.organization.leave')} numeric onPress={onPress} />
+            {view.leaveColumns.map((column) => (
+              <SortHead
+                key={column.key}
+                view={view}
+                sortKey={column.sortKey}
+                label={leaveColumnNameOf(column)}
+                numeric
+                onPress={onPress}
+              />
+            ))}
             <SortHead view={view} sortKey={SORT_CONFLICTS} label={t('sati.organization.conflicts')} numeric onPress={onPress} />
           </TableRow>
         </TableHeader>
@@ -149,19 +160,21 @@ export function OrganizationHoursTable({
                     )}
                   </span>
                 </TableCell>
-                <TableCell className="whitespace-nowrap text-right tabular-nums">
-                  <span className="flex items-center justify-end gap-1">
-                    <LeaveFigure leave={row.leave} />
-                    {row.leave === null ? null : (
-                      <ExplainButton
-                        figureName={`${t('sati.organization.leave')}, ${row.name}`}
-                        onPress={() => {
-                          onExplain(row.memberId, { code: HOURS_FIGURE_LEAVE });
-                        }}
-                      />
-                    )}
-                  </span>
-                </TableCell>
+                {row.leave.map((cell) => (
+                  <TableCell key={cell.column.key} className="whitespace-nowrap text-right tabular-nums">
+                    <span className="flex items-center justify-end gap-1">
+                      <LeaveFigure leave={cell.figure} />
+                      {cell.figure === null ? null : (
+                        <ExplainButton
+                          figureName={`${leaveColumnNameOf(cell.column)}, ${row.name}`}
+                          onPress={() => {
+                            onExplain(row.memberId, { code: HOURS_FIGURE_LEAVE, column: cell.column.key });
+                          }}
+                        />
+                      )}
+                    </span>
+                  </TableCell>
+                ))}
                 <TableCell className="whitespace-nowrap text-right tabular-nums">
                   {row.conflictCount === 0 ? (
                     row.conflictCount
@@ -200,9 +213,11 @@ export function OrganizationHoursTable({
               <TableCell className="whitespace-nowrap text-right tabular-nums">
                 {t(view.footer.total.key, view.footer.total.values)}
               </TableCell>
-              <TableCell className="whitespace-nowrap text-right tabular-nums">
-                <LeaveFigure leave={view.footer.leave} />
-              </TableCell>
+              {view.footer.leave.map((cell) => (
+                <TableCell key={cell.column.key} className="whitespace-nowrap text-right tabular-nums">
+                  <LeaveFigure leave={cell.figure} />
+                </TableCell>
+              ))}
               <TableCell className="whitespace-nowrap text-right tabular-nums">{view.footer.conflictCount}</TableCell>
             </TableRow>
           </TableFooter>

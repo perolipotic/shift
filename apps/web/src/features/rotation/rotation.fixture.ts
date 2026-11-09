@@ -6,6 +6,7 @@ import {
   CALENDAR_ROSTER_OVERRIDES_FUNCTION,
 } from '@/features/calendar/services/snapshot';
 import type { RotationAnswer, RotationTable } from '@/features/rotation/services/list';
+import { ANNUAL_LEAVE_ID } from '@/features/absence-types/services/list';
 
 /**
  * Both fixtures' rotation snapshots as PostgREST embeds them under the
@@ -307,6 +308,11 @@ export function statusRow(
   return { organization_id: organization, member_id: memberId, active, effective_from: effectiveFrom };
 }
 
+/** One absence type as the calendar's embed carries it (story 13.2). */
+export function absenceTypeRow(id: string, name: string, drawsAllowance: unknown, organization = ORGANIZATION): Row {
+  return { organization_id: organization, id, name, draws_allowance: drawsAllowance };
+}
+
 /** The name the calendar's organization row carries by default (story 4.3). */
 export const FIXTURE_ORGANIZATION_NAME = 'DVD Fixture';
 
@@ -332,6 +338,8 @@ export function calendarOrganizationRow(
     // STORY 11.2: Minimum Members on the same row; absent by default, as a
     // row read before 0048 would be, so it reads as not set.
     minimumMembers = undefined as unknown,
+    // STORY 13.2: the absence types embed; by default annual leave alone.
+    absenceTypes = null as readonly Row[] | null,
   } = {},
 ): Row {
   const first = rows.teams[0]?.['id'];
@@ -351,6 +359,8 @@ export function calendarOrganizationRow(
     uses_fire_ranks: usesFireRanks,
     ...(minimumMembers === undefined ? {} : { minimum_members: minimumMembers }),
     hour_bands: rows.bands ?? [],
+    // STORY 13.2: every organization holds annual leave (0052); a test adds others.
+    absence_types: absenceTypes ?? [absenceTypeRow(ANNUAL_LEAVE_ID, 'Godišnji odmor', true)],
     members,
     team_membership_versions: versions ?? stamped,
     member_status_versions: statuses,
