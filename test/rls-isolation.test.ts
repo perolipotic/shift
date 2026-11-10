@@ -2038,8 +2038,8 @@ describe('the policies refuse the same things with claims injected instead of a 
 
         await actAs(client, caller.authUserId, caller.organizationId);
         const attempted = await client.query(
-          `update members set email = '${THROWAWAY}-injected@example.org' where id = $1`,
-          [target.id],
+          'update members set email = $2 where id = $1',
+          [target.id, `${THROWAWAY}-injected@example.org`],
         );
         await actAsOwner(client);
 

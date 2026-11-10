@@ -2865,11 +2865,19 @@ describe('the allowance dialog holds its year at opening and writes against the 
 
   it('opens on the leave year containing today and the allowance it resolves to', () => {
     // FIRST CHANGE: no version, the starting allowance.
-    expect(heldAllowanceOf(member(), '2026-09-23')).toEqual({ leaveYear: 2026, days: 20 });
-    // A leave year beginning 1 July: 2027-03-01 is in leave year 2026.
+    expect(heldAllowanceOf(member(), '2026-09-23')).toEqual({
+      leaveYear: 2026,
+      days: 20,
+      from: '2026-01-01',
+      to: '2026-12-31',
+    });
+    // A leave year beginning 1 July: 2027-03-01 is in leave year 2026, and the
+    // hint's dates are that leave year's, not calendar 2026's.
     expect(heldAllowanceOf(member({ leaveYearStart: julyStart }), '2027-03-01')).toEqual({
       leaveYear: 2026,
       days: 20,
+      from: '2026-07-01',
+      to: '2027-06-30',
     });
     // CORRECTION: the highest-id version of the year.
     expect(
@@ -2885,14 +2893,14 @@ describe('the allowance dialog holds its year at opening and writes against the 
         }),
         '2026-09-23',
       ),
-    ).toEqual({ leaveYear: 2026, days: 24 });
+    ).toMatchObject({ leaveYear: 2026, days: 24 });
     // INHERITED: an earlier year's version carries into this one.
     expect(
       heldAllowanceOf(
         member({ leaveAllowance: { startingDays: 20, versions: [{ id: 1, leaveYear: 2025, days: 22 }] } }),
         '2026-09-23',
       ),
-    ).toEqual({ leaveYear: 2026, days: 22 });
+    ).toMatchObject({ leaveYear: 2026, days: 22 });
   });
 
   it('writes nothing only when the value is the one opened on and the record still resolves to it', () => {
@@ -2922,7 +2930,7 @@ describe('the allowance dialog holds its year at opening and writes against the 
     // 2026, the year the hint named, never today's 2027.
     const opened = heldAllowanceOf(member(), '2026-12-31');
 
-    expect(opened).toEqual({ leaveYear: 2026, days: 20 });
+    expect(opened).toMatchObject({ leaveYear: 2026, days: 20 });
     expect(allowanceSaveOf({ leaveYear: 2026, days: 20 }, 25, member())).toEqual({ leaveYear: 2026, days: 25 });
     // And the comparison is against the HELD year: a 2027 version of 20 does
     // not make a 2026 save of 20 unchanged when 2026 resolves to 25.

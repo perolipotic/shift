@@ -1450,5 +1450,15 @@
   summary: When deploys are enabled, `0055` must be applied before the 13.3 frontend ships: `MEMBERS_COLUMNS` embeds `leave_allowances(...)` and `organizations(leave_year_start_month,leave_year_start_day)`, and against a database or PostgREST schema cache without 0055 every member read fails (PGRST200), taking Ljudi and every balance surface down.
   evidence: Edge-case review of 13.3; same deploy-order class as the 0054/13.2b entry.
 - source_spec: `_bmad-output/implementation-artifacts/spec-13-3b-the-allowance-dialog-sets-the-current-leave-year.md`
-  summary: When deploys are enabled, ship the 13.3b frontend before or together with `0056`. An old frontend's *Promijeni pravo* PATCHes `members.leave_allowance_days`, which 0056 refuses with 42501. The new frontend only inserts into `leave_allowances` (0055), so it works against a database without 0056. Write the order into DEPLOY.md or the deploy workflow before `DEPLOY_ENABLED` is turned on.
-  evidence: Implementation review of 13.3b. This is the reverse of the deploy-order class in the 0054 and 0055 entries: here the database change breaks the old client.
+  summary: When deploys are enabled, ship the 13.3b frontend before or together with `0056`. An old frontend's *Promijeni pravo* PATCHes `members.leave_allowance_days`, which 0056 refuses with 42501. The new frontend only inserts into `leave_allowances` (0055), so it works against a database without 0056. INSTALLED PWAs make "together" too early (code review of 13.3b, 2026-11-10): `registerType: 'prompt'` keeps an old bundle in control past a deploy (the 8.1 stale-client entry), so a member device still on the pre-13.3b bundle PATCHes the starting allowance and reads *refused*. Apply 0056 at least one release after the 13.3b frontend, once stale clients have had their update prompt, or together with a client version check once one exists. Write the order into DEPLOY.md or the deploy workflow before `DEPLOY_ENABLED` is turned on.
+  evidence: Implementation review of 13.3b. This is the reverse of the deploy-order class in the 0054 and 0055 entries: here the database change breaks the old client. The PWA nuance is from the 13.3b code review (blind hunter).
+
+## Deferred from: code review of spec-13-3b-the-allowance-dialog-sets-the-current-leave-year.md (2026-11-10)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-13-3b-the-allowance-dialog-sets-the-current-leave-year.md`
+  summary: *Promijeni pravo* being disabled while today or the leave-year start is unknown (the spec's "Unknown year" row) is pinned only by source text in `structural-pins-members.test.ts`; no executed test renders the disabled button. Dropping `!allowanceDialog.available` would leave an enabled control that silently opens nothing.
+  evidence: Verification-gap review of 13.3b. `heldAllowanceOf` returning `null` is executed in `write.test.ts`; the button itself waits on render tests, which are deferred project-wide.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-13-3b-the-allowance-dialog-sets-the-current-leave-year.md`
+  summary: A landed allowance save whose members-list re-read fails or pauses shows the old *Pravo* beside the *spremljeno* notice, and a reopening holds the stale value until the list refetches.
+  evidence: Edge-case review of 13.3b. Pre-existing: every member save shares `refreshAfterWrite`, which resolves rather than rejects on a failed re-read so it cannot replace the outcome; not introduced by 13.3b.

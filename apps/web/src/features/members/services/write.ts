@@ -1,4 +1,4 @@
-import { leaveAllowanceOf, leaveYearNumberOf } from '@shift/domain';
+import { leaveAllowanceOf, leaveYearNumberOf, leaveYearOf } from '@shift/domain';
 
 import {
   MEMBERS_REFUSED,
@@ -734,6 +734,10 @@ export interface HeldAllowance {
   readonly leaveYear: number;
   /** The allowance that year resolved to at opening. */
   readonly days: number;
+  /** The leave year's first day, ISO — the hint names the year by its dates. */
+  readonly from: string;
+  /** The leave year's last day, ISO. */
+  readonly to: string;
 }
 
 /**
@@ -749,7 +753,11 @@ export function heldAllowanceOf(member: MemberListRow | null, today: string | nu
 
   if (days === null) return null;
 
-  return { leaveYear: leaveYearNumberOf(today, member.leaveYearStart), days };
+  // THE HINT NAMES THE DATES (review of 13.3b): with a leave year starting
+  // mid-year, the calendar year alone would read as the wrong span.
+  const range = leaveYearOf(today, member.leaveYearStart);
+
+  return { leaveYear: leaveYearNumberOf(today, member.leaveYearStart), days, from: range.from, to: range.to };
 }
 
 /** An allowance save that has nothing to write ({@link allowanceSaveOf}). */
@@ -769,7 +777,7 @@ export const ALLOWANCE_UNCHANGED = 'unchanged';
  * says so.
  */
 export function allowanceSaveOf(
-  held: HeldAllowance,
+  held: Pick<HeldAllowance, 'leaveYear' | 'days'>,
   entered: number,
   current: MemberListRow | null,
 ): typeof ALLOWANCE_UNCHANGED | AllowanceVersionEdit {

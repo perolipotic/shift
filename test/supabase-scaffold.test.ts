@@ -3355,9 +3355,10 @@ describe('the access-control migration', () => {
     // without naming it. No migration before 0056 grants on `members` at all
     // (its privileges were the platform's defaults), so the guard reads every
     // migration from 0056 on: any `grant` whose privilege list holds `update`
-    // or `all` with no column list, on `members`, to a session role.
+    // or `all` with no column list, on `members` (quoted or not) or on every
+    // table of the schema, to a session role or to `public`, which holds both.
     const tableWide =
-      /grant\s+(?:[a-z]+\s*,\s*)*(?:update|all(?:\s+privileges)?)\s*(?:,\s*[a-z]+\s*)*\s+on\s+(?:table\s+)?(?:public\.)?members\s+to\s+[^;]*\b(?:authenticated|anon)\b/i;
+      /grant\s+(?:[a-z]+\s*,\s*)*(?:update|all(?:\s+privileges)?)\s*(?:,\s*[a-z]+\s*)*\s+on\s+(?:(?:table\s+)?(?:"?public"?\.)?"?members"?|all\s+tables\s+in\s+schema\s+"?public"?)\s+to\s+[^;]*\b(?:authenticated|anon|public)\b/i;
     const fromThisOn = migrationNames()
       .filter((name) => name >= '0056')
       .sort()
@@ -3372,6 +3373,9 @@ describe('the access-control migration', () => {
       'grant select, update on public.members to anon;',
       'grant all on members to authenticated, anon;',
       'grant all privileges on table public.members to authenticated;',
+      'grant update on table "public"."members" to authenticated;',
+      'grant update on all tables in schema public to authenticated;',
+      'grant update on public.members to public;',
     ]) {
       expect(shape).toMatch(tableWide);
     }

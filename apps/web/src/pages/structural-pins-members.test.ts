@@ -2180,10 +2180,13 @@ describe('the allowance dialog sets the current leave year (story 13.3b)', () =>
     expect(dialog, 'the field still starts at the starting allowance').not.toContain('leaveAllowanceDays}');
   });
 
-  it('describes the field by the hint naming the year, and the refusal beside it', () => {
+  it('describes the field by the hint naming the leave year, and the refusal beside it', () => {
     const dialog = source(DIALOG);
 
-    expect(dialog).toContain("t('ljudi.allowance.validFrom', { year: yearTextOf(held.leaveYear) })");
+    // THE LEAVE YEAR BY ITS DATES (review of 13.3b), held at opening.
+    expect(dialog).toContain(
+      "t('ljudi.allowance.validFrom', { from: formatIsoDate(held.from), to: formatIsoDate(held.to) })",
+    );
     expect(dialog).toContain('<p id={MEMBER_ALLOWANCE_HINT_ID}');
     expect(dialog).toContain(
       'aria-describedby={refusal === null ? MEMBER_ALLOWANCE_HINT_ID : MEMBER_ALLOWANCE_HINT_AND_ERROR}',

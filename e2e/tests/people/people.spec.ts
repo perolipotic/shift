@@ -10,6 +10,24 @@ import { expectNoHorizontalScroll, expectNoInnerHorizontalScroll, expectTouchTar
 import { uniqueMember } from '../../utils/members.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
 
+/**
+ * The leave year holding today in Zagreb under `start`: its number (the
+ * calendar year it begins in) and its first and last day, `YYYY-MM-DD`.
+ */
+function currentLeaveYear(start: { readonly month: number; readonly day: number }): {
+  readonly leaveYear: number;
+  readonly from: string;
+  readonly to: string;
+} {
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Zagreb' }).format(new Date());
+  const startIn = (year: number): string =>
+    `${String(year)}-${String(start.month).padStart(2, '0')}-${String(start.day).padStart(2, '0')}`;
+  const year = Number(today.slice(0, 4));
+  const leaveYear = today >= startIn(year) ? year : year - 1;
+
+  return { leaveYear, from: startIn(leaveYear), to: addDays(startIn(leaveYear + 1), -1) };
+}
+
 test.use({ storageState: ADMIN_STATE });
 
 test('the member list shows the fixture members', async ({ peoplePage, fixture }) => {
@@ -655,6 +673,9 @@ test.describe('the member page shows facts and each change opens one dialog', ()
   }) => {
     const { name, username } = uniqueMember('Pravo Osobe');
     const leave = hr.ljudi.leaveRecord;
+    // THE CURRENT LEAVE YEAR, computed here rather than read from the app, so
+    // a dialog that names or writes another year fails (review of 13.3b).
+    const current = currentLeaveYear(await leaveYearStartOf(fixture.slug));
 
     await peoplePage.createMember(name, username);
     await peoplePage.closeAddDialog();
@@ -668,8 +689,9 @@ test.describe('the member page shows facts and each change opens one dialog', ()
     // with the hint naming the year it applies from describing the field.
     await peoplePage.changeAllowanceButton(name).click();
     await expect(peoplePage.allowanceInput).toHaveValue('20');
-    await expect(peoplePage.allowanceDialog.getByText(peoplePage.allowanceHint)).toBeVisible();
-    await expect(peoplePage.allowanceInput).toHaveAccessibleDescription(peoplePage.allowanceHint);
+    const hint = peoplePage.allowanceHint(current.from, current.to);
+    await expect(peoplePage.allowanceDialog.getByText(hint, { exact: true })).toBeVisible();
+    await expect(peoplePage.allowanceInput).toHaveAccessibleDescription(hint);
     // UNCHANGED: nothing is written — no version and no member PATCH — no
     // notice, and focus returns to the opener. The listener is in place
     // BEFORE the save, and the absence is read only after a positive anchor.
@@ -697,7 +719,13 @@ test.describe('the member page shows facts and each change opens one dialog', ()
       if (request.method() === 'PATCH' && request.url().includes('/rest/v1/members')) patches.push(request.url());
     };
     page.on('request', watchPatches);
-    await peoplePage.changeAllowance(name, 25);
+    const version = await peoplePage.changeAllowance(name, 25);
+    // ONE VERSION, FOR THE CURRENT LEAVE YEAR: a previous year's would be
+    // inherited into this one and read 25 below just the same.
+    expect(version, 'the version was written for another leave year').toMatchObject({
+      leave_year: current.leaveYear,
+      days: 25,
+    });
     await expect(peoplePage.leaveFigure(leave.allowance)).toHaveText(plural(hr.count.days, 25));
     await expect(peoplePage.leaveFigure(leave.balance)).toHaveText(plural(hr.count.days, 25));
     page.off('request', watchPatches);

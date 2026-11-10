@@ -9,6 +9,7 @@ import { InputGroup, InputGroupIcon } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { t } from '@/lib/i18n';
+import { formatIsoDate } from '@/lib/i18n/format';
 import { useWriteGate } from '@/lib/offline/use-write-gate';
 import type { MemberEdit } from '@/features/members/hooks/use-member-edit';
 import { LEAVE_ALLOWANCE_MAX, type HeldAllowance } from '@/features/members/services/write';
@@ -20,7 +21,6 @@ import {
   MEMBER_FORM_ERROR_ID,
 } from '@/features/members/utils/element-ids';
 import { refusalText } from '@/features/members/utils/refusal-text';
-import { yearTextOf } from '@/utils/month-keys';
 
 /** `0055` — `days` is `smallint check (>= 0)`: no allowance below zero. The
  *  upper bound is `LEAVE_ALLOWANCE_MAX`, what a `smallint` holds. */
@@ -63,8 +63,8 @@ export function MemberAllowanceAction({ edit }: { readonly edit: MemberEdit }): 
  * `Promijeni pravo na godišnji odmor`: the allowance of the CURRENT leave year
  * and nothing else (story 13.3b), behind one Spremi — `submit`, which appends
  * a `leave_allowances` version for the year held at opening. The field starts
- * at that year's resolved allowance, and the hint names the year it applies
- * from. A value that is no allowance is refused before anything is sent and
+ * at that year's resolved allowance, and the hint names the leave year it
+ * applies from by its first and last day. A value that is no allowance is refused before anything is sent and
  * the field is marked; a landed save closes the dialog, and the leave card's
  * *Pravo* and *Preostalo* move together, from one snapshot.
  */
@@ -114,7 +114,7 @@ export function MemberAllowanceDialog({ edit }: { readonly edit: MemberEdit }): 
             />
           </InputGroup>
           <p id={MEMBER_ALLOWANCE_HINT_ID} className="text-sm text-muted-foreground">
-            {t('ljudi.allowance.validFrom', { year: yearTextOf(held.leaveYear) })}
+            {t('ljudi.allowance.validFrom', { from: formatIsoDate(held.from), to: formatIsoDate(held.to) })}
           </p>
         </div>
         {refusal === null ? null : (

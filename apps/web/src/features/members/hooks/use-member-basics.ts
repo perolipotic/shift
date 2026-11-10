@@ -53,8 +53,9 @@ import { writesOnline } from '@/lib/offline/use-write-gate';
 export function useMemberBasics(screen: MemberScreen) {
   const { id, openings, form, offersRank, today } = screen;
   const queryClient = useQueryClient();
-  // THE MEMBER WRITE'S FIELDS: the basics dialog's five, and the allowance
-  // dialog's one (`member-leave`). Only one of the two dialogs is open at once.
+  // THE DIALOGS' FIELDS: the basics dialog's five, which `saveMember` writes,
+  // and the allowance dialog's one (`member-leave`), which `saveAllowance`
+  // appends as a version (story 13.3b). Only one of the two is open at once.
   const nameField = useRef<HTMLInputElement>(null);
   const usernameField = useRef<HTMLInputElement>(null);
   const emailField = useRef<HTMLInputElement>(null);

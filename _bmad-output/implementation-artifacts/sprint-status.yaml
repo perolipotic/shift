@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 11-10-2026 16:00
+last_updated: 11-10-2026 20:25
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -613,7 +613,7 @@ development_status:
   13-2b-the-type-is-chosen-when-absence-is-recorded: done  # #288
   13-2c-absence-lines-read-neutral: done  # #289
   13-3-the-allowance-is-set-per-leave-year: done  # #290
-  13-3b-the-allowance-dialog-sets-the-current-leave-year: review  # split from 13.3, 2026-11-10
+  13-3b-the-allowance-dialog-sets-the-current-leave-year: done  # split from 13.3, 2026-11-10; #291
   13-4-unused-leave-carries-over-and-expires: backlog
   13-5-a-half-day-record-costs-half-a-day: backlog
   epic-13-retrospective: optional

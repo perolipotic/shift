@@ -630,7 +630,8 @@ export function editFailureOf(error: PostgrestFailure): MemberWriteFailure {
   // omission. Two writes reach this mapping, and NEITHER writes `username`:
   //   * the members PATCH writes `name`, `email`, `role` and `fire_rank`;
   //   * the allowance dialog's insert (story 13.3b) writes one
-  //     `leave_allowances` version, which has no unique key at all.
+  //     `leave_allowances` version, whose only unique key is its identity
+  //     `id`, which no session's values can collide with.
   // So "that username is already issued" is a sentence neither path can
   // honestly say. A unique violation here would be some other constraint
   // entirely, and class `23` already reports it as a value to correct. The
