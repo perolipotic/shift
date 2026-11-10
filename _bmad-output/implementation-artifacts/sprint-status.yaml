@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 11-09-2026 21:39
+last_updated: 11-10-2026 13:18
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -610,8 +610,8 @@ development_status:
   13-1-absence-types-are-organization-data: done  # #285
   13-1b-the-admin-defines-absence-types-on-organizacija: done  # #286
   13-2-leave-has-a-type-everywhere-it-is-recorded-or-reported: done  # #287
-  13-2b-the-type-is-chosen-when-absence-is-recorded: review  # split from 13.2, 2026-11-08
-  13-2c-absence-lines-read-neutral: backlog  # split from 13.2b, 2026-11-09
+  13-2b-the-type-is-chosen-when-absence-is-recorded: done  # #288
+  13-2c-absence-lines-read-neutral: review  # split from 13.2b, 2026-11-09
   13-3-the-allowance-is-set-per-leave-year: backlog
   13-4-unused-leave-carries-over-and-expires: backlog
   13-5-a-half-day-record-costs-half-a-day: backlog

@@ -579,8 +579,8 @@ function MemberTeamWithdrawal({ edit }: { readonly edit: MemberEdit }): ReactNod
 
 /**
  * THE CHANGE'S ERASURE DIALOG (story 5.5e): the shared `ErasureDialog`, one
- * row per conflict the move or the withdrawal would erase — "{member} na
- * godišnjem · nakon promjene: {team} taj dan bez {member}". Opened over the
+ * row per conflict the move or the withdrawal would erase — "{member}
+ * (odsutnost) · nakon promjene: {team} taj dan bez {member}". Opened over the
  * team dialog, which keeps what was entered, so "Natrag na uređivanje"
  * returns to it. Its save is the confirmation's own words, `aria-disabled`
  * until every row is confirmed. The rows scroll inside it.

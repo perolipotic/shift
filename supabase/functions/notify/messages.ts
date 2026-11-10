@@ -17,24 +17,24 @@
 
 export const OBAVIJESTI = {
   leaveRequestApproved: {
-    subject: 'Zahtjev za godišnji {startDate}–{endDate} je odobren',
-    body: '{organizationName}: tvoj zahtjev za godišnji odmor {startDate}–{endDate} je odobren. Pogledaj ga u aplikaciji: {link}',
+    subject: 'Zahtjev za odsutnost {startDate}–{endDate} je odobren',
+    body: '{organizationName}: tvoj zahtjev za odsutnost {startDate}–{endDate} je odobren. Pogledaj ga u aplikaciji: {link}',
   },
   leaveRequestRejected: {
-    subject: 'Zahtjev za godišnji {startDate}–{endDate} je odbijen',
-    body: '{organizationName}: tvoj zahtjev za godišnji odmor {startDate}–{endDate} je odbijen. Pogledaj ga u aplikaciji: {link}',
+    subject: 'Zahtjev za odsutnost {startDate}–{endDate} je odbijen',
+    body: '{organizationName}: tvoj zahtjev za odsutnost {startDate}–{endDate} je odbijen. Pogledaj ga u aplikaciji: {link}',
   },
   leaveRecorded: {
-    subject: 'Upisan ti je godišnji {startDate}–{endDate}',
-    body: '{organizationName}: upisan ti je godišnji odmor {startDate}–{endDate}. Pogledaj ga u aplikaciji: {link}',
+    subject: 'Upisana ti je odsutnost {startDate}–{endDate}',
+    body: '{organizationName}: upisana ti je odsutnost {startDate}–{endDate}. Pogledaj je u aplikaciji: {link}',
   },
   leaveRecordChanged: {
-    subject: 'Izmijenjen ti je godišnji, sada {startDate}–{endDate}',
-    body: '{organizationName}: tvoj godišnji odmor izmijenjen je na {startDate}–{endDate}. Pogledaj ga u aplikaciji: {link}',
+    subject: 'Izmijenjena ti je odsutnost, sada {startDate}–{endDate}',
+    body: '{organizationName}: tvoja odsutnost izmijenjena je na {startDate}–{endDate}. Pogledaj je u aplikaciji: {link}',
   },
   leaveRecordRemoved: {
-    subject: 'Uklonjen ti je godišnji {startDate}–{endDate}',
-    body: '{organizationName}: uklonjen ti je godišnji odmor {startDate}–{endDate}. Pogledaj u aplikaciji: {link}',
+    subject: 'Uklonjena ti je odsutnost {startDate}–{endDate}',
+    body: '{organizationName}: uklonjena ti je odsutnost {startDate}–{endDate}. Pogledaj u aplikaciji: {link}',
   },
   rosterPutOn: {
     subject: 'Promjena rasporeda {date}: na rasporedu si',
@@ -81,8 +81,8 @@ export const OBAVIJESTI = {
     body: '{organizationName}: promjena rotacije zakazana od {effectiveFrom} je otkazana. Pogledaj kalendar: {link}',
   },
   leaveRequestCreated: {
-    subject: 'Novi zahtjev za godišnji: {memberName}',
-    body: '{organizationName}: {memberName} traži godišnji odmor {startDate}–{endDate}. Zahtjev čeka tvoju odluku: {link}',
+    subject: 'Novi zahtjev za odsutnost: {memberName}',
+    body: '{organizationName}: {memberName} traži odsutnost {startDate}–{endDate}. Zahtjev čeka tvoju odluku: {link}',
   },
   swapRequestProposed: {
     subject: 'Predložena ti je zamjena {date}',

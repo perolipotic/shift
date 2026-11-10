@@ -429,7 +429,7 @@ export const KEY_SOURCES = [
     // counted in the calendar's `empty-day` (two fewer).
     //
     // SIXTY-TWO SINCE STORY 9.5: *Treba tebe*'s rows name their kind
-    // (*Odsutnost u smjeni*, *Zahtjev za godišnji odmor*), and a pending
+    // (*Odsutnost u smjeni*, *Zahtjev za odsutnost*), and a pending
     // request's row its range and its member or the words for one who is gone.
     //
     // SIXTY-FOUR SINCE STORY 11.3: *Ovaj tjedan*'s short-staffed cell adds
@@ -1117,7 +1117,7 @@ export const KEY_SOURCES = [
     // and who decided it and when, with the words for an admin no longer
     // there.
     // THIRTY-FIVE SINCE STORY 9.5: each item names its kind, on Čeka odluku
-    // (*Odsutnost u smjeni*, *Zahtjev za godišnji odmor*) and on Odlučeno
+    // (*Odsutnost u smjeni*, *Zahtjev za odsutnost*) and on Odlučeno
     // (both again); a pending request's row, its member or the words for one
     // who is gone, and its range; a decided request's row, its outcome
     // (*Odobren*, *Odbijen*), its member or the gone words, its range, and

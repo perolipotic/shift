@@ -262,10 +262,10 @@ describe('notify renders from a pinned copy of the obavijesti namespace', () => 
 
     expect(approved).toEqual({
       ok: true,
-      subject: 'Zahtjev za godišnji 02.03.2046–06.03.2046 je odobren',
-      text: `${ORGANIZATION_NAME}: tvoj zahtjev za godišnji odmor 02.03.2046–06.03.2046 je odobren. Pogledaj ga u aplikaciji: ${linkTo('/godisnji')}${FOOTER}`,
+      subject: 'Zahtjev za odsutnost 02.03.2046–06.03.2046 je odobren',
+      text: `${ORGANIZATION_NAME}: tvoj zahtjev za odsutnost 02.03.2046–06.03.2046 je odobren. Pogledaj ga u aplikaciji: ${linkTo('/godisnji')}${FOOTER}`,
     });
-    expect(rejected).toMatchObject({ ok: true, subject: 'Zahtjev za godišnji 02.03.2046–06.03.2046 je odbijen' });
+    expect(rejected).toMatchObject({ ok: true, subject: 'Zahtjev za odsutnost 02.03.2046–06.03.2046 je odbijen' });
     expect(rejected.ok && rejected.text).toContain(linkTo('/godisnji'));
   });
 
@@ -342,22 +342,22 @@ const EVERY_CODE: readonly {
     code: 'LEAVE_RECORDED',
     operands: { startDate: '2046-03-02', endDate: '2046-03-06' },
     path: '/godisnji',
-    subject: 'Upisan ti je godišnji 02.03.2046–06.03.2046',
-    text: `${ORGANIZATION_NAME}: upisan ti je godišnji odmor 02.03.2046–06.03.2046. Pogledaj ga u aplikaciji: {link}`,
+    subject: 'Upisana ti je odsutnost 02.03.2046–06.03.2046',
+    text: `${ORGANIZATION_NAME}: upisana ti je odsutnost 02.03.2046–06.03.2046. Pogledaj je u aplikaciji: {link}`,
   },
   {
     code: 'LEAVE_RECORD_CHANGED',
     operands: { startDate: '2046-03-02', endDate: '2046-03-06' },
     path: '/godisnji',
-    subject: 'Izmijenjen ti je godišnji, sada 02.03.2046–06.03.2046',
-    text: `${ORGANIZATION_NAME}: tvoj godišnji odmor izmijenjen je na 02.03.2046–06.03.2046. Pogledaj ga u aplikaciji: {link}`,
+    subject: 'Izmijenjena ti je odsutnost, sada 02.03.2046–06.03.2046',
+    text: `${ORGANIZATION_NAME}: tvoja odsutnost izmijenjena je na 02.03.2046–06.03.2046. Pogledaj je u aplikaciji: {link}`,
   },
   {
     code: 'LEAVE_RECORD_REMOVED',
     operands: { startDate: '2046-03-02', endDate: '2046-03-06' },
     path: '/godisnji',
-    subject: 'Uklonjen ti je godišnji 02.03.2046–06.03.2046',
-    text: `${ORGANIZATION_NAME}: uklonjen ti je godišnji odmor 02.03.2046–06.03.2046. Pogledaj u aplikaciji: {link}`,
+    subject: 'Uklonjena ti je odsutnost 02.03.2046–06.03.2046',
+    text: `${ORGANIZATION_NAME}: uklonjena ti je odsutnost 02.03.2046–06.03.2046. Pogledaj u aplikaciji: {link}`,
   },
   {
     code: 'ROSTER_PUT_ON',
@@ -440,8 +440,8 @@ const EVERY_CODE: readonly {
     code: 'LEAVE_REQUEST_CREATED',
     operands: { requestId: REQUEST_ID, memberName: 'Ana Kovač', startDate: '2046-03-02', endDate: '2046-03-06' },
     path: `/za-odluku/zahtjev/${REQUEST_ID}`,
-    subject: 'Novi zahtjev za godišnji: Ana Kovač',
-    text: `${ORGANIZATION_NAME}: Ana Kovač traži godišnji odmor 02.03.2046–06.03.2046. Zahtjev čeka tvoju odluku: {link}`,
+    subject: 'Novi zahtjev za odsutnost: Ana Kovač',
+    text: `${ORGANIZATION_NAME}: Ana Kovač traži odsutnost 02.03.2046–06.03.2046. Zahtjev čeka tvoju odluku: {link}`,
   },
   // Story 12.3b (0050): a swap proposed to the addressee, and its answer to
   // the proposer. The date only: no name, no team, no shift type (Q5).
@@ -549,7 +549,7 @@ describe("notify renders every 10.2 code with the organization's name and its si
     );
     const typed = render('TEAM_SHIFT_TYPE_SET', 'hr', { date: '2046-03-02', shiftTypeName: '2046-03-02' }, TARGET);
 
-    expect(rendered).toMatchObject({ ok: true, subject: 'Novi zahtjev za godišnji: 2046-02-30' });
+    expect(rendered).toMatchObject({ ok: true, subject: 'Novi zahtjev za odsutnost: 2046-02-30' });
     expect(typed.ok && typed.text).toContain('za 02.03.2046 vrijedi 2046-03-02 umjesto');
   });
 
@@ -834,8 +834,8 @@ describe("notify's matrix against a fake client: one send per row, settled by th
     expect(JSON.parse(String(init?.body))).toEqual({
       from: ENVIRONMENT['NOTIFY_EMAIL_FROM'],
       to: ['ana@example.org'],
-      subject: 'Zahtjev za godišnji 02.03.2046–06.03.2046 je odobren',
-      text: `${ORGANIZATION_NAME}: tvoj zahtjev za godišnji odmor 02.03.2046–06.03.2046 je odobren. Pogledaj ga u aplikaciji: ${linkTo('/godisnji')}${FOOTER}`,
+      subject: 'Zahtjev za odsutnost 02.03.2046–06.03.2046 je odobren',
+      text: `${ORGANIZATION_NAME}: tvoj zahtjev za odsutnost 02.03.2046–06.03.2046 je odobren. Pogledaj ga u aplikaciji: ${linkTo('/godisnji')}${FOOTER}`,
     });
     expect(settles).toEqual([{ p_id: claimed.id, p_result: 'sent', p_failure_code: null }]);
     expect(tokens).toEqual([claimed.claimed_at]);
@@ -1698,8 +1698,8 @@ describe("notify's push matrix against a fake client and a fake web-push (story 
     expect(ttls).toEqual([PUSH_TTL_SECONDS, PUSH_TTL_SECONDS]);
     expect(payloads.map((payload) => JSON.parse(payload) as unknown)).toEqual([
       {
-        title: 'Zahtjev za godišnji 02.03.2046–06.03.2046 je odobren',
-        body: `${ORGANIZATION_NAME}: tvoj zahtjev za godišnji odmor 02.03.2046–06.03.2046 je odobren. Pogledaj ga u aplikaciji: ${linkTo('/godisnji')}`,
+        title: 'Zahtjev za odsutnost 02.03.2046–06.03.2046 je odobren',
+        body: `${ORGANIZATION_NAME}: tvoj zahtjev za odsutnost 02.03.2046–06.03.2046 je odobren. Pogledaj ga u aplikaciji: ${linkTo('/godisnji')}`,
         url: pathTo('/godisnji'),
         // One notification per fact on a device: a re-send replaces it.
         tag: `LEAVE_REQUEST_APPROVED:${SUBJECT_ID}`,

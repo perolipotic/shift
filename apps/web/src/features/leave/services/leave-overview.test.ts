@@ -493,9 +493,9 @@ describe('the search and the summary', () => {
     const line = (count: number, records: number) =>
       t('godisnji.overview.summary', { count, records, used: 8, allowance: 340 });
 
-    expect(line(17, 3)).toBe('Prikazano: 17 osoba · upisana 3 godišnja · iskorišteno ukupno 8 dana od 340');
-    expect(line(1, 1)).toBe('Prikazano: 1 osoba · upisan 1 godišnji · iskorišteno ukupno 8 dana od 340');
-    expect(line(2, 0)).toBe('Prikazano: 2 osobe · upisano 0 godišnjih · iskorišteno ukupno 8 dana od 340');
+    expect(line(17, 3)).toBe('Prikazano: 17 osoba · upisane 3 odsutnosti · iskorišteno ukupno 8 dana od 340');
+    expect(line(1, 1)).toBe('Prikazano: 1 osoba · upisana 1 odsutnost · iskorišteno ukupno 8 dana od 340');
+    expect(line(2, 0)).toBe('Prikazano: 2 osobe · upisano 0 odsutnosti · iskorišteno ukupno 8 dana od 340');
   });
 });
 
@@ -609,9 +609,9 @@ describe('the Smjena and Stanje chips (E884)', () => {
   it('words every state for its picker and its chip', () => {
     expect(OVERVIEW_STATES.map((state) => t(leaveOverviewStateMessageKey(state)))).toEqual([
       'Sva stanja',
-      'Na godišnjem danas',
-      'S upisanim godišnjim',
-      'Bez upisanog godišnjeg',
+      'Odsutnost danas',
+      'S upisanom odsutnošću',
+      'Bez upisane odsutnosti',
       'Preostalo u minusu',
     ]);
     expect(t('godisnji.overview.stateChip', { value: t(leaveOverviewStateValueMessageKey(OVERVIEW_STATE_ALL)) })).toBe(

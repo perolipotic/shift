@@ -748,7 +748,7 @@ describe("Godišnji's list of the viewer's requests (story 9.3)", () => {
         (status) => t(myLeaveRequestStatusMessageKey(status)),
       ),
     ).toEqual(['Čeka odluku', 'Odobren', 'Odbijen', 'Povučen', 'Zatvoren deaktivacijom']);
-    expect(t('godisnji.request.empty')).toBe('Nemaš zahtjeva za godišnji.');
+    expect(t('godisnji.request.empty')).toBe('Nemaš zahtjeva za odsutnost.');
   });
 });
 

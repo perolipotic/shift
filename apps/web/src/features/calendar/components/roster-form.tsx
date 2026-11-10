@@ -536,7 +536,7 @@ export function RosterRemoveConfirm({
  * A ROSTER CHANGE'S ERASURE CONFIRMATION (story 5.5b): the shared
  * `ErasureDialog` in the calendar's words, rendered BESIDE the day detail as
  * the removal's confirmation is. One row per conflict the change would
- * erase — "{member} na godišnjem · nakon promjene: {team} taj dan bez
+ * erase — "{member} (odsutnost) · nakon promjene: {team} taj dan bez
  * {member}" — and its own save: "Spremi promjenu" for a save, "Ukloni" for a
  * removal, `aria-disabled` until every row is confirmed. A removal's lede and
  * kept hint say so in its own words. "Natrag na

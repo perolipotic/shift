@@ -68,7 +68,7 @@ export function useLeaveRequestView() {
 }
 
 /**
- * *Zatraži godišnji* (story 9.3): the member's own figures' reads, the
+ * *Zatraži odsutnost* (story 9.3): the member's own figures' reads, the
  * entered range, its preview and the one send. Wiring only — every decision
  * is `@/features/leave/services/my-leave`'s, `.../leave-request-list`'s and
  * `.../leave-request-write`'s, which the node suite executes.

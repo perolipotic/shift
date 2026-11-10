@@ -20,7 +20,7 @@ import { keepFocusOnAlert } from '@/utils/retry-focus';
  * *Danas* for an admin (story 6.3), in this order: *Treba tebe*, *Zamjene*
  * while the admin has a swap (story 12.3), *Premalo
  * ljudi* while *Najmanje ljudi u smjeni* is set (story 11.4), *Pokrivenost
- * danas*, *Odsutni danas* and *Ovaj tjedan*. The skeleton while the reads are
+ * danas*, *Odsutnost danas* and *Ovaj tjedan*. The skeleton while the reads are
  * unanswered; one alert with a retry, and no figure, when a read failed or
  * what it answered cannot be trusted. `adminTodayOf` decides which; this only
  * draws it, and holds its own reads (`useAdminToday`), so the page only picks

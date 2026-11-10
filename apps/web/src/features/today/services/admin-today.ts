@@ -284,7 +284,7 @@ export interface Coverage {
   readonly noRotation: readonly string[];
 }
 
-/** A member on leave, as *Odsutni danas* names them. */
+/** A member on leave, as *Odsutnost danas* names them. */
 export interface AbsentMember {
   readonly memberId: string;
   readonly name: string;
@@ -297,7 +297,7 @@ export interface AbsentMember {
   readonly oneDay: boolean;
 }
 
-/** *Odsutni danas*. */
+/** *Odsutnost danas*. */
 export interface Absences {
   /** Active members whose leave covers today, in the snapshot's name order. */
   readonly today: readonly AbsentMember[];
@@ -791,7 +791,7 @@ function teamNameOn(
 }
 
 /**
- * *Odsutni danas*: every active member whose leave covers today — back-to-back
+ * *Odsutnost danas*: every active member whose leave covers today — back-to-back
  * records read as one absence — with their team today; then every active
  * member not on leave today whose leave starts tomorrow, with their team
  * tomorrow.

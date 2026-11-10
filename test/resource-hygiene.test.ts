@@ -217,7 +217,7 @@ const SANCTIONED_PLURAL_KEYS = [
   // third card — `za 1 dan`, `za 2 dana`, `za 5 dana`.
   'zaOdluku.resolution.amendDrops',
   // LEAVE IN DAYS (2026-10-10): the first two cards' leave term, the day
-  // the decision charges (`1 dan godišnjeg`), where it said hours.
+  // the decision charges (`1 dan odsutnosti`), where it said hours.
   'zaOdluku.resolution.daysAsLeave',
   // SINCE STORY 6.3: an admin's Danas — how many of the unresolved conflicts are
   // past (`1 na datum koji je prošao`, `3 na datume koji su prošli`), and how
@@ -1750,7 +1750,7 @@ const SANCTIONED_SCREEN_KEYS = [
   'godisnji.overview.stateValue.recorded',
   'godisnji.overview.stateValue.unrecorded',
   'godisnji.overview.stateValue.negative',
-  // STORY 9.3: a member requests leave — *Zatraži godišnji*, the request
+  // STORY 9.3: a member requests leave — *Zatraži odsutnost*, the request
   // form's heading, lede, fields, preview labels and notes, its reasons and
   // refusals, *Pošalji* and *Odustani*; the sent line; and the member's own
   // requests on *Godišnji*: the heading, the empty and unavailable lines, a
@@ -1878,7 +1878,7 @@ const SANCTIONED_SCREEN_KEYS = [
   'zaOdluku.savedRequestApproved',
   'zaOdluku.savedRequestRejected',
   // STORY 9.5: every queue item names its kind in words, on *Čeka odluku*,
-  // *Odlučeno* and *Danas*: *Odsutnost u smjeni* and *Zahtjev za godišnji odmor*.
+  // *Odlučeno* and *Danas*: *Odsutnost u smjeni* and *Zahtjev za odsutnost*.
   'zaOdluku.kind.collision',
   'zaOdluku.kind.request',
   // STORY 12.4: an accepted swap waiting for an admin is the queue's third

@@ -446,8 +446,8 @@ describe('decided leave requests beside resolved conflicts (story 9.5)', () => {
   });
 
   it.each([
-    ['amended', 'Godišnji je naknadno izmijenjen.'],
-    ['removed', 'Godišnji je naknadno uklonjen.'],
+    ['amended', 'Odsutnost je naknadno izmijenjena.'],
+    ['removed', 'Odsutnost je naknadno uklonjena.'],
   ] as const)('keeps an approved request whose leave was %s since as Odobren, with the change beside it (0047)', (change, words) => {
     const view = fullViewOf(
       [],

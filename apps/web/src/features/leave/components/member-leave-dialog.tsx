@@ -38,7 +38,7 @@ import { t } from '@/lib/i18n';
 import { useWriteGate } from '@/lib/offline/use-write-gate';
 
 /**
- * `Upiši godišnji odmor` and `Izmijeni godišnji odmor {od}–{do}` (story
+ * `Upiši odsutnost` and `Izmijeni odsutnost {od}–{do}` (story
  * 7.12): the leave card's od–do fields, behind one Spremi, in one dialog the
  * card's header button or a row's Izmijeni opens. Before anything is sent it
  * shows what the range costs, the balance after it and the conflicts it

@@ -147,7 +147,7 @@ describe('Take off', () => {
     if (row === undefined) throw new Error('no row');
 
     expect(t('kalendar.detail.rosterChange.erasures.rowWithout', { member: row.memberName, team: row.teamName })).toBe(
-      `${VIEWER_NAME} na godišnjem · nakon promjene: Smjena A taj dan bez ${VIEWER_NAME}`,
+      `${VIEWER_NAME} (odsutnost) · nakon promjene: Smjena A taj dan bez ${VIEWER_NAME}`,
     );
     expect(t('kalendar.detail.rosterChange.erasures.ledeRemoval', { count: 1 })).toBe(
       'Ova promjena uklanja uzrok 1 stavke koja čeka odluku. Prije uklanjanja odluči za svaku.',

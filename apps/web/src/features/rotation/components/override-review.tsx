@@ -513,7 +513,7 @@ export function OverrideReview({
 /**
  * THE REVIEW'S ERASURE CONFIRMATION (story 5.5h): the shared `ErasureDialog`
  * in the review's words, opened by a confirm or an amend that would erase a
- * pending conflict. One row per conflict — "{member} na godišnjem · nakon
+ * pending conflict. One row per conflict — "{member} (odsutnost) · nakon
  * promjene: {team} taj dan slobodna", or for a roster override (0039) "…
  * {team} taj dan bez {member}" — and its own save, "Potvrdi" or
  * "Spremi izmjenu", `aria-disabled` until every row is confirmed. Its rows

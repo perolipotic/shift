@@ -336,7 +336,7 @@ export function myLeaveRequestEarliestOf(leave: MyLeave): string | null {
 }
 
 /**
- * STORY 9.3: *Zatraži godišnji*. What the entered range would cost and the
+ * STORY 9.3: *Zatraži odsutnost*. What the entered range would cost and the
  * balance after it, as the domain's `leavePreviewOf` over the very input the
  * three figures stand on (`leavePreviewStateOf`, the admin dialog's rule, with
  * no record amended): a reason in place of the preview while a date is

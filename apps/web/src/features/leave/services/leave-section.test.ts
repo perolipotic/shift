@@ -634,7 +634,7 @@ describe('the records list', () => {
 
   it('has no rows for a member with no live record, and the empty line says so', () => {
     expect(baseOf([]).rows).toEqual([]);
-    expect(t('ljudi.leaveRecord.recordsEmpty')).toBe('Za osobu nije upisan nijedan godišnji odmor.');
+    expect(t('ljudi.leaveRecord.recordsEmpty')).toBe('Za osobu nije upisana nijedna odsutnost.');
   });
 
   it('prompts a removal with the range and its whole cost when all of it falls in this leave year', () => {
@@ -646,7 +646,7 @@ describe('the records list', () => {
     expect(leaveRemovePromptMessageKey(row)).toBe('ljudi.leaveRecord.removePrompt');
     expect(
       t(leaveRemovePromptMessageKey(row), { from: row.from, to: row.to, cost: t('count.days', { count: row.costDays }) }),
-    ).toBe('Ukloniti godišnji odmor 10.09.2026–14.09.2026? Njegov trošak je 3 dana.');
+    ).toBe('Ukloniti odsutnost 10.09.2026–14.09.2026? Njezin trošak je 3 dana.');
   });
 
   it('states the in-year part of a record crossing the leave year, on its row and in its removal prompt', () => {
@@ -667,7 +667,7 @@ describe('the records list', () => {
         cost: t('count.days', { count: row.costDays }),
         inYear: t('count.days', { count: row.inYearDays ?? row.costDays }),
       }),
-    ).toBe('Ukloniti godišnji odmor 27.12.2026–01.01.2027? Njegov trošak je 4 dana, a u tekuću godinu od toga ulazi 3 dana.');
+    ).toBe('Ukloniti odsutnost 27.12.2026–01.01.2027? Njezin trošak je 4 dana, a u tekuću godinu od toga ulazi 3 dana.');
   });
 
   it('states an in-year part of 0 for a record wholly outside the current leave year', () => {
@@ -870,7 +870,7 @@ describe('what an amend or a removal says', () => {
   });
 
   it('says a gone record no longer exists, removed or amended, and claims no refresh', () => {
-    expect(t('ljudi.leaveRecord.gone')).toBe('Taj zapis godišnjeg odmora više ne postoji (uklonjen je ili izmijenjen).');
+    expect(t('ljudi.leaveRecord.gone')).toBe('Taj zapis odsutnosti više ne postoji (uklonjen je ili izmijenjen).');
   });
 
   it('reads the conflict off an amend outcome as off a record one', () => {

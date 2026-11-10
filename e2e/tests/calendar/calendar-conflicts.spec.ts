@@ -375,7 +375,7 @@ test('the day detail states each unresolved conflict with its leave, links to it
   // Today's is accepted as uncovered: resolved, so its day states no conflict.
   await seedConflictResolution(fixture.slug, member.id, today, team.id);
   const date = isoDaysAfter(today, 1);
-  // A member of another team (with no rotation), on leave that day: a candidate "na godišnjem taj dan".
+  // A member of another team (with no rotation), on leave that day: a candidate "odsutnost taj dan".
   const elsewhere = await seedExtraTeam(fixture.slug, `Smjena ${randomBytes(3).toString('hex')}`);
   const away = await seedLeaveMember(fixture.slug, elsewhere.id, today, 20);
   withLeave.push({ slug: fixture.slug, id: away.id });
@@ -423,7 +423,7 @@ test('the day detail states each unresolved conflict with its leave, links to it
   await expect(calendarPage.overrideForm).toHaveCount(0);
   await expect(calendarPage.overrideOpenerIn(detail)).toBeFocused();
 
-  // The roster dialog: the member on leave elsewhere is offered under "na godišnjem taj dan", none preselected.
+  // The roster dialog: the member on leave elsewhere is offered under "odsutnost taj dan", none preselected.
   const roster = await calendarPage.openRosterFormIn(detail);
   await expect(calendarPage.rosterInIn(roster)).toHaveValue('');
   const onLeave = calendarPage.rosterInGroupIn(roster, 'onLeave');

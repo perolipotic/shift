@@ -57,7 +57,7 @@ export function LeaveRequestBack(): ReactNode {
 }
 
 /**
- * *Zatraži godišnji odmor* (story 9.3): od and do, what the range would cost
+ * *Zatraži odsutnost* (story 9.3): od and do, what the range would cost
  * and the balance after it, and one *Pošalji*. The preview shows the cost in
  * days, the part charged to the current leave year when the range crosses it,
  * the balance after it, and — as notes, NEVER A GATE — that it goes over the

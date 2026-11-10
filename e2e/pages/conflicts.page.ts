@@ -101,7 +101,7 @@ const resolution = zaOdluku.resolution;
  * (story 5.4b) — the way back, ‹ ›, the facts, the radio cards with their
  * consequence strips, and Odustani and Spremi odluku. Since story 5.4c, the
  * second card, "Zamijeni osobu", and the candidate picker after it. Since
- * story 5.4d, the third card, "Izmijeni godišnji odmor".
+ * story 5.4d, the third card, "Izmijeni odsutnost".
  */
 export class ConflictResolutionPage extends BasePage {
   readonly path = '/za-odluku';
@@ -158,7 +158,7 @@ export class ConflictResolutionPage extends BasePage {
     return this.choice.getByRole('radio', { name: resolution.replaceTitle });
   }
 
-  /** The third card, "Izmijeni godišnji odmor" (story 5.4d). */
+  /** The third card, "Izmijeni odsutnost" (story 5.4d). */
   get amendOption(): Locator {
     return this.choice.getByRole('radio', { name: resolution.amendTitle });
   }
@@ -173,7 +173,7 @@ export class ConflictResolutionPage extends BasePage {
     return this.candidates.getByRole('radio', { name: new RegExp(`^${escapeRegExp(name)}( ·|$)`) });
   }
 
-  /** One candidate group, by its heading: `slobodan`, `radi taj dan` or `na godišnjem taj dan`. */
+  /** One candidate group, by its heading: `slobodan`, `radi taj dan` or `odsutnost taj dan`. */
   candidateGroup(heading: string): Locator {
     return this.candidates.getByRole('group', { name: heading, exact: true });
   }

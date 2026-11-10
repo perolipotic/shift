@@ -52,7 +52,7 @@ import { keepFocusOnAlert } from '@/utils/retry-focus';
  * carries: a URL segment is not a label, and `hr.json` is where the `š`
  * belongs.
  *
- * STORY 9.3: a member's view also offers *Zatraži godišnji*, which opens the
+ * STORY 9.3: a member's view also offers *Zatraži odsutnost*, which opens the
  * request form at `/godisnji/zatrazi`, and lists the member's own requests
  * with their status — a pending one with *Povuci zahtjev* — and, after a
  * landed send, a status line naming the range. An admin's view does not.
@@ -127,7 +127,7 @@ export function GodisnjiScreen() {
 
 /**
  * A member-role session's *Godišnji*: their own three figures, as since story
- * 5.2c, and since story 9.3 *Zatraži godišnji* (offered once the figures are
+ * 5.2c, and since story 9.3 *Zatraži odsutnost* (offered once the figures are
  * ready, which the form previews against), the sent line and their own
  * requests, which stand on their own read whatever the figures' state.
  */
