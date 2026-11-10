@@ -37,7 +37,7 @@ function withContinuous(label: string, continuousMinutes: number | null): string
  * `<button>` and cannot hold controls — shown only while that card is chosen.
  * Its own radio group: one tab stop, the arrow keys move, nothing preselected.
  *
- * The groups (`slobodan`, `radi taj dan`, `na godišnjem taj dan`) only
+ * The groups (`slobodan`, `radi taj dan`, `odsutnost taj dan`) only
  * inform: every candidate is selectable, none is disabled, styled apart or
  * recommended. Each line is `Ime · čin · položaj`, as the roster form builds
  * it (`outOptionOf`), then `· 24 h bez pauze` where the shift would make a

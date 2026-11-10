@@ -80,8 +80,8 @@ import {
  * (`dayDetailOf`) less every member on live leave that date. The strip's
  * three terms are coverage (`covered of total`, the roster with and without
  * the members on leave), the absent member's leave in days (the conflict's
- * date as *Godišnji* charges it, `leaveCostOf` over that one date: `1 dan
- * godišnjeg` — leave is counted in days, never hours, human 2026-10-10) and
+ * date as a day of absence, whatever its type, `leaveCostOf` over that one date: `1 dan
+ * odsutnosti` — leave is counted in days, never hours, human 2026-10-10) and
  * the balance, which accepting
  * leaves unchanged — `leaveBalanceOf` through the member card's own recipe
  * (`memberLeaveBaseOf`).
@@ -1051,7 +1051,7 @@ export function amendHandoffOf(view: ResolutionView, origin: ResolutionParams): 
 }
 
 /**
- * The absent member's leave term: the days as leave, `1 dan godišnjeg`, or
+ * The absent member's leave term: the days as leave, `1 dan odsutnosti`, or
  * the empty mark for a date that charges none. A conflict's date charges 0
  * only when the member is inactive on it (R4.2: a leave day needs the member
  * active, with a working shift — and a conflict always has the shift), a

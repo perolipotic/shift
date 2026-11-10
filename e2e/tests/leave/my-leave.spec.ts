@@ -314,7 +314,7 @@ test.describe("the admin's overview (story 7.15)", () => {
     await expect(leavePage.tableRow(member.name)).toBeVisible();
 
     // E884: THE STANJE CHIP, in the URL. The member is on leave from today, so
-    // "Na godišnjem danas" keeps the row and "Bez upisanog godišnjeg" leaves nobody.
+    // "Odsutnost danas" keeps the row and "Bez upisane odsutnosti" leaves nobody.
     // The summary counts the one record from today on: its `one` form.
     const oneRecord = /\{records, plural, one \{([^{}]*)\}/.exec(overview.summary)?.[1]?.replace('#', '1') ?? '';
     expect(oneRecord).not.toBe('');

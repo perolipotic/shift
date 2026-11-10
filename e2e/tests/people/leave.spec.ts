@@ -73,7 +73,7 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * since the page loaded is named. Each replacement is seeded with its
  * override in SQL (`seedConflictResolution`).
  *
- * Story 7.12: no od–do field is mounted on the card. *Upiši godišnji* opens
+ * Story 7.12: no od–do field is mounted on the card. *Upiši odsutnost* opens
  * the record dialog and a row's Izmijeni its amend dialog; each shows, before
  * saving, the cost, the balance after and the conflicts the range creates —
  * an amend *Bilo / Sada* and which conflicts clear and which stay — and a

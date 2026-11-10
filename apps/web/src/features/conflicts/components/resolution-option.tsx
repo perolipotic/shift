@@ -175,7 +175,7 @@ export function ReplaceMemberOption({
 }
 
 /**
- * The `resolution-option` card for "Izmijeni godišnji odmor" (story 5.4d), at
+ * The `resolution-option` card for "Izmijeni odsutnost" (story 5.4d), at
  * fixed position 3: what the computed range does — the leave starts later,
  * ends earlier, or the record is removed — and the strip in the same three
  * terms: the coverage one higher with the absent member working, their hours
@@ -229,7 +229,7 @@ export function AmendLeaveOption({ view }: { readonly view: ResolutionView }): R
   );
 }
 
-/** The first two cards' leave and balance: the absent member's day as leave, `1 dan godišnjeg`, and the balance unchanged. */
+/** The first two cards' leave and balance: the absent member's day as leave, `1 dan odsutnosti`, and the balance unchanged. */
 function LeaveStrip({
   view,
   id,

@@ -54,7 +54,7 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * The replacement is a fresh member on a second team of the test's own with
  * no rotation, so they are `slobodan` that day.
  *
- * Story 5.4d adds the third card, "Izmijeni godišnji odmor", which writes no
+ * Story 5.4d adds the third card, "Izmijeni odsutnost", which writes no
  * resolution: by keyboard to the member page's amend form, prefilled — a
  * cancel leaves the conflict in the queue, a saved amend takes it away — and
  * a one-day record to its removal confirmation, or nothing once it is gone.
@@ -305,7 +305,7 @@ test('accepts a conflict as uncovered by keyboard: the queue drops it with a sta
 
   // THE STRIP: three terms, in order.
   await expect(resolutionPage.stripLabels).toHaveText([resolution.coverageLabel, resolution.absentLabel, resolution.balanceLabel]);
-  // Leave is counted in days, never hours (2026-10-10): `1 dan godišnjeg`, no `12 h`.
+  // Leave is counted in days, never hours (2026-10-10): `1 dan odsutnosti`, no `12 h`.
   await expect(resolutionPage.acceptOption).toContainText(plural(resolution.daysAsLeave, 1));
   await expect(resolutionPage.acceptOption).not.toContainText('12 h');
   await expect(resolutionPage.acceptOption).toContainText(resolution.balanceUnchanged);
@@ -576,7 +576,7 @@ test('replaces the absent member by keyboard: the queue drops the conflict with 
   // Its strip: the coverage one higher, never "Nepokriveno", the hours and the balance as the first card's.
   await expect(resolutionPage.replaceOption).toContainText(replaceCoverageOfOne());
   await expect(resolutionPage.replaceOption).not.toContainText(resolution.uncovered);
-  // Leave is counted in days, never hours (2026-10-10): `1 dan godišnjeg`, no `12 h`.
+  // Leave is counted in days, never hours (2026-10-10): `1 dan odsutnosti`, no `12 h`.
   await expect(resolutionPage.replaceOption).toContainText(plural(resolution.daysAsLeave, 1));
   await expect(resolutionPage.replaceOption).not.toContainText('12 h');
   await expect(resolutionPage.replaceOption).toContainText(resolution.balanceUnchanged);

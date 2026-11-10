@@ -26,7 +26,7 @@ import {
 /**
  * The member page's *Godišnji* card (story 5.1c): the member's allowance, the
  * days used in the current leave year and the balance, then the member's
- * live records (story 5.2b). Facts only (story 7.12): *Upiši godišnji* in the
+ * live records (story 5.2b). Facts only (story 7.12): *Upiši odsutnost* in the
  * header opens the record dialog, and each record's Izmijeni its amend
  * dialog (`member-leave-dialog`), where a range shows what it costs, the
  * balance after it and the conflicts it creates before anything is saved;
@@ -178,7 +178,7 @@ export function MemberLeaveCard({
               {renderHeading()}
             </h2>
           </CardTitle>
-          {/* *UPIŠI GODIŠNJI* (story 7.12): the record dialog's opener, its
+          {/* *UPIŠI ODSUTNOST* (story 7.12): the record dialog's opener, its
               accessible name naming the member once the calendar has read them. */}
           <Button
             ref={recordDialog.opener}

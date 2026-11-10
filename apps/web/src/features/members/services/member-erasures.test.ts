@@ -167,7 +167,7 @@ describe('Move away', () => {
     if (row === undefined) throw new Error('no row');
 
     expect(t('ljudi.erasures.rowWithout', { member: row.memberName, team: row.teamName })).toBe(
-      `${VIEWER_NAME} na godišnjem · nakon promjene: Smjena A taj dan bez ${VIEWER_NAME}`,
+      `${VIEWER_NAME} (odsutnost) · nakon promjene: Smjena A taj dan bez ${VIEWER_NAME}`,
     );
     expect(t('ljudi.erasures.title', { count: 2 })).toBe('Promjena uklanja 2 odsutnosti u smjeni koje čekaju odluku');
     expect(t('ljudi.erasures.removed', { count: 1 })).toBe('Uklonjena 1 odsutnost u smjeni koja je čekala odluku.');

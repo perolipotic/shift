@@ -33,7 +33,7 @@ function renderToday(member: AbsentMember): ReactNode {
 }
 
 /**
- * *Odsutni danas* (story 6.3): every active member whose leave covers today,
+ * *Odsutnost danas* (story 6.3): every active member whose leave covers today,
  * or the sentence that says nobody is; then each one whose leave starts
  * tomorrow; and the way to *Godišnji*.
  */

@@ -12,8 +12,8 @@ const leave = hr.ljudi.leaveRecord;
 /** *Godišnji odmor*, or *Godišnji odmor 2026.* once the leave year is read — never the records' own heading. */
 const LEAVE_HEADING = new RegExp(`^${escapeRegExp(leave.heading)}( \\d{4}\\.(/\\d{4}\\.)?)?$`);
 /**
- * Either leave dialog (story 7.12), by its title: `Upiši godišnji odmor`, or
- * `Izmijeni godišnji odmor {od}–{do}` whatever the range.
+ * Either leave dialog (story 7.12), by its title: `Upiši odsutnost`, or
+ * `Izmijeni odsutnost {od}–{do}` whatever the range.
  */
 const LEAVE_DIALOG = new RegExp(
   `^(${escapeRegExp(leave.recordDialogHeading)}|${escapeRegExp(leave.amendDialogHeading.split('{')[0] ?? '')}.+)$`,
@@ -603,7 +603,7 @@ export class PeoplePage extends BasePage {
       .first();
   }
 
-  /** *Upiši godišnji* in the leave card's header (story 7.12): it opens the record dialog. */
+  /** *Upiši odsutnost* in the leave card's header (story 7.12): it opens the record dialog. */
   get recordLeaveButton(): Locator {
     return this.leaveCard.getByRole('button', { name: leave.record });
   }
@@ -613,7 +613,7 @@ export class PeoplePage extends BasePage {
     return this.dialog().filter({ has: this.page.getByRole('heading', { name: LEAVE_DIALOG }) });
   }
 
-  /** The new record's dialog, `Upiši godišnji odmor`. */
+  /** The new record's dialog, `Upiši odsutnost`. */
   get leaveRecordDialog(): Locator {
     return this.dialog(leave.recordDialogHeading);
   }

@@ -404,7 +404,7 @@ describe('shift-type overrides', () => {
 
     expect(row).toMatchObject({ shiftTypeName: 'Dežurstvo', times: null });
     expect(t('zaOdluku.detail', { type: row!.shiftTypeName, from: row!.leaveFrom, to: row!.leaveTo })).toBe(
-      'Dežurstvo · Godišnji odmor 10.09.2026–14.09.2026',
+      'Dežurstvo · Odsutnost 10.09.2026–14.09.2026',
     );
   });
 });
@@ -712,7 +712,7 @@ describe('pending leave requests beside collisions (story 9.5)', () => {
       [ITEM_COLLISION, '2026-09-14'],
     ]);
     expect(t('zaOdluku.kind.collision')).toBe('Odsutnost u smjeni');
-    expect(t('zaOdluku.kind.request')).toBe('Zahtjev za godišnji odmor');
+    expect(t('zaOdluku.kind.request')).toBe('Zahtjev za odsutnost');
   });
 
   it('Only requests: one pending request is `1 čeka odluku`, a row naming the member and the range', () => {
@@ -733,7 +733,7 @@ describe('pending leave requests beside collisions (story 9.5)', () => {
 
     expect(view).toEqual({ count: 1, rows: [expected] });
     expect(t('zaOdluku.count', { count: view.count })).toBe('1 čeka odluku');
-    expect(t('zaOdluku.request.range', { from: expected.from, to: expected.to })).toBe('Godišnji odmor 12.09.2026–13.09.2026');
+    expect(t('zaOdluku.request.range', { from: expected.from, to: expected.to })).toBe('Odsutnost 12.09.2026–13.09.2026');
   });
 
   it('Zero: nothing pending is `0 čeka odluku`', () => {

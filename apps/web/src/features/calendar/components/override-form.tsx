@@ -440,7 +440,7 @@ export function OverrideRemoveConfirm({
  * A SHIFT-TYPE OVERRIDE'S ERASURE CONFIRMATION (story 5.5f): the shared
  * `ErasureDialog` in the calendar's words, rendered BESIDE the day detail as
  * the removal's confirmation is. One row per conflict the write would erase
- * — "{member} na godišnjem · nakon promjene: {team} taj dan slobodna" — and
+ * — "{member} (odsutnost) · nakon promjene: {team} taj dan slobodna" — and
  * its own save: "Spremi izmjenu" for a set, "Ukloni" for a removal,
  * `aria-disabled` until every row is confirmed. A removal's lede and kept
  * hint say so in its own words. "Natrag na uređivanje" returns to the form

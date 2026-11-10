@@ -173,7 +173,7 @@ describe('Set non-working', () => {
     if (row === undefined) throw new Error('no row');
 
     expect(t('kalendar.detail.override.erasures.rowFree', { member: row.memberName, team: row.teamName })).toBe(
-      `${VIEWER_NAME} na godišnjem · nakon promjene: Smjena A taj dan slobodna`,
+      `${VIEWER_NAME} (odsutnost) · nakon promjene: Smjena A taj dan slobodna`,
     );
     expect(t('kalendar.detail.override.erasures.title', { count: 1 })).toBe('Promjena uklanja 1 stavku koja čeka odluku');
     expect(t('kalendar.detail.override.erasures.removed', { count: 2 })).toBe('Uklonjene 2 stavke koje su čekale odluku.');

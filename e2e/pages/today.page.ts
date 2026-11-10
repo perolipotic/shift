@@ -21,7 +21,7 @@ function leadOf(message: string): string {
  *
  * For an admin (story 6.3): *Treba tebe* with its count, its rows (each a
  * link to its conflict) and "Otvori Za odluku (n)"; *Pokrivenost danas*;
- * *Odsutni danas*; and *Ovaj tjedan*, a grid in a scrolling region whose
+ * *Odsutnost danas*; and *Ovaj tjedan*, a grid in a scrolling region whose
  * cells are named in words — each block with its way to its list view.
  * While the minimum is set, *Premalo ljudi* after *Treba tebe* (story 11.4).
  */
@@ -189,7 +189,7 @@ export class TodayPage extends BasePage {
     return this.coverageCard.getByRole('link', { name: admin.coverage.link, exact: true });
   }
 
-  /** *Odsutni danas*. */
+  /** *Odsutnost danas*. */
   get absentCard(): Locator {
     return this.card(admin.absent.heading);
   }

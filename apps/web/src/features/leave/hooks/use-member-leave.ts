@@ -111,7 +111,7 @@ export interface LeaveDialogOpening {
  * the whole page is unavailable.
  *
  * THE DIALOGS (story 7.12, the member page's pattern from 7.11). The od–do
- * fields live only in a dialog: `recordDialog` (*Upiši godišnji* in the
+ * fields live only in a dialog: `recordDialog` (*Upiši odsutnost* in the
  * card's header) and `amendDialog` (a row's *Izmijeni*, or the hand-off).
  * The hook owns which is open and the button that opened it; each opening
  * renders a fresh keyed body whose fields start from the opening's range.
@@ -202,7 +202,7 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
    * no longer ready closes its dialog, and its unavailable line says why.
    */
   const cardHeading = useRef<HTMLHeadingElement>(null);
-  /** *Upiši godišnji*, which opens the record dialog and takes focus back when it closes (story 7.12). */
+  /** *Upiši odsutnost*, which opens the record dialog and takes focus back when it closes (story 7.12). */
   const recordOpener = useRef<HTMLButtonElement>(null);
   /** The Izmijeni that opened the amend dialog, which takes focus back when it closes; null after a hand-off. */
   const amendOpener = useRef<HTMLButtonElement | null>(null);
@@ -591,7 +591,7 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
     clearRaised();
   }
 
-  /** *Upiši godišnji*: the record dialog, empty. */
+  /** *Upiši odsutnost*: the record dialog, empty. */
   function openRecord(): void {
     if (recording.current || amending.current || removing.current) return;
 
@@ -982,7 +982,7 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
     retry,
     save,
     amend,
-    /** The record dialog (story 7.12): *Upiši godišnji* opens it. */
+    /** The record dialog (story 7.12): *Upiši odsutnost* opens it. */
     recordDialog: {
       opener: recordOpener,
       opening: opening !== null && opening.target === null ? opening : null,

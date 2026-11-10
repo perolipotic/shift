@@ -142,7 +142,7 @@ beforeAll(async () => {
 });
 
 describe('Groups: free, working that day, on leave — in that order, by name', () => {
-  it('puts Dino in slobodan, Ana (off a Noć that ends as Dan starts) and Ivo in radi taj dan, and Eva in na godišnjem', async () => {
+  it('puts Dino in slobodan, Ana (off a Noć that ends as Dan starts) and Ivo in radi taj dan, and Eva in odsutnost taj dan', async () => {
     const groups = replacementCandidatesOf(await snapshotOf(OVERRIDES), LEAVE, A, DATE, DAN);
 
     expect(groups.map((group) => group.kind)).toEqual([CANDIDATES_FREE, CANDIDATES_WORKING, CANDIDATES_ON_LEAVE]);

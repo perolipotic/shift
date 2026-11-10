@@ -421,7 +421,7 @@ describe('a refused decision', () => {
     [REQUEST_NOT_PENDING, 'Zahtjev više ne čeka odluku.'],
     [
       REQUEST_APPROVAL_STALE,
-      'U međuvremenu je upisan godišnji koji se preklapa s ovim zahtjevom. Odobrenje nije moguće, a zahtjev možeš odbiti.',
+      'U međuvremenu je upisana odsutnost koja se preklapa s ovim zahtjevom. Odobrenje nije moguće, a zahtjev možeš odbiti.',
     ],
     [
       REQUEST_MEMBER_INACTIVE,

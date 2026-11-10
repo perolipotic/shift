@@ -18,7 +18,7 @@ const request = hr.godisnji.request;
  * Since story 7.15 an admin's `/godisnji` is the overview instead: every
  * member active today as a table row from 640 px, a stacked row below it.
  *
- * Since story 9.3 a member's `/godisnji` offers *Zatraži godišnji*, which
+ * Since story 9.3 a member's `/godisnji` offers *Zatraži odsutnost*, which
  * opens the request form at `/godisnji/zatrazi`, and lists their own requests
  * by status; a pending one has *Povuci zahtjev*.
  */
@@ -84,7 +84,7 @@ export class LeavePage extends BasePage {
     });
   }
 
-  /** The Stanje chip's text for a value: `Stanje: na godišnjem danas`. */
+  /** The Stanje chip's text for a value: `Stanje: odsutnost danas`. */
   stateChipText(value: keyof typeof overview.stateValue): string {
     return fill(overview.stateChip, { value: overview.stateValue[value] });
   }
@@ -160,7 +160,7 @@ export class LeavePage extends BasePage {
 
   // ------------------------------------------------------- the request (9.3)
 
-  /** *Zatraži godišnji*, the link to the request form. */
+  /** *Zatraži odsutnost*, the link to the request form. */
   get requestAction(): Locator {
     return this.page.getByRole('link', { name: request.action, exact: true });
   }

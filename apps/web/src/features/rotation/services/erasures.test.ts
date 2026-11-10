@@ -177,7 +177,7 @@ describe('Erases', () => {
       'Smjena A · četvrtak 10.09. · Dan',
     );
     expect(t('rotation.builder.erasures.rowFree', { member: row.memberName, team: row.teamName })).toBe(
-      `${VIEWER_NAME} na godišnjem · nova rotacija: Smjena A taj dan slobodna`,
+      `${VIEWER_NAME} (odsutnost) · nova rotacija: Smjena A taj dan slobodna`,
     );
     expect(t('rotation.builder.erasures.title', { count: 2 })).toBe('Promjena uklanja 2 stavke koje čekaju odluku');
     expect(t('rotation.builder.erasures.title', { count: 5 })).toBe('Promjena uklanja 5 stavki koje čekaju odluku');
@@ -248,7 +248,7 @@ describe('Override pending', () => {
 
     expect(rows).toEqual([expect.objectContaining({ date: '2026-09-13', teamName: 'Smjena B', shiftTypeName: 'Dan', teamWorks: true })]);
     expect(t('rotation.builder.erasures.rowWithout', { member: VIEWER_NAME, team: 'Smjena B' })).toBe(
-      `${VIEWER_NAME} na godišnjem · nova rotacija: Smjena B taj dan bez ${VIEWER_NAME}`,
+      `${VIEWER_NAME} (odsutnost) · nova rotacija: Smjena B taj dan bez ${VIEWER_NAME}`,
     );
   });
 
@@ -452,7 +452,7 @@ describe('the cancel: Plain revert', () => {
       expect.objectContaining({ date: '2026-09-12', teamName: 'Smjena A', shiftTypeName: 'Dan', teamWorks: false }),
     ]);
     expect(t('rotation.builder.cancelScheduled.erasures.rowFree', { member: VIEWER_NAME, team: 'Smjena A' })).toBe(
-      `${VIEWER_NAME} na godišnjem · nakon poništavanja: Smjena A taj dan slobodna`,
+      `${VIEWER_NAME} (odsutnost) · nakon poništavanja: Smjena A taj dan slobodna`,
     );
     expect(t('rotation.builder.cancelScheduled.erasures.lede', { count: 1 })).toBe(
       'Poništavanje uklanja uzrok 1 stavke koja čeka odluku. Prije poništavanja odluči za svaku.',
@@ -533,7 +533,7 @@ describe('the cancel: Roster returns', () => {
       expect.objectContaining({ date: '2026-09-10', teamName: 'Smjena A', memberName: VIEWER_NAME, teamWorks: true }),
     ]);
     expect(t('rotation.builder.cancelScheduled.erasures.rowWithout', { member: VIEWER_NAME, team: 'Smjena A' })).toBe(
-      `${VIEWER_NAME} na godišnjem · nakon poništavanja: Smjena A taj dan bez ${VIEWER_NAME}`,
+      `${VIEWER_NAME} (odsutnost) · nakon poništavanja: Smjena A taj dan bez ${VIEWER_NAME}`,
     );
   });
 });

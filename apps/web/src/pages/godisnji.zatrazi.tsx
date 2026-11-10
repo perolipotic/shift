@@ -15,7 +15,7 @@ import { appLayoutRoute } from '@/pages/_app';
 import { keepFocusOnAlert } from '@/utils/retry-focus';
 
 /**
- * `/godisnji/zatrazi` — *Zatraži godišnji odmor* (story 9.3, UX-DR47): a
+ * `/godisnji/zatrazi` — *Zatraži odsutnost* (story 9.3, UX-DR47): a
  * member asks for a range of leave and sees what it would cost before sending
  * it. A SURFACE OF ITS OWN, with a URL (UX-DR33 counts it among the new
  * surfaces), reached from a member's *Godišnji*; the *Godišnji* tab lights

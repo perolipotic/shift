@@ -65,7 +65,7 @@ function ConflictItem({ row }: { readonly row: ConflictRow }): ReactNode {
 }
 
 /**
- * One pending leave request (*Zahtjev za godišnji odmor*, story 9.5): the
+ * One pending leave request (*Zahtjev za odsutnost*, story 9.5): the
  * range's first date, the member — or that they are gone — and the range.
  * The whole row is the link to the request's own decision screen (story 9.4).
  * No cost or balance here: those are the decision screen's.

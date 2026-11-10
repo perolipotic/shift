@@ -78,7 +78,7 @@ export const CONFLICTS_READY = 'ready';
 
 /** A queue item that is a collision: *Odsutnost u smjeni* (story 9.5). */
 export const ITEM_COLLISION = 'collision';
-/** A queue item that is a pending leave request: *Zahtjev za godišnji odmor* (story 9.5). */
+/** A queue item that is a pending leave request: *Zahtjev za odsutnost* (story 9.5). */
 export const ITEM_REQUEST = 'request';
 /** A queue item that is an accepted swap waiting for an admin: *Zamjena smjene* (story 12.4). */
 export const ITEM_SWAP = 'swap';

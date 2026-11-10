@@ -758,7 +758,7 @@ test.describe('as an admin', () => {
     await expect(coverage).toContainText(membersText(3, 4));
     await expect(coverage).toContainText(fill(admin.coverage.absentUnresolved, { name: absent.name }));
 
-    // ODSUTNI DANAS: the member, their team and the day.
+    // ODSUTNOST DANAS: the member, their team and the day.
     await expect(todayPage.absentCard).toContainText(absent.name);
     // One day of leave: its one date, never `07.10.–07.10.`.
     await expect(todayPage.absentCard).toContainText(fill(admin.absent.lineDay, { team: team.name, date: dayMonth(today) }));

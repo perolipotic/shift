@@ -403,7 +403,7 @@ describe('the facts', () => {
     ).toBe('Dan 07:00–19:00 · Smjena A · četvrtak 10.09.2026');
     expect(view.memberName).toBe(VIEWER_NAME);
     expect(t('zaOdluku.resolution.leave', { from: view.leaveFrom, to: view.leaveTo, days: view.leaveCostDays })).toBe(
-      'na godišnjem 10.09.2026–14.09.2026 · 3 dana',
+      'odsutnost 10.09.2026–14.09.2026 · 3 dana',
     );
   });
 
@@ -430,15 +430,15 @@ describe('the facts', () => {
 });
 
 describe('Strip: coverage, the day as leave and the balance', () => {
-  it('reads "3 od 4 člana", "1 dan godišnjeg" and "16 dana preostalo" for a team of four, a 12 h shift and a balance of 16', () => {
+  it('reads "3 od 4 člana", "1 dan odsutnosti" and "16 dana preostalo" for a team of four, a 12 h shift and a balance of 16', () => {
     const view = viewOf(resolutionScreenOf(sourcesOf(pilot), paramsOn('2026-09-10'), NOW));
 
     expect([view.covered, view.total]).toEqual([3, 4]);
     expect(t(coverageMessageKey(), { covered: view.covered, total: view.total })).toBe('3 od 4 člana');
     // Leave is counted in days, never hours (human, 2026-10-10): the date as Godišnji charges it.
     expect(view.leaveDays).toBe(1);
-    expect(t(leaveDaysMessageKey(view.leaveDays), { count: view.leaveDays })).toBe('1 dan godišnjeg');
-    expect(t('zaOdluku.resolution.daysAsLeave', { count: 3 })).toBe('3 dana godišnjeg');
+    expect(t(leaveDaysMessageKey(view.leaveDays), { count: view.leaveDays })).toBe('1 dan odsutnosti');
+    expect(t('zaOdluku.resolution.daysAsLeave', { count: 3 })).toBe('3 dana odsutnosti');
     expect(view.balanceDays).toBe(16);
     expect(t('zaOdluku.resolution.balance', { count: view.balanceDays })).toBe('16 dana preostalo');
   });
@@ -668,7 +668,7 @@ describe('the patch round', () => {
     expect(view.shiftHours).toBeNull();
     expect(t(workHoursMessageKey(view.shiftHours))).toBe('—');
     // The day is charged with or without times: leave is counted in days.
-    expect(t(leaveDaysMessageKey(view.leaveDays), { count: view.leaveDays })).toBe('1 dan godišnjeg');
+    expect(t(leaveDaysMessageKey(view.leaveDays), { count: view.leaveDays })).toBe('1 dan odsutnosti');
     expect(t(shiftFactsMessageKey(view.times), { type: view.shiftTypeName, team: view.teamName, date: view.dateShown })).toBe(
       'Dan · Smjena A · četvrtak 10.09.2026',
     );
@@ -740,7 +740,7 @@ describe('replacing the absent member (story 5.4c)', () => {
     expect(hasCandidates(viewOf(resolutionScreenOf(sourcesOf(pilot), paramsOn('2026-09-10'), NOW)))).toBe(false);
     expect(t(candidateGroupMessageKey(CANDIDATES_FREE))).toBe('slobodan');
     expect(t(candidateGroupMessageKey(CANDIDATES_WORKING))).toBe('radi taj dan');
-    expect(t(candidateGroupMessageKey(CANDIDATES_ON_LEAVE))).toBe('na godišnjem taj dan');
+    expect(t(candidateGroupMessageKey(CANDIDATES_ON_LEAVE))).toBe('odsutnost taj dan');
   });
 
   it('Leave pick: offers a member on leave that date, in their own group', () => {
@@ -752,7 +752,7 @@ describe('replacing the absent member (story 5.4c)', () => {
     expect(view.candidates[1]?.candidates.map((one) => one.name)).toEqual(['Dino Grgić']);
   });
 
-  it('Strip: "4 od 4 člana · Dino Grgić", "1 dan godišnjeg" and "16 dana preostalo · bez promjene"', () => {
+  it('Strip: "4 od 4 člana · Dino Grgić", "1 dan odsutnosti" and "16 dana preostalo · bez promjene"', () => {
     const view = viewOf(resolutionScreenOf(sourcesOf(others), paramsOn('2026-09-10'), NOW));
     const dino = replacementOf(view, DINO);
 
@@ -760,7 +760,7 @@ describe('replacing the absent member (story 5.4c)', () => {
     expect(
       `${t(coverageMessageKey(), { covered: view.replaceCovered, total: view.total })} ${t('zaOdluku.resolution.replacementShown', { name: dino!.name })}`,
     ).toBe('4 od 4 člana · Dino Grgić');
-    expect(t(leaveDaysMessageKey(view.leaveDays), { count: view.leaveDays })).toBe('1 dan godišnjeg');
+    expect(t(leaveDaysMessageKey(view.leaveDays), { count: view.leaveDays })).toBe('1 dan odsutnosti');
     expect(`${t('zaOdluku.resolution.balance', { count: view.balanceDays })} · ${t('zaOdluku.resolution.balanceUnchanged')}`).toBe(
       '16 dana preostalo · bez promjene',
     );
@@ -941,7 +941,7 @@ describe('amending the leave (story 5.4d)', () => {
     expect(view.amend.target).toEqual({ kind: AMEND_STARTS, range: { from: '2026-09-11', to: '2026-09-14' } });
     expect(
       t(amendBodyMessageKey(view.amend.target.kind), { name: view.memberName, date: view.dayMonth, newDate: view.amend.dateShown ?? '' }),
-    ).toBe(`${view.memberName} radi 10.09., a godišnji počinje 11.09. Otvara izmjenu godišnjeg s tim datumom.`);
+    ).toBe(`${view.memberName} radi 10.09., a odsutnost počinje 11.09. Otvara izmjenu odsutnosti s tim datumom.`);
     expect(
       `${t(coverageMessageKey(), { covered: view.replaceCovered, total: view.total })} ${t('zaOdluku.resolution.amendWorks', { name: view.memberName })}`,
     ).toBe(`4 od 4 člana · ${view.memberName} radi`);
@@ -966,7 +966,7 @@ describe('amending the leave (story 5.4d)', () => {
     // 10.09. goes with the conflict's 11.09.; today (01.09.) is before it.
     expect(amendViewOn('2026-09-11').amend.dropped).toEqual({ days: 1, rangeShown: '10.09.', past: false });
     expect(t('zaOdluku.resolution.amendDrops', { count: 1, range: '10.09.' })).toBe(
-      'Godišnji se skraćuje i za 1 dan prije toga (10.09.).',
+      'Odsutnost se skraćuje i za 1 dan prije toga (10.09.).',
     );
     // The first day drops nothing before it; an earlier end or a removal drops nothing at all.
     expect(amendViewOn('2026-09-10').amend.dropped).toBeNull();
@@ -982,7 +982,7 @@ describe('amending the leave (story 5.4d)', () => {
     });
     expect(resolutionAmendDroppedOf(record, '2026-10-06', target, '2026-10-02')?.past).toBe(false);
     expect(t('zaOdluku.resolution.amendDrops', { count: 4, range: '02.10.–05.10.' })).toBe(
-      'Godišnji se skraćuje i za 4 dana prije toga (02.10.–05.10.).',
+      'Odsutnost se skraćuje i za 4 dana prije toga (02.10.–05.10.).',
     );
     expect(t('zaOdluku.resolution.amendDrops', { count: 5, range: '' })).toContain('5 dana');
   });
@@ -993,7 +993,7 @@ describe('amending the leave (story 5.4d)', () => {
     expect(view.amend.target).toEqual({ kind: AMEND_ENDS, range: { from: '2026-09-10', to: '2026-09-13' } });
     expect(
       t(amendBodyMessageKey(view.amend.target.kind), { name: 'Mirela', date: view.dayMonth, newDate: view.amend.dateShown ?? '' }),
-    ).toBe('Mirela radi 14.09., a godišnji završava 13.09. Otvara izmjenu godišnjeg s tim datumom.');
+    ).toBe('Mirela radi 14.09., a odsutnost završava 13.09. Otvara izmjenu odsutnosti s tim datumom.');
     expect([view.amend.balanceDays, view.amend.gainedDays]).toEqual([17, 1]);
   });
 
@@ -1004,7 +1004,7 @@ describe('amending the leave (story 5.4d)', () => {
     expect(view.amend.target).toEqual({ kind: AMEND_REMOVES });
     expect(view.amend.dateShown).toBeNull();
     expect(t(amendBodyMessageKey(AMEND_REMOVES), { name: 'Mirela', date: view.dayMonth, newDate: '' })).toBe(
-      'Mirela radi 10.09., a ovaj godišnji se briše. Otvara brisanje godišnjeg.',
+      'Mirela radi 10.09., a ova odsutnost se briše. Otvara brisanje odsutnosti.',
     );
     expect([view.amend.balanceDays, view.amend.gainedDays]).toEqual([19, 1]);
   });
@@ -1041,9 +1041,9 @@ describe('amending the leave (story 5.4d)', () => {
     expect(readyToSave(OPTION_AMEND_LEAVE, null)).toBe(true);
     expect(saveFocusOf(OPTION_AMEND_LEAVE, null, false)).toBeNull();
     expect(t(saveHintMessageKey(OPTION_AMEND_LEAVE, null, true, AMEND_STARTS), { date: '11.09.' })).toBe(
-      'Spremi otvara izmjenu godišnjeg s datumom 11.09.',
+      'Spremi otvara izmjenu odsutnosti s datumom 11.09.',
     );
-    expect(t(saveHintMessageKey(OPTION_AMEND_LEAVE, null, true, AMEND_REMOVES))).toBe('Spremi otvara brisanje ovog godišnjeg.');
+    expect(t(saveHintMessageKey(OPTION_AMEND_LEAVE, null, true, AMEND_REMOVES))).toBe('Spremi otvara brisanje ove odsutnosti.');
     expect(workHoursMessageKey(null)).toBe('zaOdluku.resolution.noHours');
   });
 

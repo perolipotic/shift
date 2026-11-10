@@ -573,7 +573,7 @@ describe('Pokrivenost danas', () => {
     expect(noc?.absent).toEqual([{ memberId: ANA, name: 'Ana Anić', state: ABSENT_UNRESOLVED }]);
     expect(t('danas.admin.coverage.members', { present: noc?.present, total: noc?.total })).toBe('3 od 4 člana');
     expect(t(coverageAbsentMessageKey(ABSENT_UNRESOLVED), { name: 'Ana Anić' })).toBe(
-      'Ana Anić je na godišnjem, a u sastavu je smjene · čeka odluku',
+      'Ana Anić ima upisanu odsutnost, a u sastavu je smjene · čeka odluku',
     );
   });
 
@@ -584,7 +584,7 @@ describe('Pokrivenost danas', () => {
     expect(noc).toMatchObject({ present: 3, total: 4 });
     expect(noc?.absent).toEqual([{ memberId: ANA, name: 'Ana Anić', state: ABSENT_ACCEPTED }]);
     expect(t(coverageAbsentMessageKey(ABSENT_ACCEPTED), { name: 'Ana Anić' })).toBe(
-      'Ana Anić je na godišnjem · prihvaćeno bez zamjene',
+      'Ana Anić ima upisanu odsutnost · prihvaćeno bez zamjene',
     );
   });
 
@@ -650,12 +650,12 @@ describe('Pokrivenost danas', () => {
   });
 });
 
-describe('Odsutni danas', () => {
+describe('Odsutnost danas', () => {
   it('names nobody on a day nobody is on leave', () => {
     const { absences } = viewOf(pilot, []);
 
     expect(absences).toEqual({ today: [], tomorrow: [] });
-    expect(t('danas.admin.absent.none')).toBe('Danas nitko nije na godišnjem odmoru.');
+    expect(t('danas.admin.absent.none')).toBe('Danas nitko nema upisanu odsutnost.');
   });
 
   it('names who is on leave with their team and the whole absence, then who starts tomorrow', () => {
@@ -677,7 +677,7 @@ describe('Odsutni danas', () => {
     const [dora] = absences.tomorrow;
 
     expect(t(absentLineMessageKey({ teamName: 'Smjena A', oneDay: false }), { team: ana?.teamName, from: ana?.from, to: ana?.to })).toBe(
-      'Smjena A · godišnji 28.09.–04.10.',
+      'Smjena A · odsutnost 28.09.–04.10.',
     );
     expect(
       t(absentTomorrowMessageKey({ teamName: 'Smjena A', oneDay: false }), {
@@ -700,12 +700,12 @@ describe('Odsutni danas', () => {
     expect(ana.oneDay).toBe(true);
     expect(dora.oneDay).toBe(true);
     expect(t(absentLineMessageKey(ana), { team: ana.teamName, from: ana.from, to: ana.to, date: ana.from })).toBe(
-      'Smjena A · godišnji 01.10.',
+      'Smjena A · odsutnost 01.10.',
     );
     expect(
       t(absentTomorrowMessageKey(dora), { name: dora.name, team: dora.teamName, from: dora.from, to: dora.to, date: dora.from }),
     ).toBe('Od sutra: Dora Dorić (Smjena A), 02.10.');
-    expect(t(absentLineMessageKey({ teamName: null, oneDay: true }), { date: '01.10.' })).toBe('godišnji 01.10.');
+    expect(t(absentLineMessageKey({ teamName: null, oneDay: true }), { date: '01.10.' })).toBe('odsutnost 01.10.');
     expect(t(absentTomorrowMessageKey({ teamName: null, oneDay: true }), { name: 'Ana Anić', date: '02.10.' })).toBe(
       'Od sutra: Ana Anić, 02.10.',
     );
@@ -719,7 +719,7 @@ describe('Odsutni danas', () => {
   });
 
   it('says a member on no team without one', () => {
-    expect(t(absentLineMessageKey({ teamName: null, oneDay: false }), { from: '28.09.', to: '04.10.' })).toBe('godišnji 28.09.–04.10.');
+    expect(t(absentLineMessageKey({ teamName: null, oneDay: false }), { from: '28.09.', to: '04.10.' })).toBe('odsutnost 28.09.–04.10.');
     expect(t(absentTomorrowMessageKey({ teamName: null, oneDay: false }), { name: 'Ana Anić', from: '02.10.', to: '04.10.' })).toBe(
       'Od sutra: Ana Anić, 02.10.–04.10.',
     );
@@ -1108,7 +1108,7 @@ describe('the subtitle', () => {
 
     expect(adminStatusOf(todayViewOf(snapshot, [], AT_1420))).toEqual({ kind: STATUS_FREE });
     expect(t(adminStatusMessageKey(STATUS_FREE))).toBe('Danas ne radiš');
-    expect(t(adminStatusMessageKey(STATUS_LEAVE))).toBe('Danas si na godišnjem odmoru');
+    expect(t(adminStatusMessageKey(STATUS_LEAVE))).toBe('Danas imaš upisanu odsutnost');
     expect(t(adminStatusMessageKey(STATUS_DUTY), { time: '07:00' })).toBe('Na dužnosti do 07:00');
     expect(adminStatusShiftMessageKey({ name: 'Noć', range: null, fromYesterday: false })).toBe('danas.admin.status.workingUntimed');
   });

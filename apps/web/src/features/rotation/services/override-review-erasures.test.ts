@@ -206,7 +206,7 @@ describe('Confirm erases', () => {
     if (row === undefined) throw new Error('no row');
 
     expect(t('rotation.builder.overrides.erasures.rowFree', { member: row.memberName, team: row.teamName })).toBe(
-      `${VIEWER_NAME} na godišnjem · nakon promjene: Smjena A taj dan slobodna`,
+      `${VIEWER_NAME} (odsutnost) · nakon promjene: Smjena A taj dan slobodna`,
     );
     expect(t('rotation.builder.overrides.erasures.title', { count: 1 })).toBe('Izmjena uklanja 1 stavku koja čeka odluku');
     expect(t('rotation.builder.overrides.erasures.removed', { count: 1 })).toBe('Uklonjena 1 stavka koja je čekala odluku.');
@@ -396,7 +396,7 @@ describe('the roster layer: confirm and amend erase (0039)', () => {
     if (row === undefined) throw new Error('no row');
 
     expect(t('rotation.builder.overrides.erasures.rowWithout', { member: row.memberName, team: row.teamName })).toBe(
-      `${VIEWER_NAME} na godišnjem · nakon promjene: Smjena A taj dan bez ${VIEWER_NAME}`,
+      `${VIEWER_NAME} (odsutnost) · nakon promjene: Smjena A taj dan bez ${VIEWER_NAME}`,
     );
   });
 
