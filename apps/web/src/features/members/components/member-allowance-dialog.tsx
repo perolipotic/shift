@@ -9,19 +9,21 @@ import { InputGroup, InputGroupIcon } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { t } from '@/lib/i18n';
+import { formatIsoDate } from '@/lib/i18n/format';
 import { useWriteGate } from '@/lib/offline/use-write-gate';
 import type { MemberEdit } from '@/features/members/hooks/use-member-edit';
-import type { MemberListRow } from '@/features/members/services/list';
-import { LEAVE_ALLOWANCE_MAX } from '@/features/members/services/write';
+import { LEAVE_ALLOWANCE_MAX, type HeldAllowance } from '@/features/members/services/write';
 import {
   MEMBER_ALLOWANCE_DIALOG_HEADING_ID,
   MEMBER_ALLOWANCE_FIELD_ID,
+  MEMBER_ALLOWANCE_HINT_AND_ERROR,
+  MEMBER_ALLOWANCE_HINT_ID,
   MEMBER_FORM_ERROR_ID,
 } from '@/features/members/utils/element-ids';
 import { refusalText } from '@/features/members/utils/refusal-text';
 
-/** `0002:145` — the column is `smallint not null check (>= 0)`: no allowance
- *  below zero. The upper bound is `LEAVE_ALLOWANCE_MAX`, what a `smallint` holds. */
+/** `0055` — `days` is `smallint check (>= 0)`: no allowance below zero. The
+ *  upper bound is `LEAVE_ALLOWANCE_MAX`, what a `smallint` holds. */
 const ALLOWANCE_MINIMUM = 0;
 const ALLOWANCE_STEP = 1;
 
@@ -45,7 +47,8 @@ export function MemberAllowanceAction({ edit }: { readonly edit: MemberEdit }): 
         type="button"
         variant="outline"
         aria-label={t('ljudi.allowance.changeName', { name: member.name })}
-        disabled={pending}
+        // STORY 13.3b: no year to set while today or the leave-year start is unknown.
+        disabled={pending || !allowanceDialog.available}
         onClick={allowanceDialog.open}
       >
         {t('ljudi.allowance.change')}
@@ -57,12 +60,13 @@ export function MemberAllowanceAction({ edit }: { readonly edit: MemberEdit }): 
 }
 
 /**
- * `Promijeni pravo na godišnji odmor`: the allowance and nothing else, behind
- * one Spremi — the member page's one member write, `submit`, which sends only
- * the allowance from here. A value that is no allowance is refused before
- * anything is sent and the field is marked; a landed save closes the dialog,
- * and the leave card's *Pravo* and *Preostalo* move together, from one
- * snapshot.
+ * `Promijeni pravo na godišnji odmor`: the allowance of the CURRENT leave year
+ * and nothing else (story 13.3b), behind one Spremi — `submit`, which appends
+ * a `leave_allowances` version for the year held at opening. The field starts
+ * at that year's resolved allowance, and the hint names the leave year it
+ * applies from by its first and last day. A value that is no allowance is refused before anything is sent and
+ * the field is marked; a landed save closes the dialog, and the leave card's
+ * *Pravo* and *Preostalo* move together, from one snapshot.
  */
 export function MemberAllowanceDialog({ edit }: { readonly edit: MemberEdit }): ReactNode {
   const { form, leaveField, pending, invalidField, refusal, submit, allowanceDialog } = edit;
@@ -72,7 +76,7 @@ export function MemberAllowanceDialog({ edit }: { readonly edit: MemberEdit }): 
   const gate = useWriteGate();
 
   /** The dialog's form: the allowance, its refusal, and one Spremi. */
-  function renderForm(shown: MemberListRow): ReactNode {
+  function renderForm(held: HeldAllowance): ReactNode {
     return (
       <form
         method="post"
@@ -104,11 +108,14 @@ export function MemberAllowanceDialog({ edit }: { readonly edit: MemberEdit }): 
               step={ALLOWANCE_STEP}
               aria-invalid={invalidField === MEMBER_ALLOWANCE_FIELD_ID}
               required
-              defaultValue={shown.leaveAllowanceDays}
-              aria-describedby={refusal === null ? undefined : MEMBER_FORM_ERROR_ID}
+              defaultValue={held.days}
+              aria-describedby={refusal === null ? MEMBER_ALLOWANCE_HINT_ID : MEMBER_ALLOWANCE_HINT_AND_ERROR}
               className="h-11"
             />
           </InputGroup>
+          <p id={MEMBER_ALLOWANCE_HINT_ID} className="text-sm text-muted-foreground">
+            {t('ljudi.allowance.validFrom', { from: formatIsoDate(held.from), to: formatIsoDate(held.to) })}
+          </p>
         </div>
         {refusal === null ? null : (
           <Notice id={MEMBER_FORM_ERROR_ID} role="alert">
@@ -156,7 +163,7 @@ export function MemberAllowanceDialog({ edit }: { readonly edit: MemberEdit }): 
             <DialogDescription>{member.name}</DialogDescription>
           </DialogHeader>
           <Fragment key={opening.key}>
-            {renderForm(member)}
+            {renderForm(opening.held)}
           </Fragment>
         </>
       )}

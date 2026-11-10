@@ -883,6 +883,64 @@ describe('every organization table carries row level security, and only its revi
     }
   });
 
+  it.skipIf(noDatabase)('lets a session update five member columns and never the starting allowance (0056)', async () => {
+    // STORY 13.3b. `members.leave_allowance_days` is the STARTING allowance;
+    // an update would rewrite every leave year with no version of its own.
+    // `0056` revokes UPDATE on the table from both session roles and grants
+    // `authenticated` back exactly the columns a session updates: the app's
+    // member PATCH (name, email, role, fire_rank) and admin-auth's caller-client
+    // username update. INSERT is untouched, so the create still writes the
+    // starting allowance.
+    const client = await connect();
+    try {
+      const { rows } = await client.query<{ role: string; privilege: string; held: boolean }>(
+        `select role, privilege,
+                has_table_privilege(role, 'public.members', privilege) as held
+           from unnest(array['anon', 'authenticated']) as role,
+                unnest(array['INSERT', 'UPDATE']) as privilege`,
+      );
+
+      expect(
+        rows
+          .filter((row) => row.held)
+          .map((row) => `${row.role}:${row.privilege}`)
+          .sort(),
+        'a session holds UPDATE on the whole members table, or lost INSERT',
+      ).toEqual(['anon:INSERT', 'authenticated:INSERT']);
+
+      // EVERY COLUMN THE TABLE HAS, read from the catalogue rather than listed
+      // here, so a column a later migration adds is checked too.
+      const { rows: columns } = await client.query<{ role: string; column: string; held: boolean }>(
+        `select role, c.column_name as column,
+                has_column_privilege(role, 'public.members', c.column_name, 'UPDATE') as held
+           from unnest(array['anon', 'authenticated']) as role,
+                information_schema.columns c
+          where c.table_schema = 'public' and c.table_name = 'members'`,
+      );
+
+      expect(
+        columns.some((row) => row.column === 'leave_allowance_days'),
+        'the members columns were not read, so nothing below is asserted',
+      ).toBe(true);
+
+      expect(
+        columns
+          .filter((row) => row.held)
+          .map((row) => `${row.role}:${row.column}`)
+          .sort(),
+        'the member columns a session may update changed, or anon holds one',
+      ).toEqual([
+        'authenticated:email',
+        'authenticated:fire_rank',
+        'authenticated:name',
+        'authenticated:role',
+        'authenticated:username',
+      ]);
+    } finally {
+      await client.end();
+    }
+  });
+
   it.skipIf(noDatabase)('holds no privilege on hour_bands that no policy needs', async () => {
     // STORY 2.1a. Any band may be deleted, so `authenticated` keeps SELECT and
     // DELETE (each narrowed by a policy) and column-level INSERT and UPDATE on

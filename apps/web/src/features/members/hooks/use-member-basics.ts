@@ -1,7 +1,11 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 
-import { byId, type DialogOpening, type MemberScreen } from '@/features/members/hooks/member-edit-context';
+import {
+  byId,
+  type DialogOpening,
+  type MemberScreen,
+} from '@/features/members/hooks/member-edit-context';
 import { MEMBERS_LIST_KEY, MEMBERS_TABLE } from '@/features/members/services/list';
 import {
   MEMBER_ENTRY_EMAIL,
@@ -10,9 +14,13 @@ import {
   MEMBER_WRITE_INVALID,
   MEMBER_WRITE_UNAVAILABLE,
   chosenRole,
+  ALLOWANCE_UNCHANGED,
+  allowanceSaveOf,
   enteredAllowance,
+  heldAllowanceOf,
   memberEntryRefusalOf,
   raisedForMember,
+  saveAllowance,
   saveMember,
   storedEmail,
   type RaisedForMember,
@@ -22,6 +30,10 @@ import {
   type MemberSaveScope,
   type MemberFunctions,
   type MemberWriteRefusal,
+  type MemberWriteOutcome,
+  type AllowanceVersionEdit,
+  type HeldAllowance,
+  LEAVE_ALLOWANCES_TABLE,
 } from '@/features/members/services/write';
 import { MEMBER_PAGE_HEADING_ID } from '@/features/members/utils/element-ids';
 import { rankEditOf } from '@/features/members/utils/rank';
@@ -33,15 +45,17 @@ import { writesOnline } from '@/lib/offline/use-write-gate';
 
 /**
  * The member page's basics card and the allowance's dialog (stories 1.5b,
- * 7.11; split out of `useMemberEdit` by the epics 5–7 retro, A21): the one
- * member write, `saveMember`, for whichever of its two dialogs is open, with
- * its own in-flight ref, pending flag and refusal.
+ * 7.11; split out of `useMemberEdit` by the epics 5–7 retro, A21): one save
+ * handler, `submit`, for whichever of its two dialogs is open — the basics
+ * through `saveMember`, the allowance (story 13.3b) through `saveAllowance` —
+ * with its own in-flight ref, pending flag and refusal.
  */
 export function useMemberBasics(screen: MemberScreen) {
-  const { id, openings, form, offersRank } = screen;
+  const { id, openings, form, offersRank, today } = screen;
   const queryClient = useQueryClient();
-  // THE MEMBER WRITE'S FIELDS: the basics dialog's five, and the allowance
-  // dialog's one (`member-leave`). Only one of the two dialogs is open at once.
+  // THE DIALOGS' FIELDS: the basics dialog's five, which `saveMember` writes,
+  // and the allowance dialog's one (`member-leave`), which `saveAllowance`
+  // appends as a version (story 13.3b). Only one of the two is open at once.
   const nameField = useRef<HTMLInputElement>(null);
   const usernameField = useRef<HTMLInputElement>(null);
   const emailField = useRef<HTMLInputElement>(null);
@@ -55,7 +69,7 @@ export function useMemberBasics(screen: MemberScreen) {
   const saving = useRef(false);
   const [pending, setPending] = useState(false);
   const [basicsOpen, setBasicsOpen] = useState<RaisedForMember<DialogOpening> | null>(null);
-  const [allowanceOpen, setAllowanceOpen] = useState<RaisedForMember<DialogOpening> | null>(null);
+  const [allowanceOpen, setAllowanceOpen] = useState<RaisedForMember<DialogOpening<HeldAllowance>> | null>(null);
   // SCOPED TO THE MEMBER IT WAS RAISED ABOUT. One component instance serves
   // every row — navigating between two members changes a route param, not the
   // component — so unscoped state outlives the record it describes.
@@ -95,19 +109,40 @@ export function useMemberBasics(screen: MemberScreen) {
     focusLater([], byId(MEMBER_PAGE_HEADING_ID));
   }, [basicsGone]);
 
-  /** `Uredi` or `Promijeni pravo`: its dialog opens on the record as it is now. */
+  // THE YEAR *Promijeni pravo* WOULD SET, and the allowance it resolves to now:
+  // `null` while today or the leave-year start is unknown, which disables it.
+  const allowanceNow = heldAllowanceOf(form.member, today);
+
+  /**
+   * `Uredi` or `Promijeni pravo`: its dialog opens on the record as it is now.
+   * The allowance dialog HOLDS the leave year and its allowance at opening
+   * (story 13.3b), so a save after the leave-year boundary still writes the
+   * year its hint names.
+   */
   function openMemberDialog(scope: MemberSaveScope): void {
     if (saving.current || form.member === null) return;
 
+    // EXPLICITLY BY SCOPE: an allowance request with no year to set opens
+    // nothing, and never falls through to the basics dialog.
+    if (scope === ALLOWANCE_SAVE) {
+      if (allowanceNow === null) return;
+
+      clearForOpening();
+      setAllowanceOpen({ member: id, raised: { key: openings.current, held: allowanceNow } });
+
+      return;
+    }
+
+    clearForOpening();
+    setBasicsOpen({ member: id, raised: { key: openings.current, held: null } });
+  }
+
+  /** What every opening starts from: no refusal, no mark, no confirmation, and a fresh key. */
+  function clearForOpening(): void {
     setFailure(null);
     setInvalidField(null);
     setSaved(null);
     openings.current += 1;
-
-    const opening = { member: id, raised: { key: openings.current, held: null } };
-
-    if (scope === ALLOWANCE_SAVE) setAllowanceOpen(opening);
-    else setBasicsOpen(opening);
   }
 
   /** Either dialog's cancel, close button and Escape: never while a save is in flight. */
@@ -126,13 +161,15 @@ export function useMemberBasics(screen: MemberScreen) {
   }
 
   /**
-   * THE ONE MEMBER WRITE, for whichever of its two dialogs is open (story
-   * 7.11): the basics dialog sends name, username, address, role and — while
-   * offered — rank, and never the allowance; the allowance dialog sends the
-   * allowance and nothing else. `saveMember` sends only the fields the edit
-   * carries, so neither writes back a value another admin may have changed
-   * since this page was read. A refusal keeps the dialog open with what was
-   * entered; a landed save closes it and says so on its card.
+   * THE SAVE, for whichever of its two dialogs is open (story 7.11): the
+   * basics dialog sends name, username, address, role and — while offered —
+   * rank through `saveMember`, which sends only the fields the edit carries,
+   * so it never writes back a value another admin may have changed since this
+   * page was read. The allowance dialog (story 13.3b) appends one
+   * `leave_allowances` version for the leave year it was opened in, through
+   * `saveAllowance`, and never PATCHes the member. A refusal keeps the dialog
+   * open with what was entered; a landed save closes it and says so on its
+   * card; an allowance saved as it was opened writes nothing and closes.
    */
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -159,7 +196,9 @@ export function useMemberBasics(screen: MemberScreen) {
     // STORY 8.3a: offline, nothing is sent — the component's gate is not the only guard.
     if (!writesOnline()) return;
 
-    let edits: MemberEdits;
+    let edits: MemberEdits = {};
+    let allowance: AllowanceVersionEdit | null = null;
+    const held = allowanceOpening?.held ?? null;
 
     if (scope === ALLOWANCE_SAVE) {
       const leaveAllowanceDays = enteredAllowance(leave?.value ?? NO_TEXT);
@@ -172,7 +211,29 @@ export function useMemberBasics(screen: MemberScreen) {
         return;
       }
 
-      edits = { leaveAllowanceDays };
+      // NO HELD YEAR is a dialog that should not be open: said, never a
+      // silent no-op under the admin's hand.
+      if (held === null) {
+        setFailure({ member: member.id, raised: { code: MEMBER_WRITE_UNAVAILABLE, saved: false } });
+
+        return;
+      }
+
+      const save = allowanceSaveOf(held, leaveAllowanceDays, member);
+
+      // UNCHANGED (PO, 2026-11-10): nothing is written — a version equal to
+      // the one it resolves to would only add a row — and nothing is said; the
+      // dialog closes and focus goes back to its opener.
+      if (save === ALLOWANCE_UNCHANGED) {
+        setAllowanceOpen(null);
+        setInvalidField(null);
+        setFailure(null);
+        focusLater([() => allowanceOpener.current], byId(MEMBER_PAGE_HEADING_ID));
+
+        return;
+      }
+
+      allowance = save;
     } else {
       // THE FORM'S OWN REFUSALS (B298), in field order: the dialog is
       // `noValidate`, so nothing in the browser's language stops them.
@@ -211,12 +272,15 @@ export function useMemberBasics(screen: MemberScreen) {
     setPending(true);
 
     try {
-      const outcome = await saveMember(
-        supabaseClient().from(MEMBERS_TABLE),
-        supabaseClient().functions as MemberFunctions,
-        member,
-        edits,
-      );
+      const outcome: MemberWriteOutcome =
+        allowance === null
+          ? await saveMember(
+              supabaseClient().from(MEMBERS_TABLE),
+              supabaseClient().functions as MemberFunctions,
+              member,
+              edits,
+            )
+          : await saveAllowance(supabaseClient().from(LEAVE_ALLOWANCES_TABLE), member, allowance);
 
       // THE OUTCOME FIRST, AND THE CACHE AFTER. A failed or paused re-read
       // resolves rather than rejects (`refreshAfterWrite`), so it cannot
@@ -236,11 +300,13 @@ export function useMemberBasics(screen: MemberScreen) {
       // refused RENAME still wrote the ordinary fields, so a cache left alone
       // would show the old values beside a message saying they were saved.
       // Whatever LANDED is re-read wherever the row shows (`MEMBER_SAVE_DEPENDENTS`).
+      // AN ALLOWANCE VERSION (story 13.3b) is embedded by the members list
+      // alone, so it re-reads that list and nothing else.
       try {
         await refreshAfterWrite(
           queryClient,
           MEMBERS_LIST_KEY,
-          outcome.ok || outcome.refusal.saved ? MEMBER_SAVE_DEPENDENTS : NO_DEPENDENTS,
+          scope === BASICS_SAVE && (outcome.ok || outcome.refusal.saved) ? MEMBER_SAVE_DEPENDENTS : NO_DEPENDENTS,
         );
       } catch (cause) {
         console.error(MEMBER_WRITE_UNAVAILABLE, cause);
@@ -280,6 +346,8 @@ export function useMemberBasics(screen: MemberScreen) {
     allowanceDialog: {
       opener: allowanceOpener,
       opening: allowanceOpening,
+      /** Whether *Promijeni pravo* can open: today and the leave-year start are known. */
+      available: allowanceNow !== null,
       open: () => {
         openMemberDialog(ALLOWANCE_SAVE);
       },

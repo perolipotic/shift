@@ -10,6 +10,7 @@ import {
 import {
   DEFAULT_MEMBER_ROLE,
   LEAVE_ALLOWANCE_MAX,
+  LEAVE_ALLOWANCES_TABLE,
   MEMBER_ACCOUNT_STRANDED,
   MEMBER_CREATED,
   MEMBER_ENTRY_EMAIL,
@@ -70,6 +71,11 @@ import {
   replyCodeOf,
   resetPassword,
   resetStageOf,
+  memberPatchOf,
+  saveAllowance,
+  ALLOWANCE_UNCHANGED,
+  allowanceSaveOf,
+  heldAllowanceOf,
   saveMember,
   standingConfirmation,
   statusBlockKey,
@@ -96,6 +102,8 @@ import {
   storedUsernameOf,
   usernameChanged,
   type FunctionsAnswer,
+  type AllowanceInsertAnswer,
+  type AllowanceWriteTable,
   type MemberStatusTable,
   type StatusChange,
   type StatusContext,
@@ -220,7 +228,6 @@ function edits(fields: Partial<MemberEdits> = {}): MemberEdits {
     name: 'Ana Kovač',
     email: null,
     role: 'member_role',
-    leaveAllowanceDays: 20,
     username: 'ana.kovac',
     ...fields,
   };
@@ -914,7 +921,7 @@ describe('an edit reaches the privileged function only when the identity moves',
       table,
       functions,
       member(),
-      edits({ name: 'Ana Kovač-Babić', leaveAllowanceDays: 25, role: 'admin' }),
+      edits({ name: 'Ana Kovač-Babić', role: 'admin' }),
     );
 
     expect(outcome).toEqual({ ok: true });
@@ -924,7 +931,6 @@ describe('an edit reaches the privileged function only when the identity moves',
       name: 'Ana Kovač-Babić',
       email: null,
       role: 'admin',
-      leave_allowance_days: 25,
     });
     // THE USERNAME IS NOT IN THE PATCH. Sent here it would move `members`
     // without moving `auth.users.email`, which is the disagreement the whole
@@ -970,41 +976,34 @@ describe('an edit reaches the privileged function only when the identity moves',
     expect(empty.calls, 'an empty PATCH was sent').toEqual([]);
     expect(emptyFunctions.calls).toEqual([]);
 
-    // AN ALLOWANCE-ONLY EDIT never meets the blank-name check: a member whose
-    // stored name is blank still has their allowance saved.
-    const allowance = tableThat({ data: [{ id: 'member-1' }], error: null });
+    // AN EDIT WITHOUT A NAME never meets the blank-name check: a member whose
+    // stored name is blank still has their role saved.
+    const role = tableThat({ data: [{ id: 'member-1' }], error: null });
 
     expect(
-      await saveMember(allowance.table, functionsThat(replied({ code: USERNAME_CHANGED })).functions, member({ name: '   ' }), {
-        leaveAllowanceDays: 30,
+      await saveMember(role.table, functionsThat(replied({ code: USERNAME_CHANGED })).functions, member({ name: '   ' }), {
+        role: 'admin',
       }),
     ).toEqual({ ok: true });
-    expect(allowance.calls[0]?.values).toEqual({ leave_allowance_days: 30 });
+    expect(role.calls[0]?.values).toEqual({ role: 'admin' });
   });
 
-  it('sends only the fields its edit carries, so no dialog writes back what it did not show (story 7.11)', async () => {
-    // THE ALLOWANCE DIALOG: the allowance and nothing else — no name, address,
-    // role or rank another admin may have changed since the page was read —
-    // and no rename, since it carries no username.
-    const allowance = tableThat({ data: [{ id: 'member-1' }], error: null });
-    const allowanceFunctions = functionsThat(replied({ code: USERNAME_CHANGED }));
-
-    expect(
-      await saveMember(allowance.table, allowanceFunctions.functions, member(), { leaveAllowanceDays: 25 }),
-    ).toEqual({ ok: true });
-    expect(allowance.calls).toHaveLength(1);
-    expect(allowance.calls[0]?.values).toEqual({ leave_allowance_days: 25 });
-    expect(allowanceFunctions.calls).toEqual([]);
-
-    // THE BASICS DIALOG: everything it shows, and never the allowance.
+  it('sends only the fields its edit carries, and never the allowance (stories 7.11, 13.3b)', async () => {
+    // THE BASICS DIALOG: everything it shows, and never the allowance — the
+    // starting allowance is no session's to update since `0056`.
     const basics = tableThat({ data: [{ id: 'member-1' }], error: null });
     const basicsFunctions = functionsThat(replied({ code: USERNAME_CHANGED }));
-    const { leaveAllowanceDays: _omitted, ...shown } = edits({ role: 'admin' });
 
-    await saveMember(basics.table, basicsFunctions.functions, member(), shown);
+    await saveMember(basics.table, basicsFunctions.functions, member(), edits({ role: 'admin' }));
 
     expect(basics.calls[0]?.values).toEqual({ name: 'Ana Kovač', email: null, role: 'admin' });
     expect(Object.keys(basics.calls[0]?.values ?? {})).not.toContain('leave_allowance_days');
+
+    // NOT EVEN WHEN HANDED ONE: an edit that smuggles the field past the type
+    // still PATCHes nothing but what `memberPatchOf` knows.
+    const smuggled = { role: 'admin', leaveAllowanceDays: 25 } as unknown as MemberEdits;
+
+    expect(memberPatchOf(smuggled)).toEqual({ role: 'admin' });
   });
 
   it('reports a rank the check constraint refuses as a value to correct', async () => {
@@ -2725,5 +2724,226 @@ describe('the suggested username follows one rule (story 7.13b)', () => {
 
     expect(operations).toContain('const normalized = value.trim().toLowerCase();');
     expect(operations).toContain("if (normalized === '' || /[\\s@]/.test(normalized)) return null;");
+  });
+});
+
+describe('the allowance dialog appends a version for the current leave year (story 13.3b)', () => {
+  /** A `leave_allowances` table that answers `answer`, recording each insert. */
+  function allowanceTableThat(answer: AllowanceInsertAnswer | Error = { error: null }): {
+    table: AllowanceWriteTable;
+    inserted: Readonly<Record<string, unknown>>[];
+  } {
+    const inserted: Readonly<Record<string, unknown>>[] = [];
+
+    return {
+      inserted,
+      table: {
+        insert(values) {
+          inserted.push(values);
+
+          if (answer instanceof Error) return Promise.reject(answer);
+
+          return Promise.resolve(answer);
+        },
+      },
+    };
+  }
+
+  it('names the table 0055 created', () => {
+    expect(LEAVE_ALLOWANCES_TABLE).toBe('leave_allowances');
+  });
+
+  it('inserts exactly the four granted columns, for the year it was handed', async () => {
+    // FIRST CHANGE: starting 20, no version, year 2026 → one 2026 row of 25.
+    const { table, inserted } = allowanceTableThat();
+
+    expect(await saveAllowance(table, member(), { leaveYear: 2026, days: 25 })).toEqual({ ok: true });
+    expect(inserted).toEqual([
+      { organization_id: 'organization-1', member_id: 'member-1', leave_year: 2026, days: 25 },
+    ]);
+  });
+
+  it('writes a correction or an inherited year as one more row of that year', async () => {
+    // CORRECTION: v(2026)=25 → a second 2026 row of 24; INHERITED: v(2025)=22,
+    // year 2026 → a 2026 row. Append-only: the seam has no update to reach.
+    const corrected = member({
+      leaveAllowance: { startingDays: 20, versions: [{ id: 1, leaveYear: 2026, days: 25 }] },
+    });
+    const { table, inserted } = allowanceTableThat();
+
+    await saveAllowance(table, corrected, { leaveYear: 2026, days: 24 });
+
+    const inherited = member({
+      leaveAllowance: { startingDays: 20, versions: [{ id: 1, leaveYear: 2025, days: 22 }] },
+    });
+
+    await saveAllowance(table, inherited, { leaveYear: 2026, days: 22 });
+
+    expect(inserted.map((row) => [row['leave_year'], row['days']])).toEqual([
+      [2026, 24],
+      [2026, 22],
+    ]);
+    expect(Object.keys(table)).toEqual(['insert']);
+  });
+
+  it.each([
+    { name: 'a negative allowance', edit: { leaveYear: 2026, days: -1 } },
+    { name: 'a fraction', edit: { leaveYear: 2026, days: 20.5 } },
+    { name: 'more than a smallint holds', edit: { leaveYear: 2026, days: LEAVE_ALLOWANCE_MAX + 1 } },
+    { name: 'a leave year of 0', edit: { leaveYear: 0, days: 20 } },
+    { name: 'a leave year past 9999', edit: { leaveYear: 10000, days: 20 } },
+    { name: 'a fractional leave year', edit: { leaveYear: 2026.5, days: 20 } },
+  ])('refuses $name before anything is sent', async ({ edit }) => {
+    const { table, inserted } = allowanceTableThat();
+
+    expect(await saveAllowance(table, member(), edit)).toEqual({
+      ok: false,
+      refusal: { code: MEMBER_WRITE_INVALID, saved: false },
+    });
+    expect(inserted, 'a value no column holds was sent').toEqual([]);
+  });
+
+  it('reads the policy\'s 42501 as refused: not an admin, or no longer active', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { table } = allowanceTableThat({
+      error: { code: '42501', message: 'new row violates row-level security policy for table "leave_allowances"' },
+    });
+
+    expect(await saveAllowance(table, member(), { leaveYear: 2026, days: 25 })).toEqual({
+      ok: false,
+      refusal: { code: MEMBER_WRITE_REFUSED, saved: false },
+    });
+  });
+
+  it('reads a 23503 as the member gone between opening and save, not as a value to correct', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { table } = allowanceTableThat({
+      error: { code: '23503', message: 'insert or update on table "leave_allowances" violates foreign key constraint' },
+    });
+
+    expect(await saveAllowance(table, member(), { leaveYear: 2026, days: 25 })).toEqual({
+      ok: false,
+      refusal: { code: MEMBER_UNKNOWN, saved: false },
+    });
+  });
+
+  it('reads a check violation as a value to correct, and anything else as unavailable', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    expect(
+      await saveAllowance(allowanceTableThat({ error: { code: '23514', message: 'check' } }).table, member(), {
+        leaveYear: 2026,
+        days: 25,
+      }),
+    ).toEqual({ ok: false, refusal: { code: MEMBER_WRITE_INVALID, saved: false } });
+    expect(
+      await saveAllowance(allowanceTableThat({ error: { code: '08006', message: 'gone' } }).table, member(), {
+        leaveYear: 2026,
+        days: 25,
+      }),
+    ).toEqual({ ok: false, refusal: { code: MEMBER_WRITE_UNAVAILABLE, saved: false } });
+  });
+
+  it('reports a thrown insert as unavailable', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    expect(
+      await saveAllowance(allowanceTableThat(new Error('network')).table, member(), { leaveYear: 2026, days: 25 }),
+    ).toEqual({ ok: false, refusal: { code: MEMBER_WRITE_UNAVAILABLE, saved: false } });
+  });
+});
+
+describe('the allowance dialog holds its year at opening and writes against the record as it is now (story 13.3b)', () => {
+  /** A member whose organization's leave year starts on 1 July. */
+  const julyStart = { month: 7, day: 1 };
+
+  it('opens on no year while today or the leave-year start is unknown, or with no member', () => {
+    expect(heldAllowanceOf(member(), null)).toBeNull();
+    expect(heldAllowanceOf(member({ leaveYearStart: null }), TODAY)).toBeNull();
+    expect(heldAllowanceOf(null, TODAY)).toBeNull();
+  });
+
+  it('opens on the leave year containing today and the allowance it resolves to', () => {
+    // FIRST CHANGE: no version, the starting allowance.
+    expect(heldAllowanceOf(member(), '2026-09-23')).toEqual({
+      leaveYear: 2026,
+      days: 20,
+      from: '2026-01-01',
+      to: '2026-12-31',
+    });
+    // A leave year beginning 1 July: 2027-03-01 is in leave year 2026, and the
+    // hint's dates are that leave year's, not calendar 2026's.
+    expect(heldAllowanceOf(member({ leaveYearStart: julyStart }), '2027-03-01')).toEqual({
+      leaveYear: 2026,
+      days: 20,
+      from: '2026-07-01',
+      to: '2027-06-30',
+    });
+    // CORRECTION: the highest-id version of the year.
+    expect(
+      heldAllowanceOf(
+        member({
+          leaveAllowance: {
+            startingDays: 20,
+            versions: [
+              { id: 1, leaveYear: 2026, days: 25 },
+              { id: 2, leaveYear: 2026, days: 24 },
+            ],
+          },
+        }),
+        '2026-09-23',
+      ),
+    ).toMatchObject({ leaveYear: 2026, days: 24 });
+    // INHERITED: an earlier year's version carries into this one.
+    expect(
+      heldAllowanceOf(
+        member({ leaveAllowance: { startingDays: 20, versions: [{ id: 1, leaveYear: 2025, days: 22 }] } }),
+        '2026-09-23',
+      ),
+    ).toMatchObject({ leaveYear: 2026, days: 22 });
+  });
+
+  it('writes nothing only when the value is the one opened on and the record still resolves to it', () => {
+    const held = { leaveYear: 2026, days: 20 };
+
+    expect(allowanceSaveOf(held, 20, member())).toBe(ALLOWANCE_UNCHANGED);
+    expect(allowanceSaveOf(held, 25, member())).toEqual({ leaveYear: 2026, days: 25 });
+  });
+
+  it('writes the entered value when another admin saved a version meanwhile', () => {
+    // A opens on 20; B saves 25; A saves 20. A's 20 is a change against the
+    // record as it now is, so it is written, not dropped.
+    const held = { leaveYear: 2026, days: 20 };
+    const meanwhile = member({
+      leaveAllowance: { startingDays: 20, versions: [{ id: 1, leaveYear: 2026, days: 25 }] },
+    });
+
+    expect(allowanceSaveOf(held, 20, meanwhile)).toEqual({ leaveYear: 2026, days: 20 });
+  });
+
+  it('never calls a save unchanged once the member row is gone', () => {
+    expect(allowanceSaveOf({ leaveYear: 2026, days: 20 }, 20, null)).toEqual({ leaveYear: 2026, days: 20 });
+  });
+
+  it('always writes the year held at opening, even once today has crossed into the next leave year', () => {
+    // Opened in leave year 2026, saved after the boundary: the save carries
+    // 2026, the year the hint named, never today's 2027.
+    const opened = heldAllowanceOf(member(), '2026-12-31');
+
+    expect(opened).toMatchObject({ leaveYear: 2026, days: 20 });
+    expect(allowanceSaveOf({ leaveYear: 2026, days: 20 }, 25, member())).toEqual({ leaveYear: 2026, days: 25 });
+    // And the comparison is against the HELD year: a 2027 version of 20 does
+    // not make a 2026 save of 20 unchanged when 2026 resolves to 25.
+    const later = member({
+      leaveAllowance: {
+        startingDays: 20,
+        versions: [
+          { id: 1, leaveYear: 2026, days: 25 },
+          { id: 2, leaveYear: 2027, days: 20 },
+        ],
+      },
+    });
+
+    expect(allowanceSaveOf({ leaveYear: 2026, days: 20 }, 20, later)).toEqual({ leaveYear: 2026, days: 20 });
   });
 });

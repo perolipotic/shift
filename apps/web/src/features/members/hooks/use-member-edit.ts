@@ -81,8 +81,9 @@ import { currentSession, supabaseClient } from '@/lib/supabase/client';
  *
  * THE HANDLERS. Each write has its own in-flight ref, pending flag and
  * refusal, so no block's request disables another's controls: `submit` (the
- * basics and the allowance dialogs' one member write, `saveMember`), `issue`
- * (the password reset), `changeStatus` and `changeTeam`. The team and status
+ * basics dialog's `saveMember` and, since story 13.3b, the allowance dialog's
+ * `saveAllowance`), `issue` (the password reset), `changeStatus` and
+ * `changeTeam`. The team and status
  * dialogs' Save is the old arm-then-confirm folded into one press — `armTeam`
  * / `armStatus` run the preflight, then `changeTeam` / `changeStatus` run the
  * erasure check and the write. Withdrawing a scheduled change keeps its card
@@ -206,7 +207,7 @@ export function useMemberEdit(id: string) {
   const team = useMemberTeam(screen);
 
   return {
-    // The member write: the basics and the allowance dialogs.
+    // The basics and the allowance dialogs' save.
     ...basics,
     form,
     /**

@@ -2128,6 +2128,8 @@ const SANCTIONED_SCREEN_KEYS = [
   'ljudi.allowance.changeName',
   'ljudi.allowance.dialogHeading',
   'ljudi.allowance.saved',
+  // STORY 13.3b: the allowance field's hint, naming the leave year it sets.
+  'ljudi.allowance.validFrom',
   'ljudi.leaveRecord.allowance',
   'ljudi.leaveRecord.headingYear',
   'ljudi.leaveRecord.headingYears',

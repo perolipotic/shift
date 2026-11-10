@@ -918,7 +918,8 @@
       "change": "Promijeni pravo",
       "changeName": "Promijeni pravo na godišnji odmor osobe {name}",
       "dialogHeading": "Promijeni pravo na godišnji odmor",
-      "saved": "Pravo na godišnji odmor je spremljeno."
+      "saved": "Pravo na godišnji odmor je spremljeno.",
+      "validFrom": "Vrijedi od godine godišnjeg {from}–{to} dok se ne promijeni."
     },
     "form": {
       "newHeading": "Nova osoba",

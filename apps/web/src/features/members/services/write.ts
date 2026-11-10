@@ -1,7 +1,10 @@
+import { leaveAllowanceOf, leaveYearNumberOf, leaveYearOf } from '@shift/domain';
+
 import {
   MEMBERS_REFUSED,
   MEMBERS_TABLE,
   memberActiveFrom,
+  memberAllowanceOn,
   memberLatestVersion,
   memberStatusOf,
   memberTeamLatestVersion,
@@ -331,17 +334,23 @@ export interface MemberFields {
 
 /**
  * One edit of an existing member (story 7.11): A PARTIAL PATCH. An absent
- * field is not sent, so a dialog writes only the fields it showed — the
- * basics dialog never writes back the allowance, and the allowance dialog
- * never writes back a name another admin may have changed since this screen
- * read the list. `fireRank`'s rule has always been this one.
+ * field is not sent, so a dialog writes only the fields it showed and never
+ * writes back a value another admin may have changed since this screen read
+ * the list. `fireRank`'s rule has always been this one.
+ *
+ * NEVER THE ALLOWANCE (story 13.3b). `leave_allowance_days` is the starting
+ * allowance, written only when a member is created; `0056` takes UPDATE on it
+ * away from every session. The allowance dialog appends a version for the
+ * current leave year instead ({@link saveAllowance}).
  */
-export type MemberEdits = Partial<MemberFields>;
+export type MemberEdits = Partial<Omit<MemberFields, 'leaveAllowanceDays'>>;
 
 /**
  * Which of the member page's two dialogs a member save came from (story
- * 7.11): the basics, or the allowance on the leave card. The one member write
- * serves both, and the card the dialog closed back onto says it landed.
+ * 7.11): the basics, or the allowance on the leave card. One handler serves
+ * both — the basics through {@link saveMember}, the allowance, since story
+ * 13.3b, through {@link saveAllowance} — and the card the dialog closed back
+ * onto says it landed.
  */
 export const BASICS_SAVE = 'basics';
 export const ALLOWANCE_SAVE = 'allowance';
@@ -586,7 +595,6 @@ export function memberPatchOf(edits: MemberEdits): Record<string, unknown> {
     ...(edits.name === undefined ? {} : { name: trimName(edits.name) }),
     ...(edits.email === undefined ? {} : { email: edits.email }),
     ...(edits.role === undefined ? {} : { role: edits.role }),
-    ...(edits.leaveAllowanceDays === undefined ? {} : { leave_allowance_days: edits.leaveAllowanceDays }),
     ...(edits.fireRank === undefined ? {} : { fire_rank: edits.fireRank }),
   };
 }
@@ -610,7 +618,7 @@ export async function saveMember(
   // `members_name_check`'s 23514 would reach through `editFailureOf`: a value to
   // correct. `trim()` keeps U+0085 and U+001C–001F, so without this a name of
   // those alone would travel to the database only to be refused there. Only
-  // when the edit carries a name: the allowance dialog sends none.
+  // when the edit carries a name.
   if (edits.name !== undefined && isBlankName(edits.name)) {
     return { ok: false, refusal: { code: MEMBER_WRITE_INVALID, saved: false } };
   }
@@ -673,6 +681,170 @@ export async function saveMember(
 
   // THE FOUR FIELDS REALLY ARE IN THE DATABASE. See {@link MemberWriteRefusal}.
   return { ok: false, refusal: { code: renamed.refusal.code, saved: true } };
+}
+
+/**
+ * The table the allowance dialog writes (story 13.3b, `0055`): append-only
+ * versions of a member's allowance, one leave year each. Never updated or
+ * deleted — a correction is a later row of the same year.
+ */
+export const LEAVE_ALLOWANCES_TABLE = 'leave_allowances';
+
+/** What an allowance insert resolves to. Nothing is read back: the policy that
+ *  admits the write is the confirmation, and the list refetch shows it. */
+export interface AllowanceInsertAnswer {
+  readonly error: PostgrestFailure | null;
+}
+
+/**
+ * The one PostgREST call an allowance save makes, named structurally so it can
+ * be stubbed. `insert` AND NOTHING ELSE: a version is never changed, and the
+ * table carries no update or delete privilege for a seam to reach.
+ */
+export interface AllowanceWriteTable {
+  insert(values: Readonly<Record<string, unknown>>): PromiseLike<AllowanceInsertAnswer>;
+}
+
+/**
+ * One allowance change (story 13.3b): the days, for the leave year the dialog
+ * was opened in. The year is the caller's, held at opening, never recomputed
+ * at save — a dialog opened before the leave-year boundary writes the year its
+ * hint names.
+ */
+export interface AllowanceVersionEdit {
+  /** The calendar year in which the leave year begins (`0055`: 1–9999). */
+  readonly leaveYear: number;
+  readonly days: number;
+}
+
+/** `0055`'s `leave_year` range. */
+const LEAVE_YEAR_MIN = 1;
+const LEAVE_YEAR_MAX = 9999;
+/** `0055`'s composite key to `members`: the member a version names does not exist. */
+const FOREIGN_KEY_VIOLATION = '23503';
+
+/**
+ * What the allowance dialog opens on (story 13.3b): the leave year it sets —
+ * the one containing `today` — and the allowance that year resolves to now,
+ * the field's start value (a version of that year, else an inherited earlier
+ * year's, else the starting allowance). Held from opening to save.
+ */
+export interface HeldAllowance {
+  /** The calendar year in which the leave year begins. */
+  readonly leaveYear: number;
+  /** The allowance that year resolved to at opening. */
+  readonly days: number;
+  /** The leave year's first day, ISO — the hint names the year by its dates. */
+  readonly from: string;
+  /** The leave year's last day, ISO. */
+  readonly to: string;
+}
+
+/**
+ * The allowance dialog's opening for `member` on `today`, or `null` while
+ * there is no member, today is unknown, or the organization's leave-year start
+ * is unknown — then *Promijeni pravo* is disabled, because there is no year to
+ * set.
+ */
+export function heldAllowanceOf(member: MemberListRow | null, today: string | null): HeldAllowance | null {
+  if (member === null || today === null || member.leaveYearStart === null) return null;
+
+  const days = memberAllowanceOn(member, today);
+
+  if (days === null) return null;
+
+  // THE HINT NAMES THE DATES (review of 13.3b): with a leave year starting
+  // mid-year, the calendar year alone would read as the wrong span.
+  const range = leaveYearOf(today, member.leaveYearStart);
+
+  return { leaveYear: leaveYearNumberOf(today, member.leaveYearStart), days, from: range.from, to: range.to };
+}
+
+/** An allowance save that has nothing to write ({@link allowanceSaveOf}). */
+export const ALLOWANCE_UNCHANGED = 'unchanged';
+
+/**
+ * What a save of the allowance dialog writes (story 13.3b): ALWAYS for the
+ * year held at opening, never one recomputed at save — a dialog opened before
+ * the leave-year boundary writes the year its hint names.
+ *
+ * UNCHANGED only when the entered days are the ones the dialog opened on AND
+ * the member, as last read, still resolves the held year to them. If another
+ * admin saved a version meanwhile (opened on 20, they saved 25, this saves
+ * 20), the entered value is a change against the record as it is now, and it
+ * is written rather than silently dropped. `current` is the member's latest
+ * row; `null` (the row is gone) is never "unchanged" — the write's own refusal
+ * says so.
+ */
+export function allowanceSaveOf(
+  held: Pick<HeldAllowance, 'leaveYear' | 'days'>,
+  entered: number,
+  current: MemberListRow | null,
+): typeof ALLOWANCE_UNCHANGED | AllowanceVersionEdit {
+  if (
+    entered === held.days &&
+    current !== null &&
+    leaveAllowanceOf(current.leaveAllowance, held.leaveYear) === entered
+  ) {
+    return ALLOWANCE_UNCHANGED;
+  }
+
+  return { leaveYear: held.leaveYear, days: entered };
+}
+
+/**
+ * Append a version of `member`'s allowance for one leave year (story 13.3b).
+ *
+ * The insert is `{organization_id, member_id, leave_year, days}` — the four
+ * columns `0055` grants, `created_by` and `created_at` the database's own. A
+ * value no column can hold is refused before anything is sent; a refusal maps
+ * through {@link editFailureOf}, so the policy's 42501 (not an admin, or no
+ * longer active) reads as refused. NEVER `saved: true`: one row is written or
+ * none is.
+ */
+export async function saveAllowance(
+  table: AllowanceWriteTable,
+  member: MemberListRow,
+  edit: AllowanceVersionEdit,
+): Promise<MemberWriteOutcome> {
+  if (
+    !Number.isInteger(edit.days) ||
+    edit.days < 0 ||
+    edit.days > LEAVE_ALLOWANCE_MAX ||
+    !Number.isInteger(edit.leaveYear) ||
+    edit.leaveYear < LEAVE_YEAR_MIN ||
+    edit.leaveYear > LEAVE_YEAR_MAX
+  ) {
+    return { ok: false, refusal: { code: MEMBER_WRITE_INVALID, saved: false } };
+  }
+
+  let answered: AllowanceInsertAnswer;
+
+  try {
+    answered = await table.insert({
+      organization_id: member.organizationId,
+      member_id: member.id,
+      leave_year: edit.leaveYear,
+      days: edit.days,
+    });
+  } catch (cause) {
+    console.error(MEMBER_WRITE_UNAVAILABLE, cause);
+
+    return { ok: false, refusal: { code: MEMBER_WRITE_UNAVAILABLE, saved: false } };
+  }
+
+  if (answered.error !== null) {
+    // 23503 IS THE MEMBER GONE between opening and save: the composite key to
+    // `members` finds no row. Not a value to correct — "Ova osoba više ne
+    // postoji u organizaciji.", the same code a stale member link reads as.
+    const code = answered.error.code === FOREIGN_KEY_VIOLATION ? MEMBER_UNKNOWN : editFailureOf(answered.error);
+
+    console.error(code, answered.error.code);
+
+    return { ok: false, refusal: { code, saved: false } };
+  }
+
+  return { ok: true };
 }
 
 /** What a create collects, plus the organization the row belongs to. */
