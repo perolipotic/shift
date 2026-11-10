@@ -535,6 +535,9 @@ interface MemberRow {
   readonly organizationId: string;
   readonly role: string;
   readonly leaveAllowanceDays: number;
+  /** Story 13.3b: a column a session may still update, for the cases that
+   *  used to update the starting allowance. */
+  readonly email: string | null;
 }
 
 /**
@@ -551,7 +554,8 @@ async function memberByUsername(
             m.auth_user_id as "authUserId",
             m.organization_id as "organizationId",
             m.role,
-            m.leave_allowance_days as "leaveAllowanceDays"
+            m.leave_allowance_days as "leaveAllowanceDays",
+            m.email
        from members m
        join auth.users u on u.id = m.auth_user_id
       where u.email = $1`,
@@ -569,7 +573,8 @@ async function memberById(client: Client, id: string): Promise<MemberRow | undef
             auth_user_id as "authUserId",
             organization_id as "organizationId",
             role,
-            leave_allowance_days as "leaveAllowanceDays"
+            leave_allowance_days as "leaveAllowanceDays",
+            email
        from members where id = $1`,
     [id],
   );
@@ -703,6 +708,7 @@ async function addThrowawayMember(client: Client, organization: string): Promise
     organizationId: organization,
     role: 'member_role',
     leaveAllowanceDays: 20,
+    email: null,
   };
 }
 
@@ -1602,10 +1608,45 @@ describe('a direct API call refuses an administrative write by a member-role acc
 
 describe('a direct API call permits an admin inside their own organization and nowhere else', () => {
   it.skipIf(noApi).each(FIXTURES)(
-    'permits the $fixture admin to change a leave allowance in their own organization',
+    'permits the $fixture admin to change an address in their own organization',
     async ({ slug, admin }) => {
       // The positive control the three refusals above need. Without it a policy
       // that refused every write would satisfy all of them.
+      // STORY 13.3b: the address, not the allowance — `0056` takes UPDATE on
+      // the starting allowance away from every session.
+      const token = await tokenFor(admin, slug);
+      const client = await connect();
+      try {
+        const target = await addThrowawayMember(client, await organizationId(client, slug));
+        const written = `${THROWAWAY}-patched@example.org`;
+        const response = await rest(`members?id=eq.${target.id}`, {
+          token,
+          method: 'PATCH',
+          body: { email: written },
+        });
+
+        expect(response.status, 'a permitted update answers 204 with no body').toBe(204);
+        expect(
+          (await memberById(client, target.id))?.email,
+          `the ${slug} admin could not write inside their own organization`,
+        ).toBe(written);
+      } finally {
+        await client.end();
+      }
+    },
+    20_000,
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'refuses the $fixture admin a PATCH of the starting allowance with 42501, and the row keeps it (0056)',
+    async ({ slug, admin }) => {
+      // STORY 13.3b. `members.leave_allowance_days` is the STARTING allowance:
+      // an update would rewrite every leave year with no version of its own,
+      // past years included. `0056` takes UPDATE on it from every session, so
+      // even an active admin of the row's own organization — the one the
+      // positive control above admits — is refused by the privilege before
+      // any policy is read. The allowance dialog appends a `leave_allowances`
+      // version instead.
       const token = await tokenFor(admin, slug);
       const client = await connect();
       try {
@@ -1616,11 +1657,12 @@ describe('a direct API call permits an admin inside their own organization and n
           body: { leave_allowance_days: target.leaveAllowanceDays + 3 },
         });
 
-        expect(response.status, 'a permitted update answers 204 with no body').toBe(204);
+        expect(response.status, 'a privilege refusal reaches the caller as HTTP 403').toBe(403);
+        expect((await restRefusal(response)).code, 'a privilege refusal is 42501').toBe('42501');
         expect(
           (await memberById(client, target.id))?.leaveAllowanceDays,
-          `the ${slug} admin could not write inside their own organization`,
-        ).toBe(target.leaveAllowanceDays + 3);
+          `the ${slug} admin rewrote a starting allowance`,
+        ).toBe(target.leaveAllowanceDays);
       } finally {
         await client.end();
       }
@@ -1642,14 +1684,14 @@ describe('a direct API call permits an admin inside their own organization and n
         const response = await rest(`members?id=eq.${target.id}`, {
           token,
           method: 'PATCH',
-          body: { leave_allowance_days: target.leaveAllowanceDays + 5 },
+          body: { email: `${THROWAWAY}-cross-tenant@example.org` },
         });
 
         expect(response.status, 'a cross-tenant update matches no row and raises nothing').toBe(204);
         expect(
-          (await memberById(client, target.id))?.leaveAllowanceDays,
+          (await memberById(client, target.id))?.email,
           `the ${slug} admin wrote into ${otherSlug}`,
-        ).toBe(target.leaveAllowanceDays);
+        ).toBe(target.email);
       } finally {
         await client.end();
       }
@@ -1756,9 +1798,13 @@ describe('a direct API call permits an admin inside their own organization and n
     'refuses moving a $fixture member into $otherFixture with 42501',
     async ({ slug, admin, otherSlug }) => {
       // USING passes here — the row is the admin own organization's — and WITH
-      // CHECK is the only thing standing between an otherwise-legal update and
-      // a member handed to another tenant. This case is what a USING-only
-      // policy fails.
+      // CHECK used to be the only thing standing between an otherwise-legal
+      // update and a member handed to another tenant.
+      //
+      // SINCE 0056 (story 13.3b) PostgREST's 42501 comes from the missing
+      // column privilege on `organization_id`, before WITH CHECK is reached,
+      // so this case now pins the privilege rather than a USING-only policy.
+      // The assertions stand: 403, 42501, and the row stays where it was.
       const token = await tokenFor(admin, slug);
       const client = await connect();
       try {
@@ -1773,7 +1819,7 @@ describe('a direct API call permits an admin inside their own organization and n
         });
 
         expect(response.status, 'a refused write reaches the caller as HTTP 403').toBe(403);
-        expect((await restRefusal(response)).code, 'a WITH CHECK refusal is 42501').toBe('42501');
+        expect((await restRefusal(response)).code, 'a privilege refusal is 42501').toBe('42501');
         expect(
           (await memberById(client, target.id))?.organizationId,
           `a ${slug} member was moved into ${otherSlug}`,
@@ -1992,7 +2038,7 @@ describe('the policies refuse the same things with claims injected instead of a 
 
         await actAs(client, caller.authUserId, caller.organizationId);
         const attempted = await client.query(
-          'update members set leave_allowance_days = 99 where id = $1',
+          `update members set email = '${THROWAWAY}-injected@example.org' where id = $1`,
           [target.id],
         );
         await actAsOwner(client);
@@ -2002,9 +2048,9 @@ describe('the policies refuse the same things with claims injected instead of a 
           `the ${slug} admin reached a ${otherSlug} row through the update policy`,
         ).toBe(0);
         expect(
-          (await memberById(client, target.id))?.leaveAllowanceDays,
+          (await memberById(client, target.id))?.email,
           `the ${slug} admin changed a ${otherSlug} member`,
-        ).toBe(target.leaveAllowanceDays);
+        ).toBe(target.email);
       });
     },
   );
@@ -2015,8 +2061,13 @@ describe('the policies refuse the same things with claims injected instead of a 
       // The WITH CHECK twin. 0003:296-302 says that clause exists precisely so
       // the refusal survives a later loosening of USING, and weakening it to
       // `with check (organization_id is not null)` passed every injected case
-      // before this one. Unlike the update above this one *does* raise, because
-      // WITH CHECK is what refuses it.
+      // before this one. Unlike the update above this one *does* raise.
+      //
+      // SINCE 0056 (story 13.3b) the 42501 comes from the missing column
+      // privilege — no session may update `organization_id` at all — before
+      // WITH CHECK is reached, so this case now pins the privilege and no
+      // longer exercises WITH CHECK. The assertions stand: the move is refused
+      // with 42501 and the row stays in its organization.
       await inRolledBackTransaction(async (client) => {
         const caller = await memberByUsername(client, slug, admin);
         const target = await addThrowawayMember(client, caller.organizationId);
@@ -3580,7 +3631,7 @@ describe('role and active state are re-read on the next statement, not at token 
 
         await actAs(client, caller.authUserId, caller.organizationId);
         const permitted = await client.query(
-          'update members set leave_allowance_days = leave_allowance_days + 1 where id = $1',
+          'update members set email = email where id = $1',
           [target.id],
         );
         await actAsOwner(client);
@@ -3591,7 +3642,7 @@ describe('role and active state are re-read on the next statement, not at token 
 
         await actAs(client, caller.authUserId, caller.organizationId);
         const refusedNow = await client.query(
-          'update members set leave_allowance_days = leave_allowance_days + 1 where id = $1',
+          'update members set email = email where id = $1',
           [target.id],
         );
         await actAsOwner(client);
@@ -3665,26 +3716,26 @@ describe('role and active state are re-read on the next statement, not at token 
       // and this is the only shape that can prove the clause. PostgreSQL
       // applies the SELECT policy to an `update`/`delete` as well as the write
       // policy whenever the statement reads a column (a `where` on `id`, or
-      // `leave_allowance_days + 1`), and the SELECT policy carries its own
+      // `email = email`), and the SELECT policy carries its own
       // `is_active`. So the obvious `... where id = $1` form is refused either
       // way and proves nothing about the write policy at all — verified live:
       // with the clause dropped from all three write policies, `update members
       // set leave_allowance_days = 7 where id = $1` still affects zero rows
       // while the column-free form updates every own-organization row.
+      // STORY 13.3b: the address, a column `0056` still grants, in place of the
+      // starting allowance, which no session may update any more.
       //
       // PostgREST cannot issue an unfiltered write, which is why this case is
       // claims-injection only. It is a statement about the policy, not about
       // the transport.
-      const settled = 7;
+      const settled = `${THROWAWAY}-settled@example.org`;
 
       await inRolledBackTransaction(async (client) => {
         const caller = await memberByUsername(client, slug, admin);
         const own = await memberCount(client, caller.organizationId);
 
         await actAs(client, caller.authUserId, caller.organizationId);
-        const permitted = await client.query('update members set leave_allowance_days = $1', [
-          settled,
-        ]);
+        const permitted = await client.query('update members set email = $1', [settled]);
         await actAsOwner(client);
 
         expect(
@@ -3697,8 +3748,8 @@ describe('role and active state are re-read on the next statement, not at token 
         ]);
 
         await actAs(client, caller.authUserId, caller.organizationId);
-        const updated = await client.query('update members set leave_allowance_days = $1', [
-          settled + 1,
+        const updated = await client.query('update members set email = $1', [
+          `${THROWAWAY}-after-ban@example.org`,
         ]);
         const deleted = await client.query('delete from members');
         await actAsOwner(client);
@@ -3711,7 +3762,7 @@ describe('role and active state are re-read on the next statement, not at token 
         // these two assertions could not see.
         const { rows: survivors } = await client.query<{ total: number; settled: number }>(
           `select count(*)::int as total,
-                  count(*) filter (where leave_allowance_days = $2)::int as settled
+                  count(*) filter (where email = $2)::int as settled
              from members where organization_id = $1`,
           [caller.organizationId, settled],
         );
@@ -3789,7 +3840,7 @@ describe('role and active state are re-read on the next statement, not at token 
         await actAs(client, caller.authUserId, caller.organizationId);
         const visible = await visibleToSession(client);
         const written = await client.query(
-          'update members set leave_allowance_days = leave_allowance_days + 1 where id = $1',
+          'update members set email = email where id = $1',
           [target.id],
         );
         await actAsOwner(client);
@@ -6814,15 +6865,15 @@ describe('a deactivated member loses access on the very next statement', () => {
     async ({ slug, admin }) => {
       // Column-free, for the reason the ban twin of this case gives: only that
       // shape proves the write policies' own `is_active`.
-      const settled = 7;
+      // STORY 13.3b: the address, which `0056` still grants, in place of the
+      // starting allowance.
+      const settled = `${THROWAWAY}-settled@example.org`;
 
       await inRolledBackTransaction(async (client) => {
         const caller = await memberByUsername(client, slug, admin);
 
         await actAs(client, caller.authUserId, caller.organizationId);
-        const permitted = await client.query('update members set leave_allowance_days = $1', [
-          settled,
-        ]);
+        const permitted = await client.query('update members set email = $1', [settled]);
         await actAsOwner(client);
 
         expect(permitted.rowCount).toBeGreaterThan(0);
@@ -6836,8 +6887,8 @@ describe('a deactivated member loses access on the very next statement', () => {
         });
 
         await actAs(client, caller.authUserId, caller.organizationId);
-        const updated = await client.query('update members set leave_allowance_days = $1', [
-          settled + 1,
+        const updated = await client.query('update members set email = $1', [
+          `${THROWAWAY}-after-deactivation@example.org`,
         ]);
         const deleted = await client.query('delete from members');
         await actAsOwner(client);

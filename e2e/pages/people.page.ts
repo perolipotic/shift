@@ -396,11 +396,32 @@ export class PeoplePage extends BasePage {
     return this.allowanceDialog.getByRole('button', { name: hr.ljudi.form.save, exact: true });
   }
 
-  /** Changes the open member's allowance to `days` through its dialog, and waits for it to close. */
+  /** The allowance dialog's *Vrijedi od {year}.* hint, any leave year (story 13.3b). */
+  get allowanceHint(): RegExp {
+    return new RegExp(
+      `^${escapeRegExp(hr.ljudi.allowance.validFrom).replace(escapeRegExp('{year}'), '\\d{4}')}$`,
+    );
+  }
+
+  /**
+   * Changes the open member's allowance to `days` through its dialog, and
+   * waits for it to close. STORY 13.3b: the save is one POST of a
+   * `leave_allowances` version, awaited here; `days` must differ from the
+   * value the dialog opens on, since an unchanged save writes nothing.
+   */
   async changeAllowance(name: string, days: number): Promise<void> {
     await this.changeAllowanceButton(name).click();
+    // AN EQUAL VALUE writes nothing, so the wait below would time out; this
+    // fails clearly instead.
+    await expect(this.allowanceInput, 'changeAllowance was asked for the value the dialog opens on').not.toHaveValue(
+      String(days),
+    );
     await this.allowanceInput.fill(String(days));
+    const inserted = this.page.waitForResponse(
+      (response) => response.request().method() === 'POST' && response.url().includes('/rest/v1/leave_allowances'),
+    );
     await this.allowanceSaveButton.click();
+    expect((await inserted).ok(), 'the allowance version was not inserted').toBe(true);
     await expect(this.allowanceDialog).toHaveCount(0);
   }
 

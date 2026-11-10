@@ -1,3 +1,5 @@
+import type { Request } from '@playwright/test';
+
 import { PeoplePage } from '../../pages/people.page.ts';
 import { sortControlName } from '../../pages/sort-control.ts';
 import { leaveYearStartOf } from '../../utils/database-helper.ts';
@@ -647,6 +649,7 @@ test.describe('the member page shows facts and each change opens one dialog', ()
   });
 
   test('a changed allowance reads on the leave card, with the balance from the same snapshot', async ({
+    page,
     peoplePage,
     fixture,
   }) => {
@@ -661,9 +664,48 @@ test.describe('the member page shows facts and each change opens one dialog', ()
     await expect(peoplePage.leaveFigure(leave.allowance)).toHaveText(plural(hr.count.days, 20));
     await expect(peoplePage.leaveFigure(leave.balance)).toHaveText(plural(hr.count.days, 20));
 
+    // STORY 13.3b: the dialog opens on the current leave year's allowance,
+    // with the hint naming the year it applies from describing the field.
+    await peoplePage.changeAllowanceButton(name).click();
+    await expect(peoplePage.allowanceInput).toHaveValue('20');
+    await expect(peoplePage.allowanceDialog.getByText(peoplePage.allowanceHint)).toBeVisible();
+    await expect(peoplePage.allowanceInput).toHaveAccessibleDescription(peoplePage.allowanceHint);
+    // UNCHANGED: nothing is written — no version and no member PATCH — no
+    // notice, and focus returns to the opener. The listener is in place
+    // BEFORE the save, and the absence is read only after a positive anchor.
+    const unchangedWrites: string[] = [];
+    const watchUnchanged = (request: Request): void => {
+      if (
+        (request.method() === 'POST' && request.url().includes('/rest/v1/leave_allowances')) ||
+        (request.method() === 'PATCH' && request.url().includes('/rest/v1/members'))
+      ) {
+        unchangedWrites.push(`${request.method()} ${request.url()}`);
+      }
+    };
+    page.on('request', watchUnchanged);
+    await peoplePage.allowanceSaveButton.click();
+    await expect(peoplePage.allowanceDialog).toHaveCount(0);
+    await expect(peoplePage.changeAllowanceButton(name)).toBeFocused();
+    await expect(peoplePage.leaveFigure(leave.allowance)).toHaveText(plural(hr.count.days, 20));
+    await expect(peoplePage.leaveCard.getByRole('status').filter({ hasText: hr.ljudi.allowance.saved })).toHaveCount(0);
+    page.off('request', watchUnchanged);
+    expect(unchangedWrites, 'an unchanged allowance save wrote something').toEqual([]);
+
+    // A VERSION, NOT A MEMBER PATCH: the starting allowance is no session's to update (0056).
+    const patches: string[] = [];
+    const watchPatches = (request: Request): void => {
+      if (request.method() === 'PATCH' && request.url().includes('/rest/v1/members')) patches.push(request.url());
+    };
+    page.on('request', watchPatches);
     await peoplePage.changeAllowance(name, 25);
     await expect(peoplePage.leaveFigure(leave.allowance)).toHaveText(plural(hr.count.days, 25));
     await expect(peoplePage.leaveFigure(leave.balance)).toHaveText(plural(hr.count.days, 25));
+    page.off('request', watchPatches);
+    expect(patches, 'the allowance save PATCHed the member').toEqual([]);
+
+    // REOPENED, it starts at the version just written.
+    await peoplePage.changeAllowanceButton(name).click();
+    await expect(peoplePage.allowanceInput).toHaveValue('25');
   });
 
   test('a last-admin demotion is refused inside the basics dialog, which stays open', async ({ page, peoplePage }) => {

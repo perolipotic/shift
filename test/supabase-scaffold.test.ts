@@ -3322,6 +3322,64 @@ describe('the access-control migration', () => {
     expect(migration, '13.3 computes a leave year in SQL (AD-7)').not.toMatch(/leave_year_start_(month|day)|extract\s*\(|date_part/i);
   });
 
+  it('takes UPDATE on the starting allowance from every session and grants back the five columns sessions update (story 13.3b)', () => {
+    // STORY 13.3b (0056): source text only; what the privilege refuses is
+    // `test/rls-isolation.test.ts` and the grant itself `test/provisioning.test.ts`,
+    // both in CI.
+    const migration = stripLineComments(
+      readFileSync(join(supabaseRoot, 'migrations', '0056_members_allowance_privilege.sql'), 'utf8'),
+    );
+
+    expect(migration).toMatch(/revoke update on table public\.members from authenticated, anon;/);
+    expect(migration, 'a session may update a member column beyond the five it updates').toMatch(
+      /grant update \(name, email, role, username, fire_rank\) on table public\.members to authenticated;/,
+    );
+    // NO OTHER CHANGE: one revoke and one grant, and the grant comes second.
+    const statements = migration
+      .split(';')
+      .map((statement) => statement.trim())
+      .filter((statement) => statement !== '');
+    expect(statements, '0056 does more than the revoke and the grant').toHaveLength(2);
+    expect(migration.indexOf('revoke update')).toBeLessThan(migration.indexOf('grant update'));
+    expect(migration, '0056 touches INSERT, which admin-auth\'s create needs').not.toMatch(/\binsert\b/i);
+    expect(migration, '0056 grants anon something').not.toMatch(/grant[^;]*\banon\b/i);
+    expect(migration, '0056 changes or backfills a value').not.toMatch(/\b(update public|update members|alter table)\b/i);
+
+    const statementsAll = migrationStatements();
+    expect(
+      statementsAll,
+      'a migration grants a session UPDATE on the starting allowance',
+    ).not.toMatch(/grant update \([^)]*\bleave_allowance_days\b[^)]*\) on table public\.members/i);
+
+    // NOR A TABLE-WIDE GRANT, which would hand the starting allowance back
+    // without naming it. No migration before 0056 grants on `members` at all
+    // (its privileges were the platform's defaults), so the guard reads every
+    // migration from 0056 on: any `grant` whose privilege list holds `update`
+    // or `all` with no column list, on `members`, to a session role.
+    const tableWide =
+      /grant\s+(?:[a-z]+\s*,\s*)*(?:update|all(?:\s+privileges)?)\s*(?:,\s*[a-z]+\s*)*\s+on\s+(?:table\s+)?(?:public\.)?members\s+to\s+[^;]*\b(?:authenticated|anon)\b/i;
+    const fromThisOn = migrationNames()
+      .filter((name) => name >= '0056')
+      .sort()
+      .map((name) => [name, stripLineComments(readFileSync(join(supabaseRoot, 'migrations', name), 'utf8'))] as const);
+    expect(fromThisOn.length, 'the guard reads no migration, so it asserts nothing').toBeGreaterThan(0);
+    for (const [name, text] of fromThisOn) {
+      expect(text, `${name} grants a session UPDATE on the whole members table`).not.toMatch(tableWide);
+    }
+    // NON-VACUITY: the guard does catch the shapes it exists for, and lets a column grant through.
+    for (const shape of [
+      'grant update on table public.members to authenticated;',
+      'grant select, update on public.members to anon;',
+      'grant all on members to authenticated, anon;',
+      'grant all privileges on table public.members to authenticated;',
+    ]) {
+      expect(shape).toMatch(tableWide);
+    }
+    expect('grant update (name, email, role, username, fire_rank) on table public.members to authenticated;').not.toMatch(
+      tableWide,
+    );
+  });
+
   it('recreates both leave reads to carry each record\'s type and its drawing flag, and changes nothing else (story 13.2)', () => {
     // STORY 13.2 (0053): the read side only. Source text; what each read
     // returns is `test/rls-isolation.test.ts`, which runs in CI.

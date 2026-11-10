@@ -21,6 +21,9 @@ export const MEMBER_TEAM_ERROR_ID = 'member-team-error';
 /** *Pravo*, on the leave card: its dialog's title and its one field. */
 export const MEMBER_ALLOWANCE_DIALOG_HEADING_ID = 'member-allowance-dialog-heading';
 export const MEMBER_ALLOWANCE_FIELD_ID = 'member-leave';
+/** *Vrijedi od {year}.*'s hint, which describes the field (story 13.3b); with the refusal beside it once there is one. */
+export const MEMBER_ALLOWANCE_HINT_ID = 'member-leave-hint';
+export const MEMBER_ALLOWANCE_HINT_AND_ERROR = `${MEMBER_ALLOWANCE_HINT_ID} ${MEMBER_FORM_ERROR_ID}`;
 
 /** *Status*. */
 export const MEMBER_STATUS_HEADING_ID = 'member-status-heading';

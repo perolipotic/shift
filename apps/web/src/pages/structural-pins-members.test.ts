@@ -2068,7 +2068,13 @@ describe('a team or membership write re-reads every screen that shows it, once i
     // cards' confirmations and their erasure dialogs both call.
     { handler: 'writeTeam', gate: 'outcome.ok', dependents: 'MEMBERSHIP_WRITE_DEPENDENTS' },
     { handler: 'writeStatus', gate: 'outcome.ok', dependents: 'MEMBERSHIP_WRITE_DEPENDENTS' },
-    { handler: 'submit', gate: 'outcome.ok || outcome.refusal.saved', dependents: 'MEMBER_SAVE_DEPENDENTS' },
+    // STORY 13.3b: the allowance dialog's version is embedded by the members
+    // list alone, so only a landed or partly landed BASICS save re-reads more.
+    {
+      handler: 'submit',
+      gate: 'scope === BASICS_SAVE && (outcome.ok || outcome.refusal.saved)',
+      dependents: 'MEMBER_SAVE_DEPENDENTS',
+    },
   ])('re-reads $dependents after a landed $handler on the member edit screen', ({ handler, gate, dependents }) => {
     const body = namedHandler(source(MEMBER_EDIT_HOOK), handler);
 
@@ -2151,5 +2157,68 @@ describe('a team or membership write re-reads every screen that shows it, once i
       expect(occurrences(body, 'refresh('), `${name} re-reads more than once`).toBe(1);
       expect(body, `${name} re-reads the dependents whatever the outcome`).toContain('await refresh(outcome.ok);');
     }
+  });
+});
+
+describe('the allowance dialog sets the current leave year (story 13.3b)', () => {
+  const DIALOG = join(MEMBERS_FEATURE, 'components', 'member-allowance-dialog.tsx');
+  const BASICS_HOOK = join(MEMBERS_FEATURE, 'hooks', 'use-member-basics.ts');
+
+  it('holds the opening the tested helpers decide, and prefills the field with it', () => {
+    // WHAT the opening holds and what a save writes are `heldAllowanceOf` and
+    // `allowanceSaveOf`, executed in `write.test.ts`. Pinned here is only the
+    // wiring: the hook holds the one and hands the save to the other.
+    const hook = source(BASICS_HOOK);
+    const dialog = source(DIALOG);
+    const submit = namedHandler(hook, 'submit');
+
+    expect(hook, 'the opening holds no allowance').toContain('DialogOpening<HeldAllowance>');
+    expect(hook).toContain('const allowanceNow = heldAllowanceOf(form.member, today);');
+    expect(submit).toContain('const save = allowanceSaveOf(held, leaveAllowanceDays, member);');
+    expect(submit, 'the save recomputes the leave year').not.toContain('leaveYearNumberOf(');
+    expect(dialog, 'the field does not start at the held allowance').toContain('defaultValue={held.days}');
+    expect(dialog, 'the field still starts at the starting allowance').not.toContain('leaveAllowanceDays}');
+  });
+
+  it('describes the field by the hint naming the year, and the refusal beside it', () => {
+    const dialog = source(DIALOG);
+
+    expect(dialog).toContain("t('ljudi.allowance.validFrom', { year: yearTextOf(held.leaveYear) })");
+    expect(dialog).toContain('<p id={MEMBER_ALLOWANCE_HINT_ID}');
+    expect(dialog).toContain(
+      'aria-describedby={refusal === null ? MEMBER_ALLOWANCE_HINT_ID : MEMBER_ALLOWANCE_HINT_AND_ERROR}',
+    );
+  });
+
+  it('disables Promijeni pravo while today or the leave-year start is unknown', () => {
+    expect(source(DIALOG)).toContain('disabled={pending || !allowanceDialog.available}');
+    expect(source(BASICS_HOOK)).toContain('available: allowanceNow !== null,');
+  });
+
+  it('inserts a version and never PATCHes the member, and writes nothing for an unchanged value', () => {
+    const handler = namedHandler(source(BASICS_HOOK), 'submit');
+
+    expect(handler).toContain('await saveAllowance(supabaseClient().from(LEAVE_ALLOWANCES_TABLE), member, allowance)');
+    expect(handler, 'the allowance still travels in the member PATCH').not.toMatch(/edits = \{ leaveAllowanceDays/);
+    // NO HELD YEAR is said, never a silent no-op.
+    expect(handler).toMatch(/if \(held === null\) \{\s*setFailure\([^)]*MEMBER_WRITE_UNAVAILABLE/);
+    // UNCHANGED: the dialog closes before anything is in flight, says nothing,
+    // and focus goes back to its opener.
+    const unchanged = /save === ALLOWANCE_UNCHANGED\) \{[\s\S]*?return;/.exec(handler)?.[0] ?? '';
+
+    expect(unchanged, 'the unchanged branch could not be extracted').not.toBe('');
+    expect(unchanged).toContain('setAllowanceOpen(null);');
+    expect(unchanged).toContain('focusLater([() => allowanceOpener.current]');
+    expect(unchanged, 'an unchanged save says it was saved').not.toContain('setSaved(');
+    expect(unchanged, 'an unchanged save is put in flight').not.toContain('saving.current = true');
+  });
+
+  it('opens the allowance dialog only from an allowance request, never the basics one', () => {
+    const opener = namedHandler(source(BASICS_HOOK), 'openMemberDialog');
+
+    expect(opener).toMatch(
+      /if \(scope === ALLOWANCE_SAVE\) \{\s*if \(allowanceNow === null\) return;[\s\S]*?setAllowanceOpen\([\s\S]*?return;\s*\}/,
+    );
+    expect(occurrences(opener, 'setBasicsOpen('), 'the basics dialog opens from more than one place').toBe(1);
   });
 });

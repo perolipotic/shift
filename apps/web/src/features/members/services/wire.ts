@@ -627,12 +627,15 @@ export function editFailureOf(error: PostgrestFailure): MemberWriteFailure {
     return MEMBER_NAME_TOO_LONG;
   }
   // NO `23505` CASE, deliberately, and its absence is a finding rather than an
-  // omission: this path's update writes `name`, `email`, `role` and
-  // `leave_allowance_days` and NEVER `username`, so "that username is already
-  // issued" is a sentence this path cannot honestly say. A unique violation
-  // here would be some other constraint entirely, and class `23` already
-  // reports it as a value to correct. The FUNCTION keeps its own `23505` case,
-  // because `updateUserById` is the one write that does move the column.
+  // omission. Two writes reach this mapping, and NEITHER writes `username`:
+  //   * the members PATCH writes `name`, `email`, `role` and `fire_rank`;
+  //   * the allowance dialog's insert (story 13.3b) writes one
+  //     `leave_allowances` version, which has no unique key at all.
+  // So "that username is already issued" is a sentence neither path can
+  // honestly say. A unique violation here would be some other constraint
+  // entirely, and class `23` already reports it as a value to correct. The
+  // FUNCTION keeps its own `23505` case, because `updateUserById` is the one
+  // write that does move the column.
   if (namesAValue(error.code)) return MEMBER_WRITE_INVALID;
 
   return MEMBER_WRITE_UNAVAILABLE;

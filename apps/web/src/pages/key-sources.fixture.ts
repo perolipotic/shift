@@ -1581,10 +1581,11 @@ export const KEY_SOURCES = [
     // ONE HUNDRED AND FIFTY-SIX SINCE 0041: the deactivation question's line
     // naming the pending leave requests it closes.
     // STORY 13.2b: the leave dialog's type group label and the unchanged-balance line.
+    // STORY 13.3b: the allowance field's *Vrijedi od {year}.* hint.
     name: 'the member edit form',
     file: MEMBER_EDIT,
     keys: translationKeys,
-    strings: 158,
+    strings: 159,
   },
   {
     // THIRTEEN on the member write path's rules: eleven `ljudi.form.error.*`
