@@ -610,6 +610,11 @@ describe('the accent control offers a curated set and nothing else', () => {
     expect(/MINIMUM_MEMBERS_DIALOG,[\s\S]*?\[CALENDAR_KEY\],\s*\);/.test(source(SETTINGS_HOOK)), 'the minimum’s save leaves the calendar stale').toBe(
       true,
     );
+    // STORY 13.3: the member list embeds the leave-year start (Ljudi's
+    // *Godišnji* column), so the leave year's save declares it.
+    expect(/LEAVE_YEAR_DIALOG,[\s\S]*?\[MEMBERS_LIST_KEY\],\s*\);/.test(componentFunction(source(SETTINGS_HOOK), 'saveLeaveYear')), 'the leave year’s save leaves the member list stale').toBe(
+      true,
+    );
   });
 
   it('marks and focuses the control a refused save names, and only that one', () => {

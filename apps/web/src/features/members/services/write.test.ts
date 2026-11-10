@@ -173,6 +173,8 @@ import { DEFAULT_POSITION } from '@/features/members/utils/position';
 
 /** A member row, with everything but the interesting field held still. */
 function member(fields: Partial<MemberListRow> = {}): MemberListRow {
+  const leaveAllowanceDays = fields.leaveAllowanceDays ?? 20;
+
   return {
     id: 'member-1',
     organizationId: 'organization-1',
@@ -180,7 +182,9 @@ function member(fields: Partial<MemberListRow> = {}): MemberListRow {
     username: 'ana.kovac',
     email: null,
     role: 'member_role',
-    leaveAllowanceDays: 20,
+    leaveAllowanceDays,
+    leaveAllowance: { startingDays: leaveAllowanceDays, versions: [] },
+    leaveYearStart: { month: 1, day: 1 },
     fireRank: null,
     authUserId: 'account-1',
     statusVersions: [],

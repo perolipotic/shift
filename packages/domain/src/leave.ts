@@ -23,6 +23,14 @@
  * BALANCE (R4.5): `balance = allowance − used`, and it may go negative. An
  * over-balance range is flagged (R4.7), never refused.
  *
+ * ALLOWANCE PER LEAVE YEAR (story 13.3, AD-2 versioned): a member has a
+ * starting allowance and append-only versions, each for one leave year,
+ * numbered by the calendar year it begins in ({@link leaveYearNumberOf}). The
+ * allowance of leave year Y is the highest-`id` version for Y; otherwise the
+ * highest-`id` version of the latest year before Y; otherwise the starting
+ * allowance ({@link leaveAllowanceOf}). A balance uses the allowance of the
+ * leave year containing its `today`.
+ *
  * ABSENCE TYPES (story 13.2, CAP-23): a record whose type does not draw the
  * allowance ({@link LeaveRange.drawsAllowance} `false`) is never counted in
  * `used`, and a previewed range of such a type charges nothing. Every other
@@ -75,12 +83,29 @@ export interface LeaveYearStart {
   readonly day: number;
 }
 
+/** One version of a member's allowance, for one leave year (story 13.3). Never changed once written. */
+export interface LeaveAllowanceVersion {
+  /** The row's identity; a later correction of the same year has a higher one. A positive integer. */
+  readonly id: number;
+  /** The calendar year in which the leave year begins, an integer 1–9999. */
+  readonly leaveYear: number;
+  /** The allowance for that leave year, in whole days, never negative. */
+  readonly days: number;
+}
+
+/** A member's allowance across leave years (story 13.3): the starting allowance and every version, in any order. */
+export interface LeaveAllowance {
+  /** The allowance of every leave year before the first version, in whole days, never negative. */
+  readonly startingDays: number;
+  readonly versions: readonly LeaveAllowanceVersion[];
+}
+
 /** What a member's leave balance is derived from. */
 export interface LeaveBalanceInput {
   /** The member's schedule input, whose working shifts and statuses decide what each date costs. */
   readonly input: MemberScheduleInput;
-  /** The member's allowance for a leave year, in whole days, never negative. */
-  readonly allowanceDays: number;
+  /** The member's allowance across leave years; the balance resolves it for the leave year containing `today`. */
+  readonly allowance: LeaveAllowance;
   /** Every leave record of THIS member, in any order, no two sharing a date. Named in errors by their index here. */
   readonly records: readonly LeaveRange[];
   /** The caller's current date, `YYYY-MM-DD`, which picks the current leave year. */
@@ -97,6 +122,7 @@ export interface LeavePreviewInput extends LeaveBalanceInput {
 
 /** A member's balance in the current leave year. Always `balanceDays = allowanceDays − usedDays`. */
 export interface LeaveBalance {
+  /** The allowance resolved for the current leave year ({@link leaveAllowanceOf}). */
   readonly allowanceDays: number;
   readonly usedDays: number;
   /** May be negative. */
@@ -309,16 +335,87 @@ export function leaveYearOf(date: string, start: LeaveYearStart): LeaveRange {
 }
 
 /**
- * Every precondition of a balance input, and the current leave year.
+ * The number of the leave year containing `date` (story 13.3): the calendar
+ * year in which that leave year begins, as {@link leaveYearOf} places it. A
+ * date in 0001 before the start month and day belongs to leave year 0, which
+ * no version can name.
+ *
+ * @throws RangeError on any precondition of {@link leaveYearOf}.
+ */
+export function leaveYearNumberOf(date: string, start: LeaveYearStart): number {
+  checkDate('the date', date);
+  checkLeaveYearStart(start);
+  const year = Number(date.slice(0, 4));
+  const startIn = `${date.slice(0, 4)}-${String(start.month).padStart(2, '0')}-${String(start.day).padStart(2, '0')}`;
+  return date >= startIn ? year : year - 1;
+}
+
+/**
+ * @throws RangeError naming the value when the starting allowance or a
+ *   version's days are not a whole number of zero or more, a version's id is
+ *   not a positive integer, or its leave year not an integer 1–9999.
+ */
+function checkLeaveAllowance(allowance: LeaveAllowance): void {
+  if (!Number.isInteger(allowance.startingDays) || allowance.startingDays < 0) {
+    throw new RangeError(`the starting leave allowance is ${String(allowance.startingDays)} days, not a whole number of zero or more`);
+  }
+  allowance.versions.forEach((version, index) => {
+    const what = `leave allowance version ${String(index)}`;
+    if (!Number.isInteger(version.id) || version.id < 1) {
+      throw new RangeError(`${what} has id ${String(version.id)}, not a positive integer`);
+    }
+    if (!Number.isInteger(version.leaveYear) || version.leaveYear < 1 || version.leaveYear > 9999) {
+      throw new RangeError(`${what} is for leave year ${String(version.leaveYear)}, not an integer 1–9999`);
+    }
+    if (!Number.isInteger(version.days) || version.days < 0) {
+      throw new RangeError(`${what} is ${String(version.days)} days, not a whole number of zero or more`);
+    }
+  });
+}
+
+/**
+ * The allowance of leave year `leaveYear` (story 13.3, PO 2026-11-10): the
+ * highest-`id` version for that year; otherwise the highest-`id` version of
+ * the latest year before it; otherwise the starting allowance. A version for
+ * a later year never applies.
+ *
+ * @throws RangeError when `leaveYear` is not an integer, and on any malformed
+ *   allowance (see {@link LeaveAllowance}).
+ */
+export function leaveAllowanceOf(allowance: LeaveAllowance, leaveYear: number): number {
+  if (!Number.isInteger(leaveYear)) {
+    throw new RangeError(`the leave year is ${String(leaveYear)}, not an integer`);
+  }
+  checkLeaveAllowance(allowance);
+  let chosen: LeaveAllowanceVersion | null = null;
+  for (const version of allowance.versions) {
+    if (version.leaveYear > leaveYear) continue;
+    if (
+      chosen === null ||
+      version.leaveYear > chosen.leaveYear ||
+      (version.leaveYear === chosen.leaveYear && version.id > chosen.id)
+    ) {
+      chosen = version;
+    }
+  }
+  return chosen === null ? allowance.startingDays : chosen.days;
+}
+
+/** An already-checked balance input's current leave year and the allowance resolved for it. */
+interface CurrentYear {
+  readonly year: LeaveRange;
+  readonly allowanceDays: number;
+}
+
+/**
+ * Every precondition of a balance input, the current leave year, and its allowance.
  *
  * @throws RangeError on any precondition of {@link leaveBalanceOf}.
  */
-function checkBalanceInput(balance: LeaveBalanceInput): LeaveRange {
-  if (!Number.isInteger(balance.allowanceDays) || balance.allowanceDays < 0) {
-    throw new RangeError(`the leave allowance is ${String(balance.allowanceDays)} days, not a whole number of zero or more`);
-  }
+function checkBalanceInput(balance: LeaveBalanceInput): CurrentYear {
   checkDate('today', balance.today);
   checkLeaveYearStart(balance.leaveYearStart);
+  const allowanceDays = leaveAllowanceOf(balance.allowance, leaveYearNumberOf(balance.today, balance.leaveYearStart));
   balance.records.forEach((record, index) => checkRange(`leave record ${String(index)}`, record));
 
   const byStart = balance.records.map((record, index) => ({ record, index })).sort((a, b) => (a.record.from < b.record.from ? -1 : 1));
@@ -331,37 +428,38 @@ function checkBalanceInput(balance: LeaveBalanceInput): LeaveRange {
       );
     }
   }
-  return leaveYearOf(balance.today, balance.leaveYearStart);
+  return { year: leaveYearOf(balance.today, balance.leaveYearStart), allowanceDays };
 }
 
-/** The balance of an already-checked input in `year`, counted by `costOf`; only drawing records are used. */
-function balanceOf(costOf: (range: LeaveRange) => number, balance: LeaveBalanceInput, year: LeaveRange): LeaveBalance {
+/** The balance of an already-checked input in its current year, counted by `costOf`; only drawing records are used. */
+function balanceOf(costOf: (range: LeaveRange) => number, balance: LeaveBalanceInput, current: CurrentYear): LeaveBalance {
   let usedDays = 0;
   for (const record of balance.records) {
     if (!drawsAllowance(record)) continue;
-    const inYear = intersect(record, year);
+    const inYear = intersect(record, current.year);
     if (inYear !== null) usedDays += costOf(inYear);
   }
-  return { allowanceDays: balance.allowanceDays, usedDays, balanceDays: balance.allowanceDays - usedDays };
+  return { allowanceDays: current.allowanceDays, usedDays, balanceDays: current.allowanceDays - usedDays };
 }
 
 /**
- * The member's balance in the current leave year (R4.5, R4.6): the allowance,
- * the leave days of every DRAWING record's dates (story 13.2) inside the leave year containing
+ * The member's balance in the current leave year (R4.5, R4.6): the allowance
+ * of that leave year ({@link leaveAllowanceOf}, story 13.3), the leave days of every DRAWING record's dates (story 13.2) inside the leave year containing
  * `today` — a record straddling the year's start or end counts only its dates
  * inside it — and the allowance less those, which may be negative.
  *
- * @throws RangeError when `allowanceDays` is not a whole number of zero or
- *   more; when `today`, or the start or end of a record, is not a calendar
+ * @throws RangeError when the allowance is malformed (a starting allowance or
+ *   version days not a whole number of zero or more, a version id not a
+ *   positive integer, a version leave year not an integer 1–9999); when `today`, or the start or end of a record, is not a calendar
  *   `YYYY-MM-DD`; when a record ends before it starts or is longer than
  *   {@link MAX_LEAVE_RANGE_DAYS}; when two records share a date; on any
  *   precondition of {@link leaveYearOf}; and on any of
  *   {@link memberScheduleOfMonth}.
  */
 export function leaveBalanceOf(balance: LeaveBalanceInput): LeaveBalance {
-  const year = checkBalanceInput(balance);
+  const current = checkBalanceInput(balance);
   const costOf = costCounter(balance.input);
-  return balanceOf((range) => costOf(range), balance, year);
+  return balanceOf((range) => costOf(range), balance, current);
 }
 
 /**
@@ -377,13 +475,13 @@ export function leaveBalanceOf(balance: LeaveBalanceInput): LeaveBalance {
  *   before it starts, or when it is longer than {@link MAX_LEAVE_RANGE_DAYS}.
  */
 export function leavePreviewOf(preview: LeavePreviewInput): LeavePreview {
-  const year = checkBalanceInput(preview);
+  const current = checkBalanceInput(preview);
   checkRange('the leave range', preview.range);
 
   const costOf = costCounter(preview.input);
-  const before = balanceOf((range) => costOf(range), preview, year);
+  const before = balanceOf((range) => costOf(range), preview, current);
   const costDays = costOf(preview.range);
-  const inYear = intersect(preview.range, year);
+  const inYear = intersect(preview.range, current.year);
   // A range of a type that does not draw the allowance charges nothing; its
   // cost over every date is still reported (story 13.2).
   const costInYearDays = inYear === null || !drawsAllowance(preview.range) ? 0 : costOf(inYear, preview.records);

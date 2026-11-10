@@ -151,7 +151,7 @@ afterEach(() => {
 });
 
 const MEMBERS: LeaveMembersSource = {
-  members: [{ id: VIEWER_MEMBER, leaveAllowanceDays: 20 }],
+  members: [{ id: VIEWER_MEMBER, leaveAllowance: { startingDays: 20, versions: [] } }],
   refusal: null,
   loading: false,
   paused: false,
@@ -234,12 +234,38 @@ describe('the figures', () => {
     expect(base.balance).toEqual({ allowanceDays: 20, usedDays: 3, balanceDays: 17 });
     expect(base.balance).toEqual(leaveBalanceOf(base.input));
     expect(base.input).toMatchObject({
-      allowanceDays: 20,
+      allowance: { startingDays: 20, versions: [] },
       records: [WORKED],
       today: '2026-09-26',
       leaveYearStart: { month: 1, day: 1 },
     });
     expect(base.organizationId).toBe(pilot.organizationId);
+  });
+
+  it('balances against the allowance of the leave year it counts (story 13.3)', () => {
+    // NOW is 2026-09-26: leave year 2026. A version for it applies, a later
+    // correction of the same year wins, and a version for 2027 does not.
+    const members: LeaveMembersSource = {
+      ...MEMBERS,
+      members: [
+        {
+          id: VIEWER_MEMBER,
+          leaveAllowance: {
+            startingDays: 20,
+            versions: [
+              { id: 1, leaveYear: 2026, days: 25 },
+              { id: 2, leaveYear: 2026, days: 24 },
+              { id: 3, leaveYear: 2027, days: 40 },
+            ],
+          },
+        },
+      ],
+    };
+    const base = readyOf(memberLeaveBaseOf(sourcesOf(pilot, { members, records: recordsOf([WORKED]) }), VIEWER_MEMBER, NOW));
+
+    expect(base.balance).toEqual({ allowanceDays: 24, usedDays: 3, balanceDays: 21 });
+    // A past leave year's balance uses that year's allowance: the starting one.
+    expect(leaveBalanceOf({ ...base.input, today: '2025-09-26' }).allowanceDays).toBe(20);
   });
 
   it('counts the UJ5 fixture through the same rule', () => {
@@ -309,7 +335,7 @@ describe('the figures', () => {
   });
 
   it('is unscheduled, not unavailable, when the calendar holds no such member', () => {
-    const members = { ...MEMBERS, members: [{ id: 'someone-else', leaveAllowanceDays: 20 }] };
+    const members = { ...MEMBERS, members: [{ id: 'someone-else', leaveAllowance: { startingDays: 20, versions: [] } }] };
 
     expect(memberLeaveBaseOf(sourcesOf(pilot, { members }), 'someone-else', NOW)).toEqual({
       kind: LEAVE_UNSCHEDULED,
@@ -345,7 +371,7 @@ describe('the preview', () => {
       memberLeaveBaseOf(
         sourcesOf(pilot, {
           records: recordsOf(records),
-          members: { ...MEMBERS, members: [{ id: VIEWER_MEMBER, leaveAllowanceDays: allowanceDays }] },
+          members: { ...MEMBERS, members: [{ id: VIEWER_MEMBER, leaveAllowance: { startingDays: allowanceDays, versions: [] } }] },
         }),
         VIEWER_MEMBER,
         NOW,
@@ -496,7 +522,7 @@ describe('the outcome', () => {
   function inputOf(allowanceDays: number) {
     return readyOf(
       memberLeaveBaseOf(
-        sourcesOf(pilot, { members: { ...MEMBERS, members: [{ id: VIEWER_MEMBER, leaveAllowanceDays: allowanceDays }] } }),
+        sourcesOf(pilot, { members: { ...MEMBERS, members: [{ id: VIEWER_MEMBER, leaveAllowance: { startingDays: allowanceDays, versions: [] } }] } }),
         VIEWER_MEMBER,
         NOW,
       ),
@@ -592,7 +618,7 @@ describe('the records list', () => {
       memberLeaveBaseOf(
         sourcesOf(pilot, {
           records: recordsOf(records),
-          members: { ...MEMBERS, members: [{ id: VIEWER_MEMBER, leaveAllowanceDays: allowanceDays }] },
+          members: { ...MEMBERS, members: [{ id: VIEWER_MEMBER, leaveAllowance: { startingDays: allowanceDays, versions: [] } }] },
         }),
         VIEWER_MEMBER,
         NOW,

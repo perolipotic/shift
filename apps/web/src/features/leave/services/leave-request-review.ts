@@ -1,5 +1,5 @@
 import type { QueryKey } from '@tanstack/react-query';
-import type { LeavePreview } from '@shift/domain';
+import type { LeaveAllowance, LeavePreview } from '@shift/domain';
 
 import type { CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { actorNamesOf } from '@/features/conflicts/services/resolved-conflicts';
@@ -89,9 +89,9 @@ export interface ReviewReadAnswer {
   readonly isError: boolean;
 }
 
-/** The member list as the screen reads it: each member's name and allowance. */
+/** The member list as the screen reads it: each member's name and allowance across leave years (story 13.3). */
 export interface ReviewMembersSource {
-  readonly members: readonly { readonly id: string; readonly name: string; readonly leaveAllowanceDays: number }[] | null;
+  readonly members: readonly { readonly id: string; readonly name: string; readonly leaveAllowance: LeaveAllowance }[] | null;
   readonly refusal: string | null;
   readonly loading: boolean;
   readonly paused: boolean;

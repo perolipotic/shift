@@ -119,6 +119,7 @@ import {
   statusCellOf,
   statusFilterMessageKey,
   statusValueMessageKey,
+  memberAllowanceOn,
 } from '@/features/members/services/list';
 import { TEAM_HISTORY, TEAM_HISTORY_ANSWERS, TEAM_HISTORY_SPAN } from '@/features/members/team-history.fixture';
 import { initLocalization, t } from '@/lib/i18n';
@@ -153,13 +154,17 @@ const SCALE = 400;
 
 /** A member, with everything but the interesting field held still. */
 function member(fields: Partial<MemberListRow> & { readonly id: string }): MemberListRow {
+  const leaveAllowanceDays = fields.leaveAllowanceDays ?? 20;
+
   return {
     organizationId: 'organization',
     name: 'Ana Anić',
     username: 'ana.anic',
     email: null,
     role: 'member_role',
-    leaveAllowanceDays: 20,
+    leaveAllowanceDays,
+    leaveAllowance: { startingDays: leaveAllowanceDays, versions: [] },
+    leaveYearStart: { month: 1, day: 1 },
     fireRank: null,
     authUserId: `account-${fields.id}`,
     statusVersions: [],
@@ -204,7 +209,8 @@ function row(fields: Readonly<Record<string, unknown>>): Record<string, unknown>
     auth_user_id: `account-${String(fields['id'] ?? 'member')}`,
     member_status_versions: [],
     team_membership_versions: [],
-    organizations: { timezone: 'Europe/Zagreb' },
+    leave_allowances: [],
+    organizations: { timezone: 'Europe/Zagreb', leave_year_start_month: 1, leave_year_start_day: 1 },
     ...fields,
   };
 }
@@ -296,9 +302,13 @@ describe('the read asks for exactly what the surface needs, and for the count', 
     // `organizations(timezone)` is the organization's ZONE, embedded so "as at
     // today" is the organization's today without a second read (AD-13, L8).
     // STORY 1.7b adds the TEAM history, each version with its team's name.
+    // STORY 13.3 adds the allowance versions and the organization's
+    // leave-year start, which the leave column resolves today's allowance from.
     const embed =
       'member_status_versions(active,effective_from),' +
-      'team_membership_versions(team_id,position,effective_from,teams(name)),organizations(timezone)';
+      'team_membership_versions(team_id,position,effective_from,teams(name)),' +
+      'leave_allowances(id,leave_year,days),' +
+      'organizations(timezone,leave_year_start_month,leave_year_start_day)';
 
     expect(MEMBERS_COLUMNS.endsWith(`,${embed}`)).toBe(true);
     expect(MEMBERS_COLUMNS.slice(0, -(embed.length + 1)).split(',').sort()).toEqual(
@@ -337,6 +347,8 @@ describe('the read asks for exactly what the surface needs, and for the count', 
       email: 'ivan@dvd.hr',
       role: 'admin',
       leaveAllowanceDays: 25,
+      leaveAllowance: { startingDays: 25, versions: [] },
+      leaveYearStart: { month: 1, day: 1 },
       fireRank: 'officer',
       authUserId: 'account-m1',
       statusVersions: [],
@@ -362,6 +374,10 @@ describe('the read asks for exactly what the surface needs, and for the count', 
   it.each([
     { field: 'id', value: null },
     { field: 'organization_id', value: undefined },
+    // STORY 13.3: the starting allowance is a whole number of zero or more,
+    // which the domain resolves every leave year from.
+    { field: 'leave_allowance_days', value: 2.5 },
+    { field: 'leave_allowance_days', value: -1 },
     { field: 'name', value: 42 },
     // `0007` makes the column `not null`, so a row without one is not a row.
     // Admitting it would seed the edit form with a blank sign-in identity.
@@ -383,6 +399,107 @@ describe('the read asks for exactly what the surface needs, and for the count', 
     expect(memberListRowOf(null)).toBeNull();
     expect(memberListRowOf('a row')).toBeNull();
     expect(memberListRowOf([])).toBeNull();
+  });
+});
+
+describe('the allowance per leave year (story 13.3)', () => {
+  const column = (): (typeof MEMBER_COLUMNS)[number] => {
+    const found = MEMBER_COLUMNS.find((candidate) => candidate.key === LEAVE_COLUMN);
+
+    if (found === undefined) throw new Error('no leave column');
+
+    return found;
+  };
+
+  it('reads the versions and the leave-year start off the one read', () => {
+    const parsed = memberListRowOf(
+      row({
+        leave_allowance_days: 20,
+        leave_allowances: [
+          { id: 2, leave_year: 2026, days: 24 },
+          { id: 1, leave_year: 2026, days: 25 },
+        ],
+        organizations: { timezone: 'Europe/Zagreb', leave_year_start_month: 3, leave_year_start_day: 1 },
+      }),
+    );
+
+    expect(parsed?.leaveAllowanceDays).toBe(20);
+    expect(parsed?.leaveAllowance).toEqual({
+      startingDays: 20,
+      versions: [
+        { id: 2, leaveYear: 2026, days: 24 },
+        { id: 1, leaveYear: 2026, days: 25 },
+      ],
+    });
+    expect(parsed?.leaveYearStart).toEqual({ month: 3, day: 1 });
+  });
+
+  it('reads a row cached before 13.3 as the starting allowance with no start', () => {
+    const cached = row({ leave_allowance_days: 22, organizations: { timezone: 'Europe/Zagreb' } });
+
+    delete cached['leave_allowances'];
+
+    const parsed = memberListRowOf(cached);
+
+    expect(parsed?.leaveAllowance).toEqual({ startingDays: 22, versions: [] });
+    expect(parsed?.leaveYearStart).toBeNull();
+    // No start, no current leave year: the cell is empty, never a guess.
+    expect(parsed === null ? undefined : column().cell(parsed, TODAY)).toEqual({ kind: TEXT_CELL, text: NO_TEXT });
+  });
+
+  it.each([
+    { name: 'negative days', versions: [{ id: 1, leave_year: 2026, days: -1 }] },
+    { name: 'a fractional leave year', versions: [{ id: 1, leave_year: 2026.5, days: 20 }] },
+    { name: 'a leave year out of range', versions: [{ id: 1, leave_year: 0, days: 20 }] },
+    { name: 'no id', versions: [{ leave_year: 2026, days: 20 }] },
+    { name: 'a string year', versions: [{ id: 1, leave_year: '2026', days: 20 }] },
+    { name: 'a version that is not an object', versions: [7] },
+    { name: 'a field that is not a list', versions: { id: 1 } },
+    { name: 'null', versions: null },
+  ])('refuses a row whose versions carry $name', ({ versions }) => {
+    expect(memberRowOutcomeOf(row({ leave_allowances: versions }))).toEqual({
+      ok: false,
+      malformed: { field: 'leave_allowances', id: 'member' },
+    });
+  });
+
+  it.each([
+    { name: 'only a month', organization: { timezone: 'Europe/Zagreb', leave_year_start_month: 3 } },
+    { name: 'only a day', organization: { timezone: 'Europe/Zagreb', leave_year_start_day: 1 } },
+    { name: 'a day of 29', organization: { timezone: 'Europe/Zagreb', leave_year_start_month: 3, leave_year_start_day: 29 } },
+    { name: 'a month of 13', organization: { timezone: 'Europe/Zagreb', leave_year_start_month: 13, leave_year_start_day: 1 } },
+  ])('refuses a row whose leave-year start carries $name', ({ organization }) => {
+    expect(memberRowOutcomeOf(row({ organizations: organization }))).toEqual({
+      ok: false,
+      malformed: { field: 'organizations', id: 'member' },
+    });
+  });
+
+  it('shows and sorts by the current leave year allowance, and nothing while today is unknown', () => {
+    const changed = member({
+      id: 'changed',
+      leaveAllowanceDays: 20,
+      leaveAllowance: { startingDays: 20, versions: [{ id: 1, leaveYear: 2026, days: 25 }] },
+      leaveYearStart: { month: 3, day: 1 },
+    });
+
+    // TODAY is 2026-09-23: leave year 2026 under a 1 March start.
+    expect(column().cell(changed, TODAY)).toEqual({ kind: DAYS_CELL, days: 25 });
+    expect(column().sortValue(changed, TODAY)).toBe(25);
+    // 2026-02-10 lies in leave year 2025, before the version.
+    expect(column().cell(changed, '2026-02-10')).toEqual({ kind: DAYS_CELL, days: 20 });
+    expect(memberAllowanceOn(changed, '2027-09-01')).toBe(25);
+    expect(column().cell(changed, null)).toEqual({ kind: TEXT_CELL, text: NO_TEXT });
+    expect(column().sortValue(changed, null)).toBeNull();
+    expect(column().sortValue(changed)).toBeNull();
+  });
+
+  it('equals the starting allowance in every year while no version exists', () => {
+    const plain = member({ id: 'plain', leaveAllowanceDays: 18 });
+
+    for (const today of ['2020-01-01', TODAY, '2031-12-31']) {
+      expect(column().cell(plain, today)).toEqual({ kind: DAYS_CELL, days: 18 });
+    }
   });
 });
 
@@ -600,7 +717,7 @@ describe('the six columns are one table, so a heading and its sort key cannot dr
   it('reads each column sort value off the field it names', () => {
     const one = member({ id: 'm', name: 'Ana', email: 'ana@dvd.hr', role: 'admin', leaveAllowanceDays: 25 });
     const values = Object.fromEntries(
-      MEMBER_COLUMNS.map((column) => [column.key, column.sortValue(one)]),
+      MEMBER_COLUMNS.map((column) => [column.key, column.sortValue(one, TODAY)]),
     );
 
     expect(values[NAME_COLUMN]).toBe('Ana');
@@ -920,16 +1037,23 @@ describe('the order is Croatian, and an address-less member has a place in it', 
   it('sorts the allowance numerically rather than as text', () => {
     // `'9' > '10'` as text, which is the defect a string sort over a numeric
     // column produces and the only one it produces visibly.
+    // Named against the figures, so a tie broken by name cannot pass it.
     const members = [
-      member({ id: 'nine', name: 'Ana', leaveAllowanceDays: 9 }),
-      member({ id: 'ten', name: 'Boris', leaveAllowanceDays: 10 }),
+      member({ id: 'nine', name: 'Boris', leaveAllowanceDays: 9 }),
+      member({ id: 'ten', name: 'Ana', leaveAllowanceDays: 10 }),
     ];
 
     expect(
-      narrowMembers(members, '', ALL_LEVELS, {
-        key: LEAVE_COLUMN,
-        direction: ASCENDING,
-      }).rows.map((found) => found.id),
+      narrowMembers(
+        members,
+        '',
+        ALL_LEVELS,
+        {
+          key: LEAVE_COLUMN,
+          direction: ASCENDING,
+        },
+        TODAY,
+      ).rows.map((found) => found.id),
     ).toEqual(['nine', 'ten']);
   });
 

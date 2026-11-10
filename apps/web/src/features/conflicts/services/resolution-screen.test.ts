@@ -202,7 +202,7 @@ function sourcesOf(
     requests: settled([]),
     swaps: settled([]),
     members: {
-      members: snapshot.members.map((member) => ({ id: member.id, leaveAllowanceDays: 19 })),
+      members: snapshot.members.map((member) => ({ id: member.id, leaveAllowance: { startingDays: 19, versions: [] } })),
       refusal: null,
       loading: false,
       paused: false,

@@ -5,6 +5,7 @@ import {
   leaveCostOf,
   leavePreviewOf,
   leaveYearOf,
+  type LeaveAllowance,
   type LeaveBalance,
   type LeaveBalanceInput,
   type LeavePreview,
@@ -61,9 +62,13 @@ import { RANGE_DASH, compareText, formatIsoDate, isIsoDate, nextIsoDate, previou
 /** TanStack Query's name for a fetch it has not started (offline). */
 const FETCH_PAUSED = 'paused';
 
-/** The member list's state, as far as the card reads it. */
+/**
+ * The member list's state, as far as the card reads it: each member's
+ * allowance across leave years (story 13.3), which the balance resolves for
+ * the leave year it counts.
+ */
 export interface LeaveMembersSource {
-  readonly members: readonly { readonly id: string; readonly leaveAllowanceDays: number }[] | null;
+  readonly members: readonly { readonly id: string; readonly leaveAllowance: LeaveAllowance }[] | null;
   readonly refusal: string | null;
   readonly loading: boolean;
   /** A refetch paused offline over cached members: never computed from. */
@@ -258,7 +263,7 @@ export function memberLeaveBaseOf(sources: MemberLeaveSources, memberId: string,
 
   const input: LeaveRecordsInput = {
     input: memberScheduleInputOf(snapshot, { ...scheduled, memberId: scheduled.id }),
-    allowanceDays: member.leaveAllowanceDays,
+    allowance: member.leaveAllowance,
     records: recorded,
     today: calendarTodayOf(snapshot, now),
     leaveYearStart,

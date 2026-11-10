@@ -936,7 +936,7 @@ describe('the access-control layer is present, so nothing below passes vacuously
       );
       expect(
         policies.map((row) => row.policyname),
-        'stories 1.3a, 1.4a, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a, 3.5a, 3.6a, 5.1b, 5.4a, 9.2, 10.3, 10.4, 12.1, 13.1, 13.2 and 0025 own exactly these policies; a missing one refuses silently and looks like a working refusal',
+        'stories 1.3a, 1.4a, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a, 3.5a, 3.6a, 5.1b, 5.4a, 9.2, 10.3, 10.4, 12.1, 13.1, 13.2, 13.3 and 0025 own exactly these policies; a missing one refuses silently and looks like a working refusal',
       ).toEqual([
         // STORY 13.1 (0052): an active admin defines and renames a type or
         // sets its drawing flag. No delete. STORY 13.2 (0053, PO Q2): every
@@ -956,6 +956,11 @@ describe('the access-control layer is present, so nothing below passes vacuously
         'hour_bands_insert_by_own_active_admin',
         'hour_bands_select_own_organization',
         'hour_bands_update_by_own_active_admin',
+        // STORY 13.3 (0055): an active admin appends a version of a member's
+        // allowance; the read is the admin's for the organization and a
+        // member's for their own rows. No update and no delete (AD-2).
+        'leave_allowances_insert_by_own_active_admin',
+        'leave_allowances_select_own_organization',
         // STORY 5.1b: an active admin inserts; the read is an active admin's
         // for the organization and an active member's for their own rows. No
         // update and no delete: removal and amend are 0029's definer
@@ -17428,7 +17433,7 @@ describe('a leave record is recorded by an admin, refused on overlap by the data
         );
         const preview = leavePreviewOf({
           input: await memberScheduleInputOf(client, organization, self.id),
-          allowanceDays: self.leaveAllowanceDays,
+          allowance: { startingDays: self.leaveAllowanceDays, versions: [] },
           records: existing,
           today,
           leaveYearStart,
@@ -17910,7 +17915,7 @@ async function leaveYearSetup(
       await actAsOwner(client);
       return leaveBalanceOf({
         input,
-        allowanceDays: 20,
+        allowance: { startingDays: 20, versions: [] },
         records: live.map((record) => record.range),
         today,
         leaveYearStart,
@@ -25870,6 +25875,217 @@ describe('the type is chosen when absence is recorded or requested, and approval
         expect(request.code, `${slug}: a request named ${otherSlug}'s type`).toBe('23503');
         expect(request.message).toContain('leave_requests_absence_type_fkey');
         expect(await typeOfRecord(client, live), `${slug}: a refused amend changed the record`).toBe(ANNUAL_LEAVE);
+      });
+    },
+  );
+});
+
+// ------------------------------------------ story 13.3: the allowance per year
+
+/**
+ * STORY 13.3 (`0055`). A member's allowance is versioned per leave year:
+ * `leave_allowances` holds append-only versions, each for one leave year, and
+ * `members.leave_allowance_days` stays the starting allowance. An active admin
+ * appends versions and reads the organization's; a member reads their own; no
+ * session changes or deletes one (AD-2). Which version applies is
+ * `packages/domain`'s (AD-7). Every case runs in a rolled-back transaction.
+ */
+async function insertAllowanceVersion(
+  client: Client,
+  version: { organization: string; member: string; leaveYear: number; days: number },
+): Promise<string> {
+  const { rows } = await client.query<{ id: string }>(
+    `insert into leave_allowances (organization_id, member_id, leave_year, days)
+     values ($1, $2, $3, $4) returning id::text as id`,
+    [version.organization, version.member, version.leaveYear, version.days],
+  );
+  const id = rows[0]?.id;
+  if (id === undefined) throw new Error('the allowance version insert returned no id');
+  return id;
+}
+
+describe('a member\'s allowance is versioned per leave year, append-only (story 13.3)', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'lets the $fixture admin append versions, a correction of one year included, attributed to the caller',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const subject = await memberByUsername(client, slug, member);
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const first = await insertAllowanceVersion(client, {
+          organization: caller.organizationId,
+          member: subject.id,
+          leaveYear: 2046,
+          days: 25,
+        });
+        const correction = await insertAllowanceVersion(client, {
+          organization: caller.organizationId,
+          member: subject.id,
+          leaveYear: 2046,
+          days: 24,
+        });
+        const { rows } = await client.query<{ id: string; leaveYear: number; days: number; createdBy: string }>(
+          `select id::text as id, leave_year as "leaveYear", days, created_by as "createdBy"
+             from leave_allowances where member_id = $1 order by id`,
+          [subject.id],
+        );
+        await actAsOwner(client);
+
+        expect(BigInt(correction) > BigInt(first), `${slug}: a correction does not order after its year's version`).toBe(true);
+        expect(rows).toEqual([
+          { id: first, leaveYear: 2046, days: 25, createdBy: caller.authUserId },
+          { id: correction, leaveYear: 2046, days: 24, createdBy: caller.authUserId },
+        ]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture version update, delete, forged id or author, and a year or days out of range',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const subject = await memberByUsername(client, slug, member);
+        const organization = caller.organizationId;
+        await actAs(client, caller.authUserId, organization);
+        const id = await insertAllowanceVersion(client, { organization, member: subject.id, leaveYear: 2046, days: 25 });
+
+        const update = await refusedThenContinue(client, () =>
+          client.query('update leave_allowances set days = 30 where id = $1', [id]),
+        );
+        const removal = await refusedThenContinue(client, () =>
+          client.query('delete from leave_allowances where id = $1', [id]),
+        );
+        const forgedId = await refusedThenContinue(client, () =>
+          client.query(
+            `insert into leave_allowances (organization_id, id, member_id, leave_year, days)
+             overriding system value values ($1, 999999999, $2, 2046, 1)`,
+            [organization, subject.id],
+          ),
+        );
+        const forgedAuthor = await refusedThenContinue(client, () =>
+          client.query(
+            `insert into leave_allowances (organization_id, member_id, leave_year, days, created_by)
+             values ($1, $2, 2046, 1, $3)`,
+            [organization, subject.id, subject.authUserId],
+          ),
+        );
+        const yearZero = await refusedThenContinue(client, () =>
+          insertAllowanceVersion(client, { organization, member: subject.id, leaveYear: 0, days: 1 }),
+        );
+        const negative = await refusedThenContinue(client, () =>
+          insertAllowanceVersion(client, { organization, member: subject.id, leaveYear: 2046, days: -1 }),
+        );
+        await actAsOwner(client);
+
+        expect(update.code, `${slug}: a version was changed`).toBe('42501');
+        expect(removal.code, `${slug}: a version was deleted`).toBe('42501');
+        expect(forgedId.code, `${slug}: a session named a version's id`).toBe('42501');
+        expect(forgedAuthor.code, `${slug}: a session named a version's author`).toBe('42501');
+        expect(yearZero.code).toBe('23514');
+        expect(yearZero.message).toContain('leave_allowances_leave_year_range');
+        expect(negative.code).toBe('23514');
+        expect(negative.message).toContain('leave_allowances_days_non_negative');
+        const { rows } = await client.query<{ days: number }>('select days from leave_allowances where id = $1', [id]);
+        expect(rows).toEqual([{ days: 25 }]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(CROSS_TENANT)(
+    'shows the $fixture admin its own organization\'s versions and the member-role session its own alone, refuses its insert and the admin\'s for $otherFixture, and refuses another tenant\'s member by the composite key',
+    async ({ slug, admin, member, otherSlug }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = caller.organizationId;
+        const foreignFixture = FIXTURES.find((entry) => entry.slug === otherSlug);
+        const foreignOwner = await memberByUsername(client, otherSlug, foreignFixture?.admin ?? '');
+        const foreignMember = await memberByUsername(client, otherSlug, foreignFixture?.member ?? '');
+        const other = foreignOwner.organizationId;
+
+        // As the owner: a version in the other tenant, which neither session may read.
+        const { rows: seeded } = await client.query<{ id: string }>(
+          `insert into leave_allowances (organization_id, member_id, leave_year, days, created_by)
+           values ($1, $2, 2046, 33, $3) returning id::text as id`,
+          [other, foreignMember.id, foreignOwner.authUserId],
+        );
+        const foreignVersion = seeded[0]?.id;
+        if (foreignVersion === undefined) throw new Error(`no version seeded in ${otherSlug}`);
+
+        await actAs(client, caller.authUserId, organization);
+        const own = await insertAllowanceVersion(client, { organization, member: self.id, leaveYear: 2046, days: 25 });
+        const adminOwn = await insertAllowanceVersion(client, { organization, member: caller.id, leaveYear: 2046, days: 30 });
+        const { rows: adminSees } = await client.query<{ id: string }>(
+          'select id::text as id from leave_allowances order by id',
+        );
+        const foreign = await refusedThenContinue(client, () =>
+          insertAllowanceVersion(client, { organization: other, member: foreignMember.id, leaveYear: 2046, days: 1 }),
+        );
+        const crossKey = await refusedThenContinue(client, () =>
+          insertAllowanceVersion(client, { organization, member: foreignMember.id, leaveYear: 2046, days: 1 }),
+        );
+
+        await actAs(client, self.authUserId, organization);
+        const { rows: seen } = await client.query<{ id: string; memberId: string }>(
+          'select id::text as id, member_id as "memberId" from leave_allowances',
+        );
+        const memberInsert = await refusedThenContinue(client, () =>
+          insertAllowanceVersion(client, { organization, member: self.id, leaveYear: 2047, days: 40 }),
+        );
+        await actAsOwner(client);
+
+        expect(
+          adminSees.map((row) => row.id).sort(),
+          `${slug}: the admin does not read exactly the organization's versions`,
+        ).toEqual([own, adminOwn].sort());
+        expect(adminSees.map((row) => row.id), `${slug}: the admin read ${otherSlug}'s version`).not.toContain(foreignVersion);
+        expect(seen, `${slug}: a member reads a colleague's or another tenant's version`).toEqual([{ id: own, memberId: self.id }]);
+        expect(memberInsert.code, `${slug}: a member-role account appended a version`).toBe('42501');
+        expect(foreign.code, `${slug}: an admin appended a version in ${otherSlug}`).toBe('42501');
+        expect(crossKey.code, `${slug}: a version named ${otherSlug}'s member`).toBe('23503');
+        expect(crossKey.message).toContain('leave_allowances_member_fkey');
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'reads and appends no $fixture version for an admin inactive today, and shows a member inactive today none of their own',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const inactiveAdmin = await addThrowawayAdmin(client, organization);
+
+        // As the active admin: versions both deactivated accounts would otherwise read.
+        await actAs(client, owner.authUserId, organization);
+        await insertAllowanceVersion(client, { organization, member: self.id, leaveYear: 2046, days: 25 });
+        await insertAllowanceVersion(client, { organization, member: inactiveAdmin.id, leaveYear: 2046, days: 30 });
+        await actAsOwner(client);
+
+        const today = await organizationDay(client, organization);
+        for (const deactivated of [inactiveAdmin, self]) {
+          await ownerVersion(client, { organization, member: deactivated.id, active: false, from: today, by: owner.authUserId });
+        }
+
+        await actAs(client, inactiveAdmin.authUserId, organization);
+        const { rows: adminSees } = await client.query('select id from leave_allowances');
+        const adminInsert = await refusedThenContinue(client, () =>
+          insertAllowanceVersion(client, { organization, member: self.id, leaveYear: 2047, days: 1 }),
+        );
+        await actAs(client, self.authUserId, organization);
+        const { rows: memberSees } = await client.query('select id from leave_allowances');
+        await actAsOwner(client);
+
+        expect(adminSees, `${slug}: an inactive admin read versions`).toEqual([]);
+        expect(adminInsert.code, `${slug}: an inactive admin appended a version`).toBe('42501');
+        expect(memberSees, `${slug}: an inactive member read their own versions`).toEqual([]);
+        const { rows } = await client.query<{ total: number }>(
+          'select count(*)::int as total from leave_allowances where organization_id = $1 and leave_year = 2047',
+          [organization],
+        );
+        expect(rows[0]?.total).toBe(0);
       });
     },
   );

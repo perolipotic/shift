@@ -159,6 +159,11 @@ describe('the member list computes nothing it renders', () => {
       'email',
       'role',
       'leaveAllowanceDays',
+      // STORY 13.3: the allowance across leave years and the organization's
+      // leave-year start, which the leave column resolves today's allowance
+      // from; guarded like the rest.
+      'leaveAllowance',
+      'leaveYearStart',
       // MEMBER RANK: read for the edit form and guarded like the rest — a rank
       // column on the list is an Ask First, so the list may not reach for it.
       'fireRank',

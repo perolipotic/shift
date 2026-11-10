@@ -1,4 +1,4 @@
-import { leaveBalanceOf, leaveCostOf, type LeaveBalance, type LeaveYearStart } from '@shift/domain';
+import { leaveBalanceOf, leaveCostOf, type LeaveAllowance, type LeaveBalance, type LeaveYearStart } from '@shift/domain';
 
 import type { AbsenceTypeRow } from '@/features/absence-types/services/list';
 import { absenceTypesOfCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
@@ -166,20 +166,20 @@ function offeredAbsenceTypesOf(snapshot: Pick<CalendarSnapshot, 'absenceTypes' |
 /**
  * The viewer's balance input (story 9.3, factored out of {@link myLeaveOf}):
  * the calendar's one schedule recipe for the snapshot's viewer, their
- * allowance, their own live records, today in the organization's zone and the
+ * allowance across leave years (story 13.3), their own live records, today in the organization's zone and the
  * leave year. The three figures and the request form's preview both stand on
  * this one value. Throws what the schedule recipe throws.
  */
 export function myLeaveInputOf(
   snapshot: CalendarSnapshot,
-  allowanceDays: number,
+  allowance: LeaveAllowance,
   records: LeaveRecordsInput['records'],
   leaveYearStart: LeaveYearStart,
   now: Date,
 ): LeaveRecordsInput {
   return {
     input: memberScheduleInputOf(snapshot, snapshot.viewer),
-    allowanceDays,
+    allowance,
     records,
     today: calendarTodayOf(snapshot, now),
     leaveYearStart,
@@ -234,7 +234,7 @@ export function myLeaveOf(sources: MyLeaveSources, now: Date): MyLeave {
   }
 
   try {
-    const input = myLeaveInputOf(snapshot, own.leaveAllowanceDays, recorded, leaveYearStart, now);
+    const input = myLeaveInputOf(snapshot, own.leaveAllowance, recorded, leaveYearStart, now);
 
     return {
       kind: MY_LEAVE_READY,
