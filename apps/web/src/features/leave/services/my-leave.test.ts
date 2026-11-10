@@ -127,7 +127,7 @@ afterEach(() => {
 });
 
 const MEMBERS: LeaveMembersSource = {
-  members: [{ id: VIEWER_MEMBER, leaveAllowanceDays: 20 }],
+  members: [{ id: VIEWER_MEMBER, leaveAllowance: { startingDays: 20, versions: [] } }],
   refusal: null,
   loading: false,
   paused: false,
@@ -176,7 +176,7 @@ describe("the viewer's figures", () => {
     expect(leave.balance).toEqual(
       leaveBalanceOf({
         input: memberScheduleInputOf(pilot, pilot.viewer),
-        allowanceDays: 20,
+        allowance: { startingDays: 20, versions: [] },
         records: [{ from: '2026-09-10', to: '2026-09-14' }],
         today: '2026-09-26',
         leaveYearStart: { month: 1, day: 1 },
@@ -269,19 +269,49 @@ describe("the viewer's figures", () => {
   });
 
   it('shows a negative balance as a number when the days used exceed the allowance', () => {
-    const members = { ...MEMBERS, members: [{ id: VIEWER_MEMBER, leaveAllowanceDays: 1 }] };
+    const members = { ...MEMBERS, members: [{ id: VIEWER_MEMBER, leaveAllowance: { startingDays: 1, versions: [] } }] };
     const leave = readyOf(myLeaveOf(sourcesOf(pilot, { members, records: rowsOf([WORKED]) }), NOW));
 
     expect(leave.balance).toEqual({ allowanceDays: 1, usedDays: 3, balanceDays: -2 });
     expect(t('count.days', { count: leave.balance.balanceDays })).toContain('−2 dana');
   });
 
+  it('balances against the allowance of the leave year it counts, not the starting one (story 13.3)', () => {
+    // NOW is 2026-09-26: leave year 2026. Its later correction wins; 2027's does not apply yet.
+    const members = {
+      ...MEMBERS,
+      members: [
+        {
+          id: VIEWER_MEMBER,
+          leaveAllowance: {
+            startingDays: 20,
+            versions: [
+              { id: 1, leaveYear: 2026, days: 25 },
+              { id: 2, leaveYear: 2026, days: 24 },
+              { id: 3, leaveYear: 2027, days: 40 },
+            ],
+          },
+        },
+      ],
+    };
+    const leave = readyOf(myLeaveOf(sourcesOf(pilot, { members, records: rowsOf([WORKED]) }), NOW));
+
+    expect(leave.balance).toEqual({ allowanceDays: 24, usedDays: 3, balanceDays: 21 });
+    // The request form's preview stands on the same input: the same resolved allowance.
+    const state = myLeaveRequestPreviewOf(leave, '2026-10-05', '2026-10-07', ANNUAL_LEAVE_ID);
+
+    if (state?.kind !== LEAVE_PREVIEW_READY) throw new Error('no preview');
+
+    expect(state.preview.allowanceDays).toBe(24);
+    expect(leavePreviewOf({ ...leave.input, range: { from: '2026-10-05', to: '2026-10-07' } }).allowanceDays).toBe(24);
+  });
+
   it("reads the viewer's own row out of an admin's whole member list", () => {
     const members = {
       ...MEMBERS,
       members: [
-        { id: 'someone-else', leaveAllowanceDays: 30 },
-        { id: VIEWER_MEMBER, leaveAllowanceDays: 20 },
+        { id: 'someone-else', leaveAllowance: { startingDays: 30, versions: [] } },
+        { id: VIEWER_MEMBER, leaveAllowance: { startingDays: 20, versions: [] } },
       ],
     };
 
@@ -317,7 +347,7 @@ describe("what stands in the figures' place", () => {
     ['the organization refetch is paused offline', { organization: { ...ORGANIZATION, fetchStatus: 'paused' } }],
     ['the member list is refused', { members: { members: null, refusal: 'MEMBERS_REFUSED', loading: false, paused: false } }],
     ['the member list refetch is paused offline', { members: { ...MEMBERS, paused: true } }],
-    ["the member list holds no row of the viewer's", { members: { ...MEMBERS, members: [{ id: 'x', leaveAllowanceDays: 20 }] } }],
+    ["the member list holds no row of the viewer's", { members: { ...MEMBERS, members: [{ id: 'x', leaveAllowance: { startingDays: 20, versions: [] } }] } }],
   ] as const)('is unavailable when %s', (_name, overrides) => {
     expect(myLeaveOf(sourcesOf(pilot, overrides), NOW)).toEqual({ kind: MY_LEAVE_UNAVAILABLE });
   });
@@ -344,7 +374,7 @@ describe("what stands in the figures' place", () => {
 
   it('is unavailable when the domain refuses what it is given (a RangeError)', () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const members = { ...MEMBERS, members: [{ id: VIEWER_MEMBER, leaveAllowanceDays: 2.5 }] };
+    const members = { ...MEMBERS, members: [{ id: VIEWER_MEMBER, leaveAllowance: { startingDays: 2.5, versions: [] } }] };
 
     expect(myLeaveOf(sourcesOf(pilot, { members }), NOW)).toEqual({ kind: MY_LEAVE_UNAVAILABLE });
     expect(error).toHaveBeenCalledWith(MY_LEAVE_UNAVAILABLE, expect.any(RangeError));
@@ -421,7 +451,7 @@ describe('the balance input the figures stand on (story 9.3)', () => {
 
     expect(leave.input).toEqual({
       input: memberScheduleInputOf(pilot, pilot.viewer),
-      allowanceDays: 20,
+      allowance: { startingDays: 20, versions: [] },
       records: [{ ...ANNUAL_RECORD, id: 'record-worked', from: '2026-09-10', to: '2026-09-14' }],
       today: '2026-09-26',
       leaveYearStart: { month: 1, day: 1 },
@@ -447,7 +477,7 @@ describe("the request form's preview (story 9.3)", () => {
   });
 
   it('never gates: over the balance it warns, and the preview still stands', () => {
-    const members = { ...MEMBERS, members: [{ id: VIEWER_MEMBER, leaveAllowanceDays: 1 }] };
+    const members = { ...MEMBERS, members: [{ id: VIEWER_MEMBER, leaveAllowance: { startingDays: 1, versions: [] } }] };
     const leave = readyOf(myLeaveOf(sourcesOf(pilot, { members }), NOW));
     const state = myLeaveRequestPreviewOf(leave, '2026-10-01', '2026-10-20', ANNUAL_LEAVE_ID);
 

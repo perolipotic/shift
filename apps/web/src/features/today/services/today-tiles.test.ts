@@ -114,7 +114,7 @@ function hoursOf(
 }
 
 const MEMBERS: LeaveMembersSource = {
-  members: [{ id: VIEWER_MEMBER, leaveAllowanceDays: 20 }],
+  members: [{ id: VIEWER_MEMBER, leaveAllowance: { startingDays: 20, versions: [] } }],
   refusal: null,
   loading: false,
   paused: false,
@@ -262,8 +262,33 @@ describe('the leave tile', () => {
     );
   });
 
+  it('shows the allowance of the current leave year, not the starting one (story 13.3)', () => {
+    const members: LeaveMembersSource = {
+      ...MEMBERS,
+      members: [
+        {
+          id: VIEWER_MEMBER,
+          leaveAllowance: {
+            startingDays: 20,
+            versions: [
+              { id: 1, leaveYear: 2026, days: 25 },
+              { id: 2, leaveYear: 2026, days: 24 },
+              { id: 3, leaveYear: 2027, days: 40 },
+            ],
+          },
+        },
+      ],
+    };
+    const figures = leaveFiguresOf(leaveTileOf(leaveOf(pilot, settled([WORKED]), { members })));
+
+    expect(figures).toEqual({ balanceDays: 21, usedDays: 3, allowanceDays: 24 });
+    expect(t('danas.tiles.leaveHint', { used: figures.usedDays, allowance: figures.allowanceDays })).toBe(
+      'preostalo · iskorišteno 3 od 24',
+    );
+  });
+
   it('keeps a balance below zero a number', () => {
-    const members: LeaveMembersSource = { ...MEMBERS, members: [{ id: VIEWER_MEMBER, leaveAllowanceDays: 1 }] };
+    const members: LeaveMembersSource = { ...MEMBERS, members: [{ id: VIEWER_MEMBER, leaveAllowance: { startingDays: 1, versions: [] } }] };
     const figures = leaveFiguresOf(leaveTileOf(leaveOf(pilot, settled([WORKED]), { members })));
 
     expect(figures).toEqual({ balanceDays: -2, usedDays: 3, allowanceDays: 1 });

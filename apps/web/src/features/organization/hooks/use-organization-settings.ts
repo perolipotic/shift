@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type FormEvent, type RefObject } from 'rea
 import { flushSync } from 'react-dom';
 
 import { CALENDAR_KEY } from '@/features/calendar/services/snapshot';
+import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
 import type { BrandAccentKey } from '@/features/organization/utils/accent';
 import {
   LOGO_UNAVAILABLE,
@@ -392,11 +393,17 @@ export function useOrganizationSettings() {
     const leaveYearStartMonth = Number(entered.get(ORGANIZATION_LEAVE_MONTH_FIELD));
     const leaveYearStartDay = Number(entered.get(ORGANIZATION_LEAVE_DAY_FIELD));
 
-    await write(LEAVE_YEAR_DIALOG, (row) =>
-      updateOrganization(organizationTable(), row.id, {
-        leaveYearStartMonth,
-        leaveYearStartDay,
-      }),
+    // STORY 13.3: the member list embeds the leave-year start, from which
+    // Ljudi's *Godišnji* column resolves the current leave year's allowance,
+    // so a landed write re-reads it.
+    await write(
+      LEAVE_YEAR_DIALOG,
+      (row) =>
+        updateOrganization(organizationTable(), row.id, {
+          leaveYearStartMonth,
+          leaveYearStartDay,
+        }),
+      [MEMBERS_LIST_KEY],
     );
   }
 

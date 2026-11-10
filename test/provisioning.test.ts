@@ -700,7 +700,7 @@ describe('every organization table carries row level security, and only its revi
               'leave_records', 'conflict_resolutions', 'leave_requests',
               'leave_request_decisions', 'notification_outbox', 'notification_settings',
               'push_subscriptions', 'swap_requests', 'swap_request_decisions',
-              'absence_types'
+              'absence_types', 'leave_allowances'
             )
           order by relname`,
       );
@@ -720,6 +720,8 @@ describe('every organization table carries row level security, and only its revi
         'absence_types',
         'conflict_resolutions',
         'hour_bands',
+        // STORY 13.3 (0055): the versions of a member's allowance.
+        'leave_allowances',
         'leave_records',
         'leave_request_decisions',
         'leave_requests',
@@ -1577,6 +1579,80 @@ describe('every organization table carries row level security, and only its revi
         'leave_records_notify_insert',
         'leave_records_notify_removal',
       ]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it.skipIf(noDatabase)('holds no privilege on leave_allowances but read and a four-column insert, and never update or delete (story 13.3)', async () => {
+    // As 5.1b's leave records: `authenticated` reads (narrowed by the policy
+    // to an active admin's organization or a member's own rows) and inserts
+    // the four facts of a version; no session updates or deletes one (AD-2),
+    // names its id or attribution, or holds anything as `anon`.
+    const client = await connect();
+    try {
+      const held = await heldPrivileges(client, 'leave_allowances', [
+        'organization_id',
+        'id',
+        'member_id',
+        'leave_year',
+        'days',
+        'created_by',
+        'created_at',
+      ]);
+      expect(held.tables).toEqual(['authenticated:SELECT']);
+      expect(held.columns, 'the writable allowance version columns changed, or anon holds one').toEqual([
+        'authenticated:INSERT:days',
+        'authenticated:INSERT:leave_year',
+        'authenticated:INSERT:member_id',
+        'authenticated:INSERT:organization_id',
+      ]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it.skipIf(noDatabase)('keys an allowance version to its tenant\'s member, bounds its year and days, and takes no trigger (story 13.3)', async () => {
+    const client = await connect();
+    try {
+      const { rows: columns } = await client.query<{ column_name: string; is_nullable: string }>(
+        `select column_name, is_nullable from information_schema.columns
+          where table_schema = 'public' and table_name = 'leave_allowances'
+          order by ordinal_position`,
+      );
+      expect(columns.map((row) => row.column_name)).toEqual([
+        'organization_id',
+        'id',
+        'member_id',
+        'leave_year',
+        'days',
+        'created_by',
+        'created_at',
+      ]);
+      expect(columns.every((row) => row.is_nullable === 'NO')).toBe(true);
+      const { rows: keys } = await client.query<{ definition: string }>(
+        `select pg_get_constraintdef(oid) as definition
+           from pg_constraint
+          where contype in ('p', 'f', 'c') and conrelid = 'public.leave_allowances'::regclass`,
+      );
+      expect(keys.map((row) => row.definition).sort()).toEqual([
+        'CHECK (((leave_year >= 1) AND (leave_year <= 9999)))',
+        'CHECK ((days >= 0))',
+        'FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE',
+        'FOREIGN KEY (organization_id, member_id) REFERENCES members(organization_id, id)',
+        'PRIMARY KEY (id)',
+      ]);
+      const { rows: indexes } = await client.query<{ indexdef: string }>(
+        `select indexdef from pg_indexes where schemaname = 'public' and tablename = 'leave_allowances'`,
+      );
+      expect(
+        indexes.some((row) => /\(organization_id, member_id\)$/.test(row.indexdef)),
+        'no index on leave_allowances serves one member\'s versions',
+      ).toBe(true);
+      const { rows: triggers } = await client.query<{ tgname: string }>(
+        `select tgname from pg_trigger where tgrelid = 'public.leave_allowances'::regclass and not tgisinternal`,
+      );
+      expect(triggers, 'leave_allowances takes a trigger').toEqual([]);
     } finally {
       await client.end();
     }

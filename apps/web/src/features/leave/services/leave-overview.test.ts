@@ -145,12 +145,16 @@ async function snapshotOf(rows: FixtureRows, role: unknown = 'admin'): Promise<C
 }
 
 function member(fields: Partial<MemberListRow> & { readonly id: string; readonly name: string }): MemberListRow {
+  const leaveAllowanceDays = fields.leaveAllowanceDays ?? 20;
+
   return {
     organizationId: 'organization',
     username: fields.id,
     email: null,
     role: 'member_role',
-    leaveAllowanceDays: 20,
+    leaveAllowanceDays,
+    leaveAllowance: { startingDays: leaveAllowanceDays, versions: [] },
+    leaveYearStart: { month: 1, day: 1 },
     fireRank: null,
     authUserId: `account-${fields.id}`,
     statusVersions: [],
@@ -281,6 +285,31 @@ describe('the rows', () => {
       expect(row.figures, row.name).toEqual({ usedDays: base.balance.usedDays, balanceDays: base.balance.balanceDays });
       expect(row.allowanceDays - (row.figures?.usedDays ?? NaN), row.name).toBe(row.figures?.balanceDays);
     }
+  });
+
+  it('shows the allowance of the current leave year, through the domain resolver, for scheduled and unscheduled rows alike (story 13.3)', () => {
+    // NOW is 2026-09-26, leave year 2026 under a 1 January start; a version
+    // for a later year never applies, and one for an earlier year carries on.
+    const versioned = LIST.map((row) => {
+      if (row.id === ANA) {
+        return { ...row, leaveAllowance: { startingDays: 25, versions: [{ id: 1, leaveYear: 2026, days: 30 }, { id: 3, leaveYear: 2027, days: 40 }] } };
+      }
+      if (row.id === DORA) {
+        return { ...row, leaveAllowance: { startingDays: 18, versions: [{ id: 2, leaveYear: 2025, days: 21 }] } };
+      }
+      return row;
+    });
+    const overview = readyOf(
+      leaveOverviewOf(sourcesOf(pilot, { members: { members: versioned, refusal: null, loading: false, paused: false } }), NO_FILTERS, NOW),
+    );
+    const allowances = Object.fromEntries(overview.rows.map((row) => [row.memberId, row.allowanceDays]));
+
+    expect(allowances).toEqual({ [VIEWER_MEMBER]: 22, [ANA]: 30, [CEDO]: 20, [DORA]: 21 });
+    const ana = overview.rows.find((row) => row.memberId === ANA);
+
+    if (ana === undefined) throw new Error('no row for Ana');
+    if (ana.figures === null) throw new Error('Ana has no figures');
+    expect(ana.allowanceDays - ana.figures.usedDays).toBe(ana.figures.balanceDays);
   });
 
   it("names each row's team today from the snapshot, and none for a member on no team", () => {

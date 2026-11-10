@@ -1,4 +1,5 @@
 import { queryOptions } from '@tanstack/react-query';
+import { leaveAllowanceOf, leaveYearNumberOf, type LeaveAllowance, type LeaveAllowanceVersion, type LeaveYearStart } from '@shift/domain';
 
 import { initialsOf } from '@/utils/initials';
 import { searchTextOf, sortSearchFor, sortSearchOf } from '@/utils/search-params';
@@ -122,11 +123,18 @@ export const MEMBERS_LIST_KEY = ['members'] as const;
  * TEAM POSITION ADDS `position` to each membership version (`0015`): the
  * position is versioned with the team, so it arrives in the same embed and
  * the edit screen's team block reads both off one history.
+ *
+ * STORY 13.3 EMBEDS THE ALLOWANCE VERSIONS (`0055`) and the organization's
+ * leave-year start: `leave_allowance_days` is the starting allowance, and
+ * every balance surface resolves the allowance of the leave year it counts
+ * through `@shift/domain` from this one read (AD-7, AD-13).
  */
 export const MEMBERS_COLUMNS =
   'organization_id,id,auth_user_id,name,username,email,role,leave_allowance_days,fire_rank,' +
   'member_status_versions(active,effective_from),' +
-  'team_membership_versions(team_id,position,effective_from,teams(name)),organizations(timezone)';
+  'team_membership_versions(team_id,position,effective_from,teams(name)),' +
+  'leave_allowances(id,leave_year,days),' +
+  'organizations(timezone,leave_year_start_month,leave_year_start_day)';
 
 /**
  * The exact count the transport is asked for alongside the rows.
@@ -260,7 +268,24 @@ export interface MemberListRow {
   readonly username: string;
   readonly email: string | null;
   readonly role: MemberRole;
+  /**
+   * The member's STARTING allowance (`members.leave_allowance_days`): the
+   * allowance of every leave year before the first version (story 13.3). What
+   * a balance uses is {@link MemberListRow.leaveAllowance}, resolved for its
+   * leave year.
+   */
   readonly leaveAllowanceDays: number;
+  /**
+   * The member's allowance across leave years (story 13.3): the starting
+   * allowance and every version (`0055`), resolved by `leaveAllowanceOf`. A
+   * row cached before 13.3 carries no versions.
+   */
+  readonly leaveAllowance: LeaveAllowance;
+  /**
+   * The member's organization's leave-year start, embedded in the same read,
+   * or `null` on a row cached before 13.3. Every row carries the same one.
+   */
+  readonly leaveYearStart: LeaveYearStart | null;
   /**
    * The member's rank code (`0014`), or `null` for none. Wide rather than the
    * code union, because a row may carry a code this build lacks; the edit form
@@ -622,6 +647,76 @@ function numberAt(row: Record<string, unknown>, column: string): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
+/** A whole number within `min`–`max` at `column`, or `null`. */
+function integerAt(row: Record<string, unknown>, column: string, min: number, max: number): number | null {
+  const value = row[column];
+
+  return typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max ? value : null;
+}
+
+/**
+ * The embedded allowance versions (story 13.3, `0055`), or `null` when one is
+ * malformed. A row WITHOUT the field — a cache written before 13.3 — has no
+ * versions, so its allowance is the starting one. A malformed version refuses
+ * the row rather than being dropped: a dropped version is a wrong allowance
+ * shown as a right one.
+ */
+function allowanceVersionsIn(row: Record<string, unknown>): LeaveAllowanceVersion[] | null {
+  const value = row['leave_allowances'];
+
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) return null;
+
+  const versions: LeaveAllowanceVersion[] = [];
+
+  for (const entry of value as readonly unknown[]) {
+    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) return null;
+
+    const fields = entry as Record<string, unknown>;
+    const id = integerAt(fields, 'id', 1, Number.MAX_SAFE_INTEGER);
+    const leaveYear = integerAt(fields, 'leave_year', 1, 9999);
+    const days = integerAt(fields, 'days', 0, Number.MAX_SAFE_INTEGER);
+
+    if (id === null || leaveYear === null || days === null) return null;
+
+    versions.push({ id, leaveYear, days });
+  }
+
+  return versions;
+}
+
+/** What the embedded organization's leave-year start is: absent (a pre-13.3 cache), a start, or malformed. */
+type LeaveYearStartOutcome = { readonly ok: true; readonly start: LeaveYearStart | null } | { readonly ok: false };
+
+/**
+ * The organization's leave-year start off the embed (story 13.3): `null` when
+ * neither field is there — a row cached before 13.3 — and malformed when
+ * only one is, or either is out of `0004`'s range.
+ */
+function leaveYearStartIn(organization: Record<string, unknown>): LeaveYearStartOutcome {
+  const month = organization['leave_year_start_month'];
+  const day = organization['leave_year_start_day'];
+
+  if (month === undefined && day === undefined) return { ok: true, start: null };
+
+  const start = {
+    month: integerAt(organization, 'leave_year_start_month', 1, 12),
+    day: integerAt(organization, 'leave_year_start_day', 1, 28),
+  };
+
+  return start.month === null || start.day === null ? { ok: false } : { ok: true, start: { month: start.month, day: start.day } };
+}
+
+/**
+ * A member's allowance in the leave year containing `today` (story 13.3), or
+ * `null` while today or the organization's leave-year start is unknown.
+ */
+export function memberAllowanceOn(member: MemberListRow, today: string | null | undefined): number | null {
+  if (today === null || today === undefined || member.leaveYearStart === null) return null;
+
+  return leaveAllowanceOf(member.leaveAllowance, leaveYearNumberOf(today, member.leaveYearStart));
+}
+
 /**
  * The permission level a value IS, or `null` if it is not one.
  *
@@ -700,7 +795,10 @@ export function memberRowOutcomeOf(row: unknown): RowOutcome {
   // save it back over a working sign-in identity.
   if (username === null) return { ok: false, malformed: { field: 'username', id } };
   if (role === null) return { ok: false, malformed: { field: 'role', id } };
-  if (leaveAllowanceDays === null) {
+  // A WHOLE NUMBER of zero or more, as the column is: the starting allowance
+  // the domain resolves every leave year from (story 13.3) refuses anything
+  // else, so a row carrying it is refused here rather than failing a balance.
+  if (leaveAllowanceDays === null || !Number.isInteger(leaveAllowanceDays) || leaveAllowanceDays < 0) {
     return { ok: false, malformed: { field: 'leave_allowance_days', id } };
   }
 
@@ -729,13 +827,24 @@ export function memberRowOutcomeOf(row: unknown): RowOutcome {
     return { ok: false, malformed: { field: 'team_membership_versions', id } };
   }
 
-  const organization = fields['organizations'];
-  const timeZone =
-    typeof organization === 'object' && organization !== null && !Array.isArray(organization)
-      ? textAt(organization as Record<string, unknown>, 'timezone')
-      : null;
+  const allowanceVersions = allowanceVersionsIn(fields);
 
-  if (timeZone === null) return { ok: false, malformed: { field: 'organizations', id } };
+  if (allowanceVersions === null) {
+    return { ok: false, malformed: { field: 'leave_allowances', id } };
+  }
+
+  const organization = fields['organizations'];
+  const organizationFields =
+    typeof organization === 'object' && organization !== null && !Array.isArray(organization)
+      ? (organization as Record<string, unknown>)
+      : null;
+  const timeZone = organizationFields === null ? null : textAt(organizationFields, 'timezone');
+
+  if (organizationFields === null || timeZone === null) return { ok: false, malformed: { field: 'organizations', id } };
+
+  const leaveYearStart = leaveYearStartIn(organizationFields);
+
+  if (!leaveYearStart.ok) return { ok: false, malformed: { field: 'organizations', id } };
 
   return {
     ok: true,
@@ -747,6 +856,8 @@ export function memberRowOutcomeOf(row: unknown): RowOutcome {
       email: textAt(fields, 'email'),
       role,
       leaveAllowanceDays,
+      leaveAllowance: { startingDays: leaveAllowanceDays, versions: allowanceVersions },
+      leaveYearStart: leaveYearStart.start,
       fireRank,
       authUserId,
       statusVersions,
@@ -1144,8 +1255,15 @@ export const MEMBER_COLUMNS: readonly MemberColumn[] = [
     key: LEAVE_COLUMN,
     label: 'ljudi.leave',
     numeric: true,
-    cell: (member) => ({ kind: DAYS_CELL, days: member.leaveAllowanceDays }),
-    sortValue: (member) => member.leaveAllowanceDays,
+    // STORY 13.3: the allowance of the CURRENT leave year, and nothing at all
+    // while today or the organization's leave-year start is unknown, for the
+    // reason the team cell gives. Sorts by the figure the cell shows.
+    cell: (member, today) => {
+      const days = memberAllowanceOn(member, today);
+
+      return days === null ? { kind: TEXT_CELL, text: NO_TEXT } : { kind: DAYS_CELL, days };
+    },
+    sortValue: (member, today) => memberAllowanceOn(member, today),
   },
   {
     key: STATUS_COLUMN,

@@ -483,7 +483,7 @@ describe('the access-control migration', () => {
     ).toEqual([]);
   });
 
-  it('declares exactly the fifty-eight policies stories 1.3a, 1.4a, 1.4b, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a, 3.5a, 3.6a, 5.1b, 5.4a, 9.2, 10.3, 10.4, 12.1, 13.1, 0025 and 0036 reviewed, and no fifty-ninth', () => {
+  it('declares exactly the sixty policies stories 1.3a, 1.4a, 1.4b, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a, 3.5a, 3.6a, 5.1b, 5.4a, 9.2, 10.3, 10.4, 12.1, 13.1, 13.3, 0025 and 0036 reviewed, and no sixty-first', () => {
     // EXTENDED BY STORY 1.4a, exactly as this comment asked: `0004_organization
     // _settings.sql` adds `organizations_update_by_own_active_admin`, built by
     // copying `members_update_by_own_active_admin`, and its name is added here
@@ -533,6 +533,12 @@ describe('the access-control migration', () => {
       'hour_bands_insert_by_own_active_admin',
       'hour_bands_select_own_organization',
       'hour_bands_update_by_own_active_admin',
+      // STORY 13.3, and TWO: an active admin appends a version of a member's
+      // allowance, and the read is the admin's for the organization and a
+      // member's for their own rows. No update and no delete policy: a
+      // version is never changed (AD-2).
+      'leave_allowances_insert_by_own_active_admin',
+      'leave_allowances_select_own_organization',
       // STORY 5.1b, and TWO: an active admin inserts, and the read is the
       // admin's for the organization and a member's for their own rows. No
       // update and no delete policy: removal and amend are 0029's definer
@@ -3246,6 +3252,74 @@ describe('the access-control migration', () => {
     expect(migration, '13.2b takes a trigger').not.toMatch(/create (or replace )?trigger/i);
     expect(migration, '13.2b takes a check on the type').not.toMatch(/\bcheck\s*\(/i);
     expect(migration, '13.2b takes a policy').not.toMatch(/create policy/i);
+  });
+
+  it('stores a member\'s allowance as append-only versions per leave year, read as a leave record is and inserted by an active admin alone (story 13.3)', () => {
+    // STORY 13.3 (0055, AD-2 versioned): source text only; what each rule
+    // does is `test/rls-isolation.test.ts`, which runs in CI.
+    const allowances = columnsOf('leave_allowances');
+    expect(allowances.columns, 'leave_allowances stores something beyond its reviewed columns').toEqual([
+      'organization_id',
+      'id',
+      'member_id',
+      'leave_year',
+      'days',
+      'created_by',
+      'created_at',
+    ]);
+    expect(allowances.body).toMatch(/organization_id uuid not null references organizations \(id\) on delete cascade/);
+    expect(allowances.body, 'a version is not ordered by an identity key').toMatch(
+      /id bigint generated always as identity primary key/,
+    );
+    expect(allowances.body).toMatch(/leave_year smallint not null/);
+    expect(allowances.body).toMatch(/days smallint not null/);
+    expect(allowances.body).toMatch(/created_by uuid not null default auth\.uid\(\)/);
+    expect(allowances.body).toMatch(/created_at timestamptz not null default now\(\)/);
+    expect(allowances.body, 'a version may name another tenant\'s member, or cascades').toMatch(
+      /constraint leave_allowances_member_fkey\s+foreign key \(organization_id, member_id\)\s+references members \(organization_id, id\),/,
+    );
+    expect(allowances.body, 'a leave year outside 1–9999 is admitted').toMatch(/check \(leave_year between 1 and 9999\)/);
+    expect(allowances.body, 'a negative allowance is admitted').toMatch(/check \(days >= 0\)/);
+
+    const migration = stripLineComments(
+      readFileSync(join(supabaseRoot, 'migrations', '0055_leave_allowances.sql'), 'utf8'),
+    );
+    expect(migration).toMatch(/alter table leave_allowances enable row level security;/);
+    expect(migration).toMatch(
+      /create index \w+ on leave_allowances \(organization_id, member_id\);/,
+    );
+
+    const read = policyBody('leave_allowances_select_own_organization');
+    expect(read, 'the version read is not a select').toMatch(/for select\b/);
+    expect((read.match(/organization_id = nullif/g) ?? []).length, 'the version read does not pin the tenant').toBe(1);
+    expect(read, 'a member reads a colleague\'s versions').toMatch(/and member\.auth_user_id = \(select auth\.uid\(\)\)/);
+    expect(read, 'the version read is not the admin\'s for the organization').toMatch(/access\.member_role = 'admin'/);
+    const insert = policyBody('leave_allowances_insert_by_own_active_admin');
+    expect(insert, 'the version write is not an insert').toMatch(/for insert\b/);
+    expect(insert, 'the version write admits a member-role account').toMatch(/access\.member_role = 'admin'/);
+    expect(insert, 'the version write does not pin its author').toMatch(/and created_by = \(select auth\.uid\(\)\)/);
+    const policies = policyDeclarations(migration);
+    expect(policies, '0055 declares a policy beyond the read and the insert').toHaveLength(2);
+
+    expect(migration).toMatch(
+      /revoke insert, update, delete, truncate, references, trigger on table public\.leave_allowances\s+from anon, authenticated;/,
+    );
+    expect(migration).toMatch(/revoke select on table public\.leave_allowances from anon;/);
+    expect(migration, 'a session may insert more than the four facts of a version').toMatch(
+      /grant insert \(organization_id, member_id, leave_year, days\) on table public\.leave_allowances\s+to authenticated;/,
+    );
+    const statements = migrationStatements();
+    expect(statements, 'a migration grants update or delete on leave_allowances (AD-2)').not.toMatch(
+      /grant[^;]*\b(update|delete|all)\b[^;]*on table public\.leave_allowances\b/i,
+    );
+    expect(statements, 'a migration grants anon something on leave_allowances').not.toMatch(
+      /grant[^;]*on table public\.leave_allowances to[^;]*\banon\b/i,
+    );
+
+    expect(migration, '13.3 takes a trigger').not.toMatch(/create (or replace )?trigger/i);
+    expect(migration, '13.3 takes a function (AD-7)').not.toMatch(/create (or replace )?function/i);
+    expect(migration, '13.3 backfills a version (AD-7)').not.toMatch(/\b(insert into|update public|delete from)\b/i);
+    expect(migration, '13.3 computes a leave year in SQL (AD-7)').not.toMatch(/leave_year_start_(month|day)|extract\s*\(|date_part/i);
   });
 
   it('recreates both leave reads to carry each record\'s type and its drawing flag, and changes nothing else (story 13.2)', () => {

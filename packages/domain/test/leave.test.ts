@@ -5,13 +5,16 @@ import {
   daysBetween,
   drawsAllowance,
   isLeaveDay,
+  leaveAllowanceOf,
   leaveBalanceOf,
   leaveCostOf,
   leaveDaysOfMonth,
   leavePreviewOf,
+  leaveYearNumberOf,
   leaveYearOf,
   MAX_LEAVE_RANGE_DAYS,
   memberScheduleOfMonth,
+  type LeaveAllowance,
   type LeaveBalanceInput,
   type MemberScheduleInput,
   type MembershipVersion,
@@ -132,6 +135,11 @@ function inputOf(fx: Fixture, teamIndex: number, options: InputOptions = {}): Me
 }
 
 const MARCH_FIRST = { month: 3, day: 1 } as const;
+
+/** An allowance with no version: `days` in every leave year (story 13.3). */
+function startingAt(days: number): LeaveAllowance {
+  return { startingDays: days, versions: [] };
+}
 
 // ---------------------------------------------------------------------------
 
@@ -413,7 +421,7 @@ describe.each(FIXTURES)('the balance and the preview under $fixture (R4.5–R4.7
   // 2026-09-10 is a working date for this member; the worked-example window costs 3.
   const base = (overrides: Partial<LeaveBalanceInput> = {}): LeaveBalanceInput => ({
     input,
-    allowanceDays: 20,
+    allowance: startingAt(20),
     records: [],
     today: '2026-09-01',
     leaveYearStart: MARCH_FIRST,
@@ -455,7 +463,7 @@ describe.each(FIXTURES)('the balance and the preview under $fixture (R4.5–R4.7
   });
 
   it('goes negative over allowance, never refusing', () => {
-    const balance = leaveBalanceOf(base({ allowanceDays: 1, records: [{ from: '2026-09-10', to: '2026-09-14' }] }));
+    const balance = leaveBalanceOf(base({ allowance: startingAt(1), records: [{ from: '2026-09-10', to: '2026-09-14' }] }));
     expect(balance).toEqual({ allowanceDays: 1, usedDays: 3, balanceDays: -2 });
   });
 
@@ -488,10 +496,10 @@ describe.each(FIXTURES)('the balance and the preview under $fixture (R4.5–R4.7
 
   it('flags over balance: allowance 2, used 1, new cost 3 gives −2', () => {
     const preview = leavePreviewOf({
-      ...base({ allowanceDays: 2, records: [{ from: '2026-09-10', to: '2026-09-10' }] }),
+      ...base({ allowance: startingAt(2), records: [{ from: '2026-09-10', to: '2026-09-10' }] }),
       range: { from: '2026-09-14', to: '2026-09-18' },
     });
-    expect(leaveBalanceOf(base({ allowanceDays: 2, records: [{ from: '2026-09-10', to: '2026-09-10' }] }))).toEqual({
+    expect(leaveBalanceOf(base({ allowance: startingAt(2), records: [{ from: '2026-09-10', to: '2026-09-10' }] }))).toEqual({
       allowanceDays: 2,
       usedDays: 1,
       balanceDays: 1,
@@ -509,7 +517,7 @@ describe.each(FIXTURES)('the balance and the preview under $fixture (R4.5–R4.7
   });
 
   it('does not flag a range that uses the balance exactly', () => {
-    const preview = leavePreviewOf({ ...base({ allowanceDays: 3 }), range: { from: '2026-09-10', to: '2026-09-14' } });
+    const preview = leavePreviewOf({ ...base({ allowance: startingAt(3) }), range: { from: '2026-09-10', to: '2026-09-14' } });
     expect(preview).toEqual({
       allowanceDays: 3,
       usedDays: 0,
@@ -531,7 +539,7 @@ describe.each(FIXTURES)('the balance and the preview under $fixture (R4.5–R4.7
 
   it('does not flag a range charging 0 when the balance is already negative', () => {
     const preview = leavePreviewOf({
-      ...base({ allowanceDays: 1, records: [{ from: '2026-09-10', to: '2026-09-14' }] }),
+      ...base({ allowance: startingAt(1), records: [{ from: '2026-09-10', to: '2026-09-14' }] }),
       range: { from: '2027-03-10', to: '2027-03-14' },
     });
     expect(preview.balanceDays).toBe(-2);
@@ -543,7 +551,7 @@ describe.each(FIXTURES)('the balance and the preview under $fixture (R4.5–R4.7
   it('flags a range charging 1 when the balance is already negative', () => {
     const workDate = datesOfMonth('2026-09').find((date) => date > '2026-09-14' && oracleWorking(fx, team, date))!;
     const preview = leavePreviewOf({
-      ...base({ allowanceDays: 1, records: [{ from: '2026-09-10', to: '2026-09-14' }] }),
+      ...base({ allowance: startingAt(1), records: [{ from: '2026-09-10', to: '2026-09-14' }] }),
       range: { from: workDate, to: workDate },
     });
     expect(preview.balanceDays).toBe(-2);
@@ -554,7 +562,7 @@ describe.each(FIXTURES)('the balance and the preview under $fixture (R4.5–R4.7
 
   it('does not flag a range charging 0 when the balance is 0', () => {
     const offDate = datesOfMonth('2026-09').find((date) => !oracleWorking(fx, team, date))!;
-    const preview = leavePreviewOf({ ...base({ allowanceDays: 0 }), range: { from: offDate, to: offDate } });
+    const preview = leavePreviewOf({ ...base({ allowance: startingAt(0) }), range: { from: offDate, to: offDate } });
     expect(preview.balanceDays).toBe(0);
     expect(preview.costInYearDays).toBe(0);
     expect(preview.exceedsBalance).toBe(false);
@@ -573,7 +581,7 @@ describe.each(FIXTURES)('the balance and the preview under $fixture (R4.5–R4.7
 
   it('charges nothing for a range wholly inside an existing record, and does not flag the balance', () => {
     const records = [{ from: '2026-09-10', to: '2026-09-14' }];
-    const preview = leavePreviewOf({ ...base({ allowanceDays: 3, records }), range: { from: '2026-09-10', to: '2026-09-14' } });
+    const preview = leavePreviewOf({ ...base({ allowance: startingAt(3), records }), range: { from: '2026-09-10', to: '2026-09-14' } });
     expect(preview.balanceDays).toBe(0);
     expect(preview.costDays).toBe(3);
     expect(preview.costInYearDays).toBe(0);
@@ -611,7 +619,7 @@ describe.each(FIXTURES)('the balance and the preview under $fixture (R4.5–R4.7
 
   it('previews a non-drawing range: its cost is reported, it charges 0 and never exceeds', () => {
     const range = { from: '2026-09-10', to: '2026-09-14', drawsAllowance: false };
-    const preview = leavePreviewOf({ ...base({ allowanceDays: 0 }), range });
+    const preview = leavePreviewOf({ ...base({ allowance: startingAt(0) }), range });
     expect(preview.costDays).toBe(3);
     expect(preview.costInYearDays).toBe(0);
     expect(preview.balanceAfterDays).toBe(0);
@@ -643,6 +651,88 @@ describe.each(FIXTURES)('the balance and the preview under $fixture (R4.5–R4.7
   });
 });
 
+describe('the allowance per leave year (story 13.3)', () => {
+  it('numbers a leave year by the calendar year it begins in', () => {
+    expect(leaveYearNumberOf('2026-02-28', MARCH_FIRST)).toBe(2025);
+    expect(leaveYearNumberOf('2026-03-01', MARCH_FIRST)).toBe(2026);
+    expect(leaveYearNumberOf('2026-12-31', { month: 1, day: 1 })).toBe(2026);
+    expect(leaveYearNumberOf('2026-07-14', { month: 7, day: 15 })).toBe(2025);
+    expect(leaveYearNumberOf('0001-02-01', MARCH_FIRST)).toBe(0);
+    for (const date of ['2026-02-28', '2026-03-01', '2027-02-28', '9999-12-31']) {
+      expect(leaveYearNumberOf(date, MARCH_FIRST)).toBe(Number(leaveYearOf(date, MARCH_FIRST).from.slice(0, 4)));
+    }
+  });
+
+  it('reads the starting allowance in every year with no version', () => {
+    for (const year of [1, 2025, 2026, 9999]) expect(leaveAllowanceOf(startingAt(20), year)).toBe(20);
+  });
+
+  it('uses a version from its own year, never before it', () => {
+    const allowance: LeaveAllowance = { startingDays: 20, versions: [{ id: 1, leaveYear: 2026, days: 25 }] };
+    expect(leaveAllowanceOf(allowance, 2026)).toBe(25);
+    expect(leaveAllowanceOf(allowance, 2025)).toBe(20);
+  });
+
+  it('inherits the latest earlier year’s version', () => {
+    const allowance: LeaveAllowance = {
+      startingDays: 20,
+      versions: [
+        { id: 3, leaveYear: 2024, days: 22 },
+        { id: 1, leaveYear: 2026, days: 25 },
+        { id: 2, leaveYear: 2029, days: 30 },
+      ],
+    };
+    expect(leaveAllowanceOf(allowance, 2027)).toBe(25);
+    expect(leaveAllowanceOf(allowance, 2025)).toBe(22);
+    expect(leaveAllowanceOf(allowance, 2023)).toBe(20);
+  });
+
+  it('takes the highest id of a corrected year, in any order', () => {
+    const versions = [
+      { id: 2, leaveYear: 2026, days: 24 },
+      { id: 1, leaveYear: 2026, days: 25 },
+    ];
+    expect(leaveAllowanceOf({ startingDays: 20, versions }, 2026)).toBe(24);
+    expect(leaveAllowanceOf({ startingDays: 20, versions: [...versions].reverse() }, 2027)).toBe(24);
+  });
+
+  it('balances a past leave year with that year’s allowance', () => {
+    const input = inputOf(FIXTURES[0], 0);
+    const allowance: LeaveAllowance = { startingDays: 20, versions: [{ id: 1, leaveYear: 2026, days: 25 }] };
+    const at = (today: string) => leaveBalanceOf({ input, allowance, records: [], today, leaveYearStart: MARCH_FIRST });
+    expect(at('2026-02-10')).toEqual({ allowanceDays: 20, usedDays: 0, balanceDays: 20 });
+    expect(at('2026-09-01')).toEqual({ allowanceDays: 25, usedDays: 0, balanceDays: 25 });
+    expect(at('2027-09-01').allowanceDays).toBe(25);
+    const preview = leavePreviewOf({ input, allowance, records: [], today: '2026-02-10', leaveYearStart: MARCH_FIRST, range: { from: '2026-02-10', to: '2026-02-10' } });
+    expect(preview.allowanceDays).toBe(20);
+  });
+
+  it('refuses a malformed allowance or version', () => {
+    const at = (allowance: LeaveAllowance) => () => leaveAllowanceOf(allowance, 2026);
+    expect(at({ startingDays: -1, versions: [] })).toThrow(RangeError);
+    expect(at({ startingDays: 20, versions: [{ id: 1, leaveYear: 2026, days: -1 }] })).toThrow(/version 0 is -1 days/);
+    expect(at({ startingDays: 20, versions: [{ id: 1, leaveYear: 2026, days: 1.5 }] })).toThrow(/1\.5/);
+    expect(at({ startingDays: 20, versions: [{ id: 1, leaveYear: 2026.5, days: 1 }] })).toThrow(/leave year 2026\.5/);
+    expect(at({ startingDays: 20, versions: [{ id: 1, leaveYear: 0, days: 1 }] })).toThrow(/leave year 0/);
+    expect(at({ startingDays: 20, versions: [{ id: 1, leaveYear: 10000, days: 1 }] })).toThrow(/leave year 10000/);
+    expect(at({ startingDays: 20, versions: [{ id: 0, leaveYear: 2026, days: 1 }] })).toThrow(/id 0/);
+    // A malformed version in a later year still fails: the input is checked whole.
+    expect(at({ startingDays: 20, versions: [{ id: 1, leaveYear: 2030, days: -1 }] })).toThrow(RangeError);
+    expect(() => leaveAllowanceOf(startingAt(20), 2026.5)).toThrow(RangeError);
+    expect(() => leaveYearNumberOf('2026-13-01', MARCH_FIRST)).toThrow(/"2026-13-01"/);
+    const input = inputOf(FIXTURES[0], 0);
+    expect(() =>
+      leaveBalanceOf({
+        input,
+        allowance: { startingDays: 20, versions: [{ id: 1, leaveYear: 2026, days: -1 }] },
+        records: [],
+        today: '2026-09-01',
+        leaveYearStart: MARCH_FIRST,
+      }),
+    ).toThrow(RangeError);
+  });
+});
+
 describe('drawsAllowance (story 13.2)', () => {
   it('reads an absent flag as drawing, and only false as not', () => {
     expect(drawsAllowance({ from: '2026-09-10', to: '2026-09-10' })).toBe(true);
@@ -656,7 +746,7 @@ describe('drawsAllowance (story 13.2)', () => {
 describe('a breached precondition throws a RangeError naming the value', () => {
   const fx = FIXTURES[0];
   const input = inputOf(fx, 0);
-  const base: LeaveBalanceInput = { input, allowanceDays: 20, records: [], today: '2026-09-01', leaveYearStart: MARCH_FIRST };
+  const base: LeaveBalanceInput = { input, allowance: startingAt(20), records: [], today: '2026-09-01', leaveYearStart: MARCH_FIRST };
 
   it('refuses a range ending before it starts', () => {
     expect(() => leaveCostOf(input, '2026-09-14', '2026-09-10')).toThrow(RangeError);
@@ -710,9 +800,9 @@ describe('a breached precondition throws a RangeError naming the value', () => {
   });
 
   it('refuses a negative or fractional allowance', () => {
-    expect(() => leaveBalanceOf({ ...base, allowanceDays: -1 })).toThrow(RangeError);
-    expect(() => leaveBalanceOf({ ...base, allowanceDays: -1 })).toThrow(/-1/);
-    expect(() => leaveBalanceOf({ ...base, allowanceDays: 2.5 })).toThrow(/2\.5/);
-    expect(() => leavePreviewOf({ ...base, allowanceDays: -1, range: { from: '2026-09-10', to: '2026-09-10' } })).toThrow(/-1/);
+    expect(() => leaveBalanceOf({ ...base, allowance: startingAt(-1) })).toThrow(RangeError);
+    expect(() => leaveBalanceOf({ ...base, allowance: startingAt(-1) })).toThrow(/-1/);
+    expect(() => leaveBalanceOf({ ...base, allowance: startingAt(2.5) })).toThrow(/2\.5/);
+    expect(() => leavePreviewOf({ ...base, allowance: startingAt(-1), range: { from: '2026-09-10', to: '2026-09-10' } })).toThrow(/-1/);
   });
 });

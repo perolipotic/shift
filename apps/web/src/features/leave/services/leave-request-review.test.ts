@@ -132,7 +132,7 @@ function sourcesOf(overrides: Partial<LeaveRequestReviewSources> = {}): LeaveReq
   return {
     request: answered([requestRow()]),
     members: {
-      members: [{ id: VIEWER_MEMBER, name: VIEWER_NAME, leaveAllowanceDays: 20 }],
+      members: [{ id: VIEWER_MEMBER, name: VIEWER_NAME, leaveAllowance: { startingDays: 20, versions: [] } }],
       refusal: null,
       loading: false,
       paused: false,
@@ -264,7 +264,7 @@ describe('a pending request', () => {
   });
 
   it('notes a cost above the balance, and never refuses it', () => {
-    const members = { members: [{ id: VIEWER_MEMBER, name: VIEWER_NAME, leaveAllowanceDays: 1 }], refusal: null, loading: false, paused: false };
+    const members = { members: [{ id: VIEWER_MEMBER, name: VIEWER_NAME, leaveAllowance: { startingDays: 1, versions: [] } }], refusal: null, loading: false, paused: false };
     const preview = readyOf(pendingOf(leaveRequestReviewOf(sourcesOf({ members }), REQUEST, NOW)).preview);
 
     expect(preview.figures.exceedsBalance).toBe(true);
@@ -512,7 +512,7 @@ describe('the short-staffed block approval would cause (story 11.2)', () => {
     const unset = await staffingSnapshotOf(fixture, { size: 4, minimum: null });
     const { date } = firstWorkingDayOf(four, fixture);
     const members = {
-      members: [0, 1, 2, 3].map((index) => ({ id: member(index), name: `Član ${String(index)}`, leaveAllowanceDays: 20 })),
+      members: [0, 1, 2, 3].map((index) => ({ id: member(index), name: `Član ${String(index)}`, leaveAllowance: { startingDays: 20, versions: [] } })),
       refusal: null,
       loading: false,
       paused: false,

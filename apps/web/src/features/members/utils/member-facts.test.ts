@@ -6,6 +6,8 @@ import { memberHeaderFactsOf, memberStatusBadgeMessageKey } from '@/features/mem
 const TODAY = '2026-10-08';
 
 function member(fields: Partial<MemberListRow> = {}): MemberListRow {
+  const leaveAllowanceDays = fields.leaveAllowanceDays ?? 20;
+
   return {
     id: 'member-1',
     organizationId: 'organization-1',
@@ -13,7 +15,9 @@ function member(fields: Partial<MemberListRow> = {}): MemberListRow {
     username: 'luka.knezevic',
     email: null,
     role: 'member_role',
-    leaveAllowanceDays: 20,
+    leaveAllowanceDays,
+    leaveAllowance: { startingDays: leaveAllowanceDays, versions: [] },
+    leaveYearStart: { month: 1, day: 1 },
     fireRank: 'nco',
     authUserId: 'account-1',
     statusVersions: [],

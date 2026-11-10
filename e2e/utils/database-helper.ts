@@ -210,10 +210,19 @@ export async function removeFormerMemberInSql(slug: string, memberId: string): P
     if (member.username === null || !member.username.startsWith(FORMER_MEMBER_USERNAME_PREFIX)) {
       throw new Error(`E2E: refusing to delete ${memberId}, not a member seedFormerMember wrote (${member.username})`);
     }
+    await client.query('begin');
     await client.query(
       `delete from conflict_resolutions c
         using organizations o
         where o.slug = $1 and c.organization_id = o.id and c.member_id = $2`,
+      [slug, memberId],
+    );
+    // Story 13.3: the member's allowance versions (0055), whose member key
+    // does not cascade.
+    await client.query(
+      `delete from leave_allowances a
+        using organizations o
+        where o.slug = $1 and a.organization_id = o.id and a.member_id = $2`,
       [slug, memberId],
     );
     await client.query(
@@ -222,6 +231,10 @@ export async function removeFormerMemberInSql(slug: string, memberId: string): P
         where m.auth_user_id = u.id and m.id = $2 and o.slug = $1 and m.username like $3`,
       [slug, memberId, `${FORMER_MEMBER_USERNAME_PREFIX.replace(/[\\%_]/g, (c) => `\\${c}`)}%`],
     );
+    await client.query('commit');
+  } catch (cause) {
+    await client.query('rollback').catch(() => undefined);
+    throw cause;
   } finally {
     await client.end();
   }
@@ -480,6 +493,9 @@ export async function removeLeaveMemberInSql(slug: string, memberId: string): Pr
       'delete from notification_outbox where organization_id = $1 and recipient_member_id = $2',
       scope,
     );
+    // Story 13.3: their allowance versions (0055), whose member key does not
+    // cascade.
+    await client.query('delete from leave_allowances where organization_id = $1 and member_id = $2', scope);
     await client.query(
       'delete from auth.users u using members m where m.auth_user_id = u.id and m.organization_id = $1 and m.id = $2',
       scope,
@@ -667,11 +683,24 @@ export async function removeOfflineMemberInSql(slug: string, username: string): 
   }
   const client = await connect();
   try {
+    await client.query('begin');
+    // Story 13.3: the member's allowance versions (0055), whose member key
+    // does not cascade.
+    await client.query(
+      `delete from leave_allowances a using members m, organizations o
+        where a.organization_id = m.organization_id and a.member_id = m.id
+          and o.id = m.organization_id and o.slug = $1 and m.username = $2`,
+      [slug, username],
+    );
     await client.query(
       `delete from auth.users u using members m, organizations o
         where m.auth_user_id = u.id and o.id = m.organization_id and o.slug = $1 and m.username = $2`,
       [slug, username],
     );
+    await client.query('commit');
+  } catch (cause) {
+    await client.query('rollback').catch(() => undefined);
+    throw cause;
   } finally {
     await client.end();
   }

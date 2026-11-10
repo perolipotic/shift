@@ -1,4 +1,4 @@
-import { membershipOn } from '@shift/domain';
+import { leaveAllowanceOf, leaveYearNumberOf, membershipOn } from '@shift/domain';
 
 import type { CalendarSnapshot, CalendarSurfaceState, CalendarViewer } from '@/features/calendar/services/snapshot';
 import { calendarTodayOf } from '@/features/calendar/utils/month';
@@ -450,6 +450,23 @@ function organizationReady(organization: LeaveOrganizationSource): boolean {
 }
 
 /**
+ * A member's allowance in the leave year containing `today` (story 13.3),
+ * through the domain's resolver and the organization's leave-year start: what
+ * an unscheduled row shows, which has no balance to carry it. Throws what the
+ * domain throws, and when the organization snapshot is not ready, which the
+ * caller has already ruled out.
+ */
+function allowanceInYearOf(member: MemberListRow, organization: LeaveOrganizationSource, today: string): number {
+  const answer = organization.data;
+
+  if (answer === undefined || !answer.ok) throw new Error('the organization snapshot is not ready');
+
+  const start = { month: answer.snapshot.leaveYearStartMonth, day: answer.snapshot.leaveYearStartDay };
+
+  return leaveAllowanceOf(member.leaveAllowance, leaveYearNumberOf(today, start));
+}
+
+/**
  * The team a snapshot member is on today, by the domain's own reading, or
  * `null` — also for a team the snapshot does not hold, which names no team
  * rather than taking the whole overview down: the figures do not depend on it.
@@ -550,7 +567,10 @@ export function leaveOverviewRowsOf(sources: LeaveOverviewSources, now: Date): L
         memberId: member.id,
         name: member.name,
         team: teamTodayOf(snapshot, member.id, today),
-        allowanceDays: member.leaveAllowanceDays,
+        // THE ALLOWANCE OF THE LEAVE YEAR THE BALANCE COUNTS (story 13.3): the
+        // balance's own for a scheduled member, and the same resolution for an
+        // unscheduled one, from the same today and the same leave-year start.
+        allowanceDays: base.kind === LEAVE_READY ? base.balance.allowanceDays : allowanceInYearOf(member, organization, today),
         figures:
           base.kind === LEAVE_READY
             ? { usedDays: base.balance.usedDays, balanceDays: base.balance.balanceDays }
