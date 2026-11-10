@@ -33,7 +33,7 @@ export class TodayPage extends BasePage {
     return this.page.getByRole('region', typeof heading === 'string' ? { name: heading, exact: true } : { name: heading });
   }
 
-  /** Today's card, by its case: `Danas radiš`, `Danas ne radiš` or `Danas si na godišnjem odmoru`. */
+  /** Today's card, by its case: `Danas radiš`, `Danas ne radiš` or (story 13.2b) `Danas: {type}`. */
   todayCard(caseText: string): Locator {
     return this.card(caseText);
   }

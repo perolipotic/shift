@@ -37,9 +37,12 @@ function renderDetail(todayCase: Exclude<TodayCase, { readonly kind: typeof CASE
     return (
       <>
         <p className="tabular-nums">{t('danas.today.leaveRange', { from: todayCase.from, to: todayCase.to })}</p>
-        <p className="tabular-nums">
-          {t('danas.today.leaveCost', { days: t('count.days', { count: todayCase.costDays }) })}
-        </p>
+        {/* STORY 13.2b: only drawing records cost, and nothing is said when none does. */}
+        {todayCase.costDays === 0 ? null : (
+          <p className="tabular-nums">
+            {t('danas.today.leaveCost', { days: t('count.days', { count: todayCase.costDays }) })}
+          </p>
+        )}
       </>
     );
   }
@@ -87,7 +90,10 @@ export function TodayCard({
     <Card className="min-w-0">
       <section aria-labelledby={headingId} className="grid min-w-0 gap-3 p-4 sm:p-6">
         <h2 id={headingId} className="font-heading text-xl font-bold">
-          {t(todayCaseMessageKey(todayCase.kind))}
+          {/* STORY 13.2b: the leave case names today's record's type, the viewer's own. */}
+          {todayCase.kind === CASE_LEAVE
+            ? t('danas.today.leave', { type: todayCase.typeName })
+            : t(todayCaseMessageKey(todayCase.kind))}
         </h2>
         {renderDetail(todayCase)}
         <OwnTeamLine team={ownTeam} />

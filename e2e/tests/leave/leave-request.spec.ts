@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import type { Page } from '@playwright/test';
 
 import {
+  ANNUAL_LEAVE_NAME,
   API_URL,
   changeApprovedLeaveInSql,
   holdRotation,
@@ -187,6 +188,15 @@ test.describe('a member requests leave', () => {
     await leavePage.requestFrom.fill(from);
     await expect(leavePage.text(request.incomplete)).toBeVisible();
     await leavePage.requestTo.fill(to);
+    // STORY 13.2b: NO TYPE is preselected; until one is chosen its reason stands in for the preview,
+    // and a send marks and focuses the group and sends nothing.
+    await expect(leavePage.text(request.typeUnchosen)).toBeVisible();
+    await expect(leavePage.requestTypeGroup.getByRole('radio', { checked: true })).toHaveCount(0);
+    await leavePage.sendButton.click();
+    await expect(leavePage.requestTypeGroup).toHaveAttribute('aria-invalid', 'true');
+    await expect(leavePage.requestTypeGroup.getByRole('radio').first()).toBeFocused();
+    await expect(page).toHaveURL(/\/godisnji\/zatrazi$/);
+    await leavePage.requestTypeCard(ANNUAL_LEAVE_NAME).check();
     await expect(leavePage.requestFigure(request.cost)).toHaveText(plural(days, 2));
     // In this leave year: 18 left; in the next (a base past the year's end): this year charged nothing.
     await expect(leavePage.requestFigure(request.balanceAfter)).toHaveText(plural(days, 20 - inYear(from, to)));
@@ -201,6 +211,8 @@ test.describe('a member requests leave', () => {
     await expect(leavePage.statusWith(fill(request.sent, { from: fullDate(from), to: fullDate(to) }))).toBeVisible();
     const row = leavePage.requestRow(rangeLabel(from, to));
     await expect(row).toContainText(plural(days, 2));
+    // STORY 13.2b: the member's own request names its type.
+    await expect(row).toContainText(ANNUAL_LEAVE_NAME);
     await expect(row).toContainText(request.status.pending);
     await expect(leavePage.withdrawButton(fullDate(from), fullDate(to))).toBeVisible();
     // A PENDING REQUEST CHARGES NOTHING.

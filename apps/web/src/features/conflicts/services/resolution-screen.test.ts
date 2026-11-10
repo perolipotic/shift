@@ -56,6 +56,7 @@ import {
   withResolutionSaved,
   withoutResolutionSaved,
   workHoursMessageKey,
+  amendBalanceChangeMessageKey,
   type ResolutionParams,
   type ResolutionScreen,
   type ResolutionSources,
@@ -779,7 +780,7 @@ describe('replacing the absent member (story 5.4c)', () => {
   });
 
   it('generates the reason through t(), with no field for it', () => {
-    expect(t('zaOdluku.resolution.replaceReason', { member: VIEWER_NAME })).toBe(`Zamjena za ${VIEWER_NAME} (godišnji)`);
+    expect(t('zaOdluku.resolution.replaceReason', { member: VIEWER_NAME })).toBe(`Zamjena za ${VIEWER_NAME} (odsutnost)`);
   });
 
   it('names the replacement on the queue\'s status line, and reads it back from router state', () => {
@@ -1006,6 +1007,20 @@ describe('amending the leave (story 5.4d)', () => {
       'Mirela radi 10.09., a ovaj godišnji se briše. Otvara brisanje godišnjeg.',
     );
     expect([view.amend.balanceDays, view.amend.gainedDays]).toEqual([19, 1]);
+  });
+
+  // STORY 13.2b: a record of a type that does not draw gives nothing back.
+  it('A non-drawing record: the balance after it the balance now, and the change "bez promjene", never "+0 dana"', () => {
+    const sick = { ...WORKED, absence_type_id: 'type-sick', draws_allowance: false };
+    const view = amendViewOn('2026-09-10', [sick]);
+
+    expect(view.amend.target).toEqual({ kind: AMEND_STARTS, range: { from: '2026-09-11', to: '2026-09-14' } });
+    expect(view.amend.balanceDays).toBe(view.balanceDays);
+    expect(view.amend.gainedDays).toBe(0);
+    expect(amendBalanceChangeMessageKey(view.amend.gainedDays)).toBe('zaOdluku.resolution.balanceUnchanged');
+    expect(t(amendBalanceChangeMessageKey(0))).toBe(t('zaOdluku.resolution.balanceUnchanged'));
+    // A drawing record still says what it gives back.
+    expect(amendBalanceChangeMessageKey(amendViewOn('2026-09-10').amend.gainedDays)).toBe('zaOdluku.resolution.balanceGained');
   });
 
   it('Year edge: the balance after and what it gives back are the conflict date\'s leave year', () => {

@@ -107,6 +107,8 @@ export const ORGANIZATION_ABSENCE_TYPE_NAME_FIELD_ID = 'organization-absence-typ
 export const ORGANIZATION_ABSENCE_TYPE_DRAWS_LABEL_ID = 'organization-absence-type-draws-label';
 export const ORGANIZATION_ABSENCE_TYPE_DRAWS_FIELD_ID = 'organization-absence-type-draws';
 export const ORGANIZATION_ABSENCE_TYPE_ANNUAL_HINT_ID = 'organization-absence-type-annual-hint';
+/** The edit dialog's line on what changing a non-annual type's flag does (story 13.2b), which describes the choice. */
+export const ORGANIZATION_ABSENCE_TYPE_DRAWS_HINT_ID = 'organization-absence-type-draws-hint';
 export const ORGANIZATION_ABSENCE_TYPE_ERROR_ID = 'organization-absence-type-error';
 export const ORGANIZATION_ABSENCE_TYPE_SAVE_ID = 'organization-absence-type-save';
 /** What annual leave's locked choice is described by after a refusal: the hint AND the refusal. */

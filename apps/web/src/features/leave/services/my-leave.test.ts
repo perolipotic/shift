@@ -14,6 +14,8 @@ import {
   LEAVE_RANGE_TOO_LONG,
   LEAVE_RANGE_UNCHANGED,
   LEAVE_READY,
+  LEAVE_TYPE_FIELD,
+  LEAVE_TYPE_UNCHOSEN,
   memberLeaveBaseOf,
   type LeaveMembersSource,
   type LeaveOrganizationSource,
@@ -434,7 +436,7 @@ describe('the balance input the figures stand on (story 9.3)', () => {
 describe("the request form's preview (story 9.3)", () => {
   it("is the domain's preview over the figures' input: the cost and the balance after it", () => {
     const leave = readyOf(myLeaveOf(sourcesOf(pilot, { records: rowsOf([WORKED]) }), NOW));
-    const state = myLeaveRequestPreviewOf(leave, '2026-10-05', '2026-10-07');
+    const state = myLeaveRequestPreviewOf(leave, '2026-10-05', '2026-10-07', ANNUAL_LEAVE_ID);
 
     if (state?.kind !== LEAVE_PREVIEW_READY) throw new Error('no preview');
 
@@ -447,7 +449,7 @@ describe("the request form's preview (story 9.3)", () => {
   it('never gates: over the balance it warns, and the preview still stands', () => {
     const members = { ...MEMBERS, members: [{ id: VIEWER_MEMBER, leaveAllowanceDays: 1 }] };
     const leave = readyOf(myLeaveOf(sourcesOf(pilot, { members }), NOW));
-    const state = myLeaveRequestPreviewOf(leave, '2026-10-01', '2026-10-20');
+    const state = myLeaveRequestPreviewOf(leave, '2026-10-01', '2026-10-20', ANNUAL_LEAVE_ID);
 
     if (state?.kind !== LEAVE_PREVIEW_READY) throw new Error('no preview');
 
@@ -458,7 +460,7 @@ describe("the request form's preview (story 9.3)", () => {
   it("warns, never refuses, over the viewer's own leave: the database decides", () => {
     const ahead = rowOf('record-ahead', '2026-10-12', '2026-10-17');
     const leave = readyOf(myLeaveOf(sourcesOf(pilot, { records: rowsOf([WORKED, ahead]) }), NOW));
-    const state = myLeaveRequestPreviewOf(leave, '2026-10-14', '2026-10-18');
+    const state = myLeaveRequestPreviewOf(leave, '2026-10-14', '2026-10-18', ANNUAL_LEAVE_ID);
 
     expect(state?.kind).toBe(LEAVE_PREVIEW_READY);
     if (state?.kind === LEAVE_PREVIEW_READY) expect(state.preview.overlapsRecord).toBe(true);
@@ -466,7 +468,7 @@ describe("the request form's preview (story 9.3)", () => {
 
   it('states the in-year charge apart when the range crosses the leave year', () => {
     const leave = readyOf(myLeaveOf(sourcesOf(pilot), NOW));
-    const state = myLeaveRequestPreviewOf(leave, '2026-12-28', '2027-01-03');
+    const state = myLeaveRequestPreviewOf(leave, '2026-12-28', '2027-01-03', ANNUAL_LEAVE_ID);
 
     if (state?.kind !== LEAVE_PREVIEW_READY) throw new Error('no preview');
 
@@ -480,7 +482,7 @@ describe("the request form's preview (story 9.3)", () => {
   ] as const)('is a reason, never a preview, for %s', (_name, from, to, reason) => {
     const leave = readyOf(myLeaveOf(sourcesOf(pilot), NOW));
 
-    expect(myLeaveRequestPreviewOf(leave, from, to)).toMatchObject({ kind: LEAVE_PREVIEW_REASON, reason });
+    expect(myLeaveRequestPreviewOf(leave, from, to, ANNUAL_LEAVE_ID)).toMatchObject({ kind: LEAVE_PREVIEW_REASON, reason });
   });
 
   it.each([
@@ -491,7 +493,7 @@ describe("the request form's preview (story 9.3)", () => {
   ] as const)('refuses %s on Od, before any other reason: past leave is an admin\'s to record (0047)', (_name, from, to) => {
     const leave = readyOf(myLeaveOf(sourcesOf(pilot), NOW));
 
-    expect(myLeaveRequestPreviewOf(leave, from, to)).toEqual({
+    expect(myLeaveRequestPreviewOf(leave, from, to, ANNUAL_LEAVE_ID)).toEqual({
       kind: LEAVE_PREVIEW_REASON,
       reason: LEAVE_REQUEST_IN_PAST,
       field: LEAVE_FROM_FIELD,
@@ -501,14 +503,52 @@ describe("the request form's preview (story 9.3)", () => {
   it("takes a range starting on the organization's today, and offers it as the earliest date (0047)", () => {
     const leave = readyOf(myLeaveOf(sourcesOf(pilot), NOW));
 
-    expect(myLeaveRequestPreviewOf(leave, '2026-09-26', '2026-09-28')?.kind).toBe(LEAVE_PREVIEW_READY);
+    expect(myLeaveRequestPreviewOf(leave, '2026-09-26', '2026-09-28', ANNUAL_LEAVE_ID)?.kind).toBe(LEAVE_PREVIEW_READY);
     expect(myLeaveRequestEarliestOf(leave)).toBe('2026-09-26');
     expect(myLeaveRequestEarliestOf({ kind: MY_LEAVE_LOADING })).toBeNull();
   });
 
+  // STORY 13.2b: the member chooses the type; nothing is preselected.
+  it('is the unchosen-type reason on the type group until a type is chosen, after the past start', () => {
+    const leave = readyOf(myLeaveOf(sourcesOf(pilot), NOW));
+
+    expect(myLeaveRequestPreviewOf(leave, '2026-10-05', '2026-10-07', null)).toEqual({
+      kind: LEAVE_PREVIEW_REASON,
+      reason: LEAVE_TYPE_UNCHOSEN,
+      field: LEAVE_TYPE_FIELD,
+    });
+    expect(myLeaveRequestReasonMessageKey(LEAVE_TYPE_UNCHOSEN)).toBe('godisnji.request.typeUnchosen');
+    expect(myLeaveRequestPreviewOf(leave, '2026-09-25', '2026-09-28', null)).toMatchObject({ reason: LEAVE_REQUEST_IN_PAST });
+  });
+
+  it('previews a type that does not draw: its days, and the balance after it the balance now', () => {
+    const sick = { id: 'type-sick', organizationId: pilot.organizationId, name: 'Bolovanje', drawsAllowance: false };
+    const typed = { ...pilot, absenceTypes: [...(pilot.absenceTypes ?? []), sick] };
+    const leave = readyOf(myLeaveOf(sourcesOf(typed, { records: rowsOf([WORKED]) }), NOW));
+    const state = myLeaveRequestPreviewOf(leave, '2026-10-05', '2026-10-07', 'type-sick');
+
+    if (state?.kind !== LEAVE_PREVIEW_READY) throw new Error('no preview');
+
+    expect(leave.absenceTypes?.map((type) => type.name)).toEqual(['Godišnji odmor', 'Bolovanje']);
+    expect(state.type).toEqual({ id: 'type-sick', drawsAllowance: false });
+    expect(state.preview.costDays).toBeGreaterThan(0);
+    expect(state.preview.balanceAfterDays).toBe(leave.balance.balanceDays);
+  });
+
+  it('is nothing while the snapshot holds no type catalog (cached before 13.2), and the figures still stand', () => {
+    const { absenceTypes: _types, ...cached } = pilot;
+    const leave = readyOf(myLeaveOf(sourcesOf(cached as typeof pilot), NOW));
+
+    expect(leave.absenceTypes).toBeNull();
+    expect(leave.balance.allowanceDays).toBe(20);
+    expect(myLeaveRequestPreviewOf(leave, '2026-10-05', '2026-10-07', ANNUAL_LEAVE_ID)).toBeNull();
+    // An empty catalog offers no card: the same.
+    expect(readyOf(myLeaveOf(sourcesOf({ ...pilot, absenceTypes: [] }), NOW)).absenceTypes).toBeNull();
+  });
+
   it('is nothing while the figures are not ready', () => {
-    expect(myLeaveRequestPreviewOf({ kind: MY_LEAVE_LOADING }, '2026-10-05', '2026-10-07')).toBeNull();
-    expect(myLeaveRequestPreviewOf({ kind: MY_LEAVE_UNSCHEDULED }, '2026-10-05', '2026-10-07')).toBeNull();
+    expect(myLeaveRequestPreviewOf({ kind: MY_LEAVE_LOADING }, '2026-10-05', '2026-10-07', ANNUAL_LEAVE_ID)).toBeNull();
+    expect(myLeaveRequestPreviewOf({ kind: MY_LEAVE_UNSCHEDULED }, '2026-10-05', '2026-10-07', ANNUAL_LEAVE_ID)).toBeNull();
   });
 
   it("speaks each reason and refusal in the form's own words, never the admin card's", () => {
@@ -598,6 +638,36 @@ describe("Godišnji's list of the viewer's requests (story 9.3)", () => {
     expect(list.rows[2]?.closedOn).toBe('21.10.2026');
   });
 
+  // STORY 13.2b: the viewer sees the type of each of their own requests.
+  it('names the type of each request, annual leave for a row read before 0054, and is unavailable for one it cannot name', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const sick = { id: 'type-sick', organizationId: pilot.organizationId, name: 'Bolovanje', drawsAllowance: false };
+    const viewer = { ...ready(), absenceTypes: [...(pilot.absenceTypes ?? []), sick] };
+    const list = myLeaveRequestsOf(
+      viewer,
+      rowsOf([
+        { ...requestRowOf('sick', '2026-10-05', '2026-10-08'), absence_type_id: 'type-sick' },
+        requestRowOf('old', '2026-10-12', '2026-10-13'),
+      ]),
+    );
+
+    if (list.kind !== MY_REQUESTS_READY) throw new Error(list.kind);
+
+    expect(list.rows.map((row) => [row.request.id, row.request.absenceTypeId, row.typeName])).toEqual([
+      ['sick', 'type-sick', 'Bolovanje'],
+      ['old', ANNUAL_LEAVE_ID, 'Godišnji odmor'],
+    ]);
+    expect(
+      myLeaveRequestsOf(ready(), rowsOf([{ ...requestRowOf('unknown', '2026-10-05', '2026-10-08'), absence_type_id: 'type-gone' }])),
+    ).toEqual({ kind: MY_REQUESTS_UNAVAILABLE });
+    expect(
+      myLeaveRequestsOf(ready(), rowsOf([{ ...requestRowOf('bad', '2026-10-05', '2026-10-08'), absence_type_id: 7 }])),
+    ).toEqual({ kind: MY_REQUESTS_UNAVAILABLE });
+    expect(
+      myLeaveRequestsOf({ ...ready(), absenceTypes: null }, rowsOf([requestRowOf('old', '2026-10-12', '2026-10-13')])),
+    ).toEqual({ kind: MY_REQUESTS_UNAVAILABLE });
+  });
+
   it("charges nothing: the viewer's balance is the same with pending requests as without", () => {
     const leave = ready();
 
@@ -627,7 +697,12 @@ describe("Godišnji's list of the viewer's requests (story 9.3)", () => {
     const viewer = myLeaveRequestsViewerOf(teamless, leave);
     const list = myLeaveRequestsOf(viewer, rowsOf([requestRowOf('pending', '2026-10-05', '2026-10-08')]));
 
-    expect(viewer).toEqual({ memberId: VIEWER_MEMBER, timeZone: teamless.timeZone, input: null });
+    expect(viewer).toEqual({
+      memberId: VIEWER_MEMBER,
+      timeZone: teamless.timeZone,
+      input: null,
+      absenceTypes: teamless.absenceTypes,
+    });
     if (list.kind !== MY_REQUESTS_READY) throw new Error(list.kind);
     expect(list.rows).toHaveLength(1);
     expect(list.rows[0]).toMatchObject({ costDays: null, withdrawable: true, label: '05.10.2026–07.10.2026' });

@@ -1,7 +1,7 @@
 import { expect, type Locator } from '@playwright/test';
 
 import { dayMonth, fullDate, weekdayShort } from '../utils/dates.ts';
-import { escapeRegExp, fill, hr, plural } from '../utils/i18n.ts';
+import { ANNUAL_LEAVE_COLUMN, escapeRegExp, fill, hr, plural } from '../utils/i18n.ts';
 import { BasePage } from './base.page.ts';
 import { ErasureDialogParts } from './erasure-dialog.ts';
 import { FilterBarParts } from './filter-bar.ts';
@@ -598,7 +598,9 @@ export class PeoplePage extends BasePage {
       .or(this.leaveDialog)
       .locator('dl > div')
       .filter({ has: this.page.getByRole('term').getByText(label, { exact: true }) })
-      .getByRole('definition');
+      .getByRole('definition')
+      // Story 13.2b: *Bilo* and *Sada* add the type as a second definition; the figure is the first.
+      .first();
   }
 
   /** *Upiši godišnji* in the leave card's header (story 7.12): it opens the record dialog. */
@@ -749,9 +751,21 @@ export class PeoplePage extends BasePage {
     return this.leaveCard.getByRole('button', { name: leave.retry });
   }
 
+  /** The open leave dialog's absence type group (story 13.2b), named by its label. */
+  get leaveTypeGroup(): Locator {
+    return this.leaveDialog.getByRole('radiogroup', { name: leave.type, exact: true });
+  }
+
+  /** The type card named `name`, exactly, in the open leave dialog. */
+  leaveTypeCard(name: string): Locator {
+    return this.leaveTypeGroup.getByRole('radio').filter({ has: this.page.getByText(name, { exact: true }) });
+  }
+
   /**
    * Enters an od–do range, both `YYYY-MM-DD`, in the open leave dialog —
-   * opening the record dialog first when none is open (story 7.12).
+   * opening the record dialog first when none is open (story 7.12). STORY
+   * 13.2b: when no type is chosen yet (a new record), annual leave is, by its
+   * seeded name (every organization holds it); an amend keeps its record's.
    */
   async enterLeave(from: string, to: string): Promise<void> {
     if (!(await this.leaveDialog.isVisible())) {
@@ -760,6 +774,9 @@ export class PeoplePage extends BasePage {
     }
     await this.leaveFromInput.fill(from);
     await this.leaveToInput.fill(to);
+    if ((await this.leaveTypeGroup.getByRole('radio', { checked: true }).count()) === 0) {
+      await this.leaveTypeCard(ANNUAL_LEAVE_COLUMN).check();
+    }
   }
 
   /** Puts the open member on a team from the dialog's default date: open, pick, Spremi, closed. */

@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { ANNUAL_LEAVE_ID } from '@/features/absence-types/services/list';
+
 import {
   LEAVE_RECORD_AMENDED,
   LEAVE_RECORD_REMOVED,
@@ -103,9 +105,38 @@ describe("the viewer's own requests", () => {
     ];
 
     expect(leaveRequestsOf(rows, MEMBER)).toEqual([
-      { id: 'sooner', from: '2026-10-28', to: '2026-10-30', status: REQUEST_REJECTED, closedAt: '2026-10-20T08:00:00Z', recordChange: null },
-      { id: 'later', from: '2026-11-02', to: '2026-11-04', status: REQUEST_PENDING, closedAt: null, recordChange: null },
+      {
+        id: 'sooner',
+        from: '2026-10-28',
+        to: '2026-10-30',
+        absenceTypeId: ANNUAL_LEAVE_ID,
+        status: REQUEST_REJECTED,
+        closedAt: '2026-10-20T08:00:00Z',
+        recordChange: null,
+      },
+      {
+        id: 'later',
+        from: '2026-11-02',
+        to: '2026-11-04',
+        absenceTypeId: ANNUAL_LEAVE_ID,
+        status: REQUEST_PENDING,
+        closedAt: null,
+        recordChange: null,
+      },
     ]);
+  });
+
+  // STORY 13.2b (0054): the type asked for; a row read before 0054 is annual leave.
+  it('carry the type asked for, annual leave for a row with none, and refuse one that is no type', () => {
+    const typed = { ...rowOf('typed', '2026-11-02', '2026-11-05'), absence_type_id: 'type-sick' };
+
+    expect(leaveRequestsOf([typed], MEMBER)?.[0]?.absenceTypeId).toBe('type-sick');
+    expect(leaveRequestsOf([rowOf('old', '2026-11-02', '2026-11-05')], MEMBER)?.[0]?.absenceTypeId).toBe(ANNUAL_LEAVE_ID);
+    for (const broken of ['', null, 7]) {
+      expect(leaveRequestsOf([{ ...typed, absence_type_id: broken }], MEMBER), String(broken)).toBeNull();
+    }
+    expect(LEAVE_REQUESTS_COLUMNS).toContain('absence_type_id');
+    expect(LEAVE_REQUEST_COLUMNS).toContain('absence_type_id');
   });
 
   it.each([
@@ -223,6 +254,7 @@ describe('one request by its id (story 9.4)', () => {
         memberId: 'member-2',
         from: '2026-11-02',
         to: '2026-11-04',
+        absenceTypeId: ANNUAL_LEAVE_ID,
         status: REQUEST_PENDING,
         closedAt: null,
         recordChange: null,

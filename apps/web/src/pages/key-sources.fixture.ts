@@ -219,7 +219,8 @@ export const KEY_SOURCES = [
   // close, the name's label, the drawing choice's label, annual leave's hint,
   // Odustani and Spremi. What a row says about drawing, the refusals and the
   // confirmations reach `t()` through the absence type modules.
-  { name: 'the organization settings surface', file: SETTINGS, keys: translationKeys, strings: 88 },
+  // STORY 13.2b: the edit dialog's line on what changing a type's flag does.
+  { name: 'the organization settings surface', file: SETTINGS, keys: translationKeys, strings: 89 },
   {
     // EIGHT on the member list since story 1.5b, up from five, and the number is
     // still small because most of what this screen says is read off a table
@@ -451,10 +452,11 @@ export const KEY_SOURCES = [
     // NINETY-SEVEN SINCE STORY 12.4: *Treba tebe*'s swap row — its kind
     // (*Zamjena smjene*) and the proposer → the colleague. Its shifts are the
     // queue's own `SwapShifts`, counted on *Za odluku*.
+    // STORY 13.2b: the leave case's heading, naming today's type, drawn apart from the other cases'.
     name: 'the Danas destination',
     file: DANAS,
     keys: translationKeys,
-    strings: 97,
+    strings: 98,
   },
   {
     // STORY 6.1a: today's three cases, the next shift's two headings, and
@@ -1070,10 +1072,11 @@ export const KEY_SOURCES = [
     // accessible name, and the withdrawn line. The status words, the closing
     // date's line and the refusals come through
     // `@/features/leave/services/my-leave`.
+    // STORY 13.2b: the type of each of the viewer's requests, its term for a screen reader.
     name: 'the Godišnji destination',
     file: GODISNJI,
     keys: translationKeys,
-    strings: 63,
+    strings: 64,
   },
   {
     // STORY 9.3. On the request form: its heading (twice, once while the role
@@ -1083,10 +1086,11 @@ export const KEY_SOURCES = [
     // and the page's own retry while the role cannot be read. The reasons,
     // the refusals and the unscheduled line come through
     // `@/features/leave/services/my-leave`, a key source.
+    // STORY 13.2b: the type group's label, and the line that a type which does not draw leaves the balance as it is.
     name: 'the leave request form',
     file: LEAVE_REQUEST,
     keys: translationKeys,
-    strings: 18,
+    strings: 20,
   },
   {
     // E884: the Stanje chip's five options and the five values its text says,
@@ -1150,10 +1154,12 @@ export const KEY_SOURCES = [
     // FORTY-ONE SINCE STORY 11.2: a strip's words for a shift still short of
     // people. The term against the minimum is the short-staffed block's own
     // `atWorkText`, counted with the block.
+    // FORTY SINCE STORY 13.2b: the third card's balance change comes through
+    // `amendBalanceChangeMessageKey`, a rules key, no longer a literal here.
     name: 'the conflict resolution screen',
     file: RESOLUTION,
     keys: translationKeys,
-    strings: 41,
+    strings: 40,
   },
   {
     // STORY 5.4b: the facts line with and without times, who else works or
@@ -1172,10 +1178,12 @@ export const KEY_SOURCES = [
     // TWENTY-TWO SINCE STORY 9.4: the status line for a leave request
     // approved or rejected on its own screen, in the same slot.
     // TWENTY-FOUR SINCE STORY 12.4: and for a swap approved or rejected.
+    // TWENTY-SIX SINCE STORY 13.2b: the third card's balance change, what it
+    // gives back or *bez promjene* for a record that does not draw.
     name: 'the conflict resolution rules',
     file: RESOLUTION_SCREEN_KEYS,
     keys: messageKeyUnions,
-    strings: 24,
+    strings: 26,
   },
   {
     // STORY 9.4. On one leave request's decision screen, through `t('…')`:
@@ -1188,10 +1196,11 @@ export const KEY_SOURCES = [
     // through the rules below, and the collisions through the dialog's lines.
     // TWENTY SINCE ITS REVIEW: the neutral line for a member gone from both
     // lists, on the facts and as the queue's line names them.
+    // STORY 13.2b: the request's type, and the line that a type which does not draw leaves the balance as it is.
     name: 'the leave request decision screen',
     file: LEAVE_REQUEST_REVIEW,
     keys: translationKeys,
-    strings: 20,
+    strings: 22,
   },
   {
     // STORY 10.3. On *Obavijesti*: its heading and lede; the email card's
@@ -1292,10 +1301,11 @@ export const KEY_SOURCES = [
     // closing date's line.
     // TWENTY-SEVEN SINCE 0047: the past start, as the form's reason and as
     // the database's refusal.
+    // STORY 13.2b: the reason no type is chosen yet.
     name: 'the Godišnji rules',
     file: MY_LEAVE_KEYS,
     keys: memberListKeys,
-    strings: 27,
+    strings: 28,
   },
   {
     // 0047: the line under an approved request whose leave an admin amended
@@ -1385,10 +1395,11 @@ export const KEY_SOURCES = [
     // for a record already gone.
     // EIGHTEEN SINCE THE 5.2b REVIEW: the removal prompt's two forms, with
     // and without the in-year part, off `leaveRemovePromptMessageKey`.
+    // STORY 13.2b: the reason no type is chosen yet, and each type card's drawing line (the type card's own two).
     name: 'the leave card rules',
     file: LEAVE_SECTION_KEYS,
     keys: messageKeyUnions,
-    strings: 18,
+    strings: 21,
   },
   {
     // STORY 3.1: the calendar's one read failure.
@@ -1569,10 +1580,11 @@ export const KEY_SOURCES = [
     // od and do came from the conflict.
     // ONE HUNDRED AND FIFTY-SIX SINCE 0041: the deactivation question's line
     // naming the pending leave requests it closes.
+    // STORY 13.2b: the leave dialog's type group label and the unchanged-balance line.
     name: 'the member edit form',
     file: MEMBER_EDIT,
     keys: translationKeys,
-    strings: 156,
+    strings: 158,
   },
   {
     // THIRTEEN on the member write path's rules: eleven `ljudi.form.error.*`

@@ -1,6 +1,7 @@
 import { leaveBalanceOf, leaveCostOf, type LeaveBalance, type LeaveYearStart } from '@shift/domain';
 
-import type { CalendarSnapshot } from '@/features/calendar/services/snapshot';
+import type { AbsenceTypeRow } from '@/features/absence-types/services/list';
+import { absenceTypesOfCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { calendarTodayOf, memberScheduleInputOf } from '@/features/calendar/utils/month';
 import { leaveRecordsOf } from '@/features/leave/services/leave-list';
 import {
@@ -11,8 +12,10 @@ import {
   LEAVE_RANGE_REVERSED,
   LEAVE_RANGE_TOO_LONG,
   LEAVE_RANGE_UNCHANGED,
+  LEAVE_TYPE_UNCHOSEN,
   leavePreviewStateOf,
   leaveRangeValuesOf,
+  leaveTypeChoiceOf,
   type LeaveCalendarSource,
   type LeaveMembersSource,
   type LeaveOrganizationAnswer,
@@ -98,6 +101,14 @@ export type MyLeave =
       readonly memberId: string;
       /** The organization's zone, in which a closed request's instant is a date. */
       readonly timeZone: string;
+      /**
+       * STORY 13.2b: the organization's absence types, in the snapshot's
+       * order — the request form's choice and the names on the viewer's own
+       * requests and *Danas* — or null for a snapshot cached before 13.2,
+       * which carries none: those surfaces are then unavailable until it is
+       * read again. The figures do not need it.
+       */
+      readonly absenceTypes: readonly AbsenceTypeRow[] | null;
     };
 
 /** The query result the own rows' state is derived from. */
@@ -138,6 +149,18 @@ function leaveYearStartOf(answer: LeaveOrganizationAnswer): LeaveYearStart | nul
   return answer !== undefined && answer.ok
     ? { month: answer.snapshot.leaveYearStartMonth, day: answer.snapshot.leaveYearStartDay }
     : null;
+}
+
+/**
+ * The snapshot's type catalog as the request form and the viewer's lists use
+ * it (story 13.2b): null for none (a snapshot cached before 13.2) and for an
+ * empty one, which no card could be chosen from — every organization holds
+ * annual leave, so either is a snapshot to read again.
+ */
+function offeredAbsenceTypesOf(snapshot: Pick<CalendarSnapshot, 'absenceTypes' | 'timeZone'>): readonly AbsenceTypeRow[] | null {
+  const types = absenceTypesOfCalendar(snapshot);
+
+  return types === null || types.length === 0 ? null : types;
 }
 
 /**
@@ -220,6 +243,7 @@ export function myLeaveOf(sources: MyLeaveSources, now: Date): MyLeave {
       organizationId: snapshot.organizationId,
       memberId: viewer.memberId,
       timeZone: snapshot.timeZone,
+      absenceTypes: offeredAbsenceTypesOf(snapshot),
     };
   } catch (cause) {
     // AS THE ADMIN CARD DOES (`memberLeaveBaseOf`): any failure — the domain's
@@ -273,6 +297,8 @@ export const LEAVE_REQUEST_HEADING_ID = 'leave-request-heading';
 export const LEAVE_REQUEST_FROM_ID = 'leave-request-from';
 /** The do field. */
 export const LEAVE_REQUEST_TO_ID = 'leave-request-to';
+/** The type group's label (story 13.2b), which names the radio group. */
+export const LEAVE_REQUEST_TYPE_LABEL_ID = 'leave-request-type-label';
 /** The preview's polite live region. */
 export const LEAVE_REQUEST_PREVIEW_ID = 'leave-request-preview';
 /** The reason line, which the field it names is described by while that field is marked. */
@@ -320,16 +346,25 @@ export function myLeaveRequestEarliestOf(leave: MyLeave): string | null {
  * date and before any other. Null while the figures are not ready. A NOTE,
  * NEVER A GATE: over the balance or over the viewer's own leave, the request
  * is sent, and the database decides. Pending requests charge nothing, so they
- * are no part of the input and no part of the balance after it.
+ * are no part of the input and no part of the balance after it. STORY
+ * 13.2b: the range is previewed as the chosen type (`typeId`), and no type
+ * chosen is a reason after the dates'; null as well while the snapshot holds
+ * no type catalog (cached before 13.2), and the form is then unavailable.
  */
-export function myLeaveRequestPreviewOf(leave: MyLeave, from: string, to: string): LeaveRequestPreviewState | null {
-  if (leave.kind !== MY_LEAVE_READY) return null;
+export function myLeaveRequestPreviewOf(
+  leave: MyLeave,
+  from: string,
+  to: string,
+  typeId: string | null,
+): LeaveRequestPreviewState | null {
+  if (leave.kind !== MY_LEAVE_READY || leave.absenceTypes === null) return null;
 
   if (isIsoDate(from) && from < leave.input.today) {
     return { kind: LEAVE_PREVIEW_REASON, reason: LEAVE_REQUEST_IN_PAST, field: LEAVE_FROM_FIELD };
   }
 
-  return leavePreviewStateOf(leave.input, from, to);
+  // STORY 13.2b: by the chosen type's drawing flag; no type chosen is a reason.
+  return leavePreviewStateOf(leave.input, from, to, leaveTypeChoiceOf(leave.absenceTypes, typeId));
 }
 
 /** The reason line's key, in the request form's own words. Exhaustive. */
@@ -340,6 +375,7 @@ export function myLeaveRequestReasonMessageKey(
   | 'godisnji.request.incomplete'
   | 'godisnji.request.reversed'
   | 'godisnji.request.tooLong'
+  | 'godisnji.request.typeUnchosen'
   | 'godisnji.request.refused' {
   switch (reason) {
     case LEAVE_REQUEST_IN_PAST:
@@ -350,6 +386,8 @@ export function myLeaveRequestReasonMessageKey(
       return 'godisnji.request.reversed';
     case LEAVE_RANGE_TOO_LONG:
       return 'godisnji.request.tooLong';
+    case LEAVE_TYPE_UNCHOSEN:
+      return 'godisnji.request.typeUnchosen';
     // No amend here, so an unchanged range is never a reason the form meets;
     // were it one, it could not be costed either.
     case LEAVE_RANGE_REFUSED:
@@ -450,6 +488,8 @@ export interface MyLeaveRequestRow {
   readonly to: string;
   /** `10.09.2026–14.09.2026`. */
   readonly label: string;
+  /** The stored name of the absence type asked for (story 13.2b): the viewer's own, so theirs to see. */
+  readonly typeName: string;
   /** The domain's `leaveCostOf` over the whole range, or null when it refuses the range. */
   readonly costDays: number | null;
   /** `20.09.2026`, the date it was closed in the organization's zone, or null while pending. */
@@ -495,17 +535,20 @@ export interface MyLeaveRequestsViewer {
   readonly memberId: string;
   readonly timeZone: string;
   readonly input: LeaveRecordsInput | null;
+  /** The snapshot's absence types (story 13.2b), or null for a snapshot cached before 13.2. */
+  readonly absenceTypes: readonly AbsenceTypeRow[] | null;
 }
 
 /** The viewer of the list from the snapshot and the figures: the figures' input when ready, else none. */
 export function myLeaveRequestsViewerOf(
-  snapshot: Pick<CalendarSnapshot, 'viewer' | 'timeZone'>,
+  snapshot: Pick<CalendarSnapshot, 'viewer' | 'timeZone' | 'absenceTypes'>,
   leave: MyLeave,
 ): MyLeaveRequestsViewer {
   return {
     memberId: snapshot.viewer.memberId,
     timeZone: snapshot.timeZone,
     input: leave.kind === MY_LEAVE_READY ? leave.input : null,
+    absenceTypes: offeredAbsenceTypesOf(snapshot),
   };
 }
 
@@ -517,6 +560,8 @@ export function myLeaveRequestsViewerOf(
  * viewer's schedule (null with no balance input, or when the domain refuses
  * the range), its status and, once closed, the date. Nothing here is charged:
  * a pending request's cost is what it would cost, and no balance counts it.
+ * STORY 13.2b: each row names its absence type; a snapshot with no type
+ * catalog, or a request of a type it lacks, is unavailable, never a guess.
  */
 export function myLeaveRequestsOf(viewer: MyLeaveRequestsViewer, rows: MyLeaveRowsState): MyLeaveRequests {
   if (rows.rows === null) return rows.loading ? { kind: MY_REQUESTS_LOADING } : { kind: MY_REQUESTS_UNAVAILABLE };
@@ -525,6 +570,14 @@ export function myLeaveRequestsOf(viewer: MyLeaveRequestsViewer, rows: MyLeaveRo
 
   if (requests === null) {
     console.error(MY_REQUESTS_UNAVAILABLE, 'row');
+
+    return { kind: MY_REQUESTS_UNAVAILABLE };
+  }
+
+  const types = new Map((viewer.absenceTypes ?? []).map((type) => [type.id, type.name]));
+
+  if (viewer.absenceTypes === null || requests.some((request) => !types.has(request.absenceTypeId))) {
+    console.error(MY_REQUESTS_UNAVAILABLE, 'type');
 
     return { kind: MY_REQUESTS_UNAVAILABLE };
   }
@@ -550,6 +603,7 @@ export function myLeaveRequestsOf(viewer: MyLeaveRequestsViewer, rows: MyLeaveRo
         from: values.from,
         to: values.to,
         label: `${values.from}${RANGE_DASH}${values.to}`,
+        typeName: types.get(request.absenceTypeId) ?? '',
         costDays,
         closedOn: closedOnOf(request.closedAt, viewer.timeZone),
         withdrawable: request.status === REQUEST_PENDING,

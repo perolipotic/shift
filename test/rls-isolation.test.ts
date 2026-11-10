@@ -17744,16 +17744,16 @@ describe('a leave record is recorded by an admin, refused on overlap by the data
         await insertLeave(client, { organization, member: other.id, during: '[2040-09-09,2040-09-20]', by });
         const asAdmin = restLeaveTable(await tokenFor(admin, slug));
 
-        expect(await recordLeave(asAdmin, organization, self.id, '2040-09-10', '2040-09-20'), slug).toEqual({
+        expect(await recordLeave(asAdmin, organization, self.id, '2040-09-10', '2040-09-20', ANNUAL_LEAVE), slug).toEqual({
           ok: false,
           code: LEAVE_OVERLAP,
           conflict: { from: '2040-09-12', to: '2040-09-15' },
         });
-        expect(await recordLeave(asAdmin, organization, self.id, '2040-09-26', '2040-09-30'), slug).toEqual({
+        expect(await recordLeave(asAdmin, organization, self.id, '2040-09-26', '2040-09-30', ANNUAL_LEAVE), slug).toEqual({
           ok: true,
         });
         expect(
-          await recordLeave(restLeaveTable(await tokenFor(member, slug)), organization, self.id, '2040-10-01', '2040-10-02'),
+          await recordLeave(restLeaveTable(await tokenFor(member, slug)), organization, self.id, '2040-10-01', '2040-10-02', ANNUAL_LEAVE),
           slug,
         ).toEqual({ ok: false, code: LEAVE_DENIED });
 
@@ -18260,17 +18260,17 @@ describe('a leave record is amended or removed by an active admin alone, attribu
 
         // The entered 12.09–20.09 overlaps the amended record too, which the
         // read-back leaves out: the conflict named is 18.09–25.09.
-        expect(await amendLeave(asAdmin, table, organization, self.id, amended, '2041-09-12', '2041-09-20'), slug).toEqual({
+        expect(await amendLeave(asAdmin, table, organization, self.id, amended, '2041-09-12', '2041-09-20', ANNUAL_LEAVE), slug).toEqual({
           ok: false,
           code: LEAVE_OVERLAP,
           conflict: { from: '2041-09-18', to: '2041-09-25' },
         });
-        expect(await amendLeave(asAdmin, table, organization, self.id, amended, '2041-09-14', '2041-09-10'), slug).toEqual({
+        expect(await amendLeave(asAdmin, table, organization, self.id, amended, '2041-09-14', '2041-09-10', ANNUAL_LEAVE), slug).toEqual({
           ok: false,
           code: LEAVE_FAILED,
         });
         expect(
-          await amendLeave(restLeaveRpc(await tokenFor(member, slug)), table, organization, self.id, amended, '2041-09-11', '2041-09-12'),
+          await amendLeave(restLeaveRpc(await tokenFor(member, slug)), table, organization, self.id, amended, '2041-09-11', '2041-09-12', ANNUAL_LEAVE),
           slug,
         ).toEqual({ ok: false, code: LEAVE_DENIED });
         expect(await removeLeave(restLeaveRpc(await tokenFor(member, slug)), amended), slug).toEqual({
@@ -18278,7 +18278,7 @@ describe('a leave record is amended or removed by an active admin alone, attribu
           code: LEAVE_DENIED,
         });
 
-        const landed = await amendLeave(asAdmin, table, organization, self.id, amended, '2041-09-11', '2041-09-15');
+        const landed = await amendLeave(asAdmin, table, organization, self.id, amended, '2041-09-11', '2041-09-15', ANNUAL_LEAVE);
         expect(landed.ok, `${slug}: ${JSON.stringify(landed)}`).toBe(true);
         const replacement = landed.ok ? landed.id : '';
         expect(replacement).toMatch(/^[0-9a-f-]{36}$/);
@@ -25626,7 +25626,7 @@ describe('absence types are organization data, and every leave record is annual 
   );
 
   it.skipIf(noDatabase).each(FIXTURES)(
-    'records a $fixture admin\'s leave naming no type as annual leave, and refuses naming one',
+    'records a $fixture admin\'s leave naming no type as annual leave, and admits naming one (story 13.2b)',
     async ({ slug, admin, member }) => {
       await inRolledBackTransaction(async (client) => {
         const caller = await memberByUsername(client, slug, admin);
@@ -25637,12 +25637,16 @@ describe('absence types are organization data, and every leave record is annual 
           member: subject.id,
           during: '[2041-03-02,2041-03-04]',
         });
-        const named = await refusedThenContinue(client, () =>
-          client.query(
-            `insert into leave_records (organization_id, member_id, during, absence_type_id)
-             values ($1, $2, '[2041-04-02,2041-04-04]'::daterange, $3)`,
-            [caller.organizationId, subject.id, ANNUAL_LEAVE],
-          ),
+        // STORY 13.2b (0054): an admin names the type — one of the
+        // organization's own that is not the default, inserted as the owner.
+        await actAsOwner(client);
+        const notDrawing = await addNonDrawingType(client, caller.organizationId, `${THROWAWAY} named`);
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const { rows: named } = await client.query<{ id: string }>(
+          `insert into leave_records (organization_id, member_id, during, absence_type_id)
+           values ($1, $2, '[2041-04-02,2041-04-04]'::daterange, $3)
+           returning id::text as id`,
+          [caller.organizationId, subject.id, notDrawing],
         );
         await actAsOwner(client);
 
@@ -25651,7 +25655,7 @@ describe('absence types are organization data, and every leave record is annual 
           [id],
         );
         expect(rows[0]?.type, `${slug}: a leave record naming no type is not annual leave`).toBe(ANNUAL_LEAVE);
-        expect(named.code, 'a session may write a leave record\'s type before 13.2b').toBe('42501');
+        expect(await typeOfRecord(client, named[0]?.id ?? ''), `${slug}: the admin's named type was not stored`).toBe(notDrawing);
       });
     },
   );
@@ -25710,6 +25714,162 @@ describe('absence types are organization data, and every leave record is annual 
           (await read('public.leave_overview_records()')).every((row) => row.drawsAllowance),
           `${slug}: the flag did not follow the type`,
         ).toBe(true);
+      });
+    },
+  );
+});
+
+/** A non-drawing type of the organization, inserted as the owner: its id. */
+async function addNonDrawingType(client: Client, organization: string, name: string): Promise<string> {
+  const { rows } = await client.query<{ id: string }>(
+    `insert into absence_types (organization_id, name, draws_allowance)
+     values ($1, $2, false) returning id::text as id`,
+    [organization, name],
+  );
+  const id = rows[0]?.id;
+  if (id === undefined) throw new Error('the absence type insert returned no id');
+  return id;
+}
+
+/** One leave record's type, as the owner sees it. */
+async function typeOfRecord(client: Client, id: string): Promise<string | undefined> {
+  const { rows } = await client.query<{ type: string }>(
+    'select absence_type_id::text as type from leave_records where id = $1',
+    [id],
+  );
+  return rows[0]?.type;
+}
+
+describe('the type is chosen when absence is recorded or requested, and approval and amend carry it (story 13.2b)', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    "stores a $fixture admin's typed record and a member's typed request, and an approval copies the request's type",
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const sick = await addNonDrawingType(client, organization, `${THROWAWAY} not drawing`);
+
+        await actAs(client, owner.authUserId, organization);
+        const { rows: recorded } = await client.query<{ id: string }>(
+          `insert into leave_records (organization_id, member_id, during, absence_type_id)
+           values ($1, $2, '[2046-05-04,2046-05-06]'::daterange, $3)
+           returning id::text as id`,
+          [organization, self.id, sick],
+        );
+        await actAs(client, self.authUserId, organization);
+        const { rows: requested } = await client.query<{ id: string }>(
+          `insert into leave_requests (organization_id, member_id, during, absence_type_id)
+           values ($1, $2, '[2046-06-01,2046-06-03]'::daterange, $3)
+           returning id::text as id`,
+          [organization, self.id, sick],
+        );
+        const untyped = await insertRequest(client, { organization, member: self.id, during: '[2046-07-01,2046-07-02]' });
+        const request = requested[0]?.id;
+        if (request === undefined) throw new Error('the leave request insert returned no id');
+
+        await actAs(client, owner.authUserId, organization);
+        const approved = await decideRequest(client, request, 'approved');
+        const approvedUntyped = await decideRequest(client, untyped, 'approved');
+        await actAsOwner(client);
+
+        expect(await typeOfRecord(client, recorded[0]?.id ?? ''), `${slug}: the admin's record lost its type`).toBe(sick);
+        const { rows: requestTypes } = await client.query<{ id: string; type: string }>(
+          'select id::text as id, absence_type_id::text as type from leave_requests where id = any($1::uuid[]) order by id::text',
+          [[request, untyped]],
+        );
+        expect(Object.fromEntries(requestTypes.map((row) => [row.id, row.type])), slug).toEqual({
+          [request]: sick,
+          // An old client names no type: annual leave.
+          [untyped]: ANNUAL_LEAVE,
+        });
+        expect(await typeOfRecord(client, approved ?? ''), `${slug}: the approval did not copy the type`).toBe(sick);
+        expect(await typeOfRecord(client, approvedUntyped ?? ''), `${slug}: an untyped approval`).toBe(ANNUAL_LEAVE);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    "keeps a $fixture record's type on an amend that names none, and changes it on one that names one",
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const sick = await addNonDrawingType(client, organization, `${THROWAWAY} not drawing`);
+
+        await actAs(client, owner.authUserId, organization);
+        const { rows } = await client.query<{ id: string }>(
+          `insert into leave_records (organization_id, member_id, during, absence_type_id)
+           values ($1, $2, '[2046-05-04,2046-05-06]'::daterange, $3)
+           returning id::text as id`,
+          [organization, self.id, sick],
+        );
+        const original = rows[0]?.id;
+        if (original === undefined) throw new Error('the leave record insert returned no id');
+        // Three arguments, as an old cached client: the type stays.
+        const kept = await amendLeaveRecord(client, original, '2046-05-04', '2046-05-07');
+        // The same range, another type: a type-only amend.
+        const { rows: changed } = await client.query<{ id: string | null }>(
+          'select public.amend_leave_record($1::uuid, $2::date, $3::date, $4::uuid)::text as id',
+          [kept, '2046-05-04', '2046-05-07', ANNUAL_LEAVE],
+        );
+        const back = changed[0]?.id ?? '';
+        await actAsOwner(client);
+
+        expect(await typeOfRecord(client, kept), `${slug}: an amend naming no type changed it`).toBe(sick);
+        expect(await typeOfRecord(client, back), `${slug}: an amend naming a type did not change it`).toBe(ANNUAL_LEAVE);
+        const { rows: live } = await client.query<{ id: string }>(
+          'select id::text as id from leave_records where member_id = $1 and removed_at is null and during && $2::daterange',
+          [self.id, '[2046-05-01,2046-05-31]'],
+        );
+        expect(live.map((row) => row.id), `${slug}: the amend left other than the replacement live`).toEqual([back]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(CROSS_TENANT)(
+    'refuses a $fixture record, request or amend naming a $otherFixture type by the composite key (23503)',
+    async ({ slug, admin, member, otherSlug }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const foreignType = await addNonDrawingType(client, await organizationId(client, otherSlug), `${THROWAWAY} foreign`);
+
+        await actAs(client, owner.authUserId, organization);
+        const record = await refusedThenContinue(client, () =>
+          client.query(
+            `insert into leave_records (organization_id, member_id, during, absence_type_id)
+             values ($1, $2, '[2046-05-04,2046-05-06]'::daterange, $3)`,
+            [organization, self.id, foreignType],
+          ),
+        );
+        const live = await insertLeave(client, { organization, member: self.id, during: '[2046-08-03,2046-08-05]' });
+        const amend = await refusedThenContinue(client, () =>
+          client.query('select public.amend_leave_record($1::uuid, $2::date, $3::date, $4::uuid)', [
+            live,
+            '2046-08-03',
+            '2046-08-05',
+            foreignType,
+          ]),
+        );
+        await actAs(client, self.authUserId, organization);
+        const request = await refusedThenContinue(client, () =>
+          client.query(
+            `insert into leave_requests (organization_id, member_id, during, absence_type_id)
+             values ($1, $2, '[2046-06-01,2046-06-03]'::daterange, $3)`,
+            [organization, self.id, foreignType],
+          ),
+        );
+        await actAsOwner(client);
+
+        expect(record.code, `${slug}: a record named ${otherSlug}'s type`).toBe('23503');
+        expect(record.message).toContain('leave_records_absence_type_fkey');
+        expect(amend.code, `${slug}: an amend named ${otherSlug}'s type`).toBe('23503');
+        expect(request.code, `${slug}: a request named ${otherSlug}'s type`).toBe('23503');
+        expect(request.message).toContain('leave_requests_absence_type_fkey');
+        expect(await typeOfRecord(client, live), `${slug}: a refused amend changed the record`).toBe(ANNUAL_LEAVE);
       });
     },
   );

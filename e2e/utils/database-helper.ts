@@ -1137,6 +1137,31 @@ export function holdAbsenceTypes(slug: string): RotationHold {
 }
 
 /**
+ * An absence type of the run organization named `name`, drawing or not, in
+ * SQL as the owner (story 13.2b): a test that records leave of a type of its
+ * own adds one, under {@link holdAbsenceTypes}, and its `finally` removes it
+ * with {@link cleanUpAbsenceTypesInSql}, which removes the leave of it first.
+ * `name` must carry {@link E2E_ABSENCE_TYPE_PREFIX}. Returns the type's id.
+ */
+export async function seedAbsenceType(slug: string, name: string, drawsAllowance: boolean): Promise<string> {
+  if (!name.startsWith(E2E_ABSENCE_TYPE_PREFIX)) throw new Error(`E2E: an absence type a test adds is named ${E2E_ABSENCE_TYPE_PREFIX}…`);
+  const client = await connect();
+  try {
+    const { rows } = await client.query<{ id: string }>(
+      `insert into absence_types (organization_id, name, draws_allowance)
+       select o.id, $2, $3 from organizations o where o.slug = $1
+       returning id`,
+      [slug, name, drawsAllowance],
+    );
+    const type = rows[0];
+    if (type === undefined) throw new Error(`E2E: no organization ${slug} to add the absence type ${name} to`);
+    return type.id;
+  } finally {
+    await client.end();
+  }
+}
+
+/**
  * Deletes the run organization's absence types named in `names`, every one
  * carrying {@link E2E_ABSENCE_TYPE_PREFIX}, and every one that is annual
  * leave's seeded name by `private.name_key` (so a regression that let the
@@ -1144,8 +1169,10 @@ export function holdAbsenceTypes(slug: string): RotationHold {
  * itself, by its id; then sets
  * annual leave's name back to its seeded one if a test renamed it. Run from a
  * `finally` under {@link holdAbsenceTypes}. As the owner, past `0052`'s
- * missing delete privilege: no session deletes a type, and the types a test
- * adds carry no leave record. Idempotent.
+ * missing delete privilege: no session deletes a type. STORY 13.2b: a type a
+ * test recorded or requested leave of is referenced with no cascade (0052,
+ * 0054), so the decisions, leave records and requests of those types go
+ * first, in that order. Idempotent.
  */
 export async function cleanUpAbsenceTypesInSql(slug: string, names: readonly string[]): Promise<void> {
   const client = await connect();
@@ -1157,17 +1184,48 @@ export async function cleanUpAbsenceTypesInSql(slug: string, names: readonly str
 }
 
 async function cleanUpAbsenceTypes(client: pg.Client, slug: string, names: readonly string[]): Promise<void> {
-  await client.query(
-    `delete from absence_types t
-      using organizations o
-      where t.organization_id = o.id and o.slug = $1
+  // The types about to go, as one predicate over `t` (never annual leave).
+  const doomed = `t.organization_id = o.id and o.slug = $1
         and t.id <> $2::uuid
         and (
           t.name = any($3::text[])
           or t.name like $4
           or private.name_key(t.name) = private.name_key($5)
-        )`,
-    [slug, ANNUAL_LEAVE_ID, names, `${E2E_ABSENCE_TYPE_PREFIX}%`, ANNUAL_LEAVE_NAME],
+        )`;
+  const parameters = [slug, ANNUAL_LEAVE_ID, names, `${E2E_ABSENCE_TYPE_PREFIX}%`, ANNUAL_LEAVE_NAME];
+  // STORY 13.2b: what names those types first — a decision names its request
+  // and the record it wrote, so the decisions go before either.
+  await client.query(
+    `delete from leave_request_decisions d
+      where exists (
+        select 1 from absence_types t, organizations o
+         where ${doomed}
+           and t.organization_id = d.organization_id
+           and (
+             exists (select 1 from leave_records r
+                      where r.organization_id = d.organization_id and r.id = d.leave_record_id
+                        and r.absence_type_id = t.id)
+             or exists (select 1 from leave_requests q
+                         where q.organization_id = d.organization_id and q.id = d.request_id
+                           and q.absence_type_id = t.id)
+           )
+      )`,
+    parameters,
+  );
+  for (const table of ['leave_records', 'leave_requests']) {
+    await client.query(
+      `delete from ${table} x
+        using absence_types t, organizations o
+        where ${doomed}
+          and x.organization_id = t.organization_id and x.absence_type_id = t.id`,
+      parameters,
+    );
+  }
+  await client.query(
+    `delete from absence_types t
+      using organizations o
+      where ${doomed}`,
+    parameters,
   );
   await client.query(
     `update absence_types t set name = $3

@@ -23,6 +23,7 @@ import {
   absenceTypeWriteFailureOf,
   absenceTypeWriteMessageKey,
   createAbsenceType,
+  drawsHintShown,
   drawsLocked,
   drawsOf,
   drawsValue,
@@ -294,6 +295,14 @@ describe('the drawing choice', () => {
     expect(drawsLocked(annual)).toBe(true);
     expect(drawsLocked(education)).toBe(false);
     expect(drawsLocked(null)).toBe(false);
+  });
+
+  // STORY 13.2b (Q8): a static line, never a confirmation.
+  it("says what changing the flag does on every edited type but annual leave's, and never on a new one", () => {
+    expect(drawsHintShown(education)).toBe(true);
+    expect(drawsHintShown({ ...education, drawsAllowance: false })).toBe(true);
+    expect(drawsHintShown(annual)).toBe(false);
+    expect(drawsHintShown(null)).toBe(false);
   });
 
   it('round-trips its values, draws first', () => {

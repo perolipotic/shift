@@ -28,6 +28,7 @@ import {
   LEAVE_READY,
   LEAVE_RECORD_ACTION,
   LEAVE_REMOVE_ACTION,
+  LEAVE_TYPE_FIELD,
   leaveAmendedOf,
   leaveConflictOf,
   leaveFormFailureOf,
@@ -37,6 +38,8 @@ import {
   leaveInvalidFieldOf,
   leavePreviewStateOf,
   leaveSavedOf,
+  leaveTypeChoiceOf,
+  typedLeaveBaseOf,
   LEAVE_UNAVAILABLE,
   memberLeaveBaseOf,
   REPLACEMENTS_UNKNOWN,
@@ -121,6 +124,12 @@ export interface LeaveDialogOpening {
  * their values are mirrored into state only so the preview can follow them.
  * The whole form is disabled while a save is outstanding.
  *
+ * THE TYPE (story 13.2b) is a radio card group of the calendar snapshot's
+ * absence types, held in state: nothing is chosen for a new record, and an
+ * amend starts on its record's type. A save with no type chosen marks and
+ * focuses the group and sends nothing. A snapshot with no catalog, or a
+ * record naming a type it lacks, makes the card unavailable.
+ *
  * THE CONFLICT PREVIEW (story 7.12): `conflicts` is what the ready range
  * would create, clear and keep, and `removeConflicts` what the open removal
  * clears — both `leaveConflictsOf`, over the queue's own recipe. A note,
@@ -176,6 +185,8 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
   const navigate = useNavigate();
   const fromField = useRef<HTMLInputElement>(null);
   const toField = useRef<HTMLInputElement>(null);
+  /** The type group's first card, which a save refused for want of a type focuses (story 13.2b). */
+  const typeField = useRef<HTMLButtonElement>(null);
   /** The card's status line a landed save or amend raised: `Notice` renders a `<p>`. */
   const noticeField = useRef<HTMLParagraphElement>(null);
   /** The open dialog's alert: a refused save or amend, above its buttons (story 7.12). */
@@ -224,6 +235,8 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
   const [handoffMissed, setHandoffMissed] = useState(false);
   const [from, setFrom] = useState(LEAVE_NO_DATE);
   const [to, setTo] = useState(LEAVE_NO_DATE);
+  /** The chosen absence type's id (story 13.2b), or null while none is chosen. */
+  const [typeId, setTypeId] = useState<string | null>(null);
   const [leaveFailure, setLeaveFailure] = useState<LeaveFailure | null>(null);
   const [leaveSaved, setLeaveSaved] = useState<LeaveSaved | null>(null);
   /** The field a save refused before any request named, until it is edited. */
@@ -284,20 +297,25 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
 
   const recordsState = leaveRecordsStateOf(records);
   const calendarState = calendarSurfaceStateOf(calendar);
-  const base = memberLeaveBaseOf(
-    {
-      members: membersSurfaceStateOf(members),
-      calendar: calendarState,
-      organization,
-      records: recordsState,
-    },
-    memberId,
-    new Date(),
+  // STORY 13.2b: the card names every record's type, so a snapshot without
+  // the catalog, or a record of a type it lacks, leaves it unavailable.
+  const { base, types: absenceTypes } = typedLeaveBaseOf(
+    memberLeaveBaseOf(
+      {
+        members: membersSurfaceStateOf(members),
+        calendar: calendarState,
+        organization,
+        records: recordsState,
+      },
+      memberId,
+      new Date(),
+    ),
+    calendarState.snapshot,
   );
   // NO PREVIEW WHILE THE RECORDS ARE BEING RE-READ: what they cost may be about to change.
   const preview =
     base.kind === LEAVE_READY && !recordsState.refreshing
-      ? leavePreviewStateOf(base.input, from, to, amendTarget)
+      ? leavePreviewStateOf(base.input, from, to, leaveTypeChoiceOf(absenceTypes, typeId), amendTarget)
       : null;
   const snapshot = base.kind === LEAVE_READY ? calendarState.snapshot : null;
   /** What the previewed amend would leave rostered (story 5.4e), or null while no amend range is previewed. */
@@ -404,7 +422,11 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
   function capturedGuard(guard: ReplacementGuard | null): ReplacementGuard | null {
     return guard !== null && guardFetching ? { kind: REPLACEMENTS_UNKNOWN } : guard;
   }
-  const invalidField = leaveInvalidFieldOf(leaveFormFailureOf(leaveFailure), refusedField);
+  // STORY 13.2b: a refused field stays marked only while the reason standing is about it.
+  const invalidField = leaveInvalidFieldOf(
+    leaveFormFailureOf(leaveFailure),
+    preview?.kind === LEAVE_PREVIEW_REASON && preview.field === refusedField ? refusedField : null,
+  );
   /** Any leave write outstanding: every leave control waits for it. */
   const writePending = recordPending || amendPending || removePending;
   const formDisabled = base.kind !== LEAVE_READY || writePending || recordsState.refreshing;
@@ -429,6 +451,7 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
       setOpening(null);
       setFrom(LEAVE_NO_DATE);
       setTo(LEAVE_NO_DATE);
+      setTypeId(null);
       setRefusedField(null);
       if (live !== null) {
         setLeaveFailure({ code: LEAVE_GONE, action: LEAVE_AMEND_ACTION, conflict: null });
@@ -442,6 +465,7 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
       setOpening(null);
       setFrom(LEAVE_NO_DATE);
       setTo(LEAVE_NO_DATE);
+      setTypeId(null);
       setRefusedField(null);
       setLeaveFailure(null);
       focusLater([() => cardHeading.current], () => cardHeading.current);
@@ -536,6 +560,8 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
     setOpening({ key: openings.current, target, range, handed });
     setFrom(range?.from ?? LEAVE_NO_DATE);
     setTo(range?.to ?? LEAVE_NO_DATE);
+    // STORY 13.2b: an amend starts on its record's type; a new record on none.
+    setTypeId(target?.absenceTypeId ?? null);
     focusLater([() => fromField.current], () => toField.current);
   }
 
@@ -556,6 +582,12 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
 
     if (event.currentTarget.name === LEAVE_FROM_FIELD) setFrom(value);
     else setTo(value);
+    clearRaised();
+  }
+
+  /** A type card chosen (story 13.2b): the preview follows it, and it clears everything raised. */
+  function chooseType(value: string): void {
+    setTypeId(value);
     clearRaised();
   }
 
@@ -594,6 +626,7 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
     setOpening(null);
     setFrom(LEAVE_NO_DATE);
     setTo(LEAVE_NO_DATE);
+    setTypeId(null);
     focusLater(
       [amendClosed ? () => amendOpener.current : () => recordOpener.current, () => listHeading.current],
       () => cardHeading.current,
@@ -636,7 +669,9 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
     }
   }
 
-  function fieldOf(field: LeaveField): HTMLInputElement | null {
+  function fieldOf(field: LeaveField): HTMLElement | null {
+    if (field === LEAVE_TYPE_FIELD) return typeField.current;
+
     return field === LEAVE_FROM_FIELD ? fromField.current : toField.current;
   }
 
@@ -681,6 +716,7 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
         memberId,
         sent.range.from,
         sent.range.to,
+        sent.type.id,
       );
 
       // A REFUSAL KEEPS EVERY ENTERED VALUE: nothing here resets the fields.
@@ -708,6 +744,7 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
         setOpening(null);
         setFrom(LEAVE_NO_DATE);
         setTo(LEAVE_NO_DATE);
+        setTypeId(null);
       }
     } catch (cause) {
       console.error(LEAVE_FAILED, cause);
@@ -787,6 +824,7 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
         target.id,
         sent.range.from,
         sent.range.to,
+        sent.type.id,
       );
 
       if (!outcome.ok) {
@@ -807,11 +845,13 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
         setOpening(null);
         setFrom(LEAVE_NO_DATE);
         setTo(LEAVE_NO_DATE);
+        setTypeId(null);
         landedId = outcome.id;
       } else if (outcome.code === LEAVE_GONE) {
         setOpening(null);
         setFrom(LEAVE_NO_DATE);
         setTo(LEAVE_NO_DATE);
+        setTypeId(null);
       }
     } catch (cause) {
       console.error(LEAVE_FAILED, cause);
@@ -919,6 +959,7 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
     cardHeading,
     fromField,
     toField,
+    typeField,
     noticeField,
     alertField,
     listNoticeField,
@@ -928,6 +969,11 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
     shortStaffed,
     removeConflicts,
     memberName,
+    /** The organization's absence types, in the snapshot's order, while the card is ready (story 13.2b). */
+    absenceTypes,
+    /** The chosen type's id, or null (story 13.2b). */
+    typeId,
+    chooseType,
     change,
     // STORY 8.2e: "show the read retry now" — the surface is in its
     // retryable unavailable state, and online: offline its re-read would

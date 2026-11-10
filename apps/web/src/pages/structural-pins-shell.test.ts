@@ -1208,7 +1208,11 @@ describe('no read retry offline, on any surface (story 8.2e)', () => {
     ['features/today/hooks/use-admin-today.ts', /const retryable = clock\.online && adminToday\.kind === ADMIN_TODAY_UNAVAILABLE;/],
     ['features/calendar/hooks/use-calendar-screen.ts', /const retryable = clock\.online && refusalRetryable;/],
     ['features/hours/hooks/use-hours.ts', /retryable: clock\.online && surface\.retryable,/],
-    ['features/leave/hooks/use-my-leave.ts', /retryable: clock\.online && leave\.kind === MY_LEAVE_UNAVAILABLE,/],
+    // Story 13.2b: and over a snapshot with no type catalog, the request form's way out.
+    [
+      'features/leave/hooks/use-my-leave.ts',
+      /retryable:\s*clock\.online &&\s*\(leave\.kind === MY_LEAVE_UNAVAILABLE \|\| \(leave\.kind === MY_LEAVE_READY && leave\.absenceTypes === null\)\),/,
+    ],
     ['features/leave/hooks/use-leave-overview.ts', /retryable: clock\.online && \(/],
     // Story 9.3: a member's own requests list, beside their figures.
     ['features/leave/hooks/use-leave-request-form.ts', /retryable: clock\.online && view === GODISNJI_UNAVAILABLE,/],

@@ -11,6 +11,7 @@ import {
   LEAVE_NO_DATE,
   LEAVE_PREVIEW_REASON,
   LEAVE_TO_FIELD,
+  LEAVE_TYPE_FIELD,
   type LeaveField,
 } from '@/features/leave/services/leave-section';
 import { GODISNJI_OVERVIEW, GODISNJI_UNAVAILABLE, godisnjiViewOf } from '@/features/leave/services/leave-overview';
@@ -83,6 +84,10 @@ export function useLeaveRequestView() {
  * preview — incomplete, reversed, longer than 366 days — is refused here,
  * before any request, with its reason and its field focused.
  *
+ * THE TYPE (story 13.2b): a radio card group of the organization's absence
+ * types, held in state, none preselected; any type may be requested. A send
+ * with none chosen marks and focuses the group and sends nothing.
+ *
  * THE FIELDS ARE UNCONTROLLED, so a refusal keeps every entered value; their
  * values are mirrored into state only so the preview can follow them. One send
  * in flight (a ref, no mutation, nothing optimistic). After any outcome the
@@ -97,16 +102,23 @@ export function useLeaveRequestForm() {
   useMyLeaveRequestsRead();
   const [from, setFrom] = useState(LEAVE_NO_DATE);
   const [to, setTo] = useState(LEAVE_NO_DATE);
+  /** The chosen absence type's id (story 13.2b), or null while none is chosen. */
+  const [typeId, setTypeId] = useState<string | null>(null);
   const [refusedField, setRefusedField] = useState<LeaveField | null>(null);
   const [failure, setFailure] = useState<LeaveRequestSendFailure | null>(null);
   const [pending, setPending] = useState(false);
   const sending = useRef(false);
   const fromField = useRef<HTMLInputElement>(null);
   const toField = useRef<HTMLInputElement>(null);
+  /** The type group's first card, which a send refused for want of a type focuses. */
+  const typeField = useRef<HTMLButtonElement>(null);
   const alertField = useRef<HTMLParagraphElement>(null);
-  const preview = myLeaveRequestPreviewOf(leave, from, to);
+  const preview = myLeaveRequestPreviewOf(leave, from, to, typeId);
   // The field a reason names is marked only once a send was refused for it.
-  const invalidField = preview !== null && preview.kind === LEAVE_PREVIEW_REASON ? refusedField : null;
+  // STORY 13.2b: and only while the reason standing is about that field, so a
+  // later date reason never leaves the type group marked, or the reverse.
+  const invalidField =
+    preview !== null && preview.kind === LEAVE_PREVIEW_REASON && preview.field === refusedField ? refusedField : null;
 
   /**
    * A date typed: mirrored so the preview follows it. A refusal standing
@@ -122,7 +134,15 @@ export function useLeaveRequestForm() {
     else if (name === LEAVE_TO_FIELD) setTo(value);
   }
 
-  function fieldOf(field: LeaveField): HTMLInputElement | null {
+  /** A type card chosen: the preview follows it, and a standing refusal goes, as after a typed date. */
+  function chooseType(value: string): void {
+    setFailure(null);
+    setTypeId(value);
+  }
+
+  function fieldOf(field: LeaveField): HTMLElement | null {
+    if (field === LEAVE_TYPE_FIELD) return typeField.current;
+
     return field === LEAVE_FROM_FIELD ? fromField.current : toField.current;
   }
 
@@ -160,6 +180,7 @@ export function useLeaveRequestForm() {
         leave.memberId,
         range.from,
         range.to,
+        preview.type.id,
       );
 
       // A REFUSAL KEEPS EVERY ENTERED VALUE: nothing here resets the fields.
@@ -200,9 +221,12 @@ export function useLeaveRequestForm() {
     failure,
     pending,
     change,
+    typeId,
+    chooseType,
     send,
     fromField,
     toField,
+    typeField,
     alertField,
   };
 }

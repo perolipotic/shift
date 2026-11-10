@@ -29,10 +29,12 @@ import {
   LEAVE_READY,
   LEAVE_UNAVAILABLE,
   LEAVE_UNSCHEDULED,
-  leaveInYearChargeOf,
+  leavePreviewInYearOf,
   leavePreviewStateOf,
   leaveRangeValuesOf,
   leaveReasonMessageKey,
+  leaveTypeChoiceOf,
+  leaveTypesOf,
   memberLeaveBaseOf,
   type LeaveCalendarSource,
   type LeaveOrganizationSource,
@@ -73,6 +75,11 @@ import {
  * failed — is its reason line in place of the figures. NOTHING IN THE PREVIEW
  * DISABLES A DECISION: over the balance, over the member's leave, unknown
  * collisions, both buttons stay; the database decides overlap.
+ *
+ * THE TYPE (story 13.2b) is the request's own: the screen names it as a fact
+ * and previews by its drawing flag. Approval writes it; nothing here chooses
+ * or changes it. A snapshot with no type catalog, or a request of a type the
+ * catalog lacks, is unavailable, never a guess.
  */
 
 /** A read the screen stands on: TanStack's answer, as `useSnapshotFreshness` reshapes it. */
@@ -130,6 +137,8 @@ export interface ReviewFacts {
   readonly memberName: string | null;
   readonly from: string;
   readonly to: string;
+  /** The stored name of the type asked for (story 13.2b): the admin's to see. */
+  readonly typeName: string;
 }
 
 /** The base cannot cost the range: its line in place of the figures. */
@@ -151,8 +160,10 @@ export type ReviewPreview =
   | {
       readonly kind: typeof PREVIEW_READY;
       readonly figures: LeavePreview;
-      /** The part charged to the current leave year, when it differs from the whole cost. */
+      /** The part charged to the current leave year, when it differs from the whole cost; none for a type that does not draw. */
       readonly inYearDays: number | null;
+      /** Whether the request's type draws down the allowance (story 13.2b): when not, a line says the balance does not change. */
+      readonly drawsAllowance: boolean;
       /** What approval would create; null when the range shares a date with the member's leave (the overlap note says so). */
       readonly conflicts: LeaveConflicts | null;
       /** What approval would newly leave short of people (story 11.2); null while the setting is empty. */
@@ -259,6 +270,7 @@ function previewOf(
   sources: LeaveRequestReviewSources,
   snapshot: CalendarSnapshot,
   request: ReviewedLeaveRequest,
+  types: Parameters<typeof leaveTypeChoiceOf>[0],
   now: Date,
 ): ReviewPreview | typeof REVIEW_LOADING {
   const base = memberLeaveBaseOf(
@@ -272,14 +284,17 @@ function previewOf(
   // NO FIGURE WHILE THE RECORDS ARE RE-READ: what the range costs may be about to change.
   if (sources.records.refreshing) return { kind: PREVIEW_REFRESHING };
 
-  const state = leavePreviewStateOf(base.input, request.from, request.to);
+  // STORY 13.2b: by the request's own type, which the caller found in the catalog.
+  const type = leaveTypeChoiceOf(types, request.absenceTypeId);
+  const state = leavePreviewStateOf(base.input, request.from, request.to, type);
 
   if (state.kind === LEAVE_PREVIEW_REASON) return { kind: PREVIEW_REASON, key: leaveReasonMessageKey(state.reason) };
 
   return {
     kind: PREVIEW_READY,
     figures: state.preview,
-    inYearDays: leaveInYearChargeOf(state.preview),
+    inYearDays: leavePreviewInYearOf(state),
+    drawsAllowance: state.type.drawsAllowance,
     conflicts: leaveConflictsOf(
       sources.resolutions,
       snapshot,
@@ -331,10 +346,16 @@ export function leaveRequestReviewOf(
   // A MEMBER GONE FROM BOTH LISTS is no read to retry: the request is still
   // drawn, under a neutral line, its preview reaches the base's absent reason,
   // and the decisions stay — the database decides.
-  const facts: ReviewFacts = { request, memberName, ...leaveRangeValuesOf(request) };
+  // STORY 13.2b: the request's type, named from the snapshot's catalog, or the screen is unavailable.
+  const types = leaveTypesOf(snapshot, [request.absenceTypeId]);
+  const typeName = types?.find((type) => type.id === request.absenceTypeId)?.name;
+
+  if (typeName === undefined) return { kind: REVIEW_UNAVAILABLE };
+
+  const facts: ReviewFacts = { request, memberName, ...leaveRangeValuesOf(request), typeName };
 
   if (request.status === REQUEST_PENDING) {
-    const preview = previewOf(sources, snapshot, request, now);
+    const preview = previewOf(sources, snapshot, request, types, now);
 
     return preview === REVIEW_LOADING ? { kind: REVIEW_LOADING } : { kind: REVIEW_PENDING, facts, preview };
   }

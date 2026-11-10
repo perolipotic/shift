@@ -211,8 +211,8 @@ function answeredErrorOf(answered: unknown): LeaveRequestWriteError | null | und
 
 /**
  * Send a request for `memberId` from `from` to `to`, both `YYYY-MM-DD` and
- * both included: 0040's plain insert of the three facts, the range as the
- * `daterange` literal `[from,to]`. `created_by` and `created_at` come from
+ * both included, of the absence type `absenceTypeId` (story 13.2b): 0040's
+ * plain insert of the facts, the range as the `daterange` literal `[from,to]`. `created_by` and `created_at` come from
  * their defaults. A date that is not a calendar date, or a reversed range, is
  * {@link REQUEST_FAILED} without a request.
  */
@@ -222,6 +222,7 @@ export async function sendLeaveRequest(
   memberId: string,
   from: string,
   to: string,
+  absenceTypeId: string,
 ): Promise<LeaveRequestSendOutcome> {
   if (!isIsoDate(from) || !isIsoDate(to) || to < from) {
     console.error(REQUEST_FAILED, 'not a range of calendar dates');
@@ -232,7 +233,13 @@ export async function sendLeaveRequest(
   let answered: unknown;
 
   try {
-    answered = await table.insert({ organization_id: organizationId, member_id: memberId, during: `[${from},${to}]` });
+    answered = await table.insert({
+      organization_id: organizationId,
+      member_id: memberId,
+      during: `[${from},${to}]`,
+      // STORY 13.2b (0054): the type the member chose; another tenant's is 23503, a plain failure.
+      absence_type_id: absenceTypeId,
+    });
   } catch (cause) {
     console.error(REQUEST_FAILED, cause);
 

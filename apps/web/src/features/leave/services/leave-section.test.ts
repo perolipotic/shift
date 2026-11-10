@@ -23,6 +23,8 @@ import {
   LEAVE_RECORD_ACTION,
   LEAVE_REMOVE_ACTION,
   LEAVE_TO_FIELD,
+  LEAVE_TYPE_FIELD,
+  LEAVE_TYPE_UNCHOSEN,
   LEAVE_UNAVAILABLE,
   LEAVE_UNSCHEDULED,
   leaveAmendedOf,
@@ -41,8 +43,14 @@ import {
   leaveListFailureOf,
   leaveHeadingYearsOf,
   leaveOverlapNoteShown,
+  leavePreviewInYearOf,
   leavePreviewStateOf,
   leaveRangeValuesOf,
+  leaveTypeChoiceOf,
+  leaveTypeDrawsMessageKey,
+  leaveTypeNameOf,
+  leaveTypesOf,
+  typedLeaveBaseOf,
   leaveReasonMessageKey,
   leaveRefusalMessageKey,
   leaveRefusalValuesOf,
@@ -63,6 +71,7 @@ import {
   type LeaveOrganizationSource,
   type MemberLeaveBase,
   type MemberLeaveSources,
+  type LeaveTypeChoice,
   LEAVE_HANDOFF_ORIGIN_STATE,
   LEAVE_HANDOFF_STATE,
   withLeaveHandoff,
@@ -94,6 +103,13 @@ import {
 
 /** Story 13.2: a record of annual leave, which draws down the allowance. */
 const ANNUAL_RECORD = { absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true } as const;
+
+/** Story 13.2b: annual leave chosen in the dialog. */
+const ANNUAL: LeaveTypeChoice = { id: ANNUAL_LEAVE_ID, drawsAllowance: true };
+
+/** Story 13.2b: a type that does not draw down the allowance (*Bolovanje* in the spec's matrix). */
+const SICK_ID = 'type-sick';
+const SICK: LeaveTypeChoice = { id: SICK_ID, drawsAllowance: false };
 
 /**
  * Story 5.1c's view model, executed (AD-15): every row of the spec's matrix,
@@ -339,12 +355,13 @@ describe('the preview', () => {
 
   it('costs the worked example 3 and leaves 14 after a record costing 3, as the domain does', () => {
     const base = baseOf([{ from: '2026-09-02', to: '2026-09-06' }]);
-    const state = leavePreviewStateOf(base.input, '2026-09-18', '2026-09-22');
+    const state = leavePreviewStateOf(base.input, '2026-09-18', '2026-09-22', ANNUAL);
 
     if (state.kind !== LEAVE_PREVIEW_READY) throw new Error(state.kind);
 
     expect(base.balance.balanceDays).toBe(17);
-    expect(state.range).toEqual({ from: '2026-09-18', to: '2026-09-22' });
+    expect(state.range).toEqual({ from: '2026-09-18', to: '2026-09-22', drawsAllowance: true });
+    expect(state.type).toEqual(ANNUAL);
     expect(state.preview.costDays).toBe(3);
     expect(state.preview.balanceAfterDays).toBe(14);
     expect(state.preview.exceedsBalance).toBe(false);
@@ -353,7 +370,7 @@ describe('the preview', () => {
   });
 
   it('notes an overlap with an existing record', () => {
-    const state = leavePreviewStateOf(baseOf([WORKED]).input, '2026-09-13', '2026-09-18');
+    const state = leavePreviewStateOf(baseOf([WORKED]).input, '2026-09-13', '2026-09-18', ANNUAL);
 
     if (state.kind !== LEAVE_PREVIEW_READY) throw new Error(state.kind);
 
@@ -361,7 +378,7 @@ describe('the preview', () => {
   });
 
   it('notes an over-balance range as −2 for a cost of 3 over a balance of 1, and refuses nothing', () => {
-    const state = leavePreviewStateOf(baseOf([], 1).input, WORKED.from, WORKED.to);
+    const state = leavePreviewStateOf(baseOf([], 1).input, WORKED.from, WORKED.to, ANNUAL);
 
     if (state.kind !== LEAVE_PREVIEW_READY) throw new Error(state.kind);
 
@@ -379,7 +396,7 @@ describe('the preview', () => {
     ['do before od', '2026-09-14', '2026-09-10', LEAVE_RANGE_REVERSED, LEAVE_TO_FIELD],
     ['367 days', '2026-01-01', '2027-01-02', LEAVE_RANGE_TOO_LONG, LEAVE_TO_FIELD],
   ] as const)('gives a reason and no preview for %s', (_name, from, to, reason, field) => {
-    expect(leavePreviewStateOf(baseOf().input, from, to)).toEqual({ kind: LEAVE_PREVIEW_REASON, reason, field });
+    expect(leavePreviewStateOf(baseOf().input, from, to, ANNUAL)).toEqual({ kind: LEAVE_PREVIEW_REASON, reason, field });
   });
 
   it('refuses a range the domain will not cost with its own reason on the od field, never the load failure', () => {
@@ -387,7 +404,7 @@ describe('the preview', () => {
     // A breached precondition the base did not check: a record overlapping another.
     const input = { ...baseOf().input, records: [WORKED, { ...ANNUAL_RECORD, id: 'record-overlapping', from: '2026-09-12', to: '2026-09-20' }] };
 
-    expect(leavePreviewStateOf(input, '2026-10-01', '2026-10-02')).toEqual({
+    expect(leavePreviewStateOf(input, '2026-10-01', '2026-10-02', ANNUAL)).toEqual({
       kind: LEAVE_PREVIEW_REASON,
       reason: LEAVE_RANGE_REFUSED,
       field: LEAVE_FROM_FIELD,
@@ -397,7 +414,7 @@ describe('the preview', () => {
 
   it('shows the part charged to this leave year when a range crosses its end', () => {
     // Dan on 2026-12-27 (step 0): 27 Dan, 28 Noć, 29 Sl, 30 Sl, 31 Dan | 01 Noć.
-    const state = leavePreviewStateOf(baseOf().input, '2026-12-27', '2027-01-01');
+    const state = leavePreviewStateOf(baseOf().input, '2026-12-27', '2027-01-01', ANNUAL);
 
     if (state.kind !== LEAVE_PREVIEW_READY) throw new Error(state.kind);
 
@@ -409,7 +426,7 @@ describe('the preview', () => {
   });
 
   it('shows no in-year line when the whole range is charged', () => {
-    const state = leavePreviewStateOf(baseOf().input, WORKED.from, WORKED.to);
+    const state = leavePreviewStateOf(baseOf().input, WORKED.from, WORKED.to, ANNUAL);
 
     if (state.kind !== LEAVE_PREVIEW_READY) throw new Error(state.kind);
 
@@ -417,7 +434,55 @@ describe('the preview', () => {
   });
 
   it('previews 366 days, the longest range', () => {
-    expect(leavePreviewStateOf(baseOf().input, '2026-01-01', '2027-01-01').kind).toBe(LEAVE_PREVIEW_READY);
+    expect(leavePreviewStateOf(baseOf().input, '2026-01-01', '2027-01-01', ANNUAL).kind).toBe(LEAVE_PREVIEW_READY);
+  });
+
+  // STORY 13.2b: the type is chosen; nothing is preselected.
+  it('gives the unchosen-type reason on the type group once the dates are a range, and never before', () => {
+    expect(leavePreviewStateOf(baseOf().input, WORKED.from, WORKED.to, null)).toEqual({
+      kind: LEAVE_PREVIEW_REASON,
+      reason: LEAVE_TYPE_UNCHOSEN,
+      field: LEAVE_TYPE_FIELD,
+    });
+    expect(leaveReasonMessageKey(LEAVE_TYPE_UNCHOSEN)).toBe('ljudi.leaveRecord.typeUnchosen');
+    expect(t('ljudi.leaveRecord.typeUnchosen')).toBe('Odaberi vrstu odsutnosti.');
+    // The dates' own reasons come first, in the form's order.
+    expect(leavePreviewStateOf(baseOf().input, '', '', null)).toEqual({
+      kind: LEAVE_PREVIEW_REASON,
+      reason: LEAVE_RANGE_INCOMPLETE,
+      field: LEAVE_FROM_FIELD,
+    });
+    expect(leavePreviewStateOf(baseOf().input, '2026-09-14', '2026-09-10', null)).toMatchObject({ reason: LEAVE_RANGE_REVERSED });
+  });
+
+  it('previews a non-drawing range of 3 working days at 3 days, the balance after it the balance now, and no in-year line', () => {
+    const base = baseOf([{ from: '2026-09-02', to: '2026-09-06' }]);
+    const state = leavePreviewStateOf(base.input, WORKED.from, WORKED.to, SICK);
+
+    if (state.kind !== LEAVE_PREVIEW_READY) throw new Error(state.kind);
+
+    expect(state.range).toEqual({ from: WORKED.from, to: WORKED.to, drawsAllowance: false });
+    expect(state.type).toEqual(SICK);
+    expect(state.preview.costDays).toBe(3);
+    expect(state.preview.costInYearDays).toBe(0);
+    expect(state.preview.balanceAfterDays).toBe(base.balance.balanceDays);
+    expect(state.preview.exceedsBalance).toBe(false);
+    expect(leavePreviewInYearOf(state)).toBeNull();
+    expect(t('ljudi.leaveRecord.balanceUnchanged')).toContain('ne mijenja');
+    // A drawing range of the same dates states the in-year part as before.
+    const annual = leavePreviewStateOf(base.input, '2026-12-27', '2027-01-01', ANNUAL);
+
+    if (annual.kind !== LEAVE_PREVIEW_READY) throw new Error(annual.kind);
+
+    expect(leavePreviewInYearOf(annual)).toBe(3);
+  });
+
+  it('notes an overlap whatever the type, since every type collides', () => {
+    const state = leavePreviewStateOf(baseOf([WORKED]).input, '2026-09-13', '2026-09-18', SICK);
+
+    if (state.kind !== LEAVE_PREVIEW_READY) throw new Error(state.kind);
+
+    expect(state.preview.overlapsRecord).toBe(true);
   });
 
   it('names every reason with its own line', () => {
@@ -618,7 +683,7 @@ describe('the records list', () => {
 
   it('leaves the amended record out by its id, not by its dates', () => {
     const impostor: LeaveRecord = { ...WORKED, id: 'record-not-in-the-list' };
-    const state = leavePreviewStateOf(baseOf([WORKED]).input, '2026-09-10', '2026-09-16', impostor);
+    const state = leavePreviewStateOf(baseOf([WORKED]).input, '2026-09-10', '2026-09-16', ANNUAL, impostor);
 
     if (state.kind !== LEAVE_PREVIEW_READY) throw new Error(state.kind);
 
@@ -627,7 +692,7 @@ describe('the records list', () => {
 
   it('previews an amend without the amended record: the new cost, the balance after it, and no overlap of its own', () => {
     const base = baseOf([WORKED]);
-    const state = leavePreviewStateOf(base.input, '2026-09-10', '2026-09-16', WORKED);
+    const state = leavePreviewStateOf(base.input, '2026-09-10', '2026-09-16', ANNUAL, WORKED);
 
     if (state.kind !== LEAVE_PREVIEW_READY) throw new Error(state.kind);
 
@@ -637,7 +702,7 @@ describe('the records list', () => {
     expect(state.preview.overlapsRecord).toBe(false);
     expect(state.preview).toEqual(leavePreviewOf({ ...base.input, records: [], range: state.range }));
     // The same range as a NEW record overlaps the one held.
-    const asNew = leavePreviewStateOf(base.input, '2026-09-10', '2026-09-16');
+    const asNew = leavePreviewStateOf(base.input, '2026-09-10', '2026-09-16', ANNUAL);
 
     if (asNew.kind !== LEAVE_PREVIEW_READY) throw new Error(asNew.kind);
 
@@ -645,7 +710,7 @@ describe('the records list', () => {
   });
 
   it('still notes an amend that overlaps another record', () => {
-    const state = leavePreviewStateOf(baseOf([WORKED, LATER]).input, '2026-09-10', '2026-09-19', WORKED);
+    const state = leavePreviewStateOf(baseOf([WORKED, LATER]).input, '2026-09-10', '2026-09-19', ANNUAL, WORKED);
 
     if (state.kind !== LEAVE_PREVIEW_READY) throw new Error(state.kind);
 
@@ -653,14 +718,41 @@ describe('the records list', () => {
   });
 
   it('gives a reason and no preview for an amend to the range already held, so it is never sent', () => {
-    expect(leavePreviewStateOf(baseOf([WORKED]).input, WORKED.from, WORKED.to, WORKED)).toEqual({
+    expect(leavePreviewStateOf(baseOf([WORKED]).input, WORKED.from, WORKED.to, ANNUAL, WORKED)).toEqual({
       kind: LEAVE_PREVIEW_REASON,
       reason: LEAVE_RANGE_UNCHANGED,
       field: LEAVE_FROM_FIELD,
     });
     expect(leaveReasonMessageKey(LEAVE_RANGE_UNCHANGED)).toBe('ljudi.leaveRecord.unchanged');
+    // STORY 13.2b: a type-only change is a change, so the line names both.
+    expect(t('ljudi.leaveRecord.unchanged')).toBe('Raspon i vrsta jednaki su upisanima. Promijeni datum ili vrstu odsutnosti.');
     // A new record of the same range is no amend: it previews, and overlaps.
-    expect(leavePreviewStateOf(baseOf([WORKED]).input, WORKED.from, WORKED.to).kind).toBe(LEAVE_PREVIEW_READY);
+    expect(leavePreviewStateOf(baseOf([WORKED]).input, WORKED.from, WORKED.to, ANNUAL).kind).toBe(LEAVE_PREVIEW_READY);
+  });
+
+  // STORY 13.2b: an amend is unchanged only when both the range and the type are.
+  it('previews a type-only amend — the same range, another type — and gives the days back', () => {
+    const base = baseOf([WORKED]);
+    const state = leavePreviewStateOf(base.input, WORKED.from, WORKED.to, SICK, WORKED);
+
+    if (state.kind !== LEAVE_PREVIEW_READY) throw new Error(state.kind);
+
+    expect(base.balance.balanceDays).toBe(17);
+    expect(state.preview.costDays).toBe(3);
+    // Without the amended record nothing is charged: the 3 days come back.
+    expect(state.preview.balanceAfterDays).toBe(20);
+    expect(state.preview.overlapsRecord).toBe(false);
+  });
+
+  it('gives the unchanged reason for the same range and the same type, and previews the same range of another', () => {
+    const sickRecord: LeaveRecord = { ...WORKED, absenceTypeId: SICK_ID, drawsAllowance: false };
+
+    expect(leavePreviewStateOf(baseOf([sickRecord]).input, WORKED.from, WORKED.to, SICK, sickRecord)).toMatchObject({
+      reason: LEAVE_RANGE_UNCHANGED,
+    });
+    expect(leavePreviewStateOf(baseOf([sickRecord]).input, WORKED.from, WORKED.to, ANNUAL, sickRecord).kind).toBe(
+      LEAVE_PREVIEW_READY,
+    );
   });
 
   it('removing the one record costing 3 leaves 20 / 0 / 20; amending it to a range costing 5 leaves 20 / 5 / 15', () => {
@@ -669,7 +761,7 @@ describe('the records list', () => {
 
     // 10.09–18.09: Dan, Noć, Sl, Sl, Dan, Noć, Sl, Sl, Dan.
     const amended: LeaveRecord = { ...ANNUAL_RECORD, id: 'record-amended', from: '2026-09-10', to: '2026-09-18' };
-    const preview = leavePreviewStateOf(baseOf([WORKED]).input, amended.from, amended.to, WORKED);
+    const preview = leavePreviewStateOf(baseOf([WORKED]).input, amended.from, amended.to, ANNUAL, WORKED);
 
     if (preview.kind !== LEAVE_PREVIEW_READY) throw new Error(preview.kind);
 
@@ -1105,5 +1197,68 @@ describe('the replacement guard (story 5.4e)', () => {
       );
       expect(t('ljudi.leaveRecord.replacementsUnknown')).toBe('Ne mogu provjeriti zamjene za ove datume.');
     });
+  });
+});
+
+/**
+ * Story 13.2b: the type catalog the dialog chooses from and the rows name,
+ * the snapshot's, and what makes the card unavailable rather than guessed.
+ */
+describe('the absence type', () => {
+  const SICK_ROW = { id: SICK_ID, organizationId: 'org', name: 'Bolovanje', drawsAllowance: false };
+
+  function readyBase(records: readonly LeaveRecord[]): MemberLeaveBase {
+    return memberLeaveBaseOf(sourcesOf(pilot, { records: recordsOf(records) }), VIEWER_MEMBER, NOW);
+  }
+
+  it("offers the snapshot's catalog, in its order, when every named type is in it", () => {
+    const types = leaveTypesOf(pilot, [ANNUAL_LEAVE_ID]);
+
+    expect(types?.map((type) => type.id)).toEqual([ANNUAL_LEAVE_ID]);
+    expect(leaveTypesOf(pilot, [])).toEqual(types);
+    expect(leaveTypeNameOf(types, ANNUAL_LEAVE_ID)).toBe('Godišnji odmor');
+    expect(leaveTypeChoiceOf(types, ANNUAL_LEAVE_ID)).toEqual(ANNUAL);
+    expect(leaveTypeChoiceOf(types, null)).toBeNull();
+    expect(leaveTypeChoiceOf(types, 'not-a-type')).toBeNull();
+  });
+
+  it('is no catalog for no snapshot, a snapshot cached before 13.2, or a named type it lacks', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { absenceTypes: _types, ...cached } = pilot;
+
+    expect(leaveTypesOf(null, [])).toBeNull();
+    expect(leaveTypesOf(cached as CalendarSnapshot, [])).toBeNull();
+    expect(leaveTypesOf(pilot, [SICK_ID])).toBeNull();
+    // An empty catalog offers no card to choose: no catalog either.
+    expect(leaveTypesOf({ ...pilot, absenceTypes: [] }, [])).toBeNull();
+    expect(typedLeaveBaseOf(readyBase([WORKED]), { ...pilot, absenceTypes: [] }).base).toEqual({ kind: LEAVE_UNAVAILABLE });
+  });
+
+  it('keeps a ready base with its catalog, and makes it unavailable for a record of an unknown type or no catalog', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const ready = readyBase([WORKED]);
+    const typed = typedLeaveBaseOf(ready, pilot);
+
+    expect(typed.base).toBe(ready);
+    expect(typed.types?.map((type) => type.id)).toEqual([ANNUAL_LEAVE_ID]);
+
+    const unknown = readyBase([{ ...WORKED, absenceTypeId: SICK_ID, drawsAllowance: false }]);
+
+    expect(typedLeaveBaseOf(unknown, pilot)).toEqual({ base: { kind: LEAVE_UNAVAILABLE }, types: null });
+
+    const { absenceTypes: _types, ...cached } = pilot;
+
+    expect(typedLeaveBaseOf(ready, cached as CalendarSnapshot)).toEqual({ base: { kind: LEAVE_UNAVAILABLE }, types: null });
+    // A base that is not ready is passed through, with no catalog.
+    expect(typedLeaveBaseOf({ kind: LEAVE_LOADING }, pilot)).toEqual({ base: { kind: LEAVE_LOADING }, types: null });
+  });
+
+  it('names each card by whether its type draws, in the type card\'s own words', () => {
+    expect(leaveTypeDrawsMessageKey(SICK_ROW)).toBe('organization.absenceTypes.doesNotDraw');
+    expect(leaveTypeDrawsMessageKey({ ...SICK_ROW, drawsAllowance: true })).toBe('organization.absenceTypes.draws');
+    // The *Uredi* hint (Q8) is a conditional statement of fact, never a question or a confirmation.
+    expect(t('organization.absenceTypes.drawsHint')).toBe(
+      'Ako promijeniš troši li ova vrsta dane godišnjeg, preostali dani svih članova ponovno se izračunavaju, i za već upisane odsutnosti.',
+    );
   });
 });

@@ -9,6 +9,7 @@ import { LeavePage } from '../../pages/leave.page.ts';
 import { LoginPage } from '../../pages/login.page.ts';
 import { TodayPage } from '../../pages/today.page.ts';
 import {
+  ANNUAL_LEAVE_NAME,
   holdRotation,
   organizationInstant,
   promoteToAdminInSql,
@@ -436,7 +437,8 @@ test('a member on leave today reads the leave case with its range, and the next 
   await todayPage.page.setViewportSize({ width: 390, height: 844 });
   await todayPage.goto();
 
-  const card = todayPage.todayCard(danas.today.leave);
+  // STORY 13.2b: the leave case names today's record's type.
+  const card = todayPage.todayCard(fill(danas.today.leave, { type: ANNUAL_LEAVE_NAME }));
   await expect(card).toBeVisible();
   await expect(card).toContainText(fill(danas.today.leaveRange, { from: fullDate(today), to: fullDate(until) }));
   // STORY 6.1b: today's Dan and tomorrow's Noć, the days the member would work.

@@ -1,6 +1,7 @@
 import { queryOptions } from '@tanstack/react-query';
 import type { LeaveRange } from '@shift/domain';
 
+import { ANNUAL_LEAVE_ID } from '@/features/absence-types/services/list';
 import { readLeaveRowPages, type OrganizationLeaveRecordsAnswer } from '@/features/leave/services/leave-list';
 import { leaveRangeOf } from '@/features/leave/services/leave-write';
 
@@ -26,8 +27,8 @@ import { leaveRangeOf } from '@/features/leave/services/leave-write';
  *   - every request of the organization (9.5), parsed row by row as the
  *     decision screen's one request is, for *Za odluku* and *Danas*.
  *
- * ONE ROW PARSE: every read parses a row's id, member, range, status and
- * `closed_at` the same way, and the embedded decisions through one
+ * ONE ROW PARSE: every read parses a row's id, member, range, absence type
+ * (story 13.2b), status and `closed_at` the same way, and the embedded decisions through one
  * normaliser, whether PostgREST answers the embed as a list, one object or
  * null.
  *
@@ -49,9 +50,11 @@ export const MY_LEAVE_REQUESTS_KEY = ['my-leave-requests'] as const;
 /**
  * The columns read: the request's own, and its decision's outcome through the
  * embed. Since 0047 also what became of an approval's leave record
- * (`leave_record_change`, a computed field on the decision).
+ * (`leave_record_change`, a computed field on the decision), and since 0054
+ * (story 13.2b) the absence type the request asks for.
  */
-export const LEAVE_REQUESTS_COLUMNS = 'id,member_id,during,closed_at,leave_request_decisions(outcome,leave_record_change)';
+export const LEAVE_REQUESTS_COLUMNS =
+  'id,member_id,during,absence_type_id,closed_at,leave_request_decisions(outcome,leave_record_change)';
 
 /**
  * The prefix every one request's key starts with (story 9.4): a request
@@ -71,7 +74,7 @@ export function LEAVE_REQUEST_KEY(requestId: string) {
  * start on one date in *Za odluku*.
  */
 export const LEAVE_REQUEST_COLUMNS =
-  'id,member_id,during,closed_at,created_at,leave_request_decisions(outcome,decided_by,decided_at,leave_record_change)';
+  'id,member_id,during,absence_type_id,closed_at,created_at,leave_request_decisions(outcome,decided_by,decided_at,leave_record_change)';
 
 /** The read could not be answered, or answered something that is not rows. */
 export const LEAVE_REQUESTS_UNAVAILABLE = 'LEAVE_REQUESTS_UNAVAILABLE';
@@ -140,9 +143,15 @@ export function leaveRecordChangeMessageKey(
   }
 }
 
-/** One of the viewer's own requests: its id, its inclusive range, its status and when it was closed. */
+/** One of the viewer's own requests: its id, its inclusive range, its type, its status and when it was closed. */
 export interface LeaveRequest extends LeaveRange {
   readonly id: string;
+  /**
+   * The absence type asked for (0054, story 13.2b); annual leave for a row
+   * read before 0054 (an older copy kept on the device), as every request
+   * then was. An approval writes its record of this type.
+   */
+  readonly absenceTypeId: string;
   readonly status: LeaveRequestStatus;
   /** The instant the request was closed (`closed_at`), or null while it is pending. */
   readonly closedAt: string | null;
@@ -157,6 +166,7 @@ export interface LeaveRequest extends LeaveRange {
 const ID_COLUMN = 'id';
 const MEMBER_COLUMN = 'member_id';
 const DURING_COLUMN = 'during';
+const TYPE_COLUMN = 'absence_type_id';
 const CLOSED_COLUMN = 'closed_at';
 const DECISIONS_EMBED = 'leave_request_decisions';
 const OUTCOME_COLUMN = 'outcome';
@@ -244,11 +254,23 @@ function recordChangeOf(status: LeaveRequestStatus, embedded: unknown): LeaveRec
 }
 
 /**
+ * A row's absence type: annual leave when the row carries none (read before
+ * 0054), the id when it is non-empty text, and null for anything else.
+ */
+export function leaveRequestTypeOf(row: Record<string, unknown>): string | null {
+  const type = row[TYPE_COLUMN];
+
+  if (type === undefined) return ANNUAL_LEAVE_ID;
+
+  return typeof type === 'string' && type !== '' ? type : null;
+}
+
+/**
  * One row's own facts, read the same way by every read: its id, its member,
- * its inclusive range, its status, when it was closed and, approved, what
- * became of its leave record. Null when the row is no object, carries no id
- * or no member, or has a range, a status or a record change that does not
- * parse.
+ * its inclusive range, its type, its status, when it was closed and,
+ * approved, what became of its leave record. Null when the row is no object,
+ * carries no id or no member, or has a range, a type, a status or a record
+ * change that does not parse.
  */
 function requestRowOf(row: unknown): (LeaveRequest & { readonly memberId: string }) | null {
   if (!isRecord(row)) return null;
@@ -258,9 +280,11 @@ function requestRowOf(row: unknown): (LeaveRequest & { readonly memberId: string
   const range = leaveRangeOf(row[DURING_COLUMN]);
   const status = leaveRequestStatusOf(row[CLOSED_COLUMN], row[DECISIONS_EMBED]);
   const closed = row[CLOSED_COLUMN];
+  const absenceTypeId = leaveRequestTypeOf(row);
 
   if (typeof id !== 'string' || id === '') return null;
   if (typeof memberId !== 'string' || memberId === '' || range === null || status === null) return null;
+  if (absenceTypeId === null) return null;
 
   const recordChange = recordChangeOf(status, row[DECISIONS_EMBED]);
 
@@ -271,6 +295,7 @@ function requestRowOf(row: unknown): (LeaveRequest & { readonly memberId: string
     memberId,
     from: range.from,
     to: range.to,
+    absenceTypeId,
     status,
     closedAt: typeof closed === 'string' ? closed : null,
     recordChange,
@@ -294,9 +319,9 @@ export function leaveRequestsOf(rows: readonly unknown[], memberId: string): rea
 
     ids.add(request.id);
 
-    const { id, from, to, status, closedAt, recordChange } = request;
+    const { id, from, to, absenceTypeId, status, closedAt, recordChange } = request;
 
-    requests.push({ id, from, to, status, closedAt, recordChange });
+    requests.push({ id, from, to, absenceTypeId, status, closedAt, recordChange });
   }
 
   return requests.sort(compareRequests);

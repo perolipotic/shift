@@ -18,6 +18,7 @@ import {
   RESOLUTION_REPLACE_DESCRIBED_BY,
   RESOLUTION_REPLACE_STRIP_ID,
   RESOLUTION_REPLACE_TITLE_ID,
+  amendBalanceChangeMessageKey,
   amendBodyMessageKey,
   coverageMessageKey,
   leaveDaysMessageKey,
@@ -200,7 +201,7 @@ export function AmendLeaveOption({ view }: { readonly view: ResolutionView }): R
               : t(workHoursMessageKey(view.shiftHours), { hours: t(view.shiftHours.key, view.shiftHours.values) })
           }
           balanceDays={amend.balanceDays}
-          balanceChange={t('zaOdluku.resolution.balanceGained', { count: amend.gainedDays })}
+          balanceChange={t(amendBalanceChangeMessageKey(amend.gainedDays), { count: amend.gainedDays })}
         >
           <CoverageTerm view={view} covered={view.replaceCovered} staffing={view.staffing?.amend ?? null} />
           <span className="min-w-0 break-words">{t('zaOdluku.resolution.amendWorks', { name: view.memberName })}</span>

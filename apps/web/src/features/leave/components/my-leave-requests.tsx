@@ -75,6 +75,11 @@ export function MyLeaveRequests({
                 {cost === null ? row.label : t('godisnji.request.rangeCost', { range: row.label, cost })}
               </dd>
             </div>
+            {/* STORY 13.2b: the type the viewer asked for, theirs to see. */}
+            <div className="min-w-0">
+              <dt className="sr-only">{t('godisnji.request.type')}</dt>
+              <dd className="break-words text-sm text-muted-foreground">{row.typeName}</dd>
+            </div>
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               <dt className="sr-only">{t('godisnji.request.state')}</dt>
               <dd className="min-w-0">

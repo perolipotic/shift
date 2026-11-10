@@ -1517,9 +1517,8 @@ describe('every organization table carries row level security, and only its revi
     // removal, or holds anything as `anon`.
     const client = await connect();
     try {
-      // STORY 13.1: `absence_type_id` is no session's to write until 13.2
-      // carries the type through amend and approval; it defaults to annual
-      // leave.
+      // STORY 13.1: `absence_type_id` defaults to annual leave. STORY 13.2b
+      // (0054): an admin names it on insert, since amend and approval carry it.
       const held = await heldPrivileges(client, 'leave_records', [
         'organization_id',
         'id',
@@ -1533,6 +1532,7 @@ describe('every organization table carries row level security, and only its revi
       ]);
       expect(held.tables).toEqual(['authenticated:SELECT']);
       expect(held.columns, 'the writable leave record columns changed, or anon holds one').toEqual([
+        'authenticated:INSERT:absence_type_id',
         'authenticated:INSERT:during',
         'authenticated:INSERT:member_id',
         'authenticated:INSERT:organization_id',
@@ -1647,20 +1647,22 @@ describe('every organization table carries row level security, and only its revi
       );
       expect(missing.map((row) => row.slug), 'an organization has no drawing annual leave').toEqual([]);
 
-      const { rows: other } = await client.query<{ count: number }>(
-        `select count(*)::int as count from leave_records
-          where absence_type_id <> '00000000-0000-0000-0000-000000000001'`,
+      // STORY 13.2b: a session may now record another type, so only the
+      // default is pinned, not that every record is annual leave. 0054 gives
+      // a leave request the same default, so an old client writes annual leave.
+      const { rows: column } = await client.query<{ table_name: string; is_nullable: string; column_default: string }>(
+        `select table_name, is_nullable, column_default from information_schema.columns
+          where table_schema = 'public' and table_name in ('leave_records', 'leave_requests')
+            and column_name = 'absence_type_id'
+          order by table_name`,
       );
-      expect(other[0]?.count, 'a leave record is not annual leave before 13.2').toBe(0);
-
-      const { rows: column } = await client.query<{ is_nullable: string; column_default: string }>(
-        `select is_nullable, column_default from information_schema.columns
-          where table_schema = 'public' and table_name = 'leave_records' and column_name = 'absence_type_id'`,
+      expect(column).toEqual(
+        ['leave_records', 'leave_requests'].map((table_name) => ({
+          table_name,
+          is_nullable: 'NO',
+          column_default: "'00000000-0000-0000-0000-000000000001'::uuid",
+        })),
       );
-      expect(column[0]).toEqual({
-        is_nullable: 'NO',
-        column_default: "'00000000-0000-0000-0000-000000000001'::uuid",
-      });
 
       const { rows: triggers } = await client.query<{ definition: string }>(
         `select pg_get_triggerdef(oid) as definition
@@ -1720,9 +1722,12 @@ describe('every organization table carries row level security, and only its revi
         'created_at',
         'closed_by',
         'closed_at',
+        'absence_type_id',
       ]);
       expect(requests.tables).toEqual(['authenticated:SELECT']);
+      // STORY 13.2b (0054): the member names the type they ask for.
       expect(requests.columns, 'the writable leave request columns changed, or anon holds one').toEqual([
+        'authenticated:INSERT:absence_type_id',
         'authenticated:INSERT:during',
         'authenticated:INSERT:member_id',
         'authenticated:INSERT:organization_id',
@@ -1770,6 +1775,8 @@ describe('every organization table carries row level security, and only its revi
         'leave_requests: CHECK (lower_inc(during))',
         'leave_requests: EXCLUDE USING gist (member_id WITH =, during WITH &&) WHERE ((closed_at IS NULL))',
         'leave_requests: FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE',
+        // STORY 13.2b (0054): the request's type, of its own organization, no cascade.
+        'leave_requests: FOREIGN KEY (organization_id, absence_type_id) REFERENCES absence_types(organization_id, id)',
         'leave_requests: FOREIGN KEY (organization_id, member_id) REFERENCES members(organization_id, id)',
         'leave_requests: PRIMARY KEY (id)',
         'leave_requests: UNIQUE (organization_id, id)',
@@ -1784,6 +1791,10 @@ describe('every organization table carries row level security, and only its revi
       expect(
         indexes.some((row) => /\(organization_id, member_id\)$/.test(row.indexdef)),
         'no index on leave_requests serves one member\'s requests',
+      ).toBe(true);
+      expect(
+        indexes.some((row) => /\(organization_id, absence_type_id\)$/.test(row.indexdef)),
+        'no index on leave_requests serves the type\'s foreign key (13.2b)',
       ).toBe(true);
       const { rows: decisionIndexes } = await client.query<{ indexdef: string }>(
         `select indexdef from pg_indexes where schemaname = 'public' and tablename = 'leave_request_decisions'`,
@@ -2200,7 +2211,8 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // STORY 5.2a. The leave record's soft-remove and its atomic amend, on
     // 3.6b's and 3.5c's attributes.
     { name: 'remove_leave_record', argumentCount: 1 },
-    { name: 'amend_leave_record', argumentCount: 3 },
+    // 0054 (13.2b) added the type, dropping the three-argument signature.
+    { name: 'amend_leave_record', argumentCount: 4 },
     // STORY 5.2c. The member's own live leave records, read past 0028's
     // select policy so no author leaves, on 3.6a's attributes.
     { name: 'my_leave_records', argumentCount: 0 },
@@ -2376,7 +2388,7 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'amend_roster_override', argumentCount: 4, expected: ['authenticated'] },
     // STORY 5.2a. The leave record's removal and amend, on 3.6b's terms.
     { name: 'remove_leave_record', argumentCount: 1, expected: ['authenticated'] },
-    { name: 'amend_leave_record', argumentCount: 3, expected: ['authenticated'] },
+    { name: 'amend_leave_record', argumentCount: 4, expected: ['authenticated'] },
     // STORY 5.2c. The member's own leave records, on 3.6a's read's terms.
     { name: 'my_leave_records', argumentCount: 0, expected: ['authenticated'] },
     // STORY 7.15. The admin's leave overview, on 5.2c's terms; the function

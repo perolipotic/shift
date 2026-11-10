@@ -8,7 +8,13 @@ import {
   type MyLeaveRecordsRpc,
 } from '@/features/leave/services/leave-list';
 import { MY_LEAVE_REQUESTS_KEY } from '@/features/leave/services/leave-request-list';
-import { myLeaveOf, myLeaveRowsStateOf, MY_LEAVE_LOADING, MY_LEAVE_UNAVAILABLE } from '@/features/leave/services/my-leave';
+import {
+  myLeaveOf,
+  myLeaveRowsStateOf,
+  MY_LEAVE_LOADING,
+  MY_LEAVE_READY,
+  MY_LEAVE_UNAVAILABLE,
+} from '@/features/leave/services/my-leave';
 import { GODISNJI_MEMBER_SURFACE_KEYS } from '@/features/leave/services/surface-keys';
 import {
   MEMBERS_LIST_KEY,
@@ -115,8 +121,12 @@ export function useMyLeave() {
     ),
     // STORY 8.2e: "show the read retry now" — the surface is in its
     // retryable unavailable state, and online: offline its re-read would
-    // pause until the connection returns.
-    retryable: clock.online && leave.kind === MY_LEAVE_UNAVAILABLE,
+    // pause until the connection returns. STORY 13.2b: a snapshot cached
+    // before 13.2 holds no type catalog, and the request form is unavailable
+    // over it; reading the snapshot again is its way out.
+    retryable:
+      clock.online &&
+      (leave.kind === MY_LEAVE_UNAVAILABLE || (leave.kind === MY_LEAVE_READY && leave.absenceTypes === null)),
     retry,
   };
 }

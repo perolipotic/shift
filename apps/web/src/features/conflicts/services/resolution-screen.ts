@@ -287,6 +287,17 @@ export interface ResolutionAmendDropped {
 }
 
 /** The third card's figures (story 5.4d): the target, the date it names, and the balance once it is saved. */
+/**
+ * The amend card's balance change (story 13.2b): what it gives back, or
+ * *bez promjene*, as the other cards say it, when it gives back nothing — a
+ * record of a type that does not draw the allowance. Never "+0 dana".
+ */
+export function amendBalanceChangeMessageKey(
+  gainedDays: number,
+): 'zaOdluku.resolution.balanceGained' | 'zaOdluku.resolution.balanceUnchanged' {
+  return gainedDays === 0 ? 'zaOdluku.resolution.balanceUnchanged' : 'zaOdluku.resolution.balanceGained';
+}
+
 export interface ResolutionAmend {
   readonly target: ResolutionAmendTarget;
   /** `03.10.`, the date the card and the hint name: the new start or the new end; `null` for a removal. */
@@ -341,7 +352,9 @@ export function resolutionAmendOf(input: LeaveRecordsInput, record: LeaveRecord,
   if (target.kind === AMEND_REMOVES) {
     after = leaveBalanceOf({ ...inYear, records: input.records.filter((one) => one.id !== record.id) }).balanceDays;
   } else {
-    const preview = leavePreviewStateOf(inYear, target.range.from, target.range.to, record);
+    // The hand-off amends the dates alone: the record keeps its own type (story 13.2b).
+    const type = { id: record.absenceTypeId, drawsAllowance: record.drawsAllowance };
+    const preview = leavePreviewStateOf(inYear, target.range.from, target.range.to, type, record);
 
     if (preview.kind !== LEAVE_PREVIEW_READY) throw new RangeError(`the amend of ${record.id} cannot be costed: ${preview.reason}`);
 

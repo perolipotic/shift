@@ -63,6 +63,8 @@ function RequestFacts({ facts }: { readonly facts: ReviewFacts }): ReactNode {
       <p className="min-w-0 break-words text-sm tabular-nums text-muted-foreground">
         {t('zaOdluku.request.range', { from: facts.from, to: facts.to })}
       </p>
+      {/* STORY 13.2b: the type asked for, a fact for the admin; approval writes it unchanged. */}
+      <p className="min-w-0 break-words text-sm text-muted-foreground">{t('zaOdluku.request.type', { type: facts.typeName })}</p>
     </div>
   );
 }
@@ -80,7 +82,7 @@ function RequestPreview({ preview }: { readonly preview: ReviewPreview }): React
     return <p className="text-sm text-muted-foreground">{t(preview.key)}</p>;
   }
 
-  const { figures, inYearDays, conflicts, shortStaffed } = preview;
+  const { figures, inYearDays, drawsAllowance, conflicts, shortStaffed } = preview;
 
   return (
     <div className="grid min-w-0 gap-2">
@@ -95,6 +97,7 @@ function RequestPreview({ preview }: { readonly preview: ReviewPreview }): React
         </div>
       </dl>
       {inYearDays === null ? null : <p className="text-sm">{t('godisnji.request.costInYear', { count: inYearDays })}</p>}
+      {drawsAllowance ? null : <p className="text-sm">{t('godisnji.request.balanceUnchanged')}</p>}
       {figures.overlapsRecord ? <p className="text-sm font-medium">{t('ljudi.leaveRecord.overlap')}</p> : null}
       {figures.exceedsBalance ? (
         <p className="text-sm font-medium">{t('godisnji.request.exceeds', { count: figures.balanceAfterDays })}</p>

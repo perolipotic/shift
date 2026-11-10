@@ -132,6 +132,16 @@ export function drawsLocked(type: AbsenceTypeRow | null): boolean {
   return type !== null && isAnnualLeave(type.id);
 }
 
+/**
+ * Whether the edit dialog says what changing the flag does (story 13.2b,
+ * Q8): on every existing type but annual leave, whose flag is locked. A
+ * static line, never a confirmation: every balance is re-derived from the
+ * flag as it stands (AD-2 current-state).
+ */
+export function drawsHintShown(type: AbsenceTypeRow | null): boolean {
+  return type !== null && !isAnnualLeave(type.id);
+}
+
 // ---------------------------------------------------------------- the rules
 
 /** How long a name is as `char_length` counts it: in code points. */

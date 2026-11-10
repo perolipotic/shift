@@ -31,6 +31,8 @@ import { isIsoDate } from '@/lib/i18n/format';
 
 const ORGANIZATION = '00000000-0000-4000-8000-0000000000a1';
 const MEMBER = '00000000-0000-4000-8000-0000000000b2';
+/** A type the admin chose (story 13.2b): sent as it is, whatever it is. */
+const SICK = '00000000-0000-4000-8000-0000000000e5';
 
 interface FakeTable extends LeaveTable {
   readonly sent: unknown[];
@@ -107,8 +109,10 @@ describe('recording leave (story 5.1b)', () => {
   it('inserts the three facts, the range as an inclusive daterange, and reads nothing back', async () => {
     const table = tableAnswering({ error: null });
 
-    expect(await recordLeave(table, ORGANIZATION, MEMBER, '2026-09-10', '2026-09-14')).toEqual({ ok: true });
-    expect(table.sent).toEqual([{ organization_id: ORGANIZATION, member_id: MEMBER, during: '[2026-09-10,2026-09-14]' }]);
+    expect(await recordLeave(table, ORGANIZATION, MEMBER, '2026-09-10', '2026-09-14', SICK)).toEqual({ ok: true });
+    expect(table.sent).toEqual([
+      { organization_id: ORGANIZATION, member_id: MEMBER, during: '[2026-09-10,2026-09-14]', absence_type_id: SICK },
+    ]);
     expect(table.read).toEqual([]);
   });
 
@@ -116,7 +120,7 @@ describe('recording leave (story 5.1b)', () => {
     const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const table = tableAnswering({ error: { code: '23P01' } }, { data: [{ during: '[2026-09-12,2026-09-21)' }], error: null });
 
-    expect(await recordLeave(table, ORGANIZATION, MEMBER, '2026-09-10', '2026-09-14')).toEqual({
+    expect(await recordLeave(table, ORGANIZATION, MEMBER, '2026-09-10', '2026-09-14', SICK)).toEqual({
       ok: false,
       code: LEAVE_OVERLAP,
       conflict: { from: '2026-09-12', to: '2026-09-20' },
@@ -150,7 +154,7 @@ describe('recording leave (story 5.1b)', () => {
       readAnswer === 'throws' ? Promise.reject(new Error('offline')) : (readAnswer as LeaveReadAnswer),
     );
 
-    expect(await recordLeave(table, ORGANIZATION, MEMBER, '2026-09-10', '2026-09-14')).toEqual({
+    expect(await recordLeave(table, ORGANIZATION, MEMBER, '2026-09-10', '2026-09-14', SICK)).toEqual({
       ok: false,
       code: LEAVE_OVERLAP,
       conflict: null,
@@ -168,7 +172,7 @@ describe('recording leave (story 5.1b)', () => {
     const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const table = tableAnswering({ error: { code } });
 
-    expect(await recordLeave(table, ORGANIZATION, MEMBER, '2026-09-10', '2026-09-14')).toEqual({
+    expect(await recordLeave(table, ORGANIZATION, MEMBER, '2026-09-10', '2026-09-14', SICK)).toEqual({
       ok: false,
       code: expected,
     });
@@ -187,7 +191,7 @@ describe('recording leave (story 5.1b)', () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const table = tableAnswering(answer as unknown as LeaveWriteAnswer);
 
-    expect(await recordLeave(table, ORGANIZATION, MEMBER, '2026-09-10', '2026-09-14')).toEqual({
+    expect(await recordLeave(table, ORGANIZATION, MEMBER, '2026-09-10', '2026-09-14', SICK)).toEqual({
       ok: false,
       code: LEAVE_FAILED,
     });
@@ -207,7 +211,7 @@ describe('recording leave (story 5.1b)', () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const table = tableAnswering({ error: null });
 
-    expect(await recordLeave(table, ORGANIZATION, MEMBER, from, to)).toEqual({ ok: false, code: LEAVE_FAILED });
+    expect(await recordLeave(table, ORGANIZATION, MEMBER, from, to, SICK)).toEqual({ ok: false, code: LEAVE_FAILED });
     expect(table.sent).toEqual([]);
     expect(table.read).toEqual([]);
   });
@@ -216,10 +220,10 @@ describe('recording leave (story 5.1b)', () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     expect(
-      await recordLeave(tableAnswering(Promise.reject(new Error('offline'))), ORGANIZATION, MEMBER, '2026-09-10', '2026-09-14'),
+      await recordLeave(tableAnswering(Promise.reject(new Error('offline'))), ORGANIZATION, MEMBER, '2026-09-10', '2026-09-14', SICK),
     ).toEqual({ ok: false, code: LEAVE_FAILED });
     expect(
-      await recordLeave(tableAnswering(null as unknown as LeaveWriteAnswer), ORGANIZATION, MEMBER, '2026-09-10', '2026-09-14'),
+      await recordLeave(tableAnswering(null as unknown as LeaveWriteAnswer), ORGANIZATION, MEMBER, '2026-09-10', '2026-09-14', SICK),
     ).toEqual({ ok: false, code: LEAVE_FAILED });
   });
 });
@@ -327,12 +331,12 @@ describe('amending a leave record (story 5.2a)', () => {
     const client = rpcAnswering({ data: REPLACEMENT, error: null });
     const table = tableAnswering({ error: null });
 
-    expect(await amendLeave(client, table, ORGANIZATION, MEMBER, RECORD, '2026-09-12', '2026-09-20')).toEqual({
+    expect(await amendLeave(client, table, ORGANIZATION, MEMBER, RECORD, '2026-09-12', '2026-09-20', SICK)).toEqual({
       ok: true,
       id: REPLACEMENT,
     });
     expect(client.called).toEqual([
-      ['amend_leave_record', { p_record_id: RECORD, p_from: '2026-09-12', p_to: '2026-09-20' }],
+      ['amend_leave_record', { p_record_id: RECORD, p_from: '2026-09-12', p_to: '2026-09-20', p_absence_type_id: SICK }],
     ]);
     expect(table.sent).toEqual([]);
     expect(table.read).toEqual([]);
@@ -343,7 +347,7 @@ describe('amending a leave record (story 5.2a)', () => {
     const table = tableAnswering({ error: null }, { data: [{ during: '[2026-09-18,2026-09-26)' }], error: null });
 
     expect(
-      await amendLeave(rpcAnswering({ data: null, error: { code: '23P01' } }), table, ORGANIZATION, MEMBER, RECORD, '2026-09-12', '2026-09-20'),
+      await amendLeave(rpcAnswering({ data: null, error: { code: '23P01' } }), table, ORGANIZATION, MEMBER, RECORD, '2026-09-12', '2026-09-20', SICK),
     ).toEqual({ ok: false, code: LEAVE_OVERLAP, conflict: { from: '2026-09-18', to: '2026-09-25' } });
     expect(table.read).toEqual([
       [
@@ -366,7 +370,7 @@ describe('amending a leave record (story 5.2a)', () => {
     const table = tableAnswering({ error: null }, { data: [], error: null });
 
     expect(
-      await amendLeave(rpcAnswering({ data: null, error: { code: '23P01' } }), table, ORGANIZATION, MEMBER, RECORD, '2026-09-12', '2026-09-20'),
+      await amendLeave(rpcAnswering({ data: null, error: { code: '23P01' } }), table, ORGANIZATION, MEMBER, RECORD, '2026-09-12', '2026-09-20', SICK),
     ).toEqual({ ok: false, code: LEAVE_OVERLAP, conflict: null });
   });
 
@@ -383,7 +387,7 @@ describe('amending a leave record (story 5.2a)', () => {
     const table = tableAnswering({ error: null });
 
     expect(
-      await amendLeave(rpcAnswering({ data: null, error: { code } }), table, ORGANIZATION, MEMBER, RECORD, '2026-09-12', '2026-09-20'),
+      await amendLeave(rpcAnswering({ data: null, error: { code } }), table, ORGANIZATION, MEMBER, RECORD, '2026-09-12', '2026-09-20', SICK),
     ).toEqual({ ok: false, code: expected });
     expect(leaveChangeFailureOf({ code })).toBe(expected);
     expect(table.read).toEqual([]);
@@ -404,7 +408,7 @@ describe('amending a leave record (story 5.2a)', () => {
       answer === 'throws' ? Promise.reject(new Error('offline')) : (answer as unknown as LeaveAmendAnswer),
     );
 
-    expect(await amendLeave(client, tableAnswering({ error: null }), ORGANIZATION, MEMBER, RECORD, '2026-09-12', '2026-09-20')).toEqual({
+    expect(await amendLeave(client, tableAnswering({ error: null }), ORGANIZATION, MEMBER, RECORD, '2026-09-12', '2026-09-20', SICK)).toEqual({
       ok: false,
       code: LEAVE_FAILED,
     });
@@ -418,7 +422,7 @@ describe('amending a leave record (story 5.2a)', () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const client = rpcAnswering({ data: REPLACEMENT, error: null });
 
-    expect(await amendLeave(client, tableAnswering({ error: null }), ORGANIZATION, MEMBER, RECORD, from, to)).toEqual({
+    expect(await amendLeave(client, tableAnswering({ error: null }), ORGANIZATION, MEMBER, RECORD, from, to, SICK)).toEqual({
       ok: false,
       code: LEAVE_FAILED,
     });
