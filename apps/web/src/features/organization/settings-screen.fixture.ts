@@ -32,6 +32,9 @@ export const SETTINGS_SCREEN_PARTS = {
   emailNotifications: ['features', 'organization', 'components', 'organization-email-notifications-card.tsx'],
   // STORY 11.1: minimum members, a fact and a number field in its own dialog.
   minimumMembers: ['features', 'organization', 'components', 'organization-minimum-members-card.tsx'],
+  // STORY 13.4: the carry-over setting, a fact and four controls in its own
+  // dialog (the cap, the expiry's day and month, the first leave year).
+  carryOver: ['features', 'organization', 'components', 'organization-carry-over-card.tsx'],
   // Deferred work from 7.18: the *Satni pojasi* facts card and the hook
   // holding its one read of the bands.
   hourBands: ['features', 'organization', 'components', 'organization-hour-bands-card.tsx'],
@@ -71,7 +74,7 @@ export const SETTINGS_SCREEN_EXEMPT: readonly { readonly file: string; readonly 
   },
   {
     file: 'utils/dialogs.ts',
-    why: 'the seven dialog names (story 7.18; the sixth since story 10.3, the seventh since story 11.1); identifiers that say which dialog is open, never a string the page renders',
+    why: 'the eight dialog names (story 7.18; the sixth since story 10.3, the seventh since story 11.1, the eighth since story 13.4); identifiers that say which dialog is open, never a string the page renders',
   },
   {
     file: 'utils/email-notifications.ts',
@@ -80,6 +83,10 @@ export const SETTINGS_SCREEN_EXEMPT: readonly { readonly file: string; readonly 
   {
     file: 'utils/minimum-members.ts',
     why: 'the minimum-members entry rule (story 11.1), executed by minimum-members.test.ts; it renders no string',
+  },
+  {
+    file: 'utils/carry-over.ts',
+    why: 'the carry-over entry rule and its expiry label (story 13.4), executed by carry-over.test.ts; it renders no string of its own',
   },
   {
     file: 'utils/leave-start.ts',

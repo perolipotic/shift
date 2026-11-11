@@ -9,6 +9,11 @@ import { offersReadRetry, organizationMessageKey } from '@/features/organization
 import { SETTINGS_SCREEN_PARTS } from '@/features/organization/settings-screen.fixture';
 import {
   ORGANIZATION_ACCENT_FIELD,
+  ORGANIZATION_CARRY_OVER_EXPIRY_DAY_FIELD,
+  ORGANIZATION_CARRY_OVER_EXPIRY_MONTH_FIELD,
+  ORGANIZATION_CARRY_OVER_FIRST_YEAR_FIELD,
+  ORGANIZATION_CARRY_OVER_INVALID,
+  ORGANIZATION_CARRY_OVER_MAX_DAYS_FIELD,
   ORGANIZATION_COLUMNS,
   ORGANIZATION_CONSTRAINT_FIELDS,
   ORGANIZATION_INVALID,
@@ -23,6 +28,7 @@ import {
   ORGANIZATION_REFUSED,
   ORGANIZATION_SNAPSHOT_KEY,
   ORGANIZATION_UNAVAILABLE,
+  carryOverOf,
   minimumMembersOf,
   organizationEditColumns,
   organizationSnapshotOf,
@@ -134,6 +140,11 @@ const PILOT_ROW = {
   email_notifications: true,
   // Story 11.1 (`0048`): the pilot's teams of four need 3.
   minimum_members: 3,
+  // Story 13.4 (`0057`): no carry-over until an organization sets one.
+  carry_over_max_days: null,
+  carry_over_expiry_month: null,
+  carry_over_expiry_day: null,
+  carry_over_first_leave_year: null,
 };
 
 /** The name dialog's write (story 7.18): the name and nothing else. */
@@ -262,7 +273,67 @@ describe('one PostgREST row becomes the canonical snapshot', () => {
       usesFireRanks: true,
       emailNotifications: true,
       minimumMembers: 3,
+      carryOver: null,
     });
+  });
+
+  it('carries the carry-over setting when all four are set, and reads anything else as none (story 13.4)', () => {
+    const SET = {
+      carry_over_max_days: 5,
+      carry_over_expiry_month: 6,
+      carry_over_expiry_day: 30,
+      carry_over_first_leave_year: 2027,
+    };
+
+    expect(organizationSnapshotOf({ ...PILOT_ROW, ...SET })?.carryOver).toEqual({
+      maxDays: 5,
+      expiryMonth: 6,
+      expiryDay: 30,
+      firstLeaveYear: 2027,
+    });
+    expect(organizationSnapshotOf(PILOT_ROW)?.carryOver).toBeNull();
+    // A row from a source without the columns (a fixture); a live database
+    // before `0057` refuses the select instead (`DEPLOY.md`).
+    const {
+      carry_over_max_days: _a,
+      carry_over_expiry_month: _b,
+      carry_over_expiry_day: _c,
+      carry_over_first_leave_year: _d,
+      ...withoutColumns
+    } = PILOT_ROW;
+    expect(organizationSnapshotOf(withoutColumns)?.carryOver).toBeNull();
+    // A partial set, an impossible date, or a value out of range: none, and
+    // the organization still reads.
+    for (const broken of [
+      { carry_over_first_leave_year: null },
+      { carry_over_max_days: 0 },
+      { carry_over_max_days: 32768 },
+      { carry_over_max_days: 2.5 },
+      { carry_over_max_days: '5' },
+      { carry_over_expiry_month: 0 },
+      { carry_over_expiry_month: 13 },
+      { carry_over_expiry_day: 0 },
+      { carry_over_expiry_day: 31 },
+      { carry_over_expiry_month: 2, carry_over_expiry_day: 29 },
+      { carry_over_first_leave_year: 0 },
+      { carry_over_first_leave_year: 10000 },
+    ]) {
+      const read = organizationSnapshotOf({ ...PILOT_ROW, ...SET, ...broken });
+      expect(read, JSON.stringify(broken)).not.toBeNull();
+      expect(read?.carryOver, JSON.stringify(broken)).toBeNull();
+    }
+    expect(
+      organizationSnapshotOf({ ...PILOT_ROW, ...SET, carry_over_expiry_month: 2, carry_over_expiry_day: 28 })?.carryOver
+        ?.expiryDay,
+    ).toBe(28);
+  });
+
+  it('reads a snapshot cached before 0057, which lacks the field, as no carry-over', () => {
+    const { carryOver: _dropped, ...cached } = organizationSnapshotOf(PILOT_ROW)!;
+    expect(carryOverOf(cached as never)).toBeNull();
+    const setting = { maxDays: 5, expiryMonth: 6, expiryDay: 30, firstLeaveYear: 2027 };
+    expect(carryOverOf({ carryOver: setting })).toEqual(setting);
+    expect(carryOverOf({ carryOver: { ...setting, expiryDay: 31 } })).toBeNull();
   });
 
   it('carries minimum members as a whole number from 1, and reads anything else as not set (story 11.1)', () => {
@@ -414,7 +485,18 @@ describe('the read returns one snapshot or one code', () => {
     // `id` is here because every write addresses the row by it.
     const columns = ORGANIZATION_COLUMNS.split(',');
 
-    for (const column of ['id', 'logo_path', 'brand_accent', 'uses_fire_ranks', 'email_notifications', 'minimum_members']) {
+    for (const column of [
+      'id',
+      'logo_path',
+      'brand_accent',
+      'uses_fire_ranks',
+      'email_notifications',
+      'minimum_members',
+      'carry_over_max_days',
+      'carry_over_expiry_month',
+      'carry_over_expiry_day',
+      'carry_over_first_leave_year',
+    ]) {
       expect(columns, `the snapshot stops reading ${column}`).toContain(column);
     }
     // Spelled `snake_case`, because PostgREST speaks columns: a `camelCase`
@@ -603,6 +685,8 @@ describe('the update writes the edited fields and answers with the row', () => {
     ['the email-notifications switch', { emailNotifications: false }],
     ['minimum members', { minimumMembers: 3 }],
     ['cleared minimum members', { minimumMembers: null }],
+    ['the carry-over setting', { carryOver: { maxDays: 5, expiryMonth: 6, expiryDay: 30, firstLeaveYear: 2027 } }],
+    ['no carry-over', { carryOver: null }],
   ] as const)('never writes the type or the zone with %s (FR-7, FR-8)', (_, write) => {
     const written = Object.keys(organizationEditColumns(write));
 
@@ -829,6 +913,53 @@ describe('the update writes the edited fields and answers with the row', () => {
     expect(withEmail).toBeDefined();
   });
 
+  it('sends the carry-over setting as all four columns, four nulls to clear it, as a seventh disjoint write (story 13.4)', async () => {
+    for (const [value, columns] of [
+      [
+        { maxDays: 5, expiryMonth: 6, expiryDay: 30, firstLeaveYear: 2027 },
+        {
+          carry_over_max_days: 5,
+          carry_over_expiry_month: 6,
+          carry_over_expiry_day: 30,
+          carry_over_first_leave_year: 2027,
+        },
+      ],
+      [
+        null,
+        {
+          carry_over_max_days: null,
+          carry_over_expiry_month: null,
+          carry_over_expiry_day: null,
+          carry_over_first_leave_year: null,
+        },
+      ],
+    ] as const) {
+      expect(organizationEditColumns({ carryOver: value })).toEqual(columns);
+
+      const log = recorder();
+      const outcome = await updateOrganization(
+        answering({ data: [PILOT_ROW], error: null }, log),
+        PILOT_ROW.id,
+        { carryOver: value },
+      );
+
+      expect(outcome.ok).toBe(true);
+      // ONE PATCH, the four columns and nothing else.
+      expect(log.updated).toEqual([columns]);
+    }
+
+    // @ts-expect-error the carry-over write may not carry the name
+    const withFields: OrganizationWrite = { ...EDITS, carryOver: null };
+    // @ts-expect-error the carry-over write may not carry minimum members
+    const withMinimum: OrganizationWrite = { minimumMembers: 3, carryOver: null };
+    // @ts-expect-error the carry-over write may not carry the leave year start
+    const withLeaveYear: OrganizationWrite = { ...LEAVE_YEAR, carryOver: null };
+
+    expect(withFields).toBeDefined();
+    expect(withMinimum).toBeDefined();
+    expect(withLeaveYear).toBeDefined();
+  });
+
   it('types the setting write apart from EVERY other snapshot field', () => {
     // The doc's claim, made executable: each `@ts-expect-error` below is a
     // `pnpm typecheck` failure the moment the field stops being excluded.
@@ -853,6 +984,8 @@ describe('the update writes the edited fields and answers with the row', () => {
       { usesFireRanks: true, emailNotifications: true },
       // @ts-expect-error not minimum members
       { usesFireRanks: true, minimumMembers: 3 },
+      // @ts-expect-error not the carry-over setting
+      { usesFireRanks: true, carryOver: null },
     ];
     const snapshotFields = Object.keys(organizationSnapshotOf(PILOT_ROW) ?? {}).filter(
       (field) => field !== 'usesFireRanks',
@@ -1002,6 +1135,33 @@ describe('the update writes the edited fields and answers with the row', () => {
       code: ORGANIZATION_MINIMUM_MEMBERS_INVALID,
       field: ORGANIZATION_MINIMUM_MEMBERS_FIELD,
     });
+  });
+
+  it.each([
+    ['organizations_carry_over_max_days_check', ORGANIZATION_CARRY_OVER_MAX_DAYS_FIELD],
+    ['organizations_carry_over_expiry_month_check', ORGANIZATION_CARRY_OVER_EXPIRY_MONTH_FIELD],
+    ['organizations_carry_over_expiry_day_check', ORGANIZATION_CARRY_OVER_EXPIRY_DAY_FIELD],
+    ['organizations_carry_over_first_leave_year_check', ORGANIZATION_CARRY_OVER_FIRST_YEAR_FIELD],
+    ['organizations_carry_over_all_or_none', undefined],
+  ] as const)('reports a refused carry-over by %s as its own message, on %s (story 13.4)', async (constraint, field) => {
+    const refused: PostgrestAnswer = {
+      data: null,
+      error: {
+        code: '23514',
+        message: `new row for relation "organizations" violates check constraint "${constraint}"`,
+        details: 'Failing row contains (…).',
+      },
+    };
+
+    expect(
+      await updateOrganization(answering(refused), PILOT_ROW.id, {
+        carryOver: { maxDays: 5, expiryMonth: 6, expiryDay: 31, firstLeaveYear: 2027 },
+      }),
+    ).toEqual(
+      field === undefined
+        ? { ok: false, code: ORGANIZATION_CARRY_OVER_INVALID }
+        : { ok: false, code: ORGANIZATION_CARRY_OVER_INVALID, field },
+    );
   });
 
   it('does not report a blank name because a typed value spells the name check', async () => {
@@ -1177,12 +1337,15 @@ describe('a check violation is attributed to the control its constraint names', 
     ).toBeNull();
   });
 
-  it('maps six constraints to five distinct controls, the name\'s two checks to the name', () => {
+  it('maps ten constraints to nine distinct controls, the name\'s two checks to the name', () => {
     // 0036 added the name's length check beside its blank check; both mark
     // the one name control, and every other constraint a control of its own.
     // 0048 (story 11.1) adds minimum members' check, which marks its field.
-    expect(ORGANIZATION_CONSTRAINT_FIELDS).toHaveLength(6);
-    expect(new Set(ORGANIZATION_CONSTRAINT_FIELDS.map(([, field]) => field)).size).toBe(5);
+    // 0057 (story 13.4) adds four carry-over checks, one per field; its
+    // all-or-none check marks none.
+    expect(ORGANIZATION_CONSTRAINT_FIELDS).toHaveLength(10);
+    expect(new Set(ORGANIZATION_CONSTRAINT_FIELDS.map(([, field]) => field)).size).toBe(9);
+    expect(refusedOrganizationFieldOf(violating('organizations_carry_over_all_or_none'))).toBeNull();
     expect(refusedOrganizationFieldOf(violating('organizations_minimum_members_check'))).toBe(
       ORGANIZATION_MINIMUM_MEMBERS_FIELD,
     );
@@ -1241,6 +1404,7 @@ describe('every failure code has its own message key', () => {
     ORGANIZATION_NAME_TOO_LONG,
     ORGANIZATION_INVALID,
     ORGANIZATION_MINIMUM_MEMBERS_INVALID,
+    ORGANIZATION_CARRY_OVER_INVALID,
     ORGANIZATION_UNAVAILABLE,
   ];
 
@@ -1248,7 +1412,7 @@ describe('every failure code has its own message key', () => {
     expect(organizationMessageKey(code)).toMatch(/^organization\.error\./);
   });
 
-  it('maps the six codes to six distinct keys', () => {
+  it('maps the seven codes to seven distinct keys', () => {
     // The mutation a per-code loop cannot see: a mapping that returned one key
     // for everything satisfies every case above while a refused save and an
     // outage say the same thing.
@@ -1263,6 +1427,7 @@ describe('every failure code has its own message key', () => {
     expect(organizationMessageKey(ORGANIZATION_NAME_TOO_LONG)).toBe('organization.error.nameTooLong');
     expect(organizationMessageKey(ORGANIZATION_INVALID)).toBe('organization.error.invalid');
     expect(organizationMessageKey(ORGANIZATION_MINIMUM_MEMBERS_INVALID)).toBe('organization.error.minimumMembers');
+    expect(organizationMessageKey(ORGANIZATION_CARRY_OVER_INVALID)).toBe('organization.error.carryOver');
     expect(organizationMessageKey(ORGANIZATION_UNAVAILABLE)).toBe(
       'organization.error.unavailable',
     );

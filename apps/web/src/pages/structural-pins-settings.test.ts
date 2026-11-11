@@ -16,6 +16,7 @@ import {
   occurrences,
   selectElements,
   SETTINGS,
+  SETTINGS_CARRY_OVER,
   SETTINGS_EMAIL_NOTIFICATIONS,
   SETTINGS_MINIMUM_MEMBERS,
   SETTINGS_FIRE_RANKS,
@@ -85,9 +86,10 @@ describe('every field on the settings surface carries an accessible name', () =>
     const targets = [...screen.matchAll(/<Label htmlFor=\{(\w+)\}/g)].map((found) => found[1] ?? '');
 
     // TWO since story 11.1: minimum members' number field. THREE since story
-    // 13.1b: an absence type's name.
-    expect(inputElements(screen)).toHaveLength(3);
-    expect(selectElements(screen), 'a control became a select again').toHaveLength(2);
+    // 13.1b: an absence type's name. FIVE since story 13.4: the carry-over
+    // cap and first leave year, beside the expiry's day and month selects.
+    expect(inputElements(screen)).toHaveLength(5);
+    expect(selectElements(screen), 'a control became a select again').toHaveLength(4);
     expect(ids, 'a field carries no id constant, so no <Label> can name it').not.toContain(null);
     expect(new Set(ids).size, 'two fields share one id').toBe(ids.length);
     expect([...targets].sort()).toEqual([...(ids as string[])].sort());
@@ -113,8 +115,10 @@ describe('every field on the settings surface carries an accessible name', () =>
       // hint always and by the hint and the refusal after one, as the radio
       // groups are; every other field names the refusal only. STORY 13.1b:
       // the absence type dialog is its own hook's, with its own refusal id.
+      // STORY 13.4: the carry-over cap and first year have hints, as minimum
+      // members' field does.
       expect(field, 'a field describes nothing, or names its refusal unconditionally').toMatch(
-        /aria-describedby=\{failure === null \? (undefined : ORGANIZATION_DIALOG_ERROR_ID|undefined : ORGANIZATION_ABSENCE_TYPE_ERROR_ID|ORGANIZATION_MINIMUM_MEMBERS_HINT_ID : ORGANIZATION_MINIMUM_MEMBERS_REFUSED_DESCRIPTION)\}/,
+        /aria-describedby=\{failure === null \? (undefined : ORGANIZATION_DIALOG_ERROR_ID|undefined : ORGANIZATION_ABSENCE_TYPE_ERROR_ID|ORGANIZATION_MINIMUM_MEMBERS_HINT_ID : ORGANIZATION_MINIMUM_MEMBERS_REFUSED_DESCRIPTION|ORGANIZATION_CARRY_OVER_MAX_DAYS_HINT_ID : ORGANIZATION_CARRY_OVER_MAX_DAYS_REFUSED_DESCRIPTION|ORGANIZATION_CARRY_OVER_FIRST_YEAR_HINT_ID : ORGANIZATION_CARRY_OVER_FIRST_YEAR_REFUSED_DESCRIPTION)\}/,
       );
     }
   });
@@ -142,11 +146,22 @@ describe('every field on the settings surface carries an accessible name', () =>
     for (const field of [...inputElements(source(SETTINGS)), ...selectElements(source(SETTINGS))]) {
       expect(field, 'a settings field is controlled').not.toMatch(/(?<![A-Za-z])value=\{/);
       // STORY 13.1b: an absence type's name is seeded from the type it edits,
-      // and empty for a new one.
+      // and empty for a new one. STORY 13.4: the carry-over fields from the
+      // row's setting as the card reads it (`stored`, `carryOverOf`).
       expect(field, 'a settings field is not seeded from the row').toMatch(
-        /defaultValue=\{(organization\.|type === null \? NO_TEXT : type\.name\})/,
+        /defaultValue=\{(organization\.|stored\?\.|type === null \? NO_TEXT : type\.name\})/,
       );
     }
+  });
+
+  it('seeds the carry-over form from the same read as its fact (story 13.4)', () => {
+    const card = source(SETTINGS_CARRY_OVER);
+    // The form is the file's last function, so it runs to the end of the file.
+    const form = card.includes('function CarryOverForm(') ? card.slice(card.indexOf('function CarryOverForm(')) : '';
+
+    expect(form, 'no carry-over form to read').not.toBe('');
+    expect(form).toContain('const stored = carryOverOf(organization);');
+    expect(form, 'the form reads the raw cached value').not.toMatch(/\borganization\.carryOver\b/);
   });
 
   it('delegates the failure-to-message pairing rather than branching on it', () => {
@@ -233,6 +248,8 @@ describe('the settings page is facts, and each change opens its own dialog (stor
     SETTINGS_EMAIL_NOTIFICATIONS,
     // Story 11.1.
     SETTINGS_MINIMUM_MEMBERS,
+    // Story 13.4.
+    SETTINGS_CARRY_OVER,
   ];
 
   it('mounts no form outside the one dialog form every change draws', () => {
@@ -255,7 +272,8 @@ describe('the settings page is facts, and each change opens its own dialog (stor
       'a change has no dialog, or two',
       // SIX SINCE STORY 10.3: the email-notifications switch.
       // SEVEN SINCE STORY 11.1: minimum members.
-    ).toBe(7);
+      // EIGHT SINCE STORY 13.4: the carry-over setting.
+    ).toBe(8);
   });
 
   it('keeps each dialog mounted and drives it through open, so every close returns focus', () => {
@@ -288,7 +306,8 @@ describe('the settings page is facts, and each change opens its own dialog (stor
     // SIX OPENERS, ONE PER DIALOG; `ProfileRow` takes *Profil*'s three by prop.
     // SIX SINCE STORY 10.3: the email-notifications card's own.
     // SEVEN SINCE STORY 11.1: minimum members' card.
-    expect(openers.sort()).toEqual(['emailNotifications', 'fireRanks', 'leaveYear', 'minimumMembers']);
+    // EIGHT SINCE STORY 13.4: the carry-over card's.
+    expect(openers.sort()).toEqual(['carryOver', 'emailNotifications', 'fireRanks', 'leaveYear', 'minimumMembers']);
     expect(source(SETTINGS_PROFILE)).toContain('<Button ref={opener}');
     for (const opener of ['openers.name', 'openers.logo', 'openers.accent']) {
       expect(source(SETTINGS_PROFILE), `${opener} opens nothing`).toContain(`opener={${opener}}`);
@@ -615,6 +634,11 @@ describe('the accent control offers a curated set and nothing else', () => {
     expect(/LEAVE_YEAR_DIALOG,[\s\S]*?\[MEMBERS_LIST_KEY\],\s*\);/.test(componentFunction(source(SETTINGS_HOOK), 'saveLeaveYear')), 'the leave year’s save leaves the member list stale').toBe(
       true,
     );
+    // STORY 13.4: nothing derives from the carry-over setting yet (13.4b), so
+    // its save declares no dependents and re-reads the organization alone.
+    const saveCarryOver = componentFunction(source(SETTINGS_HOOK), 'saveCarryOver');
+    expect(saveCarryOver, 'no carry-over save to read').toContain('await write(CARRY_OVER_DIALOG, (row) =>');
+    expect(saveCarryOver, 'the carry-over save re-reads something else').not.toMatch(/_KEY\b/);
   });
 
   it('marks and focuses the control a refused save names, and only that one', () => {
@@ -628,6 +652,11 @@ describe('the accent control offers a curated set and nothing else', () => {
       [SETTINGS_PROFILE, 'ORGANIZATION_NAME_FIELD_ID', 'ORGANIZATION_NAME_FIELD'],
       [SETTINGS_TIME, 'ORGANIZATION_LEAVE_DAY_FIELD_ID', 'ORGANIZATION_LEAVE_DAY_FIELD'],
       [SETTINGS_TIME, 'ORGANIZATION_LEAVE_MONTH_FIELD_ID', 'ORGANIZATION_LEAVE_MONTH_FIELD'],
+      // STORY 13.4: the carry-over dialog's four.
+      [SETTINGS_CARRY_OVER, 'ORGANIZATION_CARRY_OVER_MAX_DAYS_FIELD_ID', 'ORGANIZATION_CARRY_OVER_MAX_DAYS_FIELD'],
+      [SETTINGS_CARRY_OVER, 'ORGANIZATION_CARRY_OVER_EXPIRY_DAY_FIELD_ID', 'ORGANIZATION_CARRY_OVER_EXPIRY_DAY_FIELD'],
+      [SETTINGS_CARRY_OVER, 'ORGANIZATION_CARRY_OVER_EXPIRY_MONTH_FIELD_ID', 'ORGANIZATION_CARRY_OVER_EXPIRY_MONTH_FIELD'],
+      [SETTINGS_CARRY_OVER, 'ORGANIZATION_CARRY_OVER_FIRST_YEAR_FIELD_ID', 'ORGANIZATION_CARRY_OVER_FIRST_YEAR_FIELD'],
     ] as const) {
       const control = new RegExp(`id=\\{${id}\\}[\\s\\S]{0,400}?aria-invalid=\\{([^}]*)\\}`).exec(source(file))?.[1];
 
@@ -666,6 +695,10 @@ describe('the accent control offers a curated set and nothing else', () => {
       ['name', 'ORGANIZATION_NAME_FIELD_ID'],
       ['leaveYearStartDay', 'ORGANIZATION_LEAVE_DAY_FIELD_ID'],
       ['leaveYearStartMonth', 'ORGANIZATION_LEAVE_MONTH_FIELD_ID'],
+      ['carryOverMaxDays', 'ORGANIZATION_CARRY_OVER_MAX_DAYS_FIELD_ID'],
+      ['carryOverExpiryDay', 'ORGANIZATION_CARRY_OVER_EXPIRY_DAY_FIELD_ID'],
+      ['carryOverExpiryMonth', 'ORGANIZATION_CARRY_OVER_EXPIRY_MONTH_FIELD_ID'],
+      ['carryOverFirstLeaveYear', 'ORGANIZATION_CARRY_OVER_FIRST_YEAR_FIELD_ID'],
     ] as const) {
       expect(body, `a ${field} refusal focuses another control`).toContain(`${field}: ${id},`);
     }

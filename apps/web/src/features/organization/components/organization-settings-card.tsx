@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Notice } from '@/components/ui/notice';
 import { t } from '@/lib/i18n';
 import { OrganizationAbsenceTypesCard } from '@/features/organization/components/organization-absence-types-card';
+import { OrganizationCarryOverCard } from '@/features/organization/components/organization-carry-over-card';
 import { OrganizationEmailNotificationsCard } from '@/features/organization/components/organization-email-notifications-card';
 import { OrganizationMinimumMembersCard } from '@/features/organization/components/organization-minimum-members-card';
 import { OrganizationFireRanksCard } from '@/features/organization/components/organization-fire-ranks-card';
@@ -19,12 +20,13 @@ import { keepFocusOnAlert } from '@/utils/retry-focus';
 
 /**
  * The settings page's body (stories 1.4a-1.4c and member rank; facts and
- * dialogs since story 7.18): the read's message and retry, then seven cards:
- * five of facts — *Profil*, *Vrijeme i godina*, *Vatrogasni činovi i
- * položaji*, *Obavijesti e-poštom* (story 10.3) and *Najmanje ljudi u smjeni*
- * (story 11.1) — each change behind its own dialog with one Spremi; a sixth,
+ * dialogs since story 7.18): the read's message and retry, then eight cards:
+ * six of facts — *Profil*, *Vrijeme i godina*, *Prijenos godišnjeg* (story
+ * 13.4), *Vatrogasni činovi i položaji*, *Obavijesti e-poštom* (story 10.3)
+ * and *Najmanje ljudi u smjeni* (story 11.1) — each change behind its own
+ * dialog with one Spremi; a seventh,
  * *Satni pojasi*, a summary of the hour bands with the way to their editor;
- * and a seventh, *Vrste odsutnosti* (story 13.1b), the absence types with one
+ * and an eighth, *Vrste odsutnosti* (story 13.1b), the absence types with one
  * dialog to add a type or edit one. No field is mounted on the page.
  *
  * WHAT IS DELIBERATELY NOT HERE:
@@ -87,6 +89,7 @@ export function OrganizationSettingsCard({
       <>
         <OrganizationProfileCard settings={settings} organization={organization} />
         <OrganizationTimeCard settings={settings} organization={organization} />
+        <OrganizationCarryOverCard settings={settings} organization={organization} />
         <OrganizationFireRanksCard settings={settings} organization={organization} />
         <OrganizationEmailNotificationsCard settings={settings} organization={organization} />
         <OrganizationMinimumMembersCard settings={settings} organization={organization} />

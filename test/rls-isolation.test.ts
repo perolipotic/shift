@@ -2327,6 +2327,12 @@ describe('organizations admits exactly one write path, and it is the settings su
         // holding a value this build cannot render is `0006`'s check constraint
         // rather than either.
         'brand_accent',
+        // STORY 13.4. `0057` adds the carry-over setting's four columns with
+        // one column grant, written together on their own disjoint shape.
+        'carry_over_expiry_day',
+        'carry_over_expiry_month',
+        'carry_over_first_leave_year',
+        'carry_over_max_days',
         // STORY 10.3. `0044` adds the email-notifications switch with its own
         // column grant, written on its own disjoint shape.
         'email_notifications',
@@ -23460,6 +23466,193 @@ describe('minimum members (0048)', () => {
       } finally {
         if (own !== undefined) {
           await client.query('update organizations set minimum_members = $1 where id = $2', [seeded, own]);
+        }
+        await client.end();
+      }
+    },
+    20_000,
+  );
+});
+
+// -------------------------------------------------------- carry-over setting
+
+/**
+ * STORY 13.4. `0057_carry_over_setting.sql`: four nullable columns on
+ * `organizations` (the cap, the expiry day and month, the first leave year
+ * carried into), each under a named check, with an all-or-none check and one
+ * column grant. Neither fixture sets it (no default, nothing in `seed.sql`).
+ * The SQL cases run in rolled-back transactions; the REST case commits and
+ * restores the seeded nulls.
+ */
+describe('the carry-over setting (0057)', () => {
+  const COLUMNS = [
+    'carry_over_max_days',
+    'carry_over_expiry_month',
+    'carry_over_expiry_day',
+    'carry_over_first_leave_year',
+  ] as const;
+
+  type CarryOverRow = Readonly<Record<(typeof COLUMNS)[number], number | null>>;
+
+  const NONE: CarryOverRow = {
+    carry_over_max_days: null,
+    carry_over_expiry_month: null,
+    carry_over_expiry_day: null,
+    carry_over_first_leave_year: null,
+  };
+
+  const SET: CarryOverRow = {
+    carry_over_max_days: 5,
+    carry_over_expiry_month: 6,
+    carry_over_expiry_day: 30,
+    carry_over_first_leave_year: 2027,
+  };
+
+  async function carryOverOf(client: Client, organization: string): Promise<CarryOverRow | undefined> {
+    const { rows } = await client.query<CarryOverRow>(
+      `select ${COLUMNS.join(', ')} from organizations where id = $1`,
+      [organization],
+    );
+    return rows[0];
+  }
+
+  async function refusalOf(
+    client: Client,
+    organization: string,
+    row: CarryOverRow,
+  ): Promise<{ code?: string; constraint?: string } | null> {
+    await client.query('savepoint before_refusal');
+    const failure = await client
+      .query(
+        `update organizations
+            set carry_over_max_days = $1, carry_over_expiry_month = $2,
+                carry_over_expiry_day = $3, carry_over_first_leave_year = $4
+          where id = $5`,
+        [
+          row.carry_over_max_days,
+          row.carry_over_expiry_month,
+          row.carry_over_expiry_day,
+          row.carry_over_first_leave_year,
+          organization,
+        ],
+      )
+      .then(() => null, (error: unknown) => error as { code?: string; constraint?: string });
+    await client.query('rollback to savepoint before_refusal');
+    return failure;
+  }
+
+  it.skipIf(noDatabase).each(FIXTURES)('$slug holds no carry-over', ({ slug }) => {
+    return inRolledBackTransaction(async (client) => {
+      expect(await carryOverOf(client, await organizationId(client, slug))).toEqual(NONE);
+    });
+  });
+
+  it.skipIf(noDatabase)('takes all four, 30.06. and 28.02. included, and clears all four', () => {
+    return inRolledBackTransaction(async (client) => {
+      const own = await organizationId(client, PILOT.slug);
+      for (const row of [SET, { ...SET, carry_over_expiry_month: 2, carry_over_expiry_day: 28 }, NONE]) {
+        expect(await refusalOf(client, own, row), JSON.stringify(row)).toBeNull();
+        await client.query(
+          `update organizations
+              set carry_over_max_days = $1, carry_over_expiry_month = $2,
+                  carry_over_expiry_day = $3, carry_over_first_leave_year = $4
+            where id = $5`,
+          [
+            row.carry_over_max_days,
+            row.carry_over_expiry_month,
+            row.carry_over_expiry_day,
+            row.carry_over_first_leave_year,
+            own,
+          ],
+        );
+        expect(await carryOverOf(client, own)).toEqual(row);
+      }
+    });
+  });
+
+  it.skipIf(noDatabase).each([
+    [{ ...SET, carry_over_max_days: 0 }, 'organizations_carry_over_max_days_check'],
+    [{ ...SET, carry_over_max_days: -1 }, 'organizations_carry_over_max_days_check'],
+    [{ ...SET, carry_over_expiry_month: 13 }, 'organizations_carry_over_expiry_month_check'],
+    [{ ...SET, carry_over_expiry_month: 0 }, 'organizations_carry_over_expiry_month_check'],
+    [{ ...SET, carry_over_expiry_day: 31 }, 'organizations_carry_over_expiry_day_check'],
+    [{ ...SET, carry_over_expiry_month: 2, carry_over_expiry_day: 29 }, 'organizations_carry_over_expiry_day_check'],
+    [{ ...SET, carry_over_expiry_day: 0 }, 'organizations_carry_over_expiry_day_check'],
+    [{ ...SET, carry_over_first_leave_year: 0 }, 'organizations_carry_over_first_leave_year_check'],
+    [{ ...SET, carry_over_first_leave_year: 10000 }, 'organizations_carry_over_first_leave_year_check'],
+    [{ ...SET, carry_over_first_leave_year: null }, 'organizations_carry_over_all_or_none'],
+    [{ ...NONE, carry_over_max_days: 5 }, 'organizations_carry_over_all_or_none'],
+  ] as const)('refuses %j by %s', (row, constraint) => {
+    return inRolledBackTransaction(async (client) => {
+      const own = await organizationId(client, PILOT.slug);
+      const failure = await refusalOf(client, own, row);
+      expect(failure?.code).toBe('23514');
+      expect(failure?.constraint).toBe(constraint);
+      expect(await carryOverOf(client, own)).toEqual(NONE);
+    });
+  });
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'lets the $slug admin set and clear it, and refuses the member-role session',
+    async ({ slug, admin, member }) => {
+      const client = await connect();
+      let own: string | undefined;
+      try {
+        own = await organizationId(client, slug);
+        expect(
+          await carryOverOf(client, own),
+          `${slug} holds a carry-over — a previous run did not restore it`,
+        ).toEqual(NONE);
+
+        // EACH COLUMN ALONE, and all four: RLS refuses the member-role session
+        // before any check could.
+        for (const body of [SET, ...COLUMNS.map((column) => ({ [column]: SET[column] }))]) {
+          const refusedWrite = await rest(`organizations?id=eq.${own}`, {
+            token: await tokenFor(member, slug),
+            method: 'PATCH',
+            body,
+          });
+          expect(refusedWrite.status, 'a refused update affects zero rows and raises nothing').toBe(204);
+          expect(await carryOverOf(client, own), `a ${slug} member-role session wrote ${JSON.stringify(body)}`).toEqual(
+            NONE,
+          );
+        }
+
+        const set = await rest(`organizations?id=eq.${own}`, {
+          token: await tokenFor(admin, slug),
+          method: 'PATCH',
+          body: SET,
+        });
+        expect(set.status).toBe(204);
+        expect(await carryOverOf(client, own)).toEqual(SET);
+
+        // THE NAMED CHECK reaches the client by name, as the form reads it.
+        const refused = await rest(`organizations?id=eq.${own}`, {
+          token: await tokenFor(admin, slug),
+          method: 'PATCH',
+          body: { ...SET, carry_over_expiry_day: 31 },
+        });
+        const refusal = await restRefusal(refused);
+        expect(refusal.code).toBe('23514');
+        expect(refusal.message).toContain('organizations_carry_over_expiry_day_check');
+        expect(await carryOverOf(client, own)).toEqual(SET);
+
+        const cleared = await rest(`organizations?id=eq.${own}`, {
+          token: await tokenFor(admin, slug),
+          method: 'PATCH',
+          body: NONE,
+        });
+        expect(cleared.status).toBe(204);
+        expect(await carryOverOf(client, own)).toEqual(NONE);
+      } finally {
+        if (own !== undefined) {
+          await client.query(
+            `update organizations
+                set carry_over_max_days = null, carry_over_expiry_month = null,
+                    carry_over_expiry_day = null, carry_over_first_leave_year = null
+              where id = $1`,
+            [own],
+          );
         }
         await client.end();
       }
