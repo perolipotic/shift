@@ -780,6 +780,15 @@ to 10.4's is safe: it ignores `push_devices_for_send` and sends to the claim's
 database lacks, PostgREST refuses the read, and every signed-in screen loses its
 organization. `db push`, then the SPA. No function changes.
 
+**Migration `0057` before the SPA of story 13.4.** `0057` adds the carry-over
+setting, four nullable columns on `organizations` (`carry_over_max_days`,
+`carry_over_expiry_month`, `carry_over_expiry_day`,
+`carry_over_first_leave_year`, all four or none, one column grant), which
+`ORGANIZATION_COLUMNS` now selects: as with `0048`, an SPA deployed first asks
+for columns the database lacks and every signed-in screen loses its
+organization. `db push`, then the SPA. No function changes, and nothing to
+backfill: every organization starts with no carry-over.
+
 With the pipeline enabled (§8), merging to `main` is what promotes: staging is
 deployed and smoked, then production waits for an approval, and each deploy
 pushes migrations **before** it publishes the SPA. Without it, nothing publishes

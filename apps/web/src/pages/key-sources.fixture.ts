@@ -220,7 +220,12 @@ export const KEY_SOURCES = [
   // Odustani and Spremi. What a row says about drawing, the refusals and the
   // confirmations reach `t()` through the absence type modules.
   // STORY 13.2b: the edit dialog's line on what changing a type's flag does.
-  { name: 'the organization settings surface', file: SETTINGS, keys: translationKeys, strings: 89 },
+  // ONE HUNDRED AND SEVEN SINCE STORY 13.4: the *Prijenos godišnjeg* card's
+  // heading, `Uredi` and its name, the fact's label, the fact or none, the two
+  // saved lines, the dialog title, the cap's label and hint, the expiry's
+  // group label, its day and month labels and their empty choices, and the
+  // first year's label and hint.
+  { name: 'the organization settings surface', file: SETTINGS, keys: translationKeys, strings: 107 },
   {
     // EIGHT on the member list since story 1.5b, up from five, and the number is
     // still small because most of what this screen says is read off a table
@@ -1762,10 +1767,11 @@ export const KEY_SOURCES = [
     //
     // TEN SINCE 0036: a name over the maximum.
     // ELEVEN SINCE 0048 (story 11.1): minimum members that is no whole number from 1.
+    // TWELVE SINCE 0057 (story 13.4): a carry-over setting 0057 would refuse.
     name: 'the organization failure-to-message mapping',
     file: ORGANIZATION_MESSAGE_KEYS,
     keys: messageKeyUnion,
-    strings: 11,
+    strings: 12,
   },
   // SIX literal keys on the chrome — the navigation landmark's name twice (one
   // per bar), the collapse's two state-dependent names, the exit and the retry —

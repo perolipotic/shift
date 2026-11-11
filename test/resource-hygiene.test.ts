@@ -242,6 +242,10 @@ const SANCTIONED_PLURAL_KEYS = [
   // lede, how many items waiting for a decision the swap would erase.
   'zaOdluku.swap.erasures.title',
   'zaOdluku.swap.erasures.lede',
+  // STORY 13.4: the carry-over fact and its saved line, `Najviše 1 dan`,
+  // `Najviše 5 dana`.
+  'organization.carryOverFact',
+  'organization.carryOverStatusSet',
 ];
 
 /** The flat screen strings the application is permitted to ship, by the story
@@ -2357,6 +2361,25 @@ const SANCTIONED_SCREEN_KEYS = [
   'organization.minimumMembersStatusSet',
   'organization.minimumMembersStatusNotSet',
   'organization.error.minimumMembers',
+  // STORY 13.4. The carry-over setting on *Organizacija*: the card (its
+  // heading and the dialog's title), its `Uredi`, the cap's label and hint,
+  // the expiry's group label, its day and month labels and empty choices, the
+  // first year's label and hint, none, its saved line and the refusal (the fact and
+  // the set line are plurals, above).
+  'organization.carryOver',
+  'organization.editCarryOver',
+  'organization.carryOverMaxDays',
+  'organization.carryOverMaxDaysHint',
+  'organization.carryOverExpiry',
+  'organization.carryOverExpiryDay',
+  'organization.carryOverExpiryMonth',
+  'organization.carryOverExpiryDayEmpty',
+  'organization.carryOverExpiryMonthEmpty',
+  'organization.carryOverFirstYear',
+  'organization.carryOverFirstYearHint',
+  'organization.carryOverNone',
+  'organization.carryOverStatusNone',
+  'organization.error.carryOver',
   // STORY 11.2. The short-staffed block in every *Što se mijenja* a save that
   // can cause one has: its heading, a row, `i još {n}`, the neutral line when
   // it cannot be checked, and a resolution strip's words for a short shift.

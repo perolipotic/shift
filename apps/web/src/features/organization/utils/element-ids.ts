@@ -14,6 +14,8 @@ export const ORGANIZATION_FIRE_RANKS_HEADING_ID = 'organization-fire-ranks-headi
 export const ORGANIZATION_EMAIL_NOTIFICATIONS_HEADING_ID = 'organization-email-notifications-heading';
 /** The minimum-members card (story 11.1). */
 export const ORGANIZATION_MINIMUM_MEMBERS_HEADING_ID = 'organization-minimum-members-heading';
+/** The carry-over card (story 13.4). */
+export const ORGANIZATION_CARRY_OVER_HEADING_ID = 'organization-carry-over-heading';
 /** The *Satni pojasi* facts card (deferred work from 7.18): a summary, and the way to the editor. */
 export const ORGANIZATION_HOUR_BANDS_HEADING_ID = 'organization-hour-bands-heading';
 /** The *Vrste odsutnosti* card (story 13.1b): the types, and the one dialog that adds or edits one. */
@@ -28,6 +30,7 @@ export const ORGANIZATION_DIALOG_CARD_HEADING_IDS = {
   fireRanks: ORGANIZATION_FIRE_RANKS_HEADING_ID,
   emailNotifications: ORGANIZATION_EMAIL_NOTIFICATIONS_HEADING_ID,
   minimumMembers: ORGANIZATION_MINIMUM_MEMBERS_HEADING_ID,
+  carryOver: ORGANIZATION_CARRY_OVER_HEADING_ID,
 } as const;
 
 /**
@@ -58,6 +61,14 @@ export const ORGANIZATION_LOGO_FIELD_ID = 'organization-logo';
 export const ORGANIZATION_MINIMUM_MEMBERS_FIELD_ID = 'organization-minimum-members';
 /** The line under it that says what empty means. */
 export const ORGANIZATION_MINIMUM_MEMBERS_HINT_ID = 'organization-minimum-members-hint';
+/** The carry-over dialog's four fields (story 13.4), and the line that says what an empty cap means. */
+export const ORGANIZATION_CARRY_OVER_MAX_DAYS_FIELD_ID = 'organization-carry-over-max-days';
+export const ORGANIZATION_CARRY_OVER_MAX_DAYS_HINT_ID = 'organization-carry-over-max-days-hint';
+export const ORGANIZATION_CARRY_OVER_EXPIRY_LABEL_ID = 'organization-carry-over-expiry-label';
+export const ORGANIZATION_CARRY_OVER_EXPIRY_DAY_FIELD_ID = 'organization-carry-over-expiry-day';
+export const ORGANIZATION_CARRY_OVER_EXPIRY_MONTH_FIELD_ID = 'organization-carry-over-expiry-month';
+export const ORGANIZATION_CARRY_OVER_FIRST_YEAR_FIELD_ID = 'organization-carry-over-first-year';
+export const ORGANIZATION_CARRY_OVER_FIRST_YEAR_HINT_ID = 'organization-carry-over-first-year-hint';
 /** `Odaberi sliku`, where focus goes after a refused upload: the pick to retry. */
 export const ORGANIZATION_LOGO_CHOOSE_ID = 'organization-logo-choose';
 
@@ -83,6 +94,10 @@ export const ORGANIZATION_FIRE_RANKS_REFUSED_DESCRIPTION = `${ORGANIZATION_FIRE_
 export const ORGANIZATION_EMAIL_NOTIFICATIONS_REFUSED_DESCRIPTION = `${ORGANIZATION_EMAIL_NOTIFICATIONS_HINT_ID} ${ORGANIZATION_DIALOG_ERROR_ID}`;
 /** Story 11.1: minimum members' field, described by its hint and, after a refusal, the refusal too. */
 export const ORGANIZATION_MINIMUM_MEMBERS_REFUSED_DESCRIPTION = `${ORGANIZATION_MINIMUM_MEMBERS_HINT_ID} ${ORGANIZATION_DIALOG_ERROR_ID}`;
+/** Story 13.4: the cap's field, likewise. */
+export const ORGANIZATION_CARRY_OVER_MAX_DAYS_REFUSED_DESCRIPTION = `${ORGANIZATION_CARRY_OVER_MAX_DAYS_HINT_ID} ${ORGANIZATION_DIALOG_ERROR_ID}`;
+/** Story 13.4: the first leave year's field, likewise. */
+export const ORGANIZATION_CARRY_OVER_FIRST_YEAR_REFUSED_DESCRIPTION = `${ORGANIZATION_CARRY_OVER_FIRST_YEAR_HINT_ID} ${ORGANIZATION_DIALOG_ERROR_ID}`;
 
 /** Each dialog's title, which names the dialog; all six are mounted at once. */
 export const ORGANIZATION_DIALOG_HEADING_IDS = {
@@ -93,6 +108,7 @@ export const ORGANIZATION_DIALOG_HEADING_IDS = {
   fireRanks: 'organization-fire-ranks-dialog-heading',
   emailNotifications: 'organization-email-notifications-dialog-heading',
   minimumMembers: 'organization-minimum-members-dialog-heading',
+  carryOver: 'organization-carry-over-dialog-heading',
 } as const;
 
 /**

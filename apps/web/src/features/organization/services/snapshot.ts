@@ -117,9 +117,29 @@ export const ORGANIZATION_READ_STALE_MS = 300000;
  * `minimum_members` joined for story 11.1 (`0048`): how many people a working
  * shift needs, or empty, edited on this screen. The migration ships before
  * the SPA, because a select naming a column the database lacks is refused.
+ *
+ * The four `carry_over_*` columns joined for story 13.4 (`0057`): the
+ * carry-over setting, all four or none, edited on this screen. Nothing is
+ * derived from them yet (13.4b). `0057` ships before the SPA, as `0048` did.
  */
 export const ORGANIZATION_COLUMNS =
-  'id,slug,name,organization_type,timezone,locale,leave_year_start_month,leave_year_start_day,logo_path,brand_accent,uses_fire_ranks,email_notifications,minimum_members';
+  'id,slug,name,organization_type,timezone,locale,leave_year_start_month,leave_year_start_day,logo_path,brand_accent,uses_fire_ranks,email_notifications,minimum_members,carry_over_max_days,carry_over_expiry_month,carry_over_expiry_day,carry_over_first_leave_year';
+
+/**
+ * The carry-over setting (story 13.4, `0057`): the most days that carry into a
+ * leave year, the day and month they expire on, and the first leave year
+ * carried INTO. Current-state (AD-2). Nothing derives from it yet (13.4b).
+ */
+export interface CarryOverSetting {
+  /** `1` to `32767`. */
+  readonly maxDays: number;
+  /** `1` to `12`. */
+  readonly expiryMonth: number;
+  /** `1` to the month's last day, February at 28. */
+  readonly expiryDay: number;
+  /** `1` to `9999`, the calendar year in which that leave year begins. */
+  readonly firstLeaveYear: number;
+}
 
 /**
  * The organization, as everything downstream sees it.
@@ -171,6 +191,64 @@ export interface OrganizationSnapshot {
    * value as `null` ({@link minimumMembersOf}).
    */
   readonly minimumMembers: number | null;
+  /**
+   * The carry-over setting (`0057`, story 13.4), or `null` for no carry-over.
+   * A snapshot cached before `0057` lacks it; every reader takes a missing
+   * value as `null` ({@link carryOverOf}).
+   */
+  readonly carryOver: CarryOverSetting | null;
+}
+
+/** The last day an expiry may fall on in each month, February at 28 (`0057`). */
+const CARRY_OVER_MONTH_LAST_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31] as const;
+
+/** The last day of `month` (1–12) an expiry may fall on, or `null` for no such month. */
+export function carryOverLastDayOf(month: number): number | null {
+  return Number.isInteger(month) ? (CARRY_OVER_MONTH_LAST_DAYS[month - 1] ?? null) : null;
+}
+
+/** The largest number `smallint` holds: the cap's upper bound. */
+export const CARRY_OVER_MAX_DAYS_MAX = 32767;
+/** The first leave year's bounds, as `0057` checks them. */
+export const CARRY_OVER_FIRST_YEAR_MIN = 1;
+export const CARRY_OVER_FIRST_YEAR_MAX = 9999;
+
+function wholeIn(value: unknown, min: number, max: number): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max;
+}
+
+/**
+ * The setting four values make, or `null` when they make none: any of them
+ * missing, out of range, or an expiry day its month does not have. Lenient,
+ * as {@link minimumMembersOf} is: a value this build would never write reads
+ * as no carry-over rather than blanking the organization.
+ */
+export function carryOverSettingOf(
+  maxDays: unknown,
+  expiryMonth: unknown,
+  expiryDay: unknown,
+  firstLeaveYear: unknown,
+): CarryOverSetting | null {
+  if (!wholeIn(maxDays, 1, CARRY_OVER_MAX_DAYS_MAX)) return null;
+  if (!wholeIn(expiryMonth, 1, 12)) return null;
+  if (!wholeIn(expiryDay, 1, carryOverLastDayOf(expiryMonth) ?? 0)) return null;
+  if (!wholeIn(firstLeaveYear, CARRY_OVER_FIRST_YEAR_MIN, CARRY_OVER_FIRST_YEAR_MAX)) return null;
+
+  return { maxDays, expiryMonth, expiryDay, firstLeaveYear };
+}
+
+/**
+ * The carry-over a snapshot carries, with a snapshot restored from a cache
+ * written before `0057` (no such field) read as no carry-over.
+ */
+export function carryOverOf(snapshot: Pick<OrganizationSnapshot, 'carryOver'>): CarryOverSetting | null {
+  const value = (snapshot as { readonly carryOver?: unknown }).carryOver;
+
+  if (typeof value !== 'object' || value === null) return null;
+
+  const setting = value as Partial<Record<keyof CarryOverSetting, unknown>>;
+
+  return carryOverSettingOf(setting.maxDays, setting.expiryMonth, setting.expiryDay, setting.firstLeaveYear);
 }
 
 /**
@@ -206,6 +284,7 @@ export interface OrganizationNameEdit {
   readonly usesFireRanks?: never;
   readonly emailNotifications?: never;
   readonly minimumMembers?: never;
+  readonly carryOver?: never;
 }
 
 /**
@@ -224,6 +303,7 @@ export interface OrganizationLeaveYearEdit {
   readonly usesFireRanks?: never;
   readonly emailNotifications?: never;
   readonly minimumMembers?: never;
+  readonly carryOver?: never;
 }
 
 /**
@@ -249,6 +329,7 @@ export interface OrganizationLogoEdit {
   readonly usesFireRanks?: never;
   readonly emailNotifications?: never;
   readonly minimumMembers?: never;
+  readonly carryOver?: never;
 }
 
 /**
@@ -295,6 +376,7 @@ export interface OrganizationAccentEdit {
   readonly usesFireRanks?: never;
   readonly emailNotifications?: never;
   readonly minimumMembers?: never;
+  readonly carryOver?: never;
 }
 
 /**
@@ -323,6 +405,7 @@ export interface OrganizationFireRanksEdit {
   readonly brandAccent?: never;
   readonly emailNotifications?: never;
   readonly minimumMembers?: never;
+  readonly carryOver?: never;
 }
 
 /**
@@ -344,6 +427,7 @@ export interface OrganizationEmailNotificationsEdit {
   readonly brandAccent?: never;
   readonly usesFireRanks?: never;
   readonly minimumMembers?: never;
+  readonly carryOver?: never;
 }
 
 /**
@@ -366,10 +450,36 @@ export interface OrganizationMinimumMembersEdit {
   readonly brandAccent?: never;
   readonly usesFireRanks?: never;
   readonly emailNotifications?: never;
+  readonly carryOver?: never;
 }
 
 /**
- * One of the seven writes, and NEVER two of them.
+ * The carry-over setting (story 13.4), written on its own — a SEVENTH disjoint
+ * shape, for the fire-rank setting's reason. ALL FOUR COLUMNS OR NONE, as
+ * `0057`'s `organizations_carry_over_all_or_none` demands: `null` is a value,
+ * not an omission, and sends four nulls, which is how an organization stops
+ * carrying leave over.
+ */
+export interface OrganizationCarryOverEdit {
+  readonly carryOver: CarryOverSetting | null;
+  /** None of these, ever. See {@link OrganizationWrite}. */
+  readonly id?: never;
+  readonly slug?: never;
+  readonly locale?: never;
+  readonly name?: never;
+  readonly organizationType?: never;
+  readonly timezone?: never;
+  readonly leaveYearStartMonth?: never;
+  readonly leaveYearStartDay?: never;
+  readonly logoPath?: never;
+  readonly brandAccent?: never;
+  readonly usesFireRanks?: never;
+  readonly emailNotifications?: never;
+  readonly minimumMembers?: never;
+}
+
+/**
+ * One of the eight writes, and NEVER two of them.
  *
  * The `?: never` members on every side are what make "disjoint" a fact the
  * compiler checks rather than a claim a comment makes. Without them a value
@@ -386,7 +496,8 @@ export type OrganizationWrite =
   | OrganizationAccentEdit
   | OrganizationFireRanksEdit
   | OrganizationEmailNotificationsEdit
-  | OrganizationMinimumMembersEdit;
+  | OrganizationMinimumMembersEdit
+  | OrganizationCarryOverEdit;
 
 /**
  * Which of the two a write is: the one that actually carries a logo path.
@@ -436,6 +547,14 @@ function isMinimumMembersEdit(write: OrganizationWrite): write is OrganizationMi
 }
 
 /**
+ * The one that carries the carry-over setting (story 13.4). `!== undefined`,
+ * as the accent's guard: `null` is the meaningful "no carry-over".
+ */
+function isCarryOverEdit(write: OrganizationWrite): write is OrganizationCarryOverEdit {
+  return 'carryOver' in write && write.carryOver !== undefined;
+}
+
+/**
  * The name write, recognised POSITIVELY: the one that carries a name.
  *
  * `!== undefined` for the reason its siblings use it: `exactOptionalProperty
@@ -476,6 +595,13 @@ export const ORGANIZATION_INVALID = 'ORGANIZATION_INVALID';
  * `organizations_minimum_members_check`.
  */
 export const ORGANIZATION_MINIMUM_MEMBERS_INVALID = 'ORGANIZATION_MINIMUM_MEMBERS_INVALID';
+/**
+ * The carry-over setting is not one `0057` admits (story 13.4): a cap that is
+ * no whole number from 1 to 32767, an expiry day its month does not have, or
+ * a first leave year outside 1–9999. Refused by the dialog before anything is
+ * sent, or by one of `0057`'s checks.
+ */
+export const ORGANIZATION_CARRY_OVER_INVALID = 'ORGANIZATION_CARRY_OVER_INVALID';
 /** The service could not be reached, or answered with something that is not a row. */
 export const ORGANIZATION_UNAVAILABLE = 'ORGANIZATION_UNAVAILABLE';
 
@@ -485,6 +611,7 @@ export type OrganizationFailure =
   | typeof ORGANIZATION_NAME_TOO_LONG
   | typeof ORGANIZATION_INVALID
   | typeof ORGANIZATION_MINIMUM_MEMBERS_INVALID
+  | typeof ORGANIZATION_CARRY_OVER_INVALID
   | typeof ORGANIZATION_UNAVAILABLE;
 
 /**
@@ -496,13 +623,22 @@ export const ORGANIZATION_LEAVE_DAY_FIELD = 'leaveYearStartDay';
 export const ORGANIZATION_LEAVE_MONTH_FIELD = 'leaveYearStartMonth';
 export const ORGANIZATION_ACCENT_FIELD = 'brandAccent';
 export const ORGANIZATION_MINIMUM_MEMBERS_FIELD = 'minimumMembers';
+/** The carry-over dialog's four controls (story 13.4). */
+export const ORGANIZATION_CARRY_OVER_MAX_DAYS_FIELD = 'carryOverMaxDays';
+export const ORGANIZATION_CARRY_OVER_EXPIRY_DAY_FIELD = 'carryOverExpiryDay';
+export const ORGANIZATION_CARRY_OVER_EXPIRY_MONTH_FIELD = 'carryOverExpiryMonth';
+export const ORGANIZATION_CARRY_OVER_FIRST_YEAR_FIELD = 'carryOverFirstLeaveYear';
 
 export type OrganizationField =
   | typeof ORGANIZATION_NAME_FIELD
   | typeof ORGANIZATION_LEAVE_DAY_FIELD
   | typeof ORGANIZATION_LEAVE_MONTH_FIELD
   | typeof ORGANIZATION_ACCENT_FIELD
-  | typeof ORGANIZATION_MINIMUM_MEMBERS_FIELD;
+  | typeof ORGANIZATION_MINIMUM_MEMBERS_FIELD
+  | typeof ORGANIZATION_CARRY_OVER_MAX_DAYS_FIELD
+  | typeof ORGANIZATION_CARRY_OVER_EXPIRY_DAY_FIELD
+  | typeof ORGANIZATION_CARRY_OVER_EXPIRY_MONTH_FIELD
+  | typeof ORGANIZATION_CARRY_OVER_FIRST_YEAR_FIELD;
 
 /**
  * A refusal carries `field` ONLY when the constraint that raised it maps to a
@@ -580,6 +716,23 @@ const CHECK_VIOLATION = '23514';
 const NAME_CHECK_CONSTRAINT = 'organizations_name_check';
 /** `0048`'s check on minimum members, named explicitly with PostgreSQL's own spelling. */
 const MINIMUM_MEMBERS_CHECK_CONSTRAINT = 'organizations_minimum_members_check';
+/**
+ * `0057`'s five checks on the carry-over setting (story 13.4): four mark their
+ * control; the all-or-none check marks none, because the dialog always sends
+ * all four and only a write from elsewhere can break it.
+ */
+const CARRY_OVER_MAX_DAYS_CHECK_CONSTRAINT = 'organizations_carry_over_max_days_check';
+const CARRY_OVER_EXPIRY_MONTH_CHECK_CONSTRAINT = 'organizations_carry_over_expiry_month_check';
+const CARRY_OVER_EXPIRY_DAY_CHECK_CONSTRAINT = 'organizations_carry_over_expiry_day_check';
+const CARRY_OVER_FIRST_YEAR_CHECK_CONSTRAINT = 'organizations_carry_over_first_leave_year_check';
+const CARRY_OVER_ALL_OR_NONE_CONSTRAINT = 'organizations_carry_over_all_or_none';
+const CARRY_OVER_CONSTRAINTS: readonly string[] = [
+  CARRY_OVER_MAX_DAYS_CHECK_CONSTRAINT,
+  CARRY_OVER_EXPIRY_MONTH_CHECK_CONSTRAINT,
+  CARRY_OVER_EXPIRY_DAY_CHECK_CONSTRAINT,
+  CARRY_OVER_FIRST_YEAR_CHECK_CONSTRAINT,
+  CARRY_OVER_ALL_OR_NONE_CONSTRAINT,
+];
 /** `0036`'s one maximum name length, on this table. */
 const NAME_LENGTH_CONSTRAINT = 'organizations_name_length';
 
@@ -600,6 +753,12 @@ export const ORGANIZATION_CONSTRAINT_FIELDS: readonly (readonly [string, Organiz
   ['organizations_brand_accent_check', ORGANIZATION_ACCENT_FIELD],
   // `0048` names its check explicitly, the name PostgreSQL would have given it.
   [MINIMUM_MEMBERS_CHECK_CONSTRAINT, ORGANIZATION_MINIMUM_MEMBERS_FIELD],
+  // `0057` (story 13.4) names its checks explicitly; the all-or-none check
+  // marks no control.
+  [CARRY_OVER_MAX_DAYS_CHECK_CONSTRAINT, ORGANIZATION_CARRY_OVER_MAX_DAYS_FIELD],
+  [CARRY_OVER_EXPIRY_MONTH_CHECK_CONSTRAINT, ORGANIZATION_CARRY_OVER_EXPIRY_MONTH_FIELD],
+  [CARRY_OVER_EXPIRY_DAY_CHECK_CONSTRAINT, ORGANIZATION_CARRY_OVER_EXPIRY_DAY_FIELD],
+  [CARRY_OVER_FIRST_YEAR_CHECK_CONSTRAINT, ORGANIZATION_CARRY_OVER_FIRST_YEAR_FIELD],
 ];
 
 /** A PostgREST answer's rows, or an empty list — `null` data is not a row. */
@@ -680,6 +839,15 @@ export function organizationSnapshotOf(row: unknown): OrganizationSnapshot | nul
     // every screen. A database before `0048` refuses the select outright, so it
     // never reaches here; `DEPLOY.md` orders `0048` before the SPA.
     minimumMembers: minimumMembersOf({ minimumMembers: fields['minimum_members'] as number | null }),
+    // STORY 13.4 (`0057`): lenient the same way. All four nulls, a row
+    // without the columns (a fixture), or a set this build would never write
+    // reads as no carry-over.
+    carryOver: carryOverSettingOf(
+      fields['carry_over_max_days'],
+      fields['carry_over_expiry_month'],
+      fields['carry_over_expiry_day'],
+      fields['carry_over_first_leave_year'],
+    ),
   };
 }
 
@@ -728,6 +896,20 @@ export function organizationEditColumns(
   // ONE COLUMN on minimum members (story 11.1); `null` is sent, which clears it.
   if (isMinimumMembersEdit(write)) return { minimum_members: write.minimumMembers };
 
+  // FOUR COLUMNS on the carry-over setting (story 13.4), always all four:
+  // `null` sends four nulls, which clears it, and `0057`'s all-or-none check
+  // refuses anything between.
+  if (isCarryOverEdit(write)) {
+    const setting = write.carryOver;
+
+    return {
+      carry_over_max_days: setting?.maxDays ?? null,
+      carry_over_expiry_month: setting?.expiryMonth ?? null,
+      carry_over_expiry_day: setting?.expiryDay ?? null,
+      carry_over_first_leave_year: setting?.firstLeaveYear ?? null,
+    };
+  }
+
   // ONE COLUMN on the name (story 7.18). It used to travel with the type, the
   // zone and the leave year's start, filled in from the cached snapshot, so a
   // rename on a stale cache wrote another admin's older values back. Now no
@@ -772,6 +954,7 @@ function failureOf(error: PostgrestFailure): OrganizationFailure {
   if (violated === NAME_CHECK_CONSTRAINT) return ORGANIZATION_NAME_BLANK;
   if (violated === NAME_LENGTH_CONSTRAINT) return ORGANIZATION_NAME_TOO_LONG;
   if (violated === MINIMUM_MEMBERS_CHECK_CONSTRAINT) return ORGANIZATION_MINIMUM_MEMBERS_INVALID;
+  if (violated !== null && CARRY_OVER_CONSTRAINTS.includes(violated)) return ORGANIZATION_CARRY_OVER_INVALID;
 
   return ORGANIZATION_INVALID;
 }

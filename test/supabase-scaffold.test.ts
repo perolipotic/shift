@@ -924,6 +924,12 @@ describe('the access-control migration', () => {
       // identity fields and from the logo, so none of the three can clobber
       // another. What it holds is a KEY and never a colour; `0006` says why.
       'brand_accent',
+      // STORY 13.4. The carry-over setting, four columns on one disjoint
+      // write shape: all four or none, nullable, current-state (0057).
+      'carry_over_expiry_day',
+      'carry_over_expiry_month',
+      'carry_over_first_leave_year',
+      'carry_over_max_days',
       // STORY 10.3. The email-notifications switch, a NINTH column on its own
       // disjoint write shape.
       'email_notifications',
@@ -3382,6 +3388,41 @@ describe('the access-control migration', () => {
     expect('grant update (name, email, role, username, fire_rank) on table public.members to authenticated;').not.toMatch(
       tableWide,
     );
+  });
+
+  it('gives every organization a nullable carry-over setting, all four columns or none, with no default (story 13.4)', () => {
+    // STORY 13.4 (0057). Source text only; the refusals are `test/rls-isolation.test.ts`, in CI.
+    const migration = stripLineComments(
+      readFileSync(join(supabaseRoot, 'migrations', '0057_carry_over_setting.sql'), 'utf8'),
+    );
+
+    expect(migration).toMatch(
+      /add column carry_over_max_days smallint\s+constraint organizations_carry_over_max_days_check check \(carry_over_max_days >= 1\)/,
+    );
+    expect(migration).toMatch(
+      /add column carry_over_expiry_month smallint\s+constraint organizations_carry_over_expiry_month_check\s+check \(carry_over_expiry_month between 1 and 12\)/,
+    );
+    expect(migration).toMatch(/add column carry_over_expiry_day smallint,/);
+    expect(migration).toMatch(
+      /add column carry_over_first_leave_year smallint\s+constraint organizations_carry_over_first_leave_year_check\s+check \(carry_over_first_leave_year between 1 and 9999\)/,
+    );
+    // THE DAY AGAINST ITS MONTH, February at 28, so 30.06. fits.
+    expect(migration).toMatch(
+      /add constraint organizations_carry_over_expiry_day_check check \(\s*carry_over_expiry_day between 1 and \(\s*case\s+when carry_over_expiry_month = 2 then 28\s+when carry_over_expiry_month in \(4, 6, 9, 11\) then 30\s+else 31\s+end/,
+    );
+    expect(migration).toContain('add constraint organizations_carry_over_all_or_none check (');
+    // NO DEFAULT (DI-8): the product does not choose 30.06. for anybody.
+    expect(migration, '0057 sets a default').not.toMatch(/\bdefault\b/i);
+    // NOTHING DERIVED, NOTHING WRITTEN: no trigger, function, update or backfill.
+    expect(migration, '0057 derives or writes something').not.toMatch(
+      /\b(create (or replace )?(function|trigger|view)|update public|insert into)\b/i,
+    );
+    // THE UPDATE POLICY IS UNCHANGED: one column grant, no policy.
+    expect(migration, '0057 touches a policy').not.toMatch(/\bpolicy\b/i);
+    expect(migration).toMatch(
+      /grant update \(\s*carry_over_max_days,\s*carry_over_expiry_month,\s*carry_over_expiry_day,\s*carry_over_first_leave_year\s*\) on table public\.organizations to authenticated;/,
+    );
+    expect(migration, '0057 grants anon something').not.toMatch(/grant[^;]*\banon\b/i);
   });
 
   it('recreates both leave reads to carry each record\'s type and its drawing flag, and changes nothing else (story 13.2)', () => {

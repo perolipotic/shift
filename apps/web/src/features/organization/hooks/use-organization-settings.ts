@@ -13,6 +13,11 @@ import {
 } from '@/features/organization/services/logo';
 import { useRenderableLogo } from '@/features/organization/hooks/logo-url';
 import {
+  ORGANIZATION_CARRY_OVER_EXPIRY_DAY_FIELD,
+  ORGANIZATION_CARRY_OVER_EXPIRY_MONTH_FIELD,
+  ORGANIZATION_CARRY_OVER_FIRST_YEAR_FIELD,
+  ORGANIZATION_CARRY_OVER_INVALID,
+  ORGANIZATION_CARRY_OVER_MAX_DAYS_FIELD,
   ORGANIZATION_LEAVE_DAY_FIELD,
   ORGANIZATION_LEAVE_MONTH_FIELD,
   ORGANIZATION_MINIMUM_MEMBERS_FIELD,
@@ -36,6 +41,10 @@ import {
   organizationSurfaceTimeZoneOf,
 } from '@/features/organization/services/surface-keys';
 import {
+  ORGANIZATION_CARRY_OVER_EXPIRY_DAY_FIELD_ID,
+  ORGANIZATION_CARRY_OVER_EXPIRY_MONTH_FIELD_ID,
+  ORGANIZATION_CARRY_OVER_FIRST_YEAR_FIELD_ID,
+  ORGANIZATION_CARRY_OVER_MAX_DAYS_FIELD_ID,
   ORGANIZATION_DIALOG_CARD_HEADING_IDS,
   ORGANIZATION_DIALOG_SAVE_ID,
   ORGANIZATION_LEAVE_DAY_FIELD_ID,
@@ -47,6 +56,7 @@ import {
 } from '@/features/organization/utils/element-ids';
 import {
   ACCENT_DIALOG,
+  CARRY_OVER_DIALOG,
   EMAIL_NOTIFICATIONS_DIALOG,
   FIRE_RANKS_DIALOG,
   LEAVE_YEAR_DIALOG,
@@ -56,6 +66,7 @@ import {
   type OrganizationDialog,
 } from '@/features/organization/utils/dialogs';
 import { ORGANIZATION_ERROR_ID, offersReadRetry } from '@/features/organization/utils/messages';
+import { enteredCarryOver } from '@/features/organization/utils/carry-over';
 import { enteredMinimumMembers } from '@/features/organization/utils/minimum-members';
 import { NOTIFICATION_SETTINGS_KEY } from '@/features/notifications/services/settings';
 import { offlineNoteOf } from '@/lib/offline/freshness';
@@ -84,6 +95,10 @@ const REFUSED_FIELD_IDS: Partial<Record<OrganizationField, string>> = {
   leaveYearStartDay: ORGANIZATION_LEAVE_DAY_FIELD_ID,
   leaveYearStartMonth: ORGANIZATION_LEAVE_MONTH_FIELD_ID,
   minimumMembers: ORGANIZATION_MINIMUM_MEMBERS_FIELD_ID,
+  carryOverMaxDays: ORGANIZATION_CARRY_OVER_MAX_DAYS_FIELD_ID,
+  carryOverExpiryDay: ORGANIZATION_CARRY_OVER_EXPIRY_DAY_FIELD_ID,
+  carryOverExpiryMonth: ORGANIZATION_CARRY_OVER_EXPIRY_MONTH_FIELD_ID,
+  carryOverFirstLeaveYear: ORGANIZATION_CARRY_OVER_FIRST_YEAR_FIELD_ID,
 };
 
 /**
@@ -153,6 +168,7 @@ export function useOrganizationSettings() {
   const fireRanksOpener = useRef<HTMLButtonElement>(null);
   const emailNotificationsOpener = useRef<HTMLButtonElement>(null);
   const minimumMembersOpener = useRef<HTMLButtonElement>(null);
+  const carryOverOpener = useRef<HTMLButtonElement>(null);
   const openers: Readonly<Record<OrganizationDialog, RefObject<HTMLButtonElement | null>>> = {
     name: nameOpener,
     logo: logoOpener,
@@ -161,6 +177,7 @@ export function useOrganizationSettings() {
     fireRanks: fireRanksOpener,
     emailNotifications: emailNotificationsOpener,
     minimumMembers: minimumMembersOpener,
+    carryOver: carryOverOpener,
   };
   // A REF as well as state: state drives the busy dialog, and state is stale
   // inside a handler already called once this tick.
@@ -490,6 +507,34 @@ export function useOrganizationSettings() {
   }
 
   /**
+   * The carry-over dialog's Spremi (story 13.4), on its own disjoint write:
+   * all four columns, or four nulls when *Najviše dana* is empty, whatever the
+   * other fields hold. An entry `0057` would refuse is refused HERE, through
+   * the same refusal path a database refusal takes — the field it names marked
+   * and focused, the dialog open — and nothing is sent. Nothing derives from
+   * the setting yet (13.4b), so no other read depends on it.
+   */
+  async function saveCarryOver(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+
+    // Read before the write disables the fields: a disabled control is left
+    // out of `FormData`.
+    const form = new FormData(event.currentTarget);
+    const entered = enteredCarryOver({
+      maxDays: form.get(ORGANIZATION_CARRY_OVER_MAX_DAYS_FIELD),
+      expiryDay: form.get(ORGANIZATION_CARRY_OVER_EXPIRY_DAY_FIELD),
+      expiryMonth: form.get(ORGANIZATION_CARRY_OVER_EXPIRY_MONTH_FIELD),
+      firstLeaveYear: form.get(ORGANIZATION_CARRY_OVER_FIRST_YEAR_FIELD),
+    });
+
+    await write(CARRY_OVER_DIALOG, (row) =>
+      entered.ok
+        ? updateOrganization(organizationTable(), row.id, { carryOver: entered.value })
+        : Promise.resolve({ ok: false, code: ORGANIZATION_CARRY_OVER_INVALID, field: entered.field }),
+    );
+  }
+
+  /**
    * Reads the row again after a failed read — the retry the read's message
    * asks for. A second press while the read is in flight does nothing.
    *
@@ -537,6 +582,7 @@ export function useOrganizationSettings() {
     saveFireRanks,
     saveEmailNotifications,
     saveMinimumMembers,
+    saveCarryOver,
   };
 }
 

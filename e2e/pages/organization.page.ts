@@ -78,6 +78,53 @@ export class OrganizationPage extends BasePage {
     return this.page.getByRole('region', { name: organization.minimumMembers, exact: true });
   }
 
+  /** The carry-over card's `Uredi` (story 13.4). */
+  get carryOverOpener(): Locator {
+    return this.page.getByRole('button', { name: organization.editCarryOver, exact: true });
+  }
+
+  /** The carry-over dialog (story 13.4). */
+  get carryOverDialog(): Locator {
+    return this.dialog(organization.carryOver);
+  }
+
+  /** The carry-over card (story 13.4). */
+  get carryOverRegion(): Locator {
+    return this.page.getByRole('region', { name: organization.carryOver, exact: true });
+  }
+
+  /** The cap, inside the carry-over dialog. */
+  get carryOverMaxDays(): Locator {
+    return this.carryOverDialog.getByLabel(organization.carryOverMaxDays, { exact: true });
+  }
+
+  /** The expiry's day, inside the carry-over dialog. */
+  get carryOverExpiryDay(): Locator {
+    return this.carryOverDialog.getByLabel(organization.carryOverExpiryDay, { exact: true });
+  }
+
+  /** The expiry's month, inside the carry-over dialog. */
+  get carryOverExpiryMonth(): Locator {
+    return this.carryOverDialog.getByLabel(organization.carryOverExpiryMonth, { exact: true });
+  }
+
+  /** The first leave year carried into, inside the carry-over dialog. */
+  get carryOverFirstYear(): Locator {
+    return this.carryOverDialog.getByLabel(organization.carryOverFirstYear, { exact: true });
+  }
+
+  /**
+   * Clears the carry-over setting through its dialog (an empty cap) and waits
+   * for the card to say so: the run's organization starts with none.
+   */
+  async clearCarryOver(): Promise<void> {
+    await this.carryOverOpener.click();
+    await this.carryOverMaxDays.fill('');
+    await this.saveIn(this.carryOverDialog).click();
+    await expect(this.carryOverDialog).toHaveCount(0);
+    await expect(this.carryOverRegion.getByText(organization.carryOverNone, { exact: true })).toBeVisible();
+  }
+
   /** *Vrijeme i godina*: the zone, locked, and the leave year. */
   get timeRegion(): Locator {
     return this.page.getByRole('region', { name: organization.timeHeading });

@@ -143,6 +143,8 @@ export const SETTINGS_FIRE_RANKS = join(srcRoot, ...SETTINGS_SCREEN_PARTS.fireRa
 export const SETTINGS_EMAIL_NOTIFICATIONS = join(srcRoot, ...SETTINGS_SCREEN_PARTS.emailNotifications);
 /** Story 11.1: the minimum-members card and its dialog. */
 export const SETTINGS_MINIMUM_MEMBERS = join(srcRoot, ...SETTINGS_SCREEN_PARTS.minimumMembers);
+/** Story 13.4: the carry-over card and its dialog. */
+export const SETTINGS_CARRY_OVER = join(srcRoot, ...SETTINGS_SCREEN_PARTS.carryOver);
 
 /**
  * Story 1.4a's settings surface: the first destination that is not a
@@ -838,7 +840,9 @@ export const SCREENS = [
   // FIVE FIELDS AND FIFTEEN BUTTONS since story 13.1b: the *Vrste odsutnosti*
   // card's `Dodaj` and each row's `Uredi` (one element, mapped), and its
   // dialog's name field, Odustani and Spremi.
-  { name: 'the organization settings surface', file: SETTINGS, expectedFields: 5, expectedButtons: 15 },
+  // NINE FIELDS AND SIXTEEN BUTTONS since story 13.4: the carry-over card's
+  // `Uredi`, and its dialog's cap, expiry day and month, and first year.
+  { name: 'the organization settings surface', file: SETTINGS, expectedFields: 9, expectedButtons: 16 },
   // THREE on the member list, and the count is what keeps a fourth from
   // arriving unreviewed: the search field, the permission-level filter, and ONE
   // `<Button>` — the sort control, written once inside a map over
