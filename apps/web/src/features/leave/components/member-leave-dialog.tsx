@@ -33,6 +33,8 @@ import {
   leaveRefusalValuesOf,
   leaveTypeDrawsMessageKey,
   leaveTypeNameOf,
+  leaveExceedsOf,
+  EXCEEDS_AFTER_EXPIRY,
 } from '@/features/leave/services/leave-section';
 import { t } from '@/lib/i18n';
 import { useWriteGate } from '@/lib/offline/use-write-gate';
@@ -128,6 +130,8 @@ export function MemberLeaveDialog({ leave }: { readonly leave: MemberLeave }): R
     }
 
     const figures = preview.preview;
+    // STORY 13.4b: over the balance today, or only once the carried days lapse.
+    const exceeds = leaveExceedsOf(figures);
     // STORY 13.2b: a type that does not draw states no in-year part; its own line says why.
     const inYear = leavePreviewInYearOf(preview);
     const cost = t('count.days', { count: figures.costDays });
@@ -161,9 +165,13 @@ export function MemberLeaveDialog({ leave }: { readonly leave: MemberLeave }): R
         {leaveOverlapNoteShown(figures, leaveFailure) ? (
           <p className="text-sm font-medium">{t('ljudi.leaveRecord.overlap')}</p>
         ) : null}
-        {figures.exceedsBalance ? (
-          <p className="text-sm font-medium">{t('ljudi.leaveRecord.exceeds', { count: figures.balanceAfterDays })}</p>
-        ) : null}
+        {exceeds === null ? null : (
+          <p className="text-sm font-medium">
+            {exceeds.kind === EXCEEDS_AFTER_EXPIRY
+              ? t('godisnji.expiryExceeds', { ...exceeds })
+              : t('ljudi.leaveRecord.exceeds', { count: exceeds.count })}
+          </p>
+        )}
         {/* STORY 5.4e: inside the polite live region, a note and never a gate. */}
         <LeaveReplacementLines guard={amendGuard} />
         {/* STORY 7.12: the conflicts, beside them, neutral and never a gate. */}

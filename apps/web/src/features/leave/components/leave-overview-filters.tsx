@@ -72,12 +72,21 @@ export function LeaveOverviewFilters({ screen }: { readonly screen: LeaveOvervie
       summary={
         ready === null
           ? NO_TEXT
-          : t('godisnji.overview.summary', {
-              count: ready.summary.shown,
-              records: ready.summary.records,
-              used: ready.summary.usedDays,
-              allowance: ready.summary.allowanceDays,
-            })
+          : ready.summary.carriedDays === 0
+            ? t('godisnji.overview.summary', {
+                count: ready.summary.shown,
+                records: ready.summary.records,
+                used: ready.summary.usedDays,
+                allowance: ready.summary.allowanceDays,
+              })
+            : // STORY 13.4b: the carried sum joins the line when any day was carried.
+              t('godisnji.overview.summaryCarried', {
+                count: ready.summary.shown,
+                records: ready.summary.records,
+                used: ready.summary.usedDays,
+                allowance: ready.summary.allowanceDays,
+                carried: ready.summary.carriedDays,
+              })
       }
       showClear={ready !== null && leaveOverviewNarrowed({ team, state: filters.state })}
       shownCount={ready?.rows.length ?? 0}

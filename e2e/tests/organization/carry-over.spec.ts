@@ -8,13 +8,17 @@ test.use({ storageState: ADMIN_STATE });
 
 const organization = hr.organization;
 
-/** 5, 30.06. and 2027: the story's I/O matrix. */
-const FACT = { count: 5, dayMonth: '30.06.', year: '2027' } as const;
+/**
+ * 5, 30.06. and 2099: the story's I/O matrix, the first year moved to 2099
+ * (story 13.4b) so the setting carries nothing into any leave year the
+ * shared organization's other specs read while this one holds it.
+ */
+const FACT = { count: 5, dayMonth: '30.06.', year: '2099' } as const;
 
 /**
- * Story 13.4: *Prijenos godišnjeg* on *Organizacija*. Only the setting:
- * nothing derives carried days from it yet (13.4b), so no other surface
- * changes. The run's organization has none (no default, nothing in the seed);
+ * Story 13.4: *Prijenos godišnjeg* on *Organizacija*. Only the setting: since
+ * 13.4b every balance derives carried days from it, so its first year is 2099
+ * and no other surface changes while it is set. The run's organization has none (no default, nothing in the seed);
  * the case starts by clearing it through the dialog and ends by clearing it
  * again, so a failed run restores it too. Serial: the organization is shared.
  */
@@ -31,7 +35,7 @@ function patchesOf(page: Page): unknown[] {
   return bodies;
 }
 
-test('sets 5, 30.06. and 2027 in one PATCH, refuses an impossible day before sending, and clears it', async ({
+test('sets 5, 30.06. and 2099 in one PATCH, refuses an impossible day before sending, and clears it', async ({
   page,
   organizationPage,
 }) => {
@@ -47,7 +51,7 @@ test('sets 5, 30.06. and 2027 in one PATCH, refuses an impossible day before sen
     await organizationPage.carryOverMaxDays.fill('5');
     await organizationPage.carryOverExpiryDay.selectOption('30');
     await organizationPage.carryOverExpiryMonth.selectOption('6');
-    await organizationPage.carryOverFirstYear.fill('2027');
+    await organizationPage.carryOverFirstYear.fill('2099');
     await organizationPage.saveIn(organizationPage.carryOverDialog).click();
 
     await expect(organizationPage.carryOverDialog).toHaveCount(0);
@@ -57,14 +61,14 @@ test('sets 5, 30.06. and 2027 in one PATCH, refuses an impossible day before sen
       organizationPage.carryOverRegion.getByText(icu(organization.carryOverFact, FACT), { exact: true }),
     ).toBeVisible();
     expect(icu(organization.carryOverFact, FACT)).toBe(
-      'Najviše 5 dana. Preneseni dani istječu 30.06., od godine godišnjeg 2027.',
+      'Najviše 5 dana. Preneseni dani istječu 30.06., od godine godišnjeg 2099.',
     );
     expect(patches).toEqual([
       {
         carry_over_max_days: 5,
         carry_over_expiry_month: 6,
         carry_over_expiry_day: 30,
-        carry_over_first_leave_year: 2027,
+        carry_over_first_leave_year: 2099,
       },
     ]);
 
@@ -74,7 +78,7 @@ test('sets 5, 30.06. and 2027 in one PATCH, refuses an impossible day before sen
     await expect(organizationPage.carryOverMaxDays).toHaveValue('5');
     await expect(organizationPage.carryOverExpiryDay).toHaveValue('30');
     await expect(organizationPage.carryOverExpiryMonth).toHaveValue('6');
-    await expect(organizationPage.carryOverFirstYear).toHaveValue('2027');
+    await expect(organizationPage.carryOverFirstYear).toHaveValue('2099');
     await organizationPage.carryOverExpiryDay.selectOption('31');
     await organizationPage.saveIn(organizationPage.carryOverDialog).click();
 

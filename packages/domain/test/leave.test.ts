@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  carryOverExpiryOf,
   datesOfMonth,
   daysBetween,
   drawsAllowance,
@@ -16,6 +17,7 @@ import {
   memberScheduleOfMonth,
   type LeaveAllowance,
   type LeaveBalanceInput,
+  type LeaveCarryOver,
   type MemberScheduleInput,
   type MembershipVersion,
   type RosterMember,
@@ -429,7 +431,7 @@ describe.each(FIXTURES)('the balance and the preview under $fixture (R4.5–R4.7
   });
 
   it('keeps balance = allowance − used, with no record', () => {
-    expect(leaveBalanceOf(base())).toEqual({ allowanceDays: 20, usedDays: 0, balanceDays: 20 });
+    expect(leaveBalanceOf(base())).toEqual({ allowanceDays: 20, carriedDays: 0, lapsedDays: 0, carryOverExpiry: null, usedDays: 0, balanceDays: 20 });
   });
 
   it('counts every record inside the current year', () => {
@@ -464,7 +466,7 @@ describe.each(FIXTURES)('the balance and the preview under $fixture (R4.5–R4.7
 
   it('goes negative over allowance, never refusing', () => {
     const balance = leaveBalanceOf(base({ allowance: startingAt(1), records: [{ from: '2026-09-10', to: '2026-09-14' }] }));
-    expect(balance).toEqual({ allowanceDays: 1, usedDays: 3, balanceDays: -2 });
+    expect(balance).toEqual({ allowanceDays: 1, carriedDays: 0, lapsedDays: 0, carryOverExpiry: null, usedDays: 3, balanceDays: -2 });
   });
 
   it('previews a range across leave years: the cost counts all dates, the charge only this year', () => {
@@ -501,17 +503,25 @@ describe.each(FIXTURES)('the balance and the preview under $fixture (R4.5–R4.7
     });
     expect(leaveBalanceOf(base({ allowance: startingAt(2), records: [{ from: '2026-09-10', to: '2026-09-10' }] }))).toEqual({
       allowanceDays: 2,
+      carriedDays: 0,
+      lapsedDays: 0,
+      carryOverExpiry: null,
       usedDays: 1,
       balanceDays: 1,
     });
     expect(preview).toEqual({
       allowanceDays: 2,
+      carriedDays: 0,
+      lapsedDays: 0,
+      carryOverExpiry: null,
       usedDays: 1,
       balanceDays: 1,
       costDays: 3,
       costInYearDays: 3,
       balanceAfterDays: -2,
+      endBalanceAfterDays: -2,
       exceedsBalance: true,
+      exceedsAfterExpiry: false,
       overlapsRecord: false,
     });
   });
@@ -520,12 +530,17 @@ describe.each(FIXTURES)('the balance and the preview under $fixture (R4.5–R4.7
     const preview = leavePreviewOf({ ...base({ allowance: startingAt(3) }), range: { from: '2026-09-10', to: '2026-09-14' } });
     expect(preview).toEqual({
       allowanceDays: 3,
+      carriedDays: 0,
+      lapsedDays: 0,
+      carryOverExpiry: null,
       usedDays: 0,
       balanceDays: 3,
       costDays: 3,
       costInYearDays: 3,
       balanceAfterDays: 0,
+      endBalanceAfterDays: 0,
       exceedsBalance: false,
+      exceedsAfterExpiry: false,
       overlapsRecord: false,
     });
   });
@@ -534,7 +549,14 @@ describe.each(FIXTURES)('the balance and the preview under $fixture (R4.5–R4.7
     const records = [{ from: '2026-09-10', to: '2026-09-14' }];
     const preview = leavePreviewOf({ ...base({ records }), range: { from: '2026-10-01', to: '2026-10-05' } });
     const balance = leaveBalanceOf(base({ records }));
-    expect({ allowanceDays: preview.allowanceDays, usedDays: preview.usedDays, balanceDays: preview.balanceDays }).toEqual(balance);
+    expect({
+      allowanceDays: preview.allowanceDays,
+      carriedDays: preview.carriedDays,
+      lapsedDays: preview.lapsedDays,
+      carryOverExpiry: preview.carryOverExpiry,
+      usedDays: preview.usedDays,
+      balanceDays: preview.balanceDays,
+    }).toEqual(balance);
   });
 
   it('does not flag a range charging 0 when the balance is already negative', () => {
@@ -606,7 +628,7 @@ describe.each(FIXTURES)('the balance and the preview under $fixture (R4.5–R4.7
     expect(leaveCostOf(input, sick.from, sick.to)).toBeGreaterThan(0);
     expect(balance.usedDays).toBe(expected);
     expect(balance.balanceDays).toBe(20 - expected);
-    expect(leaveBalanceOf(base({ records: [sick] }))).toEqual({ allowanceDays: 20, usedDays: 0, balanceDays: 20 });
+    expect(leaveBalanceOf(base({ records: [sick] }))).toEqual({ allowanceDays: 20, carriedDays: 0, lapsedDays: 0, carryOverExpiry: null, usedDays: 0, balanceDays: 20 });
   });
 
   it('still refuses two overlapping records whatever their type', () => {
@@ -700,8 +722,8 @@ describe('the allowance per leave year (story 13.3)', () => {
     const input = inputOf(FIXTURES[0], 0);
     const allowance: LeaveAllowance = { startingDays: 20, versions: [{ id: 1, leaveYear: 2026, days: 25 }] };
     const at = (today: string) => leaveBalanceOf({ input, allowance, records: [], today, leaveYearStart: MARCH_FIRST });
-    expect(at('2026-02-10')).toEqual({ allowanceDays: 20, usedDays: 0, balanceDays: 20 });
-    expect(at('2026-09-01')).toEqual({ allowanceDays: 25, usedDays: 0, balanceDays: 25 });
+    expect(at('2026-02-10')).toEqual({ allowanceDays: 20, carriedDays: 0, lapsedDays: 0, carryOverExpiry: null, usedDays: 0, balanceDays: 20 });
+    expect(at('2026-09-01')).toEqual({ allowanceDays: 25, carriedDays: 0, lapsedDays: 0, carryOverExpiry: null, usedDays: 0, balanceDays: 25 });
     expect(at('2027-09-01').allowanceDays).toBe(25);
     const preview = leavePreviewOf({ input, allowance, records: [], today: '2026-02-10', leaveYearStart: MARCH_FIRST, range: { from: '2026-02-10', to: '2026-02-10' } });
     expect(preview.allowanceDays).toBe(20);
@@ -730,6 +752,211 @@ describe('the allowance per leave year (story 13.3)', () => {
         leaveYearStart: MARCH_FIRST,
       }),
     ).toThrow(RangeError);
+  });
+});
+
+describe('carry-over (story 13.4b, R4.13–R4.15)', () => {
+  const input = inputOf(FIXTURES[0], 0);
+  const JANUARY_FIRST = { month: 1, day: 1 } as const;
+  const setting = (overrides: Partial<LeaveCarryOver> = {}): LeaveCarryOver => ({
+    maxDays: 5,
+    expiryMonth: 6,
+    expiryDay: 30,
+    firstLeaveYear: 2027,
+    ...overrides,
+  });
+
+  /** The first `count` dates on or after `from` that cost a leave day, each as a one-date record. */
+  const leaveDatesFrom = (from: string, count: number): readonly { from: string; to: string }[] => {
+    const records: { from: string; to: string }[] = [];
+    let year = Number(from.slice(0, 4));
+    let month = Number(from.slice(5, 7));
+    while (records.length < count) {
+      const key = `${String(year)}-${String(month).padStart(2, '0')}`;
+      const dates = datesOfMonth(key);
+      for (const date of leaveDaysOfMonth(input, [{ from: dates[0]!, to: dates[dates.length - 1]! }], key)) {
+        if (date >= from && records.length < count) records.push({ from: date, to: date });
+      }
+      month = month === 12 ? 1 : month + 1;
+      if (month === 1) year += 1;
+    }
+    return records;
+  };
+
+  const at = (overrides: Partial<LeaveBalanceInput>): LeaveBalanceInput => ({
+    input,
+    allowance: startingAt(20),
+    records: [],
+    today: '2027-09-01',
+    leaveYearStart: JANUARY_FIRST,
+    carryOver: setting(),
+    ...overrides,
+  });
+
+  const balanced = (balance: { allowanceDays: number; carriedDays: number; usedDays: number; balanceDays: number }) =>
+    expect(balance.balanceDays).toBe(balance.allowanceDays + balance.carriedDays - balance.usedDays);
+
+  // The worked example: 2026 uses 14 of 20; 2027 uses 3 before 30.06.
+  const workedRecords = [...leaveDatesFrom('2026-02-01', 14), ...leaveDatesFrom('2027-01-10', 3)];
+
+  it('runs the worked example after the expiry: carried 3, lapsed 2, balance 20', () => {
+    const balance = leaveBalanceOf(at({ records: workedRecords }));
+    expect(balance).toEqual({
+      allowanceDays: 20,
+      carriedDays: 3,
+      lapsedDays: 2,
+      carryOverExpiry: '2027-06-30',
+      usedDays: 3,
+      balanceDays: 20,
+    });
+  });
+
+  it('counts every carried day before the expiry, and through it', () => {
+    for (const today of ['2027-03-01', '2027-06-30']) {
+      const balance = leaveBalanceOf(at({ records: workedRecords, today }));
+      expect(balance).toMatchObject({ carriedDays: 5, lapsedDays: 0, carryOverExpiry: '2027-06-30', balanceDays: 22 });
+      balanced(balance);
+    }
+    expect(leaveBalanceOf(at({ records: workedRecords, today: '2027-07-01' })).lapsedDays).toBe(2);
+  });
+
+  it('lapses nothing when the carried days are all consumed by the expiry', () => {
+    const records = [...leaveDatesFrom('2026-02-01', 14), ...leaveDatesFrom('2027-01-10', 7)];
+    const balance = leaveBalanceOf(at({ records }));
+    expect(balance).toMatchObject({ carriedDays: 5, lapsedDays: 0, usedDays: 7, balanceDays: 18 });
+  });
+
+  it('caps the carried days, and carries nothing from an overdrawn year', () => {
+    const capped = leaveBalanceOf(at({ records: leaveDatesFrom('2026-02-01', 11), today: '2027-03-01' }));
+    expect(capped).toMatchObject({ carriedDays: 5, balanceDays: 25 });
+    const overdrawn = leaveBalanceOf(
+      at({
+        allowance: { startingDays: 10, versions: [{ id: 1, leaveYear: 2027, days: 20 }] },
+        records: leaveDatesFrom('2026-02-01', 14),
+        today: '2027-03-01',
+      }),
+    );
+    expect(overdrawn).toEqual({ allowanceDays: 20, carriedDays: 0, lapsedDays: 0, carryOverExpiry: null, usedDays: 0, balanceDays: 20 });
+  });
+
+  it('carries the previous year’s allowance when it had no record', () => {
+    expect(leaveBalanceOf(at({ today: '2027-03-01', carryOver: setting({ maxDays: 30 }) }))).toMatchObject({ carriedDays: 20, balanceDays: 40 });
+  });
+
+  it('carries nothing into a year before the first', () => {
+    const balance = leaveBalanceOf(at({ records: workedRecords, carryOver: setting({ firstLeaveYear: 2028 }) }));
+    expect(balance).toEqual({ allowanceDays: 20, carriedDays: 0, lapsedDays: 0, carryOverExpiry: null, usedDays: 3, balanceDays: 17 });
+  });
+
+  it('chains from the first year: the previous year’s carried days feed the next', () => {
+    // 2025 uses 15 of 20; 2026 uses 20, the first 5 before 30.06.
+    const records = [...leaveDatesFrom('2025-02-01', 15), ...leaveDatesFrom('2026-02-01', 20)];
+    const today = '2027-03-01';
+    const chained = leaveBalanceOf(at({ records, today, carryOver: setting({ firstLeaveYear: 2026 }) }));
+    expect(chained).toMatchObject({ carriedDays: 5, balanceDays: 25 });
+    // Nothing carried into 2026 when 2027 is the first: 2026 ends at 0.
+    expect(leaveBalanceOf(at({ records, today })).carriedDays).toBe(0);
+    // R4.15: changing an earlier year's records recomputes the later carry.
+    const fewer = leaveBalanceOf(at({ records: [...leaveDatesFrom('2025-02-01', 18), ...leaveDatesFrom('2026-02-01', 20)], today, carryOver: setting({ firstLeaveYear: 2026 }) }));
+    expect(fewer.carriedDays).toBe(2);
+  });
+
+  it('reads the chain’s years with their own allowances', () => {
+    const allowance: LeaveAllowance = { startingDays: 20, versions: [{ id: 1, leaveYear: 2026, days: 16 }] };
+    const balance = leaveBalanceOf(at({ allowance, records: leaveDatesFrom('2026-02-01', 14), today: '2027-03-01' }));
+    expect(balance).toMatchObject({ allowanceDays: 16, carriedDays: 2, balanceDays: 18 });
+  });
+
+  it('skips non-drawing records, in the year carried from and the year carried into', () => {
+    const sick = (records: readonly { from: string; to: string }[]) => records.map((record) => ({ ...record, drawsAllowance: false }));
+    const balance = leaveBalanceOf(at({ records: [...sick(leaveDatesFrom('2026-02-01', 18)), ...sick(leaveDatesFrom('2027-01-10', 3))] }));
+    expect(balance).toMatchObject({ carriedDays: 0, lapsedDays: 5, usedDays: 0, balanceDays: 20 });
+  });
+
+  it('places the expiry on or after the leave year’s first day', () => {
+    expect(carryOverExpiryOf(2027, JANUARY_FIRST, setting())).toBe('2027-06-30');
+    expect(carryOverExpiryOf(2027, { month: 7, day: 1 }, setting())).toBe('2028-06-30');
+    expect(carryOverExpiryOf(2027, { month: 6, day: 15 }, setting({ expiryDay: 15 }))).toBe('2027-06-15');
+    expect(carryOverExpiryOf(9999, { month: 7, day: 1 }, setting())).toBe('9999-12-31');
+    // A start of 01.07.: the leave year 2027 is 01.07.2027–30.06.2028.
+    const records = [...leaveDatesFrom('2026-08-01', 14), ...leaveDatesFrom('2028-01-10', 3)];
+    const balance = leaveBalanceOf(at({ records, today: '2028-03-01', leaveYearStart: { month: 7, day: 1 } }));
+    expect(balance).toMatchObject({ carriedDays: 5, carryOverExpiry: '2028-06-30', balanceDays: 22 });
+  });
+
+  it('previews a range after the expiry against the year’s end, never the carried days', () => {
+    // 2027: allowance 10, 5 carried; 1 day before 30.06. and 10 after it.
+    const allowance: LeaveAllowance = { startingDays: 20, versions: [{ id: 1, leaveYear: 2027, days: 10 }] };
+    const after = leaveDatesFrom('2027-07-01', 12);
+    const records = [...leaveDatesFrom('2026-02-01', 15), ...leaveDatesFrom('2027-01-10', 1), ...after.slice(0, 10)];
+    const base = at({ allowance, records, today: '2027-03-01' });
+    expect(leaveBalanceOf(base)).toMatchObject({ carriedDays: 5, usedDays: 11, balanceDays: 4 });
+
+    const late = leavePreviewOf({ ...base, range: { from: after[10]!.from, to: after[11]!.to } });
+    // The warning is the expiry's: the balance is still 2 today, and −2 once 30.06. has passed.
+    expect(late).toMatchObject({
+      costInYearDays: 2,
+      balanceDays: 4,
+      balanceAfterDays: 2,
+      endBalanceAfterDays: -2,
+      exceedsBalance: true,
+      exceedsAfterExpiry: true,
+    });
+
+    const early = leaveDatesFrom('2027-02-01', 2);
+    const inTime = leavePreviewOf({ ...base, range: { from: early[0]!.from, to: early[1]!.to } });
+    expect(inTime.costInYearDays).toBe(leaveCostOf(input, early[0]!.from, early[1]!.to));
+    expect(inTime.balanceAfterDays).toBe(4 - inTime.costInYearDays);
+    expect(inTime.exceedsBalance).toBe(inTime.costInYearDays > 2);
+    expect(inTime.exceedsAfterExpiry).toBe(false);
+  });
+
+  it('flags a range in the previous leave year that shrinks the carry below zero, though it charges nothing this year', () => {
+    // 2027: allowance 0, 5 carried from 2026 (15 of 20 used), 3 days before 30.06.
+    const allowance: LeaveAllowance = { startingDays: 20, versions: [{ id: 1, leaveYear: 2027, days: 0 }] };
+    const records = [...leaveDatesFrom('2026-02-01', 15), ...leaveDatesFrom('2027-01-10', 3)];
+    const base = at({ allowance, records, today: '2027-03-01' });
+    expect(leaveBalanceOf(base)).toMatchObject({ carriedDays: 5, balanceDays: 2 });
+
+    const late2026 = leaveDatesFrom('2026-10-01', 3);
+    const preview = leavePreviewOf({ ...base, range: { from: late2026[0]!.from, to: late2026[2]!.to } });
+    expect(preview.costInYearDays).toBe(0);
+    // 2026 ends at 2, so 2 carry: 0 + 2 − 3 = −1, today and after the expiry.
+    expect(preview).toMatchObject({ balanceAfterDays: -1, endBalanceAfterDays: -1, exceedsBalance: true, exceedsAfterExpiry: false });
+
+    // One day in 2026 leaves 4 carried: 1 today, 0 after the expiry (3 consumed): lower, but no warning.
+    const one = leavePreviewOf({ ...base, range: late2026[0]! });
+    expect(one).toMatchObject({ costInYearDays: 0, balanceAfterDays: 1, endBalanceAfterDays: 0, exceedsBalance: false });
+  });
+
+  it('previews a range before the expiry, after it has passed, as consuming the carried days', () => {
+    const base = at({ records: workedRecords });
+    const early = leaveDatesFrom('2027-02-01', 1);
+    const preview = leavePreviewOf({ ...base, range: early[0]! });
+    expect(preview).toMatchObject({ carriedDays: 3, balanceDays: 20, costInYearDays: 1, balanceAfterDays: 20, exceedsBalance: false });
+  });
+
+  it('reads an absent or null setting as no carry-over, every figure as before', () => {
+    const records = workedRecords;
+    const absent = leaveBalanceOf({ input, allowance: startingAt(20), records, today: '2027-09-01', leaveYearStart: JANUARY_FIRST });
+    expect(absent).toEqual({ allowanceDays: 20, carriedDays: 0, lapsedDays: 0, carryOverExpiry: null, usedDays: 3, balanceDays: 17 });
+    expect(leaveBalanceOf(at({ records, carryOver: null }))).toEqual(absent);
+    const range = leaveDatesFrom('2027-08-01', 1)[0]!;
+    expect(leavePreviewOf({ ...at({ records, carryOver: null }), range })).toMatchObject({ balanceAfterDays: 16, exceedsBalance: false });
+  });
+
+  it('refuses a malformed setting, naming it', () => {
+    const refused = (carryOver: LeaveCarryOver) => () => leaveBalanceOf(at({ carryOver }));
+    expect(refused(setting({ maxDays: 0 }))).toThrow(/carry-over cap is 0 days/);
+    expect(refused(setting({ maxDays: 2.5 }))).toThrow(RangeError);
+    expect(refused(setting({ expiryMonth: 13 }))).toThrow(/month 13/);
+    expect(refused(setting({ expiryDay: 31 }))).toThrow(/day 31 of month 6/);
+    expect(refused(setting({ expiryMonth: 2, expiryDay: 29 }))).toThrow(/day 29 of month 2/);
+    expect(refused(setting({ firstLeaveYear: 0 }))).toThrow(/first leave year carried into is 0/);
+    expect(refused(setting({ firstLeaveYear: 10000 }))).toThrow(RangeError);
+    // Checked even when no year is carried into yet.
+    expect(() => leaveBalanceOf(at({ carryOver: setting({ maxDays: 0, firstLeaveYear: 2099 }) }))).toThrow(RangeError);
+    expect(() => carryOverExpiryOf(0, JANUARY_FIRST, setting())).toThrow(/leave year is 0/);
   });
 });
 

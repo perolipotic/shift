@@ -11,10 +11,12 @@ import { RadioCard, RadioGroup } from '@/components/ui/radio-group';
 import { MyLeaveSkeleton } from '@/features/leave/components/my-leave-skeleton';
 import type { useLeaveRequestForm } from '@/features/leave/hooks/use-leave-request-form';
 import {
+  EXCEEDS_AFTER_EXPIRY,
   LEAVE_FROM_FIELD,
   LEAVE_PREVIEW_REASON,
   LEAVE_TO_FIELD,
   LEAVE_TYPE_FIELD,
+  leaveExceedsOf,
   leavePreviewInYearOf,
   leaveTypeDrawsMessageKey,
   type LeaveField,
@@ -124,6 +126,8 @@ export function LeaveRequestFormBody({ form }: { readonly form: LeaveRequestForm
     }
 
     const figures = preview.preview;
+    // STORY 13.4b: over the balance today, or only once the carried days lapse.
+    const exceeds = leaveExceedsOf(figures);
     // STORY 13.2b: a type that does not draw states no in-year part; its own line says why.
     const inYear = leavePreviewInYearOf(preview);
 
@@ -142,9 +146,13 @@ export function LeaveRequestFormBody({ form }: { readonly form: LeaveRequestForm
         {inYear === null ? null : <p className="text-sm">{t('godisnji.request.costInYear', { count: inYear })}</p>}
         {preview.type.drawsAllowance ? null : <p className="text-sm">{t('godisnji.request.balanceUnchanged')}</p>}
         {figures.overlapsRecord ? <p className="text-sm font-medium">{t('godisnji.request.overlapNote')}</p> : null}
-        {figures.exceedsBalance ? (
-          <p className="text-sm font-medium">{t('godisnji.request.exceeds', { count: figures.balanceAfterDays })}</p>
-        ) : null}
+        {exceeds === null ? null : (
+          <p className="text-sm font-medium">
+            {exceeds.kind === EXCEEDS_AFTER_EXPIRY
+              ? t('godisnji.expiryExceeds', { ...exceeds })
+              : t('godisnji.request.exceeds', { count: exceeds.count })}
+          </p>
+        )}
       </div>
     );
   }

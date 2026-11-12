@@ -1,4 +1,11 @@
-import { leaveBalanceOf, leaveCostOf, type LeaveAllowance, type LeaveBalance, type LeaveYearStart } from '@shift/domain';
+import {
+  leaveBalanceOf,
+  leaveCostOf,
+  type LeaveAllowance,
+  type LeaveBalance,
+  type LeaveCarryOver,
+  type LeaveYearStart,
+} from '@shift/domain';
 
 import type { AbsenceTypeRow } from '@/features/absence-types/services/list';
 import { absenceTypesOfCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
@@ -13,12 +20,13 @@ import {
   LEAVE_RANGE_TOO_LONG,
   LEAVE_RANGE_UNCHANGED,
   LEAVE_TYPE_UNCHOSEN,
+  leaveCarryOverOf,
   leavePreviewStateOf,
   leaveRangeValuesOf,
   leaveTypeChoiceOf,
+  leaveYearStartOf,
   type LeaveCalendarSource,
   type LeaveMembersSource,
-  type LeaveOrganizationAnswer,
   type LeaveOrganizationSource,
   type LeavePreviewState,
   type LeaveRangeReason,
@@ -144,13 +152,6 @@ export interface MyLeaveSources {
   readonly records: MyLeaveRowsState;
 }
 
-/** Where the leave year begins, or null while it is not known. */
-function leaveYearStartOf(answer: LeaveOrganizationAnswer): LeaveYearStart | null {
-  return answer !== undefined && answer.ok
-    ? { month: answer.snapshot.leaveYearStartMonth, day: answer.snapshot.leaveYearStartDay }
-    : null;
-}
-
 /**
  * The snapshot's type catalog as the request form and the viewer's lists use
  * it (story 13.2b): null for none (a snapshot cached before 13.2) and for an
@@ -166,8 +167,8 @@ function offeredAbsenceTypesOf(snapshot: Pick<CalendarSnapshot, 'absenceTypes' |
 /**
  * The viewer's balance input (story 9.3, factored out of {@link myLeaveOf}):
  * the calendar's one schedule recipe for the snapshot's viewer, their
- * allowance across leave years (story 13.3), their own live records, today in the organization's zone and the
- * leave year. The three figures and the request form's preview both stand on
+ * allowance across leave years (story 13.3), their own live records, today in the organization's zone, the
+ * leave year and the carry-over setting (story 13.4b). The three figures and the request form's preview both stand on
  * this one value. Throws what the schedule recipe throws.
  */
 export function myLeaveInputOf(
@@ -175,6 +176,7 @@ export function myLeaveInputOf(
   allowance: LeaveAllowance,
   records: LeaveRecordsInput['records'],
   leaveYearStart: LeaveYearStart,
+  carryOver: LeaveCarryOver | null,
   now: Date,
 ): LeaveRecordsInput {
   return {
@@ -183,6 +185,7 @@ export function myLeaveInputOf(
     records,
     today: calendarTodayOf(snapshot, now),
     leaveYearStart,
+    carryOver,
   };
 }
 
@@ -234,7 +237,7 @@ export function myLeaveOf(sources: MyLeaveSources, now: Date): MyLeave {
   }
 
   try {
-    const input = myLeaveInputOf(snapshot, own.leaveAllowance, recorded, leaveYearStart, now);
+    const input = myLeaveInputOf(snapshot, own.leaveAllowance, recorded, leaveYearStart, leaveCarryOverOf(organization.data), now);
 
     return {
       kind: MY_LEAVE_READY,

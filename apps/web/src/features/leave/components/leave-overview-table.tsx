@@ -2,7 +2,7 @@ import { Link } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
 
 import { SortableHead } from '@/components/sortable-head';
-import { Table, TableBody, TableCaption, TableCell, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
   OVERVIEW_READY,
   OVERVIEW_SORT_ALLOWANCE,
@@ -15,6 +15,7 @@ import {
   type LeaveOverview,
   type LeaveOverviewSortKey,
 } from '@/features/leave/services/leave-overview';
+import { leaveCarriedCellMessageKey } from '@/features/leave/services/leave-section';
 import { t } from '@/lib/i18n';
 
 /** The overview once ready: what the table and the rows draw. */
@@ -49,9 +50,10 @@ function SortHead({
 /**
  * The admin's leave overview from 640 px (story 7.15): *Osoba* (the link to
  * the member page, where leave is recorded), *Smjena*, *Pravo*,
- * *Iskorišteno* and *Preostalo*, every heading sortable, every figure in
- * tabular numerals. A member with no schedule shows their *Pravo* and the
- * unscheduled line across the other two. It scrolls inside its own
+ * *Preneseno* (story 13.4b, the carried days with their expiry, not
+ * sortable), *Iskorišteno* and *Preostalo*, every other heading sortable,
+ * every figure in tabular numerals. A member with no schedule shows their
+ * *Pravo* and the unscheduled line across the other three. It scrolls inside its own
  * container, never the page; below 640 px `LeaveOverviewRows` draws the same
  * view model as stacked rows. Every figure is `leaveOverviewOf`'s.
  */
@@ -73,6 +75,8 @@ export function LeaveOverviewTable({
           <SortHead overview={overview} sortKey={OVERVIEW_SORT_NAME} label={t('godisnji.overview.person')} numeric={false} onPress={onPress} />
           <SortHead overview={overview} sortKey={OVERVIEW_SORT_TEAM} label={t('godisnji.overview.team')} numeric={false} onPress={onPress} />
           <SortHead overview={overview} sortKey={OVERVIEW_SORT_ALLOWANCE} label={t('godisnji.overview.allowance')} numeric onPress={onPress} />
+          {/* STORY 13.4b: carried days, never sorted or filtered. */}
+          <TableHead className="text-right">{t('godisnji.overview.carried')}</TableHead>
           <SortHead overview={overview} sortKey={OVERVIEW_SORT_USED} label={t('godisnji.overview.used')} numeric onPress={onPress} />
           <SortHead overview={overview} sortKey={OVERVIEW_SORT_BALANCE} label={t('godisnji.overview.balance')} numeric onPress={onPress} />
         </TableRow>
@@ -92,11 +96,16 @@ export function LeaveOverviewTable({
             <TableCell className="whitespace-nowrap">{row.team?.name ?? t('godisnji.overview.noTeam')}</TableCell>
             <TableCell className="whitespace-nowrap text-right tabular-nums">{row.allowanceDays}</TableCell>
             {row.figures === null ? (
-              <TableCell colSpan={2} className="text-sm text-muted-foreground">
+              <TableCell colSpan={3} className="text-sm text-muted-foreground">
                 {t('ljudi.leaveRecord.unscheduled')}
               </TableCell>
             ) : (
               <>
+                <TableCell className="whitespace-nowrap text-right tabular-nums">
+                  {row.figures.carried === null
+                    ? row.figures.carriedDays
+                    : t(leaveCarriedCellMessageKey(row.figures.carried.kind), { ...row.figures.carried })}
+                </TableCell>
                 <TableCell className="whitespace-nowrap text-right tabular-nums">{row.figures.usedDays}</TableCell>
                 <TableCell className="whitespace-nowrap text-right font-semibold tabular-nums">
                   {row.figures.balanceDays}
@@ -107,7 +116,7 @@ export function LeaveOverviewTable({
         ))}
         {overview.empty === null ? null : (
           <TableRow>
-            <TableCell colSpan={5}>{empty}</TableCell>
+            <TableCell colSpan={6}>{empty}</TableCell>
           </TableRow>
         )}
       </TableBody>

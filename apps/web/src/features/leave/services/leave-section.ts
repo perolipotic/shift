@@ -8,6 +8,7 @@ import {
   type LeaveAllowance,
   type LeaveBalance,
   type LeaveBalanceInput,
+  type LeaveCarryOver,
   type LeavePreview,
   type LeaveRange,
   type LeaveYearStart,
@@ -33,7 +34,8 @@ import {
   type LeaveChangeFailure,
   type LeaveWriteOutcome,
 } from '@/features/leave/services/leave-write';
-import { RANGE_DASH, compareText, formatIsoDate, isIsoDate, nextIsoDate, previousIsoDate } from '@/lib/i18n/format';
+import { carryOverOf, type CarryOverSetting } from '@/features/organization/services/snapshot';
+import { RANGE_DASH, compareText, formatIsoDate, formatIsoDayMonth, isIsoDate, nextIsoDate, previousIsoDate } from '@/lib/i18n/format';
 
 /**
  * The member page's leave card (story 5.1c) as a pure view model, in a `.ts`
@@ -81,11 +83,19 @@ export interface LeaveCalendarSource {
   readonly loading: boolean;
 }
 
-/** The organization snapshot's answer, as far as the leave year needs it. */
+/**
+ * The organization snapshot's answer, as far as the leave year needs it: its
+ * start, and the carry-over setting (story 13.4b). A snapshot without the
+ * setting — a cache or fixture from before 13.4 — reads as no carry-over.
+ */
 export type LeaveOrganizationAnswer =
   | {
       readonly ok: true;
-      readonly snapshot: { readonly leaveYearStartMonth: number; readonly leaveYearStartDay: number };
+      readonly snapshot: {
+        readonly leaveYearStartMonth: number;
+        readonly leaveYearStartDay: number;
+        readonly carryOver?: CarryOverSetting | null;
+      };
     }
   | { readonly ok: false }
   | undefined;
@@ -220,10 +230,19 @@ export function leaveHeadingYearsOf(base: MemberLeaveBase): LeaveHeadingYears | 
 }
 
 /** Where the leave year begins, or null while it is not known. */
-function leaveYearStartOf(answer: LeaveOrganizationAnswer): LeaveYearStart | null {
+export function leaveYearStartOf(answer: LeaveOrganizationAnswer): LeaveYearStart | null {
   return answer !== undefined && answer.ok
     ? { month: answer.snapshot.leaveYearStartMonth, day: answer.snapshot.leaveYearStartDay }
     : null;
+}
+
+/**
+ * The carry-over setting every balance input passes (story 13.4b), read as
+ * `carryOverOf` reads it: a missing field, a partial or an impossible one is
+ * none, so an old cache or fixture keeps every figure as before.
+ */
+export function leaveCarryOverOf(answer: LeaveOrganizationAnswer): LeaveCarryOver | null {
+  return answer !== undefined && answer.ok ? carryOverOf({ carryOver: answer.snapshot.carryOver ?? null }) : null;
 }
 
 /**
@@ -267,6 +286,7 @@ export function memberLeaveBaseOf(sources: MemberLeaveSources, memberId: string,
     records: recorded,
     today: calendarTodayOf(snapshot, now),
     leaveYearStart,
+    carryOver: leaveCarryOverOf(organization.data),
   };
 
   try {
@@ -282,6 +302,126 @@ export function memberLeaveBaseOf(sources: MemberLeaveSources, memberId: string,
 
     return { kind: LEAVE_UNAVAILABLE };
   }
+}
+
+// ------------------------------------------------------- carried days (13.4b)
+
+/** Carried days not yet expired: every one counts, none lapsed. */
+export const CARRIED_PENDING = 'pending';
+/** Past the expiry, some carried days lapsed unconsumed. */
+export const CARRIED_LAPSED = 'lapsed';
+/** Past the expiry, every carried day consumed in time. */
+export const CARRIED_KEPT = 'kept';
+
+export type LeaveCarriedKind = typeof CARRIED_PENDING | typeof CARRIED_LAPSED | typeof CARRIED_KEPT;
+
+/**
+ * The carried line (story 13.4b, PO 2026-11-12) as every balance surface
+ * states it: its shape, the carried days the balance counts, the lapsed days
+ * and the expiry as `30.06.`. *Preneseno 5 dana (istječu 30.06.)* before the
+ * expiry, *Preneseno 3 dana (2 istekla 30.06.)* after it with days lapsed,
+ * *Preneseno 5 dana* after it with none.
+ */
+export interface LeaveCarriedLine {
+  readonly kind: LeaveCarriedKind;
+  /** The balance's own `carriedDays`. */
+  readonly count: number;
+  /** The balance's own `lapsedDays`. */
+  readonly lapsed: number;
+  /** `30.06.` */
+  readonly date: string;
+}
+
+/**
+ * The carried line of a balance computed at `today` (the balance input's
+ * own), or `null` when nothing was carried into the leave year: no line. Every
+ * figure is the domain's; only the shape is chosen here, by whether `today`
+ * is past the expiry.
+ */
+export function leaveCarriedLineOf(balance: LeaveBalance, today: string): LeaveCarriedLine | null {
+  const expiry = balance.carryOverExpiry;
+
+  if (expiry === null) return null;
+
+  const kind = today <= expiry ? CARRIED_PENDING : balance.lapsedDays > 0 ? CARRIED_LAPSED : CARRIED_KEPT;
+
+  return { kind, count: balance.carriedDays, lapsed: balance.lapsedDays, date: formatIsoDayMonth(expiry) ?? expiry };
+}
+
+/** The line under a balance's figures: *Preneseno 5 dana (istječu 30.06.)*. Exhaustive. */
+export function leaveCarriedLineMessageKey(
+  kind: LeaveCarriedKind,
+): 'godisnji.carried.pending' | 'godisnji.carried.lapsed' | 'godisnji.carried.kept' {
+  switch (kind) {
+    case CARRIED_PENDING:
+      return 'godisnji.carried.pending';
+    case CARRIED_LAPSED:
+      return 'godisnji.carried.lapsed';
+    case CARRIED_KEPT:
+      return 'godisnji.carried.kept';
+  }
+}
+
+/** The member card's *Preneseno* value: *5 dana (istječu 30.06.)*. Exhaustive. */
+export function leaveCarriedDaysMessageKey(
+  kind: LeaveCarriedKind,
+): 'godisnji.carriedDays.pending' | 'godisnji.carriedDays.lapsed' | 'godisnji.carriedDays.kept' {
+  switch (kind) {
+    case CARRIED_PENDING:
+      return 'godisnji.carriedDays.pending';
+    case CARRIED_LAPSED:
+      return 'godisnji.carriedDays.lapsed';
+    case CARRIED_KEPT:
+      return 'godisnji.carriedDays.kept';
+  }
+}
+
+/** The overview's *Preneseno* cell: *5 (istječu 30.06.)*. Exhaustive. */
+export function leaveCarriedCellMessageKey(
+  kind: LeaveCarriedKind,
+): 'godisnji.overview.carriedCell.pending' | 'godisnji.overview.carriedCell.lapsed' | 'godisnji.overview.carriedCell.kept' {
+  switch (kind) {
+    case CARRIED_PENDING:
+      return 'godisnji.overview.carriedCell.pending';
+    case CARRIED_LAPSED:
+      return 'godisnji.overview.carriedCell.lapsed';
+    case CARRIED_KEPT:
+      return 'godisnji.overview.carriedCell.kept';
+  }
+}
+
+/**
+ * The over-balance warning a preview states (story 13.4b, PO 2026-11-12), or
+ * `null` when it states none. When the warning is the expiry's — the balance
+ * after the range is still zero or more today, because carried days count
+ * until they lapse — it names the expiry and the year's balance after it
+ * (`Preneseni dani istječu 30.06.; nakon toga preostaje −2 dana.`); otherwise
+ * it is the balance after the range, as before.
+ */
+export type LeaveExceeds =
+  | { readonly kind: typeof EXCEEDS_BALANCE; readonly count: number }
+  | { readonly kind: typeof EXCEEDS_AFTER_EXPIRY; readonly count: number; readonly dayMonth: string };
+
+/** Over the balance today. */
+export const EXCEEDS_BALANCE = 'balance';
+/** Over the balance once the carried days lapse. */
+export const EXCEEDS_AFTER_EXPIRY = 'afterExpiry';
+
+export function leaveExceedsOf(
+  preview: Pick<
+    LeavePreview,
+    'exceedsBalance' | 'exceedsAfterExpiry' | 'balanceAfterDays' | 'endBalanceAfterDays' | 'carryOverExpiry'
+  >,
+): LeaveExceeds | null {
+  if (!preview.exceedsBalance) return null;
+
+  const expiry = preview.carryOverExpiry;
+
+  if (preview.exceedsAfterExpiry && expiry !== null) {
+    return { kind: EXCEEDS_AFTER_EXPIRY, count: preview.endBalanceAfterDays, dayMonth: formatIsoDayMonth(expiry) ?? expiry };
+  }
+
+  return { kind: EXCEEDS_BALANCE, count: preview.balanceAfterDays };
 }
 
 /** The line a base with no figures shows in their place. */
@@ -720,12 +860,15 @@ export function replacementGuardOf(
 export interface LeaveSaved {
   /** What the record cost, or null when the re-read after it did not answer: a plain saved line. */
   readonly costDays: number | null;
-  /** The balance after the save when it exceeded the balance (negative), else null. */
-  readonly overBalanceDays: number | null;
+  /**
+   * The over-balance warning of the save (story 13.4b: the balance after it,
+   * or the year's balance once the carried days lapse), else null.
+   */
+  readonly overBalance: LeaveExceeds | null;
 }
 
 /** The saved line with no figure. */
-const PLAIN_SAVED: LeaveSaved = { costDays: null, overBalanceDays: null };
+const PLAIN_SAVED: LeaveSaved = { costDays: null, overBalance: null };
 
 /**
  * The status line of a landed save, from the records the re-read after it
@@ -771,7 +914,7 @@ function savedAgainst(input: LeaveBalanceInput, others: readonly LeaveRange[], r
   try {
     const preview = leavePreviewOf({ ...input, records: others, range });
 
-    return { costDays: preview.costDays, overBalanceDays: preview.exceedsBalance ? preview.balanceAfterDays : null };
+    return { costDays: preview.costDays, overBalance: leaveExceedsOf(preview) };
   } catch (cause) {
     console.error(LEAVE_UNAVAILABLE, cause);
 

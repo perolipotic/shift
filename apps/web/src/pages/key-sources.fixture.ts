@@ -1078,10 +1078,14 @@ export const KEY_SOURCES = [
     // date's line and the refusals come through
     // `@/features/leave/services/my-leave`.
     // STORY 13.2b: the type of each of the viewer's requests, its term for a screen reader.
+    // SIXTY-SEVEN SINCE STORY 13.4b: the overview's *Preneseno* heading, once
+    // in the table and once in the stacked rows, and the summary's form with
+    // the carried sum. The carried line's shapes come through
+    // `@/features/leave/services/leave-section`.
     name: 'the Godišnji destination',
     file: GODISNJI,
     keys: translationKeys,
-    strings: 64,
+    strings: 67,
   },
   {
     // STORY 9.3. On the request form: its heading (twice, once while the role
@@ -1092,10 +1096,11 @@ export const KEY_SOURCES = [
     // the refusals and the unscheduled line come through
     // `@/features/leave/services/my-leave`, a key source.
     // STORY 13.2b: the type group's label, and the line that a type which does not draw leaves the balance as it is.
+    // STORY 13.4b: the over-balance warning when it is the expiry's (`godisnji.expiryExceeds`).
     name: 'the leave request form',
     file: LEAVE_REQUEST,
     keys: translationKeys,
-    strings: 20,
+    strings: 21,
   },
   {
     // E884: the Stanje chip's five options and the five values its text says,
@@ -1202,10 +1207,11 @@ export const KEY_SOURCES = [
     // TWENTY SINCE ITS REVIEW: the neutral line for a member gone from both
     // lists, on the facts and as the queue's line names them.
     // STORY 13.2b: the request's type, and the line that a type which does not draw leaves the balance as it is.
+    // STORY 13.4b: the over-balance warning when it is the expiry's (`godisnji.expiryExceeds`).
     name: 'the leave request decision screen',
     file: LEAVE_REQUEST_REVIEW,
     keys: translationKeys,
-    strings: 22,
+    strings: 23,
   },
   {
     // STORY 10.3. On *Obavijesti*: its heading and lede; the email card's
@@ -1401,10 +1407,13 @@ export const KEY_SOURCES = [
     // EIGHTEEN SINCE THE 5.2b REVIEW: the removal prompt's two forms, with
     // and without the in-year part, off `leaveRemovePromptMessageKey`.
     // STORY 13.2b: the reason no type is chosen yet, and each type card's drawing line (the type card's own two).
+    // THIRTY SINCE STORY 13.4b: the carried line's three shapes, in each of
+    // its three forms — the line, the member card's value and the overview's
+    // cell — off `leaveCarriedLineMessageKey` and its two siblings.
     name: 'the leave card rules',
     file: LEAVE_SECTION_KEYS,
     keys: messageKeyUnions,
-    strings: 21,
+    strings: 30,
   },
   {
     // STORY 3.1: the calendar's one read failure.
@@ -1587,10 +1596,12 @@ export const KEY_SOURCES = [
     // naming the pending leave requests it closes.
     // STORY 13.2b: the leave dialog's type group label and the unchanged-balance line.
     // STORY 13.3b: the allowance field's *Vrijedi od {year}.* hint.
+    // STORY 13.4b: the leave card's *Preneseno* row label.
+    // STORY 13.4b: the expiry's over-balance warning in the leave dialog and in the saved and amended lines.
     name: 'the member edit form',
     file: MEMBER_EDIT,
     keys: translationKeys,
-    strings: 159,
+    strings: 163,
   },
   {
     // THIRTEEN on the member write path's rules: eleven `ljudi.form.error.*`

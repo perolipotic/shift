@@ -6,8 +6,10 @@ import { organizationLeaveRecordsOf, type LeaveRecord } from '@/features/leave/s
 import {
   LEAVE_READY,
   LEAVE_UNSCHEDULED,
+  leaveCarriedLineOf,
   memberLeaveBaseOf,
   type LeaveCalendarSource,
+  type LeaveCarriedLine,
   type LeaveOrganizationSource,
 } from '@/features/leave/services/leave-section';
 import type { MyLeaveRowsState } from '@/features/leave/services/my-leave';
@@ -368,8 +370,15 @@ export interface LeaveOverviewSources {
   readonly records: MyLeaveRowsState;
 }
 
-/** The three figures of a scheduled member, as the member page's card states them. */
+/**
+ * The figures of a scheduled member, as the member page's card states them.
+ * Always `balanceDays = allowanceDays + carriedDays − usedDays` (story 13.4b).
+ */
 export interface LeaveOverviewFigures {
+  /** The carried days the balance counts; `0` without carry-over. */
+  readonly carriedDays: number;
+  /** The *Preneseno* cell's shape and parenthetical; `null` when nothing was carried. */
+  readonly carried: LeaveCarriedLine | null;
   readonly usedDays: number;
   /** May be negative. */
   readonly balanceDays: number;
@@ -398,6 +407,8 @@ export interface LeaveOverviewSummary {
   readonly usedDays: number;
   /** Their allowance, over the same rows. */
   readonly allowanceDays: number;
+  /** Their carried days, over the same rows (story 13.4b). */
+  readonly carriedDays: number;
 }
 
 /** One Smjena option: every team, no team, or a team (its name data), and how many rows it would leave. */
@@ -573,7 +584,12 @@ export function leaveOverviewRowsOf(sources: LeaveOverviewSources, now: Date): L
         allowanceDays: base.kind === LEAVE_READY ? base.balance.allowanceDays : allowanceInYearOf(member, organization, today),
         figures:
           base.kind === LEAVE_READY
-            ? { usedDays: base.balance.usedDays, balanceDays: base.balance.balanceDays }
+            ? {
+                carriedDays: base.balance.carriedDays,
+                carried: leaveCarriedLineOf(base.balance, base.input.today),
+                usedDays: base.balance.usedDays,
+                balanceDays: base.balance.balanceDays,
+              }
             : null,
         onLeaveToday: own.some((record) => record.from <= today && today <= record.to),
         upcomingRecords: own.filter((record) => record.to >= today).length,
@@ -649,6 +665,7 @@ export function searchedLeaveOverviewRows(rows: readonly LeaveOverviewRow[], sea
 export function leaveOverviewSummaryOf(rows: readonly LeaveOverviewRow[]): LeaveOverviewSummary {
   let usedDays = 0;
   let allowanceDays = 0;
+  let carriedDays = 0;
   let records = 0;
 
   for (const row of rows) {
@@ -657,9 +674,10 @@ export function leaveOverviewSummaryOf(rows: readonly LeaveOverviewRow[]): Leave
 
     usedDays += row.figures.usedDays;
     allowanceDays += row.allowanceDays;
+    carriedDays += row.figures.carriedDays;
   }
 
-  return { shown: rows.length, records, usedDays, allowanceDays };
+  return { shown: rows.length, records, usedDays, allowanceDays, carriedDays };
 }
 
 /** The team value a row counts under: its team's id, or {@link NO_TEAM}. */

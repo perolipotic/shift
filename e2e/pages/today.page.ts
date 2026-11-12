@@ -2,6 +2,7 @@ import type { Locator } from '@playwright/test';
 
 import { escapeRegExp, fill, hr, icu, plural } from '../utils/i18n.ts';
 import { BasePage } from './base.page.ts';
+import { CARRIED_LINE } from './leave.page.ts';
 
 const danas = hr.danas;
 const admin = danas.admin;
@@ -127,6 +128,11 @@ export class TodayPage extends BasePage {
   /** The leave tile's hint, `preostalo · iskorišteno 3 od 20`, its third paragraph. */
   get leaveTileHint(): Locator {
     return this.leaveTile.locator('p').nth(2);
+  }
+
+  /** The leave tile's carried line (story 13.4b), `Preneseno 5 dana (istječu 30.06.)`, when days were carried. */
+  get leaveTileCarried(): Locator {
+    return this.leaveTile.getByText(CARRIED_LINE);
   }
 
   /** *Treba tebe* (story 6.3), by the region its heading names. */

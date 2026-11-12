@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
 
 import { StatTile, StatTileLabel, StatTileValue } from '@/components/ui/stat-tile';
+import { leaveCarriedLineMessageKey } from '@/features/leave/services/leave-section';
 import { TodayTileSkeleton } from '@/features/today/components/today-skeleton';
 import { TILE_LOADING, TILE_UNAVAILABLE, type LeaveTile as LeaveTileState } from '@/features/today/services/today-tiles';
 import { t } from '@/lib/i18n';
@@ -9,7 +10,8 @@ import { t } from '@/lib/i18n';
 /**
  * The leave balance (story 6.1b), *Godišnji*'s own figures: the days left
  * through `count.days` — a negative balance stays a number — then the days
- * used and the allowance. The whole tile — a `StatTile`, at least 44 px
+ * used and the allowance, and under them the carried line when days were
+ * carried (story 13.4b). The whole tile — a `StatTile`, at least 44 px
  * tall — links to *Godišnji*; when
  * *Godišnji* would show its unavailable sentence, so does the tile, and it
  * still links there, where the retry is.
@@ -33,6 +35,11 @@ export function LeaveTile({ tile }: { readonly tile: LeaveTileState }): ReactNod
             <p className="min-w-0 break-words text-xs text-muted-foreground tabular-nums">
               {t('danas.tiles.leaveHint', { used: tile.figures.usedDays, allowance: tile.figures.allowanceDays })}
             </p>
+            {tile.figures.carried === null ? null : (
+              <p className="min-w-0 break-words text-xs text-muted-foreground tabular-nums">
+                {t(leaveCarriedLineMessageKey(tile.figures.carried.kind), { ...tile.figures.carried })}
+              </p>
+            )}
           </div>
         )}
       </StatTile>

@@ -56,5 +56,5 @@ export function MyLeaveBody({
     return <p className="text-sm text-muted-foreground">{t(myLeaveMessageKey(leave.kind))}</p>;
   }
 
-  return <MyLeaveSummary balance={leave.balance} />;
+  return <MyLeaveSummary balance={leave.balance} today={leave.input.today} />;
 }

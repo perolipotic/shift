@@ -13,19 +13,23 @@ import {
   MemberLeaveRemoveConfirm,
 } from '@/features/leave/components/member-leave-records';
 import {
+  EXCEEDS_AFTER_EXPIRY,
   LEAVE_ABSENT,
   LEAVE_HEADING_ID,
   LEAVE_READY,
   LEAVE_UNAVAILABLE,
   LEAVE_UNSCHEDULED,
   leaveBaseMessageKey,
+  leaveCarriedDaysMessageKey,
+  leaveCarriedLineOf,
   leaveHeadingYearsOf,
   type LeaveHandoff,
 } from '@/features/leave/services/leave-section';
 
 /**
  * The member page's *Godišnji* card (story 5.1c): the member's allowance, the
- * days used in the current leave year and the balance, then the member's
+ * days used in the current leave year and the balance, a *Preneseno* row when
+ * days were carried into the leave year (story 13.4b), then the member's
  * live records (story 5.2b). Facts only (story 7.12): *Upiši odsutnost* in the
  * header opens the record dialog, and each record's Izmijeni its amend
  * dialog (`member-leave-dialog`), where a range shows what it costs, the
@@ -94,6 +98,8 @@ export function MemberLeaveCard({
     }
 
     const balance = base.kind === LEAVE_READY ? base.balance : null;
+    // STORY 13.4b: a *Preneseno* row when days were carried into the leave year.
+    const carried = base.kind === LEAVE_READY ? leaveCarriedLineOf(base.balance, base.input.today) : null;
 
     return (
       <dl className="grid min-w-0 gap-3 sm:grid-cols-3">
@@ -109,6 +115,12 @@ export function MemberLeaveCard({
           <dt className="text-xs text-muted-foreground">{t('ljudi.leaveRecord.balance')}</dt>
           {renderFigure(balance?.balanceDays ?? null)}
         </div>
+        {carried === null ? null : (
+          <div className="grid min-w-0 gap-1 rounded-md bg-muted p-3 sm:col-span-3">
+            <dt className="text-xs text-muted-foreground">{t('ljudi.leaveRecord.carried')}</dt>
+            <dd className="text-sm font-semibold tabular-nums">{t(leaveCarriedDaysMessageKey(carried.kind), { ...carried })}</dd>
+          </div>
+        )}
       </dl>
     );
   }
@@ -143,9 +155,11 @@ export function MemberLeaveCard({
           {leaveAmended.costDays === null
             ? t('ljudi.leaveRecord.amendedPlain')
             : t('ljudi.leaveRecord.amended', { count: leaveAmended.costDays })}
-          {leaveAmended.overBalanceDays === null ? null : (
+          {leaveAmended.overBalance === null ? null : (
             <span className="mt-1 block">
-              {t('ljudi.leaveRecord.savedExceeds', { count: leaveAmended.overBalanceDays })}
+              {leaveAmended.overBalance.kind === EXCEEDS_AFTER_EXPIRY
+                ? t('godisnji.expiryExceeds', { ...leaveAmended.overBalance })
+                : t('ljudi.leaveRecord.savedExceeds', { count: leaveAmended.overBalance.count })}
             </span>
           )}
           <LeaveReplacementLines guard={amendedReplacements} inline />
@@ -160,9 +174,11 @@ export function MemberLeaveCard({
         {leaveSaved.costDays === null
           ? t('ljudi.leaveRecord.savedPlain')
           : t('ljudi.leaveRecord.saved', { count: leaveSaved.costDays })}
-        {leaveSaved.overBalanceDays === null ? null : (
+        {leaveSaved.overBalance === null ? null : (
           <span className="mt-1 block">
-            {t('ljudi.leaveRecord.savedExceeds', { count: leaveSaved.overBalanceDays })}
+            {leaveSaved.overBalance.kind === EXCEEDS_AFTER_EXPIRY
+              ? t('godisnji.expiryExceeds', { ...leaveSaved.overBalance })
+              : t('ljudi.leaveRecord.savedExceeds', { count: leaveSaved.overBalance.count })}
           </span>
         )}
       </Notice>

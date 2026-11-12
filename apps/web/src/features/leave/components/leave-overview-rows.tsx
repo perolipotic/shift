@@ -12,6 +12,7 @@ import {
   OVERVIEW_SORT_USED,
   type LeaveOverviewSortKey,
 } from '@/features/leave/services/leave-overview';
+import { leaveCarriedCellMessageKey } from '@/features/leave/services/leave-section';
 import { t } from '@/lib/i18n';
 import type { SortControlColumn } from '@/utils/sort-control';
 
@@ -19,8 +20,9 @@ import type { SortControlColumn } from '@/utils/sort-control';
  * The admin's leave overview on a phone (story 7.15): the table's own view
  * model as stacked rows (story 7.6), so no figure can differ between the two
  * forms. A row is the name (the link to the member page) with the team under
- * it and *Preostalo* at the top right, then *Pravo* and *Iskorišteno* — or,
- * for a member with no schedule, *Pravo* and the unscheduled line.
+ * it and *Preostalo* at the top right, then *Pravo* and *Iskorišteno*, and
+ * *Preneseno* when days were carried (story 13.4b) — or, for a member with no
+ * schedule, *Pravo* and the unscheduled line.
  *
  * EVERY VALUE IS A `StackedField`, announced with its column's own label. The
  * sort is the shared `SortControl`, one `Poredano` control, whose pick is the
@@ -83,6 +85,13 @@ export function LeaveOverviewRows({
               {row.figures === null ? null : (
                 <StackedField label={t('godisnji.overview.used')} className="rounded-md bg-muted px-2 py-1.5">
                   <span className="font-semibold">{row.figures.usedDays}</span>
+                </StackedField>
+              )}
+              {row.figures === null || row.figures.carried === null ? null : (
+                <StackedField label={t('godisnji.overview.carried')} className="col-span-2 rounded-md bg-muted px-2 py-1.5">
+                  <span className="font-semibold">
+                    {t(leaveCarriedCellMessageKey(row.figures.carried.kind), { ...row.figures.carried })}
+                  </span>
                 </StackedField>
               )}
             </StackedFields>

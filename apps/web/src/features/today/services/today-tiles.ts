@@ -1,4 +1,5 @@
 import { hoursMessageKey, type HoursBandRow, type HoursFigure, type MyHoursSurface } from '@/features/hours/services/my-hours';
+import { leaveCarriedLineOf, type LeaveCarriedLine } from '@/features/leave/services/leave-section';
 import { MY_LEAVE_LOADING, MY_LEAVE_READY, myLeaveMessageKey, type MyLeave } from '@/features/leave/services/my-leave';
 
 /**
@@ -49,6 +50,8 @@ export interface LeaveTileFigures {
   readonly balanceDays: number;
   readonly usedDays: number;
   readonly allowanceDays: number;
+  /** *Godišnji*'s carried line (story 13.4b), or `null` when nothing was carried: no line. */
+  readonly carried: LeaveCarriedLine | null;
 }
 
 export type LeaveTile =
@@ -90,7 +93,7 @@ export function hoursTileOf(surface: MyHoursSurface): HoursTile {
 /**
  * The leave tile from *Godišnji*'s own state: the skeleton while it loads,
  * its sentence when it is unavailable or unscheduled, and otherwise the
- * balance with the days used and the allowance.
+ * balance with the days used and the allowance, and the carried line.
  */
 export function leaveTileOf(leave: MyLeave): LeaveTile {
   if (leave.kind === MY_LEAVE_LOADING) return { kind: TILE_LOADING };
@@ -98,7 +101,10 @@ export function leaveTileOf(leave: MyLeave): LeaveTile {
 
   const { balanceDays, usedDays, allowanceDays } = leave.balance;
 
-  return { kind: TILE_READY, figures: { balanceDays, usedDays, allowanceDays } };
+  return {
+    kind: TILE_READY,
+    figures: { balanceDays, usedDays, allowanceDays, carried: leaveCarriedLineOf(leave.balance, leave.input.today) },
+  };
 }
 
 /** Both tiles, each from its own detail view's state. */
