@@ -8,15 +8,19 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { RadioCard, RadioGroup } from '@/components/ui/radio-group';
+import { Switch } from '@/components/ui/switch';
 import { MyLeaveSkeleton } from '@/features/leave/components/my-leave-skeleton';
 import type { useLeaveRequestForm } from '@/features/leave/hooks/use-leave-request-form';
 import {
   EXCEEDS_AFTER_EXPIRY,
   LEAVE_FROM_FIELD,
+  LEAVE_HALF_FIELD,
   LEAVE_PREVIEW_REASON,
   LEAVE_TO_FIELD,
   LEAVE_TYPE_FIELD,
   leaveExceedsOf,
+  leaveHalfMessageKey,
+  leaveHalfSwitchDescribedByOf,
   leavePreviewInYearOf,
   leaveTypeDrawsMessageKey,
   type LeaveField,
@@ -24,6 +28,9 @@ import {
 import {
   LEAVE_REQUEST_ERROR_ID,
   LEAVE_REQUEST_FROM_ID,
+  LEAVE_REQUEST_HALF_HINT_ID,
+  LEAVE_REQUEST_HALF_LABEL_ID,
+  LEAVE_REQUEST_HALF_SWITCH_ID,
   LEAVE_REQUEST_PREVIEW_ID,
   LEAVE_REQUEST_REASON_ID,
   LEAVE_REQUEST_TO_ID,
@@ -67,12 +74,14 @@ export function LeaveRequestBack(): ReactNode {
  * nothing, so no figure here counts them. Story 13.2b: between the dates and
  * the preview, one radio card per absence type of the organization, none
  * preselected (UX-DR47, UX-DR50); a type that does not draw says the balance
- * does not change. Offline *Pošalji* is gated and the
+ * does not change. Story 13.5b: after the type, while Od = Do, *Pola dana*
+ * and its two half cards with their times, neither preselected, as in the
+ * admin's dialog. Offline *Pošalji* is gated and the
  * note says why. Every figure, reason and message is
  * `@/features/leave/services/my-leave`'s decision; this renders them.
  */
 export function LeaveRequestFormBody({ form }: { readonly form: LeaveRequestForm }): ReactNode {
-  const { leave, preview, invalidField, failure, pending } = form;
+  const { leave, preview, invalidField, failure, pending, half, halfOptions } = form;
   // STORY 8.3a: offline, *Pošalji* is gated and the note says why.
   const gate = useWriteGate();
 
@@ -111,6 +120,68 @@ export function LeaveRequestFormBody({ form }: { readonly form: LeaveRequestForm
     if (failure !== null && field === LEAVE_FROM_FIELD) return LEAVE_REQUEST_ERROR_ID;
 
     return invalidField === field ? LEAVE_REQUEST_REASON_ID : undefined;
+  }
+
+  /**
+   * The half day (story 13.5b): while Od = Do, *Pola dana*; when it is on,
+   * the two half cards with their times, neither preselected, marked and
+   * described by the reason after a send refused for want of a half or for a
+   * date without exactly one working shift. Nothing while the range is more
+   * than one date.
+   */
+  function renderHalf(): ReactNode {
+    if (!form.halfOffered) return null;
+
+    // A refused half day draws no card, so the switch carries the mark and the reason.
+    const switchMarked = invalidField === LEAVE_HALF_FIELD && (!half.on || halfOptions === null);
+
+    return (
+      <div className="grid min-w-0 gap-3">
+        <div className="flex min-h-11 min-w-0 items-center gap-3">
+          <Switch
+            ref={form.halfSwitch}
+            id={LEAVE_REQUEST_HALF_SWITCH_ID}
+            checked={half.on}
+            onCheckedChange={form.switchHalf}
+            aria-invalid={switchMarked}
+            aria-describedby={leaveHalfSwitchDescribedByOf(switchMarked, LEAVE_REQUEST_HALF_HINT_ID, LEAVE_REQUEST_REASON_ID)}
+          />
+          <div className="grid min-w-0 gap-1">
+            <Label htmlFor={LEAVE_REQUEST_HALF_SWITCH_ID}>{t('ljudi.leaveRecord.halfDay')}</Label>
+            <span id={LEAVE_REQUEST_HALF_HINT_ID} className="break-words text-sm text-muted-foreground">
+              {t('ljudi.leaveRecord.halfDayHint')}
+            </span>
+          </div>
+        </div>
+        {!half.on || halfOptions === null ? null : (
+          <div className="grid min-w-0 gap-3">
+            <p id={LEAVE_REQUEST_HALF_LABEL_ID} className="text-sm font-semibold leading-none">
+              {t('ljudi.leaveRecord.half')}
+            </p>
+            <RadioGroup
+              value={half.half}
+              onValueChange={form.chooseHalf}
+              required
+              aria-labelledby={LEAVE_REQUEST_HALF_LABEL_ID}
+              aria-invalid={invalidField === LEAVE_HALF_FIELD}
+              aria-describedby={describedBy(LEAVE_HALF_FIELD)}
+              className="grid-cols-1 sm:grid-cols-2"
+            >
+              {halfOptions.map((option, index) => (
+                <RadioCard key={option.half} ref={index === 0 ? form.halfField : undefined} value={option.half}>
+                  <span className="break-words text-sm font-semibold">{t(leaveHalfMessageKey(option.half))}</span>
+                  {option.times === null ? null : (
+                    <span className="text-sm tabular-nums text-muted-foreground">
+                      {t('ljudi.leaveRecord.halfTimes', option.times)}
+                    </span>
+                  )}
+                </RadioCard>
+              ))}
+            </RadioGroup>
+          </div>
+        )}
+      </div>
+    );
   }
 
   /** The cost, the in-year part, the balance after it and the two notes; or the reason there is none. */
@@ -225,6 +296,8 @@ export function LeaveRequestFormBody({ form }: { readonly form: LeaveRequestForm
             ))}
           </RadioGroup>
         </div>
+        {/* STORY 13.5b: the half day, after the type and before the cost. */}
+        {renderHalf()}
         <div id={LEAVE_REQUEST_PREVIEW_ID} aria-live="polite" className="grid min-w-0 gap-2">
           {renderPreview()}
         </div>

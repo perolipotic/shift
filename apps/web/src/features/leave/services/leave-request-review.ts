@@ -29,6 +29,7 @@ import {
   LEAVE_READY,
   LEAVE_UNAVAILABLE,
   LEAVE_UNSCHEDULED,
+  leaveHalfChoiceOf,
   leavePreviewInYearOf,
   leavePreviewStateOf,
   leaveRangeValuesOf,
@@ -260,6 +261,16 @@ function closedLineOf(request: ReviewedLeaveRequest, actors: readonly unknown[],
   return { decided: false, date: formatDate(closedAt, timeZone) };
 }
 
+/** A request's review amends no record: approval writes a new one. */
+const NOT_AMENDING = null;
+
+/**
+ * A request's stored half is never refused at review (story 13.5b): the
+ * schedule may have changed since it was sent, and the half then costs what
+ * the domain says.
+ */
+const NEVER_REFUSE_HALF = false;
+
 /**
  * The pending request's preview, the admin leave dialog's pipeline over the
  * requested range: the base's line while it is not ready, nothing while the
@@ -286,7 +297,18 @@ function previewOf(
 
   // STORY 13.2b: by the request's own type, which the caller found in the catalog.
   const type = leaveTypeChoiceOf(types, request.absenceTypeId);
-  const state = leavePreviewStateOf(base.input, request.from, request.to, type);
+  // STORY 13.5b: by the request's half too, never refused for it — the
+  // schedule may have changed since it was sent, and the half then costs what
+  // the domain says.
+  const state = leavePreviewStateOf(
+    base.input,
+    request.from,
+    request.to,
+    type,
+    NOT_AMENDING,
+    leaveHalfChoiceOf(request),
+    NEVER_REFUSE_HALF,
+  );
 
   if (state.kind === LEAVE_PREVIEW_REASON) return { kind: PREVIEW_REASON, key: leaveReasonMessageKey(state.reason) };
 

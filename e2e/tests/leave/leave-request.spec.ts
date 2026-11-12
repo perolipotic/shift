@@ -52,10 +52,14 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * leave an admin later amended or removed keeps *Odobren* and says which
  * (0047); offline *Pošalji* and
  * *Povuci zahtjev* state the connection need and send nothing; and an admin
- * opening the form is sent to the overview.
+ * opening the form is sent to the overview. STORY 13.5b: a half day on a
+ * working date costs 0,5 dana and is listed with its half, the switch on with
+ * no card is refused on the switch, a date without a working shift is refused
+ * in the member's words, and widening the range clears the half.
  */
 
 const request = hr.godisnji.request;
+const leaveRecord = hr.ljudi.leaveRecord;
 const godisnji = hr.godisnji;
 const days = hr.count.days;
 
@@ -226,6 +230,67 @@ test.describe('a member requests leave', () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(leavePage.requestRow(rangeLabel(from, to))).toBeVisible();
     await expectNoHorizontalScroll(page);
+  });
+
+  // STORY 13.5b: a member asks for half a shift off.
+  test('sends a half day at 0,5 dana, refusing an unchosen half and a date without a working shift first', async ({
+    page,
+    loginPage,
+    leavePage,
+    fixture,
+  }) => {
+    test.slow();
+    const { member, at } = await seeded(fixture.slug);
+    // Base + 8 is the pattern's Dan: one working shift. Base + 10 is Slobodno: none.
+    const date = at(8);
+    const free = at(10);
+    const writes = spyOnWrites(page);
+
+    await loginPage.signIn(fixture.slug, member.username, member.password);
+    await page.goto('/godisnji/zatrazi');
+    await leavePage.enterRequest(date, date);
+    await expect(leavePage.requestFigure(request.cost)).toHaveText(plural(days, 1));
+
+    // NEITHER CARD PRESELECTED: the switch on with no card is refused on the switch, sending nothing.
+    await leavePage.requestHalfDaySwitch.check();
+    await expect(leavePage.requestHalfCard(leaveRecord.halfFirst)).toBeVisible();
+    await expect(leavePage.requestHalfCard(leaveRecord.halfSecond)).toBeVisible();
+    await expect(leavePage.requestHalfGroup.getByRole('radio', { checked: true })).toHaveCount(0);
+    await expect(leavePage.text(request.halfUnchosen)).toBeVisible();
+    await leavePage.sendButton.click();
+    await expect(leavePage.requestHalfGroup).toHaveAttribute('aria-invalid', 'true');
+    await expect(leavePage.requestHalfGroup.getByRole('radio').first()).toBeFocused();
+    await expect(page).toHaveURL(/\/godisnji\/zatrazi$/);
+
+    // A DATE WITHOUT A WORKING SHIFT: no card, the member's own words.
+    await leavePage.requestFrom.fill(free);
+    await leavePage.requestTo.fill(free);
+    await leavePage.requestHalfDaySwitch.check();
+    await expect(leavePage.text(request.halfRefused)).toBeVisible();
+    await expect(leavePage.requestHalfGroup).toHaveCount(0);
+    await leavePage.sendButton.click();
+    await expect(leavePage.requestHalfDaySwitch).toHaveAttribute('aria-invalid', 'true');
+    await expect(leavePage.requestHalfDaySwitch).toBeFocused();
+
+    // A WIDER RANGE clears the half and hides the switch.
+    await leavePage.requestFrom.fill(date);
+    await leavePage.requestTo.fill(addDays(date, 1));
+    await expect(leavePage.requestHalfDaySwitch).toHaveCount(0);
+    await leavePage.requestTo.fill(date);
+    await expect(leavePage.requestHalfDaySwitch).not.toBeChecked();
+    expect(writes(), 'a refused half day sent something').toEqual([]);
+
+    await leavePage.requestHalfDaySwitch.check();
+    await leavePage.requestHalfCard(leaveRecord.halfFirst).check();
+    await expect(leavePage.requestFigure(request.cost)).toHaveText(plural(days, 0.5));
+    await leavePage.sendButton.click();
+    await expect(page).toHaveURL(/\/godisnji$/);
+    const row = leavePage.requestRow(rangeLabel(date, date));
+    await expect(row).toContainText(fill(leaveRecord.rangeHalfFirst, { range: rangeLabel(date, date) }));
+    await expect(row).toContainText(plural(days, 0.5));
+    await expect(row).toContainText(request.status.pending);
+    // A PENDING HALF DAY CHARGES NOTHING.
+    await expect(leavePage.balanceFigure).toHaveText(plural(days, 20));
   });
 
   test('goes over the balance with a warning, and still sends', async ({ page, loginPage, leavePage, fixture }) => {

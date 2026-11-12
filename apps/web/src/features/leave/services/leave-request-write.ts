@@ -1,3 +1,5 @@
+import type { LeaveHalf } from '@shift/domain';
+
 import type { REQUEST_APPROVED, REQUEST_REJECTED } from '@/features/leave/services/leave-request-list';
 import { isIsoDate } from '@/lib/i18n/format';
 
@@ -214,7 +216,10 @@ function answeredErrorOf(answered: unknown): LeaveRequestWriteError | null | und
  * both included, of the absence type `absenceTypeId` (story 13.2b): 0040's
  * plain insert of the facts, the range as the `daterange` literal `[from,to]`. `created_by` and `created_at` come from
  * their defaults. A date that is not a calendar date, or a reversed range, is
- * {@link REQUEST_FAILED} without a request.
+ * {@link REQUEST_FAILED} without a request. STORY 13.5b (0059): a half day
+ * names its `half`, a whole day sends none; a half on more than one date is
+ * {@link REQUEST_FAILED} without a request too, as 0059's check would refuse
+ * it (23514).
  */
 export async function sendLeaveRequest(
   table: LeaveRequestInsertTable,
@@ -223,9 +228,16 @@ export async function sendLeaveRequest(
   from: string,
   to: string,
   absenceTypeId: string,
+  half: LeaveHalf | null = null,
 ): Promise<LeaveRequestSendOutcome> {
   if (!isIsoDate(from) || !isIsoDate(to) || to < from) {
     console.error(REQUEST_FAILED, 'not a range of calendar dates');
+
+    return { ok: false, code: REQUEST_FAILED };
+  }
+
+  if (half !== null && from !== to) {
+    console.error(REQUEST_FAILED, 'a half day on more than one date');
 
     return { ok: false, code: REQUEST_FAILED };
   }
@@ -239,6 +251,8 @@ export async function sendLeaveRequest(
       during: `[${from},${to}]`,
       // STORY 13.2b (0054): the type the member chose; another tenant's is 23503, a plain failure.
       absence_type_id: absenceTypeId,
+      // STORY 13.5b (0059): a half day names its half; a whole day sends none.
+      ...(half === null ? {} : { half }),
     });
   } catch (cause) {
     console.error(REQUEST_FAILED, cause);

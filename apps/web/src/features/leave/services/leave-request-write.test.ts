@@ -71,6 +71,38 @@ describe('the send', () => {
     ]);
   });
 
+  it('STORY 13.5b: a half day names its half; a whole day sends no half key', async () => {
+    const table = insertAnswering({ error: null });
+
+    expect(await sendLeaveRequest(table, ORGANIZATION, MEMBER, '2026-11-02', '2026-11-02', SICK, 'FIRST')).toEqual({ ok: true });
+    expect(await sendLeaveRequest(table, ORGANIZATION, MEMBER, '2026-11-03', '2026-11-03', SICK, null)).toEqual({ ok: true });
+    expect(table.sent).toEqual([
+      { organization_id: ORGANIZATION, member_id: MEMBER, during: '[2026-11-02,2026-11-02]', absence_type_id: SICK, half: 'FIRST' },
+      { organization_id: ORGANIZATION, member_id: MEMBER, during: '[2026-11-03,2026-11-03]', absence_type_id: SICK },
+    ]);
+  });
+
+  it('STORY 13.5b: refuses a half on more than one date before any request', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const table = insertAnswering({ error: null });
+
+    expect(await sendLeaveRequest(table, ORGANIZATION, MEMBER, '2026-11-02', '2026-11-04', SICK, 'SECOND')).toEqual({
+      ok: false,
+      code: REQUEST_FAILED,
+    });
+    expect(table.sent).toEqual([]);
+  });
+
+  it("STORY 13.5b: 0059's check refusing a half (23514) is a plain failure", async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const table = insertAnswering({ error: { code: '23514', message: 'leave_requests_half_check' } });
+
+    expect(await sendLeaveRequest(table, ORGANIZATION, MEMBER, '2026-11-02', '2026-11-02', SICK, 'SECOND')).toEqual({
+      ok: false,
+      code: REQUEST_FAILED,
+    });
+  });
+
   it.each([
     ['an overlap with live leave', { code: '23P01', message: 'LEAVE_REQUEST_OVERLAPS_LEAVE' }, REQUEST_OVERLAPS_LEAVE],
     ['an overlap with a pending request', { code: '23P01', message: 'conflicting key value violates exclusion constraint' }, REQUEST_OVERLAPS_REQUEST],

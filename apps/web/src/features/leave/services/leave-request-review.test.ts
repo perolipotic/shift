@@ -233,6 +233,64 @@ describe('a pending request', () => {
     expect(preview.inYearDays).toBeNull();
   });
 
+  // STORY 13.5b: the requested half, named as a fact and previewed by; never refused for it.
+  it('previews a half-day request at 0,5 through the dialog\'s pipeline, with the half on the range', () => {
+    const review = pendingOf(
+      leaveRequestReviewOf(
+        sourcesOf({ request: answered([{ ...requestRow({ from: '2026-09-10', toExclusive: '2026-09-11' }), half: 'FIRST' }]) }),
+        REQUEST,
+        NOW,
+      ),
+    );
+    const preview = readyOf(review.preview);
+
+    expect(review.facts.request.half).toBe('FIRST');
+    expect(preview.figures.costDays).toBe(0.5);
+    expect(preview.figures.balanceAfterDays).toBe(preview.figures.balanceDays - 0.5);
+
+    const sources = sourcesOf();
+    const base = memberLeaveBaseOf(
+      { members: sources.members, calendar: sources.calendar, organization: sources.organization, records: sources.records },
+      VIEWER_MEMBER,
+      NOW,
+    );
+
+    if (base.kind !== 'ready') throw new Error('base not ready');
+
+    const dialog = leavePreviewStateOf(
+      base.input,
+      '2026-09-10',
+      '2026-09-10',
+      { id: ANNUAL_LEAVE_ID, drawsAllowance: true },
+      null,
+      { on: true, half: 'FIRST' },
+    );
+
+    if (dialog.kind !== LEAVE_PREVIEW_READY) throw new Error('dialog not ready');
+
+    expect(preview.figures).toEqual(dialog.preview);
+    // One collision, as a whole day's.
+    expect(preview.conflicts).toEqual(readyOf(pendingOf(leaveRequestReviewOf(
+      sourcesOf({ request: answered([requestRow({ from: '2026-09-10', toExclusive: '2026-09-11' })]) }),
+      REQUEST,
+      NOW,
+    )).preview).conflicts);
+  });
+
+  it('never refuses a half whose date no longer holds one working shift: it costs what the domain says, 0', () => {
+    const review = pendingOf(
+      leaveRequestReviewOf(
+        sourcesOf({ request: answered([{ ...requestRow({ from: '2026-09-12', toExclusive: '2026-09-13' }), half: 'SECOND' }]) }),
+        REQUEST,
+        NOW,
+      ),
+    );
+    const preview = readyOf(review.preview);
+
+    expect(preview.figures.costDays).toBe(0);
+    expect(preview.figures.balanceAfterDays).toBe(preview.figures.balanceDays);
+  });
+
   it('previews approval against the organization’s carry-over (story 13.4b)', () => {
     const plain = readyOf(pendingOf(leaveRequestReviewOf(sourcesOf(), REQUEST, NOW)).preview);
     const carried = readyOf(

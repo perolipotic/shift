@@ -1711,6 +1711,10 @@ const SANCTIONED_SCREEN_KEYS = [
   'ljudi.leaveRecord.halfRefused',
   'ljudi.leaveRecord.costHalfFirst',
   'ljudi.leaveRecord.costHalfSecond',
+  // STORY 13.5b: a half-day request's range, each half, on the review,
+  // *Za odluku* and the member's own list.
+  'ljudi.leaveRecord.rangeHalfFirst',
+  'ljudi.leaveRecord.rangeHalfSecond',
   'ljudi.leaveRecord.balanceUnchanged',
   'ljudi.leaveRecord.amendedPlain',
   'ljudi.leaveRecord.amendDenied',
@@ -1802,6 +1806,10 @@ const SANCTIONED_SCREEN_KEYS = [
   'godisnji.request.refused',
   'godisnji.request.type',
   'godisnji.request.typeUnchosen',
+  // STORY 13.5b: the two reasons the member's half day is not sent, in the
+  // member's own words.
+  'godisnji.request.halfUnchosen',
+  'godisnji.request.halfRefused',
   'godisnji.request.balanceUnchanged',
   'godisnji.request.submit',
   'godisnji.request.cancel',
@@ -2792,9 +2800,10 @@ const SWAP_NOTIFICATION_KEYS: readonly string[] = [
 /**
  * Story 13.5, the half day: `smjen` names the member's working shift that
  * date — *Prvi dio smjene*, *Drugi dio smjene*, as the PO worded them on
- * 2026-11-12 — never the Team, and `tip… smjen…` is refused. EIGHT KEYS: the
+ * 2026-11-12 — never the Team, and `tip… smjen…` is refused. TWELVE KEYS: the
  * switch's hint, the half group's label, its two cards, the two reasons a
- * half day is not sent, and a half day's cost in a list, each half.
+ * half day is not sent, and a half day's cost in a list, each half; story
+ * 13.5b adds a request's range, each half, and the member's own two reasons.
  */
 const HALF_DAY_KEYS: readonly string[] = [
   'ljudi.leaveRecord.halfDayHint',
@@ -2805,6 +2814,10 @@ const HALF_DAY_KEYS: readonly string[] = [
   'ljudi.leaveRecord.halfRefused',
   'ljudi.leaveRecord.costHalfFirst',
   'ljudi.leaveRecord.costHalfSecond',
+  'ljudi.leaveRecord.rangeHalfFirst',
+  'ljudi.leaveRecord.rangeHalfSecond',
+  'godisnji.request.halfUnchosen',
+  'godisnji.request.halfRefused',
 ];
 
 /**

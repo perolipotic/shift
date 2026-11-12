@@ -1,4 +1,4 @@
-import { collisionKeyOf, collisionsOf, unresolvedCollisionsOf, type Collision, type CollisionInput } from '@shift/domain';
+import { collisionKeyOf, collisionsOf, unresolvedCollisionsOf, type Collision, type CollisionInput, type LeaveHalf } from '@shift/domain';
 
 import type { CalendarSnapshot, CalendarSurfaceState } from '@/features/calendar/services/snapshot';
 import { unknownSnapshotIdsOf } from '@/features/calendar/services/snapshot-skew';
@@ -137,6 +137,8 @@ export interface RequestRow {
   /** The requested range, as the member's leave card writes it. */
   readonly from: string;
   readonly to: string;
+  /** STORY 13.5b: the requested half of a one-date request, or null for a whole day. */
+  readonly half: LeaveHalf | null;
   /** When it was sent: requests starting on one date are ordered by it, oldest first, then by id. */
   readonly createdAt: string | null;
 }
@@ -301,6 +303,7 @@ export function requestRowsOf(
       memberName: members.get(request.memberId) ?? null,
       from: range.from,
       to: range.to,
+      half: request.half ?? null,
       createdAt: request.createdAt,
     };
   });

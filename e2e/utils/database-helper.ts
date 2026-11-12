@@ -773,7 +773,9 @@ export type SeededRequestStatus = 'pending' | 'approved' | 'rejected' | 'withdra
  * admin, a rejection with its decision, a withdrawal by the member with none.
  * 0040's checks and its pending exclusion still apply: the superuser bypasses
  * only the policies (and the over-leave trigger, which acts for
- * `authenticated` alone). Returns the request's id.
+ * `authenticated` alone). Returns the request's id. STORY 13.5b (0059): a
+ * one-date request may name its `half`, which an approval's record carries
+ * too; null (the default) is a whole day.
  */
 export async function seedLeaveRequest(
   slug: string,
@@ -781,6 +783,7 @@ export async function seedLeaveRequest(
   from: string,
   to: string,
   status: SeededRequestStatus = 'pending',
+  half: 'FIRST' | 'SECOND' | null = null,
 ): Promise<string> {
   const client = await connect();
   try {
@@ -801,10 +804,10 @@ export async function seedLeaveRequest(
     }
     const closedBy = status === 'pending' ? null : status === 'withdrawn' ? scope.member_user : scope.admin_user;
     const { rows } = await client.query<{ id: string }>(
-      `insert into leave_requests (organization_id, member_id, during, created_by, closed_by, closed_at)
-       values ($1, $2, daterange($3::date, $4::date, '[]'), $5, $6, case when $6::uuid is null then null else now() end)
+      `insert into leave_requests (organization_id, member_id, during, created_by, closed_by, closed_at, half)
+       values ($1, $2, daterange($3::date, $4::date, '[]'), $5, $6, case when $6::uuid is null then null else now() end, $7)
        returning id`,
-      [scope.organization_id, memberId, from, to, scope.member_user, closedBy],
+      [scope.organization_id, memberId, from, to, scope.member_user, closedBy, half],
     );
     const request = rows[0];
     if (request === undefined) throw new Error(`E2E: the request ${from}–${to} of ${memberId} was not inserted`);
@@ -812,10 +815,10 @@ export async function seedLeaveRequest(
       let record: string | null = null;
       if (status === 'approved') {
         const created = await client.query<{ id: string }>(
-          `insert into leave_records (organization_id, member_id, during, created_by)
-           values ($1, $2, daterange($3::date, $4::date, '[]'), $5)
+          `insert into leave_records (organization_id, member_id, during, created_by, half)
+           values ($1, $2, daterange($3::date, $4::date, '[]'), $5, $6)
            returning id`,
-          [scope.organization_id, memberId, from, to, scope.admin_user],
+          [scope.organization_id, memberId, from, to, scope.admin_user, half],
         );
         record = created.rows[0]?.id ?? null;
       }

@@ -1,4 +1,4 @@
-import { leaveBalanceOf, leaveCostOf, leavePreviewOf } from '@shift/domain';
+import { halfDayShiftOf, leaveBalanceOf, leaveCostOf, leavePreviewOf } from '@shift/domain';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { ANNUAL_LEAVE_ID } from '@/features/absence-types/services/list';
@@ -6,6 +6,9 @@ import { readCalendar, type CalendarSnapshot } from '@/features/calendar/service
 import { memberScheduleInputOf } from '@/features/calendar/utils/month';
 import {
   LEAVE_FROM_FIELD,
+  LEAVE_HALF_FIELD,
+  LEAVE_HALF_REFUSED,
+  LEAVE_HALF_UNCHOSEN,
   LEAVE_PREVIEW_READY,
   LEAVE_PREVIEW_REASON,
   LEAVE_RANGE_INCOMPLETE,
@@ -16,6 +19,7 @@ import {
   LEAVE_READY,
   LEAVE_TYPE_FIELD,
   LEAVE_TYPE_UNCHOSEN,
+  leaveHalfOptionsOf,
   memberLeaveBaseOf,
   type LeaveMembersSource,
   type LeaveOrganizationSource,
@@ -37,6 +41,7 @@ import {
   REQUEST_MEMBER_INACTIVE,
 } from '@/features/leave/services/leave-request-write';
 import {
+  LEAVE_REQUEST_HALF_OPTIONS_FAILED,
   LEAVE_REQUEST_IN_PAST,
   LEAVE_REQUEST_SENT_STATE,
   MY_LEAVE_LOADING,
@@ -50,6 +55,8 @@ import {
   leaveRequestSentStepOf,
   leaveRequestSentValuesOf,
   myLeaveMessageKey,
+  myLeaveRequestHalfOptionsOf,
+  myLeaveRequestHalfPreviewOf,
   myLeaveRequestPreviewOf,
   myLeaveRequestEarliestOf,
   myLeaveRequestClosedMessageKey,
@@ -69,6 +76,7 @@ import {
   type MyLeaveSources,
 } from '@/features/leave/services/my-leave';
 import { initLocalization, t } from '@/lib/i18n';
+import { nextIsoDate } from '@/lib/i18n/format';
 import {
   PILOT,
   UJ5,
@@ -616,10 +624,138 @@ describe("the request form's preview (story 9.3)", () => {
     expect(myLeaveRequestPreviewOf({ kind: MY_LEAVE_UNSCHEDULED }, '2026-10-05', '2026-10-07', ANNUAL_LEAVE_ID)).toBeNull();
   });
 
+  // STORY 13.5b: the half day, through the admin dialog's rule and the domain's one cost.
+  describe('the half day (story 13.5b)', () => {
+    /** The first date from `from` on which the viewer's schedule holds exactly one working shift, or none. */
+    function dateOf(leave: ReturnType<typeof readyOf>, working: boolean): string {
+      for (let day = 1; day <= 28; day += 1) {
+        const date = `2026-10-${String(day).padStart(2, '0')}`;
+
+        if ((halfDayShiftOf(leave.input.input, date) !== null) === working) return date;
+      }
+
+      throw new Error('no such date');
+    }
+
+    it('costs a chosen half 0,5 through the domain, the range carrying its half, and the balance after it lower by 0.5', () => {
+      const leave = readyOf(myLeaveOf(sourcesOf(pilot, { records: rowsOf([WORKED]) }), NOW));
+      const date = dateOf(leave, true);
+      const state = myLeaveRequestPreviewOf(leave, date, date, ANNUAL_LEAVE_ID, { on: true, half: 'FIRST' });
+
+      if (state?.kind !== LEAVE_PREVIEW_READY) throw new Error('no preview');
+
+      expect(state.range).toEqual({ from: date, to: date, drawsAllowance: true, half: 'FIRST' });
+      expect(state.preview.costDays).toBe(0.5);
+      expect(state.preview).toEqual(leavePreviewOf({ ...leave.input, range: state.range }));
+      expect(state.preview.balanceAfterDays).toBe(leave.balance.balanceDays - 0.5);
+      expect(t('count.days', { count: state.preview.costDays })).toBe('0,5 dana');
+    });
+
+    it('is the unchosen-half reason on the half field while the switch is on and no card is chosen', () => {
+      const leave = readyOf(myLeaveOf(sourcesOf(pilot), NOW));
+      const date = dateOf(leave, true);
+
+      expect(myLeaveRequestPreviewOf(leave, date, date, ANNUAL_LEAVE_ID, { on: true, half: null })).toEqual({
+        kind: LEAVE_PREVIEW_REASON,
+        reason: LEAVE_HALF_UNCHOSEN,
+        field: LEAVE_HALF_FIELD,
+      });
+      expect(myLeaveRequestReasonMessageKey(LEAVE_HALF_UNCHOSEN)).toBe('godisnji.request.halfUnchosen');
+    });
+
+    it("refuses a half on a date without exactly one working shift, in the member's own words", () => {
+      const leave = readyOf(myLeaveOf(sourcesOf(pilot), NOW));
+      const date = dateOf(leave, false);
+
+      for (const half of ['FIRST', null] as const) {
+        expect(myLeaveRequestPreviewOf(leave, date, date, ANNUAL_LEAVE_ID, { on: true, half })).toEqual({
+          kind: LEAVE_PREVIEW_REASON,
+          reason: LEAVE_HALF_REFUSED,
+          field: LEAVE_HALF_FIELD,
+        });
+      }
+      expect(myLeaveRequestReasonMessageKey(LEAVE_HALF_REFUSED)).toBe('godisnji.request.halfRefused');
+      expect(t('godisnji.request.halfRefused')).toBe('Taj dan nemaš točno jednu radnu smjenu.');
+      expect(leaveHalfOptionsOf(pilot, leave.input.input, date)).toBeNull();
+    });
+
+    it('offers two cards with times on a date with one working shift', () => {
+      const leave = readyOf(myLeaveOf(sourcesOf(pilot), NOW));
+      const options = leaveHalfOptionsOf(pilot, leave.input.input, dateOf(leave, true));
+
+      expect(options?.map((option) => option.half)).toEqual(['FIRST', 'SECOND']);
+      expect(options?.every((option) => option.times !== null)).toBe(true);
+    });
+
+    it('draws the cards only while offered and on, and refuses the half day when they cannot be drawn', () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const leave = readyOf(myLeaveOf(sourcesOf(pilot), NOW));
+      const date = dateOf(leave, true);
+      const on = { on: true, half: null } as const;
+
+      expect(myLeaveRequestHalfOptionsOf(leave, pilot, date, date, on)).toEqual(leaveHalfOptionsOf(pilot, leave.input.input, date));
+      expect(myLeaveRequestHalfOptionsOf(leave, pilot, date, date, { on: false, half: null })).toBeNull();
+      expect(myLeaveRequestHalfOptionsOf(leave, pilot, date, '2026-10-28', on)).toBeNull();
+      expect(myLeaveRequestHalfOptionsOf(leave, null, date, date, on)).toBeNull();
+      expect(myLeaveRequestHalfOptionsOf({ kind: MY_LEAVE_LOADING }, pilot, date, date, on)).toBeNull();
+
+      // A snapshot the domain refuses (a shift type version with no minutes): no card can be drawn.
+      const broken = {
+        ...pilot,
+        types: pilot.types.map((type) => ({
+          ...type,
+          versions: type.versions.map((version) => ({ ...version, startMinute: Number.NaN, endMinute: Number.NaN })),
+        })),
+      };
+      const failed = myLeaveRequestHalfOptionsOf(leave, broken, date, date, on);
+
+      expect(failed).toBe(LEAVE_REQUEST_HALF_OPTIONS_FAILED);
+      expect(error).toHaveBeenCalled();
+      // Then the reason is the refusal on the half field, never "choose a half" with no card to choose.
+      const unchosen = myLeaveRequestPreviewOf(leave, date, date, ANNUAL_LEAVE_ID, on);
+
+      expect(unchosen).toMatchObject({ reason: LEAVE_HALF_UNCHOSEN });
+      expect(myLeaveRequestHalfPreviewOf(unchosen, failed)).toEqual({
+        kind: LEAVE_PREVIEW_REASON,
+        reason: LEAVE_HALF_REFUSED,
+        field: LEAVE_HALF_FIELD,
+      });
+      expect(myLeaveRequestHalfPreviewOf(unchosen, null)).toBe(unchosen);
+      expect(myLeaveRequestHalfPreviewOf(null, failed)).toBeNull();
+    });
+
+    it('ignores the half over more than one date: a whole-day range, costed as one', () => {
+      const leave = readyOf(myLeaveOf(sourcesOf(pilot), NOW));
+      const state = myLeaveRequestPreviewOf(leave, '2026-10-05', '2026-10-07', ANNUAL_LEAVE_ID, { on: true, half: 'SECOND' });
+
+      if (state?.kind !== LEAVE_PREVIEW_READY) throw new Error('no preview');
+
+      expect(state.range).not.toHaveProperty('half');
+      expect(state.preview.costDays).toBe(leaveCostOf(leave.input.input, '2026-10-05', '2026-10-07'));
+    });
+
+    it('leaves a whole day as before when the switch is off', () => {
+      const leave = readyOf(myLeaveOf(sourcesOf(pilot), NOW));
+      const date = dateOf(leave, true);
+
+      expect(myLeaveRequestPreviewOf(leave, date, date, ANNUAL_LEAVE_ID, { on: false, half: null })).toEqual(
+        myLeaveRequestPreviewOf(leave, date, date, ANNUAL_LEAVE_ID),
+      );
+    });
+  });
+
   it("speaks each reason and refusal in the form's own words, never the admin card's", () => {
     expect(
       (
-        [LEAVE_RANGE_INCOMPLETE, LEAVE_RANGE_REVERSED, LEAVE_RANGE_TOO_LONG, LEAVE_RANGE_REFUSED, LEAVE_RANGE_UNCHANGED] as const
+        [
+          LEAVE_RANGE_INCOMPLETE,
+          LEAVE_RANGE_REVERSED,
+          LEAVE_RANGE_TOO_LONG,
+          LEAVE_RANGE_REFUSED,
+          LEAVE_RANGE_UNCHANGED,
+          LEAVE_HALF_UNCHOSEN,
+          LEAVE_HALF_REFUSED,
+        ] as const
       ).map((reason) => myLeaveRequestReasonMessageKey(reason)),
     ).toEqual([
       'godisnji.request.incomplete',
@@ -627,7 +763,12 @@ describe("the request form's preview (story 9.3)", () => {
       'godisnji.request.tooLong',
       'godisnji.request.refused',
       'godisnji.request.refused',
+      'godisnji.request.halfUnchosen',
+      'godisnji.request.halfRefused',
     ]);
+    // STORY 13.5b: never the admin dialog's third-person words.
+    expect(t('godisnji.request.halfUnchosen')).not.toBe(t('ljudi.leaveRecord.halfUnchosen'));
+    expect(t('godisnji.request.halfRefused')).not.toBe(t('ljudi.leaveRecord.halfRefused'));
     expect(myLeaveRequestReasonMessageKey(LEAVE_REQUEST_IN_PAST)).toBe('godisnji.request.inPastReason');
     expect(
       (
@@ -731,6 +872,33 @@ describe("Godišnji's list of the viewer's requests (story 9.3)", () => {
     expect(
       myLeaveRequestsOf({ ...ready(), absenceTypes: null }, rowsOf([requestRowOf('old', '2026-10-12', '2026-10-13')])),
     ).toEqual({ kind: MY_REQUESTS_UNAVAILABLE });
+  });
+
+  // STORY 13.5b: a half-day request costs 0.5 through the domain's one rule.
+  it('costs a half-day request half a day, and an old row without the column a whole day', () => {
+    const leave = ready();
+    let date = '';
+
+    for (let day = 1; day <= 28 && date === ''; day += 1) {
+      const candidate = `2026-10-${String(day).padStart(2, '0')}`;
+
+      if (halfDayShiftOf(leave.input.input, candidate) !== null) date = candidate;
+    }
+
+    const upper = nextIsoDate(date) ?? date;
+    const list = myLeaveRequestsOf(
+      leave,
+      rowsOf([{ ...requestRowOf('half', date, upper), half: 'FIRST' }, requestRowOf('whole', date, upper, { closedAt: '2026-10-01T08:00:00Z' })]),
+    );
+
+    if (list.kind !== MY_REQUESTS_READY) throw new Error(list.kind);
+
+    expect(list.rows.map((row) => [row.request.id, row.request.half ?? null, row.costDays])).toEqual(
+      expect.arrayContaining([
+        ['half', 'FIRST', 0.5],
+        ['whole', null, 1],
+      ]),
+    );
   });
 
   it("charges nothing: the viewer's balance is the same with pending requests as without", () => {

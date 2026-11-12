@@ -508,10 +508,15 @@ export const LEAVE_HALF_HINT_ID = 'member-leave-half-day-hint';
 /**
  * What *Pola dana* is described by (story 13.5): its hint, and the reason a
  * half day is refused while that refusal marks the switch — no half card
- * is drawn then, so the switch carries it.
+ * is drawn then, so the switch carries it. The admin dialog's ids by
+ * default; the member's request form passes its own (story 13.5b).
  */
-export function leaveHalfSwitchDescribedByOf(marked: boolean): string {
-  return marked ? `${LEAVE_HALF_HINT_ID} ${LEAVE_REASON_ID}` : LEAVE_HALF_HINT_ID;
+export function leaveHalfSwitchDescribedByOf(
+  marked: boolean,
+  hintId: string = LEAVE_HALF_HINT_ID,
+  reasonId: string = LEAVE_REASON_ID,
+): string {
+  return marked ? `${hintId} ${reasonId}` : hintId;
 }
 
 /**
@@ -615,6 +620,23 @@ export function leaveCostHalfMessageKey(
   return null;
 }
 
+/**
+ * The words a half-day REQUEST's range reads with (story 13.5b): `{range}
+ * (prvi dio smjene)` or `(drugi dio smjene)`, the range written by the
+ * caller; `null` for a whole day, whose range reads alone. One helper for
+ * every request surface — *Za odluku*'s row, the request's decision screen
+ * and the member's own list — so each names the half the same way. A
+ * record's cost keeps {@link leaveCostHalfMessageKey}.
+ */
+export function leaveRangeHalfMessageKey(
+  range: LeaveRange,
+): 'ljudi.leaveRecord.rangeHalfFirst' | 'ljudi.leaveRecord.rangeHalfSecond' | null {
+  if (range.half === LEAVE_HALF_FIRST) return 'ljudi.leaveRecord.rangeHalfFirst';
+  if (range.half === LEAVE_HALF_SECOND) return 'ljudi.leaveRecord.rangeHalfSecond';
+
+  return null;
+}
+
 /** The type group's label id, which names the radio group (story 13.2b). */
 export const LEAVE_TYPE_LABEL_ID = 'member-leave-type-label';
 
@@ -697,6 +719,12 @@ export type LeavePreviewState =
  * its own dates are no overlap, and what it cost now is given back before the
  * new range is charged. A type-only amend (the same range, another type) is a
  * change (story 13.2b).
+ *
+ * A STORED HALF (story 13.5b): a request's review passes `refuseHalf` false.
+ * The half was checked against the member's schedule when it was sent; the
+ * decision is made later against a schedule that may have changed, and is
+ * never refused for it — the half then costs what the domain says (0 on a
+ * date with no working shift), as a record's does.
  */
 export function leavePreviewStateOf(
   input: LeaveRecordsInput,
@@ -705,6 +733,7 @@ export function leavePreviewStateOf(
   type: LeaveTypeChoice | null,
   amending: LeaveRecord | null = null,
   halfChoice: LeaveHalfChoice = LEAVE_WHOLE_DAY,
+  refuseHalf = true,
 ): LeavePreviewState {
   if (!isIsoDate(from)) return { kind: LEAVE_PREVIEW_REASON, reason: LEAVE_RANGE_INCOMPLETE, field: LEAVE_FROM_FIELD };
   if (!isIsoDate(to)) return { kind: LEAVE_PREVIEW_REASON, reason: LEAVE_RANGE_INCOMPLETE, field: LEAVE_TO_FIELD };
@@ -717,7 +746,7 @@ export function leavePreviewStateOf(
   // STORY 13.5: the half day, while Od = Do and *Pola dana* is on.
   const half = leaveSentHalfOf(from, to, halfChoice);
 
-  if (leaveHalfOfferedOf(from, to) && halfChoice.on) {
+  if (refuseHalf && leaveHalfOfferedOf(from, to) && halfChoice.on) {
     // FIRST whether the date can hold a half day at all: with no working
     // shift, or two, no half card is drawn, so asking for one would point at
     // nothing. A domain refusal is the half day's too, never the range's.

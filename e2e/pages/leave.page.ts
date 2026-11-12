@@ -8,6 +8,7 @@ import { sortControlIn, sortOptionIn, sortPickerIn } from './sort-control.ts';
 const godisnji = hr.godisnji;
 const overview = hr.godisnji.overview;
 const request = hr.godisnji.request;
+const leaveRecord = hr.ljudi.leaveRecord;
 
 /** The carried line (story 13.4b): the text before its first placeholder, `Preneseno `, starts it. */
 export const CARRIED_LINE = new RegExp(`^${escapeRegExp(godisnji.carried.kept.slice(0, godisnji.carried.kept.indexOf('{')))}`);
@@ -204,6 +205,21 @@ export class LeavePage extends BasePage {
   /** The request form's absence type group (story 13.2b), named by its label. */
   get requestTypeGroup(): Locator {
     return this.page.getByRole('radiogroup', { name: request.type, exact: true });
+  }
+
+  /** *Pola dana* on the request form (story 13.5b), a switch named by its label. */
+  get requestHalfDaySwitch(): Locator {
+    return this.page.getByRole('switch', { name: leaveRecord.halfDay, exact: true });
+  }
+
+  /** The request form's half group (story 13.5b), named by its label. */
+  get requestHalfGroup(): Locator {
+    return this.page.getByRole('radiogroup', { name: leaveRecord.half, exact: true });
+  }
+
+  /** The half card named `name` (*Prvi dio smjene*, *Drugi dio smjene*) on the request form (story 13.5b). */
+  requestHalfCard(name: string): Locator {
+    return this.requestHalfGroup.getByRole('radio').filter({ has: this.page.getByText(name, { exact: true }) });
   }
 
   /**

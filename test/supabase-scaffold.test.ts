@@ -3474,6 +3474,48 @@ describe('the access-control migration', () => {
     expect(migration, '13.5 takes a policy').not.toMatch(/\bpolicy\b/i);
   });
 
+  it('lets a leave request be a half day of one date, named on insert, and carries it into the record an approval writes (story 13.5b)', () => {
+    // STORY 13.5b (0059). Source text only; what each write does is `test/rls-isolation.test.ts`, in CI.
+    const migration = stripLineComments(
+      readFileSync(join(supabaseRoot, 'migrations', '0059_half_day_requests.sql'), 'utf8'),
+    );
+    expect(migration).toMatch(
+      /add column half text\s+constraint leave_requests_half_check check \(half in \('FIRST', 'SECOND'\)\);/,
+    );
+    expect(migration, 'a half may span more than one date').toMatch(
+      /add constraint leave_requests_half_one_date\s+check \(half is null or upper\(during\) - lower\(during\) = 1\);/,
+    );
+    expect(migration, '0059 sets a default half').not.toMatch(/\bhalf text[^;]*\bdefault\b/i);
+    expect(migration).toContain('grant insert (half) on table public.leave_requests to authenticated;');
+
+    // REPLACED IN PLACE, the same signature: no drop, no overload.
+    expect(migration, '0059 drops a function').not.toMatch(/drop function/i);
+    const decide = /create or replace function public\.decide_leave_request\(p_request_id uuid, p_outcome text\)[\s\S]*?\$\$;/.exec(migration)?.[0] ?? '';
+    expect(decide, 'decide_leave_request is not replaced').not.toBe('');
+    expect(decide, 'the decision does not read the half').toMatch(
+      /returning r\.member_id, r\.during, r\.absence_type_id, r\.half\s+into requested_member, requested_during, requested_type, requested_half;/,
+    );
+    expect(decide, 'the approval does not write the half').toMatch(
+      /insert into public\.leave_records \(organization_id, member_id, during, absence_type_id, half\)\s+values \(claimed, requested_member, requested_during, requested_type, requested_half\)/,
+    );
+    expect(decide).toMatch(/security definer/);
+    expect(decide).toMatch(/set search_path = ''/);
+    expect(decide, 'the decision lost its lock').toMatch(/pg_catalog\.pg_advisory_xact_lock\(/);
+    expect(decide).toMatch(/errcode = 'insufficient_privilege',\s+message = 'LEAVE_REQUEST_DECISION_REFUSED'/);
+    expect(decide).toMatch(/message = 'LEAVE_REQUEST_APPROVAL_OVERLAPS_LEAVE'/);
+    expect(decide).toMatch(/message = 'LEAVE_REQUEST_MEMBER_INACTIVE'/);
+    expect(decide).toMatch(/set_config\('shift\.notify_suppress', 'approval', true\)/);
+    expect(decide).toMatch(/private\.notify_members\(/);
+    for (const role of ['public', 'anon', 'service_role']) {
+      expect(migration).toContain(`revoke execute on function public.decide_leave_request(uuid, text) from ${role};`);
+    }
+    expect(migration).toContain('grant execute on function public.decide_leave_request(uuid, text) to authenticated;');
+
+    expect(migration, '13.5b takes a trigger').not.toMatch(/create (or replace )?trigger/i);
+    expect(migration, '13.5b takes a policy').not.toMatch(/\bpolicy\b/i);
+    expect(migration, '13.5b touches leave_records\' shape').not.toMatch(/alter table public\.leave_records/);
+  });
+
   it('recreates both leave reads to carry each record\'s type and its drawing flag, and changes nothing else (story 13.2)', () => {
     // STORY 13.2 (0053): the read side only. Source text; what each read
     // returns is `test/rls-isolation.test.ts`, which runs in CI.

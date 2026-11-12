@@ -48,7 +48,11 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * stays pending and names the overlap; a request closed meanwhile (P0002)
  * says so and reads as it now stands; a closed request read-only; an unknown
  * id; offline, both decisions gated and nothing sent; and a member is turned
- * away by the admin guard.
+ * away by the admin guard. STORY 13.5b: a half-day request names its half on
+ * *Za odluku* and on its screen, previews 0,5 dana, and its approval writes a
+ * record that reads *0,5 dana (prvi dio smjene)*. (Calendar-robust: today + 4
+ * may fall in the next leave year, so no balance is asserted here; the admin
+ * half day's balance is `people/leave.spec.ts`'s.)
  */
 
 test.describe.configure({ timeout: 120_000 });
@@ -201,6 +205,38 @@ test.describe("an admin's leave request decision screen", () => {
     } finally {
       await context.close();
     }
+  });
+
+  // STORY 13.5b: the half travels from the request to the record.
+  test('names a half-day request\'s half, previews 0,5 dana, and its approval records that half', async ({
+    page,
+    conflictsPage,
+    peoplePage,
+    fixture,
+  }) => {
+    const { member, from } = await scenarioOf(fixture.slug);
+    // Today + 4 is the pattern's Dan: one working shift.
+    const requestId = await seedLeaveRequest(fixture.slug, member.id, from, from, 'pending', 'FIRST');
+    const review = new LeaveRequestReviewPage(page);
+    const range = fill(request.range, { from: fullDate(from), to: fullDate(from) });
+    const halfRange = fill(hr.ljudi.leaveRecord.rangeHalfFirst, { range });
+
+    await conflictsPage.goto();
+    await expect(conflictsPage.rowsOf(member.name)).toContainText(halfRange);
+
+    await review.gotoRequest(requestId);
+    await expect(review.line(halfRange)).toBeVisible();
+    await expect(review.figure(hr.godisnji.request.cost)).toHaveText(plural(days, 0.5));
+    // One collision, as a whole day's.
+    await expect(review.line(plural(hr.ljudi.leaveRecord.conflictsCreated, 1))).toBeVisible();
+
+    await review.approveButton.click();
+    await expect(page).toHaveURL(/\/za-odluku$/);
+
+    await peoplePage.gotoMember(member.id);
+    await expect(peoplePage.leaveRecordRow(from, from)).toContainText(
+      fill(hr.ljudi.leaveRecord.costHalfFirst, { days: plural(days, 0.5) }),
+    );
   });
 
   test('rejects a request: only the decision is recorded', async ({ page, conflictsPage, peoplePage, fixture }) => {

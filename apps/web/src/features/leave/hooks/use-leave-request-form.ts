@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { LEAVE_HALF_FIRST, LEAVE_HALF_SECOND } from '@shift/domain';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 
 import { useCalendarSnapshot } from '@/features/calendar/hooks/use-calendar-snapshot';
 import { CALENDAR_KEY, calendarSurfaceStateOf } from '@/features/calendar/services/snapshot';
@@ -8,11 +9,15 @@ import { useMyLeave } from '@/features/leave/hooks/use-my-leave';
 import { useMyLeaveRequestsRead } from '@/features/leave/hooks/use-my-leave-requests';
 import {
   LEAVE_FROM_FIELD,
+  LEAVE_HALF_FIELD,
   LEAVE_NO_DATE,
   LEAVE_PREVIEW_REASON,
   LEAVE_TO_FIELD,
   LEAVE_TYPE_FIELD,
+  LEAVE_WHOLE_DAY,
+  leaveHalfOfferedOf,
   type LeaveField,
+  type LeaveHalfChoice,
 } from '@/features/leave/services/leave-section';
 import { GODISNJI_OVERVIEW, GODISNJI_UNAVAILABLE, godisnjiViewOf } from '@/features/leave/services/leave-overview';
 import { LEAVE_REQUESTS_TABLE, MY_LEAVE_REQUESTS_KEY } from '@/features/leave/services/leave-request-list';
@@ -23,7 +28,10 @@ import {
   type LeaveRequestSendFailure,
 } from '@/features/leave/services/leave-request-write';
 import {
+  LEAVE_REQUEST_HALF_OPTIONS_FAILED,
   MY_LEAVE_READY,
+  myLeaveRequestHalfOptionsOf,
+  myLeaveRequestHalfPreviewOf,
   myLeaveRequestPreviewOf,
   withLeaveRequestSent,
 } from '@/features/leave/services/my-leave';
@@ -88,6 +96,13 @@ export function useLeaveRequestView() {
  * types, held in state, none preselected; any type may be requested. A send
  * with none chosen marks and focuses the group and sends nothing.
  *
+ * THE HALF DAY (story 13.5b), as the admin dialog's (story 13.5): while Od =
+ * Do, *Pola dana*; when it is on, the two half cards with their times from
+ * the figures' own snapshot, neither preselected. A send with the switch on
+ * and no half chosen, or on a date without exactly one working shift, is
+ * refused here with its reason; a range of more than one date clears the
+ * half. The chosen half goes with the send.
+ *
  * THE FIELDS ARE UNCONTROLLED, so a refusal keeps every entered value; their
  * values are mirrored into state only so the preview can follow them. One send
  * in flight (a ref, no mutation, nothing optimistic). After any outcome the
@@ -98,12 +113,14 @@ export function useLeaveRequestView() {
 export function useLeaveRequestForm() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const { leave, loading, offline, retryable, retry } = useMyLeave();
+  const { leave, snapshot, loading, offline, retryable, retry } = useMyLeave();
   useMyLeaveRequestsRead();
   const [from, setFrom] = useState(LEAVE_NO_DATE);
   const [to, setTo] = useState(LEAVE_NO_DATE);
   /** The chosen absence type's id (story 13.2b), or null while none is chosen. */
   const [typeId, setTypeId] = useState<string | null>(null);
+  /** *Pola dana* and the chosen half (story 13.5b): off until switched on, neither half preselected. */
+  const [half, setHalf] = useState<LeaveHalfChoice>(LEAVE_WHOLE_DAY);
   const [refusedField, setRefusedField] = useState<LeaveField | null>(null);
   const [failure, setFailure] = useState<LeaveRequestSendFailure | null>(null);
   const [pending, setPending] = useState(false);
@@ -112,8 +129,21 @@ export function useLeaveRequestForm() {
   const toField = useRef<HTMLInputElement>(null);
   /** The type group's first card, which a send refused for want of a type focuses. */
   const typeField = useRef<HTMLButtonElement>(null);
+  /** *Pola dana* (story 13.5b), which a refused half day focuses when no card is drawn. */
+  const halfSwitch = useRef<HTMLButtonElement>(null);
+  /** The half group's first card, which a send refused for want of a half focuses (story 13.5b). */
+  const halfField = useRef<HTMLButtonElement>(null);
   const alertField = useRef<HTMLParagraphElement>(null);
-  const preview = myLeaveRequestPreviewOf(leave, from, to, typeId);
+  const halfOffered = leaveHalfOfferedOf(from, to);
+  /** The half cards and their times (story 13.5b), or why none: not offered, refused, or failed. */
+  const halfCards = useMemo(
+    () => myLeaveRequestHalfOptionsOf(leave, snapshot, from, to, half),
+    [leave, snapshot, from, to, half],
+  );
+  /** The cards to draw: none when they are not offered, refused, or could not be drawn. */
+  const halfOptions = halfCards === LEAVE_REQUEST_HALF_OPTIONS_FAILED ? null : halfCards;
+  // STORY 13.5b: cards that could not be drawn are the half day's refusal, never "choose a half".
+  const preview = myLeaveRequestHalfPreviewOf(myLeaveRequestPreviewOf(leave, from, to, typeId, half), halfCards);
   // The field a reason names is marked only once a send was refused for it.
   // STORY 13.2b: and only while the reason standing is about that field, so a
   // later date reason never leaves the type group marked, or the reverse.
@@ -127,11 +157,29 @@ export function useLeaveRequestForm() {
    */
   function change(event: ChangeEvent<HTMLInputElement>): void {
     const { name, value } = event.currentTarget;
+    const nextFrom = name === LEAVE_FROM_FIELD ? value : from;
+    const nextTo = name === LEAVE_TO_FIELD ? value : to;
 
     setFailure(null);
 
     if (name === LEAVE_FROM_FIELD) setFrom(value);
     else if (name === LEAVE_TO_FIELD) setTo(value);
+    // STORY 13.5b: a range of more than one date clears the half day.
+    if (nextFrom !== nextTo) setHalf(LEAVE_WHOLE_DAY);
+  }
+
+  /** *Pola dana* switched (story 13.5b): on with no half chosen, or off; a standing refusal goes. */
+  function switchHalf(on: boolean): void {
+    setFailure(null);
+    setHalf(on ? { on: true, half: null } : LEAVE_WHOLE_DAY);
+  }
+
+  /** A half card chosen (story 13.5b): the preview follows it, and a standing refusal goes. */
+  function chooseHalf(value: string): void {
+    if (value !== LEAVE_HALF_FIRST && value !== LEAVE_HALF_SECOND) return;
+
+    setFailure(null);
+    setHalf({ on: true, half: value });
   }
 
   /** A type card chosen: the preview follows it, and a standing refusal goes, as after a typed date. */
@@ -142,6 +190,8 @@ export function useLeaveRequestForm() {
 
   function fieldOf(field: LeaveField): HTMLElement | null {
     if (field === LEAVE_TYPE_FIELD) return typeField.current;
+    // A refused half day draws no card: the switch carries the refusal (story 13.5b).
+    if (field === LEAVE_HALF_FIELD) return halfOptions === null ? halfSwitch.current : (halfField.current ?? halfSwitch.current);
 
     return field === LEAVE_FROM_FIELD ? fromField.current : toField.current;
   }
@@ -181,6 +231,8 @@ export function useLeaveRequestForm() {
         range.from,
         range.to,
         preview.type.id,
+        // STORY 13.5b: the half `leaveSentHalfOf` put on the range; none for a whole day.
+        range.half ?? null,
       );
 
       // A REFUSAL KEEPS EVERY ENTERED VALUE: nothing here resets the fields.
@@ -223,6 +275,16 @@ export function useLeaveRequestForm() {
     change,
     typeId,
     chooseType,
+    /** *Pola dana* and the chosen half (story 13.5b). */
+    half,
+    /** Whether *Pola dana* is offered: while Od = Do. */
+    halfOffered,
+    /** The half cards with their times, or null (story 13.5b). */
+    halfOptions,
+    switchHalf,
+    chooseHalf,
+    halfSwitch,
+    halfField,
     send,
     fromField,
     toField,
