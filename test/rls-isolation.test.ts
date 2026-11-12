@@ -26244,6 +26244,156 @@ describe('a leave record may be a half day of one date, named on insert and on a
   );
 });
 
+// ------------------------------------- story 13.5b: the half-day request
+
+/**
+ * STORY 13.5b (`0059`). A leave request may be a half day: `half` is `FIRST`
+ * or `SECOND` on a one-date range, or null for a whole day, as a record's
+ * (0058). A member names it on insert, and `decide_leave_request` copies it
+ * into the record an approval writes, attributed to the approving admin; a
+ * rejection writes nothing. The shape is the database's; whether the date
+ * holds one working shift is `packages/domain`'s (AD-1), so the decision
+ * never refuses on it. Every case runs in a rolled-back transaction.
+ */
+describe('a leave request may be a half day of one date, and approval carries the half (story 13.5b)', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    "stores a $fixture member's half-day request, and an approval writes one record of that half by the admin",
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+
+        await actAs(client, self.authUserId, organization);
+        const { rows: requested } = await client.query<{ id: string }>(
+          `insert into leave_requests (organization_id, member_id, during, half)
+           values ($1, $2, '[2046-06-01,2046-06-01]'::daterange, 'FIRST')
+           returning id::text as id`,
+          [organization, self.id],
+        );
+        const { rows: rejectedRows } = await client.query<{ id: string }>(
+          `insert into leave_requests (organization_id, member_id, during, half)
+           values ($1, $2, '[2046-06-08,2046-06-08]'::daterange, 'SECOND')
+           returning id::text as id`,
+          [organization, self.id],
+        );
+        // An old client names no half: a whole day.
+        const whole = await insertRequest(client, { organization, member: self.id, during: '[2046-07-01,2046-07-01]' });
+        const request = requested[0]?.id;
+        const rejected = rejectedRows[0]?.id;
+        if (request === undefined || rejected === undefined) throw new Error('the leave request insert returned no id');
+
+        await actAs(client, owner.authUserId, organization);
+        const approved = await decideRequest(client, request, 'approved');
+        const none = await decideRequest(client, rejected, 'rejected');
+        const approvedWhole = await decideRequest(client, whole, 'approved');
+        await actAsOwner(client);
+
+        const { rows: requestHalves } = await client.query<{ id: string; half: string | null }>(
+          'select id::text as id, half from leave_requests where id = any($1::uuid[])',
+          [[request, rejected, whole]],
+        );
+        expect(Object.fromEntries(requestHalves.map((row) => [row.id, row.half])), slug).toEqual({
+          [request]: 'FIRST',
+          [rejected]: 'SECOND',
+          [whole]: null,
+        });
+        expect(await halfOfRecord(client, approved ?? ''), `${slug}: the approval did not copy the half`).toBe('FIRST');
+        expect(await halfOfRecord(client, approvedWhole ?? ''), `${slug}: a whole-day approval wrote a half`).toBeNull();
+        expect(none ?? null, `${slug}: a rejection wrote a record`).toBeNull();
+        const { rows: records } = await client.query<{ createdBy: string; during: string }>(
+          `select created_by::text as "createdBy", during::text as during
+             from leave_records where member_id = $1 and removed_at is null and during && '[2046-06-01,2046-06-30]'::daterange`,
+          [self.id],
+        );
+        expect(records, `${slug}: the approval wrote other than one record, by the admin`).toEqual([
+          { createdBy: owner.authUserId, during: '[2046-06-01,2046-06-02)' },
+        ]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture half-day request on more than one date, a half that is neither, and one on a date with leave',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+
+        await actAs(client, owner.authUserId, organization);
+        await insertLeave(client, { organization, member: self.id, during: '[2046-08-03,2046-08-03]' });
+        await actAs(client, self.authUserId, organization);
+        const twoDates = await refusedThenContinue(client, () =>
+          client.query(
+            `insert into leave_requests (organization_id, member_id, during, half)
+             values ($1, $2, '[2046-05-04,2046-05-05]'::daterange, 'FIRST')`,
+            [organization, self.id],
+          ),
+        );
+        const neither = await refusedThenContinue(client, () =>
+          client.query(
+            `insert into leave_requests (organization_id, member_id, during, half)
+             values ($1, $2, '[2046-05-04,2046-05-04]'::daterange, 'MIDDLE')`,
+            [organization, self.id],
+          ),
+        );
+        // The overlap rules are unchanged: the other half of a date with leave is refused too.
+        const onLeave = await refusedThenContinue(client, () =>
+          client.query(
+            `insert into leave_requests (organization_id, member_id, during, half)
+             values ($1, $2, '[2046-08-03,2046-08-03]'::daterange, 'SECOND')`,
+            [organization, self.id],
+          ),
+        );
+        await actAsOwner(client);
+
+        expect(twoDates.code, `${slug}: a half-day request on two dates`).toBe('23514');
+        expect(twoDates.message).toContain('leave_requests_half_one_date');
+        expect(neither.code, `${slug}: a half that is neither`).toBe('23514');
+        expect(neither.message).toContain('leave_requests_half_check');
+        expect(onLeave.code, `${slug}: a half-day request on a date with leave`).toBe('23P01');
+        expect(onLeave.message).toContain('LEAVE_REQUEST_OVERLAPS_LEAVE');
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture member\'s second half of a date that already has a pending half request (23P01)',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+
+        await actAs(client, self.authUserId, organization);
+        await client.query(
+          `insert into leave_requests (organization_id, member_id, during, half)
+           values ($1, $2, '[2046-09-07,2046-09-07]'::daterange, 'FIRST')`,
+          [organization, self.id],
+        );
+        // Two halves on one date are never allowed: the pending-overlap exclusion refuses the other half.
+        const otherHalf = await refusedThenContinue(client, () =>
+          client.query(
+            `insert into leave_requests (organization_id, member_id, during, half)
+             values ($1, $2, '[2046-09-07,2046-09-07]'::daterange, 'SECOND')`,
+            [organization, self.id],
+          ),
+        );
+        await actAsOwner(client);
+
+        expect(otherHalf.code, `${slug}: two pending halves of one date`).toBe('23P01');
+        expect(otherHalf.message).toContain('leave_requests_no_pending_overlap');
+        const { rows } = await client.query<{ total: number }>(
+          "select count(*)::int as total from leave_requests where member_id = $1 and during && '[2046-09-07,2046-09-07]'::daterange",
+          [self.id],
+        );
+        expect(rows[0]?.total, `${slug}: the refused half was stored`).toBe(1);
+      });
+    },
+  );
+});
+
 // ------------------------------------------ story 13.3: the allowance per year
 
 /**

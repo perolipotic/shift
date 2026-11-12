@@ -26,7 +26,7 @@ import {
   type ReviewFacts,
   type ReviewPreview,
 } from '@/features/leave/services/leave-request-review';
-import { EXCEEDS_AFTER_EXPIRY, leaveExceedsOf } from '@/features/leave/services/leave-section';
+import { EXCEEDS_AFTER_EXPIRY, leaveExceedsOf, leaveRangeHalfMessageKey } from '@/features/leave/services/leave-section';
 import { REQUEST_APPROVED, REQUEST_PENDING, REQUEST_REJECTED } from '@/features/leave/services/leave-request-list';
 import { myLeaveRequestStatusMessageKey } from '@/features/leave/services/my-leave';
 import {
@@ -51,6 +51,10 @@ function BackLink({ disabled = false }: { readonly disabled?: boolean }): ReactN
 
 /** Who asked, for which range, and where the request stands, as a word in a badge. */
 function RequestFacts({ facts }: { readonly facts: ReviewFacts }): ReactNode {
+  const range = t('zaOdluku.request.range', { from: facts.from, to: facts.to });
+  // STORY 13.5b: a half-day request names its half after the range, as on its *Za odluku* row.
+  const half = leaveRangeHalfMessageKey(facts.request);
+
   return (
     <div className="grid min-w-0 gap-1">
       <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
@@ -62,7 +66,7 @@ function RequestFacts({ facts }: { readonly facts: ReviewFacts }): ReactNode {
         </Badge>
       </p>
       <p className="min-w-0 break-words text-sm tabular-nums text-muted-foreground">
-        {t('zaOdluku.request.range', { from: facts.from, to: facts.to })}
+        {half === null ? range : t(half, { range })}
       </p>
       {/* STORY 13.2b: the type asked for, a fact for the admin; approval writes it unchanged. */}
       <p className="min-w-0 break-words text-sm text-muted-foreground">{t('zaOdluku.request.type', { type: facts.typeName })}</p>

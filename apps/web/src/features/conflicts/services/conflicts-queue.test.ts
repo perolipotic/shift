@@ -670,6 +670,7 @@ function requestOf(
     readonly closedAt?: string | null;
     readonly decisions?: readonly unknown[];
     readonly createdAt?: string;
+    readonly half?: string;
   } = {},
 ): Row {
   return {
@@ -678,6 +679,7 @@ function requestOf(
     during: `[${from},${toExclusive})`,
     closed_at: options.closedAt ?? null,
     ...(options.createdAt === undefined ? {} : { created_at: options.createdAt }),
+    ...(options.half === undefined ? {} : { half: options.half }),
     leave_request_decisions: options.decisions ?? [],
   };
 }
@@ -728,12 +730,36 @@ describe('pending leave requests beside collisions (story 9.5)', () => {
       memberName: VIEWER_NAME,
       from: '12.09.2026',
       to: '13.09.2026',
+      half: null,
       createdAt: null,
     };
 
     expect(view).toEqual({ count: 1, rows: [expected] });
     expect(t('zaOdluku.count', { count: view.count })).toBe('1 čeka odluku');
     expect(t('zaOdluku.request.range', { from: expected.from, to: expected.to })).toBe('Odsutnost 12.09.2026–13.09.2026');
+  });
+
+  it('STORY 13.5b: a half-day request carries its half; a row without the column is a whole day', () => {
+    const view = mergedOf(
+      [],
+      [],
+      [
+        requestOf('req-half', '2026-09-12', '2026-09-13', { half: 'SECOND' }),
+        requestOf('req-whole', '2026-09-14', '2026-09-15'),
+      ],
+      '2026-09-01',
+    );
+
+    expect(view.rows.map((row) => (row.kind === ITEM_REQUEST ? [row.requestId, row.half] : null))).toEqual([
+      ['req-half', 'SECOND'],
+      ['req-whole', null],
+    ]);
+  });
+
+  it('STORY 13.5b: a half on a request of more than one date cannot be trusted', () => {
+    expect(() =>
+      mergedOf([], [], [requestOf('req-bad', '2026-09-12', '2026-09-14', { half: 'FIRST' })], '2026-09-01'),
+    ).toThrow();
   });
 
   it('Zero: nothing pending is `0 čeka odluku`', () => {
@@ -902,6 +928,7 @@ describe('pending leave requests beside collisions (story 9.5)', () => {
       memberName: null,
       from: date,
       to: date,
+      half: null,
       createdAt: null,
     });
     const merged = mergedQueueOrderOf([], [request('z', '2026-09-12'), request('y', '2026-09-01'), request('x', '2026-09-12'), request('w', '2026-09-05')], '2026-09-10');

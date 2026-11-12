@@ -14,6 +14,7 @@ import {
   type SwapRow,
 } from '@/features/conflicts/services/conflicts-queue';
 import { SwapShifts } from '@/features/conflicts/components/swap-shifts';
+import { leaveRangeHalfMessageKey } from '@/features/leave/services/leave-section';
 import { cn } from '@/lib/utils';
 import { t } from '@/lib/i18n';
 
@@ -71,6 +72,10 @@ function ConflictItem({ row }: { readonly row: ConflictRow }): ReactNode {
  * No cost or balance here: those are the decision screen's.
  */
 function RequestItem({ row }: { readonly row: RequestRow }): ReactNode {
+  const range = t('zaOdluku.request.range', { from: row.from, to: row.to });
+  // STORY 13.5b: a half-day request names its half after the range, as the member's list does.
+  const half = leaveRangeHalfMessageKey(row);
+
   return (
     <li className="min-w-0">
       <Link
@@ -87,7 +92,7 @@ function RequestItem({ row }: { readonly row: RequestRow }): ReactNode {
             {row.memberName ?? t('zaOdluku.request.memberGone')}
           </span>
           <span className="min-w-0 break-words text-sm text-muted-foreground">
-            {t('zaOdluku.request.range', { from: row.from, to: row.to })}
+            {half === null ? range : t(half, { range })}
           </span>
         </span>
         <CaretRight aria-hidden className="size-4 shrink-0" />

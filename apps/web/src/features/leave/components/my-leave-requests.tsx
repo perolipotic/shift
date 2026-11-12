@@ -10,6 +10,7 @@ import type {
   LeaveRequestWithdrawn,
 } from '@/features/leave/hooks/use-my-leave-requests';
 import { REQUEST_PENDING, leaveRecordChangeMessageKey } from '@/features/leave/services/leave-request-list';
+import { leaveRangeHalfMessageKey } from '@/features/leave/services/leave-section';
 import {
   MY_LEAVE_REQUESTS_HEADING_ID,
   MY_REQUESTS_LOADING,
@@ -64,6 +65,9 @@ export function MyLeaveRequests({
     const pending = pendingId === row.request.id;
     const cost = row.costDays === null ? null : t('count.days', { count: row.costDays });
     const closed = myLeaveRequestClosedMessageKey(row.request.status);
+    // STORY 13.5b: a half-day request names its half after the range.
+    const halfKey = leaveRangeHalfMessageKey(row.request);
+    const label = halfKey === null ? row.label : t(halfKey, { range: row.label });
 
     return (
       <li key={row.request.id} className="grid min-w-0 gap-2 py-3 sm:flex sm:items-center sm:justify-between sm:gap-4">
@@ -72,7 +76,7 @@ export function MyLeaveRequests({
             <div className="min-w-0">
               <dt className="sr-only">{t('godisnji.request.range')}</dt>
               <dd className="break-words text-base font-semibold tabular-nums">
-                {cost === null ? row.label : t('godisnji.request.rangeCost', { range: row.label, cost })}
+                {cost === null ? label : t('godisnji.request.rangeCost', { range: label, cost })}
               </dd>
             </div>
             {/* STORY 13.2b: the type the viewer asked for, theirs to see. */}

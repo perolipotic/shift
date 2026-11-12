@@ -139,6 +139,23 @@ describe("the viewer's own requests", () => {
     expect(LEAVE_REQUEST_COLUMNS).toContain('absence_type_id');
   });
 
+  // STORY 13.5b (0059): the half of a one-date request; a row read before 0059, or null, is a whole day.
+  it('carry the half of a one-date request, none for a whole day, and refuse one that cannot be trusted', () => {
+    const half = { ...rowOf('half', '2026-11-02', '2026-11-03'), half: 'SECOND' };
+
+    expect(leaveRequestsOf([half], MEMBER)?.[0]).toMatchObject({ from: '2026-11-02', to: '2026-11-02', half: 'SECOND' });
+    expect(leaveRequestFoundOf([half], 'half')?.request?.half).toBe('SECOND');
+    // An old cache without the column, and a whole day's null, carry no `half` key at all.
+    expect(leaveRequestsOf([rowOf('old', '2026-11-02', '2026-11-03')], MEMBER)?.[0]).not.toHaveProperty('half');
+    expect(leaveRequestsOf([{ ...half, half: null }], MEMBER)?.[0]).not.toHaveProperty('half');
+    expect(leaveRequestFoundOf([{ ...half, half: null }], 'half')?.request).not.toHaveProperty('half');
+    // Neither half, or a half on more than one date: the row cannot be trusted.
+    expect(leaveRequestsOf([{ ...half, half: 'MIDDLE' }], MEMBER)).toBeNull();
+    expect(leaveRequestsOf([{ ...rowOf('long', '2026-11-02', '2026-11-04'), half: 'FIRST' }], MEMBER)).toBeNull();
+    expect(LEAVE_REQUESTS_COLUMNS).toContain(',half,');
+    expect(LEAVE_REQUEST_COLUMNS).toContain(',half,');
+  });
+
   it.each([
     ['live', null, null],
     ['read before 0047, with no field', undefined, null],

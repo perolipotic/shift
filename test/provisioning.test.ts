@@ -1589,11 +1589,14 @@ describe('every organization table carries row level security, and only its revi
         'removed_by',
         'removed_at',
         'absence_type_id',
+        'half',
       ]);
       expect(held.tables).toEqual(['authenticated:SELECT']);
+      // STORY 13.5 (0058): an admin names a half day's half on insert.
       expect(held.columns, 'the writable leave record columns changed, or anon holds one').toEqual([
         'authenticated:INSERT:absence_type_id',
         'authenticated:INSERT:during',
+        'authenticated:INSERT:half',
         'authenticated:INSERT:member_id',
         'authenticated:INSERT:organization_id',
       ]);
@@ -1858,12 +1861,15 @@ describe('every organization table carries row level security, and only its revi
         'closed_by',
         'closed_at',
         'absence_type_id',
+        'half',
       ]);
       expect(requests.tables).toEqual(['authenticated:SELECT']);
-      // STORY 13.2b (0054): the member names the type they ask for.
+      // STORY 13.2b (0054): the member names the type they ask for. STORY
+      // 13.5b (0059): and the half of a one-date request.
       expect(requests.columns, 'the writable leave request columns changed, or anon holds one').toEqual([
         'authenticated:INSERT:absence_type_id',
         'authenticated:INSERT:during',
+        'authenticated:INSERT:half',
         'authenticated:INSERT:member_id',
         'authenticated:INSERT:organization_id',
       ]);
@@ -1904,9 +1910,12 @@ describe('every organization table carries row level security, and only its revi
         'leave_request_decisions: UNIQUE (organization_id, leave_record_id)',
         'leave_requests: CHECK (((NOT lower_inf(during)) AND (NOT upper_inf(during))))',
         'leave_requests: CHECK (((closed_by IS NULL) = (closed_at IS NULL)))',
+        // STORY 13.5b (0059): a half only on a one-date request, and only one of the two.
+        'leave_requests: CHECK (((half IS NULL) OR ((upper(during) - lower(during)) = 1)))',
         "leave_requests: CHECK (((lower(during) >= '0001-01-01'::date) AND (upper(during) <= '10000-01-01'::date)))",
         'leave_requests: CHECK (((upper(during) - lower(during)) <= 366))',
         'leave_requests: CHECK ((NOT isempty(during)))',
+        "leave_requests: CHECK ((half = ANY (ARRAY['FIRST'::text, 'SECOND'::text])))",
         'leave_requests: CHECK (lower_inc(during))',
         'leave_requests: EXCLUDE USING gist (member_id WITH =, during WITH &&) WHERE ((closed_at IS NULL))',
         'leave_requests: FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE',

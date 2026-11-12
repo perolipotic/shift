@@ -111,6 +111,11 @@ export function useMyLeave() {
 
   return {
     leave,
+    /**
+     * STORY 13.5b: the calendar snapshot the figures stand on, so the request
+     * form draws the half cards' times from the same schedule; null until read.
+     */
+    snapshot: calendarState.snapshot,
     loading: leave.kind === MY_LEAVE_LOADING,
     // STORY 8.2b: the as-of note's time and zone while the whole snapshot is
     // drawn offline; none above the unavailable state, where nothing is drawn.

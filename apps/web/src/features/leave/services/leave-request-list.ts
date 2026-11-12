@@ -1,8 +1,8 @@
 import { queryOptions } from '@tanstack/react-query';
-import type { LeaveRange } from '@shift/domain';
+import { halfFieldOf, type LeaveRange } from '@shift/domain';
 
 import { ANNUAL_LEAVE_ID } from '@/features/absence-types/services/list';
-import { readLeaveRowPages, type OrganizationLeaveRecordsAnswer } from '@/features/leave/services/leave-list';
+import { leaveRecordHalfOf, readLeaveRowPages, type OrganizationLeaveRecordsAnswer } from '@/features/leave/services/leave-list';
 import { leaveRangeOf } from '@/features/leave/services/leave-write';
 
 /**
@@ -28,7 +28,7 @@ import { leaveRangeOf } from '@/features/leave/services/leave-write';
  *     decision screen's one request is, for *Za odluku* and *Danas*.
  *
  * ONE ROW PARSE: every read parses a row's id, member, range, absence type
- * (story 13.2b), status and `closed_at` the same way, and the embedded decisions through one
+ * (story 13.2b), half (story 13.5b), status and `closed_at` the same way, and the embedded decisions through one
  * normaliser, whether PostgREST answers the embed as a list, one object or
  * null.
  *
@@ -51,10 +51,11 @@ export const MY_LEAVE_REQUESTS_KEY = ['my-leave-requests'] as const;
  * The columns read: the request's own, and its decision's outcome through the
  * embed. Since 0047 also what became of an approval's leave record
  * (`leave_record_change`, a computed field on the decision), and since 0054
- * (story 13.2b) the absence type the request asks for.
+ * (story 13.2b) the absence type the request asks for, and since 0059
+ * (story 13.5b) the half of a one-date request.
  */
 export const LEAVE_REQUESTS_COLUMNS =
-  'id,member_id,during,absence_type_id,closed_at,leave_request_decisions(outcome,leave_record_change)';
+  'id,member_id,during,absence_type_id,half,closed_at,leave_request_decisions(outcome,leave_record_change)';
 
 /**
  * The prefix every one request's key starts with (story 9.4): a request
@@ -71,10 +72,10 @@ export function LEAVE_REQUEST_KEY(requestId: string) {
  * The columns one request is read with on its decision screen (story 9.4):
  * the request's own, and its decision's outcome, who decided and when. Since
  * story 9.5 also when it was sent (`created_at`), which orders requests that
- * start on one date in *Za odluku*.
+ * start on one date in *Za odluku*. Since 0059 (story 13.5b) the half too.
  */
 export const LEAVE_REQUEST_COLUMNS =
-  'id,member_id,during,absence_type_id,closed_at,created_at,leave_request_decisions(outcome,decided_by,decided_at,leave_record_change)';
+  'id,member_id,during,absence_type_id,half,closed_at,created_at,leave_request_decisions(outcome,decided_by,decided_at,leave_record_change)';
 
 /** The read could not be answered, or answered something that is not rows. */
 export const LEAVE_REQUESTS_UNAVAILABLE = 'LEAVE_REQUESTS_UNAVAILABLE';
@@ -143,7 +144,12 @@ export function leaveRecordChangeMessageKey(
   }
 }
 
-/** One of the viewer's own requests: its id, its inclusive range, its type, its status and when it was closed. */
+/**
+ * One of the viewer's own requests: its id, its inclusive range, its type, its
+ * status and when it was closed. STORY 13.5b: a one-date request may carry
+ * `half` (`LeaveRange`'s), which an approval copies into its record; a whole
+ * day carries no `half` at all.
+ */
 export interface LeaveRequest extends LeaveRange {
   readonly id: string;
   /**
@@ -269,8 +275,8 @@ export function leaveRequestTypeOf(row: Record<string, unknown>): string | null 
  * One row's own facts, read the same way by every read: its id, its member,
  * its inclusive range, its type, its status, when it was closed and,
  * approved, what became of its leave record. Null when the row is no object,
- * carries no id or no member, or has a range, a type, a status or a record
- * change that does not parse.
+ * carries no id or no member, or has a range, a type, a half (story 13.5b),
+ * a status or a record change that does not parse.
  */
 function requestRowOf(row: unknown): (LeaveRequest & { readonly memberId: string }) | null {
   if (!isRecord(row)) return null;
@@ -286,6 +292,11 @@ function requestRowOf(row: unknown): (LeaveRequest & { readonly memberId: string
   if (typeof memberId !== 'string' || memberId === '' || range === null || status === null) return null;
   if (absenceTypeId === null) return null;
 
+  // STORY 13.5b: as a record's half — absent (an old cache) or null is a whole day.
+  const half = leaveRecordHalfOf(row, range);
+
+  if (half === undefined) return null;
+
   const recordChange = recordChangeOf(status, row[DECISIONS_EMBED]);
 
   if (recordChange === undefined) return null;
@@ -295,6 +306,7 @@ function requestRowOf(row: unknown): (LeaveRequest & { readonly memberId: string
     memberId,
     from: range.from,
     to: range.to,
+    ...(half === null ? {} : { half }),
     absenceTypeId,
     status,
     closedAt: typeof closed === 'string' ? closed : null,
@@ -321,7 +333,7 @@ export function leaveRequestsOf(rows: readonly unknown[], memberId: string): rea
 
     const { id, from, to, absenceTypeId, status, closedAt, recordChange } = request;
 
-    requests.push({ id, from, to, absenceTypeId, status, closedAt, recordChange });
+    requests.push({ id, from, to, ...halfFieldOf(request), absenceTypeId, status, closedAt, recordChange });
   }
 
   return requests.sort(compareRequests);

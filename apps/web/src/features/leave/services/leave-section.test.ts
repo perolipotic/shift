@@ -31,6 +31,7 @@ import {
   LEAVE_HALF_UNCHOSEN,
   LEAVE_WHOLE_DAY,
   leaveCostHalfMessageKey,
+  leaveRangeHalfMessageKey,
   leaveHalfChoiceOf,
   leaveHalfMessageKey,
   leaveHalfOfferedOf,
@@ -1562,6 +1563,24 @@ describe('the half day (story 13.5)', () => {
   it('marks the switch with the reason while it carries a refusal, else its hint alone', () => {
     expect(leaveHalfSwitchDescribedByOf(false)).toBe(LEAVE_HALF_HINT_ID);
     expect(leaveHalfSwitchDescribedByOf(true)).toBe(`${LEAVE_HALF_HINT_ID} ${LEAVE_REASON_ID}`);
+    // Story 13.5b: the request form passes its own ids.
+    expect(leaveHalfSwitchDescribedByOf(false, 'form-hint', 'form-reason')).toBe('form-hint');
+    expect(leaveHalfSwitchDescribedByOf(true, 'form-hint', 'form-reason')).toBe('form-hint form-reason');
+  });
+
+  it('costs a stored half on a date with no working shift at 0, never refused, when the half is not to be refused (story 13.5b)', () => {
+    const base = baseOf();
+    // 2026-09-12 is the viewer's Slobodno: a request's review decides against a schedule that changed.
+    const state = leavePreviewStateOf(base.input, '2026-09-12', '2026-09-12', ANNUAL, null, { on: true, half: LEAVE_HALF_FIRST }, false);
+
+    if (state.kind !== LEAVE_PREVIEW_READY) throw new Error(state.kind);
+
+    expect(state.range.half).toBe(LEAVE_HALF_FIRST);
+    expect(state.preview.costDays).toBe(0);
+    // A working date costs 0.5 the same way.
+    const working = leavePreviewStateOf(base.input, '2026-09-10', '2026-09-10', ANNUAL, null, { on: true, half: LEAVE_HALF_FIRST }, false);
+
+    expect(working.kind === LEAVE_PREVIEW_READY ? working.preview.costDays : null).toBe(0.5);
   });
 
   it('offers both cards with no times when the snapshot holds no version of the shift’s type for the date', () => {
@@ -1609,6 +1628,15 @@ describe('the half day (story 13.5)', () => {
     expect(leaveCostHalfMessageKey(HALF)).toBe('ljudi.leaveRecord.costHalfFirst');
     expect(leaveCostHalfMessageKey(WORKED)).toBeNull();
     expect(t('ljudi.leaveRecord.costHalfFirst', { days: t('count.days', { count: 0.5 }) })).toBe('0,5 dana (prvi dio smjene)');
+  });
+
+  it('names a half-day request\'s half after its range, and nothing for a whole day (story 13.5b)', () => {
+    expect(leaveRangeHalfMessageKey(HALF)).toBe('ljudi.leaveRecord.rangeHalfFirst');
+    expect(leaveRangeHalfMessageKey({ ...HALF, half: LEAVE_HALF_SECOND })).toBe('ljudi.leaveRecord.rangeHalfSecond');
+    expect(leaveRangeHalfMessageKey(WORKED)).toBeNull();
+    expect(t('ljudi.leaveRecord.rangeHalfSecond', { range: '10.09.2026–10.09.2026' })).toBe(
+      '10.09.2026–10.09.2026 (drugi dio smjene)',
+    );
   });
 
   it('offers the two halves with their times: Dan 07:00–13:00 and 13:00–19:00, Noć across midnight', () => {

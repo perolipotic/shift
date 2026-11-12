@@ -1097,10 +1097,14 @@ export const KEY_SOURCES = [
     // `@/features/leave/services/my-leave`, a key source.
     // STORY 13.2b: the type group's label, and the line that a type which does not draw leaves the balance as it is.
     // STORY 13.4b: the over-balance warning when it is the expiry's (`godisnji.expiryExceeds`).
+    // TWENTY-FIVE SINCE STORY 13.5b: *Pola dana* and its hint, the half
+    // group's label and a half card's times, the admin dialog's keys. The two
+    // cards' names come through `leaveHalfMessageKey` in
+    // `@/features/leave/services/leave-section`, a key source.
     name: 'the leave request form',
     file: LEAVE_REQUEST,
     keys: translationKeys,
-    strings: 21,
+    strings: 25,
   },
   {
     // E884: the Stanje chip's five options and the five values its text says,
@@ -1313,10 +1317,12 @@ export const KEY_SOURCES = [
     // TWENTY-SEVEN SINCE 0047: the past start, as the form's reason and as
     // the database's refusal.
     // STORY 13.2b: the reason no type is chosen yet.
+    // THIRTY SINCE STORY 13.5b: the two half-day reasons in the member's own
+    // words, no half chosen and a date without exactly one working shift.
     name: 'the Godišnji rules',
     file: MY_LEAVE_KEYS,
     keys: memberListKeys,
-    strings: 28,
+    strings: 30,
   },
   {
     // 0047: the line under an approved request whose leave an admin amended
@@ -1413,10 +1419,12 @@ export const KEY_SOURCES = [
     // THIRTY-SIX SINCE STORY 13.5: the two reasons a half day is not sent (no
     // half chosen, no single working shift), the two half cards' names, and a
     // half day's cost in a list, each half.
+    // THIRTY-EIGHT SINCE STORY 13.5b: a half-day request's range, each half,
+    // off `leaveRangeHalfMessageKey`, for every request surface.
     name: 'the leave card rules',
     file: LEAVE_SECTION_KEYS,
     keys: messageKeyUnions,
-    strings: 36,
+    strings: 38,
   },
   {
     // STORY 3.1: the calendar's one read failure.

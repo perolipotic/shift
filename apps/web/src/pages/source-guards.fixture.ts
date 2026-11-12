@@ -1098,8 +1098,9 @@ export const SCREENS = [
   // *Odustani* (a `<Button asChild>` link back to Godišnji), the figures'
   // unavailable alert's retry, *Natrag na Godišnji* above the title (written
   // once, drawn in every state), and the page's own retry when the calendar
-  // cannot name the role. No type and no half day (Epic 13), and nothing
-  // that decides: the count is what notices one arriving.
+  // cannot name the role. The type's and the half's radio cards and *Pola
+  // dana*'s `Switch` (stories 13.2b, 13.5b) are no `<Input>` or `<Button>`,
+  // and nothing decides: the count is what notices one arriving.
   { name: 'the leave request form', file: LEAVE_REQUEST, expectedFields: 2, expectedButtons: 5 },
   // STORY 5.3b. ONE on Za odluku: the retry its unavailable alert offers. The
   // queue is read, never pressed: no `Riješi` and no bulk action. STILL ONE

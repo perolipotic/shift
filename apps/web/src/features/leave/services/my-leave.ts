@@ -1,6 +1,6 @@
 import {
   leaveBalanceOf,
-  leaveCostOf,
+  leaveRangeCostOf,
   type LeaveAllowance,
   type LeaveBalance,
   type LeaveCarryOver,
@@ -13,6 +13,7 @@ import { calendarTodayOf, memberScheduleInputOf } from '@/features/calendar/util
 import { leaveRecordsOf } from '@/features/leave/services/leave-list';
 import {
   LEAVE_FROM_FIELD,
+  LEAVE_HALF_FIELD,
   LEAVE_PREVIEW_REASON,
   LEAVE_RANGE_INCOMPLETE,
   LEAVE_RANGE_REFUSED,
@@ -22,12 +23,17 @@ import {
   LEAVE_HALF_REFUSED,
   LEAVE_HALF_UNCHOSEN,
   LEAVE_TYPE_UNCHOSEN,
+  LEAVE_WHOLE_DAY,
   leaveCarryOverOf,
+  leaveHalfOfferedOf,
+  leaveHalfOptionsOf,
   leavePreviewStateOf,
   leaveRangeValuesOf,
   leaveTypeChoiceOf,
   leaveYearStartOf,
   type LeaveCalendarSource,
+  type LeaveHalfChoice,
+  type LeaveHalfOption,
   type LeaveMembersSource,
   type LeaveOrganizationSource,
   type LeavePreviewState,
@@ -304,6 +310,12 @@ export const LEAVE_REQUEST_FROM_ID = 'leave-request-from';
 export const LEAVE_REQUEST_TO_ID = 'leave-request-to';
 /** The type group's label (story 13.2b), which names the radio group. */
 export const LEAVE_REQUEST_TYPE_LABEL_ID = 'leave-request-type-label';
+/** *Pola dana*'s id (story 13.5b), which its label points at. Never the admin dialog's `member-leave-*` id. */
+export const LEAVE_REQUEST_HALF_SWITCH_ID = 'leave-request-half-day';
+/** *Pola dana*'s hint (story 13.5b), which describes the switch. */
+export const LEAVE_REQUEST_HALF_HINT_ID = 'leave-request-half-day-hint';
+/** The half group's label (story 13.5b), which names the radio group. */
+export const LEAVE_REQUEST_HALF_LABEL_ID = 'leave-request-half-label';
 /** The preview's polite live region. */
 export const LEAVE_REQUEST_PREVIEW_ID = 'leave-request-preview';
 /** The reason line, which the field it names is described by while that field is marked. */
@@ -355,12 +367,17 @@ export function myLeaveRequestEarliestOf(leave: MyLeave): string | null {
  * 13.2b: the range is previewed as the chosen type (`typeId`), and no type
  * chosen is a reason after the dates'; null as well while the snapshot holds
  * no type catalog (cached before 13.2), and the form is then unavailable.
+ * STORY 13.5b: the half day as the admin dialog's (`halfChoice`), after the
+ * type: while Od = Do and *Pola dana* is on, a date without exactly one
+ * working shift, then no half chosen, is a reason; a chosen half costs 0,5
+ * through the domain's one rule.
  */
 export function myLeaveRequestPreviewOf(
   leave: MyLeave,
   from: string,
   to: string,
   typeId: string | null,
+  halfChoice: LeaveHalfChoice = LEAVE_WHOLE_DAY,
 ): LeaveRequestPreviewState | null {
   if (leave.kind !== MY_LEAVE_READY || leave.absenceTypes === null) return null;
 
@@ -369,7 +386,53 @@ export function myLeaveRequestPreviewOf(
   }
 
   // STORY 13.2b: by the chosen type's drawing flag; no type chosen is a reason.
-  return leavePreviewStateOf(leave.input, from, to, leaveTypeChoiceOf(leave.absenceTypes, typeId));
+  return leavePreviewStateOf(leave.input, from, to, leaveTypeChoiceOf(leave.absenceTypes, typeId), null, halfChoice);
+}
+
+/** The half cards could not be drawn: the domain refused what it was given (story 13.5b). */
+export const LEAVE_REQUEST_HALF_OPTIONS_FAILED = 'halfOptionsFailed';
+
+/**
+ * STORY 13.5b: the request form's half cards — `leaveHalfOptionsOf` over the
+ * figures' own input and the snapshot they stand on — while *Pola dana* is
+ * offered (Od = Do) and on; null while it is not, while the figures or the
+ * snapshot are not ready, or when the date holds no single working shift.
+ * {@link LEAVE_REQUEST_HALF_OPTIONS_FAILED} when the domain throws a
+ * `RangeError` (logged): no card can be drawn, which
+ * {@link myLeaveRequestHalfPreviewOf} turns into the refusal.
+ */
+export function myLeaveRequestHalfOptionsOf(
+  leave: MyLeave,
+  snapshot: CalendarSnapshot | null,
+  from: string,
+  to: string,
+  halfChoice: LeaveHalfChoice,
+): readonly LeaveHalfOption[] | null | typeof LEAVE_REQUEST_HALF_OPTIONS_FAILED {
+  if (leave.kind !== MY_LEAVE_READY || snapshot === null || !halfChoice.on || !leaveHalfOfferedOf(from, to)) return null;
+
+  try {
+    return leaveHalfOptionsOf(snapshot, leave.input.input, from);
+  } catch (cause) {
+    if (!(cause instanceof RangeError)) throw cause;
+    console.error(LEAVE_REQUEST_HALF_OPTIONS_FAILED, cause);
+
+    return LEAVE_REQUEST_HALF_OPTIONS_FAILED;
+  }
+}
+
+/**
+ * The preview with the half cards' failure folded in (story 13.5b): when no
+ * card could be drawn for a domain refusal, the half day is refused on the
+ * half field — never "choose a half" with no card to choose. Otherwise the
+ * preview as it came.
+ */
+export function myLeaveRequestHalfPreviewOf(
+  preview: LeaveRequestPreviewState | null,
+  options: ReturnType<typeof myLeaveRequestHalfOptionsOf>,
+): LeaveRequestPreviewState | null {
+  if (preview === null || options !== LEAVE_REQUEST_HALF_OPTIONS_FAILED) return preview;
+
+  return { kind: LEAVE_PREVIEW_REASON, reason: LEAVE_HALF_REFUSED, field: LEAVE_HALF_FIELD };
 }
 
 /** The reason line's key, in the request form's own words. Exhaustive. */
@@ -381,6 +444,8 @@ export function myLeaveRequestReasonMessageKey(
   | 'godisnji.request.reversed'
   | 'godisnji.request.tooLong'
   | 'godisnji.request.typeUnchosen'
+  | 'godisnji.request.halfUnchosen'
+  | 'godisnji.request.halfRefused'
   | 'godisnji.request.refused' {
   switch (reason) {
     case LEAVE_REQUEST_IN_PAST:
@@ -393,13 +458,15 @@ export function myLeaveRequestReasonMessageKey(
       return 'godisnji.request.tooLong';
     case LEAVE_TYPE_UNCHOSEN:
       return 'godisnji.request.typeUnchosen';
+    // STORY 13.5b: both half-day reasons in the member's own words.
+    case LEAVE_HALF_UNCHOSEN:
+      return 'godisnji.request.halfUnchosen';
+    case LEAVE_HALF_REFUSED:
+      return 'godisnji.request.halfRefused';
     // No amend here, so an unchanged range is never a reason the form meets;
     // were it one, it could not be costed either.
-    // Nor a half day (story 13.5b): the request form offers none yet.
     case LEAVE_RANGE_REFUSED:
     case LEAVE_RANGE_UNCHANGED:
-    case LEAVE_HALF_UNCHOSEN:
-    case LEAVE_HALF_REFUSED:
       return 'godisnji.request.refused';
     default: {
       const unhandled: never = reason;
@@ -498,7 +565,10 @@ export interface MyLeaveRequestRow {
   readonly label: string;
   /** The stored name of the absence type asked for (story 13.2b): the viewer's own, so theirs to see. */
   readonly typeName: string;
-  /** The domain's `leaveCostOf` over the whole range, or null when it refuses the range. */
+  /**
+   * The domain's `leaveRangeCostOf` over the whole range — 0.5 per charged
+   * date for a half day (story 13.5b) — or null when it refuses the range.
+   */
   readonly costDays: number | null;
   /** `20.09.2026`, the date it was closed in the organization's zone, or null while pending. */
   readonly closedOn: string | null;
@@ -600,7 +670,8 @@ export function myLeaveRequestsOf(viewer: MyLeaveRequestsViewer, rows: MyLeaveRo
 
       if (input !== null) {
         try {
-          costDays = leaveCostOf(input.input, request.from, request.to);
+          // STORY 13.5b: half-aware, the one cost rule a record's figures use too.
+          costDays = leaveRangeCostOf(input.input, request);
         } catch (cause) {
           console.error(MY_REQUESTS_UNAVAILABLE, cause);
         }

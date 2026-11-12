@@ -1472,7 +1472,7 @@
   evidence: Review of 13.4b. `leavePreviewOf` runs `balanceOf` twice (before and with the range), each walking the chain from the earlier of the first carried-into year and the earliest drawing record; `leaveRecordRowsOf` calls it once per record.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-13-5-a-half-day-record-costs-half-a-day.md`
-  summary: Story 13.5b — a member asks for a half day (split from 13.5, PO, 2026-11-12). R9.2: a Leave Request carries the half (first or second half of the shift) for a one-date range; the member's request form offers it after the type (range, type, half day, then cost and balance after, with one *Pošalji*), the request review and *Za odluku* show it, and approving creates one Half-day Record of that half. The preview costs it 0.5 through the same domain rule 13.5 ships.
+  summary: RESOLVED by 13.5b (2026-11-12) — `leave_requests.half` (0059), the request form's *Pola dana* and half cards, the review and *Za odluku* naming the half, and `decide_leave_request` copying it into the record. Story 13.5b — a member asks for a half day (split from 13.5, PO, 2026-11-12). R9.2: a Leave Request carries the half (first or second half of the shift) for a one-date range; the member's request form offers it after the type (range, type, half day, then cost and balance after, with one *Pošalji*), the request review and *Za odluku* show it, and approving creates one Half-day Record of that half. The preview costs it 0.5 through the same domain rule 13.5 ships.
   evidence: 13.5 was two independently shippable goals (the admin records a half day with every derived figure; the member requests one through Epic 9's request flow), well over the spec budget. The PO split at step 01 of bmad-build (2026-11-12), admin record first, as 13.4/13.4b did.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-13-5-a-half-day-record-costs-half-a-day.md`
@@ -1482,3 +1482,10 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-13-5-a-half-day-record-costs-half-a-day.md`
   summary: The half itself is not shown on the decision surfaces: the resolution screen, the calendar day detail's collision line and *Za odluku* say *odsutnost {od}–{do}* without "pola dana (prvi/drugi dio smjene)", so an admin choosing *Zamijeni člana* (which moves the whole shift) cannot see the member would have worked the other half.
   evidence: Review of 13.5 (blind layer). The spec put a calendar half-day mark under Ask First; the resolution screen's cost already reads 0,5 dana, but no surface names the half. Decide with the PO whether these lines name it.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-13-5b-a-member-asks-for-a-half-day.md`
+  summary: A half-day leave request or record is still named as a whole-day range by notifications (`leaveRequestCreated`, `leaveRequestApproved`/`Rejected`, `leaveRecorded`), admin *Danas*, *Odlučeno* and the deactivation request list; decide with the PO whether these name the half.
+  evidence: Review of 13.5b (blind layer). 13.5 and 13.5b put notification text and these surfaces under Ask First, so they render `{startDate}–{endDate}` only (`supabase/functions/notify/messages.ts:19-26,83-86`, `admin-today.ts:156-175`, `resolved-conflicts.ts:265-283`, `deactivation-requests.ts:44`).
+- source_spec: `_bmad-output/implementation-artifacts/spec-13-5b-a-member-asks-for-a-half-day.md`
+  summary: The request review shows *0 dana* without explanation when a requested half's date no longer holds one working shift; the admin approves a record that costs nothing without being told why.
+  evidence: Review of 13.5b (blind layer). By the spec's Design Note the review never refuses the half and costs what the domain says (0), but no line on the decision screen says the half no longer matches a shift.
