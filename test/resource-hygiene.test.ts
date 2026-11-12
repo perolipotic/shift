@@ -246,6 +246,19 @@ const SANCTIONED_PLURAL_KEYS = [
   // `Najviše 5 dana`.
   'organization.carryOverFact',
   'organization.carryOverStatusSet',
+  // STORY 13.4b: the carried line (pending, lapsed, kept), the member card's
+  // carried figure, the overview cell's verb and lapsed count, the summary's
+  // carried sum, and the warning when the carried days expire first.
+  'godisnji.carried.pending',
+  'godisnji.carried.lapsed',
+  'godisnji.carried.kept',
+  'godisnji.carriedDays.pending',
+  'godisnji.carriedDays.lapsed',
+  'godisnji.carriedDays.kept',
+  'godisnji.overview.carriedCell.pending',
+  'godisnji.overview.carriedCell.lapsed',
+  'godisnji.overview.summaryCarried',
+  'godisnji.expiryExceeds',
 ];
 
 /** The flat screen strings the application is permitted to ship, by the story
@@ -2380,6 +2393,11 @@ const SANCTIONED_SCREEN_KEYS = [
   'organization.carryOverNone',
   'organization.carryOverStatusNone',
   'organization.error.carryOver',
+  // STORY 13.4b. The *Preneseno* label on the overview and the member card,
+  // and the overview cell's bare number when nothing lapsed.
+  'godisnji.overview.carried',
+  'ljudi.leaveRecord.carried',
+  'godisnji.overview.carriedCell.kept',
   // STORY 11.2. The short-staffed block in every *Što se mijenja* a save that
   // can cause one has: its heading, a row, `i još {n}`, the neutral line when
   // it cannot be checked, and a resolution strip's words for a short shift.
