@@ -615,8 +615,9 @@ development_status:
   13-3-the-allowance-is-set-per-leave-year: done  # #290
   13-3b-the-allowance-dialog-sets-the-current-leave-year: done  # split from 13.3, 2026-11-10; #291
   13-4-unused-leave-carries-over-and-expires: done  # #292
-  13-4b-carry-over-is-derived-and-shown: review
-  13-5-a-half-day-record-costs-half-a-day: backlog
+  13-4b-carry-over-is-derived-and-shown: done  # #293
+  13-5-a-half-day-record-costs-half-a-day: review
+  13-5b-a-member-asks-for-a-half-day: backlog  # split from 13.5, 2026-11-12
   epic-13-retrospective: optional
 
   epic-14: backlog

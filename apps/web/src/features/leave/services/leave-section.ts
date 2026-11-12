@@ -1,14 +1,21 @@
 import {
+  LEAVE_HALF_FIRST,
+  LEAVE_HALF_SECOND,
   MAX_LEAVE_RANGE_DAYS,
   daysBetween,
+  halfDayShiftOf,
   leaveBalanceOf,
-  leaveCostOf,
+  halfFieldOf,
+  leaveRangeCostOf,
   leavePreviewOf,
   leaveYearOf,
+  shiftHalvesOf,
+  shiftTypeVersionOn,
   type LeaveAllowance,
   type LeaveBalance,
   type LeaveBalanceInput,
   type LeaveCarryOver,
+  type LeaveHalf,
   type LeavePreview,
   type LeaveRange,
   type LeaveYearStart,
@@ -35,7 +42,16 @@ import {
   type LeaveWriteOutcome,
 } from '@/features/leave/services/leave-write';
 import { carryOverOf, type CarryOverSetting } from '@/features/organization/services/snapshot';
-import { RANGE_DASH, compareText, formatIsoDate, formatIsoDayMonth, isIsoDate, nextIsoDate, previousIsoDate } from '@/lib/i18n/format';
+import {
+  RANGE_DASH,
+  compareText,
+  formatIsoDate,
+  formatIsoDayMonth,
+  formatMinuteOfDay,
+  isIsoDate,
+  nextIsoDate,
+  previousIsoDate,
+} from '@/lib/i18n/format';
 
 /**
  * The member page's leave card (story 5.1c) as a pure view model, in a `.ts`
@@ -159,7 +175,7 @@ export interface LeaveRecordRow {
   readonly to: string;
   /** `10.09.2026–14.09.2026`, the two joined by an en dash. */
   readonly label: string;
-  /** The domain's `leaveCostOf` over the whole range. */
+  /** The domain's `leaveRangeCostOf` over the whole record: 0.5 for a half day (story 13.5). */
   readonly costDays: number;
   /**
    * The part of that cost charged to the current leave year, when it differs
@@ -176,7 +192,8 @@ export function leaveRangeValuesOf(range: LeaveRange): { readonly from: string; 
 
 /**
  * The records as the list's rows, in the order `leaveRecordsOf` gives them —
- * soonest first — each costed by `leaveCostOf` over the member's schedule,
+ * soonest first — each costed by `leaveRangeCostOf` over the member's
+ * schedule, a half day at 0.5 (story 13.5),
  * and its in-year part by `leavePreviewOf` against every other record.
  * Throws what the domain throws, so a record it will not cost makes the
  * whole card unavailable.
@@ -186,7 +203,7 @@ export function leaveRecordRowsOf(input: LeaveRecordsInput): readonly LeaveRecor
     const values = leaveRangeValuesOf(record);
     // The record's own drawing flag (story 13.2): a type that does not draw
     // charges the balance nothing.
-    const range = { from: record.from, to: record.to, drawsAllowance: record.drawsAllowance };
+    const range = { from: record.from, to: record.to, drawsAllowance: record.drawsAllowance, ...halfFieldOf(record) };
     const others = input.records.filter((other) => other.id !== record.id);
 
     return {
@@ -194,7 +211,8 @@ export function leaveRecordRowsOf(input: LeaveRecordsInput): readonly LeaveRecor
       from: values.from,
       to: values.to,
       label: `${values.from}${RANGE_DASH}${values.to}`,
-      costDays: leaveCostOf(input.input, record.from, record.to),
+      // A half day costs 0.5 (story 13.5).
+      costDays: leaveRangeCostOf(input.input, record),
       // A type that does not draw has no in-year charge to state: no part, never `0` (story 13.2).
       inYearDays: record.drawsAllowance ? leaveInYearChargeOf(leavePreviewOf({ ...input, records: others, range })) : null,
     };
@@ -447,13 +465,24 @@ export const LEAVE_RANGE_UNCHANGED = 'unchanged';
 /** No absence type is chosen yet (story 13.2b): nothing is preselected, so nothing is previewed or sent. */
 export const LEAVE_TYPE_UNCHOSEN = 'typeUnchosen';
 
+/** *Pola dana* is on and no half is chosen (story 13.5): neither card is preselected. */
+export const LEAVE_HALF_UNCHOSEN = 'halfUnchosen';
+
+/**
+ * *Pola dana* is on, but the date does not hold exactly one working shift of
+ * the member (story 13.5, R4.12): the dialog refuses the half day.
+ */
+export const LEAVE_HALF_REFUSED = 'halfRefused';
+
 export type LeaveRangeReason =
   | typeof LEAVE_RANGE_INCOMPLETE
   | typeof LEAVE_RANGE_REVERSED
   | typeof LEAVE_RANGE_TOO_LONG
   | typeof LEAVE_RANGE_REFUSED
   | typeof LEAVE_RANGE_UNCHANGED
-  | typeof LEAVE_TYPE_UNCHOSEN;
+  | typeof LEAVE_TYPE_UNCHOSEN
+  | typeof LEAVE_HALF_UNCHOSEN
+  | typeof LEAVE_HALF_REFUSED;
 
 /** The od field. */
 export const LEAVE_FROM_FIELD = 'from';
@@ -462,7 +491,129 @@ export const LEAVE_TO_FIELD = 'to';
 /** The absence type's radio card group (story 13.2b). */
 export const LEAVE_TYPE_FIELD = 'type';
 
-export type LeaveField = typeof LEAVE_FROM_FIELD | typeof LEAVE_TO_FIELD | typeof LEAVE_TYPE_FIELD;
+/** The half day's radio card group (story 13.5). */
+export const LEAVE_HALF_FIELD = 'half';
+
+export type LeaveField = typeof LEAVE_FROM_FIELD | typeof LEAVE_TO_FIELD | typeof LEAVE_TYPE_FIELD | typeof LEAVE_HALF_FIELD;
+
+/** The half group's label id, which names the radio group (story 13.5). */
+export const LEAVE_HALF_LABEL_ID = 'member-leave-half-label';
+
+/** *Pola dana*'s id, which its label points at (story 13.5). */
+export const LEAVE_HALF_SWITCH_ID = 'member-leave-half-day';
+
+/** *Pola dana*'s hint's id, which describes the switch (story 13.5). */
+export const LEAVE_HALF_HINT_ID = 'member-leave-half-day-hint';
+
+/**
+ * What *Pola dana* is described by (story 13.5): its hint, and the reason a
+ * half day is refused while that refusal marks the switch — no half card
+ * is drawn then, so the switch carries it.
+ */
+export function leaveHalfSwitchDescribedByOf(marked: boolean): string {
+  return marked ? `${LEAVE_HALF_HINT_ID} ${LEAVE_REASON_ID}` : LEAVE_HALF_HINT_ID;
+}
+
+/**
+ * The half-day choice (story 13.5): *Pola dana* off, or on with the half
+ * chosen, or none yet — neither card is preselected.
+ */
+export interface LeaveHalfChoice {
+  readonly on: boolean;
+  readonly half: LeaveHalf | null;
+}
+
+/** *Pola dana* off: a whole day, what every opening starts on unless its record is a half day. */
+export const LEAVE_WHOLE_DAY: LeaveHalfChoice = { on: false, half: null };
+
+/** The choice an amend opens on: its record's half, or a whole day. */
+export function leaveHalfChoiceOf(record: LeaveRange | null): LeaveHalfChoice {
+  return record?.half === LEAVE_HALF_FIRST || record?.half === LEAVE_HALF_SECOND ? { on: true, half: record.half } : LEAVE_WHOLE_DAY;
+}
+
+/** Whether *Pola dana* is offered: while Od and Do are one calendar date (story 13.5). */
+export function leaveHalfOfferedOf(from: string, to: string): boolean {
+  return isIsoDate(from) && from === to;
+}
+
+/**
+ * The half the range is sent with: the chosen one while *Pola dana* is
+ * offered and on, else none — a range of more than one date clears it.
+ */
+export function leaveSentHalfOf(from: string, to: string, choice: LeaveHalfChoice): LeaveHalf | null {
+  return leaveHalfOfferedOf(from, to) && choice.on ? choice.half : null;
+}
+
+/** One half card (story 13.5): its half, and its times, `07:00`–`13:00`, or `null` for a shift with no times that date. */
+export interface LeaveHalfOption {
+  readonly half: LeaveHalf;
+  readonly times: { readonly from: string; readonly to: string } | null;
+}
+
+/**
+ * The two half cards for `date` (story 13.5, R4.12): *Prvi dio smjene* and
+ * *Drugi dio smjene*, each with its times — the member's one working shift
+ * that date split at its nominal midpoint (`shiftHalvesOf`), from the type's
+ * version in force on it. `null` when the date holds no working shift or
+ * more than one (`halfDayShiftOf`): the half day is then refused. A shift
+ * whose type or version the snapshot does not hold for the date gets both
+ * cards with no times, never invented ones.
+ *
+ * @throws RangeError on any precondition of the domain.
+ */
+export function leaveHalfOptionsOf(
+  snapshot: CalendarSnapshot,
+  input: LeaveBalanceInput['input'],
+  date: string,
+): readonly LeaveHalfOption[] | null {
+  if (!isIsoDate(date)) return null;
+
+  const shift = halfDayShiftOf(input, date);
+
+  if (shift === null) return null;
+
+  const type = snapshot.types.find((one) => one.id === shift.shiftTypeId);
+  const version = type === undefined ? null : shiftTypeVersionOn(type.versions, date);
+
+  // A type or a version the snapshot does not hold for the date: both cards, no times.
+  if (version === null) {
+    return [
+      { half: LEAVE_HALF_FIRST, times: null },
+      { half: LEAVE_HALF_SECOND, times: null },
+    ];
+  }
+
+  const halves = shiftHalvesOf(version.startMinute, version.endMinute);
+  const at = (minute: number): string => formatMinuteOfDay(minute % MINUTES_IN_DAY);
+  const end = halves.second.startMinute + halves.second.durationMinutes;
+
+  return [
+    { half: LEAVE_HALF_FIRST, times: { from: at(halves.first.startMinute), to: at(halves.midpointMinute) } },
+    { half: LEAVE_HALF_SECOND, times: { from: at(halves.midpointMinute), to: at(end) } },
+  ];
+}
+
+const MINUTES_IN_DAY = 1440;
+
+/** A half card's words: *Prvi dio smjene*, *Drugi dio smjene*. */
+export function leaveHalfMessageKey(half: LeaveHalf): 'ljudi.leaveRecord.halfFirst' | 'ljudi.leaveRecord.halfSecond' {
+  return half === LEAVE_HALF_FIRST ? 'ljudi.leaveRecord.halfFirst' : 'ljudi.leaveRecord.halfSecond';
+}
+
+/**
+ * The words a half day's cost reads with in a list (story 13.5): `{days}
+ * (prvi dio smjene)` or `(drugi dio smjene)`, the days rendered through
+ * `count.days` by the caller, so `0,5 dana` goes through the locale and never
+ * reads `0.5`; `null` for a whole day, whose days read alone.
+ */
+export function leaveCostHalfMessageKey(
+  record: LeaveRange,
+): 'ljudi.leaveRecord.costHalfFirst' | 'ljudi.leaveRecord.costHalfSecond' | null {
+  if (record.half === LEAVE_HALF_FIRST) return 'ljudi.leaveRecord.costHalfFirst';
+  if (record.half === LEAVE_HALF_SECOND) return 'ljudi.leaveRecord.costHalfSecond';
+
+  return null;
+}
 
 /** The type group's label id, which names the radio group (story 13.2b). */
 export const LEAVE_TYPE_LABEL_ID = 'member-leave-type-label';
@@ -553,6 +704,7 @@ export function leavePreviewStateOf(
   to: string,
   type: LeaveTypeChoice | null,
   amending: LeaveRecord | null = null,
+  halfChoice: LeaveHalfChoice = LEAVE_WHOLE_DAY,
 ): LeavePreviewState {
   if (!isIsoDate(from)) return { kind: LEAVE_PREVIEW_REASON, reason: LEAVE_RANGE_INCOMPLETE, field: LEAVE_FROM_FIELD };
   if (!isIsoDate(to)) return { kind: LEAVE_PREVIEW_REASON, reason: LEAVE_RANGE_INCOMPLETE, field: LEAVE_TO_FIELD };
@@ -561,11 +713,39 @@ export function leavePreviewStateOf(
     return { kind: LEAVE_PREVIEW_REASON, reason: LEAVE_RANGE_TOO_LONG, field: LEAVE_TO_FIELD };
   }
   if (type === null) return { kind: LEAVE_PREVIEW_REASON, reason: LEAVE_TYPE_UNCHOSEN, field: LEAVE_TYPE_FIELD };
-  if (amending !== null && from === amending.from && to === amending.to && type.id === amending.absenceTypeId) {
+
+  // STORY 13.5: the half day, while Od = Do and *Pola dana* is on.
+  const half = leaveSentHalfOf(from, to, halfChoice);
+
+  if (leaveHalfOfferedOf(from, to) && halfChoice.on) {
+    // FIRST whether the date can hold a half day at all: with no working
+    // shift, or two, no half card is drawn, so asking for one would point at
+    // nothing. A domain refusal is the half day's too, never the range's.
+    let shift: ReturnType<typeof halfDayShiftOf>;
+
+    try {
+      shift = halfDayShiftOf(input.input, from);
+    } catch (cause) {
+      console.error(LEAVE_RANGE_REFUSED, cause);
+      shift = null;
+    }
+
+    if (shift === null) return { kind: LEAVE_PREVIEW_REASON, reason: LEAVE_HALF_REFUSED, field: LEAVE_HALF_FIELD };
+    if (half === null) return { kind: LEAVE_PREVIEW_REASON, reason: LEAVE_HALF_UNCHOSEN, field: LEAVE_HALF_FIELD };
+  }
+
+  // A half-only amend (the same range and type, another half) is a change (story 13.5).
+  if (
+    amending !== null &&
+    from === amending.from &&
+    to === amending.to &&
+    type.id === amending.absenceTypeId &&
+    (amending.half ?? null) === half
+  ) {
     return { kind: LEAVE_PREVIEW_REASON, reason: LEAVE_RANGE_UNCHANGED, field: LEAVE_FROM_FIELD };
   }
 
-  const range = { from, to, drawsAllowance: type.drawsAllowance };
+  const range: LeaveRange = { from, to, drawsAllowance: type.drawsAllowance, ...(half === null ? {} : { half }) };
   const records = amending === null ? input.records : input.records.filter((record) => record.id !== amending.id);
 
   try {
@@ -586,7 +766,9 @@ export function leaveReasonMessageKey(
   | 'ljudi.leaveRecord.tooLong'
   | 'ljudi.leaveRecord.refused'
   | 'ljudi.leaveRecord.unchanged'
-  | 'ljudi.leaveRecord.typeUnchosen' {
+  | 'ljudi.leaveRecord.typeUnchosen'
+  | 'ljudi.leaveRecord.halfUnchosen'
+  | 'ljudi.leaveRecord.halfRefused' {
   switch (reason) {
     case LEAVE_RANGE_INCOMPLETE:
       return 'ljudi.leaveRecord.incomplete';
@@ -600,6 +782,10 @@ export function leaveReasonMessageKey(
       return 'ljudi.leaveRecord.unchanged';
     case LEAVE_TYPE_UNCHOSEN:
       return 'ljudi.leaveRecord.typeUnchosen';
+    case LEAVE_HALF_UNCHOSEN:
+      return 'ljudi.leaveRecord.halfUnchosen';
+    case LEAVE_HALF_REFUSED:
+      return 'ljudi.leaveRecord.halfRefused';
     default: {
       const unhandled: never = reason;
 
@@ -881,6 +1067,7 @@ const PLAIN_SAVED: LeaveSaved = { costDays: null, overBalance: null };
 export function leaveSavedOf(input: LeaveBalanceInput, fresh: readonly LeaveRange[] | null, range: LeaveRange): LeaveSaved {
   if (fresh === null) return PLAIN_SAVED;
 
+  // A half day is one date, so its date alone finds it among the fresh records.
   const others = fresh.filter((record) => record.from !== range.from || record.to !== range.to);
 
   if (others.length !== fresh.length - 1) return PLAIN_SAVED;
@@ -905,7 +1092,7 @@ export function leaveAmendedOf(input: LeaveBalanceInput, fresh: readonly LeaveRe
   return savedAgainst(
     input,
     fresh.filter((record) => record.id !== id),
-    { from: replacement.from, to: replacement.to, drawsAllowance: replacement.drawsAllowance },
+    { from: replacement.from, to: replacement.to, drawsAllowance: replacement.drawsAllowance, ...halfFieldOf(replacement) },
   );
 }
 

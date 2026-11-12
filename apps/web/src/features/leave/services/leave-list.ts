@@ -1,5 +1,5 @@
 import { queryOptions } from '@tanstack/react-query';
-import type { LeaveRange } from '@shift/domain';
+import { halfFieldOf, LEAVE_HALF_FIRST, LEAVE_HALF_SECOND, type LeaveHalf, type LeaveRange } from '@shift/domain';
 
 import { ANNUAL_LEAVE_ID } from '@/features/absence-types/services/list';
 import { leaveRangeOf } from '@/features/leave/services/leave-write';
@@ -29,6 +29,11 @@ export { LEAVE_RECORDS_TABLE } from '@/features/leave/services/leave-write';
  * flat `absence_type_id` and `draws_allowance`. A row with NEITHER, a cache
  * written before 13.2, is annual leave and draws, as every record then was;
  * any other missing or malformed value makes the read unavailable.
+ *
+ * A HALF DAY CARRIES ITS HALF (story 13.5): `half`, `FIRST` or `SECOND`, on a
+ * one-date record. A row without the column (a cache written before 13.5) or
+ * with null is a whole day, and the record then carries no `half` at all; a
+ * half that is neither, or on more than one date, makes the read unavailable.
  */
 
 /**
@@ -57,7 +62,7 @@ export const LEAVE_RECORDS_UNAVAILABLE = 'LEAVE_RECORDS_UNAVAILABLE';
  * tripwire, the range, and (story 13.2) the record's absence type and whether
  * it draws down the allowance, spread flat as 0053's definer reads answer it.
  */
-export const LEAVE_RECORDS_COLUMNS = 'id,member_id,during,absence_type_id,...absence_types(draws_allowance)';
+export const LEAVE_RECORDS_COLUMNS = 'id,member_id,during,absence_type_id,half,...absence_types(draws_allowance)';
 
 const ID_COLUMN = 'id';
 const MEMBER_COLUMN = 'member_id';
@@ -65,6 +70,7 @@ const REMOVED_COLUMN = 'removed_at';
 const DURING_COLUMN = 'during';
 const TYPE_COLUMN = 'absence_type_id';
 const DRAWS_COLUMN = 'draws_allowance';
+const HALF_COLUMN = 'half';
 
 /**
  * One live record: the inclusive range it records and its id, which an amend
@@ -130,6 +136,21 @@ export function leaveRecordTypeOf(
 }
 
 /**
+ * A row's half (story 13.5): `FIRST` or `SECOND`, `null` for a whole day —
+ * the column absent (an old cache) or null — or `undefined` when it cannot be
+ * trusted: anything else, or a half on a range of more than one date.
+ */
+export function leaveRecordHalfOf(row: Record<string, unknown>, range: LeaveRange): LeaveHalf | null | undefined {
+  const half = row[HALF_COLUMN];
+
+  if (half === undefined || half === null) return null;
+
+  if (half !== LEAVE_HALF_FIRST && half !== LEAVE_HALF_SECOND) return undefined;
+
+  return range.from === range.to ? half : undefined;
+}
+
+/**
  * The rows as the member's records, in start order, or null when any row is
  * another member's, carries no id or one another row carries, does not
  * parse, carries a type that cannot be trusted ({@link leaveRecordTypeOf}),
@@ -156,7 +177,11 @@ export function leaveRecordsOf(rows: readonly unknown[], memberId: string): read
 
     if (type === null) return null;
 
-    records.push({ id, from: range.from, to: range.to, ...type });
+    const half = leaveRecordHalfOf(row, range);
+
+    if (half === undefined) return null;
+
+    records.push({ id, from: range.from, to: range.to, ...type, ...halfFieldOf({ from: range.from, to: range.to, half }) });
   }
 
   records.sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));

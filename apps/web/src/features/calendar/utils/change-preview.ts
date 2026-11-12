@@ -8,6 +8,7 @@ import {
   OVERRIDE_CHANGE_SET,
   overrideChangeSnapshotOf,
 } from '@/features/conflicts/services/override-erasures';
+import { NO_LEAVE_RECORDS, type LeaveRecordsByMember } from '@/features/hours/services/hours-conflicts';
 import { memberHoursInputOf } from '@/features/hours/services/my-hours';
 import {
   configurationReportOf,
@@ -102,7 +103,8 @@ export interface MemberMonthDelta {
  * each of `memberIds` and each of `months`, in that order, what
  * `memberHoursOfMonth` says after less what it says before, through *Sati*'s
  * own input (`memberHoursInputOf`) with the leave keys `leaveKeysOf` gives
- * that member. A member the snapshots do not hold has no history to count
+ * that member, and (story 13.5) each member's half days among
+ * `leaveRecords`, when the caller holds them. A member the snapshots do not hold has no history to count
  * hours by, and is left out. The day detail's previews group these by delta;
  * the swap proposal names each member and month.
  *
@@ -114,6 +116,7 @@ export function memberMonthDeltasOf(
   memberIds: readonly string[],
   months: readonly string[],
   leaveKeysOf: (memberId: string) => readonly CollisionResolution[],
+  leaveRecords: LeaveRecordsByMember = NO_LEAVE_RECORDS,
 ): readonly MemberMonthDelta[] {
   const deltas: MemberMonthDelta[] = [];
 
@@ -127,7 +130,7 @@ export function memberMonthDeltasOf(
 
     for (const month of months) {
       const minutesIn = (snapshot: CalendarSnapshot) =>
-        memberHoursOfMonth(memberHoursInputOf(snapshot, history, leaveKeys), month).totalMinutes;
+        memberHoursOfMonth(memberHoursInputOf(snapshot, history, leaveKeys, undefined, leaveRecords), month).totalMinutes;
 
       deltas.push({ memberId: member.id, month, deltaMinutes: minutesIn(after) - minutesIn(before) });
     }
@@ -148,12 +151,13 @@ function hourDeltasOf(
   dayBefore: DayDetail,
   dayAfter: DayDetail,
   leaveKeys: readonly CollisionResolution[],
+  leaveRecords: LeaveRecordsByMember,
 ): readonly HourDelta[] {
   const month = monthOf(dayBefore.isoDate);
   const ids = [...new Set([...dayBefore.roster, ...dayAfter.roster].map((member) => member.id))];
   const groups = new Map<number, string[]>();
 
-  for (const { memberId, deltaMinutes } of memberMonthDeltasOf(before, after, ids, [month], () => leaveKeys)) {
+  for (const { memberId, deltaMinutes } of memberMonthDeltasOf(before, after, ids, [month], () => leaveKeys, leaveRecords)) {
     if (deltaMinutes === 0) continue;
 
     const group = groups.get(deltaMinutes);
@@ -179,6 +183,8 @@ function previewOf(
   leaveKeys: readonly CollisionResolution[],
   /** Whether the change is a roster change, the one that moves members one by one. */
   rosterChange: boolean,
+  /** The leave records by member, whose half days split their shift's hours (story 13.5). */
+  leaveRecords: LeaveRecordsByMember,
 ): ChangePreview | null {
   const dayBefore = dayDetailOf(before, detail.teamId, detail.isoDate);
   const dayAfter = dayDetailOf(after, detail.teamId, detail.isoDate);
@@ -198,7 +204,7 @@ function previewOf(
   return {
     type,
     roster: out === null && put === null ? null : { out, in: put },
-    hours: hourDeltasOf(before, after, dayBefore, dayAfter, leaveKeys),
+    hours: hourDeltasOf(before, after, dayBefore, dayAfter, leaveKeys, leaveRecords),
   };
 }
 
@@ -223,6 +229,8 @@ export function overridePreviewOf(
   detail: DayDetail | null,
   shiftTypeId: string,
   leaveKeys: readonly CollisionResolution[],
+  /** Story 13.5: the leave records the screen read, by member, so a half day counts only its worked half. */
+  leaveRecords: LeaveRecordsByMember = NO_LEAVE_RECORDS,
 ): ChangePreview | null {
   if (snapshot === null || detail === null) return null;
   if (shiftTypeId === OVERRIDE_NO_TYPE || shiftTypeId === detail.projectedShiftTypeId) return null;
@@ -235,7 +243,7 @@ export function overridePreviewOf(
       shiftTypeId,
     });
 
-    return applied.ok ? previewOf(snapshot, applied.after, detail, leaveKeys, false) : null;
+    return applied.ok ? previewOf(snapshot, applied.after, detail, leaveKeys, false, leaveRecords) : null;
   });
 }
 
@@ -251,6 +259,8 @@ export function rosterPreviewOf(
   memberOutId: string,
   memberInId: string,
   leaveKeys: readonly CollisionResolution[],
+  /** Story 13.5: the leave records the screen read, by member, so a half day counts only its worked half. */
+  leaveRecords: LeaveRecordsByMember = NO_LEAVE_RECORDS,
 ): ChangePreview | null {
   if (snapshot === null || detail === null) return null;
   if (memberOutId === memberInId) return null;
@@ -264,7 +274,7 @@ export function rosterPreviewOf(
       memberInId: memberInId === ROSTER_NOBODY ? null : memberInId,
     });
 
-    return applied.ok ? previewOf(snapshot, applied.after, detail, leaveKeys, true) : null;
+    return applied.ok ? previewOf(snapshot, applied.after, detail, leaveKeys, true, leaveRecords) : null;
   });
 }
 

@@ -1410,10 +1410,13 @@ export const KEY_SOURCES = [
     // THIRTY SINCE STORY 13.4b: the carried line's three shapes, in each of
     // its three forms — the line, the member card's value and the overview's
     // cell — off `leaveCarriedLineMessageKey` and its two siblings.
+    // THIRTY-SIX SINCE STORY 13.5: the two reasons a half day is not sent (no
+    // half chosen, no single working shift), the two half cards' names, and a
+    // half day's cost in a list, each half.
     name: 'the leave card rules',
     file: LEAVE_SECTION_KEYS,
     keys: messageKeyUnions,
-    strings: 30,
+    strings: 36,
   },
   {
     // STORY 3.1: the calendar's one read failure.
@@ -1598,10 +1601,16 @@ export const KEY_SOURCES = [
     // STORY 13.3b: the allowance field's *Vrijedi od {year}.* hint.
     // STORY 13.4b: the leave card's *Preneseno* row label.
     // STORY 13.4b: the expiry's over-balance warning in the leave dialog and in the saved and amended lines.
+    // ONE HUNDRED AND SIXTY-FOUR SINCE STORY 13.5: four new — the leave
+    // dialog's *Pola dana* switch, its hint, the half group's label and a half
+    // card's times — and three fewer, since the four `count.days` calls of a
+    // record's or a range's cost (the row, the removal prompt, *Bilo* and the
+    // preview's cost) now go through one `leaveCostText`, which makes one
+    // `count.days` call of its own and names the half: +4 − 4 + 1.
     name: 'the member edit form',
     file: MEMBER_EDIT,
     keys: translationKeys,
-    strings: 163,
+    strings: 164,
   },
   {
     // THIRTEEN on the member write path's rules: eleven `ljudi.form.error.*`

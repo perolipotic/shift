@@ -116,6 +116,15 @@ describe('recording leave (story 5.1b)', () => {
     expect(table.read).toEqual([]);
   });
 
+  it('sends a half day\'s half, and none for a whole day (story 13.5)', async () => {
+    const table = tableAnswering({ error: null });
+
+    expect(await recordLeave(table, ORGANIZATION, MEMBER, '2026-09-10', '2026-09-10', SICK, 'FIRST')).toEqual({ ok: true });
+    expect(table.sent).toEqual([
+      { organization_id: ORGANIZATION, member_id: MEMBER, during: '[2026-09-10,2026-09-10]', absence_type_id: SICK, half: 'FIRST' },
+    ]);
+  });
+
   it('answers an overlap with the earliest conflicting live record’s inclusive dates, read once, and logs nothing', async () => {
     const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const table = tableAnswering({ error: { code: '23P01' } }, { data: [{ during: '[2026-09-12,2026-09-21)' }], error: null });
@@ -340,6 +349,18 @@ describe('amending a leave record (story 5.2a)', () => {
     ]);
     expect(table.sent).toEqual([]);
     expect(table.read).toEqual([]);
+  });
+
+  it('sends a half day\'s half as p_half, and none for a whole day (story 13.5)', async () => {
+    const client = rpcAnswering({ data: REPLACEMENT, error: null });
+
+    await amendLeave(client, tableAnswering({ error: null }), ORGANIZATION, MEMBER, RECORD, '2026-09-12', '2026-09-12', SICK, 'SECOND');
+    expect(client.called).toEqual([
+      [
+        'amend_leave_record',
+        { p_record_id: RECORD, p_from: '2026-09-12', p_to: '2026-09-12', p_absence_type_id: SICK, p_half: 'SECOND' },
+      ],
+    ]);
   });
 
   it('answers an overlap with the earliest conflicting live record other than the amended one, read once, and logs nothing', async () => {

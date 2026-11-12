@@ -369,6 +369,26 @@ describe('the matrix edges', () => {
     expect(daysIn('2026-11')).toBeNull();
   });
 
+  it('leave: a half day counts 0,5 dana, and splits its shift: the worked half in the hours, by intersection (story 13.5)', () => {
+    // 2026-09-10 is the viewer's Dan 07:00–19:00 in the pilot.
+    const half = { from: '2026-09-10', to: '2026-09-10', absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true, half: 'FIRST' as const };
+    const whole = { from: '2026-09-14', to: '2026-09-14', absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true };
+    const plain = myHoursOf(pilot, { mjesec: MONTH }, TODAY, NO_COLLISIONS, [], new Map([[VIEWER_MEMBER, [whole]]]));
+    const withHalf = myHoursOf(pilot, { mjesec: MONTH }, TODAY, NO_COLLISIONS, [], new Map([[VIEWER_MEMBER, [half, whole]]]));
+
+    if (!plain.ok || !withHalf.ok) throw new Error('unavailable');
+
+    expect(withHalf.view.leave[0]?.days).toBe(1.5);
+    const { key, values } = leaveShownOf(withHalf.view.leave[0]?.figure ?? null);
+    expect(t(key, values)).toBe('1,5 dana');
+    // Six of the shift's twelve hours leave the total: the absent half.
+    const input = memberHoursInputOf(pilot, pilot.viewer, [], undefined, new Map([[VIEWER_MEMBER, [half, whole]]]));
+    expect(input.halfDays).toEqual([{ date: '2026-09-10', half: 'FIRST' }]);
+    const hours = memberHoursOfMonth(input, MONTH);
+    expect(memberHoursOfMonth(memberHoursInputOf(pilot), MONTH).totalMinutes - hours.totalMinutes).toBe(360);
+    expect(hours.leaveMinutes).toBe(360);
+  });
+
   it('leave: no day is the one empty rule, and what a leave reads as goes through t()', () => {
     expect(leaveIsEmpty(0)).toBe(true);
     expect(leaveIsEmpty(1)).toBe(false);

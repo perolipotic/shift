@@ -1,4 +1,4 @@
-import { collisionKeyOf, daysBetween, deriveShiftTimes, leaveBalanceOf, leaveCostOf, shiftTypeVersionOn, type Collision } from '@shift/domain';
+import { collisionKeyOf, daysBetween, deriveShiftTimes, halfFieldOf, isHalfDay, leaveBalanceOf, leaveRangeCostOf, shiftTypeVersionOn, type Collision } from '@shift/domain';
 
 import type { CalendarSnapshot, CalendarSurfaceState } from '@/features/calendar/services/snapshot';
 import { dayDetailOf } from '@/features/calendar/utils/day-detail';
@@ -80,7 +80,8 @@ import {
  * (`dayDetailOf`) less every member on live leave that date. The strip's
  * three terms are coverage (`covered of total`, the roster with and without
  * the members on leave), the absent member's leave in days (the conflict's
- * date as a day of absence, whatever its type, `leaveCostOf` over that one date: `1 dan
+ * date as a day of absence, whatever its type, `leaveRangeCostOf` over that one date with the
+ * record's half — `0,5 dana` for a half day (story 13.5): `1 dan
  * odsutnosti` — leave is counted in days, never hours, human 2026-10-10) and
  * the balance, which accepting
  * leaves unchanged — `leaveBalanceOf` through the member card's own recipe
@@ -502,17 +503,25 @@ export interface ResolutionView {
   readonly leaveTo: string;
   /** What that record costs, in days. */
   readonly leaveCostDays: number;
-  /** The team's members who work that day: the roster less every member on live leave, by name. */
+  /**
+   * The team's other members who work that day: the roster less every member
+   * on live leave (a half day is at work, story 13.5) and less the absent
+   * member, by name.
+   */
   readonly coworkers: readonly string[];
   /** The roster on that date. */
   readonly total: number;
-  /** The roster less every member on live leave that date. */
+  /**
+   * The roster less every member on live leave that date, as staffing counts
+   * it (R10.1): a member on a half day — the absent member's own included —
+   * counts at work.
+   */
   readonly covered: number;
   /** The shift's duration, as the hours the third card has the absent member work; `null` when the shift has no times. */
   readonly shiftHours: ResolutionHours | null;
   /**
    * The conflict's date as leave, in days: what *Godišnji* charges for it
-   * (`leaveCostOf` over the one date), the first two cards' leave term.
+   * (`leaveRangeCostOf` over the one date, 0.5 for a half day), the first two cards’ leave term.
    */
   readonly leaveDays: number;
   /** The absent member's balance in the leave year that holds the conflict's date, which neither outcome changes. */
@@ -522,7 +531,7 @@ export interface ResolutionView {
   /** Whether rank and position are shown beside a candidate: where the organization uses them. */
   readonly rankShown: boolean;
   readonly positionShown: boolean;
-  /** The coverage once someone is put on: {@link covered} + 1. */
+  /** The coverage once someone is put on in the absent member's place: the coworkers + 1. */
   readonly replaceCovered: number;
   /** `02.10.`, the conflict's date as the third card's sentence names it (story 5.4d). */
   readonly dayMonth: string;
@@ -634,9 +643,13 @@ function linkOf(collision: Collision | undefined): ResolutionLink | null {
   };
 }
 
-/** Whether a live record of `memberId` covers `date`. */
+/**
+ * Whether a live record of `memberId` takes them off work on `date`: it
+ * covers the date and is no half day — a member on a half day counts at work,
+ * as staffing counts them (R10.1, story 13.5).
+ */
 function onLeave(records: readonly OrganizationLeaveRecord[], memberId: string, date: string): boolean {
-  return records.some((record) => record.memberId === memberId && record.from <= date && date <= record.to);
+  return records.some((record) => record.memberId === memberId && !isHalfDay(record) && record.from <= date && date <= record.to);
 }
 
 /**
@@ -771,7 +784,14 @@ function resolutionScreenFrom(
       records: {
         records: records
           .filter((record) => record.memberId === collision.memberId)
-          .map(({ id, from, to, absenceTypeId, drawsAllowance }) => ({ id, from, to, absenceTypeId, drawsAllowance })),
+          .map((one) => ({
+            id: one.id,
+            from: one.from,
+            to: one.to,
+            absenceTypeId: one.absenceTypeId,
+            drawsAllowance: one.drawsAllowance,
+            ...halfFieldOf(one),
+          })),
         loading: false,
         refreshing: false,
       },
@@ -803,9 +823,11 @@ function resolutionScreenFrom(
     throw new RangeError(`member ${collision.memberId} is not on the roster of ${collision.teamId} on ${collision.date}`);
   }
 
-  // ONE LIST for the coverage and the names: the roster less every member on live leave.
+  // ONE LIST for the coverage and the names: the roster less every member on
+  // live leave, a member on a half day counting at work (R10.1, story 13.5).
+  // The names leave out the absent member, who is the screen's subject.
   const working = detail.roster.filter((one) => !onLeave(records, one.id, collision.date));
-  const coworkers = working.map((one) => {
+  const coworkers = working.filter((one) => one.id !== collision.memberId).map((one) => {
     if (one.name === null) throw new RangeError(`member ${one.id} is rostered but has no name in the snapshot`);
 
     return one.name;
@@ -843,9 +865,10 @@ function resolutionScreenFrom(
       leaveCostDays: record.costDays,
       coworkers,
       total: detail.roster.length,
-      covered: coworkers.length,
+      covered: working.length,
       shiftHours: minutes === null ? null : { key: durationMessageKey(minutes), values: durationValuesOf(minutes) },
-      leaveDays: leaveCostOf(base.input.input, collision.date, collision.date),
+      // A half day's date costs 0.5 (story 13.5).
+      leaveDays: leaveRangeCostOf(base.input.input, { from: collision.date, to: collision.date, ...halfFieldOf(record.record) }),
       // THE LEAVE YEAR OF THE CONFLICT'S DATE, not today's: the balance the decision is about.
       balanceDays: leaveBalanceOf({ ...base.input, today: collision.date }).balanceDays,
       candidates,

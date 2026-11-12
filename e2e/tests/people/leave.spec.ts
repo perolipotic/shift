@@ -84,6 +84,12 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * with none preselected. A non-drawing type's record previews and saves its
  * days without changing the balance and its row names the type; an amend
  * back to annual leave over the same range charges them.
+ *
+ * Story 13.5: a one-date record may be a half day. *Pola dana* shows while Od
+ * = Do; switched on, two half cards with their times, neither preselected,
+ * and Spremi with neither marks the group. A half day previews and costs
+ * *0,5 dana*, its row reads *0,5 dana (prvi dio smjene)*, the balance drops
+ * by half a day, and an amend that changes only the half is a change.
  */
 
 test.use({ storageState: ADMIN_STATE });
@@ -1010,4 +1016,58 @@ test('records leave of a type that does not draw, which leaves the balance, and 
   // NOTHING IS LEFT BEHIND: the annual replacement is the seeded member's, and
   // `afterEach` deletes the member with all their leave (`removeLeaveMemberInSql`)
   // before the type cleanup deletes what names the E2E type.
+});
+
+test('records a half day: 0,5 dana in the preview and the list, half a day off the balance, and a half-only amend (13.5)', async ({
+  peoplePage,
+  fixture,
+}) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
+  // Today is the seeded pattern's Dan: one working shift.
+  const { member, today } = await seeded(fixture.slug, () => 20);
+
+  await peoplePage.gotoMember(member.id);
+  await peoplePage.recordLeaveButton.click();
+  await expect(peoplePage.leaveRecordDialog).toBeVisible();
+  await peoplePage.leaveFromInput.fill(today);
+  await peoplePage.leaveToInput.fill(isoDaysAfter(today, 1));
+  // MORE THAN ONE DATE: no switch.
+  await expect(peoplePage.leaveHalfDaySwitch).toHaveCount(0);
+  await peoplePage.leaveToInput.fill(today);
+  await peoplePage.leaveTypeCard(ANNUAL_LEAVE_NAME).check();
+  await expect(peoplePage.leaveHalfDaySwitch).not.toBeChecked();
+  await expect(peoplePage.leaveFigure(leave.cost)).toHaveText(plural(days, 1));
+
+  // SWITCHED ON: two cards with their times, neither preselected; Spremi marks and focuses the group.
+  await peoplePage.leaveHalfDaySwitch.check();
+  await expect(peoplePage.leaveHalfGroup.getByRole('radio')).toHaveCount(2);
+  await expect(peoplePage.leaveHalfGroup.getByRole('radio', { checked: true })).toHaveCount(0);
+  await expect(peoplePage.leaveHalfCard(leave.halfFirst)).toContainText(/\d{2}:\d{2}–\d{2}:\d{2}/);
+  await expect(peoplePage.leavePreviewRegion).toHaveText(leave.halfUnchosen);
+  await peoplePage.saveLeaveButton.click();
+  await expect(peoplePage.leaveHalfGroup).toHaveAttribute('aria-invalid', 'true');
+  await expect(peoplePage.leaveHalfGroup.getByRole('radio').first()).toBeFocused();
+  await expect(peoplePage.leaveRecordRows).toHaveCount(0);
+
+  // THE FIRST HALF: half a day, through the locale.
+  await peoplePage.leaveHalfCard(leave.halfFirst).check();
+  await expect(peoplePage.leaveFigure(leave.cost)).toHaveText(fill(leave.costHalfFirst, { days: plural(days, 0.5) }));
+  await expect(peoplePage.leaveFigure(leave.balanceAfter)).toHaveText(plural(days, 19.5));
+  await peoplePage.saveLeaveButton.click();
+  await expect(peoplePage.leaveDialog).toHaveCount(0);
+  await expect(peoplePage.leaveRecordRow(today, today)).toContainText(fill(leave.costHalfFirst, { days: plural(days, 0.5) }));
+  await expect(peoplePage.leaveFigure(leave.used)).toHaveText(plural(days, 0.5));
+  await expect(peoplePage.leaveFigure(leave.balance)).toHaveText(plural(days, 19.5));
+
+  // THE AMEND opens on the record's half; the same half is no change, the other one is.
+  await peoplePage.amendLeaveButton(today, today).click();
+  await expect(peoplePage.leaveAmendDialog(today, today)).toBeVisible();
+  await expect(peoplePage.leaveHalfDaySwitch).toBeChecked();
+  await expect(peoplePage.leaveHalfCard(leave.halfFirst)).toBeChecked();
+  await expect(peoplePage.leavePreviewRegion).toHaveText(leave.unchanged);
+  await peoplePage.leaveHalfCard(leave.halfSecond).check();
+  await peoplePage.amendSaveButton.click();
+  await expect(peoplePage.leaveDialog).toHaveCount(0);
+  await expect(peoplePage.leaveRecordRow(today, today)).toContainText(fill(leave.costHalfSecond, { days: plural(days, 0.5) }));
+  await expect(peoplePage.leaveFigure(leave.balance)).toHaveText(plural(days, 19.5));
 });

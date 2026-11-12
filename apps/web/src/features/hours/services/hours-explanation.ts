@@ -15,13 +15,14 @@ import {
 
 import type { CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { memberScheduleInputOf, type CalendarMemberHistory } from '@/features/calendar/utils/month';
-import type { LeaveRecordsByMember } from '@/features/hours/services/hours-conflicts';
+import { NO_LEAVE_RECORDS, type LeaveRecordsByMember } from '@/features/hours/services/hours-conflicts';
 import {
   HOURS_UNAVAILABLE,
   figureOf,
   leaveColumnNameOf,
   leaveColumnsOf,
   leaveDaysFigureOf,
+  leaveDaysIn,
   memberHoursInputOf,
   memberLeaveDatesByColumnOf,
   type HoursFigure,
@@ -261,7 +262,11 @@ export function hoursExplanationOf(
 
     const figureName = figureNameOf(snapshot, request.figure);
 
-    const explanation = explainMemberHours(memberHoursInputOf(snapshot, history, leaveKeys), month.month, request.figure);
+    const explanation = explainMemberHours(
+      memberHoursInputOf(snapshot, history, leaveKeys, undefined, leaveRecords ?? NO_LEAVE_RECORDS),
+      month.month,
+      request.figure,
+    );
     const lines = explanation.operands.map((operand): HoursExplanationLine => {
       const { team, shiftType } = namesOf(names, operand.teamId, operand.shiftTypeId);
 
@@ -297,8 +302,8 @@ interface Decided {
  * date order. Each names the working
  * shifts on its date as `team · type`, paired per shift, with the decision as
  * the source word of a shift a conflict decision moved to leave, and adds
- * `1 dan`. The total is the domain's: the dates' count, which the lines sum
- * to.
+ * `1 dan`, or `0,5 dana` for a half day (story 13.5). The total is the
+ * domain's: the dates' days summed, which the lines sum to.
  *
  * @throws RangeError on any precondition of the domain; a team, shift type
  *   or date the snapshot or the locale cannot name; and a charged date with
@@ -315,7 +320,7 @@ function leaveEquationOf(
   column: LeaveColumn,
 ): { readonly total: LeaveDaysFigure; readonly lines: readonly LeaveExplanationLine[] } {
   const charged = memberLeaveDatesByColumnOf(snapshot, history, leaveRecords, month, columns)[columns.indexOf(column)] ?? [];
-  const total = leaveDaysFigureOf(charged.length);
+  const total = leaveDaysFigureOf(leaveDaysIn(charged));
 
   if (charged.length === 0) return { total, lines: [] };
 
@@ -323,7 +328,7 @@ function leaveEquationOf(
   const working = new Set(input.workingShiftTypeIds);
   const schedule = new Map(memberScheduleOfMonth(input, month).map((day) => [day.date, day]));
 
-  const lines = charged.map((date): LeaveExplanationLine => {
+  const lines = charged.map(({ date, days }): LeaveExplanationLine => {
     const shifts = new Map<string, { readonly teamId: string; readonly shiftTypeId: string }>();
 
     for (const shift of schedule.get(date)?.shifts ?? []) {
@@ -353,7 +358,8 @@ function leaveEquationOf(
       date: dateOf(date),
       label: formatList(pairs),
       decisions,
-      amount: leaveDaysFigureOf(1),
+      // A half day's date adds 0,5 (story 13.5).
+      amount: leaveDaysFigureOf(days),
       conflict: [...shifts.values()].some((shift) =>
         names.inConflict.has(collisionKeyOf({ memberId: history.memberId, date, teamId: shift.teamId })),
       ),

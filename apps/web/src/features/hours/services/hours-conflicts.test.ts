@@ -26,6 +26,7 @@ import {
   hoursLeaveOf,
   hoursConflictsStateOf,
   hoursLeaveKeysOf,
+  hoursLeaveRecordsOf,
   leaveShiftsOf,
   type HoursConflictsState,
   type LeaveRecordsByMember,
@@ -287,6 +288,23 @@ describe('the worked example', () => {
     expect(t('sati.conflicts', { count: 2 })).toBe('2 smjene čekaju odluku');
     expect(t('sati.conflicts', { count: 1 })).toBe('1 smjena čeka odluku');
     expect(t('sati.conflicts', { count: 5 })).toBe('5 smjena čeka odluku');
+  });
+});
+
+describe('the leave records an hours preview splits half days by (story 13.5)', () => {
+  it('parses the rows the role read, by member, each keeping its half; the same records hoursLeaveOf counts', () => {
+    const rows = [{ ...rowOf('record-half', '2026-09-10', '2026-09-11'), half: 'FIRST' }];
+    const records = hoursLeaveRecordsOf(admin, rows);
+
+    expect(records.get(VIEWER_MEMBER)).toEqual([
+      { from: '2026-09-10', to: '2026-09-10', absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true, half: 'FIRST' },
+    ]);
+    expect(records).toEqual(hoursLeaveOf(admin, rows, []).leaveRecords);
+    expect(hoursLeaveRecordsOf(member, rows)).toEqual(hoursLeaveOf(member, rows, []).leaveRecords);
+  });
+
+  it('refuses rows that cannot be trusted', () => {
+    expect(() => hoursLeaveRecordsOf(admin, [{ ...rowOf('record-half', '2026-09-10', '2026-09-12'), half: 'FIRST' }])).toThrow(RangeError);
   });
 });
 

@@ -2,15 +2,20 @@ import { describe, expect, it } from 'vitest';
 
 import {
   carryOverExpiryOf,
+  checkHalfDay,
   datesOfMonth,
   daysBetween,
   drawsAllowance,
+  halfDayShiftOf,
+  isHalfDay,
   isLeaveDay,
   leaveAllowanceOf,
   leaveBalanceOf,
   leaveCostOf,
+  leaveDayWeightsOfMonth,
   leaveDaysOfMonth,
   leavePreviewOf,
+  leaveRangeCostOf,
   leaveYearNumberOf,
   leaveYearOf,
   MAX_LEAVE_RANGE_DAYS,
@@ -957,6 +962,126 @@ describe('carry-over (story 13.4b, R4.13–R4.15)', () => {
     // Checked even when no year is carried into yet.
     expect(() => leaveBalanceOf(at({ carryOver: setting({ maxDays: 0, firstLeaveYear: 2099 }) }))).toThrow(RangeError);
     expect(() => carryOverExpiryOf(0, JANUARY_FIRST, setting())).toThrow(/leave year is 0/);
+  });
+});
+
+describe('a half day (story 13.5, R4.12)', () => {
+  const pilot = FIXTURES[0];
+  const team = teamOnStep(pilot, '2026-09-10', 0);
+  // 2026-09-10 Dan, 09-11 Noć, 09-12 and 09-13 Slobodno, 09-14 Dan.
+  const input = inputOf(pilot, team);
+  const base = (overrides: Partial<LeaveBalanceInput> = {}): LeaveBalanceInput => ({
+    input,
+    allowance: startingAt(20),
+    records: [],
+    today: '2026-09-01',
+    leaveYearStart: MARCH_FIRST,
+    ...overrides,
+  });
+
+  it('reads an absent or null half as a whole day', () => {
+    expect(isHalfDay({ from: '2026-09-10', to: '2026-09-10' })).toBe(false);
+    expect(isHalfDay({ from: '2026-09-10', to: '2026-09-10', half: null })).toBe(false);
+    expect(isHalfDay({ from: '2026-09-10', to: '2026-09-10', half: 'FIRST' })).toBe(true);
+    expect(leaveRangeCostOf(input, { from: '2026-09-10', to: '2026-09-10', half: null })).toBe(1);
+  });
+
+  it('costs 0.5 on a working date, either half, and 0 on a date with no working shift', () => {
+    expect(leaveRangeCostOf(input, { from: '2026-09-10', to: '2026-09-10', half: 'FIRST' })).toBe(0.5);
+    expect(leaveRangeCostOf(input, { from: '2026-09-11', to: '2026-09-11', half: 'SECOND' })).toBe(0.5);
+    expect(leaveRangeCostOf(input, { from: '2026-09-12', to: '2026-09-12', half: 'FIRST' })).toBe(0);
+  });
+
+  it('charges 0.5 in the balance, and a non-drawing half day charges nothing', () => {
+    const balance = leaveBalanceOf(
+      base({ records: [{ from: '2026-09-10', to: '2026-09-10', half: 'FIRST' }, { from: '2026-09-14', to: '2026-09-14' }] }),
+    );
+    expect(balance).toMatchObject({ usedDays: 1.5, balanceDays: 18.5 });
+    const free = leaveBalanceOf(base({ records: [{ from: '2026-09-10', to: '2026-09-10', half: 'FIRST', drawsAllowance: false }] }));
+    expect(free).toMatchObject({ usedDays: 0, balanceDays: 20 });
+  });
+
+  it('previews 0.5: cost, charge and balance after', () => {
+    const preview = leavePreviewOf({ ...base(), range: { from: '2026-09-11', to: '2026-09-11', half: 'SECOND' } });
+    expect(preview).toMatchObject({ costDays: 0.5, costInYearDays: 0.5, balanceDays: 20, balanceAfterDays: 19.5, exceedsBalance: false });
+    const free = leavePreviewOf({ ...base(), range: { from: '2026-09-11', to: '2026-09-11', half: 'SECOND', drawsAllowance: false } });
+    expect(free).toMatchObject({ costDays: 0.5, costInYearDays: 0, balanceAfterDays: 20 });
+  });
+
+  it('flags a half day overlapping a whole day on its date, charging nothing twice', () => {
+    const preview = leavePreviewOf({
+      ...base({ records: [{ from: '2026-09-10', to: '2026-09-14' }] }),
+      range: { from: '2026-09-10', to: '2026-09-10', half: 'FIRST' },
+    });
+    expect(preview).toMatchObject({ overlapsRecord: true, costInYearDays: 0 });
+  });
+
+  it('weighs a month’s charged dates: the half day’s date at 0.5, summing to the cost', () => {
+    const records = [
+      { from: '2026-09-10', to: '2026-09-10', half: 'FIRST' as const },
+      { from: '2026-09-14', to: '2026-09-14' },
+    ];
+    expect(leaveDayWeightsOfMonth(input, records, '2026-09')).toEqual([
+      { date: '2026-09-10', days: 0.5 },
+      { date: '2026-09-14', days: 1 },
+    ]);
+    expect(leaveDaysOfMonth(input, records, '2026-09')).toEqual(['2026-09-10', '2026-09-14']);
+  });
+
+  it('weighs a date two records share once, at the larger weight, in either order', () => {
+    const half = { from: '2026-09-10', to: '2026-09-10', half: 'FIRST' as const };
+    const whole = { from: '2026-09-10', to: '2026-09-11' };
+    const expected = [
+      { date: '2026-09-10', days: 1 },
+      { date: '2026-09-11', days: 1 },
+    ];
+
+    expect(leaveDayWeightsOfMonth(input, [half, whole], '2026-09')).toEqual(expected);
+    expect(leaveDayWeightsOfMonth(input, [whole, half], '2026-09')).toEqual(expected);
+  });
+
+  it('carries a half day’s balance: a year ending at 2.5 with cap 5 carries 2.5', () => {
+    const JANUARY_FIRST = { month: 1, day: 1 } as const;
+    // 2026: allowance 3, used one half day → 2.5 at the year's end.
+    const balance = leaveBalanceOf({
+      input,
+      allowance: startingAt(3),
+      records: [{ from: '2026-09-10', to: '2026-09-10', half: 'FIRST' }],
+      today: '2027-03-01',
+      leaveYearStart: JANUARY_FIRST,
+      carryOver: { maxDays: 5, expiryMonth: 6, expiryDay: 30, firstLeaveYear: 2027 },
+    });
+    expect(balance).toMatchObject({ allowanceDays: 3, carriedDays: 2.5, balanceDays: 5.5 });
+  });
+
+  it('finds the one working shift a half day covers, or none', () => {
+    expect(halfDayShiftOf(input, '2026-09-10')?.shiftTypeId).toBe('pilot-dan');
+    expect(halfDayShiftOf(input, '2026-09-12')).toBeNull();
+    // Two working shifts: their own Slobodno is not working, so put them on two other teams' shifts.
+    const dan = teamOnStep(pilot, '2026-09-12', 0);
+    const noc = teamOnStep(pilot, '2026-09-12', 1);
+    const members = membersOf(pilot);
+    const twice = inputOf(pilot, team, {
+      rosterOverrides: [
+        { id: 'ro-dan', teamId: pilot.teams[dan]!.id, date: '2026-09-12', memberOutId: null, memberInId: members[team]!.id },
+        { id: 'ro-noc', teamId: pilot.teams[noc]!.id, date: '2026-09-12', memberOutId: null, memberInId: members[team]!.id },
+      ],
+    });
+    expect(halfDayShiftOf(twice, '2026-09-12')).toBeNull();
+    expect(() => checkHalfDay(twice, { from: '2026-09-12', to: '2026-09-12', half: 'FIRST' })).toThrow(RangeError);
+  });
+
+  it('refuses a half day on a date with no working shift, and passes a whole day there', () => {
+    expect(() => checkHalfDay(input, { from: '2026-09-12', to: '2026-09-12', half: 'SECOND' })).toThrow(/"2026-09-12"/);
+    expect(() => checkHalfDay(input, { from: '2026-09-12', to: '2026-09-12' })).not.toThrow();
+    expect(() => checkHalfDay(input, { from: '2026-09-10', to: '2026-09-10', half: 'FIRST' })).not.toThrow();
+  });
+
+  it('refuses a half on a range of more than one date, or a half that is neither', () => {
+    expect(() => leaveRangeCostOf(input, { from: '2026-09-10', to: '2026-09-11', half: 'FIRST' })).toThrow(/one date/);
+    expect(() => leaveBalanceOf(base({ records: [{ from: '2026-09-10', to: '2026-09-11', half: 'SECOND' }] }))).toThrow(RangeError);
+    // @ts-expect-error -- a half that is neither, as an old or corrupt cache could hold.
+    expect(() => leaveRangeCostOf(input, { from: '2026-09-10', to: '2026-09-10', half: 'MIDDLE' })).toThrow(/"MIDDLE"/);
   });
 });
 

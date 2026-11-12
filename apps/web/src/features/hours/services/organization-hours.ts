@@ -257,7 +257,7 @@ export function organizationHoursRowsOf(
 
   for (const member of snapshot.members) {
     const history = { ...member, memberId: member.id };
-    const hours = memberHoursOfMonth(memberHoursInputOf(snapshot, history, leaveKeys, shared), month);
+    const hours = memberHoursOfMonth(memberHoursInputOf(snapshot, history, leaveKeys, shared, leaveRecords), month);
     const active = dates.some((date) => activeOn(member.statuses, date));
 
     if (!active && hours.shiftCount === 0) continue;

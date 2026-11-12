@@ -1,4 +1,4 @@
-import type { LeaveRange } from '@shift/domain';
+import type { LeaveHalf, LeaveRange } from '@shift/domain';
 
 import { isIsoDate, previousIsoDate } from '@/lib/i18n/format';
 
@@ -143,6 +143,8 @@ export interface LeaveRecordRpc {
       readonly p_from: string;
       readonly p_to: string;
       readonly p_absence_type_id: string;
+      /** Story 13.5 (0058): the half of a half day; omitted for a whole day. */
+      readonly p_half?: LeaveHalf;
     },
   ): PromiseLike<LeaveAmendAnswer>;
 }
@@ -289,6 +291,7 @@ export async function recordLeave(
   from: string,
   to: string,
   absenceTypeId: string,
+  half: LeaveHalf | null = null,
 ): Promise<LeaveWriteOutcome> {
   if (!isIsoDate(from) || !isIsoDate(to)) {
     console.error(LEAVE_FAILED, 'not a calendar date');
@@ -304,6 +307,8 @@ export async function recordLeave(
       member_id: memberId,
       during: rangeLiteralOf(from, to),
       absence_type_id: absenceTypeId,
+      // Story 13.5 (0058): a half day names its half; a whole day sends none.
+      ...(half === null ? {} : { half }),
     });
   } catch (cause) {
     console.error(LEAVE_FAILED, cause);
@@ -395,7 +400,7 @@ export async function removeLeave(client: LeaveRecordRpc, recordId: string): Pro
 /**
  * Amend the leave record `recordId` of `memberId` to `from`–`to`, both
  * `YYYY-MM-DD` and both included, of the absence type `absenceTypeId` (story
- * 13.2b, 0054; the record's own type when it is unchanged): 0029's
+ * 13.2b, 0054; the record's own type when it is unchanged), a half day's `half` (story 13.5, 0058; null a whole day): 0029's
  * remove-and-insert in one transaction, answering the replacement's id. A date that is not a real
  * calendar date is {@link LEAVE_FAILED} without a request. A refused overlap
  * answers {@link LEAVE_OVERLAP} with the earliest conflicting record's dates
@@ -419,6 +424,7 @@ export async function amendLeave(
   from: string,
   to: string,
   absenceTypeId: string,
+  half: LeaveHalf | null = null,
 ): Promise<LeaveAmendOutcome> {
   if (!isIsoDate(from) || !isIsoDate(to)) {
     console.error(LEAVE_FAILED, 'not a calendar date');
@@ -434,6 +440,8 @@ export async function amendLeave(
       p_from: from,
       p_to: to,
       p_absence_type_id: absenceTypeId,
+      // Story 13.5 (0058): omitted, the replacement is a whole day.
+      ...(half === null ? {} : { p_half: half }),
     });
   } catch (cause) {
     console.error(LEAVE_FAILED, cause);

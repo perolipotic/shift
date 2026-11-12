@@ -23,6 +23,7 @@ import {
   formatDayMonthRange,
   formatMonthName,
   formatList,
+  formatLeaveDays,
   formatNumber,
   formatTime,
   formatTimeRange,
@@ -259,6 +260,8 @@ function parametersOf(source: string, name: string): string[] {
 // judgement or a calendar date out.
 const UNZONED_ENTRY_POINTS = [
   'formatNumber',
+  // Story 13.5: a count of leave days, `0,5`, no instant at all.
+  'formatLeaveDays',
   'compareText',
   'formatIsoDate',
   // Story 2.3b: the same calendar date, day and month only.
@@ -487,6 +490,11 @@ describe('numbers use Croatian grouping and decimal separators', () => {
 
   it('renders a count without decimals when asked', () => {
     expect(formatNumber(1234, 0)).toBe('1.234');
+    // Story 13.5: leave days, whole with no decimals, a half day's with one.
+    expect(formatLeaveDays(0.5)).toBe('0,5');
+    expect(formatLeaveDays(3)).toBe('3');
+    expect(formatLeaveDays(-1.5)).toBe('−1,5');
+    expect(formatLeaveDays(24.5)).toBe('24,5');
   });
 
   it('holds the digits the caller names, so a column never wobbles', () => {

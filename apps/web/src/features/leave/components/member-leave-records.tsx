@@ -1,3 +1,4 @@
+import type { LeaveRange } from '@shift/domain';
 import type { ReactNode } from 'react';
 
 import { OfflineWriteNote } from '@/components/offline-write-note';
@@ -17,6 +18,7 @@ import {
   LEAVE_REMOVE_REPLACEMENTS_ID,
   REPLACEMENTS_UNKNOWN,
   leaveConfirmFailureOf,
+  leaveCostHalfMessageKey,
   leaveListFailureOf,
   leaveRefusalMessageKey,
   leaveRemovePromptMessageKey,
@@ -26,6 +28,18 @@ import {
 } from '@/features/leave/services/leave-section';
 import { t } from '@/lib/i18n';
 import { useWriteGate } from '@/lib/offline/use-write-gate';
+
+/**
+ * A record's or a range's cost as the list and the dialog read it (story
+ * 13.5): its days through the locale, `3 dana` or `0,5 dana`, never `0.5`,
+ * with a half day's part: `0,5 dana (prvi dio smjene)`.
+ */
+export function leaveCostText(range: LeaveRange, days: number): string {
+  const count = t('count.days', { count: days });
+  const key = leaveCostHalfMessageKey(range);
+
+  return key === null ? count : t(key, { days: count });
+}
 
 /**
  * THE REPLACEMENT GUARD'S LINES (story 5.4e): one line per replacement an
@@ -125,7 +139,7 @@ export function MemberLeaveRecords({ leave }: { readonly leave: MemberLeave }): 
                 {leaveTypeNameOf(leave.absenceTypes, row.record.absenceTypeId)}
               </span>
               <span className="text-xs text-muted-foreground tabular-nums">
-                {t('count.days', { count: row.costDays })}
+                {leaveCostText(row.record, row.costDays)}
               </span>
               {row.inYearDays === null ? null : (
                 <span className="text-xs text-muted-foreground">
@@ -250,7 +264,7 @@ export function MemberLeaveRemoveConfirm({ leave }: { readonly leave: MemberLeav
         {t(leaveRemovePromptMessageKey(confirming), {
           from: confirming.from,
           to: confirming.to,
-          cost: t('count.days', { count: confirming.costDays }),
+          cost: leaveCostText(confirming.record, confirming.costDays),
           inYear: t('count.days', { count: confirming.inYearDays ?? confirming.costDays }),
         })}
       </p>

@@ -1,4 +1,4 @@
-import { DUTY_RUNNING, activeOn, leaveCostOf, membershipOn, monthOf, type LeaveRange } from '@shift/domain';
+import { DUTY_RUNNING, activeOn, leaveRangeCostOf, membershipOn, monthOf, type LeaveRange } from '@shift/domain';
 
 import { absenceTypesOfCalendar, type CalendarSnapshot, type CalendarSurfaceState } from '@/features/calendar/services/snapshot';
 import {
@@ -132,9 +132,10 @@ export type TodayCase =
       readonly typeName: string;
       /**
        * What the absence costs in leave days (story 6.1b): the domain's
-       * `leaveCostOf` over each own record it joins that DRAWS down the
+       * `leaveRangeCostOf` over each own record it joins that DRAWS down the
        * allowance (story 13.2b), each on its own range, summed — only the
-       * days the viewer would have worked count. Zero when none draws, and
+       * days the viewer would have worked count, a half day's at 0.5
+       * (story 13.5). Zero when none draws, and
        * the card then states no cost.
        */
       readonly costDays: number;
@@ -499,11 +500,12 @@ function leaveTypeNameOn(snapshot: CalendarSnapshot, records: readonly LeaveReco
 
 /**
  * Today's one case: leave first, then working, then free. The leave's cost is
- * the domain's `leaveCostOf` over the viewer's schedule, each joined DRAWING
- * record (story 13.2b) costed on its own range, never the merged one; the
+ * the domain's `leaveRangeCostOf` over the viewer's schedule, each joined
+ * DRAWING record (story 13.2b) costed on its own range with its half (story
+ * 13.5), never the merged one; the
  * leave names today's record's type, `typeName`.
  *
- * @throws RangeError on any precondition of `leaveCostOf`.
+ * @throws RangeError on any precondition of `leaveRangeCostOf`.
  */
 function todayCaseOf(
   snapshot: CalendarSnapshot,
@@ -522,7 +524,8 @@ function todayCaseOf(
     const input = memberScheduleInputOf(snapshot, snapshot.viewer);
     // The absence's joined records are exactly the own records inside it; only the drawing ones cost.
     const drawing = records.filter((record) => leave.from <= record.from && record.to <= leave.to && record.drawsAllowance);
-    const costDays = drawing.reduce((sum, record) => sum + leaveCostOf(input, record.from, record.to), 0);
+    // A half day costs 0.5 (story 13.5).
+    const costDays = drawing.reduce((sum, record) => sum + leaveRangeCostOf(input, record), 0);
 
     return { kind: CASE_LEAVE, from, to, typeName, costDays };
   }

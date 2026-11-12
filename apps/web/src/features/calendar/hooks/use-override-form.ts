@@ -23,6 +23,7 @@ import {
   overrideRemovalShortStaffedOf,
   overrideShortStaffedOf,
 } from '@/features/calendar/utils/change-preview';
+import { NO_LEAVE_RECORDS, type LeaveRecordsByMember } from '@/features/hours/services/hours-conflicts';
 import { useStaffingLeave } from '@/features/staffing/hooks/use-staffing-leave';
 import {
   OVERRIDE_NO_TYPE,
@@ -176,6 +177,8 @@ export function useOverrideForm(
   detail: DayDetail | null,
   /** The decided-leave keys whose shifts the preview's hours leave out, as *Sati* does (story 7.9). */
   leaveKeys: readonly CollisionResolution[] = NO_LEAVE_KEYS,
+  /** The leave records by member the calendar read, whose half days split the preview's hours (story 13.5). */
+  leaveRecords: LeaveRecordsByMember = NO_LEAVE_RECORDS,
 ) {
   const queryClient = useQueryClient();
   const typeField = useRef<HTMLSelectElement>(null);
@@ -257,8 +260,8 @@ export function useOverrideForm(
   const formGone = changing && !offers.set && !pending;
 
   const preview = useMemo(
-    () => overridePreviewOf(snapshot, detail, chosenType, leaveKeys),
-    [snapshot, detail, chosenType, leaveKeys],
+    () => overridePreviewOf(snapshot, detail, chosenType, leaveKeys, leaveRecords),
+    [snapshot, detail, chosenType, leaveKeys, leaveRecords],
   );
   const chooseType = useCallback((id: string): void => {
     setChosenType(id);

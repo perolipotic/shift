@@ -395,6 +395,22 @@ describe('the card’s rows (the I/O matrix)', () => {
     expect(row?.consequence?.hours).toEqual([{ memberId: VIEWER_MEMBER, month: '2026-09', deltaMinutes: TWELVE_HOURS }]);
   });
 
+  it('the consequence counts the addressee’s own half day as Sati does: giving its shift away moves only the worked half (story 13.5)', () => {
+    const half = { from: DATE, to: DATE, absenceTypeId: 'annual', drawsAllowance: true, half: 'FIRST' as const };
+    const [row] = mySwapRowsOf(
+      snapshot,
+      swapsOf([rowOf({ return_team_id: A, return_date: DATE })]),
+      TODAY,
+      [],
+      new Map([[VIEWER_MEMBER, [half]]]),
+    );
+
+    // +12 h on the given shift, −6 h for the return shift's worked half.
+    expect(row?.consequence?.hours).toEqual([
+      { memberId: VIEWER_MEMBER, month: '2026-09', deltaMinutes: TWELVE_HOURS - TWELVE_HOURS / 2 },
+    ]);
+  });
+
   it('Accept: an accepted swap waits for a decision; the addressee may withdraw it, no longer answer it', () => {
     const [row] = mySwapRowsOf(snapshot, swapsOf([rowOf({ answer: 'accepted' })]), TODAY, []);
 

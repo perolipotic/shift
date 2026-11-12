@@ -6,6 +6,7 @@ import { leaveCarriedLineMessageKey } from '@/features/leave/services/leave-sect
 import { TodayTileSkeleton } from '@/features/today/components/today-skeleton';
 import { TILE_LOADING, TILE_UNAVAILABLE, type LeaveTile as LeaveTileState } from '@/features/today/services/today-tiles';
 import { t } from '@/lib/i18n';
+import { formatLeaveDays } from '@/lib/i18n/format';
 
 /**
  * The leave balance (story 6.1b), *Godišnji*'s own figures: the days left
@@ -33,7 +34,10 @@ export function LeaveTile({ tile }: { readonly tile: LeaveTileState }): ReactNod
             <StatTileLabel>{t('danas.tiles.leaveKicker')}</StatTileLabel>
             <StatTileValue>{t('count.days', { count: tile.figures.balanceDays })}</StatTileValue>
             <p className="min-w-0 break-words text-xs text-muted-foreground tabular-nums">
-              {t('danas.tiles.leaveHint', { used: tile.figures.usedDays, allowance: tile.figures.allowanceDays })}
+              {t('danas.tiles.leaveHint', {
+                used: formatLeaveDays(tile.figures.usedDays),
+                allowance: formatLeaveDays(tile.figures.allowanceDays),
+              })}
             </p>
             {tile.figures.carried === null ? null : (
               <p className="min-w-0 break-words text-xs text-muted-foreground tabular-nums">

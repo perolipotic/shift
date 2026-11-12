@@ -429,6 +429,34 @@ describe('the facts', () => {
   });
 });
 
+describe('a half day (story 13.5, R10.1)', () => {
+  it('counts a coworker on a half day at work, and names them', () => {
+    const view = viewOf(
+      resolutionScreenOf(
+        sourcesOf(pilot, [WORKED, { ...rowOf('record-frane', '2026-09-10', '2026-09-11', FRANE), half: 'FIRST' }]),
+        paramsOn('2026-09-10'),
+        NOW,
+      ),
+    );
+
+    expect(view.coworkers).toEqual(['Ante Bilić', 'Frane Lozić', 'Karlo Jelić']);
+    expect([view.covered, view.total]).toEqual([3, 4]);
+  });
+
+  it('counts the absent member on a half day at work too, never naming them, and costs the date 0,5', () => {
+    const view = viewOf(
+      resolutionScreenOf(sourcesOf(pilot, [{ ...rowOf('record-half', '2026-09-10', '2026-09-11'), half: 'SECOND' }]), paramsOn('2026-09-10'), NOW),
+    );
+
+    expect(view.coworkers).toEqual(['Ante Bilić', 'Frane Lozić', 'Karlo Jelić']);
+    expect([view.covered, view.total]).toEqual([4, 4]);
+    // Put someone on in their place: the three others and the replacement.
+    expect(view.replaceCovered).toBe(4);
+    expect(view.leaveDays).toBe(0.5);
+    expect(t(leaveDaysMessageKey(view.leaveDays), { count: view.leaveDays })).toBe('0,5 dana odsutnosti');
+  });
+});
+
 describe('Strip: coverage, the day as leave and the balance', () => {
   it('reads "3 od 4 člana", "1 dan odsutnosti" and "16 dana preostalo" for a team of four, a 12 h shift and a balance of 16', () => {
     const view = viewOf(resolutionScreenOf(sourcesOf(pilot), paramsOn('2026-09-10'), NOW));

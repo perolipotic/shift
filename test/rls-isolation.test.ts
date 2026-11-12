@@ -18397,12 +18397,12 @@ async function myLeaveRecords(client: Client): Promise<{ id: string; memberId: s
 }
 
 describe("a member reads their own live leave records alone, with no author and no removal (story 5.2c)", () => {
-  it.skipIf(noDatabase)('returns exactly id, member_id, during, absence_type_id and draws_allowance', async () => {
+  it.skipIf(noDatabase)('returns exactly id, member_id, during, absence_type_id, draws_allowance and half', async () => {
     const client = await connect();
     try {
       const { fields } = await client.query('select * from public.my_leave_records() limit 0');
-      // STORY 13.2 (0053): the record's type and whether it draws the allowance.
-      expect(fields.map((field) => field.name)).toEqual(['id', 'member_id', 'during', 'absence_type_id', 'draws_allowance']);
+      // STORY 13.2 (0053): the record's type and whether it draws the allowance. STORY 13.5 (0058): its half.
+      expect(fields.map((field) => field.name)).toEqual(['id', 'member_id', 'during', 'absence_type_id', 'draws_allowance', 'half']);
     } finally {
       await client.end();
     }
@@ -18543,10 +18543,11 @@ describe("a member reads their own live leave records alone, with no author and 
         expect(rows.length, `${slug}: no row came back`).toBeGreaterThan(0);
         for (const row of rows) {
           expect(row['member_id'], `${slug}: a row of another member`).toBe(self.id);
-          expect(Object.keys(row).sort(), `${slug}: a row carries more than its five columns`).toEqual([
+          expect(Object.keys(row).sort(), `${slug}: a row carries more than its six columns`).toEqual([
             'absence_type_id',
             'draws_allowance',
             'during',
+            'half',
             'id',
             'member_id',
           ]);
@@ -18558,6 +18559,7 @@ describe("a member reads their own live leave records alone, with no author and 
             during: '[2042-09-10,2042-09-15)',
             absence_type_id: '00000000-0000-0000-0000-000000000001',
             draws_allowance: true,
+            half: null,
           },
         ]);
         // The client's own parser reads the range the function returns.
@@ -18600,12 +18602,12 @@ async function leaveOverviewRecords(client: Client): Promise<{ id: string; membe
 }
 
 describe("an active admin reads the organization's live leave records, and nobody else does (story 7.15)", () => {
-  it.skipIf(noDatabase)('returns exactly id, member_id, during, absence_type_id and draws_allowance', async () => {
+  it.skipIf(noDatabase)('returns exactly id, member_id, during, absence_type_id, draws_allowance and half', async () => {
     const client = await connect();
     try {
       const { fields } = await client.query('select * from public.leave_overview_records() limit 0');
-      // STORY 13.2 (0053): the record's type and whether it draws the allowance.
-      expect(fields.map((field) => field.name)).toEqual(['id', 'member_id', 'during', 'absence_type_id', 'draws_allowance']);
+      // STORY 13.2 (0053): the record's type and whether it draws the allowance. STORY 13.5 (0058): its half.
+      expect(fields.map((field) => field.name)).toEqual(['id', 'member_id', 'during', 'absence_type_id', 'draws_allowance', 'half']);
     } finally {
       await client.end();
     }
@@ -18775,10 +18777,11 @@ describe("an active admin reads the organization's live leave records, and nobod
         const range = response.headers.get('content-range') ?? '';
         expect(range.split('/')[1], `${slug}: the count is not exact`).toBe(String(rows.length));
         for (const row of rows) {
-          expect(Object.keys(row).sort(), `${slug}: a row carries more than its five columns`).toEqual([
+          expect(Object.keys(row).sort(), `${slug}: a row carries more than its six columns`).toEqual([
             'absence_type_id',
             'draws_allowance',
             'during',
+            'half',
             'id',
             'member_id',
           ]);
@@ -18790,6 +18793,7 @@ describe("an active admin reads the organization's live leave records, and nobod
             during: '[2043-09-10,2043-09-15)',
             absence_type_id: '00000000-0000-0000-0000-000000000001',
             draws_allowance: true,
+            half: null,
           },
         ]);
       } finally {
@@ -26119,6 +26123,122 @@ describe('the type is chosen when absence is recorded or requested, and approval
         expect(request.code, `${slug}: a request named ${otherSlug}'s type`).toBe('23503');
         expect(request.message).toContain('leave_requests_absence_type_fkey');
         expect(await typeOfRecord(client, live), `${slug}: a refused amend changed the record`).toBe(ANNUAL_LEAVE);
+      });
+    },
+  );
+});
+
+// ------------------------------------------------ story 13.5: the half day
+
+/**
+ * STORY 13.5 (`0058`). A leave record may be a half day: `half` is `FIRST` or
+ * `SECOND` on a one-date range, or null for a whole day. An admin names it on
+ * insert, `amend_leave_record` takes `p_half` (null a whole day), and two
+ * halves on one date are refused by the exclusion like any overlap. What a
+ * half day costs is `packages/domain`'s (AD-7). Every case runs in a
+ * rolled-back transaction.
+ */
+async function halfOfRecord(client: Client, id: string): Promise<string | null | undefined> {
+  const { rows } = await client.query<{ half: string | null }>('select half from leave_records where id = $1', [id]);
+  return rows[0]?.half;
+}
+
+describe('a leave record may be a half day of one date, named on insert and on amend (story 13.5)', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    "stores a $fixture admin's half day, reads it back, and amends it to the other half and to a whole day",
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+
+        await actAs(client, owner.authUserId, organization);
+        const { rows } = await client.query<{ id: string }>(
+          `insert into leave_records (organization_id, member_id, during, half)
+           values ($1, $2, '[2046-05-04,2046-05-04]'::daterange, 'FIRST')
+           returning id::text as id`,
+          [organization, self.id],
+        );
+        const original = rows[0]?.id;
+        if (original === undefined) throw new Error('the leave record insert returned no id');
+        const { rows: overview } = await client.query<{ half: string | null }>(
+          'select half from public.leave_overview_records() where id = $1',
+          [original],
+        );
+        // A half-only amend: the same date, the other half.
+        const { rows: second } = await client.query<{ id: string | null }>(
+          'select public.amend_leave_record($1::uuid, $2::date, $3::date, null, $4)::text as id',
+          [original, '2046-05-04', '2046-05-04', 'SECOND'],
+        );
+        const other = second[0]?.id ?? '';
+        // Four arguments, as an old cached client: a whole day.
+        const { rows: whole } = await client.query<{ id: string | null }>(
+          'select public.amend_leave_record($1::uuid, $2::date, $3::date, null)::text as id',
+          [other, '2046-05-04', '2046-05-04'],
+        );
+        await actAsOwner(client);
+
+        expect(overview.map((row) => row.half), `${slug}: the overview lost the half`).toEqual(['FIRST']);
+        expect(await halfOfRecord(client, original), slug).toBe('FIRST');
+        expect(await halfOfRecord(client, other), `${slug}: the amend did not take the half`).toBe('SECOND');
+        expect(await halfOfRecord(client, whole[0]?.id ?? ''), `${slug}: an amend naming no half kept one`).toBeNull();
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture half day on more than one date, a half that is neither, and a second half on the same date',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+
+        await actAs(client, owner.authUserId, organization);
+        const twoDates = await refusedThenContinue(client, () =>
+          client.query(
+            `insert into leave_records (organization_id, member_id, during, half)
+             values ($1, $2, '[2046-05-04,2046-05-05]'::daterange, 'FIRST')`,
+            [organization, self.id],
+          ),
+        );
+        const neither = await refusedThenContinue(client, () =>
+          client.query(
+            `insert into leave_records (organization_id, member_id, during, half)
+             values ($1, $2, '[2046-05-04,2046-05-04]'::daterange, 'MIDDLE')`,
+            [organization, self.id],
+          ),
+        );
+        await client.query(
+          `insert into leave_records (organization_id, member_id, during, half)
+           values ($1, $2, '[2046-06-01,2046-06-01]'::daterange, 'FIRST')`,
+          [organization, self.id],
+        );
+        const bothHalves = await refusedThenContinue(client, () =>
+          client.query(
+            `insert into leave_records (organization_id, member_id, during, half)
+             values ($1, $2, '[2046-06-01,2046-06-01]'::daterange, 'SECOND')`,
+            [organization, self.id],
+          ),
+        );
+        const live = await insertLeave(client, { organization, member: self.id, during: '[2046-08-03,2046-08-05]' });
+        const amendedOverRange = await refusedThenContinue(client, () =>
+          client.query('select public.amend_leave_record($1::uuid, $2::date, $3::date, null, $4)', [
+            live,
+            '2046-08-03',
+            '2046-08-05',
+            'FIRST',
+          ]),
+        );
+        await actAsOwner(client);
+
+        expect(twoDates.code, `${slug}: a half day on two dates`).toBe('23514');
+        expect(twoDates.message).toContain('leave_records_half_one_date');
+        expect(neither.code, `${slug}: a half that is neither`).toBe('23514');
+        expect(neither.message).toContain('leave_records_half_check');
+        expect(bothHalves.code, `${slug}: two halves on one date`).toBe('23P01');
+        expect(amendedOverRange.code, `${slug}: an amend to a half day over three dates`).toBe('23514');
+        expect(await halfOfRecord(client, live), `${slug}: a refused amend changed the record`).toBeNull();
       });
     },
   );

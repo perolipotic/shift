@@ -1,4 +1,4 @@
-import { shortStaffedShiftsOf } from '@shift/domain';
+import { peopleAtWorkOn, shortStaffedShiftsOf, type StaffingInput } from '@shift/domain';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { ANNUAL_LEAVE_ID } from '@/features/absence-types/services/list';
@@ -121,6 +121,17 @@ describe.each(STAFFING_FIXTURES)('$name', (fixture) => {
     expect(input.leaveRecords).toEqual([{ id: ONE, memberId: member(1), from: day.date, to: day.date }]);
   });
 
+  it('keeps a half day\'s half, so the member counts at work (story 13.5, R10.1)', () => {
+    const input = staffingInputOf(four, [{ id: ONE, memberId: member(1), from: day.date, to: day.date, half: 'FIRST' }]);
+
+    expect(input.leaveRecords).toEqual([{ id: ONE, memberId: member(1), from: day.date, to: day.date, half: 'FIRST' }]);
+    const atWork = (records: StaffingInput['leaveRecords']): number | undefined =>
+      peopleAtWorkOn({ ...input, leaveRecords: records }, fixture.team, day.date)?.atWork;
+
+    expect(atWork(input.leaveRecords)).toBe(atWork([]));
+    expect(atWork([{ id: ONE, memberId: member(1), from: day.date, to: day.date }])).toBe((atWork([]) ?? 0) - 1);
+  });
+
   it('leave makes short: a team of 4, one already on leave, a second recorded', () => {
     const report = leaveChangeReportOf(four, leaveRead([leaveRow(ONE, member(1), day.date, day.date)]), {
       memberId: member(2),
@@ -153,6 +164,35 @@ describe.each(STAFFING_FIXTURES)('$name', (fixture) => {
     );
 
     expect(known(report).rows.map((row) => row.atWork)).toEqual([2]);
+  });
+
+  it('a half day leaves the member at work (R10.1, story 13.5): a team at its minimum gets no new shortfall', () => {
+    // Four on the team, one already off: three at work, exactly the minimum.
+    const read = leaveRead([leaveRow(ONE, member(1), day.date, day.date)]);
+    const halfWindow = { ...dayWindowOf(day.date), half: 'FIRST' as const };
+    const added = leaveChangeReportOf(four, read, { memberId: member(2), targetId: null, candidateId: LEAVE_CANDIDATE_ID, next: halfWindow });
+    // A whole day of member 2 elsewhere, amended to a half day on the date.
+    const elsewhere = '2026-12-20';
+    const amended = leaveChangeReportOf(
+      four,
+      leaveRead([leaveRow(ONE, member(1), day.date, day.date), leaveRow(TWO, member(2), elsewhere, elsewhere)]),
+      { memberId: member(2), targetId: TWO, candidateId: LEAVE_CANDIDATE_ID, next: halfWindow },
+    );
+    // A whole day on the date, amended to a half day of the same date.
+    const halved = leaveChangeReportOf(
+      four,
+      leaveRead([leaveRow(ONE, member(1), day.date, day.date), leaveRow(TWO, member(2), day.date, day.date)]),
+      { memberId: member(2), targetId: TWO, candidateId: LEAVE_CANDIDATE_ID, next: halfWindow },
+    );
+
+    expect(known(added).rows).toEqual([]);
+    expect(known(amended).rows).toEqual([]);
+    expect(known(halved).rows).toEqual([]);
+    // The same new record as a whole day does make it short.
+    expect(
+      known(leaveChangeReportOf(four, read, { memberId: member(2), targetId: null, candidateId: LEAVE_CANDIDATE_ID, next: dayWindowOf(day.date) }))
+        .rows,
+    ).toHaveLength(1);
   });
 
   it('one on leave of four is not short, and a shift short before and after is no row', () => {

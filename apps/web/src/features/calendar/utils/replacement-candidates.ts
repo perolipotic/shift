@@ -144,6 +144,8 @@ export function replacementCandidatesOf(
     if (one.teamId === teamId && one.date === date && one.memberInId !== null) excluded.add(one.memberInId);
   }
 
+  // Every record groups a candidate as on leave, a half day's too: they are
+  // away for half the shift, a conservative grouping never a gate (R6.6, story 13.5).
   const onLeave = new Set(
     leave.filter((record) => record.from <= date && date <= record.to).map((record) => record.memberId),
   );

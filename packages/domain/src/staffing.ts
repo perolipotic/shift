@@ -14,8 +14,8 @@
  * whose leave record covers the date. A member a replacement took off is no
  * longer on the list, so their leave is never subtracted twice; a replacement
  * who is on leave themselves is subtracted. Every leave record counts as an
- * absence, whatever its type. (A half-day record, which counts as at work, does
- * not exist until story 13.5; `deferred-work.md` hands that clause to it.)
+ * absence, whatever its type, except a half-day record (story 13.5, R10.1): a
+ * member on a half day counts as at work.
  *
  * SHORT-STAFFED (R10.2): the scheduled shift type is a working one AND the
  * people at work number fewer than `minimumMembers`. A non-working day, a team
@@ -34,7 +34,7 @@
 
 import { checkDate } from './calendar.js';
 import type { CollisionLeaveRecord } from './collisions.js';
-import { checkRange } from './leave.js';
+import { checkRange, isHalfDay } from './leave.js';
 import { rosterOn } from './roster.js';
 import { adjacentMonth, monthOf, scheduleOfMonth, type ScheduleInput } from './schedule.js';
 
@@ -112,6 +112,8 @@ function leaveIndexOf(records: readonly CollisionLeaveRecord[]): LeaveIndex {
     }
     ids.add(record.id);
     checkRange(`leave record ${JSON.stringify(record.id)}`, record);
+    // A member on a half day is at work (R10.1, story 13.5).
+    if (isHalfDay(record)) continue;
     const known = byMember.get(record.memberId);
     if (known === undefined) byMember.set(record.memberId, [record]);
     else known.push(record);

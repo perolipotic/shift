@@ -194,6 +194,16 @@ describe('Waits: what the swap does, a warning and never a gate (R9.3)', () => {
     expect(screen.preview).toMatchObject({ onLeave: [], overlaps: [], shortStaffed: null });
   });
 
+  it('counts a half-day proposer\'s worked half alone: −6 h for them, +12 h for the colleague (story 13.5)', () => {
+    const half = { ...leaveRowOf('leave-ivo', IVO, '2026-09-13', '2026-09-14'), half: 'FIRST' };
+    const screen = waitingOf(swapDecisionOf(sourcesOf(undefined, { records: answered([half]) }), 'swap-1', NOW));
+
+    expect(screen.preview?.hours).toEqual([
+      { memberId: IVO, month: '2026-09', deltaMinutes: -TWELVE_HOURS / 2, name: 'Ivo Horvat' },
+      { memberId: KARLO, month: '2026-09', deltaMinutes: TWELVE_HOURS, name: 'Karlo Jelić' },
+    ]);
+  });
+
   it('with a return shift: both dates, the proposer back on the colleague\'s shift, and the hours netting out', () => {
     const screen = waitingOf(
       swapDecisionOf(sourcesOf([swapRowOf({ return_team_id: TEAM_A, return_date: '2026-09-14' })]), 'swap-1', NOW),

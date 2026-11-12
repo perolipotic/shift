@@ -4,6 +4,7 @@ import { monthOf, type CollisionResolution } from '@shift/domain';
 import type { CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { memberMonthDeltasOf, type MemberMonthDelta } from '@/features/calendar/utils/change-preview';
 import type { OpenSwapProposal } from '@/features/calendar/utils/day-detail';
+import { NO_LEAVE_RECORDS, type LeaveRecordsByMember } from '@/features/hours/services/hours-conflicts';
 import {
   SWAP_REQUESTS_TABLE,
   swapAppliedOf,
@@ -400,6 +401,8 @@ export function swapConsequenceOf(
   snapshot: CalendarSnapshot,
   swap: MySwap,
   leaveKeys: readonly CollisionResolution[],
+  /** Story 13.5: the viewer's own leave records, by member, whose half days split their shift's hours; none by default. */
+  leaveRecords: LeaveRecordsByMember = NO_LEAVE_RECORDS,
 ): SwapConsequence | null {
   try {
     const applied = swapAppliedOf(snapshot, swap);
@@ -411,7 +414,7 @@ export function swapConsequenceOf(
     if (swap.returnShift !== null) lines.push({ shift: shiftShownOf(snapshot, swap.returnShift), viewerWorks: false });
 
     const months = [...new Set([swap.given.date, ...(swap.returnShift === null ? [] : [swap.returnShift.date])].map(monthOf))].sort();
-    const hours = memberMonthDeltasOf(snapshot, applied.after, [swap.addresseeId], months, () => leaveKeys);
+    const hours = memberMonthDeltasOf(snapshot, applied.after, [swap.addresseeId], months, () => leaveKeys, leaveRecords);
 
     return { lines, hours };
   } catch (cause) {
@@ -460,6 +463,8 @@ export function mySwapRowsOf(
   swaps: readonly MySwap[],
   today: string,
   leaveKeys: readonly CollisionResolution[],
+  /** Story 13.5: the viewer's own leave records, by member, for the consequence's hours; none by default. */
+  leaveRecords: LeaveRecordsByMember = NO_LEAVE_RECORDS,
 ): readonly MySwapRow[] {
   const viewerId = snapshot.viewer.memberId;
   const rows: MySwapRow[] = [];
@@ -485,7 +490,7 @@ export function mySwapRowsOf(
       waitsForViewer: proposed && viewerIsAddressee,
       past,
       stale,
-      consequence: open && viewerIsAddressee && !stale ? swapConsequenceOf(snapshot, swap, leaveKeys) : null,
+      consequence: open && viewerIsAddressee && !stale ? swapConsequenceOf(snapshot, swap, leaveKeys, leaveRecords) : null,
       canAccept: proposed && viewerIsAddressee && !stale && !past,
       canDecline: proposed && viewerIsAddressee,
       canWithdraw: viewerIsAddressee ? swap.status === SWAP_ACCEPTED : open,

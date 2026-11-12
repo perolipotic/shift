@@ -69,7 +69,7 @@ import {
   type OrganizationLeaveRecordsTable,
 } from '@/features/leave/services/leave-list';
 import { useReplacementLinkRefresh } from '@/features/conflicts/hooks/use-replacement-link-refresh';
-import { hoursLeaveKeysOf } from '@/features/hours/services/hours-conflicts';
+import { NO_LEAVE_RECORDS, hoursLeaveKeysOf, hoursLeaveRecordsOf } from '@/features/hours/services/hours-conflicts';
 import { MEMBER_ROLE_KEY } from '@/features/navigation/services/role';
 import { dayStaffingOf } from '@/features/staffing/services/short-staffed';
 import { useMySwapRequestsRead } from '@/features/swaps/hooks/use-my-swaps';
@@ -261,6 +261,21 @@ export function useCalendarScreen(
       return NO_LEAVE_KEYS;
     }
   }, [snapshot, readsResolutions, resolutionsData]);
+  // STORY 13.5: the leave rows already read, by member, so a half day's
+  // shift counts only its worked half in the day detail's hour preview. None
+  // while they are not read, or cannot be trusted (the marks then say so).
+  const leaveRecords = useMemo(() => {
+    if (snapshot === null || leaveData === undefined) return NO_LEAVE_RECORDS;
+
+    try {
+      return hoursLeaveRecordsOf(snapshot, leaveData);
+    } catch (cause) {
+      if (!(cause instanceof RangeError)) throw cause;
+      console.error(cause);
+
+      return NO_LEAVE_RECORDS;
+    }
+  }, [snapshot, leaveData]);
   const loading = state.loading || marksState?.kind === MARKS_LOADING;
   // THE ORGANIZATION'S TODAY, moved at its midnight: a screen left open
   // overnight marks the new day's row and `Ovaj mjesec` target.
@@ -515,6 +530,7 @@ export function useCalendarScreen(
     swapProposed,
     candidateLeave,
     leaveKeys,
+    leaveRecords,
     retry,
     show,
     choose,

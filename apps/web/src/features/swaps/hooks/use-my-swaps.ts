@@ -23,7 +23,9 @@ import {
   type SwapRequestRpc,
   type SwapShiftShown,
 } from '@/features/swaps/services/my-swaps';
-import { swapLeaveKeysOf } from '@/features/swaps/services/swap-proposal';
+import { NO_LEAVE_RECORDS } from '@/features/hours/services/hours-conflicts';
+import { myLeaveRecordsQueryOptions, type MyLeaveRecordsRpc } from '@/features/leave/services/leave-list';
+import { swapLeaveKeysOf, swapLeaveRecordsOf } from '@/features/swaps/services/swap-proposal';
 import { SWAP_REQUEST_WRITE_DEPENDENTS, refreshAfterWrite } from '@/features/teams/services/dependents';
 import { useOrganizationToday } from '@/hooks/organization-today';
 import { ZONE_FROM_CALENDAR } from '@/lib/offline/freshness';
@@ -87,6 +89,11 @@ export function useMySwaps(surfaceKeys: readonly QueryKey[]) {
   const calendarRead = useCalendarSnapshot();
   const swapsRead = useMySwapRequestsRead();
   const resolutionsRead = useQuery(myConflictResolutionsQueryOptions(() => supabaseClient() as unknown as MyConflictResolutionsRpc));
+  // STORY 13.5: the viewer's own leave, under the shared key *Danas* and
+  // *Godišnji* read it by, so a half day counts only its worked half in the
+  // consequence. Never part of the card's freshness: pending or failed, the
+  // card is drawn and its hours count whole shifts.
+  const ownLeaveRead = useQuery(myLeaveRecordsQueryOptions(() => supabaseClient() as unknown as MyLeaveRecordsRpc));
   const { answerFor } = useSnapshotFreshness(
     surfaceKeys,
     [
@@ -104,6 +111,12 @@ export function useMySwaps(surfaceKeys: readonly QueryKey[]) {
     () => (snapshot === null ? { keys: [], known: false } : swapLeaveKeysOf(snapshot, resolutionRows)),
     [snapshot, resolutionRows],
   );
+  const ownLeaveData = ownLeaveRead.data;
+  const ownLeaveFailed = ownLeaveRead.isError;
+  const leaveRecords = useMemo(
+    () => (snapshot === null ? NO_LEAVE_RECORDS : swapLeaveRecordsOf(snapshot, { data: ownLeaveData, isError: ownLeaveFailed })),
+    [snapshot, ownLeaveData, ownLeaveFailed],
+  );
   const rows = useMemo(() => {
     if (snapshot === null || today === null || swapRows === undefined) return NO_ROWS;
 
@@ -112,8 +125,8 @@ export function useMySwaps(surfaceKeys: readonly QueryKey[]) {
 
     if (swaps === null) return NO_ROWS;
 
-    return mySwapRowsOf(snapshot, swaps, today, leave.keys);
-  }, [snapshot, today, swapRows, leave.keys]);
+    return mySwapRowsOf(snapshot, swaps, today, leave.keys, leaveRecords);
+  }, [snapshot, today, swapRows, leave.keys, leaveRecords]);
   const acting = useRef(false);
   /** The swap whose action is in flight: its row alone reads busy; cleared in `finally`. */
   const [pendingId, setPendingId] = useState<string | null>(null);

@@ -178,6 +178,22 @@ describe.each(FIXTURES)('people at work under $fixture (R10.1, R10.2)', (fx) => 
     expect(peopleAtWorkOn(input, teamId, date)?.atWork).toBe(3);
   });
 
+  it('a member on a half day counts as at work (story 13.5, R10.1)', () => {
+    const half = inputOf(fx, {
+      leaveRecords: [{ id: 'h', memberId: memberIdOf(teamId, 0), from: date, to: date, half: 'FIRST' }],
+    });
+    expect(peopleAtWorkOn(half, teamId, date)).toEqual({ shiftTypeId, atWork: TEAM_SIZE });
+    // Minimum 3, three left after a whole day off, one of them on a half day: 3 at work, not short-staffed.
+    const threeLeft = inputOf(fx, {
+      leaveRecords: [
+        leave('l', memberIdOf(teamId, 1), date),
+        { id: 'h', memberId: memberIdOf(teamId, 0), from: date, to: date, half: 'SECOND' },
+      ],
+    });
+    expect(peopleAtWorkOn(threeLeft, teamId, date)?.atWork).toBe(3);
+    expect(shortStaffedShiftsOf(threeLeft, date, date)).toEqual([]);
+  });
+
   it('a non-working day is never short-staffed, even with nobody at work', () => {
     const off = offDayOf(fx);
     const input = inputOf(fx, { members: [], minimumMembers: 99 });

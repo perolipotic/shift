@@ -1,6 +1,10 @@
 import {
-  leaveDaysOfMonth,
+  halfFieldOf,
+  leaveDayWeightsOfMonth,
   memberHoursOfMonth,
+  type HalfDay,
+  type LeaveDayWeight,
+  type LeaveRange,
   type Collision,
   type CollisionResolution,
   type MemberHours,
@@ -28,6 +32,7 @@ import { durationMessageKey } from '@/features/hour-bands/services/list';
 import {
   HOURS_CONFLICTS_LOADING,
   HOURS_CONFLICTS_UNAVAILABLE,
+  NO_LEAVE_RECORDS,
   conflictCountOf,
   leaveRecordsIn,
   leaveShiftsOf,
@@ -112,6 +117,11 @@ export type HoursFailure = typeof HOURS_UNAVAILABLE;
  * for that removal and deliberately shown nowhere, since leave is counted in
  * days (human decision 2026-10-10).
  *
+ * HALF DAYS (story 13.5): the member's half-day records among `leaveRecords`
+ * (theirs or every member's, by member) split their shift at its midpoint —
+ * the worked half counts by intersection, the absent half as leave minutes.
+ * None given, no shift is split.
+ *
  * The organization's table works the snapshot-wide part out once
  * ({@link hoursSnapshotInputOf}) and passes it as `shared` for every member
  * (Epic 4 retro, C8); it is the same value either way.
@@ -121,6 +131,7 @@ export function memberHoursInputOf(
   history: CalendarMemberHistory = snapshot.viewer,
   leaveKeys: readonly CollisionResolution[] = [],
   shared: HoursSnapshotInput = hoursSnapshotInputOf(snapshot),
+  leaveRecords: LeaveRecordsByMember = NO_LEAVE_RECORDS,
 ): MemberHoursInput {
   const { bands, shiftTypes, ...schedule } = shared;
 
@@ -129,7 +140,21 @@ export function memberHoursInputOf(
     bands,
     shiftTypes,
     leaveShifts: leaveShiftsOf(leaveKeys, history.memberId),
+    halfDays: halfDaysOf(leaveRecordsIn(leaveRecords, history.memberId)),
   };
+}
+
+/** The half days among one member's records (story 13.5), as the hours split them. */
+export function halfDaysOf(records: readonly LeaveRange[]): readonly HalfDay[] {
+  const halfDays: HalfDay[] = [];
+
+  for (const record of records) {
+    const { half } = halfFieldOf(record);
+
+    if (half !== undefined) halfDays.push({ date: record.from, half });
+  }
+
+  return halfDays;
 }
 
 /** The part of {@link memberHoursInputOf} that is the same for every member. */
@@ -170,7 +195,7 @@ export function figureIsEmpty(figure: HoursFigure): boolean {
   return figure.values.hours === 0 && figure.values.minutes === 0;
 }
 
-/** A count of leave days as `t()` renders it: `1 dan`, `3 dana`. */
+/** A count of leave days as `t()` renders it: `1 dan`, `3 dana`, `0,5 dana` (story 13.5). */
 // A type alias, not an interface: its values go to `t()`.
 export type LeaveDaysValues = { readonly count: number };
 
@@ -272,7 +297,8 @@ export function leaveColumnNameOf(column: LeaveColumn): string {
 
 /**
  * The member's charged leave dates of `month` (`YYYY-MM`) in each of
- * `columns`, in the same order: the domain's `leaveDaysOfMonth` over the
+ * `columns`, in the same order, each with what it costs — 1, or 0.5 for a
+ * half day (story 13.5): the domain's `leaveDayWeightsOfMonth` over the
  * member's records of that column's types and the calendar's schedule recipe
  * (`memberScheduleInputOf`), which the hours' `memberHoursInputOf` builds on.
  * A record of a drawing type is counted in its type's column, any other in
@@ -281,7 +307,7 @@ export function leaveColumnNameOf(column: LeaveColumn): string {
  *
  * @throws RangeError for a record whose type the snapshot does not hold, or
  *   whose drawing flag the snapshot's type contradicts, and on any
- *   precondition of `leaveDaysOfMonth`.
+ *   precondition of `leaveDayWeightsOfMonth`.
  */
 export function memberLeaveDatesByColumnOf(
   snapshot: CalendarSnapshot,
@@ -290,7 +316,7 @@ export function memberLeaveDatesByColumnOf(
   month: string,
   columns: readonly LeaveColumn[],
   shared?: SnapshotScheduleInput,
-): readonly (readonly string[])[] {
+): readonly (readonly LeaveDayWeight[])[] {
   const records = leaveRecordsIn(leaveRecords, history.memberId);
 
   if (records.length === 0) return columns.map(() => []);
@@ -322,7 +348,7 @@ export function memberLeaveDatesByColumnOf(
   return columns.map((column) => {
     const group = groups.get(column.key) ?? [];
 
-    return group.length === 0 ? [] : leaveDaysOfMonth(input, group, month);
+    return group.length === 0 ? [] : leaveDayWeightsOfMonth(input, group, month);
   });
 }
 
@@ -356,7 +382,12 @@ export function memberLeaveCellsOf(
 ): readonly HoursLeaveCell[] {
   const dates = memberLeaveDatesByColumnOf(snapshot, history, leaveRecords, month, columns, shared);
 
-  return columns.map((column, index) => leaveCellOf(column, dates[index]?.length ?? 0));
+  return columns.map((column, index) => leaveCellOf(column, leaveDaysIn(dates[index] ?? [])));
+}
+
+/** The leave days of charged dates: their weights summed, 0.5 for each half day (story 13.5). */
+export function leaveDaysIn(dates: readonly LeaveDayWeight[]): number {
+  return dates.reduce((sum, date) => sum + date.days, 0);
 }
 
 /** One band's row: its name as stored, its hours, and the shifts overlapping it. */
@@ -472,7 +503,7 @@ export function myHoursOf(
 ): MyHoursOutcome {
   return hoursGuarded(() => {
     const month = monthShownOf(search, today);
-    const hours = memberHoursOfMonth(memberHoursInputOf(snapshot, snapshot.viewer, leaveKeys), month);
+    const hours = memberHoursOfMonth(memberHoursInputOf(snapshot, snapshot.viewer, leaveKeys, undefined, leaveRecords), month);
     const conflictCount = conflictCountOf(collisions, snapshot.viewer.memberId, month);
     const leave = memberLeaveCellsOf(snapshot, snapshot.viewer, leaveRecords, month, leaveColumnsOf(snapshot));
 

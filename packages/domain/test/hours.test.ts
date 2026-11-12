@@ -13,6 +13,7 @@ import {
   memberHoursOfMonth,
   memberScheduleOfMonth,
   projectedShiftTypeOn,
+  shiftHalvesOf,
   type HourBand,
   type HoursFigureCode,
   type LeaveShift,
@@ -663,6 +664,104 @@ describe('an accepted-uncovered shift counts as leave, not as work (story 5.4b)'
       { date: '2026-10-05', teamId: alfa },
     ];
     expect(memberHoursOfMonth(fixtureInput(fx, id, { leaveShifts }), MONTH)).toEqual(before);
+  });
+});
+
+describe('a half day splits its shift at the nominal midpoint (story 13.5, R4.12)', () => {
+  const shiftTypes = withVersions(PILOT_SHIFT_TYPES, PILOT_SHIFT_TYPE_VERSIONS);
+
+  it('splits at start + ⌊duration/2⌋: 07:00–19:00 at 13:00, 19:00–07:00 at 01:00, 07:00–07:59 at 29 minutes', () => {
+    expect(shiftHalvesOf(at(7), at(19))).toEqual({
+      first: { startMinute: at(7), durationMinutes: 360 },
+      second: { startMinute: at(13), durationMinutes: 360 },
+      midpointMinute: at(13),
+    });
+    expect(shiftHalvesOf(at(19), at(7)).midpointMinute).toBe(1440 + at(1));
+    const odd = shiftHalvesOf(at(7), at(7) + 59);
+    expect([odd.first.durationMinutes, odd.second.durationMinutes]).toEqual([29, 30]);
+  });
+
+  it('a day shift, FIRST: worked 13:00–19:00 in the bands, 6 h leave minutes, one shift', () => {
+    const input: MemberHoursInput = {
+      ...soloInput(PILOT_HOUR_BANDS, shiftTypes, 'pilot-slobodno', [{ date: '2026-09-10', shiftTypeId: 'pilot-dan' }]),
+      halfDays: [{ date: '2026-09-10', half: 'FIRST' }],
+    };
+    const hours = memberHoursOfMonth(input, MONTH);
+    expect(hours).toEqual({
+      shiftCount: 1,
+      bands: [
+        { bandId: 'pilot-dan', minutes: 360, shiftCount: 1 },
+        { bandId: 'pilot-noc', minutes: 0, shiftCount: 0 },
+      ],
+      unbandedMinutes: 0,
+      totalMinutes: 360,
+      leaveMinutes: 360,
+      untimedShiftCount: 0,
+    });
+    expectInvariant(hours, 'day FIRST');
+    expect(explainMemberHours(input, MONTH, { code: HOURS_FIGURE_LEAVE }).minutes).toBe(360);
+    expect(explainMemberHours(input, MONTH, { code: HOURS_FIGURE_TOTAL }).minutes).toBe(360);
+  });
+
+  it('a night shift, SECOND: worked 19:00–01:00 and absent 01:00–07:00, across midnight, by intersection', () => {
+    const bands: readonly HourBand[] = [
+      { id: 'b-day', name: 'B', startMinute: at(6) },
+      { id: 'b-night', name: 'N', startMinute: at(21) },
+    ];
+    const input: MemberHoursInput = {
+      ...soloInput(bands, shiftTypes, 'pilot-slobodno', [{ date: '2026-09-30', shiftTypeId: 'pilot-noc' }]),
+      halfDays: [{ date: '2026-09-30', half: 'SECOND' }],
+    };
+    const hours = memberHoursOfMonth(input, MONTH);
+    // Worked 19:00–01:00: 19–21 in b-day (120), 21–01 in b-night (240).
+    expect(bandsOf(hours)).toEqual({ 'b-day': [120, 1], 'b-night': [240, 1] });
+    expect(hours).toMatchObject({ shiftCount: 1, totalMinutes: 360, leaveMinutes: 360 });
+    expectInvariant(hours, 'night SECOND');
+    const first = memberHoursOfMonth({ ...input, halfDays: [{ date: '2026-09-30', half: 'FIRST' }] }, MONTH);
+    // Worked 01:00–07:00: 01–06 in b-night (300), 06–07 in b-day (60).
+    expect(bandsOf(first)).toEqual({ 'b-day': [60, 1], 'b-night': [300, 1] });
+  });
+
+  it('odd minutes: 07:00–07:59, FIRST, is absent 29 and worked 30', () => {
+    const input: MemberHoursInput = {
+      ...soloInput(PILOT_HOUR_BANDS, [typeOf('x', at(7), at(7) + 59), offEntry], 'off', [{ date: '2026-09-10', shiftTypeId: 'x' }]),
+      halfDays: [{ date: '2026-09-10', half: 'FIRST' }],
+    };
+    expect(memberHoursOfMonth(input, MONTH)).toMatchObject({ totalMinutes: 30, leaveMinutes: 29, shiftCount: 1 });
+  });
+
+  it('counts the worked half whether or not the collision was accepted as uncovered', () => {
+    const base: MemberHoursInput = {
+      ...soloInput(PILOT_HOUR_BANDS, shiftTypes, 'pilot-slobodno', [{ date: '2026-09-10', shiftTypeId: 'pilot-dan' }]),
+      halfDays: [{ date: '2026-09-10', half: 'SECOND' }],
+    };
+    const accepted = memberHoursOfMonth({ ...base, leaveShifts: [{ date: '2026-09-10', teamId: 't' }] }, MONTH);
+    expect(accepted).toEqual(memberHoursOfMonth(base, MONTH));
+    expect(accepted).toMatchObject({ totalMinutes: 360, leaveMinutes: 360 });
+  });
+
+  it('an untimed working shift stays untimed: no leave minutes', () => {
+    const later = typeOf('x', at(7), at(19), '2026-09-15');
+    const base = soloInput(PILOT_HOUR_BANDS, [later, offEntry], 'off', [{ date: '2026-09-10', shiftTypeId: 'x' }]);
+    const hours = memberHoursOfMonth({ ...base, halfDays: [{ date: '2026-09-10', half: 'FIRST' }] }, MONTH);
+    expect(hours).toEqual(memberHoursOfMonth(base, MONTH));
+    expect(hours).toMatchObject({ untimedShiftCount: 1, leaveMinutes: 0 });
+  });
+
+  it('changes nothing on a date with no working shift, and with no half days at all', () => {
+    const base = soloInput(PILOT_HOUR_BANDS, shiftTypes, 'pilot-slobodno', [{ date: '2026-09-10', shiftTypeId: 'pilot-dan' }]);
+    const plain = memberHoursOfMonth(base, MONTH);
+    expect(memberHoursOfMonth({ ...base, halfDays: [] }, MONTH)).toEqual(plain);
+    expect(memberHoursOfMonth({ ...base, halfDays: [{ date: '2026-09-11', half: 'FIRST' }] }, MONTH)).toEqual(plain);
+  });
+
+  it('refuses two half days on one date', () => {
+    const base = soloInput(PILOT_HOUR_BANDS, shiftTypes, 'pilot-slobodno', [{ date: '2026-09-10', shiftTypeId: 'pilot-dan' }]);
+    const halfDays = [
+      { date: '2026-09-10', half: 'FIRST' as const },
+      { date: '2026-09-10', half: 'SECOND' as const },
+    ];
+    expect(() => memberHoursOfMonth({ ...base, halfDays }, MONTH)).toThrow(RangeError);
   });
 });
 

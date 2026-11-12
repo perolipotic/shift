@@ -1,4 +1,4 @@
-import { leaveBalanceOf, leaveCostOf, leavePreviewOf, type LeavePreview, type LeaveRange } from '@shift/domain';
+import { LEAVE_HALF_FIRST, LEAVE_HALF_SECOND, leaveBalanceOf, leaveCostOf, leavePreviewOf, type LeavePreview, type LeaveRange } from '@shift/domain';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { ANNUAL_LEAVE_ID } from '@/features/absence-types/services/list';
@@ -24,6 +24,18 @@ import {
   LEAVE_RANGE_REVERSED,
   LEAVE_RANGE_TOO_LONG,
   LEAVE_RANGE_UNCHANGED,
+  LEAVE_HALF_FIELD,
+  LEAVE_HALF_HINT_ID,
+  leaveHalfSwitchDescribedByOf,
+  LEAVE_HALF_REFUSED,
+  LEAVE_HALF_UNCHOSEN,
+  LEAVE_WHOLE_DAY,
+  leaveCostHalfMessageKey,
+  leaveHalfChoiceOf,
+  leaveHalfMessageKey,
+  leaveHalfOfferedOf,
+  leaveHalfOptionsOf,
+  leaveSentHalfOf,
   LEAVE_READY,
   LEAVE_REASON_ID,
   LEAVE_RECORD_ACTION,
@@ -939,8 +951,8 @@ describe('the records list', () => {
       field: LEAVE_FROM_FIELD,
     });
     expect(leaveReasonMessageKey(LEAVE_RANGE_UNCHANGED)).toBe('ljudi.leaveRecord.unchanged');
-    // STORY 13.2b: a type-only change is a change, so the line names both.
-    expect(t('ljudi.leaveRecord.unchanged')).toBe('Raspon i vrsta jednaki su upisanima. Promijeni datum ili vrstu odsutnosti.');
+    // STORY 13.2b: a type-only change is a change, so the line names both; story 13.5 adds the half.
+    expect(t('ljudi.leaveRecord.unchanged')).toBe('Raspon, vrsta i dio dana jednaki su upisanima. Promijeni datum, vrstu odsutnosti ili dio dana.');
     // A new record of the same range is no amend: it previews, and overlaps.
     expect(leavePreviewStateOf(baseOf([WORKED]).input, WORKED.from, WORKED.to, ANNUAL).kind).toBe(LEAVE_PREVIEW_READY);
   });
@@ -1475,5 +1487,142 @@ describe('the absence type', () => {
     expect(t('organization.absenceTypes.drawsHint')).toBe(
       'Ako promijeniš troši li ova vrsta dane godišnjeg, preostali dani svih članova ponovno se izračunavaju, i za već upisane odsutnosti.',
     );
+  });
+});
+
+describe('the half day (story 13.5)', () => {
+  function baseOf(records: readonly (LeaveRange | LeaveRecord)[] = []) {
+    return readyOf(memberLeaveBaseOf(sourcesOf(pilot, { records: recordsOf(records) }), VIEWER_MEMBER, NOW));
+  }
+
+  /** 2026-09-10, the viewer's Dan 07:00–19:00, recorded as its first half. */
+  const HALF: LeaveRecord = { ...ANNUAL_RECORD, id: 'record-half', from: '2026-09-10', to: '2026-09-10', half: LEAVE_HALF_FIRST };
+
+  it('is offered while Od = Do, and a range of more than one date sends no half', () => {
+    expect(leaveHalfOfferedOf('2026-09-10', '2026-09-10')).toBe(true);
+    expect(leaveHalfOfferedOf('2026-09-10', '2026-09-11')).toBe(false);
+    expect(leaveHalfOfferedOf('', '')).toBe(false);
+    expect(leaveSentHalfOf('2026-09-10', '2026-09-11', { on: true, half: LEAVE_HALF_FIRST })).toBeNull();
+    expect(leaveSentHalfOf('2026-09-10', '2026-09-10', { on: true, half: LEAVE_HALF_FIRST })).toBe(LEAVE_HALF_FIRST);
+    expect(leaveSentHalfOf('2026-09-10', '2026-09-10', LEAVE_WHOLE_DAY)).toBeNull();
+  });
+
+  it('previews 0,5 dana and the balance after, the range carrying its half', () => {
+    const base = baseOf();
+    const state = leavePreviewStateOf(base.input, '2026-09-10', '2026-09-10', ANNUAL, null, { on: true, half: LEAVE_HALF_SECOND });
+
+    if (state.kind !== LEAVE_PREVIEW_READY) throw new Error(state.kind);
+
+    expect(state.range).toEqual({ from: '2026-09-10', to: '2026-09-10', drawsAllowance: true, half: LEAVE_HALF_SECOND });
+    expect(state.preview.costDays).toBe(0.5);
+    expect(state.preview.balanceAfterDays).toBe(base.balance.balanceDays - 0.5);
+    expect(t('count.days', { count: state.preview.costDays })).toBe('0,5 dana');
+  });
+
+  it('refuses the switch on with no half chosen, naming the half group', () => {
+    expect(leavePreviewStateOf(baseOf().input, '2026-09-10', '2026-09-10', ANNUAL, null, { on: true, half: null })).toEqual({
+      kind: LEAVE_PREVIEW_REASON,
+      reason: LEAVE_HALF_UNCHOSEN,
+      field: LEAVE_HALF_FIELD,
+    });
+    expect(leaveReasonMessageKey(LEAVE_HALF_UNCHOSEN)).toBe('ljudi.leaveRecord.halfUnchosen');
+  });
+
+  it('refuses a half day on a date with no working shift', () => {
+    // 2026-09-12 is the viewer's Slobodno.
+    expect(leavePreviewStateOf(baseOf().input, '2026-09-12', '2026-09-12', ANNUAL, null, { on: true, half: LEAVE_HALF_FIRST })).toEqual({
+      kind: LEAVE_PREVIEW_REASON,
+      reason: LEAVE_HALF_REFUSED,
+      field: LEAVE_HALF_FIELD,
+    });
+    expect(leaveReasonMessageKey(LEAVE_HALF_REFUSED)).toBe('ljudi.leaveRecord.halfRefused');
+  });
+
+  it('refuses a date with no working shift before asking for a half: the switch on, no half chosen', () => {
+    expect(leavePreviewStateOf(baseOf().input, '2026-09-12', '2026-09-12', ANNUAL, null, { on: true, half: null })).toEqual({
+      kind: LEAVE_PREVIEW_REASON,
+      reason: LEAVE_HALF_REFUSED,
+      field: LEAVE_HALF_FIELD,
+    });
+  });
+
+  it('reports a domain refusal of the half day against the half field, logged', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const base = baseOf().input;
+    const broken = { ...base, input: { ...base.input, statuses: [{ active: true, effectiveFrom: 'not a date' }] } };
+
+    expect(leavePreviewStateOf(broken, '2026-09-10', '2026-09-10', ANNUAL, null, { on: true, half: LEAVE_HALF_FIRST })).toEqual({
+      kind: LEAVE_PREVIEW_REASON,
+      reason: LEAVE_HALF_REFUSED,
+      field: LEAVE_HALF_FIELD,
+    });
+    expect(error).toHaveBeenCalled();
+  });
+
+  it('marks the switch with the reason while it carries a refusal, else its hint alone', () => {
+    expect(leaveHalfSwitchDescribedByOf(false)).toBe(LEAVE_HALF_HINT_ID);
+    expect(leaveHalfSwitchDescribedByOf(true)).toBe(`${LEAVE_HALF_HINT_ID} ${LEAVE_REASON_ID}`);
+  });
+
+  it('offers both cards with no times when the snapshot holds no version of the shift’s type for the date', () => {
+    const input = baseOf().input.input;
+    const untimed = { ...pilot, types: pilot.types.map((type) => ({ ...type, versions: [] })) };
+    const typeless = { ...pilot, types: [] };
+
+    for (const snapshot of [untimed, typeless]) {
+      expect(leaveHalfOptionsOf(snapshot, input, '2026-09-10')).toEqual([
+        { half: LEAVE_HALF_FIRST, times: null },
+        { half: LEAVE_HALF_SECOND, times: null },
+      ]);
+    }
+  });
+
+  it('ignores a half chosen before the range grew past one date: a whole range', () => {
+    const state = leavePreviewStateOf(baseOf().input, '2026-09-10', '2026-09-14', ANNUAL, null, { on: true, half: LEAVE_HALF_FIRST });
+
+    if (state.kind !== LEAVE_PREVIEW_READY) throw new Error(state.kind);
+
+    expect(state.range).toEqual({ from: '2026-09-10', to: '2026-09-14', drawsAllowance: true });
+    expect(state.preview.costDays).toBe(3);
+  });
+
+  it('treats an amend that changes only the half, or only to a whole day, as a change', () => {
+    const base = baseOf([HALF]);
+
+    expect(leavePreviewStateOf(base.input, HALF.from, HALF.to, ANNUAL, HALF, leaveHalfChoiceOf(HALF))).toMatchObject({
+      reason: LEAVE_RANGE_UNCHANGED,
+    });
+    expect(leavePreviewStateOf(base.input, HALF.from, HALF.to, ANNUAL, HALF, { on: true, half: LEAVE_HALF_SECOND }).kind).toBe(
+      LEAVE_PREVIEW_READY,
+    );
+    expect(leavePreviewStateOf(base.input, HALF.from, HALF.to, ANNUAL, HALF, LEAVE_WHOLE_DAY).kind).toBe(LEAVE_PREVIEW_READY);
+    expect(leaveHalfChoiceOf(HALF)).toEqual({ on: true, half: LEAVE_HALF_FIRST });
+    expect(leaveHalfChoiceOf(WORKED)).toEqual(LEAVE_WHOLE_DAY);
+  });
+
+  it('costs a half-day record 0.5 in the list and the balance, and names its half', () => {
+    const base = baseOf([HALF, { from: '2026-09-14', to: '2026-09-14' }]);
+
+    expect(base.rows.map((row) => row.costDays)).toEqual([0.5, 1]);
+    expect(base.balance).toMatchObject({ usedDays: 1.5, balanceDays: 18.5 });
+    expect(base.balance.balanceDays).toBe(base.balance.allowanceDays + base.balance.carriedDays - base.balance.usedDays);
+    expect(leaveCostHalfMessageKey(HALF)).toBe('ljudi.leaveRecord.costHalfFirst');
+    expect(leaveCostHalfMessageKey(WORKED)).toBeNull();
+    expect(t('ljudi.leaveRecord.costHalfFirst', { days: t('count.days', { count: 0.5 }) })).toBe('0,5 dana (prvi dio smjene)');
+  });
+
+  it('offers the two halves with their times: Dan 07:00–13:00 and 13:00–19:00, Noć across midnight', () => {
+    const input = baseOf().input.input;
+
+    expect(leaveHalfOptionsOf(pilot, input, '2026-09-10')).toEqual([
+      { half: LEAVE_HALF_FIRST, times: { from: '07:00', to: '13:00' } },
+      { half: LEAVE_HALF_SECOND, times: { from: '13:00', to: '19:00' } },
+    ]);
+    expect(leaveHalfOptionsOf(pilot, input, '2026-09-11')).toEqual([
+      { half: LEAVE_HALF_FIRST, times: { from: '19:00', to: '01:00' } },
+      { half: LEAVE_HALF_SECOND, times: { from: '01:00', to: '07:00' } },
+    ]);
+    expect(leaveHalfOptionsOf(pilot, input, '2026-09-12')).toBeNull();
+    expect(leaveHalfMessageKey(LEAVE_HALF_SECOND)).toBe('ljudi.leaveRecord.halfSecond');
   });
 });
