@@ -56,6 +56,17 @@
  * the collisions and staffing that read these records — sees every record,
  * whatever its type.
  *
+ * HALF DAY (story 13.5, R4.12, PO 2026-11-12): a one-date record may carry a
+ * `half`, `FIRST` or `SECOND` of the member's working shift that date. Its
+ * date costs 0.5 leave days wherever a whole date costs 1 — the cost, the
+ * balance, carry-over, the preview and {@link leaveDayWeightsOfMonth} — and
+ * nothing when the date holds no working shift, like a whole day. A half on a
+ * range of more than one date, or a half that is neither, is refused
+ * ({@link checkRange}). Whether the date holds exactly one working shift is
+ * what {@link halfDayShiftOf} answers and {@link checkHalfDay} refuses; a
+ * stored record whose shift a later change removed or doubled is not refused,
+ * only costed. A `half` absent or `null` is a whole day.
+ *
  * Ranges are inclusive `from`–`to` calendar dates, `from <= to`, at most
  * {@link MAX_LEAVE_RANGE_DAYS} days long, and may span months and leave years.
  * Dates are `YYYY-MM-DD` strings: no `Date`, no time zone. Records of one
@@ -69,7 +80,15 @@
 
 import { checkDate, civilDayNumber, dateOfCivilDay } from './calendar.js';
 import { activeOn } from './roster.js';
-import { adjacentMonth, datesOfMonth, memberScheduleOfMonth, monthOf, type MemberScheduleDay, type MemberScheduleInput } from './schedule.js';
+import {
+  adjacentMonth,
+  datesOfMonth,
+  memberScheduleOfMonth,
+  monthOf,
+  type MemberScheduleDay,
+  type MemberScheduleInput,
+  type MemberShift,
+} from './schedule.js';
 
 /**
  * The longest range or record accepted, in days, both ends included: annual
@@ -88,6 +107,41 @@ export interface LeaveRange {
    * is annual leave. Only the balance reads it.
    */
   readonly drawsAllowance?: boolean;
+  /**
+   * The half of the member's working shift a one-date record covers (story
+   * 13.5): absent or `null` is a whole day.
+   */
+  readonly half?: LeaveHalf | null;
+}
+
+/** The first half of a shift: absent from its start to its midpoint (story 13.5). */
+export const LEAVE_HALF_FIRST = 'FIRST';
+/** The second half of a shift: absent from its midpoint to its end (story 13.5). */
+export const LEAVE_HALF_SECOND = 'SECOND';
+
+/** Which half of the shift a Half-day Record covers. */
+export type LeaveHalf = typeof LEAVE_HALF_FIRST | typeof LEAVE_HALF_SECOND;
+
+/** What one charged date of a half-day record costs, in leave days (R4.12). */
+export const HALF_DAY_LEAVE_DAYS = 0.5;
+
+/** Whether a record or range is a Half-day Record: `half` is set (story 13.5). */
+export function isHalfDay(range: LeaveRange): boolean {
+  return range.half !== undefined && range.half !== null;
+}
+
+/**
+ * `{ half }` when the range is a half day, `{}` for a whole day (story 13.5):
+ * what a mapper copying a record's fields spreads to carry its half, so a
+ * whole day never gains a `half` key.
+ */
+export function halfFieldOf(range: LeaveRange): { readonly half?: LeaveHalf } {
+  return range.half === LEAVE_HALF_FIRST || range.half === LEAVE_HALF_SECOND ? { half: range.half } : {};
+}
+
+/** What each charged date of `range` costs: 0.5 for a half day, 1 otherwise. */
+function weightOf(range: LeaveRange): number {
+  return isHalfDay(range) ? HALF_DAY_LEAVE_DAYS : 1;
 }
 
 /** Whether a record or range draws down the allowance: absent means it does (story 13.2). */
@@ -232,8 +286,9 @@ export function isLeaveDay(day: Pick<MemberScheduleDay, 'date' | 'shifts'>, work
  * `index.ts`.
  *
  * @throws RangeError naming `what` when either end is not a calendar
- *   `YYYY-MM-DD`, when `from` is after `to`, or when the range is longer than
- *   {@link MAX_LEAVE_RANGE_DAYS}.
+ *   `YYYY-MM-DD`, when `from` is after `to`, when the range is longer than
+ *   {@link MAX_LEAVE_RANGE_DAYS}, when `half` is set but neither `FIRST` nor
+ *   `SECOND`, or when it is set on a range of more than one date (story 13.5).
  */
 export function checkRange(what: string, range: LeaveRange): void {
   checkDate(`the start of ${what}`, range.from);
@@ -246,6 +301,16 @@ export function checkRange(what: string, range: LeaveRange): void {
     throw new RangeError(
       `${what} runs from ${JSON.stringify(range.from)} to ${JSON.stringify(range.to)}, ${String(days)} days, longer than ${String(MAX_LEAVE_RANGE_DAYS)}`,
     );
+  }
+  if (isHalfDay(range)) {
+    if (range.half !== LEAVE_HALF_FIRST && range.half !== LEAVE_HALF_SECOND) {
+      throw new RangeError(`${what} is half ${JSON.stringify(range.half)}, neither ${LEAVE_HALF_FIRST} nor ${LEAVE_HALF_SECOND}`);
+    }
+    if (days !== 1) {
+      throw new RangeError(
+        `${what} is a half day but runs from ${JSON.stringify(range.from)} to ${JSON.stringify(range.to)}; a half day is one date`,
+      );
+    }
   }
 }
 
@@ -267,11 +332,16 @@ function covers(range: LeaveRange, date: string): boolean {
   return date >= range.from && date <= range.to;
 }
 
-/** The part of `range` inside `year`, or `null` when they share no date. Both already checked. */
+/**
+ * The part of `range` inside `year`, or `null` when they share no date. Both
+ * already checked. It keeps `range`'s half (story 13.5), so a half day's part
+ * still costs half.
+ */
 function intersect(range: LeaveRange, year: LeaveRange): LeaveRange | null {
   const from = range.from > year.from ? range.from : year.from;
   const to = range.to < year.to ? range.to : year.to;
-  return from <= to ? { from, to } : null;
+  if (from > to) return null;
+  return isHalfDay(range) ? { from, to, half: range.half ?? null } : { from, to };
 }
 
 /**
@@ -304,10 +374,13 @@ function leaveDatesCollector(input: MemberScheduleInput): (range: LeaveRange, sk
   };
 }
 
-/** A cost counter over one member's input: the count of {@link leaveDatesCollector}'s dates. */
+/**
+ * A cost counter over one member's input: the count of
+ * {@link leaveDatesCollector}'s dates, each 0.5 for a half day (story 13.5).
+ */
 function costCounter(input: MemberScheduleInput): (range: LeaveRange, skip?: readonly LeaveRange[]) => number {
   const datesOf = leaveDatesCollector(input);
-  return (range, skip) => datesOf(range, skip).length;
+  return (range, skip) => datesOf(range, skip).length * weightOf(range);
 }
 
 /**
@@ -321,9 +394,59 @@ function costCounter(input: MemberScheduleInput): (range: LeaveRange, skip?: rea
  *   {@link memberScheduleOfMonth}.
  */
 export function leaveCostOf(input: MemberScheduleInput, from: string, to: string): number {
-  const range = { from, to };
+  return leaveRangeCostOf(input, { from, to });
+}
+
+/**
+ * What a range or record costs the member (R4.2, R4.12): {@link leaveCostOf}
+ * over its dates, and 0.5 per charged date when it is a half day (story
+ * 13.5). Its type is not read.
+ *
+ * @throws RangeError on any precondition of {@link leaveCostOf}, and on a
+ *   malformed half (see {@link checkRange}).
+ */
+export function leaveRangeCostOf(input: MemberScheduleInput, range: LeaveRange): number {
   checkRange('the leave range', range);
   return costCounter(input)(range);
+}
+
+/**
+ * The one working shift a half day on `date` would cover (story 13.5,
+ * R4.12): the member is active on it and their schedule holds exactly one
+ * working shift that date. `null` when it holds none or more than one, or
+ * the member is inactive — the dates on which a half day is refused.
+ *
+ * @throws RangeError when `date` is not a calendar `YYYY-MM-DD`, and on any
+ *   precondition of {@link memberScheduleOfMonth}.
+ */
+export function halfDayShiftOf(input: MemberScheduleInput, date: string): MemberShift | null {
+  checkDate('the date of the half day', date);
+  if (!activeOn(input.statuses, date)) return null;
+  const day = memberScheduleOfMonth(input, monthOf(date)).find((one) => one.date === date);
+  const working = (day?.shifts ?? []).filter(
+    (shift) => shift.shiftTypeId !== null && input.workingShiftTypeIds.includes(shift.shiftTypeId),
+  );
+  return working.length === 1 ? working[0]! : null;
+}
+
+/**
+ * Refuses a half day being entered (story 13.5, R4.12): a range with a half
+ * whose date does not hold exactly one working shift of an active member
+ * ({@link halfDayShiftOf}). A whole-day range passes unread. The dialog asks
+ * {@link halfDayShiftOf} first, so this throws only when that is bypassed.
+ *
+ * @throws RangeError on any precondition of {@link checkRange} or
+ *   {@link halfDayShiftOf}, and when the half day's date holds no working
+ *   shift or more than one.
+ */
+export function checkHalfDay(input: MemberScheduleInput, range: LeaveRange): void {
+  checkRange('the leave range', range);
+  if (!isHalfDay(range)) return;
+  if (halfDayShiftOf(input, range.from) === null) {
+    throw new RangeError(
+      `a half day on ${JSON.stringify(range.from)} needs exactly one working shift of an active member that date`,
+    );
+  }
 }
 
 /** A `YYYY-MM-DD`-shaped string, a real calendar date or not: what can be placed by string comparison. */
@@ -333,9 +456,9 @@ const DATE_SHAPE = /^\d{4}-\d{2}-\d{2}$/;
  * The member's charged leave dates in `month` (R4.2), in order: every date of
  * a record inside the month on which they are active and that is
  * {@link isLeaveDay}. A record straddling the month counts only its dates
- * inside it, so the months of one record sum to {@link leaveCostOf} over it.
- * The count of a month's leave days is the length; the dates are what explain
- * it.
+ * inside it. Without half days the count of a month's leave days is the
+ * length; a half day's date is listed once and costs 0.5, so a month with one
+ * reads its days from {@link leaveDayWeightsOfMonth}.
  *
  * A record is checked as {@link leaveCostOf} checks a range, whole, whenever
  * it reaches the month. A record whose ends are both `YYYY-MM-DD`-shaped —
@@ -351,10 +474,32 @@ const DATE_SHAPE = /^\d{4}-\d{2}-\d{2}$/;
  *   precondition of {@link memberScheduleOfMonth}.
  */
 export function leaveDaysOfMonth(input: MemberScheduleInput, records: readonly LeaveRange[], month: string): readonly string[] {
+  return leaveDayWeightsOfMonth(input, records, month).map((day) => day.date);
+}
+
+/** One charged leave date and what it costs: 1, or 0.5 for a half day (story 13.5). */
+export interface LeaveDayWeight {
+  readonly date: string;
+  readonly days: number;
+}
+
+/**
+ * {@link leaveDaysOfMonth} with what each date costs (story 13.5): 1, or 0.5
+ * when its record is a half day. The days sum to the month's leave days, and
+ * the months of one record sum to {@link leaveRangeCostOf} over it.
+ *
+ * @throws RangeError on any precondition of {@link leaveDaysOfMonth}, and on
+ *   a malformed half of a record reaching the month.
+ */
+export function leaveDayWeightsOfMonth(
+  input: MemberScheduleInput,
+  records: readonly LeaveRange[],
+  month: string,
+): readonly LeaveDayWeight[] {
   const dates = datesOfMonth(month);
   const span: LeaveRange = { from: dates[0]!, to: dates[dates.length - 1]! };
   const datesOf = leaveDatesCollector(input);
-  const charged = new Set<string>();
+  const charged = new Map<string, number>();
   records.forEach((record, index) => {
     const what = `leave record ${String(index)}`;
     // Ends that are not date-shaped cannot be placed outside the month either.
@@ -368,9 +513,11 @@ export function leaveDaysOfMonth(input: MemberScheduleInput, records: readonly L
       from: record.from > span.from ? record.from : span.from,
       to: record.to < span.to ? record.to : span.to,
     };
-    for (const date of datesOf(inMonth)) charged.add(date);
+    // Records of one member never share a date; were two to, the date counts
+    // once, at the larger weight, whatever their order — the old set union.
+    for (const date of datesOf(inMonth)) charged.set(date, Math.max(charged.get(date) ?? 0, weightOf(record)));
   });
-  return [...charged].sort();
+  return [...charged.keys()].sort().map((date) => ({ date, days: charged.get(date)! }));
 }
 
 /**
@@ -728,7 +875,8 @@ export function leavePreviewOf(preview: LeavePreviewInput): LeavePreview {
   // cost over every date is still reported (story 13.2).
   const draws = drawsAllowance(preview.range);
   const costInYearDays = inYear === null || !draws ? 0 : costOf(inYear, preview.records);
-  const after = draws ? balanceOf(costOf, preview, current, { from: preview.range.from, to: preview.range.to }) : beforeAndEnd;
+  const extra: LeaveRange = { from: preview.range.from, to: preview.range.to, ...halfFieldOf(preview.range) };
+  const after = draws ? balanceOf(costOf, preview, current, extra) : beforeAndEnd;
   // The range lowers the balance: by its charge in the year, or — a range in
   // the previous leave year — by shrinking what is carried into this one.
   const lowers = costInYearDays > 0 || after.balance.balanceDays < before.balanceDays;

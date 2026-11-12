@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
+import { LEAVE_HALF_FIRST, LEAVE_HALF_SECOND } from '@shift/domain';
 import { useEffect, useEffectEvent, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type MouseEvent } from 'react';
 
 import { useCalendarSnapshot } from '@/features/calendar/hooks/use-calendar-snapshot';
@@ -28,13 +29,18 @@ import {
   LEAVE_READY,
   LEAVE_RECORD_ACTION,
   LEAVE_REMOVE_ACTION,
+  LEAVE_HALF_FIELD,
   LEAVE_TYPE_FIELD,
+  LEAVE_WHOLE_DAY,
   leaveAmendedOf,
   leaveConflictOf,
   leaveFormFailureOf,
   leaveHandoffKeyOf,
   leaveHandoffMissed,
   leaveHandoffOpeningOf,
+  leaveHalfChoiceOf,
+  leaveHalfOfferedOf,
+  leaveHalfOptionsOf,
   leaveInvalidFieldOf,
   leavePreviewStateOf,
   leaveSavedOf,
@@ -47,6 +53,8 @@ import {
   withoutLeaveHandoffOpening,
   type LeaveFailure,
   type LeaveField,
+  type LeaveHalfChoice,
+  type LeaveHalfOption,
   type LeaveHandoff,
   type LeaveRecordRow,
   type LeaveSaved,
@@ -130,6 +138,13 @@ export interface LeaveDialogOpening {
  * focuses the group and sends nothing. A snapshot with no catalog, or a
  * record naming a type it lacks, makes the card unavailable.
  *
+ * THE HALF DAY (story 13.5): while Od = Do, *Pola dana* (a switch) and, when
+ * it is on, two half cards with their times, held in state with the type.
+ * Neither card is preselected, so a save with the switch on and no half
+ * marks and focuses the group and sends nothing, as does a date without
+ * exactly one working shift. An amend opens on its record's half; a range of
+ * more than one date clears it. The half goes with the save and the amend.
+ *
  * THE CONFLICT PREVIEW (story 7.12): `conflicts` is what the ready range
  * would create, clear and keep, and `removeConflicts` what the open removal
  * clears — both `leaveConflictsOf`, over the queue's own recipe. A note,
@@ -187,6 +202,10 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
   const toField = useRef<HTMLInputElement>(null);
   /** The type group's first card, which a save refused for want of a type focuses (story 13.2b). */
   const typeField = useRef<HTMLButtonElement>(null);
+  /** *Pola dana* (story 13.5), which a refused half day focuses when no card is drawn. */
+  const halfSwitch = useRef<HTMLButtonElement>(null);
+  /** The half group's first card, which a save refused for want of a half focuses (story 13.5). */
+  const halfField = useRef<HTMLButtonElement>(null);
   /** The card's status line a landed save or amend raised: `Notice` renders a `<p>`. */
   const noticeField = useRef<HTMLParagraphElement>(null);
   /** The open dialog's alert: a refused save or amend, above its buttons (story 7.12). */
@@ -237,6 +256,8 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
   const [to, setTo] = useState(LEAVE_NO_DATE);
   /** The chosen absence type's id (story 13.2b), or null while none is chosen. */
   const [typeId, setTypeId] = useState<string | null>(null);
+  /** *Pola dana* and the chosen half (story 13.5): off for a new record, the record's own for an amend. */
+  const [half, setHalf] = useState<LeaveHalfChoice>(LEAVE_WHOLE_DAY);
   const [leaveFailure, setLeaveFailure] = useState<LeaveFailure | null>(null);
   const [leaveSaved, setLeaveSaved] = useState<LeaveSaved | null>(null);
   /** The field a save refused before any request named, until it is edited. */
@@ -315,8 +336,21 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
   // NO PREVIEW WHILE THE RECORDS ARE BEING RE-READ: what they cost may be about to change.
   const preview =
     base.kind === LEAVE_READY && !recordsState.refreshing
-      ? leavePreviewStateOf(base.input, from, to, leaveTypeChoiceOf(absenceTypes, typeId), amendTarget)
+      ? leavePreviewStateOf(base.input, from, to, leaveTypeChoiceOf(absenceTypes, typeId), amendTarget, half)
       : null;
+  /** The half cards and their times (story 13.5), while Od = Do and *Pola dana* is on; null when refused or not offered. */
+  const halfOptions = useMemo((): readonly LeaveHalfOption[] | null => {
+    if (base.kind !== LEAVE_READY || calendarState.snapshot === null || !half.on || !leaveHalfOfferedOf(from, to)) return null;
+
+    try {
+      return leaveHalfOptionsOf(calendarState.snapshot, base.input.input, from);
+    } catch (cause) {
+      if (!(cause instanceof RangeError)) throw cause;
+      console.error(cause);
+
+      return null;
+    }
+  }, [base, calendarState.snapshot, half.on, from, to]);
   const snapshot = base.kind === LEAVE_READY ? calendarState.snapshot : null;
   /** What the previewed amend would leave rostered (story 5.4e), or null while no amend range is previewed. */
   // ONLY A READY PREVIEW CAN BE SAVED (`amend` returns before any request
@@ -353,6 +387,8 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
   // on every render.
   const rangeFrom = opening !== null && preview?.kind === LEAVE_PREVIEW_READY ? preview.range.from : null;
   const rangeTo = opening !== null && preview?.kind === LEAVE_PREVIEW_READY ? preview.range.to : null;
+  /** The ready range's half, as `leaveSentHalfOf` put it on the range (story 13.5); null for a whole day. */
+  const rangeHalf = opening !== null && preview?.kind === LEAVE_PREVIEW_READY ? (preview.range.half ?? null) : null;
   /** The calendar snapshot is being re-read — as every opening asks for — so the conflicts wait for it. */
   // THE RAW OBSERVER'S, not the answer as seen (story 8.2c, the fetch-flag
   // rule in `@/lib/offline/use-snapshot-freshness`): whether a re-read is in
@@ -389,10 +425,11 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
             memberId,
             targetId: opening.target?.id ?? null,
             candidateId: LEAVE_CANDIDATE_ID,
-            next: { from: rangeFrom, to: rangeTo },
+            // STORY 13.5: the half that will be sent — a half day leaves the member at work (R10.1).
+            next: { from: rangeFrom, to: rangeTo, half: rangeHalf },
           })
         : null,
-    [snapshot, staffingLeave, memberId, opening, rangeFrom, rangeTo],
+    [snapshot, staffingLeave, memberId, opening, rangeFrom, rangeTo, rangeHalf],
   );
   /** What the open removal would clear (story 7.12); null while no confirmation is open. */
   const removeConflicts = useMemo<LeaveConflicts | null>(
@@ -452,6 +489,7 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
       setFrom(LEAVE_NO_DATE);
       setTo(LEAVE_NO_DATE);
       setTypeId(null);
+      setHalf(LEAVE_WHOLE_DAY);
       setRefusedField(null);
       if (live !== null) {
         setLeaveFailure({ code: LEAVE_GONE, action: LEAVE_AMEND_ACTION, conflict: null });
@@ -466,6 +504,7 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
       setFrom(LEAVE_NO_DATE);
       setTo(LEAVE_NO_DATE);
       setTypeId(null);
+      setHalf(LEAVE_WHOLE_DAY);
       setRefusedField(null);
       setLeaveFailure(null);
       focusLater([() => cardHeading.current], () => cardHeading.current);
@@ -562,6 +601,8 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
     setTo(range?.to ?? LEAVE_NO_DATE);
     // STORY 13.2b: an amend starts on its record's type; a new record on none.
     setTypeId(target?.absenceTypeId ?? null);
+    // STORY 13.5: an amend starts on its record's half, unless the range it opens on is not its one date.
+    setHalf(range !== null && target !== null && range.from === target.from && range.to === target.to ? leaveHalfChoiceOf(target) : LEAVE_WHOLE_DAY);
     focusLater([() => fromField.current], () => toField.current);
   }
 
@@ -579,9 +620,27 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
   /** Mirror an edited date into state, for the preview; an edit clears everything raised. */
   function change(event: ChangeEvent<HTMLInputElement>): void {
     const value = event.currentTarget.value;
+    const nextFrom = event.currentTarget.name === LEAVE_FROM_FIELD ? value : from;
+    const nextTo = event.currentTarget.name === LEAVE_FROM_FIELD ? to : value;
 
     if (event.currentTarget.name === LEAVE_FROM_FIELD) setFrom(value);
     else setTo(value);
+    // STORY 13.5: a range of more than one date clears the half day.
+    if (nextFrom !== nextTo) setHalf(LEAVE_WHOLE_DAY);
+    clearRaised();
+  }
+
+  /** *Pola dana* switched (story 13.5): on with no half chosen, or off; it clears everything raised. */
+  function switchHalf(on: boolean): void {
+    setHalf(on ? { on: true, half: null } : LEAVE_WHOLE_DAY);
+    clearRaised();
+  }
+
+  /** A half card chosen (story 13.5): the preview follows it, and it clears everything raised. */
+  function chooseHalf(value: string): void {
+    if (value !== LEAVE_HALF_FIRST && value !== LEAVE_HALF_SECOND) return;
+
+    setHalf({ on: true, half: value });
     clearRaised();
   }
 
@@ -627,6 +686,7 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
     setFrom(LEAVE_NO_DATE);
     setTo(LEAVE_NO_DATE);
     setTypeId(null);
+    setHalf(LEAVE_WHOLE_DAY);
     focusLater(
       [amendClosed ? () => amendOpener.current : () => recordOpener.current, () => listHeading.current],
       () => cardHeading.current,
@@ -671,6 +731,8 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
 
   function fieldOf(field: LeaveField): HTMLElement | null {
     if (field === LEAVE_TYPE_FIELD) return typeField.current;
+    // A refused half day draws no card: the switch carries the refusal (story 13.5).
+    if (field === LEAVE_HALF_FIELD) return halfOptions === null ? halfSwitch.current : (halfField.current ?? halfSwitch.current);
 
     return field === LEAVE_FROM_FIELD ? fromField.current : toField.current;
   }
@@ -717,6 +779,7 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
         sent.range.from,
         sent.range.to,
         sent.type.id,
+        sent.range.half ?? null,
       );
 
       // A REFUSAL KEEPS EVERY ENTERED VALUE: nothing here resets the fields.
@@ -745,6 +808,7 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
         setFrom(LEAVE_NO_DATE);
         setTo(LEAVE_NO_DATE);
         setTypeId(null);
+        setHalf(LEAVE_WHOLE_DAY);
       }
     } catch (cause) {
       console.error(LEAVE_FAILED, cause);
@@ -825,6 +889,7 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
         sent.range.from,
         sent.range.to,
         sent.type.id,
+        sent.range.half ?? null,
       );
 
       if (!outcome.ok) {
@@ -846,12 +911,14 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
         setFrom(LEAVE_NO_DATE);
         setTo(LEAVE_NO_DATE);
         setTypeId(null);
+        setHalf(LEAVE_WHOLE_DAY);
         landedId = outcome.id;
       } else if (outcome.code === LEAVE_GONE) {
         setOpening(null);
         setFrom(LEAVE_NO_DATE);
         setTo(LEAVE_NO_DATE);
         setTypeId(null);
+        setHalf(LEAVE_WHOLE_DAY);
       }
     } catch (cause) {
       console.error(LEAVE_FAILED, cause);
@@ -974,6 +1041,16 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
     /** The chosen type's id, or null (story 13.2b). */
     typeId,
     chooseType,
+    /** *Pola dana* and the chosen half (story 13.5). */
+    half,
+    /** Whether *Pola dana* is offered: while Od = Do (story 13.5). */
+    halfOffered: leaveHalfOfferedOf(from, to),
+    /** The half cards with their times, or null (story 13.5). */
+    halfOptions,
+    halfSwitch,
+    halfField,
+    switchHalf,
+    chooseHalf,
     change,
     // STORY 8.2e: "show the read retry now" — the surface is in its
     // retryable unavailable state, and online: offline its re-read would

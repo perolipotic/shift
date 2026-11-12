@@ -42,6 +42,7 @@ import {
   type DayDetail,
 } from '@/features/calendar/utils/day-detail';
 import { DAY_DETAIL_HEADING_ID } from '@/features/calendar/utils/element-ids';
+import { NO_LEAVE_RECORDS, type LeaveRecordsByMember } from '@/features/hours/services/hours-conflicts';
 import { useStaffingLeave } from '@/features/staffing/hooks/use-staffing-leave';
 import type { CandidateLeave } from '@/features/calendar/utils/replacement-candidates';
 import { useErasureConfirmation } from '@/features/conflicts/hooks/use-erasure-confirmation';
@@ -165,6 +166,8 @@ export function useRosterForm(
   leave: readonly CandidateLeave[] | null = null,
   /** The decided-leave keys whose shifts the preview's hours leave out, as *Sati* does (story 7.9). */
   leaveKeys: readonly CollisionResolution[] = NO_LEAVE_KEYS,
+  /** The leave records by member the calendar read, whose half days split the preview's hours (story 13.5). */
+  leaveRecords: LeaveRecordsByMember = NO_LEAVE_RECORDS,
 ) {
   const queryClient = useQueryClient();
   const outField = useRef<HTMLSelectElement>(null);
@@ -258,8 +261,8 @@ export function useRosterForm(
   const formGone = changing && !offers.set && !pending;
 
   const preview = useMemo(
-    () => rosterPreviewOf(snapshot, detail, chosenOut, chosenIn, leaveKeys),
-    [snapshot, detail, chosenOut, chosenIn, leaveKeys],
+    () => rosterPreviewOf(snapshot, detail, chosenOut, chosenIn, leaveKeys, leaveRecords),
+    [snapshot, detail, chosenOut, chosenIn, leaveKeys, leaveRecords],
   );
   const chooseOut = useCallback((id: string): void => {
     setChosenOut(id);

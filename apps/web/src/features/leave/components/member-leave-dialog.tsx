@@ -7,15 +7,21 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { RadioCard, RadioGroup } from '@/components/ui/radio-group';
+import { Switch } from '@/components/ui/switch';
 import { LeaveConflictLines } from '@/features/leave/components/leave-conflict-lines';
 import { ShortStaffedBlock } from '@/features/staffing/components/short-staffed-block';
-import { LeaveReplacementLines } from '@/features/leave/components/member-leave-records';
+import { LeaveReplacementLines, leaveCostText } from '@/features/leave/components/member-leave-records';
 import type { LeaveDialogOpening, MemberLeave } from '@/features/leave/hooks/use-member-leave';
 import type { LeaveRecord } from '@/features/leave/services/leave-list';
 import {
   LEAVE_DIALOG_HEADING_ID,
   LEAVE_ERROR_ID,
   LEAVE_FROM_FIELD,
+  LEAVE_HALF_FIELD,
+  LEAVE_HALF_HINT_ID,
+  LEAVE_HALF_LABEL_ID,
+  LEAVE_HALF_SWITCH_ID,
+  leaveHalfSwitchDescribedByOf,
   LEAVE_PREVIEW_ID,
   LEAVE_PREVIEW_REASON,
   LEAVE_READY,
@@ -25,6 +31,7 @@ import {
   LEAVE_TYPE_LABEL_ID,
   leaveDescribedByOf,
   leaveFormFailureOf,
+  leaveHalfMessageKey,
   leaveOverlapNoteShown,
   leavePreviewInYearOf,
   leaveRangeValuesOf,
@@ -48,7 +55,9 @@ import { useWriteGate } from '@/lib/offline/use-write-gate';
  * which stay. None of it gates the save, an over-balance range included
  * (UX-DR23). Story 13.2b adds the absence type between the dates and the
  * preview (UX-DR47, UX-DR50): one radio card per type of the organization,
- * none preselected for a new record, the record's own for an amend.
+ * none preselected for a new record, the record's own for an amend. Story
+ * 13.5 adds, after the type and while Od = Do, *Pola dana* and its two half
+ * cards with their times, neither preselected.
  *
  * Every figure, reason and message is `@/features/leave/services/leave-section`'s
  * or `leave-conflicts`'s decision; this renders them. Each opening draws its
@@ -71,6 +80,11 @@ export function MemberLeaveDialog({ leave }: { readonly leave: MemberLeave }): R
     typeField,
     absenceTypes,
     typeId,
+    half,
+    halfOffered,
+    halfOptions,
+    halfSwitch,
+    halfField,
     memberName,
     recordDialog,
     amendDialog,
@@ -102,7 +116,7 @@ export function MemberLeaveDialog({ leave }: { readonly leave: MemberLeave }): R
       <div className="grid min-w-0 gap-1">
         <dt className="text-xs text-muted-foreground">{t('ljudi.leaveRecord.before')}</dt>
         <dd className="break-words text-base font-semibold tabular-nums">
-          {t('ljudi.leaveRecord.rangeCost', { from: row.from, to: row.to, cost: t('count.days', { count: row.costDays }) })}
+          {t('ljudi.leaveRecord.rangeCost', { from: row.from, to: row.to, cost: leaveCostText(row.record, row.costDays) })}
         </dd>
         {/* STORY 13.2b: the type the record holds, a fact for the admin. */}
         {typeName === null ? null : <dd className="break-words text-sm text-muted-foreground">{typeName}</dd>}
@@ -134,7 +148,7 @@ export function MemberLeaveDialog({ leave }: { readonly leave: MemberLeave }): R
     const exceeds = leaveExceedsOf(figures);
     // STORY 13.2b: a type that does not draw states no in-year part; its own line says why.
     const inYear = leavePreviewInYearOf(preview);
-    const cost = t('count.days', { count: figures.costDays });
+    const cost = leaveCostText(preview.range, figures.costDays);
     const range = leaveRangeValuesOf(preview.range);
     const afterTypeName = leaveTypeNameOf(absenceTypes, preview.type.id);
 
@@ -216,6 +230,68 @@ export function MemberLeaveDialog({ leave }: { readonly leave: MemberLeave }): R
     );
   }
 
+  /**
+   * The half day (story 13.5): while Od = Do, *Pola dana*; when it is on, the
+   * two half cards with their times, neither preselected, marked and
+   * described by the reason after a save refused for want of a half or for a
+   * date without exactly one working shift. Nothing while the range is more
+   * than one date.
+   */
+  function renderHalf(): ReactNode {
+    if (!halfOffered) return null;
+
+    // A refused half day draws no card, so the switch carries the mark and the reason.
+    const switchMarked = invalidField === LEAVE_HALF_FIELD && (!half.on || halfOptions === null);
+
+    return (
+      <div className="grid min-w-0 gap-3">
+        <div className="flex min-h-11 min-w-0 items-center gap-3">
+          <Switch
+            ref={halfSwitch}
+            id={LEAVE_HALF_SWITCH_ID}
+            checked={half.on}
+            onCheckedChange={leave.switchHalf}
+            aria-invalid={switchMarked}
+            aria-describedby={leaveHalfSwitchDescribedByOf(switchMarked)}
+          />
+          <div className="grid min-w-0 gap-1">
+            <Label htmlFor={LEAVE_HALF_SWITCH_ID}>{t('ljudi.leaveRecord.halfDay')}</Label>
+            <span id={LEAVE_HALF_HINT_ID} className="break-words text-sm text-muted-foreground">
+              {t('ljudi.leaveRecord.halfDayHint')}
+            </span>
+          </div>
+        </div>
+        {!half.on || halfOptions === null ? null : (
+          <div className="grid min-w-0 gap-3">
+            <p id={LEAVE_HALF_LABEL_ID} className="text-sm font-semibold leading-none">
+              {t('ljudi.leaveRecord.half')}
+            </p>
+            <RadioGroup
+              value={half.half}
+              onValueChange={leave.chooseHalf}
+              required
+              aria-labelledby={LEAVE_HALF_LABEL_ID}
+              aria-invalid={invalidField === LEAVE_HALF_FIELD}
+              aria-describedby={leaveDescribedByOf(LEAVE_HALF_FIELD, leaveFailure, invalidField)}
+              className="grid-cols-1 sm:grid-cols-2"
+            >
+              {halfOptions.map((option, index) => (
+                <RadioCard key={option.half} ref={index === 0 ? halfField : undefined} value={option.half}>
+                  <span className="break-words text-sm font-semibold">{t(leaveHalfMessageKey(option.half))}</span>
+                  {option.times === null ? null : (
+                    <span className="text-sm tabular-nums text-muted-foreground">
+                      {t('ljudi.leaveRecord.halfTimes', option.times)}
+                    </span>
+                  )}
+                </RadioCard>
+              ))}
+            </RadioGroup>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   /** The refusal of the last save or amend, above the buttons. */
   function renderAlert(): ReactNode {
     if (leaveFailure === null) return null;
@@ -283,6 +359,7 @@ export function MemberLeaveDialog({ leave }: { readonly leave: MemberLeave }): R
             </div>
           </div>
           {renderTypes()}
+          {renderHalf()}
           <div id={LEAVE_PREVIEW_ID} aria-live="polite" className="grid min-w-0 gap-2">
             {renderPreview(shown.target)}
           </div>

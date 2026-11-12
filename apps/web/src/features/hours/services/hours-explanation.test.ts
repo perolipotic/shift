@@ -199,6 +199,32 @@ describe('the leave is explained in days', () => {
     expect(t(view.total.key, view.total.values)).toBe(`${String(dates.length)} dana`);
   });
 
+  it('a half day is a line of 0,5 dana, and the lines sum to the total (story 13.5)', () => {
+    // 10.09. is the viewer's Dan; 14.09. their Dan too.
+    const half = { from: '2026-09-10', to: '2026-09-10', absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true, half: 'FIRST' as const };
+    const whole = { from: '2026-09-14', to: '2026-09-14', absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true };
+    const view = leaveOf(pilot, new Map([[VIEWER_MEMBER, [half, whole]]]));
+
+    expect(view.lines.map((line) => [line.key, t(line.amount.key, line.amount.values)])).toEqual([
+      ['2026-09-10', '0,5 dana'],
+      ['2026-09-14', '1 dan'],
+    ]);
+    expect(view.lines.reduce((sum, line) => sum + line.amount.values.count, 0)).toBe(view.total.values.count);
+    expect(t(view.total.key, view.total.values)).toBe('1,5 dana');
+  });
+
+  it('explains a half-day member\'s total as memberHoursOfMonth counts it: the worked half (story 13.5)', () => {
+    const half = { from: '2026-09-10', to: '2026-09-10', absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true, half: 'SECOND' as const };
+    const records = new Map([[VIEWER_MEMBER, [half]]]);
+    const hours = memberHoursOfMonth(memberHoursInputOf(pilot, pilot.viewer, [], undefined, records), MONTH);
+    const view = hoursExplanationOf(pilot, { memberId: null, figure: { code: HOURS_FIGURE_TOTAL } }, HEADER, [], [], records, []);
+
+    if (view === null || view.kind !== EXPLANATION_HOURS) throw new Error('refused');
+    expect(view.total).toEqual(figureOf(hours.totalMinutes));
+    expect(hours.totalMinutes).toBe(memberHoursOfMonth(memberHoursInputOf(pilot), MONTH).totalMinutes - 6 * 60);
+    expect(view.lines.find((line) => line.key.startsWith('2026-09-10'))?.amount).toEqual(figureOf(6 * 60));
+  });
+
   it('has no line without a record', () => {
     expect(explained(pilot, { code: HOURS_FIGURE_LEAVE, column: ANNUAL_LEAVE_ID }).lines).toEqual([]);
   });
@@ -216,7 +242,7 @@ describe('the leave is explained in days', () => {
       (day) => !day.shifts.some((shift) => shift.shiftTypeId !== null && working.has(shift.shiftTypeId)),
     )!;
 
-    vi.mocked(memberLeaveDatesByColumnOf).mockReturnValueOnce([[off.date]]);
+    vi.mocked(memberLeaveDatesByColumnOf).mockReturnValueOnce([[{ date: off.date, days: 1 }]]);
 
     expect(
       hoursExplanationOf(pilot, { memberId: null, figure: { code: HOURS_FIGURE_LEAVE, column: ANNUAL_LEAVE_ID } }, HEADER, [], [], new Map(), []),

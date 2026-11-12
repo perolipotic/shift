@@ -39,6 +39,7 @@ import {
   type OrganizationHoursRow,
   type OrganizationHoursView,
 } from '@/features/hours/services/organization-hours';
+import { hoursExportOf } from '@/features/hours/services/hours-export';
 import { initLocalization, t } from '@/lib/i18n';
 import { compareText } from '@/lib/i18n/format';
 import {
@@ -498,6 +499,28 @@ describe('the sort', () => {
     });
     // Leave days take nothing out of the hours: no shift was accepted as uncovered.
     expect(down.rows.find((row) => row.memberId === second!.memberId)!.hours).toEqual(second!.hours);
+  });
+
+  it('a half day lowers its member\'s total by the absent half and counts 0,5 in the leave column and the file (story 13.5)', () => {
+    // 10.09. is the viewer's Dan, 07:00–19:00.
+    const half = { from: '2026-09-10', to: '2026-09-10', absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true, half: 'FIRST' as const };
+    const plain = viewOf(pilot, NO_LEAVE_RECORDS).rows.find((row) => row.memberId === VIEWER_MEMBER)!;
+    const view = viewOf(pilot, new Map([[VIEWER_MEMBER, [half]]]));
+    const row = view.rows.find((one) => one.memberId === VIEWER_MEMBER)!;
+
+    expect(minutesOf(plain.total) - minutesOf(row.total)).toBe(6 * 60);
+    expect(row.hours.leaveMinutes).toBe(6 * 60);
+    expect(row.shiftCount).toBe(plain.shiftCount);
+    expect(row.leave[0]?.days).toBe(0.5);
+    expect(t('count.days', { count: row.leave[0]?.figure?.values.count ?? NaN })).toBe('0,5 dana');
+    expect(view.footer?.leave[0]?.days).toBe(0.5);
+
+    const sheet = hoursExportOf(view, 'Org');
+    const index = view.rows.indexOf(row);
+    const leaveAt = sheet.columns.indexOf(t('sati.organization.export.days', { name: 'Godišnji odmor' }));
+
+    expect(leaveAt).toBeGreaterThan(0);
+    expect(sheet.rows[index]?.[leaveAt]).toEqual({ kind: 'count', value: 0.5 });
   });
 
   it('a new column starts ascending, and pressing it again flips it', () => {

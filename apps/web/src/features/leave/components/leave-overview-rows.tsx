@@ -14,6 +14,7 @@ import {
 } from '@/features/leave/services/leave-overview';
 import { leaveCarriedCellMessageKey } from '@/features/leave/services/leave-section';
 import { t } from '@/lib/i18n';
+import { formatLeaveDays } from '@/lib/i18n/format';
 import type { SortControlColumn } from '@/utils/sort-control';
 
 /**
@@ -73,18 +74,18 @@ export function LeaveOverviewRows({
               {row.figures === null ? null : (
                 <StackedFields className="shrink-0 text-right">
                   <StackedField label={t('godisnji.overview.balance')}>
-                    <span className="text-xl font-bold">{row.figures.balanceDays}</span>
+                    <span className="text-xl font-bold">{formatLeaveDays(row.figures.balanceDays)}</span>
                   </StackedField>
                 </StackedFields>
               )}
             </div>
             <StackedFields className="grid grid-cols-2 gap-2">
               <StackedField label={t('godisnji.overview.allowance')} className="rounded-md bg-muted px-2 py-1.5">
-                <span className="font-semibold">{row.allowanceDays}</span>
+                <span className="font-semibold">{formatLeaveDays(row.allowanceDays)}</span>
               </StackedField>
               {row.figures === null ? null : (
                 <StackedField label={t('godisnji.overview.used')} className="rounded-md bg-muted px-2 py-1.5">
-                  <span className="font-semibold">{row.figures.usedDays}</span>
+                  <span className="font-semibold">{formatLeaveDays(row.figures.usedDays)}</span>
                 </StackedField>
               )}
               {row.figures === null || row.figures.carried === null ? null : (

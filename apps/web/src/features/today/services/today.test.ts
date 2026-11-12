@@ -379,6 +379,16 @@ describe("what today's leave costs (story 6.1b)", () => {
     );
   });
 
+  it('costs a half day 0,5 (story 13.5)', () => {
+    // 01.10. is the viewer's Noć.
+    const view = readyOf(todayViewOf(pilot, [{ ...rowOf('leave-half', '2026-10-01', '2026-10-02'), half: 'FIRST' }], noonOf('2026-10-01')));
+
+    expect(view.todayCase).toMatchObject({ kind: CASE_LEAVE, from: '01.10.2026', to: '01.10.2026', costDays: 0.5 });
+    expect(t('danas.today.leaveCost', { days: t('count.days', { count: costOf(view) }) })).toBe(
+      'Troši 0,5 dana godišnjeg — računaju se samo tvoji radni dani.',
+    );
+  });
+
   it('sums back-to-back records, each costed on its own range', () => {
     const rows = [rowOf('leave-1', '2026-09-28', '2026-10-01'), rowOf('leave-2', '2026-10-01', '2026-10-05')];
     const view = readyOf(todayViewOf(pilot, rows, noonOf('2026-10-01')));

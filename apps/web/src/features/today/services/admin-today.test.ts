@@ -577,6 +577,13 @@ describe('Pokrivenost danas', () => {
     );
   });
 
+  it('a half day is no absence (R10.1, story 13.5): 4 od 4, ✓ puna smjena', () => {
+    const rows = [{ ...leaveOf('leave-ana', ANA, TODAY, TODAY), half: 'SECOND' }];
+    const [noc] = viewOf(pilot, rows).coverage.rows;
+
+    expect(noc).toMatchObject({ present: 4, total: 4, absent: [], staffing: STAFFING_FULL });
+  });
+
   it('accepted as uncovered: still 3 od 4, and said so', () => {
     const rows = [leaveOf('leave-ana', ANA, TODAY, TODAY)];
     const [noc] = viewOf(pilot, rows, [resolutionOf(ANA, TODAY, A)]).coverage.rows;

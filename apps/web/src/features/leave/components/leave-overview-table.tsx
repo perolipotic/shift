@@ -17,6 +17,7 @@ import {
 } from '@/features/leave/services/leave-overview';
 import { leaveCarriedCellMessageKey } from '@/features/leave/services/leave-section';
 import { t } from '@/lib/i18n';
+import { formatLeaveDays } from '@/lib/i18n/format';
 
 /** The overview once ready: what the table and the rows draw. */
 export type ReadyLeaveOverview = Extract<LeaveOverview, { kind: typeof OVERVIEW_READY }>;
@@ -94,7 +95,7 @@ export function LeaveOverviewTable({
               </Link>
             </TableCell>
             <TableCell className="whitespace-nowrap">{row.team?.name ?? t('godisnji.overview.noTeam')}</TableCell>
-            <TableCell className="whitespace-nowrap text-right tabular-nums">{row.allowanceDays}</TableCell>
+            <TableCell className="whitespace-nowrap text-right tabular-nums">{formatLeaveDays(row.allowanceDays)}</TableCell>
             {row.figures === null ? (
               <TableCell colSpan={3} className="text-sm text-muted-foreground">
                 {t('ljudi.leaveRecord.unscheduled')}
@@ -103,12 +104,12 @@ export function LeaveOverviewTable({
               <>
                 <TableCell className="whitespace-nowrap text-right tabular-nums">
                   {row.figures.carried === null
-                    ? row.figures.carriedDays
+                    ? formatLeaveDays(row.figures.carriedDays)
                     : t(leaveCarriedCellMessageKey(row.figures.carried.kind), { ...row.figures.carried })}
                 </TableCell>
-                <TableCell className="whitespace-nowrap text-right tabular-nums">{row.figures.usedDays}</TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums">{formatLeaveDays(row.figures.usedDays)}</TableCell>
                 <TableCell className="whitespace-nowrap text-right font-semibold tabular-nums">
-                  {row.figures.balanceDays}
+                  {formatLeaveDays(row.figures.balanceDays)}
                 </TableCell>
               </>
             )}

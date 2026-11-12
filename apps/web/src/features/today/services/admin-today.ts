@@ -2,6 +2,7 @@ import {
   activeOn,
   collisionKeyOf,
   deriveShiftTimes,
+  isHalfDay,
   membershipOn,
   shiftTypeVersionOn,
   shortStaffedShiftsOf,
@@ -672,9 +673,13 @@ export function coveragePhaseOf(startMinute: number, endMinute: number, minute: 
   return { kind: PHASE_ENDED, time: formatMinuteOfDay(times.endMinute) };
 }
 
-/** Whether `memberId`'s live leave covers `date`. */
+/**
+ * Whether `memberId`'s live leave takes them off work on `date`: it covers the
+ * date and is no half day — a member on a half day counts at work, as
+ * staffing counts them (R10.1, story 13.5).
+ */
 function onLeave(records: readonly OrganizationLeaveRecord[], memberId: string, date: string): boolean {
-  return records.some((record) => record.memberId === memberId && record.from <= date && date <= record.to);
+  return records.some((record) => record.memberId === memberId && !isHalfDay(record) && record.from <= date && date <= record.to);
 }
 
 /**

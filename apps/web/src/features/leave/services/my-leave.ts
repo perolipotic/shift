@@ -19,6 +19,8 @@ import {
   LEAVE_RANGE_REVERSED,
   LEAVE_RANGE_TOO_LONG,
   LEAVE_RANGE_UNCHANGED,
+  LEAVE_HALF_REFUSED,
+  LEAVE_HALF_UNCHOSEN,
   LEAVE_TYPE_UNCHOSEN,
   leaveCarryOverOf,
   leavePreviewStateOf,
@@ -393,8 +395,11 @@ export function myLeaveRequestReasonMessageKey(
       return 'godisnji.request.typeUnchosen';
     // No amend here, so an unchanged range is never a reason the form meets;
     // were it one, it could not be costed either.
+    // Nor a half day (story 13.5b): the request form offers none yet.
     case LEAVE_RANGE_REFUSED:
     case LEAVE_RANGE_UNCHANGED:
+    case LEAVE_HALF_UNCHOSEN:
+    case LEAVE_HALF_REFUSED:
       return 'godisnji.request.refused';
     default: {
       const unhandled: never = reason;

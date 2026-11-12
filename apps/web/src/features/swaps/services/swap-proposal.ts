@@ -24,7 +24,13 @@ import {
   type OpenSwapProposal,
 } from '@/features/calendar/utils/day-detail';
 import { memberScheduleInputOf } from '@/features/calendar/utils/month';
-import { hoursLeaveKeysOf } from '@/features/hours/services/hours-conflicts';
+import {
+  NO_LEAVE_RECORDS,
+  hoursLeaveKeysOf,
+  hoursLeaveRecordsOf,
+  leaveRecordsIn,
+  type LeaveRecordsByMember,
+} from '@/features/hours/services/hours-conflicts';
 import { compareText, formatIsoDate, isIsoDate } from '@/lib/i18n/format';
 import { monthInMessageKey, yearOfMonthText } from '@/utils/filter-bar';
 
@@ -433,6 +439,12 @@ export function swapPreviewOf(
   colleagueId: string,
   returnShift: SwapShiftKey | null,
   proposerLeaveKeys: readonly CollisionResolution[],
+  /**
+   * Story 13.5: the viewer's own leave records, by member, whose half days
+   * split their shift's hours as their *Sati* does; none by default. The
+   * colleague's are never read (7.10).
+   */
+  proposerLeaveRecords: LeaveRecordsByMember = NO_LEAVE_RECORDS,
 ): SwapPreview | null {
   if (colleagueId === SWAP_NO_COLLEAGUE) return null;
 
@@ -459,8 +471,13 @@ export function swapPreviewOf(
     }
 
     const months = [...new Set([given.isoDate, ...(returnShift === null ? [] : [returnShift.date])].map(monthOf))].sort();
-    const hours = memberMonthDeltasOf(snapshot, after, [proposerId, colleagueId], months, (memberId) =>
-      memberId === proposerId ? proposerLeaveKeys : [],
+    const hours = memberMonthDeltasOf(
+      snapshot,
+      after,
+      [proposerId, colleagueId],
+      months,
+      (memberId) => (memberId === proposerId ? proposerLeaveKeys : []),
+      new Map([[proposerId, leaveRecordsIn(proposerLeaveRecords, proposerId)]]),
     );
 
     return { kind: SWAP_PREVIEW_READY, lines, hours };
@@ -601,6 +618,39 @@ export function swapLeaveKeysOf(snapshot: CalendarSnapshot, rows: readonly unkno
     return { keys: [], known: false };
   }
 }
+
+/**
+ * The viewer's own leave records, by member, from their `my_leave_records()`
+ * rows (story 13.5), so a half day's shift counts only its worked half in a
+ * swap's hours, as their *Sati* counts it. None while the rows are not read
+ * (`undefined`, pending or failed) or cannot be trusted, the failure and the
+ * untrusted rows logged: never a gate, and the card or form is drawn either
+ * way, its hours then counting whole shifts.
+ */
+export function swapLeaveRecordsOf(
+  snapshot: CalendarSnapshot,
+  read: { readonly data: readonly unknown[] | undefined; readonly isError: boolean },
+): LeaveRecordsByMember {
+  if (read.isError) {
+    console.error(SWAP_LEAVE_RECORDS_UNREAD, 'the own leave read failed');
+
+    return NO_LEAVE_RECORDS;
+  }
+
+  if (read.data === undefined) return NO_LEAVE_RECORDS;
+
+  try {
+    return hoursLeaveRecordsOf(snapshot, read.data);
+  } catch (cause) {
+    if (!(cause instanceof RangeError)) throw cause;
+    console.error(SWAP_LEAVE_RECORDS_UNREAD, cause);
+
+    return NO_LEAVE_RECORDS;
+  }
+}
+
+/** What a swap's hours log when they count no half day for want of the viewer's leave read (story 13.5). */
+export const SWAP_LEAVE_RECORDS_UNREAD = 'SWAP_LEAVE_RECORDS_UNREAD';
 
 // ----------------------------------------------------------------- the write
 

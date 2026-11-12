@@ -135,6 +135,16 @@ describe('the type preview (story 7.9)', () => {
     expect(preview?.hours).toEqual([{ deltaMinutes: -TWELVE_HOURS, memberIds: [DINO, EVA, IVO] }]);
   });
 
+  it('counts a half day as Sati does (story 13.5): its member loses only the worked half', () => {
+    const half = { from: DATE, to: DATE, absenceTypeId: 'annual', drawsAllowance: true, half: 'FIRST' as const };
+    const preview = overridePreviewOf(snapshot, dayOf(snapshot, B), SLOBODNO, [], new Map([[ANA, [half]]]));
+
+    expect(preview?.hours).toEqual([
+      { deltaMinutes: -TWELVE_HOURS, memberIds: [DINO, EVA, IVO] },
+      { deltaMinutes: -TWELVE_HOURS / 2, memberIds: [ANA] },
+    ]);
+  });
+
   it('an off day made a working one says the type from and to, +12 h for each arriving, and no roster part', () => {
     const preview = overridePreviewOf(snapshot, dayOf(snapshot, C), DAN, []);
 
@@ -181,6 +191,13 @@ describe('the roster preview (story 7.9)', () => {
       { deltaMinutes: -TWELVE_HOURS, memberIds: [IVO] },
       { deltaMinutes: TWELVE_HOURS, memberIds: [KARLO] },
     ]);
+  });
+
+  it('replacing a member on a half day moves only their worked half off their hours (story 13.5)', () => {
+    const half = { from: DATE, to: DATE, absenceTypeId: 'annual', drawsAllowance: true, half: 'SECOND' as const };
+    const preview = rosterPreviewOf(snapshot, dayOf(snapshot, B), IVO, ROSTER_NOBODY, [], new Map([[IVO, [half]]]));
+
+    expect(preview?.hours).toEqual([{ deltaMinutes: -TWELVE_HOURS / 2, memberIds: [IVO] }]);
   });
 
   it('one side alone names that side, and the other is null', () => {

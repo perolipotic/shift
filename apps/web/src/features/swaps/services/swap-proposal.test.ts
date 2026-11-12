@@ -47,6 +47,8 @@ import {
   swapChoiceOnColleague,
   swapColleaguesOf,
   swapLeaveKeysOf,
+  swapLeaveRecordsOf,
+  SWAP_LEAVE_RECORDS_UNREAD,
   swapMonthOf,
   swapPreviewOf,
   swapProposedOf,
@@ -386,6 +388,28 @@ describe('the preview (story 12.2)', () => {
     ]);
   });
 
+  it('counts the viewer’s own half day as Sati does, and never a record of the colleague (story 13.5)', () => {
+    const half = { from: DATE, to: DATE, absenceTypeId: 'annual', drawsAllowance: true, half: 'SECOND' as const };
+    const other = { from: DATE, to: DATE, absenceTypeId: 'annual', drawsAllowance: true, half: 'FIRST' as const };
+    const preview = swapPreviewOf(
+      snapshot,
+      givenOf(snapshot),
+      IVO,
+      null,
+      [],
+      new Map([
+        [VIEWER_MEMBER, [half]],
+        [IVO, [other]],
+      ]),
+    );
+
+    if (preview?.kind !== SWAP_PREVIEW_READY) throw new Error('no preview');
+    expect(preview.hours).toEqual([
+      { memberId: VIEWER_MEMBER, month: '2026-09', deltaMinutes: -TWELVE_HOURS / 2 },
+      { memberId: IVO, month: '2026-09', deltaMinutes: TWELVE_HOURS },
+    ]);
+  });
+
   it('a preview that cannot be derived is none, logged, never a thrown error', () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const broken: CalendarSnapshot = { ...snapshot, types: [] };
@@ -504,6 +528,31 @@ describe('the send-time check (FR-66)', () => {
     const taken = await snapshotOf({ rosterOverrides: [calendarRosterOverrideRow('ro-mara', A, DATE, LUKA, MARA)] });
 
     expect(codeOf(swapSendCheckOf(taken, given, choiceOf(MARA), TODAY))).toBe(SWAP_BLOCKED);
+  });
+});
+
+describe('the viewer’s leave records (story 13.5)', () => {
+  const halfRow = { id: 'record-half', member_id: VIEWER_MEMBER, during: `[${DATE},2026-09-11)`, half: 'SECOND' };
+
+  it('are the viewer’s own records by member, a half day keeping its half, and split the preview’s hours', () => {
+    const records = swapLeaveRecordsOf(snapshot, { data: [halfRow], isError: false });
+
+    expect(records.get(VIEWER_MEMBER)).toMatchObject([{ from: DATE, to: DATE, half: 'SECOND' }]);
+    const preview = swapPreviewOf(snapshot, givenOf(snapshot), IVO, null, [], records);
+    if (preview?.kind !== SWAP_PREVIEW_READY) throw new Error('no preview');
+    expect(preview.hours[0]).toEqual({ memberId: VIEWER_MEMBER, month: '2026-09', deltaMinutes: -TWELVE_HOURS / 2 });
+  });
+
+  it('are none while pending, silently, and none when the read failed or a row cannot be trusted, logged', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    expect(swapLeaveRecordsOf(snapshot, { data: undefined, isError: false }).size).toBe(0);
+    expect(error).not.toHaveBeenCalled();
+    expect(swapLeaveRecordsOf(snapshot, { data: undefined, isError: true }).size).toBe(0);
+    expect(swapLeaveRecordsOf(snapshot, { data: [{ ...halfRow, member_id: 'someone else' }], isError: false }).size).toBe(0);
+    expect(error).toHaveBeenCalledTimes(2);
+    expect(error).toHaveBeenCalledWith(SWAP_LEAVE_RECORDS_UNREAD, expect.anything());
+    error.mockRestore();
   });
 });
 

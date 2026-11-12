@@ -1,4 +1,11 @@
-import { isShortStaffed, newlyShortStaffedOf, peopleAtWorkOn, type CollisionLeaveRecord } from '@shift/domain';
+import {
+  halfFieldOf,
+  isShortStaffed,
+  newlyShortStaffedOf,
+  peopleAtWorkOn,
+  type CollisionLeaveRecord,
+  type LeaveHalf,
+} from '@shift/domain';
 
 import { minimumOfCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { readsOrganizationLeave } from '@/features/calendar/services/snapshot-skew';
@@ -280,8 +287,12 @@ export interface StaffingLeaveChange {
   readonly targetId: string | null;
   /** The id a new record's candidate carries (`LEAVE_CANDIDATE_ID`): one no stored record can carry. */
   readonly candidateId: string;
-  /** The range the change leaves. */
-  readonly next: StaffingWindow;
+  /**
+   * The range the change leaves, and (story 13.5) its half when it is a half
+   * day: a member on a half day counts at work (R10.1), so it makes no shift
+   * short-staffed.
+   */
+  readonly next: StaffingWindow & { readonly half?: LeaveHalf | null };
 }
 
 /**
@@ -313,7 +324,7 @@ export function leaveChangeReportOf(
       ? null
       : [
           ...records.filter((record) => record.id !== id),
-          { id, memberId: change.memberId, from: change.next.from, to: change.next.to },
+          { id, memberId: change.memberId, from: change.next.from, to: change.next.to, ...halfFieldOf(change.next) },
         ];
 
   return shortStaffedReportOf({ calendar, records }, { calendar, records: after }, change.next);

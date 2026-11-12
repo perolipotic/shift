@@ -11,6 +11,8 @@ import {
   myConflictResolutionsQueryOptions,
   type MyConflictResolutionsRpc,
 } from '@/features/conflicts/services/resolutions';
+import { NO_LEAVE_RECORDS } from '@/features/hours/services/hours-conflicts';
+import { myLeaveRecordsQueryOptions, type MyLeaveRecordsRpc } from '@/features/leave/services/leave-list';
 import { useMySwapRequestsRead } from '@/features/swaps/hooks/use-my-swaps';
 import { MY_SWAP_REQUESTS_KEY, openSwapProposalsOf } from '@/features/swaps/services/my-swaps';
 import {
@@ -30,6 +32,7 @@ import {
   swapChoiceOnColleague,
   swapColleaguesOf,
   swapLeaveKeysOf,
+  swapLeaveRecordsOf,
   swapPreviewOf,
   swapReturnOptionsOf,
   swapReturnValueOf,
@@ -123,6 +126,11 @@ export function useSwapProposal(search: SwapSearch) {
   const calendarRead = useCalendarSnapshot();
   const resolutionsRead = useQuery(myConflictResolutionsQueryOptions(() => supabaseClient() as unknown as MyConflictResolutionsRpc));
   const swapsRead = useMySwapRequestsRead();
+  // STORY 13.5: the viewer's own leave, under the shared key, so their half
+  // day counts only its worked half in the preview. Never waited for and
+  // never part of the freshness: pending or failed, the form is drawn and the
+  // preview counts whole shifts.
+  const ownLeaveRead = useQuery(myLeaveRecordsQueryOptions(() => supabaseClient() as unknown as MyLeaveRecordsRpc));
   const { freshness, clock, answerFor } = useSnapshotFreshness(
     SWAP_SURFACE_KEYS,
     [[CALENDAR_KEY, calendarRead]],
@@ -155,6 +163,12 @@ export function useSwapProposal(search: SwapSearch) {
   const leave = useMemo(
     () => (snapshot === null ? { keys: [], known: false } : swapLeaveKeysOf(snapshot, resolutionRows)),
     [snapshot, resolutionRows],
+  );
+  const ownLeaveData = ownLeaveRead.data;
+  const ownLeaveFailed = ownLeaveRead.isError;
+  const leaveRecords = useMemo(
+    () => (snapshot === null ? NO_LEAVE_RECORDS : swapLeaveRecordsOf(snapshot, { data: ownLeaveData, isError: ownLeaveFailed })),
+    [snapshot, ownLeaveData, ownLeaveFailed],
   );
   // UNKNOWN UNLESS ANSWERED: a failed read is no answer, even over cached rows
   // (the offer then stands, and 0049's 23505 is the backstop).
@@ -199,8 +213,8 @@ export function useSwapProposal(search: SwapSearch) {
     () =>
       snapshot === null || given === null || !resolved.ok
         ? null
-        : swapPreviewOf(snapshot, given, resolved.colleague.id, resolved.returnShift, leave.keys),
-    [snapshot, given, resolved, leave.keys],
+        : swapPreviewOf(snapshot, given, resolved.colleague.id, resolved.returnShift, leave.keys, leaveRecords),
+    [snapshot, given, resolved, leave.keys, leaveRecords],
   );
 
   /** A colleague chosen: the return shift was the last colleague's, so it goes; so does a standing refusal. */

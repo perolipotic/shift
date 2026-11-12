@@ -101,8 +101,32 @@ describe('the read', () => {
       'member_id',
       'during',
       'absence_type_id',
+      // STORY 13.5 (0058): the half of a half day.
+      'half',
       '...absence_types(draws_allowance)',
     ]);
+  });
+
+  it('reads a half day with its half, and a row without the column or with null as a whole day (story 13.5)', () => {
+    const type = { absence_type_id: ANNUAL_LEAVE_ID, draws_allowance: true };
+    expect(leaveRecordsOf([{ id: FIRST, member_id: MEMBER, during: '[2026-09-10,2026-09-11)', ...type, half: 'FIRST' }], MEMBER)).toEqual([
+      { id: FIRST, from: '2026-09-10', to: '2026-09-10', absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true, half: 'FIRST' },
+    ]);
+    for (const row of [
+      { id: FIRST, member_id: MEMBER, during: '[2026-09-10,2026-09-11)', ...type, half: null },
+      { id: FIRST, member_id: MEMBER, during: '[2026-09-10,2026-09-11)', ...type },
+    ]) {
+      const records = leaveRecordsOf([row], MEMBER);
+      expect(records).toEqual([{ id: FIRST, from: '2026-09-10', to: '2026-09-10', absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true }]);
+      expect(records?.[0] !== undefined && 'half' in records[0]).toBe(false);
+    }
+  });
+
+  it.each([
+    ['a half that is neither', { during: '[2026-09-10,2026-09-11)', half: 'MIDDLE' }],
+    ['a half on two dates', { during: '[2026-09-10,2026-09-12)', half: 'SECOND' }],
+  ] as const)('cannot trust a row with %s (story 13.5)', (_name, row) => {
+    expect(leaveRecordsOf([{ id: FIRST, member_id: MEMBER, absence_type_id: ANNUAL_LEAVE_ID, draws_allowance: true, ...row }], MEMBER)).toBeNull();
   });
 
   it('parses each canonical range into the inclusive dates it records, with its id and type, in start order', async () => {

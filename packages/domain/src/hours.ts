@@ -30,6 +30,16 @@
  * it was. The leave minutes never enter a band or the total, so the invariant
  * holds as it is.
  *
+ * HALF DAYS (story 13.5, R4.12, PO 2026-11-12). On a date the caller names in
+ * `halfDays` whose schedule holds exactly ONE working shift, that shift is
+ * split at its nominal midpoint, start + ⌊duration/2⌋ ({@link shiftHalvesOf}):
+ * the worked half is intersected with the bands and counts in the total and
+ * `shiftCount`, the absent half counts in `leaveMinutes` — whether or not the
+ * shift is also an accepted-uncovered leave shift. An untimed one is untimed,
+ * as ever. A date holding no working shift, or more than one, is read as if
+ * no half day were named. The invariant holds: the worked half's band minutes
+ * sum to the minutes it adds to the total.
+ *
  * The result is numbers and ids only; nothing here reads a name.
  *
  * Every breached precondition throws a `RangeError` naming the offending value.
@@ -37,6 +47,7 @@
 
 import { MINUTES_PER_DAY, deriveHourBands, partitionOfDay, type DayPartition, type HourBand } from './bands.js';
 import { deriveShiftTimes, shiftDurationOn, shiftTypeVersionOn, type ShiftType, type ShiftTypeVersion } from './duration.js';
+import { LEAVE_HALF_FIRST, LEAVE_HALF_SECOND, type LeaveHalf } from './leave.js';
 import { datesOfMonth, memberScheduleOfMonth, type MemberScheduleInput, type MemberShift } from './schedule.js';
 
 /** One shift type with every version of its times. */
@@ -61,6 +72,51 @@ export interface MemberHoursInput extends MemberScheduleInput {
    * order. Absent or empty, every shift is worked.
    */
   readonly leaveShifts?: readonly LeaveShift[];
+  /**
+   * The member's half-day records (story 13.5): each date and the half they
+   * were absent, in any order, at most one per date. Absent or empty, no
+   * shift is split.
+   */
+  readonly halfDays?: readonly HalfDay[];
+}
+
+/** One half-day record of a member, by its date and half (story 13.5). */
+export interface HalfDay {
+  readonly date: string;
+  readonly half: LeaveHalf;
+}
+
+/** One half of a shift: the interval `[startMinute, startMinute + durationMinutes)`, which may run past midnight. */
+export interface ShiftHalf {
+  readonly startMinute: number;
+  readonly durationMinutes: number;
+}
+
+/** A shift split at its nominal midpoint (story 13.5): the first half, then the second. */
+export interface ShiftHalves {
+  readonly first: ShiftHalf;
+  readonly second: ShiftHalf;
+  /** The midpoint, minutes after the start of the shift's date (may be 1440 or more past midnight). */
+  readonly midpointMinute: number;
+}
+
+/**
+ * A shift's two halves (story 13.5, R4.12, PO 2026-11-12): split at start +
+ * ⌊duration/2⌋ on its nominal interval, so an odd minute goes to the second
+ * half. 07:00–19:00 splits at 13:00; 19:00–07:00 at 01:00 the next day;
+ * 07:00–07:59 gives 29 and 30 minutes.
+ *
+ * @throws RangeError on any precondition of {@link deriveShiftTimes}.
+ */
+export function shiftHalvesOf(startMinute: number, endMinute: number): ShiftHalves {
+  const times = deriveShiftTimes(startMinute, endMinute);
+  const firstMinutes = Math.floor(times.durationMinutes / 2);
+  const midpointMinute = times.startMinute + firstMinutes;
+  return {
+    first: { startMinute: times.startMinute, durationMinutes: firstMinutes },
+    second: { startMinute: midpointMinute, durationMinutes: times.durationMinutes - firstMinutes },
+    midpointMinute,
+  };
 }
 
 /** One shift of a member, by its date and team, that counts as leave (story 5.4b). */
@@ -258,9 +314,26 @@ function walkMonth(input: MemberHoursInput, month: string): MonthWalk {
   // Non-null: every month has a first date.
   const typesById = shiftTypesById(input, dates[0]!);
   const leaveShifts = new Set((input.leaveShifts ?? []).map((shift) => JSON.stringify([shift.date, shift.teamId])));
+  const halfDays = new Map<string, LeaveHalf>();
+  for (const halfDay of input.halfDays ?? []) {
+    if (halfDay.half !== LEAVE_HALF_FIRST && halfDay.half !== LEAVE_HALF_SECOND) {
+      throw new RangeError(`the half day on ${halfDay.date} is half ${JSON.stringify(halfDay.half)}, neither FIRST nor SECOND`);
+    }
+    if (halfDays.has(halfDay.date)) throw new RangeError(`two half days are given on ${halfDay.date}`);
+    halfDays.set(halfDay.date, halfDay.half);
+  }
   const terms: HoursTerm[] = [];
+  const sharesOf = (startMinute: number, durationMinutes: number): readonly HoursShare[] =>
+    [...minutesByBand(partition, startMinute, durationMinutes)].map(([bandId, minutes]) => ({ bandId, minutes }));
 
   for (const day of memberScheduleOfMonth(input, month)) {
+    const half = halfDays.get(day.date);
+    // A half day splits the date's shift only when it holds exactly one working one.
+    const workingShifts =
+      half === undefined
+        ? 0
+        : day.shifts.filter((shift) => shift.shiftTypeId !== null && typesById.get(shift.shiftTypeId)?.type.isWorking === true)
+            .length;
     for (const shift of day.shifts) {
       if (shift.shiftTypeId === null) continue;
       const entry = typesById.get(shift.shiftTypeId);
@@ -271,6 +344,25 @@ function walkMonth(input: MemberHoursInput, month: string): MonthWalk {
 
       const version = shiftTypeVersionOn(entry.versions, day.date);
       const base = { date: day.date, teamId: shift.teamId, shiftTypeId: shift.shiftTypeId, source: sourceOf(shift) };
+      if (half !== undefined && workingShifts === 1 && version !== null) {
+        // A half day: the absent half is leave, the worked half is worked, by intersection.
+        const halves = shiftHalvesOf(version.startMinute, version.endMinute);
+        const absent = half === LEAVE_HALF_FIRST ? halves.first : halves.second;
+        const worked = half === LEAVE_HALF_FIRST ? halves.second : halves.first;
+        if (absent.durationMinutes > 0) terms.push({ ...base, kind: HOURS_KIND_LEAVE, minutes: absent.durationMinutes, shares: [] });
+        terms.push({
+          ...base,
+          kind: HOURS_KIND_WORKED,
+          minutes: worked.durationMinutes,
+          shares: sharesOf(worked.startMinute, worked.durationMinutes),
+        });
+        continue;
+      }
+      if (half !== undefined && workingShifts === 1) {
+        // An untimed shift on a half day is untimed, as ever: no leave minutes.
+        terms.push({ ...base, kind: HOURS_KIND_UNTIMED, minutes: 0, shares: [] });
+        continue;
+      }
       if (leaveShifts.has(JSON.stringify([day.date, shift.teamId]))) {
         // A leave shift is not worked: only its duration, as leave.
         if (version !== null) {
@@ -289,10 +381,7 @@ function walkMonth(input: MemberHoursInput, month: string): MonthWalk {
         ...base,
         kind: HOURS_KIND_WORKED,
         minutes: times.durationMinutes,
-        shares: [...minutesByBand(partition, times.startMinute, times.durationMinutes)].map(([bandId, minutes]) => ({
-          bandId,
-          minutes,
-        })),
+        shares: sharesOf(times.startMinute, times.durationMinutes),
       });
     }
   }

@@ -18,7 +18,11 @@ import { erasuresOf, erasuresOutcomeOf, type ErasureRow } from '@/features/confl
 import { ORGANIZATION_CONFLICT_RESOLUTIONS_KEY } from '@/features/conflicts/services/resolutions';
 import { ACTING_ADMINS_KEY, actorNamesOf } from '@/features/conflicts/services/resolved-conflicts';
 import { hoursLeaveKeysOf } from '@/features/hours/services/hours-conflicts';
-import { ORGANIZATION_LEAVE_RECORDS_KEY, organizationLeaveRecordsOf } from '@/features/leave/services/leave-list';
+import {
+  ORGANIZATION_LEAVE_RECORDS_KEY,
+  organizationLeaveRecordsOf,
+  type OrganizationLeaveRecord,
+} from '@/features/leave/services/leave-list';
 import { configurationReportOf, type ShortStaffedReport } from '@/features/staffing/services/short-staffed';
 import { swapStaleOf } from '@/features/swaps/services/my-swaps';
 import {
@@ -308,10 +312,6 @@ export function swapDecisionPreviewOf(
   // EACH MEMBER'S OWN LEAVE KEYS, as their *Sati* counts them: the organization's, filtered to them.
   const keys = hoursLeaveKeysOf(snapshot, resolutionRows);
   const months = [...new Set(putOn.map(({ shift }) => monthOf(shift.date)))].sort();
-  const hours = memberMonthDeltasOf(snapshot, after, [swap.proposerId, swap.addresseeId], months, (memberId) =>
-    keys.filter((key) => key.memberId === memberId),
-  ).map((delta) => ({ ...delta, name: nameOf(delta.memberId) }));
-
   const records = organizationLeaveRecordsOf(
     recordRows,
     snapshot.members.map((member) => member.id),
@@ -319,6 +319,27 @@ export function swapDecisionPreviewOf(
 
   if (records === null) throw new RangeError('a leave record row cannot be trusted');
 
+  // Each member's half days split their shift's hours as *Sati* does (story 13.5).
+  const recordsByMember = new Map<string, OrganizationLeaveRecord[]>();
+
+  for (const record of records) {
+    const own = recordsByMember.get(record.memberId);
+
+    if (own === undefined) recordsByMember.set(record.memberId, [record]);
+    else own.push(record);
+  }
+
+  const hours = memberMonthDeltasOf(
+    snapshot,
+    after,
+    [swap.proposerId, swap.addresseeId],
+    months,
+    (memberId) => keys.filter((key) => key.memberId === memberId),
+    recordsByMember,
+  ).map((delta) => ({ ...delta, name: nameOf(delta.memberId) }));
+
+  // Every record warns, a half day's too: the member put on is away for half
+  // the shift they take, a conservative note never a gate (R6.6, story 13.5).
   const onLeave = putOn
     .filter(({ shift, inId }) =>
       records.some((record) => record.memberId === inId && record.from <= shift.date && shift.date <= record.to),

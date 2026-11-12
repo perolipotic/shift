@@ -8,6 +8,7 @@ import {
   datesOfMonth,
   erasedCollisionsOf,
   leaveCostOf,
+  leaveRangeCostOf,
   leaveRecordsFrom,
   MAX_LEAVE_RANGE_DAYS,
   scheduleOfMonth,
@@ -200,6 +201,13 @@ describe.each(FIXTURES)('the collision rule under $fixture (R6.1, R7.1, R7.3)', 
   const own = teamOnStep(fx, date, 0);
   const ownMember = memberOf(fx, own);
   const ownTeam = fx.teams[own]!.id;
+
+  it('raises one collision for a half day, which costs 0.5 (story 13.5, R4.12)', () => {
+    const input = inputOf(fx, [{ id: 'h', memberId: ownMember, from: date, to: date, half: 'FIRST' }]);
+    expect(collisionsOf(input)).toHaveLength(1);
+    expect(collisionsOf(input)[0]).toMatchObject({ memberId: ownMember, date, teamId: ownTeam, leaveRecordId: 'h' });
+    expect(leaveRangeCostOf(memberInputOf(input, ownMember), { from: date, to: date, half: 'FIRST' })).toBe(0.5);
+  });
 
   it('raises nothing over non-working dates only', () => {
     // Two consecutive September dates on which their own team is off.

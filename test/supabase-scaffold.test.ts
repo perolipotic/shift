@@ -3425,6 +3425,55 @@ describe('the access-control migration', () => {
     expect(migration, '0057 grants anon something').not.toMatch(/grant[^;]*\banon\b/i);
   });
 
+  it('lets a leave record be a half day of one date, named on insert and on amend, and returns it from both reads (story 13.5)', () => {
+    // STORY 13.5 (0058). Source text only; what each write does is `test/rls-isolation.test.ts`, in CI.
+    const migration = stripLineComments(
+      readFileSync(join(supabaseRoot, 'migrations', '0058_half_day_leave.sql'), 'utf8'),
+    );
+    expect(migration).toMatch(
+      /add column half text\s+constraint leave_records_half_check check \(half in \('FIRST', 'SECOND'\)\);/,
+    );
+    expect(migration, 'a half may span more than one date').toMatch(
+      /add constraint leave_records_half_one_date\s+check \(half is null or upper\(during\) - lower\(during\) = 1\);/,
+    );
+    expect(migration, '0058 sets a default half').not.toMatch(/\bhalf text[^;]*\bdefault\b/i);
+    expect(migration).toContain('grant insert (half) on table public.leave_records to authenticated;');
+
+    expect(migration).toContain('drop function public.amend_leave_record(uuid, date, date, uuid);');
+    const amend = /create function public\.amend_leave_record\([\s\S]*?\$\$;/.exec(migration)?.[0] ?? '';
+    expect(amend, 'amend_leave_record is not recreated').not.toBe('');
+    expect(amend).toMatch(/p_absence_type_id uuid default null,\s+p_half text default null\s*\)/);
+    expect(amend, 'the amend does not write the half').toMatch(
+      /insert into public\.leave_records \(organization_id, member_id, during, absence_type_id, half\)[\s\S]*?coalesce\(p_absence_type_id, amended_type\),\s+p_half\s*\)/,
+    );
+    expect(amend).toMatch(/security definer/);
+    expect(amend).toMatch(/set search_path = ''/);
+    expect(amend, 'the amend lost its lock').toMatch(/pg_catalog\.pg_advisory_xact_lock\(/);
+    expect(amend).toMatch(/errcode = 'insufficient_privilege',\s+message = 'LEAVE_RECORD_AMEND_REFUSED'/);
+    expect(amend).toMatch(/set_config\('shift\.notify_suppress', 'amend', true\)/);
+    expect(amend).toMatch(/and not \(c\.date <@ replacement_during\)/);
+    for (const role of ['public', 'anon', 'service_role']) {
+      expect(migration).toContain(`revoke execute on function public.amend_leave_record(uuid, date, date, uuid, text) from ${role};`);
+    }
+    expect(migration).toContain('grant execute on function public.amend_leave_record(uuid, date, date, uuid, text) to authenticated;');
+
+    const returns =
+      /returns table \(\s*id uuid,\s*member_id uuid,\s*during daterange,\s*absence_type_id uuid,\s*draws_allowance boolean,\s*half text\s*\)/;
+    for (const name of ['my_leave_records', 'leave_overview_records']) {
+      expect(migration).toContain(`drop function public.${name}();`);
+      const read = new RegExp(`create function public\\.${name}\\(\\)[\\s\\S]*?\\$\\$;`).exec(migration)?.[0] ?? '';
+      expect(read, `${name} is not recreated`).not.toBe('');
+      expect(read, `${name} does not return the half`).toMatch(returns);
+      expect(read).toMatch(/and r\.removed_at is null/);
+      expect(read).toMatch(/security definer/);
+      expect(migration).toContain(`grant execute on function public.${name}() to authenticated;`);
+    }
+
+    expect(migration, '13.5 touches the request flow (13.5b)').not.toMatch(/leave_requests|decide_leave_request/);
+    expect(migration, '13.5 takes a trigger').not.toMatch(/create (or replace )?trigger/i);
+    expect(migration, '13.5 takes a policy').not.toMatch(/\bpolicy\b/i);
+  });
+
   it('recreates both leave reads to carry each record\'s type and its drawing flag, and changes nothing else (story 13.2)', () => {
     // STORY 13.2 (0053): the read side only. Source text; what each read
     // returns is `test/rls-isolation.test.ts`, which runs in CI.

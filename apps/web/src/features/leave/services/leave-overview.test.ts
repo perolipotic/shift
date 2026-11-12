@@ -60,7 +60,7 @@ import {
 } from '@/features/leave/services/leave-section';
 import { ALL_TEAMS, NO_TEAM, type MemberListRow } from '@/features/members/services/list';
 import { initLocalization, t } from '@/lib/i18n';
-import { nextIsoDate } from '@/lib/i18n/format';
+import { formatLeaveDays, nextIsoDate } from '@/lib/i18n/format';
 import {
   PILOT,
   SEEDED,
@@ -337,6 +337,21 @@ describe('the rows', () => {
     // 29.12.2025–02.01.2026 charges only 01.01. (Noć; 02.01. is free) to this
     // year, and 2027's record charges nothing: one day more.
     expect(ana?.figures).toEqual({ carriedDays: 0, carried: null, usedDays: 5, balanceDays: 20 });
+  });
+
+  it('counts a half day 0,5 in the row and the summary, every figure through the locale (story 13.5)', () => {
+    // 01.06.2026 is Ana's Dan.
+    const half = { ...rpcRow('r-half', ANA, '2026-06-01', '2026-06-02'), half: 'FIRST' };
+    const overview = readyOf(leaveOverviewOf(sourcesOf(pilot, { records: { rows: [half], loading: false } }), NO_FILTERS, NOW));
+    const ana = overview.rows.find((row) => row.memberId === ANA);
+
+    expect(ana?.figures).toEqual({ carriedDays: 0, carried: null, usedDays: 0.5, balanceDays: 24.5 });
+    expect(formatLeaveDays(ana?.figures?.usedDays ?? NaN)).toBe('0,5');
+    expect(formatLeaveDays(ana?.figures?.balanceDays ?? NaN)).toBe('24,5');
+    expect(overview.summary.usedDays).toBe(0.5);
+    expect(
+      t('godisnji.overview.summary', { count: overview.summary.shown, records: 1, used: overview.summary.usedDays, allowance: 100 }),
+    ).toContain('iskorišteno ukupno 0,5 dana od 100');
   });
 
   it.each([

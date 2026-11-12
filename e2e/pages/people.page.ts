@@ -789,6 +789,21 @@ export class PeoplePage extends BasePage {
     return this.leaveTypeGroup.getByRole('radio').filter({ has: this.page.getByText(name, { exact: true }) });
   }
 
+  /** *Pola dana* in the open leave dialog (story 13.5), a switch named by its label. */
+  get leaveHalfDaySwitch(): Locator {
+    return this.leaveDialog.getByRole('switch', { name: leave.halfDay, exact: true });
+  }
+
+  /** The open leave dialog's half group (story 13.5), named by its label. */
+  get leaveHalfGroup(): Locator {
+    return this.leaveDialog.getByRole('radiogroup', { name: leave.half, exact: true });
+  }
+
+  /** The half card named `name` (*Prvi dio smjene*, *Drugi dio smjene*) in the open leave dialog. */
+  leaveHalfCard(name: string): Locator {
+    return this.leaveHalfGroup.getByRole('radio').filter({ has: this.page.getByText(name, { exact: true }) });
+  }
+
   /**
    * Enters an od–do range, both `YYYY-MM-DD`, in the open leave dialog —
    * opening the record dialog first when none is open (story 7.12). STORY

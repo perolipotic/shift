@@ -139,13 +139,14 @@ export function KalendarScreen() {
         : t('kalendar.ownNote', { team: month.ownTeamName });
   // STORY 12.2: the polite line a landed swap proposal returns with.
   const { proposed: swapProposed, lineField: swapLine } = useSwapProposed();
-  const overrideForm = useOverrideForm(snapshot, screen.detail, screen.leaveKeys);
+  const overrideForm = useOverrideForm(snapshot, screen.detail, screen.leaveKeys, screen.leaveRecords);
   const rosterForm = useRosterForm(
     snapshot,
     screen.detail,
     overrideForm.latch,
     screen.candidateLeave,
     screen.leaveKeys,
+    screen.leaveRecords,
   );
 
   return (

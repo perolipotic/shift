@@ -1,5 +1,6 @@
 import {
   collisionsOf,
+  halfFieldOf,
   monthOf,
   unresolvedCollisionsOf,
   type Collision,
@@ -146,8 +147,10 @@ function byMemberOf(
 ): LeaveRecordsByMember {
   const byMember = new Map<string, HoursLeaveRecord[]>();
 
-  for (const { memberId, from, to, absenceTypeId, drawsAllowance } of records) {
-    const record: HoursLeaveRecord = { from, to, absenceTypeId, drawsAllowance };
+  for (const one of records) {
+    const { memberId, from, to, absenceTypeId, drawsAllowance } = one;
+    // A half day keeps its half (story 13.5): it costs 0.5 and splits the shift's hours.
+    const record: HoursLeaveRecord = { from, to, absenceTypeId, drawsAllowance, ...halfFieldOf(one) };
     const own = byMember.get(memberId);
 
     if (own === undefined) byMember.set(memberId, [record]);
@@ -210,6 +213,35 @@ export function hoursLeaveOf(
   if (records === null) throw new RangeError('a leave record row cannot be trusted');
 
   return { collisions: unresolvedOf(snapshot, records, resolutionRows), leaveRecords: byMemberOf(records) };
+}
+
+/**
+ * The leave records by member (story 13.5), of the rows the viewer's role
+ * read, parsed as {@link hoursLeaveOf} parses them — every member's for an
+ * admin, the viewer's own for a member — for an hours input that splits a
+ * half day's shift, where the collisions are not wanted.
+ *
+ * @throws RangeError when a row cannot be trusted.
+ */
+export function hoursLeaveRecordsOf(snapshot: CalendarSnapshot, rows: readonly unknown[]): LeaveRecordsByMember {
+  const viewer = snapshot.viewer;
+
+  if (!readsOrganizationLeave(viewer.role)) {
+    const own = leaveRecordsOf(rows, viewer.memberId);
+
+    if (own === null) throw new RangeError('an own leave record row cannot be trusted');
+
+    return byMemberOf(own.map((record) => ({ ...record, memberId: viewer.memberId })));
+  }
+
+  const records = organizationLeaveRecordsOf(
+    rows,
+    snapshot.members.map((member) => member.id),
+  );
+
+  if (records === null) throw new RangeError('a leave record row cannot be trusted');
+
+  return byMemberOf(records);
 }
 
 /**

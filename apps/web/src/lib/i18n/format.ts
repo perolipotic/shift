@@ -514,6 +514,15 @@ export function formatNumber(value: number, fractionDigits: number): string {
   return formatter.format(value);
 }
 
+/**
+ * A count of leave days as a bare figure, where a column header or a label
+ * names the unit (story 13.5): `3`, `0,5`, `−1,5` — whole days with no
+ * decimals, a half day's with one, through the locale and never `0.5`.
+ */
+export function formatLeaveDays(days: number): string {
+  return formatNumber(days, Number.isInteger(days) ? 0 : 1);
+}
+
 /** One list formatter per process: names joined as Croatian prose reads them. */
 const listFormatter = new Intl.ListFormat(LOCALE, { style: 'long', type: 'conjunction' });
 

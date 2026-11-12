@@ -1698,6 +1698,19 @@ const SANCTIONED_SCREEN_KEYS = [
   'ljudi.leaveRecord.unchanged',
   'ljudi.leaveRecord.type',
   'ljudi.leaveRecord.typeUnchosen',
+  // STORY 13.5: the half day — the *Pola dana* switch and its hint, the half
+  // group's label, its two cards and their times, the two reasons a half day
+  // is not sent, and a half day's cost in a list, each half.
+  'ljudi.leaveRecord.halfDay',
+  'ljudi.leaveRecord.halfDayHint',
+  'ljudi.leaveRecord.half',
+  'ljudi.leaveRecord.halfFirst',
+  'ljudi.leaveRecord.halfSecond',
+  'ljudi.leaveRecord.halfTimes',
+  'ljudi.leaveRecord.halfUnchosen',
+  'ljudi.leaveRecord.halfRefused',
+  'ljudi.leaveRecord.costHalfFirst',
+  'ljudi.leaveRecord.costHalfSecond',
   'ljudi.leaveRecord.balanceUnchanged',
   'ljudi.leaveRecord.amendedPlain',
   'ljudi.leaveRecord.amendDenied',
@@ -2777,6 +2790,24 @@ const SWAP_NOTIFICATION_KEYS: readonly string[] = [
 ];
 
 /**
+ * Story 13.5, the half day: `smjen` names the member's working shift that
+ * date — *Prvi dio smjene*, *Drugi dio smjene*, as the PO worded them on
+ * 2026-11-12 — never the Team, and `tip… smjen…` is refused. EIGHT KEYS: the
+ * switch's hint, the half group's label, its two cards, the two reasons a
+ * half day is not sent, and a half day's cost in a list, each half.
+ */
+const HALF_DAY_KEYS: readonly string[] = [
+  'ljudi.leaveRecord.halfDayHint',
+  'ljudi.leaveRecord.half',
+  'ljudi.leaveRecord.halfFirst',
+  'ljudi.leaveRecord.halfSecond',
+  'ljudi.leaveRecord.halfUnchosen',
+  'ljudi.leaveRecord.halfRefused',
+  'ljudi.leaveRecord.costHalfFirst',
+  'ljudi.leaveRecord.costHalfSecond',
+];
+
+/**
  * Story 12.4, an admin decides a swap: `smjen` names the swapped shift (a
  * team's rostered shift, *Zamjena smjene*), as on *Danas*'s *Zamjene* card
  * and in the swap notifications, and `tip… smjen…` is refused. SIX KEYS:
@@ -2859,7 +2890,8 @@ function teamTermOutOfTurn(key: string, message: string): boolean {
     !MINIMUM_MEMBERS_KEYS.includes(key) &&
     !SHORT_STAFFED_KEYS.includes(key) &&
     !SWAP_NOTIFICATION_KEYS.includes(key) &&
-    !SWAP_DECISION_KEYS.includes(key)
+    !SWAP_DECISION_KEYS.includes(key) &&
+    !HALF_DAY_KEYS.includes(key)
   ) {
     return lowered.includes('smjen');
   }

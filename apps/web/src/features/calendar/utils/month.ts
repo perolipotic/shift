@@ -22,6 +22,7 @@ import {
   type OverrideStanding,
   type StaffingInput,
   type StatusVersion,
+  halfFieldOf,
 } from '@shift/domain';
 
 import {
@@ -1077,7 +1078,14 @@ export function snapshotScheduleInputOf(snapshot: CalendarSnapshot): SnapshotSch
 export function staffingInputOf(calendar: CalendarSnapshot, records: readonly CollisionLeaveRecord[]): StaffingInput {
   return {
     ...snapshotScheduleInputOf(calendar),
-    leaveRecords: records.map(({ id, memberId, from, to }) => ({ id, memberId, from, to })),
+    // A half day keeps its half: the member counts at work (R10.1, story 13.5).
+    leaveRecords: records.map((record) => ({
+      id: record.id,
+      memberId: record.memberId,
+      from: record.from,
+      to: record.to,
+      ...halfFieldOf(record),
+    })),
     teamIds: splitTeams(calendar.teams).active.map((team) => team.id),
     minimumMembers: minimumOfCalendar(calendar),
   };
