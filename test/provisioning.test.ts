@@ -1816,7 +1816,8 @@ describe('every organization table carries row level security, and only its revi
 
   it.skipIf(noDatabase)('returns each leave record\'s type and its drawing flag from both leave reads (story 13.2)', async () => {
     // 0053 recreates `my_leave_records()` and `leave_overview_records()` with
-    // two more columns, and changes nothing else about either.
+    // two more columns, and 0058 adds `half` (story 13.5); nothing else about
+    // either changes.
     const client = await connect();
     try {
       const { rows } = await client.query<{ name: string; result: string }>(
@@ -1828,11 +1829,11 @@ describe('every organization table carries row level security, and only its revi
       expect(rows).toEqual([
         {
           name: 'leave_overview_records',
-          result: 'TABLE(id uuid, member_id uuid, during daterange, absence_type_id uuid, draws_allowance boolean)',
+          result: 'TABLE(id uuid, member_id uuid, during daterange, absence_type_id uuid, draws_allowance boolean, half text)',
         },
         {
           name: 'my_leave_records',
-          result: 'TABLE(id uuid, member_id uuid, during daterange, absence_type_id uuid, draws_allowance boolean)',
+          result: 'TABLE(id uuid, member_id uuid, during daterange, absence_type_id uuid, draws_allowance boolean, half text)',
         },
       ]);
     } finally {
@@ -2346,7 +2347,7 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // 3.6b's and 3.5c's attributes.
     { name: 'remove_leave_record', argumentCount: 1 },
     // 0054 (13.2b) added the type, dropping the three-argument signature.
-    { name: 'amend_leave_record', argumentCount: 4 },
+    { name: 'amend_leave_record', argumentCount: 5 },
     // STORY 5.2c. The member's own live leave records, read past 0028's
     // select policy so no author leaves, on 3.6a's attributes.
     { name: 'my_leave_records', argumentCount: 0 },
@@ -2522,7 +2523,7 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'amend_roster_override', argumentCount: 4, expected: ['authenticated'] },
     // STORY 5.2a. The leave record's removal and amend, on 3.6b's terms.
     { name: 'remove_leave_record', argumentCount: 1, expected: ['authenticated'] },
-    { name: 'amend_leave_record', argumentCount: 4, expected: ['authenticated'] },
+    { name: 'amend_leave_record', argumentCount: 5, expected: ['authenticated'] },
     // STORY 5.2c. The member's own leave records, on 3.6a's read's terms.
     { name: 'my_leave_records', argumentCount: 0, expected: ['authenticated'] },
     // STORY 7.15. The admin's leave overview, on 5.2c's terms; the function
