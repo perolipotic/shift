@@ -296,8 +296,10 @@ test.describe("the admin's overview (story 7.15)", () => {
     await expect(leavePage.overviewTable).toBeVisible();
     const cells = leavePage.tableCells(member.name);
     await expect(cells.nth(2)).toHaveText('20');
-    await expect(cells.nth(3)).toHaveText(String(cost));
-    await expect(cells.nth(4)).toHaveText(String(20 - cost));
+    // STORY 13.4b: *Preneseno* after *Pravo*; the run's organization carries nothing.
+    await expect(cells.nth(3)).toHaveText('0');
+    await expect(cells.nth(4)).toHaveText(String(cost));
+    await expect(cells.nth(5)).toHaveText(String(20 - cost));
     await expect(leavePage.tableRow(colleague.name)).toHaveCount(0);
     // One person shown, and the days they used of their 20 in the summary.
     await expect(

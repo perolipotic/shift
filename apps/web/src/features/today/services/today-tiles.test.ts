@@ -249,12 +249,13 @@ describe('the leave tile', () => {
 
     if (leave.kind !== MY_LEAVE_READY) throw new Error(leave.kind);
 
-    expect(figures).toEqual({ balanceDays: 17, usedDays: 3, allowanceDays: 20 });
+    expect(figures).toEqual({ balanceDays: 17, usedDays: 3, allowanceDays: 20, carried: null });
     // EQUAL TO GODIŠNJI, figure for figure.
     expect(figures).toEqual({
       balanceDays: leave.balance.balanceDays,
       usedDays: leave.balance.usedDays,
       allowanceDays: leave.balance.allowanceDays,
+      carried: null,
     });
     expect(t('count.days', { count: figures.balanceDays })).toBe('17 dana');
     expect(t('danas.tiles.leaveHint', { used: figures.usedDays, allowance: figures.allowanceDays })).toBe(
@@ -281,7 +282,7 @@ describe('the leave tile', () => {
     };
     const figures = leaveFiguresOf(leaveTileOf(leaveOf(pilot, settled([WORKED]), { members })));
 
-    expect(figures).toEqual({ balanceDays: 21, usedDays: 3, allowanceDays: 24 });
+    expect(figures).toEqual({ balanceDays: 21, usedDays: 3, allowanceDays: 24, carried: null });
     expect(t('danas.tiles.leaveHint', { used: figures.usedDays, allowance: figures.allowanceDays })).toBe(
       'preostalo · iskorišteno 3 od 24',
     );
@@ -291,7 +292,7 @@ describe('the leave tile', () => {
     const members: LeaveMembersSource = { ...MEMBERS, members: [{ id: VIEWER_MEMBER, leaveAllowance: { startingDays: 1, versions: [] } }] };
     const figures = leaveFiguresOf(leaveTileOf(leaveOf(pilot, settled([WORKED]), { members })));
 
-    expect(figures).toEqual({ balanceDays: -2, usedDays: 3, allowanceDays: 1 });
+    expect(figures).toEqual({ balanceDays: -2, usedDays: 3, allowanceDays: 1, carried: null });
     // Intl's Croatian minus sign (U+2212), never dropped.
     expect(t('count.days', { count: figures.balanceDays })).toBe('\u22122 dana');
   });
@@ -312,6 +313,33 @@ describe('the leave tile', () => {
     const empty = await snapshotOf([]);
 
     expect(leaveTileOf(leaveOf(empty, settled([])))).toEqual({ kind: TILE_UNAVAILABLE, key: 'godisnji.unscheduled' });
+  });
+});
+
+describe('the carried line (story 13.4b)', () => {
+  it('shows Godišnji’s carried days under the figures, and none without carry-over', () => {
+    const organization: LeaveOrganizationSource = {
+      ...ORGANIZATION,
+      data: {
+        ok: true,
+        snapshot: {
+          leaveYearStartMonth: 1,
+          leaveYearStartDay: 1,
+          carryOver: { maxDays: 5, expiryMonth: 12, expiryDay: 31, firstLeaveYear: 2026 },
+        },
+      },
+    };
+    const leave = leaveOf(pilot, settled([WORKED]), { organization });
+    const figures = leaveFiguresOf(leaveTileOf(leave));
+
+    expect(figures).toEqual({
+      balanceDays: 22,
+      usedDays: 3,
+      allowanceDays: 20,
+      carried: { kind: 'pending', count: 5, lapsed: 0, date: '31.12.' },
+    });
+    expect(figures.allowanceDays + (figures.carried?.count ?? 0) - figures.usedDays).toBe(figures.balanceDays);
+    expect(leaveFiguresOf(leaveTileOf(leaveOf(pilot, settled([WORKED])))).carried).toBeNull();
   });
 });
 

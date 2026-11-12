@@ -9,6 +9,9 @@ const godisnji = hr.godisnji;
 const overview = hr.godisnji.overview;
 const request = hr.godisnji.request;
 
+/** The carried line (story 13.4b): the text before its first placeholder, `Preneseno `, starts it. */
+export const CARRIED_LINE = new RegExp(`^${escapeRegExp(godisnji.carried.kept.slice(0, godisnji.carried.kept.indexOf('{')))}`);
+
 /**
  * `/godisnji`: the viewer's own leave (story 5.2c) — three tiles, the
  * allowance, the days used in the current leave year and the balance — or,
@@ -48,6 +51,11 @@ export class LeavePage extends BasePage {
   /** The balance's figure. */
   get balanceFigure(): Locator {
     return this.tileValue(godisnji.balance);
+  }
+
+  /** The carried line under the three figures (story 13.4b): `Preneseno 5 dana (istječu 30.06.)`. */
+  get carriedLine(): Locator {
+    return this.page.getByRole('main').getByText(CARRIED_LINE);
   }
 
   /** The retry the unavailable alert offers. */
@@ -113,7 +121,7 @@ export class LeavePage extends BasePage {
       .filter({ has: this.page.getByRole('link', { name, exact: true }) });
   }
 
-  /** The table row's cells, in column order: Osoba, Smjena, Pravo, Iskorišteno, Preostalo. */
+  /** The table row's cells, in column order: Osoba, Smjena, Pravo, Preneseno (story 13.4b), Iskorišteno, Preostalo. */
   tableCells(name: string): Locator {
     return this.tableRow(name).getByRole('cell');
   }

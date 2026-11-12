@@ -528,6 +528,17 @@
     "allowance": "Pravo na godišnji odmor",
     "used": "Iskorišteno u tekućoj godini",
     "balance": "Preostalo",
+    "carried": {
+      "pending": "Preneseno {count, plural, one {# dan} few {# dana} other {# dana}} ({count, plural, one {istječe} few {istječu} other {istječu}} {date})",
+      "lapsed": "Preneseno {count, plural, one {# dan} few {# dana} other {# dana}} ({lapsed, plural, one {# istekao} few {# istekla} other {# isteklo}} {date})",
+      "kept": "Preneseno {count, plural, one {# dan} few {# dana} other {# dana}}"
+    },
+    "expiryExceeds": "Preneseni dani istječu {dayMonth}; nakon toga preostaje {count, plural, one {# dan} few {# dana} other {# dana}}.",
+    "carriedDays": {
+      "pending": "{count, plural, one {# dan} few {# dana} other {# dana}} ({count, plural, one {istječe} few {istječu} other {istječu}} {date})",
+      "lapsed": "{count, plural, one {# dan} few {# dana} other {# dana}} ({lapsed, plural, one {# istekao} few {# istekla} other {# isteklo}} {date})",
+      "kept": "{count, plural, one {# dan} few {# dana} other {# dana}}"
+    },
     "unavailable": "Godišnji odmor trenutačno nije moguće učitati. Pokušaj ponovno.",
     "unscheduled": "Za tebe još ne postoji raspored, pa se godišnji odmor ne može izračunati.",
     "retry": "Pokušaj ponovno",
@@ -538,10 +549,17 @@
       "person": "Osoba",
       "team": "Smjena",
       "allowance": "Pravo",
+      "carried": "Preneseno",
+      "carriedCell": {
+        "pending": "{count, number} ({count, plural, one {istječe} few {istječu} other {istječu}} {date})",
+        "lapsed": "{count, number} ({lapsed, plural, one {# istekao} few {# istekla} other {# isteklo}} {date})",
+        "kept": "{count, number}"
+      },
       "used": "Iskorišteno",
       "balance": "Preostalo",
       "noTeam": "Bez smjene",
       "summary": "Prikazano: {count, plural, one {# osoba} few {# osobe} other {# osoba}} · {records, plural, one {upisana # odsutnost} few {upisane # odsutnosti} other {upisano # odsutnosti}} · iskorišteno ukupno {used, plural, one {# dan} few {# dana} other {# dana}} od {allowance}",
+      "summaryCarried": "Prikazano: {count, plural, one {# osoba} few {# osobe} other {# osoba}} · {records, plural, one {upisana # odsutnost} few {upisane # odsutnosti} other {upisano # odsutnosti}} · iskorišteno ukupno {used, plural, one {# dan} few {# dana} other {# dana}} od {allowance} · preneseno ukupno {carried, plural, one {# dan} few {# dana} other {# dana}}",
       "stateChip": "Stanje: {value}",
       "stateRemove": "Ukloni filtar stanje: {value}",
       "statePicker": "Odaberi stanje",
@@ -1050,6 +1068,7 @@
       "allowance": "Pravo",
       "used": "Iskorišteno u tekućoj godini",
       "balance": "Preostalo",
+      "carried": "Preneseno",
       "record": "Upiši odsutnost",
       "recordName": "Upiši odsutnost: {name}",
       "recordDialogHeading": "Upiši odsutnost",

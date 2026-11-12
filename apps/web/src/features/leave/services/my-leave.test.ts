@@ -172,7 +172,7 @@ describe("the viewer's figures", () => {
   it('shows 20 / 3 / 17 for an allowance of 20 and one own record costing 3 this year, as the domain does', () => {
     const leave = readyOf(myLeaveOf(sourcesOf(pilot, { records: rowsOf([WORKED]) }), NOW));
 
-    expect(leave.balance).toEqual({ allowanceDays: 20, usedDays: 3, balanceDays: 17 });
+    expect(leave.balance).toEqual({ allowanceDays: 20, carriedDays: 0, lapsedDays: 0, carryOverExpiry: null, usedDays: 3, balanceDays: 17 });
     expect(leave.balance).toEqual(
       leaveBalanceOf({
         input: memberScheduleInputOf(pilot, pilot.viewer),
@@ -189,7 +189,7 @@ describe("the viewer's figures", () => {
     const typed = { ...WORKED, absence_type_id: ANNUAL_LEAVE_ID, draws_allowance: true };
     const leave = readyOf(myLeaveOf(sourcesOf(pilot, { records: rowsOf([typed, sick]) }), NOW));
 
-    expect(leave.balance).toEqual({ allowanceDays: 20, usedDays: 3, balanceDays: 17 });
+    expect(leave.balance).toEqual({ allowanceDays: 20, carriedDays: 0, lapsedDays: 0, carryOverExpiry: null, usedDays: 3, balanceDays: 17 });
   });
 
   it('is unavailable when a row carries a type it cannot trust (story 13.2)', () => {
@@ -202,6 +202,9 @@ describe("the viewer's figures", () => {
   it('shows 20 / 0 / 20 with no records', () => {
     expect(readyOf(myLeaveOf(sourcesOf(pilot), NOW)).balance).toEqual({
       allowanceDays: 20,
+      carriedDays: 0,
+      lapsedDays: 0,
+      carryOverExpiry: null,
       usedDays: 0,
       balanceDays: 20,
     });
@@ -213,6 +216,9 @@ describe("the viewer's figures", () => {
     // Jutarnja, Popodnevna, Noćna, Slobodno, Slobodno.
     expect(readyOf(myLeaveOf(sourcesOf(uj5, { records: rowsOf([record]) }), NOW)).balance).toEqual({
       allowanceDays: 20,
+      carriedDays: 0,
+      lapsedDays: 0,
+      carryOverExpiry: null,
       usedDays: 3,
       balanceDays: 17,
     });
@@ -263,6 +269,9 @@ describe("the viewer's figures", () => {
     // From 12.09 the range holds Slobodno, Slobodno, Dan.
     expect(readyOf(myLeaveOf(sourcesOf(pilot, { organization, records: rowsOf([WORKED]) }), NOW)).balance).toEqual({
       allowanceDays: 20,
+      carriedDays: 0,
+      lapsedDays: 0,
+      carryOverExpiry: null,
       usedDays: 1,
       balanceDays: 19,
     });
@@ -272,7 +281,7 @@ describe("the viewer's figures", () => {
     const members = { ...MEMBERS, members: [{ id: VIEWER_MEMBER, leaveAllowance: { startingDays: 1, versions: [] } }] };
     const leave = readyOf(myLeaveOf(sourcesOf(pilot, { members, records: rowsOf([WORKED]) }), NOW));
 
-    expect(leave.balance).toEqual({ allowanceDays: 1, usedDays: 3, balanceDays: -2 });
+    expect(leave.balance).toEqual({ allowanceDays: 1, carriedDays: 0, lapsedDays: 0, carryOverExpiry: null, usedDays: 3, balanceDays: -2 });
     expect(t('count.days', { count: leave.balance.balanceDays })).toContain('−2 dana');
   });
 
@@ -296,7 +305,7 @@ describe("the viewer's figures", () => {
     };
     const leave = readyOf(myLeaveOf(sourcesOf(pilot, { members, records: rowsOf([WORKED]) }), NOW));
 
-    expect(leave.balance).toEqual({ allowanceDays: 24, usedDays: 3, balanceDays: 21 });
+    expect(leave.balance).toEqual({ allowanceDays: 24, carriedDays: 0, lapsedDays: 0, carryOverExpiry: null, usedDays: 3, balanceDays: 21 });
     // The request form's preview stands on the same input: the same resolved allowance.
     const state = myLeaveRequestPreviewOf(leave, '2026-10-05', '2026-10-07', ANNUAL_LEAVE_ID);
 
@@ -317,9 +326,34 @@ describe("the viewer's figures", () => {
 
     expect(readyOf(myLeaveOf(sourcesOf(pilot, { members, records: rowsOf([WORKED]) }), NOW)).balance).toEqual({
       allowanceDays: 20,
+      carriedDays: 0,
+      lapsedDays: 0,
+      carryOverExpiry: null,
       usedDays: 3,
       balanceDays: 17,
     });
+  });
+});
+
+describe('carried days (story 13.4b)', () => {
+  it('passes the organization’s setting into the input the figures and the request preview stand on', () => {
+    const carryOver = { maxDays: 5, expiryMonth: 12, expiryDay: 31, firstLeaveYear: 2026 };
+    const organization: LeaveOrganizationSource = {
+      ...ORGANIZATION,
+      data: { ok: true, snapshot: { leaveYearStartMonth: 1, leaveYearStartDay: 1, carryOver } },
+    };
+    const leave = readyOf(myLeaveOf(sourcesOf(pilot, { organization, records: rowsOf([WORKED]) }), NOW));
+
+    expect(leave.input.carryOver).toEqual(carryOver);
+    expect(leave.balance).toEqual({
+      allowanceDays: 20,
+      carriedDays: 5,
+      lapsedDays: 0,
+      carryOverExpiry: '2026-12-31',
+      usedDays: 3,
+      balanceDays: 22,
+    });
+    expect(leave.balance).toEqual(leaveBalanceOf(leave.input));
   });
 });
 
@@ -412,7 +446,7 @@ describe("what stands in the figures' place", () => {
 
 describe('the tiles', () => {
   it('are the allowance, the days used and the balance, in that order, each in whole days', () => {
-    expect(myLeaveTilesOf({ allowanceDays: 20, usedDays: 3, balanceDays: 17 })).toEqual([
+    expect(myLeaveTilesOf({ allowanceDays: 20, carriedDays: 0, lapsedDays: 0, carryOverExpiry: null, usedDays: 3, balanceDays: 17 })).toEqual([
       { label: 'godisnji.allowance', days: 20 },
       { label: 'godisnji.used', days: 3 },
       { label: 'godisnji.balance', days: 17 },
@@ -455,6 +489,7 @@ describe('the balance input the figures stand on (story 9.3)', () => {
       records: [{ ...ANNUAL_RECORD, id: 'record-worked', from: '2026-09-10', to: '2026-09-14' }],
       today: '2026-09-26',
       leaveYearStart: { month: 1, day: 1 },
+      carryOver: null,
     });
     expect(leaveBalanceOf(leave.input)).toEqual(leave.balance);
     expect(leave.organizationId).toBe(pilot.organizationId);
@@ -703,7 +738,7 @@ describe("Godišnji's list of the viewer's requests (story 9.3)", () => {
 
     myLeaveRequestsOf(leave, rowsOf([requestRowOf('pending', '2026-10-05', '2026-10-08')]));
 
-    expect(leave.balance).toEqual({ allowanceDays: 20, usedDays: 3, balanceDays: 17 });
+    expect(leave.balance).toEqual({ allowanceDays: 20, carriedDays: 0, lapsedDays: 0, carryOverExpiry: null, usedDays: 3, balanceDays: 17 });
     expect(leave.input.records).toHaveLength(1);
   });
 

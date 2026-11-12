@@ -26,6 +26,7 @@ import {
   type ReviewFacts,
   type ReviewPreview,
 } from '@/features/leave/services/leave-request-review';
+import { EXCEEDS_AFTER_EXPIRY, leaveExceedsOf } from '@/features/leave/services/leave-section';
 import { REQUEST_APPROVED, REQUEST_PENDING, REQUEST_REJECTED } from '@/features/leave/services/leave-request-list';
 import { myLeaveRequestStatusMessageKey } from '@/features/leave/services/my-leave';
 import {
@@ -83,6 +84,8 @@ function RequestPreview({ preview }: { readonly preview: ReviewPreview }): React
   }
 
   const { figures, inYearDays, drawsAllowance, conflicts, shortStaffed } = preview;
+  // STORY 13.4b: over the balance today, or only once the carried days lapse.
+  const exceeds = leaveExceedsOf(figures);
 
   return (
     <div className="grid min-w-0 gap-2">
@@ -99,9 +102,13 @@ function RequestPreview({ preview }: { readonly preview: ReviewPreview }): React
       {inYearDays === null ? null : <p className="text-sm">{t('godisnji.request.costInYear', { count: inYearDays })}</p>}
       {drawsAllowance ? null : <p className="text-sm">{t('godisnji.request.balanceUnchanged')}</p>}
       {figures.overlapsRecord ? <p className="text-sm font-medium">{t('ljudi.leaveRecord.overlap')}</p> : null}
-      {figures.exceedsBalance ? (
-        <p className="text-sm font-medium">{t('godisnji.request.exceeds', { count: figures.balanceAfterDays })}</p>
-      ) : null}
+      {exceeds === null ? null : (
+        <p className="text-sm font-medium">
+          {exceeds.kind === EXCEEDS_AFTER_EXPIRY
+            ? t('godisnji.expiryExceeds', { ...exceeds })
+            : t('godisnji.request.exceeds', { count: exceeds.count })}
+        </p>
+      )}
       <LeaveConflictLines conflicts={conflicts} amend={false} />
       {/* STORY 11.2: the shifts approval would newly leave short of people, never a gate. */}
       <ShortStaffedBlock report={shortStaffed} />

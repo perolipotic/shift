@@ -54,6 +54,7 @@ import {
 import {
   LEAVE_READY,
   LEAVE_UNSCHEDULED,
+  leaveCarriedLineOf,
   memberLeaveBaseOf,
   type LeaveOrganizationSource,
 } from '@/features/leave/services/leave-section';
@@ -282,7 +283,7 @@ describe('the rows', () => {
 
       if (base.kind !== LEAVE_READY) throw new Error(`not ready: ${base.kind}`);
       expect(row.allowanceDays, row.name).toBe(base.balance.allowanceDays);
-      expect(row.figures, row.name).toEqual({ usedDays: base.balance.usedDays, balanceDays: base.balance.balanceDays });
+      expect(row.figures, row.name).toEqual({ carriedDays: 0, carried: null, usedDays: base.balance.usedDays, balanceDays: base.balance.balanceDays });
       expect(row.allowanceDays - (row.figures?.usedDays ?? NaN), row.name).toBe(row.figures?.balanceDays);
     }
   });
@@ -332,13 +333,29 @@ describe('the rows', () => {
 
     // Smjena B works Dan, Noć, Slobodno, Slobodno from Noć on 01.01.2020.
     // 01.06.–07.06.2026 is Dan, Noć, -, -, Dan, Noć, -: four days.
-    expect(alone?.figures).toEqual({ usedDays: 4, balanceDays: 21 });
+    expect(alone?.figures).toEqual({ carriedDays: 0, carried: null, usedDays: 4, balanceDays: 21 });
     // 29.12.2025–02.01.2026 charges only 01.01. (Noć; 02.01. is free) to this
     // year, and 2027's record charges nothing: one day more.
-    expect(ana?.figures).toEqual({ usedDays: 5, balanceDays: 20 });
+    expect(ana?.figures).toEqual({ carriedDays: 0, carried: null, usedDays: 5, balanceDays: 20 });
   });
 
-  it('holds the rule as a property: random records, every row equal to memberLeaveBaseOf', () => {
+  it.each([
+    { setting: 'no carry-over', organization: ORGANIZATION },
+    {
+      setting: 'a carry-over',
+      organization: {
+        ...ORGANIZATION,
+        data: {
+          ok: true,
+          snapshot: {
+            leaveYearStartMonth: 1,
+            leaveYearStartDay: 1,
+            carryOver: { maxDays: 5, expiryMonth: 6, expiryDay: 30, firstLeaveYear: 2026 },
+          },
+        },
+      } satisfies LeaveOrganizationSource,
+    },
+  ])('holds the rule as a property under $setting: random records, every row equal to memberLeaveBaseOf', ({ organization }) => {
     let seed = 7;
     const next = (limit: number) => {
       seed = (seed * 1103515245 + 12345) % 2147483648;
@@ -366,7 +383,7 @@ describe('the rows', () => {
         }
       }
 
-      const sources = sourcesOf(pilot, { records: { rows, loading: false } });
+      const sources = sourcesOf(pilot, { organization, records: { rows, loading: false } });
       const overview = readyOf(leaveOverviewOf(sources, NO_FILTERS, NOW));
 
       for (const row of overview.rows) {
@@ -380,11 +397,18 @@ describe('the rows', () => {
           NOW,
         );
         const figures =
-          base.kind === LEAVE_READY ? { usedDays: base.balance.usedDays, balanceDays: base.balance.balanceDays } : null;
+          base.kind === LEAVE_READY
+            ? {
+                carriedDays: base.balance.carriedDays,
+                carried: leaveCarriedLineOf(base.balance, base.input.today),
+                usedDays: base.balance.usedDays,
+                balanceDays: base.balance.balanceDays,
+              }
+            : null;
 
         expect(row.figures, `round ${String(round)}: ${row.name}`).toEqual(figures);
         if (row.figures !== null) {
-          expect(row.allowanceDays - row.figures.usedDays).toBe(row.figures.balanceDays);
+          expect(row.allowanceDays + row.figures.carriedDays - row.figures.usedDays).toBe(row.figures.balanceDays);
         }
       }
     }
@@ -481,7 +505,7 @@ describe('the states', () => {
 
     expect(overview.rows).toEqual([]);
     expect(overview.empty).toBe(OVERVIEW_EMPTY_NONE);
-    expect(overview.summary).toEqual({ shown: 0, records: 0, usedDays: 0, allowanceDays: 0 });
+    expect(overview.summary).toEqual({ shown: 0, records: 0, usedDays: 0, allowanceDays: 0, carriedDays: 0 });
   });
 });
 
@@ -493,7 +517,7 @@ describe('the search and the summary', () => {
     expect(cedo.rows.map((row) => row.name)).toEqual(['Čedo Čačić']);
     expect(none.rows).toEqual([]);
     expect(none.empty).toBe(OVERVIEW_EMPTY_SEARCH);
-    expect(none.summary).toEqual({ shown: 0, records: 0, usedDays: 0, allowanceDays: 0 });
+    expect(none.summary).toEqual({ shown: 0, records: 0, usedDays: 0, allowanceDays: 0, carriedDays: 0 });
   });
 
   it('treats a box holding only whitespace as no search, as the trimmed URL does', () => {
@@ -515,6 +539,7 @@ describe('the search and the summary', () => {
       records: 1,
       usedDays: scheduled.reduce((sum, row) => sum + (row.figures?.usedDays ?? 0), 0),
       allowanceDays: 22 + 25 + 20,
+      carriedDays: 0,
     });
   });
 
@@ -525,6 +550,72 @@ describe('the search and the summary', () => {
     expect(line(17, 3)).toBe('Prikazano: 17 osoba · upisane 3 odsutnosti · iskorišteno ukupno 8 dana od 340');
     expect(line(1, 1)).toBe('Prikazano: 1 osoba · upisana 1 odsutnost · iskorišteno ukupno 8 dana od 340');
     expect(line(2, 0)).toBe('Prikazano: 2 osobe · upisano 0 odsutnosti · iskorišteno ukupno 8 dana od 340');
+  });
+});
+
+describe('carried days (story 13.4b)', () => {
+  const organization: LeaveOrganizationSource = {
+    ...ORGANIZATION,
+    data: {
+      ok: true,
+      snapshot: {
+        leaveYearStartMonth: 1,
+        leaveYearStartDay: 1,
+        carryOver: { maxDays: 5, expiryMonth: 6, expiryDay: 30, firstLeaveYear: 2026 },
+      },
+    },
+  };
+
+  it('gives every row the member page’s carried days, and Pravo + Preneseno − Iskorišteno = Preostalo', () => {
+    const sources = sourcesOf(pilot, { organization });
+    const overview = readyOf(leaveOverviewOf(sources, NO_FILTERS, NOW));
+
+    for (const row of overview.rows) {
+      if (row.figures === null) continue;
+      expect(row.allowanceDays + row.figures.carriedDays - row.figures.usedDays, row.name).toBe(row.figures.balanceDays);
+    }
+
+    // Ana: 01.01. and 01.06.–07.06.2026 cost five days before 30.06., so all 5 carried count.
+    const ana = overview.rows.find((row) => row.memberId === ANA);
+
+    expect(ana?.figures).toMatchObject({ carriedDays: 5, carried: { kind: 'kept', count: 5, lapsed: 0, date: '30.06.' } });
+    // The viewer's only record is in September: all 5 lapsed on 30.06.
+    expect(overview.rows.find((row) => row.memberId === VIEWER_MEMBER)?.figures).toMatchObject({
+      carriedDays: 0,
+      carried: { kind: 'lapsed', count: 0, lapsed: 5, date: '30.06.' },
+    });
+
+    const base = memberLeaveBaseOf(
+      {
+        ...sources,
+        records: {
+          records: leaveRecordsOf(
+            ROWS.filter((one) => one.member_id === ANA),
+            ANA,
+          ) ?? [],
+          loading: false,
+          refreshing: false,
+        },
+      },
+      ANA,
+      NOW,
+    );
+
+    if (base.kind !== LEAVE_READY) throw new Error(base.kind);
+    expect(ana?.figures?.carriedDays).toBe(base.balance.carriedDays);
+    expect(ana?.figures?.balanceDays).toBe(base.balance.balanceDays);
+  });
+
+  it('sums the carried days into the summary, and words them only when there are any', () => {
+    const overview = readyOf(leaveOverviewOf(sourcesOf(pilot, { organization }), NO_FILTERS, NOW));
+    const carried = overview.rows.reduce((sum, row) => sum + (row.figures?.carriedDays ?? 0), 0);
+
+    expect(overview.summary.carriedDays).toBe(carried);
+    expect(carried).toBeGreaterThan(0);
+    expect(readyOf(leaveOverviewOf(sourcesOf(pilot), NO_FILTERS, NOW)).summary.carriedDays).toBe(0);
+    expect(t('godisnji.overview.summaryCarried', { count: 4, records: 1, used: 8, allowance: 82, carried: 7 })).toBe(
+      'Prikazano: 4 osobe · upisana 1 odsutnost · iskorišteno ukupno 8 dana od 82 · preneseno ukupno 7 dana',
+    );
   });
 });
 
@@ -676,7 +767,7 @@ describe('the sort and the URL', () => {
       name,
       team: null,
       allowanceDays: 20,
-      figures: { usedDays: 2, balanceDays: 18 },
+      figures: { carriedDays: 0, carried: null, usedDays: 2, balanceDays: 18 },
       onLeaveToday: false,
       upcomingRecords: 0,
     });

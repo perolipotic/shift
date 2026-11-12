@@ -3,9 +3,15 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { ANNUAL_LEAVE_ID } from '@/features/absence-types/services/list';
 import { readCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
+import { carryOverSettingOf } from '@/features/organization/services/snapshot';
 import { memberScheduleInputOf } from '@/features/calendar/utils/month';
 import type { LeaveRecord, LeaveRecordsState } from '@/features/leave/services/leave-list';
 import {
+  CARRIED_KEPT,
+  EXCEEDS_AFTER_EXPIRY,
+  EXCEEDS_BALANCE,
+  CARRIED_LAPSED,
+  CARRIED_PENDING,
   LEAVE_ABSENT,
   LEAVE_AMEND_ACTION,
   LEAVE_FROM_FIELD,
@@ -29,7 +35,13 @@ import {
   LEAVE_UNSCHEDULED,
   leaveAmendedOf,
   leaveBaseMessageKey,
+  leaveCarriedCellMessageKey,
+  leaveCarriedDaysMessageKey,
+  leaveCarriedLineMessageKey,
+  leaveCarriedLineOf,
+  leaveCarryOverOf,
   leaveConfirmFailureOf,
+  leaveExceedsOf,
   leaveConflictOf,
   leaveDescribedByOf,
   leaveFormFailureOf,
@@ -79,7 +91,7 @@ import {
 } from '@/features/leave/services/leave-section';
 import { LEAVE_DENIED, LEAVE_FAILED, LEAVE_GONE, LEAVE_OVERLAP } from '@/features/leave/services/leave-write';
 import { initLocalization, t } from '@/lib/i18n';
-import { formatIsoDate } from '@/lib/i18n/format';
+import { formatIsoDate, nextIsoDate } from '@/lib/i18n/format';
 import {
   PILOT,
   SEEDED,
@@ -221,6 +233,140 @@ describe('the heading names the leave year the figures count (story 7.11)', () =
   });
 });
 
+describe('carried days (story 13.4b)', () => {
+  const SETTING = { maxDays: 5, expiryMonth: 12, expiryDay: 31, firstLeaveYear: 2026 };
+  const withCarryOver = (carryOver: unknown): LeaveOrganizationSource => ({
+    ...ORGANIZATION,
+    data: { ok: true, snapshot: { leaveYearStartMonth: 1, leaveYearStartDay: 1, carryOver: carryOver as never } },
+  });
+
+  it('passes the organization’s setting into the input: 2025 unused carries 5, so 20 + 5 − 3 = 22', () => {
+    const base = readyOf(
+      memberLeaveBaseOf(sourcesOf(pilot, { organization: withCarryOver(SETTING), records: recordsOf([WORKED]) }), VIEWER_MEMBER, NOW),
+    );
+
+    expect(base.input.carryOver).toEqual(SETTING);
+    expect(base.balance).toEqual({
+      allowanceDays: 20,
+      carriedDays: 5,
+      lapsedDays: 0,
+      carryOverExpiry: '2026-12-31',
+      usedDays: 3,
+      balanceDays: 22,
+    });
+    expect(base.balance).toEqual(leaveBalanceOf(base.input));
+    expect(leaveCarriedLineOf(base.balance, base.input.today)).toEqual({ kind: CARRIED_PENDING, count: 5, lapsed: 0, date: '31.12.' });
+  });
+
+  it('lapses the unconsumed days after the expiry, and the balance still adds up', () => {
+    const base = readyOf(
+      memberLeaveBaseOf(
+        sourcesOf(pilot, { organization: withCarryOver({ ...SETTING, expiryMonth: 6, expiryDay: 30 }), records: recordsOf([WORKED]) }),
+        VIEWER_MEMBER,
+        NOW,
+      ),
+    );
+
+    expect(base.balance).toMatchObject({ carriedDays: 0, lapsedDays: 5, carryOverExpiry: '2026-06-30', balanceDays: 17 });
+    expect(leaveCarriedLineOf(base.balance, base.input.today)).toEqual({ kind: CARRIED_LAPSED, count: 0, lapsed: 5, date: '30.06.' });
+  });
+
+  it('reads a missing, null, partial or impossible setting as none, every figure as before', () => {
+    for (const carryOver of [undefined, null, { maxDays: 5 }, { ...SETTING, expiryMonth: 6, expiryDay: 31 }]) {
+      const organization = carryOver === undefined ? ORGANIZATION : withCarryOver(carryOver);
+      const base = readyOf(memberLeaveBaseOf(sourcesOf(pilot, { organization, records: recordsOf([WORKED]) }), VIEWER_MEMBER, NOW));
+
+      expect(leaveCarryOverOf(organization.data)).toBeNull();
+      expect(base.input.carryOver).toBeNull();
+      expect(base.balance).toEqual({ allowanceDays: 20, carriedDays: 0, lapsedDays: 0, carryOverExpiry: null, usedDays: 3, balanceDays: 17 });
+      expect(leaveCarriedLineOf(base.balance, base.input.today)).toBeNull();
+    }
+    expect(leaveCarryOverOf(undefined)).toBeNull();
+    expect(leaveCarryOverOf({ ok: false })).toBeNull();
+  });
+
+  it('states the over-balance warning as the balance’s or the expiry’s', () => {
+    const preview = {
+      exceedsBalance: true,
+      exceedsAfterExpiry: false,
+      balanceAfterDays: -2,
+      endBalanceAfterDays: -2,
+      carryOverExpiry: null,
+    };
+
+    expect(leaveExceedsOf({ ...preview, exceedsBalance: false })).toBeNull();
+    expect(leaveExceedsOf(preview)).toEqual({ kind: EXCEEDS_BALANCE, count: -2 });
+    expect(
+      leaveExceedsOf({ ...preview, exceedsAfterExpiry: true, balanceAfterDays: 2, carryOverExpiry: '2026-06-30' }),
+    ).toEqual({ kind: EXCEEDS_AFTER_EXPIRY, count: -2, dayMonth: '30.06.' });
+  });
+
+  it('agrees with the domain on every boundary the organization parser accepts', () => {
+    const settings = [
+      [1, 2, 28, 1],
+      [32767, 6, 30, 9999],
+      [5, 12, 31, 2026],
+      [5, 1, 1, 1],
+    ].map(([maxDays, expiryMonth, expiryDay, firstLeaveYear]) => carryOverSettingOf(maxDays, expiryMonth, expiryDay, firstLeaveYear));
+
+    for (const carryOver of settings) {
+      expect(carryOver).not.toBeNull();
+      expect(() =>
+        leaveBalanceOf({
+          input: memberScheduleInputOf(pilot, pilot.viewer),
+          allowance: { startingDays: 20, versions: [] },
+          records: [],
+          today: '2026-09-26',
+          leaveYearStart: { month: 1, day: 1 },
+          carryOver,
+        }),
+      ).not.toThrow();
+    }
+    // And what it refuses reads as none, never a setting the domain would throw on.
+    expect(carryOverSettingOf(0, 6, 30, 2026)).toBeNull();
+    expect(carryOverSettingOf(5, 2, 29, 2026)).toBeNull();
+    expect(carryOverSettingOf(5, 6, 31, 2026)).toBeNull();
+    expect(carryOverSettingOf(5, 6, 30, 10000)).toBeNull();
+  });
+
+  it('formats the overview cell’s number as the locale does, for half days to come (13.5)', () => {
+    expect(t(leaveCarriedCellMessageKey(CARRIED_KEPT), { count: 4.5, lapsed: 0, date: '30.06.' })).toBe('4,5');
+    expect(t(leaveCarriedCellMessageKey(CARRIED_PENDING), { count: 4.5, lapsed: 0, date: '30.06.' })).toBe('4,5 (istječu 30.06.)');
+  });
+
+  it('chooses the line’s shape by the expiry and the lapsed days', () => {
+    const balance = { allowanceDays: 20, carriedDays: 5, lapsedDays: 0, carryOverExpiry: '2027-06-30', usedDays: 0, balanceDays: 25 };
+
+    expect(leaveCarriedLineOf(balance, '2027-06-30')?.kind).toBe(CARRIED_PENDING);
+    expect(leaveCarriedLineOf(balance, '2027-07-01')?.kind).toBe(CARRIED_KEPT);
+    expect(leaveCarriedLineOf({ ...balance, carriedDays: 3, lapsedDays: 2 }, '2027-07-01')?.kind).toBe(CARRIED_LAPSED);
+    expect(leaveCarriedLineOf({ ...balance, carriedDays: 0, carryOverExpiry: null }, '2027-03-01')).toBeNull();
+  });
+
+  it('words the three shapes on every surface, the days, verb and lapsed count plural', () => {
+    const line = (kind: typeof CARRIED_PENDING | typeof CARRIED_LAPSED | typeof CARRIED_KEPT, count: number, lapsed = 0) => ({
+      line: t(leaveCarriedLineMessageKey(kind), { count, lapsed, date: '30.06.' }),
+      days: t(leaveCarriedDaysMessageKey(kind), { count, lapsed, date: '30.06.' }),
+      cell: t(leaveCarriedCellMessageKey(kind), { count, lapsed, date: '30.06.' }),
+    });
+
+    expect(line(CARRIED_PENDING, 5)).toEqual({
+      line: 'Preneseno 5 dana (istječu 30.06.)',
+      days: '5 dana (istječu 30.06.)',
+      cell: '5 (istječu 30.06.)',
+    });
+    expect(line(CARRIED_PENDING, 1).line).toBe('Preneseno 1 dan (istječe 30.06.)');
+    expect(line(CARRIED_LAPSED, 3, 2)).toEqual({
+      line: 'Preneseno 3 dana (2 istekla 30.06.)',
+      days: '3 dana (2 istekla 30.06.)',
+      cell: '3 (2 istekla 30.06.)',
+    });
+    expect(line(CARRIED_LAPSED, 0, 1).line).toBe('Preneseno 0 dana (1 istekao 30.06.)');
+    expect(line(CARRIED_LAPSED, 0, 5).line).toBe('Preneseno 0 dana (5 isteklo 30.06.)');
+    expect(line(CARRIED_KEPT, 5)).toEqual({ line: 'Preneseno 5 dana', days: '5 dana', cell: '5' });
+  });
+});
+
 describe('the figures', () => {
   it('shows 20 / 3 / 17 for an allowance of 20 and one record costing 3 this year, as the domain does', () => {
     const base = readyOf(memberLeaveBaseOf(sourcesOf(pilot, { records: recordsOf([WORKED]) }), VIEWER_MEMBER, NOW));
@@ -231,7 +377,7 @@ describe('the figures', () => {
     const input = memberScheduleInputOf(pilot, { ...viewer, memberId: viewer.id });
 
     expect(leaveCostOf(input, WORKED.from, WORKED.to)).toBe(3);
-    expect(base.balance).toEqual({ allowanceDays: 20, usedDays: 3, balanceDays: 17 });
+    expect(base.balance).toEqual({ allowanceDays: 20, carriedDays: 0, lapsedDays: 0, carryOverExpiry: null, usedDays: 3, balanceDays: 17 });
     expect(base.balance).toEqual(leaveBalanceOf(base.input));
     expect(base.input).toMatchObject({
       allowance: { startingDays: 20, versions: [] },
@@ -263,7 +409,7 @@ describe('the figures', () => {
     };
     const base = readyOf(memberLeaveBaseOf(sourcesOf(pilot, { members, records: recordsOf([WORKED]) }), VIEWER_MEMBER, NOW));
 
-    expect(base.balance).toEqual({ allowanceDays: 24, usedDays: 3, balanceDays: 21 });
+    expect(base.balance).toEqual({ allowanceDays: 24, carriedDays: 0, lapsedDays: 0, carryOverExpiry: null, usedDays: 3, balanceDays: 21 });
     // A past leave year's balance uses that year's allowance: the starting one.
     expect(leaveBalanceOf({ ...base.input, today: '2025-09-26' }).allowanceDays).toBe(20);
   });
@@ -273,7 +419,7 @@ describe('the figures', () => {
     const base = readyOf(memberLeaveBaseOf(sourcesOf(uj5, { records: recordsOf([record]) }), VIEWER_MEMBER, NOW));
 
     // Jutarnja, Popodnevna, Noćna, Slobodno, Slobodno.
-    expect(base.balance).toEqual({ allowanceDays: 20, usedDays: 3, balanceDays: 17 });
+    expect(base.balance).toEqual({ allowanceDays: 20, carriedDays: 0, lapsedDays: 0, carryOverExpiry: null, usedDays: 3, balanceDays: 17 });
     expect(base.balance).toEqual(leaveBalanceOf(base.input));
   });
 
@@ -287,7 +433,7 @@ describe('the figures', () => {
     );
 
     // From 12.09 the range holds Slobodno, Slobodno, Dan.
-    expect(base.balance).toEqual({ allowanceDays: 20, usedDays: 1, balanceDays: 19 });
+    expect(base.balance).toEqual({ allowanceDays: 20, carriedDays: 0, lapsedDays: 0, carryOverExpiry: null, usedDays: 1, balanceDays: 19 });
     expect(base.balance).toEqual(leaveBalanceOf(base.input));
   });
 
@@ -530,8 +676,8 @@ describe('the outcome', () => {
   }
 
   it('says what a landed save cost, and the over-balance warning with its number, from the fresh records', () => {
-    expect(leaveSavedOf(inputOf(1), [WORKED], WORKED)).toEqual({ costDays: 3, overBalanceDays: -2 });
-    expect(leaveSavedOf(inputOf(20), [WORKED], WORKED)).toEqual({ costDays: 3, overBalanceDays: null });
+    expect(leaveSavedOf(inputOf(1), [WORKED], WORKED)).toEqual({ costDays: 3, overBalance: { kind: EXCEEDS_BALANCE, count: -2 } });
+    expect(leaveSavedOf(inputOf(20), [WORKED], WORKED)).toEqual({ costDays: 3, overBalance: null });
     expect(t('ljudi.leaveRecord.savedExceeds', { count: -2 })).toContain('−2 dana');
     expect(t('ljudi.leaveRecord.saved', { count: 3 })).toContain('3 dana');
   });
@@ -540,14 +686,57 @@ describe('the outcome', () => {
     const earlier = { from: '2026-09-02', to: '2026-09-06' };
 
     // Allowance 4: the earlier record leaves 1, so this one goes 2 over.
-    expect(leaveSavedOf(inputOf(4), [earlier, WORKED], WORKED)).toEqual({ costDays: 3, overBalanceDays: -2 });
+    expect(leaveSavedOf(inputOf(4), [earlier, WORKED], WORKED)).toEqual({ costDays: 3, overBalance: { kind: EXCEEDS_BALANCE, count: -2 } });
     // Allowance 6: it leaves 3, so this one fits exactly.
-    expect(leaveSavedOf(inputOf(6), [earlier, WORKED], WORKED)).toEqual({ costDays: 3, overBalanceDays: null });
+    expect(leaveSavedOf(inputOf(6), [earlier, WORKED], WORKED)).toEqual({ costDays: 3, overBalance: null });
+  });
+
+  it('words the warning as the expiry’s when the balance after the save still holds only through carried days (story 13.4b)', () => {
+    // Allowance 1 in 2026, 5 carried from 2025's 20 until 30.09.; WORKED (3 days, before it) leaves 3 today.
+    const base = readyOf(
+      memberLeaveBaseOf(
+        sourcesOf(pilot, {
+          members: {
+            ...MEMBERS,
+            members: [{ id: VIEWER_MEMBER, leaveAllowance: { startingDays: 20, versions: [{ id: 1, leaveYear: 2026, days: 1 }] } }],
+          },
+          organization: {
+            ...ORGANIZATION,
+            data: {
+              ok: true,
+              snapshot: {
+                leaveYearStartMonth: 1,
+                leaveYearStartDay: 1,
+                carryOver: { maxDays: 5, expiryMonth: 9, expiryDay: 30, firstLeaveYear: 2026 },
+              },
+            },
+          },
+          records: recordsOf([WORKED]),
+        }),
+        VIEWER_MEMBER,
+        NOW,
+      ),
+    );
+    expect(base.balance).toMatchObject({ carriedDays: 5, balanceDays: 3 });
+
+    // An October range costing 2: 1 left today, −1 once 30.09. has passed.
+    let to = '2026-10-01';
+    while (leaveCostOf(base.input.input, '2026-10-01', to) < 2) to = nextIsoDate(to) ?? to;
+    const october: LeaveRecord = { ...ANNUAL_RECORD, id: 'record-october', from: '2026-10-01', to };
+
+    expect(leaveSavedOf(base.input, [WORKED, october], october)).toEqual({
+      costDays: 2,
+      overBalance: { kind: EXCEEDS_AFTER_EXPIRY, count: -1, dayMonth: '30.09.' },
+    });
+    expect(t('godisnji.expiryExceeds', { count: -1, dayMonth: '30.09.' })).toBe(
+      'Preneseni dani istječu 30.09.; nakon toga preostaje \u22121 dan.',
+    );
+    expect(t('godisnji.expiryExceeds', { count: 2, dayMonth: '30.06.' })).toBe('Preneseni dani istječu 30.06.; nakon toga preostaje 2 dana.');
   });
 
   it('gives the plain line when the re-read did not answer or lacks the saved record', () => {
-    expect(leaveSavedOf(inputOf(1), null, WORKED)).toEqual({ costDays: null, overBalanceDays: null });
-    expect(leaveSavedOf(inputOf(1), [], WORKED)).toEqual({ costDays: null, overBalanceDays: null });
+    expect(leaveSavedOf(inputOf(1), null, WORKED)).toEqual({ costDays: null, overBalance: null });
+    expect(leaveSavedOf(inputOf(1), [], WORKED)).toEqual({ costDays: null, overBalance: null });
   });
 
   it('names the conflicting record with its dates and an en dash', () => {
@@ -782,8 +971,8 @@ describe('the records list', () => {
   });
 
   it('removing the one record costing 3 leaves 20 / 0 / 20; amending it to a range costing 5 leaves 20 / 5 / 15', () => {
-    expect(baseOf([WORKED]).balance).toEqual({ allowanceDays: 20, usedDays: 3, balanceDays: 17 });
-    expect(baseOf([]).balance).toEqual({ allowanceDays: 20, usedDays: 0, balanceDays: 20 });
+    expect(baseOf([WORKED]).balance).toEqual({ allowanceDays: 20, carriedDays: 0, lapsedDays: 0, carryOverExpiry: null, usedDays: 3, balanceDays: 17 });
+    expect(baseOf([]).balance).toEqual({ allowanceDays: 20, carriedDays: 0, lapsedDays: 0, carryOverExpiry: null, usedDays: 0, balanceDays: 20 });
 
     // 10.09–18.09: Dan, Noć, Sl, Sl, Dan, Noć, Sl, Sl, Dan.
     const amended: LeaveRecord = { ...ANNUAL_RECORD, id: 'record-amended', from: '2026-09-10', to: '2026-09-18' };
@@ -793,7 +982,7 @@ describe('the records list', () => {
 
     expect(preview.preview.costDays).toBe(5);
     expect(preview.preview.balanceAfterDays).toBe(15);
-    expect(baseOf([amended]).balance).toEqual({ allowanceDays: 20, usedDays: 5, balanceDays: 15 });
+    expect(baseOf([amended]).balance).toEqual({ allowanceDays: 20, carriedDays: 0, lapsedDays: 0, carryOverExpiry: null, usedDays: 5, balanceDays: 15 });
     expect(baseOf([amended]).rows.map((row) => row.costDays)).toEqual([5]);
   });
 
@@ -801,15 +990,15 @@ describe('the records list', () => {
     const input = baseOf([WORKED], 4).input;
     const replacement: LeaveRecord = { ...ANNUAL_RECORD, id: 'record-new', from: '2026-09-10', to: '2026-09-18' };
 
-    expect(leaveAmendedOf(input, [replacement], replacement.id)).toEqual({ costDays: 5, overBalanceDays: -1 });
+    expect(leaveAmendedOf(input, [replacement], replacement.id)).toEqual({ costDays: 5, overBalance: { kind: EXCEEDS_BALANCE, count: -1 } });
     expect(leaveAmendedOf(baseOf([WORKED]).input, [replacement], replacement.id)).toEqual({
       costDays: 5,
-      overBalanceDays: null,
+      overBalance: null,
     });
     // Against the other fresh records: one costing 3 leaves 1 of 4, so 5 goes 4 over.
     const other: LeaveRecord = { ...ANNUAL_RECORD, id: 'record-other', from: '2026-09-26', to: '2026-09-30' };
 
-    expect(leaveAmendedOf(input, [replacement, other], replacement.id).overBalanceDays).toBe(
+    expect(leaveAmendedOf(input, [replacement, other], replacement.id).overBalance?.count).toBe(
       leavePreviewOf({ ...input, records: [other], range: replacement }).balanceAfterDays,
     );
     expect(t('ljudi.leaveRecord.amended', { count: 5 })).toContain('5 dana');
@@ -826,14 +1015,14 @@ describe('the records list', () => {
       drawsAllowance: false,
     };
 
-    expect(leaveAmendedOf(input, [replacement], replacement.id)).toEqual({ costDays: 5, overBalanceDays: null });
+    expect(leaveAmendedOf(input, [replacement], replacement.id)).toEqual({ costDays: 5, overBalance: null });
   });
 
   it('gives the plain amended line when the re-read did not answer or holds no record of the returned id', () => {
     const input = baseOf([WORKED]).input;
 
-    expect(leaveAmendedOf(input, null, 'record-new')).toEqual({ costDays: null, overBalanceDays: null });
-    expect(leaveAmendedOf(input, [WORKED], 'record-new')).toEqual({ costDays: null, overBalanceDays: null });
+    expect(leaveAmendedOf(input, null, 'record-new')).toEqual({ costDays: null, overBalance: null });
+    expect(leaveAmendedOf(input, [WORKED], 'record-new')).toEqual({ costDays: null, overBalance: null });
   });
 });
 

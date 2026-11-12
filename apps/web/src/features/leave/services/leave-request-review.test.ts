@@ -233,6 +233,39 @@ describe('a pending request', () => {
     expect(preview.inYearDays).toBeNull();
   });
 
+  it('previews approval against the organization’s carry-over (story 13.4b)', () => {
+    const plain = readyOf(pendingOf(leaveRequestReviewOf(sourcesOf(), REQUEST, NOW)).preview);
+    const carried = readyOf(
+      pendingOf(
+        leaveRequestReviewOf(
+          sourcesOf({
+            organization: {
+              data: {
+                ok: true,
+                snapshot: {
+                  leaveYearStartMonth: 1,
+                  leaveYearStartDay: 1,
+                  carryOver: { maxDays: 5, expiryMonth: 12, expiryDay: 31, firstLeaveYear: 2026 },
+                },
+              },
+              isPending: false,
+              isError: false,
+              fetchStatus: 'idle',
+            },
+          }),
+          REQUEST,
+          NOW,
+        ),
+      ).preview,
+    );
+
+    // 2025 ends at its 20, so 5 carry in until 31.12.: every figure 5 higher.
+    expect(carried.figures).toMatchObject({ carriedDays: 5, carryOverExpiry: '2026-12-31', exceedsBalance: false });
+    expect(carried.figures.balanceDays).toBe(plain.figures.balanceDays + 5);
+    expect(carried.figures.balanceAfterDays).toBe(plain.figures.balanceAfterDays + 5);
+    expect(plain.figures.carriedDays).toBe(0);
+  });
+
   it('lists the collisions approval would create, as the dialog words them', () => {
     const preview = readyOf(pendingOf(leaveRequestReviewOf(sourcesOf(), REQUEST, NOW)).preview);
 

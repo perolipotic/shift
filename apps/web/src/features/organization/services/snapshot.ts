@@ -119,8 +119,8 @@ export const ORGANIZATION_READ_STALE_MS = 300000;
  * the SPA, because a select naming a column the database lacks is refused.
  *
  * The four `carry_over_*` columns joined for story 13.4 (`0057`): the
- * carry-over setting, all four or none, edited on this screen. Nothing is
- * derived from them yet (13.4b). `0057` ships before the SPA, as `0048` did.
+ * carry-over setting, all four or none, edited on this screen; every leave
+ * balance derives carried days from it (13.4b). `0057` ships before the SPA, as `0048` did.
  */
 export const ORGANIZATION_COLUMNS =
   'id,slug,name,organization_type,timezone,locale,leave_year_start_month,leave_year_start_day,logo_path,brand_accent,uses_fire_ranks,email_notifications,minimum_members,carry_over_max_days,carry_over_expiry_month,carry_over_expiry_day,carry_over_first_leave_year';
@@ -128,7 +128,8 @@ export const ORGANIZATION_COLUMNS =
 /**
  * The carry-over setting (story 13.4, `0057`): the most days that carry into a
  * leave year, the day and month they expire on, and the first leave year
- * carried INTO. Current-state (AD-2). Nothing derives from it yet (13.4b).
+ * carried INTO. Current-state (AD-2). Every leave balance derives carried
+ * days from it (13.4b, the domain's `LeaveCarryOver`).
  */
 export interface CarryOverSetting {
   /** `1` to `32767`. */

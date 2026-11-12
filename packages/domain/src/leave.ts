@@ -20,7 +20,7 @@
  * dates of a record inside the current leave year — the one containing the
  * caller's `today` — count as used.
  *
- * BALANCE (R4.5): `balance = allowance − used`, and it may go negative. An
+ * BALANCE (R4.5, R4.13): `balance = allowance + carried − used`, and it may go negative. An
  * over-balance range is flagged (R4.7), never refused.
  *
  * ALLOWANCE PER LEAVE YEAR (story 13.3, AD-2 versioned): a member has a
@@ -30,6 +30,24 @@
  * highest-`id` version of the latest year before Y; otherwise the starting
  * allowance ({@link leaveAllowanceOf}). A balance uses the allowance of the
  * leave year containing its `today`.
+ *
+ * CARRY-OVER (story 13.4b, R4.13–R4.15, PO 2026-11-11 and 2026-11-12): an
+ * organization may set a cap, an expiry day and month, and the first leave
+ * year carried INTO ({@link LeaveCarryOver}). The days carried into leave
+ * year Y are min(cap, max(0, Y−1's balance at its end)), and nothing is
+ * carried into a year before the first; into the first, they come from Y−1's
+ * balance with nothing carried into Y−1. The chain recomputes from the first
+ * year on read, each year with its own allowance and drawing records, so
+ * nothing is stored (R4.15). The expiry in Y is the first date on or after
+ * Y's first day with the stored day and month ({@link carryOverExpiryOf}).
+ * Drawing leave days consume carried days first (R4.14): consumed =
+ * min(carried, the year's drawing leave days dated on or before the expiry).
+ * While `today` is on or before the expiry, the balance shows every carried
+ * day and none lapsed; after it, it shows the consumed part and the rest as
+ * lapsed. A year's END balance, the one carried onward and the one the
+ * preview's warning judges, is always the post-expiry one, so days after the
+ * expiry are never covered by carried days. Always `balance = allowance +
+ * carried − used`. Without a setting every figure is as before.
  *
  * ABSENCE TYPES (story 13.2, CAP-23): a record whose type does not draw the
  * allowance ({@link LeaveRange.drawsAllowance} `false`) is never counted in
@@ -100,6 +118,21 @@ export interface LeaveAllowance {
   readonly versions: readonly LeaveAllowanceVersion[];
 }
 
+/**
+ * An organization's carry-over setting (story 13.4, R4.13): all four set, or
+ * none (`null`/absent on {@link LeaveBalanceInput.carryOver}).
+ */
+export interface LeaveCarryOver {
+  /** The most days carried into a leave year, an integer of 1 or more. */
+  readonly maxDays: number;
+  /** The expiry month, an integer 1–12. */
+  readonly expiryMonth: number;
+  /** The expiry day, an integer from 1 to the month's last day, February at 28. */
+  readonly expiryDay: number;
+  /** The first leave year carried INTO, numbered as {@link leaveYearNumberOf} numbers it, an integer 1–9999. */
+  readonly firstLeaveYear: number;
+}
+
 /** What a member's leave balance is derived from. */
 export interface LeaveBalanceInput {
   /** The member's schedule input, whose working shifts and statuses decide what each date costs. */
@@ -112,6 +145,8 @@ export interface LeaveBalanceInput {
   readonly today: string;
   /** Where the organization's leave year begins. */
   readonly leaveYearStart: LeaveYearStart;
+  /** The organization's carry-over setting (story 13.4b); absent or `null` means none. */
+  readonly carryOver?: LeaveCarryOver | null;
 }
 
 /** What a new range is previewed against: the balance input plus the range. */
@@ -120,10 +155,20 @@ export interface LeavePreviewInput extends LeaveBalanceInput {
   readonly range: LeaveRange;
 }
 
-/** A member's balance in the current leave year. Always `balanceDays = allowanceDays − usedDays`. */
+/** A member's balance in the current leave year. Always `balanceDays = allowanceDays + carriedDays − usedDays`. */
 export interface LeaveBalance {
   /** The allowance resolved for the current leave year ({@link leaveAllowanceOf}). */
   readonly allowanceDays: number;
+  /**
+   * The carried days the balance counts (story 13.4b): every day carried into
+   * the current leave year while `today` is on or before the expiry, and only
+   * the consumed part after it. `0` without carry-over.
+   */
+  readonly carriedDays: number;
+  /** The carried days that lapsed unconsumed: `0` until `today` is past the expiry. */
+  readonly lapsedDays: number;
+  /** The expiry of the days carried into the current leave year, `YYYY-MM-DD`; `null` when nothing was carried. */
+  readonly carryOverExpiry: string | null;
   readonly usedDays: number;
   /** May be negative. */
   readonly balanceDays: number;
@@ -141,10 +186,32 @@ export interface LeavePreview extends LeaveBalance {
    * the current leave year that no existing record already covers.
    */
   readonly costInYearDays: number;
-  /** `balanceDays − costInYearDays`; may be negative. */
+  /**
+   * The balance with the range added as a record (story 13.4b); may be
+   * negative. Without carry-over, `balanceDays − costInYearDays`.
+   */
   readonly balanceAfterDays: number;
-  /** True when the range charges something and more than the balance before it: a warning, never a refusal. */
+  /**
+   * The current leave year's balance after the expiry, with the range: the
+   * carried days only as far as they were consumed by the expiry. Without
+   * carry-over, or once the expiry has passed, equal to `balanceAfterDays`.
+   */
+  readonly endBalanceAfterDays: number;
+  /**
+   * True when the range lowers the balance — by its in-year charge, or by
+   * shrinking the days carried in from the previous leave year — and the
+   * year's balance after the expiry, with the range, would be negative
+   * (`endBalanceAfterDays < 0`): a warning, never a refusal. Without
+   * carry-over, when the charge is more than the balance before it.
+   */
   readonly exceedsBalance: boolean;
+  /**
+   * True when the warning is caused by the expiry (story 13.4b, PO
+   * 2026-11-12): {@link exceedsBalance} while `balanceAfterDays` is still
+   * zero or more, because carried days still count today but lapse on
+   * `carryOverExpiry`. Never true without carry-over.
+   */
+  readonly exceedsAfterExpiry: boolean;
   /** True when the range shares a date with an existing record, which the database will refuse (R4.4). */
   readonly overlapsRecord: boolean;
 }
@@ -401,10 +468,76 @@ export function leaveAllowanceOf(allowance: LeaveAllowance, leaveYear: number): 
   return chosen === null ? allowance.startingDays : chosen.days;
 }
 
-/** An already-checked balance input's current leave year and the allowance resolved for it. */
+/** An already-checked balance input's current leave year, its number and the allowance resolved for it. */
 interface CurrentYear {
   readonly year: LeaveRange;
+  readonly yearNumber: number;
   readonly allowanceDays: number;
+}
+
+/** The last day of `month` 1–12 an expiry may fall on: February at 28, as `0057` checks. */
+function carryOverLastDayOf(month: number): number {
+  return month === 2 ? 28 : [4, 6, 9, 11].includes(month) ? 30 : 31;
+}
+
+/**
+ * @throws RangeError naming the value when the cap is not an integer of 1 or
+ *   more, the expiry month not an integer 1–12, the expiry day not an integer
+ *   from 1 to that month's last day (February at 28), or the first leave year
+ *   not an integer 1–9999.
+ */
+function checkCarryOver(carryOver: LeaveCarryOver): void {
+  if (!Number.isInteger(carryOver.maxDays) || carryOver.maxDays < 1) {
+    throw new RangeError(`the carry-over cap is ${String(carryOver.maxDays)} days, not an integer of 1 or more`);
+  }
+  if (!Number.isInteger(carryOver.expiryMonth) || carryOver.expiryMonth < 1 || carryOver.expiryMonth > 12) {
+    throw new RangeError(`the carry-over expires in month ${String(carryOver.expiryMonth)}, not an integer 1–12`);
+  }
+  const lastDay = carryOverLastDayOf(carryOver.expiryMonth);
+  if (!Number.isInteger(carryOver.expiryDay) || carryOver.expiryDay < 1 || carryOver.expiryDay > lastDay) {
+    throw new RangeError(
+      `the carry-over expires on day ${String(carryOver.expiryDay)} of month ${String(carryOver.expiryMonth)}, not an integer 1–${String(lastDay)}`,
+    );
+  }
+  if (!Number.isInteger(carryOver.firstLeaveYear) || carryOver.firstLeaveYear < 1 || carryOver.firstLeaveYear > 9999) {
+    throw new RangeError(`the first leave year carried into is ${String(carryOver.firstLeaveYear)}, not an integer 1–9999`);
+  }
+}
+
+/** `YYYY-MM-DD` of `month` and `day` in calendar year `year` 1–9999. */
+function dateIn(year: number, month: number, day: number): string {
+  return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+/**
+ * Leave year number `leaveYear` 1–9999 as a range, as {@link leaveYearOf}
+ * places it. Start already checked.
+ */
+function leaveYearNumbered(leaveYear: number, start: LeaveYearStart): LeaveRange {
+  return leaveYearOf(dateIn(leaveYear, start.month, start.day), start);
+}
+
+/**
+ * The expiry of the days carried into leave year `leaveYear` (story 13.4b,
+ * the 13.4 spec's Design Notes): the first date on or after that year's first
+ * day with the setting's day and month, so always inside the year. A start of
+ * 01.01. with 30.06. gives 30.06. of the same year; a start of 01.07. with
+ * 30.06. gives 30.06. of the next, the year's last day. An expiry past
+ * 9999-12-31 is cut there, the calendar's end.
+ *
+ * @throws RangeError when `leaveYear` is not an integer 1–9999, on a
+ *   malformed setting (see {@link LeaveCarryOver}), and on a malformed start.
+ */
+export function carryOverExpiryOf(leaveYear: number, start: LeaveYearStart, carryOver: LeaveCarryOver): string {
+  if (!Number.isInteger(leaveYear) || leaveYear < 1 || leaveYear > 9999) {
+    throw new RangeError(`the leave year is ${String(leaveYear)}, not an integer 1–9999`);
+  }
+  checkLeaveYearStart(start);
+  checkCarryOver(carryOver);
+  const first = dateIn(leaveYear, start.month, start.day);
+  const sameYear = dateIn(leaveYear, carryOver.expiryMonth, carryOver.expiryDay);
+  if (sameYear >= first) return sameYear;
+  return leaveYear + 1 > 9999 ? '9999-12-31' : dateIn(leaveYear + 1, carryOver.expiryMonth, carryOver.expiryDay);
 }
 
 /**
@@ -415,7 +548,9 @@ interface CurrentYear {
 function checkBalanceInput(balance: LeaveBalanceInput): CurrentYear {
   checkDate('today', balance.today);
   checkLeaveYearStart(balance.leaveYearStart);
-  const allowanceDays = leaveAllowanceOf(balance.allowance, leaveYearNumberOf(balance.today, balance.leaveYearStart));
+  if (balance.carryOver !== undefined && balance.carryOver !== null) checkCarryOver(balance.carryOver);
+  const yearNumber = leaveYearNumberOf(balance.today, balance.leaveYearStart);
+  const allowanceDays = leaveAllowanceOf(balance.allowance, yearNumber);
   balance.records.forEach((record, index) => checkRange(`leave record ${String(index)}`, record));
 
   const byStart = balance.records.map((record, index) => ({ record, index })).sort((a, b) => (a.record.from < b.record.from ? -1 : 1));
@@ -428,29 +563,133 @@ function checkBalanceInput(balance: LeaveBalanceInput): CurrentYear {
       );
     }
   }
-  return { year: leaveYearOf(balance.today, balance.leaveYearStart), allowanceDays };
+  return { year: leaveYearOf(balance.today, balance.leaveYearStart), yearNumber, allowanceDays };
 }
 
-/** The balance of an already-checked input in its current year, counted by `costOf`; only drawing records are used. */
-function balanceOf(costOf: (range: LeaveRange) => number, balance: LeaveBalanceInput, current: CurrentYear): LeaveBalance {
-  let usedDays = 0;
-  for (const record of balance.records) {
-    if (!drawsAllowance(record)) continue;
-    const inYear = intersect(record, current.year);
-    if (inYear !== null) usedDays += costOf(inYear);
+/** A cost counter over one member's input: the leave days of a range not inside any of `skip`. */
+type CostOf = (range: LeaveRange, skip?: readonly LeaveRange[]) => number;
+
+/**
+ * A drawn-days counter: the leave days of every DRAWING record inside
+ * `window`, plus those of `extra` (a range being previewed, already known to
+ * draw) not already covered by a record, so no date is counted twice.
+ */
+function drawnDaysCounter(costOf: CostOf, records: readonly LeaveRange[], extra: LeaveRange | null): (window: LeaveRange) => number {
+  return (window) => {
+    let days = 0;
+    for (const record of records) {
+      if (!drawsAllowance(record)) continue;
+      const inWindow = intersect(record, window);
+      if (inWindow !== null) days += costOf(inWindow);
+    }
+    if (extra !== null) {
+      const inWindow = intersect(extra, window);
+      if (inWindow !== null) days += costOf(inWindow, records);
+    }
+    return days;
+  };
+}
+
+/** The days carried into a year and what of them its drawing leave days consumed by the expiry. */
+interface CarriedInto {
+  readonly carriedDays: number;
+  readonly consumedDays: number;
+  /** `null` when nothing was carried. */
+  readonly expiry: string | null;
+}
+
+const NOTHING_CARRIED: CarriedInto = { carriedDays: 0, consumedDays: 0, expiry: null };
+
+/**
+ * What was carried into leave year `yearNumber` and consumed by its expiry
+ * (R4.13, R4.14), by the chain from the setting's first year.
+ *
+ * The chain starts at the later of the year before the first and the year
+ * before the earliest drawing record (or extra): a year with no drawing leave
+ * days ends at its own allowance whatever was carried into it, so nothing
+ * before it can change what follows.
+ */
+function carriedInto(
+  drawnIn: (window: LeaveRange) => number,
+  balance: LeaveBalanceInput,
+  yearNumber: number,
+  extra: LeaveRange | null,
+): CarriedInto {
+  const carryOver = balance.carryOver;
+  if (carryOver === undefined || carryOver === null || yearNumber < carryOver.firstLeaveYear) return NOTHING_CARRIED;
+  const start = balance.leaveYearStart;
+
+  let earliest = yearNumber;
+  for (const record of [...balance.records.filter(drawsAllowance), ...(extra === null ? [] : [extra])]) {
+    earliest = Math.min(earliest, leaveYearNumberOf(record.from, start));
   }
-  return { allowanceDays: current.allowanceDays, usedDays, balanceDays: current.allowanceDays - usedDays };
+
+  const consumedIn = (year: number, carriedDays: number): CarriedInto => {
+    if (carriedDays === 0) return NOTHING_CARRIED;
+    const expiry = carryOverExpiryOf(year, start, carryOver);
+    const drawnByExpiry = drawnIn({ from: leaveYearNumbered(year, start).from, to: expiry });
+    return { carriedDays, consumedDays: Math.min(carriedDays, drawnByExpiry), expiry };
+  };
+
+  let carried = 0;
+  for (let year = Math.min(yearNumber - 1, Math.max(carryOver.firstLeaveYear - 1, earliest - 1)); year < yearNumber; year += 1) {
+    if (year < 1) {
+      // Leave year 0 (dates in 0001 before the start) carries nothing onward.
+      carried = 0;
+      continue;
+    }
+    const { consumedDays } = consumedIn(year, carried);
+    const endBalance = leaveAllowanceOf(balance.allowance, year) + consumedDays - drawnIn(leaveYearNumbered(year, start));
+    carried = year + 1 >= carryOver.firstLeaveYear ? Math.min(carryOver.maxDays, Math.max(0, endBalance)) : 0;
+  }
+  return consumedIn(yearNumber, carried);
+}
+
+/** A balance and the current year's balance after the expiry, the one the preview's warning judges. */
+interface BalanceAndEnd {
+  readonly balance: LeaveBalance;
+  readonly endBalanceDays: number;
 }
 
 /**
- * The member's balance in the current leave year (R4.5, R4.6): the allowance
- * of that leave year ({@link leaveAllowanceOf}, story 13.3), the leave days of every DRAWING record's dates (story 13.2) inside the leave year containing
- * `today` — a record straddling the year's start or end counts only its dates
- * inside it — and the allowance less those, which may be negative.
+ * The balance of an already-checked input in its current year, counted by
+ * `costOf`; only drawing records are used, plus `extra` when given (a range
+ * being previewed, known to draw).
+ */
+function balanceOf(costOf: CostOf, balance: LeaveBalanceInput, current: CurrentYear, extra: LeaveRange | null = null): BalanceAndEnd {
+  const drawnIn = drawnDaysCounter(costOf, balance.records, extra);
+  const usedDays = drawnIn(current.year);
+  const carried = carriedInto(drawnIn, balance, current.yearNumber, extra);
+  const pending = carried.expiry !== null && balance.today <= carried.expiry;
+  const carriedDays = pending ? carried.carriedDays : carried.consumedDays;
+  const lapsedDays = pending ? 0 : carried.carriedDays - carried.consumedDays;
+  return {
+    balance: {
+      allowanceDays: current.allowanceDays,
+      carriedDays,
+      lapsedDays,
+      carryOverExpiry: carried.expiry,
+      usedDays,
+      balanceDays: current.allowanceDays + carriedDays - usedDays,
+    },
+    endBalanceDays: current.allowanceDays + carried.consumedDays - usedDays,
+  };
+}
+
+/**
+ * The member's balance in the current leave year (R4.5, R4.6, R4.13–R4.15):
+ * the allowance of that leave year ({@link leaveAllowanceOf}, story 13.3),
+ * the carried days and their expiry (story 13.4b, see CARRY-OVER above), the
+ * leave days of every DRAWING record's dates (story 13.2) inside the leave
+ * year containing `today` — a record straddling the year's start or end
+ * counts only its dates inside it — and allowance + carried − used, which may
+ * be negative.
  *
  * @throws RangeError when the allowance is malformed (a starting allowance or
  *   version days not a whole number of zero or more, a version id not a
- *   positive integer, a version leave year not an integer 1–9999); when `today`, or the start or end of a record, is not a calendar
+ *   positive integer, a version leave year not an integer 1–9999); when the
+ *   carry-over setting is malformed (see {@link LeaveCarryOver}); when
+ *   `today`, or the start or end of a record, is not a calendar
  *   `YYYY-MM-DD`; when a record ends before it starts or is longer than
  *   {@link MAX_LEAVE_RANGE_DAYS}; when two records share a date; on any
  *   precondition of {@link leaveYearOf}; and on any of
@@ -458,17 +697,19 @@ function balanceOf(costOf: (range: LeaveRange) => number, balance: LeaveBalanceI
  */
 export function leaveBalanceOf(balance: LeaveBalanceInput): LeaveBalance {
   const current = checkBalanceInput(balance);
-  const costOf = costCounter(balance.input);
-  return balanceOf((range) => costOf(range), balance, current);
+  return balanceOf(costCounter(balance.input), balance, current).balance;
 }
 
 /**
  * What saving `range` would do (R4.2, R4.7): the balance before it, the
  * range's cost over every date, the part the balance is charged — its dates
  * inside the current leave year that no existing record covers, so no date
- * is charged twice, and nothing when the range does not draw the allowance — the balance after that charge, whether the charge is
- * positive and greater than the balance before it, and whether the range
- * overlaps an existing record. The flags are warnings; nothing here refuses.
+ * is charged twice, and nothing when the range does not draw the allowance —
+ * the balance with the range added as a record, whether the charge is
+ * positive and the year's balance after the expiry, with the range, would be
+ * negative (story 13.4b: days after the expiry are never covered by carried
+ * days), and whether the range overlaps an existing record. The flags are
+ * warnings; nothing here refuses.
  *
  * @throws RangeError on any precondition of {@link leaveBalanceOf}, and when
  *   the start or end of `range` is not a calendar `YYYY-MM-DD`, when it ends
@@ -479,19 +720,28 @@ export function leavePreviewOf(preview: LeavePreviewInput): LeavePreview {
   checkRange('the leave range', preview.range);
 
   const costOf = costCounter(preview.input);
-  const before = balanceOf((range) => costOf(range), preview, current);
+  const beforeAndEnd = balanceOf(costOf, preview, current);
+  const before = beforeAndEnd.balance;
   const costDays = costOf(preview.range);
   const inYear = intersect(preview.range, current.year);
   // A range of a type that does not draw the allowance charges nothing; its
   // cost over every date is still reported (story 13.2).
-  const costInYearDays = inYear === null || !drawsAllowance(preview.range) ? 0 : costOf(inYear, preview.records);
+  const draws = drawsAllowance(preview.range);
+  const costInYearDays = inYear === null || !draws ? 0 : costOf(inYear, preview.records);
+  const after = draws ? balanceOf(costOf, preview, current, { from: preview.range.from, to: preview.range.to }) : beforeAndEnd;
+  // The range lowers the balance: by its charge in the year, or — a range in
+  // the previous leave year — by shrinking what is carried into this one.
+  const lowers = costInYearDays > 0 || after.balance.balanceDays < before.balanceDays;
+  const exceedsBalance = lowers && after.endBalanceDays < 0;
 
   return {
     ...before,
     costDays,
     costInYearDays,
-    balanceAfterDays: before.balanceDays - costInYearDays,
-    exceedsBalance: costInYearDays > 0 && costInYearDays > before.balanceDays,
+    balanceAfterDays: after.balance.balanceDays,
+    endBalanceAfterDays: after.endBalanceDays,
+    exceedsBalance,
+    exceedsAfterExpiry: exceedsBalance && after.balance.balanceDays >= 0,
     overlapsRecord: preview.records.some((record) => intersect(record, preview.range) !== null),
   };
 }

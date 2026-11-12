@@ -78,6 +78,7 @@ export {
 } from './hours.js';
 
 export {
+  carryOverExpiryOf,
   drawsAllowance,
   isLeaveDay,
   leaveAllowanceOf,
@@ -92,6 +93,7 @@ export {
   type LeaveAllowanceVersion,
   type LeaveBalance,
   type LeaveBalanceInput,
+  type LeaveCarryOver,
   type LeavePreview,
   type LeavePreviewInput,
   type LeaveRange,
