@@ -789,6 +789,49 @@ for columns the database lacks and every signed-in screen loses its
 organization. `db push`, then the SPA. No function changes, and nothing to
 backfill: every organization starts with no carry-over.
 
+**Epic 13, migrations `0053`–`0059`.** `db push` before the SPA holds for all of
+them except `0056`. Each item below says what breaks if the order is reversed.
+Installed PWAs (`registerType: 'prompt'`) keep an old bundle in control past a
+deploy until the member takes the update prompt. So "an old client" here
+includes installed devices for at least one release after the SPA ships.
+
+- **`0053` before the SPA of story 13.2.** Without it, a member session's
+  `absence_types` embed answers an empty catalog under `0052`'s admin-only
+  policy, and the member's *Sati* is unavailable.
+- **`0054` before the SPA of story 13.2b.** The new client always sends
+  `p_absence_type_id` to `amend_leave_record` and selects
+  `leave_requests.absence_type_id`. Against a database without `0054`, every
+  amend fails with no matching function, and the request reads fail. An old
+  client against `0054` keeps working: the request's type defaults to annual
+  leave, and a null `p_absence_type_id` keeps the record's type.
+- **`0055` before the SPA of story 13.3.** `MEMBERS_COLUMNS` embeds
+  `leave_allowances(...)` and the organization's leave-year start. Without
+  `0055`, every member read fails (`PGRST200`), which takes down Ljudi and
+  every balance surface.
+- **`0056` AFTER the SPA of story 13.3b, by at least one release.** This is the
+  reverse case. `0056` takes `UPDATE (leave_allowance_days)` away, so an old
+  client's *Promijeni pravo* PATCH is refused (`42501`). The new client only
+  inserts into `leave_allowances`, so it works without `0056`. Apply `0056`
+  once stale installed clients have had their update prompt, or together with
+  a client version check once one exists.
+- **`0057` before the SPA of story 13.4**, as above.
+- **`0058` before the SPA of story 13.5.** The client selects
+  `leave_records.half` and calls `amend_leave_record` with `p_half`. Without
+  `0058`, the leave reads fail and every amend fails with no matching
+  function. **Old installed clients against `0058`:** an amend sent without
+  `p_half` writes a whole day, so an old bundle that amends a half-day record
+  (only its dates or type) silently turns it into a whole day and charges 1
+  instead of 0.5. The old bundle cannot show a half, so the admin cannot see
+  it happen. The amend lands and notifies like any other. Until a client
+  version check exists, the mitigation is the update prompt: an admin who
+  amends leave should take it before amending a half-day record.
+- **`0059` before the SPA of story 13.5b.** The client selects
+  `leave_requests.half`. Without `0059`, every request read fails, on both the
+  member's *Godišnji* and the admin's *Zahtjevi*. An old client against `0059`
+  keeps working: its requests name no half and are whole days, and approval
+  (`decide_leave_request`, same signature) copies whatever half the request
+  holds.
+
 With the pipeline enabled (§8), merging to `main` is what promotes: staging is
 deployed and smoked, then production waits for an approval, and each deploy
 pushes migrations **before** it publishes the SPA. Without it, nothing publishes
