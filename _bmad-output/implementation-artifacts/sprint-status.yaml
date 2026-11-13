@@ -1069,12 +1069,12 @@ action_items:
       root tests (resource-hygiene, supabase-scaffold) locally; DB-connecting files
       stay forbidden"
     owner: "Perolipotic (process)"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-13-retro-2026-11-12.md"
   - id: "epic-13-retro-item-60-a11-bmad-build-customization-a-story-add"
     epic: 13
     action: "A11: bmad-build customization: a story adding a column to a leave row
       greps every mapper copying leave fields (or uses A8 shared helper)"
     owner: "Perolipotic (process)"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-13-retro-2026-11-12.md"
