@@ -934,7 +934,7 @@ An Admin can define Absence Types by name, each stating whether it draws down th
 - Every Organization starts with one drawing type for annual leave. Existing Leave Records become that type.
 - Every type raises Conflicts against a rostered working shift (FR-47). Only drawing types count toward Leave Balance (FR-45).
 - A type's name is visible only to Admins and to the Member themselves. To any other Member, the Member reads as absent (NFR-5).
-- The hours views and the Excel export report Leave Days per drawing type and one total for the rest, with columns named by Organization data (FR-42a, DI-8).
+- The hours views and the Excel export report Leave Days per drawing type, and one total for the rest when the Organization has a non-drawing type, with columns named by Organization data (FR-42a, DI-8). (Amended 2026-11-13, epic 13 retro A6: the total for the rest is conditional: PO Q4 2026-11-08, approved 2026-11-09, story 13.2.)
 
 #### FR-75: Half-day records
 An Admin, or a Member through a request, can record a one-date absence covering the first or second half of the Member's working shift that date.
@@ -943,7 +943,7 @@ An Admin, or a Member through a request, can record a one-date absence covering 
 - It costs 0.5 Leave Days.
 - It raises one Conflict, like a full day.
 - The worked half's interval counts in Band Hours and Total Hours by band intersection (FR-40, DI-7). The absent half counts in neither.
-- A half-day record on a date without a working shift is refused.
+- A half day is refused when it is entered on a date without exactly one working shift: a new record, a request, or an amend that chooses another date or the other half. A stored half day is never refused because the schedule changed after it was recorded. Its decision, and an amend that keeps its date and half, stand, and it costs 0 Leave Days on a date that no longer has a working shift. (Amended 2026-11-13, epic 13 retro A6.)
 
 #### FR-76: Carry-over
 An Admin can set the Organization's carry-over: the maximum days that carry into the next Leave Year, and the date they expire.
