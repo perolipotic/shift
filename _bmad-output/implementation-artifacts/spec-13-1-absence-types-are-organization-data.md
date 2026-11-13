@@ -33,7 +33,7 @@ context:
   - Reports (Sati, Excel, leave overview, tiles), conflicts, staffing, notifications and outbox operands: unchanged; nothing reads the type yet.
   - `amend_leave_record` (0043), `decide_leave_request` (0046), `replace_conflict_member` (0036), the deactivation close (0041): unchanged; their inserts take the default.
 - Sessions get no privilege on `leave_records.absence_type_id` in 13.1: amend copies no type yet, so a non-annual record must not be writable before 13.2 carries the type through amend and approval.
-- Pilot sick leave (epic AC 3): Not confirmed by the product owner as of 2026-11-08; if recorded, the type name is visible only to admins and the member (GDPR Art. 9(2)(b)).
+- Pilot sick leave (epic AC 3): Confirmed by the product owner (2026-11-08, recorded 2026-11-13 by epic 13 retro A7): the pilot records *Bolovanje* as a non-drawing type. When it is recorded, the type name is visible only to admins and the member (GDPR Art. 9(2)(b)).
 
 **Ask First:** any change to a leave function, the domain balance or a report; any `apps/web` change beyond what a test needs.
 

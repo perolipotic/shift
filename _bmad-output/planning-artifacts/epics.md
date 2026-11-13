@@ -2390,6 +2390,62 @@ So that half a shift away is not charged as a whole day.
 **When** it is merged
 **Then** the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change (UX-DR47, 50)
 
+### Story 13.6: Carry-over counts only the time a member was active
+
+As a member who joined or came back during a year,
+I want my carried-over days to reflect only the time I was active,
+So that a year I was not a member does not hand me days I never earned.
+
+**Depends on:** 13.4. **Source:** epic 13 retro A3, finding B2 (PO decision 2026-11-13).
+
+**Acceptance Criteria:**
+
+**Given** a member who was active for only part of the previous leave year
+**When** the carry into the new year is derived
+**Then** the previous year's allowance is counted in proportion to the days the member was active, the days they took are subtracted, and the cap still applies; nothing derived is stored (AD-1, AD-7)
+
+**Given** a member who was not active at any point in the previous leave year
+**When** the carry is derived
+**Then** nothing is carried
+
+**Given** a member active for the whole previous leave year
+**When** the carry is derived
+**Then** it is unchanged from story 13.4b
+
+**Given** this story ships
+**When** it is merged
+**Then** the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change
+
+### Story 13.7: A half day is named as a half wherever leave is shown
+
+As a member or an admin,
+I want a half day named as a half on every surface and in every notification,
+So that nobody reads half a shift away as a whole day.
+
+**Depends on:** 13.5b. **Source:** epic 13 retro A5, findings B4 and B5 and the review's unexplained *0 dana* (PO decision 2026-11-13: all four).
+
+**Acceptance Criteria:**
+
+**Given** a half-day record
+**When** the member's own *Danas* renders that date
+**Then** it names the half (*prvi* / *drugi dio smjene*). It is not drawn as a whole day of leave, and it is not joined to adjacent records
+
+**Given** a half-day record or request
+**When** a notification is sent for it, including an amend that changes only the half
+**Then** the text names the half
+
+**Given** a half-day record
+**When** the admin's *Danas*, *Odlučeno* or the deactivation's question names it
+**Then** the half is named beside the range
+
+**Given** a half-day request whose date no longer has a working shift
+**When** the decision screen shows its cost of 0 days
+**Then** it says why
+
+**Given** this story ships
+**When** it is merged
+**Then** the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change
+
 ## Epic 14: Every change can be read back, and printed
 
 An admin reads who changed what and when — before and after, deletions included — filters it, and exports exactly what they filtered as a PDF.
