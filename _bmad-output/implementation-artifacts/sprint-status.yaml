@@ -1061,7 +1061,7 @@ action_items:
     action: "A9: fix stale FEATURE_PUBLIC consumer comments; drop or justify the new
       organization -> teams import"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-13-retro-2026-11-12.md"
   - id: "epic-13-retro-item-59-a10-bmad-build-customization-implementat"
     epic: 13

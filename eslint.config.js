@@ -125,7 +125,7 @@ export const FEATURE_PUBLIC = {
   // Story 13.1b: *Organizacija*'s *Vrste odsutnosti* card reads and writes
   // the types through their own list and write modules.
   'absence-types': [
-    'services/list', // organization
+    'services/list', // calendar, hours, leave, organization
     'services/write', // organization
   ],
   // Story 7.8: the signed-in layout holds a flagged session at the
@@ -288,7 +288,7 @@ export const FEATURE_PUBLIC = {
     // its resolution page and the admin's Danas stand on. Retro 8–9 (S1): the
     // read side of `leave-requests`, split from its writes, which stay private.
     'services/leave-request-list', // conflicts, members, teams, today
-    'services/leave-section', // conflicts
+    'services/leave-section', // conflicts, pages, today
     'services/my-leave', // today
     // Story 9.4: the decision screen's heading id, which names the page's main
     // region; since retro 8–9 (P1) in its own ids file, not a service.
@@ -371,7 +371,11 @@ export const FEATURE_PUBLIC = {
   ],
   // Story 6.1b: *Danas*'s retry reads the team line's key again with the rest.
   teams: [
-    'services/dependents', // conflicts, hour-bands, leave, members, swaps
+    // Every feature that writes re-reads through this one registry, so an
+    // import of it is not a dependency on teams' screens. Organization's
+    // absence-type writes (story 13.1b) use it like every other writer, and
+    // teams reads organization's surface keys back (epic 13 retro A9).
+    'services/dependents', // calendar, conflicts, hour-bands, leave, members, organization, rotation, shift-types, swaps
     'services/list', // calendar, members, rotation, pages
     'services/roster', // pages, today
     'services/write', // pages
