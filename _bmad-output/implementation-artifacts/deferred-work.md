@@ -1493,3 +1493,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-a1-snapshot-shape-buster.md`
   summary: Enforce the `DEVICE_SNAPSHOT_SHAPE` bump rule mechanically. One option is a test pinning each persisted key's mapped field set, failing unless the shape changes with it. Another is making the mapped-row readers (`memberAllowanceOn`, `write.ts`, `leave-overview.ts`, `my-leave.ts`) tolerant of missing fields.
   evidence: A1 fixed B1 with a versioned buster, but the bump rule is only a doc comment. A forgotten bump on the next mapped-shape change would hydrate stale rows again, and `checkLeaveYearStart` still throws during render on a row missing `leaveYearStart`.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-a2-amend-keeps-stored-half.md`
+  summary: The admin's Izmijeni dialog draws no half card for a kept half on a date with no single working shift, so it shows Pola dana on without saying which half is stored; drawing the kept half needs new hr.json copy.
+  evidence: A2 keeps the stored half there (`keepsStoredHalf`), but `halfOptions` in `use-member-leave.ts` is null on such a date.

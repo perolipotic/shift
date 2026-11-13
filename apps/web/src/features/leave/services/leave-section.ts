@@ -536,6 +536,24 @@ export function leaveHalfChoiceOf(record: LeaveRange | null): LeaveHalfChoice {
   return record?.half === LEAVE_HALF_FIRST || record?.half === LEAVE_HALF_SECOND ? { on: true, half: record.half } : LEAVE_WHOLE_DAY;
 }
 
+/**
+ * The half choice once the amend's dialog lands on `from`–`to` (epic 13 retro
+ * A2): the amended record's own half while the range is its own one date and
+ * the record is a half day, so switching *Pola dana* back on or moving the
+ * date back never loses the stored half (on a date with no single working
+ * shift no card could pick it again); otherwise `otherwise`.
+ */
+export function leaveHalfRestoredOf(
+  target: LeaveRange | null,
+  from: string,
+  to: string,
+  otherwise: LeaveHalfChoice,
+): LeaveHalfChoice {
+  const stored = leaveHalfChoiceOf(target);
+
+  return target !== null && stored.on && from === target.from && to === target.to ? stored : otherwise;
+}
+
 /** Whether *Pola dana* is offered: while Od and Do are one calendar date (story 13.5). */
 export function leaveHalfOfferedOf(from: string, to: string): boolean {
   return isIsoDate(from) && from === to;
@@ -724,7 +742,14 @@ export type LeavePreviewState =
  * The half was checked against the member's schedule when it was sent; the
  * decision is made later against a schedule that may have changed, and is
  * never refused for it — the half then costs what the domain says (0 on a
- * date with no working shift), as a record's does.
+ * date with no working shift), as a record's does. An amend that KEEPS the
+ * record's own half on its own date is never refused for the shift either
+ * (epic 13 retro A2): the rotation or an override may since have taken the
+ * shift, or doubled it, leaving no single working shift, and the stored half
+ * then costs what the domain says. Keeping it skips only the shift refusal,
+ * whatever else the amend changes (its type, say). A fresh half (another
+ * date, or the other half) is still refused on a date with no single working
+ * shift.
  */
 export function leavePreviewStateOf(
   input: LeaveRecordsInput,
@@ -746,7 +771,11 @@ export function leavePreviewStateOf(
   // STORY 13.5: the half day, while Od = Do and *Pola dana* is on.
   const half = leaveSentHalfOf(from, to, halfChoice);
 
-  if (refuseHalf && leaveHalfOfferedOf(from, to) && halfChoice.on) {
+  // EPIC 13 RETRO A2: the amended record's own half, on its own date, is never refused for the shift.
+  const keepsStoredHalf =
+    amending !== null && from === amending.from && to === amending.to && half !== null && half === (amending.half ?? null);
+
+  if (refuseHalf && !keepsStoredHalf && leaveHalfOfferedOf(from, to) && halfChoice.on) {
     // FIRST whether the date can hold a half day at all: with no working
     // shift, or two, no half card is drawn, so asking for one would point at
     // nothing. A domain refusal is the half day's too, never the range's.
