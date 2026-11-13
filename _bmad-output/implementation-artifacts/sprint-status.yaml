@@ -1039,7 +1039,7 @@ action_items:
     action: "A6: reconcile contract docs: AD-2 amendment + CAP-23 row in ARCHITECTURE-SPINE
       for half (0058/0059, p_half); PRD FR-75 and FR-74 to as-built (R1, R2)"
     owner: "architect / PM"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-13-retro-2026-11-12.md"
   - id: "epic-13-retro-item-56-a7-record-the-pilot-sick-leave-bolovanje"
     epic: 13
