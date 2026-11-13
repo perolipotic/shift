@@ -1024,7 +1024,7 @@ action_items:
     action: "A4: deploy-order notes for migrations 0057, 0058, 0059 incl. the installed-PWA
       case where an old client amends a half to a whole day (R3)"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-13-retro-2026-11-12.md"
   - id: "epic-13-retro-item-54-a5-one-po-pass-on-half-day-presentation"
     epic: 13
