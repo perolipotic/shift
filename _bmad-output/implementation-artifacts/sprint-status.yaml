@@ -618,6 +618,8 @@ development_status:
   13-4b-carry-over-is-derived-and-shown: done  # #293
   13-5-a-half-day-record-costs-half-a-day: done  # #294
   13-5b-a-member-asks-for-a-half-day: done  # split from 13.5, 2026-11-12; #295
+  13-6-carry-over-counts-only-the-time-a-member-was-active: backlog  # epic 13 retro A3, PO 2026-11-13
+  13-7-a-half-day-is-named-as-a-half-wherever-leave-is-shown: backlog  # epic 13 retro A5, PO 2026-11-13
   epic-13-retrospective: done
 
   epic-14: backlog
@@ -1017,7 +1019,7 @@ action_items:
     action: "A3: PO decides whether carry-over counts a previous year in which the
       member was not active (B2), then a story"
     owner: "PO"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-13-retro-2026-11-12.md"
   - id: "epic-13-retro-item-53-a4-deploy-order-notes-for-migrations-005"
     epic: 13
@@ -1032,7 +1034,7 @@ action_items:
       surfaces, notifications naming the half, the review unexplained 0 dana (B4,
       B5)"
     owner: "PO"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-13-retro-2026-11-12.md"
   - id: "epic-13-retro-item-55-a6-reconcile-contract-docs-ad-2-amendmen"
     epic: 13
@@ -1046,7 +1048,7 @@ action_items:
     action: "A7: record the pilot sick-leave (Bolovanje) answer once, consistently,
       in spec 13.1 and deferred-work (R4)"
     owner: "PO"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-13-retro-2026-11-12.md"
   - id: "epic-13-retro-item-57-a8-tech-debt-story-one-shared-copy-of-a"
     epic: 13
