@@ -1010,7 +1010,7 @@ action_items:
     action: "A2: let the admin amend a stored half whose shift has gone (type-only/date-preserving
       amend keeps it, costed by the domain), per 13.5 Design Note (B3)"
     owner: "dev"
-    status: open
+    status: done  # amend keeps the stored half (spec-a2-amend-keeps-stored-half)
     ref: "_bmad-output/implementation-artifacts/epic-13-retro-2026-11-12.md"
   - id: "epic-13-retro-item-52-a3-po-decides-whether-carry-over-counts"
     epic: 13

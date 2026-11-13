@@ -1,4 +1,4 @@
-import { LEAVE_HALF_FIRST, LEAVE_HALF_SECOND, leaveBalanceOf, leaveCostOf, leavePreviewOf, type LeavePreview, type LeaveRange } from '@shift/domain';
+import { LEAVE_HALF_FIRST, LEAVE_HALF_SECOND, halfDayShiftOf, leaveBalanceOf, leaveCostOf, leavePreviewOf, type LeavePreview, type LeaveRange } from '@shift/domain';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { ANNUAL_LEAVE_ID } from '@/features/absence-types/services/list';
@@ -33,6 +33,7 @@ import {
   leaveCostHalfMessageKey,
   leaveRangeHalfMessageKey,
   leaveHalfChoiceOf,
+  leaveHalfRestoredOf,
   leaveHalfMessageKey,
   leaveHalfOfferedOf,
   leaveHalfOptionsOf,
@@ -1617,6 +1618,130 @@ describe('the half day (story 13.5)', () => {
     expect(leavePreviewStateOf(base.input, HALF.from, HALF.to, ANNUAL, HALF, LEAVE_WHOLE_DAY).kind).toBe(LEAVE_PREVIEW_READY);
     expect(leaveHalfChoiceOf(HALF)).toEqual({ on: true, half: LEAVE_HALF_FIRST });
     expect(leaveHalfChoiceOf(WORKED)).toEqual(LEAVE_WHOLE_DAY);
+  });
+
+  describe('an amend that keeps or changes a stored half (epic 13 retro A2)', () => {
+    /** 2026-09-12, the viewer's Slobodno, recorded as its first half before the schedule changed. */
+    const GONE: LeaveRecord = { ...HALF, id: 'record-half-gone', from: '2026-09-12', to: '2026-09-12' };
+    /** Another drawing type, so a 0 is the domain's (no single working shift), never the type's. */
+    const OTHER: LeaveTypeChoice = { id: 'type-other-drawing', drawsAllowance: true };
+
+    it('keeps the half on a type-only amend where the shift has gone, ready at 0 days', () => {
+      const state = leavePreviewStateOf(baseOf([GONE]).input, GONE.from, GONE.to, OTHER, GONE, leaveHalfChoiceOf(GONE));
+
+      if (state.kind !== LEAVE_PREVIEW_READY) throw new Error(state.kind);
+
+      expect(state.range).toEqual({ from: GONE.from, to: GONE.to, drawsAllowance: true, half: LEAVE_HALF_FIRST });
+      expect(state.type).toEqual(OTHER);
+      expect(state.preview.costDays).toBe(0);
+      // A non-drawing type keeps it the same way.
+      const sick = leavePreviewStateOf(baseOf([GONE]).input, GONE.from, GONE.to, SICK, GONE, leaveHalfChoiceOf(GONE));
+
+      if (sick.kind !== LEAVE_PREVIEW_READY) throw new Error(sick.kind);
+
+      expect(sick.range.half).toBe(LEAVE_HALF_FIRST);
+      expect(sick.range.drawsAllowance).toBe(false);
+      expect(sick.preview.costDays).toBe(0);
+    });
+
+    it('keeps the half on a type-only amend where the shift has doubled', () => {
+      const base = baseOf([HALF]).input;
+      const own = new Set(base.input.memberships.map((membership) => membership.teamId));
+      // The viewer put on every other team's 2026-09-10 too: their Dan and at least one more working shift.
+      const doubled = {
+        ...base,
+        input: {
+          ...base.input,
+          rosterOverrides: pilot.teams
+            .filter((team) => !own.has(team.id))
+            .map((team) => ({ id: `ro-${team.id}`, teamId: team.id, date: HALF.from, memberOutId: null, memberInId: base.input.memberId })),
+        },
+      };
+
+      expect(halfDayShiftOf(base.input, HALF.from)).not.toBeNull();
+      expect(halfDayShiftOf(doubled.input, HALF.from)).toBeNull();
+      const state = leavePreviewStateOf(doubled, HALF.from, HALF.to, OTHER, HALF, leaveHalfChoiceOf(HALF));
+
+      if (state.kind !== LEAVE_PREVIEW_READY) throw new Error(state.kind);
+
+      expect(state.range.half).toBe(LEAVE_HALF_FIRST);
+      // A fresh half there is still refused.
+      expect(leavePreviewStateOf(doubled, HALF.from, HALF.to, OTHER, HALF, { on: true, half: LEAVE_HALF_SECOND })).toMatchObject({
+        reason: LEAVE_HALF_REFUSED,
+      });
+    });
+
+    it('stays unchanged with the same date, type and half', () => {
+      expect(leavePreviewStateOf(baseOf([GONE]).input, GONE.from, GONE.to, ANNUAL, GONE, leaveHalfChoiceOf(GONE))).toEqual({
+        kind: LEAVE_PREVIEW_REASON,
+        reason: LEAVE_RANGE_UNCHANGED,
+        field: LEAVE_FROM_FIELD,
+      });
+    });
+
+    it('refuses the other half on the same date', () => {
+      expect(
+        leavePreviewStateOf(baseOf([GONE]).input, GONE.from, GONE.to, ANNUAL, GONE, { on: true, half: LEAVE_HALF_SECOND }),
+      ).toEqual({ kind: LEAVE_PREVIEW_REASON, reason: LEAVE_HALF_REFUSED, field: LEAVE_HALF_FIELD });
+    });
+
+    it('refuses a half kept on a working-date record moved to a date with no working shift', () => {
+      // HALF, on 2026-09-10, moved onto 2026-09-12, the Slobodno.
+      expect(
+        leavePreviewStateOf(baseOf([HALF]).input, '2026-09-12', '2026-09-12', ANNUAL, HALF, leaveHalfChoiceOf(HALF)),
+      ).toEqual({ kind: LEAVE_PREVIEW_REASON, reason: LEAVE_HALF_REFUSED, field: LEAVE_HALF_FIELD });
+    });
+
+    it('costs a gone-shift record moved with its half to a working date', () => {
+      const state = leavePreviewStateOf(baseOf([GONE]).input, '2026-09-10', '2026-09-10', ANNUAL, GONE, leaveHalfChoiceOf(GONE));
+
+      if (state.kind !== LEAVE_PREVIEW_READY) throw new Error(state.kind);
+
+      expect(state.range).toEqual({ from: '2026-09-10', to: '2026-09-10', drawsAllowance: true, half: LEAVE_HALF_FIRST });
+      expect(state.preview.costDays).toBe(0.5);
+    });
+
+    it('asks a one-date whole-day record switched on for a half, or refuses it where there is no working shift', () => {
+      const day: LeaveRecord = { ...ANNUAL_RECORD, id: 'record-day', from: '2026-09-10', to: '2026-09-10' };
+      const free: LeaveRecord = { ...day, id: 'record-free', from: '2026-09-12', to: '2026-09-12' };
+
+      expect(leavePreviewStateOf(baseOf([day]).input, day.from, day.to, OTHER, day, { on: true, half: null })).toEqual({
+        kind: LEAVE_PREVIEW_REASON,
+        reason: LEAVE_HALF_UNCHOSEN,
+        field: LEAVE_HALF_FIELD,
+      });
+      expect(leavePreviewStateOf(baseOf([free]).input, free.from, free.to, OTHER, free, { on: true, half: null })).toEqual({
+        kind: LEAVE_PREVIEW_REASON,
+        reason: LEAVE_HALF_REFUSED,
+        field: LEAVE_HALF_FIELD,
+      });
+    });
+
+    it('turns into a whole day with the switch off, as before', () => {
+      const state = leavePreviewStateOf(baseOf([GONE]).input, GONE.from, GONE.to, ANNUAL, GONE, LEAVE_WHOLE_DAY);
+
+      if (state.kind !== LEAVE_PREVIEW_READY) throw new Error(state.kind);
+
+      expect(state.range).toEqual({ from: GONE.from, to: GONE.to, drawsAllowance: true });
+    });
+
+    it('still refuses a new record on that date', () => {
+      expect(
+        leavePreviewStateOf(baseOf([GONE]).input, GONE.from, GONE.to, ANNUAL, null, { on: true, half: LEAVE_HALF_FIRST }),
+      ).toEqual({ kind: LEAVE_PREVIEW_REASON, reason: LEAVE_HALF_REFUSED, field: LEAVE_HALF_FIELD });
+    });
+
+    it('brings the stored half back when the dialog lands on the record\'s own date again', () => {
+      const switchedOn = { on: true, half: null };
+
+      // Pola dana switched back on, or the date moved back, over the record's own date.
+      expect(leaveHalfRestoredOf(GONE, GONE.from, GONE.to, switchedOn)).toEqual({ on: true, half: LEAVE_HALF_FIRST });
+      expect(leaveHalfRestoredOf(GONE, GONE.from, GONE.to, LEAVE_WHOLE_DAY)).toEqual({ on: true, half: LEAVE_HALF_FIRST });
+      // Another date, a whole-day record or a new record: the choice stands.
+      expect(leaveHalfRestoredOf(GONE, '2026-09-10', '2026-09-10', switchedOn)).toBe(switchedOn);
+      expect(leaveHalfRestoredOf({ from: GONE.from, to: GONE.to }, GONE.from, GONE.to, switchedOn)).toBe(switchedOn);
+      expect(leaveHalfRestoredOf(null, GONE.from, GONE.to, LEAVE_WHOLE_DAY)).toBe(LEAVE_WHOLE_DAY);
+    });
   });
 
   it('costs a half-day record 0.5 in the list and the balance, and names its half', () => {

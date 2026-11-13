@@ -39,6 +39,7 @@ import {
   leaveHandoffMissed,
   leaveHandoffOpeningOf,
   leaveHalfChoiceOf,
+  leaveHalfRestoredOf,
   leaveHalfOfferedOf,
   leaveHalfOptionsOf,
   leaveInvalidFieldOf,
@@ -625,14 +626,17 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
 
     if (event.currentTarget.name === LEAVE_FROM_FIELD) setFrom(value);
     else setTo(value);
-    // STORY 13.5: a range of more than one date clears the half day.
+    // STORY 13.5: a range of more than one date clears the half day; epic 13
+    // retro A2: landing back on the amended record's own date brings its half back.
     if (nextFrom !== nextTo) setHalf(LEAVE_WHOLE_DAY);
+    else setHalf((current) => leaveHalfRestoredOf(amendTarget, nextFrom, nextTo, current));
     clearRaised();
   }
 
   /** *Pola dana* switched (story 13.5): on with no half chosen, or off; it clears everything raised. */
   function switchHalf(on: boolean): void {
-    setHalf(on ? { on: true, half: null } : LEAVE_WHOLE_DAY);
+    // EPIC 13 RETRO A2: switched back on over the amended record's own date, its stored half comes back.
+    setHalf(on ? leaveHalfRestoredOf(amendTarget, from, to, { on: true, half: null }) : LEAVE_WHOLE_DAY);
     clearRaised();
   }
 
