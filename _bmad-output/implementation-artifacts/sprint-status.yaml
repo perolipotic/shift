@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 12-11-2026 12:00
+last_updated: 11-13-2026 09:20
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -617,8 +617,8 @@ development_status:
   13-4-unused-leave-carries-over-and-expires: done  # #292
   13-4b-carry-over-is-derived-and-shown: done  # #293
   13-5-a-half-day-record-costs-half-a-day: done  # #294
-  13-5b-a-member-asks-for-a-half-day: review  # split from 13.5, 2026-11-12
-  epic-13-retrospective: optional
+  13-5b-a-member-asks-for-a-half-day: done  # split from 13.5, 2026-11-12; #295
+  epic-13-retrospective: done
 
   epic-14: backlog
   14-1-every-change-is-recorded-in-the-change-history: backlog
@@ -997,3 +997,84 @@ action_items:
     owner: "Dev"
     status: done  # #282
     ref: "_bmad-output/implementation-artifacts/epic-12-retro-2026-11-07.md"
+  - id: "epic-13-retro-item-50-a1-make-the-persisted-mapped-members-cac"
+    epic: 13
+    action: "A1: make the persisted mapped members cache tolerant of a missing leaveYearStart/leaveAllowance
+      (or bump the snapshot buster on a mapped-shape change); test a pre-13.3 row
+      (B1: member page crashes)"
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-13-retro-2026-11-12.md"
+  - id: "epic-13-retro-item-51-a2-let-the-admin-amend-a-stored-half-who"
+    epic: 13
+    action: "A2: let the admin amend a stored half whose shift has gone (type-only/date-preserving
+      amend keeps it, costed by the domain), per 13.5 Design Note (B3)"
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-13-retro-2026-11-12.md"
+  - id: "epic-13-retro-item-52-a3-po-decides-whether-carry-over-counts"
+    epic: 13
+    action: "A3: PO decides whether carry-over counts a previous year in which the
+      member was not active (B2), then a story"
+    owner: "PO"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-13-retro-2026-11-12.md"
+  - id: "epic-13-retro-item-53-a4-deploy-order-notes-for-migrations-005"
+    epic: 13
+    action: "A4: deploy-order notes for migrations 0057, 0058, 0059 incl. the installed-PWA
+      case where an old client amends a half to a whole day (R3)"
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-13-retro-2026-11-12.md"
+  - id: "epic-13-retro-item-54-a5-one-po-pass-on-half-day-presentation"
+    epic: 13
+    action: "A5: one PO pass on half-day presentation gaps: member Danas, decision
+      surfaces, notifications naming the half, the review unexplained 0 dana (B4,
+      B5)"
+    owner: "PO"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-13-retro-2026-11-12.md"
+  - id: "epic-13-retro-item-55-a6-reconcile-contract-docs-ad-2-amendmen"
+    epic: 13
+    action: "A6: reconcile contract docs: AD-2 amendment + CAP-23 row in ARCHITECTURE-SPINE
+      for half (0058/0059, p_half); PRD FR-75 and FR-74 to as-built (R1, R2)"
+    owner: "architect / PM"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-13-retro-2026-11-12.md"
+  - id: "epic-13-retro-item-56-a7-record-the-pilot-sick-leave-bolovanje"
+    epic: 13
+    action: "A7: record the pilot sick-leave (Bolovanje) answer once, consistently,
+      in spec 13.1 and deferred-work (R4)"
+    owner: "PO"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-13-retro-2026-11-12.md"
+  - id: "epic-13-retro-item-57-a8-tech-debt-story-one-shared-copy-of-a"
+    epic: 13
+    action: "A8: tech-debt story: one shared copy of a leave row range fields for
+      every mapper; split leave-section.ts by concern; collapse leave-year-start,
+      allowance-in-year and balance-input duplicates"
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-13-retro-2026-11-12.md"
+  - id: "epic-13-retro-item-58-a9-fix-stale-feature_public-consumer-com"
+    epic: 13
+    action: "A9: fix stale FEATURE_PUBLIC consumer comments; drop or justify the new
+      organization -> teams import"
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-13-retro-2026-11-12.md"
+  - id: "epic-13-retro-item-59-a10-bmad-build-customization-implementat"
+    epic: 13
+    action: "A10: bmad-build customization: implementation and review briefs run DB-free
+      root tests (resource-hygiene, supabase-scaffold) locally; DB-connecting files
+      stay forbidden"
+    owner: "Perolipotic (process)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-13-retro-2026-11-12.md"
+  - id: "epic-13-retro-item-60-a11-bmad-build-customization-a-story-add"
+    epic: 13
+    action: "A11: bmad-build customization: a story adding a column to a leave row
+      greps every mapper copying leave fields (or uses A8 shared helper)"
+    owner: "Perolipotic (process)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-13-retro-2026-11-12.md"
