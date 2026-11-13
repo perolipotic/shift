@@ -41,12 +41,14 @@ import {
   DEVICE_SNAPSHOT_MAX_AGE_MS,
   DEVICE_SNAPSHOT_FORGET_TIMED_OUT,
   DEVICE_SNAPSHOT_RESTORE_TIMED_OUT,
+  DEVICE_SNAPSHOT_SHAPE,
   ERASURE_CHECK_KEY_PART,
   PERSISTED_KEY_ROOTS,
   PERSISTED_PARAMETERISED_KEY_ROOTS,
   deviceSnapshot,
   persistsKey,
   persistsQuery,
+  snapshotBusterOf,
   type SnapshotStorage,
 } from '@/lib/offline/persistence';
 
@@ -81,7 +83,10 @@ function memoryStorage(): SnapshotStorage & { readonly entries: Map<string, stri
 
 const client = (): QueryClient => new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
-/** What the stored blob holds: its owner and the keys it kept. */
+/** The shape prefix every buster this app writes carries (`snapshotBusterOf`). */
+const SHAPE_PREFIX = `${String(DEVICE_SNAPSHOT_SHAPE)}:`;
+
+/** What the stored blob holds: its owner (parsed out of the shaped buster) and the keys it kept. */
 function stored(storage: ReturnType<typeof memoryStorage>): { owner: string; keys: unknown[] } | null {
   const raw = storage.entries.get(DEVICE_SNAPSHOT_KEY);
 
@@ -89,20 +94,43 @@ function stored(storage: ReturnType<typeof memoryStorage>): { owner: string; key
 
   const parsed = JSON.parse(raw) as { buster: string; clientState: { queries: { queryKey: unknown[] }[] } };
 
-  return { owner: parsed.buster, keys: parsed.clientState.queries.map((query) => query.queryKey) };
+  if (!parsed.buster.startsWith(SHAPE_PREFIX)) throw new Error(`the stored buster ${parsed.buster} carries no shape`);
+
+  return { owner: parsed.buster.slice(SHAPE_PREFIX.length), keys: parsed.clientState.queries.map((query) => query.queryKey) };
 }
 
-/** A page load that read `calendar` and `member-role` as `owner`, and saved them. */
-async function savedBy(owner: string, storage: ReturnType<typeof memoryStorage>): Promise<void> {
+/** A page load that read `calendar` and `member-role` (and any `also`) as `owner`, and saved them. */
+async function savedBy(
+  owner: string,
+  storage: ReturnType<typeof memoryStorage>,
+  also: readonly { readonly queryKey: readonly string[]; readonly data: unknown }[] = [],
+): Promise<void> {
   const page = client();
   const device = deviceSnapshot(page, () => storage, { throttleTime: 0 });
 
   await device.restoreForSession(owner);
   await page.fetchQuery({ queryKey: CALENDAR_KEY, queryFn: () => Promise.resolve({ of: owner }) });
   await page.fetchQuery({ queryKey: MEMBER_ROLE_KEY, queryFn: () => Promise.resolve({ ok: true, role: 'member' }) });
+  for (const read of also) await page.fetchQuery({ queryKey: read.queryKey, queryFn: () => Promise.resolve(read.data) });
   await vi.waitFor(() => {
-    expect(stored(storage)?.keys).toEqual(expect.arrayContaining([[...CALENDAR_KEY], [...MEMBER_ROLE_KEY]]));
+    expect(stored(storage)?.keys).toEqual(
+      expect.arrayContaining([[...CALENDAR_KEY], [...MEMBER_ROLE_KEY], ...also.map((read) => [...read.queryKey])]),
+    );
   });
+}
+
+/** The stored blob as JSON; fails the test when nothing was written. */
+function storedBlob(storage: ReturnType<typeof memoryStorage>): { buster: string } & Record<string, unknown> {
+  const raw = storage.entries.get(DEVICE_SNAPSHOT_KEY);
+
+  if (raw === undefined) throw new Error('nothing was written to the device');
+
+  return JSON.parse(raw) as { buster: string } & Record<string, unknown>;
+}
+
+/** Rewrites the stored blob's buster, as a save by another app's shape would have left it. */
+function rebusted(storage: ReturnType<typeof memoryStorage>, buster: string): void {
+  storage.entries.set(DEVICE_SNAPSHOT_KEY, JSON.stringify({ ...storedBlob(storage), buster }));
 }
 
 /**
@@ -280,6 +308,49 @@ describe('a kept snapshot is restored for its owner alone', () => {
     const reloaded = client();
 
     await deviceSnapshot(reloaded, () => storage, { throttleTime: 0 }).restoreForSession('member-b');
+
+    expect(reloaded.getQueryData(CALENDAR_KEY)).toBeUndefined();
+    expect(storage.entries.has(DEVICE_SNAPSHOT_KEY)).toBe(false);
+  });
+
+  it('saves under the shaped buster of its owner', async () => {
+    const storage = memoryStorage();
+
+    await savedBy('member-a', storage);
+
+    expect(storedBlob(storage).buster).toBe(snapshotBusterOf('member-a'));
+  });
+
+  it('restores nothing saved in an older shape, and deletes the copy (epic 13 retro A1)', async () => {
+    const storage = memoryStorage();
+
+    // A blob from before the shape was versioned: the bare user id as its
+    // buster, and a `members` row from before story 13.3 (no `leaveYearStart`
+    // nor `leaveAllowance`).
+    await savedBy('member-a', storage, [
+      { queryKey: [...MEMBERS_LIST_KEY], data: { ok: true, members: [{ id: 'm1', fullName: 'Ana' }] } },
+    ]);
+    rebusted(storage, 'member-a');
+    const reloaded = client();
+
+    await deviceSnapshot(reloaded, () => storage, { throttleTime: 0 }).restoreForSession('member-a');
+
+    expect(reloaded.getQueryData(MEMBERS_LIST_KEY)).toBeUndefined();
+    expect(reloaded.getQueryData(CALENDAR_KEY)).toBeUndefined();
+    expect(storage.entries.has(DEVICE_SNAPSHOT_KEY)).toBe(false);
+  });
+
+  it.each([
+    ['an earlier', '1:member-a'],
+    ['a later', `${String(DEVICE_SNAPSHOT_SHAPE + 1)}:member-a`],
+  ])('restores nothing the same user saved in %s shape, and deletes the copy', async (_, buster) => {
+    const storage = memoryStorage();
+
+    await savedBy('member-a', storage);
+    rebusted(storage, buster);
+    const reloaded = client();
+
+    await deviceSnapshot(reloaded, () => storage, { throttleTime: 0 }).restoreForSession('member-a');
 
     expect(reloaded.getQueryData(CALENDAR_KEY)).toBeUndefined();
     expect(storage.entries.has(DEVICE_SNAPSHOT_KEY)).toBe(false);
@@ -580,6 +651,9 @@ describe('forgetting the device', () => {
     await vi.waitFor(() => {
       expect(stored(storage)?.owner).toBe('member-b');
     });
-    for (const write of storage.writes) expect(write).not.toContain('"buster":"member-a"');
+    for (const write of storage.writes) {
+      expect(write).not.toContain(`"buster":"${snapshotBusterOf('member-a')}"`);
+      expect(write).not.toContain('"buster":"member-a"');
+    }
   });
 });

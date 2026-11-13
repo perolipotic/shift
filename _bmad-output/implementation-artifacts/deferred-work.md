@@ -1489,3 +1489,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-13-5b-a-member-asks-for-a-half-day.md`
   summary: The request review shows *0 dana* without explanation when a requested half's date no longer holds one working shift; the admin approves a record that costs nothing without being told why.
   evidence: Review of 13.5b (blind layer). By the spec's Design Note the review never refuses the half and costs what the domain says (0), but no line on the decision screen says the half no longer matches a shift.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-a1-snapshot-shape-buster.md`
+  summary: Enforce the `DEVICE_SNAPSHOT_SHAPE` bump rule mechanically. One option is a test pinning each persisted key's mapped field set, failing unless the shape changes with it. Another is making the mapped-row readers (`memberAllowanceOn`, `write.ts`, `leave-overview.ts`, `my-leave.ts`) tolerant of missing fields.
+  evidence: A1 fixed B1 with a versioned buster, but the bump rule is only a doc comment. A forgotten bump on the next mapped-shape change would hydrate stale rows again, and `checkLeaveYearStart` still throws during render on a row missing `leaveYearStart`.

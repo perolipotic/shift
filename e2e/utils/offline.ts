@@ -55,7 +55,10 @@ export interface SnapshotQuery {
   readonly data: unknown;
 }
 
-/** The device snapshot as IndexedDB holds it: whose it is (`buster`, the auth user id) and its queries. */
+/**
+ * The device snapshot as IndexedDB holds it: whose it is (the auth user id,
+ * parsed out of the `buster`) and its queries.
+ */
 export interface DeviceSnapshot {
   readonly owner: string;
   readonly queries: readonly SnapshotQuery[];
@@ -115,8 +118,17 @@ export async function deviceSnapshotOf(page: Page): Promise<DeviceSnapshot | nul
     clientState?: { queries?: { queryKey: unknown[]; state?: { data?: unknown } }[] };
   };
 
+  // The app saves under `"<shape>:<userId>"` (`snapshotBusterOf` in
+  // `apps/web/src/lib/offline/persistence.ts`; epic 13 retro A1). The owner is
+  // what follows the `<digits>:` prefix — the bare auth user id, never the
+  // shaped string — so a spec checking that the id does not appear in another
+  // account's queries keeps its full strength. FAIL LOUDLY on a buster with no
+  // shape: an unshaped save must never pass e2e silently.
+  const shaped = /^\d+:(.+)$/.exec(parsed.buster ?? '');
+  if (shaped === null) throw new Error(`E2E: the device snapshot's buster ${JSON.stringify(parsed.buster)} carries no <shape>: prefix`);
+
   return {
-    owner: parsed.buster ?? '',
+    owner: shaped[1] ?? '',
     queries: (parsed.clientState?.queries ?? []).map((query) => ({ queryKey: query.queryKey, data: query.state?.data })),
   };
 }
