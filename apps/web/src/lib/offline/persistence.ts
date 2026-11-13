@@ -20,12 +20,16 @@ import { persistQueryClientSubscribe, type PersistedClient } from '@tanstack/rea
  * and members reads) is not a snapshot either. No mutation is ever kept:
  * nothing is queued (story 8.3).
  *
- * WHOSE IT IS. The blob carries the signed-in auth user's id as TanStack's
- * `buster`, so a restore for anybody else discards it. `main.tsx` restores
- * before the first render, and only for the local session's user; no session,
- * another user and an expired blob all delete it. A save is refused unless
- * its owner is still the one being persisted for, so a write dehydrated for a
- * user who has since signed out never lands after the delete.
+ * WHOSE IT IS, AND IN WHAT SHAPE. The blob's TanStack `buster` is
+ * {@link snapshotBusterOf}: the signed-in auth user's id behind
+ * {@link DEVICE_SNAPSHOT_SHAPE}. A restore for anybody else discards it, and
+ * so does a restore of a blob saved in another shape of mapped rows, every
+ * bare-id blob written before the shape was versioned among them.
+ * `main.tsx` restores before the first render, and only for the local
+ * session's user; no session, another user and an expired blob all delete
+ * it. A save is refused unless its owner is still the one being persisted
+ * for, so a write dehydrated for a user who has since signed out never lands
+ * after the delete.
  *
  * FOR HOW LONG. {@link DEVICE_SNAPSHOT_MAX_AGE_MS}, 30 days, for the blob
  * and for every entry in it (by its own `dataUpdatedAt`). In memory, each
@@ -55,6 +59,40 @@ export interface SnapshotStorage {
 
 /** The one entry the snapshot is stored under. */
 export const DEVICE_SNAPSHOT_KEY = 'shift-query-cache';
+
+/**
+ * The SHAPE of the kept rows, written into the blob's `buster`
+ * ({@link snapshotBusterOf}). The snapshot keeps MAPPED rows, not raw ones, so
+ * a blob saved by an older app can hold rows that today's readers no longer
+ * understand: a `['members']` row saved before story 13.3 has no
+ * `leaveYearStart` nor `leaveAllowance`, and restored it made
+ * `memberAllowanceOn` throw during render (epic 13 retro, A1). A blob of any
+ * other shape is deleted on restore, never hydrated.
+ *
+ * BUMP IT whenever the mapped shape of any persisted entry changes (a field
+ * added, removed, renamed or retyped on a kept key's data). The cost is one
+ * cold start per device; the alternative is a crash on a stale row.
+ *
+ * IT STARTS AT 2. The unversioned busters written before it (the bare user
+ * id) count as shape 1, so 1 must never be reused.
+ *
+ * TWO BUNDLES AT ONCE. While an old and a new bundle both run (a waiting
+ * service worker under `registerType: 'prompt'`, or an old tab left open),
+ * each deletes the other's blob on restore. That costs offline reading until
+ * the next save, never correctness: neither hydrates the other's shape.
+ */
+export const DEVICE_SNAPSHOT_SHAPE = 2;
+
+/**
+ * The `buster` a snapshot of `userId`'s cache is saved and restored under:
+ * `"<DEVICE_SNAPSHOT_SHAPE>:<userId>"`. The one place a buster is built: every
+ * save, the subscribe, the restore's check and the serialize guard use it, so
+ * the owner check stays exact under every shape. `userId` is the auth user's
+ * uuid and never contains `:`, so the shape and the owner never blur.
+ */
+export function snapshotBusterOf(userId: string): string {
+  return `${String(DEVICE_SNAPSHOT_SHAPE)}:${userId}`;
+}
 
 /** How long a kept snapshot may be restored: 30 days. */
 export const DEVICE_SNAPSHOT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
@@ -327,7 +365,7 @@ export function deviceSnapshot(
   const dehydrateOptions = { shouldDehydrateQuery: savable, shouldDehydrateMutation: () => false };
 
   const serialized = (persisted: PersistedClient): string => {
-    if (owner === null || persisted.buster !== owner) throw new Error(SAVE_OUTLIVED_OWNER);
+    if (owner === null || persisted.buster !== snapshotBusterOf(owner)) throw new Error(SAVE_OUTLIVED_OWNER);
 
     serializedFor = owner;
 
@@ -374,7 +412,7 @@ export function deviceSnapshot(
   const flush = (): void => {
     if (owner === null || unsubscribe === null) return;
 
-    const persisted: PersistedClient = { buster: owner, timestamp: now(), clientState: dehydrate(client, dehydrateOptions) };
+    const persisted: PersistedClient = { buster: snapshotBusterOf(owner), timestamp: now(), clientState: dehydrate(client, dehydrateOptions) };
 
     try {
       const value = serialized(persisted);
@@ -393,7 +431,7 @@ export function deviceSnapshot(
   const startSaving = (): void => {
     if (owner === null || reading || unsubscribe !== null) return;
 
-    unsubscribe = persistQueryClientSubscribe({ queryClient: client, persister, buster: owner, dehydrateOptions });
+    unsubscribe = persistQueryClientSubscribe({ queryClient: client, persister, buster: snapshotBusterOf(owner), dehydrateOptions });
     stopHidden ??= options.lifecycle?.subscribe(flush) ?? null;
   };
 
@@ -441,7 +479,7 @@ export function deviceSnapshot(
         if (persisted === undefined) return;
 
         // Checked even when the first render has gone ahead without it.
-        if (!persisted.timestamp || outOfLife(persisted.timestamp, now()) || persisted.buster !== userId) {
+        if (!persisted.timestamp || outOfLife(persisted.timestamp, now()) || persisted.buster !== snapshotBusterOf(userId)) {
           await remove();
 
           return;

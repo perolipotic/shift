@@ -1003,7 +1003,7 @@ action_items:
       (or bump the snapshot buster on a mapped-shape change); test a pre-13.3 row
       (B1: member page crashes)"
     owner: "dev"
-    status: open
+    status: done  # snapshot shape in the buster (spec-a1-snapshot-shape-buster)
     ref: "_bmad-output/implementation-artifacts/epic-13-retro-2026-11-12.md"
   - id: "epic-13-retro-item-51-a2-let-the-admin-amend-a-stored-half-who"
     epic: 13
