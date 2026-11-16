@@ -606,7 +606,7 @@ development_status:
   12-4b-swap-waiting-and-decided-notifications: done  # #281
   epic-12-retrospective: done
 
-  epic-13: in-progress
+  epic-13: done  # every story and every retro action item done (A8 closed 2026-11-16)
   13-1-absence-types-are-organization-data: done  # #285
   13-1b-the-admin-defines-absence-types-on-organizacija: done  # #286
   13-2-leave-has-a-type-everywhere-it-is-recorded-or-reported: done  # #287
