@@ -143,6 +143,29 @@ describe('one period is read by keyset on the raw (occurred_at, id)', () => {
     expect(calls).toHaveLength(2);
   });
 
+  it('rejects a page that repeats an event already read, never looping on a cursor that did not move', async () => {
+    const { table, calls } = stubbed([
+      { data: rows(3000, 1000), error: null },
+      { data: rows(3000, 1000), error: null },
+      { data: rows(3000, 1000), error: null },
+    ]);
+
+    await expect(readHistoryEvents(table, PERIOD)).rejects.toThrow(HISTORY_UNAVAILABLE);
+    expect(calls).toHaveLength(2);
+  });
+
+  it('asks for no further page once the read is aborted', async () => {
+    const controller = new AbortController();
+    const pages: HistoryAnswer[] = [{ data: rows(3000, 1000), error: null }, { data: rows(2000, 10), error: null }];
+    const { table, calls } = stubbed(pages);
+    const read = readHistoryEvents(table, PERIOD, controller.signal);
+
+    controller.abort();
+
+    await expect(read).rejects.toThrow();
+    expect(calls).toHaveLength(1);
+  });
+
   it('rejects the period when the marker read fails though the events read answers', async () => {
     let call = 0;
     const answers: HistoryAnswer[] = [
@@ -169,9 +192,9 @@ describe('one period is read by keyset on the raw (occurred_at, id)', () => {
       },
     };
     const options = historyQueryOptions(() => table, PERIOD);
-    const queryFn = options.queryFn as unknown as () => Promise<unknown>;
+    const queryFn = options.queryFn as unknown as (context: { signal: AbortSignal }) => Promise<unknown>;
 
-    await expect(queryFn()).rejects.toThrow(HISTORY_UNAVAILABLE);
+    await expect(queryFn({ signal: new AbortController().signal })).rejects.toThrow(HISTORY_UNAVAILABLE);
   });
 
   it('carries on past a page boundary whose next rows share the last row\'s instant, by id', async () => {

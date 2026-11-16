@@ -73,8 +73,9 @@ test.describe('an admin', () => {
       ).toBeVisible();
       await expect(historyPage.table.getByRole('row').filter({ hasText: renamed })).toHaveCount(1);
 
-      // WHERE HISTORY BEGINS: the last 365 days reach back to the marker, or
-      // to the earliest event read on a seeded database.
+      // WHERE HISTORY BEGINS: the last 365 days reach back to the 0061 marker,
+      // or to the organization's own INSERT event (seeded after 0061). Nothing
+      // is stated for the earliest event read alone.
       await historyPage.goto('?razdoblje=365-dana');
       await expect(page).toHaveURL(/razdoblje=365-dana$/);
       await expect(historyPage.beginsStatement).toBeVisible();

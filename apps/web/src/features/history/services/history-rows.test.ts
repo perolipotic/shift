@@ -17,7 +17,9 @@ import {
   historyFieldMessageKey,
   historyKindOptionsOf,
   historyMemberOptionsOf,
+  historyChangeCount,
   historyNamesOf,
+  historyOperandText,
   historyPeriodText,
   historyRecordMessageKey,
   historyRowsOf,
@@ -250,5 +252,22 @@ describe('the rows the table draws and 14.3 prints', () => {
     expect(historyKindOptionsOf([{ id: 'leave-record:added', count: 1 }])[0]?.label).toBe(
       `${t('history.record.leaveRecord')} · ${t('history.action.added')}`,
     );
+  });
+});
+
+describe('an operand never breaks the rows (story 14.2 review)', () => {
+  it('draws PostgreSQL\'s 24:00:00 as the end of the day instead of throwing', () => {
+    expect(historyOperandText({ type: 'time', minute: 1440 }, historyNamesOf([], LISTS))).toBe('24:00');
+    expect(historyOperandText({ type: 'time', minute: 450 }, historyNamesOf([], LISTS))).toBe('07:30');
+  });
+
+  it('counts every entry but the start of history', () => {
+    expect(
+      historyChangeCount([
+        { kind: { record: 'organization', action: 'history-begins' } },
+        { kind: { record: 'team', action: 'changed' } },
+        { kind: { record: 'leave-record', action: 'amended' } },
+      ]),
+    ).toBe(2);
   });
 });
