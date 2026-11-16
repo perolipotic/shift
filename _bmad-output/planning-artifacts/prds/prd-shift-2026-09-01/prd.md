@@ -951,6 +951,7 @@ An Admin can set the Organization's carry-over: the maximum days that carry into
 **Consequences (testable):**
 - Leave Allowance is held per Leave Year, so an earlier year's allowance stays as it was.
 - Carried-over Days are the previous year's unused balance, capped by the maximum. They are derived and never entered.
+- Each earlier year's allowance (every year the carry is derived from) counts only the days the Member was active in it. That prorated allowance is rounded down to a half day before the days taken are subtracted (story 13.6).
 - Leave Days consume carried days first; carried days not used by the expiry date lapse.
 - An empty or zero maximum means no carry-over. No default exists in the core (DI-8).
 

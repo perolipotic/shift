@@ -37,8 +37,19 @@
  * year Y are min(cap, max(0, Y−1's balance at its end)), and nothing is
  * carried into a year before the first; into the first, they come from Y−1's
  * balance with nothing carried into Y−1. The chain recomputes from the first
- * year on read, each year with its own allowance and drawing records, so
- * nothing is stored (R4.15). The expiry in Y is the first date on or after
+ * year on read, each year with its own allowance, drawing records and the
+ * member's status versions, so nothing is stored and a change to any of them,
+ * status versions included, recomputes every later year (R4.15). In the chain only (story 13.6, PO 2026-11-16),
+ * each earlier year's allowance counts in proportion to the days the member
+ * was active in it, rounded down to a half day: prorated(Y) =
+ * ⌊2 × allowance(Y) × activeDays(Y) / daysIn(Y)⌋ / 2, where activeDays counts
+ * the dates of leave year Y on which {@link activeOn} holds (status versions
+ * only; a member with none is active on every date) and daysIn every date of
+ * it. A year's end balance is prorated(Y) + consumed(Y) − drawn(Y). A member
+ * active the whole year has prorated(Y) = allowance(Y) exactly; one never
+ * active carries nothing on. The current year's allowance is never prorated.
+ * The arithmetic is exact in integers because every allowance is a whole
+ * number (`checkLeaveAllowance`). The expiry in Y is the first date on or after
  * Y's first day with the stored day and month ({@link carryOverExpiryOf}).
  * Drawing leave days consume carried days first (R4.14): consumed =
  * min(carried, the year's drawing leave days dated on or before the expiry).
@@ -79,7 +90,7 @@
  */
 
 import { checkDate, civilDayNumber, dateOfCivilDay } from './calendar.js';
-import { activeOn } from './roster.js';
+import { activeOn, orderedVersions, type StatusVersion } from './roster.js';
 import {
   adjacentMonth,
   datesOfMonth,
@@ -737,6 +748,31 @@ function drawnDaysCounter(costOf: CostOf, records: readonly LeaveRange[], extra:
   };
 }
 
+/**
+ * The dates of `range` on which the member is active, by one pass over
+ * status versions already ordered by {@link orderedVersions}: the version in
+ * force on a date decides it, and before any version the member is active,
+ * as {@link activeOn} (and `member_active_on`, 0008) judges it.
+ */
+function activeDaysIn(ordered: readonly StatusVersion[], range: LeaveRange): number {
+  const first = civilDayNumber(range.from);
+  const last = civilDayNumber(range.to);
+  let active = true;
+  let segmentStart = first;
+  let days = 0;
+  for (const version of ordered) {
+    const at = civilDayNumber(version.effectiveFrom);
+    if (at > last) break;
+    if (at > first) {
+      if (active) days += at - segmentStart;
+      segmentStart = at;
+    }
+    active = version.active;
+  }
+  if (active) days += last + 1 - segmentStart;
+  return days;
+}
+
 /** The days carried into a year and what of them its drawing leave days consumed by the expiry. */
 interface CarriedInto {
   readonly carriedDays: number;
@@ -753,8 +789,15 @@ const NOTHING_CARRIED: CarriedInto = { carriedDays: 0, consumedDays: 0, expiry: 
  *
  * The chain starts at the later of the year before the first and the year
  * before the earliest drawing record (or extra): a year with no drawing leave
- * days ends at its own allowance whatever was carried into it, so nothing
- * before it can change what follows.
+ * days ends at its own prorated allowance whatever was carried into it, so
+ * nothing before it can change what follows.
+ *
+ * Each chain year's allowance is prorated by the member's active days in it
+ * (story 13.6, PO 2026-11-16; see CARRY-OVER above): ⌊2 × allowance ×
+ * activeDays / daysIn⌋ / 2. Every allowance is a whole number
+ * (`checkLeaveAllowance`), so the numerator is an exact integer and no
+ * float drifts. The chain reads the member's status versions on every call,
+ * so a change to them recomputes every later year's carry (R4.15).
  */
 function carriedInto(
   drawnIn: (window: LeaveRange) => number,
@@ -778,6 +821,15 @@ function carriedInto(
     return { carriedDays, consumedDays: Math.min(carriedDays, drawnByExpiry), expiry };
   };
 
+  let ordered: readonly StatusVersion[] | null = null;
+  const proratedAllowanceOf = (year: number): number => {
+    ordered ??= orderedVersions('member status', balance.input.statuses);
+    const range = leaveYearNumbered(year, start);
+    const allowance = leaveAllowanceOf(balance.allowance, year);
+    const daysIn = civilDayNumber(range.to) - civilDayNumber(range.from) + 1;
+    return Math.floor((2 * allowance * activeDaysIn(ordered, range)) / daysIn) / 2;
+  };
+
   let carried = 0;
   for (let year = Math.min(yearNumber - 1, Math.max(carryOver.firstLeaveYear - 1, earliest - 1)); year < yearNumber; year += 1) {
     if (year < 1) {
@@ -786,7 +838,7 @@ function carriedInto(
       continue;
     }
     const { consumedDays } = consumedIn(year, carried);
-    const endBalance = leaveAllowanceOf(balance.allowance, year) + consumedDays - drawnIn(leaveYearNumbered(year, start));
+    const endBalance = proratedAllowanceOf(year) + consumedDays - drawnIn(leaveYearNumbered(year, start));
     carried = year + 1 >= carryOver.firstLeaveYear ? Math.min(carryOver.maxDays, Math.max(0, endBalance)) : 0;
   }
   return consumedIn(yearNumber, carried);
@@ -839,8 +891,10 @@ function balanceOf(costOf: CostOf, balance: LeaveBalanceInput, current: CurrentY
  *   `today`, or the start or end of a record, is not a calendar
  *   `YYYY-MM-DD`; when a record ends before it starts or is longer than
  *   {@link MAX_LEAVE_RANGE_DAYS}; when two records share a date; on any
- *   precondition of {@link leaveYearOf}; and on any of
- *   {@link memberScheduleOfMonth}.
+ *   precondition of {@link leaveYearOf}; on any of
+ *   {@link memberScheduleOfMonth}; and, when a carry chain runs (story 13.6),
+ *   when a status version's `effectiveFrom` is not a calendar `YYYY-MM-DD` or
+ *   two status versions share one.
  */
 export function leaveBalanceOf(balance: LeaveBalanceInput): LeaveBalance {
   const current = checkBalanceInput(balance);

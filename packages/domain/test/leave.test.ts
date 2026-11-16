@@ -963,6 +963,181 @@ describe('carry-over (story 13.4b, R4.13–R4.15)', () => {
     expect(() => leaveBalanceOf(at({ carryOver: setting({ maxDays: 0, firstLeaveYear: 2099 }) }))).toThrow(RangeError);
     expect(() => carryOverExpiryOf(0, JANUARY_FIRST, setting())).toThrow(/leave year is 0/);
   });
+
+  describe('carry-over counts only active time (story 13.6)', () => {
+    // Allowance 20, cap 5, first leave year 2027, start 01.01.; today before the 30.06. expiry.
+    const withStatuses = (statuses: readonly { active: boolean; effectiveFrom: string }[]) => ({ ...input, statuses });
+    const today = '2027-03-01';
+
+    it('carries as 13.4b for a member active the whole year (no status version)', () => {
+      const records = leaveDatesFrom('2026-02-01', 17);
+      const balance = leaveBalanceOf(at({ input: withStatuses([]), records, today }));
+      expect(balance).toMatchObject({ carriedDays: 3, balanceDays: 23 });
+      expect(balance).toEqual(leaveBalanceOf(at({ records, today })));
+    });
+
+    it('prorates a member reactivated 02.10. (91 of 365 days) to 4.5, rounded down to a half day', () => {
+      const reactivated = withStatuses([
+        { active: false, effectiveFrom: '2026-01-01' },
+        { active: true, effectiveFrom: '2026-10-02' },
+      ]);
+      // floor(2·20·91 / 365) / 2 = floor(3640 / 365) / 2 = 9 / 2.
+      const balance = leaveBalanceOf(at({ input: reactivated, today }));
+      expect(balance).toMatchObject({ allowanceDays: 20, carriedDays: 4.5, lapsedDays: 0, carryOverExpiry: '2027-06-30', balanceDays: 24.5 });
+      balanced(balance);
+
+      const drew = leaveBalanceOf(at({ input: reactivated, records: leaveDatesFrom('2026-10-02', 2), today }));
+      expect(drew).toMatchObject({ carriedDays: 2.5, balanceDays: 22.5 });
+      balanced(drew);
+    });
+
+    it('carries nothing, and shows no carried line, for a member inactive the whole year', () => {
+      const balance = leaveBalanceOf(at({ input: withStatuses([{ active: false, effectiveFrom: '2025-06-01' }]), today }));
+      expect(balance).toEqual({ allowanceDays: 20, carriedDays: 0, lapsedDays: 0, carryOverExpiry: null, usedDays: 0, balanceDays: 20 });
+    });
+
+    it('prorates a member deactivated 01.03. (59 days) to 3, less the 3 drawn in Jan–Feb: 0', () => {
+      const records = leaveDatesFrom('2026-01-01', 3);
+      expect(records.every((record) => record.to < '2026-03-01')).toBe(true);
+      const balance = leaveBalanceOf(at({ input: withStatuses([{ active: false, effectiveFrom: '2026-03-01' }]), records, today }));
+      expect(balance).toMatchObject({ carriedDays: 0, carryOverExpiry: null, balanceDays: 20 });
+      // One fewer drawn day leaves exactly the 1 more.
+      const fewer = leaveBalanceOf(at({ input: withStatuses([{ active: false, effectiveFrom: '2026-03-01' }]), records: records.slice(0, 2), today }));
+      expect(fewer.carriedDays).toBe(1);
+    });
+
+    it('carries 0, never a negative, when the prorated allowance is below what was drawn', () => {
+      // Active 01.01.–30.01. (30 days): floor(2·20·30 / 365) / 2 = 1.5, drew 4.
+      const records = leaveDatesFrom('2026-01-01', 4);
+      expect(records.every((record) => record.to < '2026-01-31')).toBe(true);
+      const balance = leaveBalanceOf(at({ input: withStatuses([{ active: false, effectiveFrom: '2026-01-31' }]), records, today }));
+      expect(balance).toMatchObject({ carriedDays: 0, lapsedDays: 0, carryOverExpiry: null, balanceDays: 20 });
+    });
+
+    it('prorates every year in the chain: an inactive year two years back carries nothing into the next', () => {
+      // 2025 inactive, 2026 active and drew 20, the first 5 before 30.06.
+      const statuses = withStatuses([
+        { active: false, effectiveFrom: '2024-06-01' },
+        { active: true, effectiveFrom: '2026-01-01' },
+      ]);
+      const records = leaveDatesFrom('2026-02-01', 20);
+      const carryOver = setting({ firstLeaveYear: 2026 });
+      // Without statuses 2025 ends at 20, so 5 carry into 2026 and it ends at 5.
+      expect(leaveBalanceOf(at({ records, today, carryOver })).carriedDays).toBe(5);
+      // Inactive through 2025: nothing carries into 2026, so it ends at 0.
+      expect(leaveBalanceOf(at({ input: statuses, records, today, carryOver }))).toMatchObject({ carriedDays: 0, balanceDays: 20 });
+    });
+
+    it('counts the days of the leave year, not the calendar year, for a start of 01.07.', () => {
+      // Leave year 2027 is 01.07.2027–30.06.2028, 366 days with 29.02.2028. Active from 19.04.2028: 73 days.
+      // floor(2·20·73 / 366) / 2 = 3.5; over 365 days it would be 4.
+      const statuses = withStatuses([
+        { active: false, effectiveFrom: '2027-01-01' },
+        { active: true, effectiveFrom: '2028-04-19' },
+      ]);
+      const balance = leaveBalanceOf(
+        at({ input: statuses, today: '2028-09-01', leaveYearStart: { month: 7, day: 1 }, carryOver: setting({ firstLeaveYear: 2028 }) }),
+      );
+      expect(balance).toMatchObject({ carriedDays: 3.5, carryOverExpiry: '2029-06-30', balanceDays: 23.5 });
+    });
+
+    it('never prorates the current year’s allowance', () => {
+      // Active through 2026, so 5 carry into 2027; deactivated 01.05.2027, drew 3 in January.
+      const deactivated = withStatuses([{ active: false, effectiveFrom: '2027-05-01' }]);
+      const records = leaveDatesFrom('2027-01-10', 3);
+      const before = leaveBalanceOf(at({ input: deactivated, records, today: '2027-03-01' }));
+      expect(before).toEqual({ allowanceDays: 20, carriedDays: 5, lapsedDays: 0, carryOverExpiry: '2027-06-30', usedDays: 3, balanceDays: 22 });
+      balanced(before);
+      const after = leaveBalanceOf(at({ input: deactivated, records, today: '2027-09-01' }));
+      expect(after).toEqual({ allowanceDays: 20, carriedDays: 3, lapsedDays: 2, carryOverExpiry: '2027-06-30', usedDays: 3, balanceDays: 20 });
+      balanced(after);
+    });
+
+    // Inactive 01.03.–01.10.2026: Jan–Feb (59) + 02.10.–31.12. (91) = 150 active days.
+    const twoSegments = [
+      { active: false, effectiveFrom: '2026-03-01' },
+      { active: true, effectiveFrom: '2026-10-02' },
+    ];
+
+    it('adds two active segments of one year: 150 of 365 days with cap 10 carries 8', () => {
+      // floor(2·20·150 / 365) / 2 = floor(6000 / 365) / 2 = 16 / 2.
+      const balance = leaveBalanceOf(at({ input: withStatuses(twoSegments), today, carryOver: setting({ maxDays: 10 }) }));
+      expect(balance).toMatchObject({ carriedDays: 8, balanceDays: 28 });
+    });
+
+    it('reads status versions in any order', () => {
+      const ordered = leaveBalanceOf(at({ input: withStatuses(twoSegments), today, carryOver: setting({ maxDays: 10 }) }));
+      const reversed = leaveBalanceOf(at({ input: withStatuses([...twoSegments].reverse()), today, carryOver: setting({ maxDays: 10 }) }));
+      expect(reversed).toEqual(ordered);
+    });
+
+    it('reads an explicit active version before the year, or on its first day, as 13.4b', () => {
+      const records = leaveDatesFrom('2026-02-01', 17);
+      const plain = leaveBalanceOf(at({ records, today }));
+      expect(plain.carriedDays).toBe(3);
+      expect(leaveBalanceOf(at({ input: withStatuses([{ active: true, effectiveFrom: '2025-05-01' }]), records, today }))).toEqual(plain);
+      expect(leaveBalanceOf(at({ input: withStatuses([{ active: true, effectiveFrom: '2026-01-01' }]), records, today }))).toEqual(plain);
+    });
+
+    it('prorates a deactivation on the year’s last day to 364 of 365 days: 19.5', () => {
+      // floor(2·20·364 / 365) / 2 = floor(14560 / 365) / 2 = 39 / 2.
+      const balance = leaveBalanceOf(
+        at({ input: withStatuses([{ active: false, effectiveFrom: '2026-12-31' }]), today, carryOver: setting({ maxDays: 30 }) }),
+      );
+      expect(balance).toMatchObject({ carriedDays: 19.5, balanceDays: 39.5 });
+    });
+
+    it('does not reduce the carry by records on dates the member was inactive (they cost 0, R4.2)', () => {
+      // Active Jan–Feb (59 days): floor(2·20·59 / 365) / 2 = 3; five records in April cost nothing.
+      const deactivated = withStatuses([{ active: false, effectiveFrom: '2026-03-01' }]);
+      const records = leaveDatesFrom('2026-04-01', 5);
+      expect(leaveBalanceOf(at({ input: deactivated, records, today })).carriedDays).toBe(3);
+      expect(leaveBalanceOf(at({ input: deactivated, today })).carriedDays).toBe(3);
+    });
+
+    it('compounds two consecutive part years through the chain', () => {
+      // 2025: active 01.01.–30.06. (181) and 01.10.–31.12. (92) = 273 days → floor(2·20·273 / 365) / 2 = 14.5; drew 4 → ends 10.5.
+      // 2026: active 01.01.–31.08. (243) → floor(2·20·243 / 365) / 2 = 13; 10.5 carried, drew 12 before 30.06. → ends 13 + 10.5 − 12 = 11.5.
+      const statuses = withStatuses([
+        { active: false, effectiveFrom: '2025-07-01' },
+        { active: true, effectiveFrom: '2025-10-01' },
+        { active: false, effectiveFrom: '2026-09-01' },
+      ]);
+      const in2025 = leaveDatesFrom('2025-02-01', 4);
+      const in2026 = leaveDatesFrom('2026-02-01', 12);
+      expect(in2025.every((record) => record.to < '2025-07-01')).toBe(true);
+      expect(in2026.every((record) => record.to <= '2026-06-30')).toBe(true);
+      const carryOver = setting({ maxDays: 30, firstLeaveYear: 2026 });
+      const balance = leaveBalanceOf(at({ input: statuses, records: [...in2025, ...in2026], today, carryOver }));
+      expect(balance).toMatchObject({ allowanceDays: 20, carriedDays: 11.5, balanceDays: 31.5 });
+      // Prorating 2026 alone (2025 active throughout: ends 16, 12 consumed) would give 13 + 12 − 12 = 13.
+      const only2026 = withStatuses([{ active: false, effectiveFrom: '2026-09-01' }]);
+      expect(leaveBalanceOf(at({ input: only2026, records: [...in2025, ...in2026], today, carryOver })).carriedDays).toBe(13);
+    });
+
+    it('previews against the prorated carry, today and after the expiry', () => {
+      // 2027 allowance 0, so the balance is the 4.5 carried for the reactivated member.
+      const reactivated = withStatuses([
+        { active: false, effectiveFrom: '2026-01-01' },
+        { active: true, effectiveFrom: '2026-10-02' },
+      ]);
+      const allowance: LeaveAllowance = { startingDays: 20, versions: [{ id: 1, leaveYear: 2027, days: 0 }] };
+      const base = at({ input: reactivated, allowance, today });
+      expect(leaveBalanceOf(base)).toMatchObject({ carriedDays: 4.5, balanceDays: 4.5 });
+
+      const early = leaveDatesFrom('2027-02-01', 5);
+      // Four days consume 4 of the 4.5; the unused 0.5 lapses at the expiry, so the year ends at 0.
+      const four = leavePreviewOf({ ...base, range: { from: early[0]!.from, to: early[3]!.to } });
+      expect(four).toMatchObject({ carriedDays: 4.5, costInYearDays: 4, balanceAfterDays: 0.5, endBalanceAfterDays: 0, exceedsBalance: false, exceedsAfterExpiry: false });
+      const five = leavePreviewOf({ ...base, range: { from: early[0]!.from, to: early[4]!.to } });
+      expect(five).toMatchObject({ costInYearDays: 5, balanceAfterDays: -0.5, endBalanceAfterDays: -0.5, exceedsBalance: true });
+
+      // After the expiry the carried days never cover a range: 0 + 0 − 4.
+      const late = leaveDatesFrom('2027-07-01', 4);
+      const after = leavePreviewOf({ ...base, range: { from: late[0]!.from, to: late[3]!.to } });
+      expect(after).toMatchObject({ costInYearDays: 4, balanceAfterDays: 0.5, endBalanceAfterDays: -4, exceedsAfterExpiry: true });
+    });
+  });
 });
 
 describe('a half day (story 13.5, R4.12)', () => {
