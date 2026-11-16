@@ -29,9 +29,12 @@ export class HistoryPage extends BasePage {
     return this.table.getByRole('row').filter({ hasText: text });
   }
 
-  /** The stacked row that names `text` anywhere in it. */
+  /**
+   * The stacked row that names `text` anywhere in it. Only the list's own items:
+   * a row's change lines are a nested list, whose items would match too.
+   */
   stackedRowNaming(text: string): Locator {
-    return this.stackedList.getByRole('listitem').filter({ hasText: text });
+    return this.stackedList.locator(':scope > li').filter({ hasText: text });
   }
 
   /** `record · action`, as a row's *Vrsta* says it. */
@@ -53,7 +56,11 @@ export class HistoryPage extends BasePage {
 
   /** The chip bar's active chip whose name holds `text` (`Smjena: Smjena A`). */
   chip(text: string): Locator {
-    return this.page.getByRole('group', { name: hr.filter.label, exact: true }).getByRole('button', { name: text });
+    // Exact: the chip's remove button is named `Ukloni filtar smjena: …`, which
+    // holds the chip's own name case-insensitively.
+    return this.page
+      .getByRole('group', { name: hr.filter.label, exact: true })
+      .getByRole('button', { name: text, exact: true });
   }
 
   /** The offline notice that stands in place of the rows. */
