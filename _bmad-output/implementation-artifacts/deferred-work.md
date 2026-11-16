@@ -1564,3 +1564,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-14-3-the-change-history-exports-to-pdf.md`
   summary: In the *Povijest promjena* PDF, a row that does not fit at the foot of a page continues on the next page under the repeated header with empty *Vrijeme*, *Autor*, *Vrsta* and *Predmet* cells, so the continuation does not say which change it belongs to. `dontBreakRows` is not a fix: pdfmake 0.3.13 silently drops a row taller than a page under it. Repeat the row's identifying cells on a continuation, or keep a row whole when it fits on one page and split only taller rows.
   evidence: Independent second review of 14.3, from a rendered 60-row export (pdfmake 0.3.13 in Node). A 90-change row under `dontBreakRows: true` was missing from the output.
+- source_spec: `_bmad-output/implementation-artifacts/epic-14-retro-2026-11-16.md`
+  summary: The `today.spec.ts` e2e is not safe across midnight Europe/Zagreb. On 2026-11-16 four cases ("a free day names the seeded type and team…", "a failed resolutions read leaves the hours tile…", "a failed read of their own leave…" and "a failed read of the calendar snapshot…") failed on PR #310 because shard 4 ran from 23:55 to 00:05 local time: the seed and the page disagreed about "today". A re-run passed. Pin the browser clock (`page.clock`) or seed relative to one `now` read once per test, so a run that crosses midnight cannot fail.
+  evidence: CI run 43973684653, shard 4/4 (started 2026-11-16T22:55:05Z, finished 23:05:03Z); the re-run of the failed job passed.
+

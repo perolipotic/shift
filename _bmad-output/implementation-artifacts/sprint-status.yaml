@@ -623,7 +623,7 @@ development_status:
   13-7b-a-notification-names-the-half: done  # split from 13.7, PO 2026-11-16; #306
   epic-13-retrospective: done
 
-  epic-14: in-progress  # all stories built; not accepted until CI green and merged (retro 2026-11-16 verdict rejected-unverified, A1)
+  epic-14: done  # accepted with open items, 2026-11-17: CI green and merged in order (#307, #309, #310, #312, #313, #314, #311), retro A1
   14-1-every-change-is-recorded-in-the-change-history: done
   14-2-an-admin-reads-the-change-history: done
   14-3-the-change-history-exports-to-pdf: done
@@ -1089,7 +1089,7 @@ action_items:
       history + PDF e2e, check-migrations), merge in order; then set epic-14 done
       and re-render the verdict (V1)"
     owner: "Perolipotic (founder)"
-    status: open
+    status: done  # 2026-11-17: every PR CI green and squash-merged in order, #307 → #311
     ref: "_bmad-output/implementation-artifacts/epic-14-retro-2026-11-16.md"
   - id: "epic-14-retro-item-62-a2-approve-the-0061-production-push-outs"
     epic: 14
