@@ -71,7 +71,7 @@ export const LEAVE_SCREEN_EXEMPT: readonly { readonly file: string; readonly why
   },
   {
     file: 'services/leave-section-ids.ts',
-    why: "the admin card's DOM ids and its two non-copy strings, split out of leave-section.ts (epic 13 retro A8) and re-exported by it; renders nothing and declares no key",
+    why: "the admin card's DOM ids and its two non-copy strings, split out of leave-section.ts (epic 13 retro A8) and re-exported by it; renders nothing and declares no key, executed by leave-section.test.ts",
   },
   {
     file: 'services/leave-section-base.ts',

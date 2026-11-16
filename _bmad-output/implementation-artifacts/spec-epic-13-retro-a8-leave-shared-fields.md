@@ -48,6 +48,8 @@ deferred:
 
 ## Code Map
 
+Line numbers below are the baseline's (`a388590`); after the split, `leave-section.ts`'s non-key code lives in the `leave-section-*.ts` modules listed under *The split*.
+
 Shared copies (new):
 - `packages/domain/src/leave.ts` -- beside `halfFieldOf` (`:149`): `leaveSpanOf(range)` = `{ from, to, ...halfFieldOf(range) }` (where a leave lies and how much of the date); `leaveChargeOf(range)` = span plus `drawsAllowance` only when the input has it (what the balance reads); `leaveAllowanceOn(allowance, date, start)` = `leaveAllowanceOf(allowance, leaveYearNumberOf(date, start))`. `:932` `extra` becomes `leaveSpanOf(preview.range)`. Export all three from `packages/domain/src/index.ts`.
 - `apps/web/src/features/leave/services/leave-list.ts` -- `LEAVE_ROW_COLUMNS = 'id,member_id,during,absence_type_id,half'`; `LEAVE_RECORDS_COLUMNS` = it + `',...absence_types(draws_allowance)'`. `leaveRecordFieldsOf(record: LeaveRecord): LeaveRecord` = `{ id, absenceTypeId, drawsAllowance, ...leaveSpanOf(record) }` (drops `memberId`). Parser `:184` builds through it.
@@ -98,6 +100,13 @@ The split (all in `apps/web/src/features/leave/services/`):
 - Given `leave-section.ts`, then it is under 450 lines and holds every leave-card key literal; no `leave-section-*.ts` holds one.
 - Given the three duplicates, then `leaveYearStartMonth` is read in `leave-section-base.ts` only among leave services, and `leaveAllowanceOf(…leaveYearNumberOf(` appears nowhere in `apps/web/src`.
 
+## Epic AC Deviations
+
+A8 has no story in `epics.md`; its criteria are the action's own text (`epic-13-retro-2026-11-12.md`, A8, findings A-mappers and A-dup). Two are met only in part, by design:
+
+- **"one shared copy of a leave row's range fields (id, dates, type, draws, half) used by every mapper"** — partly. Two copies, not one: `leaveSpanOf` (dates, half) and `leaveRecordFieldsOf` (id, type, draws, span), because adding `drawsAllowance` or a type to what staffing, marks, collisions and *Danas* read would change their outputs (Design Notes). Sites that hand a record to staffing (`calendar/utils/month.ts`, `staffing/services/short-staffed.ts`) and the request mappers (`leave-request-list.ts`) still name `id`, `memberId` and `absenceTypeId` beside `leaveSpanOf`, since those are not a record's own fields there. `my-hours.ts:152` reads `halfFieldOf` into a view and copies no row (Code Map, deliberately left).
+- **"collapse the leave-year-start … duplicate"** — partly. The start read from the organization answer has one copy (`leaveYearStartOf`); the two raw parsers (`members/services/list.ts` `leaveYearStartIn`, `organization/services/snapshot.ts` `organizationSnapshotOf`) stay apart because their refusal policies differ (Never list; `deferred-work.md`, source this spec).
+
 ## Spec Change Log
 
 ## Review Triage Log
@@ -116,6 +125,14 @@ The split (all in `apps/web/src/features/leave/services/`):
   - `[low]` `[patch]` The shared balance input had no test of its own: `my-leave.test.ts` now asserts *Godišnji*'s input equals the admin card's for the same member.
   - `[low]` `[patch]` Code Map's deliberately-left list now names `resolution-screen.ts:456` (amend-target staffing record, never a half), `organization-time-card.tsx:118` and `members/services/write.ts:760`.
 
+### 2026-11-16 — Second review pass (independent)
+- intent_gap: 0
+- bad_spec: 1 (low: no Epic AC Deviations section; added)
+- patch: 3 (high 0, medium 0, low 3)
+- defer: 2 (high 0, medium 0, low 2)
+- reject: 16 (high 0, medium 0, low 16)
+- rejected, with reason: a half kept on a multi-date span (`halfFieldOf`'s baseline behaviour; the parsers refuse such rows); the preview's own `{ from, to, drawsAllowance, half }` (form input, deliberately left); key order (no mapped record is serialized; `leaveHandoffKeyOf` stringifies a hand-off rebuilt from fixed keys); the parser dropping `type` keys (`leaveRecordTypeOf` yields only the two kept); seven positional parameters, a named `LeaveSpan` type, use-before-declare in moved code (style; verbatim move); `HoursLeaveRecord` gaining future record columns (intended: a new column flows through the one copy); `LEAVE_ROW_COLUMNS` binding both tables (intended and documented; selects unchanged byte for byte); the `'paused'` copies (already deferred); no export-pin test (export list diffed in review, 139 = 139); per-site tests for the rerouted mappers (existing suites cover them; outputs are equal by construction); Node 24 (CI is the gate); front-matter / deferral bundling (process, no defect); argument evaluation order in `leaveRecordsInputOf` (both pure).
+
 ## Design Notes
 
 Two domain helpers, not one: `leaveSpanOf` gives what staffing, marks, collisions and *Danas* read; adding `drawsAllowance` there would change their outputs. A new per-date column goes in `leaveSpanOf`; a new record column in `leaveRecordFieldsOf` and `LEAVE_ROW_COLUMNS`. The barrel keeps the public face stable; the split lowers the reader's load, not the importers'.
@@ -133,9 +150,9 @@ Two domain helpers, not one: `leaveSpanOf` gives what staffing, marks, collision
 
 Status: done
 
-**Summary.** No-behaviour-change refactor for epic 13 retro A8. Shared copies: `leaveSpanOf`, `leaveChargeOf`, `leaveAllowanceOn` (`@shift/domain`), `leaveRecordFieldsOf` and `LEAVE_ROW_COLUMNS` (`leave-list.ts`); every row copy in the Code Map goes through them. `leave-section.ts` (1527 lines) is split into nine `leave-section-*.ts` modules; it keeps the key pickers and re-exports the same 139 public names (412 lines). The leave-year start from the organization answer, the allowance in a leave year and the balance input each have one copy.
+**Summary.** No-behaviour-change refactor for epic 13 retro A8. Shared copies: `leaveSpanOf`, `leaveChargeOf`, `leaveAllowanceOn` (`@shift/domain`), `leaveRecordFieldsOf` and `LEAVE_ROW_COLUMNS` (`leave-list.ts`); every row copy in the Code Map goes through them. `leave-section.ts` (1527 lines) is split into nine `leave-section-*.ts` modules; it keeps the key pickers and exports the same 139 public names — 125 re-exported by name, the 14 key pickers declared there (409 lines). The leave-year start from the organization answer, the allowance in a leave year and the balance input each have one copy.
 
-**Files changed (31).** Domain: `packages/domain/src/leave.ts`, `index.ts`, `test/leave.test.ts`. Leave: `leave-list.ts` (+test), `leave-request-list.ts`, `leave-overview.ts`, `my-leave.ts` (+test), `leave-section.ts`, nine new `leave-section-*.ts`, `leave-screen.fixture.ts`. Copy sites: `calendar/services/marks.ts`, `calendar/utils/month.ts`, `conflicts/services/resolution-screen.ts`, `hours/services/hours-conflicts.ts`, `staffing/services/short-staffed.ts`, `today/services/today.ts`, `members/services/list.ts`. BMAD: `deferred-work.md` (one new entry), `sprint-status.yaml` (A8 done), this spec.
+**Files changed (30).** Domain: `packages/domain/src/leave.ts`, `index.ts`, `test/leave.test.ts`. Leave: `leave-list.ts` (+test), `leave-request-list.ts`, `leave-overview.ts`, `my-leave.ts` (+test), `leave-section.ts`, nine new `leave-section-*.ts`, `leave-screen.fixture.ts`. Copy sites: `calendar/services/marks.ts`, `calendar/utils/month.ts`, `conflicts/services/resolution-screen.ts`, `hours/services/hours-conflicts.ts`, `staffing/services/short-staffed.ts`, `today/services/today.ts`, `members/services/list.ts`. BMAD: `deferred-work.md` (one new entry), `sprint-status.yaml` (A8 done), this spec.
 
 **Review.** Four layers (blind, edge-case, verification-gap, intent-alignment). 6 low patches applied, 1 low deferred (the `'paused'` copies, also in the new `deferred-work.md` entry), 9 rejected (object key order — same keys and values, nothing serializes these mapped objects; positional parameters; `HoursLeaveRecord` type copy; an exported `LeaveSpan` type; multi-date half passthrough, refused by the parsers upstream; no export-list pin test; sprint status timing; a pre-existing `try` placement; the notify/SQL layers, which no TS helper can bind and where no web code copies a leave row). No `deferred-work.md` entry matched A8, so none is marked RESOLVED. Follow-up review: patched high 0, medium 0, low 6, score 6, so recommended.
 
@@ -146,3 +163,14 @@ Status: done
 - DB-connecting root tests and e2e not run (STRICT DATABASE RULE, no local stack); CI is the gate. Nothing touches SQL.
 
 **Residual risks.** Mapped leave objects now list their keys in a different order (same keys and values). The rule that new columns go through the shared helpers is enforced by doc comments and review, not by a test.
+
+## Review Findings
+
+Second, independent `bmad-code-review` pass (2026-11-16; layers: blind, edge-case, verification-gap, acceptance, epic-AC). No behaviour change found: export list (139, diff empty), the 38 key literals, select strings, parser refusals, logs and object keys were checked against the baseline; the moved code differs from the baseline only in the routed lines.
+
+- [x] [Review][Patch] The spec had no `## Epic AC Deviations` for A8's two partly-met criteria (two shared copies, not one; the raw leave-year-start parsers kept) [spec]
+- [x] [Review][Patch] Auto Run Result miscounted (31 files, "re-exports 139") and the Code Map's line numbers were unmarked as the baseline's [spec]
+- [x] [Review][Patch] `leave-section-ids.ts`'s fixture reason omitted that `leave-section.test.ts` executes it (`leaveHalfSwitchDescribedByOf`) [apps/web/src/features/leave/leave-screen.fixture.ts:74]
+- [x] [Review][Patch] Domain tests did not cover `leaveChargeOf` keeping `drawsAllowance: true` or `leaveSpanOf` dropping a half it does not know [packages/domain/test/leave.test.ts]
+- [x] [Review][Defer] Nothing mechanical holds the rule that a new leave-row column goes through `LEAVE_ROW_COLUMNS` / `leaveRecordFieldsOf` / `leaveSpanOf` [apps/web/src/features/leave/services/leave-list.ts:61] — deferred, needs a design for the check
+- [x] [Review][Defer] `memberLeaveBaseOf` builds its balance input before its `try`, so a throw there escapes instead of `LEAVE_UNAVAILABLE` [apps/web/src/features/leave/services/leave-section-base.ts:285] — deferred, pre-existing; moving it would change behaviour in a pure refactor
