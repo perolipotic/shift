@@ -17,6 +17,7 @@ import {
   ERROR_SCREEN,
   FILTER_BAR_KEYS,
   GODISNJI,
+  POVIJEST_PROMJENA,
   LEAVE_REQUEST,
   HOUR_BAND_EDIT,
   HOUR_BAND_LIST,
@@ -24,6 +25,7 @@ import {
   HOUR_BAND_WRITE_KEYS,
   HOURS_EXPLANATION_KEYS,
   HOURS_EXPORT_KEYS,
+  HISTORY_ROWS_KEYS,
   HOURS_KEYS,
   KALENDAR,
   LEAVE_OVERVIEW_KEYS,
@@ -1114,6 +1116,34 @@ export const KEY_SOURCES = [
     strings: 25,
   },
   {
+    // STORY 14.2. On Povijest promjena: its own `nav.povijestPromjena`
+    // heading and lede; the five column headings and the caption, twice
+    // (table and stacked rows); the reconstructed badge; the three ways a
+    // field's *bilo → sada* reads and the line for none; the begins
+    // statement; the offline, unavailable, retry, empty and filtered lines
+    // with *Poništi filtre*; and the four chips' words, options and the
+    // summary. The kinds, fields, values and periods come through
+    // `@/features/history/services/history-rows`, a key source.
+    // FIFTY-TWO SINCE ITS REVIEW: the start-of-history badge, twice (table
+    // and stacked rows); the begins statement's two wordings come through
+    // `historyBeginsMessageKey`.
+    name: 'the Povijest promjena destination',
+    file: POVIJEST_PROMJENA,
+    keys: translationKeys,
+    strings: 52,
+  },
+  {
+    // STORY 14.2: the history's words — the record, action, field, value,
+    // author and period records, off their `\w*MessageKey` unions, and the
+    // lines built with `t()`.
+    name: 'the change history rules',
+    file: HISTORY_ROWS_KEYS,
+    // 125 SINCE ITS REVIEW: the `other` record's word and the begins
+    // statement's two wordings.
+    keys: (text: string) => [...translationKeys(text), ...messageKeyUnions(text)],
+    strings: 125,
+  },
+  {
     // E884: the Stanje chip's five options and the five values its text says,
     // off `leaveOverviewStateMessageKey` and `leaveOverviewStateValueMessageKey`.
     name: 'the Godišnji overview rules',
@@ -1847,10 +1877,11 @@ export const KEY_SOURCES = [
   {
     // NINE over two unions: a description per destination key (eight), and
     // the one place *Više* names by a shorter word than the label.
+    // TEN SINCE STORY 14.2: *Povijest promjena*'s description.
     name: 'the destination copy mapping',
     file: DESTINATION_COPY_KEYS,
     keys: messageKeyUnions,
-    strings: 9,
+    strings: 10,
   },
   // ONE each, exactly. The seven together are what make the set comparison
   // below hold once `hr.json` gained eight `nav.*` keys: a key declared and

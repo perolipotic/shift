@@ -1715,6 +1715,25 @@ export async function removeTeamInSql(slug: string, teamId: string): Promise<voi
 }
 
 /**
+ * Renames a team {@link seedExtraTeam} wrote, in SQL (story 14.2): one
+ * `teams` UPDATE, which 0061's trigger records as a change with the old and
+ * new name. Written by the owner, so the history names its author `Sustav`.
+ */
+export async function renameTeamInSql(slug: string, teamId: string, name: string): Promise<void> {
+  const client = await connect();
+  try {
+    const { rowCount } = await client.query(
+      `update teams set name = $3
+        where id = $2 and organization_id = (select id from organizations where slug = $1)`,
+      [slug, teamId, name],
+    );
+    if (rowCount !== 1) throw new Error(`E2E: the team ${teamId} was not renamed`);
+  } finally {
+    await client.end();
+  }
+}
+
+/**
  * Takes every member off `teamId` in SQL (story 6.2): deletes the membership
  * versions naming it, so {@link removeTeamInSql} can delete the team a test
  * put a fresh member on. The member stays, on no team.

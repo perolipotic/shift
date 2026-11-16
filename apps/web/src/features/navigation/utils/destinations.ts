@@ -9,7 +9,8 @@ import type { ParseKeys } from 'i18next';
  * destination with role-scoped content rather than two — the human decision of
  * 2026-09-04 that resolves the overlap between those two rules — and so is
  * `Ljudi` since story 7.17 (decision of 2026-10-09): the member list for an
- * admin, the team directory for a member. The totals are five and eight.
+ * admin, the team directory for a member. The totals are five and nine
+ * since story 14.2 added *Povijest promjena*, admin-only (D4).
  *
  * A `.ts` module rather than a component, and that is the whole reason this file
  * exists. L2 is an ESLint `no-restricted-syntax` selector over JSX shapes:
@@ -124,6 +125,9 @@ export const DESTINATIONS: readonly [Destination, ...Destination[]] = [
   // ROLE-SCOPED TOO (story 7.17): the member list for an admin, the read-only
   // directory of who is on which team for a member.
   { key: 'nav.ljudi', path: '/ljudi', roles: EVERYONE, group: 'overview' },
+  // STORY 14.2: the change history. ADMIN-ONLY (D4) and read, never set up,
+  // so it sits under *Pregled* after Ljudi; on a phone it is in *Više*.
+  { key: 'nav.povijestPromjena', path: '/povijest-promjena', roles: ADMIN_ONLY, group: 'overview' },
   { key: 'nav.postavkeRotacije', path: '/postavke-rotacije', roles: ADMIN_ONLY, group: 'settings' },
   { key: 'nav.organizacija', path: '/organizacija', roles: ADMIN_ONLY, group: 'settings' },
 ];

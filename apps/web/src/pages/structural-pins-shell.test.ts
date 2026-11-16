@@ -56,7 +56,19 @@ import {
 //
 // EIGHT SINCE STORY 5.3b: `/raspored` (now `/za-odluku`) left the placeholders when it gained the
 // conflicts queue — every destination is built.
-const BUILT_SLUGS = ['organizacija', 'ljudi', 'danas', 'postavke-rotacije', 'kalendar', 'sati', 'godisnji', 'za-odluku'];
+//
+// NINE SINCE STORY 14.2: `/povijest-promjena`, the change history, arrives built.
+const BUILT_SLUGS = [
+  'organizacija',
+  'ljudi',
+  'danas',
+  'postavke-rotacije',
+  'kalendar',
+  'sati',
+  'godisnji',
+  'za-odluku',
+  'povijest-promjena',
+];
 
 /** Every registered destination, however much of it is built. */
 const DESTINATION_SLUGS = [...PLACEHOLDER_SLUGS, ...BUILT_SLUGS];

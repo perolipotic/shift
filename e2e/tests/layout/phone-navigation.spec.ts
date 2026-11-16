@@ -20,7 +20,8 @@ const ADMIN_TABS = [hr.nav.danas, hr.nav.kalendar, hr.nav.zaOdluku, hr.nav.ljudi
 const MEMBER_TABS = [hr.nav.danas, hr.nav.kalendar, hr.nav.sati, hr.nav.godisnji] as const;
 /** The sheet's rows by destination name: each row's label and its one-line
  *  description come from the same key. */
-const ADMIN_MORE = ['sati', 'godisnji', 'postavkeRotacije', 'organizacija'] as const;
+// STORY 14.2: *Povijest promjena* under *Pregled*, after Godišnji.
+const ADMIN_MORE = ['sati', 'godisnji', 'povijestPromjena', 'postavkeRotacije', 'organizacija'] as const;
 /** Story 7.17: the member's fifth destination, the team directory, under *Pregled*. */
 const MEMBER_MORE = ['ljudi'] as const;
 
@@ -220,6 +221,7 @@ test.describe('at a desktop viewport', () => {
       hr.nav.godisnji,
       hr.nav.zaOdluku,
       hr.nav.ljudi,
+      hr.nav.povijestPromjena,
     ]);
     await expect(settings.getByText(hr.shell.moreGroup.adminOnly, { exact: true })).toBeVisible();
     await expect(settings.getByRole('link')).toHaveText([hr.nav.postavkeRotacije, hr.nav.organizacija]);
