@@ -942,7 +942,7 @@ describe('the access-control layer is present, so nothing below passes vacuously
       );
       expect(
         policies.map((row) => row.policyname),
-        'stories 1.3a, 1.4a, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a, 3.5a, 3.6a, 5.1b, 5.4a, 9.2, 10.3, 10.4, 12.1, 13.1, 13.2, 13.3 and 0025 own exactly these policies; a missing one refuses silently and looks like a working refusal',
+        'stories 1.3a, 1.4a, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a, 3.5a, 3.6a, 5.1b, 5.4a, 9.2, 10.3, 10.4, 12.1, 13.1, 13.2, 13.3, 14.1 and 0025 own exactly these policies; a missing one refuses silently and looks like a working refusal',
       ).toEqual([
         // STORY 13.1 (0052): an active admin defines and renames a type or
         // sets its drawing flag. No delete. STORY 13.2 (0053, PO Q2): every
@@ -950,6 +950,10 @@ describe('the access-control layer is present, so nothing below passes vacuously
         'absence_types_insert_by_own_active_admin',
         'absence_types_select_by_own_active_member',
         'absence_types_update_by_own_active_admin',
+        // STORY 14.1 (0061, D4): an active admin of the claimed organization
+        // reads its change history. No write policy: only the definer
+        // trigger inserts an event.
+        'audit_events_select_by_own_active_admin',
         // STORY 5.4a: read and insert alone, and both an active admin's only;
         // a member reads their own live rows through `my_conflict_resolutions`.
         // No update and no delete: the lifetime rule soft-removes through
@@ -26754,6 +26758,700 @@ describe('a member\'s allowance is versioned per leave year, append-only (story 
           [organization],
         );
         expect(rows[0]?.total).toBe(0);
+      });
+    },
+  );
+});
+
+// ------------------------------------ story 14.1: every change is recorded
+
+/**
+ * STORY 14.1 (`0061`, AD-3 and AD-11 as amended 2026-11-16, decision D4).
+ * Every row write to the 21 audited tables is one `audit_events` row in the
+ * writer's transaction, with whole rows, `auth.uid()`, the raw role and the
+ * transaction id; an unchanged update writes none. An active admin reads the
+ * organization's events and nobody else reads any; no session writes, changes,
+ * deletes or truncates one, nor truncates an audited table. The migration's
+ * backfill block is run again here, DML only, in a rolled-back transaction.
+ */
+
+/** The 21 audited tables (AD-11). */
+const AUDITED_TABLES = [
+  'organizations', 'members', 'member_status_versions', 'team_membership_versions', 'teams', 'hour_bands',
+  'shift_types', 'shift_type_versions', 'rotation_patterns', 'rotation_steps', 'rotation_assignments',
+  'shift_type_overrides', 'roster_overrides', 'leave_records', 'conflict_resolutions', 'leave_requests',
+  'leave_request_decisions', 'swap_requests', 'swap_request_decisions', 'absence_types', 'leave_allowances',
+] as const;
+
+interface AuditEvent {
+  readonly organizationId: string;
+  readonly tableName: string;
+  readonly operation: string;
+  readonly rowId: string;
+  readonly oldRow: Record<string, unknown> | null;
+  readonly newRow: Record<string, unknown> | null;
+  readonly actor: string | null;
+  readonly sessionRole: string;
+  readonly origin: string;
+  readonly transactionId: string | null;
+  /** `occurred_at` as `to_jsonb` prints it, the shape a row's own instants have. */
+  readonly occurredAt: string;
+}
+
+/** The events of one audited row, oldest first, as the owner reads them. */
+async function auditEventsOf(
+  client: Client,
+  table: string,
+  rowId: string,
+  after = '0',
+): Promise<AuditEvent[]> {
+  const { rows } = await client.query<AuditEvent>(
+    `select organization_id::text as "organizationId", table_name as "tableName", operation, row_id as "rowId",
+            old_row as "oldRow", new_row as "newRow", actor::text as actor, session_role as "sessionRole",
+            origin, transaction_id::text as "transactionId", to_jsonb(occurred_at) #>> '{}' as "occurredAt"
+       from audit_events
+      where table_name = $1 and row_id = $2 and id > $3::bigint
+      order by id`,
+    [table, rowId, after],
+  );
+  return rows;
+}
+
+/** One row, whole, as `to_jsonb` prints it, read by whoever the connection is. */
+async function wholeRow(client: Client, table: string, key: string, id: string): Promise<Record<string, unknown>> {
+  const { rows } = await client.query<{ row: Record<string, unknown> }>(
+    `select to_jsonb(r) as row from ${table} r where ${key} = $1`,
+    [id],
+  );
+  const row = rows[0]?.row;
+  if (row === undefined) throw new Error(`no ${table} row ${id}`);
+  return row;
+}
+
+/** The connection's transaction id and raw role, as the recorder reads them. */
+async function sessionFacts(client: Client): Promise<{ transactionId: string; role: string }> {
+  const { rows } = await client.query<{ transactionId: string; role: string }>(
+    `select pg_current_xact_id()::text as "transactionId", current_setting('role') as role`,
+  );
+  const facts = rows[0];
+  if (facts === undefined) throw new Error('no session facts');
+  return facts;
+}
+
+/**
+ * Back to the owner AND no JWT user: `actAsOwner` resets the role alone, and
+ * the transaction-local claims an earlier `actAs` set would still make
+ * `auth.uid()` the caller. Supabase's `auth.uid()` reads
+ * `request.jwt.claim.sub` first and then `request.jwt.claims`, so both go.
+ */
+async function actAsSystem(client: Client): Promise<void> {
+  await actAsOwner(client);
+  await client.query(
+    `select set_config('request.jwt.claims', '', true), set_config('request.jwt.claim.sub', '', true)`,
+  );
+  const { rows } = await client.query<{ uid: string | null }>('select auth.uid()::text as uid');
+  if (rows[0]?.uid !== null) throw new Error('auth.uid() still names a user after the claims were cleared');
+}
+
+/** `row` with every named column set to null, as the backfill writes it. */
+function withNulls(row: Record<string, unknown>, columns: readonly string[]): Record<string, unknown> {
+  return { ...row, ...Object.fromEntries(columns.map((column) => [column, null])) };
+}
+
+/** `0061`'s backfill block, its statements alone, as the migration runs them. */
+function backfillBlock(): string {
+  const migration = readFileSync(join(repoRoot, 'supabase', 'migrations', '0061_audit_events.sql'), 'utf8');
+  const begins = /^-- BACKFILL BEGINS$/m.exec(migration);
+  const ends = /^-- BACKFILL ENDS$/m.exec(migration);
+  if (begins === null || ends === null || ends.index < begins.index) throw new Error('0061 has no backfill block');
+  return migration.slice(begins.index, ends.index);
+}
+
+describe('every change is recorded in the change history (story 14.1)', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'records the $fixture admin\'s insert, change and delete of a band once each, whole, attributed and in its transaction, and nothing for an unchanged update',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const organization = caller.organizationId;
+        await actAs(client, caller.authUserId, organization);
+        const facts = await sessionFacts(client);
+        const band = await insertHourBand(client, organization, 'Povijest 14.1', '03:17');
+        const inserted = await wholeRow(client, 'hour_bands', 'id', band);
+        await client.query(`update hour_bands set name = 'Povijest 14.1 b' where id = $1`, [band]);
+        const renamed = await wholeRow(client, 'hour_bands', 'id', band);
+        const unchanged = await client.query('update hour_bands set name = name, start_time = start_time where id = $1', [band]);
+        await client.query('delete from hour_bands where id = $1', [band]);
+        await actAsOwner(client);
+
+        expect(unchanged.rowCount, `${slug}: the unchanged update reached no row, so it proves nothing`).toBe(1);
+        const live = {
+          organizationId: organization,
+          tableName: 'hour_bands',
+          rowId: band,
+          actor: caller.authUserId,
+          sessionRole: 'authenticated',
+          origin: 'trigger',
+          transactionId: facts.transactionId,
+        };
+        expect(
+          (await auditEventsOf(client, 'hour_bands', band)).map(({ occurredAt: _at, ...event }) => event),
+          `${slug}: the band's writes are not exactly three events`,
+        ).toEqual([
+          { ...live, operation: 'INSERT', oldRow: null, newRow: inserted },
+          { ...live, operation: 'UPDATE', oldRow: inserted, newRow: renamed },
+          { ...live, operation: 'DELETE', oldRow: renamed, newRow: null },
+        ]);
+        expect(facts.role).toBe('authenticated');
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'records a $fixture member\'s request, the admin\'s rejection and its close in one transaction, the decision under the request\'s id, and an owner write with no actor',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = caller.organizationId;
+
+        await actAs(client, self.authUserId, organization);
+        const { transactionId } = await sessionFacts(client);
+        const request = await insertRequest(client, { organization, member: self.id, during: '[2046-07-01,2046-07-02)' });
+        await actAs(client, caller.authUserId, organization);
+        expect(await decideRequest(client, request, 'rejected'), `${slug}: a rejection wrote leave`).toBeNull();
+        await actAsOwner(client);
+
+        const requestEvents = await auditEventsOf(client, 'leave_requests', request);
+        expect(requestEvents.map((event) => [event.operation, event.actor])).toEqual([
+          ['INSERT', self.authUserId],
+          ['UPDATE', caller.authUserId],
+        ]);
+        expect(requestEvents[1]?.oldRow?.['closed_at']).toBeNull();
+        expect(requestEvents[1]?.newRow?.['closed_by']).toBe(caller.authUserId);
+        const decision = await auditEventsOf(client, 'leave_request_decisions', request);
+        expect(decision.map(({ occurredAt: _at, ...event }) => event), `${slug}: the decision is not one event keyed by its request`).toEqual([
+          {
+            organizationId: organization,
+            tableName: 'leave_request_decisions',
+            operation: 'INSERT',
+            rowId: request,
+            oldRow: null,
+            newRow: await wholeRow(client, 'leave_request_decisions', 'request_id', request),
+            actor: caller.authUserId,
+            sessionRole: 'authenticated',
+            origin: 'trigger',
+            transactionId,
+          },
+        ]);
+        for (const event of [...requestEvents, ...decision]) {
+          expect(event.transactionId, `${slug}: an event left its write's transaction`).toBe(transactionId);
+          expect(event.sessionRole).toBe('authenticated');
+        }
+
+        // An owner write, with no JWT user: no actor, and the raw role.
+        await actAsSystem(client);
+        const owner = await sessionFacts(client);
+        const team = (await client.query<{ id: string }>(
+          'select id from teams where organization_id = $1 order by id limit 1',
+          [organization],
+        )).rows[0]?.id;
+        if (team === undefined) throw new Error(`${slug} has no team`);
+        await client.query(`update teams set name = name || ' (14.1)' where id = $1`, [team]);
+        const ownerEvents = await auditEventsOf(client, 'teams', team);
+        expect(ownerEvents.at(-1), `${slug}: the owner's write is not recorded as a system write`).toMatchObject({
+          organizationId: organization,
+          operation: 'UPDATE',
+          actor: null,
+          sessionRole: owner.role,
+          origin: 'trigger',
+          transactionId,
+        });
+        expect(owner.role, 'the owner connection runs under a SET ROLE').not.toBe('authenticated');
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'records the close a $fixture deactivation makes in its nested definer trigger, attributed to the deactivating admin, in the same transaction',
+    async ({ slug, admin, member, bystander }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const other = await memberByUsername(client, slug, bystander);
+        const organization = caller.organizationId;
+        const today = await organizationDay(client, organization);
+        const team = (await client.query<{ id: string }>(
+          'select id::text as id from teams where organization_id = $1 and not archived order by id limit 1',
+          [organization],
+        )).rows[0]?.id;
+        if (team === undefined) throw new Error(`${slug} has no team`);
+
+        // As the system: an open swap the member proposed, which 0049's
+        // close on deactivation reaches.
+        await actAsSystem(client);
+        const swap = (await client.query<{ id: string }>(
+          `insert into swap_requests (organization_id, proposer_id, addressee_id, team_id, date, created_by)
+           values ($1, $2, $3, $4, '2046-09-01', $5) returning id::text as id`,
+          [organization, self.id, other.id, team, self.authUserId],
+        )).rows[0]?.id;
+        if (swap === undefined) throw new Error('the swap insert returned no id');
+
+        await actAs(client, caller.authUserId, organization);
+        const { transactionId } = await sessionFacts(client);
+        await insertVersion(client, { organization, member: self.id, active: false, from: today });
+        await actAsOwner(client);
+
+        const events = await auditEventsOf(client, 'swap_requests', swap);
+        expect(events.map((event) => [event.operation, event.actor]), `${slug}: the nested close is not recorded`).toEqual([
+          ['INSERT', null],
+          ['UPDATE', caller.authUserId],
+        ]);
+        const close = events[1];
+        expect(close?.oldRow?.['closed_at'], `${slug}: the close's old row was already closed`).toBeNull();
+        expect(close?.newRow?.['closed_at'], `${slug}: the close's new row is not closed`).not.toBeNull();
+        expect(close?.newRow?.['closed_by']).toBe(caller.authUserId);
+        expect(close?.sessionRole).toBe('authenticated');
+        expect(close?.transactionId, `${slug}: the nested close left the deactivation's transaction`).toBe(transactionId);
+        const decision = await auditEventsOf(client, 'swap_request_decisions', swap);
+        expect(decision.map((event) => [event.operation, event.actor, event.newRow?.['outcome'], event.transactionId])).toEqual([
+          ['INSERT', caller.authUserId, 'deactivated', transactionId],
+        ]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'records a $fixture amend as its removal and its replacement in one transaction, apart from the original\'s own insert',
+    async ({ slug, admin, member }) => {
+      // The original is committed first, so its insert is in another
+      // transaction than the amend's and the shared id is not this case's
+      // own single transaction. It and what it wrote are deleted in `finally`.
+      const setup = await connect();
+      let original: string | undefined;
+      try {
+        const caller = await memberByUsername(setup, slug, admin);
+        const self = await memberByUsername(setup, slug, member);
+        const organization = caller.organizationId;
+        original = await insertLeave(setup, {
+          organization,
+          member: self.id,
+          during: '[2048-03-02,2048-03-04)',
+          by: caller.authUserId,
+        });
+        const amended = original;
+
+        await inRolledBackTransaction(async (client) => {
+          await actAs(client, caller.authUserId, organization);
+          const { transactionId } = await sessionFacts(client);
+          const replacement = await amendLeaveRecord(client, amended, '2048-03-02', '2048-03-06');
+          await actAsOwner(client);
+
+          const removal = await auditEventsOf(client, 'leave_records', amended);
+          const inserted = await auditEventsOf(client, 'leave_records', replacement);
+          expect(removal.map((event) => [event.operation, event.actor])).toEqual([
+            ['INSERT', null],
+            ['UPDATE', caller.authUserId],
+          ]);
+          expect(inserted.map((event) => [event.operation, event.actor])).toEqual([['INSERT', caller.authUserId]]);
+          expect(removal[1]?.transactionId, `${slug}: the removal is not in the amend's transaction`).toBe(transactionId);
+          expect(inserted[0]?.transactionId, `${slug}: the replacement is not in the amend's transaction`).toBe(transactionId);
+          expect(removal[0]?.transactionId, `${slug}: the original's insert shares the amend's transaction`).not.toBe(transactionId);
+          // The pre-0061 pairing 14.2 uses for a backfilled amend: one now().
+          expect(removal[1]?.newRow?.['removed_at']).toBe(inserted[0]?.newRow?.['created_at']);
+        });
+      } finally {
+        if (original !== undefined) {
+          await setup.query('delete from notification_outbox where subject_id = $1', [original]);
+          await setup.query('delete from leave_records where id = $1', [original]);
+          await setup.query(`delete from audit_events where table_name = 'leave_records' and row_id = $1`, [original]);
+        }
+        await setup.end();
+      }
+    },
+  );
+
+  it.skipIf(noDatabase).each(CROSS_TENANT)(
+    'shows the $fixture active admin its own organization\'s events and never $otherFixture\'s, and a member-role account and an inactive admin none',
+    async ({ slug, admin, member, otherSlug }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = caller.organizationId;
+        const foreignFixture = FIXTURES.find((entry) => entry.slug === otherSlug);
+        const other = (await memberByUsername(client, otherSlug, foreignFixture?.admin ?? '')).organizationId;
+
+        // As the owner: one event in each organization, so neither read is empty by accident.
+        for (const tenant of [organization, other]) {
+          await client.query(`update organizations set name = name || ' (14.1)' where id = $1`, [tenant]);
+        }
+        const inactiveAdmin = await addThrowawayAdmin(client, organization);
+        await ownerVersion(client, {
+          organization,
+          member: inactiveAdmin.id,
+          active: false,
+          from: await organizationDay(client, organization),
+          by: caller.authUserId,
+        });
+
+        await actAs(client, caller.authUserId, organization);
+        const { rows: adminSees } = await client.query<{ organizationId: string; events: number }>(
+          'select organization_id::text as "organizationId", count(*)::int as events from audit_events group by 1',
+        );
+        const adminForeign = await client.query<{ total: number }>(
+          'select count(*)::int as total from audit_events where organization_id = $1',
+          [other],
+        );
+        await actAs(client, self.authUserId, organization);
+        const memberSees = await client.query<{ total: number }>('select count(*)::int as total from audit_events');
+        await actAs(client, inactiveAdmin.authUserId, organization);
+        const inactiveSees = await client.query<{ total: number }>('select count(*)::int as total from audit_events');
+        await actAs(client, caller.authUserId, other);
+        const forgedClaim = await client.query<{ total: number }>('select count(*)::int as total from audit_events');
+        await actAsOwner(client);
+
+        expect(adminSees.map((row) => row.organizationId), `${slug}: the admin does not read its own organization's events alone`).toEqual([
+          organization,
+        ]);
+        expect(adminSees[0]?.events ?? 0).toBeGreaterThan(0);
+        expect(adminForeign.rows[0]?.total, `${slug}: the admin read ${otherSlug}'s events`).toBe(0);
+        expect(memberSees.rows[0]?.total, `${slug}: a member-role account read the change history`).toBe(0);
+        expect(inactiveSees.rows[0]?.total, `${slug}: an inactive admin read the change history`).toBe(0);
+        expect(forgedClaim.rows[0]?.total, `${slug}: a claim naming ${otherSlug} read its events`).toBe(0);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses anon and service_role the $fixture history read, and every session, an admin included, a write or truncate of it or a truncate of an audited table',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const organization = caller.organizationId;
+        await client.query(`set local lock_timeout = '1s'`);
+        const refusals: { who: string; statement: string; code: string }[] = [];
+        const probe = async (who: string, statement: string, parameters: unknown[] = []): Promise<void> => {
+          const refusal = await refusedThenContinue(client, () => client.query(statement, parameters));
+          refusals.push({ who, statement, code: refusal.code });
+        };
+        const writes: [string, unknown[]][] = [
+          [
+            `insert into audit_events (organization_id, table_name, operation, row_id, new_row, session_role, origin, transaction_id)
+             values ($1, 'teams', 'INSERT', 'x', '{}', 'authenticated', 'trigger', pg_current_xact_id())`,
+            [organization],
+          ],
+          ['update audit_events set actor = null where organization_id = $1', [organization]],
+          ['delete from audit_events where organization_id = $1', [organization]],
+          ['truncate audit_events', []],
+          ...AUDITED_TABLES.map((table): [string, unknown[]] => [`truncate ${table} cascade`, []]),
+        ];
+
+        for (const who of ['admin', 'anon', 'service_role'] as const) {
+          if (who === 'admin') await actAs(client, caller.authUserId, organization);
+          else await client.query(`set local role ${who}`);
+          if (who !== 'admin') await probe(who, 'select count(*) from audit_events');
+          for (const [statement, parameters] of writes) await probe(who, statement, parameters);
+          await actAsOwner(client);
+        }
+
+        expect(
+          refusals.filter((refusal) => refusal.code !== '42501'),
+          `${slug}: a session wrote, truncated or read what no session may`,
+        ).toEqual([]);
+        expect(refusals).toHaveLength(3 * writes.length + 2);
+      });
+    },
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'reads the $fixture change history through PostgREST as the active admin alone, and refuses a member nothing but an empty read, anon the read and the admin a write',
+    async ({ slug, admin, member }) => {
+      const adminToken = await tokenFor(admin, slug);
+      const memberToken = await tokenFor(member, slug);
+      const client = await connect();
+      const organization = await organizationId(client, slug).finally(() => client.end());
+
+      const adminRows = await restRows('audit_events?select=organization_id,id&order=occurred_at.desc,id.desc&limit=1000', {
+        token: adminToken,
+      });
+      expect(adminRows.length, `${slug}: the admin read no event; the seed's writes are recorded`).toBeGreaterThan(0);
+      expect(
+        [...new Set(adminRows.map((row) => row['organization_id']))],
+        `${slug}: the admin read another organization's events`,
+      ).toEqual([organization]);
+      expect(await restRows('audit_events?select=id', { token: memberToken }), `${slug}: a member read the history`).toEqual([]);
+
+      const anonymous = await rest('audit_events?select=id');
+      expect(anonymous.status, 'an anonymous caller read the history').toBe(401);
+      expect((await restRefusal(anonymous)).code).toBe('42501');
+
+      const forged = await rest('audit_events', {
+        token: adminToken,
+        method: 'POST',
+        body: {
+          organization_id: organization,
+          table_name: 'teams',
+          operation: 'HISTORY_BEGINS',
+          row_id: organization,
+          session_role: 'authenticated',
+          origin: 'backfill',
+        },
+      });
+      expect(forged.status, `${slug}: the admin wrote an event`).toBe(403);
+      expect((await restRefusal(forged)).code).toBe('42501');
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'reconstructs the $fixture rows that existed before it from their attribution columns, then marks where history begins (the backfill block)',
+    async ({ slug, admin, member, bystander }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const other = await memberByUsername(client, slug, bystander);
+        const organization = caller.organizationId;
+        const first = async (sql: string): Promise<string> => {
+          const id = (await client.query<{ id: string }>(sql, [organization])).rows[0]?.id;
+          if (id === undefined) throw new Error(`${slug}: ${sql} found nothing`);
+          return id;
+        };
+        const team = await first('select id::text as id from teams where organization_id = $1 and not archived order by id limit 1');
+        const type = await first('select id::text as id from shift_types where organization_id = $1 and not archived order by id limit 1');
+
+        // As the owner, rows as an earlier epic left them: a confirm and a
+        // later removal, a confirm and a removal at one instant, a closed
+        // request and its decision.
+        const override = async (date: string, confirmedAt: string, removedBy: string, removedAt: string): Promise<string> =>
+          (
+            await client.query<{ id: string }>(
+              `insert into shift_type_overrides (organization_id, team_id, date, shift_type_id, reason,
+                                                 created_by, created_at, confirmed_by, confirmed_at, removed_by, removed_at)
+               values ($1, $2, $3::date, $4, 'Povijest 14.1.', $5, '2031-01-01T08:00:00.123456Z', $5, $6, $7, $8)
+               returning id::text as id`,
+              [organization, team, date, type, caller.authUserId, confirmedAt, removedBy, removedAt],
+            )
+          ).rows[0]?.id ?? '';
+        const staged = await override('2046-05-05', '2031-01-02T08:00:00.654321Z', self.authUserId, '2031-01-03T08:00:00Z');
+        const merged = await override('2046-05-06', '2031-01-04T08:00:00Z', self.authUserId, '2031-01-04T08:00:00Z');
+        const request = (
+          await client.query<{ id: string }>(
+            `insert into leave_requests (organization_id, member_id, during, created_by, created_at, closed_by, closed_at)
+             values ($1, $2, '[2046-06-01,2046-06-02)', $3, '2031-02-01T00:00:00Z', $4, '2031-02-02T00:00:00Z')
+             returning id::text as id`,
+            [organization, self.id, self.authUserId, caller.authUserId],
+          )
+        ).rows[0]?.id ?? '';
+        await client.query(
+          `insert into leave_request_decisions (organization_id, request_id, outcome, decided_by, decided_at)
+           values ($1, $2, 'rejected', $3, '2031-02-02T00:00:00Z')`,
+          [organization, request, caller.authUserId],
+        );
+
+        // Every other pair table: a declined swap (the answer and the close at
+        // one instant, by two authors, so the merge's author is visible), a
+        // swap accepted and withdrawn later, and a removal on each of the
+        // roster overrides, the leave records and the resolutions.
+        const swap = async (date: string, answer: string, answeredAt: string, closedAt: string): Promise<string> =>
+          (
+            await client.query<{ id: string }>(
+              `insert into swap_requests (organization_id, proposer_id, addressee_id, team_id, date, created_by, created_at,
+                                          answer, answered_by, answered_at, closed_by, closed_at)
+               values ($1, $2, $3, $4, $5::date, $6, '2031-03-01T00:00:00Z', $7, $8, $9, $6, $10)
+               returning id::text as id`,
+              [organization, self.id, other.id, team, date, self.authUserId, answer, other.authUserId, answeredAt, closedAt],
+            )
+          ).rows[0]?.id ?? '';
+        const declined = await swap('2046-05-07', 'declined', '2031-03-02T00:00:00Z', '2031-03-02T00:00:00Z');
+        const withdrawn = await swap('2046-05-08', 'accepted', '2031-03-02T00:00:00Z', '2031-03-03T00:00:00Z');
+        const removed = async (sql: string, parameters: unknown[]): Promise<string> =>
+          (await client.query<{ id: string }>(sql, parameters)).rows[0]?.id ?? '';
+        const roster = await removed(
+          `insert into roster_overrides (organization_id, team_id, date, member_out_id, reason, created_by, created_at, removed_by, removed_at)
+           values ($1, $2, '2046-05-09', $3, 'Povijest 14.1.', $4, '2031-04-01T00:00:00Z', $4, '2031-04-02T00:00:00Z')
+           returning id::text as id`,
+          [organization, team, self.id, caller.authUserId],
+        );
+        const leave = await removed(
+          `insert into leave_records (organization_id, member_id, during, created_by, created_at, removed_by, removed_at)
+           values ($1, $2, '[2046-08-01,2046-08-03)', $3, '2031-04-03T00:00:00Z', $3, '2031-04-04T00:00:00Z')
+           returning id::text as id`,
+          [organization, self.id, caller.authUserId],
+        );
+        // 0031's born-on-leave trigger checks an owner insert too: the
+        // resolution's date is on a live leave record.
+        await client.query(
+          `insert into leave_records (organization_id, member_id, during, created_by, created_at)
+           values ($1, $2, '[2046-08-10,2046-08-11)', $3, '2031-04-05T00:00:00Z')`,
+          [organization, self.id, caller.authUserId],
+        );
+        const resolution = await removed(
+          `insert into conflict_resolutions (organization_id, member_id, date, team_id, kind, created_by, created_at, removed_by, removed_at)
+           values ($1, $2, '2046-08-10', $3, 'accept_uncovered', $4, '2031-04-05T00:00:00Z', $4, '2031-04-06T00:00:00Z')
+           returning id::text as id`,
+          [organization, self.id, team, caller.authUserId],
+        );
+
+        const baseline = (await client.query<{ id: string }>('select coalesce(max(id), 0)::text as id from audit_events')).rows[0]?.id ?? '0';
+        const { role } = await sessionFacts(client);
+        await client.query(backfillBlock());
+
+        const backfilled = {
+          organizationId: organization,
+          sessionRole: role,
+          origin: 'backfill',
+          transactionId: null,
+        };
+        const pairs = ['confirmed_by', 'confirmed_at', 'removed_by', 'removed_at'];
+        const removal = ['removed_by', 'removed_at'];
+
+        const stagedRow = await wholeRow(client, 'shift_type_overrides', 'id', staged);
+        expect(await auditEventsOf(client, 'shift_type_overrides', staged, baseline), `${slug}: a confirm and a later removal`).toEqual([
+          { ...backfilled, tableName: 'shift_type_overrides', rowId: staged, operation: 'INSERT', oldRow: null,
+            newRow: withNulls(stagedRow, pairs), actor: caller.authUserId, occurredAt: stagedRow['created_at'] },
+          { ...backfilled, tableName: 'shift_type_overrides', rowId: staged, operation: 'UPDATE', oldRow: withNulls(stagedRow, pairs),
+            newRow: withNulls(stagedRow, removal), actor: caller.authUserId, occurredAt: stagedRow['confirmed_at'] },
+          { ...backfilled, tableName: 'shift_type_overrides', rowId: staged, operation: 'UPDATE', oldRow: withNulls(stagedRow, removal),
+            newRow: stagedRow, actor: self.authUserId, occurredAt: stagedRow['removed_at'] },
+        ]);
+
+        // One instant, one event, by the lower-ranked pair's author (the confirm).
+        const mergedRow = await wholeRow(client, 'shift_type_overrides', 'id', merged);
+        expect(await auditEventsOf(client, 'shift_type_overrides', merged, baseline), `${slug}: two pairs at one instant`).toEqual([
+          { ...backfilled, tableName: 'shift_type_overrides', rowId: merged, operation: 'INSERT', oldRow: null,
+            newRow: withNulls(mergedRow, pairs), actor: caller.authUserId, occurredAt: mergedRow['created_at'] },
+          { ...backfilled, tableName: 'shift_type_overrides', rowId: merged, operation: 'UPDATE', oldRow: withNulls(mergedRow, pairs),
+            newRow: mergedRow, actor: caller.authUserId, occurredAt: mergedRow['confirmed_at'] },
+        ]);
+
+        const requestRow = await wholeRow(client, 'leave_requests', 'id', request);
+        const close = ['closed_by', 'closed_at'];
+        expect(await auditEventsOf(client, 'leave_requests', request, baseline), `${slug}: a request and its close`).toEqual([
+          { ...backfilled, tableName: 'leave_requests', rowId: request, operation: 'INSERT', oldRow: null,
+            newRow: withNulls(requestRow, close), actor: self.authUserId, occurredAt: requestRow['created_at'] },
+          { ...backfilled, tableName: 'leave_requests', rowId: request, operation: 'UPDATE', oldRow: withNulls(requestRow, close),
+            newRow: requestRow, actor: caller.authUserId, occurredAt: requestRow['closed_at'] },
+        ]);
+        const decisionRow = await wholeRow(client, 'leave_request_decisions', 'request_id', request);
+        expect(await auditEventsOf(client, 'leave_request_decisions', request, baseline), `${slug}: a decision`).toEqual([
+          { ...backfilled, tableName: 'leave_request_decisions', rowId: request, operation: 'INSERT', oldRow: null,
+            newRow: decisionRow, actor: caller.authUserId, occurredAt: decisionRow['decided_at'] },
+        ]);
+
+        // The declined swap: one merged event, credited to the answer's author
+        // (the lower-ranked pair), not the close's.
+        const answerPair = ['answer', 'answered_by', 'answered_at'];
+        const swapPairs = [...answerPair, ...close];
+        const declinedRow = await wholeRow(client, 'swap_requests', 'id', declined);
+        expect(await auditEventsOf(client, 'swap_requests', declined, baseline), `${slug}: a decline`).toEqual([
+          { ...backfilled, tableName: 'swap_requests', rowId: declined, operation: 'INSERT', oldRow: null,
+            newRow: withNulls(declinedRow, swapPairs), actor: self.authUserId, occurredAt: declinedRow['created_at'] },
+          { ...backfilled, tableName: 'swap_requests', rowId: declined, operation: 'UPDATE', oldRow: withNulls(declinedRow, swapPairs),
+            newRow: declinedRow, actor: other.authUserId, occurredAt: declinedRow['answered_at'] },
+        ]);
+        expect(declinedRow['closed_by'], 'the decline\'s close must have another author for the merge to be seen').not.toBe(
+          declinedRow['answered_by'],
+        );
+        const withdrawnRow = await wholeRow(client, 'swap_requests', 'id', withdrawn);
+        expect(await auditEventsOf(client, 'swap_requests', withdrawn, baseline), `${slug}: an accept, then a withdrawal`).toEqual([
+          { ...backfilled, tableName: 'swap_requests', rowId: withdrawn, operation: 'INSERT', oldRow: null,
+            newRow: withNulls(withdrawnRow, swapPairs), actor: self.authUserId, occurredAt: withdrawnRow['created_at'] },
+          { ...backfilled, tableName: 'swap_requests', rowId: withdrawn, operation: 'UPDATE', oldRow: withNulls(withdrawnRow, swapPairs),
+            newRow: withNulls(withdrawnRow, close), actor: other.authUserId, occurredAt: withdrawnRow['answered_at'] },
+          { ...backfilled, tableName: 'swap_requests', rowId: withdrawn, operation: 'UPDATE', oldRow: withNulls(withdrawnRow, close),
+            newRow: withdrawnRow, actor: self.authUserId, occurredAt: withdrawnRow['closed_at'] },
+        ]);
+        const rosterPairs = ['confirmed_by', 'confirmed_at', ...removal];
+        for (const [table, id, nulled] of [
+          ['roster_overrides', roster, rosterPairs],
+          ['leave_records', leave, removal],
+          ['conflict_resolutions', resolution, removal],
+        ] as const) {
+          const row = await wholeRow(client, table, 'id', id);
+          expect(await auditEventsOf(client, table, id, baseline), `${slug}: a ${table} removal`).toEqual([
+            { ...backfilled, tableName: table, rowId: id, operation: 'INSERT', oldRow: null,
+              newRow: withNulls(row, nulled), actor: caller.authUserId, occurredAt: row['created_at'] },
+            { ...backfilled, tableName: table, rowId: id, operation: 'UPDATE', oldRow: withNulls(row, nulled),
+              newRow: row, actor: caller.authUserId, occurredAt: row['removed_at'] },
+          ]);
+        }
+
+        // One UPDATE per distinct (table, row, pair instant), counted here
+        // independently of the block, over the six pair tables.
+        const { rows: updates } = await client.query<{ events: number; instants: number }>(
+          `select (select count(*)::int from audit_events where id > $1::bigint and operation = 'UPDATE') as events,
+                  (select count(*)::int from (
+                     select distinct source_table, source_id, instant from (
+                       select 'shift_type_overrides' as source_table, id::text as source_id, confirmed_at as instant from shift_type_overrides
+                       union all select 'shift_type_overrides', id::text, removed_at from shift_type_overrides
+                       union all select 'roster_overrides', id::text, confirmed_at from roster_overrides
+                       union all select 'roster_overrides', id::text, removed_at from roster_overrides
+                       union all select 'leave_records', id::text, removed_at from leave_records
+                       union all select 'conflict_resolutions', id::text, removed_at from conflict_resolutions
+                       union all select 'leave_requests', id::text, closed_at from leave_requests
+                       union all select 'swap_requests', id::text, answered_at from swap_requests
+                       union all select 'swap_requests', id::text, closed_at from swap_requests
+                     ) as pairs
+                     where instant is not null
+                   ) as distinct_instants) as instants`,
+          [baseline],
+        );
+        expect(updates[0]?.events, `${slug}: not one UPDATE per distinct pair instant`).toBe(updates[0]?.instants);
+        expect(updates[0]?.events ?? 0).toBeGreaterThanOrEqual(10);
+
+        // Every block event is a backfill's; the four authorless tables get none.
+        const { rows: shape } = await client.query<{ origin: string; transactions: number; roles: string[]; authorless: number }>(
+          `select string_agg(distinct origin, ',') as origin,
+                  count(transaction_id)::int as transactions,
+                  array_agg(distinct session_role) as roles,
+                  count(*) filter (where table_name in ('organizations', 'members', 'hour_bands', 'absence_types')
+                                     and operation <> 'HISTORY_BEGINS')::int as authorless
+             from audit_events where id > $1::bigint`,
+          [baseline],
+        );
+        expect(shape).toEqual([{ origin: 'backfill', transactions: 0, roles: [role], authorless: 0 }]);
+
+        // One INSERT per attributed row and per decision.
+        const { rows: counts } = await client.query<{ events: number; sources: number }>(
+          `select (select count(*)::int from audit_events where id > $1::bigint and operation = 'INSERT') as events,
+                  ((select count(*) from member_status_versions) + (select count(*) from teams)
+                   + (select count(*) from team_membership_versions) + (select count(*) from shift_types)
+                   + (select count(*) from shift_type_versions) + (select count(*) from rotation_patterns)
+                   + (select count(*) from rotation_steps) + (select count(*) from rotation_assignments)
+                   + (select count(*) from shift_type_overrides) + (select count(*) from roster_overrides)
+                   + (select count(*) from leave_records) + (select count(*) from conflict_resolutions)
+                   + (select count(*) from leave_requests) + (select count(*) from swap_requests)
+                   + (select count(*) from leave_allowances) + (select count(*) from leave_request_decisions)
+                   + (select count(*) from swap_request_decisions))::int as sources`,
+          [baseline],
+        );
+        expect(counts[0]?.events, `${slug}: not one INSERT per attributed row and decision`).toBe(counts[0]?.sources);
+
+        // The ids follow time.
+        const { rows: disorder } = await client.query<{ total: number }>(
+          `select count(*)::int as total
+             from (select occurred_at, lag(occurred_at) over (order by id) as previous
+                     from audit_events where id > $1::bigint and operation <> 'HISTORY_BEGINS') as ordered
+            where occurred_at < previous`,
+          [baseline],
+        );
+        expect(disorder[0]?.total, `${slug}: a backfilled id runs against time`).toBe(0);
+
+        // Last, one marker per organization, at the migration's now().
+        const { rows: markers } = await client.query<{ rowId: string; tidy: boolean }>(
+          `select row_id as "rowId",
+                  (organization_id::text = row_id and table_name = 'organizations' and old_row is null
+                   and new_row is null and actor is null and occurred_at = now()) as tidy
+             from audit_events where id > $1::bigint and operation = 'HISTORY_BEGINS' order by row_id`,
+          [baseline],
+        );
+        const { rows: organizations } = await client.query<{ id: string }>('select id::text as id from organizations order by id::text');
+        expect(markers.map((marker) => marker.rowId)).toEqual(organizations.map((row) => row.id));
+        expect(markers.every((marker) => marker.tidy), `${slug}: a marker carries a row, an actor or another instant`).toBe(true);
+        const { rows: last } = await client.query<{ operation: string }>(
+          'select operation from audit_events where id > $1::bigint order by id desc limit $2',
+          [baseline, organizations.length],
+        );
+        expect(last.every((row) => row.operation === 'HISTORY_BEGINS'), 'the markers are not written last').toBe(true);
       });
     },
   );

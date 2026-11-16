@@ -843,6 +843,28 @@ includes installed devices for at least one release after the SPA ships.
   and also sends the whole-day text. Rows already in the outbox when `0060`
   lands carry no `half` and send as whole days.
 
+**Epic 14, migration `0061` (story 14.1).** `db push` alone: no SPA and no
+Edge Function changes with it, and `notify` and `admin-auth` stay as they are.
+Push it **outside the pilot's working hours**. `0061` attaches two audit
+triggers to each of the 21 audited tables, and each `create trigger` holds its
+table's lock until the migration commits, so writes wait for the push. With the
+pipeline (§8), merging to `main` pushes `0061` to staging at once; the
+production approval is the step that must be given outside the pilot's working
+hours. In the
+same transaction it backfills the change history from the attribution columns
+and writes one `HISTORY_BEGINS` marker per organization. **Before `0061`, hard
+deletes and current-state edits (a rename, an archive flag, a member's details)
+were never recorded and cannot be recovered.** The backfill rebuilds only what
+`created_*`, `confirmed_*`, `removed_*`, `closed_*`, `answered_*` and the
+decisions' `decided_*` hold, using each row's values as they stand at the push.
+The SPA of story 14.2 reads `audit_events` and must ship **after** `0061`.
+Deployed first, it would query a table the database does not have. From
+`0061` on, the seed, the demo script and the e2e helpers leave owner-written
+events (`actor` null), so `audit_events` is never empty after them. A write
+from a session with no `SET ROLE` (the migration and its backfill, the seed, an
+operator script, GoTrue's cascade, Studio's SQL editor) records `session_role`
+as the literal `none`, so the history cannot tell those sources apart.
+
 With the pipeline enabled (§8), merging to `main` is what promotes: staging is
 deployed and smoked, then production waits for an approval, and each deploy
 pushes migrations **before** it publishes the SPA. Without it, nothing publishes
@@ -1071,6 +1093,12 @@ commit;
 
 The `alter table` takes ACCESS EXCLUSIVE on the table until commit, so run it
 in a maintenance window.
+
+Since `0061` (story 14.1), no session role (`anon`, `authenticated`,
+`service_role`) holds TRUNCATE on `audit_events` or on any of the 21 audited
+tables, because a TRUNCATE fires no row trigger and would leave no history.
+Only the owner can still truncate them, and a truncate by the owner is not
+recorded.
 
 ### Signup is off, remotely
 

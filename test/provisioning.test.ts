@@ -700,7 +700,7 @@ describe('every organization table carries row level security, and only its revi
               'leave_records', 'conflict_resolutions', 'leave_requests',
               'leave_request_decisions', 'notification_outbox', 'notification_settings',
               'push_subscriptions', 'swap_requests', 'swap_request_decisions',
-              'absence_types', 'leave_allowances'
+              'absence_types', 'leave_allowances', 'audit_events'
             )
           order by relname`,
       );
@@ -718,6 +718,8 @@ describe('every organization table carries row level security, and only its revi
       expect(rows.map((row) => row.relname)).toEqual([
         // STORY 13.1 (0052): an organization's absence types.
         'absence_types',
+        // STORY 14.1 (0061): the change history, an active admin's read alone.
+        'audit_events',
         'conflict_resolutions',
         'hour_bands',
         // STORY 13.3 (0055): the versions of a member's allowance.
@@ -1560,7 +1562,8 @@ describe('every organization table carries row level security, and only its revi
       ).toBe(true);
       const { rows: triggers } = await client.query<{ definition: string }>(
         `select pg_get_triggerdef(oid) as definition
-           from pg_trigger where tgrelid = 'public.conflict_resolutions'::regclass and not tgisinternal`,
+           from pg_trigger where tgrelid = 'public.conflict_resolutions'::regclass and not tgisinternal
+            and tgfoid <> 'private.record_audit_event()'::regprocedure`,
       );
       expect(triggers.map((row) => row.definition), 'story 5.4a takes exactly its born-on-leave trigger').toEqual([
         'CREATE TRIGGER conflict_resolutions_on_live_leave BEFORE INSERT ON public.conflict_resolutions FOR EACH ROW EXECUTE FUNCTION refuse_conflict_resolution_off_leave()',
@@ -1632,7 +1635,8 @@ describe('every organization table carries row level security, and only its revi
         'no index on leave_records serves one member\'s records',
       ).toBe(true);
       const { rows: triggers } = await client.query<{ tgname: string }>(
-        `select tgname from pg_trigger where tgrelid = 'public.leave_records'::regclass and not tgisinternal order by 1`,
+        `select tgname from pg_trigger where tgrelid = 'public.leave_records'::regclass and not tgisinternal
+            and tgfoid <> 'private.record_audit_event()'::regprocedure order by 1`,
       );
       // Neither story 5.1b nor 5.2a takes a trigger; 0043's notifications are
       // the only ones, AFTER the write.
@@ -1711,7 +1715,8 @@ describe('every organization table carries row level security, and only its revi
         'no index on leave_allowances serves one member\'s versions',
       ).toBe(true);
       const { rows: triggers } = await client.query<{ tgname: string }>(
-        `select tgname from pg_trigger where tgrelid = 'public.leave_allowances'::regclass and not tgisinternal`,
+        `select tgname from pg_trigger where tgrelid = 'public.leave_allowances'::regclass and not tgisinternal
+            and tgfoid <> 'private.record_audit_event()'::regprocedure`,
       );
       expect(triggers, 'leave_allowances takes a trigger').toEqual([]);
     } finally {
@@ -1803,13 +1808,15 @@ describe('every organization table carries row level security, and only its revi
 
       const { rows: triggers } = await client.query<{ definition: string }>(
         `select pg_get_triggerdef(oid) as definition
-           from pg_trigger where tgrelid = 'public.organizations'::regclass and not tgisinternal`,
+           from pg_trigger where tgrelid = 'public.organizations'::regclass and not tgisinternal
+            and tgfoid <> 'private.record_audit_event()'::regprocedure`,
       );
       expect(triggers.map((row) => row.definition), 'organizations takes exactly the annual leave seed').toEqual([
         'CREATE TRIGGER organizations_seed_absence_types AFTER INSERT ON public.organizations FOR EACH ROW EXECUTE FUNCTION private.seed_absence_types()',
       ]);
       const { rows: typeTriggers } = await client.query<{ tgname: string }>(
-        `select tgname from pg_trigger where tgrelid = 'public.absence_types'::regclass and not tgisinternal`,
+        `select tgname from pg_trigger where tgrelid = 'public.absence_types'::regclass and not tgisinternal
+            and tgfoid <> 'private.record_audit_event()'::regprocedure`,
       );
       expect(typeTriggers, 'absence_types takes a trigger').toEqual([]);
     } finally {
@@ -1960,6 +1967,7 @@ describe('every organization table carries row level security, and only its revi
            from pg_trigger
           where tgrelid in ('public.leave_requests'::regclass, 'public.leave_request_decisions'::regclass)
             and not tgisinternal
+            and tgfoid <> 'private.record_audit_event()'::regprocedure
           order by 1`,
       );
       expect(triggers.map((row) => row.definition), 'story 9.2 takes the lock and the overlap trigger, on requests alone').toEqual([
@@ -2088,6 +2096,7 @@ describe('every organization table carries row level security, and only its revi
           where (tgrelid in ('public.swap_requests'::regclass, 'public.swap_request_decisions'::regclass)
                  or tgname = 'member_status_versions_close_swap_requests')
             and not tgisinternal
+            and tgfoid <> 'private.record_audit_event()'::regprocedure
           order by 1`,
       );
       // Story 12.3b (0050): the two notification triggers, AFTER and per row,
@@ -2235,6 +2244,153 @@ describe('every organization table carries row level security, and only its revi
         rows.some((row) => /\(organization_id\)$/.test(row.indexdef)),
         'no index leads with organization_id alone',
       ).toBe(true);
+    } finally {
+      await client.end();
+    }
+  });
+
+  // STORY 14.1 (0061, AD-3 and AD-11 as amended 2026-11-16): the 21 audited
+  // tables and the two `tg_argv` each one's triggers pass the recorder.
+  const AUDITED: Readonly<Record<string, readonly [string, string]>> = {
+    organizations: ['id', 'id'],
+    members: ['organization_id', 'id'],
+    member_status_versions: ['organization_id', 'id'],
+    team_membership_versions: ['organization_id', 'id'],
+    teams: ['organization_id', 'id'],
+    hour_bands: ['organization_id', 'id'],
+    shift_types: ['organization_id', 'id'],
+    shift_type_versions: ['organization_id', 'id'],
+    rotation_patterns: ['organization_id', 'id'],
+    rotation_steps: ['organization_id', 'id'],
+    rotation_assignments: ['organization_id', 'id'],
+    shift_type_overrides: ['organization_id', 'id'],
+    roster_overrides: ['organization_id', 'id'],
+    leave_records: ['organization_id', 'id'],
+    conflict_resolutions: ['organization_id', 'id'],
+    leave_requests: ['organization_id', 'id'],
+    leave_request_decisions: ['organization_id', 'request_id'],
+    swap_requests: ['organization_id', 'id'],
+    swap_request_decisions: ['organization_id', 'request_id'],
+    absence_types: ['organization_id', 'id'],
+    leave_allowances: ['organization_id', 'id'],
+  };
+
+  it.skipIf(noDatabase)('keeps the change history append-only, read by authenticated alone, and records each of the 21 audited tables through exactly its two triggers (story 14.1)', async () => {
+    const client = await connect();
+    try {
+      // APPEND-ONLY BY PRIVILEGE: `authenticated` SELECT, and nothing else for
+      // any session role, TRUNCATE included.
+      const { rows } = await client.query<{ role: string; privilege: string; held: boolean }>(
+        `select role, privilege,
+                has_table_privilege(role, 'public.audit_events', privilege) as held
+           from unnest(array['anon', 'authenticated', 'service_role']) as role,
+                unnest(array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'])
+                  as privilege`,
+      );
+      expect(rows.filter((row) => row.held).map((row) => `${row.role}:${row.privilege}`)).toEqual([
+        'authenticated:SELECT',
+      ]);
+      const { rows: columns } = await client.query<{ held: boolean }>(
+        `select bool_or(has_column_privilege(role, 'public.audit_events', attname, verb)) as held
+           from unnest(array['anon', 'authenticated', 'service_role']) as role,
+                (select attname from pg_attribute
+                  where attrelid = 'public.audit_events'::regclass and attnum > 0 and not attisdropped) as attributes,
+                unnest(array['INSERT', 'UPDATE', 'REFERENCES']) as verb`,
+      );
+      expect(columns[0]?.held, 'a column of audit_events is writable by a session role').toBe(false);
+      const { rows: sequence } = await client.query<{ held: boolean }>(
+        `select bool_or(has_sequence_privilege(role, 'public.audit_events_id_seq', privilege)) as held
+           from unnest(array['anon', 'authenticated', 'service_role']) as role,
+                unnest(array['USAGE', 'SELECT', 'UPDATE']) as privilege`,
+      );
+      expect(sequence[0]?.held, 'a session role holds the event id sequence').toBe(false);
+
+      // No session role truncates an audited table: row triggers do not see it.
+      const { rows: truncation } = await client.query<{ grant: string }>(
+        `select role || ':' || relname as grant
+           from unnest(array['anon', 'authenticated', 'service_role']) as role,
+                unnest($1::text[]) as relname
+          where has_table_privilege(role, 'public.' || relname, 'TRUNCATE')
+          order by 1`,
+        [Object.keys(AUDITED)],
+      );
+      expect(truncation.map((row) => row.grant), 'a session role may truncate an audited table').toEqual([]);
+
+      // NO FOREIGN KEY, one index for the read, and row level security on and not forced.
+      const { rows: keys } = await client.query<{ conname: string }>(
+        `select conname from pg_constraint
+          where contype = 'f'
+            and (conrelid = 'public.audit_events'::regclass or confrelid = 'public.audit_events'::regclass)`,
+      );
+      expect(keys, 'audit_events takes part in a foreign key').toEqual([]);
+      const { rows: indexes } = await client.query<{ indexdef: string }>(
+        `select indexdef from pg_indexes where schemaname = 'public' and tablename = 'audit_events' order by 1`,
+      );
+      expect(indexes.map((row) => row.indexdef).sort()).toEqual([
+        'CREATE INDEX audit_events_organization_occurred_idx ON public.audit_events USING btree (organization_id, occurred_at DESC, id DESC)',
+        'CREATE UNIQUE INDEX audit_events_pkey ON public.audit_events USING btree (id)',
+      ]);
+      const { rows: security } = await client.query<{ enabled: boolean; forced: boolean }>(
+        `select relrowsecurity as enabled, relforcerowsecurity as forced
+           from pg_class where oid = 'public.audit_events'::regclass`,
+      );
+      expect(security).toEqual([{ enabled: true, forced: false }]);
+      const { rows: policies } = await client.query<{ policyname: string; cmd: string; roles: string[] }>(
+        `select policyname, cmd, roles::text[] as roles from pg_policies
+          where schemaname = 'public' and tablename = 'audit_events'`,
+      );
+      expect(policies, 'audit_events carries a policy beyond the admin read').toEqual([
+        { policyname: 'audit_events_select_by_own_active_admin', cmd: 'SELECT', roles: ['authenticated'] },
+      ]);
+
+      // EXACTLY TWO AUDIT TRIGGERS on each audited table, AFTER and per row,
+      // with the table's own arguments; and none anywhere else. `tgtype`
+      // bits: 1 row, 4 insert, 8 delete, 16 update (no 2: not before).
+      const { rows: triggers } = await client.query<{ table: string; definition: string; tgtype: number }>(
+        `select c.relname as table, pg_get_triggerdef(t.oid) as definition, t.tgtype::int as tgtype
+           from pg_trigger t
+           join pg_class c on c.oid = t.tgrelid
+          where t.tgfoid = 'private.record_audit_event()'::regprocedure
+          order by 1, 2`,
+      );
+      const byTableThenDefinition = (
+        a: { table: string; definition: string },
+        b: { table: string; definition: string },
+      ): number => (a.table === b.table ? (a.definition < b.definition ? -1 : 1) : a.table < b.table ? -1 : 1);
+      const expected = Object.entries(AUDITED)
+        .flatMap(([table, [organization, key]]) => {
+          const call = `EXECUTE FUNCTION private.record_audit_event('${organization}', '${key}')`;
+          return [
+            {
+              table,
+              definition: `CREATE TRIGGER ${table}_audit AFTER INSERT OR DELETE ON public.${table} FOR EACH ROW ${call}`,
+              tgtype: 1 | 4 | 8,
+            },
+            {
+              table,
+              definition: `CREATE TRIGGER ${table}_audit_update AFTER UPDATE ON public.${table} FOR EACH ROW WHEN ((old.* IS DISTINCT FROM new.*)) ${call}`,
+              tgtype: 1 | 16,
+            },
+          ];
+        })
+        .sort(byTableThenDefinition);
+      expect(
+        [...triggers].sort(byTableThenDefinition),
+        'the audit triggers are not exactly two per audited table',
+      ).toEqual(expected);
+
+      // The excluded organization tables and the history itself carry none.
+      const { rows: excluded } = await client.query<{ tgname: string }>(
+        `select tgname from pg_trigger
+          where tgrelid in ('public.audit_events'::regclass, 'public.notification_outbox'::regclass,
+                            'public.notification_settings'::regclass, 'public.push_subscriptions'::regclass)
+            and tgfoid = 'private.record_audit_event()'::regprocedure`,
+      );
+      expect(excluded, 'an excluded table is recorded').toEqual([]);
+      const { rows: guarded } = await client.query<{ tgname: string }>(
+        `select tgname from pg_trigger where tgrelid = 'public.audit_events'::regclass and not tgisinternal`,
+      );
+      expect(guarded, 'a trigger guards audit_events (AD-3: none may)').toEqual([]);
     } finally {
       await client.end();
     }
@@ -2434,6 +2590,9 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // STORY 13.1 (0052). The organization trigger seeds annual leave past the
     // table's policies and privileges, which no creating path holds.
     { name: 'seed_absence_types', argumentCount: 0, schema: 'private' },
+    // STORY 14.1 (0061). The change history's recorder inserts into
+    // `audit_events`, which no session may write.
+    { name: 'record_audit_event', argumentCount: 0, schema: 'private' },
   ];
 
   it.skipIf(noDatabase).each(ACCESS_CONTROL_FUNCTIONS)(
@@ -2612,6 +2771,9 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // STORY 13.1 (0052). The organization trigger that seeds annual leave, on
     // 0043's terms: run as the owner when it fires, and callable by nobody.
     { name: 'seed_absence_types', argumentCount: 0, expected: [], schema: 'private' },
+    // STORY 14.1 (0061). The change history's recorder, on 0052's terms: run
+    // as the owner when an audit trigger fires, and callable by nobody.
+    { name: 'record_audit_event', argumentCount: 0, expected: [], schema: 'private' },
     // STORY 10.3 (0044). The outbox filter (a definer: it reads another
     // member's setting) and the settings row's `updated_at` stamp, triggers
     // callable by nobody.
