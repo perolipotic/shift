@@ -625,7 +625,7 @@ development_status:
 
   epic-14: in-progress
   14-1-every-change-is-recorded-in-the-change-history: done
-  14-2-an-admin-reads-the-change-history: backlog
+  14-2-an-admin-reads-the-change-history: done
   14-3-the-change-history-exports-to-pdf: backlog
   epic-14-retrospective: optional
 

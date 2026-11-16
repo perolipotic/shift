@@ -5,6 +5,7 @@ import { ABSENCE_TYPES_LIST_KEY } from '@/features/absence-types/services/list';
 import { CALENDAR_KEY } from '@/features/calendar/services/snapshot';
 import { ERASURE_CHECK_KEY_PART as FEATURE_ERASURE_CHECK_KEY_PART } from '@/features/conflicts/hooks/use-erasure-reads';
 import { ACTING_ADMINS_KEY } from '@/features/conflicts/services/resolved-conflicts';
+import { HISTORY_KEY_ROOT, historyKeyOf } from '@/features/history/services/history-read';
 import { HOUR_BANDS_LIST_KEY } from '@/features/hour-bands/services/list';
 import {
   MY_CONFLICT_RESOLUTIONS_KEY,
@@ -182,6 +183,15 @@ describe('what is kept on the device', () => {
       LEAVE_RECORDS_KEY('m')[0],
       LEAVE_REQUEST_KEY('r')[0],
     ]);
+  });
+
+  it('never keeps the change history, under any period (story 14.2)', () => {
+    expect(PERSISTED_KEY_ROOTS).not.toContain(HISTORY_KEY_ROOT);
+    expect(PERSISTED_PARAMETERISED_KEY_ROOTS).not.toContain(HISTORY_KEY_ROOT);
+    expect(
+      persistsQuery({ queryKey: historyKeyOf({ from: '2026-11-01', to: '2026-11-30' }), state: success() } as never),
+    ).toBe(false);
+    expect(persistsQuery({ queryKey: [HISTORY_KEY_ROOT], state: success() } as never)).toBe(false);
   });
 
   it('keeps a parameterised read only in the exact shape [root, string id] (stories 8.2b, 8.2c)', () => {

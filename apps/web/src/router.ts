@@ -17,6 +17,7 @@ import { organizacijaRoute } from '@/pages/organizacija';
 import { organizacijaSatniPojasRoute } from '@/pages/organizacija.satni-pojasi.$id';
 import { organizacijaSatniPojasiRoute } from '@/pages/organizacija.satni-pojasi';
 import { postaviLozinkuRoute } from '@/pages/postavi-lozinku';
+import { povijestPromjenaRoute } from '@/pages/povijest-promjena';
 import { postavkeRotacijeRoute } from '@/pages/postavke-rotacije';
 import { postavkeRotacijeTipSmjeneRoute } from '@/pages/postavke-rotacije.tipovi-smjena.$id';
 import { prijavaBareRoute, prijavaRoute } from '@/pages/prijava';
@@ -102,6 +103,7 @@ const appDestinations = appLayoutRoute.addChildren([
   ljudiSmjeneRoute,
   ljudiSmjenaRoute,
   ljudiMemberRoute,
+  povijestPromjenaRoute,
   postavkeRotacijeRoute,
   // STORY 2.2b: one shift type, on 1.7a's terms — nested under the layout,
   // absent from the destinations (the `Postavke rotacije` tab lights for it),

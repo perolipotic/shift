@@ -4427,7 +4427,15 @@ describe('the access-control migration', () => {
     const decider = join(swaps, 'services', 'swap-decision.ts');
     // The writer's own test, which stubs the insert; no other test is exempt.
     // The readers' and the decider's tests name every table and call through their constants.
-    const exempt = [join(swaps, 'services', 'swap-proposal.test.ts')];
+    // STORY 14.2: the change history's meaning names every audited table to
+    // decode its events (AD-11), the swap tables among them, and derives no
+    // schedule, hours, collision or queue figure: it reads `audit_events`
+    // alone, never a swap.
+    const history = [
+      join(repoRoot, 'packages', 'domain', 'src', 'history.ts'),
+      join(repoRoot, 'packages', 'domain', 'test', 'history.test.ts'),
+    ];
+    const exempt = [join(swaps, 'services', 'swap-proposal.test.ts'), ...history];
     const sendHook = join(swaps, 'hooks', 'use-swap-proposal.ts');
     const readHook = join(swaps, 'hooks', 'use-my-swaps.ts');
     const organizationHook = join(swaps, 'hooks', 'use-organization-swaps.ts');

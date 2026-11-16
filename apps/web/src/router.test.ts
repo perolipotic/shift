@@ -63,6 +63,7 @@ import {
 } from '@/pages/organizacija.satni-pojasi';
 import { SetPasswordScreen, postaviLozinkuRoute } from '@/pages/postavi-lozinku';
 import { PostavkeRotacijeScreen, postavkeRotacijeRoute } from '@/pages/postavke-rotacije';
+import { PovijestPromjenaScreen, povijestPromjenaRoute } from '@/pages/povijest-promjena';
 import {
   PostavkeRotacijeTipSmjeneScreen,
   postavkeRotacijeTipSmjeneRoute,
@@ -232,6 +233,13 @@ const DESTINATION_ROUTES = [
   { id: '/_app/godisnji', path: '/godisnji', route: godisnjiRoute, component: GodisnjiScreen },
   { id: '/_app/za-odluku', path: '/za-odluku', route: zaOdlukuRoute, component: ZaOdlukuScreen },
   { id: '/_app/ljudi', path: '/ljudi', route: ljudiRoute, component: LjudiScreen },
+  // STORY 14.2: the change history, admin-only.
+  {
+    id: '/_app/povijest-promjena',
+    path: '/povijest-promjena',
+    route: povijestPromjenaRoute,
+    component: PovijestPromjenaScreen,
+  },
   {
     id: '/_app/postavke-rotacije',
     path: '/postavke-rotacije',
@@ -395,6 +403,14 @@ const LEVEL_GUARDED_ROUTES = [
     route: ljudiSmjenaRoute,
     component: LjudiSmjenaScreen,
   },
+  // STORY 14.2: the change history, a destination admin-only by D4, a copy of
+  // the same guard.
+  {
+    id: '/_app/povijest-promjena',
+    path: '/povijest-promjena',
+    route: povijestPromjenaRoute,
+    component: PovijestPromjenaScreen,
+  },
   // STORY 2.1b: the hour band list and one band, both admin-only, both copies
   // of the same guard, and neither a destination.
   {
@@ -478,6 +494,8 @@ describe('the shell route tree', () => {
       '/_app/postavke-rotacije',
       // STORY 2.2b. One shift type, reached from `Postavke rotacije` only.
       '/_app/postavke-rotacije/tipovi-smjena/$id',
+      // STORY 14.2. The change history, an admin-only destination.
+      '/_app/povijest-promjena',
       // STORY 9.1. The queue's old URLs, now redirects to `/za-odluku`.
       '/_app/raspored',
       '/_app/raspored/$memberId/$date/$teamId',
@@ -1732,6 +1750,12 @@ describe('the signed-in layout guards every destination once, and is pathless', 
       expect(readsOffline('/')).toBe(true);
     });
 
+    it('never reads the change history offline (story 14.2: history is never kept on the device)', () => {
+      expect(OFFLINE_READABLE_PATHS).not.toContain('/povijest-promjena');
+      expect(readsOffline('/povijest-promjena')).toBe(false);
+      expect(readsOffline('/povijest-promjena/')).toBe(false);
+    });
+
     it('reads a trailing slash as the same destination', async () => {
       expect(await guardedAt('/kalendar/', SESSION)).toEqual({ returned: undefined });
       expect(await guardedAt('/smjene/team-1/', SESSION)).toEqual({ returned: undefined });
@@ -2422,8 +2446,8 @@ describe('/ljudi decides its content by permission level, and the admin screens 
       // role-scoped, and driven by the cases above instead. THIRTEEN SINCE
       // STORY 9.1: the queue's two old URLs, now redirects. FOURTEEN SINCE
       // STORY 9.4: one leave request's decision screen. FIFTEEN SINCE STORY
-      // 12.4: one swap's decision screen.
-      expect(LEVEL_GUARDED_ROUTES).toHaveLength(15);
+      // 12.4: one swap's decision screen. SIXTEEN SINCE STORY 14.2: the change history.
+      expect(LEVEL_GUARDED_ROUTES).toHaveLength(16);
       for (const { path, route } of LEVEL_GUARDED_ROUTES) {
         expect(
           (route.options as { beforeLoad?: unknown }).beforeLoad,
