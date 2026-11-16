@@ -150,6 +150,28 @@ export function halfFieldOf(range: LeaveRange): { readonly half?: LeaveHalf } {
   return range.half === LEAVE_HALF_FIRST || range.half === LEAVE_HALF_SECOND ? { half: range.half } : {};
 }
 
+/**
+ * Where a record or range lies and how much of each date it takes — its
+ * dates and, for a half day, its half ({@link halfFieldOf}) — and nothing
+ * else (epic 13 retro A8): the one copy every mapper that hands a record to
+ * staffing, marks, collisions or *Danas* builds through. A whole day never
+ * gains a `half` key. A new per-date column belongs here.
+ */
+export function leaveSpanOf(range: LeaveRange): { readonly from: string; readonly to: string; readonly half?: LeaveHalf } {
+  return { from: range.from, to: range.to, ...halfFieldOf(range) };
+}
+
+/**
+ * What the balance reads of a record or range (epic 13 retro A8): its
+ * {@link leaveSpanOf} and, only when `range` carries it, whether it draws
+ * the allowance — `false` kept, an absent flag left absent.
+ */
+export function leaveChargeOf(range: LeaveRange): LeaveRange {
+  return range.drawsAllowance === undefined
+    ? leaveSpanOf(range)
+    : { ...leaveSpanOf(range), drawsAllowance: range.drawsAllowance };
+}
+
 /** What each charged date of `range` costs: 0.5 for a half day, 1 otherwise. */
 function weightOf(range: LeaveRange): number {
   return isHalfDay(range) ? HALF_DAY_LEAVE_DAYS : 1;
@@ -626,6 +648,17 @@ export function leaveAllowanceOf(allowance: LeaveAllowance, leaveYear: number): 
   return chosen === null ? allowance.startingDays : chosen.days;
 }
 
+/**
+ * The allowance of the leave year containing `date` (epic 13 retro A8):
+ * {@link leaveAllowanceOf} of {@link leaveYearNumberOf} — the one copy of
+ * that composition.
+ *
+ * @throws RangeError on any precondition of either.
+ */
+export function leaveAllowanceOn(allowance: LeaveAllowance, date: string, start: LeaveYearStart): number {
+  return leaveAllowanceOf(allowance, leaveYearNumberOf(date, start));
+}
+
 /** An already-checked balance input's current leave year, its number and the allowance resolved for it. */
 interface CurrentYear {
   readonly year: LeaveRange;
@@ -929,7 +962,7 @@ export function leavePreviewOf(preview: LeavePreviewInput): LeavePreview {
   // cost over every date is still reported (story 13.2).
   const draws = drawsAllowance(preview.range);
   const costInYearDays = inYear === null || !draws ? 0 : costOf(inYear, preview.records);
-  const extra: LeaveRange = { from: preview.range.from, to: preview.range.to, ...halfFieldOf(preview.range) };
+  const extra = leaveSpanOf(preview.range);
   const after = draws ? balanceOf(costOf, preview, current, extra) : beforeAndEnd;
   // The range lowers the balance: by its charge in the year, or — a range in
   // the previous leave year — by shrinking what is carried into this one.

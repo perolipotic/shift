@@ -1,5 +1,5 @@
 import { queryOptions } from '@tanstack/react-query';
-import { leaveAllowanceOf, leaveYearNumberOf, type LeaveAllowance, type LeaveAllowanceVersion, type LeaveYearStart } from '@shift/domain';
+import { leaveAllowanceOn, type LeaveAllowance, type LeaveAllowanceVersion, type LeaveYearStart } from '@shift/domain';
 
 import { initialsOf } from '@/utils/initials';
 import { searchTextOf, sortSearchFor, sortSearchOf } from '@/utils/search-params';
@@ -714,7 +714,7 @@ function leaveYearStartIn(organization: Record<string, unknown>): LeaveYearStart
 export function memberAllowanceOn(member: MemberListRow, today: string | null | undefined): number | null {
   if (today === null || today === undefined || member.leaveYearStart === null) return null;
 
-  return leaveAllowanceOf(member.leaveAllowance, leaveYearNumberOf(today, member.leaveYearStart));
+  return leaveAllowanceOn(member.leaveAllowance, today, member.leaveYearStart);
 }
 
 /**

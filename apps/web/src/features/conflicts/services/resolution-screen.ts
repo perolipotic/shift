@@ -1,4 +1,4 @@
-import { collisionKeyOf, daysBetween, deriveShiftTimes, halfFieldOf, isHalfDay, leaveBalanceOf, leaveRangeCostOf, shiftTypeVersionOn, type Collision, type LeaveHalf } from '@shift/domain';
+import { collisionKeyOf, daysBetween, deriveShiftTimes, isHalfDay, leaveBalanceOf, leaveRangeCostOf, leaveSpanOf, shiftTypeVersionOn, type Collision, type LeaveHalf } from '@shift/domain';
 
 import type { CalendarSnapshot, CalendarSurfaceState } from '@/features/calendar/services/snapshot';
 import { dayDetailOf } from '@/features/calendar/utils/day-detail';
@@ -21,6 +21,7 @@ import { heldByReplacement } from '@/features/conflicts/services/replacement-eff
 import { ACCEPT_UNCOVERED, REPLACE_MEMBER } from '@/features/conflicts/services/resolutions';
 import { durationMessageKey } from '@/features/hour-bands/services/list';
 import {
+  leaveRecordFieldsOf,
   organizationLeaveRecordsOf,
   type LeaveRecord,
   type OrganizationLeaveRecord,
@@ -786,14 +787,7 @@ function resolutionScreenFrom(
       records: {
         records: records
           .filter((record) => record.memberId === collision.memberId)
-          .map((one) => ({
-            id: one.id,
-            from: one.from,
-            to: one.to,
-            absenceTypeId: one.absenceTypeId,
-            drawsAllowance: one.drawsAllowance,
-            ...halfFieldOf(one),
-          })),
+          .map((one) => leaveRecordFieldsOf(one)),
         loading: false,
         refreshing: false,
       },
@@ -871,7 +865,7 @@ function resolutionScreenFrom(
       covered: working.length,
       shiftHours: minutes === null ? null : { key: durationMessageKey(minutes), values: durationValuesOf(minutes) },
       // A half day's date costs 0.5 (story 13.5).
-      leaveDays: leaveRangeCostOf(base.input.input, { from: collision.date, to: collision.date, ...halfFieldOf(record.record) }),
+      leaveDays: leaveRangeCostOf(base.input.input, leaveSpanOf({ ...record.record, from: collision.date, to: collision.date })),
       // THE LEAVE YEAR OF THE CONFLICT'S DATE, not today's: the balance the decision is about.
       balanceDays: leaveBalanceOf({ ...base.input, today: collision.date }).balanceDays,
       candidates,

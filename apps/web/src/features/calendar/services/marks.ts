@@ -1,4 +1,4 @@
-import { halfFieldOf, type LeaveRange } from '@shift/domain';
+import { leaveSpanOf, type LeaveRange } from '@shift/domain';
 
 import {
   CALENDAR_FETCH_FETCHING,
@@ -101,7 +101,7 @@ export function calendarMarksOf(
     return {
       collisions: [],
       uncovered: [],
-      leave: new Map([[viewer.memberId, own.map((record) => ({ from: record.from, to: record.to, ...halfFieldOf(record) }))]]),
+      leave: new Map([[viewer.memberId, own.map((record) => leaveSpanOf(record))]]),
       staffingLeave: null,
     };
   }
@@ -117,7 +117,7 @@ export function calendarMarksOf(
 
   for (const record of records) {
     // STORY 13.7: a half day keeps its half, which the day's conflict line names.
-    const range: LeaveRange = { from: record.from, to: record.to, ...halfFieldOf(record) };
+    const range: LeaveRange = leaveSpanOf(record);
     const ranges = leave.get(record.memberId);
 
     if (ranges === undefined) leave.set(record.memberId, [range]);

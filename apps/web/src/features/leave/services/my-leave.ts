@@ -9,8 +9,8 @@ import {
 
 import type { AbsenceTypeRow } from '@/features/absence-types/services/list';
 import { absenceTypesOfCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
-import { calendarTodayOf, memberScheduleInputOf } from '@/features/calendar/utils/month';
 import { leaveRecordsOf } from '@/features/leave/services/leave-list';
+import { leaveRecordsInputOf } from '@/features/leave/services/leave-section-base';
 import {
   LEAVE_FROM_FIELD,
   LEAVE_HALF_FIELD,
@@ -187,14 +187,7 @@ export function myLeaveInputOf(
   carryOver: LeaveCarryOver | null,
   now: Date,
 ): LeaveRecordsInput {
-  return {
-    input: memberScheduleInputOf(snapshot, snapshot.viewer),
-    allowance,
-    records,
-    today: calendarTodayOf(snapshot, now),
-    leaveYearStart,
-    carryOver,
-  };
+  return leaveRecordsInputOf(snapshot, snapshot.viewer, allowance, records, leaveYearStart, carryOver, now);
 }
 
 /**

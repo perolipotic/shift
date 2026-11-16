@@ -1,6 +1,5 @@
 import {
   collisionsOf,
-  halfFieldOf,
   monthOf,
   unresolvedCollisionsOf,
   type Collision,
@@ -23,7 +22,12 @@ import {
   leaveHoursKeysOf,
   type ConflictResolution,
 } from '@/features/conflicts/services/resolutions';
-import { leaveRecordsOf, organizationLeaveRecordsOf } from '@/features/leave/services/leave-list';
+import {
+  leaveRecordFieldsOf,
+  leaveRecordsOf,
+  organizationLeaveRecordsOf,
+  type LeaveRecord,
+} from '@/features/leave/services/leave-list';
 
 /**
  * *Sati*'s unresolved-conflict count (story 5.3d; FR-41, Epic 4 retro R1),
@@ -143,14 +147,14 @@ export interface HoursLeave {
 
 /** Records as {@link LeaveRecordsByMember}: each member's ranges and types, in the order read. */
 function byMemberOf(
-  records: readonly (HoursLeaveRecord & { readonly memberId: string })[],
+  records: readonly (LeaveRecord & { readonly memberId: string })[],
 ): LeaveRecordsByMember {
   const byMember = new Map<string, HoursLeaveRecord[]>();
 
   for (const one of records) {
-    const { memberId, from, to, absenceTypeId, drawsAllowance } = one;
+    const { memberId } = one;
     // A half day keeps its half (story 13.5): it costs 0.5 and splits the shift's hours.
-    const record: HoursLeaveRecord = { from, to, absenceTypeId, drawsAllowance, ...halfFieldOf(one) };
+    const { id: _id, ...record } = leaveRecordFieldsOf(one);
     const own = byMember.get(memberId);
 
     if (own === undefined) byMember.set(memberId, [record]);

@@ -1057,7 +1057,7 @@ action_items:
       every mapper; split leave-section.ts by concern; collapse leave-year-start,
       allowance-in-year and balance-input duplicates"
     owner: "dev"
-    status: open
+    status: done  # spec-epic-13-retro-a8-leave-shared-fields
     ref: "_bmad-output/implementation-artifacts/epic-13-retro-2026-11-12.md"
   - id: "epic-13-retro-item-58-a9-fix-stale-feature_public-consumer-com"
     epic: 13

@@ -1,8 +1,8 @@
 import { queryOptions } from '@tanstack/react-query';
-import { halfFieldOf, type LeaveRange } from '@shift/domain';
+import { leaveSpanOf, type LeaveRange } from '@shift/domain';
 
 import { ANNUAL_LEAVE_ID } from '@/features/absence-types/services/list';
-import { leaveRecordHalfOf, readLeaveRowPages, type OrganizationLeaveRecordsAnswer } from '@/features/leave/services/leave-list';
+import { LEAVE_ROW_COLUMNS, leaveRecordHalfOf, readLeaveRowPages, type OrganizationLeaveRecordsAnswer } from '@/features/leave/services/leave-list';
 import { leaveRangeOf } from '@/features/leave/services/leave-write';
 
 /**
@@ -55,7 +55,7 @@ export const MY_LEAVE_REQUESTS_KEY = ['my-leave-requests'] as const;
  * (story 13.5b) the half of a one-date request.
  */
 export const LEAVE_REQUESTS_COLUMNS =
-  'id,member_id,during,absence_type_id,half,closed_at,leave_request_decisions(outcome,leave_record_change)';
+  `${LEAVE_ROW_COLUMNS},closed_at,leave_request_decisions(outcome,leave_record_change)` as const;
 
 /**
  * The prefix every one request's key starts with (story 9.4): a request
@@ -75,7 +75,7 @@ export function LEAVE_REQUEST_KEY(requestId: string) {
  * start on one date in *Za odluku*. Since 0059 (story 13.5b) the half too.
  */
 export const LEAVE_REQUEST_COLUMNS =
-  'id,member_id,during,absence_type_id,half,closed_at,created_at,leave_request_decisions(outcome,decided_by,decided_at,leave_record_change)';
+  `${LEAVE_ROW_COLUMNS},closed_at,created_at,leave_request_decisions(outcome,decided_by,decided_at,leave_record_change)` as const;
 
 /** The read could not be answered, or answered something that is not rows. */
 export const LEAVE_REQUESTS_UNAVAILABLE = 'LEAVE_REQUESTS_UNAVAILABLE';
@@ -304,9 +304,7 @@ function requestRowOf(row: unknown): (LeaveRequest & { readonly memberId: string
   return {
     id,
     memberId,
-    from: range.from,
-    to: range.to,
-    ...(half === null ? {} : { half }),
+    ...leaveSpanOf({ from: range.from, to: range.to, half }),
     absenceTypeId,
     status,
     closedAt: typeof closed === 'string' ? closed : null,
@@ -331,9 +329,9 @@ export function leaveRequestsOf(rows: readonly unknown[], memberId: string): rea
 
     ids.add(request.id);
 
-    const { id, from, to, absenceTypeId, status, closedAt, recordChange } = request;
+    const { id, absenceTypeId, status, closedAt, recordChange } = request;
 
-    requests.push({ id, from, to, ...halfFieldOf(request), absenceTypeId, status, closedAt, recordChange });
+    requests.push({ id, ...leaveSpanOf(request), absenceTypeId, status, closedAt, recordChange });
   }
 
   return requests.sort(compareRequests);
