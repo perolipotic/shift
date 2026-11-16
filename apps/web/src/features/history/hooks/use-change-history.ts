@@ -109,11 +109,10 @@ export type HistoryView =
  * which nothing persists anyway (`HISTORY_KEY_ROOT` is no kept root).
  *
  * THE READS: the organization (its zone, so the period is whole days in it),
- * one period of `audit_events` under one key (AD-13) — with the current rows
- * of the requests whose decisions have no request event in it (retro A3) —
- * and the four name
- * lists under their own shared keys — members (who each auth user is),
- * teams, shift types and absence types.
+ * one period of `audit_events` under one key (AD-13), with the current rows
+ * of the requests whose decisions have no request event in it (retro A3),
+ * and the four name lists under their own shared keys — members (who each
+ * auth user is), teams, shift types and absence types.
  *
  * THE CHIPS filter in the browser over the one snapshot; a value the period
  * does not offer is replaced out of the URL.

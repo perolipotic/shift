@@ -300,6 +300,12 @@ describe('every real change is drawn in words, never a bare id (epic 14 retro A3
       operation: 'INSERT',
       newRow: { id: 'o2', team_id: 'a', date: '2026-11-13', member_out_id: null, member_in_id: 'ivo', reason: 'r' },
     }),
+    event({
+      id: 25,
+      tableName: 'roster_overrides',
+      operation: 'INSERT',
+      newRow: { id: 'o3', team_id: 'a', date: '2026-11-14', member_out_id: 'ana', member_in_id: null, reason: 'r' },
+    }),
   ];
   const lists = {
     ...LISTS,
@@ -327,7 +333,15 @@ describe('every real change is drawn in words, never a bare id (epic 14 retro A3
     expect(historyOperandText({ type: 'roster-override', id: 'o1' }, names)).toBe(
       t('history.value.rosterOverride', { date: formatIsoDate('2026-11-12'), memberIn: 'Ivo Ivić', memberOut: 'Ana Anić' }),
     );
-    expect(historyOperandText({ type: 'roster-override', id: 'o2' }, names)).toContain('Ivo Ivić');
+    expect(historyOperandText({ type: 'roster-override', id: 'o2' }, names)).toBe(
+      t('history.value.rosterOverrideIn', { date: formatIsoDate('2026-11-13'), memberIn: 'Ivo Ivić' }),
+    );
+    expect(historyOperandText({ type: 'roster-override', id: 'o2' }, names)).toBe(
+      `${String(formatIsoDate('2026-11-13'))}: ulazi Ivo Ivić`,
+    );
+    expect(historyOperandText({ type: 'roster-override', id: 'o3' }, names)).toBe(
+      `${String(formatIsoDate('2026-11-14'))}: izlazi Ana Anić`,
+    );
     expect(historyOperandText({ type: 'roster-override', id: 'o1' }, names)).toBe(
       `${String(formatIsoDate('2026-11-12'))}: ulazi Ivo Ivić, izlazi Ana Anić`,
     );

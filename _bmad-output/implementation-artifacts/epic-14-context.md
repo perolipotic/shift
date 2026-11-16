@@ -96,4 +96,4 @@ An admin can read back who changed what in their organization, and when. Each en
 - 14.3 depends on 14.2's rendered, filtered snapshot. It needs no migration, and `notify` and `admin-auth` are unchanged.
 - History must decode the row shapes of every audited table from Epics 1–13.
 - A future organization-scoped table must attach the audit triggers in its creating migration, or amend AD-11's exclusion list.
-- Known gap: the refusing triggers from 0023, 0031, 0035, 0036 and 0039 are not named in AD-3. The gap is recorded and not ratified, so it is not precedent.
+- Resolved gap (epic 14 retro A5, 2026-11-16): the refusing triggers from 0023, 0031, 0035, 0036 and 0039 are now named in AD-3's inventory, with their refusals and origins. A new refusing trigger amends that inventory in its own story.

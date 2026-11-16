@@ -19,7 +19,7 @@ deferred: []
 
 **Problem:** The epic 14 retro (R1–R4) found four gaps the founder decided on 2026-11-16, answering "yes" to each recommendation: (A3) a leave/swap decision whose request event lies outside the read period has no member/team subject, so *Osoba*/*Smjena* never keep it, and the 14.2 "Applied" clause contradicts AD-11's "read from the period or the current requests"; (A4) real changes read *Bez promijenjenih polja* because `pattern_id`, `offset_step_id`, `roster_override_id` and the lifecycle `_at`/`_by` pairs are hidden; (A5) AD-3 names only two refusing triggers while 0023/0031/0035/0036/0039 ship more; (A6) CAP-24's "a setting" is ambiguous about a member's own `notification_settings`.
 
-**Approach:** A3: one extra, batched, RLS-scoped read of the current `leave_requests`/`swap_requests` rows for the decisions whose request has no event in the read, inside the same period query (one snapshot, AD-13); the domain falls back to that row for the subject. A4: unhide the non-bookkeeping columns with typed operands resolved from rows the read already holds, and derive a `status` before/after line from the lifecycle columns on an UPDATE. A5/A6: spine (and PRD/SPEC/epics wording) amendments only.
+**Approach:** A3: one extra, batched, RLS-scoped read of the current `leave_requests`/`swap_requests` rows for the decisions whose request has no event in the read, inside the same period query, under its one key (AD-13; one load, not a database snapshot); the domain falls back to that row for the subject. A4: unhide the non-bookkeeping columns with typed operands resolved from rows the read already holds, and derive a `status` before/after line from the lifecycle columns on an UPDATE. A5/A6: spine (and PRD/SPEC/epics wording) amendments only.
 
 ## Boundaries & Constraints
 
@@ -46,6 +46,7 @@ deferred: []
 ## Epic AC Deviations
 
 - Epic 14 / CAP-24: "Every write to a rule, an exception, a decision, a request, a member or a setting appears…". Spec: "a setting" is an organization setting; a member's own `notification_settings` (e-mail opt-out) is not recorded. Why: founder decision 2026-11-16 (retro A6), matching AD-11's existing exclusion. Reinterpreted, not deferred.
+- Epic 14 / CAP-24: "…with its before/after values". A pattern, offset step or roster-override link is named only when its row was written inside the read; otherwise each side reads a neutral *… spremljen(a) ranije* (marked *prethodna/nova vrijednost* when both sides read alike), so the reader sees that the link changed but not to what. Why: the Never rule forbids a second read of rotation or roster-override lists for names. Accepted, not deferred.
 - Every other epic 14 AC: none deviated; A3 and A4 bring the build closer to them.
 
 </intent-contract>
@@ -76,7 +77,7 @@ deferred: []
 - `apps/web/src/features/history/services/history-read.ts` -- `historyQueryOptions(source: (table) => HistoryTable, period)`; after the events, `readHistoryRequests` for the unmatched ids (chunks of 100, `.in('id', …)`), validated; `HistoryRead.requests`.
 - `apps/web/src/features/history/services/history-read.test.ts` -- factory, no read when all matched, chunking, failure → unavailable, malformed row → unavailable.
 - `apps/web/src/features/history/hooks/use-change-history.ts` -- factory and `requests` into the context.
-- `apps/web/src/features/history/services/history-rows.ts` (+ test) -- names gain rotation steps (by id: pattern, position, shift type) and roster overrides (by id: date, out, in) from the events read; texts: step `Korak {position}: {name}`, pattern `{count} koraka: {steps}`, override `{date}: {memberIn} umjesto {memberOut}`, neutral `… spremljen ranije` words when the read lacks the row; status enum words; rotation step `position` shown 1-based.
+- `apps/web/src/features/history/services/history-rows.ts` (+ test) -- names gain rotation steps (by id: pattern, position, shift type) and roster overrides (by id: date, out, in) from the events read; texts: step `Korak {position}: {name}`, pattern `{count} koraka: {steps}`, override `{date}: ulazi {memberIn}, izlazi {memberOut}` (one side alone when the other is none), neutral `… spremljen ranije` words when the read lacks the row; status enum words; rotation step `position` shown 1-based.
 - `apps/web/src/lib/i18n/locales/hr.json` -- the new keys.
 - `e2e/tests/history/history.spec.ts` -- A3: a rejected request seeded for a fresh member, its request events back-dated 400 days in SQL, then `?osoba=<member>` keeps the decision row. Grep `e2e/` for `Bez promijenjenih` / `noChanges` / position words.
 - `ARCHITECTURE-SPINE.md` -- AD-11: `Amended 2026-11-16 (epic 14 retro A3)` clause restoring the fallback and correcting the 14.2 Applied "no current-requests read" sentence; `Amended … (A4)` naming the hidden set; `Amended … (A6)` on the Excluded list; AD-3: `Amended 2026-11-16 (epic 14 retro A5)` inventory. `.memlog.md` event line.
@@ -143,6 +144,25 @@ None. No bad_spec or intent_gap loopback.
   - A3 "one extra read" being several calls: batched as the intent allows.
   - Spine "superseded" annotation rather than a rewrite: the spine now states one rule.
   - The story-versus-migration naming in A5: the origins are given by migration and PR, because those triggers came from fix PRs, not stories.
+
+### 2026-11-16 — Independent review pass (bmad-code-review, 5 layers)
+- intent_gap: 0
+- bad_spec: 0
+- patch: 9 (high 0, medium 2, low 7)
+- defer: 0
+- reject: 17
+
+### Review Findings
+- [x] [Review][Patch] `[medium]` AD-3's original Q6 "named exception" paragraph still said the 9.2 trigger is "the one other refusing trigger" and 0023's second last-admin trigger was never reconciled; it now carries an inline "superseded by the A5 inventory" note, and the 14.1 Architect-pass gap sentence an inline "closed" note [ARCHITECTURE-SPINE.md AD-3]
+- [x] [Review][Patch] `[medium]` The A5 inventory was incomplete or loose: the Q6 function's 0008 redefinition was not named; the stale-admin function's 42501 refusals of an insert onto an archived team (0035) and of a step on an archived shift type (0036) were missing; "archived team or shift type" now says which table refuses which, for an active admin's session; 0049's `swap_requests_serialize_organization_writes` was missing from the refuse-nothing list; `notification_outbox_filter` is noted as dropping a row without raising [ARCHITECTURE-SPINE.md AD-3]
+- [x] [Review][Patch] `[low]` `epic-14-context.md` still listed the AD-3 trigger gap as open [epic-14-context.md Risks]
+- [x] [Review][Patch] `[low]` The one-sided roster-override wordings (`rosterOverrideIn`, `rosterOverrideOut`) had no exact-text test; an add-only and a removal-only override are now asserted [history-rows.test.ts]
+- [x] [Review][Patch] `[low]` Pattern/step/override links resolve to a neutral word outside the read, so CAP-24's before/after is only partly met; now listed under Epic AC Deviations [this spec]
+- [x] [Review][Patch] `[low]` The spec's Approach and the deferred-work A3 resolution called the request read "one snapshot", contradicting AD-11's A3 clause (one query and key, not a database snapshot) [this spec; deferred-work.md]
+- [x] [Review][Patch] `[low]` The spec's Tasks still gave the superseded override wording `… umjesto …` [this spec]
+- [x] [Review][Patch] `[low]` The retro marked A8 done at a pre-rebase hash `9497ac6`; the branch commit is `4637b03` [epic-14-retro-2026-11-16.md]
+- [x] [Review][Patch] `[low]` The hook's READS doc comment was split mid-sentence [use-change-history.ts]
+- Rejected (with reason): deleted or partial steps inflating a pattern's text (steps are inserted with their pattern and deleted only with it, 0016/0025, no UPDATE); operands worded from the latest row state (step and override rows are never updated in place; an override's confirmation changes no worded column); in-flight request chunks not cancelled (same contract as the event pages: `throwIfAborted` between awaits, `HistoryQuery` has no abort); unbounded parallel chunks (100 ids a call; a period's unmatched decisions are few); unmatched ids from padding days (harmless, prior triage); quadratic dedupe (sizes are small); status line when OLD/NEW key sets differ (one event's OLD and NEW share a shape); `_by`-only lifecycle updates (every pair is tied by a `*_complete` check, 0019/0022/0026/0028/0031/0039/0040/0049); optional `tableName` on `historyChangesOf` (both callers pass it, tests pin the pattern line); request column lists defined twice (the scaffold pins both, a drift fails loudly); scaffold `.delete(` regex false positive (fails loudly, never silently); migration parser forms (every current migration uses the parsed forms; its own test covers add/drop/rename); per-table test using timestamps for nulls (it checks a change line exists, the rows tests check the words); hand-written status lists (the typed `Record<HistoryEnumField, …>` and the rows test cover each); double colons (field and value are separate cells); A4 built inside this spec rather than a separate story (the founder approved this bundle); items `done` before CI (the comments record "built, CI pending" per retro A11).
 
 ## Auto Run Result
 
