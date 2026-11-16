@@ -2,6 +2,7 @@ import type {
   AuditEvent,
   HistoryAction,
   HistoryAuthor,
+  HistoryChange,
   HistoryEntry,
   HistoryEnumField,
   HistoryField,
@@ -75,12 +76,33 @@ export interface HistoryRow {
   readonly changes: readonly HistoryRowChange[];
 }
 
+/** A rotation step as an event read holds it: its pattern, its 0-based position and its shift type. */
+export interface HistoryStepName {
+  readonly patternId: string;
+  readonly position: number;
+  readonly shiftTypeId: string;
+}
+
+/** A roster override as an event read holds it: its day, who goes out and who comes in. */
+export interface HistoryOverrideName {
+  readonly date: string;
+  readonly memberOutId: string | null;
+  readonly memberInId: string | null;
+}
+
 /** Names by id, for the subjects, the authors and the operands. */
 export interface HistoryNames {
   readonly members: ReadonlyMap<string, string>;
   readonly teams: ReadonlyMap<string, string>;
   readonly shiftTypes: ReadonlyMap<string, string>;
   readonly absenceTypes: ReadonlyMap<string, string>;
+  /**
+   * Rotation steps and roster overrides by id, from the rows the events read
+   * hold — never a second read (retro A4). One the read lacks is drawn in a
+   * neutral word, never as its id.
+   */
+  readonly rotationSteps: ReadonlyMap<string, HistoryStepName>;
+  readonly rosterOverrides: ReadonlyMap<string, HistoryOverrideName>;
 }
 
 /** The current lists, each `{ id, name }`. */
@@ -122,6 +144,56 @@ function namesFrom(
   return names;
 }
 
+function textOrNull(value: unknown): string | null | undefined {
+  if (value === null || value === undefined) return null;
+
+  return typeof value === 'string' && value !== '' ? value : undefined;
+}
+
+/** Each row of `table` the events hold, oldest first, as `shape` reads it (`null`: not one), by id. */
+function rowsFrom<T>(
+  table: string,
+  events: readonly Pick<AuditEvent, 'tableName' | 'oldRow' | 'newRow'>[],
+  shape: (row: Readonly<Record<string, unknown>>) => T | null,
+): ReadonlyMap<string, T> {
+  const rows = new Map<string, T>();
+
+  for (const event of [...events].reverse()) {
+    if (event.tableName !== table) continue;
+
+    for (const row of [event.oldRow, event.newRow]) {
+      const id = row?.['id'];
+      const read = row === null ? null : shape(row);
+
+      if (typeof id === 'string' && read !== null) rows.set(id, read);
+    }
+  }
+
+  return rows;
+}
+
+function stepOf(row: Readonly<Record<string, unknown>>): HistoryStepName | null {
+  const { pattern_id: patternId, position, shift_type_id: shiftTypeId } = row;
+
+  return typeof patternId === 'string' &&
+    typeof shiftTypeId === 'string' &&
+    typeof position === 'number' &&
+    Number.isInteger(position) &&
+    position >= 0
+    ? { patternId, position, shiftTypeId }
+    : null;
+}
+
+function overrideOf(row: Readonly<Record<string, unknown>>): HistoryOverrideName | null {
+  const date = row['date'];
+  const memberOutId = textOrNull(row['member_out_id']);
+  const memberInId = textOrNull(row['member_in_id']);
+
+  return typeof date === 'string' && memberOutId !== undefined && memberInId !== undefined
+    ? { date, memberOutId, memberInId }
+    : null;
+}
+
 /** Every name the rows may need: the current lists, then the rows the events hold. */
 export function historyNamesOf(
   events: readonly Pick<AuditEvent, 'tableName' | 'oldRow' | 'newRow'>[],
@@ -132,6 +204,8 @@ export function historyNamesOf(
     teams: namesFrom(NAMED_TABLES.teams, events, lists.teams),
     shiftTypes: namesFrom(NAMED_TABLES.shiftTypes, events, lists.shiftTypes),
     absenceTypes: namesFrom(NAMED_TABLES.absenceTypes, events, lists.absenceTypes),
+    rotationSteps: rowsFrom('rotation_steps', events, stepOf),
+    rosterOverrides: rowsFrom('roster_overrides', events, overrideOf),
   };
 }
 
@@ -280,6 +354,7 @@ export function historyActionMessageKey(
 }
 
 const FIELD_KEYS: Readonly<Record<HistoryField, ReturnType<typeof historyFieldMessageKey>>> = {
+  status: 'history.field.status',
   name: 'history.field.name',
   shortName: 'history.field.shortName',
   slug: 'history.field.slug',
@@ -317,6 +392,8 @@ const FIELD_KEYS: Readonly<Record<HistoryField, ReturnType<typeof historyFieldMe
   archived: 'history.field.archived',
   isWorking: 'history.field.isWorking',
   shiftType: 'history.field.shiftType',
+  rotationPattern: 'history.field.rotationPattern',
+  offsetStep: 'history.field.offsetStep',
   startTime: 'history.field.startTime',
   endTime: 'history.field.endTime',
   effectiveFrom: 'history.field.effectiveFrom',
@@ -328,6 +405,8 @@ const FIELD_KEYS: Readonly<Record<HistoryField, ReturnType<typeof historyFieldMe
   absenceType: 'history.field.absenceType',
   drawsAllowance: 'history.field.drawsAllowance',
   kind: 'history.field.kind',
+  rosterOverride: 'history.field.rosterOverride',
+  returnRosterOverride: 'history.field.returnRosterOverride',
   reason: 'history.field.reason',
   answer: 'history.field.answer',
   outcome: 'history.field.outcome',
@@ -339,6 +418,7 @@ const FIELD_KEYS: Readonly<Record<HistoryField, ReturnType<typeof historyFieldMe
 export function historyFieldMessageKey(
   field: HistoryField,
 ):
+  | 'history.field.status'
   | 'history.field.name'
   | 'history.field.shortName'
   | 'history.field.slug'
@@ -376,6 +456,8 @@ export function historyFieldMessageKey(
   | 'history.field.archived'
   | 'history.field.isWorking'
   | 'history.field.shiftType'
+  | 'history.field.rotationPattern'
+  | 'history.field.offsetStep'
   | 'history.field.startTime'
   | 'history.field.endTime'
   | 'history.field.effectiveFrom'
@@ -387,6 +469,8 @@ export function historyFieldMessageKey(
   | 'history.field.absenceType'
   | 'history.field.drawsAllowance'
   | 'history.field.kind'
+  | 'history.field.rosterOverride'
+  | 'history.field.returnRosterOverride'
   | 'history.field.reason'
   | 'history.field.answer'
   | 'history.field.outcome'
@@ -409,6 +493,14 @@ const ENUM_KEYS: Readonly<Record<HistoryEnumField, Readonly<Record<string, Retur
     amend_leave: 'history.enum.kindAmendLeave',
   },
   half: { FIRST: 'history.enum.halfFirst', SECOND: 'history.enum.halfSecond' },
+  status: {
+    current: 'history.enum.statusCurrent',
+    open: 'history.enum.statusOpen',
+    confirmed: 'history.enum.statusConfirmed',
+    answered: 'history.enum.statusAnswered',
+    closed: 'history.enum.statusClosed',
+    removed: 'history.enum.statusRemoved',
+  },
 };
 
 /** A stored enum value's word, or `null` for a value this build does not know (drawn as stored). */
@@ -428,6 +520,12 @@ export function historyEnumMessageKey(
   | 'history.enum.kindAmendLeave'
   | 'history.enum.halfFirst'
   | 'history.enum.halfSecond'
+  | 'history.enum.statusCurrent'
+  | 'history.enum.statusOpen'
+  | 'history.enum.statusConfirmed'
+  | 'history.enum.statusAnswered'
+  | 'history.enum.statusClosed'
+  | 'history.enum.statusRemoved'
   | null {
   const values = ENUM_KEYS[field];
 
@@ -485,6 +583,62 @@ function numberText(value: number): string {
   return formatNumber(value, Number.isInteger(value) ? 0 : 2);
 }
 
+/** A rotation step's position as the builder counts it, from 1 (`Korak 1`); stored from 0. */
+function stepNumber(position: number): string {
+  return formatNumber(position + 1, 0);
+}
+
+/** `Korak 2: Noć`; a step no event read holds, in a neutral word. */
+function stepText(id: string, names: HistoryNames): string {
+  const step = names.rotationSteps.get(id);
+
+  if (step === undefined) return t('history.value.earlierStep');
+
+  return t('history.value.rotationStep', {
+    position: stepNumber(step.position),
+    name: named(names.shiftTypes, step.shiftTypeId, t('history.value.unknownShiftType')),
+  });
+}
+
+/** `3 koraka: Dan, Noć i Slobodno`, from the steps the events read hold; else a neutral word. */
+function patternText(id: string, names: HistoryNames): string {
+  const steps = [...names.rotationSteps.values()]
+    .filter((step) => step.patternId === id)
+    .sort((first, second) => first.position - second.position);
+
+  if (steps.length === 0) return t('history.value.earlierPattern');
+
+  return t('history.value.rotationPattern', {
+    count: steps.length,
+    steps: formatList(steps.map((step) => named(names.shiftTypes, step.shiftTypeId, t('history.value.unknownShiftType')))),
+  });
+}
+
+/** `16. 11. 2026.: ulazi Ivo, izlazi Ana`; one side alone when the other is none; else a neutral word. */
+function overrideText(id: string, names: HistoryNames): string {
+  const override = names.rosterOverrides.get(id);
+
+  if (override === undefined) return t('history.value.earlierRosterOverride');
+
+  const date = formatIsoDate(override.date) ?? override.date;
+  const memberOf = (memberId: string): string => named(names.members, memberId, t('history.value.unknownMember'));
+
+  if (override.memberInId !== null && override.memberOutId !== null) {
+    return t('history.value.rosterOverride', {
+      date,
+      memberIn: memberOf(override.memberInId),
+      memberOut: memberOf(override.memberOutId),
+    });
+  }
+
+  if (override.memberInId !== null) return t('history.value.rosterOverrideIn', { date, memberIn: memberOf(override.memberInId) });
+  if (override.memberOutId !== null) {
+    return t('history.value.rosterOverrideOut', { date, memberOut: memberOf(override.memberOutId) });
+  }
+
+  return date;
+}
+
 /** One operand in words; `null` for none. */
 export function historyOperandText(operand: HistoryOperand, names: HistoryNames): string | null {
   switch (operand.type) {
@@ -516,6 +670,12 @@ export function historyOperandText(operand: HistoryOperand, names: HistoryNames)
       return named(names.shiftTypes, operand.id, t('history.value.unknownShiftType'));
     case 'absence-type':
       return named(names.absenceTypes, operand.id, t('history.value.unknownAbsenceType'));
+    case 'rotation-pattern':
+      return patternText(operand.id, names);
+    case 'rotation-step':
+      return stepText(operand.id, names);
+    case 'roster-override':
+      return overrideText(operand.id, names);
     case 'enum': {
       const key = historyEnumMessageKey(operand.field, operand.value);
 
@@ -528,10 +688,29 @@ export function historyOperandText(operand: HistoryOperand, names: HistoryNames)
 
 // ---------------------------------------------------------------- rows
 
-/** A change's operand: a team position's code in its own words (0015), every other as {@link historyOperandText}. */
-function changeOperandText(field: HistoryField | null, operand: HistoryOperand, names: HistoryNames): string | null {
+/**
+ * A change's operand: a team position's code in its own words (0015), a
+ * rotation step's position counted from 1 as the builder does (0016), every
+ * other as {@link historyOperandText}.
+ */
+function changeOperandText(
+  record: HistoryRecord,
+  field: HistoryField | null,
+  operand: HistoryOperand,
+  names: HistoryNames,
+): string | null {
   if (field === 'position' && operand.type === 'text' && isPositionCode(operand.value)) {
     return t(positionMessageKey(operand.value));
+  }
+
+  if (
+    record === 'rotation-step' &&
+    field === 'position' &&
+    operand.type === 'number' &&
+    Number.isInteger(operand.value) &&
+    operand.value >= 0
+  ) {
+    return stepNumber(operand.value);
   }
 
   return historyOperandText(operand, names);
@@ -568,6 +747,31 @@ export function historyKindText(code: string): string {
       });
 }
 
+/** A field's label; a rotation step's `position` is its ordinal, not a team position. */
+function changeFieldText(record: HistoryRecord, change: HistoryChange): string {
+  if (change.field === null) return change.column;
+  if (record === 'rotation-step' && change.field === 'position') return t('history.field.stepPosition');
+
+  return t(historyFieldMessageKey(change.field));
+}
+
+/**
+ * One change in words. Two operands that differ but read alike (both sides an
+ * earlier-saved pattern, two unknown names) are marked as the earlier and the
+ * new value, so the line never reads as no change.
+ */
+function changeRowOf(record: HistoryRecord, change: HistoryChange, names: HistoryNames): HistoryRowChange {
+  let before = changeOperandText(record, change.field, change.before, names);
+  let after = changeOperandText(record, change.field, change.after, names);
+
+  if (before !== null && before === after) {
+    before = t('history.value.differsBefore', { value: before });
+    after = t('history.value.differsAfter', { value: after });
+  }
+
+  return { column: change.column, field: changeFieldText(record, change), before, after };
+}
+
 /**
  * The rows the screen draws and 14.3 prints, one per entry, in the entries'
  * order: every word from `hr.json`, every name from `names`, every instant in
@@ -588,12 +792,7 @@ export function historyRowsOf(entries: readonly HistoryEntry[], names: HistoryNa
       subject: entry.kind.action === 'history-begins' ? t('history.markerSubject') : subjectText(entry, names),
       reconstructed: entry.reconstructed,
       marker: entry.kind.action === 'history-begins',
-      changes: entry.changes.map((change) => ({
-        column: change.column,
-        field: change.field === null ? change.column : t(historyFieldMessageKey(change.field)),
-        before: changeOperandText(change.field, change.before, names),
-        after: changeOperandText(change.field, change.after, names),
-      })),
+      changes: entry.changes.map((change) => changeRowOf(entry.kind.record, change, names)),
     };
   });
 }

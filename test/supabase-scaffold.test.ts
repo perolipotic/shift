@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { NAME_WHITESPACE } from '../apps/web/src/utils/name.ts';
+import { HISTORY_HIDDEN_COLUMNS, historyFieldOfColumn } from '../packages/domain/src/index.ts';
 
 import { collectFiles } from './source-scan.ts';
 
@@ -4431,11 +4432,30 @@ describe('the access-control migration', () => {
     // decode its events (AD-11), the swap tables among them, and derives no
     // schedule, hours, collision or queue figure: it reads `audit_events`
     // alone, never a swap.
+    // EPIC 14 RETRO A3: the history read names a swap request to read, by
+    // primary key, the subject columns of the requests whose decisions have
+    // no request event in the period — a select alone, of ids, members and
+    // teams, never a date, an answer or a write — pinned below.
+    const historyRead = join(repoRoot, 'apps', 'web', 'src', 'features', 'history', 'services', 'history-read.ts');
     const history = [
       join(repoRoot, 'packages', 'domain', 'src', 'history.ts'),
       join(repoRoot, 'packages', 'domain', 'test', 'history.test.ts'),
+      historyRead,
+      join(repoRoot, 'apps', 'web', 'src', 'features', 'history', 'services', 'history-read.test.ts'),
     ];
     const exempt = [join(swaps, 'services', 'swap-proposal.test.ts'), ...history];
+    const historyReadSource = readFileSync(historyRead, 'utf8');
+
+    const requestColumns = /HISTORY_REQUEST_COLUMNS[^=]*=\s*\{([^}]*)\}/.exec(historyReadSource)?.[1] ?? '';
+
+    expect(historyReadSource, 'the history read writes').not.toMatch(/\.(insert|update|upsert|delete)\(/);
+    expect(
+      Object.fromEntries([...requestColumns.matchAll(/(\w+): '([^']*)'/g)].map((found) => [found[1], found[2]])),
+      'the history read selects more of a request than its subject',
+    ).toEqual({
+      leave_requests: 'id,member_id',
+      swap_requests: 'id,proposer_id,addressee_id,team_id,return_team_id',
+    });
     const sendHook = join(swaps, 'hooks', 'use-swap-proposal.ts');
     const readHook = join(swaps, 'hooks', 'use-my-swaps.ts');
     const organizationHook = join(swaps, 'hooks', 'use-organization-swaps.ts');
@@ -4709,6 +4729,96 @@ describe('the access-control migration', () => {
         ),
       );
     }
+  });
+
+  // ------------------------------------------------ epic 14 retro A4: every column is a field or bookkeeping
+
+  /**
+   * Each table's live columns after every migration, in file order: a
+   * `create table` sets its list; `alter table … add column`, `drop column`
+   * and `rename column … to …` change it. Comments stripped; quoted and
+   * `public.` spellings read alike.
+   */
+  function liveColumnsOf(texts: readonly (readonly [string, string])[]): ReadonlyMap<string, readonly string[]> {
+    const tables = new Map<string, string[]>();
+    // A column sits at two spaces; a constraint's continuation lines sit deeper.
+    const keywords = new Set(['constraint', 'primary', 'unique', 'check', 'foreign', 'exclude', 'like', 'references', 'on']);
+    const statement =
+      /create table (?:if not exists )?(?:"?public"?\.)?"?(\w+)"? \(([\s\S]*?)\n\);|alter table (?:if exists )?(?:only )?(?:"?public"?\.)?"?(\w+)"?\s+([^;]*);/gi;
+
+    for (const [, text] of texts) {
+      for (const found of stripLineComments(text).matchAll(statement)) {
+        if (found[1] !== undefined) {
+          const columns = [...(found[2] ?? '').matchAll(/^[ ]{2}"?([a-z_][a-z0-9_]*)"?[ ]+[a-z]/gm)]
+            .map((match) => match[1] ?? '')
+            .filter((name) => !keywords.has(name));
+
+          tables.set(found[1].toLowerCase(), columns);
+          continue;
+        }
+
+        const table = (found[3] ?? '').toLowerCase();
+        const columns = tables.get(table);
+
+        if (columns === undefined) continue;
+
+        const actions =
+          /add column (?:if not exists )?"?(\w+)"?|drop column (?:if exists )?"?(\w+)"?|rename column "?(\w+)"? to "?(\w+)"?/gi;
+
+        for (const action of (found[4] ?? '').matchAll(actions)) {
+          if (action[1] !== undefined && !columns.includes(action[1])) columns.push(action[1]);
+          const dropped = action[2] === undefined ? -1 : columns.indexOf(action[2]);
+          const renamed = action[3] === undefined ? -1 : columns.indexOf(action[3]);
+
+          if (dropped >= 0) columns.splice(dropped, 1);
+          if (renamed >= 0 && action[4] !== undefined) columns.splice(renamed, 1, action[4]);
+        }
+      }
+    }
+
+    return tables;
+  }
+
+  it('draws every live column of the 21 audited tables as a named field or hides it as bookkeeping, never both or neither (epic 14 retro A4)', () => {
+    const live = liveColumnsOf(migrationTexts());
+    const misplaced: string[] = [];
+    const hiddenSeen = new Set<string>();
+
+    for (const table of Object.keys(AUDITED_TABLES)) {
+      const columns = live.get(table) ?? [];
+
+      expect(columns.length, `${table} was not parsed from the migrations`).toBeGreaterThan(1);
+      for (const column of columns) {
+        const hidden = HISTORY_HIDDEN_COLUMNS.has(column);
+        const named = historyFieldOfColumn(column) !== null;
+
+        if (hidden) hiddenSeen.add(column);
+        if (hidden === named) misplaced.push(`${table}.${column} (${hidden ? 'hidden and named' : 'drawn raw'})`);
+      }
+    }
+
+    expect(misplaced, 'a live audited column is drawn raw, or both hidden and named').toEqual([]);
+    expect([...HISTORY_HIDDEN_COLUMNS].filter((column) => !hiddenSeen.has(column)), 'a hidden column no table holds').toEqual(
+      [],
+    );
+    // Spot checks that the parser follows the migrations, not only the creates.
+    expect(live.get('roster_overrides'), '0039 added confirmed_*').toEqual(expect.arrayContaining(['confirmed_by', 'confirmed_at']));
+    expect(live.get('leave_records'), '0054/0058 added the type and the half').toEqual(
+      expect.arrayContaining(['absence_type_id', 'half']),
+    );
+    expect(live.get('organizations'), '0057 added the carry-over settings').toEqual(
+      expect.arrayContaining(['carry_over_max_days', 'carry_over_expiry_month', 'carry_over_expiry_day', 'carry_over_first_leave_year']),
+    );
+  });
+
+  it('follows add, drop and rename column in the migration parser', () => {
+    const live = liveColumnsOf([
+      ['0001.sql', 'create table public.notes (\n  organization_id uuid not null,\n  id uuid primary key,\n  body text,\n  constraint notes_key unique (id)\n);\n'],
+      ['0002.sql', 'alter table public.notes add column colour text, add column if not exists size int;\n'],
+      ['0003.sql', 'alter table notes drop column size;\nalter table only public.notes rename column body to text_body;\n'],
+    ]);
+
+    expect(live.get('notes')).toEqual(['organization_id', 'id', 'text_body', 'colour']);
   });
 });
 

@@ -1,10 +1,13 @@
 import { queryOptions } from '@tanstack/react-query';
 import {
   historyReadWindowOf,
+  historyUnmatchedRequestIdsOf,
   type AuditOperation,
   type AuditOrigin,
   type AuditRow,
   type HistoryPeriod,
+  type HistoryRequestRow,
+  type HistoryRequestTableName,
 } from '@shift/domain';
 
 /**
@@ -28,10 +31,38 @@ import {
  * load — no incremental cache — so an event that committed behind the cursor
  * during a multi-page read is on the next read (focus, reconnect, retry or a
  * period change).
+ *
+ * THE CURRENT REQUESTS (epic 14 retro A3): a decision whose request has no
+ * event in the read names its subject through the request as it stands. Inside
+ * the same query, and only when such a decision exists, the request rows are
+ * read by primary key under their own `*_select_own_organization` policies, in
+ * chunks of {@link HISTORY_REQUEST_CHUNK} ids issued in parallel, with the few columns that name
+ * a subject. A refusal or a malformed row makes the whole read unavailable.
  */
 
 /** The table read (0061). */
 export const HISTORY_TABLE = 'audit_events';
+
+/** The request tables a decision's subject is read from when its request has no event in the read. */
+export const HISTORY_REQUEST_TABLES: readonly HistoryRequestTableName[] = ['leave_requests', 'swap_requests'];
+
+/** The domain's request table name, as this module reads it. */
+export type HistoryRequestTable = HistoryRequestTableName;
+
+/** Every table the history query reads. */
+export type HistoryTableName = typeof HISTORY_TABLE | HistoryRequestTable;
+
+/**
+ * The columns of a request that name its subject: a new, deliberately
+ * minimal reader, so no request feature's mapper changes.
+ */
+export const HISTORY_REQUEST_COLUMNS: Readonly<Record<HistoryRequestTable, string>> = {
+  leave_requests: 'id,member_id',
+  swap_requests: 'id,proposer_id,addressee_id,team_id,return_team_id',
+};
+
+/** How many request ids one call names, keeping the URL short. */
+export const HISTORY_REQUEST_CHUNK = 100;
 
 /** The query key's root. Never persisted. */
 export const HISTORY_KEY_ROOT = 'change-history';
@@ -97,6 +128,8 @@ export interface HistoryRead {
   readonly events: readonly ReadAuditEvent[];
   /** The organization's `HISTORY_BEGINS` and `organizations` `INSERT` events, oldest first. */
   readonly markers: readonly ReadAuditEvent[];
+  /** The current rows of the requests whose decisions have no request event read (retro A3). */
+  readonly requests: readonly HistoryRequestRow[];
 }
 
 const OPERATIONS: readonly AuditOperation[] = ['INSERT', 'UPDATE', 'DELETE', 'HISTORY_BEGINS'];
@@ -252,6 +285,89 @@ export async function readHistoryMarkers(table: HistoryTable): Promise<readonly 
   );
 }
 
+function isText(value: unknown): value is string {
+  return typeof value === 'string' && value !== '';
+}
+
+/** The subject columns each request table must hold: required, or `null` allowed. */
+const REQUEST_SHAPES: Readonly<Record<HistoryRequestTable, { readonly required: readonly string[]; readonly nullable: readonly string[] }>> = {
+  leave_requests: { required: ['member_id'], nullable: [] },
+  swap_requests: { required: ['proposer_id', 'addressee_id', 'team_id'], nullable: ['return_team_id'] },
+};
+
+/**
+ * One request row as read, or `null` when it is not one of the ids asked for
+ * with its subject columns: the whole read is then unavailable.
+ */
+export function readHistoryRequestOf(
+  table: HistoryRequestTable,
+  row: unknown,
+  asked: ReadonlySet<string>,
+): HistoryRequestRow | null {
+  if (!isRecord(row)) return null;
+
+  const { id } = row;
+  const shape = REQUEST_SHAPES[table];
+
+  if (!isText(id) || !asked.has(id)) return null;
+  if (!shape.required.every((column) => isText(row[column]))) return null;
+  if (!shape.nullable.every((column) => row[column] === null || isText(row[column]))) return null;
+
+  const kept: Record<string, unknown> = { id };
+
+  for (const column of [...shape.required, ...shape.nullable]) kept[column] = row[column];
+
+  return { tableName: table, id, row: kept };
+}
+
+async function readRequestChunk(
+  table: HistoryTable,
+  name: HistoryRequestTable,
+  chunk: readonly string[],
+): Promise<readonly HistoryRequestRow[]> {
+  const asked = new Set(chunk);
+  const answer = await table.select(HISTORY_REQUEST_COLUMNS[name]).in(ID, chunk).limit(chunk.length);
+
+  if (answer.error !== null || !Array.isArray(answer.data)) throw new Error(HISTORY_UNAVAILABLE);
+
+  return (answer.data as readonly unknown[]).map((raw) => {
+    const row = readHistoryRequestOf(name, raw, asked);
+
+    if (row === null) throw new Error(HISTORY_UNAVAILABLE);
+
+    return row;
+  });
+}
+
+/**
+ * The current rows of `ids` in each request table, by primary key,
+ * {@link HISTORY_REQUEST_CHUNK} ids a call, every call issued at once. A
+ * request no longer there is simply absent. Nothing is asked once `signal`
+ * is aborted, and no table with no id is read.
+ *
+ * @throws Error(HISTORY_UNAVAILABLE) on a refusal or a row that is not one asked for.
+ */
+export async function readHistoryRequests(
+  source: (table: HistoryRequestTable) => HistoryTable,
+  ids: Readonly<Record<HistoryRequestTable, readonly string[]>>,
+  signal?: AbortSignal,
+): Promise<readonly HistoryRequestRow[]> {
+  signal?.throwIfAborted();
+
+  const reads = HISTORY_REQUEST_TABLES.flatMap((name) => {
+    const all = ids[name];
+    const chunks: (readonly string[])[] = [];
+
+    for (let start = 0; start < all.length; start += HISTORY_REQUEST_CHUNK) {
+      chunks.push(all.slice(start, start + HISTORY_REQUEST_CHUNK));
+    }
+
+    return chunks.map((chunk) => readRequestChunk(source(name), name, chunk));
+  });
+
+  return (await Promise.all(reads)).flat();
+}
+
 /** One period's snapshot key: `[root, from, to]`. */
 export function historyKeyOf(period: HistoryPeriod): readonly [typeof HISTORY_KEY_ROOT, string, string] {
   return [HISTORY_KEY_ROOT, period.from, period.to];
@@ -263,17 +379,19 @@ export function historyKeyOf(period: HistoryPeriod): readonly [typeof HISTORY_KE
  * the screen draws its unavailable notice. Never fresh for long: each load
  * reads the period afresh.
  */
-export function historyQueryOptions(table: () => HistoryTable, period: HistoryPeriod) {
+export function historyQueryOptions(source: (table: HistoryTableName) => HistoryTable, period: HistoryPeriod) {
   return queryOptions({
     queryKey: historyKeyOf(period),
     queryFn: async ({ signal }): Promise<HistoryRead> => {
-      const source = table();
+      const audit = source(HISTORY_TABLE);
       const [events, markers] = await Promise.all([
-        readHistoryEvents(source, period, signal),
-        readHistoryMarkers(source),
+        readHistoryEvents(audit, period, signal),
+        readHistoryMarkers(audit),
       ]);
+      // Only the decisions whose request has no event read: none, no read.
+      const requests = await readHistoryRequests(source, historyUnmatchedRequestIdsOf(events), signal);
 
-      return { events, markers };
+      return { events, markers, requests };
     },
     staleTime: 0,
     retry: 1,

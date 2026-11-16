@@ -124,7 +124,7 @@ The opportunity is that the same generic engine serves every one of those indust
 
 - **CAP-24 — Change history**
   - **intent:** An admin reads who changed what and when, and can export the result as a PDF.
-  - **success:** Every write to a rule, an exception, a decision, a request, a member, or a setting appears with its author, its time, and its values before and after, deletions included. The history filters by date range, member, team, and kind. The PDF holds exactly the filtered rows. A member-role account reaches none of it. History begins at the migration that introduces it. Earlier entries are reconstructed from existing attribution columns where those exist.
+  - **success:** Every write to a rule, an exception, a decision, a request, a member, or an organization setting (amended 2026-11-16, epic 14 retro A6, founder decision: a member's own notification preference is not recorded) appears with its author, its time, and its values before and after, deletions included. The history filters by date range, member, team, and kind. The PDF holds exactly the filtered rows. A member-role account reaches none of it. History begins at the migration that introduces it. Earlier entries are reconstructed from existing attribution columns where those exist.
 
 ## Constraints
 

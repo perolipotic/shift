@@ -414,6 +414,7 @@
       "historyBegins": "početak povijesti"
     },
     "field": {
+      "status": "Stanje",
       "name": "Naziv",
       "shortName": "Kratki naziv",
       "slug": "Oznaka",
@@ -448,9 +449,12 @@
       "returnTeam": "Smjena povrata",
       "active": "Aktivna",
       "position": "Položaj",
+      "stepPosition": "Redni broj koraka",
       "archived": "Arhivirano",
       "isWorking": "Radni",
       "shiftType": "Tip smjene",
+      "rotationPattern": "Uzorak rotacije",
+      "offsetStep": "Pomak",
       "startTime": "Početak",
       "endTime": "Kraj",
       "effectiveFrom": "Vrijedi od",
@@ -462,6 +466,8 @@
       "absenceType": "Vrsta odsutnosti",
       "drawsAllowance": "Troši pravo",
       "kind": "Odluka",
+      "rosterOverride": "Zamjena osobe",
+      "returnRosterOverride": "Zamjena osobe za povrat",
       "reason": "Razlog",
       "answer": "Odgovor",
       "outcome": "Ishod",
@@ -480,7 +486,13 @@
       "kindReplaceMember": "zamjena osobe",
       "kindAmendLeave": "izmjena odsutnosti",
       "halfFirst": "prva polovica",
-      "halfSecond": "druga polovica"
+      "halfSecond": "druga polovica",
+      "statusCurrent": "važeće",
+      "statusOpen": "otvoreno",
+      "statusConfirmed": "potvrđeno",
+      "statusAnswered": "odgovoreno",
+      "statusClosed": "zatvoreno",
+      "statusRemoved": "uklonjeno"
     },
     "value": {
       "yes": "da",
@@ -489,7 +501,17 @@
       "unknownMember": "Nepoznata osoba",
       "unknownTeam": "Nepoznata smjena",
       "unknownShiftType": "Nepoznat tip smjene",
-      "unknownAbsenceType": "Nepoznata vrsta odsutnosti"
+      "unknownAbsenceType": "Nepoznata vrsta odsutnosti",
+      "rotationStep": "Korak {position}: {name}",
+      "rotationPattern": "{count, plural, one {# korak} few {# koraka} other {# koraka}}: {steps}",
+      "rosterOverride": "{date}: ulazi {memberIn}, izlazi {memberOut}",
+      "rosterOverrideIn": "{date}: ulazi {memberIn}",
+      "rosterOverrideOut": "{date}: izlazi {memberOut}",
+      "earlierStep": "Korak spremljen ranije",
+      "earlierPattern": "Uzorak spremljen ranije",
+      "earlierRosterOverride": "Zamjena spremljena ranije",
+      "differsBefore": "{value} (prethodna vrijednost)",
+      "differsAfter": "{value} (nova vrijednost)"
     }
   },
   "kalendar": {

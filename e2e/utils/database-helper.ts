@@ -1734,6 +1734,28 @@ export async function renameTeamInSql(slug: string, teamId: string, name: string
 }
 
 /**
+ * Moves every `audit_events` row of one audited row `days` into the past, in
+ * SQL (epic 14 retro A3): a request written today then reads as written
+ * before any period the page offers, while its decision's event stays in it.
+ * The owner writes it; no session can (0061). Only the run organization's
+ * events of that table and row are touched.
+ */
+export async function backdateHistoryOfRowInSql(slug: string, tableName: string, rowId: string, days: number): Promise<void> {
+  const client = await connect();
+  try {
+    const { rowCount } = await client.query(
+      `update audit_events set occurred_at = occurred_at - make_interval(days => $4)
+        where organization_id = (select id from organizations where slug = $1)
+          and table_name = $2 and row_id = $3`,
+      [slug, tableName, rowId, days],
+    );
+    if (rowCount === 0) throw new Error(`E2E: no history of ${tableName} ${rowId} to back-date`);
+  } finally {
+    await client.end();
+  }
+}
+
+/**
  * Takes every member off `teamId` in SQL (story 6.2): deletes the membership
  * versions naming it, so {@link removeTeamInSql} can delete the team a test
  * put a fresh member on. The member stays, on no team.

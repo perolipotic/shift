@@ -1105,7 +1105,7 @@ action_items:
       read for a decision whose request predates the period, or ratify 14.2's narrowing
       and amend ARCHITECTURE-SPINE.md:151 (R1)"
     owner: "Perolipotic (founder) / architect"
-    status: open
+    status: done  # founder 2026-11-16: restore; current-requests read inside the period query, AD-11 amended (spec-epic-14-retro-a3-a6-history-gaps; built, e2e CI pending)
     ref: "_bmad-output/implementation-artifacts/epic-14-retro-2026-11-16.md"
   - id: "epic-14-retro-item-64-a4-decide-the-hidden-field-gap-rotation"
     epic: 14
@@ -1113,7 +1113,7 @@ action_items:
       changes and status-only updates read 'Bez promijenjenih polja' (R2, deferred-work
       1553); then a story"
     owner: "PO"
-    status: open
+    status: done  # founder 2026-11-16: name them; pattern/step/override fields + status line, per-table test, AD-11 amended (spec-epic-14-retro-a3-a6-history-gaps; built, CI pending)
     ref: "_bmad-output/implementation-artifacts/epic-14-retro-2026-11-16.md"
   - id: "epic-14-retro-item-65-a5-reconcile-ad-3-s-refusing-trigger-inv"
     epic: 14
@@ -1121,14 +1121,14 @@ action_items:
       0036, 0039 (incl. the second last-admin trigger): name the class or narrow AD-3
       (R3)"
     owner: "architect"
-    status: open
+    status: done  # AD-3 amended with the refusing-trigger inventory and origins; no SQL change
     ref: "_bmad-output/implementation-artifacts/epic-14-retro-2026-11-16.md"
   - id: "epic-14-retro-item-66-a6-confirm-cap-24-a-setting-organization"
     epic: 14
     action: "A6: confirm CAP-24 'a setting' = organization settings only (member e-mail
       opt-out not recorded) or schedule auditing notification_settings (R4)"
     owner: "PO"
-    status: open
+    status: done  # founder 2026-11-16: organization settings only; AD-11 Excluded, PRD, SPEC, epics, epic-14-context amended
     ref: "_bmad-output/implementation-artifacts/epic-14-retro-2026-11-16.md"
   - id: "epic-14-retro-item-67-a7-bump-pdfmake-0-3-13-0-3-14-once-eligi"
     epic: 14

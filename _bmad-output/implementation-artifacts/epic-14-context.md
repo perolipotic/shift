@@ -14,7 +14,7 @@ An admin can read back who changed what in their organization, and when. Each en
 
 ## Requirements & Constraints
 
-- **What history shows.** Every write to a rule, an exception, a decision, a request, a member or a setting, with its author, time and before/after values. Deletions are included. No surface edits or removes an entry.
+- **What history shows.** Every write to a rule, an exception, a decision, a request, a member or an organization setting (amended 2026-11-16, epic 14 retro A6, founder decision: a member's own notification preference is not recorded), with its author, time and before/after values. Deletions are included. No surface edits or removes an entry.
 - **Filters.** The history filters by period, member, team and kind.
 - **What the PDF holds.** Exactly the rows the surface shows for the current filter, in the same order, built from the data the surface rendered. It names the organization, the period, the filter and the time it was generated, in the organization's locale and timezone.
 - **Admin only.** A member-role account, an inactive admin, `anon` and `service_role` read nothing, through the UI or a direct API call.

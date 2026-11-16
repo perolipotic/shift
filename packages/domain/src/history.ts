@@ -122,15 +122,36 @@ export type HistoryOperand =
   /** A date range, `to` its inclusive last day. */
   | { readonly type: 'range'; readonly from: string; readonly to: string }
   | { readonly type: 'time'; readonly minute: number }
-  | { readonly type: 'member' | 'team' | 'shift-type' | 'absence-type'; readonly id: string }
+  | {
+      readonly type:
+        | 'member'
+        | 'team'
+        | 'shift-type'
+        | 'absence-type'
+        | 'rotation-pattern'
+        | 'rotation-step'
+        | 'roster-override';
+      readonly id: string;
+    }
   | { readonly type: 'enum'; readonly field: HistoryEnumField; readonly value: string }
   | { readonly type: 'raw'; readonly json: string };
 
 /** The fields whose values are drawn from a fixed vocabulary. */
-export type HistoryEnumField = 'role' | 'outcome' | 'answer' | 'kind' | 'half';
+export type HistoryEnumField = 'role' | 'outcome' | 'answer' | 'kind' | 'half' | 'status';
+
+/**
+ * A row's lifecycle state, read from its lifecycle columns (epic 14 retro A4):
+ * the first of `removed_at`, `closed_at`, `answered_at`, `confirmed_at` set;
+ * else `open` for a request (its row holds `closed_at`), `current` otherwise.
+ */
+export const HISTORY_STATUSES = ['current', 'open', 'confirmed', 'answered', 'closed', 'removed'] as const;
+
+export type HistoryStatus = (typeof HISTORY_STATUSES)[number];
 
 /** Every field the history names, in the order an entry lists them. */
 export const HISTORY_FIELDS = [
+  // Derived from the lifecycle columns on an UPDATE, always first (retro A4).
+  'status',
   'name',
   'shortName',
   'slug',
@@ -168,6 +189,8 @@ export const HISTORY_FIELDS = [
   'archived',
   'isWorking',
   'shiftType',
+  'rotationPattern',
+  'offsetStep',
   'startTime',
   'endTime',
   'effectiveFrom',
@@ -179,6 +202,8 @@ export const HISTORY_FIELDS = [
   'absenceType',
   'drawsAllowance',
   'kind',
+  'rosterOverride',
+  'returnRosterOverride',
   'reason',
   'answer',
   'outcome',
@@ -251,11 +276,19 @@ export function historyRecordOf(tableName: string): HistoryRecord | null {
   return Object.hasOwn(RECORD_OF_TABLE, tableName) ? (RECORD_OF_TABLE[tableName] ?? null) : null;
 }
 
+/** A request table: the table a decision's `row_id` (`request_id`) points into. */
+export type HistoryRequestTableName = 'leave_requests' | 'swap_requests';
+
 /** A decision table and the request table its `row_id` (`request_id`) points into. */
-const REQUEST_TABLE_OF_DECISION: Readonly<Record<string, string>> = {
+const REQUEST_TABLE_OF_DECISION: Readonly<Record<string, HistoryRequestTableName>> = {
   leave_request_decisions: 'leave_requests',
   swap_request_decisions: 'swap_requests',
 };
+
+/** The request table a decision table points into, or `null` for any other table (own keys only). */
+function requestTableOf(tableName: string): HistoryRequestTableName | null {
+  return Object.hasOwn(REQUEST_TABLE_OF_DECISION, tableName) ? (REQUEST_TABLE_OF_DECISION[tableName] ?? null) : null;
+}
 
 /**
  * The tables an amend writes as a removal and an insert in one transaction,
@@ -269,12 +302,18 @@ const AMEND_KEYS: Readonly<Record<string, readonly string[]>> = {
 
 // ---------------------------------------------------------------- fields
 
-/** Columns no entry shows: keys, attribution and links the subject already names. */
-const HIDDEN_COLUMNS: ReadonlySet<string> = new Set([
+/**
+ * Columns no entry shows: keys, attribution, the lifecycle pairs (their state
+ * is the derived `status` line) and links the subject or the kind already
+ * names. Everything else an audited table holds is a field (epic 14 retro A4).
+ */
+export const HISTORY_HIDDEN_COLUMNS: ReadonlySet<string> = new Set([
   'organization_id',
   'id',
   'created_by',
   'created_at',
+  'decided_by',
+  'decided_at',
   'removed_by',
   'removed_at',
   'confirmed_by',
@@ -283,15 +322,9 @@ const HIDDEN_COLUMNS: ReadonlySet<string> = new Set([
   'closed_at',
   'answered_by',
   'answered_at',
-  'decided_by',
-  'decided_at',
   'request_id',
   'auth_user_id',
   'leave_record_id',
-  'roster_override_id',
-  'return_roster_override_id',
-  'pattern_id',
-  'offset_step_id',
 ]);
 
 type FieldType =
@@ -305,6 +338,9 @@ type FieldType =
   | 'team'
   | 'shift-type'
   | 'absence-type'
+  | 'rotation-pattern'
+  | 'rotation-step'
+  | 'roster-override'
   | 'enum'
   | 'auto';
 
@@ -347,6 +383,10 @@ const FIELD_OF_COLUMN: Readonly<Record<string, readonly [HistoryField, FieldType
   archived: ['archived', 'boolean'],
   is_working: ['isWorking', 'boolean'],
   shift_type_id: ['shiftType', 'shift-type'],
+  pattern_id: ['rotationPattern', 'rotation-pattern'],
+  offset_step_id: ['offsetStep', 'rotation-step'],
+  roster_override_id: ['rosterOverride', 'roster-override'],
+  return_roster_override_id: ['returnRosterOverride', 'roster-override'],
   start_time: ['startTime', 'time'],
   end_time: ['endTime', 'time'],
   effective_from: ['effectiveFrom', 'date'],
@@ -369,6 +409,16 @@ const FIELD_ORDER: ReadonlyMap<string, number> = new Map(HISTORY_FIELDS.map((fie
 
 function fieldOf(column: string): readonly [HistoryField, FieldType] | null {
   return Object.hasOwn(FIELD_OF_COLUMN, column) ? (FIELD_OF_COLUMN[column] ?? null) : null;
+}
+
+/**
+ * The named field a stored column is drawn as, or `null` for a column this
+ * module does not know (drawn raw) — every column of an audited table is
+ * either this or one of {@link HISTORY_HIDDEN_COLUMNS} (retro A4; a
+ * migration-parsing test holds it).
+ */
+export function historyFieldOfColumn(column: string): HistoryField | null {
+  return fieldOf(column)?.[0] ?? null;
 }
 
 const NONE: HistoryOperand = { type: 'none' };
@@ -452,6 +502,9 @@ export function historyOperandOf(column: string, value: unknown): HistoryOperand
     case 'team':
     case 'shift-type':
     case 'absence-type':
+    case 'rotation-pattern':
+    case 'rotation-step':
+    case 'roster-override':
       return typeof value === 'string' && value !== '' ? { type, id: value } : rawOf(value);
     case 'enum':
       return typeof value === 'string'
@@ -481,20 +534,91 @@ function compareColumns(first: string, second: string): number {
 }
 
 /**
+ * The derived status line's column key: no SQL identifier starts with `$`
+ * unquoted, and none of the audited tables does, so it never collides with a
+ * real column (a later table's `status` included).
+ */
+export const HISTORY_STATUS_COLUMN = '$status';
+
+const LIFECYCLE_COLUMNS = ['removed_at', 'closed_at', 'answered_at', 'confirmed_at'] as const;
+
+function isSet(row: AuditRow, column: string): boolean {
+  const value = row[column];
+
+  return value !== null && value !== undefined;
+}
+
+/**
+ * A row's lifecycle state: the first of `removed_at`, `closed_at`,
+ * `answered_at`, `confirmed_at` set; else `open` for a row that can close (a
+ * request) and `current` for any other.
+ */
+export function historyStatusOf(row: AuditRow): HistoryStatus {
+  if (isSet(row, 'removed_at')) return 'removed';
+  if (isSet(row, 'closed_at')) return 'closed';
+  if (isSet(row, 'answered_at')) return 'answered';
+  if (isSet(row, 'confirmed_at')) return 'confirmed';
+
+  return Object.hasOwn(row, 'closed_at') ? 'open' : 'current';
+}
+
+/**
+ * The `status` line of an UPDATE whose lifecycle state differs, or `null`:
+ * only when both rows exist and one of them holds a lifecycle column, so an
+ * insert, a delete and an amend pair (both sides live) add none.
+ */
+function statusChangeOf(before: AuditRow | null, after: AuditRow | null): HistoryChange | null {
+  if (before === null || after === null) return null;
+  if (!LIFECYCLE_COLUMNS.some((column) => Object.hasOwn(before, column) || Object.hasOwn(after, column))) return null;
+
+  const old = historyStatusOf(before);
+  const now = historyStatusOf(after);
+
+  if (old === now) return null;
+
+  return {
+    field: 'status',
+    column: HISTORY_STATUS_COLUMN,
+    before: { type: 'enum', field: 'status', value: old },
+    after: { type: 'enum', field: 'status', value: now },
+  };
+}
+
+/** A `rotation_patterns` row holds nothing but its id: the id is the pattern (retro A4). */
+const PATTERN_TABLE = 'rotation_patterns';
+
+/**
  * The visible fields that differ between `before` and `after` (either may be
  * `null`, an insert or a delete), in {@link HISTORY_FIELDS} order with unknown
- * columns last. A field null on both sides is no change.
+ * columns last, a derived `status` line first. A field null on both sides is
+ * no change. `tableName` reads a `rotation_patterns` row's `id` as its pattern.
  */
-export function historyChangesOf(before: AuditRow | null, after: AuditRow | null): readonly HistoryChange[] {
+export function historyChangesOf(
+  before: AuditRow | null,
+  after: AuditRow | null,
+  tableName?: string,
+): readonly HistoryChange[] {
   const columns = new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})]);
-  const changes: HistoryChange[] = [];
+  const status = statusChangeOf(before, after);
+  const changes: HistoryChange[] = status === null ? [] : [status];
 
   for (const column of [...columns].sort(compareColumns)) {
-    if (HIDDEN_COLUMNS.has(column)) continue;
-
     const old = before === null ? null : before[column];
     const now = after === null ? null : after[column];
 
+    if (tableName === PATTERN_TABLE && column === 'id') {
+      if (!sameValue(old, now)) {
+        changes.push({
+          field: 'rotationPattern',
+          column,
+          before: historyOperandOf('pattern_id', old),
+          after: historyOperandOf('pattern_id', now),
+        });
+      }
+      continue;
+    }
+
+    if (HISTORY_HIDDEN_COLUMNS.has(column)) continue;
     if (sameValue(old, now)) continue;
 
     changes.push({
@@ -655,9 +779,9 @@ function mergedSubjects(first: HistorySubjects, second: HistorySubjects): Histor
  * with that `row_id`, one at the same instant first.
  */
 function requestEventOf(decision: AuditEvent, requests: RequestIndex): AuditEvent | null {
-  const requestTable = REQUEST_TABLE_OF_DECISION[decision.tableName];
+  const requestTable = requestTableOf(decision.tableName);
 
-  if (requestTable === undefined) return null;
+  if (requestTable === null) return null;
 
   const candidates = requests.get(requestKeyOf(requestTable, decision.rowId)) ?? [];
 
@@ -696,8 +820,54 @@ function requestIndexOf(events: readonly AuditEvent[]): RequestIndex {
   return index;
 }
 
-function subjectsOf(event: AuditEvent, requests: RequestIndex): HistorySubjects {
-  const request = Object.hasOwn(REQUEST_TABLE_OF_DECISION, event.tableName) ? requestEventOf(event, requests) : null;
+/**
+ * The decisions' requests with no event in the read, by request table: the
+ * ids whose current rows the caller reads so those decisions still name their
+ * subject (epic 14 retro A3). Deduped, in read order; empty lists when every
+ * decision found its request among the events.
+ */
+export function historyUnmatchedRequestIdsOf(
+  events: readonly Pick<AuditEvent, 'tableName' | 'rowId'>[],
+): Readonly<Record<HistoryRequestTableName, readonly string[]>> {
+  const read = new Set(
+    events.filter((event) => REQUEST_TABLES.has(event.tableName)).map((event) => requestKeyOf(event.tableName, event.rowId)),
+  );
+  const unmatched: Record<HistoryRequestTableName, string[]> = { leave_requests: [], swap_requests: [] };
+
+  for (const event of events) {
+    const requestTable = requestTableOf(event.tableName);
+
+    if (requestTable === null) continue;
+    if (read.has(requestKeyOf(requestTable, event.rowId))) continue;
+    pushText(unmatched[requestTable], event.rowId);
+  }
+
+  return unmatched;
+}
+
+/** A request's current row, read for a decision whose request has no event in the read (retro A3). */
+export interface HistoryRequestRow {
+  readonly tableName: HistoryRequestTableName;
+  readonly id: string;
+  /** The columns that name its subject: `member_id`; `proposer_id`, `addressee_id`, `team_id`, `return_team_id`. */
+  readonly row: AuditRow;
+}
+
+/** The current request rows, by `(table, id)`. */
+type CurrentRequests = ReadonlyMap<string, HistoryRequestRow>;
+
+function currentRequestsOf(rows: readonly HistoryRequestRow[]): CurrentRequests {
+  return new Map(rows.map((row) => [requestKeyOf(row.tableName, row.id), row]));
+}
+
+const NO_SUBJECTS: HistorySubjects = { members: [], teams: [], label: null };
+
+function subjectsOf(event: AuditEvent, requests: RequestIndex, current: CurrentRequests): HistorySubjects {
+  const requestTable = requestTableOf(event.tableName);
+
+  if (requestTable === null) return subjectsOfRows(event.tableName, [event.newRow, event.oldRow]);
+
+  const request = requestEventOf(event, requests);
 
   if (request !== null) {
     const fromRequest = subjectsOfRows(request.tableName, [request.newRow, request.oldRow]);
@@ -705,15 +875,17 @@ function subjectsOf(event: AuditEvent, requests: RequestIndex): HistorySubjects 
     return { ...fromRequest, label: null };
   }
 
-  if (Object.hasOwn(REQUEST_TABLE_OF_DECISION, event.tableName)) return { members: [], teams: [], label: null };
+  // No request event read: the request as it stands, if it still exists.
+  const row = current.get(requestKeyOf(requestTable, event.rowId));
 
-  return subjectsOfRows(event.tableName, [event.newRow, event.oldRow]);
+  return row === undefined ? NO_SUBJECTS : { ...subjectsOfRows(requestTable, [row.row]), label: null };
 }
 
 // ---------------------------------------------------------------- amend pairs
 
 function pairKeyOf(event: AuditEvent, row: AuditRow | null): string | null {
-  const columns = AMEND_KEYS[event.tableName];
+  // Own keys only: a table named like a prototype key (`constructor`) has no amend key.
+  const columns = Object.hasOwn(AMEND_KEYS, event.tableName) ? AMEND_KEYS[event.tableName] : undefined;
 
   if (columns === undefined || row === null) return null;
 
@@ -895,9 +1067,22 @@ export interface HistoryContext {
   readonly period: HistoryPeriod;
   /** The current members: who each auth user is. */
   readonly members: readonly HistoryMemberIdentity[];
+  /**
+   * The current rows of the requests {@link historyUnmatchedRequestIdsOf}
+   * named: a decision with no request event read names its subject through
+   * one (retro A3). A request no longer there leaves it without a subject.
+   */
+  readonly requests?: readonly HistoryRequestRow[];
 }
 
-function entryOf(event: AuditEvent, requests: RequestIndex, members: ReadonlyMap<string, string>): HistoryEntry {
+/** What every entry of one read is resolved against. */
+interface EntryScope {
+  readonly requests: RequestIndex;
+  readonly current: CurrentRequests;
+  readonly members: ReadonlyMap<string, string>;
+}
+
+function entryOf(event: AuditEvent, scope: EntryScope): HistoryEntry {
   const kind = historyKindOf(event);
   const marker = event.operation === 'HISTORY_BEGINS';
 
@@ -907,19 +1092,14 @@ function entryOf(event: AuditEvent, requests: RequestIndex, members: ReadonlyMap
     occurredAt: event.occurredAt,
     day: event.day,
     kind,
-    author: authorOf(event, members),
-    subjects: marker ? { members: [], teams: [], label: null } : subjectsOf(event, requests),
-    changes: marker ? [] : historyChangesOf(event.oldRow, event.newRow),
+    author: authorOf(event, scope.members),
+    subjects: marker ? NO_SUBJECTS : subjectsOf(event, scope.requests, scope.current),
+    changes: marker ? [] : historyChangesOf(event.oldRow, event.newRow, event.tableName),
     reconstructed: event.origin === 'backfill' && !marker,
   };
 }
 
-function amendedEntryOf(
-  removal: AuditEvent,
-  insert: AuditEvent,
-  requests: RequestIndex,
-  members: ReadonlyMap<string, string>,
-): HistoryEntry {
+function amendedEntryOf(removal: AuditEvent, insert: AuditEvent, scope: EntryScope): HistoryEntry {
   const record = historyRecordOf(insert.tableName) ?? 'other';
   const newer = insert.id > removal.id ? insert : removal;
 
@@ -929,9 +1109,12 @@ function amendedEntryOf(
     occurredAt: newer.occurredAt,
     day: newer.day,
     kind: { record, action: 'amended' },
-    author: authorOf(insert, members),
-    subjects: mergedSubjects(subjectsOf(removal, requests), subjectsOf(insert, requests)),
-    changes: historyChangesOf(removal.oldRow, insert.newRow),
+    author: authorOf(insert, scope.members),
+    subjects: mergedSubjects(
+      subjectsOf(removal, scope.requests, scope.current),
+      subjectsOf(insert, scope.requests, scope.current),
+    ),
+    changes: historyChangesOf(removal.oldRow, insert.newRow, insert.tableName),
     reconstructed: removal.origin === 'backfill' && insert.origin === 'backfill',
   };
 }
@@ -940,12 +1123,16 @@ function amendedEntryOf(
  * The entries of `events` (as read: newest first by `(occurred_at, id)`)
  * whose day lies in the period, in that order. An amend's removal and insert
  * are one `amended` entry at the newer one's place; a decision names its
- * request's subject; an event of a table this build does not know is an
+ * request's subject (its event read, else its current row in
+ * `context.requests`); an event of a table this build does not know is an
  * `other` entry, its fields raw.
  */
 export function historyEntriesOf(events: readonly AuditEvent[], context: HistoryContext): readonly HistoryEntry[] {
-  const members = memberIdentitiesOf(events, context.members);
-  const requests = requestIndexOf(events);
+  const scope: EntryScope = {
+    members: memberIdentitiesOf(events, context.members),
+    requests: requestIndexOf(events),
+    current: currentRequestsOf(context.requests ?? []),
+  };
   const pairs = amendPairsOf(events);
   const partnerOf = new Map<number, number>();
 
@@ -967,12 +1154,12 @@ export function historyEntriesOf(events: readonly AuditEvent[], context: History
     let entry: HistoryEntry;
 
     if (partner === undefined) {
-      entry = entryOf(event, requests, members);
+      entry = entryOf(event, scope);
     } else {
       done.add(partner.id);
       entry = pairs.has(event.id)
-        ? amendedEntryOf(event, partner, requests, members)
-        : amendedEntryOf(partner, event, requests, members);
+        ? amendedEntryOf(event, partner, scope)
+        : amendedEntryOf(partner, event, scope);
     }
 
     if (inPeriod(entry.day, context.period)) entries.push(entry);

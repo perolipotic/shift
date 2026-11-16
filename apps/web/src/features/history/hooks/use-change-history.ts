@@ -17,12 +17,7 @@ import {
   ABSENCE_TYPES_TABLE,
   absenceTypesQueryOptions,
 } from '@/features/absence-types/services/list';
-import {
-  HISTORY_KEY_ROOT,
-  HISTORY_TABLE,
-  historyQueryOptions,
-  type HistoryTable,
-} from '@/features/history/services/history-read';
+import { HISTORY_KEY_ROOT, historyQueryOptions, type HistoryTable } from '@/features/history/services/history-read';
 import {
   historyBeginsViewOf,
   historyChangeCount,
@@ -114,7 +109,9 @@ export type HistoryView =
  * which nothing persists anyway (`HISTORY_KEY_ROOT` is no kept root).
  *
  * THE READS: the organization (its zone, so the period is whole days in it),
- * one period of `audit_events` under one key (AD-13), and the four name
+ * one period of `audit_events` under one key (AD-13) — with the current rows
+ * of the requests whose decisions have no request event in it (retro A3) —
+ * and the four name
  * lists under their own shared keys — members (who each auth user is),
  * teams, shift types and absence types.
  *
@@ -142,7 +139,10 @@ export function useChangeHistory(search: HistorySearch, navigate: HistoryNavigat
   );
 
   const historyRead = useQuery({
-    ...historyQueryOptions(() => supabaseClient().from(HISTORY_TABLE) as unknown as HistoryTable, period ?? HISTORY_NO_PERIOD),
+    ...historyQueryOptions(
+      (table) => supabaseClient().from(table) as unknown as HistoryTable,
+      period ?? HISTORY_NO_PERIOD,
+    ),
     enabled: online && period !== null,
   });
   const membersRead = useQuery({
@@ -194,6 +194,7 @@ export function useChangeHistory(search: HistorySearch, navigate: HistoryNavigat
     const entries = historyEntriesOf(events, {
       period,
       members: membersData.members.map((member) => ({ id: member.id, authUserId: member.authUserId })),
+      requests: historyData.requests,
     });
     const names = historyNamesOf(events, {
       members: membersData.members,
