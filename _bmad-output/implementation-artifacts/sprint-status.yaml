@@ -623,8 +623,8 @@ development_status:
   13-7b-a-notification-names-the-half: done  # split from 13.7, PO 2026-11-16; #306
   epic-13-retrospective: done
 
-  epic-14: backlog
-  14-1-every-change-is-recorded-in-the-change-history: backlog
+  epic-14: in-progress
+  14-1-every-change-is-recorded-in-the-change-history: done
   14-2-an-admin-reads-the-change-history: backlog
   14-3-the-change-history-exports-to-pdf: backlog
   epic-14-retrospective: optional

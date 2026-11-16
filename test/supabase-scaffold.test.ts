@@ -483,7 +483,7 @@ describe('the access-control migration', () => {
     ).toEqual([]);
   });
 
-  it('declares exactly the sixty policies stories 1.3a, 1.4a, 1.4b, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a, 3.5a, 3.6a, 5.1b, 5.4a, 9.2, 10.3, 10.4, 12.1, 13.1, 13.3, 0025 and 0036 reviewed, and no sixty-first', () => {
+  it('declares exactly the sixty-one policies stories 1.3a, 1.4a, 1.4b, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a, 3.5a, 3.6a, 5.1b, 5.4a, 9.2, 10.3, 10.4, 12.1, 13.1, 13.3, 14.1, 0025 and 0036 reviewed, and no sixty-second', () => {
     // EXTENDED BY STORY 1.4a, exactly as this comment asked: `0004_organization
     // _settings.sql` adds `organizations_update_by_own_active_admin`, built by
     // copying `members_update_by_own_active_admin`, and its name is added here
@@ -520,6 +520,10 @@ describe('the access-control migration', () => {
       'absence_types_insert_by_own_active_admin',
       'absence_types_select_by_own_active_member',
       'absence_types_update_by_own_active_admin',
+      // STORY 14.1 (0061), and ONE: an active admin of the claimed
+      // organization reads its change history (D4). No insert, update or
+      // delete policy: only the definer trigger writes an event.
+      'audit_events_select_by_own_active_admin',
       // STORY 5.4a, and TWO: an active admin inserts and reads; a member reads
       // their own live rows through `my_conflict_resolutions()`. No update and
       // no delete policy: the lifetime rule soft-removes through 0031's
@@ -3516,6 +3520,424 @@ describe('the access-control migration', () => {
     expect(migration, '13.5b touches leave_records\' shape').not.toMatch(/alter table public\.leave_records/);
   });
 
+  // ------------------------------------------------ story 14.1: the change history
+
+  /** AD-11's audited tables (amended 2026-11-16), each with its two `tg_argv`. */
+  const AUDITED_TABLES: Readonly<Record<string, readonly [string, string]>> = {
+    organizations: ['id', 'id'],
+    members: ['organization_id', 'id'],
+    member_status_versions: ['organization_id', 'id'],
+    team_membership_versions: ['organization_id', 'id'],
+    teams: ['organization_id', 'id'],
+    hour_bands: ['organization_id', 'id'],
+    shift_types: ['organization_id', 'id'],
+    shift_type_versions: ['organization_id', 'id'],
+    rotation_patterns: ['organization_id', 'id'],
+    rotation_steps: ['organization_id', 'id'],
+    rotation_assignments: ['organization_id', 'id'],
+    shift_type_overrides: ['organization_id', 'id'],
+    roster_overrides: ['organization_id', 'id'],
+    leave_records: ['organization_id', 'id'],
+    conflict_resolutions: ['organization_id', 'id'],
+    leave_requests: ['organization_id', 'id'],
+    leave_request_decisions: ['organization_id', 'request_id'],
+    swap_requests: ['organization_id', 'id'],
+    swap_request_decisions: ['organization_id', 'request_id'],
+    absence_types: ['organization_id', 'id'],
+    leave_allowances: ['organization_id', 'id'],
+  };
+
+  /** AD-11's excluded organization tables, exactly. */
+  const AUDIT_EXCLUDED = ['audit_events', 'notification_outbox', 'notification_settings', 'push_subscriptions'];
+
+  /** The migration that brought the change history; a table created after it attaches its triggers itself. */
+  const AUDIT_MIGRATION = '0061_audit_events.sql';
+
+  interface AuditCoverage {
+    /** Every organization-scoped table created, with the migration that creates it and whether it carries AD-11's pair. */
+    readonly tables: readonly { readonly table: string; readonly migration: string; readonly attributed: boolean }[];
+    /** The tables both triggers are declared on, in the exact shape and with the given arguments. */
+    readonly audited: readonly string[];
+    /** Organization-scoped tables neither audited nor named excluded. */
+    readonly uncovered: readonly string[];
+    /** Tables created after `AUDIT_MIGRATION` whose triggers are declared in another migration. */
+    readonly attachedElsewhere: readonly string[];
+    /** Audited tables created after `AUDIT_MIGRATION` whose own migration does not take TRUNCATE from the three session roles. */
+    readonly truncatable: readonly string[];
+  }
+
+  /**
+   * THE PIN's matcher, over `[migration name, text]` pairs: which
+   * organization-scoped tables (first column `organization_id`, plus
+   * `organizations`) carry both audit triggers in AD-3's exact shape. A table
+   * whose arguments are not in `argumentsOf` is audited by nobody's rule.
+   */
+  function auditCoverage(
+    migrations: readonly (readonly [string, string])[],
+    argumentsOf: Readonly<Record<string, readonly [string, string]>>,
+  ): AuditCoverage {
+    const tables: { table: string; migration: string; attributed: boolean }[] = [];
+    const triggersIn = new Map<string, string[]>();
+    const revokesIn = new Map<string, string[]>();
+    for (const [name, text] of migrations) {
+      const statements = sqlStatements(stripLineComments(text)).map((statement) => statement.replace(/\s+/g, ' '));
+      for (const statement of statements) {
+        // `if not exists`, a schema and quotes are all the same table; an
+        // `organization_id` column anywhere in it makes it organization-scoped.
+        const created = /^create table (?:if not exists )?(?:"?public"?\.)?"?([a-z_][a-z0-9_]*)"? \(([\s\S]*)\)$/i.exec(statement);
+        const table = created?.[1]?.toLowerCase();
+        const body = created?.[2] ?? '';
+        if (table !== undefined && (/(^|[\s,(])"?organization_id"?[\s,)]/i.test(body) || table === 'organizations')) {
+          tables.push({
+            table,
+            migration: name,
+            attributed: /(^|, ?)"?created_by"? uuid\b/i.test(body) && /(^|, ?)"?created_at"? timestamptz\b/i.test(body),
+          });
+        }
+      }
+      triggersIn.set(name, statements.filter((statement) => /^create (or replace )?trigger\b/i.test(statement)));
+      revokesIn.set(name, statements.filter((statement) => /^revoke\b/i.test(statement)));
+    }
+    const revokesTruncate = (table: string, migration: string): boolean =>
+      (revokesIn.get(migration) ?? []).some(
+        (statement) =>
+          new RegExp(String.raw`^revoke (?:[a-z, ]*\b)?(?:truncate|all)\b[a-z, ]* on (?:table )?[^;]*\bpublic\.${table}\b[^;]* from `, 'i').test(
+            statement,
+          ) &&
+          ['anon', 'authenticated', 'service_role'].every((role) =>
+            new RegExp(`\\bfrom [^;]*\\b${role}\\b`, 'i').test(statement),
+          ),
+      );
+    const declaredIn = (table: string): string[] => {
+      const args = argumentsOf[table];
+      if (args === undefined) return [];
+      const call = `execute function private.record_audit_event('${args[0]}', '${args[1]}')`;
+      const both = [
+        `create trigger ${table}_audit after insert or delete on public.${table} for each row ${call}`,
+        `create trigger ${table}_audit_update after update on public.${table} for each row when (old.* is distinct from new.*) ${call}`,
+      ];
+      return [...triggersIn.entries()]
+        .filter(([, statements]) => both.every((shape) => statements.includes(shape)))
+        .map(([name]) => name);
+    };
+    const audited = tables.filter(({ table }) => declaredIn(table).length > 0).map(({ table }) => table).sort();
+    return {
+      tables,
+      audited,
+      uncovered: tables
+        .map(({ table }) => table)
+        .filter((table) => !audited.includes(table) && !AUDIT_EXCLUDED.includes(table))
+        .sort(),
+      attachedElsewhere: tables
+        .filter(({ table, migration }) => migration > AUDIT_MIGRATION && !declaredIn(table).includes(migration))
+        .filter(({ table }) => !AUDIT_EXCLUDED.includes(table))
+        .map(({ table }) => table),
+      truncatable: tables
+        .filter(({ table, migration }) => migration > AUDIT_MIGRATION && audited.includes(table))
+        .filter(({ table, migration }) => !revokesTruncate(table, migration))
+        .map(({ table }) => table),
+    };
+  }
+
+  function migrationTexts(): (readonly [string, string])[] {
+    return migrationNames()
+      .sort()
+      .map((name) => [name, readFileSync(join(supabaseRoot, 'migrations', name), 'utf8')] as const);
+  }
+
+  it('records every organization table in the change history, or names it excluded, and nothing else writes it (story 14.1, AD-11)', () => {
+    // STORY 14.1 (0061). THE PIN: a new organization-scoped table attaches
+    // AD-3's two audit triggers in the migration that creates it, or is named
+    // excluded in AD-11 (and here). Source text only; what the triggers do is
+    // `test/rls-isolation.test.ts` and `test/provisioning.test.ts`, in CI.
+    const coverage = auditCoverage(migrationTexts(), AUDITED_TABLES);
+
+    expect(coverage.tables.length, 'too few organization tables were read for the pin to mean anything').toBeGreaterThanOrEqual(25);
+    expect(coverage.uncovered, 'an organization table is neither audited nor named excluded in AD-11').toEqual([]);
+    expect(coverage.audited, 'the audited set is not AD-11\'s 21 tables').toEqual(Object.keys(AUDITED_TABLES).sort());
+    expect(coverage.attachedElsewhere, 'a table created after 0061 does not attach its audit triggers in its own migration').toEqual([]);
+    expect(coverage.truncatable, 'a table audited after 0061 leaves TRUNCATE, which no row trigger sees, to a session role').toEqual([]);
+    expect(
+      coverage.tables.map(({ table }) => table).filter((table) => AUDIT_EXCLUDED.includes(table)).sort(),
+      'an excluded table no longer exists, or is created twice',
+    ).toEqual([...AUDIT_EXCLUDED].sort());
+    for (const excluded of AUDIT_EXCLUDED) {
+      expect(migrationStatements(), `${excluded} is excluded but carries an audit trigger`).not.toMatch(
+        new RegExp(`create trigger \\w+ after [a-z ]+ on public\\.${excluded}\\b[^;]*record_audit_event`, 'i'),
+      );
+    }
+    expect(migrationStatements(), 'an audit trigger was dropped').not.toMatch(/drop trigger (if exists )?\w+_audit(_update)?\b/i);
+
+    // NON-VACUITY: the matcher fails a table that does neither, one whose
+    // trigger has the wrong shape or arguments, and one created after 0061
+    // whose triggers sit in another migration.
+    const synthetic = (body: string): (readonly [string, string])[] => [...migrationTexts(), ['0999_synthetic.sql', body]];
+    expect(
+      auditCoverage(synthetic('create table shift_notes (\n  organization_id uuid not null,\n  id uuid primary key\n);'), AUDITED_TABLES)
+        .uncovered,
+    ).toEqual(['shift_notes']);
+    const shapes = {
+      ...AUDITED_TABLES,
+      shift_notes: ['organization_id', 'id'] as const,
+    };
+    const create = 'create table public.shift_notes (\n  organization_id uuid not null,\n  id uuid primary key\n);\n';
+    const insertDelete =
+      "create trigger shift_notes_audit after insert or delete on public.shift_notes\n  for each row execute function private.record_audit_event('organization_id', 'id');\n";
+    const update =
+      "create trigger shift_notes_audit_update after update on public.shift_notes\n  for each row when (old.* is distinct from new.*)\n  execute function private.record_audit_event('organization_id', 'id');\n";
+    expect(auditCoverage(synthetic(create + insertDelete + update), shapes).uncovered).toEqual([]);
+    expect(auditCoverage(synthetic(create + insertDelete), shapes).uncovered, 'one trigger passed for two').toEqual(['shift_notes']);
+    expect(
+      auditCoverage(synthetic(create + insertDelete + update.replace('for each row when (old.* is distinct from new.*)\n  ', 'for each row ')), shapes)
+        .uncovered,
+      'an update trigger with no WHEN passed',
+    ).toEqual(['shift_notes']);
+    expect(
+      auditCoverage(synthetic(create + insertDelete.replace("'id')", "'member_id')") + update), shapes).uncovered,
+      'a wrong key column passed',
+    ).toEqual(['shift_notes']);
+    expect(
+      auditCoverage([...migrationTexts(), ['0998_synthetic.sql', create], ['0999_synthetic.sql', insertDelete + update]], shapes)
+        .attachedElsewhere,
+      'triggers attached in a later migration passed',
+    ).toEqual(['shift_notes']);
+    // Any spelling of the create, and `organization_id` in any position.
+    expect(
+      auditCoverage(
+        synthetic('create table if not exists "public"."shift_notes" (\n  id uuid primary key,\n  organization_id uuid not null\n);'),
+        AUDITED_TABLES,
+      ).uncovered,
+      'a table created with `if not exists`, quotes or a later organization_id escaped the pin',
+    ).toEqual(['shift_notes']);
+    // A table audited after 0061 also takes TRUNCATE from the session roles in its own migration.
+    expect(
+      auditCoverage(synthetic(create + insertDelete + update), shapes).truncatable,
+      'a table audited after 0061 with TRUNCATE left to the session roles passed',
+    ).toEqual(['shift_notes']);
+    expect(
+      auditCoverage(
+        synthetic(create + insertDelete + update + 'revoke truncate on table public.shift_notes from anon, authenticated;\n'),
+        shapes,
+      ).truncatable,
+      'a TRUNCATE revoke that leaves service_role passed',
+    ).toEqual(['shift_notes']);
+    expect(
+      auditCoverage(
+        synthetic(create + insertDelete + update + 'revoke truncate on table public.shift_notes from anon, authenticated, service_role;\n'),
+        shapes,
+      ).truncatable,
+    ).toEqual([]);
+
+    // NO OTHER MIGRATION UNDOES IT: disables, drops or replaces a recorder
+    // trigger, skips triggers by replication role, drops or replaces the
+    // recorder, alters or drops the read policy, a shape check or the table, forces RLS on
+    // the history, or grants on it.
+    const undoes = [
+      /\bdisable trigger "?\w+_audit(_update)?"?/i,
+      /\bdisable trigger (all|user)\b/i,
+      /\bdrop function (if exists )?private\.record_audit_event\b/i,
+      /\bcreate or replace function private\.record_audit_event\b/i,
+      /\balter function private\.record_audit_event\b/i,
+      /\balter table (if exists )?(only )?(public\.)?audit_events\b[^;]*\b(force row level security|disable row level security)/i,
+      /\bgrant [^;]* on (table |sequence )?(public\.)?audit_events(_id_seq)?\b/i,
+      /\bgrant [^;]* on all (tables|sequences) in schema public\b/i,
+      /\bdrop trigger (if exists )?"?\w+_audit(_update)?"?/i,
+      /\bcreate or replace trigger "?\w+_audit(_update)?"?/i,
+      /\bsession_replication_role\b/i,
+      /\b(alter|drop) policy (if exists )?"?audit_events_\w+"?/i,
+      /\bdrop table (if exists )?(public\.)?audit_events\b/i,
+      /\bdrop constraint (if exists )?"?audit_events_\w+"?/i,
+    ];
+    for (const [name, text] of migrationTexts()) {
+      if (name === AUDIT_MIGRATION) continue;
+      const statements = stripLineComments(text);
+      for (const pattern of undoes) {
+        expect(statements, `${name} undoes the change history (${String(pattern)})`).not.toMatch(pattern);
+      }
+    }
+    for (const shape of [
+      'alter table public.teams disable trigger teams_audit_update;',
+      'alter table public.teams disable trigger all;',
+      'drop function if exists private.record_audit_event();',
+      'create or replace function private.record_audit_event() returns trigger',
+      'alter table public.audit_events force row level security;',
+      'grant insert on table public.audit_events to authenticated;',
+      'grant usage on sequence public.audit_events_id_seq to anon;',
+      'drop trigger if exists teams_audit on public.teams;',
+      'create or replace trigger teams_audit_update after update on public.teams',
+      "set session_replication_role = 'replica';",
+      'alter policy audit_events_select_by_own_active_admin on public.audit_events using (true);',
+      'drop table public.audit_events;',
+      'alter table public.audit_events drop constraint audit_events_rows_by_operation;',
+    ]) {
+      expect(undoes.some((pattern) => pattern.test(shape)), `the undo guard misses ${shape}`).toBe(true);
+    }
+
+    // THE BACKFILL READS EXACTLY THE ATTRIBUTED TABLES: every audited table
+    // created with `created_by` and `created_at` is in `attributed`, and no
+    // other; the two decision tables are in `decided`.
+    const raw = readFileSync(join(supabaseRoot, 'migrations', AUDIT_MIGRATION), 'utf8');
+    const cte = (name: string, next: string): string[] => {
+      const body = new RegExp(String.raw`\b${name} \(table_name, source\) as \(([\s\S]*?)\n\),\n${next}\b`).exec(stripLineComments(raw))?.[1] ?? '';
+      const reads = [...body.matchAll(/select '(\w+)', pg_catalog\.to_jsonb\(r\) from public\.(\w+) as r/g)];
+      for (const [, label, table] of reads) expect(label, `the backfill labels ${table} as ${label}`).toBe(table);
+      expect(body.split(/\bunion all\b/).length, `${name} reads a table in another shape`).toBe(reads.length);
+      return reads.map((read) => read[2] ?? '').sort();
+    };
+    const attributed = coverage.tables
+      .filter(({ table, attributed: carries }) => carries && Object.keys(AUDITED_TABLES).includes(table))
+      .map(({ table }) => table)
+      .sort();
+    expect(attributed, 'AD-11 names 15 attributed tables').toHaveLength(15);
+    expect(cte('attributed', 'decided'), 'the backfill reads other than the attributed tables').toEqual(attributed);
+    expect(cte('decided', 'instants')).toEqual(['leave_request_decisions', 'swap_request_decisions']);
+
+    // NOTHING WRITES `audit_events` but 0061: the trigger function and the backfill.
+    const writes = /\b(insert into|update|delete from|truncate( table)?)\s+(public\.)?audit_events\b/i;
+    for (const [name, text] of migrationTexts()) {
+      if (name === AUDIT_MIGRATION) continue;
+      expect(stripLineComments(text), `${name} writes audit_events`).not.toMatch(writes);
+    }
+    expect(stripLineComments(readFileSync(join(supabaseRoot, 'migrations', AUDIT_MIGRATION), 'utf8'))).toMatch(writes);
+  });
+
+  it('stores the change history append-only, read by an active admin alone, through one definer recorder and a backfill (story 14.1)', () => {
+    // STORY 14.1 (0061, AD-3 and AD-11 as amended 2026-11-16). Source text only.
+    const raw = readFileSync(join(supabaseRoot, 'migrations', AUDIT_MIGRATION), 'utf8');
+    const migration = stripLineComments(raw);
+
+    const events = columnsOf('audit_events');
+    expect(events.columns, 'audit_events stores something beyond its reviewed columns').toEqual([
+      'organization_id',
+      'id',
+      'table_name',
+      'operation',
+      'row_id',
+      'old_row',
+      'new_row',
+      'actor',
+      'session_role',
+      'origin',
+      'transaction_id',
+      'occurred_at',
+    ]);
+    for (const column of [
+      /organization_id uuid not null,/,
+      /id bigint generated always as identity primary key,/,
+      /table_name text not null,/,
+      /operation text not null,/,
+      /row_id text not null,/,
+      /old_row jsonb,/,
+      /new_row jsonb,/,
+      /actor uuid,/,
+      /session_role text not null,/,
+      /origin text not null,/,
+      /transaction_id xid8,/,
+      /occurred_at timestamptz not null default now\(\),/,
+    ]) {
+      expect(events.body).toMatch(column);
+    }
+    expect(events.body, 'audit_events has a foreign key; history must outlive what it records').not.toMatch(/\breferences\b/i);
+    expect(events.body).toMatch(
+      /constraint audit_events_operation_known\s+check \(operation in \('INSERT', 'UPDATE', 'DELETE', 'HISTORY_BEGINS'\)\)/,
+    );
+    expect(events.body).toMatch(/constraint audit_events_origin_known\s+check \(origin in \('trigger', 'backfill'\)\)/);
+    expect(events.body).toMatch(
+      /constraint audit_events_transaction_by_origin\s+check \(\(origin = 'trigger'\) = \(transaction_id is not null\)\)/,
+    );
+    expect(events.body).toContain('constraint audit_events_rows_by_operation');
+    expect(events.body).toMatch(/operation = 'HISTORY_BEGINS' and old_row is null and new_row is null and origin = 'backfill'/);
+
+    expect(migration).toMatch(/create index \w+\s+on audit_events \(organization_id, occurred_at desc, id desc\);/);
+    expect(migration.match(/create (unique )?index/gi), '0061 creates an index beyond the one read').toHaveLength(1);
+    expect(migration).toMatch(/alter table audit_events enable row level security;/);
+
+    // D4: one policy, a select, to authenticated, an active admin of the claimed organization.
+    const policies = policyDeclarations(migration);
+    expect(policies, '0061 declares a policy beyond the one read').toHaveLength(1);
+    const read = policyBody('audit_events_select_by_own_active_admin');
+    expect(read).toMatch(/^create policy audit_events_select_by_own_active_admin on public\.audit_events\s+for select\s+to authenticated\b/);
+    expect(read, 'the history read does not pin the claim').toMatch(
+      /organization_id = nullif\(\(\(select auth\.jwt\(\)\) ->> 'organization_id'\), ''\)::uuid/,
+    );
+    expect(read, 'the history read admits an inactive account').toMatch(/where access\.is_active/);
+    expect(read, 'the history read admits a member-role account').toMatch(/and access\.member_role = 'admin'/);
+    expect(migrationStatements(), 'a migration writes a policy that opens audit_events to a write').not.toMatch(
+      /create policy \w+ on public\.audit_events\s+for (insert|update|delete|all)\b/i,
+    );
+
+    // APPEND-ONLY BY PRIVILEGE: everything taken, then `authenticated` SELECT alone.
+    expect(migration).toMatch(/revoke all on table public\.audit_events from public, anon, authenticated, service_role;/);
+    expect(migration).toMatch(/revoke all on sequence public\.audit_events_id_seq from public, anon, authenticated, service_role;/);
+    expect(
+      [...migrationStatements().matchAll(/grant [^;]* on (?:table )?(?:public\.)?audit_events(?:_id_seq)?\b[^;]*;/gi)].map((match) => match[0]),
+      'a migration grants anything on audit_events but authenticated SELECT',
+    ).toEqual(['grant select on table public.audit_events to authenticated;']);
+    expect(migration.indexOf('revoke all on table public.audit_events')).toBeLessThan(
+      migration.indexOf('grant select on table public.audit_events'),
+    );
+
+    // THE RECORDER: copies and inserts, as the owner, and nothing else.
+    const recorder = /create function private\.record_audit_event\(\) returns trigger[\s\S]*?\$\$;/.exec(migration)?.[0] ?? '';
+    expect(recorder, '0061 does not define private.record_audit_event()').not.toBe('');
+    expect(recorder).toMatch(/\bsecurity definer\b/);
+    expect(recorder).toMatch(/set search_path = ''/);
+    expect(recorder).toMatch(/pg_catalog\.pg_current_xact_id\(\)/);
+    expect(recorder).toMatch(/\bauth\.uid\(\)/);
+    expect(recorder).toMatch(/pg_catalog\.current_setting\('role'\)/);
+    expect(recorder).toMatch(/pg_catalog\.to_jsonb\(old\)/);
+    expect(recorder).toMatch(/pg_catalog\.to_jsonb\(new\)/);
+    expect(recorder).toMatch(/\(written ->> tg_argv\[0\]\)::uuid, tg_table_name, tg_op, written ->> tg_argv\[1\]/);
+    expect(recorder).toMatch(/'trigger'/);
+    expect(recorder).toMatch(/return null;/);
+    expect(recorder, 'the recorder refuses something (AD-3)').not.toMatch(/\braise\b/i);
+    expect(recorder, 'the recorder is gated on pg_trigger_depth()').not.toMatch(/pg_trigger_depth/i);
+    expect(recorder, 'the recorder reads a table').not.toMatch(/\bfrom public\./i);
+    expect(recorder.match(/\binsert into\b/gi), 'the recorder writes more than one row').toHaveLength(1);
+    expect(recorder).toMatch(/insert into public\.audit_events \(/);
+    expect(migration).toContain(
+      'revoke execute on function private.record_audit_event() from public, anon, authenticated, service_role;',
+    );
+    expect(migration.match(/create (or replace )?function/gi), '0061 defines a function beyond the recorder').toHaveLength(1);
+    expect(migration.match(/create (or replace )?trigger/gi), '0061 declares other than two triggers per audited table').toHaveLength(42);
+    expect(migration, 'a constraint trigger (AD-3)').not.toMatch(/create constraint trigger/i);
+
+    // TRUNCATE, which row triggers do not see, is taken on all 21 from every session role.
+    const truncate = /revoke truncate on table\s+([\s\S]*?)\s+from anon, authenticated, service_role;/.exec(migration)?.[1] ?? '';
+    expect(
+      truncate.split(',').map((table) => table.trim().replace(/^public\./, '')).sort(),
+      'TRUNCATE is not revoked on exactly the 21 audited tables',
+    ).toEqual(Object.keys(AUDITED_TABLES).sort());
+
+    // THE BACKFILL: last, between its literal markers, after every trigger,
+    // and DML into audit_events alone (`test/rls-isolation.test.ts` runs it).
+    expect(raw.match(/^-- BACKFILL BEGINS$/gm), 'the backfill\'s opening marker').toHaveLength(1);
+    expect(raw.match(/^-- BACKFILL ENDS$/gm), 'the backfill\'s closing marker').toHaveLength(1);
+    const begins = /^-- BACKFILL BEGINS$/m.exec(raw)?.index ?? -1;
+    const ends = /^-- BACKFILL ENDS$/m.exec(raw)?.index ?? -1;
+    expect(begins, 'the backfill opens after it closes').toBeLessThan(ends);
+    expect(raw.slice(ends + '-- BACKFILL ENDS'.length).trim(), 'something follows the backfill').toBe('');
+    expect(raw.lastIndexOf('create trigger'), 'a trigger is attached after the backfill').toBeLessThan(begins);
+    const backfill = sqlStatements(stripLineComments(raw.slice(begins, ends)));
+    expect(backfill, 'the backfill is not its two statements').toHaveLength(2);
+    for (const statement of backfill) {
+      expect(statement, 'the backfill does something but insert events').toMatch(/^(with\b[\s\S]*\)\s+)?insert into public\.audit_events \(/i);
+      // Literals out first: the backfill names the operation `'UPDATE'`.
+      expect(statement.replace(/'[^']*'/g, "''"), 'the backfill writes a table but audit_events').not.toMatch(
+        /\b(update|delete from|truncate|alter|create|drop|grant|revoke)\b/i,
+      );
+    }
+    expect(backfill[0]).toMatch(/'backfill',\s+null::xid8,/);
+    expect(backfill[0]).toMatch(/order by events\.occurred_at, events\.step\b/);
+    expect(backfill[1]).toMatch(/'HISTORY_BEGINS'/);
+    expect(backfill[1]).toMatch(/from public\.organizations as organization/);
+    for (const table of ['organizations', 'members', 'hour_bands', 'absence_types']) {
+      expect(backfill[0], `${table} has no author column and gets no backfilled event`).not.toMatch(
+        new RegExp(`from public\\.${table}\\b`),
+      );
+    }
+  });
+
   it('recreates both leave reads to carry each record\'s type and its drawing flag, and changes nothing else (story 13.2)', () => {
     // STORY 13.2 (0053): the read side only. Source text; what each read
     // returns is `test/rls-isolation.test.ts`, which runs in CI.
@@ -3872,6 +4294,12 @@ describe('the access-control migration', () => {
       { name: 'swap_requests_notify_answer', timing: 'after', table: 'swap_requests', row: true },
       { name: 'swap_requests_notify_waiting', timing: 'after', table: 'swap_requests', row: true },
       { name: 'swap_request_decisions_notify_insert', timing: 'after', table: 'swap_request_decisions', row: true },
+      // STORY 14.1 (0061): the change history's two AFTER row triggers on
+      // each table, which copy the write and refuse nothing (AD-3).
+      { name: 'swap_requests_audit', timing: 'after', table: 'swap_requests', row: true },
+      { name: 'swap_requests_audit_update', timing: 'after', table: 'swap_requests', row: true },
+      { name: 'swap_request_decisions_audit', timing: 'after', table: 'swap_request_decisions', row: true },
+      { name: 'swap_request_decisions_audit_update', timing: 'after', table: 'swap_request_decisions', row: true },
     ]);
 
     // STORY 12.3b (0050): one definer trigger function on two AFTER triggers,
