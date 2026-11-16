@@ -441,11 +441,11 @@ describe('a half day (story 13.7)', () => {
 
   /** The day after `date`, as the fixture's exclusive upper bound. */
   function nextDayOf(date: string): string {
-    const next = new Date(`${date}T12:00:00Z`);
+    const next = nextIsoDate(date);
 
-    next.setUTCDate(next.getUTCDate() + 1);
+    if (next === null) throw new Error(`no day after ${date}`);
 
-    return next.toISOString().slice(0, 10);
+    return next;
   }
 
   /** The half-day line as the card writes it. */
