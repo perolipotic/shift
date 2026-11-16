@@ -2365,6 +2365,32 @@ const SANCTIONED_SCREEN_KEYS = [
   'obavijesti.swapRequestApprovedWithReturn.body',
   'obavijesti.swapRequestRejectedWithReturn.subject',
   'obavijesti.swapRequestRejectedWithReturn.body',
+  // STORY 13.7b: a half day's leave notice, naming the half after the range,
+  // rendered by `notify` in place of its code's own message.
+  'obavijesti.leaveRequestApprovedHalfFirst.subject',
+  'obavijesti.leaveRequestApprovedHalfFirst.body',
+  'obavijesti.leaveRequestApprovedHalfSecond.subject',
+  'obavijesti.leaveRequestApprovedHalfSecond.body',
+  'obavijesti.leaveRequestRejectedHalfFirst.subject',
+  'obavijesti.leaveRequestRejectedHalfFirst.body',
+  'obavijesti.leaveRequestRejectedHalfSecond.subject',
+  'obavijesti.leaveRequestRejectedHalfSecond.body',
+  'obavijesti.leaveRecordedHalfFirst.subject',
+  'obavijesti.leaveRecordedHalfFirst.body',
+  'obavijesti.leaveRecordedHalfSecond.subject',
+  'obavijesti.leaveRecordedHalfSecond.body',
+  'obavijesti.leaveRecordChangedHalfFirst.subject',
+  'obavijesti.leaveRecordChangedHalfFirst.body',
+  'obavijesti.leaveRecordChangedHalfSecond.subject',
+  'obavijesti.leaveRecordChangedHalfSecond.body',
+  'obavijesti.leaveRecordRemovedHalfFirst.subject',
+  'obavijesti.leaveRecordRemovedHalfFirst.body',
+  'obavijesti.leaveRecordRemovedHalfSecond.subject',
+  'obavijesti.leaveRecordRemovedHalfSecond.body',
+  'obavijesti.leaveRequestCreatedHalfFirst.subject',
+  'obavijesti.leaveRequestCreatedHalfFirst.body',
+  'obavijesti.leaveRequestCreatedHalfSecond.subject',
+  'obavijesti.leaveRequestCreatedHalfSecond.body',
   // STORY 10.3. The line every email ends with, linking to `/obavijesti`.
   'obavijesti.footer',
   // STORY 10.3. The notification settings screen, its *Više* row, and the
@@ -2810,14 +2836,17 @@ const SWAP_NOTIFICATION_KEYS: readonly string[] = [
 /**
  * Story 13.5, the half day: `smjen` names the member's working shift that
  * date — *Prvi dio smjene*, *Drugi dio smjene*, as the PO worded them on
- * 2026-11-12 — never the Team, and `tip… smjen…` is refused. SEVENTEEN KEYS: the
+ * 2026-11-12 — never the Team, and `tip… smjen…` is refused. THIRTY-NINE KEYS: the
  * switch's hint, the half group's label, its two cards, the two reasons a
  * half day is not sent, and a half day's cost in a list, each half; story
  * 13.5b adds a request's range, each half, and the member's own two reasons.
  * Story 13.7 adds five: the review's line that a requested half's date
  * holds no working shift any more (*radnu smjenu*, the member's shift that
  * date), and *Danas*'s half-day line, with and without its cost, and its
- * two lower-case halves (`prvi dio smjene`, `drugi dio smjene`).
+ * two lower-case halves (`prvi dio smjene`, `drugi dio smjene`). Story
+ * 13.7b adds twenty-two: the half-day variants of the six leave
+ * notifications, each half, subject and body (*(prvi dio smjene)* after the
+ * range); a new request's two subjects name no range and no half.
  */
 const HALF_DAY_KEYS: readonly string[] = [
   'ljudi.leaveRecord.halfDayHint',
@@ -2837,6 +2866,28 @@ const HALF_DAY_KEYS: readonly string[] = [
   'danas.today.halfLeaveCost',
   'danas.today.halfFirst',
   'danas.today.halfSecond',
+  'obavijesti.leaveRequestApprovedHalfFirst.subject',
+  'obavijesti.leaveRequestApprovedHalfFirst.body',
+  'obavijesti.leaveRequestApprovedHalfSecond.subject',
+  'obavijesti.leaveRequestApprovedHalfSecond.body',
+  'obavijesti.leaveRequestRejectedHalfFirst.subject',
+  'obavijesti.leaveRequestRejectedHalfFirst.body',
+  'obavijesti.leaveRequestRejectedHalfSecond.subject',
+  'obavijesti.leaveRequestRejectedHalfSecond.body',
+  'obavijesti.leaveRecordedHalfFirst.subject',
+  'obavijesti.leaveRecordedHalfFirst.body',
+  'obavijesti.leaveRecordedHalfSecond.subject',
+  'obavijesti.leaveRecordedHalfSecond.body',
+  'obavijesti.leaveRecordChangedHalfFirst.subject',
+  'obavijesti.leaveRecordChangedHalfFirst.body',
+  'obavijesti.leaveRecordChangedHalfSecond.subject',
+  'obavijesti.leaveRecordChangedHalfSecond.body',
+  'obavijesti.leaveRecordRemovedHalfFirst.subject',
+  'obavijesti.leaveRecordRemovedHalfFirst.body',
+  'obavijesti.leaveRecordRemovedHalfSecond.subject',
+  'obavijesti.leaveRecordRemovedHalfSecond.body',
+  'obavijesti.leaveRequestCreatedHalfFirst.body',
+  'obavijesti.leaveRequestCreatedHalfSecond.body',
 ];
 
 /**

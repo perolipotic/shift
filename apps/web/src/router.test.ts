@@ -13,7 +13,7 @@ import {
 } from '@/features/auth/services/return-target';
 // Story 10.2: the paths the `notify` emails link to, read from the function's
 // own module, so the sign-in route is proved to follow every one of them.
-import { MESSAGE_OF_CODE, SETTINGS_PATH, linkPathOf } from '../../../supabase/functions/notify/messages';
+import { MESSAGE_OF_CODE, OBAVIJESTI, SETTINGS_PATH, linkPathOf, type MessageKey } from '../../../supabase/functions/notify/messages';
 import { LJUDI_DIRECTORY, LJUDI_TABLE, ljudiViewOf, mayReadMembers } from '@/features/members/services/list';
 import { DESTINATIONS, destinationsFor } from '@/features/navigation/utils/destinations';
 import { adminGuard, requireAdmin } from '@/features/navigation/services/admin-guard';
@@ -186,10 +186,23 @@ describe("every notification email's link is a return target the sign-in follows
     code,
     path: linkPathOf(key, { requestId: REQUEST }),
   }));
+  // Every message, the two-way and half-day variants included (13.7b): a
+  // variant links where its code's own message does.
+  const keys = Object.keys(OBAVIJESTI).filter((key): key is MessageKey => key !== 'footer');
+  const variantPaths = keys.map((key) => ({ code: key, path: linkPathOf(key, { requestId: REQUEST }) }));
 
   it('derives a path for every code', () => {
     expect(paths.length).toBeGreaterThan(0);
     expect(paths.filter((entry) => entry.path === null)).toEqual([]);
+  });
+
+  it('derives a path for every message, variants included', () => {
+    expect(variantPaths.length).toBeGreaterThan(paths.length);
+    expect(variantPaths.filter((entry) => entry.path === null)).toEqual([]);
+  });
+
+  it.each(variantPaths)('returns the message $code to $path, not to /', ({ path }) => {
+    expect(returnTargetOf(path ?? undefined, KNOWN_PATH)).toBe(path);
   });
 
   it.each(paths)('returns $code to $path, not to /', ({ path }) => {
