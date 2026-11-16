@@ -1143,7 +1143,7 @@ action_items:
       out under load (2.4-4.0 s in isolation vs the 5 s default): explicit timeout
       or fewer runs (P4)"
     owner: "dev"
-    status: open
+    status: done  # leave-overview dates walked once (0.7 s), rotation/draft explicit 20 s timeout
     ref: "_bmad-output/implementation-artifacts/epic-14-retro-2026-11-16.md"
   - id: "epic-14-retro-item-69-a9-po-triage-of-the-14-x-deferrals-defer"
     epic: 14

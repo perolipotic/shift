@@ -377,13 +377,17 @@ describe('the rows', () => {
 
       return seed % limit;
     };
-    const iso = (day: number) => {
-      let date = '2025-10-01';
+    // Every date from 2025-10-01 on, walked once: `day` stays below 30 + 5 × 71
+    // here, and walking from the start on every call made this test brush the
+    // 5 s timeout under load (epic 14 retro A8).
+    const dates = ['2025-10-01'];
 
-      for (let step = 0; step < day; step += 1) date = nextIsoDate(date) ?? date;
+    while (dates.length < 1000) {
+      const last = dates[dates.length - 1] as string;
+      dates.push(nextIsoDate(last) ?? last);
+    }
 
-      return date;
-    };
+    const iso = (day: number) => dates[Math.min(day, dates.length - 1)] as string;
 
     for (let round = 0; round < 25; round += 1) {
       const rows: ReturnType<typeof rpcRow>[] = [];
