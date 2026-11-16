@@ -1799,6 +1799,9 @@ const SANCTIONED_SCREEN_KEYS = [
   'godisnji.request.to',
   'godisnji.request.cost',
   'godisnji.request.balanceAfter',
+  // STORY 13.7: why a requested half costs nothing on the review — its date
+  // holds no working shift any more.
+  'godisnji.request.halfNoShift',
   'godisnji.request.overlapNote',
   'godisnji.request.incomplete',
   'godisnji.request.reversed',
@@ -2041,6 +2044,13 @@ const SANCTIONED_SCREEN_KEYS = [
   // C1 fix (retro 2026-10-09): a shift dated yesterday still running is
   // today's working case, its row marked `od jučer`.
   'danas.today.fromYesterday',
+  // STORY 13.7: a half day today with its working shift — one line naming the
+  // type and the absent half, with its cost when the type draws, and the
+  // half's two words, lower case.
+  'danas.today.halfLeave',
+  'danas.today.halfLeaveCost',
+  'danas.today.halfFirst',
+  'danas.today.halfSecond',
   'danas.tiles.hoursKicker',
   'danas.tiles.band',
   'danas.tiles.separator',
@@ -2800,10 +2810,14 @@ const SWAP_NOTIFICATION_KEYS: readonly string[] = [
 /**
  * Story 13.5, the half day: `smjen` names the member's working shift that
  * date — *Prvi dio smjene*, *Drugi dio smjene*, as the PO worded them on
- * 2026-11-12 — never the Team, and `tip… smjen…` is refused. TWELVE KEYS: the
+ * 2026-11-12 — never the Team, and `tip… smjen…` is refused. SEVENTEEN KEYS: the
  * switch's hint, the half group's label, its two cards, the two reasons a
  * half day is not sent, and a half day's cost in a list, each half; story
  * 13.5b adds a request's range, each half, and the member's own two reasons.
+ * Story 13.7 adds five: the review's line that a requested half's date
+ * holds no working shift any more (*radnu smjenu*, the member's shift that
+ * date), and *Danas*'s half-day line, with and without its cost, and its
+ * two lower-case halves (`prvi dio smjene`, `drugi dio smjene`).
  */
 const HALF_DAY_KEYS: readonly string[] = [
   'ljudi.leaveRecord.halfDayHint',
@@ -2818,6 +2832,11 @@ const HALF_DAY_KEYS: readonly string[] = [
   'ljudi.leaveRecord.rangeHalfSecond',
   'godisnji.request.halfUnchosen',
   'godisnji.request.halfRefused',
+  'godisnji.request.halfNoShift',
+  'danas.today.halfLeave',
+  'danas.today.halfLeaveCost',
+  'danas.today.halfFirst',
+  'danas.today.halfSecond',
 ];
 
 /**

@@ -64,6 +64,7 @@ import {
 } from '@/features/conflicts/services/resolution-screen';
 import { LEAVE_HANDOFF_ORIGIN_STATE, LEAVE_HANDOFF_STATE, leaveHandoffOf, withLeaveHandoff } from '@/features/leave/services/leave-section';
 import { swapRowOf } from '@/features/swaps/organization-swaps.fixture';
+import { leaveHalfNamedOf } from '@/features/leave/services/leave-section';
 import { initLocalization, t } from '@/lib/i18n';
 import { snapshotAnswerOf, snapshotFreshnessOf, type FreshnessClock, type ReadAnswer } from '@/lib/offline/freshness';
 import {
@@ -405,6 +406,7 @@ describe('the facts', () => {
     expect(t('zaOdluku.resolution.leave', { from: view.leaveFrom, to: view.leaveTo, days: view.leaveCostDays })).toBe(
       'odsutnost 10.09.2026–14.09.2026 · 3 dana',
     );
+    expect(view.leaveHalf).toBeNull();
   });
 
   it('shows rank and position as information only, where the organization uses them', async () => {
@@ -454,6 +456,15 @@ describe('a half day (story 13.5, R10.1)', () => {
     expect(view.replaceCovered).toBe(4);
     expect(view.leaveDays).toBe(0.5);
     expect(t(leaveDaysMessageKey(view.leaveDays), { count: view.leaveDays })).toBe('0,5 dana odsutnosti');
+    // STORY 13.7: the leave line names the half after its date.
+    expect(view.leaveHalf).toBe('SECOND');
+    expect(
+      t('zaOdluku.resolution.leave', {
+        from: view.leaveFrom,
+        to: leaveHalfNamedOf(t, view.leaveTo, view.leaveHalf),
+        days: view.leaveCostDays,
+      }),
+    ).toBe('odsutnost 10.09.2026–10.09.2026 (drugi dio smjene) · 0,5 dana');
   });
 });
 

@@ -458,18 +458,25 @@ export const KEY_SOURCES = [
     // (*Zamjena smjene*) and the proposer → the colleague. Its shifts are the
     // queue's own `SwapShifts`, counted on *Za odluku*.
     // STORY 13.2b: the leave case's heading, naming today's type, drawn apart from the other cases'.
+    // NINETY-NINE SINCE STORY 13.7: a half day's cost in its line, through
+    // `count.days`. The line, its half's words and a half-day request's or
+    // absence's half come through `@/features/today/services/today` and
+    // `leaveRangeHalfMessageKey` (`@/features/leave/services/leave-section`).
     name: 'the Danas destination',
     file: DANAS,
     keys: translationKeys,
-    strings: 98,
+    strings: 99,
   },
   {
     // STORY 6.1a: today's three cases, the next shift's two headings, and
     // the two lines in place of a case (unavailable, unscheduled).
+    // ELEVEN SINCE STORY 13.7: a half day's line, with and without its cost,
+    // off `todayHalfLineMessageKey`, and the absent half's two words, off
+    // `todayHalfMessageKey`.
     name: 'the Danas rules',
     file: TODAY_KEYS,
     keys: messageKeyUnions,
-    strings: 7,
+    strings: 11,
   },
   {
     // STORY 6.2: the duty's two headlines, its two end lines, the three leg
@@ -1212,10 +1219,12 @@ export const KEY_SOURCES = [
     // lists, on the facts and as the queue's line names them.
     // STORY 13.2b: the request's type, and the line that a type which does not draw leaves the balance as it is.
     // STORY 13.4b: the over-balance warning when it is the expiry's (`godisnji.expiryExceeds`).
+    // TWENTY-FOUR SINCE STORY 13.7: why a requested half costs nothing, its
+    // date holding no working shift (`godisnji.request.halfNoShift`).
     name: 'the leave request decision screen',
     file: LEAVE_REQUEST_REVIEW,
     keys: translationKeys,
-    strings: 23,
+    strings: 24,
   },
   {
     // STORY 10.3. On *Obavijesti*: its heading and lede; the email card's

@@ -112,6 +112,8 @@ export interface ConflictRow {
   /** The causing record's range, as the member's leave card writes it. */
   readonly leaveFrom: string;
   readonly leaveTo: string;
+  /** STORY 13.7: the causing record's half when it is a half day, or null for a whole day. */
+  readonly half: LeaveHalf | null;
 }
 
 /** One pending leave request as the queue shows it (story 9.5). */
@@ -461,6 +463,7 @@ export function conflictsQueueViewOf(
       times: typeRangeOn(type, collision.date),
       leaveFrom: range.from,
       leaveTo: range.to,
+      half: record.half ?? null,
     };
 
     return row;

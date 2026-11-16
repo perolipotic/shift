@@ -39,6 +39,7 @@ import {
   resolutionFailureMessageKey,
   type ResolutionWriteFailure,
 } from '@/features/conflicts/services/resolution-write';
+import { leaveHalfNamedOf } from '@/features/leave/services/leave-section';
 import { rosterLineOf } from '@/features/members/utils/position';
 import { formatList } from '@/lib/i18n/format';
 import { t } from '@/lib/i18n';
@@ -108,6 +109,8 @@ function ConflictNav({
 function ResolutionFacts({ view }: { readonly view: ResolutionView }): ReactNode {
   // WHICH SENTENCE is `rosterLineOf`'s decision, executed in a test.
   const line = rosterLineOf(view.memberName, view.rankKey, view.positionKey, (key) => t(key));
+  // STORY 13.7: a half-day record names its half after the range's end.
+  const leaveTo = leaveHalfNamedOf(t, view.leaveTo, view.leaveHalf);
 
   return (
     <Card className="grid min-w-0 gap-4 p-4">
@@ -130,7 +133,7 @@ function ResolutionFacts({ view }: { readonly view: ResolutionView }): ReactNode
         <div className="grid min-w-0 gap-0.5">
           <p className="min-w-0 break-words font-semibold">{line.key === null ? line.text : t(line.key, line.values)}</p>
           <p className="min-w-0 break-words text-sm text-muted-foreground">
-            {t('zaOdluku.resolution.leave', { from: view.leaveFrom, to: view.leaveTo, days: view.leaveCostDays })}
+            {t('zaOdluku.resolution.leave', { from: view.leaveFrom, to: leaveTo, days: view.leaveCostDays })}
           </p>
         </div>
       </div>

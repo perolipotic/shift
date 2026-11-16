@@ -71,7 +71,11 @@
       "free": "Danas ne radiš",
       "leave": "Danas: {type}",
       "leaveRange": "Odsutnost {from}–{to}",
-      "leaveCost": "Troši {days} godišnjeg — računaju se samo tvoji radni dani."
+      "leaveCost": "Troši {days} godišnjeg — računaju se samo tvoji radni dani.",
+      "halfLeave": "{type}: {half}",
+      "halfLeaveCost": "{type}: {half} · troši {days} godišnjeg",
+      "halfFirst": "prvi dio smjene",
+      "halfSecond": "drugi dio smjene"
     },
     "duty": {
       "kicker": "Na dužnosti · {total} bez pauze",
@@ -591,6 +595,7 @@
       "to": "Do",
       "cost": "Trošak",
       "balanceAfter": "Preostalo nakon odobrenja",
+      "halfNoShift": "Taj dan više nema radnu smjenu, pa pola dana ne troši ništa.",
       "costInYear": "{count, plural, one {U tekuću godinu ulazi # dan.} few {U tekuću godinu ulaze # dana.} other {U tekuću godinu ulazi # dana.}}",
       "exceeds": "{count, plural, one {Trošak premašuje preostale dane. Preostalo nakon odobrenja: # dan.} few {Trošak premašuje preostale dane. Preostalo nakon odobrenja: # dana.} other {Trošak premašuje preostale dane. Preostalo nakon odobrenja: # dana.}}",
       "overlapNote": "Raspon se preklapa s tvojom upisanom odsutnošću.",

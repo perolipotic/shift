@@ -5,6 +5,7 @@ import { calendarSurfaceStateOf, readCalendar, type CalendarSnapshot } from '@/f
 import { snapshotAnswerOf, snapshotFreshnessOf, type FreshnessClock, type ReadAnswer } from '@/lib/offline/freshness';
 import { NO_MARKS, calendarDayListOf, memberScheduleInputOf, type CalendarMarks } from '@/features/calendar/utils/month';
 import { MODIFIER_LEAVE } from '@/features/calendar/utils/modifiers';
+import { leaveRangeHalfMessageKey } from '@/features/leave/services/leave-section';
 import {
   CASE_DUTY,
   CASE_FREE,
@@ -19,6 +20,8 @@ import {
   nextShiftHeadingMessageKey,
   todayCaseMessageKey,
   todayDateShownOf,
+  todayHalfLineMessageKey,
+  todayHalfMessageKey,
   todayMessageKey,
   todayOf,
   ownTeamOf,
@@ -42,6 +45,7 @@ import {
   type TodayDuty,
 } from '@/features/today/services/today-duty';
 import { initLocalization, t } from '@/lib/i18n';
+import { nextIsoDate } from '@/lib/i18n/format';
 import {
   PILOT,
   type FixtureRows,
@@ -379,14 +383,16 @@ describe("what today's leave costs (story 6.1b)", () => {
     );
   });
 
-  it('costs a half day 0,5 (story 13.5)', () => {
+  it('costs a half day 0,5 (story 13.5), in the line of the working case it is since story 13.7', () => {
     // 01.10. is the viewer's Noć.
     const view = readyOf(todayViewOf(pilot, [{ ...rowOf('leave-half', '2026-10-01', '2026-10-02'), half: 'FIRST' }], noonOf('2026-10-01')));
 
-    expect(view.todayCase).toMatchObject({ kind: CASE_LEAVE, from: '01.10.2026', to: '01.10.2026', costDays: 0.5 });
-    expect(t('danas.today.leaveCost', { days: t('count.days', { count: costOf(view) }) })).toBe(
-      'Troši 0,5 dana godišnjeg — računaju se samo tvoji radni dani.',
-    );
+    expect(view.todayCase).toMatchObject({ kind: CASE_WORKING, half: { half: 'FIRST', costDays: 0.5 } });
+
+    if (view.todayCase.kind !== CASE_WORKING || view.todayCase.half === undefined) throw new Error('no half day');
+
+    // The figure the card states, through the locale: never `0.5`.
+    expect(t('count.days', { count: view.todayCase.half.costDays })).toBe('0,5 dana');
   });
 
   it('sums back-to-back records, each costed on its own range', () => {
@@ -424,6 +430,158 @@ describe("what today's leave costs (story 6.1b)", () => {
 
     expect(view).toEqual({ kind: TODAY_UNAVAILABLE, retryable: false });
     expect(logged).toHaveBeenCalledWith(TODAY_UNAVAILABLE, expect.any(RangeError));
+  });
+});
+
+describe('a half day (story 13.7)', () => {
+  /** A half-day row as `my_leave_records()` answers it: one date, its half. */
+  function halfOf(id: string, date: string, half: 'FIRST' | 'SECOND', extra: Record<string, unknown> = {}) {
+    return { ...rowOf(id, date, nextDayOf(date)), half, ...extra };
+  }
+
+  /** The day after `date`, as the fixture's exclusive upper bound. */
+  function nextDayOf(date: string): string {
+    const next = new Date(`${date}T12:00:00Z`);
+
+    next.setUTCDate(next.getUTCDate() + 1);
+
+    return next.toISOString().slice(0, 10);
+  }
+
+  /** The half-day line as the card writes it. */
+  function halfLineOf(view: TodayView): string {
+    if (view.todayCase.kind !== CASE_WORKING || view.todayCase.half === undefined) throw new Error('no half day today');
+
+    const { half } = view.todayCase;
+
+    return t(todayHalfLineMessageKey(half), {
+      type: half.typeName,
+      half: t(todayHalfMessageKey(half.half)),
+      days: t('count.days', { count: half.costDays }),
+    });
+  }
+
+  it('is the working case on its one working shift: the worked half’s times, and one line with the type, the half and 0,5 dana', () => {
+    // 30.09. is the viewer's Dan, 07:00–19:00: absent for the first half, at work 13:00–19:00.
+    const view = readyOf(todayViewOf(pilot, [halfOf('leave-half', '2026-09-30', 'FIRST')], noonOf('2026-09-30')));
+
+    expect(view.todayCase).toEqual({
+      kind: CASE_WORKING,
+      shifts: [{ teamId: TEAM_A, teamName: 'Smjena A', name: 'Dan', range: '13:00–19:00', fromYesterday: false }],
+      half: { typeName: 'Godišnji odmor', half: 'FIRST', costDays: 0.5 },
+    });
+    expect(caseSentenceOf(view)).toBe('Danas radiš');
+    expect(halfLineOf(view)).toBe('Godišnji odmor: prvi dio smjene · troši 0,5 dana godišnjeg');
+    expect(view.returning).toBe(false);
+  });
+
+  it('splits an overnight shift at its midpoint: absent for the second half of Noć, at work 19:00–01:00', () => {
+    const view = readyOf(todayViewOf(pilot, [halfOf('leave-half', '2026-10-01', 'SECOND')], noonOf('2026-10-01')));
+
+    expect(view.todayCase).toMatchObject({
+      kind: CASE_WORKING,
+      shifts: [{ name: 'Noć', range: '19:00–01:00' }],
+      half: { half: 'SECOND', costDays: 0.5 },
+    });
+    expect(halfLineOf(view)).toBe('Godišnji odmor: drugi dio smjene · troši 0,5 dana godišnjeg');
+  });
+
+  it('ends the line at the half for a type that does not draw', () => {
+    const sick = { id: 'type-sick', organizationId: pilot.organizationId, name: 'Bolovanje', drawsAllowance: false };
+    const typed = { ...pilot, absenceTypes: [...(pilot.absenceTypes ?? []), sick] } as CalendarSnapshot;
+    const row = halfOf('leave-half', '2026-09-30', 'SECOND', { absence_type_id: 'type-sick', draws_allowance: false });
+    const view = readyOf(todayViewOf(typed, [row], noonOf('2026-09-30')));
+
+    expect(view.todayCase).toMatchObject({ kind: CASE_WORKING, half: { typeName: 'Bolovanje', half: 'SECOND', costDays: 0 } });
+    expect(halfLineOf(view)).toBe('Bolovanje: drugi dio smjene');
+  });
+
+  it('joins no neighbour: whole days either side of it are two absences, and today is the working case', () => {
+    const rows = [
+      rowOf('leave-before', '2026-09-28', '2026-09-30'),
+      halfOf('leave-half', '2026-09-30', 'FIRST'),
+      rowOf('leave-after', '2026-10-01', '2026-10-05'),
+    ];
+    const today = readyOf(todayViewOf(pilot, rows, noonOf('2026-09-30')));
+    const before = readyOf(todayViewOf(pilot, rows, noonOf('2026-09-29')));
+    const after = readyOf(todayViewOf(pilot, rows, noonOf('2026-10-01')));
+
+    expect(today.todayCase).toMatchObject({ kind: CASE_WORKING, half: { half: 'FIRST' } });
+    // The day before: its own absence ends 29.09., and the half day is its return.
+    expect(before.todayCase).toMatchObject({ kind: CASE_LEAVE, from: '28.09.2026', to: '29.09.2026', costDays: 0 });
+    expect(before.returning).toBe(true);
+    expect(before.next).toMatchObject({ date: '2026-09-30', inDays: 1, name: 'Dan' });
+    // The day after: its absence starts 01.10., never joined back across the half day.
+    expect(after.todayCase).toMatchObject({ kind: CASE_LEAVE, from: '01.10.2026', to: '04.10.2026', costDays: 2 });
+  });
+
+  it('stays the leave case when its shift is gone: the date named with its half, and no cost', () => {
+    // 02.10. is Slobodno: a stored second half there no longer splits a shift.
+    const view = readyOf(todayViewOf(pilot, [halfOf('leave-half', '2026-10-02', 'SECOND')], noonOf('2026-10-02')));
+
+    expect(view.todayCase).toEqual({
+      kind: CASE_LEAVE,
+      from: '02.10.2026',
+      to: '02.10.2026',
+      typeName: 'Godišnji odmor',
+      costDays: 0,
+      half: 'SECOND',
+    });
+    expect(view.returning).toBe(false);
+
+    if (view.todayCase.kind !== CASE_LEAVE) throw new Error('not leave');
+
+    const key = leaveRangeHalfMessageKey(view.todayCase);
+
+    expect(key === null ? null : t(key, { range: view.todayCase.from })).toBe('02.10.2026 (drugi dio smjene)');
+  });
+
+  it('is the working case on a date with two working shifts: each at its whole times, and the half line with 0,5 dana', async () => {
+    // A roster override puts the viewer on Smjena D's Dan beside their own Noć (from 20:00, so no duty).
+    const snapshot = await snapshotOf({
+      roster: [calendarRosterOverrideRow('roster-1', TEAM_D, '2026-10-01', null, VIEWER_MEMBER)],
+      rows: {
+        ...PILOT,
+        types: [
+          PILOT.types[0] ?? {},
+          typeRow('pilot-noc', 'Noć', '2026-09-25T20:07:49.331741+00:00', { times: ['20:00:00', '08:00:00'] }),
+          ...PILOT.types.slice(2),
+        ],
+      },
+    });
+    const view = readyOf(todayViewOf(snapshot, [halfOf('leave-half', '2026-10-01', 'SECOND')], noonOf('2026-10-01')));
+
+    expect(view.todayCase).toEqual({
+      kind: CASE_WORKING,
+      shifts: [
+        { teamId: TEAM_A, teamName: 'Smjena A', name: 'Noć', range: '20:00–08:00', fromYesterday: false },
+        { teamId: TEAM_D, teamName: 'Smjena D', name: 'Dan', range: '07:00–19:00', fromYesterday: false },
+      ],
+      half: { typeName: 'Godišnji odmor', half: 'SECOND', costDays: 0.5 },
+    });
+    expect(halfLineOf(view)).toBe('Godišnji odmor: drugi dio smjene · troši 0,5 dana godišnjeg');
+  });
+
+  it('is a working day tomorrow: the next shift and the week still show it', () => {
+    const view = readyOf(todayViewOf(pilot, [halfOf('leave-half', '2026-10-01', 'FIRST')], noonOf('2026-09-30')));
+
+    expect(view.todayCase.kind).toBe(CASE_WORKING);
+    expect(view.next).toMatchObject({ date: '2026-10-01', inDays: 1, name: 'Noć' });
+    expect(view.week[0]).toMatchObject({ onLeave: false });
+  });
+
+  it('leaves a whole day’s case as it was: no half key on it', () => {
+    const view = readyOf(todayViewOf(pilot, [rowOf('leave-1', '2026-09-30', '2026-10-01')], noonOf('2026-09-30')));
+
+    expect(view.todayCase).toEqual({ kind: CASE_LEAVE, from: '30.09.2026', to: '30.09.2026', typeName: 'Godišnji odmor', costDays: 1 });
+    expect(readyOf(todayViewOf(pilot, [], noonOf('2026-09-30'))).todayCase).not.toHaveProperty('half');
+  });
+
+  it('words the half and its line by their own keys', () => {
+    expect(todayHalfMessageKey('FIRST')).toBe('danas.today.halfFirst');
+    expect(todayHalfMessageKey('SECOND')).toBe('danas.today.halfSecond');
+    expect(todayHalfLineMessageKey({ costDays: 0.5 })).toBe('danas.today.halfLeaveCost');
+    expect(todayHalfLineMessageKey({ costDays: 0 })).toBe('danas.today.halfLeave');
   });
 });
 
@@ -1053,6 +1211,52 @@ describe("today's 24 h duty (story 6.2)", () => {
       });
       // Tonight's Noć is today's, never the next shift.
       expect(view.next).toMatchObject({ date: '2026-10-04', name: 'Dan' });
+    });
+
+    // STORY 13.7: a half day today beside a duty or a carried-over shift.
+    const halfRowOf = (date: string, half: 'FIRST' | 'SECOND') => ({
+      ...rowOf('leave-half', date, nextIsoDate(date) ?? date),
+      half,
+    });
+
+    it('STORY 13.7: a half day under a carried-over Noć halves today’s own row only, and names the half', async () => {
+      const snapshot = await snapshotOf({
+        roster: [calendarRosterOverrideRow('roster-1', TEAM_D, '2026-10-02', null, VIEWER_MEMBER)],
+      });
+      const view = readyOf(todayViewOf(snapshot, [halfRowOf('2026-10-02', 'FIRST')], zagrebOf('2026-10-02', '03:00')));
+
+      expect(view.todayCase).toEqual({
+        kind: CASE_WORKING,
+        shifts: [
+          NOC_FROM_YESTERDAY,
+          { teamId: TEAM_D, teamName: 'Smjena D', name: 'Noć', range: '01:00–07:00', fromYesterday: false },
+        ],
+        half: { typeName: 'Godišnji odmor', half: 'FIRST', costDays: 0.5 },
+      });
+    });
+
+    it('STORY 13.7: a half day on a duty not yet running keeps the duty, its legs never the next shift, and names the half', () => {
+      const view = readyOf(todayViewOf(takenOver, [halfRowOf('2026-10-01', 'FIRST')], zagrebOf('2026-10-01', '05:00')));
+
+      expect(view.todayCase).toMatchObject({
+        kind: CASE_DUTY,
+        duty: { phase: 'upcoming' },
+        half: { typeName: 'Godišnji odmor', half: 'FIRST', costDays: 0.5 },
+      });
+      expect(view.next?.date).not.toBe('2026-10-02');
+    });
+
+    it('STORY 13.7: a half day on a running duty names the half under it', () => {
+      const view = readyOf(todayViewOf(takenOver, [halfRowOf('2026-10-01', 'SECOND')], zagrebOf('2026-10-01', '21:10')));
+
+      expect(view.todayCase).toMatchObject({ kind: CASE_DUTY, duty: { phase: 'running' }, half: { half: 'SECOND', costDays: 0.5 } });
+    });
+
+    it('STORY 13.7: a half day under a duty running from yesterday names the half under it', () => {
+      // 02.10. is Smjena A's Slobodno: the stored half has no shift left, and costs nothing.
+      const view = readyOf(todayViewOf(takenOver, [halfRowOf('2026-10-02', 'SECOND')], zagrebOf('2026-10-02', '03:00')));
+
+      expect(view.todayCase).toMatchObject({ kind: CASE_DUTY, duty: { phase: 'running' }, half: { half: 'SECOND', costDays: 0 } });
     });
 
     it('Carry-over beats an upcoming duty with a leg dated tomorrow, which is never the next shift', async () => {

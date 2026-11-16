@@ -1,4 +1,4 @@
-import { shiftRoster } from '@shift/domain';
+import { LEAVE_HALF_FIRST, shiftRoster, type LeaveRange } from '@shift/domain';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -1534,9 +1534,10 @@ describe("the day's unresolved conflicts (story 7.9)", () => {
       shiftTypeId: 'pilot-dan',
       leaveRecordId: `leave-${memberId}`,
     });
-    const leave = new Map([
+    // STORY 13.7: Ana's leave that date is a half day, which the line names.
+    const leave = new Map<string, readonly LeaveRange[]>([
       [BORIS, [{ from: '2019-12-30', to: '2020-01-03' }]],
-      [ANA, [{ from: '2019-12-01', to: '2019-12-02' }, { from: WORKING, to: WORKING }]],
+      [ANA, [{ from: '2019-12-01', to: '2019-12-02' }, { from: WORKING, to: WORKING, half: LEAVE_HALF_FIRST }]],
     ]);
     const conflicts = dayConflictsOf(
       snapshot,
@@ -1546,8 +1547,24 @@ describe("the day's unresolved conflicts (story 7.9)", () => {
     );
 
     expect(conflicts).toEqual([
-      { memberId: ANA, memberName: 'Ana', leaveFrom: '01.01.2020', leaveTo: '01.01.2020', date: WORKING, teamId: TEAM },
-      { memberId: BORIS, memberName: 'Boris', leaveFrom: '30.12.2019', leaveTo: '03.01.2020', date: WORKING, teamId: TEAM },
+      {
+        memberId: ANA,
+        memberName: 'Ana',
+        leaveFrom: '01.01.2020',
+        leaveTo: '01.01.2020',
+        leaveHalf: LEAVE_HALF_FIRST,
+        date: WORKING,
+        teamId: TEAM,
+      },
+      {
+        memberId: BORIS,
+        memberName: 'Boris',
+        leaveFrom: '30.12.2019',
+        leaveTo: '03.01.2020',
+        leaveHalf: null,
+        date: WORKING,
+        teamId: TEAM,
+      },
     ]);
     expect(dayConflictsOf(snapshot, [], leave, detail)).toEqual([]);
   });
@@ -1569,10 +1586,37 @@ describe("the day's unresolved conflicts (story 7.9)", () => {
     const leave = new Map([[BORIS, [{ from: '2019-12-30', to: '2020-01-03' }]]]);
 
     expect(dayConflictsOf(snapshot, [collision(CVITA), collision(BORIS)], leave, detail)).toEqual([
-      { memberId: BORIS, memberName: 'Boris', leaveFrom: '30.12.2019', leaveTo: '03.01.2020', date: WORKING, teamId: TEAM },
-      { memberId: CVITA, memberName: 'Cvita', leaveFrom: null, leaveTo: null, date: WORKING, teamId: TEAM },
+      {
+        memberId: BORIS,
+        memberName: 'Boris',
+        leaveFrom: '30.12.2019',
+        leaveTo: '03.01.2020',
+        leaveHalf: null,
+        date: WORKING,
+        teamId: TEAM,
+      },
+      { memberId: CVITA, memberName: 'Cvita', leaveFrom: null, leaveTo: null, leaveHalf: null, date: WORKING, teamId: TEAM },
     ]);
     expect(error).toHaveBeenCalledTimes(1);
     error.mockRestore();
+  });
+
+  it('STORY 13.7: names no half on a line said without dates', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const snapshot = await onSmjenaB();
+    const detail = dayDetailOf(snapshot, TEAM, WORKING);
+
+    if (detail === null) throw new Error('no day');
+
+    // A half-day range whose date cannot be formatted: the line drops its dates, and its half with them.
+    const leave = new Map<string, readonly LeaveRange[]>([[BORIS, [{ from: WORKING, to: '2020-01-32', half: LEAVE_HALF_FIRST }]]]);
+    const [conflict] = dayConflictsOf(
+      snapshot,
+      [{ memberId: BORIS, date: WORKING, teamId: TEAM, shiftTypeId: 'pilot-dan', leaveRecordId: 'leave-boris' }],
+      leave,
+      detail,
+    );
+
+    expect(conflict).toMatchObject({ leaveFrom: null, leaveTo: null, leaveHalf: null });
   });
 });

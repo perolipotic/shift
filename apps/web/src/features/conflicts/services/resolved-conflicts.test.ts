@@ -21,6 +21,7 @@ import {
 } from '@/features/conflicts/services/resolved-conflicts';
 import { leaveRecordChangeMessageKey } from '@/features/leave/services/leave-request-list';
 import { CLOSED_AT, decidedSwapRowOf, swapRowOf } from '@/features/swaps/organization-swaps.fixture';
+import { leaveHalfNamedOf } from '@/features/leave/services/leave-section';
 import { initLocalization, t } from '@/lib/i18n';
 import {
   PILOT,
@@ -420,6 +421,7 @@ describe('decided leave requests beside resolved conflicts (story 9.5)', () => {
       memberName: 'Ana Anić',
       from: '05.10.2026',
       to: '09.10.2026',
+      half: null,
       actorName: 'Damir Dekanić',
       decidedOn: '02.09.2026',
       decidedAt: '12:00',
@@ -431,6 +433,27 @@ describe('decided leave requests beside resolved conflicts (story 9.5)', () => {
     expect(t('zaOdluku.resolved.decided', { actor: 'Damir Dekanić', date: '02.09.2026', time: '12:00' })).toBe(
       'Odluka: Damir Dekanić, 02.09.2026 u 12:00',
     );
+  });
+
+  it('STORY 13.7: a decided half-day request carries its half, which its range names', () => {
+    const view = fullViewOf(
+      [],
+      [
+        {
+          ...requestOf('req-half', { closedAt: '2026-09-02T10:00:00+00:00', outcome: 'approved', at: '2026-09-02T10:00:00+00:00' }),
+          during: '[2026-10-05,2026-10-06)',
+          half: 'SECOND',
+        },
+      ],
+    );
+
+    const [row] = view.rows;
+
+    if (row?.item !== ITEM_REQUEST) throw new Error('no request row');
+
+    expect(row).toMatchObject({ key: 'request:req-half', from: '05.10.2026', to: '05.10.2026', half: 'SECOND' });
+    expect(view.rows).toHaveLength(1);
+    expect(t('zaOdluku.request.range', { from: row.from, to: leaveHalfNamedOf(t, row.to, row.half) })).toBe('Odsutnost 05.10.2026–05.10.2026 (drugi dio smjene)');
   });
 
   it('lists a request closed on its member\'s deactivation, attributed to the deactivating admin (0041)', () => {

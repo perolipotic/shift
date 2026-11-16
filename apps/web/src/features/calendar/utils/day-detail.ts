@@ -11,6 +11,7 @@ import {
   shiftRoster,
   shiftTypeVersionOn,
   type Collision,
+  type LeaveHalf,
   type LeaveRange,
 } from '@shift/domain';
 
@@ -1183,6 +1184,8 @@ export interface DayConflict {
    */
   readonly leaveFrom: string | null;
   readonly leaveTo: string | null;
+  /** STORY 13.7: the covering leave's half when it is a half day, or null for a whole day (or no leave found). */
+  readonly leaveHalf: LeaveHalf | null;
   /** The conflict's key: `/za-odluku/$memberId/$date/$teamId`. */
   readonly date: string;
   readonly teamId: string;
@@ -1220,6 +1223,7 @@ export function dayConflictsOf(
         memberName: memberNameOf(snapshot, collision.memberId),
         leaveFrom: dated ? from : null,
         leaveTo: dated ? to : null,
+        leaveHalf: dated ? (range?.half ?? null) : null,
         date: collision.date,
         teamId: collision.teamId,
       };

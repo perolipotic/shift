@@ -6,6 +6,7 @@ import {
   membershipOn,
   shiftTypeVersionOn,
   shortStaffedShiftsOf,
+  type LeaveHalf,
   type MembershipVersion,
 } from '@shift/domain';
 
@@ -170,6 +171,8 @@ export interface NeedsYouRequestRow {
   /** The requested range, as the member's leave card writes it. */
   readonly from: string;
   readonly to: string;
+  /** STORY 13.7: the requested half of a one-date request, or null for a whole day. */
+  readonly half: LeaveHalf | null;
   /** `prošlo`, `danas`, or none for a later date. */
   readonly badge: NeedsYouBadge | null;
 }
@@ -296,6 +299,11 @@ export interface AbsentMember {
   readonly to: string;
   /** Whether the absence is one day: then it is stated as that one date, never `01.10.–01.10.`. */
   readonly oneDay: boolean;
+  /**
+   * STORY 13.7: the half of a half-day record, its one date named with it;
+   * null for a whole day. Still listed: a half day is named, not hidden.
+   */
+  readonly half: LeaveHalf | null;
 }
 
 /** *Odsutnost danas*. */
@@ -580,6 +588,7 @@ export function needsYouOf(queueRows: readonly QueueRow[], count: number, today:
           memberName: row.memberName,
           from: row.from,
           to: row.to,
+          half: row.half,
           badge,
         };
       }
@@ -799,7 +808,9 @@ function teamNameOn(
  * *Odsutnost danas*: every active member whose leave covers today — back-to-back
  * records read as one absence — with their team today; then every active
  * member not on leave today whose leave starts tomorrow, with their team
- * tomorrow.
+ * tomorrow. A member on a half day today (story 13.7) is listed today, and
+ * again from tomorrow when a separate absence starts then: a half day joins
+ * no neighbour.
  *
  * @throws RangeError on any precondition of the domain, or a date that
  *   cannot be formatted.
@@ -824,8 +835,10 @@ function absencesOf(snapshot: CalendarSnapshot, records: readonly OrganizationLe
         from: dayMonthOf(current.from),
         to: dayMonthOf(current.to),
         oneDay: current.from === current.to,
+        half: current.half ?? null,
       });
-      continue;
+      // STORY 13.7: a half day joins nothing, so an absence may start tomorrow after it.
+      if (!isHalfDay(current)) continue;
     }
 
     const next = activeOn(member.statuses, tomorrow) ? absenceOn(own, tomorrow) : null;
@@ -838,6 +851,7 @@ function absencesOf(snapshot: CalendarSnapshot, records: readonly OrganizationLe
         from: dayMonthOf(next.from),
         to: dayMonthOf(next.to),
         oneDay: next.from === next.to,
+        half: next.half ?? null,
       });
     }
   }

@@ -384,6 +384,31 @@ describe('a member', () => {
   });
 });
 
+describe('a half day keeps its half in the leave marks (story 13.7)', () => {
+  const HALF = { ...rowOf('record-half', '2026-09-16', '2026-09-17'), half: 'FIRST' };
+
+  it("carries a half-day row's half for an admin, and gives a whole day no half key", () => {
+    const leave = calendarMarksOf(pilot, [WORKED, HALF], []).leave.get(VIEWER_MEMBER) ?? [];
+
+    expect(leave).toEqual([
+      { from: '2026-09-10', to: '2026-09-14' },
+      { from: '2026-09-16', to: '2026-09-16', half: 'FIRST' },
+    ]);
+    expect(leave[0]).not.toHaveProperty('half');
+  });
+
+  it('carries it on a member\'s own marks the same way', async () => {
+    const member = await snapshotOf(PILOT, { role: 'member_role' });
+    const leave = calendarMarksOf(member, [WORKED, HALF], []).leave.get(VIEWER_MEMBER) ?? [];
+
+    expect(leave).toEqual([
+      { from: '2026-09-10', to: '2026-09-14' },
+      { from: '2026-09-16', to: '2026-09-16', half: 'FIRST' },
+    ]);
+    expect(leave[0]).not.toHaveProperty('half');
+  });
+});
+
 /** A settled query answer over `rows`. */
 function answered(rows: readonly unknown[]) {
   return { isPending: false, isError: false, fetchStatus: 'idle', data: rows };

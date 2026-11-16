@@ -3,6 +3,7 @@ import {
   organizationLeaveRequestsOf,
   type ReviewedLeaveRequest,
 } from '@/features/leave/services/leave-request-list';
+import { leaveHalfNamedOf, type LeaveRangeHalfTranslate } from '@/features/leave/services/leave-section';
 import { DEACTIVATE, type REACTIVATE } from '@/features/members/services/wire';
 import { RANGE_DASH, formatIsoDate, formatList, isIsoDate } from '@/lib/i18n/format';
 
@@ -39,10 +40,19 @@ export function deactivationClosedRequestsOf(
 
 /**
  * The requests as the question names them: `03.11.2026–07.11.2026`, each
- * range in the binding shape, joined as a Croatian sentence lists them.
+ * range in the binding shape, joined as a Croatian sentence lists them. A
+ * half-day request (story 13.7) names its half after its date through
+ * `translate`, the component's `t`: `01.11.2026–01.11.2026 (prvi dio smjene)`.
  */
-export function deactivationClosedRangesText(requests: readonly ReviewedLeaveRequest[]): string {
+export function deactivationClosedRangesText(
+  requests: readonly ReviewedLeaveRequest[],
+  translate: LeaveRangeHalfTranslate,
+): string {
   return formatList(
-    requests.map((request) => `${formatIsoDate(request.from) ?? request.from}${RANGE_DASH}${formatIsoDate(request.to) ?? request.to}`),
+    requests.map((request) => {
+      const to = leaveHalfNamedOf(translate, formatIsoDate(request.to) ?? request.to, request.half);
+
+      return `${formatIsoDate(request.from) ?? request.from}${RANGE_DASH}${to}`;
+    }),
   );
 }

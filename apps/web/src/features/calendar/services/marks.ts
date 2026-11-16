@@ -1,3 +1,5 @@
+import { halfFieldOf, type LeaveRange } from '@shift/domain';
+
 import {
   CALENDAR_FETCH_FETCHING,
   CALENDAR_FETCH_PAUSED,
@@ -99,7 +101,7 @@ export function calendarMarksOf(
     return {
       collisions: [],
       uncovered: [],
-      leave: new Map([[viewer.memberId, own.map(({ from, to }) => ({ from, to }))]]),
+      leave: new Map([[viewer.memberId, own.map((record) => ({ from: record.from, to: record.to, ...halfFieldOf(record) }))]]),
       staffingLeave: null,
     };
   }
@@ -111,13 +113,15 @@ export function calendarMarksOf(
 
   if (records === null) throw new RangeError('a leave record row cannot be trusted');
 
-  const leave = new Map<string, { readonly from: string; readonly to: string }[]>();
+  const leave = new Map<string, LeaveRange[]>();
 
-  for (const { memberId, from, to } of records) {
-    const ranges = leave.get(memberId);
+  for (const record of records) {
+    // STORY 13.7: a half day keeps its half, which the day's conflict line names.
+    const range: LeaveRange = { from: record.from, to: record.to, ...halfFieldOf(record) };
+    const ranges = leave.get(record.memberId);
 
-    if (ranges === undefined) leave.set(memberId, [{ from, to }]);
-    else ranges.push({ from, to });
+    if (ranges === undefined) leave.set(record.memberId, [range]);
+    else ranges.push(range);
   }
 
   return {

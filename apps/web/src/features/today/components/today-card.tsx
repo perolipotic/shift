@@ -5,12 +5,16 @@ import type { MemberTeam } from '@/features/members/services/list';
 import { dayEmptyMessageKey } from '@/features/calendar/utils/empty-day';
 import { DutyBlock } from '@/features/today/components/duty-block';
 import { OwnTeamLine } from '@/features/today/components/own-team-line';
+import { leaveHalfNamedOf } from '@/features/leave/services/leave-section';
 import {
   CASE_DUTY,
   CASE_LEAVE,
   CASE_WORKING,
   todayCaseMessageKey,
+  todayHalfLineMessageKey,
+  todayHalfMessageKey,
   type TodayCase,
+  type TodayHalf,
   type TodayShift,
 } from '@/features/today/services/today';
 import { t } from '@/lib/i18n';
@@ -30,13 +34,32 @@ function renderShift(shift: TodayShift, index: number): ReactNode {
   );
 }
 
+/** STORY 13.7: a half day's one line — its type, the absent half, and its cost when the type draws. */
+function renderHalf(half: TodayHalf): ReactNode {
+  return (
+    <p className="tabular-nums">
+      {t(todayHalfLineMessageKey(half), {
+        type: half.typeName,
+        half: t(todayHalfMessageKey(half.half)),
+        days: t('count.days', { count: half.costDays }),
+      })}
+    </p>
+  );
+}
+
 /** What follows the case's sentence: the leave's range and cost, today's shifts, or the free day's type. */
 function renderDetail(todayCase: Exclude<TodayCase, { readonly kind: typeof CASE_DUTY }>): ReactNode {
   if (todayCase.kind === CASE_LEAVE) {
+    // STORY 13.7: a stored half whose shift is gone names its date with its half, in place of the range.
+    const range =
+      todayCase.half === undefined
+        ? t('danas.today.leaveRange', { from: todayCase.from, to: todayCase.to })
+        : leaveHalfNamedOf(t, todayCase.from, todayCase.half);
+
     // STORY 6.1b: what the absence costs, through `count.days`.
     return (
       <>
-        <p className="tabular-nums">{t('danas.today.leaveRange', { from: todayCase.from, to: todayCase.to })}</p>
+        <p className="tabular-nums">{range}</p>
         {/* STORY 13.2b: only drawing records cost, and nothing is said when none does. */}
         {todayCase.costDays === 0 ? null : (
           <p className="tabular-nums">
@@ -51,7 +74,12 @@ function renderDetail(todayCase: Exclude<TodayCase, { readonly kind: typeof CASE
     // STORY 6.1a: one row per shift — yesterday's still running first, then
     // the own team's, then each one a roster override put the viewer on. A
     // 24 h duty is the duty-block's (6.2).
-    return <ul className="grid gap-2">{todayCase.shifts.map(renderShift)}</ul>;
+    return (
+      <>
+        <ul className="grid gap-2">{todayCase.shifts.map(renderShift)}</ul>
+        {todayCase.half === undefined ? null : renderHalf(todayCase.half)}
+      </>
+    );
   }
 
   // What is true, never an empty area: the free day's type and team, or no
@@ -81,6 +109,8 @@ export function TodayCard({
   if (todayCase.kind === CASE_DUTY) {
     return (
       <DutyBlock duty={todayCase.duty}>
+        {/* STORY 13.7: a half day on a duty is named under the duty-block. */}
+        {todayCase.half === undefined ? null : renderHalf(todayCase.half)}
         <OwnTeamLine team={ownTeam} />
       </DutyBlock>
     );

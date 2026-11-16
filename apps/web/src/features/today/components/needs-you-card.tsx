@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card';
 import { CaretRight, CheckCircle, Warning } from '@/components/ui/icon';
 import { SwapShifts } from '@/features/conflicts/components/swap-shifts';
 import { ITEM_REQUEST, ITEM_SWAP } from '@/features/conflicts/services/conflicts-queue';
+import { leaveHalfNamedOf } from '@/features/leave/services/leave-section';
 import {
   needsYouBadgeMessageKey,
   needsYouShiftMessageKey,
@@ -71,7 +72,8 @@ function renderRow(row: NeedsYouRow): ReactNode {
             {dateLineOf(row, t('zaOdluku.kind.request'))}
             <span className="min-w-0 break-words font-medium">{row.memberName ?? t('zaOdluku.request.memberGone')}</span>
             <span className="min-w-0 break-words text-sm text-muted-foreground tabular-nums">
-              {t('zaOdluku.request.range', { from: row.from, to: row.to })}
+              {/* STORY 13.7: a half-day request names its half after the range's end. */}
+              {t('zaOdluku.request.range', { from: row.from, to: leaveHalfNamedOf(t, row.to, row.half) })}
             </span>
           </span>
           <CaretRight aria-hidden className="size-4 shrink-0" />

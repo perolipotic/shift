@@ -31,6 +31,7 @@ import {
 import { REPLACEMENT_LINK_MISMATCH } from '@/features/conflicts/services/replacement-effect';
 import { organizationLeaveRecordsOf } from '@/features/leave/services/leave-list';
 import { CLOSED_AT, SENT_AT, decidedSwapRowOf, swapRowOf } from '@/features/swaps/organization-swaps.fixture';
+import { leaveHalfNamedOf } from '@/features/leave/services/leave-section';
 import { initLocalization, t } from '@/lib/i18n';
 import {
   PILOT,
@@ -209,7 +210,24 @@ describe('the worked example', () => {
       times: '07:00–19:00',
       leaveFrom: '10.09.2026',
       leaveTo: '14.09.2026',
+      half: null,
     });
+  });
+
+  it('STORY 13.7: a half-day record carries its half onto its row, which names it after the range', () => {
+    const [row] = viewOf(pilot, [{ ...rowOf('record-half', '2026-09-10', '2026-09-11'), half: 'FIRST' }], '2026-09-01').rows;
+
+    if (row?.kind !== ITEM_COLLISION) throw new Error('no collision row');
+
+    expect(row).toMatchObject({ leaveRecordId: 'record-half', leaveFrom: '10.09.2026', leaveTo: '10.09.2026', half: 'FIRST' });
+    expect(
+      t('zaOdluku.detailTimed', {
+        type: row.shiftTypeName,
+        times: row.times ?? '',
+        from: row.leaveFrom,
+        to: leaveHalfNamedOf(t, row.leaveTo, row.half),
+      }),
+    ).toBe('Dan 07:00–19:00 · Odsutnost 10.09.2026–10.09.2026 (prvi dio smjene)');
   });
 
   it.each([

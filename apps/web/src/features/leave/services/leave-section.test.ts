@@ -32,6 +32,7 @@ import {
   LEAVE_WHOLE_DAY,
   leaveCostHalfMessageKey,
   leaveRangeHalfMessageKey,
+  leaveHalfNamedOf,
   leaveHalfChoiceOf,
   leaveHalfRestoredOf,
   leaveHalfMessageKey,
@@ -1762,6 +1763,13 @@ describe('the half day (story 13.5)', () => {
     expect(t('ljudi.leaveRecord.rangeHalfSecond', { range: '10.09.2026–10.09.2026' })).toBe(
       '10.09.2026–10.09.2026 (drugi dio smjene)',
     );
+  });
+
+  it('names a half after its text through the surface\'s own t, and leaves a whole day\'s text unchanged (story 13.7)', () => {
+    expect(leaveHalfNamedOf(t, '10.09.2026', null)).toBe('10.09.2026');
+    expect(leaveHalfNamedOf(t, '10.09.2026', undefined)).toBe('10.09.2026');
+    expect(leaveHalfNamedOf(t, '10.09.2026', LEAVE_HALF_FIRST)).toBe('10.09.2026 (prvi dio smjene)');
+    expect(leaveHalfNamedOf(t, '10.09.', LEAVE_HALF_SECOND)).toBe('10.09. (drugi dio smjene)');
   });
 
   it('offers the two halves with their times: Dan 07:00–13:00 and 13:00–19:00, Noć across midnight', () => {
