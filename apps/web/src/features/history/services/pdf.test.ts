@@ -224,6 +224,31 @@ describe('the document', () => {
     expect(table.table.body.slice(1).map((cells) => (cells[4] as { colSpan?: number }).colSpan)).toEqual([2, 2, 2, 2, 2]);
   });
 
+  it('sizes every column in points that fit the page, so one unbroken word cannot widen the table off it', () => {
+    // Story 14.3 review: a `'*'` column grows to its longest unbroken word (a
+    // long e-mail address, a link); on a rendered export one such word pushed
+    // *Bilo* and *Sada* off the page for every row. Fixed widths make pdfmake
+    // break the word inside its cell.
+    const document = historyDocumentOf(fixture());
+    const table = document.content.at(-1) as { table: { widths: unknown[]; body: unknown[][] } };
+    const widths = table.table.widths;
+    const [left = 0, , right = 0] = document.pageMargins;
+    const content = 841.89 - left - right;
+
+    for (const width of widths) expect(typeof width).toBe('number');
+    // Each column's 4 pt padding either side, and seven 1 pt lines.
+    const used = (widths as number[]).reduce((sum, width) => sum + width + 8, 0) + widths.length + 1;
+
+    expect(used).toBeLessThanOrEqual(content);
+    expect(used).toBeGreaterThan(content - 4);
+    // A change's two sides fill exactly the two columns they span, the 8 pt between them included.
+    const sides = (table.table.body[1]?.[4] as { table: { widths: unknown[] } }).table.widths as number[];
+    const [, , , , before = 0, after = 0] = widths as number[];
+
+    expect(sides.every((width) => typeof width === 'number')).toBe(true);
+    expect(sides.reduce((sum, width) => sum + width, 0) + 8).toBe(before + 8 + 1 + after);
+  });
+
   it('draws every character in the face it uses', () => {
     const model = fixture();
     const document = historyDocumentOf(model);

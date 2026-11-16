@@ -67,7 +67,7 @@ deferred:
 | No rows | period or filters leave none | button natively `disabled` | — |
 | Double press | press while building | second press ignored (ref), button `aria-disabled`, label `Izvoz…` | — |
 | Writer fails | dynamic import fails (offline after load) or `download` rejects | `Notice role="alert"` failed line; button offered again; logged `HISTORY_EXPORT_FAILED` | never thrown |
-| View changes | filter/period change or refetch after a download/failure | the status/failure line disappears (belongs to the rows it was built from) | — |
+| View changes | filter/period change, or a read that changes the rows, after a download/failure | the status/failure line disappears (belongs to the rows it was built from) | — |
 | Long table | many rows | repeated header row on each page, landscape A4, `Stranica n od m` footer | — |
 
 </intent-contract>
@@ -129,6 +129,15 @@ deferred:
   - `[low]` `[patch]` EXPERIENCE.md and the hook's comment said any read removes the line; a refetch with identical data keeps the rows' identity, so the wording is now "a read that changes the rows".
   - `[low]` `[patch]` `history-body.tsx`'s doc comment re-wrapped.
 - rejected: marker-only export enabled (the marker is a drawn row); long unbroken tokens; stale line after offline (the export unmounts outside the ready state); remount mid-build double download; further rolldown splits and lazy-route chunk placement (tests find chunks by marker; one entry today); unoffered filter label and period words vs dates (the hook passes the offered filters, so neither can differ); file name ignoring filters; e2e file-name regex for an empty organization name; `fileNameSafeOf` coupling (spec decision); walker/format-12 detector completeness; organization-source begins test; midnight generation test; epic context regenerated per the workflow; spec/sprint status mid-run; rolldown runtime chunk nuance (it holds interop only); no-feedback when the view changes mid-build (the hours pattern); failure wording; empty-rows e2e (pure rule unit-tested); PDF byte content and network observation in e2e; hook/component unit tests (the repo has none; e2e covers them in CI).
+
+### 2026-11-16 — Independent second review (rendered PDF)
+- patch: 3 (high 1, low 2)
+- defer: 1 (low)
+- addressed_findings:
+  - `[high]` `[patch]` On a rendered export, one unbroken word (a long e-mail address or link) in a `'*'` column widened the whole table past the page, so *Bilo* and *Sada* went off the page for every row. All columns, and the two sides of a change, now have widths in points computed from the page, so pdfmake breaks the word inside its cell. Pinned in `pdf.test.ts`.
+  - `[low]` `[patch]` Each change's sides sat 2 pt lower than the row's other cells, because the nested table added its own padding. The nested table now has no padding on its outer edges, so *Bilo* starts where the row's text does and *Sada* sits under its header.
+  - `[low]` `[patch]` Nothing loaded the production writer chunks (the e2e runs the dev prebundle). `test/static-hosting.test.ts` now imports the built `pdfmake-*`/`vfs_fonts-*` chunks, checks that their `default` is the writer and the vfs, and writes a `%PDF-`. The I/O matrix "View changes" row now says "a read that changes the rows".
+- deferred: a row split across a page break continues with empty identifying cells (`dontBreakRows` drops a row taller than a page in 0.3.13).
 
 ## Design Notes
 

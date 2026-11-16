@@ -349,6 +349,40 @@ describe('the build is an installable PWA', () => {
     expect(worker).toMatch(/url:"assets\/index-[\w-]+\.js"/);
   });
 
+  it.skipIf(notBuilt)('builds writer chunks that load and write a PDF (story 14.3 review)', async () => {
+    // The e2e runs the dev server's prebundle, never these chunks. `pdf.ts`
+    // reads `default` off each `import()`; the entry's interop hands it the
+    // module's own `default` unless that carries `__esModule`. So the built
+    // writer's `default` must be pdfmake itself, the fonts' the vfs, and the
+    // pair must write a PDF.
+    const assets = join(dist, 'assets');
+    const chunk = (prefix: string): string => {
+      const name = readdirSync(assets).find((file) => file.startsWith(prefix) && file.endsWith('.js'));
+
+      expect(name, `no ${prefix}*.js chunk`).toBeDefined();
+
+      return join(assets, name ?? '');
+    };
+    const writer = (await import(/* @vite-ignore */ chunk('pdfmake-'))) as {
+      default: {
+        __esModule?: boolean;
+        addVirtualFileSystem: (vfs: unknown) => void;
+        createPdf: (definition: object) => { getBuffer: () => Promise<Uint8Array> };
+      };
+    };
+    const fonts = (await import(/* @vite-ignore */ chunk('vfs_fonts-'))) as {
+      default: { __esModule?: boolean } & Record<string, unknown>;
+    };
+
+    expect(writer.default.__esModule).not.toBe(true);
+    expect(fonts.default.__esModule).not.toBe(true);
+    expect(typeof fonts.default['Roboto-Regular.ttf']).toBe('string');
+    writer.default.addVirtualFileSystem(fonts.default);
+    const file = await writer.default.createPdf({ content: ['Čćđšž'], defaultStyle: { font: 'Roboto' } }).getBuffer();
+
+    expect(Buffer.from(file).subarray(0, 5).toString('latin1')).toBe('%PDF-');
+  });
+
   it.skipIf(notBuilt)('never activates a new worker without the member', () => {
     const worker = read('sw.js');
 

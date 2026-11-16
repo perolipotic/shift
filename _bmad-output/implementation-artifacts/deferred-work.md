@@ -1561,3 +1561,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-14-3-the-change-history-exports-to-pdf.md`
   summary: The *Povijest promjena* PDF is built on the main thread with a nested table per row and no cap, warning or worker, so a busy 366-day period can freeze the tab while it builds. Revisit with real volume, with 14.2's uncapped rendering.
   evidence: Story 14.3's review (blind layer). Pilot volume is small.
+- source_spec: `_bmad-output/implementation-artifacts/spec-14-3-the-change-history-exports-to-pdf.md`
+  summary: In the *Povijest promjena* PDF, a row that does not fit at the foot of a page continues on the next page under the repeated header with empty *Vrijeme*, *Autor*, *Vrsta* and *Predmet* cells, so the continuation does not say which change it belongs to. `dontBreakRows` is not a fix: pdfmake 0.3.13 silently drops a row taller than a page under it. Repeat the row's identifying cells on a continuation, or keep a row whole when it fits on one page and split only taller rows.
+  evidence: Independent second review of 14.3, from a rendered 60-row export (pdfmake 0.3.13 in Node). A 90-change row under `dontBreakRows: true` was missing from the output.
