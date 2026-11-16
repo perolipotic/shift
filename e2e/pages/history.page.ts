@@ -51,7 +51,7 @@ export class HistoryPage extends BasePage {
     return this.page.getByRole('main').getByText(new RegExp(`^${escapeRegExp(head)}`));
   }
 
-  /** The chip bar's active chip whose text starts with `prefix` (`Smjena: `, `Vrsta: `). */
+  /** The chip bar's active chip whose name holds `text` (`Smjena: Smjena A`). */
   chip(text: string): Locator {
     return this.page.getByRole('group', { name: hr.filter.label, exact: true }).getByRole('button', { name: text });
   }

@@ -74,7 +74,6 @@ import { supabaseClient } from '@/lib/supabase/client';
 /** How the hook writes the URL: the next search, and whether it replaces the entry. */
 export type HistoryNavigate = (next: HistorySearch, options: { readonly replace: boolean }) => void;
 
-
 /** What the screen draws once every read answered. */
 export interface HistoryReadyView {
   readonly kind: typeof HISTORY_READY;
@@ -98,7 +97,6 @@ export type HistoryView =
   | { readonly kind: typeof HISTORY_OFFLINE }
   | { readonly kind: typeof HISTORY_UNAVAILABLE_STATE }
   | HistoryReadyView;
-
 
 /**
  * *Povijest promjena*'s wiring (story 14.2). Every decision is the domain's

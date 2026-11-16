@@ -11,6 +11,7 @@ import type {
 } from '@shift/domain';
 import {
   HISTORY_PERIOD_CHOICES,
+  MINUTES_PER_DAY,
   historyKindOfCode,
   historyReachesBeginning,
   type HistoryBeginning,
@@ -31,6 +32,9 @@ import {
   formatNumber,
   formatTime,
 } from '@/lib/i18n/format';
+
+/** A `time` of `24:00:00`, as the clock writes it (a figure, not prose). */
+const END_OF_DAY = '24:00';
 
 /**
  * *Povijest promjena*'s rows in words (story 14.2): each domain entry's codes
@@ -501,7 +505,9 @@ export function historyOperandText(operand: HistoryOperand, names: HistoryNames)
       return operand.from === operand.to ? from : t('history.value.range', { from, to });
     }
     case 'time':
-      return formatMinuteOfDay(operand.minute);
+      // PostgreSQL's `24:00:00` (the domain's minute 1440) is the end of the
+      // day; the formatter holds 0–1439 and would throw while the rows draw.
+      return operand.minute >= MINUTES_PER_DAY ? END_OF_DAY : formatMinuteOfDay(operand.minute);
     case 'member':
       return named(names.members, operand.id, t('history.value.unknownMember'));
     case 'team':

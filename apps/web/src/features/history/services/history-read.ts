@@ -198,19 +198,35 @@ export function historyCursorFilterOf(cursor: Pick<ReadAuditEvent, 'occurredAt' 
  * Every event of the padded window of `period`, newest first: pages of
  * {@link HISTORY_PAGE_ROWS} by keyset, stopping at the first short page.
  *
- * @throws Error(HISTORY_UNAVAILABLE) on a refusal or a row that is not an event.
+ * A page that repeats an event already read means the cursor did not move
+ * (a filter the server ignored): the read is unavailable, never a loop. An
+ * aborted `signal` (the period changed, the page left) asks for no further page.
+ *
+ * @throws Error(HISTORY_UNAVAILABLE) on a refusal, a row that is not an event or a cursor that did not move.
  */
-export async function readHistoryEvents(table: HistoryTable, period: HistoryPeriod): Promise<readonly ReadAuditEvent[]> {
+export async function readHistoryEvents(
+  table: HistoryTable,
+  period: HistoryPeriod,
+  signal?: AbortSignal,
+): Promise<readonly ReadAuditEvent[]> {
   const window = historyReadWindowOf(period);
   const events: ReadAuditEvent[] = [];
+  const seen = new Set<number>();
   let cursor: ReadAuditEvent | null = null;
 
   for (;;) {
+    signal?.throwIfAborted();
+
     let query = table.select(HISTORY_COLUMNS).gte(OCCURRED_AT, window.from).lt(OCCURRED_AT, window.to);
 
     if (cursor !== null) query = query.or(historyCursorFilterOf(cursor));
 
     const page = eventsOf(await query.order(OCCURRED_AT, DESCENDING).order(ID, DESCENDING).limit(HISTORY_PAGE_ROWS));
+
+    for (const event of page) {
+      if (seen.has(event.id)) throw new Error(HISTORY_UNAVAILABLE);
+      seen.add(event.id);
+    }
 
     events.push(...page);
 
@@ -250,9 +266,12 @@ export function historyKeyOf(period: HistoryPeriod): readonly [typeof HISTORY_KE
 export function historyQueryOptions(table: () => HistoryTable, period: HistoryPeriod) {
   return queryOptions({
     queryKey: historyKeyOf(period),
-    queryFn: async (): Promise<HistoryRead> => {
+    queryFn: async ({ signal }): Promise<HistoryRead> => {
       const source = table();
-      const [events, markers] = await Promise.all([readHistoryEvents(source, period), readHistoryMarkers(source)]);
+      const [events, markers] = await Promise.all([
+        readHistoryEvents(source, period, signal),
+        readHistoryMarkers(source),
+      ]);
 
       return { events, markers };
     },
