@@ -291,7 +291,7 @@ export function MemberStatusDialog({ edit }: { readonly edit: MemberEdit }): Rea
               ? null
               : t('ljudi.status.deactivateRequests', {
                   count: closedRequests.length,
-                  ranges: deactivationClosedRangesText(closedRequests),
+                  ranges: deactivationClosedRangesText(closedRequests, t),
                 })}
           </output>
         ) : null}

@@ -1,4 +1,4 @@
-import { collisionKeyOf, daysBetween, deriveShiftTimes, halfFieldOf, isHalfDay, leaveBalanceOf, leaveRangeCostOf, shiftTypeVersionOn, type Collision } from '@shift/domain';
+import { collisionKeyOf, daysBetween, deriveShiftTimes, halfFieldOf, isHalfDay, leaveBalanceOf, leaveRangeCostOf, shiftTypeVersionOn, type Collision, type LeaveHalf } from '@shift/domain';
 
 import type { CalendarSnapshot, CalendarSurfaceState } from '@/features/calendar/services/snapshot';
 import { dayDetailOf } from '@/features/calendar/utils/day-detail';
@@ -501,6 +501,8 @@ export interface ResolutionView {
   /** The causing record's range, as the member's leave card writes it. */
   readonly leaveFrom: string;
   readonly leaveTo: string;
+  /** STORY 13.7: the causing record's half when it is a half day, or null for a whole day. */
+  readonly leaveHalf: LeaveHalf | null;
   /** What that record costs, in days. */
   readonly leaveCostDays: number;
   /**
@@ -862,6 +864,7 @@ function resolutionScreenFrom(
       positionKey: rosterPositionMessageKey(absent.position, positionsShown(snapshot)),
       leaveFrom: range.from,
       leaveTo: range.to,
+      leaveHalf: record.record.half ?? null,
       leaveCostDays: record.costDays,
       coworkers,
       total: detail.roster.length,

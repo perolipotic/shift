@@ -655,6 +655,26 @@ export function leaveRangeHalfMessageKey(
   return null;
 }
 
+/** A half-day range's words, `{range} (prvi dio smjene)` or `(drugi dio smjene)` (story 13.7). */
+export type LeaveRangeHalfKey = NonNullable<ReturnType<typeof leaveRangeHalfMessageKey>>;
+
+/** How a surface says a half-day range's words: its own `t`, with the half's key (story 13.7). */
+export type LeaveRangeHalfTranslate = (key: LeaveRangeHalfKey, values: { readonly range: string }) => string;
+
+/**
+ * `text` — a range's end, or a one-date absence's date, as the surface
+ * already writes it — with a half day's half named after it, through
+ * `translate` (story 13.7): `10.09.2026 (prvi dio smjene)`. A whole day's
+ * `text` comes back unchanged, so its line stays byte-identical. The one
+ * helper every leave surface names the half with, so none composes it
+ * on its own.
+ */
+export function leaveHalfNamedOf(translate: LeaveRangeHalfTranslate, text: string, half: LeaveHalf | null | undefined): string {
+  const key = leaveRangeHalfMessageKey({ from: text, to: text, half: half ?? null });
+
+  return key === null ? text : translate(key, { range: text });
+}
+
 /** The type group's label id, which names the radio group (story 13.2b). */
 export const LEAVE_TYPE_LABEL_ID = 'member-leave-type-label';
 

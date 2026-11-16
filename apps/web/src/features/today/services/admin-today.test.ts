@@ -89,6 +89,7 @@ import {
   type StaffingFixture,
 } from '@/features/staffing/staffing.fixture';
 import { datesFrom } from '@/utils/dates';
+import { leaveHalfNamedOf } from '@/features/leave/services/leave-section';
 import { initLocalization, t } from '@/lib/i18n';
 import { nextIsoDate } from '@/lib/i18n/format';
 import {
@@ -390,9 +391,22 @@ describe('Treba tebe', () => {
         memberName: 'Ana Anić',
         from: '28.09.2026',
         to: '29.09.2026',
+        half: null,
         badge: BADGE_PAST,
       });
       expect(t('danas.admin.needsYou.open', { count: needsYou.count })).toBe('Otvori Za odluku (9)');
+    });
+
+    it('STORY 13.7: a half-day request carries its half, which its range names after its end', () => {
+      const needsYou = shownOf([], [{ ...requestOf('req-half', ANA, '2026-10-04', '2026-10-04'), half: 'FIRST' }]);
+      const [row] = needsYou.rows;
+
+      if (row?.kind !== ITEM_REQUEST) throw new Error('no request row');
+
+      expect(row).toMatchObject({ from: '04.10.2026', to: '04.10.2026', half: 'FIRST' });
+      expect(t('zaOdluku.request.range', { from: row.from, to: leaveHalfNamedOf(t, row.to, row.half) })).toBe(
+        'Odsutnost 04.10.2026–04.10.2026 (prvi dio smjene)',
+      );
     });
 
     it('Only requests: one pending request is `1 čeka odluku`', () => {
@@ -675,10 +689,10 @@ describe('Odsutnost danas', () => {
     const { absences } = viewOf(pilot, rows);
 
     expect(absences.today).toEqual([
-      { memberId: ANA, name: 'Ana Anić', teamName: 'Smjena A', from: '28.09.', to: '04.10.', oneDay: false },
+      { memberId: ANA, name: 'Ana Anić', teamName: 'Smjena A', from: '28.09.', to: '04.10.', oneDay: false, half: null },
     ]);
     expect(absences.tomorrow).toEqual([
-      { memberId: DORA, name: 'Dora Dorić', teamName: 'Smjena A', from: '02.10.', to: '09.10.', oneDay: false },
+      { memberId: DORA, name: 'Dora Dorić', teamName: 'Smjena A', from: '02.10.', to: '09.10.', oneDay: false, half: null },
     ]);
     const [ana] = absences.today;
     const [dora] = absences.tomorrow;
@@ -716,6 +730,54 @@ describe('Odsutnost danas', () => {
     expect(t(absentTomorrowMessageKey({ teamName: null, oneDay: true }), { name: 'Ana Anić', date: '02.10.' })).toBe(
       'Od sutra: Ana Anić, 02.10.',
     );
+  });
+
+  it('STORY 13.7: names a half day today alone, with its half, never joined to the whole days either side', () => {
+    const rows = [
+      leaveOf('leave-ana-before', ANA, '2026-09-28', '2026-09-30'),
+      { ...leaveOf('leave-ana-half', ANA, TODAY, TODAY), half: 'FIRST' },
+      leaveOf('leave-ana-after', ANA, '2026-10-02', '2026-10-04'),
+      { ...leaveOf('leave-dora-half', DORA, '2026-10-02', '2026-10-02'), half: 'SECOND' },
+    ];
+    const { absences } = viewOf(pilot, rows);
+    const [ana] = absences.today;
+    const dora = absences.tomorrow.find((one) => one.memberId === DORA);
+
+    if (ana === undefined || dora === undefined) throw new Error('nobody absent');
+
+    expect(ana).toEqual({ memberId: ANA, name: 'Ana Anić', teamName: 'Smjena A', from: '01.10.', to: '01.10.', oneDay: true, half: 'FIRST' });
+    // The whole days after Ana's half day start tomorrow: their own absence.
+    expect(absences.tomorrow.map((one) => [one.memberId, one.from, one.to])).toEqual([
+      [ANA, '02.10.', '04.10.'],
+      [DORA, '02.10.', '02.10.'],
+    ]);
+    expect(dora).toMatchObject({ memberId: DORA, from: '02.10.', oneDay: true, half: 'SECOND' });
+    // What the card writes: the one date, its half named after it.
+    expect(
+      t(absentLineMessageKey(ana), { team: ana.teamName, date: leaveHalfNamedOf(t, ana.from, ana.half) }),
+    ).toBe('Smjena A · odsutnost 01.10. (prvi dio smjene)');
+    expect(
+      t(absentTomorrowMessageKey(dora), {
+        name: dora.name,
+        team: dora.teamName,
+        date: leaveHalfNamedOf(t, dora.from, dora.half),
+      }),
+    ).toBe('Od sutra: Dora Dorić (Smjena A), 02.10. (drugi dio smjene)');
+  });
+
+  it('STORY 13.7: still names an absence starting tomorrow after a half day today', () => {
+    const rows = [
+      { ...leaveOf('leave-ana-half', ANA, TODAY, TODAY), half: 'SECOND' },
+      leaveOf('leave-ana-after', ANA, '2026-10-02', '2026-10-04'),
+    ];
+    const { absences } = viewOf(pilot, rows);
+
+    expect(absences.today).toEqual([
+      { memberId: ANA, name: 'Ana Anić', teamName: 'Smjena A', from: '01.10.', to: '01.10.', oneDay: true, half: 'SECOND' },
+    ]);
+    expect(absences.tomorrow).toEqual([
+      { memberId: ANA, name: 'Ana Anić', teamName: 'Smjena A', from: '02.10.', to: '04.10.', oneDay: false, half: null },
+    ]);
   });
 
   it('leaves out a member inactive today', async () => {

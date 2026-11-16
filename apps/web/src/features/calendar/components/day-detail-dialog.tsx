@@ -46,6 +46,7 @@ import type { OverrideFormState } from '@/features/calendar/hooks/use-override-f
 import type { RosterFormState } from '@/features/calendar/hooks/use-roster-form';
 import type { CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { candidateContinuousMessageKey, candidateContinuousOf } from '@/features/calendar/utils/replacement-candidates';
+import { leaveHalfNamedOf } from '@/features/leave/services/leave-section';
 import { atWorkText } from '@/features/staffing/components/short-staffed-block';
 import type { CoverageAgainstMinimum } from '@/features/staffing/services/short-staffed';
 import { positionsShown, rosterLineOf, rosterPositionMessageKey } from '@/features/members/utils/position';
@@ -330,7 +331,8 @@ function renderConflicts(conflicts: readonly DayConflict[]): ReactNode {
                 : t('kalendar.detail.conflict.line', {
                     name: conflict.memberName ?? t('kalendar.detail.unknownMember'),
                     from: conflict.leaveFrom,
-                    to: conflict.leaveTo,
+                    // STORY 13.7: a half day's half after its date.
+                    to: leaveHalfNamedOf(t, conflict.leaveTo, conflict.leaveHalf),
                   })}
             </p>
             <Button asChild variant="outline" className="h-11 justify-self-start">

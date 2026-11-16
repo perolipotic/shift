@@ -1476,18 +1476,18 @@
   evidence: 13.5 was two independently shippable goals (the admin records a half day with every derived figure; the member requests one through Epic 9's request flow), well over the spec budget. The PO split at step 01 of bmad-build (2026-11-12), admin record first, as 13.4/13.4b did.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-13-5-a-half-day-record-costs-half-a-day.md`
-  summary: A member on a half day today sees only *Danas*'s leave case (0,5 dana), not the half of the shift they still work; the member's Danas could show the working case with the worked half's times and the absent half noted.
+  summary: RESOLVED by 13.7 (2026-11-16) — on a half day with its working shift, the member's *Danas* is the working case: the row shows the worked half's times, and one line names the type, the absent half and its cost; a half day joins no neighbouring absence. A member on a half day today sees only *Danas*'s leave case (0,5 dana), not the half of the shift they still work; the member's Danas could show the working case with the worked half's times and the absent half noted.
   evidence: Review of 13.5 (blind and edge-case layers). `today/services/today.ts` takes "leave first, then working"; 13.5 changed only the cost to 0.5. The spec named no Danas behaviour beyond the figure, so the shape (which case wins, which times) is a UX decision for the PO.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-13-5-a-half-day-record-costs-half-a-day.md`
-  summary: The half itself is not shown on the decision surfaces: the resolution screen, the calendar day detail's collision line and *Za odluku* say *odsutnost {od}–{do}* without "pola dana (prvi/drugi dio smjene)", so an admin choosing *Zamijeni člana* (which moves the whole shift) cannot see the member would have worked the other half.
+  summary: RESOLVED by 13.7 (2026-11-16) — the resolution screen, the day detail's collision line and *Za odluku*'s collision row name the half after the range's end, `(prvi/drugi dio smjene)`. The half itself is not shown on the decision surfaces: the resolution screen, the calendar day detail's collision line and *Za odluku* say *odsutnost {od}–{do}* without "pola dana (prvi/drugi dio smjene)", so an admin choosing *Zamijeni člana* (which moves the whole shift) cannot see the member would have worked the other half.
   evidence: Review of 13.5 (blind layer). The spec put a calendar half-day mark under Ask First; the resolution screen's cost already reads 0,5 dana, but no surface names the half. Decide with the PO whether these lines name it.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-13-5b-a-member-asks-for-a-half-day.md`
-  summary: A half-day leave request or record is still named as a whole-day range by notifications (`leaveRequestCreated`, `leaveRequestApproved`/`Rejected`, `leaveRecorded`), admin *Danas*, *Odlučeno* and the deactivation request list; decide with the PO whether these name the half.
+  summary: RESOLVED IN PART by 13.7 (2026-11-16) — admin *Danas* (*Odsutnost danas*, *Treba tebe*), *Odlučeno* and the deactivation question now name the half; the notifications stay open as Story 13.7b. A half-day leave request or record is still named as a whole-day range by notifications (`leaveRequestCreated`, `leaveRequestApproved`/`Rejected`, `leaveRecorded`), admin *Danas*, *Odlučeno* and the deactivation request list; decide with the PO whether these name the half.
   evidence: Review of 13.5b (blind layer). 13.5 and 13.5b put notification text and these surfaces under Ask First, so they render `{startDate}–{endDate}` only (`supabase/functions/notify/messages.ts:19-26,83-86`, `admin-today.ts:156-175`, `resolved-conflicts.ts:265-283`, `deactivation-requests.ts:44`).
 - source_spec: `_bmad-output/implementation-artifacts/spec-13-5b-a-member-asks-for-a-half-day.md`
-  summary: The request review shows *0 dana* without explanation when a requested half's date no longer holds one working shift; the admin approves a record that costs nothing without being told why.
+  summary: RESOLVED by 13.7 (2026-11-16) — a line under *Trošak* says the date holds no working shift any more, so the half costs nothing (`godisnji.request.halfNoShift`). The request review shows *0 dana* without explanation when a requested half's date no longer holds one working shift; the admin approves a record that costs nothing without being told why.
   evidence: Review of 13.5b (blind layer). By the spec's Design Note the review never refuses the half and costs what the domain says (0), but no line on the decision screen says the half no longer matches a shift.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-a1-snapshot-shape-buster.md`
@@ -1497,3 +1497,11 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-a2-amend-keeps-stored-half.md`
   summary: The admin's Izmijeni dialog draws no half card for a kept half on a date with no single working shift, so it shows Pola dana on without saying which half is stored; drawing the kept half needs new hr.json copy.
   evidence: A2 keeps the stored half there (`keepsStoredHalf`), but `halfOptions` in `use-member-leave.ts` is null on such a date.
+
+- source_spec: none
+  summary: Story 13.7b — every notification about a half-day leave record or request names the half (`leaveRequestCreated`, `leaveRequestApproved`/`Rejected`, `leaveRecorded`, `leaveRecordChanged`, `leaveRecordRemoved`), including an amend that changes only the half.
+  evidence: Split from 13.7 at step 01 of bmad-build (PO, 2026-11-16). The operands are written by SQL (0043's leave record trigger, 0043:517's request trigger, 0059's `decide_leave_request`), so naming the half needs migration 0060, new `obavijesti` copy in `hr.json` and `notify/messages.ts` and the notify boundary pin. That is a separately shippable goal with its own deploy order; 13.7 is client-only.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-13-7-a-half-day-is-named-as-a-half-wherever-leave-is-shown.md`
+  summary: The member's week strip on *Danas* and the calendar cells still draw a half-day date with the whole-day leave mark (◷ / hatch), while *Danas* itself now shows that date as a working day; a half-day calendar mark is a UX decision for the PO.
+  evidence: Review of 13.7 (blind and epic-AC layers). `today.ts` `dayLookupOf` maps records to `{from, to}` for the calendar's leave modifier and was left on purpose: the spec put a calendar half-day mark under Ask First. `weekOf` now sets `onLeave: false` for a half day, so the strip's cell and its mark disagree.

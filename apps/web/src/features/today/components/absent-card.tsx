@@ -4,6 +4,7 @@ import { useId, type ReactNode } from 'react';
 import { Card } from '@/components/ui/card';
 import { ModifierGlyphs } from '@/features/calendar/components/modifier-glyphs';
 import { MODIFIER_LEAVE, glyphOf } from '@/features/calendar/utils/modifiers';
+import { leaveHalfNamedOf } from '@/features/leave/services/leave-section';
 import {
   absentLineMessageKey,
   absentTomorrowMessageKey,
@@ -15,6 +16,14 @@ import { t } from '@/lib/i18n';
 /** The leave mark's glyph, as the calendar draws it. */
 const LEAVE_GLYPHS = [glyphOf(MODIFIER_LEAVE)];
 
+/**
+ * A one-day absence's date (story 13.7): a half day's names its half after
+ * it — `01.10. (prvi dio smjene)` — and a whole day's reads alone.
+ */
+function halfDateOf(member: AbsentMember): string {
+  return leaveHalfNamedOf(t, member.from, member.half);
+}
+
 /** One member on leave today: the name, then the team and the whole absence. */
 function renderToday(member: AbsentMember): ReactNode {
   return (
@@ -25,7 +34,7 @@ function renderToday(member: AbsentMember): ReactNode {
       <span className="grid min-w-0 flex-1 gap-0.5">
         <span className="min-w-0 break-words font-semibold">{member.name}</span>
         <span className="min-w-0 break-words text-sm text-muted-foreground tabular-nums">
-          {t(absentLineMessageKey(member), { team: member.teamName, from: member.from, to: member.to, date: member.from })}
+          {t(absentLineMessageKey(member), { team: member.teamName, from: member.from, to: member.to, date: halfDateOf(member) })}
         </span>
       </span>
     </li>
@@ -58,7 +67,7 @@ export function AbsentCard({ absences }: { readonly absences: Absences }): React
               team: member.teamName,
               from: member.from,
               to: member.to,
-              date: member.from,
+              date: halfDateOf(member),
             })}
           </p>
         ))}

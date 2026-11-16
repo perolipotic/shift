@@ -1,5 +1,5 @@
 import { queryOptions } from '@tanstack/react-query';
-import { collisionKeyOf, scheduledShiftTypeOn } from '@shift/domain';
+import { collisionKeyOf, scheduledShiftTypeOn, type LeaveHalf } from '@shift/domain';
 
 import type { CalendarSnapshot, CalendarSurfaceState } from '@/features/calendar/services/snapshot';
 import { unknownSnapshotIdsOf } from '@/features/calendar/services/snapshot-skew';
@@ -122,6 +122,8 @@ export interface ResolvedRequestRow {
   /** The requested range, as the member's leave card writes it. */
   readonly from: string;
   readonly to: string;
+  /** STORY 13.7: the requested half of a one-date request, or null for a whole day. */
+  readonly half: LeaveHalf | null;
   /** The deciding admin's name, or `null` when they are no longer a member. */
   readonly actorName: string | null;
   /** `12.09.2026`, in the organization's zone. */
@@ -294,6 +296,7 @@ function decidedRequestsOf(
           memberName: members.get(request.memberId) ?? null,
           from: range.from,
           to: range.to,
+          half: request.half ?? null,
           actorName: actors.get(decision.decidedBy) ?? null,
           decidedOn: formatDate(decidedAt, snapshot.timeZone),
           decidedAt: formatTime(decidedAt, snapshot.timeZone),

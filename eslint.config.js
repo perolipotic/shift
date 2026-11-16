@@ -288,7 +288,10 @@ export const FEATURE_PUBLIC = {
     // its resolution page and the admin's Danas stand on. Retro 8–9 (S1): the
     // read side of `leave-requests`, split from its writes, which stay private.
     'services/leave-request-list', // conflicts, members, teams, today
-    'services/leave-section', // conflicts, pages, today
+    // Story 13.7: the calendar's day detail and the member page's deactivation
+    // question name a half day's half through `leaveHalfNamedOf`, the one
+    // helper every leave surface says the half with, so none composes it alone.
+    'services/leave-section', // calendar, conflicts, members, pages, today
     'services/my-leave', // today
     // Story 9.4: the decision screen's heading id, which names the page's main
     // region; since retro 8–9 (P1) in its own ids file, not a service.
