@@ -109,7 +109,15 @@ export default defineConfig({
         // STORY 10.4. The push handlers (`public/push-sw.js`) are imported
         // by the worker, never precached: the browser checks an imported
         // script for updates with the worker itself.
-        globIgnores: ['**/node_modules/**/*', 'push-sw.js'],
+        //
+        // STORY 14.3. The change history's PDF writer (`pdfmake`, ~0.8 MB) and
+        // its Roboto fonts (~0.9 MB) are loaded by `import()` only when an
+        // admin exports, and never precached: no install downloads them, and
+        // the export is online only, as the history is. Rolldown names each
+        // chunk after its module (`pdfmake.js`, `vfs_fonts.js`);
+        // `test/static-hosting.test.ts` finds the writer chunks by their
+        // contents and proves `sw.js` lists neither.
+        globIgnores: ['**/node_modules/**/*', 'push-sw.js', 'assets/pdfmake-*.js', 'assets/vfs_fonts-*.js'],
         importScripts: ['push-sw.js'],
         navigateFallback: '/index.html',
         sourcemap: false,

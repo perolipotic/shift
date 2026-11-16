@@ -318,6 +318,19 @@
     "retry": "Pokušaj ponovno",
     "summary": "Prikazano: {shown, plural, one {# promjena} few {# promjene} other {# promjena}} od {total}",
     "count": "{count, plural, one {# promjena} few {# promjene} other {# promjena}}",
+    "export": {
+      "action": "Izvezi u PDF",
+      "pending": "Izvoz…",
+      "failed": "Izvoz nije uspio. Osvježi stranicu i pokušaj ponovno.",
+      "done": "{count, plural, one {Preuzeta je datoteka {fileName} s # promjenom.} few {Preuzeta je datoteka {fileName} s # promjene.} other {Preuzeta je datoteka {fileName} s # promjena.}}",
+      "fileName": "Povijest promjena {organization} {from} {to}",
+      "organization": "Organizacija: {name}",
+      "period": "Razdoblje: {value} ({from} – {to})",
+      "generated": "Izrađeno: {date} u {time}",
+      "page": "Stranica {page} od {pages}",
+      "before": "Bilo",
+      "after": "Sada"
+    },
     "chip": {
       "period": "Razdoblje: {value}",
       "member": "Osoba: {value}",

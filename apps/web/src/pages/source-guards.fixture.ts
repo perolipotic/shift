@@ -278,10 +278,16 @@ export const POVIJEST_PROMJENA: readonly string[] = [
   join(HISTORY_FEATURE, 'components', 'history-rows.tsx'),
   join(HISTORY_FEATURE, 'components', 'history-changes.tsx'),
   join(HISTORY_FEATURE, 'components', 'history-begins.tsx'),
+  // Story 14.3: *Izvezi u PDF*, its hook and its component.
+  join(HISTORY_FEATURE, 'hooks', 'use-history-export.ts'),
+  join(HISTORY_FEATURE, 'components', 'history-export.tsx'),
 ];
 
 /** Story 14.2's rules: the history's words, off `t()` and its `\w*MessageKey` unions. */
 export const HISTORY_ROWS_KEYS = join(HISTORY_FEATURE, 'services', 'history-rows.ts');
+
+/** Story 14.3's rules: the PDF's header lines, columns, sides, file name and page footer, and its action's two labels. */
+export const HISTORY_EXPORT_KEYS = join(HISTORY_FEATURE, 'services', 'history-export.ts');
 
 /**
  * Story 5.3b's *Za odluku*: the conflicts queue, a file set on *Sati*'s terms,
@@ -1118,7 +1124,8 @@ export const SCREENS = [
   // STORY 14.2. TWO on Povijest promjena: the unavailable alert's retry, and
   // *Poništi filtre* on the line the chips leave when they show nothing. The
   // chips are the shared `OptionFilterBar`'s, and nothing here writes.
-  { name: 'the Povijest promjena destination', file: POVIJEST_PROMJENA, expectedFields: 0, expectedButtons: 2 },
+  // THREE SINCE STORY 14.3: *Izvezi u PDF*.
+  { name: 'the Povijest promjena destination', file: POVIJEST_PROMJENA, expectedFields: 0, expectedButtons: 3 },
   // STORY 9.3. On the request form: the od and do `<Input>`s, *Pošalji*,
   // *Odustani* (a `<Button asChild>` link back to Godišnji), the figures'
   // unavailable alert's retry, *Natrag na Godišnji* above the title (written

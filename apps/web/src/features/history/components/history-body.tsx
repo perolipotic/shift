@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Notice } from '@/components/ui/notice';
 import { StackedSkeletonRow } from '@/components/ui/stacked-list';
 import { HistoryBegins } from '@/features/history/components/history-begins';
+import { HistoryExport } from '@/features/history/components/history-export';
 import { HistoryFilters } from '@/features/history/components/history-filters';
 import { HistoryStackedRows } from '@/features/history/components/history-rows';
 import { HistoryTable } from '@/features/history/components/history-table';
@@ -17,11 +18,11 @@ const SKELETON_ROWS = [0, 1, 2, 3];
 
 /**
  * *Povijest promjena* under its heading (story 14.2): the chips, where
- * history begins when the period reaches it, and the rows — a table from
- * 640 px, stacked rows below. The skeleton while the reads are unanswered;
- * offline, one notice and no rows (the history is never kept on the device);
- * a failed read, one alert with a retry; in place of no rows, one line that
- * says why.
+ * history begins when the period reaches it, the *Izvezi u PDF* action (story
+ * 14.3), and the rows — a table from 640 px, stacked rows below. The
+ * skeleton while the reads are unanswered; offline, one notice and no rows
+ * (the history is never kept on the device); a failed read, one alert with a
+ * retry; in place of no rows, one line that says why.
  */
 export function HistoryBody({ screen }: { readonly screen: ChangeHistoryScreen }): ReactNode {
   const { view, retryable, retry, clearFilters } = screen;
@@ -83,6 +84,9 @@ export function HistoryBody({ screen }: { readonly screen: ChangeHistoryScreen }
             <HistoryBegins begins={view.begins} />
           </div>
         )}
+        <div className="px-4">
+          <HistoryExport view={view} filters={screen.filters} />
+        </div>
         {isPhone ? <HistoryStackedRows rows={view.rows} empty={empty} /> : <HistoryTable rows={view.rows} empty={empty} />}
       </div>
     );

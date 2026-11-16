@@ -261,6 +261,8 @@ export const FEATURE_PUBLIC = {
   // (`hoursLeaveKeysOf`), never a second recipe.
   hours: [
     'services/hours-conflicts', // calendar, swaps, today
+    // Story 14.3: the change history's PDF names its file as the hours export does (`fileNameSafeOf`).
+    'services/hours-export', // history
     // Epic 4 retro P1: *Sati*'s URL, moved out of `my-hours`; the route parses with it.
     'services/hours-search', // pages, today
     'services/my-hours', // calendar, pages, today

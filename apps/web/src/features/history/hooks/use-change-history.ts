@@ -77,7 +77,7 @@ export type HistoryNavigate = (next: HistorySearch, options: { readonly replace:
 /** What the screen draws once every read answered. */
 export interface HistoryReadyView {
   readonly kind: typeof HISTORY_READY;
-  /** The filtered rows, in the order drawn: the value 14.3 exports. */
+  /** The filtered rows, in the order drawn: the value the PDF exports (story 14.3). */
   readonly rows: readonly HistoryRow[];
   /** Every change of the period, before the chips; the start-of-history row is no change. */
   readonly total: number;
@@ -90,6 +90,12 @@ export interface HistoryReadyView {
   readonly begins: HistoryBeginsView | null;
   /** The period has entries and the chips left none: the empty line offers *Poništi filtre*. */
   readonly filteredOut: boolean;
+  /** The period's first and last day, ISO: the export's header names them (story 14.3). */
+  readonly period: HistoryPeriod;
+  /** The organization snapshot's `name`: the export's header and file name. */
+  readonly organizationName: string;
+  /** The organization's time zone, the export's generation time is read in. */
+  readonly zone: string;
 }
 
 export type HistoryView =
@@ -122,6 +128,7 @@ export function useChangeHistory(search: HistorySearch, navigate: HistoryNavigat
 
   const organizationRead = useQuery(organizationSnapshotQueryOptions(organizationTable));
   const zone = organizationRead.data?.ok === true ? organizationRead.data.snapshot.timezone : null;
+  const organizationName = organizationRead.data?.ok === true ? organizationRead.data.snapshot.name : null;
   const { today } = useOrganizationToday(zone);
   const periods = useMemo(() => (today === null ? null : historyPeriodChoicesOf(today)), [today]);
   const chosenPeriod =
@@ -221,19 +228,23 @@ export function useChangeHistory(search: HistorySearch, navigate: HistoryNavigat
         },
   );
   const stateKey = historySearchKeyOf(search);
+  const offeredMember = offered.member;
+  const offeredTeam = offered.team;
+  const offeredKind = offered.kind;
 
-  let view: HistoryView;
+  // THE READY VIEW, ONCE PER SNAPSHOT AND CHIPS (story 14.3): its `rows` keep
+  // their identity while the view does, so the export's status and failure
+  // lines, keyed on them, go when the period, a chip or a refetch changes them.
+  const ready = useMemo<HistoryReadyView | null>(() => {
+    if (snapshot === null || zone === null || period === null || organizationName === null) return null;
 
-  if (!online) {
-    view = { kind: HISTORY_OFFLINE };
-  } else if (failed) {
-    view = { kind: HISTORY_UNAVAILABLE_STATE };
-  } else if (snapshot === null || zone === null) {
-    view = { kind: HISTORY_LOADING };
-  } else {
-    const shown = filteredHistoryEntries(snapshot.entries, offered);
+    const shown = filteredHistoryEntries(snapshot.entries, {
+      member: offeredMember,
+      team: offeredTeam,
+      kind: offeredKind,
+    });
 
-    view = {
+    return {
       kind: HISTORY_READY,
       rows: historyRowsOf(shown, snapshot.names, zone),
       filteredOut: shown.length === 0 && snapshot.entries.length > 0,
@@ -243,7 +254,22 @@ export function useChangeHistory(search: HistorySearch, navigate: HistoryNavigat
       teams: snapshot.teams,
       kinds: snapshot.kinds,
       begins: snapshot.begins,
+      period,
+      organizationName,
+      zone,
     };
+  }, [snapshot, zone, period, organizationName, offeredMember, offeredTeam, offeredKind]);
+
+  let view: HistoryView;
+
+  if (!online) {
+    view = { kind: HISTORY_OFFLINE };
+  } else if (failed) {
+    view = { kind: HISTORY_UNAVAILABLE_STATE };
+  } else if (ready === null) {
+    view = { kind: HISTORY_LOADING };
+  } else {
+    view = ready;
   }
 
   /** Write `next` to the URL, and return the state it leaves. */

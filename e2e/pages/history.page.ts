@@ -1,6 +1,6 @@
-import type { Locator } from '@playwright/test';
+import type { Download, Locator } from '@playwright/test';
 
-import { escapeRegExp, fill, hr } from '../utils/i18n.ts';
+import { escapeRegExp, fill, hr, plural } from '../utils/i18n.ts';
 import { BasePage } from './base.page.ts';
 
 const history = hr.history;
@@ -63,6 +63,11 @@ export class HistoryPage extends BasePage {
       .getByRole('button', { name: text, exact: true });
   }
 
+  /** The ✕ of the active team chip whose value is `value`. */
+  removeTeamChip(value: string): Locator {
+    return this.page.getByRole('button', { name: fill(history.remove.team, { value }), exact: true });
+  }
+
   /** The offline notice that stands in place of the rows. */
   get offlineNotice(): Locator {
     return this.page.getByRole('status').filter({ hasText: history.offline });
@@ -71,5 +76,41 @@ export class HistoryPage extends BasePage {
   /** The line the chips leave when they show nothing. */
   get filteredLine(): Locator {
     return this.page.getByText(history.filtered, { exact: true });
+  }
+
+  // ------------------------------------------------ the export (story 14.3)
+
+  /** `Izvezi u PDF`, above the rows; while building, it wears the pending label. */
+  get exportButton(): Locator {
+    return this.page.getByRole('button', { name: history.export.action, exact: true });
+  }
+
+  /** The line a failed build shows. */
+  get exportFailed(): Locator {
+    return this.page.getByRole('alert').filter({ hasText: history.export.failed });
+  }
+
+  /** The status line after a download: the file's name and how many changes it holds. */
+  exportDone(fileName: string, count: number): Locator {
+    // The plural helper takes no braces inside a form: the file's name goes in after.
+    const placeholder = '\u0000';
+    const text = plural(history.export.done.replaceAll('{fileName}', placeholder), count).replace(placeholder, fileName);
+
+    return this.page.getByRole('status').filter({ hasText: text });
+  }
+
+  /** The file name the export gives, whatever the organization and period: `Povijest promjena … YYYY-MM-DD YYYY-MM-DD.pdf`. */
+  get exportFileName(): RegExp {
+    const day = '\\d{4}-\\d{2}-\\d{2}';
+    const [head] = history.export.fileName.split('{');
+
+    return new RegExp(`^${escapeRegExp(head ?? '')}.+ ${day} ${day}\\.pdf$`);
+  }
+
+  /** Chooses the export and answers the download it starts. */
+  async exportDownload(): Promise<Download> {
+    const [download] = await Promise.all([this.page.waitForEvent('download'), this.exportButton.click()]);
+
+    return download;
   }
 }

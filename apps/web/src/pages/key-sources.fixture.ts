@@ -25,6 +25,7 @@ import {
   HOUR_BAND_WRITE_KEYS,
   HOURS_EXPLANATION_KEYS,
   HOURS_EXPORT_KEYS,
+  HISTORY_EXPORT_KEYS,
   HISTORY_ROWS_KEYS,
   HOURS_KEYS,
   KALENDAR,
@@ -1127,10 +1128,13 @@ export const KEY_SOURCES = [
     // FIFTY-TWO SINCE ITS REVIEW: the start-of-history badge, twice (table
     // and stacked rows); the begins statement's two wordings come through
     // `historyBeginsMessageKey`.
+    // FIFTY-FOUR SINCE STORY 14.3: the export's failed and done lines; its
+    // action's two labels come through `historyExportMessageKey` in
+    // `@/features/history/services/history-export`, a key source.
     name: 'the Povijest promjena destination',
     file: POVIJEST_PROMJENA,
     keys: translationKeys,
-    strings: 52,
+    strings: 54,
   },
   {
     // STORY 14.2: the history's words — the record, action, field, value,
@@ -1142,6 +1146,18 @@ export const KEY_SOURCES = [
     // statement's two wordings.
     keys: (text: string) => [...translationKeys(text), ...messageKeyUnions(text)],
     strings: 125,
+  },
+  {
+    // STORY 14.3: the PDF's words — the title (the caption), the header's
+    // organization, period, three filter lines (each set or `sve`), summary,
+    // generation time and the begins statement off `historyBeginsMessageKey`;
+    // the six column headings; a change's two sides and the line for none;
+    // the two badges; the file's name and the page footer; and the action's
+    // two labels, off `historyExportMessageKey`.
+    name: 'the change history export rules',
+    file: HISTORY_EXPORT_KEYS,
+    keys: (text: string) => [...translationKeys(text), ...messageKeyUnions(text)],
+    strings: 26,
   },
   {
     // E884: the Stanje chip's five options and the five values its text says,

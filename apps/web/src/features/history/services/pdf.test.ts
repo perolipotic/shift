@@ -1,0 +1,278 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { beforeAll, describe, expect, it } from 'vitest';
+
+import { historyExportOf, type HistoryExport } from '@/features/history/services/history-export';
+import type { HistoryRow } from '@/features/history/services/history-rows';
+import { HISTORY_PDF_FONT, historyDocumentOf } from '@/features/history/services/pdf';
+import { initLocalization, t } from '@/lib/i18n';
+import resources from '@/lib/i18n/locales/hr.json';
+
+/**
+ * Story 14.3: every character the PDF draws is in the font it is drawn in.
+ * pdfmake's bundled Roboto has č, ć, đ, š and ž but no `→` — a missing glyph
+ * prints as an empty box, silently — so the document is walked string by
+ * string, each against the cmap of the face it uses (bold: Roboto-Medium,
+ * italic: Roboto-Italic), decoded from the same `vfs_fonts.js` the writer
+ * registers. The cmap is parsed here (formats 4 and 12), with no dependency.
+ */
+
+type Face = 'normal' | 'bold' | 'italics' | 'bolditalics';
+
+/** pdfmake's own Roboto table (`src/browser-extensions/index.js`). */
+const FACE_FILES: Readonly<Record<Face, string>> = {
+  normal: 'Roboto-Regular.ttf',
+  bold: 'Roboto-Medium.ttf',
+  italics: 'Roboto-Italic.ttf',
+  bolditalics: 'Roboto-MediumItalic.ttf',
+};
+
+const vfs = createRequire(import.meta.url)('pdfmake/build/vfs_fonts.js') as Readonly<Record<string, string>>;
+
+/** The code points a TrueType font maps, from its `cmap`'s Unicode subtables (3,1 format 4; 3,10 / 0,x format 12). */
+function codePointsOf(font: Buffer): ReadonlySet<number> {
+  const tables = font.readUInt16BE(4);
+  let cmap = -1;
+
+  for (let index = 0; index < tables; index += 1) {
+    const record = 12 + index * 16;
+
+    if (font.toString('latin1', record, record + 4) === 'cmap') cmap = font.readUInt32BE(record + 8);
+  }
+  if (cmap < 0) throw new Error('no cmap table');
+
+  const points = new Set<number>();
+  const subtables = font.readUInt16BE(cmap + 2);
+
+  for (let index = 0; index < subtables; index += 1) {
+    const record = cmap + 4 + index * 8;
+    const platform = font.readUInt16BE(record);
+    const encoding = font.readUInt16BE(record + 2);
+    const at = cmap + font.readUInt32BE(record + 4);
+    const format = font.readUInt16BE(at);
+    const unicode = platform === 0 || (platform === 3 && (encoding === 1 || encoding === 10));
+
+    if (!unicode) continue;
+
+    if (format === 4) {
+      const segments = font.readUInt16BE(at + 6) / 2;
+      const ends = at + 14;
+      const starts = ends + segments * 2 + 2;
+      const deltas = starts + segments * 2;
+      const offsets = deltas + segments * 2;
+
+      for (let segment = 0; segment < segments; segment += 1) {
+        const end = font.readUInt16BE(ends + segment * 2);
+        const start = font.readUInt16BE(starts + segment * 2);
+        const delta = font.readInt16BE(deltas + segment * 2);
+        const offsetAt = offsets + segment * 2;
+        const offset = font.readUInt16BE(offsetAt);
+
+        for (let point = start; point <= end && point !== 0xffff; point += 1) {
+          const glyph =
+            offset === 0
+              ? (point + delta) & 0xffff
+              : font.readUInt16BE(offsetAt + offset + (point - start) * 2);
+
+          if (glyph !== 0) points.add(point);
+        }
+      }
+    } else if (format === 12) {
+      const groups = font.readUInt32BE(at + 12);
+
+      for (let group = 0; group < groups; group += 1) {
+        const groupAt = at + 16 + group * 12;
+        const start = font.readUInt32BE(groupAt);
+        const end = font.readUInt32BE(groupAt + 4);
+        const glyph = font.readUInt32BE(groupAt + 8);
+
+        for (let point = start; point <= end; point += 1) if (glyph + (point - start) !== 0) points.add(point);
+      }
+    }
+  }
+
+  return points;
+}
+
+const FACES: Readonly<Record<Face, ReadonlySet<number>>> = {
+  normal: codePointsOf(Buffer.from(vfs[FACE_FILES.normal] ?? '', 'base64')),
+  bold: codePointsOf(Buffer.from(vfs[FACE_FILES.bold] ?? '', 'base64')),
+  italics: codePointsOf(Buffer.from(vfs[FACE_FILES.italics] ?? '', 'base64')),
+  bolditalics: codePointsOf(Buffer.from(vfs[FACE_FILES.bolditalics] ?? '', 'base64')),
+};
+
+/** The characters of `text` that `face` cannot draw (line breaks are layout, not glyphs). */
+function missingIn(face: Face, text: string): string[] {
+  return [...text].filter((character) => character !== '\n' && !FACES[face].has(character.codePointAt(0) ?? 0));
+}
+
+interface Drawn {
+  readonly text: string;
+  readonly face: Face;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** Every string a pdfmake node draws, with the face it is drawn in (bold and italics inherited). */
+function drawnIn(node: unknown, bold: boolean, italics: boolean, out: Drawn[]): Drawn[] {
+  if (typeof node === 'string') {
+    out.push({ text: node, face: bold ? (italics ? 'bolditalics' : 'bold') : italics ? 'italics' : 'normal' });
+  } else if (Array.isArray(node)) {
+    for (const child of node) drawnIn(child, bold, italics, out);
+  } else if (isRecord(node)) {
+    const nextBold = typeof node['bold'] === 'boolean' ? node['bold'] : bold;
+    const nextItalics = typeof node['italics'] === 'boolean' ? node['italics'] : italics;
+
+    for (const key of ['text', 'stack', 'table', 'body'] as const) {
+      if (key in node) drawnIn(node[key], nextBold, nextItalics, out);
+    }
+  }
+
+  return out;
+}
+
+function row(overrides: Partial<HistoryRow> & Pick<HistoryRow, 'id'>): HistoryRow {
+  return {
+    time: '16.11.2026 09:05',
+    author: 'Đurđa Šoštarić',
+    kind: 'Smjena · promijenjeno',
+    subject: 'Ćiril Žužić, Smjena Č',
+    reconstructed: false,
+    marker: false,
+    changes: [],
+    ...overrides,
+  };
+}
+
+/** A document that draws every shape the export has, in every face, with č ć đ š ž. */
+function fixture(): HistoryExport {
+  return historyExportOf({
+    view: {
+      rows: [
+        row({ id: '4', changes: [{ column: 'name', field: 'Naziv', before: 'Čađa – 1', after: 'Žuta, 2.' }] }),
+        row({ id: '3', changes: [{ column: 'days', field: 'Dani', before: null, after: '12,5' }] }),
+        row({ id: '2', reconstructed: true, changes: [{ column: 'note', field: 'Razlog', before: 'Šišmiš (đak)', after: null }] }),
+        row({ id: '1' }),
+        row({ id: '0', marker: true, subject: t('history.markerSubject') }),
+      ],
+      shown: 4,
+      total: 12,
+      members: [{ id: 'm', label: 'Đurđa Šoštarić', count: 4 }],
+      teams: [{ id: 'a', label: 'Smjena Č', count: 4 }],
+      begins: { source: 'marker', date: '16.11.2026', time: '10:00' },
+      period: { from: '2026-11-01', to: '2026-11-30' },
+      organizationName: 'JVP Čakovec–Međimurje',
+      zone: 'Europe/Zagreb',
+    },
+    filters: { period: '2026-11', member: 'm', team: 'a', kind: 'team:changed' },
+    generatedAt: new Date('2026-11-16T13:42:00Z'),
+  });
+}
+
+/** Every string value under a resource subtree, with its key. */
+function stringsOf(node: unknown, path: string): (readonly [string, string])[] {
+  if (typeof node === 'string') return [[path, node]];
+  if (!isRecord(node)) return [];
+
+  return Object.entries(node).flatMap(([key, value]) => stringsOf(value, `${path}.${key}`));
+}
+
+/** The two `history.*` strings that hold `→`: the screen's, which the PDF never draws. */
+const SCREEN_ONLY = new Set(['history.change', 'history.column.changes']);
+
+beforeAll(async () => {
+  await initLocalization();
+});
+
+describe('the font detector', () => {
+  it('finds Croatian letters and digits in every face, and no arrow in any', () => {
+    for (const face of Object.keys(FACES) as Face[]) {
+      expect(FACES[face].size, face).toBeGreaterThan(500);
+      expect(missingIn(face, 'ČĆĐŠŽčćđšž 0123456789 –…·'), face).toEqual([]);
+      expect(missingIn(face, '→'), face).toEqual(['→']);
+    }
+  });
+
+  it('reads every string a node draws, in its face', () => {
+    expect(
+      drawnIn({ stack: [{ text: 'a', bold: true }, { text: ['b', { text: 'c', italics: true }] }] }, false, false, []),
+    ).toEqual([
+      { text: 'a', face: 'bold' },
+      { text: 'b', face: 'normal' },
+      { text: 'c', face: 'italics' },
+    ]);
+  });
+});
+
+describe('the document', () => {
+  it('is landscape A4 in Roboto, with a repeated header row and Bilo/Sada spanning two columns', () => {
+    const document = historyDocumentOf(fixture());
+    const table = document.content.at(-1) as { table: { headerRows: number; widths: unknown[]; body: unknown[][] } };
+
+    expect(document.pageOrientation).toBe('landscape');
+    expect(document.pageSize).toBe('A4');
+    expect(document.defaultStyle.font).toBe(HISTORY_PDF_FONT);
+    expect(table.table.headerRows).toBe(1);
+    expect(table.table.body).toHaveLength(1 + fixture().rows.length);
+    for (const cells of table.table.body) expect(cells).toHaveLength(table.table.widths.length);
+    // Each change row: the fifth cell spans *Bilo* and *Sada*; the sixth is its placeholder.
+    expect(table.table.body.slice(1).map((cells) => (cells[4] as { colSpan?: number }).colSpan)).toEqual([2, 2, 2, 2, 2]);
+  });
+
+  it('draws every character in the face it uses', () => {
+    const model = fixture();
+    const document = historyDocumentOf(model);
+    const drawn = [
+      ...drawnIn(document.content, false, false, []),
+      ...[1, 2, 3].flatMap((page) => drawnIn(document.footer(page, 3), false, false, [])),
+      { text: document.info.title, face: 'normal' as const },
+    ];
+
+    expect(drawn.length).toBeGreaterThan(40);
+    // Every header line, row cell and badge is among them.
+    for (const line of model.lines) expect(drawn.map((item) => item.text)).toContain(line);
+    expect(drawn).toContainEqual({ text: t('history.reconstructed'), face: 'italics' });
+    expect(drawn).toContainEqual({ text: t('history.markerBadge'), face: 'italics' });
+    expect(drawn).toContainEqual({ text: t('history.export.before'), face: 'bold' });
+    expect(drawn).toContainEqual({ text: 'Stranica 3 od 3', face: 'normal' });
+
+    for (const { text, face } of drawn) expect(missingIn(face, text), `${face}: ${text}`).toEqual([]);
+  });
+
+  it('holds every history word the export can draw, and its status lines, in every face', () => {
+    const words = stringsOf(resources.history, 'history').filter(([key]) => !SCREEN_ONLY.has(key));
+
+    expect(words.length).toBeGreaterThan(100);
+    for (const [key, value] of words) {
+      for (const face of Object.keys(FACES) as Face[]) expect(missingIn(face, value), `${face}: ${key}`).toEqual([]);
+    }
+    // The two the export leaves out are left out for their arrow alone.
+    for (const key of SCREEN_ONLY) {
+      expect(missingIn('normal', stringsOf(resources.history, 'history').find(([path]) => path === key)?.[1] ?? '')).toEqual(['→']);
+    }
+  });
+});
+
+describe('the one writer module', () => {
+  it('is the only source that imports pdfmake, and only by import()', () => {
+    const src = fileURLToPath(new URL('../../..', import.meta.url));
+    const sources = (readdirSync(src, { recursive: true }) as string[])
+      .filter((path) => /\.tsx?$/.test(path) && !path.endsWith('.d.ts') && !path.endsWith('.test.ts'))
+      .map((path) => join(src, path));
+    const importers = sources
+      .filter((path) => /['"]pdfmake(\/[^'"]*)?['"]/.test(readFileSync(path, 'utf8')))
+      .map((path) => relative(src, path).split('\\').join('/'));
+    const writer = readFileSync(join(src, 'features', 'history', 'services', 'pdf.ts'), 'utf8');
+
+    expect(sources.length).toBeGreaterThan(100);
+    expect(importers).toEqual(['features/history/services/pdf.ts']);
+    expect(writer).toMatch(/import\('pdfmake\/build\/pdfmake'\)/);
+    expect(writer).toMatch(/import\('pdfmake\/build\/vfs_fonts'\)/);
+    expect(writer).not.toMatch(/^import[^;]*from\s*'pdfmake/m);
+  });
+});
