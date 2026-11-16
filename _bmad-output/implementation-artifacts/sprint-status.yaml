@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 11-16-2026 12:17
+last_updated: 11-16-2026 20:47
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -623,11 +623,11 @@ development_status:
   13-7b-a-notification-names-the-half: done  # split from 13.7, PO 2026-11-16; #306
   epic-13-retrospective: done
 
-  epic-14: in-progress
+  epic-14: in-progress  # all stories built; not accepted until CI green and merged (retro 2026-11-16 verdict rejected-unverified, A1)
   14-1-every-change-is-recorded-in-the-change-history: done
   14-2-an-admin-reads-the-change-history: done
   14-3-the-change-history-exports-to-pdf: done
-  epic-14-retrospective: optional
+  epic-14-retrospective: done
 
   epic-15: done  # accepted with open items by the product owner, 2026-11-04 (retro)
   15-1-pilot-kalendar-and-the-shell-in-glass: done
@@ -1081,3 +1081,91 @@ action_items:
     owner: "Perolipotic (process)"
     status: done
     ref: "_bmad-output/implementation-artifacts/epic-13-retro-2026-11-12.md"
+  - id: "epic-14-retro-item-61-a1-gh-auth-login-open-the-stacked-prs-in"
+    epic: 14
+    action: "A1: gh auth login; open the stacked PRs in order (docs/epic-14-architect-pass
+      -> refactor/epic-13-retro-a8-leave-shared-fields -> feat/14-1 -> feat/14-2 ->
+      feat/14-3 -> docs/epic-14-retrospective), get CI green (0061 rls-isolation/provisioning,
+      history + PDF e2e, check-migrations), merge in order; then set epic-14 done
+      and re-render the verdict (V1)"
+    owner: "Perolipotic (founder)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-14-retro-2026-11-16.md"
+  - id: "epic-14-retro-item-62-a2-approve-the-0061-production-push-outs"
+    epic: 14
+    action: "A2: approve the 0061 production push outside the pilot's working hours
+      (create trigger locks held until commit, no lock_timeout); decide whether to
+      add a lock_timeout; SPA after 0061"
+    owner: "Perolipotic (founder)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-14-retro-2026-11-16.md"
+  - id: "epic-14-retro-item-63-a3-decide-ad-11-decision-subject-fallbac"
+    epic: 14
+    action: "A3: decide AD-11 decision-subject fallback: restore the current-requests
+      read for a decision whose request predates the period, or ratify 14.2's narrowing
+      and amend ARCHITECTURE-SPINE.md:151 (R1)"
+    owner: "Perolipotic (founder) / architect"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-14-retro-2026-11-16.md"
+  - id: "epic-14-retro-item-64-a4-decide-the-hidden-field-gap-rotation"
+    epic: 14
+    action: "A4: decide the hidden-field gap: rotation assignment pattern_id/offset_step_id
+      changes and status-only updates read 'Bez promijenjenih polja' (R2, deferred-work
+      1553); then a story"
+    owner: "PO"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-14-retro-2026-11-16.md"
+  - id: "epic-14-retro-item-65-a5-reconcile-ad-3-s-refusing-trigger-inv"
+    epic: 14
+    action: "A5: reconcile AD-3's refusing-trigger inventory with 0023, 0031, 0035,
+      0036, 0039 (incl. the second last-admin trigger): name the class or narrow AD-3
+      (R3)"
+    owner: "architect"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-14-retro-2026-11-16.md"
+  - id: "epic-14-retro-item-66-a6-confirm-cap-24-a-setting-organization"
+    epic: 14
+    action: "A6: confirm CAP-24 'a setting' = organization settings only (member e-mail
+      opt-out not recorded) or schedule auditing notification_settings (R4)"
+    owner: "PO"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-14-retro-2026-11-16.md"
+  - id: "epic-14-retro-item-67-a7-bump-pdfmake-0-3-13-0-3-14-once-eligi"
+    epic: 14
+    action: "A7: bump pdfmake 0.3.13 -> 0.3.14 once eligible (2026-11-22) and update
+      the spine Stack row"
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-14-retro-2026-11-16.md"
+  - id: "epic-14-retro-item-68-a8-stop-the-leave-overview-and-rotation"
+    epic: 14
+    action: "A8: stop the leave-overview and rotation/draft property tests timing
+      out under load (2.4-4.0 s in isolation vs the 5 s default): explicit timeout
+      or fewer runs (P4)"
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-14-retro-2026-11-16.md"
+  - id: "epic-14-retro-item-69-a9-po-triage-of-the-14-x-deferrals-defer"
+    epic: 14
+    action: "A9: PO triage of the 14.x deferrals (deferred-work 1540-1566): PDF row
+      split loses context cells, uncapped main-thread PDF/rendering, non-Roboto boxes,
+      departed member naming, amend-pairing proof, missing history e2e"
+    owner: "PO"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-14-retro-2026-11-16.md"
+  - id: "epic-14-retro-item-70-a10-process-render-the-artifact-is-a-sta"
+    epic: 14
+    action: "A10: process: 'render the artifact' is a standard review step for any
+      story that generates a file (PDF, xlsx, export): open the real output, not only
+      its definition (P1)"
+    owner: "Perolipotic (process)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-14-retro-2026-11-16.md"
+  - id: "epic-14-retro-item-71-a11-process-local-toolchain-on-this-mach"
+    epic: 14
+    action: "A11: process: local toolchain on this machine (Node 24.19.0, pnpm on
+      PATH, poppler, gh); keep sprint status short of done until merged with green
+      CI; fix the stale residual-risk line in spec-14-3 (P2, P3, R6)"
+    owner: "Perolipotic (process)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-14-retro-2026-11-16.md"
