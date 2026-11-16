@@ -850,8 +850,7 @@ triggers to each of the 21 audited tables, and each `create trigger` holds its
 table's lock until the migration commits, so writes wait for the push. With the
 pipeline (§8), merging to `main` pushes `0061` to staging at once; the
 production approval is the step that must be given outside the pilot's working
-hours. In the
-same transaction it backfills the change history from the attribution columns
+hours. In the same transaction, `0061` backfills the change history from the attribution columns
 and writes one `HISTORY_BEGINS` marker per organization. **Before `0061`, hard
 deletes and current-state edits (a rename, an archive flag, a member's details)
 were never recorded and cannot be recovered.** The backfill rebuilds only what

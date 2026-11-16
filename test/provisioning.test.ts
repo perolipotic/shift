@@ -2323,6 +2323,18 @@ describe('every organization table carries row level security, and only its revi
             and (conrelid = 'public.audit_events'::regclass or confrelid = 'public.audit_events'::regclass)`,
       );
       expect(keys, 'audit_events takes part in a foreign key').toEqual([]);
+      // The four shape checks 14.2 reads the history through.
+      const { rows: checks } = await client.query<{ conname: string }>(
+        `select conname from pg_constraint
+          where contype = 'c' and conrelid = 'public.audit_events'::regclass
+          order by conname`,
+      );
+      expect(checks.map((row) => row.conname), 'the shape checks on audit_events changed').toEqual([
+        'audit_events_operation_known',
+        'audit_events_origin_known',
+        'audit_events_rows_by_operation',
+        'audit_events_transaction_by_origin',
+      ]);
       const { rows: indexes } = await client.query<{ indexdef: string }>(
         `select indexdef from pg_indexes where schemaname = 'public' and tablename = 'audit_events' order by 1`,
       );

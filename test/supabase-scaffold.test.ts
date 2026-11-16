@@ -3728,8 +3728,10 @@ describe('the access-control migration', () => {
       ).truncatable,
     ).toEqual([]);
 
-    // NO OTHER MIGRATION UNDOES IT: disables or drops a recorder trigger,
-    // drops or replaces the recorder, forces RLS on the history, or grants on it.
+    // NO OTHER MIGRATION UNDOES IT: disables, drops or replaces a recorder
+    // trigger, skips triggers by replication role, drops or replaces the
+    // recorder, alters or drops the read policy, a shape check or the table, forces RLS on
+    // the history, or grants on it.
     const undoes = [
       /\bdisable trigger "?\w+_audit(_update)?"?/i,
       /\bdisable trigger (all|user)\b/i,
@@ -3739,6 +3741,12 @@ describe('the access-control migration', () => {
       /\balter table (if exists )?(only )?(public\.)?audit_events\b[^;]*\b(force row level security|disable row level security)/i,
       /\bgrant [^;]* on (table |sequence )?(public\.)?audit_events(_id_seq)?\b/i,
       /\bgrant [^;]* on all (tables|sequences) in schema public\b/i,
+      /\bdrop trigger (if exists )?"?\w+_audit(_update)?"?/i,
+      /\bcreate or replace trigger "?\w+_audit(_update)?"?/i,
+      /\bsession_replication_role\b/i,
+      /\b(alter|drop) policy (if exists )?"?audit_events_\w+"?/i,
+      /\bdrop table (if exists )?(public\.)?audit_events\b/i,
+      /\bdrop constraint (if exists )?"?audit_events_\w+"?/i,
     ];
     for (const [name, text] of migrationTexts()) {
       if (name === AUDIT_MIGRATION) continue;
@@ -3755,6 +3763,12 @@ describe('the access-control migration', () => {
       'alter table public.audit_events force row level security;',
       'grant insert on table public.audit_events to authenticated;',
       'grant usage on sequence public.audit_events_id_seq to anon;',
+      'drop trigger if exists teams_audit on public.teams;',
+      'create or replace trigger teams_audit_update after update on public.teams',
+      "set session_replication_role = 'replica';",
+      'alter policy audit_events_select_by_own_active_admin on public.audit_events using (true);',
+      'drop table public.audit_events;',
+      'alter table public.audit_events drop constraint audit_events_rows_by_operation;',
     ]) {
       expect(undoes.some((pattern) => pattern.test(shape)), `the undo guard misses ${shape}`).toBe(true);
     }

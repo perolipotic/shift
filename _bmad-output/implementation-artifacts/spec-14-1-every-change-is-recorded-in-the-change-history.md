@@ -112,6 +112,20 @@ deferred:
   - `[low]` `[patch]` Scaffold pin hardened: any table spelling, `organization_id` anywhere, later migrations may not disable, drop, replace or grant on the recorder or table, a later audited table must revoke TRUNCATE, and the backfill's source tables are pinned from the schema.
   - `[low]` `[patch]` Docs: DEPLOY.md names the production approval as the off-hours step and `session_role = 'none'`; deferred-work lineage entries say how a pre-0061 amend pairs; Epic AC Deviations adds "updated" read as "changed".
 
+### 2026-11-16 — Second review pass (independent)
+- intent_gap: 0
+- bad_spec: 0
+- patch: 4 (low 4)
+- defer: 3 (low 2, medium 1)
+- reject: 21
+- addressed_findings:
+  - `[low]` `[patch]` DEPLOY.md's 0061 note broke mid-sentence ("In the / same transaction it…", "it" read as the approval); now "In the same transaction, `0061` backfills…".
+  - `[low]` `[patch]` The 0061 header and the spine's AD-11 deploy bullet said the triggers lock each table "briefly"; each `create trigger` holds its lock until the migration commits (as DEPLOY.md says). Comment and spine reworded; no SQL changed.
+  - `[low]` `[patch]` The scaffold undo guard missed `drop trigger`/`create or replace trigger` on a recorder trigger, `session_replication_role`, `alter`/`drop policy` on the history, `drop table audit_events` and `drop constraint audit_events_*`; added, each with a synthetic shape the guard must catch.
+  - `[low]` `[patch]` The four shape checks were pinned only as source text; `test/provisioning.test.ts` now pins their names in `pg_constraint` (CI).
+- deferred: `lock_timeout` and backfill lock window; read index for `transaction_id`/`(table_name, row_id)` (both from the first pass, now in deferred-work.md); `occurred_at = now()` vs `HISTORY_BEGINS` and keyset order, for 14.2.
+- rejected (by design or noise): owner can still tamper (spine: owner-only, stated); same-instant merge credits one author (spine); authorless tables get no backfilled INSERT (spine); GDPR/retention (spine Deferred); `service_role` writes record a null actor (spine); behaviour tests on a subset of the 21 tables (catalog pin covers every trigger, one shared function); amend pairing for roster/shift-type amends (all three RPCs stamp `removed_at = now()` beside a `created_at default now()`); `pairs` map completeness (checked against every `_by`/`_at` column in the migrations); ids-follow-time is empirical (the DB test checks it); scaffold table regex variants (no such DDL in the repo); test cleanup deleting its own committed events as the owner; storage growth; `review_loop_iteration`; inactive-admin PostgREST read (AC's "or"; SQL proves the policy); status `done` before CI (the project's CI-gate convention, stated in Residual risks).
+
 ## Design Notes
 
 **Function and triggers (golden shape):**

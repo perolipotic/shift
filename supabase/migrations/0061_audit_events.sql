@@ -49,8 +49,8 @@
 -- no author column and get no backfilled event; their history begins at the
 -- marker.
 --
--- DEPLOY ORDER: `db push` alone, outside the pilot's working hours (attaching
--- the triggers locks each table briefly). No SPA or Edge Function change;
+-- DEPLOY ORDER: `db push` alone, outside the pilot's working hours (each
+-- CREATE TRIGGER holds its table's lock until the migration commits). No SPA or Edge Function change;
 -- story 14.2's SPA ships after this.
 
 -- ------------------------------------------------------------------ the table

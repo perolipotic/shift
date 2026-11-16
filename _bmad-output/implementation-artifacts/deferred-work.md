@@ -1522,3 +1522,15 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-epic-13-retro-a8-leave-shared-fields.md`
   summary: `memberLeaveBaseOf` (`leave-section-base.ts`) builds its input through `leaveRecordsInputOf` before the `try` that turns a domain throw into `LEAVE_UNAVAILABLE`, so a throw from `memberScheduleInputOf` or `calendarTodayOf` (e.g. an invalid time zone) escapes the card's base instead of showing it unavailable.
   evidence: Second review of A8 (edge-case and blind layers). Pre-existing at baseline (`leave-section.ts:301-308`); A8 is behaviour-neutral, so it was not moved.
+
+## Deferred from: code review of spec-14-1-every-change-is-recorded-in-the-change-history.md (2026-11-16)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-14-1-every-change-is-recorded-in-the-change-history.md`
+  summary: `0061` sets no `lock_timeout`, so a long transaction holding a lock on an audited table can make the push wait while writers queue behind the 42 `create trigger` locks; the backfill (a `select distinct` over whole-row jsonb across 17 tables) then runs while those locks are held. Fine at the pilot's scale; revisit before a large tenant or if a push stalls.
+  evidence: Story 14.1's own review (frontmatter `deferred`) and the second review (edge-case layer). DEPLOY.md mitigates by approving the production push outside working hours. Whether the Supabase CLI wraps the file in one transaction (which `set local` and the "no write falls in the gap" argument need) is unverified here.
+- source_spec: `_bmad-output/implementation-artifacts/spec-14-1-every-change-is-recorded-in-the-change-history.md`
+  summary: No index serves a read of `audit_events` by `transaction_id` or by `(table_name, row_id)`; story 14.2 decides whether its amend pairing or a per-record read needs one.
+  evidence: Story 14.1's own review (frontmatter `deferred`). The only read index is `(organization_id, occurred_at desc, id desc)`.
+- source_spec: `_bmad-output/implementation-artifacts/spec-14-1-every-change-is-recorded-in-the-change-history.md`
+  summary: For story 14.2: a live event's `occurred_at` is its transaction's `now()` (its start), not its commit, and `id` is assigned at write time. A transaction that began before `0061` committed can record an event dated before its organization's `HISTORY_BEGINS` marker, and a newest-first `(occurred_at, id)` keyset page can miss an event that commits after a later-starting transaction. 14.2's read and its "history begins here" line must tolerate both (e.g. place the marker by id, or re-read an overlap window).
+  evidence: Second review of 14.1 (blind and edge-case layers). `audit_events.occurred_at default now()`; the AD-11 amendment fixes `now()` as the event time, so this is a read-side concern, not a recorder change.
