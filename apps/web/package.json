@@ -32,6 +32,7 @@
     "i18next-icu": "2.4.4",
     "idb-keyval": "6.3.0",
     "intl-messageformat": "11.2.14",
+    "pdfmake": "0.3.13",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-i18next": "17.0.13",

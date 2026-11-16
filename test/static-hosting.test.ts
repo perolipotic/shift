@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -321,6 +322,65 @@ describe('the build is an installable PWA', () => {
     // No fetch handler and no cache: the runtime-cache pins above still hold.
     expect(push).not.toMatch(/addEventListener\(\s*['"]fetch['"]/);
     expect(push).not.toMatch(/\bcaches\.|registerRoute|workbox\./);
+  });
+
+  it.skipIf(notBuilt)('never precaches the PDF writer or its fonts: the export is online only (story 14.3)', () => {
+    // The writer chunks, found by what they hold, not by name: pdfmake's own
+    // popup-blocked message, and the head of the Roboto face its fonts chunk
+    // carries as base64 (read off the same `vfs_fonts.js` the build bundles).
+    const vfs = createRequire(join(repoRoot, 'apps', 'web', 'package.json'))('pdfmake/build/vfs_fonts.js') as Record<
+      string,
+      string
+    >;
+    const markers = ['Open PDF in new window blocked by browser', (vfs['Roboto-Regular.ttf'] ?? '').slice(0, 64)];
+    const assets = join(dist, 'assets');
+    const chunks = readdirSync(assets).filter((name) => name.endsWith('.js'));
+    const worker = read('sw.js');
+
+    expect(markers[1], 'the fonts marker is empty').toHaveLength(64);
+    for (const marker of markers) {
+      const writers = chunks.filter((name) => readFileSync(join(assets, name), 'utf8').includes(marker));
+
+      expect(writers, `no single chunk holds ${marker.slice(0, 24)}…`).toHaveLength(1);
+      expect(worker, `${writers[0]} is precached`).not.toContain(`url:"assets/${writers[0]}"`);
+      expect(worker).not.toContain(writers[0]);
+    }
+    // Vacuous-pass guard: the precache list is still read where it is written.
+    expect(worker).toMatch(/url:"assets\/index-[\w-]+\.js"/);
+  });
+
+  it.skipIf(notBuilt)('builds writer chunks that load and write a PDF (story 14.3 review)', async () => {
+    // The e2e runs the dev server's prebundle, never these chunks. `pdf.ts`
+    // reads `default` off each `import()`; the entry's interop hands it the
+    // module's own `default` unless that carries `__esModule`. So the built
+    // writer's `default` must be pdfmake itself, the fonts' the vfs, and the
+    // pair must write a PDF.
+    const assets = join(dist, 'assets');
+    const chunk = (prefix: string): string => {
+      const name = readdirSync(assets).find((file) => file.startsWith(prefix) && file.endsWith('.js'));
+
+      expect(name, `no ${prefix}*.js chunk`).toBeDefined();
+
+      return join(assets, name ?? '');
+    };
+    const writer = (await import(/* @vite-ignore */ chunk('pdfmake-'))) as {
+      default: {
+        __esModule?: boolean;
+        addVirtualFileSystem: (vfs: unknown) => void;
+        createPdf: (definition: object) => { getBuffer: () => Promise<Uint8Array> };
+      };
+    };
+    const fonts = (await import(/* @vite-ignore */ chunk('vfs_fonts-'))) as {
+      default: { __esModule?: boolean } & Record<string, unknown>;
+    };
+
+    expect(writer.default.__esModule).not.toBe(true);
+    expect(fonts.default.__esModule).not.toBe(true);
+    expect(typeof fonts.default['Roboto-Regular.ttf']).toBe('string');
+    writer.default.addVirtualFileSystem(fonts.default);
+    const file = await writer.default.createPdf({ content: ['Čćđšž'], defaultStyle: { font: 'Roboto' } }).getBuffer();
+
+    expect(Buffer.from(file).subarray(0, 5).toString('latin1')).toBe('%PDF-');
   });
 
   it.skipIf(notBuilt)('never activates a new worker without the member', () => {
