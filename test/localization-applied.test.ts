@@ -454,6 +454,20 @@ const SOURCES = [
   join(webRoot, 'src', 'pages', 'za-odluku.tsx'),
   join(webRoot, 'src', 'pages', 'ljudi.tsx'),
   join(webRoot, 'src', 'pages', 'organizacija.tsx'),
+  // Story 14.2: *Povijest promjena*, the ninth destination, and its feature —
+  // its hook, components, and the rules module that words every row.
+  join(webRoot, 'src', 'pages', 'povijest-promjena.tsx'),
+  join(webRoot, 'src', 'features', 'history', 'hooks', 'use-change-history.ts'),
+  join(webRoot, 'src', 'features', 'history', 'components', 'history-body.tsx'),
+  join(webRoot, 'src', 'features', 'history', 'components', 'history-filters.tsx'),
+  join(webRoot, 'src', 'features', 'history', 'components', 'history-table.tsx'),
+  join(webRoot, 'src', 'features', 'history', 'components', 'history-rows.tsx'),
+  join(webRoot, 'src', 'features', 'history', 'components', 'history-changes.tsx'),
+  join(webRoot, 'src', 'features', 'history', 'components', 'history-begins.tsx'),
+  join(webRoot, 'src', 'features', 'history', 'services', 'history-rows.ts'),
+  join(webRoot, 'src', 'features', 'history', 'services', 'history-search.ts'),
+  join(webRoot, 'src', 'features', 'history', 'services', 'history-states.ts'),
+  join(webRoot, 'src', 'features', 'history', 'services', 'history-read.ts'),
   // Story 1.4a's `snapshot.ts` and 1.4b's `logo.ts` render nothing and are
   // here for the reason `client.ts` is: they hold the stable codes the screen
   // imports and logs, and `logo.ts` owns the `accept` hint the screen imports
@@ -1745,7 +1759,9 @@ function wordOccurrences(haystack: string, needle: string): number {
  */
 // STORY 7.8: `/postavi-lozinku`, whose `lozinku` is the set-password step's
 // path (the route definition and both guards' redirects), never copy.
-const ROUTE_SEGMENTS = ['/postavke-rotacije/tipovi-smjena/', '/postavi-lozinku'];
+// STORY 14.2: `/povijest-promjena`, whose `promjena` is the change history's
+// path (the route definition and the destination table), never copy.
+const ROUTE_SEGMENTS = ['/postavke-rotacije/tipovi-smjena/', '/postavi-lozinku', '/povijest-promjena'];
 
 function withoutRouteSegments(chunk: string): string {
   return ROUTE_SEGMENTS.reduce((text, segment) => text.replaceAll(segment, ''), chunk);

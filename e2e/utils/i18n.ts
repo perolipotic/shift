@@ -21,8 +21,14 @@ export function fill(message: string, values: Readonly<Record<string, string>>):
 export const ANNUAL_LEAVE_COLUMN = 'Godišnji odmor';
 export const ANNUAL_LEAVE_DAYS_HEADING = fill(hr.sati.organization.export.days, { name: ANNUAL_LEAVE_COLUMN });
 
-/** The destinations only an admin reaches (`features/navigation/utils/destinations.ts`). */
-export const ADMIN_DESTINATIONS = [hr.nav.zaOdluku, hr.nav.postavkeRotacije, hr.nav.organizacija] as const;
+/** The destinations only an admin reaches (`features/navigation/utils/destinations.ts`).
+ *  *Povijest promjena* since story 14.2. */
+export const ADMIN_DESTINATIONS = [
+  hr.nav.zaOdluku,
+  hr.nav.povijestPromjena,
+  hr.nav.postavkeRotacije,
+  hr.nav.organizacija,
+] as const;
 
 /** The ones every role reaches. Ljudi since story 7.17: the list for an admin,
  *  the team directory for a member. */

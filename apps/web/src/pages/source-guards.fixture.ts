@@ -262,6 +262,27 @@ export const LEAVE_OVERVIEW_KEYS = join(LEAVE_FEATURE, 'services', 'leave-overvi
 /** The conflicts feature, which holds the *Za odluku* screen's parts (story 5.3b). */
 export const CONFLICTS_FEATURE = join(srcRoot, 'features', 'conflicts');
 
+/** Story 14.2: the history feature, which holds *Povijest promjena*'s parts. */
+export const HISTORY_FEATURE = join(srcRoot, 'features', 'history');
+
+/**
+ * Story 14.2's *Povijest promjena*: the page, which only composes, the hook
+ * holding its reads, and the components that draw it. The page is first.
+ */
+export const POVIJEST_PROMJENA: readonly string[] = [
+  join(srcRoot, 'pages', 'povijest-promjena.tsx'),
+  join(HISTORY_FEATURE, 'hooks', 'use-change-history.ts'),
+  join(HISTORY_FEATURE, 'components', 'history-body.tsx'),
+  join(HISTORY_FEATURE, 'components', 'history-filters.tsx'),
+  join(HISTORY_FEATURE, 'components', 'history-table.tsx'),
+  join(HISTORY_FEATURE, 'components', 'history-rows.tsx'),
+  join(HISTORY_FEATURE, 'components', 'history-changes.tsx'),
+  join(HISTORY_FEATURE, 'components', 'history-begins.tsx'),
+];
+
+/** Story 14.2's rules: the history's words, off `t()` and its `\w*MessageKey` unions. */
+export const HISTORY_ROWS_KEYS = join(HISTORY_FEATURE, 'services', 'history-rows.ts');
+
 /**
  * Story 5.3b's *Za odluku*: the conflicts queue, a file set on *Sati*'s terms,
  * written ONCE in `conflicts-screen.fixture.ts`.
@@ -1094,6 +1115,10 @@ export const SCREENS = [
   // link to the request form; and in their requests list *Povuci zahtjev*,
   // written once inside the map over the rows, and the list's own retry.
   { name: 'the Godišnji destination', file: GODISNJI, expectedFields: 1, expectedButtons: 9 },
+  // STORY 14.2. TWO on Povijest promjena: the unavailable alert's retry, and
+  // *Poništi filtre* on the line the chips leave when they show nothing. The
+  // chips are the shared `OptionFilterBar`'s, and nothing here writes.
+  { name: 'the Povijest promjena destination', file: POVIJEST_PROMJENA, expectedFields: 0, expectedButtons: 2 },
   // STORY 9.3. On the request form: the od and do `<Input>`s, *Pošalji*,
   // *Odustani* (a `<Button asChild>` link back to Godišnji), the figures'
   // unavailable alert's retry, *Natrag na Godišnji* above the title (written

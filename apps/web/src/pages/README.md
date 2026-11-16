@@ -5,10 +5,11 @@ route tree by `src/router.ts`. `pages/` also holds the few components the ROOT
 route and the router compose rather than a path: `not-found.tsx` (an unknown
 path), `error.tsx` (a route that failed: Croatian copy from `hr.json`, the cause
 to the console, never on screen) and `pending.tsx` (the text-free skeleton every
-route shows while a guard is still deciding). Member-role reaches Danas, Kalendar, Sati and
-Godišnji; admin adds Za odluku, Ljudi, Postavke rotacije and Organizacija. `Sati`
-is ONE destination with role-scoped content, not one per role (human decision,
-2026-09-04), so there are eight and not nine. The roster is not a destination: it
+route shows while a guard is still deciding). Member-role reaches Danas, Kalendar, Sati,
+Godišnji and Ljudi; admin adds Za odluku, Povijest promjena (story 14.2),
+Postavke rotacije and Organizacija. `Sati` is ONE destination with role-scoped
+content, not one per role (human decision, 2026-09-04), so there are nine and
+not ten. The roster is not a destination: it
 lives inside team detail.
 
 Every destination nests under `_app.tsx`, a pathless layout that carries the

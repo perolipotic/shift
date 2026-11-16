@@ -4,6 +4,7 @@ import {
   Calendar,
   CalendarDots,
   Clock,
+  ClockCounterClockwise,
   House,
   Repeat,
   TreePalm,
@@ -54,6 +55,8 @@ const DESTINATION_ICONS: Record<NavigationKey, IconComponent> = {
   'nav.godisnji': TreePalm,
   'nav.zaOdluku': CalendarDots,
   'nav.ljudi': Users,
+  // STORY 14.2: *Povijest promjena*.
+  'nav.povijestPromjena': ClockCounterClockwise,
   'nav.postavkeRotacije': Repeat,
   'nav.organizacija': Buildings,
 };

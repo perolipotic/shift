@@ -125,7 +125,7 @@ export const FEATURE_PUBLIC = {
   // Story 13.1b: *Organizacija*'s *Vrste odsutnosti* card reads and writes
   // the types through their own list and write modules.
   'absence-types': [
-    'services/list', // calendar, hours, leave, organization
+    'services/list', // calendar, history, hours, leave, organization
     'services/write', // organization
   ],
   // Story 7.8: the signed-in layout holds a flagged session at the
@@ -242,6 +242,11 @@ export const FEATURE_PUBLIC = {
     'services/resolutions', // calendar, hours, leave, swaps, teams, today
     'services/resolved-conflicts', // leave
   ],
+  // Story 14.2: *Povijest promjena*'s route parses and rewrites its search
+  // through the history's own rules.
+  history: [
+    'services/history-search', // pages
+  ],
   'hour-bands': [
     // The generic time helpers (`minuteOfTime`, `durationValuesOf`)
     // moved to `utils/time`, so shift-types no longer reaches this module.
@@ -304,9 +309,9 @@ export const FEATURE_PUBLIC = {
   members: [
     // `NO_TEXT` and `shownDate` live in `utils/text`, shared by every feature
     // without reaching into this one.
-    'services/list', // conflicts, leave, teams, today, pages
+    'services/list', // conflicts, history, leave, teams, today, pages
     'services/surface-keys', // leave (public: the member page's key set)
-    'utils/position', // calendar, conflicts, swaps, teams
+    'utils/position', // calendar, conflicts, history, swaps, teams
     'utils/rank', // calendar, conflicts, organization, swaps, teams
   ],
   // SINCE STORY 6.3: *Danas* reads the chrome's cached role under its key, never
@@ -329,7 +334,7 @@ export const FEATURE_PUBLIC = {
   organization: [
     'components/lockup', // navigation
     'hooks/logo-url', // navigation
-    'services/snapshot', // conflicts, hour-bands, leave, members, navigation, teams, today
+    'services/snapshot', // conflicts, history, hour-bands, leave, members, navigation, teams, today
     'utils/accent', // navigation
   ],
   // Story 8.2d: `services/surface-keys` is *Postavke rotacije*'s one key set,
@@ -339,7 +344,7 @@ export const FEATURE_PUBLIC = {
     'services/surface-keys', // shift-types
   ],
   'shift-types': [
-    'services/list', // calendar, rotation, pages
+    'services/list', // calendar, history, rotation, pages
     'services/write', // pages
   ],
   // Story 11.2: every save that can newly leave a working shift short of people
@@ -379,7 +384,7 @@ export const FEATURE_PUBLIC = {
     // absence-type writes (story 13.1b) use it like every other writer, and
     // teams reads organization's surface keys back (epic 13 retro A9).
     'services/dependents', // calendar, conflicts, hour-bands, leave, members, organization, rotation, shift-types, swaps
-    'services/list', // calendar, members, rotation, pages
+    'services/list', // calendar, history, members, rotation, pages
     'services/roster', // pages, today
     'services/write', // pages
   ],

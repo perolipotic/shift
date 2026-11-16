@@ -259,6 +259,10 @@ const SANCTIONED_PLURAL_KEYS = [
   'godisnji.overview.carriedCell.lapsed',
   'godisnji.overview.summaryCarried',
   'godisnji.expiryExceeds',
+  // STORY 14.2: *Povijest promjena*'s summary line and a chip option's count
+  // (`1 promjena`, `3 promjene`, `5 promjena`).
+  'history.summary',
+  'history.count',
 ];
 
 /** The flat screen strings the application is permitted to ship, by the story
@@ -354,6 +358,8 @@ const SANCTIONED_SCREEN_KEYS = [
   'nav.godisnji',
   'nav.zaOdluku',
   'nav.ljudi',
+  // STORY 14.2: the ninth destination.
+  'nav.povijestPromjena',
   'nav.postavkeRotacije',
   'nav.organizacija',
   'notFound.heading',
@@ -763,6 +769,7 @@ const SANCTIONED_SCREEN_KEYS = [
   'shell.description.godisnji',
   'shell.description.zaOdluku',
   'shell.description.ljudi',
+  'shell.description.povijestPromjena',
   'shell.description.postavkeRotacije',
   'shell.description.organizacija',
   'shell.place.postavkeRotacije',
@@ -2596,6 +2603,169 @@ const SANCTIONED_SCREEN_KEYS = [
   'organization.absenceTypes.error.stale',
   'organization.absenceTypes.error.refused',
   'organization.absenceTypes.error.saveUnavailable',
+  // STORY 14.2: *Povijest promjena* — its lede, columns, chips, period
+  // choices, the record, action, field and value words its rows are built
+  // from, the authors, the reconstructed badge, where history begins, and
+  // the offline, unavailable, empty and filtered lines.
+  'history.lede',
+  'history.caption',
+  'history.column.time',
+  'history.column.author',
+  'history.column.kind',
+  'history.column.subject',
+  'history.column.changes',
+  'history.change',
+  'history.added',
+  'history.removedValue',
+  'history.noChanges',
+  'history.time',
+  'history.kindLine',
+  'history.reconstructed',
+  'history.markerBadge',
+  'history.markerSubject',
+  'history.begins',
+  'history.beginsOrganization',
+  'history.empty',
+  'history.filtered',
+  'history.offline',
+  'history.unavailable',
+  'history.retry',
+  'history.chip.period',
+  'history.chip.member',
+  'history.chip.memberAll',
+  'history.chip.team',
+  'history.chip.teamAll',
+  'history.chip.kind',
+  'history.chip.kindAll',
+  'history.remove.period',
+  'history.remove.member',
+  'history.remove.team',
+  'history.remove.kind',
+  'history.picker.period',
+  'history.picker.member',
+  'history.picker.team',
+  'history.picker.kind',
+  'history.heading.period',
+  'history.heading.member',
+  'history.heading.team',
+  'history.heading.kind',
+  'history.all.member',
+  'history.all.team',
+  'history.all.kind',
+  'history.period.days7',
+  'history.period.days30',
+  'history.period.days90',
+  'history.period.days365',
+  'history.period.month',
+  'history.author.departed',
+  'history.author.service',
+  'history.author.system',
+  'history.record.organization',
+  'history.record.member',
+  'history.record.memberStatus',
+  'history.record.teamMembership',
+  'history.record.team',
+  'history.record.hourBand',
+  'history.record.shiftType',
+  'history.record.shiftTypeVersion',
+  'history.record.rotationPattern',
+  'history.record.rotationStep',
+  'history.record.rotationAssignment',
+  'history.record.shiftTypeOverride',
+  'history.record.rosterOverride',
+  'history.record.leaveRecord',
+  'history.record.conflictResolution',
+  'history.record.leaveRequest',
+  'history.record.leaveRequestDecision',
+  'history.record.swapRequest',
+  'history.record.swapRequestDecision',
+  'history.record.absenceType',
+  'history.record.leaveAllowance',
+  'history.record.other',
+  'history.action.added',
+  'history.action.changed',
+  'history.action.deleted',
+  'history.action.removed',
+  'history.action.confirmed',
+  'history.action.answered',
+  'history.action.closed',
+  'history.action.archived',
+  'history.action.restored',
+  'history.action.amended',
+  'history.action.decided',
+  'history.action.historyBegins',
+  'history.field.name',
+  'history.field.shortName',
+  'history.field.slug',
+  'history.field.description',
+  'history.field.address',
+  'history.field.contactEmail',
+  'history.field.organizationType',
+  'history.field.timezone',
+  'history.field.locale',
+  'history.field.leaveYearStartMonth',
+  'history.field.leaveYearStartDay',
+  'history.field.brandAccent',
+  'history.field.logoPath',
+  'history.field.usesFireRanks',
+  'history.field.emailNotifications',
+  'history.field.minimumMembers',
+  'history.field.carryOverMaxDays',
+  'history.field.carryOverExpiryMonth',
+  'history.field.carryOverExpiryDay',
+  'history.field.carryOverFirstLeaveYear',
+  'history.field.username',
+  'history.field.email',
+  'history.field.role',
+  'history.field.fireRank',
+  'history.field.leaveAllowanceDays',
+  'history.field.member',
+  'history.field.memberOut',
+  'history.field.memberIn',
+  'history.field.proposer',
+  'history.field.addressee',
+  'history.field.team',
+  'history.field.returnTeam',
+  'history.field.active',
+  'history.field.position',
+  'history.field.archived',
+  'history.field.isWorking',
+  'history.field.shiftType',
+  'history.field.startTime',
+  'history.field.endTime',
+  'history.field.effectiveFrom',
+  'history.field.anchorDate',
+  'history.field.date',
+  'history.field.returnDate',
+  'history.field.during',
+  'history.field.half',
+  'history.field.absenceType',
+  'history.field.drawsAllowance',
+  'history.field.kind',
+  'history.field.reason',
+  'history.field.answer',
+  'history.field.outcome',
+  'history.field.leaveYear',
+  'history.field.days',
+  'history.enum.roleAdmin',
+  'history.enum.roleMember',
+  'history.enum.outcomeApproved',
+  'history.enum.outcomeRejected',
+  'history.enum.outcomeDeactivated',
+  'history.enum.answerAccepted',
+  'history.enum.answerDeclined',
+  'history.enum.kindAcceptUncovered',
+  'history.enum.kindReplaceMember',
+  'history.enum.kindAmendLeave',
+  'history.enum.halfFirst',
+  'history.enum.halfSecond',
+  'history.value.yes',
+  'history.value.no',
+  'history.value.range',
+  'history.value.unknownMember',
+  'history.value.unknownTeam',
+  'history.value.unknownShiftType',
+  'history.value.unknownAbsenceType',
 ];
 
 /** Everything the resource file is permitted to hold, together. */
@@ -2917,6 +3087,13 @@ const SWAP_DECISION_KEYS: readonly string[] = [
  */
 const ROTATION_OVERRIDE_NAMESPACE = 'rotation.builder.overrides.';
 /**
+ * STORY 14.2: *Povijest promjena* names records of every kind — the Team
+ * (`Smjena`) and the Shift Type (`Tip smjene`) both — so it takes the
+ * builder's overrides rule: the term `tip… smjen…` admitted, and `smjen`
+ * otherwise only as the Team's noun.
+ */
+const HISTORY_NAMESPACE = 'history.';
+/**
  * 0036: the day detail's refusal of an override whose team OR type was
  * archived meanwhile names both, as `rotation.builder.overrides.refused.archived`
  * does, so it reads under the builder's rule rather than the day detail's.
@@ -2940,7 +3117,11 @@ const SHIFT_TYPE_TERM = /(?<![\p{L}\p{N}])tip(?:a|u|om|ovi|ova|ove|ovima)?\s+smj
 function teamTermOutOfTurn(key: string, message: string): boolean {
   const lowered = message.toLowerCase();
 
-  if (key.startsWith(ROTATION_OVERRIDE_NAMESPACE) || key === CALENDAR_OVERRIDE_ARCHIVED_KEY) {
+  if (
+    key.startsWith(ROTATION_OVERRIDE_NAMESPACE) ||
+    key.startsWith(HISTORY_NAMESPACE) ||
+    key === CALENDAR_OVERRIDE_ARCHIVED_KEY
+  ) {
     // The term taken out, `smjen` may remain only as the Team's noun.
     return /smjen(?!a\b|e\b|u\b|om\b|ama\b)/.test(lowered.replace(SHIFT_TYPE_TERM, ''));
   }
@@ -3107,6 +3288,8 @@ describe('the messages obey the voice rules that bind every string', () => {
     //
     // AMENDED BY 0036, for one key: the day detail's archived refusal names
     // the Team or the Shift Type, under the builder's overrides rule.
+    //
+    // AMENDED BY STORY 14.2: `history` names both, under the same rule.
     const found = leafKeys(resource())
       .map((key) => ({ key, message: String(messageAt(key)) }))
       .filter(({ key, message }) => teamTermOutOfTurn(key, message));
