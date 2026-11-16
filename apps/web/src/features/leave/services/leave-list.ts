@@ -1,5 +1,5 @@
 import { queryOptions } from '@tanstack/react-query';
-import { halfFieldOf, LEAVE_HALF_FIRST, LEAVE_HALF_SECOND, type LeaveHalf, type LeaveRange } from '@shift/domain';
+import { LEAVE_HALF_FIRST, LEAVE_HALF_SECOND, leaveSpanOf, type LeaveHalf, type LeaveRange } from '@shift/domain';
 
 import { ANNUAL_LEAVE_ID } from '@/features/absence-types/services/list';
 import { leaveRangeOf } from '@/features/leave/services/leave-write';
@@ -58,11 +58,23 @@ export const LEAVE_RECORDS_FETCH_PAUSED = 'paused';
 export const LEAVE_RECORDS_UNAVAILABLE = 'LEAVE_RECORDS_UNAVAILABLE';
 
 /**
- * The columns read: the id an amend or a removal names, the member, as a
- * tripwire, the range, and (story 13.2) the record's absence type and whether
- * it draws down the allowance, spread flat as 0053's definer reads answer it.
+ * A leave row's own columns (epic 13 retro A8): the id an amend or a removal
+ * names, the member, as a tripwire, the range, the record's absence type
+ * (story 13.2) and its half (story 13.5). Every select of a leave row starts
+ * from it — the records' select and BOTH of `leave-request-list.ts`'s
+ * request selects, a different table — so a column added here must exist on
+ * `leave_records` AND `leave_requests`. A column of the records alone goes in
+ * {@link LEAVE_RECORDS_COLUMNS}; either way it is copied in
+ * {@link leaveRecordFieldsOf}.
  */
-export const LEAVE_RECORDS_COLUMNS = 'id,member_id,during,absence_type_id,half,...absence_types(draws_allowance)';
+export const LEAVE_ROW_COLUMNS = 'id,member_id,during,absence_type_id,half';
+
+/**
+ * The columns read: {@link LEAVE_ROW_COLUMNS} and (story 13.2) whether the
+ * record's absence type draws down the allowance, spread flat as 0053's
+ * definer reads answer it.
+ */
+export const LEAVE_RECORDS_COLUMNS = `${LEAVE_ROW_COLUMNS},...absence_types(draws_allowance)` as const;
 
 const ID_COLUMN = 'id';
 const MEMBER_COLUMN = 'member_id';
@@ -83,6 +95,16 @@ export interface LeaveRecord extends LeaveRange {
   readonly id: string;
   readonly absenceTypeId: string;
   readonly drawsAllowance: boolean;
+}
+
+/**
+ * A record's own fields (epic 13 retro A8): its id, absence type, drawing
+ * flag and {@link leaveSpanOf} — the one copy every mapper of a whole record
+ * builds through. Any other key the input carries (a `memberId`) is dropped;
+ * a whole day never gains a `half` key.
+ */
+export function leaveRecordFieldsOf(record: LeaveRecord): LeaveRecord {
+  return { id: record.id, absenceTypeId: record.absenceTypeId, drawsAllowance: record.drawsAllowance, ...leaveSpanOf(record) };
 }
 
 export type LeaveRecordsOutcome =
@@ -181,7 +203,7 @@ export function leaveRecordsOf(rows: readonly unknown[], memberId: string): read
 
     if (half === undefined) return null;
 
-    records.push({ id, from: range.from, to: range.to, ...type, ...halfFieldOf({ from: range.from, to: range.to, half }) });
+    records.push(leaveRecordFieldsOf({ id, ...type, from: range.from, to: range.to, half }));
   }
 
   records.sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));

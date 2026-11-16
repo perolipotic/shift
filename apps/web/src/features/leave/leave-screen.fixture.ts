@@ -67,7 +67,43 @@ export const LEAVE_SCREEN_EXEMPT: readonly { readonly file: string; readonly why
   },
   {
     file: 'services/leave-section.ts',
-    why: "every rule of the admin's leave card on the member page; a key source of its own, executed by leave-section.test.ts",
+    why: "the admin's leave card's public face and words: every key picker, and the rules of the leave-section-*.ts modules re-exported by name (epic 13 retro A8); a key source of its own, executed by leave-section.test.ts",
+  },
+  {
+    file: 'services/leave-section-ids.ts',
+    why: "the admin card's DOM ids and its two non-copy strings, split out of leave-section.ts (epic 13 retro A8) and re-exported by it; renders nothing and declares no key, executed by leave-section.test.ts",
+  },
+  {
+    file: 'services/leave-section-base.ts',
+    why: "the admin card's sources, base, balance input and record rows, split out of leave-section.ts (epic 13 retro A8) and re-exported by it; renders nothing and declares no key, executed by leave-section.test.ts",
+  },
+  {
+    file: 'services/leave-section-carried.ts',
+    why: "the carried line and the over-balance warning (story 13.4b), split out of leave-section.ts (epic 13 retro A8) and re-exported by it; declares no key, executed by leave-section.test.ts",
+  },
+  {
+    file: 'services/leave-section-half.ts',
+    why: "the half-day choice and its two cards (story 13.5), split out of leave-section.ts (epic 13 retro A8) and re-exported by it; declares no key, executed by leave-section.test.ts",
+  },
+  {
+    file: 'services/leave-section-types.ts',
+    why: "the absence type a leave surface offers and names (story 13.2b), split out of leave-section.ts (epic 13 retro A8) and re-exported by it; declares no key, executed by leave-section.test.ts",
+  },
+  {
+    file: 'services/leave-section-preview.ts',
+    why: "the entered range's preview and its reasons, split out of leave-section.ts (epic 13 retro A8) and re-exported by it; declares no key, executed by leave-section.test.ts",
+  },
+  {
+    file: 'services/leave-section-replacements.ts',
+    why: "the amend and removal replacement guard (story 5.4e), split out of leave-section.ts (epic 13 retro A8) and re-exported by it; declares no key, executed by leave-section.test.ts",
+  },
+  {
+    file: 'services/leave-section-outcome.ts',
+    why: "what a leave write's outcome says, split out of leave-section.ts (epic 13 retro A8) and re-exported by it; its refusal's words stay there, so it declares no key; executed by leave-section.test.ts",
+  },
+  {
+    file: 'services/leave-section-handoff.ts',
+    why: "the date rule and the hand-off from a conflict (story 5.4d), split out of leave-section.ts (epic 13 retro A8) and re-exported by it; declares no key, executed by leave-section.test.ts",
   },
   {
     file: 'services/leave-write.ts',

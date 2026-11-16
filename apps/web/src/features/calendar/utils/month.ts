@@ -3,6 +3,7 @@ import {
   adjacentMonth,
   datesOfMonth,
   deriveShiftTimes,
+  leaveSpanOf,
   memberScheduleOfMonth,
   membershipOn,
   monthOf,
@@ -22,7 +23,6 @@ import {
   type OverrideStanding,
   type StaffingInput,
   type StatusVersion,
-  halfFieldOf,
 } from '@shift/domain';
 
 import {
@@ -1079,13 +1079,7 @@ export function staffingInputOf(calendar: CalendarSnapshot, records: readonly Co
   return {
     ...snapshotScheduleInputOf(calendar),
     // A half day keeps its half: the member counts at work (R10.1, story 13.5).
-    leaveRecords: records.map((record) => ({
-      id: record.id,
-      memberId: record.memberId,
-      from: record.from,
-      to: record.to,
-      ...halfFieldOf(record),
-    })),
+    leaveRecords: records.map((record) => ({ id: record.id, memberId: record.memberId, ...leaveSpanOf(record) })),
     teamIds: splitTeams(calendar.teams).active.map((team) => team.id),
     minimumMembers: minimumOfCalendar(calendar),
   };

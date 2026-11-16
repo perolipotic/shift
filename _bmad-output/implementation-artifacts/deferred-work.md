@@ -1509,3 +1509,16 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-13-7b-a-notification-names-the-half.md`
   summary: A half-only amend's `LEAVE_RECORD_CHANGED` names only the new half, never the previous one (*Izmijenjena ti je odsutnost, sada 01.10.2026–01.10.2026 (drugi dio smjene)*), so the member is not told which half they had before. Naming the old half needs `private.remember_amended` to carry it from the amend's removal to its insert.
   evidence: Spec 13.7b put naming the old half under Ask First. 0060 writes the replacement row's `half` only (`private.notify_leave_record()`'s insert branch); the removal under `amend` remembers recipients, not operands.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-epic-13-retro-a8-leave-shared-fields.md`
+  summary: The other duplicates the epic 13 retro listed under A-dup, left out of A8's three: the two absence-type parse policies, `LEAVE_TYPES_UNAVAILABLE` beside `ABSENCE_TYPES_UNAVAILABLE`, the two draws key pickers, and the unused domain `leaveCostOf`. Also left by design: the two raw leave-year-start parsers (`members/services/list.ts` `leaveYearStartIn`, `organization/services/snapshot.ts` `organizationSnapshotOf`).
+  evidence: A8's spec put these under Never. The two raw parsers read different rows with different refusal policies (range-checked and tolerant of a missing value, against finite-number only), so one copy would change which rows are refused. The other four were not among A8's three duplicates (leave-year start from the organization answer, allowance in a leave year, balance input). Found in A8's review: the fetch-paused name `'paused'` is still declared once per leave module that reads it (`FETCH_PAUSED` in `leave-section-base.ts`, `LEAVE_RECORDS_FETCH_PAUSED` in `leave-list.ts`, local copies in `leave-conflicts.ts`, `leave-overview.ts`, `my-leave.ts`).
+
+## Deferred from: code review of spec-epic-13-retro-a8-leave-shared-fields.md (2026-11-16)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-epic-13-retro-a8-leave-shared-fields.md`
+  summary: Enforce mechanically that a new leave-row column goes through the shared copies (`LEAVE_ROW_COLUMNS`, `leaveRecordFieldsOf`, `leaveSpanOf`): today only doc comments and review hold it, which is how retro A-mappers' dropped fields happened. Options: a test that `leaveRecordsOf`'s output keys equal `LeaveRecord`'s plus the selected columns, or a lint against `half:`/`from:` object literals over a record outside the helpers.
+  evidence: Second review of A8 (blind layer). A8's residual risks name the gap; no entry tracked it.
+- source_spec: `_bmad-output/implementation-artifacts/spec-epic-13-retro-a8-leave-shared-fields.md`
+  summary: `memberLeaveBaseOf` (`leave-section-base.ts`) builds its input through `leaveRecordsInputOf` before the `try` that turns a domain throw into `LEAVE_UNAVAILABLE`, so a throw from `memberScheduleInputOf` or `calendarTodayOf` (e.g. an invalid time zone) escapes the card's base instead of showing it unavailable.
+  evidence: Second review of A8 (edge-case and blind layers). Pre-existing at baseline (`leave-section.ts:301-308`); A8 is behaviour-neutral, so it was not moved.

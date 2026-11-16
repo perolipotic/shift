@@ -1,4 +1,4 @@
-import { leaveAllowanceOf, leaveYearNumberOf, membershipOn } from '@shift/domain';
+import { leaveAllowanceOn, membershipOn } from '@shift/domain';
 
 import type { CalendarSnapshot, CalendarSurfaceState, CalendarViewer } from '@/features/calendar/services/snapshot';
 import { calendarTodayOf } from '@/features/calendar/utils/month';
@@ -7,6 +7,7 @@ import {
   LEAVE_READY,
   LEAVE_UNSCHEDULED,
   leaveCarriedLineOf,
+  leaveYearStartOf,
   memberLeaveBaseOf,
   type LeaveCalendarSource,
   type LeaveCarriedLine,
@@ -468,13 +469,11 @@ function organizationReady(organization: LeaveOrganizationSource): boolean {
  * caller has already ruled out.
  */
 function allowanceInYearOf(member: MemberListRow, organization: LeaveOrganizationSource, today: string): number {
-  const answer = organization.data;
+  const start = leaveYearStartOf(organization.data);
 
-  if (answer === undefined || !answer.ok) throw new Error('the organization snapshot is not ready');
+  if (start === null) throw new Error('the organization snapshot is not ready');
 
-  const start = { month: answer.snapshot.leaveYearStartMonth, day: answer.snapshot.leaveYearStartDay };
-
-  return leaveAllowanceOf(member.leaveAllowance, leaveYearNumberOf(today, start));
+  return leaveAllowanceOn(member.leaveAllowance, today, start);
 }
 
 /**

@@ -257,6 +257,8 @@ describe("the viewer's figures", () => {
       if (card.kind !== LEAVE_READY) throw new Error(card.kind);
 
       expect(mine.balance).toEqual(card.balance);
+      // EPIC 13 RETRO A8: one balance input, built once (`leaveRecordsInputOf`) for both.
+      expect(mine.input).toEqual(card.input);
     }
   });
 

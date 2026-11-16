@@ -1,369 +1,220 @@
-import {
-  LEAVE_HALF_FIRST,
-  LEAVE_HALF_SECOND,
-  MAX_LEAVE_RANGE_DAYS,
-  daysBetween,
-  halfDayShiftOf,
-  leaveBalanceOf,
-  halfFieldOf,
-  leaveRangeCostOf,
-  leavePreviewOf,
-  leaveYearOf,
-  shiftHalvesOf,
-  shiftTypeVersionOn,
-  type LeaveAllowance,
-  type LeaveBalance,
-  type LeaveBalanceInput,
-  type LeaveCarryOver,
-  type LeaveHalf,
-  type LeavePreview,
-  type LeaveRange,
-  type LeaveYearStart,
-} from '@shift/domain';
+import { LEAVE_HALF_FIRST, LEAVE_HALF_SECOND, type LeaveHalf, type LeaveRange } from '@shift/domain';
 
 import type { AbsenceTypeRow } from '@/features/absence-types/services/list';
-import { absenceTypesOfCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
-import { calendarTodayOf, dayMonthOf, memberScheduleInputOf } from '@/features/calendar/utils/month';
 import {
-  REPLACEMENT_APPLIED,
-  REPLACEMENT_MISMATCH,
-  replacementContextOf,
-  replacementStandingIn,
-} from '@/features/conflicts/services/replacement-effect';
-import { replacementLinksOf, type ReplacementLink } from '@/features/conflicts/services/resolutions';
-import type { LeaveRecord, LeaveRecordsState } from '@/features/leave/services/leave-list';
+  LEAVE_UNAVAILABLE,
+  LEAVE_UNSCHEDULED,
+  type LeaveRecordRow,
+} from '@/features/leave/services/leave-section-base';
 import {
-  LEAVE_DENIED,
-  LEAVE_FAILED,
-  LEAVE_GONE,
-  LEAVE_OVERLAP,
-  type LeaveAmendOutcome,
-  type LeaveChangeFailure,
-  type LeaveWriteOutcome,
-} from '@/features/leave/services/leave-write';
-import { carryOverOf, type CarryOverSetting } from '@/features/organization/services/snapshot';
+  CARRIED_KEPT,
+  CARRIED_LAPSED,
+  CARRIED_PENDING,
+  type LeaveCarriedKind,
+} from '@/features/leave/services/leave-section-carried';
+import { LEAVE_AMEND_ACTION, LEAVE_REMOVE_ACTION, type LeaveFailure } from '@/features/leave/services/leave-section-outcome';
 import {
-  RANGE_DASH,
-  compareText,
-  formatIsoDate,
-  formatIsoDayMonth,
-  formatMinuteOfDay,
-  isIsoDate,
-  nextIsoDate,
-  previousIsoDate,
-} from '@/lib/i18n/format';
+  LEAVE_HALF_REFUSED,
+  LEAVE_HALF_UNCHOSEN,
+  LEAVE_RANGE_INCOMPLETE,
+  LEAVE_RANGE_REFUSED,
+  LEAVE_RANGE_REVERSED,
+  LEAVE_RANGE_TOO_LONG,
+  LEAVE_RANGE_UNCHANGED,
+  LEAVE_TYPE_UNCHOSEN,
+  type LeaveRangeReason,
+} from '@/features/leave/services/leave-section-preview';
+import { LEAVE_DENIED, LEAVE_FAILED, LEAVE_GONE, LEAVE_OVERLAP } from '@/features/leave/services/leave-write';
 
 /**
- * The member page's leave card (story 5.1c) as a pure view model, in a `.ts`
- * that renders nothing (AD-15): what the card shows from its four reads, what
- * the entered range would cost, whether a save may be sent, and what each
- * outcome says. The hook only wires these; the node suite executes them.
- * Story 5.2b adds the member's live records as a list, each with what it
- * costs, the amend preview that leaves the amended record out, and what an
- * amend or a removal says.
+ * The member page's leave card (story 5.1c) as a pure view model, in `.ts`
+ * modules that render nothing (AD-15). Since epic 13 retro A8 this module is
+ * the card's public face and its words: every key picker of the card, and
+ * the rest re-exported by name from the `leave-section-*.ts` modules below.
+ * The hook only wires these; the node suite executes them through here.
  *
  * ONE COMPUTATION. Every figure and every day count is `@shift/domain`'s —
- * `leaveBalanceOf` for the three figures, `leavePreviewOf` for the range and
- * for what a landed save cost, `daysBetween` for the 366-day cap — over the
- * calendar's one schedule recipe (`memberScheduleInputOf`), the member's
- * allowance, the organization's leave year and today, and the member's live
- * records. Nothing here does date arithmetic of its own.
+ * `leaveBalanceOf`, `leavePreviewOf`, `daysBetween` — over the calendar's one
+ * schedule recipe; none of these modules does date arithmetic of its own.
  *
  * NEVER A GUESS. A read that failed, or a refetch paused offline, makes the
  * whole card unavailable, and a domain precondition the data breaches does
- * too; no figure is drawn from rows that cannot be trusted. Codes and numbers
- * only; the card formats.
+ * too. Codes and numbers only; the card formats.
  */
 
-// ------------------------------------------------------------- the sources
-
-/** TanStack Query's name for a fetch it has not started (offline). */
-const FETCH_PAUSED = 'paused';
-
-/**
- * The member list's state, as far as the card reads it: each member's
- * allowance across leave years (story 13.3), which the balance resolves for
- * the leave year it counts.
+/*
+ * THE CARD'S WORDS LIVE HERE, its rules beside it (epic 13 retro A8): this
+ * module holds every key picker of the card — so `LEAVE_SECTION_KEYS` reads
+ * one file — and re-exports, by name, the rest from the `leave-section-*.ts`
+ * modules: the DOM ids (`-ids`), the sources and the base (`-base`), the
+ * carried line (`-carried`), the half day (`-half`), the absence type
+ * (`-types`), the preview (`-preview`), the replacement guard
+ * (`-replacements`), the outcome (`-outcome`) and the hand-off (`-handoff`).
+ * None of them holds a key literal or imports this module. Two names are
+ * deliberately NOT re-exported, so the public list stays as it was:
+ * `leaveRecordsInputOf` (`my-leave.ts` imports it from `-base`) and
+ * `FETCH_PAUSED` (`-replacements` imports it from `-base`).
  */
-export interface LeaveMembersSource {
-  readonly members: readonly { readonly id: string; readonly leaveAllowance: LeaveAllowance }[] | null;
-  readonly refusal: string | null;
-  readonly loading: boolean;
-  /** A refetch paused offline over cached members: never computed from. */
-  readonly paused: boolean;
-}
 
-/** The calendar's state: a refusal, or a paused refetch, leaves no snapshot and is not loading. */
-export interface LeaveCalendarSource {
-  readonly snapshot: CalendarSnapshot | null;
-  readonly loading: boolean;
-}
+export {
+  LEAVE_DIALOG_HEADING_ID,
+  LEAVE_ERROR_ID,
+  LEAVE_HALF_HINT_ID,
+  LEAVE_HALF_LABEL_ID,
+  LEAVE_HALF_SWITCH_ID,
+  LEAVE_HEADING_ID,
+  LEAVE_LINE_SEPARATOR,
+  LEAVE_NO_DATE,
+  LEAVE_PREVIEW_ID,
+  LEAVE_REASON_ID,
+  LEAVE_RECORDS_HEADING_ID,
+  LEAVE_REMOVE_CLEARS_ID,
+  LEAVE_REMOVE_PROMPT_ID,
+  LEAVE_REMOVE_REPLACEMENTS_ID,
+  LEAVE_TYPE_LABEL_ID,
+  leaveHalfSwitchDescribedByOf,
+} from '@/features/leave/services/leave-section-ids';
 
-/**
- * The organization snapshot's answer, as far as the leave year needs it: its
- * start, and the carry-over setting (story 13.4b). A snapshot without the
- * setting — a cache or fixture from before 13.4 — reads as no carry-over.
- */
-export type LeaveOrganizationAnswer =
-  | {
-      readonly ok: true;
-      readonly snapshot: {
-        readonly leaveYearStartMonth: number;
-        readonly leaveYearStartDay: number;
-        readonly carryOver?: CarryOverSetting | null;
-      };
-    }
-  | { readonly ok: false }
-  | undefined;
+export {
+  LEAVE_ABSENT,
+  LEAVE_LOADING,
+  LEAVE_READY,
+  LEAVE_UNAVAILABLE,
+  LEAVE_UNSCHEDULED,
+  type LeaveCalendarSource,
+  leaveCarryOverOf,
+  type LeaveHeadingYears,
+  leaveHeadingYearsOf,
+  leaveInYearChargeOf,
+  type LeaveMembersSource,
+  type LeaveOrganizationAnswer,
+  type LeaveOrganizationSource,
+  leaveRangeValuesOf,
+  type LeaveRecordRow,
+  leaveRecordRowsOf,
+  type LeaveRecordsInput,
+  leaveYearStartOf,
+  type MemberLeaveBase,
+  memberLeaveBaseOf,
+  type MemberLeaveSources,
+} from '@/features/leave/services/leave-section-base';
 
-/** The organization read: its answer, whether it is pending, failed or paused offline. */
-export interface LeaveOrganizationSource {
-  readonly data: LeaveOrganizationAnswer;
-  readonly isPending: boolean;
-  readonly isError: boolean;
-  readonly fetchStatus: string;
-}
+export {
+  CARRIED_KEPT,
+  CARRIED_LAPSED,
+  CARRIED_PENDING,
+  EXCEEDS_AFTER_EXPIRY,
+  EXCEEDS_BALANCE,
+  type LeaveCarriedKind,
+  type LeaveCarriedLine,
+  leaveCarriedLineOf,
+  type LeaveExceeds,
+  leaveExceedsOf,
+} from '@/features/leave/services/leave-section-carried';
 
-export interface MemberLeaveSources {
-  readonly members: LeaveMembersSource;
-  readonly calendar: LeaveCalendarSource;
-  readonly organization: LeaveOrganizationSource;
-  readonly records: LeaveRecordsState;
-}
+export {
+  LEAVE_WHOLE_DAY,
+  type LeaveHalfChoice,
+  leaveHalfChoiceOf,
+  leaveHalfOfferedOf,
+  type LeaveHalfOption,
+  leaveHalfOptionsOf,
+  leaveHalfRestoredOf,
+  leaveSentHalfOf,
+} from '@/features/leave/services/leave-section-half';
 
-/** Still waiting on a read: skeletons, never a figure. */
-export const LEAVE_LOADING = 'loading';
-/** A read failed or its rows breach a domain rule: one unavailable line, a retry, the form disabled. */
-export const LEAVE_UNAVAILABLE = 'unavailable';
-/**
- * The member has no schedule to cost leave against — the calendar holds no
- * such member, or they have never been on a team. Not a failure, so no retry:
- * its own line, the form disabled.
- */
-export const LEAVE_UNSCHEDULED = 'unscheduled';
-/** The member is not in the list: the basics card already says so, and this card draws nothing. */
-export const LEAVE_ABSENT = 'absent';
-/** Everything read: the figures, and the input a range is previewed against. */
-export const LEAVE_READY = 'ready';
+export {
+  LEAVE_TYPES_UNAVAILABLE,
+  type LeaveTypeChoice,
+  leaveTypeChoiceOf,
+  leaveTypeNameOf,
+  leaveTypesOf,
+  typedLeaveBaseOf,
+} from '@/features/leave/services/leave-section-types';
 
-export type MemberLeaveBase =
-  | { readonly kind: typeof LEAVE_LOADING }
-  | { readonly kind: typeof LEAVE_UNAVAILABLE }
-  | { readonly kind: typeof LEAVE_UNSCHEDULED }
-  | { readonly kind: typeof LEAVE_ABSENT }
-  | {
-      readonly kind: typeof LEAVE_READY;
-      /** The organization a record is written to: the calendar snapshot's. */
-      readonly organizationId: string;
-      readonly input: LeaveRecordsInput;
-      readonly balance: LeaveBalance;
-      /** The member's live records, soonest first, each with what it costs (story 5.2b). */
-      readonly rows: readonly LeaveRecordRow[];
-    };
+export {
+  LEAVE_FROM_FIELD,
+  LEAVE_HALF_FIELD,
+  LEAVE_HALF_REFUSED,
+  LEAVE_HALF_UNCHOSEN,
+  LEAVE_PREVIEW_READY,
+  LEAVE_PREVIEW_REASON,
+  LEAVE_RANGE_INCOMPLETE,
+  LEAVE_RANGE_REFUSED,
+  LEAVE_RANGE_REVERSED,
+  LEAVE_RANGE_TOO_LONG,
+  LEAVE_RANGE_UNCHANGED,
+  LEAVE_TO_FIELD,
+  LEAVE_TYPE_FIELD,
+  LEAVE_TYPE_UNCHOSEN,
+  type LeaveField,
+  leavePreviewInYearOf,
+  type LeavePreviewState,
+  leavePreviewStateOf,
+  type LeaveRangeReason,
+} from '@/features/leave/services/leave-section-preview';
 
-/** The balance input over the member's live records, each with the id an amend or a removal names. */
-export interface LeaveRecordsInput extends LeaveBalanceInput {
-  readonly records: readonly LeaveRecord[];
-}
+export {
+  leaveUncoversDate,
+  NO_REPLACEMENTS,
+  type ReplacementGuard,
+  replacementGuardOf,
+  replacementLinesShown,
+  type ReplacementResolutionsSource,
+  REPLACEMENTS_KNOWN,
+  REPLACEMENTS_UNAVAILABLE,
+  REPLACEMENTS_UNKNOWN,
+  type ReplacementWarning,
+  replacementWarningsOf,
+} from '@/features/leave/services/leave-section-replacements';
 
-/** One live record as the list shows it: the record, its dates as written, and what it costs. */
-export interface LeaveRecordRow {
-  readonly record: LeaveRecord;
-  /** `10.09.2026`, the first date as the card writes it. */
-  readonly from: string;
-  /** `14.09.2026`, the last. */
-  readonly to: string;
-  /** `10.09.2026–14.09.2026`, the two joined by an en dash. */
-  readonly label: string;
-  /** The domain's `leaveRangeCostOf` over the whole record: 0.5 for a half day (story 13.5). */
-  readonly costDays: number;
-  /**
-   * The part of that cost charged to the current leave year, when it differs
-   * — a record crossing the leave year's edge or outside it — as 5.1c's
-   * preview states it (`leaveInYearChargeOf`); null when the two agree.
-   */
-  readonly inYearDays: number | null;
-}
+export {
+  LEAVE_AMEND_ACTION,
+  LEAVE_RECORD_ACTION,
+  LEAVE_REMOVE_ACTION,
+  type LeaveAction,
+  leaveAmendedOf,
+  leaveConfirmFailureOf,
+  leaveConflictOf,
+  leaveDescribedByOf,
+  type LeaveFailure,
+  leaveFormFailureOf,
+  leaveInvalidFieldOf,
+  leaveListFailureOf,
+  leaveOverlapNoteShown,
+  leaveRefusalValuesOf,
+  type LeaveSaved,
+  leaveSavedOf,
+} from '@/features/leave/services/leave-section-outcome';
 
-/** A range's two dates as the card writes them, `23.09.2026`; an unparsable one as it came. */
-export function leaveRangeValuesOf(range: LeaveRange): { readonly from: string; readonly to: string } {
-  return { from: formatIsoDate(range.from) ?? range.from, to: formatIsoDate(range.to) ?? range.to };
-}
+export {
+  AMEND_ENDS,
+  AMEND_REMOVES,
+  AMEND_STARTS,
+  amendTargetOf,
+  LEAVE_HANDOFF_ORIGIN_STATE,
+  LEAVE_HANDOFF_STATE,
+  type LeaveHandoff,
+  leaveHandoffKeyOf,
+  leaveHandoffMissed,
+  leaveHandoffOf,
+  type LeaveHandoffOpening,
+  leaveHandoffOpeningOf,
+  type LeaveHandoffOrigin,
+  leaveHandoffOriginOf,
+  type ResolutionAmendKind,
+  type ResolutionAmendTarget,
+  withLeaveHandoff,
+  withoutLeaveHandoffOpening,
+} from '@/features/leave/services/leave-section-handoff';
 
-/**
- * The records as the list's rows, in the order `leaveRecordsOf` gives them —
- * soonest first — each costed by `leaveRangeCostOf` over the member's
- * schedule, a half day at 0.5 (story 13.5),
- * and its in-year part by `leavePreviewOf` against every other record.
- * Throws what the domain throws, so a record it will not cost makes the
- * whole card unavailable.
- */
-export function leaveRecordRowsOf(input: LeaveRecordsInput): readonly LeaveRecordRow[] {
-  return input.records.map((record) => {
-    const values = leaveRangeValuesOf(record);
-    // The record's own drawing flag (story 13.2): a type that does not draw
-    // charges the balance nothing.
-    const range = { from: record.from, to: record.to, drawsAllowance: record.drawsAllowance, ...halfFieldOf(record) };
-    const others = input.records.filter((other) => other.id !== record.id);
-
-    return {
-      record,
-      from: values.from,
-      to: values.to,
-      label: `${values.from}${RANGE_DASH}${values.to}`,
-      // A half day costs 0.5 (story 13.5).
-      costDays: leaveRangeCostOf(input.input, record),
-      // A type that does not draw has no in-year charge to state: no part, never `0` (story 13.2).
-      inYearDays: record.drawsAllowance ? leaveInYearChargeOf(leavePreviewOf({ ...input, records: others, range })) : null,
-    };
-  });
-}
+// ---------------------------------------------------------- the key pickers
 
 /** The removal prompt: the range and its cost, and the in-year part when it differs. */
 export function leaveRemovePromptMessageKey(
   row: LeaveRecordRow,
 ): 'ljudi.leaveRecord.removePrompt' | 'ljudi.leaveRecord.removePromptInYear' {
   return row.inYearDays === null ? 'ljudi.leaveRecord.removePrompt' : 'ljudi.leaveRecord.removePromptInYear';
-}
-
-/**
- * The leave year the card's heading names (story 7.11): the year it begins
- * in, and the year it ends in when it crosses New Year (`null` otherwise) —
- * *Godišnji odmor 2026.* or *Godišnji odmor 2026./2027.* `null` until the
- * card is ready, when the heading is plain *Godišnji odmor*.
- */
-export interface LeaveHeadingYears {
-  readonly from: string;
-  readonly to: string | null;
-}
-
-export function leaveHeadingYearsOf(base: MemberLeaveBase): LeaveHeadingYears | null {
-  if (base.kind !== LEAVE_READY) return null;
-
-  const year = leaveYearOf(base.input.today, base.input.leaveYearStart);
-  const from = year.from.slice(0, 4);
-  const to = year.to.slice(0, 4);
-
-  return { from, to: from === to ? null : to };
-}
-
-/** Where the leave year begins, or null while it is not known. */
-export function leaveYearStartOf(answer: LeaveOrganizationAnswer): LeaveYearStart | null {
-  return answer !== undefined && answer.ok
-    ? { month: answer.snapshot.leaveYearStartMonth, day: answer.snapshot.leaveYearStartDay }
-    : null;
-}
-
-/**
- * The carry-over setting every balance input passes (story 13.4b), read as
- * `carryOverOf` reads it: a missing field, a partial or an impossible one is
- * none, so an old cache or fixture keeps every figure as before.
- */
-export function leaveCarryOverOf(answer: LeaveOrganizationAnswer): LeaveCarryOver | null {
-  return answer !== undefined && answer.ok ? carryOverOf({ carryOver: answer.snapshot.carryOver ?? null }) : null;
-}
-
-/**
- * What the card stands on, from its four reads at `now`: unavailable when any
- * read failed or is paused offline — first, so a failure is never hidden
- * behind another's skeleton — absent when the list holds no such member,
- * loading while any read is pending, unscheduled when the member has no
- * schedule to cost against, and otherwise the balance input and its figures.
- */
-export function memberLeaveBaseOf(sources: MemberLeaveSources, memberId: string, now: Date): MemberLeaveBase {
-  const { members, calendar, organization, records } = sources;
-  const leaveYearStart = leaveYearStartOf(organization.data);
-  const failed =
-    members.paused ||
-    (!members.loading && (members.refusal !== null || members.members === null)) ||
-    (!calendar.loading && calendar.snapshot === null) ||
-    organization.fetchStatus === FETCH_PAUSED ||
-    (!organization.isPending && (organization.isError || leaveYearStart === null)) ||
-    (!records.loading && records.records === null);
-
-  if (failed) return { kind: LEAVE_UNAVAILABLE };
-
-  const member = members.members?.find((candidate) => candidate.id === memberId);
-
-  if (members.members !== null && member === undefined) return { kind: LEAVE_ABSENT };
-
-  const snapshot = calendar.snapshot;
-  const recorded = records.records;
-
-  if (member === undefined || snapshot === null || leaveYearStart === null || recorded === null) {
-    return { kind: LEAVE_LOADING };
-  }
-
-  const scheduled = snapshot.members.find((candidate) => candidate.id === memberId);
-
-  if (scheduled === undefined || scheduled.memberships.length === 0) return { kind: LEAVE_UNSCHEDULED };
-
-  const input: LeaveRecordsInput = {
-    input: memberScheduleInputOf(snapshot, { ...scheduled, memberId: scheduled.id }),
-    allowance: member.leaveAllowance,
-    records: recorded,
-    today: calendarTodayOf(snapshot, now),
-    leaveYearStart,
-    carryOver: leaveCarryOverOf(organization.data),
-  };
-
-  try {
-    return {
-      kind: LEAVE_READY,
-      organizationId: snapshot.organizationId,
-      input,
-      balance: leaveBalanceOf(input),
-      rows: leaveRecordRowsOf(input),
-    };
-  } catch (cause) {
-    console.error(LEAVE_UNAVAILABLE, cause);
-
-    return { kind: LEAVE_UNAVAILABLE };
-  }
-}
-
-// ------------------------------------------------------- carried days (13.4b)
-
-/** Carried days not yet expired: every one counts, none lapsed. */
-export const CARRIED_PENDING = 'pending';
-/** Past the expiry, some carried days lapsed unconsumed. */
-export const CARRIED_LAPSED = 'lapsed';
-/** Past the expiry, every carried day consumed in time. */
-export const CARRIED_KEPT = 'kept';
-
-export type LeaveCarriedKind = typeof CARRIED_PENDING | typeof CARRIED_LAPSED | typeof CARRIED_KEPT;
-
-/**
- * The carried line (story 13.4b, PO 2026-11-12) as every balance surface
- * states it: its shape, the carried days the balance counts, the lapsed days
- * and the expiry as `30.06.`. *Preneseno 5 dana (istječu 30.06.)* before the
- * expiry, *Preneseno 3 dana (2 istekla 30.06.)* after it with days lapsed,
- * *Preneseno 5 dana* after it with none.
- */
-export interface LeaveCarriedLine {
-  readonly kind: LeaveCarriedKind;
-  /** The balance's own `carriedDays`. */
-  readonly count: number;
-  /** The balance's own `lapsedDays`. */
-  readonly lapsed: number;
-  /** `30.06.` */
-  readonly date: string;
-}
-
-/**
- * The carried line of a balance computed at `today` (the balance input's
- * own), or `null` when nothing was carried into the leave year: no line. Every
- * figure is the domain's; only the shape is chosen here, by whether `today`
- * is past the expiry.
- */
-export function leaveCarriedLineOf(balance: LeaveBalance, today: string): LeaveCarriedLine | null {
-  const expiry = balance.carryOverExpiry;
-
-  if (expiry === null) return null;
-
-  const kind = today <= expiry ? CARRIED_PENDING : balance.lapsedDays > 0 ? CARRIED_LAPSED : CARRIED_KEPT;
-
-  return { kind, count: balance.carriedDays, lapsed: balance.lapsedDays, date: formatIsoDayMonth(expiry) ?? expiry };
 }
 
 /** The line under a balance's figures: *Preneseno 5 dana (istječu 30.06.)*. Exhaustive. */
@@ -408,215 +259,12 @@ export function leaveCarriedCellMessageKey(
   }
 }
 
-/**
- * The over-balance warning a preview states (story 13.4b, PO 2026-11-12), or
- * `null` when it states none. When the warning is the expiry's — the balance
- * after the range is still zero or more today, because carried days count
- * until they lapse — it names the expiry and the year's balance after it
- * (`Preneseni dani istječu 30.06.; nakon toga preostaje −2 dana.`); otherwise
- * it is the balance after the range, as before.
- */
-export type LeaveExceeds =
-  | { readonly kind: typeof EXCEEDS_BALANCE; readonly count: number }
-  | { readonly kind: typeof EXCEEDS_AFTER_EXPIRY; readonly count: number; readonly dayMonth: string };
-
-/** Over the balance today. */
-export const EXCEEDS_BALANCE = 'balance';
-/** Over the balance once the carried days lapse. */
-export const EXCEEDS_AFTER_EXPIRY = 'afterExpiry';
-
-export function leaveExceedsOf(
-  preview: Pick<
-    LeavePreview,
-    'exceedsBalance' | 'exceedsAfterExpiry' | 'balanceAfterDays' | 'endBalanceAfterDays' | 'carryOverExpiry'
-  >,
-): LeaveExceeds | null {
-  if (!preview.exceedsBalance) return null;
-
-  const expiry = preview.carryOverExpiry;
-
-  if (preview.exceedsAfterExpiry && expiry !== null) {
-    return { kind: EXCEEDS_AFTER_EXPIRY, count: preview.endBalanceAfterDays, dayMonth: formatIsoDayMonth(expiry) ?? expiry };
-  }
-
-  return { kind: EXCEEDS_BALANCE, count: preview.balanceAfterDays };
-}
-
 /** The line a base with no figures shows in their place. */
 export function leaveBaseMessageKey(
   kind: typeof LEAVE_UNAVAILABLE | typeof LEAVE_UNSCHEDULED,
 ): 'ljudi.leaveRecord.unavailable' | 'ljudi.leaveRecord.unscheduled' {
   return kind === LEAVE_UNSCHEDULED ? 'ljudi.leaveRecord.unscheduled' : 'ljudi.leaveRecord.unavailable';
 }
-
-// --------------------------------------------------------------- the range
-
-/** A date is empty or not a calendar date: nothing to cost yet. */
-export const LEAVE_RANGE_INCOMPLETE = 'incomplete';
-/** The last date is before the first. */
-export const LEAVE_RANGE_REVERSED = 'reversed';
-/** The range is longer than `MAX_LEAVE_RANGE_DAYS`. */
-export const LEAVE_RANGE_TOO_LONG = 'tooLong';
-/** `@shift/domain` refused to cost the range: it cannot be previewed, so it is not sent. */
-export const LEAVE_RANGE_REFUSED = 'refused';
-/** An amend to the range the record already holds: nothing to change, so it is not sent. */
-export const LEAVE_RANGE_UNCHANGED = 'unchanged';
-
-/** No absence type is chosen yet (story 13.2b): nothing is preselected, so nothing is previewed or sent. */
-export const LEAVE_TYPE_UNCHOSEN = 'typeUnchosen';
-
-/** *Pola dana* is on and no half is chosen (story 13.5): neither card is preselected. */
-export const LEAVE_HALF_UNCHOSEN = 'halfUnchosen';
-
-/**
- * *Pola dana* is on, but the date does not hold exactly one working shift of
- * the member (story 13.5, R4.12): the dialog refuses the half day.
- */
-export const LEAVE_HALF_REFUSED = 'halfRefused';
-
-export type LeaveRangeReason =
-  | typeof LEAVE_RANGE_INCOMPLETE
-  | typeof LEAVE_RANGE_REVERSED
-  | typeof LEAVE_RANGE_TOO_LONG
-  | typeof LEAVE_RANGE_REFUSED
-  | typeof LEAVE_RANGE_UNCHANGED
-  | typeof LEAVE_TYPE_UNCHOSEN
-  | typeof LEAVE_HALF_UNCHOSEN
-  | typeof LEAVE_HALF_REFUSED;
-
-/** The od field. */
-export const LEAVE_FROM_FIELD = 'from';
-/** The do field. */
-export const LEAVE_TO_FIELD = 'to';
-/** The absence type's radio card group (story 13.2b). */
-export const LEAVE_TYPE_FIELD = 'type';
-
-/** The half day's radio card group (story 13.5). */
-export const LEAVE_HALF_FIELD = 'half';
-
-export type LeaveField = typeof LEAVE_FROM_FIELD | typeof LEAVE_TO_FIELD | typeof LEAVE_TYPE_FIELD | typeof LEAVE_HALF_FIELD;
-
-/** The half group's label id, which names the radio group (story 13.5). */
-export const LEAVE_HALF_LABEL_ID = 'member-leave-half-label';
-
-/** *Pola dana*'s id, which its label points at (story 13.5). */
-export const LEAVE_HALF_SWITCH_ID = 'member-leave-half-day';
-
-/** *Pola dana*'s hint's id, which describes the switch (story 13.5). */
-export const LEAVE_HALF_HINT_ID = 'member-leave-half-day-hint';
-
-/**
- * What *Pola dana* is described by (story 13.5): its hint, and the reason a
- * half day is refused while that refusal marks the switch — no half card
- * is drawn then, so the switch carries it. The admin dialog's ids by
- * default; the member's request form passes its own (story 13.5b).
- */
-export function leaveHalfSwitchDescribedByOf(
-  marked: boolean,
-  hintId: string = LEAVE_HALF_HINT_ID,
-  reasonId: string = LEAVE_REASON_ID,
-): string {
-  return marked ? `${hintId} ${reasonId}` : hintId;
-}
-
-/**
- * The half-day choice (story 13.5): *Pola dana* off, or on with the half
- * chosen, or none yet — neither card is preselected.
- */
-export interface LeaveHalfChoice {
-  readonly on: boolean;
-  readonly half: LeaveHalf | null;
-}
-
-/** *Pola dana* off: a whole day, what every opening starts on unless its record is a half day. */
-export const LEAVE_WHOLE_DAY: LeaveHalfChoice = { on: false, half: null };
-
-/** The choice an amend opens on: its record's half, or a whole day. */
-export function leaveHalfChoiceOf(record: LeaveRange | null): LeaveHalfChoice {
-  return record?.half === LEAVE_HALF_FIRST || record?.half === LEAVE_HALF_SECOND ? { on: true, half: record.half } : LEAVE_WHOLE_DAY;
-}
-
-/**
- * The half choice once the amend's dialog lands on `from`–`to` (epic 13 retro
- * A2): the amended record's own half while the range is its own one date and
- * the record is a half day, so switching *Pola dana* back on or moving the
- * date back never loses the stored half (on a date with no single working
- * shift no card could pick it again); otherwise `otherwise`.
- */
-export function leaveHalfRestoredOf(
-  target: LeaveRange | null,
-  from: string,
-  to: string,
-  otherwise: LeaveHalfChoice,
-): LeaveHalfChoice {
-  const stored = leaveHalfChoiceOf(target);
-
-  return target !== null && stored.on && from === target.from && to === target.to ? stored : otherwise;
-}
-
-/** Whether *Pola dana* is offered: while Od and Do are one calendar date (story 13.5). */
-export function leaveHalfOfferedOf(from: string, to: string): boolean {
-  return isIsoDate(from) && from === to;
-}
-
-/**
- * The half the range is sent with: the chosen one while *Pola dana* is
- * offered and on, else none — a range of more than one date clears it.
- */
-export function leaveSentHalfOf(from: string, to: string, choice: LeaveHalfChoice): LeaveHalf | null {
-  return leaveHalfOfferedOf(from, to) && choice.on ? choice.half : null;
-}
-
-/** One half card (story 13.5): its half, and its times, `07:00`–`13:00`, or `null` for a shift with no times that date. */
-export interface LeaveHalfOption {
-  readonly half: LeaveHalf;
-  readonly times: { readonly from: string; readonly to: string } | null;
-}
-
-/**
- * The two half cards for `date` (story 13.5, R4.12): *Prvi dio smjene* and
- * *Drugi dio smjene*, each with its times — the member's one working shift
- * that date split at its nominal midpoint (`shiftHalvesOf`), from the type's
- * version in force on it. `null` when the date holds no working shift or
- * more than one (`halfDayShiftOf`): the half day is then refused. A shift
- * whose type or version the snapshot does not hold for the date gets both
- * cards with no times, never invented ones.
- *
- * @throws RangeError on any precondition of the domain.
- */
-export function leaveHalfOptionsOf(
-  snapshot: CalendarSnapshot,
-  input: LeaveBalanceInput['input'],
-  date: string,
-): readonly LeaveHalfOption[] | null {
-  if (!isIsoDate(date)) return null;
-
-  const shift = halfDayShiftOf(input, date);
-
-  if (shift === null) return null;
-
-  const type = snapshot.types.find((one) => one.id === shift.shiftTypeId);
-  const version = type === undefined ? null : shiftTypeVersionOn(type.versions, date);
-
-  // A type or a version the snapshot does not hold for the date: both cards, no times.
-  if (version === null) {
-    return [
-      { half: LEAVE_HALF_FIRST, times: null },
-      { half: LEAVE_HALF_SECOND, times: null },
-    ];
-  }
-
-  const halves = shiftHalvesOf(version.startMinute, version.endMinute);
-  const at = (minute: number): string => formatMinuteOfDay(minute % MINUTES_IN_DAY);
-  const end = halves.second.startMinute + halves.second.durationMinutes;
-
-  return [
-    { half: LEAVE_HALF_FIRST, times: { from: at(halves.first.startMinute), to: at(halves.midpointMinute) } },
-    { half: LEAVE_HALF_SECOND, times: { from: at(halves.midpointMinute), to: at(end) } },
-  ];
-}
-
-const MINUTES_IN_DAY = 1440;
 
 /** A half card's words: *Prvi dio smjene*, *Drugi dio smjene*. */
 export function leaveHalfMessageKey(half: LeaveHalf): 'ljudi.leaveRecord.halfFirst' | 'ljudi.leaveRecord.halfSecond' {
@@ -675,166 +323,6 @@ export function leaveHalfNamedOf(translate: LeaveRangeHalfTranslate, text: strin
   return key === null ? text : translate(key, { range: text });
 }
 
-/** The type group's label id, which names the radio group (story 13.2b). */
-export const LEAVE_TYPE_LABEL_ID = 'member-leave-type-label';
-
-/** An empty date field: nothing entered yet, or cleared after a landed save. */
-export const LEAVE_NO_DATE = '';
-
-/** The refusal's id, which the od field is described by while it stands. */
-export const LEAVE_ERROR_ID = 'member-leave-error';
-
-/** The card's heading id, which names its region. */
-export const LEAVE_HEADING_ID = 'member-leave-heading';
-
-/** The records list's heading id, which names its section (story 5.2b). */
-export const LEAVE_RECORDS_HEADING_ID = 'member-leave-records-heading';
-
-/** The removal prompt's id, which names its confirmation (story 5.2b). */
-export const LEAVE_REMOVE_PROMPT_ID = 'member-leave-remove-prompt';
-
-/**
- * The whitespace each replacement line follows inside a notice's paragraph
- * (story 5.4e): the lines are drawn as blocks, and this keeps a screen reader
- * from running "…uklonjen.Dino…" together. Not copy, so not a key.
- */
-export const LEAVE_LINE_SEPARATOR = ' ';
-
-/** The preview's polite live region's id (story 5.4e: the amend's replacement lines are announced there). */
-export const LEAVE_PREVIEW_ID = 'member-leave-preview';
-
-/** The replacement lines' id, which describes the removal confirmation while it shows any (story 5.4e). */
-export const LEAVE_REMOVE_REPLACEMENTS_ID = 'member-leave-remove-replacements';
-
-/** The removal confirmation's line of the conflicts it clears (story 7.12), which describes it. */
-export const LEAVE_REMOVE_CLEARS_ID = 'member-leave-remove-clears';
-
-/** The leave dialog's title (story 7.12), which names the dialog. */
-export const LEAVE_DIALOG_HEADING_ID = 'member-leave-dialog-heading';
-
-/** The reason's id, which the field it names is described by while that field is marked. */
-export const LEAVE_REASON_ID = 'member-leave-reason';
-
-export const LEAVE_PREVIEW_REASON = 'reason';
-export const LEAVE_PREVIEW_READY = 'preview';
-
-/**
- * The absence type a range is previewed and sent as (story 13.2b): its id,
- * and whether it draws down the allowance, from the calendar snapshot's
- * catalog.
- */
-export interface LeaveTypeChoice {
-  readonly id: string;
-  readonly drawsAllowance: boolean;
-}
-
-export type LeavePreviewState =
-  | {
-      readonly kind: typeof LEAVE_PREVIEW_REASON;
-      readonly reason: LeaveRangeReason;
-      /** The field the reason is about, which a refused save focuses. */
-      readonly field: LeaveField;
-    }
-  | {
-      readonly kind: typeof LEAVE_PREVIEW_READY;
-      /** The range, carrying the chosen type's drawing flag, as the domain costs it. */
-      readonly range: LeaveRange;
-      /** The chosen type, which the write sends (story 13.2b). */
-      readonly type: LeaveTypeChoice;
-      readonly preview: LeavePreview;
-    };
-
-/**
- * What the entered `from`–`to` of the chosen `type` would do, over a ready
- * base: a reason in place of a preview while either date is incomplete, the
- * range is reversed, it is longer than {@link MAX_LEAVE_RANGE_DAYS}, no type
- * is chosen (story 13.2b), an amend leaves both the range and the type as
- * they were, or the domain refuses to cost it; otherwise `leavePreviewOf`'s
- * figures, by the chosen type's drawing flag. Only a ready preview may be
- * sent.
- *
- * AN AMEND (story 5.2b) previews against every record but the one amended:
- * its own dates are no overlap, and what it cost now is given back before the
- * new range is charged. A type-only amend (the same range, another type) is a
- * change (story 13.2b).
- *
- * A STORED HALF (story 13.5b): a request's review passes `refuseHalf` false.
- * The half was checked against the member's schedule when it was sent; the
- * decision is made later against a schedule that may have changed, and is
- * never refused for it — the half then costs what the domain says (0 on a
- * date with no working shift), as a record's does. An amend that KEEPS the
- * record's own half on its own date is never refused for the shift either
- * (epic 13 retro A2): the rotation or an override may since have taken the
- * shift, or doubled it, leaving no single working shift, and the stored half
- * then costs what the domain says. Keeping it skips only the shift refusal,
- * whatever else the amend changes (its type, say). A fresh half (another
- * date, or the other half) is still refused on a date with no single working
- * shift.
- */
-export function leavePreviewStateOf(
-  input: LeaveRecordsInput,
-  from: string,
-  to: string,
-  type: LeaveTypeChoice | null,
-  amending: LeaveRecord | null = null,
-  halfChoice: LeaveHalfChoice = LEAVE_WHOLE_DAY,
-  refuseHalf = true,
-): LeavePreviewState {
-  if (!isIsoDate(from)) return { kind: LEAVE_PREVIEW_REASON, reason: LEAVE_RANGE_INCOMPLETE, field: LEAVE_FROM_FIELD };
-  if (!isIsoDate(to)) return { kind: LEAVE_PREVIEW_REASON, reason: LEAVE_RANGE_INCOMPLETE, field: LEAVE_TO_FIELD };
-  if (to < from) return { kind: LEAVE_PREVIEW_REASON, reason: LEAVE_RANGE_REVERSED, field: LEAVE_TO_FIELD };
-  if (daysBetween(from, to) + 1 > MAX_LEAVE_RANGE_DAYS) {
-    return { kind: LEAVE_PREVIEW_REASON, reason: LEAVE_RANGE_TOO_LONG, field: LEAVE_TO_FIELD };
-  }
-  if (type === null) return { kind: LEAVE_PREVIEW_REASON, reason: LEAVE_TYPE_UNCHOSEN, field: LEAVE_TYPE_FIELD };
-
-  // STORY 13.5: the half day, while Od = Do and *Pola dana* is on.
-  const half = leaveSentHalfOf(from, to, halfChoice);
-
-  // EPIC 13 RETRO A2: the amended record's own half, on its own date, is never refused for the shift.
-  const keepsStoredHalf =
-    amending !== null && from === amending.from && to === amending.to && half !== null && half === (amending.half ?? null);
-
-  if (refuseHalf && !keepsStoredHalf && leaveHalfOfferedOf(from, to) && halfChoice.on) {
-    // FIRST whether the date can hold a half day at all: with no working
-    // shift, or two, no half card is drawn, so asking for one would point at
-    // nothing. A domain refusal is the half day's too, never the range's.
-    let shift: ReturnType<typeof halfDayShiftOf>;
-
-    try {
-      shift = halfDayShiftOf(input.input, from);
-    } catch (cause) {
-      console.error(LEAVE_RANGE_REFUSED, cause);
-      shift = null;
-    }
-
-    if (shift === null) return { kind: LEAVE_PREVIEW_REASON, reason: LEAVE_HALF_REFUSED, field: LEAVE_HALF_FIELD };
-    if (half === null) return { kind: LEAVE_PREVIEW_REASON, reason: LEAVE_HALF_UNCHOSEN, field: LEAVE_HALF_FIELD };
-  }
-
-  // A half-only amend (the same range and type, another half) is a change (story 13.5).
-  if (
-    amending !== null &&
-    from === amending.from &&
-    to === amending.to &&
-    type.id === amending.absenceTypeId &&
-    (amending.half ?? null) === half
-  ) {
-    return { kind: LEAVE_PREVIEW_REASON, reason: LEAVE_RANGE_UNCHANGED, field: LEAVE_FROM_FIELD };
-  }
-
-  const range: LeaveRange = { from, to, drawsAllowance: type.drawsAllowance, ...(half === null ? {} : { half }) };
-  const records = amending === null ? input.records : input.records.filter((record) => record.id !== amending.id);
-
-  try {
-    return { kind: LEAVE_PREVIEW_READY, range, type, preview: leavePreviewOf({ ...input, records, range }) };
-  } catch (cause) {
-    console.error(LEAVE_RANGE_REFUSED, cause);
-
-    return { kind: LEAVE_PREVIEW_REASON, reason: LEAVE_RANGE_REFUSED, field: LEAVE_FROM_FIELD };
-  }
-}
-
 /** The line a reason renders as, in place of the preview. Exhaustive. */
 export function leaveReasonMessageKey(
   reason: LeaveRangeReason,
@@ -872,344 +360,12 @@ export function leaveReasonMessageKey(
   }
 }
 
-/**
- * The part of the range charged to the current leave year, when it differs
- * from the range's whole cost — a range crossing the leave year's start or
- * end — so the balance after it reads true; null when the two agree.
- */
-export function leaveInYearChargeOf(preview: LeavePreview): number | null {
-  return preview.costInYearDays === preview.costDays ? null : preview.costInYearDays;
-}
-
-/**
- * The in-year line a ready preview states (story 13.2b): none for a type that
- * does not draw — the unchanged-balance line says it instead — else
- * {@link leaveInYearChargeOf}'s.
- */
-export function leavePreviewInYearOf(state: { readonly range: LeaveRange; readonly preview: LeavePreview }): number | null {
-  return state.range.drawsAllowance === false ? null : leaveInYearChargeOf(state.preview);
-}
-
-// ------------------------------------------------------------ the type (13.2b)
-
-/** What a type catalog that cannot be trusted logs: never shown. */
-export const LEAVE_TYPES_UNAVAILABLE = 'LEAVE_TYPES_UNAVAILABLE';
-
-/**
- * The absence types a leave surface offers and names (story 13.2b): the
- * calendar snapshot's catalog, in its order, when every id in `named` — the
- * records or requests the surface shows — is in it. Null — the surface is
- * unavailable, never a guess — for no snapshot, a snapshot cached before 13.2
- * that carries no catalog, an empty catalog (no card could be chosen; every
- * organization holds annual leave), or an id the catalog does not hold.
- */
-export function leaveTypesOf(
-  snapshot: CalendarSnapshot | null,
-  named: readonly string[],
-): readonly AbsenceTypeRow[] | null {
-  if (snapshot === null) return null;
-
-  const types = absenceTypesOfCalendar(snapshot);
-
-  if (types === null || types.length === 0) {
-    console.error(LEAVE_TYPES_UNAVAILABLE, 'catalog');
-
-    return null;
-  }
-
-  const known = new Set(types.map((type) => type.id));
-
-  if (!named.every((id) => known.has(id))) {
-    console.error(LEAVE_TYPES_UNAVAILABLE, 'type');
-
-    return null;
-  }
-
-  return types;
-}
-
-/** The type of `id` in `types` as a choice, or null when none is chosen or it is not there. */
-export function leaveTypeChoiceOf(types: readonly AbsenceTypeRow[] | null, id: string | null): LeaveTypeChoice | null {
-  const type = id === null || types === null ? undefined : types.find((candidate) => candidate.id === id);
-
-  return type === undefined ? null : { id: type.id, drawsAllowance: type.drawsAllowance };
-}
-
-/** The stored name of type `id`, or null when `types` does not hold it. */
-export function leaveTypeNameOf(types: readonly AbsenceTypeRow[] | null, id: string): string | null {
-  return types?.find((type) => type.id === id)?.name ?? null;
-}
-
 /** What one type's card says under its name: whether it draws down the allowance (story 13.2b). */
 export function leaveTypeDrawsMessageKey(
   type: AbsenceTypeRow,
 ): 'organization.absenceTypes.draws' | 'organization.absenceTypes.doesNotDraw' {
   // The *Vrste odsutnosti* card's own words for the flag (story 13.1b).
   return type.drawsAllowance ? 'organization.absenceTypes.draws' : 'organization.absenceTypes.doesNotDraw';
-}
-
-/**
- * The admin card's base with its type catalog (story 13.2b): a ready base
- * whose snapshot carries no catalog, or one of whose records names a type
- * the catalog lacks, is unavailable, never drawn with a guessed name.
- */
-export function typedLeaveBaseOf(
-  base: MemberLeaveBase,
-  snapshot: CalendarSnapshot | null,
-): { readonly base: MemberLeaveBase; readonly types: readonly AbsenceTypeRow[] | null } {
-  if (base.kind !== LEAVE_READY) return { base, types: null };
-
-  const types = leaveTypesOf(snapshot, base.input.records.map((record) => record.absenceTypeId));
-
-  return types === null ? { base: { kind: LEAVE_UNAVAILABLE }, types: null } : { base, types };
-}
-
-// ------------------------------------------------------ the replacement guard
-
-/**
- * STORY 5.4e. An amend or a removal of a leave record soft-removes, inside
- * the database call, every live resolution of the member on a date the change
- * uncovers (0031). A `replace_member` resolution goes with it while its roster
- * override stays (0032), so the replacement stays rostered beside a member who
- * now works that day. Before the write, the amend preview and the removal
- * confirmation name each such replacement, one line each; the notice after a
- * landed write repeats the lines captured before it. A NOTE, NEVER A GATE:
- * nothing here disables, blocks or asks.
- */
-
-/**
- * Whether changing `record` to `next` — null for a removal — uncovers `date`,
- * as 0031 computes it: a removal uncovers every date of the record, an amend
- * the dates in the old range and not in the new one.
- */
-export function leaveUncoversDate(record: LeaveRange, next: LeaveRange | null, date: string): boolean {
-  if (date < record.from || date > record.to) return false;
-
-  return next === null || date < next.from || date > next.to;
-}
-
-/** What a replacement guard that cannot be trusted logs: never shown. */
-export const REPLACEMENTS_UNAVAILABLE = 'REPLACEMENTS_UNAVAILABLE';
-
-/** One replacement that would stay rostered: who, on which team's shift, on which date. */
-export interface ReplacementWarning {
-  /** The override that put them on: a line's stable identity. */
-  readonly overrideId: string;
-  /** The replacement's name, as the calendar's members read answers it. */
-  readonly name: string;
-  readonly team: string;
-  /** `02.10.`, as `dayMonthOf` writes it. */
-  readonly date: string;
-}
-
-/**
- * The replacements changing `record` to `next` (null: its removal) would
- * leave behind (story 5.4e): each of `links` of `memberId` dated on a date the
- * change uncovers, whose override — joined by its id, never by team and date —
- * is still live in the snapshot and actually APPLIED on its date: a working
- * shift that date, the override in force, and `rosterOn` applying it. A
- * removed or inert override gives no line. Ordered by date, then team name.
- *
- * Null — the replacements cannot be known — when a link and the override it
- * names disagree on the team or the date, a replacement's member or team is
- * not in the snapshot, or the domain refuses the roster.
- */
-export function replacementWarningsOf(
-  links: readonly ReplacementLink[],
-  snapshot: CalendarSnapshot,
-  memberId: string,
-  record: LeaveRange,
-  next: LeaveRange | null,
-): readonly ReplacementWarning[] | null {
-  const uncovered = links.filter((link) => link.memberId === memberId && leaveUncoversDate(record, next, link.date));
-
-  if (uncovered.length === 0) return [];
-
-  try {
-    const warnings: (ReplacementWarning & { readonly isoDate: string })[] = [];
-    // THE SHARED TEST (story 5.5d), its standings worked out once for every link.
-    const context = replacementContextOf(snapshot);
-
-    for (const link of uncovered) {
-      const standing = replacementStandingIn(context, link);
-
-      // THE LINK AND ITS OVERRIDE MUST AGREE: 0032 writes both from one key.
-      if (standing.kind === REPLACEMENT_MISMATCH) {
-        console.error(REPLACEMENTS_UNAVAILABLE, 'link');
-
-        return null;
-      }
-      // Live, in force and applied on a working shift; a removed, pending or inert one gives no line.
-      if (standing.kind !== REPLACEMENT_APPLIED) continue;
-
-      const override = standing.override;
-      const teamId = override.teamId;
-      const date = override.date;
-      const replacement = snapshot.members.find((member) => member.id === override.memberInId);
-      const team = snapshot.teams.find((one) => one.id === teamId);
-
-      if (replacement === undefined || team === undefined) {
-        console.error(REPLACEMENTS_UNAVAILABLE, 'snapshot');
-
-        return null;
-      }
-
-      warnings.push({ overrideId: override.id, name: replacement.name, team: team.name, date: dayMonthOf(date), isoDate: date });
-    }
-
-    return warnings
-      .sort((left, right) => (left.isoDate === right.isoDate ? compareText(left.team, right.team) : left.isoDate < right.isoDate ? -1 : 1))
-      .map(({ overrideId, name, team, date }) => ({ overrideId, name, team, date }));
-  } catch (cause) {
-    console.error(REPLACEMENTS_UNAVAILABLE, cause);
-
-    return null;
-  }
-}
-
-/** The replacements are known: zero or more lines. */
-export const REPLACEMENTS_KNOWN = 'known';
-/** The resolutions read is pending, failed or paused, or untrustworthy: one line says they cannot be checked. */
-export const REPLACEMENTS_UNKNOWN = 'unknown';
-
-export type ReplacementGuard =
-  | { readonly kind: typeof REPLACEMENTS_KNOWN; readonly lines: readonly ReplacementWarning[] }
-  | { readonly kind: typeof REPLACEMENTS_UNKNOWN };
-
-/** No change is shown, or none would leave a replacement behind. */
-export const NO_REPLACEMENTS: ReplacementGuard = { kind: REPLACEMENTS_KNOWN, lines: [] };
-
-/** Whether a guard draws any line: the unknown line, or at least one replacement. */
-export function replacementLinesShown(guard: ReplacementGuard | null): boolean {
-  return guard !== null && (guard.kind === REPLACEMENTS_UNKNOWN || guard.lines.length !== 0);
-}
-
-/** The organization's resolutions read, as far as the guard reads it. */
-export interface ReplacementResolutionsSource {
-  readonly isPending: boolean;
-  readonly isError: boolean;
-  readonly fetchStatus: string;
-  readonly data: readonly unknown[] | undefined;
-}
-
-/**
- * The guard for changing `record` to `next` (null: its removal), from the
- * organization's resolutions read and the calendar snapshot: unknown while
- * the read is pending, failed or paused offline, or THIS MEMBER's replacement
- * rows or the replacements cannot be trusted — a malformed row of another
- * member's is not this guard's concern (`replacementLinksOf`); otherwise the
- * lines of
- * {@link replacementWarningsOf}.
- */
-export function replacementGuardOf(
-  resolutions: ReplacementResolutionsSource,
-  snapshot: CalendarSnapshot,
-  memberId: string,
-  record: LeaveRange,
-  next: LeaveRange | null,
-): ReplacementGuard {
-  if (resolutions.isPending || resolutions.isError || resolutions.fetchStatus === FETCH_PAUSED) {
-    return { kind: REPLACEMENTS_UNKNOWN };
-  }
-
-  const links = resolutions.data === undefined ? null : replacementLinksOf(resolutions.data, memberId);
-  const lines = links === null ? null : replacementWarningsOf(links, snapshot, memberId, record, next);
-
-  return lines === null ? { kind: REPLACEMENTS_UNKNOWN } : { kind: REPLACEMENTS_KNOWN, lines };
-}
-
-// ------------------------------------------------------------- the outcome
-
-/** What a landed save says: what it cost, and how far over the balance it went, if it did. */
-export interface LeaveSaved {
-  /** What the record cost, or null when the re-read after it did not answer: a plain saved line. */
-  readonly costDays: number | null;
-  /**
-   * The over-balance warning of the save (story 13.4b: the balance after it,
-   * or the year's balance once the carried days lapse), else null.
-   */
-  readonly overBalance: LeaveExceeds | null;
-}
-
-/** The saved line with no figure. */
-const PLAIN_SAVED: LeaveSaved = { costDays: null, overBalance: null };
-
-/**
- * The status line of a landed save, from the records the re-read after it
- * answered (`fresh`, null when it did not): the domain's preview of the saved
- * range against every other fresh record, so the balance it is charged to is
- * the database's, with the new record in it. A plain line — no figure — when
- * the re-read did not answer, the saved range is not among the fresh records,
- * or the domain refuses them.
- */
-export function leaveSavedOf(input: LeaveBalanceInput, fresh: readonly LeaveRange[] | null, range: LeaveRange): LeaveSaved {
-  if (fresh === null) return PLAIN_SAVED;
-
-  // A half day is one date, so its date alone finds it among the fresh records.
-  const others = fresh.filter((record) => record.from !== range.from || record.to !== range.to);
-
-  if (others.length !== fresh.length - 1) return PLAIN_SAVED;
-
-  return savedAgainst(input, others, range);
-}
-
-/**
- * The status line of a landed amend (story 5.2b): the replacement record,
- * found in the fresh records by the id the amend returned, previewed against
- * every other fresh record — so its cost and any over-balance warning are the
- * database's. A plain line when the re-read did not answer, holds no record
- * of that id, or the domain refuses them.
- */
-export function leaveAmendedOf(input: LeaveBalanceInput, fresh: readonly LeaveRecord[] | null, id: string): LeaveSaved {
-  if (fresh === null) return PLAIN_SAVED;
-
-  const replacement = fresh.find((record) => record.id === id);
-
-  if (replacement === undefined) return PLAIN_SAVED;
-
-  return savedAgainst(
-    input,
-    fresh.filter((record) => record.id !== id),
-    { from: replacement.from, to: replacement.to, drawsAllowance: replacement.drawsAllowance, ...halfFieldOf(replacement) },
-  );
-}
-
-/** What `range` cost against `others`, and how far over the balance it went; plain when the domain refuses. */
-function savedAgainst(input: LeaveBalanceInput, others: readonly LeaveRange[], range: LeaveRange): LeaveSaved {
-  try {
-    const preview = leavePreviewOf({ ...input, records: others, range });
-
-    return { costDays: preview.costDays, overBalance: leaveExceedsOf(preview) };
-  } catch (cause) {
-    console.error(LEAVE_UNAVAILABLE, cause);
-
-    return PLAIN_SAVED;
-  }
-}
-
-/** A new record saved through the form. */
-export const LEAVE_RECORD_ACTION = 'record';
-/** A record amended through the form (story 5.2b). */
-export const LEAVE_AMEND_ACTION = 'amend';
-/** A record removed through its confirmation (story 5.2b). */
-export const LEAVE_REMOVE_ACTION = 'remove';
-
-export type LeaveAction = typeof LEAVE_RECORD_ACTION | typeof LEAVE_AMEND_ACTION | typeof LEAVE_REMOVE_ACTION;
-
-/**
- * Why a write did not land, which write it was, and the conflicting record
- * when an overlap named one. Only an amend or a removal can find its record
- * gone.
- */
-export interface LeaveFailure {
-  readonly code: LeaveChangeFailure;
-  readonly action: LeaveAction;
-  readonly conflict: LeaveRange | null;
-}
-
-/** The conflicting record an outcome names: an overlap's, when it could be read. */
-export function leaveConflictOf(outcome: LeaveWriteOutcome | LeaveAmendOutcome): LeaveRange | null {
-  return !outcome.ok && outcome.code === LEAVE_OVERLAP ? outcome.conflict : null;
 }
 
 /** The alert a failure renders as: denied and failed in the words of the write that failed. Exhaustive. */
@@ -1250,278 +406,4 @@ export function leaveRefusalMessageKey(
       return unhandled;
     }
   }
-}
-
-/**
- * The conflict's dates as the alert names them, `23.09.2026`; undefined for
- * every message without placeholders.
- */
-export function leaveRefusalValuesOf(failure: LeaveFailure): { readonly from: string; readonly to: string } | undefined {
-  const conflict = failure.code === LEAVE_OVERLAP ? failure.conflict : null;
-
-  if (conflict === null) return undefined;
-
-  return leaveRangeValuesOf(conflict);
-}
-
-/**
- * The failure the form shows: the record's or the amend's, but never that
- * the amended record is gone — amend mode has closed by then, and the list
- * says so, beside the records it refreshed.
- */
-export function leaveFormFailureOf(failure: LeaveFailure | null): LeaveFailure | null {
-  return failure?.code === LEAVE_GONE ? null : failure;
-}
-
-/**
- * The refusal the list shows (story 5.2b): an amend or a removal that found
- * its record gone, once its form mode or its confirmation has closed. Any
- * other removal refusal stays inside the open confirmation.
- */
-export function leaveListFailureOf(
-  formFailure: LeaveFailure | null,
-  removeFailure: LeaveFailure | null,
-  confirming: boolean,
-): LeaveFailure | null {
-  if (!confirming && removeFailure?.code === LEAVE_GONE) return removeFailure;
-
-  return formFailure?.code === LEAVE_GONE ? formFailure : null;
-}
-
-/** The refusal shown inside the open removal confirmation: any but gone, which closes it. */
-export function leaveConfirmFailureOf(removeFailure: LeaveFailure | null): LeaveFailure | null {
-  return removeFailure?.code === LEAVE_GONE ? null : removeFailure;
-}
-
-/** Whether the preview's overlap note shows: not while an overlap alert already says it. */
-export function leaveOverlapNoteShown(preview: LeavePreview, failure: LeaveFailure | null): boolean {
-  return preview.overlapsRecord && failure?.code !== LEAVE_OVERLAP;
-}
-
-/**
- * The field marked invalid: the od field after an overlap, which is the one
- * focused, else the field a refused save named, else none.
- */
-export function leaveInvalidFieldOf(failure: LeaveFailure | null, refused: LeaveField | null): LeaveField | null {
-  return failure?.code === LEAVE_OVERLAP ? LEAVE_FROM_FIELD : refused;
-}
-
-/**
- * What a field is described by: the od field by a standing refusal, and a
- * field marked invalid by the reason that names it; nothing otherwise.
- */
-export function leaveDescribedByOf(
-  field: LeaveField,
-  failure: LeaveFailure | null,
-  invalid: LeaveField | null,
-): typeof LEAVE_ERROR_ID | typeof LEAVE_REASON_ID | undefined {
-  if (failure !== null && field === LEAVE_FROM_FIELD) return LEAVE_ERROR_ID;
-
-  return invalid === field ? LEAVE_REASON_ID : undefined;
-}
-
-// ------------------------------------------------------------- the hand-off
-
-/**
- * STORY 5.4d's date rule, here because both ends apply it: the resolution
- * screen's third card states it, and the leave card re-applies it to the
- * record as it is on arrival.
- */
-
-/** The leave starts the day after the conflict: the record runs past it. */
-export const AMEND_STARTS = 'starts';
-/** The leave ends the day before the conflict: it is the record's last day. */
-export const AMEND_ENDS = 'ends';
-/** The record is removed: it is one day, the conflict's. */
-export const AMEND_REMOVES = 'removes';
-
-export type ResolutionAmendKind = typeof AMEND_STARTS | typeof AMEND_ENDS | typeof AMEND_REMOVES;
-
-/** The range that would clear a conflict (rule A): a new range, or the record removed. */
-export type ResolutionAmendTarget =
-  | { readonly kind: typeof AMEND_STARTS | typeof AMEND_ENDS; readonly range: { readonly from: string; readonly to: string } }
-  | { readonly kind: typeof AMEND_REMOVES };
-
-/**
- * THE DATE RULE (rule A, human, 2026-10-02): for a record running `from`–`to`
- * and the conflict's date `d` — before the end, the leave starts on `d + 1`;
- * on the last day of a longer record, it ends on `d − 1`; a one-day record is
- * removed. A computation, never a recommendation.
- *
- * @throws RangeError when `d` is not inside the record, or a neighbouring day cannot be named.
- */
-export function amendTargetOf(record: { readonly from: string; readonly to: string }, date: string): ResolutionAmendTarget {
-  if (date < record.from || date > record.to) {
-    throw new RangeError(`the date ${date} is not inside the leave ${record.from}–${record.to}`);
-  }
-
-  if (date < record.to) {
-    const from = nextIsoDate(date);
-
-    if (from === null) throw new RangeError(`the date ${date} has no next day`);
-
-    return { kind: AMEND_STARTS, range: { from, to: record.to } };
-  }
-
-  if (record.from < date) {
-    const to = previousIsoDate(date);
-
-    if (to === null) throw new RangeError(`the date ${date} has no previous day`);
-
-    return { kind: AMEND_ENDS, range: { from: record.from, to } };
-  }
-
-  return { kind: AMEND_REMOVES };
-}
-
-/**
- * THE HAND-OFF FROM A CONFLICT (story 5.4d). The resolution screen's third
- * card writes nothing: its Spremi comes here with the record, the range that
- * would clear the conflict — or that the record is removed — and the conflict
- * it came from, in ROUTER STATE only, never the URL and never storage. The
- * card opens it once its rows are ready, through its own amend or removal:
- * there is no other leave write path.
- *
- * TWO KEYS, so the opening can go and the origin stay: once the card has
- * opened it, or found it does not apply, the entry is replaced without
- * {@link LEAVE_HANDOFF_STATE} — a reload or Back never reopens it — while
- * {@link LEAVE_HANDOFF_ORIGIN_STATE} keeps "Natrag na Za odluku".
- */
-export const LEAVE_HANDOFF_STATE = 'leaveHandoff';
-export const LEAVE_HANDOFF_ORIGIN_STATE = 'leaveHandoffOrigin';
-
-/** The conflict a hand-off came from: the resolution route's three params. */
-export interface LeaveHandoffOrigin {
-  readonly memberId: string;
-  readonly date: string;
-  readonly teamId: string;
-}
-
-export type LeaveHandoff =
-  | {
-      readonly kind: typeof LEAVE_AMEND_ACTION;
-      readonly recordId: string;
-      readonly range: LeaveRange;
-      readonly origin: LeaveHandoffOrigin;
-    }
-  | { readonly kind: typeof LEAVE_REMOVE_ACTION; readonly recordId: string; readonly origin: LeaveHandoffOrigin };
-
-/** The history entry's state with `handoff` and its origin added, every other field kept. */
-export function withLeaveHandoff<State extends object>(state: State, handoff: LeaveHandoff): State {
-  return { ...state, [LEAVE_HANDOFF_STATE]: handoff, [LEAVE_HANDOFF_ORIGIN_STATE]: handoff.origin };
-}
-
-/** The history entry's state without the opening, its origin and every other field kept: what a reload or Back finds. */
-export function withoutLeaveHandoffOpening(state: unknown): Record<string, unknown> {
-  if (typeof state !== 'object' || state === null) return {};
-
-  const { [LEAVE_HANDOFF_STATE]: _opening, ...rest } = state as Record<string, unknown>;
-
-  return rest;
-}
-
-function isText(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0;
-}
-
-/** An origin as it came back, or `null` for anything malformed. */
-function originOf(origin: unknown): LeaveHandoffOrigin | null {
-  if (typeof origin !== 'object' || origin === null) return null;
-
-  const { memberId, date, teamId } = origin as Record<string, unknown>;
-
-  if (!isText(memberId) || typeof date !== 'string' || !isIsoDate(date) || !isText(teamId)) return null;
-
-  return { memberId, date, teamId };
-}
-
-/** The conflict the page was reached from, for "Natrag na Za odluku", or `null` when it was not. */
-export function leaveHandoffOriginOf(state: unknown): LeaveHandoffOrigin | null {
-  if (typeof state !== 'object' || state === null) return null;
-
-  return originOf((state as Record<string, unknown>)[LEAVE_HANDOFF_ORIGIN_STATE]);
-}
-
-/** The hand-off from router state as it came back, or `null` for none, one already opened, or anything malformed. */
-export function leaveHandoffOf(state: unknown): LeaveHandoff | null {
-  if (typeof state !== 'object' || state === null) return null;
-
-  const handoff: unknown = (state as Record<string, unknown>)[LEAVE_HANDOFF_STATE];
-
-  if (typeof handoff !== 'object' || handoff === null) return null;
-
-  const { kind, recordId, range, origin: rawOrigin } = handoff as Record<string, unknown>;
-  const origin = originOf(rawOrigin);
-
-  if (!isText(recordId) || origin === null) return null;
-  if (kind === LEAVE_REMOVE_ACTION) return { kind, recordId, origin };
-  if (kind !== LEAVE_AMEND_ACTION || typeof range !== 'object' || range === null) return null;
-
-  const { from: start, to: end } = range as Record<string, unknown>;
-
-  if (typeof start !== 'string' || typeof end !== 'string' || !isIsoDate(start) || !isIsoDate(end) || end < start) {
-    return null;
-  }
-
-  return { kind, recordId, range: { from: start, to: end }, origin };
-}
-
-/** A hand-off's identity, for opening each one once: equal for equal hand-offs. */
-export function leaveHandoffKeyOf(handoff: LeaveHandoff | null): string | null {
-  return handoff === null ? null : JSON.stringify(handoff);
-}
-
-/** What a hand-off opens on the card: amend mode with the range, or the removal confirmation. */
-export type LeaveHandoffOpening =
-  | { readonly kind: typeof LEAVE_AMEND_ACTION; readonly row: LeaveRecordRow; readonly range: LeaveRange }
-  | { readonly kind: typeof LEAVE_REMOVE_ACTION; readonly row: LeaveRecordRow };
-
-/**
- * What `handoff` opens over the member's ready rows: amend mode for its
- * record, or that record's removal confirmation — by the rule RE-APPLIED to
- * the record as it is now ({@link amendTargetOf}), never the range handed
- * over, so a record lengthened elsewhere is never removed and one shortened
- * is never stretched back. `null` — nothing opens, the card stays as it was
- * — when there is no hand-off, it is about another member, its record is
- * gone, or the record no longer covers the conflict's date.
- */
-export function leaveHandoffOpeningOf(
-  handoff: LeaveHandoff | null,
-  memberId: string,
-  rows: readonly LeaveRecordRow[],
-): LeaveHandoffOpening | null {
-  if (handoff === null || handoff.origin.memberId !== memberId) return null;
-
-  const row = rows.find((one) => one.record.id === handoff.recordId);
-  const date = handoff.origin.date;
-
-  if (row === undefined || date < row.record.from || date > row.record.to) return null;
-
-  let target: ResolutionAmendTarget;
-
-  try {
-    target = amendTargetOf(row.record, date);
-  } catch (cause) {
-    if (!(cause instanceof RangeError)) throw cause;
-
-    return null;
-  }
-
-  return target.kind === AMEND_REMOVES
-    ? { kind: LEAVE_REMOVE_ACTION, row }
-    : { kind: LEAVE_AMEND_ACTION, row, range: target.range };
-}
-
-/**
- * Whether the card says a hand-off opened nothing: it was about this member,
- * yet {@link leaveHandoffOpeningOf} found no opening — the record is gone or
- * no longer covers the conflict's date. No hand-off, or one about another
- * member, says nothing.
- */
-export function leaveHandoffMissed(
-  handoff: LeaveHandoff | null,
-  memberId: string,
-  opening: LeaveHandoffOpening | null,
-): boolean {
-  return handoff !== null && handoff.origin.memberId === memberId && opening === null;
 }

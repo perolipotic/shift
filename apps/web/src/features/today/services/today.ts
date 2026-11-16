@@ -5,6 +5,7 @@ import {
   halfFieldOf,
   isHalfDay,
   leaveRangeCostOf,
+  leaveSpanOf,
   membershipOn,
   monthOf,
   type LeaveHalf,
@@ -459,7 +460,7 @@ export function absenceOn(records: readonly LeaveRecord[], date: string): Absenc
   if (covering === null) return null;
 
   if (isHalfDay(covering)) {
-    const own = { from: covering.from, to: covering.to, ...halfFieldOf(covering) };
+    const own = leaveSpanOf(covering);
 
     return { ...own, records: [own] };
   }
@@ -494,7 +495,7 @@ export function absenceOn(records: readonly LeaveRecord[], date: string): Absenc
   // contiguous union of its records, and records of one member never overlap.
   const joined = ordered
     .filter((record) => from <= record.from && record.to <= to)
-    .map((record) => ({ from: record.from, to: record.to, ...halfFieldOf(record) }));
+    .map((record) => leaveSpanOf(record));
 
   return { from, to, records: joined };
 }

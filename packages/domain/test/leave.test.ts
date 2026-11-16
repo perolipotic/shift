@@ -10,12 +10,15 @@ import {
   isHalfDay,
   isLeaveDay,
   leaveAllowanceOf,
+  leaveAllowanceOn,
   leaveBalanceOf,
+  leaveChargeOf,
   leaveCostOf,
   leaveDayWeightsOfMonth,
   leaveDaysOfMonth,
   leavePreviewOf,
   leaveRangeCostOf,
+  leaveSpanOf,
   leaveYearNumberOf,
   leaveYearOf,
   MAX_LEAVE_RANGE_DAYS,
@@ -1257,6 +1260,60 @@ describe('a half day (story 13.5, R4.12)', () => {
     expect(() => leaveBalanceOf(base({ records: [{ from: '2026-09-10', to: '2026-09-11', half: 'SECOND' }] }))).toThrow(RangeError);
     // @ts-expect-error -- a half that is neither, as an old or corrupt cache could hold.
     expect(() => leaveRangeCostOf(input, { from: '2026-09-10', to: '2026-09-10', half: 'MIDDLE' })).toThrow(/"MIDDLE"/);
+  });
+});
+
+describe('the shared copies of a record (epic 13 retro A8)', () => {
+  it('leaveSpanOf keeps the dates and a half, never gives a whole day a half key, and drops a half it does not know', () => {
+    const whole = leaveSpanOf({ from: '2026-09-10', to: '2026-09-12', drawsAllowance: false });
+    expect(whole).toStrictEqual({ from: '2026-09-10', to: '2026-09-12' });
+    expect('half' in whole).toBe(false);
+    const nulled = leaveSpanOf({ from: '2026-09-10', to: '2026-09-10', half: null });
+    expect(nulled).toStrictEqual({ from: '2026-09-10', to: '2026-09-10' });
+    expect('half' in nulled).toBe(false);
+    const untrusted = leaveSpanOf({ from: '2026-09-10', to: '2026-09-10', half: 'MIDDLE' as never });
+    expect(untrusted).toStrictEqual({ from: '2026-09-10', to: '2026-09-10' });
+    expect('half' in untrusted).toBe(false);
+    expect(leaveSpanOf({ from: '2026-09-10', to: '2026-09-10', half: 'SECOND' })).toStrictEqual({
+      from: '2026-09-10',
+      to: '2026-09-10',
+      half: 'SECOND',
+    });
+  });
+
+  it('leaveChargeOf keeps drawsAllowance true or false, and leaves an absent flag absent', () => {
+    expect(leaveChargeOf({ from: '2026-09-10', to: '2026-09-10', drawsAllowance: false, half: 'FIRST' })).toStrictEqual({
+      from: '2026-09-10',
+      to: '2026-09-10',
+      half: 'FIRST',
+      drawsAllowance: false,
+    });
+    expect(leaveChargeOf({ from: '2026-09-10', to: '2026-09-11', drawsAllowance: true })).toStrictEqual({
+      from: '2026-09-10',
+      to: '2026-09-11',
+      drawsAllowance: true,
+    });
+    const absent = leaveChargeOf({ from: '2026-09-10', to: '2026-09-11', half: null });
+    expect(absent).toStrictEqual({ from: '2026-09-10', to: '2026-09-11' });
+    expect('drawsAllowance' in absent).toBe(false);
+  });
+
+  it('leaveAllowanceOn reads the allowance of the leave year containing the date', () => {
+    const allowance: LeaveAllowance = {
+      startingDays: 20,
+      versions: [
+        { id: 1, leaveYear: 2025, days: 22 },
+        { id: 2, leaveYear: 2026, days: 25 },
+      ],
+    };
+    for (const date of ['2026-02-28', '2026-03-01', '2027-02-28', '2025-01-15']) {
+      expect(leaveAllowanceOn(allowance, date, MARCH_FIRST)).toBe(
+        leaveAllowanceOf(allowance, leaveYearNumberOf(date, MARCH_FIRST)),
+      );
+    }
+    expect(leaveAllowanceOn(allowance, '2026-02-28', MARCH_FIRST)).toBe(22);
+    expect(leaveAllowanceOn(allowance, '2026-03-01', MARCH_FIRST)).toBe(25);
+    expect(leaveAllowanceOn(allowance, '2025-01-15', MARCH_FIRST)).toBe(20);
   });
 });
 

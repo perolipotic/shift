@@ -12,6 +12,7 @@ import {
   ORGANIZATION_LEAVE_PAGE_ROWS,
   ORGANIZATION_LEAVE_RECORDS_KEY,
   leaveOverviewRecordsQueryOptions,
+  leaveRecordFieldsOf,
   leaveRecordsAfterWriteOf,
   leaveRecordsOf,
   leaveRecordsQueryOptions,
@@ -120,6 +121,15 @@ describe('the read', () => {
       expect(records).toEqual([{ id: FIRST, from: '2026-09-10', to: '2026-09-10', absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: true }]);
       expect(records?.[0] !== undefined && 'half' in records[0]).toBe(false);
     }
+  });
+
+  it("copies a record's own fields, dropping a memberId and keeping a half (epic 13 retro A8)", () => {
+    const record = { id: FIRST, memberId: MEMBER, from: '2026-09-10', to: '2026-09-10', absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: false, half: 'SECOND' } as const;
+    const fields = leaveRecordFieldsOf(record);
+    expect(fields).toStrictEqual({ id: FIRST, absenceTypeId: ANNUAL_LEAVE_ID, drawsAllowance: false, from: '2026-09-10', to: '2026-09-10', half: 'SECOND' });
+    expect('memberId' in fields).toBe(false);
+    const whole = leaveRecordFieldsOf({ ...record, half: null });
+    expect('half' in whole).toBe(false);
   });
 
   it.each([

@@ -1,7 +1,7 @@
 import {
-  halfFieldOf,
   isShortStaffed,
   newlyShortStaffedOf,
+  leaveSpanOf,
   peopleAtWorkOn,
   type CollisionLeaveRecord,
   type LeaveHalf,
@@ -324,7 +324,7 @@ export function leaveChangeReportOf(
       ? null
       : [
           ...records.filter((record) => record.id !== id),
-          { id, memberId: change.memberId, from: change.next.from, to: change.next.to, ...halfFieldOf(change.next) },
+          { id, memberId: change.memberId, ...leaveSpanOf(change.next) },
         ];
 
   return shortStaffedReportOf({ calendar, records }, { calendar, records: after }, change.next);
