@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 11-13-2026 09:20
+last_updated: 11-16-2026 10:17
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -618,7 +618,7 @@ development_status:
   13-4b-carry-over-is-derived-and-shown: done  # #293
   13-5-a-half-day-record-costs-half-a-day: done  # #294
   13-5b-a-member-asks-for-a-half-day: done  # split from 13.5, 2026-11-12; #295
-  13-6-carry-over-counts-only-the-time-a-member-was-active: backlog  # epic 13 retro A3, PO 2026-11-13
+  13-6-carry-over-counts-only-the-time-a-member-was-active: review  # epic 13 retro A3, PO 2026-11-13 and 2026-11-16
   13-7-a-half-day-is-named-as-a-half-wherever-leave-is-shown: backlog  # epic 13 retro A5, PO 2026-11-13
   epic-13-retrospective: done
 
