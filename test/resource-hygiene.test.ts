@@ -263,6 +263,9 @@ const SANCTIONED_PLURAL_KEYS = [
   // (`1 promjena`, `3 promjene`, `5 promjena`).
   'history.summary',
   'history.count',
+  // STORY 14.3: the status line after a downloaded history PDF — its name and
+  // how many changes it holds, `1 promjenom`, `3 promjene`, `5 promjena`.
+  'history.export.done',
 ];
 
 /** The flat screen strings the application is permitted to ship, by the story
@@ -2630,6 +2633,19 @@ const SANCTIONED_SCREEN_KEYS = [
   'history.offline',
   'history.unavailable',
   'history.retry',
+  // STORY 14.3: *Izvezi u PDF* — the action, the label it wears while the
+  // file is built, the line a failed build shows, the file's name, and the
+  // document's header lines, *Bilo* and *Sada* columns and page footer.
+  'history.export.action',
+  'history.export.pending',
+  'history.export.failed',
+  'history.export.fileName',
+  'history.export.organization',
+  'history.export.period',
+  'history.export.generated',
+  'history.export.page',
+  'history.export.before',
+  'history.export.after',
   'history.chip.period',
   'history.chip.member',
   'history.chip.memberAll',

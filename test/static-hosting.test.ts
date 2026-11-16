@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -321,6 +322,31 @@ describe('the build is an installable PWA', () => {
     // No fetch handler and no cache: the runtime-cache pins above still hold.
     expect(push).not.toMatch(/addEventListener\(\s*['"]fetch['"]/);
     expect(push).not.toMatch(/\bcaches\.|registerRoute|workbox\./);
+  });
+
+  it.skipIf(notBuilt)('never precaches the PDF writer or its fonts: the export is online only (story 14.3)', () => {
+    // The writer chunks, found by what they hold, not by name: pdfmake's own
+    // popup-blocked message, and the head of the Roboto face its fonts chunk
+    // carries as base64 (read off the same `vfs_fonts.js` the build bundles).
+    const vfs = createRequire(join(repoRoot, 'apps', 'web', 'package.json'))('pdfmake/build/vfs_fonts.js') as Record<
+      string,
+      string
+    >;
+    const markers = ['Open PDF in new window blocked by browser', (vfs['Roboto-Regular.ttf'] ?? '').slice(0, 64)];
+    const assets = join(dist, 'assets');
+    const chunks = readdirSync(assets).filter((name) => name.endsWith('.js'));
+    const worker = read('sw.js');
+
+    expect(markers[1], 'the fonts marker is empty').toHaveLength(64);
+    for (const marker of markers) {
+      const writers = chunks.filter((name) => readFileSync(join(assets, name), 'utf8').includes(marker));
+
+      expect(writers, `no single chunk holds ${marker.slice(0, 24)}…`).toHaveLength(1);
+      expect(worker, `${writers[0]} is precached`).not.toContain(`url:"assets/${writers[0]}"`);
+      expect(worker).not.toContain(writers[0]);
+    }
+    // Vacuous-pass guard: the precache list is still read where it is written.
+    expect(worker).toMatch(/url:"assets\/index-[\w-]+\.js"/);
   });
 
   it.skipIf(notBuilt)('never activates a new worker without the member', () => {

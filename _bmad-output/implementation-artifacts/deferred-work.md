@@ -1555,3 +1555,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-14-2-an-admin-reads-the-change-history.md`
   summary: No e2e covers *Povijest promjena*'s unavailable alert and retry (route `**/rest/v1/audit_events*` to 500, as `conflicts-queue.spec.ts` does), its filtered-out line with *Poništi filtre* (`HistoryPage.filteredLine` is unused), or a second keyset page against real PostgREST (more than 1000 events, ties on `occurred_at`).
   evidence: Independent second review of 14.2 (verification-gap layer). Unit tests cover the read against a stub only; no local stack to write and run these here.
+- source_spec: `_bmad-output/implementation-artifacts/spec-14-3-the-change-history-exports-to-pdf.md`
+  summary: The *Povijest promjena* PDF prints a user-written character that Roboto lacks (emoji, CJK, an arrow in free text, the raw JSON of an unknown column) as an empty box. Substitute or flag such characters at build time, or embed a wider font.
+  evidence: Story 14.3's review (blind and edge-case layers). `pdf.test.ts` proves every character the build's own words, dates and numbers draw is in the font; user data is neither checked nor substituted at runtime.
+- source_spec: `_bmad-output/implementation-artifacts/spec-14-3-the-change-history-exports-to-pdf.md`
+  summary: The *Povijest promjena* PDF is built on the main thread with a nested table per row and no cap, warning or worker, so a busy 366-day period can freeze the tab while it builds. Revisit with real volume, with 14.2's uncapped rendering.
+  evidence: Story 14.3's review (blind layer). Pilot volume is small.

@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -1952,6 +1953,33 @@ describe('the resource file is the only user-facing Croatian in the build', () =
 
     expect(entry, 'the entry does not load the writer lazily').toMatch(new RegExp(`import\\(\\s*${quoted}\\s*\\)`));
     expect(entry, 'the entry imports the writer statically').not.toMatch(new RegExp(`from\\s*${quoted}`));
+  });
+
+  it.skipIf(notBuilt)('keeps the PDF writer and its fonts out of the entry chunk, loaded only by import() (story 14.3)', () => {
+    // pdfmake's popup-blocked message, and the head of its bundled Roboto
+    // face as base64 (read off the same `vfs_fonts.js` the build bundles):
+    // strings the writer and its fonts cannot work without and nothing else
+    // in the application says. Each absent from the entry, present in exactly
+    // one other chunk, and that chunk named by the entry only inside a
+    // dynamic `import()` — loaded when the export is chosen, never at boot.
+    // The vocabulary sweeps above read these chunks too, and count no word
+    // from them: no exclusion is needed.
+    const vfs = createRequire(join(webRoot, 'package.json'))('pdfmake/build/vfs_fonts.js') as Record<string, string>;
+    const markers = ['Open PDF in new window blocked by browser', (vfs['Roboto-Regular.ttf'] ?? '').slice(0, 64)];
+    const entry = entryChunk();
+
+    expect(markers[1], 'the fonts marker is empty').toHaveLength(64);
+    for (const marker of markers) {
+      const writers = chunkPaths().filter((path) => readFileSync(path, 'utf8').includes(marker));
+
+      expect(entry.includes(marker), 'the PDF writer is in the entry chunk').toBe(false);
+      expect(writers, 'no single chunk holds the PDF writer').toHaveLength(1);
+      const name = (writers[0] ?? '').split(/[\\/]/).at(-1) ?? '';
+      const quoted = `[\`'"]\\./${name.replaceAll('.', '\\.')}[\`'"]`;
+
+      expect(entry, 'the entry does not load the writer lazily').toMatch(new RegExp(`import\\(\\s*${quoted}\\s*\\)`));
+      expect(entry, 'the entry imports the writer statically').not.toMatch(new RegExp(`from\\s*${quoted}`));
+    }
   });
 
   it('counts occurrences the way the sweep above assumes', () => {
