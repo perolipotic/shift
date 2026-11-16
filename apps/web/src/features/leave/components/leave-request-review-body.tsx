@@ -87,7 +87,7 @@ function RequestPreview({ preview }: { readonly preview: ReviewPreview }): React
     return <p className="text-sm text-muted-foreground">{t(preview.key)}</p>;
   }
 
-  const { figures, inYearDays, drawsAllowance, conflicts, shortStaffed } = preview;
+  const { figures, inYearDays, drawsAllowance, conflicts, shortStaffed, halfNoShift } = preview;
   // STORY 13.4b: over the balance today, or only once the carried days lapse.
   const exceeds = leaveExceedsOf(figures);
 
@@ -97,6 +97,8 @@ function RequestPreview({ preview }: { readonly preview: ReviewPreview }): React
         <div className="grid min-w-0 gap-1">
           <dt className="text-xs text-muted-foreground">{t('godisnji.request.cost')}</dt>
           <dd className="text-base font-semibold tabular-nums">{t('count.days', { count: figures.costDays })}</dd>
+          {/* STORY 13.7: why a requested half of a drawing type costs nothing — its date has no working shift any more. */}
+          {halfNoShift ? <dd className="text-sm">{t('godisnji.request.halfNoShift')}</dd> : null}
         </div>
         <div className="grid min-w-0 gap-1">
           <dt className="text-xs text-muted-foreground">{t('godisnji.request.balanceAfter')}</dt>

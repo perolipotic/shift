@@ -26143,6 +26143,20 @@ async function halfOfRecord(client: Client, id: string): Promise<string | null |
   return rows[0]?.half;
 }
 
+/** One subject's email outbox rows, by code and recipient, as the owner (13.7b). */
+async function halfDayEventsOf(
+  client: Client,
+  subject: string,
+): Promise<{ code: string; recipient: string; operands: Record<string, unknown> }[]> {
+  const { rows } = await client.query<{ code: string; recipient: string; operands: Record<string, unknown> }>(
+    `select code, recipient_member_id::text as recipient, operands
+       from notification_outbox where subject_id = $1 and channel = 'email'`,
+    [subject],
+  );
+  // Sorted here, not by the database's collation: `LEAVE_RECORDED` before `LEAVE_RECORD_REMOVED`.
+  return rows.sort((a, b) => (a.code === b.code ? (a.recipient < b.recipient ? -1 : 1) : a.code < b.code ? -1 : 1));
+}
+
 describe('a leave record may be a half day of one date, named on insert and on amend (story 13.5)', () => {
   it.skipIf(noDatabase).each(FIXTURES)(
     "stores a $fixture admin's half day, reads it back, and amends it to the other half and to a whole day",
@@ -26239,6 +26253,67 @@ describe('a leave record may be a half day of one date, named on insert and on a
         expect(bothHalves.code, `${slug}: two halves on one date`).toBe('23P01');
         expect(amendedOverRange.code, `${slug}: an amend to a half day over three dates`).toBe('23514');
         expect(await halfOfRecord(client, live), `${slug}: a refused amend changed the record`).toBeNull();
+      });
+    },
+  );
+
+  // STORY 13.7b (0060): the outbox names the half. A half day's operands
+  // carry `half` from the row; an amend's CHANGED carries the replacement's,
+  // so a half-only amend reads differently; a whole day carries no `half` key.
+  it.skipIf(noDatabase).each(FIXTURES)(
+    "writes a $fixture half day's half into its recorded, changed and removed rows, and none for a whole day",
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        await client.query('update members set email = $2 where id = $1', [self.id, `${member}@example.org`]);
+
+        await actAs(client, owner.authUserId, organization);
+        const { rows } = await client.query<{ id: string }>(
+          `insert into leave_records (organization_id, member_id, during, half)
+           values ($1, $2, '[2046-05-04,2046-05-04]'::daterange, 'FIRST')
+           returning id::text as id`,
+          [organization, self.id],
+        );
+        const recorded = rows[0]?.id;
+        if (recorded === undefined) throw new Error('the leave record insert returned no id');
+        // A half-only amend: the same date, the other half.
+        const { rows: second } = await client.query<{ id: string | null }>(
+          `select public.amend_leave_record(
+                    p_record_id => $1::uuid, p_from => $2::date, p_to => $3::date, p_half => $4
+                  )::text as id`,
+          [recorded, '2046-05-04', '2046-05-04', 'SECOND'],
+        );
+        const otherHalf = second[0]?.id;
+        if (otherHalf === undefined || otherHalf === null) throw new Error('the half-only amend returned no id');
+        // To a whole day: no half named.
+        const wholeDay = await amendLeaveRecord(client, otherHalf, '2046-05-04', '2046-05-04');
+        const { rows: removedRows } = await client.query<{ id: string }>(
+          `insert into leave_records (organization_id, member_id, during, half)
+           values ($1, $2, '[2046-06-01,2046-06-01]'::daterange, 'FIRST')
+           returning id::text as id`,
+          [organization, self.id],
+        );
+        const removed = removedRows[0]?.id;
+        if (removed === undefined) throw new Error('the leave record insert returned no id');
+        await removeLeaveRecord(client, removed);
+        await actAsOwner(client);
+
+        const date = { startDate: '2046-05-04', endDate: '2046-05-04' };
+        expect(await halfDayEventsOf(client, recorded), slug).toEqual([
+          { code: 'LEAVE_RECORDED', recipient: self.id, operands: { ...date, half: 'FIRST' } },
+        ]);
+        expect(await halfDayEventsOf(client, otherHalf), `${slug}: a half-only amend did not name the new half`).toEqual([
+          { code: 'LEAVE_RECORD_CHANGED', recipient: self.id, operands: { ...date, half: 'SECOND' } },
+        ]);
+        expect(await halfDayEventsOf(client, wholeDay), `${slug}: an amend to a whole day named a half`).toEqual([
+          { code: 'LEAVE_RECORD_CHANGED', recipient: self.id, operands: date },
+        ]);
+        expect(await halfDayEventsOf(client, removed), slug).toEqual([
+          { code: 'LEAVE_RECORDED', recipient: self.id, operands: { startDate: '2046-06-01', endDate: '2046-06-01', half: 'FIRST' } },
+          { code: 'LEAVE_RECORD_REMOVED', recipient: self.id, operands: { startDate: '2046-06-01', endDate: '2046-06-01', half: 'FIRST' } },
+        ]);
       });
     },
   );
@@ -26389,6 +26464,85 @@ describe('a leave request may be a half day of one date, and approval carries th
           [self.id],
         );
         expect(rows[0]?.total, `${slug}: the refused half was stored`).toBe(1);
+      });
+    },
+  );
+
+  // STORY 13.7b (0060): a half-day request's created, approved and rejected
+  // rows carry its half; a whole-day request's carry no `half` key.
+  it.skipIf(noDatabase).each(FIXTURES)(
+    "writes a $fixture half-day request's half into its created, approved and rejected rows, and none for a whole day",
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        await client.query('update members set email = $2 where id = $1', [owner.id, `${admin}@example.org`]);
+        await client.query('update members set email = $2 where id = $1', [self.id, `${member}@example.org`]);
+
+        await actAs(client, self.authUserId, organization);
+        const halves: string[] = [];
+        for (const during of ['[2046-06-01,2046-06-01]', '[2046-06-08,2046-06-08]']) {
+          const { rows } = await client.query<{ id: string }>(
+            `insert into leave_requests (organization_id, member_id, during, half)
+             values ($1, $2, $3::daterange, 'SECOND')
+             returning id::text as id`,
+            [organization, self.id, during],
+          );
+          const id = rows[0]?.id;
+          if (id === undefined) throw new Error('the leave request insert returned no id');
+          halves.push(id);
+        }
+        const [approved, rejected] = halves;
+        if (approved === undefined || rejected === undefined) throw new Error('the half-day requests were not both inserted');
+        const whole = await insertRequest(client, { organization, member: self.id, during: '[2046-07-01,2046-07-01]' });
+
+        await actAs(client, owner.authUserId, organization);
+        const approvedRecord = await decideRequest(client, approved, 'approved');
+        if (approvedRecord === null) throw new Error('the approval returned no record id');
+        await decideRequest(client, rejected, 'rejected');
+        await decideRequest(client, whole, 'approved');
+        await actAsOwner(client);
+        const { rows: names } = await client.query<{ name: string }>('select name from members where id = $1', [self.id]);
+        const memberName = names[0]?.name;
+
+        const toSelf = async (subject: string) =>
+          (await halfDayEventsOf(client, subject)).filter((row) => row.code !== 'LEAVE_REQUEST_CREATED');
+        const toOwner = async (subject: string) =>
+          (await halfDayEventsOf(client, subject)).filter(
+            (row) => row.code === 'LEAVE_REQUEST_CREATED' && row.recipient === owner.id,
+          );
+
+        expect(await toOwner(approved), `${slug}: a new half-day request did not name its half`).toEqual([
+          {
+            code: 'LEAVE_REQUEST_CREATED',
+            recipient: owner.id,
+            operands: { requestId: approved, memberName, startDate: '2046-06-01', endDate: '2046-06-01', half: 'SECOND' },
+          },
+        ]);
+        expect(await toSelf(approved), slug).toEqual([
+          { code: 'LEAVE_REQUEST_APPROVED', recipient: self.id, operands: { startDate: '2046-06-01', endDate: '2046-06-01', half: 'SECOND' } },
+        ]);
+        // The approval's leave sends nothing of its own, a half day's too (0043's
+        // `approval` suppression): the decision row is the only one.
+        const { rows: recordRows } = await client.query<{ total: number }>(
+          'select count(*)::int as total from notification_outbox where subject_id = $1',
+          [approvedRecord],
+        );
+        expect(recordRows[0]?.total, `${slug}: the approved half day's record notified on its own`).toBe(0);
+        expect(await toSelf(rejected), slug).toEqual([
+          { code: 'LEAVE_REQUEST_REJECTED', recipient: self.id, operands: { startDate: '2046-06-08', endDate: '2046-06-08', half: 'SECOND' } },
+        ]);
+        expect(await toOwner(whole), `${slug}: a whole-day request named a half`).toEqual([
+          {
+            code: 'LEAVE_REQUEST_CREATED',
+            recipient: owner.id,
+            operands: { requestId: whole, memberName, startDate: '2046-07-01', endDate: '2046-07-01' },
+          },
+        ]);
+        expect(await toSelf(whole), `${slug}: a whole-day approval named a half`).toEqual([
+          { code: 'LEAVE_REQUEST_APPROVED', recipient: self.id, operands: { startDate: '2046-07-01', endDate: '2046-07-01' } },
+        ]);
       });
     },
   );

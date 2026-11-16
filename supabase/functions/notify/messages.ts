@@ -20,21 +20,61 @@ export const OBAVIJESTI = {
     subject: 'Zahtjev za odsutnost {startDate}–{endDate} je odobren',
     body: '{organizationName}: tvoj zahtjev za odsutnost {startDate}–{endDate} je odobren. Pogledaj ga u aplikaciji: {link}',
   },
+  leaveRequestApprovedHalfFirst: {
+    subject: 'Zahtjev za odsutnost {startDate}–{endDate} (prvi dio smjene) je odobren',
+    body: '{organizationName}: tvoj zahtjev za odsutnost {startDate}–{endDate} (prvi dio smjene) je odobren. Pogledaj ga u aplikaciji: {link}',
+  },
+  leaveRequestApprovedHalfSecond: {
+    subject: 'Zahtjev za odsutnost {startDate}–{endDate} (drugi dio smjene) je odobren',
+    body: '{organizationName}: tvoj zahtjev za odsutnost {startDate}–{endDate} (drugi dio smjene) je odobren. Pogledaj ga u aplikaciji: {link}',
+  },
   leaveRequestRejected: {
     subject: 'Zahtjev za odsutnost {startDate}–{endDate} je odbijen',
     body: '{organizationName}: tvoj zahtjev za odsutnost {startDate}–{endDate} je odbijen. Pogledaj ga u aplikaciji: {link}',
+  },
+  leaveRequestRejectedHalfFirst: {
+    subject: 'Zahtjev za odsutnost {startDate}–{endDate} (prvi dio smjene) je odbijen',
+    body: '{organizationName}: tvoj zahtjev za odsutnost {startDate}–{endDate} (prvi dio smjene) je odbijen. Pogledaj ga u aplikaciji: {link}',
+  },
+  leaveRequestRejectedHalfSecond: {
+    subject: 'Zahtjev za odsutnost {startDate}–{endDate} (drugi dio smjene) je odbijen',
+    body: '{organizationName}: tvoj zahtjev za odsutnost {startDate}–{endDate} (drugi dio smjene) je odbijen. Pogledaj ga u aplikaciji: {link}',
   },
   leaveRecorded: {
     subject: 'Upisana ti je odsutnost {startDate}–{endDate}',
     body: '{organizationName}: upisana ti je odsutnost {startDate}–{endDate}. Pogledaj je u aplikaciji: {link}',
   },
+  leaveRecordedHalfFirst: {
+    subject: 'Upisana ti je odsutnost {startDate}–{endDate} (prvi dio smjene)',
+    body: '{organizationName}: upisana ti je odsutnost {startDate}–{endDate} (prvi dio smjene). Pogledaj je u aplikaciji: {link}',
+  },
+  leaveRecordedHalfSecond: {
+    subject: 'Upisana ti je odsutnost {startDate}–{endDate} (drugi dio smjene)',
+    body: '{organizationName}: upisana ti je odsutnost {startDate}–{endDate} (drugi dio smjene). Pogledaj je u aplikaciji: {link}',
+  },
   leaveRecordChanged: {
     subject: 'Izmijenjena ti je odsutnost, sada {startDate}–{endDate}',
     body: '{organizationName}: tvoja odsutnost izmijenjena je na {startDate}–{endDate}. Pogledaj je u aplikaciji: {link}',
   },
+  leaveRecordChangedHalfFirst: {
+    subject: 'Izmijenjena ti je odsutnost, sada {startDate}–{endDate} (prvi dio smjene)',
+    body: '{organizationName}: tvoja odsutnost izmijenjena je na {startDate}–{endDate} (prvi dio smjene). Pogledaj je u aplikaciji: {link}',
+  },
+  leaveRecordChangedHalfSecond: {
+    subject: 'Izmijenjena ti je odsutnost, sada {startDate}–{endDate} (drugi dio smjene)',
+    body: '{organizationName}: tvoja odsutnost izmijenjena je na {startDate}–{endDate} (drugi dio smjene). Pogledaj je u aplikaciji: {link}',
+  },
   leaveRecordRemoved: {
     subject: 'Uklonjena ti je odsutnost {startDate}–{endDate}',
     body: '{organizationName}: uklonjena ti je odsutnost {startDate}–{endDate}. Pogledaj u aplikaciji: {link}',
+  },
+  leaveRecordRemovedHalfFirst: {
+    subject: 'Uklonjena ti je odsutnost {startDate}–{endDate} (prvi dio smjene)',
+    body: '{organizationName}: uklonjena ti je odsutnost {startDate}–{endDate} (prvi dio smjene). Pogledaj u aplikaciji: {link}',
+  },
+  leaveRecordRemovedHalfSecond: {
+    subject: 'Uklonjena ti je odsutnost {startDate}–{endDate} (drugi dio smjene)',
+    body: '{organizationName}: uklonjena ti je odsutnost {startDate}–{endDate} (drugi dio smjene). Pogledaj u aplikaciji: {link}',
   },
   rosterPutOn: {
     subject: 'Promjena rasporeda {date}: na rasporedu si',
@@ -83,6 +123,14 @@ export const OBAVIJESTI = {
   leaveRequestCreated: {
     subject: 'Novi zahtjev za odsutnost: {memberName}',
     body: '{organizationName}: {memberName} traži odsutnost {startDate}–{endDate}. Zahtjev čeka tvoju odluku: {link}',
+  },
+  leaveRequestCreatedHalfFirst: {
+    subject: 'Novi zahtjev za odsutnost: {memberName}',
+    body: '{organizationName}: {memberName} traži odsutnost {startDate}–{endDate} (prvi dio smjene). Zahtjev čeka tvoju odluku: {link}',
+  },
+  leaveRequestCreatedHalfSecond: {
+    subject: 'Novi zahtjev za odsutnost: {memberName}',
+    body: '{organizationName}: {memberName} traži odsutnost {startDate}–{endDate} (drugi dio smjene). Zahtjev čeka tvoju odluku: {link}',
   },
   swapRequestProposed: {
     subject: 'Predložena ti je zamjena {date}',
@@ -192,6 +240,25 @@ export const RETURN_VARIANT_OF: Readonly<Partial<Record<MessageKey, MessageKey>>
   swapRequestRejected: 'swapRequestRejectedWithReturn',
 };
 
+/**
+ * The message a half-day leave notice renders with instead of its code's own
+ * (story 13.7b): the same text with the half after the range, as the app names
+ * it (13.7). Chosen when the operands carry `half` (0060 writes `FIRST` or
+ * `SECOND` from the row; a whole day carries no `half` key and renders exactly
+ * as before). A `half` that is neither value, or a `half` on a code with no
+ * half variant, is refused. A code is never in both this map and
+ * {@link RETURN_VARIANT_OF}, so the half lookup by the code's key cannot
+ * overwrite a return variant.
+ */
+export const HALF_VARIANT_OF: Readonly<Partial<Record<MessageKey, { readonly FIRST: MessageKey; readonly SECOND: MessageKey }>>> = {
+  leaveRequestApproved: { FIRST: 'leaveRequestApprovedHalfFirst', SECOND: 'leaveRequestApprovedHalfSecond' },
+  leaveRequestRejected: { FIRST: 'leaveRequestRejectedHalfFirst', SECOND: 'leaveRequestRejectedHalfSecond' },
+  leaveRecorded: { FIRST: 'leaveRecordedHalfFirst', SECOND: 'leaveRecordedHalfSecond' },
+  leaveRecordChanged: { FIRST: 'leaveRecordChangedHalfFirst', SECOND: 'leaveRecordChangedHalfSecond' },
+  leaveRecordRemoved: { FIRST: 'leaveRecordRemovedHalfFirst', SECOND: 'leaveRecordRemovedHalfSecond' },
+  leaveRequestCreated: { FIRST: 'leaveRequestCreatedHalfFirst', SECOND: 'leaveRequestCreatedHalfSecond' },
+};
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
@@ -206,6 +273,16 @@ export function linkPathOf(key: MessageKey, operands: Readonly<Record<string, un
     case 'leaveRecorded':
     case 'leaveRecordChanged':
     case 'leaveRecordRemoved':
+    case 'leaveRequestApprovedHalfFirst':
+    case 'leaveRequestApprovedHalfSecond':
+    case 'leaveRequestRejectedHalfFirst':
+    case 'leaveRequestRejectedHalfSecond':
+    case 'leaveRecordedHalfFirst':
+    case 'leaveRecordedHalfSecond':
+    case 'leaveRecordChangedHalfFirst':
+    case 'leaveRecordChangedHalfSecond':
+    case 'leaveRecordRemovedHalfFirst':
+    case 'leaveRecordRemovedHalfSecond':
       return '/godisnji';
     case 'rosterPutOn':
     case 'rosterPutOnChanged':
@@ -230,7 +307,9 @@ export function linkPathOf(key: MessageKey, operands: Readonly<Record<string, un
     case 'swapRequestApprovedWithReturn':
     case 'swapRequestRejectedWithReturn':
       return '/danas';
-    case 'leaveRequestCreated': {
+    case 'leaveRequestCreated':
+    case 'leaveRequestCreatedHalfFirst':
+    case 'leaveRequestCreatedHalfSecond': {
       const id = operands['requestId'];
       return typeof id === 'string' && UUID.test(id) ? `/za-odluku/zahtjev/${id.toLowerCase()}` : null;
     }
@@ -382,7 +461,17 @@ function compose(code: string, locale: string | null, operands: unknown, target:
   }
 
   const variant = RETURN_VARIANT_OF[codeKey];
-  const key = variant !== undefined && typeof (operands as Record<string, unknown>)['returnDate'] === 'string' ? variant : codeKey;
+  let key = variant !== undefined && typeof (operands as Record<string, unknown>)['returnDate'] === 'string' ? variant : codeKey;
+
+  // 0060: a half day names its half; no `half` key is a whole day.
+  if (Object.hasOwn(operands, 'half')) {
+    const half = (operands as Record<string, unknown>)['half'];
+    if (half !== 'FIRST' && half !== 'SECOND') return { ok: false, code: OPERANDS_INVALID };
+    // A code with no half variant is never written with a `half`.
+    const halfVariant = HALF_VARIANT_OF[codeKey];
+    if (halfVariant === undefined) return { ok: false, code: OPERANDS_INVALID };
+    key = halfVariant[half];
+  }
 
   const path = linkPathOf(key, operands as Record<string, unknown>);
   if (path === null) return { ok: false, code: OPERANDS_INVALID };

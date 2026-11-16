@@ -71,10 +71,14 @@ describe('the requests a deactivation closes (retro 8–9, C1 + C4)', () => {
   it('words the ranges in the question', () => {
     const closed = deactivationClosedRequestsOf(rows, MEMBER, OFFER, '2026-11-10') ?? [];
 
-    expect(t('ljudi.status.deactivateRequests', { count: closed.length, ranges: deactivationClosedRangesText(closed) })).toBe(
+    expect(t('ljudi.status.deactivateRequests', { count: closed.length, ranges: deactivationClosedRangesText(closed, t) })).toBe(
       'Zatvaraju se 2 zahtjeva za odsutnost koji čekaju odluku: 08.11.2026–12.11.2026 i 01.12.2026–03.12.2026. ' +
         'Poništavanje deaktivacije ne vraća zatvorene zahtjeve.',
     );
+    // STORY 13.7: a half-day request names its half after its date.
+    const half = deactivationClosedRequestsOf([{ ...(rowOf('req-half', '2026-11-20', '2026-11-21') as Record<string, unknown>), half: 'SECOND' }], MEMBER, OFFER, '2026-11-10') ?? [];
+
+    expect(deactivationClosedRangesText(half, t)).toBe('20.11.2026–20.11.2026 (drugi dio smjene)');
     expect(t('ljudi.status.deactivateRequests', { count: 1, ranges: '08.11.2026–12.11.2026' })).toBe(
       'Zatvara se 1 zahtjev za odsutnost koji čeka odluku: 08.11.2026–12.11.2026. Poništavanje deaktivacije ne vraća zatvorene zahtjeve.',
     );

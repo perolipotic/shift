@@ -66,12 +66,15 @@ import {
   MESSAGE_OF_CODE,
   MESSAGE_UNKNOWN,
   OBAVIJESTI,
+  HALF_VARIANT_OF,
   OPERANDS_INVALID,
   RETURN_VARIANT_OF,
   SETTINGS_PATH,
   formatIsoDate,
+  linkPathOf,
   render,
   renderPush,
+  type MessageKey,
 } from '../supabase/functions/notify/messages.ts';
 
 /**
@@ -225,11 +228,16 @@ describe('notify renders from a pinned copy of the obavijesti namespace', () => 
     expect(OBAVIJESTI).toEqual(resource['obavijesti']);
   });
 
-  it('maps every code it renders, and every two-way variant, to a message that exists, and only plain {name} placeholders', () => {
+  it('maps every code it renders, every two-way variant and every half-day variant, to a message that exists, and only plain {name} placeholders', () => {
     const variants = Object.values(RETURN_VARIANT_OF).filter((key) => key !== undefined);
+    const halfVariants = Object.values(HALF_VARIANT_OF)
+      .filter((pair) => pair !== undefined)
+      .flatMap((pair) => [pair.FIRST, pair.SECOND]);
 
     expect(variants).toHaveLength(5);
-    for (const key of [...Object.values(MESSAGE_OF_CODE), ...variants]) {
+    // 13.7b: the six leave codes, each with a first and a second half.
+    expect(halfVariants).toHaveLength(12);
+    for (const key of [...Object.values(MESSAGE_OF_CODE), ...variants, ...halfVariants]) {
       expect(OBAVIJESTI[key], key).toBeDefined();
       for (const message of [OBAVIJESTI[key].subject, OBAVIJESTI[key].body]) {
         // Plain interpolation only: no ICU argument a `{name}` renderer would
@@ -524,12 +532,17 @@ describe("notify renders every 10.2 code with the organization's name and its si
     ({ code }) => {
       const key = MESSAGE_OF_CODE[code] ?? 'leaveRequestApproved';
       const variant = RETURN_VARIANT_OF[key];
+      const halves = HALF_VARIANT_OF[key];
 
       const allowed = ['organizationName', 'link', 'date', 'startDate', 'endDate', 'effectiveFrom', 'shiftTypeName'];
       const checked = [
         { message: OBAVIJESTI[key], names: allowed },
         // Only a two-way variant may name the return date.
         ...(variant === undefined ? [] : [{ message: OBAVIJESTI[variant], names: [...allowed, 'returnDate'] }]),
+        // 13.7b: a half-day variant names the half in fixed words, no placeholder.
+        ...(halves === undefined
+          ? []
+          : [{ message: OBAVIJESTI[halves.FIRST], names: allowed }, { message: OBAVIJESTI[halves.SECOND], names: allowed }]),
       ];
 
       for (const { message, names } of checked) {
@@ -619,6 +632,189 @@ describe("notify renders every 10.2 code with the organization's name and its si
       });
     },
   );
+
+  // Story 13.7b (0060): a half day's operands carry `half`, and its notice
+  // names the half after the range, as the app does (13.7). A whole day
+  // carries no `half` key and renders exactly as before.
+  it.each([
+    {
+      scenario: 'a half recorded',
+      code: 'LEAVE_RECORDED',
+      operands: { startDate: '2026-10-01', endDate: '2026-10-01', half: 'FIRST' },
+      path: '/godisnji',
+      subject: 'Upisana ti je odsutnost 01.10.2026–01.10.2026 (prvi dio smjene)',
+      text: `${ORGANIZATION_NAME}: upisana ti je odsutnost 01.10.2026–01.10.2026 (prvi dio smjene). Pogledaj je u aplikaciji: {link}`,
+    },
+    {
+      scenario: 'a half-only amend, FIRST to SECOND',
+      code: 'LEAVE_RECORD_CHANGED',
+      operands: { startDate: '2026-10-01', endDate: '2026-10-01', half: 'SECOND' },
+      path: '/godisnji',
+      subject: 'Izmijenjena ti je odsutnost, sada 01.10.2026–01.10.2026 (drugi dio smjene)',
+      text: `${ORGANIZATION_NAME}: tvoja odsutnost izmijenjena je na 01.10.2026–01.10.2026 (drugi dio smjene). Pogledaj je u aplikaciji: {link}`,
+    },
+    {
+      scenario: 'a half removed',
+      code: 'LEAVE_RECORD_REMOVED',
+      operands: { startDate: '2026-10-01', endDate: '2026-10-01', half: 'FIRST' },
+      path: '/godisnji',
+      subject: 'Uklonjena ti je odsutnost 01.10.2026–01.10.2026 (prvi dio smjene)',
+      text: `${ORGANIZATION_NAME}: uklonjena ti je odsutnost 01.10.2026–01.10.2026 (prvi dio smjene). Pogledaj u aplikaciji: {link}`,
+    },
+    {
+      scenario: 'a half request created',
+      code: 'LEAVE_REQUEST_CREATED',
+      operands: { requestId: REQUEST_ID, memberName: 'Ana Kovač', startDate: '2026-10-01', endDate: '2026-10-01', half: 'SECOND' },
+      path: `/za-odluku/zahtjev/${REQUEST_ID}`,
+      subject: 'Novi zahtjev za odsutnost: Ana Kovač',
+      text: `${ORGANIZATION_NAME}: Ana Kovač traži odsutnost 01.10.2026–01.10.2026 (drugi dio smjene). Zahtjev čeka tvoju odluku: {link}`,
+    },
+    {
+      scenario: 'a half request approved',
+      code: 'LEAVE_REQUEST_APPROVED',
+      operands: { startDate: '2026-10-01', endDate: '2026-10-01', half: 'SECOND' },
+      path: '/godisnji',
+      subject: 'Zahtjev za odsutnost 01.10.2026–01.10.2026 (drugi dio smjene) je odobren',
+      text: `${ORGANIZATION_NAME}: tvoj zahtjev za odsutnost 01.10.2026–01.10.2026 (drugi dio smjene) je odobren. Pogledaj ga u aplikaciji: {link}`,
+    },
+    {
+      scenario: 'a half request rejected',
+      code: 'LEAVE_REQUEST_REJECTED',
+      operands: { startDate: '2026-10-01', endDate: '2026-10-01', half: 'SECOND' },
+      path: '/godisnji',
+      subject: 'Zahtjev za odsutnost 01.10.2026–01.10.2026 (drugi dio smjene) je odbijen',
+      text: `${ORGANIZATION_NAME}: tvoj zahtjev za odsutnost 01.10.2026–01.10.2026 (drugi dio smjene) je odbijen. Pogledaj ga u aplikaciji: {link}`,
+    },
+  ])('renders $code for $scenario naming the half, by email and by push (13.7b)', ({ code, operands, path, subject, text }) => {
+    expect(render(code, 'hr', operands, TARGET)).toEqual({
+      ok: true,
+      subject,
+      text: `${text.replace('{link}', linkTo(path))}${FOOTER}`,
+    });
+    expect(renderPush(code, 'hr', operands, TARGET)).toEqual({
+      ok: true,
+      title: subject,
+      body: text.replace('{link}', linkTo(path)),
+      url: pathTo(path),
+    });
+  });
+
+  it('renders a half-only amend differently from its predecessor (13.7b)', () => {
+    const date = { startDate: '2026-10-01', endDate: '2026-10-01' };
+    const first = render('LEAVE_RECORD_CHANGED', 'hr', { ...date, half: 'FIRST' }, TARGET);
+    const second = render('LEAVE_RECORD_CHANGED', 'hr', { ...date, half: 'SECOND' }, TARGET);
+
+    expect(first.ok && second.ok).toBe(true);
+    expect(first).not.toEqual(second);
+    expect(second.ok && second.subject).toContain('(drugi dio smjene)');
+  });
+
+  it.each([
+    'LEAVE_RECORDED',
+    'LEAVE_RECORD_CHANGED',
+    'LEAVE_RECORD_REMOVED',
+    'LEAVE_REQUEST_CREATED',
+    'LEAVE_REQUEST_APPROVED',
+    'LEAVE_REQUEST_REJECTED',
+  ])('renders %s with no half key exactly as the whole-day text, naming no half (13.7b)', (code) => {
+    // The decisions are not in EVERY_CODE (0042 writes them): their whole-day
+    // text, as the approval-and-rejection case above pins it.
+    const decisions = [
+      {
+        code: 'LEAVE_REQUEST_APPROVED',
+        operands: { startDate: '2046-03-02', endDate: '2046-03-06' },
+        path: '/godisnji',
+        subject: 'Zahtjev za odsutnost 02.03.2046–06.03.2046 je odobren',
+        text: `${ORGANIZATION_NAME}: tvoj zahtjev za odsutnost 02.03.2046–06.03.2046 je odobren. Pogledaj ga u aplikaciji: {link}`,
+      },
+      {
+        code: 'LEAVE_REQUEST_REJECTED',
+        operands: { startDate: '2046-03-02', endDate: '2046-03-06' },
+        path: '/godisnji',
+        subject: 'Zahtjev za odsutnost 02.03.2046–06.03.2046 je odbijen',
+        text: `${ORGANIZATION_NAME}: tvoj zahtjev za odsutnost 02.03.2046–06.03.2046 je odbijen. Pogledaj ga u aplikaciji: {link}`,
+      },
+    ];
+    const entry = [...EVERY_CODE, ...decisions].find((candidate) => candidate.code === code);
+    expect(entry, `${code} has no whole-day entry`).toBeDefined();
+    if (entry === undefined) return;
+    const { operands, path, subject, text } = entry;
+    const rendered = render(code, 'hr', operands, TARGET);
+
+    expect(rendered).toEqual({ ok: true, subject, text: `${text.replace('{link}', linkTo(path))}${FOOTER}` });
+    expect(rendered.ok && rendered.text).not.toContain('dio smjene');
+  });
+
+  it.each([
+    'LEAVE_RECORDED',
+    'LEAVE_RECORD_CHANGED',
+    'LEAVE_RECORD_REMOVED',
+    'LEAVE_REQUEST_CREATED',
+    'LEAVE_REQUEST_APPROVED',
+    'LEAVE_REQUEST_REJECTED',
+  ])('refuses %s with a half that is neither FIRST nor SECOND (13.7b)', (code) => {
+    const operands = { requestId: REQUEST_ID, memberName: 'Ana Kovač', startDate: '2026-10-01', endDate: '2026-10-01' };
+
+    for (const half of ['THIRD', 'first', '', null, 1]) {
+      expect(render(code, 'hr', { ...operands, half }, TARGET), String(half)).toEqual({ ok: false, code: OPERANDS_INVALID });
+      expect(renderPush(code, 'hr', { ...operands, half }, TARGET), String(half)).toEqual({
+        ok: false,
+        code: OPERANDS_INVALID,
+      });
+    }
+  });
+
+  it('refuses a half on a code that has no half variant (13.7b)', () => {
+    expect(HALF_VARIANT_OF['rosterPutOn']).toBeUndefined();
+    for (const half of ['FIRST', 'SECOND']) {
+      expect(render('ROSTER_PUT_ON', 'hr', { date: '2046-03-02', half }, TARGET), half).toEqual({
+        ok: false,
+        code: OPERANDS_INVALID,
+      });
+      expect(renderPush('ROSTER_PUT_ON', 'hr', { date: '2046-03-02', half }, TARGET), half).toEqual({
+        ok: false,
+        code: OPERANDS_INVALID,
+      });
+    }
+  });
+
+  it('keeps the two-way and the half-day variants on disjoint codes, so neither lookup overwrites the other (13.7b)', () => {
+    const returnKeys = Object.keys(RETURN_VARIANT_OF);
+    const halfKeys = Object.keys(HALF_VARIANT_OF);
+
+    expect(halfKeys).toHaveLength(6);
+    expect(returnKeys.filter((key) => halfKeys.includes(key))).toEqual([]);
+  });
+
+  it('links each half-day variant exactly where its base message does (13.7b)', () => {
+    const operands = { requestId: REQUEST_ID };
+    for (const [base, pair] of Object.entries(HALF_VARIANT_OF) as [MessageKey, { FIRST: MessageKey; SECOND: MessageKey }][]) {
+      const path = linkPathOf(base, operands);
+
+      expect(path, base).not.toBeNull();
+      expect(linkPathOf(pair.FIRST, operands), pair.FIRST).toBe(path);
+      expect(linkPathOf(pair.SECOND, operands), pair.SECOND).toBe(path);
+      expect(linkPathOf(pair.FIRST, {}), pair.FIRST).toBe(linkPathOf(base, {}));
+      expect(linkPathOf(pair.SECOND, {}), pair.SECOND).toBe(linkPathOf(base, {}));
+    }
+  });
+
+  it('refuses a new half-day request whose operands name no request id to link to (13.7b)', () => {
+    const operands = { memberName: 'Ana Kovač', startDate: '2026-10-01', endDate: '2026-10-01' };
+
+    for (const half of ['FIRST', 'SECOND']) {
+      for (const requestId of [undefined, '../ljudi']) {
+        expect(render('LEAVE_REQUEST_CREATED', 'hr', { ...operands, half, requestId }, TARGET), `${half} ${String(requestId)}`).toEqual({
+          ok: false,
+          code: OPERANDS_INVALID,
+        });
+        expect(renderPush('LEAVE_REQUEST_CREATED', 'hr', { ...operands, half, requestId }, TARGET)).toEqual({
+          ok: false,
+          code: OPERANDS_INVALID,
+        });
+      }
+    }
+  });
 
   it('refuses a new request whose operands name no request id to link to', () => {
     const { operands } = EVERY_CODE.find((entry) => entry.code === 'LEAVE_REQUEST_CREATED') ?? { operands: {} };

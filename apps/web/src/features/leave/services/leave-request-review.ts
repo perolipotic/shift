@@ -1,5 +1,12 @@
 import type { QueryKey } from '@tanstack/react-query';
-import type { LeaveAllowance, LeavePreview } from '@shift/domain';
+import {
+  isHalfDay,
+  leaveCostOf,
+  type LeaveAllowance,
+  type LeavePreview,
+  type LeaveRange,
+  type MemberScheduleInput,
+} from '@shift/domain';
 
 import type { CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { actorNamesOf } from '@/features/conflicts/services/resolved-conflicts';
@@ -169,6 +176,13 @@ export type ReviewPreview =
       readonly conflicts: LeaveConflicts | null;
       /** What approval would newly leave short of people (story 11.2); null while the setting is empty. */
       readonly shortStaffed: ShortStaffedReport | null;
+      /**
+       * STORY 13.7: a requested half of a drawing type whose date no longer
+       * holds a working shift, which the domain costs 0: one line under
+       * *Trošak* says why. A type that does not draw already says its
+       * balance is unchanged, so it is never flagged.
+       */
+      readonly halfNoShift: boolean;
     };
 
 /** A closed request's line: who decided and when, or the date it was withdrawn. */
@@ -272,6 +286,25 @@ const NOT_AMENDING = null;
 const NEVER_REFUSE_HALF = false;
 
 /**
+ * Whether `range` is a half day on a date that holds no working shift of the
+ * member (story 13.7): the domain then costs the date 0 (`leaveCostOf` of the
+ * whole date is 0), and the review says why. A two-shift date still costs the
+ * half 0.5, so it is no such date. A domain refusal is logged and read as no
+ * such date: the preview's own figures already stand on the same domain.
+ */
+function halfNoShiftOf(input: MemberScheduleInput, range: LeaveRange): boolean {
+  if (!isHalfDay(range)) return false;
+
+  try {
+    return leaveCostOf(input, range.from, range.to) === 0;
+  } catch (cause) {
+    console.error(REVIEW_UNTRUSTED, cause);
+
+    return false;
+  }
+}
+
+/**
  * The pending request's preview, the admin leave dialog's pipeline over the
  * requested range: the base's line while it is not ready, nothing while the
  * records are re-read, the reason when the range cannot be costed, otherwise
@@ -314,6 +347,7 @@ function previewOf(
 
   return {
     kind: PREVIEW_READY,
+    halfNoShift: state.type.drawsAllowance && halfNoShiftOf(base.input.input, state.range),
     figures: state.preview,
     inYearDays: leavePreviewInYearOf(state),
     drawsAllowance: state.type.drawsAllowance,

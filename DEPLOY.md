@@ -789,8 +789,9 @@ for columns the database lacks and every signed-in screen loses its
 organization. `db push`, then the SPA. No function changes, and nothing to
 backfill: every organization starts with no carry-over.
 
-**Epic 13, migrations `0053`–`0059`.** `db push` before the SPA holds for all of
-them except `0056`. Each item below says what breaks if the order is reversed.
+**Epic 13, migrations `0053`–`0060`.** `db push` before the SPA holds for
+`0053`–`0059` except `0056`; `0060` has no SPA step, only `notify` after it.
+Each item below says what breaks if the order is reversed.
 Installed PWAs (`registerType: 'prompt'`) keep an old bundle in control past a
 deploy until the member takes the update prompt. So "an old client" here
 includes installed devices for at least one release after the SPA ships.
@@ -831,6 +832,16 @@ includes installed devices for at least one release after the SPA ships.
   keeps working: its requests name no half and are whole days, and approval
   (`decide_leave_request`, same signature) copies whatever half the request
   holds.
+- **`0060` before the `notify` function of story 13.7b.** `db push`, then
+  `supabase functions deploy notify`. The SPA bundle changes only by the
+  `obavijesti` copy in `hr.json`, which it never renders, so it has no order
+  with `0060`. `0060` adds a
+  `half` operand (`FIRST`/`SECOND`) to the six leave notifications of a half
+  day, and none to a whole day's. An old `notify` against `0060` ignores the
+  unknown operand and sends the whole-day text, so pushing `0060` first is
+  safe. A new `notify` against a database without `0060` never sees a `half`
+  and also sends the whole-day text. Rows already in the outbox when `0060`
+  lands carry no `half` and send as whole days.
 
 With the pipeline enabled (§8), merging to `main` is what promotes: staging is
 deployed and smoked, then production waits for an approval, and each deploy

@@ -25,6 +25,7 @@ import {
   type SwapOutcome,
 } from '@/features/swaps/services/organization-swaps';
 import { SwapShifts } from '@/features/conflicts/components/swap-shifts';
+import { leaveHalfNamedOf } from '@/features/leave/services/leave-section';
 import { t } from '@/lib/i18n';
 
 /** The decision in words: the kind's, naming the replacement where there is one. */
@@ -117,7 +118,8 @@ function ResolvedRequestItem({ row }: { readonly row: ResolvedRequestRow }): Rea
       />
       <span className="min-w-0 break-words font-medium">{row.memberName ?? t('zaOdluku.request.memberGone')}</span>
       <span className="min-w-0 break-words text-sm text-muted-foreground">
-        {t('zaOdluku.request.range', { from: row.from, to: row.to })}
+        {/* STORY 13.7: a half-day request names its half after the range's end. */}
+        {t('zaOdluku.request.range', { from: row.from, to: leaveHalfNamedOf(t, row.to, row.half) })}
       </span>
       {row.recordChange === null ? null : (
         <span className="min-w-0 break-words text-sm">{t(leaveRecordChangeMessageKey(row.recordChange))}</span>

@@ -1,4 +1,15 @@
-import { DUTY_RUNNING, activeOn, leaveRangeCostOf, membershipOn, monthOf, type LeaveRange } from '@shift/domain';
+import {
+  DUTY_RUNNING,
+  LEAVE_HALF_FIRST,
+  activeOn,
+  halfFieldOf,
+  isHalfDay,
+  leaveRangeCostOf,
+  membershipOn,
+  monthOf,
+  type LeaveHalf,
+  type LeaveRange,
+} from '@shift/domain';
 
 import { absenceTypesOfCalendar, type CalendarSnapshot, type CalendarSurfaceState } from '@/features/calendar/services/snapshot';
 import {
@@ -12,6 +23,7 @@ import {
   type CalendarMarks,
 } from '@/features/calendar/utils/month';
 import { leaveRecordsOf, type LeaveRecord } from '@/features/leave/services/leave-list';
+import { leaveHalfOptionsOf } from '@/features/leave/services/leave-section';
 import type { MemberTeam } from '@/features/members/services/list';
 import {
   legKeyOf,
@@ -20,7 +32,7 @@ import {
   type DutySources,
   type TodayDuty,
 } from '@/features/today/services/today-duty';
-import { formatIsoDate, nextIsoDate, organizationWallClock } from '@/lib/i18n/format';
+import { RANGE_DASH, formatIsoDate, nextIsoDate, organizationWallClock } from '@/lib/i18n/format';
 import { dayAfter } from '@/utils/dates';
 
 /**
@@ -53,6 +65,16 @@ import { dayAfter } from '@/utils/dates';
  * carried-over shift ends, today is the free or the leave case again. A
  * viewer with no membership at all is unscheduled, and has no next shift
  * and no week.
+ *
+ * A HALF DAY IS AT WORK (story 13.7, R10.1). A half-day record is an
+ * absence of its own date alone: it joins no neighbour, and nothing joins
+ * across it. The duty legs, the next shift, the week and `Vraćaš se` read it
+ * as a working day. Today, on a date with a working shift, it is the working
+ * case — or the duty, which still wins as on any working day — and one line
+ * names the type, the absent half and what it costs; on the one working shift
+ * a half splits, its row shows the worked half's times, and on two each row
+ * keeps its own. With no working shift left, it stays the leave case, its
+ * date named with its half, and no cost.
  *
  * THE VIEWER'S TEAM TODAY ("Tvoja smjena ‹tim›") comes from the same
  * snapshot — the viewer's membership history and the teams it names — so
@@ -118,6 +140,17 @@ export interface TodayShift {
   readonly fromYesterday: boolean;
 }
 
+/**
+ * A half day today with its working shift (story 13.7): the type of the
+ * record, the half the viewer is absent for, and what it costs in leave days
+ * — 0.5 for a drawing type, 0 for one that does not draw (no cost is said).
+ */
+export interface TodayHalf {
+  readonly typeName: string;
+  readonly half: LeaveHalf;
+  readonly costDays: number;
+}
+
 /** Today, as exactly one case. */
 export type TodayCase =
   | {
@@ -139,9 +172,29 @@ export type TodayCase =
        * the card then states no cost.
        */
       readonly costDays: number;
+      /**
+       * STORY 13.7: a stored half whose date no longer holds a working shift:
+       * the date is named with its half, and no cost is said. Absent for a
+       * whole day.
+       */
+      readonly half?: LeaveHalf;
     }
-  | { readonly kind: typeof CASE_DUTY; readonly duty: TodayDuty }
-  | { readonly kind: typeof CASE_WORKING; readonly shifts: readonly TodayShift[] }
+  | {
+      readonly kind: typeof CASE_DUTY;
+      readonly duty: TodayDuty;
+      /** STORY 13.7: a half day today, named under the duty-block. Absent on a whole working day. */
+      readonly half?: TodayHalf;
+    }
+  | {
+      readonly kind: typeof CASE_WORKING;
+      readonly shifts: readonly TodayShift[];
+      /**
+       * STORY 13.7: a half day today. On its one working shift the row shows
+       * the worked half's times; on two, each keeps its own. Absent on a whole
+       * working day.
+       */
+      readonly half?: TodayHalf;
+    }
   | {
       readonly kind: typeof CASE_FREE;
       /** The non-working type and its team, or `null` for no shift (`Bez smjene`, or `Neaktivno`). */
@@ -260,9 +313,11 @@ export function todayViewOf(snapshot: CalendarSnapshot, rows: readonly unknown[]
     const days = dayLookupOf(snapshot, today, records);
     const working = new Set(workingShiftTypeIdsOf(snapshot));
     const leaveToday = absenceOn(records, today);
+    // STORY 13.7: a half day counts at work (R10.1); only a whole day of leave is leave here.
+    const wholeToday = leaveToday === null || isHalfDay(leaveToday) ? null : leaveToday;
     const sources: DutySources = {
       on: (date) => days.on(date),
-      onLeave: (date) => leaveOn(records, date) !== null,
+      onLeave: (date) => wholeLeaveOn(records, date) !== null,
       working,
     };
     const wallClock = organizationWallClock(now, snapshot.timeZone);
@@ -272,31 +327,59 @@ export function todayViewOf(snapshot: CalendarSnapshot, rows: readonly unknown[]
     // Read only when no duty runs: a running duty never depends on it.
     const carried =
       duty !== null && duty.duty.phase === DUTY_RUNNING ? [] : runningFromYesterdayOf(snapshot, sources, today, wallClock);
+    // STORY 13.7: a half day today, or null for a whole day or no leave.
+    let halfWork: HalfWork | null = null;
+
+    if (leaveToday !== null && isHalfDay(leaveToday)) {
+      // The half-day line names the record's type, as the leave case does.
+      const halfType = leaveTypeNameOn(snapshot, records, today);
+
+      if (halfType === null) {
+        console.error(TODAY_UNAVAILABLE, 'type');
+
+        return { kind: TODAY_UNAVAILABLE, retryable: true };
+      }
+
+      halfWork = halfWorkOf(snapshot, records, days.on(today), working, halfType);
+    }
+
     let todayCase: TodayCase;
     // The legs of the duty shown, which are today's and never the next shift.
     let skip = NO_LEGS;
 
     if (duty !== null && duty.duty.phase === DUTY_RUNNING) {
-      todayCase = { kind: CASE_DUTY, duty: duty.duty };
+      // STORY 13.7: a half day today is named under the duty-block.
+      todayCase = { kind: CASE_DUTY, duty: duty.duty, ...halfCaseFieldOf(halfWork) };
       skip = duty.legKeys;
     } else if (carried.length > 0) {
       // A carry-over never joins a duty: today's shifts, a duty's or not, are rows.
       const own =
-        leaveToday === null ? days.on(today).shifts.filter((shift) => isWorking(working, shift)) : [];
+        wholeToday === null ? days.on(today).shifts.filter((shift) => isWorking(working, shift)) : [];
 
       todayCase = {
         kind: CASE_WORKING,
         shifts: [
           ...carried.map((shift) => todayShiftOf(snapshot, shift, true)),
-          ...own.map((shift) => todayShiftOf(snapshot, shift)),
+          ...own.map((shift) => halfShiftOf(todayShiftOf(snapshot, shift), halfWork)),
         ],
+        ...halfCaseFieldOf(halfWork),
       };
       // Today's duty still to come is listed as rows, and its legs stay
       // today's: one dated tomorrow is never the next shift.
-      if (duty !== null && leaveToday === null) skip = duty.legKeys;
-    } else if (duty !== null && leaveToday === null) {
-      todayCase = { kind: CASE_DUTY, duty: duty.duty };
+      if (duty !== null && wholeToday === null) skip = duty.legKeys;
+    } else if (duty !== null && wholeToday === null) {
+      // STORY 13.7: a half day is at work, so its duty stands, the half named under it.
+      todayCase = { kind: CASE_DUTY, duty: duty.duty, ...halfCaseFieldOf(halfWork) };
       skip = duty.legKeys;
+    } else if (halfWork !== null && halfWork.atWork) {
+      // STORY 13.7: a half day on a date with a working shift is the working case.
+      todayCase = {
+        kind: CASE_WORKING,
+        shifts: days.on(today)
+          .shifts.filter((shift) => isWorking(working, shift))
+          .map((shift) => halfShiftOf(todayShiftOf(snapshot, shift), halfWork)),
+        ...halfCaseFieldOf(halfWork),
+      };
     } else {
       // STORY 13.2b: on leave today, the case names today's record's type. A
       // snapshot cached before 13.2 holds no catalog: unavailable until read again.
@@ -317,7 +400,8 @@ export function todayViewOf(snapshot: CalendarSnapshot, rows: readonly unknown[]
         today: shown,
         todayCase,
         next: nextShiftOf(days, today, records, working, skip),
-        returning: todayCase.kind === CASE_LEAVE,
+        // A half day is no absence to return from (story 13.7).
+        returning: todayCase.kind === CASE_LEAVE && todayCase.half === undefined,
         week: weekOf(days, today, records),
         ownTeam: ownTeamOf(snapshot, today),
       },
@@ -345,6 +429,13 @@ function leaveOn(records: readonly LeaveRecord[], date: string): LeaveRecord | n
   return records.find((record) => record.from <= date && date <= record.to) ?? null;
 }
 
+/** The own record of a WHOLE day covering `date`, or `null`: a half day counts at work (story 13.7, R10.1). */
+function wholeLeaveOn(records: readonly LeaveRecord[], date: string): LeaveRecord | null {
+  const record = leaveOn(records, date);
+
+  return record === null || isHalfDay(record) ? null : record;
+}
+
 /** The whole absence covering a date, and the own records it joins, each with its own range. */
 export interface Absence extends LeaveRange {
   readonly records: readonly LeaveRange[];
@@ -357,13 +448,24 @@ export interface Absence extends LeaveRange {
  * after all of them — with the records it joins. `null` when no record
  * covers `date`. EXPORTED for story 6.3: *Odsutnost danas* states each
  * member's absence the same way, over that member's records alone.
+ *
+ * A HALF DAY (story 13.7) is an absence of its own: its one date, carrying
+ * its half. It joins no neighbour, and nothing joins across it — the whole
+ * days either side of it are two absences.
  */
 export function absenceOn(records: readonly LeaveRecord[], date: string): Absence | null {
   const covering = leaveOn(records, date);
 
   if (covering === null) return null;
 
-  const ordered = [...records].sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
+  if (isHalfDay(covering)) {
+    const own = { from: covering.from, to: covering.to, ...halfFieldOf(covering) };
+
+    return { ...own, records: [own] };
+  }
+
+  // A half day joins nothing: never a link between the whole days either side of it.
+  const ordered = records.filter((record) => !isHalfDay(record)).sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
   let { from, to } = covering;
   let grown = true;
 
@@ -392,7 +494,7 @@ export function absenceOn(records: readonly LeaveRecord[], date: string): Absenc
   // contiguous union of its records, and records of one member never overlap.
   const joined = ordered
     .filter((record) => from <= record.from && record.to <= to)
-    .map((record) => ({ from: record.from, to: record.to }));
+    .map((record) => ({ from: record.from, to: record.to, ...halfFieldOf(record) }));
 
   return { from, to, records: joined };
 }
@@ -484,6 +586,69 @@ function isWorking(working: ReadonlySet<string>, shift: CalendarDay['shifts'][nu
   return shift.cell.shiftTypeId !== null && working.has(shift.cell.shiftTypeId);
 }
 
+/** A half day today (story 13.7): the line's facts, whether the date holds a working shift, and the worked half's times. */
+interface HalfWork {
+  readonly half: TodayHalf;
+  /** Whether the date holds a working shift: the working case. Without one, the leave case names the half. */
+  readonly atWork: boolean;
+  /**
+   * Whether the date holds the one working shift a half splits: its row then
+   * shows {@link range}. With two, no half is split and each row keeps its
+   * whole times.
+   */
+  readonly split: boolean;
+  /** `14:00–20:00`, or `null` when the snapshot holds no times for the shift that date. */
+  readonly range: string | null;
+}
+
+/**
+ * The half day of the own record covering `day` (story 13.7): its type, its
+ * absent half, its cost — `leaveRangeCostOf`, 0.5 on a working date, when its
+ * type draws — whether the date still holds a working shift, and, on the one
+ * working shift a half splits (`leaveHalfOptionsOf`, over `halfDayShiftOf`
+ * and `shiftHalvesOf`), the times of the half worked. `null` when no half-day
+ * record covers the date.
+ *
+ * @throws RangeError on any precondition of the domain.
+ */
+function halfWorkOf(
+  snapshot: CalendarSnapshot,
+  records: readonly LeaveRecord[],
+  day: CalendarDay,
+  working: ReadonlySet<string>,
+  typeName: string,
+): HalfWork | null {
+  const record = leaveOn(records, day.date);
+
+  if (record === null || record.half === undefined || record.half === null) return null;
+
+  const atWork = day.shifts.some((shift) => isWorking(working, shift));
+  const input = memberScheduleInputOf(snapshot, snapshot.viewer);
+  const options = atWork ? leaveHalfOptionsOf(snapshot, input, day.date) : null;
+  const times = options?.find((option) => option.half !== record.half)?.times ?? null;
+
+  return {
+    half: {
+      typeName,
+      half: record.half,
+      costDays: record.drawsAllowance ? leaveRangeCostOf(input, record) : 0,
+    },
+    atWork,
+    split: options !== null,
+    range: times === null ? null : `${times.from}${RANGE_DASH}${times.to}`,
+  };
+}
+
+/** A shift's row on a half day (story 13.7): the worked half's times in place of the whole shift's, where one is split. */
+function halfShiftOf(shift: TodayShift, halfWork: HalfWork | null): TodayShift {
+  return halfWork === null || !halfWork.split ? shift : { ...shift, range: halfWork.range };
+}
+
+/** `{ half }` for the working or duty case on a half day, `{}` otherwise, so a whole day never gains the key. */
+function halfCaseFieldOf(halfWork: HalfWork | null): { readonly half?: TodayHalf } {
+  return halfWork === null ? {} : { half: halfWork.half };
+}
+
 /**
  * The stored name of the type of the own record covering `date` (story
  * 13.2b), or null when no record covers it, the snapshot holds no type
@@ -527,7 +692,8 @@ function todayCaseOf(
     // A half day costs 0.5 (story 13.5).
     const costDays = drawing.reduce((sum, record) => sum + leaveRangeCostOf(input, record), 0);
 
-    return { kind: CASE_LEAVE, from, to, typeName, costDays };
+    // STORY 13.7: a stored half whose shift is gone keeps its half, and says no cost.
+    return { kind: CASE_LEAVE, from, to, typeName, costDays, ...halfFieldOf(leave) };
   }
 
   const shifts = day.shifts.filter((shift) => isWorking(working, shift));
@@ -563,7 +729,8 @@ function nextShiftOf(
   for (let inDays = 1; inDays <= NEXT_SHIFT_HORIZON_DAYS; inDays += 1) {
     date = dayAfter(date);
 
-    if (leaveOn(records, date) !== null) continue;
+    // A half day is a working day (story 13.7): its shift can be the next one.
+    if (wholeLeaveOn(records, date) !== null) continue;
 
     const shift = days
       .on(date)
@@ -584,7 +751,8 @@ function weekOf(days: DayLookup, today: string, records: readonly LeaveRecord[])
 
   for (let index = 0; index < WEEK_DAYS; index += 1) {
     date = dayAfter(date);
-    week.push({ day: days.on(date), onLeave: leaveOn(records, date) !== null });
+    // A half day is a working day (story 13.7), never a day of leave in the week.
+    week.push({ day: days.on(date), onLeave: wholeLeaveOn(records, date) !== null });
   }
 
   return week;
@@ -596,6 +764,16 @@ export function todayDateShownOf(today: Today): TodayDate | null {
   if (today.kind === TODAY_UNSCHEDULED) return today.today;
 
   return null;
+}
+
+/** The absent half as the half-day line names it, lower case (story 13.7). */
+export function todayHalfMessageKey(half: LeaveHalf): 'danas.today.halfFirst' | 'danas.today.halfSecond' {
+  return half === LEAVE_HALF_FIRST ? 'danas.today.halfFirst' : 'danas.today.halfSecond';
+}
+
+/** The half-day line: with its cost when the type draws, or ending at the half (story 13.7). */
+export function todayHalfLineMessageKey(half: Pick<TodayHalf, 'costDays'>): 'danas.today.halfLeaveCost' | 'danas.today.halfLeave' {
+  return half.costDays === 0 ? 'danas.today.halfLeave' : 'danas.today.halfLeaveCost';
 }
 
 /** The sentence today's case is stated in; a duty states itself in its duty-block. Exhaustive. */

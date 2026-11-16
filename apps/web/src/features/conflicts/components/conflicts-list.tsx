@@ -14,7 +14,7 @@ import {
   type SwapRow,
 } from '@/features/conflicts/services/conflicts-queue';
 import { SwapShifts } from '@/features/conflicts/components/swap-shifts';
-import { leaveRangeHalfMessageKey } from '@/features/leave/services/leave-section';
+import { leaveHalfNamedOf, leaveRangeHalfMessageKey } from '@/features/leave/services/leave-section';
 import { cn } from '@/lib/utils';
 import { t } from '@/lib/i18n';
 
@@ -38,6 +38,9 @@ function DateLine({ dateShown, past, kind }: { readonly dateShown: string; reado
  * own resolution screen (story 5.4b): no checkbox, and no bulk action.
  */
 function ConflictItem({ row }: { readonly row: ConflictRow }): ReactNode {
+  // STORY 13.7: a half-day record names its half after the range's end.
+  const to = leaveHalfNamedOf(t, row.leaveTo, row.half);
+
   return (
     <li className="min-w-0">
       <Link
@@ -55,8 +58,8 @@ function ConflictItem({ row }: { readonly row: ConflictRow }): ReactNode {
           </span>
           <span className="min-w-0 break-words text-sm text-muted-foreground">
             {row.times === null
-              ? t('zaOdluku.detail', { type: row.shiftTypeName, from: row.leaveFrom, to: row.leaveTo })
-              : t('zaOdluku.detailTimed', { type: row.shiftTypeName, times: row.times, from: row.leaveFrom, to: row.leaveTo })}
+              ? t('zaOdluku.detail', { type: row.shiftTypeName, from: row.leaveFrom, to })
+              : t('zaOdluku.detailTimed', { type: row.shiftTypeName, times: row.times, from: row.leaveFrom, to })}
           </span>
         </span>
         <CaretRight aria-hidden className="size-4 shrink-0" />

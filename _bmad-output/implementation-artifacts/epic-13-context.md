@@ -6,7 +6,7 @@
 
 Organizations record more absence than annual leave, unused leave should not vanish when the leave year turns, and some absences last only half a shift. This epic makes absence types organization data. Each type has a name and a setting for whether it draws down the allowance, and no type ever records a reason. Unused leave carries into the next leave year up to a cap and expires on a set date. A half-day record costs 0.5. Every one of these is organization data or is derived from it. The epic stands alone: existing leave becomes annual leave, and every figure reads as it did before. It changes the leave surfaces built in Epics 5, 7 and 9 through new stories.
 
-Status on 2026-11-16: 13.1 to 13.5b have shipped, and so has the retrospective. Two stories came out of PO decisions at the retro on 2026-11-13 and are in the backlog. 13.6 counts carry-over only for the time a member was active. 13.7 names a half day as a half on every surface and in every notification. The pilot's sick-leave answer is settled: the pilot records *Bolovanje* as a type that does not draw, and only admins and the member see its name.
+Status on 2026-11-16: 13.1 to 13.7b have shipped, and so has the retrospective. Two stories came out of PO decisions at the retro on 2026-11-13. 13.6 counts carry-over only for the time a member was active. 13.7 names a half day as a half on every surface. Its notification part was split to 13.7b by the PO on 2026-11-16, because the notification text is written by SQL and needs a migration. The pilot's sick-leave answer is settled: the pilot records *Bolovanje* as a type that does not draw, and only admins and the member see its name.
 
 ## Stories
 
@@ -17,6 +17,7 @@ Status on 2026-11-16: 13.1 to 13.5b have shipped, and so has the retrospective. 
 - Story 13.5: A half-day record costs half a day (13.5b: a member asks for a half day)
 - Story 13.6: Carry-over counts only the time a member was active
 - Story 13.7: A half day is named as a half wherever leave is shown
+- Story 13.7b: A notification names the half
 
 ## Requirements & Constraints
 
@@ -28,7 +29,8 @@ Status on 2026-11-16: 13.1 to 13.5b have shipped, and so has the retrospective. 
 - **Carry-over for part-year members (13.6).** If a member was active for only part of the previous leave year, that year's allowance counts in proportion to the days they were active. The days they took are subtracted, and the cap still applies. A member who was never active that year carries nothing. A member active the whole year carries what 13.4b gives today.
 - **Half day.** A one-date record of the first or second half of the member's working shift costs 0.5 Leave Days and raises one collision, like a full day. The worked half counts in Band Hours and Total Hours by band intersection. The absent half counts in neither. A half day is refused at entry on a date without exactly one working shift. Entry covers a new record, a member's request, and an amend that picks another date or the other half. A stored half is never refused because the schedule changed: its request decision and an amend that keeps its date and half both stand. On a date with no working shift left, it costs 0.
 - **Half-day request (13.5b).** A Leave Request may carry the half on a one-date range. The form previews the 0.5 cost through the same domain rule, never a second implementation. Approval creates one half-day record with the request's range, type and half, attributed to the approving admin. A pending request charges nothing and raises no collision.
-- **Naming the half (13.7).** The member's own *Danas* names the half (*prvi* / *drugi dio smjene*). It never draws the half day as a whole day of leave or joins it to the records next to it. Every notification about a half-day record or request names the half, including an amend that changes only the half. The admin's *Danas*, *Odlučeno* and the deactivation question name the half beside the range. When a request's date no longer has a working shift, the decision screen says why it costs 0 days.
+- **Naming the half (13.7).** The member's own *Danas* names the half (*prvi* / *drugi dio smjene*). It never draws the half day as a whole day of leave or joins it to the records next to it. The admin's *Danas* (*Odsutnost danas*, *Treba tebe*), *Odlučeno*, *Za odluku*, the resolution screen, the calendar day detail's collision line and the deactivation question name the half beside the range. When a request's date no longer has a working shift, the decision screen says why it costs 0 days. All of it is client-side: no migration.
+- **Notifications name the half (13.7b).** Every notification about a half-day record or request names the half, including an amend that changes only the half. The operands are written by SQL triggers (0043, 0059), so this needs migration 0060, new `obavijesti` copy and the notify boundary pin, deployed migration first.
 - **Reporting.** *Sati* and the Excel export show one days column per drawing type. They add one column for the rest only when the organization has a type that does not draw. Columns take their names from organization data, and no type name appears in code.
 - **Tests and docs.** Every new engine rule gets a node-level assertion that renders nothing. Each story updates the DESIGN.md, EXPERIENCE.md and UX-DR lines it changes in the same change (UX-DR12, 17, 47, 50).
 
@@ -50,6 +52,6 @@ Status on 2026-11-16: 13.1 to 13.5b have shipped, and so has the retrospective. 
 
 ## Cross-Story Dependencies
 
-- 13.2 depends on 13.1, 13.4 on 13.3, and 13.5 on 13.2. 13.5b depends on 13.5 and on Epic 9's request flow (form, review, `decide_leave_request`). 13.6 depends on 13.4/13.4b and on member active-status versions (Epic 1). 13.7 depends on 13.5b and on Epic 10's notifications.
+- 13.2 depends on 13.1, 13.4 on 13.3, and 13.5 on 13.2. 13.5b depends on 13.5 and on Epic 9's request flow (form, review, `decide_leave_request`). 13.6 depends on 13.4/13.4b and on member active-status versions (Epic 1). 13.7 depends on 13.5b only. 13.7b depends on 13.7 and on Epic 10's notifications.
 - Half days and carry-over affect leave cost, balance, collisions, Band Hours, staffing (Epic 11), the request preview and approval (Epic 9), *Za odluku*, notifications (Epic 10) and the offline snapshot (Epic 8). Each surface must read one snapshot, and a change to a persisted mapped shape must bump the snapshot buster.
 - Epic 14's change history will read the attributed rows of the new tables and settings.

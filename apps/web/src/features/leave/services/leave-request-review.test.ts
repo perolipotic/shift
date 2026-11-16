@@ -1,3 +1,4 @@
+import { halfDayShiftOf } from '@shift/domain';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { ANNUAL_LEAVE_ID } from '@/features/absence-types/services/list';
@@ -37,6 +38,7 @@ import {
   REQUEST_FAILED,
   REQUEST_NOT_PENDING,
 } from '@/features/leave/services/leave-request-write';
+import { memberScheduleInputOf } from '@/features/calendar/utils/month';
 import { LEAVE_PREVIEW_READY, leavePreviewStateOf, memberLeaveBaseOf } from '@/features/leave/services/leave-section';
 import { LEAVE_RECORDS_KEY } from '@/features/leave/services/leave-list';
 import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
@@ -49,6 +51,7 @@ import {
   VIEWER_NAME,
   calendarMemberRow,
   calendarOrganizationRow,
+  calendarRosterOverrideRow,
   calendarTableOf,
   memberMembershipRow,
   membersAnswerOf,
@@ -289,6 +292,95 @@ describe('a pending request', () => {
 
     expect(preview.figures.costDays).toBe(0);
     expect(preview.figures.balanceAfterDays).toBe(preview.figures.balanceDays);
+    // STORY 13.7: and says why, in one line under *Trošak*.
+    expect(preview.halfNoShift).toBe(true);
+    expect(t('godisnji.request.halfNoShift')).toBe('Taj dan više nema radnu smjenu, pa pola dana ne troši ništa.');
+  });
+
+  it('STORY 13.7: flags no half of a type that does not draw: its balance line already says nothing changes', () => {
+    const sick = { id: 'type-sick', organizationId: snapshot.organizationId, name: 'Bolovanje', drawsAllowance: false };
+    const typed = { ...snapshot, absenceTypes: [...(snapshot.absenceTypes ?? []), sick] };
+    const preview = readyOf(
+      pendingOf(
+        leaveRequestReviewOf(
+          sourcesOf({
+            calendar: { snapshot: typed, loading: false },
+            request: answered([
+              { ...requestRow({ from: '2026-09-12', toExclusive: '2026-09-13' }), absence_type_id: 'type-sick', half: 'SECOND' },
+            ]),
+          }),
+          REQUEST,
+          NOW,
+        ),
+      ).preview,
+    );
+
+    expect([preview.figures.costDays, preview.drawsAllowance, preview.halfNoShift]).toEqual([0, false, false]);
+  });
+
+  it('STORY 13.7: flags no half on a date with its working shift, and no whole day', () => {
+    const half = readyOf(
+      pendingOf(
+        leaveRequestReviewOf(
+          sourcesOf({ request: answered([{ ...requestRow({ from: '2026-09-10', toExclusive: '2026-09-11' }), half: 'FIRST' }]) }),
+          REQUEST,
+          NOW,
+        ),
+      ).preview,
+    );
+    // A whole day on a date with no working shift costs 0 too, and is no half.
+    const whole = readyOf(
+      pendingOf(
+        leaveRequestReviewOf(
+          sourcesOf({ request: answered([requestRow({ from: '2026-09-12', toExclusive: '2026-09-13' })]) }),
+          REQUEST,
+          NOW,
+        ),
+      ).preview,
+    );
+
+    expect([half.figures.costDays, half.halfNoShift]).toEqual([0.5, false]);
+    expect([whole.figures.costDays, whole.halfNoShift]).toEqual([0, false]);
+  });
+
+  it('STORY 13.7: flags no half on a date with two working shifts: it still costs 0,5', async () => {
+    // A roster override puts the viewer on Smjena D's Dan on 11.09., beside their own Noć.
+    const source = calendarTableOf(
+      {
+        data: [
+          calendarOrganizationRow(PILOT, {
+            viewers: [viewerRow([membershipRow(TEAM_A, SEEDED)], { role: 'admin' })],
+            versions: [memberMembershipRow(VIEWER_MEMBER, TEAM_A, SEEDED)],
+          }),
+        ],
+        error: null,
+        count: 1,
+      },
+      membersAnswerOf([calendarMemberRow(VIEWER_MEMBER, VIEWER_NAME)]),
+      overridesAnswerOf(),
+      rosterOverridesAnswerOf([calendarRosterOverrideRow('roster-1', 'pilot-smjena-d', '2026-09-11', null, VIEWER_MEMBER)]),
+    );
+    const outcome = await readCalendar(source, source, viewerSession());
+
+    if (!outcome.ok) throw new Error(outcome.code);
+
+    // Two working shifts that date: no half could be entered on it now.
+    expect(halfDayShiftOf(memberScheduleInputOf(outcome.snapshot, outcome.snapshot.viewer), '2026-09-11')).toBeNull();
+
+    const preview = readyOf(
+      pendingOf(
+        leaveRequestReviewOf(
+          sourcesOf({
+            calendar: { snapshot: outcome.snapshot, loading: false },
+            request: answered([{ ...requestRow({ from: '2026-09-11', toExclusive: '2026-09-12' }), half: 'SECOND' }]),
+          }),
+          REQUEST,
+          NOW,
+        ),
+      ).preview,
+    );
+
+    expect([preview.figures.costDays, preview.halfNoShift]).toEqual([0.5, false]);
   });
 
   it('previews approval against the organization’s carry-over (story 13.4b)', () => {
