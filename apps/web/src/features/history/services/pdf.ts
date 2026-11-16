@@ -20,8 +20,37 @@ export const HISTORY_PDF_FONT = 'Roboto';
 
 const MARGIN = 32;
 const PAGE_MARGINS = [MARGIN, 40, MARGIN, 40] as const;
-/** Vrijeme, Autor, Vrsta, Predmet, then *Bilo* and *Sada* sharing what is left. */
-const WIDTHS = [80, 70, 90, '*', '*', '*'] as const;
+/** A4 landscape's width in points, as pdfmake sizes it. */
+const PAGE_WIDTH = 841.89;
+/** pdfmake's default table layout: 4 pt either side of a cell's text, 1 pt lines. */
+const CELL_PADDING = 4;
+const LINE = 1;
+/** Vrijeme, Autor, Vrsta: wide enough for `16. 11. 2026. 10:42` and a kind's words. */
+const FIXED_WIDTHS = [80, 70, 90] as const;
+/**
+ * Predmet, *Bilo* and *Sada* share what is left, in POINTS, never `'*'`: a
+ * star column grows to its longest unbroken word (an e-mail address, a link),
+ * and one such word widened the whole table off the page, *Bilo* and *Sada*
+ * with it (seen on a rendered export, story 14.3 review). A fixed width makes
+ * pdfmake break that word inside its cell instead.
+ */
+const FLEX_WIDTH = Math.floor(
+  (PAGE_WIDTH -
+    2 * MARGIN -
+    6 * 2 * CELL_PADDING -
+    7 * LINE -
+    FIXED_WIDTHS.reduce((sum, width) => sum + width, 0)) /
+    3,
+);
+/** Vrijeme, Autor, Vrsta, Predmet, *Bilo*, *Sada*. */
+const WIDTHS = [...FIXED_WIDTHS, FLEX_WIDTH, FLEX_WIDTH, FLEX_WIDTH] as const;
+/**
+ * The change table inside the `colSpan: 2` cell, also in points: the span is
+ * both columns, the padding between them and their line. With no padding on
+ * its outer edges, *Bilo*'s text starts where the row's other text does, and
+ * *Sada*'s under its header.
+ */
+const SIDE_WIDTHS = [FLEX_WIDTH + 1, FLEX_WIDTH] as const;
 
 /**
  * A cell that a `colSpan` to its left covers: pdfmake wants it present and
@@ -32,8 +61,21 @@ function spannedCell(): object {
   return {};
 }
 
-/** No line inside a change's own two-column table. */
-const NO_LINES = 'noBorders';
+/**
+ * A change's own two-column table: no lines, no padding on its outer edges (so
+ * its first line sits on the row's first line), the outer table's padding
+ * between the two sides, and a little air between two changes.
+ */
+function sidesLayout(changes: number): object {
+  return {
+    hLineWidth: () => 0,
+    vLineWidth: () => 0,
+    paddingLeft: (column: number) => (column === 0 ? 0 : CELL_PADDING),
+    paddingRight: (column: number) => (column === 0 ? CELL_PADDING : 0),
+    paddingTop: (row: number) => (row === 0 ? 0 : 2),
+    paddingBottom: (row: number) => (row === changes - 1 ? 0 : 2),
+  };
+}
 
 /** A row's *Bilo* and *Sada*: a borderless two-column table so each change's sides align, or the `none` line across both. */
 function changesCellOf(row: HistoryExportRow): object {
@@ -41,9 +83,9 @@ function changesCellOf(row: HistoryExportRow): object {
 
   return {
     colSpan: 2,
-    layout: NO_LINES,
+    layout: sidesLayout(row.changes.length),
     table: {
-      widths: ['*', '*'],
+      widths: [...SIDE_WIDTHS],
       body: row.changes.map((change) => [{ text: change.before }, { text: change.after }]),
     },
   };
