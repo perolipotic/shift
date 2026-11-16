@@ -2490,9 +2490,9 @@ So that a deletion leaves a trace.
 
 **Acceptance Criteria:**
 
-**Given** every organization table
+**Given** every organization table AD-11 lists as audited
 **When** a row is inserted, updated or deleted
-**Then** an append-only trigger copies `OLD`/`NEW`, `auth.uid()` and `now()` into `audit_events`, computing and refusing nothing (AD-3); the Q6 trigger stays the only refusing one
+**Then** an append-only trigger copies `OLD`/`NEW`, `auth.uid()` and `now()` into `audit_events`, computing and refusing nothing (AD-3); it adds no refusing trigger, and no session holds an insert, update or delete privilege on `audit_events` (AD-11)
 
 **Given** RLS on `audit_events`
 **When** a member-role account reads
