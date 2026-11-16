@@ -618,7 +618,7 @@ development_status:
   13-4b-carry-over-is-derived-and-shown: done  # #293
   13-5-a-half-day-record-costs-half-a-day: done  # #294
   13-5b-a-member-asks-for-a-half-day: done  # split from 13.5, 2026-11-12; #295
-  13-6-carry-over-counts-only-the-time-a-member-was-active: review  # epic 13 retro A3, PO 2026-11-13 and 2026-11-16
+  13-6-carry-over-counts-only-the-time-a-member-was-active: done  # epic 13 retro A3, PO 2026-11-13 and 2026-11-16; #304
   13-7-a-half-day-is-named-as-a-half-wherever-leave-is-shown: backlog  # epic 13 retro A5, PO 2026-11-13
   epic-13-retrospective: done
 
