@@ -1143,7 +1143,9 @@ describe('the prefill previews exactly what is stored, over randomized rotations
     };
   }
 
-  it('for 1–12 steps, 1–6 teams, each on its own anchor and step', async () => {
+  // 120 randomized runs of real projection work (about 2.4 s alone): the 5 s
+  // default left too little room on a busy runner (epic 14 retro A8).
+  it('for 1–12 steps, 1–6 teams, each on its own anchor and step', { timeout: 20_000 }, async () => {
     const random = prng(20260926);
     const pick = (below: number) => Math.floor(random() * below);
     const days = datesFrom('2019-01-01', 3001);
