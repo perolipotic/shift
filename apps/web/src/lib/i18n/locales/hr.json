@@ -316,6 +316,8 @@
     "offline": "Povijest promjena nije dostupna bez veze. Otvori je kad se veza vrati.",
     "unavailable": "Povijest promjena trenutačno nije moguće prikazati.",
     "retry": "Pokušaj ponovno",
+    "more": "Prikaži još",
+    "partial": "Prikazano {shown, number} od {total, number} unosa.",
     "summary": "Prikazano: {shown, plural, one {# promjena} few {# promjene} other {# promjena}} od {total}",
     "count": "{count, plural, one {# promjena} few {# promjene} other {# promjena}}",
     "export": {

@@ -11,6 +11,7 @@ import {
   historyKeyOf,
   historyQueryOptions,
   readAuditEventOf,
+  readHistoryDeparted,
   readHistoryEvents,
   readHistoryMarkers,
   type HistoryAnswer,
@@ -383,7 +384,9 @@ describe('a decision whose request has no event read is named through the reques
     const stub = source([decisionRow(5, 'leave_request_decisions', 'req-1'), request], {});
 
     expect((await read(stub)).requests).toEqual([]);
-    expect(stub.calls.map((call) => call.table)).toEqual(['audit_events', 'audit_events']);
+    expect(stub.calls.filter((call) => call.table !== 'audit_events')).toEqual([]);
+    // The events, the markers, and the departed read (retro A9) of the member id and the actor no `members` row names.
+    expect(stub.calls).toHaveLength(4);
   });
 
   it('leaves a request no longer there absent, and the read whole', async () => {
@@ -506,5 +509,173 @@ describe('a decision whose request has no event read is named through the reques
     });
 
     await expect(read(stub)).rejects.toThrow(HISTORY_UNAVAILABLE);
+  });
+});
+
+describe('a departed member is named from their DELETE event, read inside the same query (retro A9)', () => {
+  /** A `members` DELETE event as PostgREST sends it. */
+  function deleted(id: number, memberId: string, authUserId: string): Record<string, unknown> {
+    return {
+      ...row(id),
+      table_name: 'members',
+      operation: 'DELETE',
+      row_id: memberId,
+      old_row: { id: memberId, auth_user_id: authUserId, name: `Name ${memberId}` },
+      new_row: null,
+      actor: null,
+      session_role: 'postgres',
+    };
+  }
+
+  /**
+   * `audit_events`: the period's `events` (a call with `gte`), no marker, and
+   * for a `members` DELETE call the `departed` rows whose asked column holds
+   * an asked id, or `answer` when set.
+   */
+  function audit(
+    events: readonly Record<string, unknown>[],
+    departed: readonly Record<string, unknown>[],
+    answer?: HistoryAnswer,
+  ): { table: HistoryTable; calls: Call[] } {
+    const calls: Call[] = [];
+
+    const table: HistoryTable = {
+      select(columns) {
+        const call: Call = { columns, steps: [] };
+        let asked: { column: string; ids: readonly string[] } | null = null;
+
+        calls.push(call);
+
+        const query: HistoryQuery = {
+          gte: (column, value) => (call.steps.push(`gte ${column} ${value}`), query),
+          lt: (column, value) => (call.steps.push(`lt ${column} ${value}`), query),
+          eq: (column, value) => (call.steps.push(`eq ${column} ${value}`), query),
+          in: (column, values) => (
+            call.steps.push(`in ${column} ${String(values.length)}`), (asked = { column, ids: values }), query
+          ),
+          or: () => query,
+          order: (column, options) => (call.steps.push(`order ${column} ${options.ascending ? 'asc' : 'desc'}`), query),
+          limit: (count) => {
+            call.steps.push(`limit ${String(count)}`);
+
+            if (call.steps.some((step) => step.startsWith('gte'))) return Promise.resolve({ data: events, error: null });
+            if (!call.steps.includes('eq table_name members')) return Promise.resolve({ data: [], error: null });
+            if (answer !== undefined) return Promise.resolve(answer);
+
+            const { column, ids } = asked ?? { column: '', ids: [] };
+            const found = departed.filter((candidate) => {
+              const key =
+                column === 'row_id'
+                  ? candidate['row_id']
+                  : (candidate['old_row'] as Record<string, unknown> | null)?.['auth_user_id'];
+
+              return typeof key === 'string' && ids.includes(key);
+            });
+
+            return Promise.resolve({ data: found, error: null });
+          },
+        };
+
+        return query;
+      },
+    };
+
+    return { table, calls };
+  }
+
+  async function read(table: HistoryTable): Promise<HistoryRead> {
+    const options = historyQueryOptions(() => table, PERIOD);
+    const queryFn = options.queryFn as unknown as (context: { signal: AbortSignal }) => Promise<HistoryRead>;
+
+    return queryFn({ signal: new AbortController().signal });
+  }
+
+  const written = {
+    ...row(20),
+    table_name: 'leave_records',
+    row_id: 'leave-1',
+    new_row: { id: 'leave-1', member_id: 'member-gone' },
+    actor: 'auth-gone',
+  };
+
+  it('reads the DELETE events by row_id for member ids and by the old auth user for actors, each once', async () => {
+    const { table, calls } = audit([written], [deleted(7, 'member-gone', 'auth-gone')]);
+
+    const answer = await read(table);
+
+    expect(answer.departed.map((event) => event.id)).toEqual([7]);
+    expect(answer.departed[0]?.oldRow).toEqual({ id: 'member-gone', auth_user_id: 'auth-gone', name: 'Name member-gone' });
+
+    const departedCalls = calls.filter((call) => call.steps.includes('eq table_name members'));
+
+    expect(departedCalls).toEqual([
+      {
+        columns: HISTORY_COLUMNS,
+        steps: ['eq table_name members', 'eq operation DELETE', 'in row_id 1', 'order id desc', 'limit 1000'],
+      },
+      {
+        columns: HISTORY_COLUMNS,
+        steps: ['eq table_name members', 'eq operation DELETE', 'in old_row->>auth_user_id 1', 'order id desc', 'limit 1000'],
+      },
+    ]);
+  });
+
+  it('issues no departed read when the read names everybody', async () => {
+    const member = {
+      ...row(21),
+      table_name: 'members',
+      row_id: 'member-ana',
+      new_row: { id: 'member-ana', auth_user_id: 'auth-ana', name: 'Ana' },
+    };
+    const leave = { ...written, new_row: { id: 'leave-1', member_id: 'member-ana' }, actor: 'auth-ana' };
+    const { table, calls } = audit([leave, member], []);
+
+    expect((await read(table)).departed).toEqual([]);
+    expect(calls.filter((call) => call.steps.includes('eq table_name members'))).toEqual([]);
+  });
+
+  it(`asks for at most ${String(HISTORY_REQUEST_CHUNK)} ids a call`, async () => {
+    const memberIds = Array.from({ length: 250 }, (_, index) => `member-${String(index)}`);
+    const { table, calls } = audit([], []);
+
+    await readHistoryDeparted(table, { memberIds, authUserIds: [] });
+
+    expect(calls.map((call) => call.steps.find((step) => step.startsWith('in ')))).toEqual([
+      'in row_id 100',
+      'in row_id 100',
+      'in row_id 50',
+    ]);
+  });
+
+  it('makes the whole read unavailable on a refusal', async () => {
+    const { table } = audit([written], [], { data: null, error: { code: '42501' } });
+
+    await expect(read(table)).rejects.toThrow(HISTORY_UNAVAILABLE);
+  });
+
+  it('makes the whole read unavailable on a row that is not a DELETE of an id asked for', async () => {
+    const insert = { ...deleted(8, 'member-gone', 'auth-gone'), operation: 'INSERT', old_row: null, new_row: {} };
+    const stranger = deleted(9, 'member-stranger', 'auth-stranger');
+
+    await expect(read(audit([written], [], { data: [insert], error: null }).table)).rejects.toThrow(HISTORY_UNAVAILABLE);
+    await expect(read(audit([written], [], { data: [stranger], error: null }).table)).rejects.toThrow(
+      HISTORY_UNAVAILABLE,
+    );
+  });
+
+  it('makes the whole read unavailable on a full page, never a silently cut answer', async () => {
+    const full = Array.from({ length: HISTORY_PAGE_ROWS }, (_, index) => deleted(index + 1, 'member-gone', 'auth-gone'));
+
+    await expect(read(audit([written], [], { data: full, error: null }).table)).rejects.toThrow(HISTORY_UNAVAILABLE);
+  });
+
+  it('asks for nothing once the read is aborted', async () => {
+    const { table, calls } = audit([], []);
+    const controller = new AbortController();
+
+    controller.abort();
+
+    await expect(readHistoryDeparted(table, { memberIds: ['m'], authUserIds: [] }, controller.signal)).rejects.toThrow();
+    expect(calls).toEqual([]);
   });
 });

@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
+import { flushSync } from 'react-dom';
 
 import { Button } from '@/components/ui/button';
 import { Notice } from '@/components/ui/notice';
@@ -9,6 +10,7 @@ import { HistoryFilters } from '@/features/history/components/history-filters';
 import { HistoryStackedRows } from '@/features/history/components/history-rows';
 import { HistoryTable } from '@/features/history/components/history-table';
 import type { ChangeHistoryScreen } from '@/features/history/hooks/use-change-history';
+import { HISTORY_ROWS_STEP, historyRowsShownOf, type HistoryRow } from '@/features/history/services/history-rows';
 import { HISTORY_LOADING, HISTORY_OFFLINE, HISTORY_READY } from '@/features/history/services/history-states';
 import { usePhone } from '@/hooks/viewport';
 import { t } from '@/lib/i18n';
@@ -19,7 +21,8 @@ const SKELETON_ROWS = [0, 1, 2, 3];
 /**
  * *Povijest promjena* under its heading (story 14.2): the chips, where
  * history begins when the period reaches it, the *Izvezi u PDF* action (story
- * 14.3), and the rows — a table from 640 px, stacked rows below. The
+ * 14.3), and the rows — a table from 640 px, stacked rows below, drawn
+ * {@link HISTORY_ROWS_STEP} at a time (epic 14 retro A9). The
  * skeleton while the reads are unanswered; offline, one notice and no rows
  * (the history is never kept on the device); a failed read, one alert with a
  * retry; in place of no rows, one line that says why.
@@ -87,7 +90,8 @@ export function HistoryBody({ screen }: { readonly screen: ChangeHistoryScreen }
         <div className="px-4">
           <HistoryExport view={view} filters={screen.filters} />
         </div>
-        {isPhone ? <HistoryStackedRows rows={view.rows} empty={empty} /> : <HistoryTable rows={view.rows} empty={empty} />}
+        {/* A new period or chip starts at one step again; a refetch of the same keeps the rows shown. */}
+        <HistoryRowsInSteps key={screen.stateKey} rows={view.rows} empty={empty} isPhone={isPhone} />
       </div>
     );
   }
@@ -116,4 +120,55 @@ function emptyLineOf(filteredOut: boolean, onClear: () => void): ReactNode {
   }
 
   return <p className="py-2 text-base">{t('history.empty')}</p>;
+}
+
+/**
+ * The rows, {@link HISTORY_ROWS_STEP} at first and a step more for each
+ * *Prikaži još* (epic 14 retro A9). Only the drawing is stepped: the chips,
+ * the summary and the PDF count and carry every row. Past one step a status
+ * line says how many are drawn; when the last step is drawn the button goes,
+ * and the focus it held moves to that line.
+ */
+function HistoryRowsInSteps({
+  rows,
+  empty,
+  isPhone,
+}: {
+  readonly rows: readonly HistoryRow[];
+  readonly empty: ReactNode;
+  readonly isPhone: boolean;
+}): ReactNode {
+  const [limit, setLimit] = useState(HISTORY_ROWS_STEP);
+  const statusRef = useRef<HTMLParagraphElement>(null);
+  const shown = historyRowsShownOf(rows, limit);
+  const remaining = rows.length > shown.length;
+  const stepped = rows.length > HISTORY_ROWS_STEP;
+
+  function showMore(): void {
+    const next = shown.length + HISTORY_ROWS_STEP;
+
+    flushSync(() => {
+      setLimit(next);
+    });
+
+    if (next >= rows.length) statusRef.current?.focus();
+  }
+
+  return (
+    <>
+      {isPhone ? <HistoryStackedRows rows={shown} empty={empty} /> : <HistoryTable rows={shown} empty={empty} />}
+      {stepped ? (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4">
+          <p ref={statusRef} role="status" tabIndex={-1} className="text-base">
+            {t('history.partial', { shown: shown.length, total: rows.length })}
+          </p>
+          {remaining ? (
+            <Button className="h-11" type="button" variant="outline" onClick={showMore}>
+              {t('history.more')}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+    </>
+  );
 }

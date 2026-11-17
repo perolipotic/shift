@@ -2636,6 +2636,10 @@ const SANCTIONED_SCREEN_KEYS = [
   'history.offline',
   'history.unavailable',
   'history.retry',
+  // EPIC 14 RETRO A9: the rows are drawn in steps — *Prikaži još*, and the
+  // line that says how many of them are drawn.
+  'history.more',
+  'history.partial',
   // STORY 14.3: *Izvezi u PDF* — the action, the label it wears while the
   // file is built, the line a failed build shows, the file's name, and the
   // document's header lines, *Bilo* and *Sada* columns and page footer.

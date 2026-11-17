@@ -1,6 +1,6 @@
 import type { Download, Locator } from '@playwright/test';
 
-import { escapeRegExp, fill, hr, plural } from '../utils/i18n.ts';
+import { escapeRegExp, fill, hr, icu, plural } from '../utils/i18n.ts';
 import { BasePage } from './base.page.ts';
 
 const history = hr.history;
@@ -76,6 +76,36 @@ export class HistoryPage extends BasePage {
   /** The line the chips leave when they show nothing. */
   get filteredLine(): Locator {
     return this.page.getByText(history.filtered, { exact: true });
+  }
+
+  /** *Poništi filtre*, beside the filtered-out line. */
+  get clearFiltersButton(): Locator {
+    return this.page.getByRole('main').getByRole('button', { name: hr.filter.clear, exact: true });
+  }
+
+  /** The alert a failed read shows in place of the rows. */
+  get unavailableAlert(): Locator {
+    return this.page.getByRole('alert').filter({ hasText: history.unavailable });
+  }
+
+  /** *Pokušaj ponovno*, under the unavailable alert. */
+  get retryButton(): Locator {
+    return this.page.getByRole('button', { name: history.retry, exact: true });
+  }
+
+  /** The table's drawn rows, the header row aside. */
+  get bodyRows(): Locator {
+    return this.table.locator('tbody tr');
+  }
+
+  /** *Prikaži još*, under rows drawn in steps (epic 14 retro A9). */
+  get showMoreButton(): Locator {
+    return this.page.getByRole('button', { name: history.more, exact: true });
+  }
+
+  /** The status line that says how many of `total` rows are drawn. */
+  partialLine(shown: number, total: number): Locator {
+    return this.page.getByRole('status').filter({ hasText: icu(history.partial, { shown, total }) });
   }
 
   // ------------------------------------------------ the export (story 14.3)

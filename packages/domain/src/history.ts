@@ -701,14 +701,23 @@ function authorOf(event: AuditEvent, members: ReadonlyMap<string, string>): Hist
   return memberId === undefined ? { kind: 'departed' } : { kind: 'member', memberId };
 }
 
-/** Auth user → member: the current members, then every `members` row the events hold. */
+/** A `members` event's rows, as far as naming reads them. */
+export type HistoryMemberEvent = Pick<AuditEvent, 'tableName' | 'oldRow' | 'newRow'>;
+
+/**
+ * Auth user → member: the current members, then every `members` row the
+ * events hold, then the departed members' DELETE rows read for the actors the
+ * events could not name (epic 14 retro A9).
+ */
 function memberIdentitiesOf(
-  events: readonly AuditEvent[],
+  events: readonly HistoryMemberEvent[],
   current: readonly HistoryMemberIdentity[],
+  departed: readonly HistoryMemberEvent[],
 ): ReadonlyMap<string, string> {
   const byAuthUser = new Map<string, string>();
 
-  for (const event of events) {
+  // A DELETE row is a member's last, so the departed rows come after the read's; the current list wins over all.
+  for (const event of [...events, ...departed]) {
     if (event.tableName !== 'members') continue;
 
     for (const row of [event.oldRow, event.newRow]) {
@@ -843,6 +852,62 @@ export function historyUnmatchedRequestIdsOf(
   }
 
   return unmatched;
+}
+
+/** The member ids and auth users a read names but holds no `members` row for (epic 14 retro A9). */
+export interface HistoryUnnamedMembers {
+  /** Member ids an event's member column names. */
+  readonly memberIds: readonly string[];
+  /** The events' actors. */
+  readonly authUserIds: readonly string[];
+}
+
+/**
+ * Who the read names but cannot name from its own `members` rows: the member
+ * ids in `member_id`, `member_out_id`, `member_in_id`, `proposer_id` and
+ * `addressee_id` of every event, and every actor, less those a `members` row
+ * in the events carries. Deduped, in read order. The caller reads the
+ * organization's `members` DELETE events for them: a member still in the
+ * organization is in the current list, so one named by neither was deleted,
+ * and its DELETE row is its last. A current request row (retro A3) never names
+ * a departed member: its member keys have no cascade (0040, 0049), so a member
+ * a request still names cannot have been deleted.
+ */
+export function historyUnnamedMembersOf(
+  events: readonly Pick<AuditEvent, 'tableName' | 'oldRow' | 'newRow' | 'actor'>[],
+): HistoryUnnamedMembers {
+  const namedMembers = new Set<string>();
+  const namedAuthUsers = new Set<string>();
+
+  for (const event of events) {
+    if (event.tableName !== 'members') continue;
+
+    for (const row of [event.oldRow, event.newRow]) {
+      const id = row?.['id'];
+      const authUserId = row?.['auth_user_id'];
+
+      if (typeof id === 'string') namedMembers.add(id);
+      if (typeof authUserId === 'string') namedAuthUsers.add(authUserId);
+    }
+  }
+
+  const memberIds: string[] = [];
+  const authUserIds: string[] = [];
+  for (const row of events.flatMap((event) => [event.newRow, event.oldRow])) {
+    if (row === null) continue;
+
+    for (const column of MEMBER_COLUMNS) {
+      const id = row[column];
+
+      if (typeof id === 'string' && !namedMembers.has(id)) pushText(memberIds, id);
+    }
+  }
+
+  for (const event of events) {
+    if (event.actor !== null && !namedAuthUsers.has(event.actor)) pushText(authUserIds, event.actor);
+  }
+
+  return { memberIds, authUserIds };
 }
 
 /** A request's current row, read for a decision whose request has no event in the read (retro A3). */
@@ -1073,6 +1138,12 @@ export interface HistoryContext {
    * one (retro A3). A request no longer there leaves it without a subject.
    */
   readonly requests?: readonly HistoryRequestRow[];
+  /**
+   * The `members` DELETE events read for {@link historyUnnamedMembersOf}'s
+   * actors and member ids (epic 14 retro A9): they name departed authors,
+   * never an entry of their own.
+   */
+  readonly departed?: readonly HistoryMemberEvent[];
 }
 
 /** What every entry of one read is resolved against. */
@@ -1129,7 +1200,7 @@ function amendedEntryOf(removal: AuditEvent, insert: AuditEvent, scope: EntrySco
  */
 export function historyEntriesOf(events: readonly AuditEvent[], context: HistoryContext): readonly HistoryEntry[] {
   const scope: EntryScope = {
-    members: memberIdentitiesOf(events, context.members),
+    members: memberIdentitiesOf(events, context.members, context.departed ?? []),
     requests: requestIndexOf(events),
     current: currentRequestsOf(context.requests ?? []),
   };

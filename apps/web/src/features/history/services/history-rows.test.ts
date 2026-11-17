@@ -23,6 +23,9 @@ import {
   historyPeriodText,
   historyRecordMessageKey,
   historyRowsOf,
+  historyRowsShownOf,
+  HISTORY_ROWS_STEP,
+  type HistoryRow,
 } from '@/features/history/services/history-rows';
 import { initLocalization, t } from '@/lib/i18n';
 import { formatIsoDate } from '@/lib/i18n/format';
@@ -489,5 +492,44 @@ describe('every real change is drawn in words, never a bare id (epic 14 retro A3
     );
 
     expect(row?.subject).toBe('Ana Anić');
+  });
+});
+
+describe('the rows are drawn in steps, and a departed member keeps their name (epic 14 retro A9)', () => {
+  function rows(count: number): HistoryRow[] {
+    return Array.from({ length: count }, (_, index) => ({
+      id: String(index),
+      time: '',
+      author: '',
+      kind: '',
+      subject: '',
+      reconstructed: false,
+      marker: false,
+      changes: [],
+    }));
+  }
+
+  it(`draws the first ${String(HISTORY_ROWS_STEP)}, then a step more each time, and all once they fit`, () => {
+    const all = rows(1101);
+
+    expect(HISTORY_ROWS_STEP).toBe(200);
+    expect(historyRowsShownOf(all, HISTORY_ROWS_STEP)).toHaveLength(200);
+    expect(historyRowsShownOf(all, 2 * HISTORY_ROWS_STEP).map((row) => row.id)).toEqual(
+      all.slice(0, 400).map((row) => row.id),
+    );
+    expect(historyRowsShownOf(all, 6 * HISTORY_ROWS_STEP)).toBe(all);
+    expect(historyRowsShownOf(rows(3), HISTORY_ROWS_STEP)).toHaveLength(3);
+    expect(historyRowsShownOf(all, 0), 'never fewer than one step').toHaveLength(200);
+  });
+
+  it('names a departed member from their DELETE row placed first, while the current list wins', () => {
+    const deletedRow = { tableName: 'members', oldRow: { id: 'member-gone', name: 'Goran' }, newRow: null };
+    const older = { tableName: 'members', oldRow: null, newRow: { id: 'member-gone', name: 'Goran staro' } };
+    const lists = { members: [{ id: 'member-ana', name: 'Ana' }], teams: [], shiftTypes: [], absenceTypes: [] };
+
+    expect(historyNamesOf([deletedRow, older], lists).members.get('member-gone')).toBe('Goran');
+    expect(
+      historyNamesOf([{ ...deletedRow, oldRow: { id: 'member-ana', name: 'Ana stara' } }], lists).members.get('member-ana'),
+    ).toBe('Ana');
   });
 });

@@ -1125,7 +1125,8 @@ export const SCREENS = [
   // *Poništi filtre* on the line the chips leave when they show nothing. The
   // chips are the shared `OptionFilterBar`'s, and nothing here writes.
   // THREE SINCE STORY 14.3: *Izvezi u PDF*.
-  { name: 'the Povijest promjena destination', file: POVIJEST_PROMJENA, expectedFields: 0, expectedButtons: 3 },
+  // FOUR SINCE EPIC 14 RETRO A9: *Prikaži još*, under rows drawn in steps.
+  { name: 'the Povijest promjena destination', file: POVIJEST_PROMJENA, expectedFields: 0, expectedButtons: 4 },
   // STORY 9.3. On the request form: the od and do `<Input>`s, *Pošalji*,
   // *Odustani* (a `<Button asChild>` link back to Godišnji), the figures'
   // unavailable alert's retry, *Natrag na Godišnji* above the title (written

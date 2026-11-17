@@ -4820,6 +4820,171 @@ describe('the access-control migration', () => {
 
     expect(live.get('notes')).toEqual(['organization_id', 'id', 'text_body', 'colour']);
   });
+
+  // ------------------------------------------------ epic 14 retro A9: only an amend pairs a removal with an insert
+
+  /** The tables whose soft-remove and insert of one key in one transaction *Povijest promjena* reads as one amend. */
+  const AMEND_TABLES = ['leave_records', 'roster_overrides', 'shift_type_overrides'] as const;
+
+  interface AmendWriters {
+    /** Each function's final definition that soft-removes an amend table, directly or through a function it calls. */
+    readonly removers: ReadonlyMap<string, readonly string[]>;
+    /** Each one that also inserts into the same table, directly or through a call: what the pairing reads as an amend. */
+    readonly pairing: ReadonlyMap<string, readonly string[]>;
+    /** The functions some `create trigger` runs. */
+    readonly triggers: ReadonlySet<string>;
+    /** Each function that inserts into an amend table, directly or through a call. */
+    readonly inserters: ReadonlySet<string>;
+    /** The functions that run dynamic SQL (`execute`) naming an amend table. */
+    readonly dynamic: readonly string[];
+  }
+
+  /**
+   * Every function's FINAL definition, in file order (`create [or replace]
+   * function` sets it, `drop function` clears it), and the amend tables each
+   * one soft-removes (`update <table> … removed_at =`) and inserts into, closed
+   * over the functions it calls. Comments stripped; `public.` and quoted
+   * spellings read alike.
+   */
+  function amendWritersOf(texts: readonly (readonly [string, string])[]): AmendWriters {
+    const bodies = new Map<string, string>();
+    const triggers = new Set<string>();
+    // Any schema, `private.` included: a writer outside `public` is read too.
+    const schema = String.raw`(?:"?\w+"?\.)?`;
+    const name = String.raw`${schema}"?(\w+)"?`;
+    const create = new RegExp(String.raw`^create\s+(?:or\s+replace\s+)?function\s+${name}\s*\(`, 'i');
+    const drop = new RegExp(String.raw`^drop\s+function\s+(?:if\s+exists\s+)?${name}`, 'i');
+    const trigger = new RegExp(String.raw`^create\s+(?:or\s+replace\s+)?(?:constraint\s+)?trigger\b[\s\S]*?\bexecute\s+(?:function|procedure)\s+${name}\s*\(`, 'i');
+
+    for (const [, text] of texts) {
+      for (const statement of sqlStatements(stripLineComments(text))) {
+        const created = create.exec(statement)?.[1]?.toLowerCase();
+        const dropped = drop.exec(statement)?.[1]?.toLowerCase();
+        const fired = trigger.exec(statement)?.[1]?.toLowerCase();
+
+        // Every body a name has had since its last drop, joined: an overload, or a
+        // `create or replace` of one signature, never hides another body. Over-reading
+        // a replaced body can only fail the pin, never pass it falsely.
+        if (created !== undefined) bodies.set(created, `${bodies.get(created) ?? ''}\n;\n${statement.toLowerCase()}`);
+        // Every name a `drop function a(…), b(…)` lists.
+        if (dropped !== undefined) {
+          for (const listed of statement.toLowerCase().matchAll(new RegExp(String.raw`(?:function\s+(?:if\s+exists\s+)?|,\s*)${name}\s*(?:\(|,|$)`, 'g'))) {
+            if (listed[1] !== undefined) bodies.delete(listed[1]);
+          }
+        }
+        if (fired !== undefined) triggers.add(fired);
+      }
+    }
+
+    const direct = (pattern: (table: string) => RegExp) =>
+      new Map([...bodies].map(([fn, body]) => [fn, new Set(AMEND_TABLES.filter((table) => pattern(table).test(body)))]));
+    const removes = direct((table) => new RegExp(String.raw`\bupdate\s+${schema}"?${table}"?\b[^;]*?\bremoved_at\s*=`));
+    const inserts = direct((table) => new RegExp(String.raw`\binsert\s+into\s+${schema}"?${table}"?\b`));
+    const calls = new Map(
+      [...bodies].map(([fn, body]) => [fn, [...bodies.keys()].filter((other) => other !== fn && new RegExp(String.raw`\b${other}\s*\(`).test(body))]),
+    );
+
+    /** `own` closed over the calls: what a function writes through every function it reaches. */
+    function closed(own: ReadonlyMap<string, ReadonlySet<string>>, fn: string, seen = new Set<string>()): Set<string> {
+      const tables = new Set(own.get(fn));
+
+      seen.add(fn);
+      for (const callee of calls.get(fn) ?? []) {
+        if (!seen.has(callee)) for (const table of closed(own, callee, seen)) tables.add(table);
+      }
+
+      return tables;
+    }
+
+    const removers = new Map<string, readonly string[]>();
+    const pairing = new Map<string, readonly string[]>();
+    const inserters = new Set<string>();
+    const dynamic = [...bodies]
+      .filter(([, body]) => /\bexecute\s+(?:format\s*\(|'|\w)/.test(body.replaceAll(/execute\s+(?:function|procedure)\b/g, '')))
+      .filter(([, body]) => AMEND_TABLES.some((table) => body.includes(table)))
+      .map(([fn]) => fn)
+      .sort();
+
+    for (const fn of [...bodies.keys()].sort()) {
+      const removed = closed(removes, fn);
+      const inserted = closed(inserts, fn);
+
+      if (inserted.size > 0) inserters.add(fn);
+      const both = [...removed].filter((table) => inserted.has(table)).sort();
+
+      if (removed.size > 0) removers.set(fn, [...removed].sort());
+      if (both.length > 0) pairing.set(fn, both);
+    }
+
+    return { removers, pairing, triggers, inserters, dynamic };
+  }
+
+  it('pairs a soft-remove with an insert of one amend table in one function only in the amend RPCs (epic 14 retro A9)', () => {
+    // ITS LIMITS: it reads `update <table> … removed_at =` and `insert into
+    // <table>` in plpgsql or SQL bodies, closed over explicit calls; dynamic SQL
+    // naming an amend table is refused below rather than read.
+    // THE PROOF the history's amend pairing rests on (`packages/domain/src/history.ts`,
+    // `amendPairsOf`): a removal and an insert of one key in one transaction are
+    // one *izmijenjeno* entry. PostgREST runs each request as one statement on
+    // a table, so two direct writes never share a transaction; only a function
+    // can. A new function here that removes and inserts one of these tables is a
+    // writer the pairing would misread: narrow the pairing, or add it here on
+    // purpose with a test of how it reads.
+    const writers = amendWritersOf(migrationTexts());
+
+    expect(Object.fromEntries(writers.pairing)).toEqual({
+      amend_leave_record: ['leave_records'],
+      amend_roster_override: ['roster_overrides'],
+      amend_shift_type_override: ['shift_type_overrides'],
+    });
+    expect(Object.fromEntries(writers.removers)).toEqual({
+      amend_leave_record: ['leave_records'],
+      amend_roster_override: ['roster_overrides'],
+      amend_shift_type_override: ['shift_type_overrides'],
+      remove_leave_record: ['leave_records'],
+      remove_roster_override: ['roster_overrides'],
+      remove_shift_type_override: ['shift_type_overrides'],
+    });
+    expect([...writers.inserters].sort(), 'the functions that insert into an amend table').toEqual([
+      'amend_leave_record',
+      'amend_roster_override',
+      'amend_shift_type_override',
+      'decide_leave_request',
+      'decide_swap_request',
+      'replace_conflict_member',
+    ]);
+    // No trigger soft-removes one of them, so no insert can pair with a removal its own trigger made.
+    expect([...writers.removers.keys()].filter((fn) => writers.triggers.has(fn))).toEqual([]);
+    expect(writers.triggers.size, 'the trigger parser found the triggers').toBeGreaterThan(10);
+    // Nor does any trigger insert into one, so a removal cannot pair with an insert a trigger made.
+    expect([...writers.triggers].filter((fn) => writers.inserters.has(fn))).toEqual([]);
+    // No body writes one of them through dynamic SQL this parser cannot read.
+    expect(writers.dynamic).toEqual([]);
+  });
+
+  it('finds a remove-and-insert writer directly, through a call, and forgets a dropped one', () => {
+    const body = (text: string) => `as $$\nbegin\n${text}\nend;\n$$;\n`;
+    const writers = amendWritersOf([
+      [
+        '0001.sql',
+        `create function public.remover(p uuid) returns void language plpgsql ${body("  update public.roster_overrides set removed_by = auth.uid(), removed_at = now() where id = p;")}` +
+          `create function public.both_direct() returns void language plpgsql ${body("  update leave_records set removed_at = now() where true;\n  insert into leave_records (id) values (gen_random_uuid());")}` +
+          `create function public.both_by_call() returns void language plpgsql ${body("  perform public.remover(null);\n  insert into public.roster_overrides (id) values (gen_random_uuid());")}` +
+          `create function private.both_private() returns void language plpgsql ${body("  update private.x set y = 1;\n  update public.leave_records set removed_at = now();\n  insert into leave_records default values;")}` +
+          `create function public.gone() returns void language plpgsql ${body("  update shift_type_overrides set removed_at = now();\n  insert into shift_type_overrides default values;")}` +
+          'create trigger t after insert on teams for each row execute function public.remover();\n',
+      ],
+      ['0002.sql', 'drop function if exists public.gone();\n'],
+    ]);
+
+    expect(Object.fromEntries(writers.pairing)).toEqual({
+      both_by_call: ['roster_overrides'],
+      both_direct: ['leave_records'],
+      both_private: ['leave_records'],
+    });
+    expect([...writers.removers.keys()]).toEqual(['both_by_call', 'both_direct', 'both_private', 'remover']);
+    expect([...writers.triggers]).toEqual(['remover']);
+  });
 });
 
 describe('the local auth provider configuration', () => {

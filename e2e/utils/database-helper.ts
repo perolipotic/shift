@@ -1734,6 +1734,53 @@ export async function renameTeamInSql(slug: string, teamId: string, name: string
 }
 
 /**
+ * Renames a team {@link seedExtraTeam} wrote `count` times in ONE transaction,
+ * in SQL (epic 14 retro A9): 0061's trigger records each UPDATE with the
+ * transaction's `now()`, so every event shares one `occurred_at` and only its
+ * `id` orders it. More than one page's worth (1000) puts the page boundary
+ * inside that tie, which the history's keyset read must cross by `id`. The
+ * last name is `${prefix} ${count}`.
+ *
+ * In the same transaction every event of the team (its INSERT too) moves
+ * `backdateDays` into the past, so no other spec's default period ever sees
+ * them, not even for a moment.
+ */
+export async function renameTeamRepeatedlyInSql(
+  slug: string,
+  teamId: string,
+  prefix: string,
+  count: number,
+  backdateDays: number,
+): Promise<void> {
+  const client = await connect();
+  try {
+    await client.query('begin');
+    for (let index = 1; index <= count; index += 1) {
+      const { rowCount } = await client.query(
+        `update teams set name = $3
+          where id = $2 and organization_id = (select id from organizations where slug = $1)`,
+        [slug, teamId, `${prefix} ${String(index)}`],
+      );
+      if (rowCount !== 1) throw new Error(`E2E: the team ${teamId} was not renamed`);
+    }
+    const backdated = await client.query(
+      `update audit_events set occurred_at = occurred_at - make_interval(days => $3)
+        where organization_id = (select id from organizations where slug = $1)
+          and table_name = 'teams' and row_id = $2`,
+      [slug, teamId, backdateDays],
+    );
+    // The renames and the team's own INSERT, every one of them.
+    if (backdated.rowCount !== count + 1) throw new Error(`E2E: the history of team ${teamId} was not back-dated`);
+    await client.query('commit');
+  } catch (cause) {
+    await client.query('rollback').catch(() => undefined);
+    throw cause;
+  } finally {
+    await client.end();
+  }
+}
+
+/**
  * Moves every `audit_events` row of one audited row `days` into the past, in
  * SQL (epic 14 retro A3): a request written today then reads as written
  * before any period the page offers, while its decision's event stays in it.
