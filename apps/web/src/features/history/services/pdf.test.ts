@@ -5,9 +5,22 @@ import { fileURLToPath } from 'node:url';
 
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { historyExportOf, type HistoryExport } from '@/features/history/services/history-export';
+import { codePointsOf } from '@/features/history/services/font-coverage';
+import { historyExportOf, type HistoryExport, type HistoryExportRow } from '@/features/history/services/history-export';
+import { REPLACEMENT } from '@/features/history/services/history-pdf-text';
 import type { HistoryRow } from '@/features/history/services/history-rows';
-import { HISTORY_PDF_FONT, historyDocumentOf } from '@/features/history/services/pdf';
+import {
+  HISTORY_PDF_CHARACTER_WIDTH,
+  HISTORY_PDF_CHUNK_HEIGHT,
+  HISTORY_PDF_FACES,
+  HISTORY_PDF_FONT,
+  HISTORY_PDF_LINE_HEIGHT,
+  HISTORY_PDF_PAGE_HEIGHT,
+  historyChunksOf,
+  historyDocumentOf,
+  historyIdentifyingHeightOf,
+  historyPdfCoverageOf,
+} from '@/features/history/services/pdf';
 import { initLocalization, t } from '@/lib/i18n';
 import resources from '@/lib/i18n/locales/hr.json';
 
@@ -17,91 +30,20 @@ import resources from '@/lib/i18n/locales/hr.json';
  * prints as an empty box, silently — so the document is walked string by
  * string, each against the cmap of the face it uses (bold: Roboto-Medium,
  * italic: Roboto-Italic), decoded from the same `vfs_fonts.js` the writer
- * registers. The cmap is parsed here (formats 4 and 12), with no dependency.
+ * registers, by the same cmap reader the writer substitutes with
+ * (`./font-coverage`).
  */
 
-type Face = 'normal' | 'bold' | 'italics' | 'bolditalics';
-
-/** pdfmake's own Roboto table (`src/browser-extensions/index.js`). */
-const FACE_FILES: Readonly<Record<Face, string>> = {
-  normal: 'Roboto-Regular.ttf',
-  bold: 'Roboto-Medium.ttf',
-  italics: 'Roboto-Italic.ttf',
-  bolditalics: 'Roboto-MediumItalic.ttf',
-};
+type Face = keyof typeof HISTORY_PDF_FACES;
 
 const vfs = createRequire(import.meta.url)('pdfmake/build/vfs_fonts.js') as Readonly<Record<string, string>>;
-
-/** The code points a TrueType font maps, from its `cmap`'s Unicode subtables (3,1 format 4; 3,10 / 0,x format 12). */
-function codePointsOf(font: Buffer): ReadonlySet<number> {
-  const tables = font.readUInt16BE(4);
-  let cmap = -1;
-
-  for (let index = 0; index < tables; index += 1) {
-    const record = 12 + index * 16;
-
-    if (font.toString('latin1', record, record + 4) === 'cmap') cmap = font.readUInt32BE(record + 8);
-  }
-  if (cmap < 0) throw new Error('no cmap table');
-
-  const points = new Set<number>();
-  const subtables = font.readUInt16BE(cmap + 2);
-
-  for (let index = 0; index < subtables; index += 1) {
-    const record = cmap + 4 + index * 8;
-    const platform = font.readUInt16BE(record);
-    const encoding = font.readUInt16BE(record + 2);
-    const at = cmap + font.readUInt32BE(record + 4);
-    const format = font.readUInt16BE(at);
-    const unicode = platform === 0 || (platform === 3 && (encoding === 1 || encoding === 10));
-
-    if (!unicode) continue;
-
-    if (format === 4) {
-      const segments = font.readUInt16BE(at + 6) / 2;
-      const ends = at + 14;
-      const starts = ends + segments * 2 + 2;
-      const deltas = starts + segments * 2;
-      const offsets = deltas + segments * 2;
-
-      for (let segment = 0; segment < segments; segment += 1) {
-        const end = font.readUInt16BE(ends + segment * 2);
-        const start = font.readUInt16BE(starts + segment * 2);
-        const delta = font.readInt16BE(deltas + segment * 2);
-        const offsetAt = offsets + segment * 2;
-        const offset = font.readUInt16BE(offsetAt);
-
-        for (let point = start; point <= end && point !== 0xffff; point += 1) {
-          const glyph =
-            offset === 0
-              ? (point + delta) & 0xffff
-              : font.readUInt16BE(offsetAt + offset + (point - start) * 2);
-
-          if (glyph !== 0) points.add(point);
-        }
-      }
-    } else if (format === 12) {
-      const groups = font.readUInt32BE(at + 12);
-
-      for (let group = 0; group < groups; group += 1) {
-        const groupAt = at + 16 + group * 12;
-        const start = font.readUInt32BE(groupAt);
-        const end = font.readUInt32BE(groupAt + 4);
-        const glyph = font.readUInt32BE(groupAt + 8);
-
-        for (let point = start; point <= end; point += 1) if (glyph + (point - start) !== 0) points.add(point);
-      }
-    }
-  }
-
-  return points;
-}
+const fontOf = (face: Face): Buffer => Buffer.from(vfs[HISTORY_PDF_FACES[face]] ?? '', 'base64');
 
 const FACES: Readonly<Record<Face, ReadonlySet<number>>> = {
-  normal: codePointsOf(Buffer.from(vfs[FACE_FILES.normal] ?? '', 'base64')),
-  bold: codePointsOf(Buffer.from(vfs[FACE_FILES.bold] ?? '', 'base64')),
-  italics: codePointsOf(Buffer.from(vfs[FACE_FILES.italics] ?? '', 'base64')),
-  bolditalics: codePointsOf(Buffer.from(vfs[FACE_FILES.bolditalics] ?? '', 'base64')),
+  normal: codePointsOf(fontOf('normal')),
+  bold: codePointsOf(fontOf('bold')),
+  italics: codePointsOf(fontOf('italics')),
+  bolditalics: codePointsOf(fontOf('bolditalics')),
 };
 
 /** The characters of `text` that `face` cannot draw (line breaks are layout, not glyphs). */
@@ -206,6 +148,144 @@ describe('the font detector', () => {
       { text: 'b', face: 'normal' },
       { text: 'c', face: 'italics' },
     ]);
+  });
+});
+
+describe('the coverage the writer substitutes against', () => {
+  it('is what every face draws: Croatian and the replacement character, no arrow, no emoji, no CJK', () => {
+    const coverage = historyPdfCoverageOf(vfs);
+
+    expect(coverage.size).toBeGreaterThan(500);
+    for (const face of Object.keys(FACES) as Face[]) for (const point of coverage) expect(FACES[face].has(point)).toBe(true);
+    for (const character of ['č', 'Đ', '–', '·', REPLACEMENT, '-', '>', '<', '=']) {
+      expect(coverage.has(character.codePointAt(0) ?? 0), character).toBe(true);
+    }
+    for (const character of ['→', '⇒', '👍', '张', '✓']) expect(coverage.has(character.codePointAt(0) ?? 0), character).toBe(false);
+  });
+});
+
+/** A face's widest glyph, in points at `size`: `hhea.advanceWidthMax` over `head.unitsPerEm`. */
+function widestOf(font: Buffer, size: number): number {
+  const tables = font.readUInt16BE(4);
+  const offsetOf = (tag: string): number => {
+    for (let index = 0; index < tables; index += 1) {
+      const record = 12 + index * 16;
+
+      if (font.toString('latin1', record, record + 4) === tag) return font.readUInt32BE(record + 8);
+    }
+    throw new Error(tag);
+  };
+
+  return (font.readUInt16BE(offsetOf('hhea') + 10) / font.readUInt16BE(offsetOf('head') + 18)) * size;
+}
+
+/** A table row's height in Roboto, read from the face's own `head` and `hhea`: pdfmake's line height. */
+function lineHeightOf(font: Buffer, size: number): number {
+  const tables = font.readUInt16BE(4);
+  const offsetOf = (tag: string): number => {
+    for (let index = 0; index < tables; index += 1) {
+      const record = 12 + index * 16;
+
+      if (font.toString('latin1', record, record + 4) === tag) return font.readUInt32BE(record + 8);
+    }
+    throw new Error(tag);
+  };
+  const unitsPerEm = font.readUInt16BE(offsetOf('head') + 18);
+  const hhea = offsetOf('hhea');
+
+  return ((font.readInt16BE(hhea + 4) - font.readInt16BE(hhea + 6) + font.readInt16BE(hhea + 8)) / unitsPerEm) * size;
+}
+
+function exportRow(changes: number, overrides: Partial<HistoryExportRow> = {}): HistoryExportRow {
+  return {
+    time: '16.11.2026 09:05',
+    author: 'Ana Anić',
+    kind: 'Smjena · promijenjeno',
+    badge: null,
+    subject: 'Smjena A',
+    changes: Array.from({ length: changes }, (_, index) => ({ before: `Dan ${index}: A`, after: `Dan ${index}: B` })),
+    none: null,
+    ...overrides,
+  };
+}
+
+describe('a row taller than a page', () => {
+  it('is a chunk that fits an empty page under the repeated header, so dontBreakRows never drops it', () => {
+    // Story 14.3's second review: under `dontBreakRows` pdfmake 0.3.13 left a
+    // 90-change row out of the file. A chunk no taller than this always fits.
+    const content = HISTORY_PDF_PAGE_HEIGHT - 40 - 40;
+    // The header row: one line, 4 pt padding over and under, its rules; the chunk's own padding and rules.
+    const header = HISTORY_PDF_LINE_HEIGHT + 8 + 2;
+
+    expect(HISTORY_PDF_LINE_HEIGHT).toBeCloseTo(lineHeightOf(fontOf('normal'), 8), 6);
+    expect(HISTORY_PDF_LINE_HEIGHT).toBeCloseTo(lineHeightOf(fontOf('bold'), 8), 6);
+    expect(HISTORY_PDF_CHUNK_HEIGHT + 8 + 2 + header).toBeLessThan(content);
+    // The estimate takes 1 em a character; Roboto's widest glyph is wider. A
+    // chunk of nothing but the widest glyphs, in any face, still fits.
+    for (const face of Object.keys(HISTORY_PDF_FACES) as Face[]) {
+      const widest = widestOf(fontOf(face), 8);
+
+      expect(widest, face).toBeGreaterThan(HISTORY_PDF_CHARACTER_WIDTH);
+      expect(HISTORY_PDF_CHUNK_HEIGHT * (widest / HISTORY_PDF_CHARACTER_WIDTH) + 8 + 2 + header, face).toBeLessThan(content);
+    }
+    expect((historyDocumentOf(fixture()).content.at(-1) as { table: { dontBreakRows: boolean } }).table.dontBreakRows).toBe(true);
+  });
+
+  it('keeps the identifying cells of the longest names under the budget beside a full chunk', () => {
+    // Names are at most 100 characters (`char_length(name) <= 100`); a subject can name a member and a team.
+    const name = 'Đ'.repeat(100);
+    const tallest = exportRow(1, {
+      author: name,
+      subject: `${name}, ${name}, 31.12.2026.–31.12.2027.`,
+      kind: 'Zamjena smjene · izmijenjeno',
+      badge: t('history.reconstructed'),
+    });
+
+    expect(historyIdentifyingHeightOf(tallest, t('history.export.continued'))).toBeLessThan(HISTORY_PDF_CHUNK_HEIGHT);
+  });
+
+  it('splits 90 changes into four rows, in order, nothing lost', () => {
+    const row = exportRow(90);
+    const chunks = historyChunksOf(row);
+
+    expect(chunks.map((chunk) => chunk.length)).toEqual([29, 29, 29, 3]);
+    expect(chunks.flat()).toEqual(row.changes);
+    expect(historyChunksOf(exportRow(3))).toEqual([exportRow(3).changes]);
+    expect(historyChunksOf(exportRow(0, { none: 'Bez promijenjenih polja' }))).toEqual([[]]);
+  });
+
+  it('splits one huge change at spaces into continuing pieces of both sides, nothing lost', () => {
+    const note = Array.from({ length: 500 }, (_, index) => `riječ${index}`).join(' ');
+    const json = `{"a":"${'x'.repeat(2000)}"}`;
+    const chunks = historyChunksOf(exportRow(0, { changes: [{ before: `Napomena: ${note}`, after: `meta: ${json}\n\nkraj` }] }));
+    const parts = chunks.flat();
+
+    expect(chunks.length).toBeGreaterThan(3);
+    expect(parts.map((part) => part.before).join('')).toBe(`Napomena: ${note}`);
+    // A paragraph break that ends a piece is the piece boundary itself.
+    expect(parts.map((part) => part.after).join('').replace(/\n/g, '')).toBe(`meta: ${json}kraj`);
+    // Each piece of the note ends after a space, never inside a word.
+    for (const part of parts.slice(0, -1)) if (part.before !== '') expect(part.before.endsWith(' ')).toBe(true);
+  });
+
+  it('repeats the time, author, kind and subject on each continuation, marked (nastavak)', () => {
+    const model = { ...fixture(), rows: [exportRow(90, { badge: 'Rekonstruirano', subject: 'Ljiljana Kovačević' })] };
+    const body = (historyDocumentOf(model).content.at(-1) as { table: { body: unknown[][] } }).table.body.slice(1);
+
+    expect(body).toHaveLength(4);
+    body.forEach((cells, index) => {
+      const drawn = drawnIn(cells.slice(0, 4), false, false, []);
+
+      expect(drawn.map((item) => item.text)).toEqual([
+        '16.11.2026 09:05',
+        ...(index === 0 ? [] : ['(nastavak)']),
+        'Ana Anić',
+        'Smjena · promijenjeno',
+        'Rekonstruirano',
+        'Ljiljana Kovačević',
+      ]);
+      if (index > 0) expect(drawn[1]).toEqual({ text: t('history.export.continued'), face: 'italics' });
+    });
   });
 });
 

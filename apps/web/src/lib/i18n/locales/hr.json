@@ -331,7 +331,10 @@
       "generated": "Izrađeno: {date} u {time}",
       "page": "Stranica {page} od {pages}",
       "before": "Bilo",
-      "after": "Sada"
+      "after": "Sada",
+      "continued": "(nastavak)",
+      "glyphNote": "Napomena: znakovi koje PDF ne može prikazati (npr. emotikoni) zamijenjeni su znakom �, a strelice znakovima poput ->.",
+      "tooLarge": "Izvoz u PDF prima najviše {limit, number} promjena, a {count, plural, one {prikazana je # promjena} few {prikazane su # promjene} other {prikazano je # promjena}}. Suzi razdoblje ili filtre pa pokušaj ponovno."
     },
     "chip": {
       "period": "Razdoblje: {value}",

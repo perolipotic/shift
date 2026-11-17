@@ -1151,7 +1151,7 @@ action_items:
       split loses context cells, uncapped main-thread PDF/rendering, non-Roboto boxes,
       departed member naming, amend-pairing proof, missing history e2e"
     owner: "PO"
-    status: open  # founder 2026-11-17: fix all; the four 14.2 deferrals built (spec-epic-14-retro-a9-history-page; built, CI pending); the 14.3 PDF deferrals go to another story
+    status: open  # founder 2026-11-17: fix all; the history-page part (four 14.2 deferrals) merged in #317; the PDF part (three 14.3 deferrals) built (spec-epic-14-retro-a9-history-pdf; built, CI pending)
     ref: "_bmad-output/implementation-artifacts/epic-14-retro-2026-11-16.md"
   - id: "epic-14-retro-item-70-a10-process-render-the-artifact-is-a-sta"
     epic: 14

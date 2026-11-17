@@ -535,3 +535,21 @@ const listFormatter = new Intl.ListFormat(LOCALE, { style: 'long', type: 'conjun
 export function formatList(items: readonly string[]): string {
   return listFormatter.format(items);
 }
+
+/** Made on first use, never at import: a browser without `Intl.Segmenter` must still load the app. */
+let graphemeSegmenter: Intl.Segmenter | null = null;
+
+/**
+ * `text`'s user-perceived characters, in order: a family emoji, a flag or a
+ * letter with its combining marks is one (epic 14 retro A9: the history PDF
+ * replaces a character its font lacks once per grapheme). Here because this
+ * file is the only one permitted to touch `Intl`; it formats nothing, so it
+ * takes no zone. Without `Intl.Segmenter` it answers code points.
+ */
+export function graphemesOf(text: string): readonly string[] {
+  if (typeof Intl.Segmenter !== 'function') return [...text];
+
+  graphemeSegmenter ??= new Intl.Segmenter(LOCALE, { granularity: 'grapheme' });
+
+  return Array.from(graphemeSegmenter.segment(text), ({ segment }) => segment);
+}

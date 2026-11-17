@@ -2,7 +2,12 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
   HISTORY_EXPORT_FAILED,
+  HISTORY_EXPORT_LIMIT,
   exportHistory,
+  historyExportCount,
+  historyExportOverLimit,
+  historyExportPressOf,
+  historyExportRefusalOf,
   historyExportDisabled,
   historyExportEmpty,
   historyExportMessageKey,
@@ -174,6 +179,17 @@ describe('the header', () => {
   it('numbers the pages', () => {
     expect(historyExportOf(inputOf()).pageText(2, 5)).toBe('Stranica 2 od 5');
   });
+
+  it('words a continuation and the note on replaced characters', () => {
+    const model = historyExportOf(inputOf());
+
+    expect(model.continued).toBe('(nastavak)');
+    expect(model.glyphNote).toBe(
+      'Napomena: znakovi koje PDF ne može prikazati (npr. emotikoni) zamijenjeni su znakom \uFFFD, a strelice znakovima poput ->.',
+    );
+    // The note is added by the writer, only when it replaced something.
+    expect(model.lines).not.toContain(model.glyphNote);
+  });
 });
 
 describe('the file name', () => {
@@ -216,6 +232,47 @@ describe('the action', () => {
     );
     expect(t('history.export.done', { fileName: 'x.pdf', count: 1 })).toBe('Preuzeta je datoteka x.pdf s 1 promjenom.');
     expect(t('history.export.done', { fileName: 'x.pdf', count: 5 })).toBe('Preuzeta je datoteka x.pdf s 5 promjena.');
+  });
+
+  it('refuses more than 2000 changes, the start of history not counted, and says how many and what to do', () => {
+    const many = (count: number): HistoryRow[] =>
+      Array.from({ length: count }, (_, index) => row({ id: String(index) }));
+
+    expect(HISTORY_EXPORT_LIMIT).toBe(2000);
+    expect(historyExportOverLimit(viewOf({ rows: many(2000) }))).toBe(false);
+    expect(historyExportOverLimit(viewOf({ rows: [...many(2000), MARKER] }))).toBe(false);
+    expect(historyExportOverLimit(viewOf({ rows: many(2001) }))).toBe(true);
+    expect(historyExportCount(viewOf({ rows: [...many(3), MARKER] }))).toBe(3);
+    expect(historyExportRefusalOf(viewOf({ rows: many(2001) }))).toEqual({ count: 2001, limit: 2000 });
+    expect(t('history.export.tooLarge', { count: 2001, limit: 2000 })).toBe(
+      'Izvoz u PDF prima najviše 2.000 promjena, a prikazana je 2.001 promjena. Suzi razdoblje ili filtre pa pokušaj ponovno.',
+    );
+    expect(t('history.export.tooLarge', { count: 2002, limit: 2000 })).toBe(
+      'Izvoz u PDF prima najviše 2.000 promjena, a prikazane su 2.002 promjene. Suzi razdoblje ili filtre pa pokušaj ponovno.',
+    );
+    expect(t('history.export.tooLarge', { count: 4500, limit: 2000 })).toBe(
+      'Izvoz u PDF prima najviše 2.000 promjena, a prikazano je 4.500 promjena. Suzi razdoblje ili filtre pa pokušaj ponovno.',
+    );
+  });
+
+  it('decides a press: nothing with no row or while building, a refusal over the limit, else a build', () => {
+    const many = Array.from({ length: 2001 }, (_, index) => row({ id: String(index) }));
+
+    expect(historyExportPressOf(viewOf({ rows: [] }), false)).toBe('ignore');
+    expect(historyExportPressOf(viewOf(), true)).toBe('ignore');
+    expect(historyExportPressOf(viewOf({ rows: many }), true)).toBe('ignore');
+    expect(historyExportPressOf(viewOf({ rows: many }), false)).toBe('refuse');
+    expect(historyExportPressOf(viewOf(), false)).toBe('build');
+  });
+
+  it('never builds over the limit, whoever calls it', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const write = vi.fn(async () => undefined);
+    const many = Array.from({ length: 2001 }, (_, index) => row({ id: String(index) }));
+
+    await expect(exportHistory(inputOf(viewOf({ rows: many })), write)).resolves.toBeNull();
+    expect(write).not.toHaveBeenCalled();
+    expect(logged).toHaveBeenCalledWith(HISTORY_EXPORT_FAILED, expect.any(Error));
   });
 
   it('logs a writer that fails and answers null, never throwing', async () => {
