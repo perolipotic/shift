@@ -522,12 +522,15 @@ describe('the rows are drawn in steps, and a departed member keeps their name (e
     expect(historyRowsShownOf(all, 0), 'never fewer than one step').toHaveLength(200);
   });
 
-  it('names a departed member from their DELETE row placed first, while the current list wins', () => {
+  it("names a departed member from their DELETE row placed last, newest first, below the read's rows; the current list wins", () => {
     const deletedRow = { tableName: 'members', oldRow: { id: 'member-gone', name: 'Goran' }, newRow: null };
-    const older = { tableName: 'members', oldRow: null, newRow: { id: 'member-gone', name: 'Goran staro' } };
+    const olderDelete = { tableName: 'members', oldRow: { id: 'member-gone', name: 'Goran staro' }, newRow: null };
+    const inRead = { tableName: 'members', oldRow: null, newRow: { id: 'member-gone', name: 'Goran u razdoblju' } };
     const lists = { members: [{ id: 'member-ana', name: 'Ana' }], teams: [], shiftTypes: [], absenceTypes: [] };
 
-    expect(historyNamesOf([deletedRow, older], lists).members.get('member-gone')).toBe('Goran');
+    // As the hook passes them: the read's events, then the departed rows newest first.
+    expect(historyNamesOf([deletedRow, olderDelete], lists).members.get('member-gone')).toBe('Goran');
+    expect(historyNamesOf([inRead, deletedRow], lists).members.get('member-gone')).toBe('Goran u razdoblju');
     expect(
       historyNamesOf([{ ...deletedRow, oldRow: { id: 'member-ana', name: 'Ana stara' } }], lists).members.get('member-ana'),
     ).toBe('Ana');

@@ -10,6 +10,7 @@ import {
   seedExtraTeam,
   seedLeaveMember,
   seedLeaveRequest,
+  withdrawLeaveRequestAsItsMemberInSql,
 } from '../../utils/database-helper.ts';
 import { fill, hr } from '../../utils/i18n.ts';
 import { ADMIN_STATE } from '../../utils/run-fixture.ts';
@@ -67,7 +68,9 @@ test.describe('an admin', () => {
       await historyPage.goto(`?smjena=${added.id}&vrsta=team:changed`);
       await expect(page).toHaveURL(new RegExp(`[?&]smjena=${added.id}`));
       await expect(historyPage.filteredLine).toBeVisible();
+      // The one body row is the line itself, in place of the rows.
       await expect(historyPage.bodyRows).toHaveCount(1);
+      await expect(historyPage.bodyRows.first()).toContainText(history.filtered);
 
       await historyPage.clearFiltersButton.click();
       await expect(page).toHaveURL(/\/povijest-promjena$/);
@@ -141,7 +144,7 @@ test.describe('an admin', () => {
     }
   });
 
-  test('names a member deleted before the period from their DELETE event, as subject and chip (epic 14 retro A9)', async ({
+  test('names a member deleted before the period from their DELETE event, as author, subject and chip (epic 14 retro A9)', async ({
     page,
     fixture,
   }) => {
@@ -149,11 +152,14 @@ test.describe('an admin', () => {
     let removed = false;
 
     try {
-      // A request names the member in the period. Then the member is deleted
-      // (the auth user, cascading to the row) and every `members` event of
-      // theirs, the DELETE included, moves 400 days back: only the DELETE read
-      // beside the period can name them now.
-      await seedLeaveRequest(fixture.slug, member.id, '2030-02-04', '2030-02-05');
+      // A request names the member in the period, and the member withdraws it
+      // (their auth user the event's actor). Then the member is deleted (the
+      // auth user, cascading to the row; their requests first, as no key
+      // cascades) and every `members` event of theirs, the DELETE included,
+      // moves 400 days back: only the DELETE read beside the period can name
+      // them now, by `row_id` as subject and by the old row's auth user as author.
+      const requestId = await seedLeaveRequest(fixture.slug, member.id, '2030-02-04', '2030-02-05');
+      await withdrawLeaveRequestAsItsMemberInSql(fixture.slug, requestId);
       await removeLeaveMemberInSql(fixture.slug, member.id);
       removed = true;
       await backdateHistoryOfRowInSql(fixture.slug, 'members', member.id, 400);
@@ -164,6 +170,8 @@ test.describe('an admin', () => {
       await expect(page).toHaveURL(new RegExp(`[?&]osoba=${member.id}`));
       await expect(historyPage.chip(fill(history.chip.member, { value: member.name }))).toBeVisible();
       await expect(historyPage.rowNaming(member.name)).not.toHaveCount(0);
+      // *Autor* (the second cell) of the withdrawal reads the member's name.
+      await expect(historyPage.bodyRows.locator('td:nth-child(2)').filter({ hasText: member.name })).toHaveCount(1);
       await expect(historyPage.rowNaming(history.value.unknownMember)).toHaveCount(0);
     } finally {
       if (!removed) await removeLeaveMemberInSql(fixture.slug, member.id);

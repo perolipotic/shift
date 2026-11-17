@@ -1192,4 +1192,26 @@ describe('a departed member is named from their DELETE event read beside the per
       memberId: ANA,
     });
   });
+
+  it("ranks a departed row below the read's own members rows, and the newest DELETE first among departed rows", () => {
+    const rejoined = 'member-rejoined';
+    const written = event({ tableName: 'teams', operation: 'INSERT', newRow: { name: 'A' }, actor: GONE_AUTH });
+    // A rejoined auth user: the read holds their newer membership, the departed read an older one's DELETE.
+    const joined = event({
+      tableName: 'members',
+      operation: 'INSERT',
+      newRow: { id: rejoined, auth_user_id: GONE_AUTH, name: 'Goran novi' },
+    });
+    const older = { tableName: 'members', oldRow: { id: 'member-first', auth_user_id: GONE_AUTH, name: 'G' }, newRow: null };
+
+    expect(historyEntriesOf([written, joined], { ...CONTEXT, departed: [goneDeleted] })[0]?.author).toEqual({
+      kind: 'member',
+      memberId: rejoined,
+    });
+    // Oldest first, as `readHistoryDeparted` returns them: the newest DELETE names the author.
+    expect(historyEntriesOf([written], { ...CONTEXT, departed: [older, goneDeleted] })[0]?.author).toEqual({
+      kind: 'member',
+      memberId: GONE,
+    });
+  });
 });

@@ -429,7 +429,8 @@ async function readDepartedChunk(
  * The organization's `members` DELETE events of `unnamed`'s member ids (by
  * `row_id`) and actors (by the old row's `auth_user_id`),
  * {@link HISTORY_REQUEST_CHUNK} a call, every call issued at once, each event
- * once, oldest first by `id`. No call when nobody is unnamed; nothing once `signal` is aborted.
+ * once, oldest first by `id`. No call when nobody is unnamed, nor when `signal`
+ * is already aborted; calls already issued are not cancelled (they are few and small).
  *
  * @throws Error(HISTORY_UNAVAILABLE) on a refusal or a row that is not a DELETE asked for.
  */
@@ -448,8 +449,8 @@ export async function readHistoryDeparted(
 
   for (const event of (await Promise.all(reads)).flat()) byId.set(event.id, event);
 
-  // Oldest first by `id`: a consumer reading "later is latest" (`memberIdentitiesOf`) and one
-  // reading "first wins" after a reverse (`namesFrom`, given these rows first) both end on the newest.
+  // Oldest first by `id`: `memberIdentitiesOf` reads them in this order, later winning; the hook
+  // reverses them for `namesFrom`, which reads newest first. Both end on the newest DELETE.
   return [...byId.values()].sort((first, second) => first.id - second.id);
 }
 

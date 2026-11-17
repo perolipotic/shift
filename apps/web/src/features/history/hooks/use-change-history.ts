@@ -197,9 +197,10 @@ export function useChangeHistory(search: HistorySearch, navigate: HistoryNavigat
       requests: historyData.requests,
       departed: historyData.departed,
     });
-    // The departed members' DELETE rows first, which `namesFrom` reads as the latest: a deleted
-    // member's last name. The current lists still win.
-    const names = historyNamesOf([...historyData.departed, ...events], {
+    // `namesFrom` reads newest first, so the departed members' DELETE rows go last, newest
+    // first: below the read's own rows, the newest DELETE winning among them. The current
+    // lists still win over all.
+    const names = historyNamesOf([...events, ...[...historyData.departed].reverse()], {
       members: membersData.members,
       teams: teamsData,
       shiftTypes: shiftTypesData.types,

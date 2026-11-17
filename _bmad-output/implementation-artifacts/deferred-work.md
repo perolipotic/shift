@@ -1568,3 +1568,9 @@
   summary: RESOLVED by spec-today-spec-midnight-safe (2026-11-17) — an auto fixture in `e2e/utils/custom-fixtures.ts` makes a test that would start within 8 minutes of 00:00 Europe/Zagreb wait until just past it, so the seed, the page and the server read one date in every spec. The `today.spec.ts` e2e is not safe across midnight Europe/Zagreb. On 2026-11-16 four cases ("a free day names the seeded type and team…", "a failed resolutions read leaves the hours tile…", "a failed read of their own leave…" and "a failed read of the calendar snapshot…") failed on PR #310 because shard 4 ran from 23:55 to 00:05 local time: the seed and the page disagreed about "today". A re-run passed. Pin the browser clock (`page.clock`) or seed relative to one `now` read once per test, so a run that crosses midnight cannot fail.
   evidence: CI run 43973684653, shard 4/4 (started 2026-11-16T22:55:05Z, finished 23:05:03Z); the re-run of the failed job passed.
 
+
+## Deferred from: code review of spec-epic-14-retro-a9-history-page.md (2026-11-17)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-epic-14-retro-a9-history-page.md`
+  summary: The amend-writer pin (`test/supabase-scaffold.test.ts`) proves the live half of `amendPairsOf` (only the three `amend_*` functions soft-remove and insert one amend table in one transaction). The backfilled half (a `removed` UPDATE and an INSERT both with `origin = 'backfill'` at one `occurred_at`, sharing the key) is not proven: 0061's backfill would pair two unrelated rows of one member (or team and date) only if it gave a removal and a later insert the same instant. Read 0061's backfill instants (`removed_at` vs `created_at`) and pin that only an amend can produce such a pair, or narrow the backfill branch.
+  evidence: Review of the A9 change (blind layer). The backfill ran once at 0061; no new backfill writes events, so the exposure is fixed to existing data.

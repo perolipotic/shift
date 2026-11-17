@@ -4,7 +4,7 @@ type: 'bugfix'
 created: '2026-11-17'
 status: 'done'
 baseline_revision: '20d5b5b9b9d8dbae697fd9966be95bdd3a6e910b'
-review_loop_iteration: 0
+review_loop_iteration: 1
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/spec-epic-14-retro-a3-a6-history-gaps.md'
   - '{project-root}/_bmad-output/implementation-artifacts/epic-14-retro-2026-11-16.md'
@@ -100,7 +100,9 @@ DELETE-only, not "latest before/after row of any `members` event": the current m
 
 **Results (2026-11-17, local, after the review fixes):** `pnpm typecheck` and `pnpm lint` clean; `pnpm -r test` — domain 854/854, web 6474/6474; `pnpm build` ok; DB-free root files (resource-hygiene, supabase-scaffold, import-cycles, feature-boundaries, key-hygiene, localization-applied, localization-guard, e2e-plural, typography-coverage, workspace-isolation, static-hosting, theme-contrast, no-jsdom) 3273/3273. Not run locally: `e2e/tests/history/*` and every DB-connecting root file — CI is the gate.
 
-**Residual risk (until CI):** the four new e2e tests have never run; in particular `.in('old_row->>auth_user_id', …)` against real PostgREST is proven only by CI's departed-member e2e (which exercises the `row_id` path; the auth-user path is unit-tested against a stub only). The stepped focus move and the step reset on a chip change have no component test (the web suite has no DOM); the reset is by `key={stateKey}`.
+**Results (2026-11-17, local, after the second review's fixes):** `pnpm typecheck` and `pnpm lint` clean; domain 855/855, web 6476/6476; `pnpm build` ok; resource-hygiene + supabase-scaffold 1973/1973; import-cycles, feature-boundaries, key-hygiene, localization-applied, localization-guard, e2e-plural 716/716. Not run locally: e2e and DB-connecting root files (CI).
+
+**Residual risk (until CI):** the four new e2e tests have never run; in particular `.in('old_row->>auth_user_id', …)` against real PostgREST is proven only by CI's departed-member e2e, which since the second review also exercises the author path (a withdrawal written under the member's JWT `sub`, `withdrawLeaveRequestAsItsMemberInSql`). The stepped focus move and the step reset on a chip change have no component test (the web suite has no DOM); the reset is by `key={stateKey}`.
 
 ## Review Triage Log
 
@@ -130,6 +132,34 @@ DELETE-only, not "latest before/after row of any `members` event": the current m
   - Step reset and phone stacking e2e: the reset is by React `key`, the phone path shares `historyRowsShownOf`, unit-tested; a second 1100-event seed at phone width is not worth its CI time.
   - Departed rows ordered "after" in the domain and "first" for `namesFrom`: each matches its consumer's convention, now commented at the read.
   - The frozen Approach says the departed read runs "after the events and the A3 request read"; it now runs beside it. A wording difference inside the frozen block, recorded here instead of edited.
+
+### 2026-11-17 — Second review pass (bmad-code-review: blind, edge-case, verification-gap, acceptance auditor, epic AC auditor; artifact renderer: no generated file changed)
+- intent_gap: 0
+- bad_spec: 0
+- patch: 9
+- defer: 1
+- addressed_findings:
+  - `[medium]` `[patch]` Departed rows outranked the read's own `members` rows, against the task's "below the read's rows": `memberIdentitiesOf` now reads `[...departed, ...events]` (a rejoined auth user's in-read membership wins over an older DELETE), and the hook passes `[...events, ...departed reversed]` to `historyNamesOf`, which also fixes `namesFrom` picking the oldest of two DELETEs. Domain and web tests pin both orders (acceptance auditor, edge-case, blind, own reading).
+  - `[medium]` `[patch]` The departed author path was never exercised against a real database: the departed-member e2e now has the member withdraw their request under their JWT `sub` (`withdrawLeaveRequestAsItsMemberInSql`), and asserts the *Autor* cell names them (verification-gap, blind, acceptance auditor).
+  - `[low]` `[patch]` EXPERIENCE.md §IA and UX-DR51's 14.3 clause still said the PDF holds "exactly the rows shown"; now "every row the chips keep, drawn or not yet drawn" (epic AC auditor, 14.2 AC2; blind).
+  - `[low]` `[patch]` `history.partial` printed `1.101` (`{total, number}`) beside the summary's plain `1101`; now plain, as the matrix row reads (acceptance auditor, blind).
+  - `[low]` `[patch]` The amend-writer pin: reads `create/drop procedure`, `set (…, removed_at, …) =` and `merge into`; a drop of a name created with several argument lists no longer forgets the surviving overload (it could pass falsely); the self-test now proves the dynamic-SQL guard, procedures, row-constructor removals and the overload rule; the limits comment names `alter function … rename` and the trigger floor is explained (edge-case, blind, verification-gap).
+  - `[low]` `[patch]` `readHistoryDeparted` tests: actors chunked by 100, a DELETE found by both calls returned once, two DELETEs of one auth user returned oldest first (verification-gap, blind).
+  - `[low]` `[patch]` `readHistoryDeparted`'s doc promised "nothing once `signal` is aborted"; it now says only an already-aborted signal stops the calls.
+  - `[low]` `[patch]` `renameTeamRepeatedlyInSql`'s "not even for a moment" was false for the seeded INSERT and the cleanup DELETE; reworded.
+  - `[low]` `[patch]` The filtered-out e2e now asserts the one body row is the filtered line itself.
+- deferred:
+  - The backfilled half of the amend pairing (`origin = 'backfill'`, one instant) is not proven by the pin, which covers writers: `deferred-work.md` (blind).
+- Rejected (with reason):
+  - Spec `status: done` and RESOLVED prefixes before CI: the spec status is the build workflow's (as A3–A6's); the A11 rule governs sprint status, which says "built, CI pending"; the RESOLVED-in-same-change rule requires the prefixes, and the e2e entry says CI pending.
+  - The departed read beside, not after, the A3 request read (frozen Approach wording): already recorded in the first pass; the order has no effect (request rows cannot name a deleted member).
+  - The paging e2e counting 1102 with the `HISTORY_BEGINS` marker: the `smjena` chip keeps only entries whose subjects name the team (`history.ts` filter), which the marker's do not.
+  - Events back-dated before the start-of-history marker: a test-only state; the read is not clamped to the marker.
+  - The member DELETE and its back-date in two transactions: the same pattern as 14.2's `backdateHistoryOfRowInSql` use; no spec counts the default period's events.
+  - Step reset, phone stacking, and the status line announced twice: as the first pass rejected them.
+  - The departed read's cost on every re-read and the unindexed JSON path: documented in Design Notes at Q20 scale; the frozen Ask First allows no index without the founder.
+  - `review_loop_iteration` and the first pass's patch count against its listed items: the count bundled related items; the iteration is now 1.
+  - Code Map line numbers drifting: they are the baseline's, as the Code Map convention reads.
 
 ## Suggested Review Order
 

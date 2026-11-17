@@ -706,8 +706,8 @@ export type HistoryMemberEvent = Pick<AuditEvent, 'tableName' | 'oldRow' | 'newR
 
 /**
  * Auth user → member: the current members, then every `members` row the
- * events hold, then the departed members' DELETE rows read for the actors the
- * events could not name (epic 14 retro A9).
+ * events hold, then — below both — the departed members' DELETE rows read for
+ * the actors and member ids the events could not name (epic 14 retro A9).
  */
 function memberIdentitiesOf(
   events: readonly HistoryMemberEvent[],
@@ -716,8 +716,9 @@ function memberIdentitiesOf(
 ): ReadonlyMap<string, string> {
   const byAuthUser = new Map<string, string>();
 
-  // A DELETE row is a member's last, so the departed rows come after the read's; the current list wins over all.
-  for (const event of [...events, ...departed]) {
+  // The departed rows first, oldest to newest, so the newest DELETE of an auth user wins among them;
+  // then the read's own rows, which win over a departed row; the current list wins over all.
+  for (const event of [...departed, ...events]) {
     if (event.tableName !== 'members') continue;
 
     for (const row of [event.oldRow, event.newRow]) {

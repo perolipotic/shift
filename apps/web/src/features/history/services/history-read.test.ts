@@ -647,6 +647,27 @@ describe('a departed member is named from their DELETE event, read inside the sa
     ]);
   });
 
+  it(`asks for at most ${String(HISTORY_REQUEST_CHUNK)} actors a call too`, async () => {
+    const authUserIds = Array.from({ length: 150 }, (_, index) => `auth-${String(index)}`);
+    const { table, calls } = audit([], []);
+
+    await readHistoryDeparted(table, { memberIds: [], authUserIds });
+
+    expect(calls.map((call) => call.steps.find((step) => step.startsWith('in ')))).toEqual([
+      'in old_row->>auth_user_id 100',
+      'in old_row->>auth_user_id 50',
+    ]);
+  });
+
+  it('returns a DELETE both calls find once, and every DELETE oldest first by id', async () => {
+    // Two memberships of one auth user, both deleted, answered newest first; the newer also by its member id.
+    const { table } = audit([], [deleted(30, 'member-second', 'auth-twice'), deleted(12, 'member-first', 'auth-twice')]);
+
+    const departed = await readHistoryDeparted(table, { memberIds: ['member-second'], authUserIds: ['auth-twice'] });
+
+    expect(departed.map((event) => event.id)).toEqual([12, 30]);
+  });
+
   it('makes the whole read unavailable on a refusal', async () => {
     const { table } = audit([written], [], { data: null, error: { code: '42501' } });
 

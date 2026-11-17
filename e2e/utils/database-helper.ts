@@ -1742,8 +1742,9 @@ export async function renameTeamInSql(slug: string, teamId: string, name: string
  * last name is `${prefix} ${count}`.
  *
  * In the same transaction every event of the team (its INSERT too) moves
- * `backdateDays` into the past, so no other spec's default period ever sees
- * them, not even for a moment.
+ * `backdateDays` into the past, so no other spec's default period sees the
+ * renames at all; only the INSERT {@link seedExtraTeam} wrote, and the DELETE
+ * a cleanup writes, sit in it for a moment, as any seeded team's do.
  */
 export async function renameTeamRepeatedlyInSql(
   slug: string,
@@ -1797,6 +1798,41 @@ export async function backdateHistoryOfRowInSql(slug: string, tableName: string,
       [slug, tableName, rowId, days],
     );
     if (rowCount === 0) throw new Error(`E2E: no history of ${tableName} ${rowId} to back-date`);
+  } finally {
+    await client.end();
+  }
+}
+
+/**
+ * Withdraws a pending leave request {@link seedLeaveRequest} wrote, in SQL, as
+ * its own member (epic 14 retro A9): the transaction carries the member's
+ * auth user as its JWT `sub`, so 0061's trigger records them as the UPDATE's
+ * `actor` (`auth.uid()`), as a withdrawal through the app would. The history
+ * then has an event whose author is that member.
+ */
+export async function withdrawLeaveRequestAsItsMemberInSql(slug: string, requestId: string): Promise<void> {
+  const client = await connect();
+  try {
+    await client.query('begin');
+    const found = await client.query<{ auth_user_id: string }>(
+      `select m.auth_user_id from leave_requests r
+         join members m on m.id = r.member_id and m.organization_id = r.organization_id
+         join organizations o on o.id = r.organization_id
+        where o.slug = $1 and r.id = $2 and r.closed_at is null`,
+      [slug, requestId],
+    );
+    const actor = found.rows[0]?.auth_user_id;
+    if (actor === undefined) throw new Error(`E2E: no pending request ${requestId} with an account to withdraw it`);
+    await client.query(`select set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ sub: actor, role: 'authenticated' })]);
+    const { rowCount } = await client.query(
+      `update leave_requests set closed_by = $2, closed_at = now() where id = $1 and closed_at is null`,
+      [requestId, actor],
+    );
+    if (rowCount !== 1) throw new Error(`E2E: the request ${requestId} was not withdrawn`);
+    await client.query('commit');
+  } catch (cause) {
+    await client.query('rollback').catch(() => undefined);
+    throw cause;
   } finally {
     await client.end();
   }
