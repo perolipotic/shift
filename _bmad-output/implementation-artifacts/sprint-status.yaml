@@ -1159,7 +1159,7 @@ action_items:
       story that generates a file (PDF, xlsx, export): open the real output, not only
       its definition (P1)"
     owner: "Perolipotic (process)"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-14-retro-2026-11-16.md"
   - id: "epic-14-retro-item-71-a11-process-local-toolchain-on-this-mach"
     epic: 14
@@ -1167,5 +1167,6 @@ action_items:
       PATH, poppler, gh); keep sprint status short of done until merged with green
       CI; fix the stale residual-risk line in spec-14-3 (P2, P3, R6)"
     owner: "Perolipotic (process)"
+    # 2026-11-17: done-rule and spec-14-3 line done; Node 24.19.0 and poppler still to install
     status: open
     ref: "_bmad-output/implementation-artifacts/epic-14-retro-2026-11-16.md"
