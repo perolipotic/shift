@@ -972,7 +972,7 @@ A Member and an Admin see the Leave Balance including carried days and their exp
 An Admin can read the Organization's change history, filtered by period, Member, Team and kind of change.
 
 **Consequences (testable):**
-- Every write to a rule, an exception, a decision, a request, a Member or a setting appears with its author, its time, and its values before and after. A deletion appears as well.
+- Every write to a rule, an exception, a decision, a request, a Member or an Organization setting (amended 2026-11-16, epic 14 retro A6, founder decision: a member's own notification preference is not recorded) appears with its author, its time, and its values before and after. A deletion appears as well.
 - The history is append-only. No surface edits or removes an entry.
 - History begins at its introduction. Earlier entries are reconstructed from existing attribution where it exists, and the surface says where history begins.
 - A Member Role account is refused every entry at the data layer (NFR-2).

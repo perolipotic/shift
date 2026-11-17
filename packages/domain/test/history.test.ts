@@ -4,7 +4,9 @@ import {
   DEFAULT_HISTORY_PERIOD,
   HISTORY_ACTIONS,
   HISTORY_FIELDS,
+  HISTORY_HIDDEN_COLUMNS,
   HISTORY_RECORDS,
+  HISTORY_STATUS_COLUMN,
   MAX_HISTORY_PERIOD_DAYS,
   filteredHistoryEntries,
   historyBeginsOf,
@@ -21,7 +23,10 @@ import {
   historyReachesBeginning,
   historyReadWindowOf,
   historyRecordOf,
+  historyStatusOf,
+  historyUnmatchedRequestIdsOf,
   type AuditEvent,
+  type AuditRow,
   type HistoryContext,
   type HistoryEntry,
 } from '../src/index.js';
@@ -674,5 +679,440 @@ describe('where history begins', () => {
       ['history-begins', false],
       ['added', false],
     ]);
+  });
+});
+
+describe('a decision whose request has no event read names it through the request as it stands (retro A3)', () => {
+  function decision(rowId: string, tableName = 'leave_request_decisions'): AuditEvent {
+    return event({ tableName, operation: 'INSERT', rowId, newRow: { request_id: rowId, outcome: 'rejected' } });
+  }
+
+  it('names the members and teams of the current request row', () => {
+    const leave = decision('req-old');
+    const swap = decision('swap-old', 'swap_request_decisions');
+    const context: HistoryContext = {
+      ...CONTEXT,
+      requests: [
+        { tableName: 'leave_requests', id: 'req-old', row: { id: 'req-old', member_id: ANA } },
+        {
+          tableName: 'swap_requests',
+          id: 'swap-old',
+          row: { id: 'swap-old', proposer_id: ANA, addressee_id: IVO, team_id: TEAM_A, return_team_id: null },
+        },
+      ],
+    };
+    const [first, second] = historyEntriesOf([leave, swap], context);
+
+    expect(first?.subjects).toEqual({ members: [ANA], teams: [], label: null });
+    expect(second?.subjects).toEqual({ members: [ANA, IVO], teams: [TEAM_A], label: null });
+    expect(filteredHistoryEntries(historyEntriesOf([leave], context), { member: ANA, team: null, kind: null })).toHaveLength(1);
+  });
+
+  it('leaves it without a subject when the request row is gone, and still shows it', () => {
+    expect(only([decision('req-gone')], { ...CONTEXT, requests: [] }).subjects).toEqual({
+      members: [],
+      teams: [],
+      label: null,
+    });
+  });
+
+  it('prefers a request event read over the current row', () => {
+    const request = event({
+      tableName: 'leave_requests',
+      operation: 'UPDATE',
+      rowId: 'req-1',
+      transactionId: '91',
+      oldRow: { member_id: IVO, closed_at: null },
+      newRow: { member_id: IVO, closed_at: 'x' },
+    });
+    const live = event({
+      tableName: 'leave_request_decisions',
+      operation: 'INSERT',
+      rowId: 'req-1',
+      transactionId: '91',
+      newRow: { request_id: 'req-1', outcome: 'approved' },
+    });
+    const context: HistoryContext = {
+      ...CONTEXT,
+      requests: [{ tableName: 'leave_requests', id: 'req-1', row: { id: 'req-1', member_id: ANA } }],
+    };
+
+    expect(historyEntriesOf([live, request], context)[0]?.subjects.members).toEqual([IVO]);
+  });
+
+  it('never takes a table named like a prototype key for a decision table', () => {
+    const odd = event({ tableName: 'constructor', operation: 'INSERT', rowId: 'req-1', newRow: { member_id: ANA } });
+    const context: HistoryContext = {
+      ...CONTEXT,
+      requests: [{ tableName: 'leave_requests', id: 'req-1', row: { id: 'req-1', member_id: IVO } }],
+    };
+
+    expect(historyUnmatchedRequestIdsOf([odd, event({ tableName: 'toString', operation: 'INSERT', rowId: 'x', newRow: {} })])).toEqual({
+      leave_requests: [],
+      swap_requests: [],
+    });
+    expect(only([odd], context)).toMatchObject({ kind: { record: 'other', action: 'added' }, subjects: { members: [ANA] } });
+  });
+
+  it('never reads a request from the other request table', () => {
+    const context: HistoryContext = {
+      ...CONTEXT,
+      requests: [{ tableName: 'swap_requests', id: 'req-x', row: { id: 'req-x', proposer_id: ANA } }],
+    };
+
+    expect(only([decision('req-x')], context).subjects.members).toEqual([]);
+  });
+
+  it('names the unmatched request ids by table, deduped, and none when every decision is matched', () => {
+    const request = event({ tableName: 'leave_requests', operation: 'INSERT', rowId: 'req-1', newRow: { member_id: ANA } });
+
+    expect(
+      historyUnmatchedRequestIdsOf([
+        decision('req-1'),
+        request,
+        decision('req-2'),
+        decision('req-2'),
+        decision('swap-9', 'swap_request_decisions'),
+        event({ tableName: 'teams', operation: 'INSERT', rowId: 'req-3', newRow: {} }),
+      ]),
+    ).toEqual({ leave_requests: ['req-2'], swap_requests: ['swap-9'] });
+    expect(historyUnmatchedRequestIdsOf([decision('req-1'), request])).toEqual({ leave_requests: [], swap_requests: [] });
+    expect(historyUnmatchedRequestIdsOf([])).toEqual({ leave_requests: [], swap_requests: [] });
+  });
+});
+
+describe('every real change names a field (retro A4)', () => {
+  const NOW = '2026-11-10T08:00:00+00:00';
+
+  it('reads a row\'s lifecycle state from its lifecycle columns', () => {
+    expect(historyStatusOf({ removed_at: null })).toBe('current');
+    expect(historyStatusOf({ name: 'A' })).toBe('current');
+    expect(historyStatusOf({ removed_at: NOW })).toBe('removed');
+    expect(historyStatusOf({ confirmed_at: NOW, removed_at: null })).toBe('confirmed');
+    expect(historyStatusOf({ closed_at: null })).toBe('open');
+    expect(historyStatusOf({ closed_at: NOW })).toBe('closed');
+    expect(historyStatusOf({ answered_at: NOW, closed_at: null })).toBe('answered');
+    expect(historyStatusOf({ answered_at: NOW, closed_at: NOW })).toBe('closed');
+  });
+
+  it('draws a status-only update as a status line, first', () => {
+    const removal = historyChangesOf(
+      { member_id: ANA, removed_at: null, removed_by: null },
+      { member_id: ANA, removed_at: NOW, removed_by: ANA_AUTH },
+      'leave_records',
+    );
+
+    expect(removal).toEqual([
+      {
+        field: 'status',
+        column: '$status',
+        before: { type: 'enum', field: 'status', value: 'current' },
+        after: { type: 'enum', field: 'status', value: 'removed' },
+      },
+    ]);
+
+    const closed = historyChangesOf({ member_id: ANA, closed_at: null }, { member_id: ANA, closed_at: NOW });
+
+    expect(closed.map((change) => [change.column, change.before, change.after])).toEqual([
+      ['$status', { type: 'enum', field: 'status', value: 'open' }, { type: 'enum', field: 'status', value: 'closed' }],
+    ]);
+
+    const answered = historyChangesOf(
+      { answer: null, answered_at: null, closed_at: null },
+      { answer: 'accepted', answered_at: NOW, closed_at: null },
+    );
+
+    expect(answered.map((change) => change.column)).toEqual(['$status', 'answer']);
+  });
+
+  it('keys the derived status line apart from a real status column', () => {
+    const changes = historyChangesOf(
+      { status: 'draft', removed_at: null },
+      { status: 'final', removed_at: NOW },
+    );
+
+    expect(changes.map((change) => [change.column, change.field])).toEqual([
+      [HISTORY_STATUS_COLUMN, 'status'],
+      ['status', null],
+    ]);
+    expect(new Set(changes.map((change) => change.column)).size).toBe(changes.length);
+  });
+
+  it('adds no status line to an insert, a delete or an amend pair', () => {
+    const live = { member_id: ANA, removed_at: null };
+
+    expect(historyChangesOf(null, live).some((change) => change.field === 'status')).toBe(false);
+    expect(historyChangesOf(live, null).some((change) => change.field === 'status')).toBe(false);
+    expect(historyChangesOf(live, { ...live, member_id: IVO }).some((change) => change.field === 'status')).toBe(false);
+  });
+
+  it('names a rotation assignment\'s pattern and step, and a resolution\'s and decision\'s overrides, by typed operand', () => {
+    const insert = historyChangesOf(null, {
+      id: 'ra1',
+      team_id: TEAM_A,
+      pattern_id: 'p1',
+      offset_step_id: 's2',
+      anchor_date: '2026-11-01',
+      effective_from: '2026-11-01',
+    });
+
+    expect(insert.map((change) => [change.field, change.after])).toEqual([
+      ['team', { type: 'team', id: TEAM_A }],
+      ['rotationPattern', { type: 'rotation-pattern', id: 'p1' }],
+      ['offsetStep', { type: 'rotation-step', id: 's2' }],
+      ['effectiveFrom', { type: 'date', value: '2026-11-01' }],
+      ['anchorDate', { type: 'date', value: '2026-11-01' }],
+    ]);
+
+    expect(
+      historyChangesOf({ kind: 'replace_member', roster_override_id: 'o1' }, { kind: 'replace_member', roster_override_id: 'o2' }),
+    ).toEqual([
+      {
+        field: 'rosterOverride',
+        column: 'roster_override_id',
+        before: { type: 'roster-override', id: 'o1' },
+        after: { type: 'roster-override', id: 'o2' },
+      },
+    ]);
+    expect(historyOperandOf('return_roster_override_id', 'o3')).toEqual({ type: 'roster-override', id: 'o3' });
+  });
+
+  it('draws a pattern insert as one pattern line from its own id', () => {
+    const row = { organization_id: ORG, id: 'p1', created_by: ANA_AUTH, created_at: NOW };
+
+    expect(historyChangesOf(null, row, 'rotation_patterns')).toEqual([
+      { field: 'rotationPattern', column: 'id', before: { type: 'none' }, after: { type: 'rotation-pattern', id: 'p1' } },
+    ]);
+    expect(historyChangesOf(null, row, 'teams')).toEqual([]);
+    expect(only([event({ tableName: 'rotation_patterns', operation: 'INSERT', newRow: row })]).changes).toHaveLength(1);
+  });
+
+  it('hides exactly the bookkeeping columns', () => {
+    expect(new Set(HISTORY_HIDDEN_COLUMNS)).toEqual(
+      new Set([
+        'organization_id',
+        'id',
+        'created_by',
+        'created_at',
+        'decided_by',
+        'decided_at',
+        'removed_by',
+        'removed_at',
+        'confirmed_by',
+        'confirmed_at',
+        'closed_by',
+        'closed_at',
+        'answered_by',
+        'answered_at',
+        'request_id',
+        'auth_user_id',
+        'leave_record_id',
+      ]),
+    );
+  });
+
+  /** Every column of the 21 audited tables as 0002–0059 leave them, with a value of its type. */
+  const AT = '2026-11-10T08:00:00+00:00';
+  const BOOKKEEPING = { organization_id: ORG, created_by: ANA_AUTH, created_at: AT };
+  const LIVE = { removed_by: null, removed_at: null };
+  const AUDITED: Readonly<Record<string, AuditRow>> = {
+    organizations: {
+      id: ORG,
+      slug: 'dvd',
+      name: 'DVD',
+      short_name: 'D',
+      description: 'opis',
+      address: 'adresa',
+      contact_email: 'a@b.hr',
+      organization_type: 'dvd',
+      timezone: 'Europe/Zagreb',
+      locale: 'hr',
+      leave_year_start_month: 1,
+      leave_year_start_day: 1,
+      created_at: AT,
+      brand_accent: 'blue',
+      logo_path: 'logo.png',
+      uses_fire_ranks: false,
+      email_notifications: true,
+      minimum_members: 2,
+      carry_over_max_days: 5,
+      carry_over_expiry_month: 6,
+      carry_over_expiry_day: 30,
+      carry_over_first_leave_year: 2026,
+    },
+    members: {
+      organization_id: ORG,
+      id: ANA,
+      auth_user_id: ANA_AUTH,
+      name: 'Ana',
+      email: 'ana@b.hr',
+      role: 'admin',
+      leave_allowance_days: 20,
+      created_at: AT,
+      username: 'ana',
+      fire_rank: 'vatrogasac',
+    },
+    member_status_versions: { ...BOOKKEEPING, id: 'v', member_id: ANA, active: true, effective_from: '2026-11-01' },
+    team_membership_versions: {
+      ...BOOKKEEPING,
+      id: 'v',
+      member_id: ANA,
+      team_id: TEAM_A,
+      effective_from: '2026-11-01',
+      position: 'leader',
+    },
+    teams: { ...BOOKKEEPING, id: TEAM_A, name: 'A', archived: false },
+    hour_bands: { organization_id: ORG, id: 'b', name: 'Noć', start_time: '22:00:00', created_at: AT },
+    shift_types: { ...BOOKKEEPING, id: 's', name: 'Dan', is_working: true, archived: false },
+    shift_type_versions: {
+      ...BOOKKEEPING,
+      id: 'v',
+      shift_type_id: 's',
+      start_time: '07:00:00',
+      end_time: '19:00:00',
+      effective_from: '2026-11-01',
+    },
+    rotation_patterns: { ...BOOKKEEPING, id: 'p' },
+    rotation_steps: { ...BOOKKEEPING, id: 'st', pattern_id: 'p', position: 0, shift_type_id: 's' },
+    rotation_assignments: {
+      ...BOOKKEEPING,
+      id: 'ra',
+      team_id: TEAM_A,
+      pattern_id: 'p',
+      offset_step_id: 'st',
+      anchor_date: '2026-11-01',
+      effective_from: '2026-11-01',
+    },
+    shift_type_overrides: {
+      ...BOOKKEEPING,
+      ...LIVE,
+      id: 'so',
+      team_id: TEAM_A,
+      date: '2026-11-12',
+      shift_type_id: 's',
+      reason: 'r',
+      confirmed_by: null,
+      confirmed_at: null,
+    },
+    roster_overrides: {
+      ...BOOKKEEPING,
+      ...LIVE,
+      id: 'ro',
+      team_id: TEAM_A,
+      date: '2026-11-12',
+      member_out_id: ANA,
+      member_in_id: IVO,
+      reason: 'r',
+      confirmed_by: null,
+      confirmed_at: null,
+    },
+    leave_records: {
+      ...BOOKKEEPING,
+      ...LIVE,
+      id: 'l',
+      member_id: ANA,
+      during: '[2026-11-02,2026-11-05)',
+      absence_type_id: 'a',
+      half: null,
+    },
+    conflict_resolutions: {
+      ...BOOKKEEPING,
+      ...LIVE,
+      id: 'c',
+      member_id: ANA,
+      date: '2026-11-12',
+      team_id: TEAM_A,
+      kind: 'replace_member',
+      shift_type_id: null,
+      roster_override_id: 'ro',
+    },
+    leave_requests: {
+      ...BOOKKEEPING,
+      id: 'r',
+      member_id: ANA,
+      during: '[2026-11-02,2026-11-05)',
+      absence_type_id: 'a',
+      half: null,
+      closed_by: null,
+      closed_at: null,
+    },
+    leave_request_decisions: {
+      organization_id: ORG,
+      request_id: 'r',
+      outcome: 'approved',
+      leave_record_id: 'l',
+      decided_by: ANA_AUTH,
+      decided_at: AT,
+    },
+    swap_requests: {
+      ...BOOKKEEPING,
+      id: 'sw',
+      proposer_id: ANA,
+      addressee_id: IVO,
+      team_id: TEAM_A,
+      date: '2026-11-12',
+      return_team_id: TEAM_B,
+      return_date: '2026-11-14',
+      answer: null,
+      answered_by: null,
+      answered_at: null,
+      closed_by: null,
+      closed_at: null,
+    },
+    swap_request_decisions: {
+      organization_id: ORG,
+      request_id: 'sw',
+      outcome: 'approved',
+      roster_override_id: 'ro1',
+      return_roster_override_id: 'ro2',
+      decided_by: ANA_AUTH,
+      decided_at: AT,
+    },
+    absence_types: { organization_id: ORG, id: 'a', name: 'Godišnji', draws_allowance: true, created_at: AT },
+    leave_allowances: { ...BOOKKEEPING, id: 7, member_id: ANA, leave_year: 2026, days: 20 },
+  };
+
+  /** A different value of the same type. */
+  function changed(value: unknown): unknown {
+    if (value === null) return AT;
+    if (typeof value === 'boolean') return !value;
+    if (typeof value === 'number') return value + 1;
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return '2026-11-20';
+    if (typeof value === 'string' && /^\d{2}:\d{2}:\d{2}$/.test(value)) return '08:30:00';
+    if (typeof value === 'string' && value.startsWith('[')) return '[2026-11-03,2026-11-09)';
+
+    return `${String(value)}-2`;
+  }
+
+  const LIFECYCLE_AT = new Set(['removed_at', 'confirmed_at', 'closed_at', 'answered_at']);
+
+  it('covers the 21 audited tables', () => {
+    expect(Object.keys(AUDITED).map((table) => historyRecordOf(table))).not.toContain(null);
+    expect(new Set(Object.keys(AUDITED).map((table) => historyRecordOf(table)))).toEqual(
+      new Set(HISTORY_RECORDS.filter((record) => record !== 'other')),
+    );
+  });
+
+  const CASES = Object.entries(AUDITED).flatMap(([table, row]) =>
+    Object.keys(row)
+      .filter(
+        (column) =>
+          !HISTORY_HIDDEN_COLUMNS.has(column) ||
+          LIFECYCLE_AT.has(column) ||
+          (table === 'rotation_patterns' && column === 'id'),
+      )
+      .map((column) => [table, column] as const),
+  );
+
+  it.each(CASES)('draws an update of %s changing only %s as at least one change, no value a bare id', (table, column) => {
+    const before = AUDITED[table] as AuditRow;
+    const after = { ...before, [column]: changed(before[column]) };
+    const entry = only([event({ tableName: table, operation: 'UPDATE', oldRow: before, newRow: after })]);
+
+    expect(entry.changes.length).toBeGreaterThan(0);
+    for (const change of entry.changes) {
+      expect(change.field).not.toBeNull();
+      for (const operand of [change.before, change.after]) expect(operand.type).not.toBe('raw');
+    }
   });
 });

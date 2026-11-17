@@ -1144,8 +1144,14 @@ export const KEY_SOURCES = [
     file: HISTORY_ROWS_KEYS,
     // 125 SINCE ITS REVIEW: the `other` record's word and the begins
     // statement's two wordings.
+    // 147 SINCE EPIC 14 RETRO A4: five field labels (status, pattern, offset,
+    // the two overrides) and six status words off the unions; the step,
+    // pattern and override texts and the override's two one-sided texts, the
+    // three earlier-saved words, and the three unknown names inside them.
+    // 150 SINCE ITS REVIEW: a rotation step's ordinal label, and the two
+    // marks on sides that differ but read alike.
     keys: (text: string) => [...translationKeys(text), ...messageKeyUnions(text)],
-    strings: 125,
+    strings: 150,
   },
   {
     // STORY 14.3: the PDF's words — the title (the caption), the header's

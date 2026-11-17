@@ -14,7 +14,7 @@ An admin can read back who changed what in their organization, and when. Each en
 
 ## Requirements & Constraints
 
-- **What history shows.** Every write to a rule, an exception, a decision, a request, a member or a setting, with its author, time and before/after values. Deletions are included. No surface edits or removes an entry.
+- **What history shows.** Every write to a rule, an exception, a decision, a request, a member or an organization setting (amended 2026-11-16, epic 14 retro A6, founder decision: a member's own notification preference is not recorded), with its author, time and before/after values. Deletions are included. No surface edits or removes an entry.
 - **Filters.** The history filters by period, member, team and kind.
 - **What the PDF holds.** Exactly the rows the surface shows for the current filter, in the same order, built from the data the surface rendered. It names the organization, the period, the filter and the time it was generated, in the organization's locale and timezone.
 - **Admin only.** A member-role account, an inactive admin, `anon` and `service_role` read nothing, through the UI or a direct API call.
@@ -96,4 +96,4 @@ An admin can read back who changed what in their organization, and when. Each en
 - 14.3 depends on 14.2's rendered, filtered snapshot. It needs no migration, and `notify` and `admin-auth` are unchanged.
 - History must decode the row shapes of every audited table from Epics 1–13.
 - A future organization-scoped table must attach the audit triggers in its creating migration, or amend AD-11's exclusion list.
-- Known gap: the refusing triggers from 0023, 0031, 0035, 0036 and 0039 are not named in AD-3. The gap is recorded and not ratified, so it is not precedent.
+- Resolved gap (epic 14 retro A5, 2026-11-16): the refusing triggers from 0023, 0031, 0035, 0036 and 0039 are now named in AD-3's inventory, with their refusals and origins. A new refusing trigger amends that inventory in its own story.

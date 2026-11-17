@@ -3,7 +3,15 @@ import { readFileSync } from 'node:fs';
 
 import { FilterBarParts } from '../../pages/filter-bar.ts';
 import { HistoryPage } from '../../pages/history.page.ts';
-import { removeTeamInSql, renameTeamInSql, seedExtraTeam } from '../../utils/database-helper.ts';
+import {
+  backdateHistoryOfRowInSql,
+  removeLeaveMemberInSql,
+  removeTeamInSql,
+  renameTeamInSql,
+  seedExtraTeam,
+  seedLeaveMember,
+  seedLeaveRequest,
+} from '../../utils/database-helper.ts';
 import { escapeRegExp, fill, hr } from '../../utils/i18n.ts';
 import { expectNoHorizontalScroll } from '../../utils/layout.ts';
 import { ADMIN_STATE, MEMBER_STATE } from '../../utils/run-fixture.ts';
@@ -16,8 +24,10 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * and *bilo → sada*; narrows by the team and the kind; and reads where
  * history begins on a long period. A phone draws the same rows stacked.
  * Story 14.3: the admin exports the team's rows to a PDF, and a writer that
- * cannot load says so and offers the action again. A member reaches none of
- * it. No spec assumes `audit_events` is empty.
+ * cannot load says so and offers the action again. Epic 14 retro A3: a
+ * decision whose request was written before the period still names its
+ * member, so *Osoba* keeps it. A member reaches none of it. No spec assumes
+ * `audit_events` is empty.
  */
 
 const history = hr.history;
@@ -146,6 +156,36 @@ test.describe('an admin', () => {
     await expect(historyPage.exportButton).not.toHaveAttribute('aria-disabled', 'true');
     await expect(historyPage.exportButton).toHaveText(history.export.action);
     await expect(historyPage.exportButton).toBeFocused();
+  });
+
+  test('keeps a decision whose request predates the period under its member (epic 14 retro A3)', async ({
+    page,
+    fixture,
+  }) => {
+    const member = await seedLeaveMember(fixture.slug, null, '', 20);
+
+    try {
+      // A rejected request: its INSERT and the decision share one transaction.
+      // The request's events then move 400 days back, out of every period the
+      // page offers, so only the request as it stands names the decision's member.
+      const requestId = await seedLeaveRequest(fixture.slug, member.id, '2030-01-07', '2030-01-08', 'rejected');
+
+      await backdateHistoryOfRowInSql(fixture.slug, 'leave_requests', requestId, 400);
+
+      const historyPage = new HistoryPage(page);
+      const decided = historyPage.kindText(history.record.leaveRequestDecision, history.action.decided);
+
+      await historyPage.goto(`?osoba=${member.id}`);
+      await expect(page).toHaveURL(new RegExp(`[?&]osoba=${escapeRegExp(member.id)}`));
+      await expect(historyPage.chip(fill(history.chip.member, { value: member.name }))).toBeVisible();
+
+      const row = historyPage.table.getByRole('row').filter({ hasText: decided });
+
+      await expect(row).toHaveCount(1);
+      await expect(row).toContainText(member.name);
+    } finally {
+      await removeLeaveMemberInSql(fixture.slug, member.id);
+    }
   });
 
   test('a bad period, or a person the period does not name, is rewritten out of the URL', async ({ page }) => {

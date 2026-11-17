@@ -266,6 +266,9 @@ const SANCTIONED_PLURAL_KEYS = [
   // STORY 14.3: the status line after a downloaded history PDF — its name and
   // how many changes it holds, `1 promjenom`, `3 promjene`, `5 promjena`.
   'history.export.done',
+  // EPIC 14 RETRO A4: a rotation pattern in the history, by its steps —
+  // `1 korak: Dan`, `2 koraka: Dan i Noć`, `5 koraka: …`.
+  'history.value.rotationPattern',
 ];
 
 /** The flat screen strings the application is permitted to ship, by the story
@@ -2782,6 +2785,33 @@ const SANCTIONED_SCREEN_KEYS = [
   'history.value.unknownTeam',
   'history.value.unknownShiftType',
   'history.value.unknownAbsenceType',
+  // EPIC 14 RETRO A4: every real change names a field — the derived status
+  // line and its six words, the rotation pattern, offset step and roster
+  // override fields, and their values in words (a step, an override, one
+  // side of an override, and the neutral words for one saved before the read).
+  'history.field.status',
+  'history.field.rotationPattern',
+  'history.field.offsetStep',
+  'history.field.rosterOverride',
+  'history.field.returnRosterOverride',
+  'history.enum.statusCurrent',
+  'history.enum.statusOpen',
+  'history.enum.statusConfirmed',
+  'history.enum.statusAnswered',
+  'history.enum.statusClosed',
+  'history.enum.statusRemoved',
+  'history.value.rotationStep',
+  'history.value.rosterOverride',
+  'history.value.rosterOverrideIn',
+  'history.value.rosterOverrideOut',
+  'history.value.earlierStep',
+  'history.value.earlierPattern',
+  'history.value.earlierRosterOverride',
+  // Its review: a rotation step's ordinal has its own label, and two sides
+  // that differ but read alike are marked as the earlier and the new value.
+  'history.field.stepPosition',
+  'history.value.differsBefore',
+  'history.value.differsAfter',
 ];
 
 /** Everything the resource file is permitted to hold, together. */

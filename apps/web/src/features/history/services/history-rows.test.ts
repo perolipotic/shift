@@ -25,6 +25,7 @@ import {
   historyRowsOf,
 } from '@/features/history/services/history-rows';
 import { initLocalization, t } from '@/lib/i18n';
+import { formatIsoDate } from '@/lib/i18n/format';
 
 const ZONE = 'Europe/Zagreb';
 const PERIOD = { from: '2026-11-01', to: '2026-11-30' };
@@ -269,5 +270,224 @@ describe('an operand never breaks the rows (story 14.2 review)', () => {
         { kind: { record: 'leave-record', action: 'amended' } },
       ]),
     ).toBe(2);
+  });
+});
+
+describe('every real change is drawn in words, never a bare id (epic 14 retro A3, A4)', () => {
+  const STEPS = [
+    event({ id: 20, tableName: 'rotation_patterns', operation: 'INSERT', rowId: 'p1', newRow: { id: 'p1' } }),
+    event({
+      id: 21,
+      tableName: 'rotation_steps',
+      operation: 'INSERT',
+      newRow: { id: 'st0', pattern_id: 'p1', position: 0, shift_type_id: 's1' },
+    }),
+    event({
+      id: 22,
+      tableName: 'rotation_steps',
+      operation: 'INSERT',
+      newRow: { id: 'st1', pattern_id: 'p1', position: 1, shift_type_id: 's2' },
+    }),
+    event({
+      id: 23,
+      tableName: 'roster_overrides',
+      operation: 'INSERT',
+      newRow: { id: 'o1', team_id: 'a', date: '2026-11-12', member_out_id: 'ana', member_in_id: 'ivo', reason: 'r' },
+    }),
+    event({
+      id: 24,
+      tableName: 'roster_overrides',
+      operation: 'INSERT',
+      newRow: { id: 'o2', team_id: 'a', date: '2026-11-13', member_out_id: null, member_in_id: 'ivo', reason: 'r' },
+    }),
+    event({
+      id: 25,
+      tableName: 'roster_overrides',
+      operation: 'INSERT',
+      newRow: { id: 'o3', team_id: 'a', date: '2026-11-14', member_out_id: 'ana', member_in_id: null, reason: 'r' },
+    }),
+  ];
+  const lists = {
+    ...LISTS,
+    members: [...LISTS.members, { id: 'ivo', name: 'Ivo Ivić' }],
+    shiftTypes: [...LISTS.shiftTypes, { id: 's2', name: 'Noćna' }],
+  };
+  const names = historyNamesOf(STEPS, lists);
+
+  function rowOf(subject: AuditEvent, held: readonly AuditEvent[] = STEPS) {
+    const [row] = historyRowsOf(
+      historyEntriesOf([subject], { period: PERIOD, members: [] }),
+      historyNamesOf([subject, ...held], lists),
+      ZONE,
+    );
+
+    return row;
+  }
+
+  it('names a step by its 1-based position and shift type, a pattern by its steps, an override by its day and people', () => {
+    expect(historyOperandText({ type: 'rotation-step', id: 'st1' }, names)).toBe('Korak 2: Noćna');
+    expect(historyOperandText({ type: 'rotation-pattern', id: 'p1' }, names)).toBe(
+      t('history.value.rotationPattern', { count: 2, steps: 'Dnevna i Noćna' }),
+    );
+    expect(historyOperandText({ type: 'rotation-pattern', id: 'p1' }, names)).toMatch(/^2 koraka: /);
+    expect(historyOperandText({ type: 'roster-override', id: 'o1' }, names)).toBe(
+      t('history.value.rosterOverride', { date: formatIsoDate('2026-11-12'), memberIn: 'Ivo Ivić', memberOut: 'Ana Anić' }),
+    );
+    expect(historyOperandText({ type: 'roster-override', id: 'o2' }, names)).toBe(
+      t('history.value.rosterOverrideIn', { date: formatIsoDate('2026-11-13'), memberIn: 'Ivo Ivić' }),
+    );
+    expect(historyOperandText({ type: 'roster-override', id: 'o2' }, names)).toBe(
+      `${String(formatIsoDate('2026-11-13'))}: ulazi Ivo Ivić`,
+    );
+    expect(historyOperandText({ type: 'roster-override', id: 'o3' }, names)).toBe(
+      `${String(formatIsoDate('2026-11-14'))}: izlazi Ana Anić`,
+    );
+    expect(historyOperandText({ type: 'roster-override', id: 'o1' }, names)).toBe(
+      `${String(formatIsoDate('2026-11-12'))}: ulazi Ivo Ivić, izlazi Ana Anić`,
+    );
+  });
+
+  it('says a neutral word for a step, pattern or override the read does not hold', () => {
+    const empty = historyNamesOf([], LISTS);
+
+    expect(historyOperandText({ type: 'rotation-step', id: 'gone' }, empty)).toBe(t('history.value.earlierStep'));
+    expect(historyOperandText({ type: 'rotation-pattern', id: 'gone' }, empty)).toBe(t('history.value.earlierPattern'));
+    expect(historyOperandText({ type: 'roster-override', id: 'gone' }, empty)).toBe(
+      t('history.value.earlierRosterOverride'),
+    );
+  });
+
+  it('draws an assignment insert with its pattern and offset lines', () => {
+    const assignment = event({
+      id: 30,
+      tableName: 'rotation_assignments',
+      operation: 'INSERT',
+      newRow: { id: 'ra', team_id: 'a', pattern_id: 'p1', offset_step_id: 'st0', anchor_date: '2026-11-01', effective_from: '2026-11-01' },
+    });
+    const changes = rowOf(assignment)?.changes ?? [];
+
+    expect(changes.map((change) => [change.field, change.after])).toEqual([
+      [t('history.field.team'), 'Smjena A'],
+      [t('history.field.rotationPattern'), t('history.value.rotationPattern', { count: 2, steps: 'Dnevna i Noćna' })],
+      [t('history.field.offsetStep'), 'Korak 1: Dnevna'],
+      [t('history.field.effectiveFrom'), formatIsoDate('2026-11-01')],
+      [t('history.field.anchorDate'), formatIsoDate('2026-11-01')],
+    ]);
+  });
+
+  it('draws a pattern insert as one pattern line, a step position from 1', () => {
+    expect(rowOf(STEPS[0] as AuditEvent)?.changes).toEqual([
+      {
+        column: 'id',
+        field: t('history.field.rotationPattern'),
+        before: null,
+        after: t('history.value.rotationPattern', { count: 2, steps: 'Dnevna i Noćna' }),
+      },
+    ]);
+    const step = rowOf(STEPS[2] as AuditEvent)?.changes.find((change) => change.column === 'position');
+
+    expect(step?.after).toBe('2');
+    expect(step?.field).toBe(t('history.field.stepPosition'));
+  });
+
+  it('counts from 1 only a rotation step\'s position, never another record\'s number', () => {
+    const membership = event({
+      id: 33,
+      tableName: 'team_membership_versions',
+      operation: 'INSERT',
+      newRow: { id: 'v', member_id: 'ana', team_id: 'a', position: 3 },
+    });
+    const position = rowOf(membership)?.changes.find((change) => change.column === 'position');
+
+    expect(position?.after).toBe('3');
+    expect(position?.field).toBe(t('history.field.position'));
+  });
+
+  it('draws a relinked resolution as an override line, before and after', () => {
+    const relinked = event({
+      id: 31,
+      tableName: 'conflict_resolutions',
+      operation: 'UPDATE',
+      oldRow: { id: 'c', member_id: 'ana', kind: 'replace_member', roster_override_id: 'o1', removed_at: null },
+      newRow: { id: 'c', member_id: 'ana', kind: 'replace_member', roster_override_id: 'o2', removed_at: null },
+    });
+
+    expect(rowOf(relinked)?.changes).toEqual([
+      {
+        column: 'roster_override_id',
+        field: t('history.field.rosterOverride'),
+        before: historyOperandText({ type: 'roster-override', id: 'o1' }, names),
+        after: historyOperandText({ type: 'roster-override', id: 'o2' }, names),
+      },
+    ]);
+  });
+
+  it('draws a status-only update as Stanje, before and after', () => {
+    const removed = event({
+      id: 32,
+      tableName: 'leave_records',
+      operation: 'UPDATE',
+      oldRow: { id: 'l', member_id: 'ana', removed_at: null, removed_by: null },
+      newRow: { id: 'l', member_id: 'ana', removed_at: '2026-11-10T08:00:00+00:00', removed_by: 'auth-ana' },
+    });
+
+    expect(rowOf(removed)?.changes).toEqual([
+      {
+        column: '$status',
+        field: t('history.field.status'),
+        before: t('history.enum.statusCurrent'),
+        after: t('history.enum.statusRemoved'),
+      },
+    ]);
+  });
+
+  it('marks two sides that differ but read alike as the earlier and the new value', () => {
+    const repatterned = event({
+      id: 34,
+      tableName: 'rotation_assignments',
+      operation: 'UPDATE',
+      oldRow: { id: 'ra', team_id: 'a', pattern_id: 'gone-1' },
+      newRow: { id: 'ra', team_id: 'a', pattern_id: 'gone-2' },
+    });
+    const [change] = rowOf(repatterned, [])?.changes ?? [];
+    const earlier = t('history.value.earlierPattern');
+
+    expect(change).toEqual({
+      column: 'pattern_id',
+      field: t('history.field.rotationPattern'),
+      before: t('history.value.differsBefore', { value: earlier }),
+      after: t('history.value.differsAfter', { value: earlier }),
+    });
+    expect(change?.before).not.toBe(change?.after);
+  });
+
+  it('words every status', () => {
+    for (const status of ['current', 'open', 'confirmed', 'answered', 'closed', 'removed']) {
+      const key = historyEnumMessageKey('status', status);
+
+      expect(key).not.toBeNull();
+      expect(t(key ?? 'history.value.yes')).not.toBe(key);
+    }
+  });
+
+  it('names a decision whose request has no event read through the request as it stands', () => {
+    const decision = event({
+      id: 40,
+      tableName: 'leave_request_decisions',
+      operation: 'INSERT',
+      rowId: 'req-old',
+      newRow: { request_id: 'req-old', outcome: 'rejected' },
+    });
+    const [row] = historyRowsOf(
+      historyEntriesOf([decision], {
+        period: PERIOD,
+        members: [],
+        requests: [{ tableName: 'leave_requests', id: 'req-old', row: { id: 'req-old', member_id: 'ana' } }],
+      }),
+      names,
+      ZONE,
+    );
+
+    expect(row?.subject).toBe('Ana Anić');
   });
 });

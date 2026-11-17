@@ -5,6 +5,7 @@ import {
   HISTORY_COLUMNS,
   HISTORY_KEY_ROOT,
   HISTORY_PAGE_ROWS,
+  HISTORY_REQUEST_CHUNK,
   HISTORY_UNAVAILABLE,
   historyCursorFilterOf,
   historyKeyOf,
@@ -14,7 +15,9 @@ import {
   readHistoryMarkers,
   type HistoryAnswer,
   type HistoryQuery,
+  type HistoryRead,
   type HistoryTable,
+  type HistoryTableName,
 } from '@/features/history/services/history-read';
 
 const PERIOD = { from: '2026-11-01', to: '2026-11-30' };
@@ -272,5 +275,236 @@ describe('the history is never kept on the device', () => {
 
     expect(options.retry).toBe(1);
     expect(options.staleTime).toBe(0);
+  });
+});
+
+describe('a decision whose request has no event read is named through the request as it stands (retro A3)', () => {
+  /** A decision event of `table` for request `rowId`. */
+  function decisionRow(id: number, table: string, rowId: string): Record<string, unknown> {
+    return {
+      ...row(id),
+      table_name: table,
+      row_id: rowId,
+      new_row: { request_id: rowId, outcome: 'rejected' },
+    };
+  }
+
+  interface SourceCall {
+    readonly table: HistoryTableName;
+    readonly columns: string;
+    readonly steps: string[];
+  }
+
+  /**
+   * A stubbed source: `audit_events` answers `events` then the markers (none);
+   * each request table answers from `requests`, filtered by the ids asked for,
+   * or `refusal` when set.
+   */
+  function source(
+    events: readonly Record<string, unknown>[],
+    requests: Partial<Record<HistoryTableName, readonly Record<string, unknown>[]>>,
+    refusal?: HistoryTableName,
+  ): { source: (table: HistoryTableName) => HistoryTable; calls: SourceCall[] } {
+    const calls: SourceCall[] = [];
+
+    return {
+      calls,
+      source: (table) => ({
+        select(columns) {
+          const call: SourceCall = { table, columns, steps: [] };
+          let ids: readonly string[] = [];
+          let marker = false;
+
+          calls.push(call);
+
+          const query: HistoryQuery = {
+            gte: (column, value) => (call.steps.push(`gte ${column} ${value}`), query),
+            lt: (column, value) => (call.steps.push(`lt ${column} ${value}`), query),
+            eq: (column, value) => (call.steps.push(`eq ${column} ${value}`), (marker = true), query),
+            in: (column, values) => (call.steps.push(`in ${column} ${String(values.length)}`), (ids = values), query),
+            or: () => query,
+            order: () => query,
+            limit: (count) => {
+              call.steps.push(`limit ${String(count)}`);
+
+              if (table === refusal) return Promise.resolve({ data: null, error: { code: '42501' } });
+              if (table === 'audit_events') return Promise.resolve({ data: marker ? [] : events, error: null });
+
+              const rows = (requests[table] ?? []).filter((candidate) => ids.includes(String(candidate['id'])));
+
+              return Promise.resolve({ data: rows, error: null });
+            },
+          };
+
+          return query;
+        },
+      }),
+    };
+  }
+
+  async function read(stub: ReturnType<typeof source>): Promise<HistoryRead> {
+    const options = historyQueryOptions(stub.source, PERIOD);
+    const queryFn = options.queryFn as unknown as (context: { signal: AbortSignal }) => Promise<HistoryRead>;
+
+    return queryFn({ signal: new AbortController().signal });
+  }
+
+  it('reads the current rows of the unmatched requests, by id, with the subject columns alone', async () => {
+    const stub = source(
+      [decisionRow(3, 'leave_request_decisions', 'req-1'), decisionRow(2, 'swap_request_decisions', 'swap-1')],
+      {
+        leave_requests: [{ id: 'req-1', member_id: 'member-ana' }],
+        swap_requests: [
+          { id: 'swap-1', proposer_id: 'member-ana', addressee_id: 'member-ivo', team_id: 'team-a', return_team_id: null },
+        ],
+      },
+    );
+
+    const answer = await read(stub);
+
+    expect(answer.requests).toEqual([
+      { tableName: 'leave_requests', id: 'req-1', row: { id: 'req-1', member_id: 'member-ana' } },
+      {
+        tableName: 'swap_requests',
+        id: 'swap-1',
+        row: { id: 'swap-1', proposer_id: 'member-ana', addressee_id: 'member-ivo', team_id: 'team-a', return_team_id: null },
+      },
+    ]);
+    expect(stub.calls.filter((call) => call.table === 'leave_requests')).toEqual([
+      { table: 'leave_requests', columns: 'id,member_id', steps: ['in id 1', 'limit 1'] },
+    ]);
+    expect(stub.calls.find((call) => call.table === 'swap_requests')?.columns).toBe(
+      'id,proposer_id,addressee_id,team_id,return_team_id',
+    );
+  });
+
+  it('issues no request read when every decision\'s request has an event read', async () => {
+    const request = { ...row(4), table_name: 'leave_requests', row_id: 'req-1', new_row: { id: 'req-1', member_id: 'm' } };
+    const stub = source([decisionRow(5, 'leave_request_decisions', 'req-1'), request], {});
+
+    expect((await read(stub)).requests).toEqual([]);
+    expect(stub.calls.map((call) => call.table)).toEqual(['audit_events', 'audit_events']);
+  });
+
+  it('leaves a request no longer there absent, and the read whole', async () => {
+    const stub = source([decisionRow(5, 'leave_request_decisions', 'req-gone')], { leave_requests: [] });
+
+    expect((await read(stub)).requests).toEqual([]);
+  });
+
+  it(`asks for at most ${String(HISTORY_REQUEST_CHUNK)} ids a call, every call at once`, async () => {
+    const ids = Array.from({ length: 250 }, (_, index) => `req-${String(index)}`);
+    const stub = source(
+      ids.map((id, index) => decisionRow(1000 - index, 'leave_request_decisions', id)),
+      { leave_requests: ids.map((id) => ({ id, member_id: 'member-ana' })) },
+    );
+
+    expect((await read(stub)).requests).toHaveLength(250);
+    expect(stub.calls.filter((call) => call.table === 'leave_requests').map((call) => call.steps[0])).toEqual([
+      'in id 100',
+      'in id 100',
+      'in id 50',
+    ]);
+  });
+
+  it('issues every request chunk before any answers', async () => {
+    const ids = Array.from({ length: 150 }, (_, index) => `req-${String(index)}`);
+    const events = ids.map((id, index) => decisionRow(1000 - index, 'leave_request_decisions', id));
+    let asked = 0;
+    let answer: (() => void) | undefined;
+    const pending = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    const audit = source(events, {});
+    const options = historyQueryOptions(
+      (table) =>
+        table === 'audit_events'
+          ? audit.source(table)
+          : {
+              select: () => {
+                const query: HistoryQuery = {
+                  gte: () => query,
+                  lt: () => query,
+                  eq: () => query,
+                  in: () => query,
+                  or: () => query,
+                  order: () => query,
+                  limit: () => {
+                    asked += 1;
+                    return pending.then(() => ({ data: [], error: null }));
+                  },
+                };
+
+                return query;
+              },
+            },
+      PERIOD,
+    );
+    const queryFn = options.queryFn as unknown as (context: { signal: AbortSignal }) => Promise<HistoryRead>;
+    const read = queryFn({ signal: new AbortController().signal });
+
+    await expect.poll(() => asked).toBe(2);
+    answer?.();
+    expect((await read).requests).toEqual([]);
+  });
+
+  it('asks for no request once the read is aborted', async () => {
+    const controller = new AbortController();
+    const stub = source([decisionRow(5, 'leave_request_decisions', 'req-1')], {});
+    const options = historyQueryOptions(stub.source, PERIOD);
+    const queryFn = options.queryFn as unknown as (context: { signal: AbortSignal }) => Promise<HistoryRead>;
+    const read = queryFn({ signal: controller.signal });
+
+    controller.abort();
+
+    await expect(read).rejects.toThrow();
+    expect(stub.calls.map((call) => call.table)).not.toContain('leave_requests');
+  });
+
+  it('makes the whole read unavailable when a request read is refused', async () => {
+    const stub = source([decisionRow(5, 'leave_request_decisions', 'req-1')], {}, 'leave_requests');
+
+    await expect(read(stub)).rejects.toThrow(HISTORY_UNAVAILABLE);
+  });
+
+  it.each([
+    ['a member that is not text', { id: 'req-1', member_id: 7 }],
+    ['an id not asked for', { id: 'req-9', member_id: 'member-ana' }],
+    ['no member', { id: 'req-1' }],
+  ])('makes the whole read unavailable on %s', async (_, request) => {
+    // The audit table alone comes from the stub; the request table answers `request` as sent.
+    const stub = source([decisionRow(5, 'leave_request_decisions', 'req-1')], {});
+    const options = historyQueryOptions(
+      (table) =>
+        table === 'leave_requests'
+          ? {
+              select: () => {
+                const query: HistoryQuery = {
+                  gte: () => query,
+                  lt: () => query,
+                  eq: () => query,
+                  in: () => query,
+                  or: () => query,
+                  order: () => query,
+                  limit: () => Promise.resolve({ data: [request], error: null }),
+                };
+
+                return query;
+              },
+            }
+          : stub.source(table),
+      PERIOD,
+    );
+    const queryFn = options.queryFn as unknown as (context: { signal: AbortSignal }) => Promise<HistoryRead>;
+
+    await expect(queryFn({ signal: new AbortController().signal })).rejects.toThrow(HISTORY_UNAVAILABLE);
+  });
+
+  it('makes the whole read unavailable on a swap request missing its team', async () => {
+    const stub = source([decisionRow(5, 'swap_request_decisions', 'swap-1')], {
+      swap_requests: [{ id: 'swap-1', proposer_id: 'a', addressee_id: 'b', team_id: null, return_team_id: null }],
+    });
+
+    await expect(read(stub)).rejects.toThrow(HISTORY_UNAVAILABLE);
   });
 });
