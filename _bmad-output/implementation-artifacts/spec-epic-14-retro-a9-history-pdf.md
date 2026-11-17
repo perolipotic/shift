@@ -2,9 +2,9 @@
 title: 'Epic 14 retro A9 (PDF part): the history PDF keeps a row whole, draws every character and refuses an oversized export'
 type: 'bugfix'
 created: '2026-11-17'
-status: 'done'
+status: 'in-review'
 baseline_commit: 'bb661d8c1c92889356b4c1c8f0a0075834b51875'
-review_loop_iteration: 0
+review_loop_iteration: 1
 context: []
 ---
 
@@ -67,7 +67,7 @@ Story 14.3: "the file holds exactly the filtered rows in their order, built from
 - [x] `deferred-work.md` (three 14.3 entries RESOLVED), `sprint-status.yaml` item 69 note.
 
 **Acceptance Criteria:**
-- Given the 90-change fixture rendered by pdfmake 0.3.13, when every cell node is checked, then each has a position (none dropped) and every continuation row carries the identifying cells.
+- Given the 90-change fixture rendered by pdfmake 0.3.13, when what pdfmake draws is recorded, then every cell node's text is drawn, in order (none dropped; a node's `positions` would not prove it), and every continuation row draws the identifying cells and *(nastavak)*.
 - Given the faces in `vfs_fonts`, when any string of the build's own words is drawn, then nothing is substituted; given user text with emoji/CJK/arrows, then the drawn text is fully covered.
 - Given typecheck, lint, web/domain unit tests and the three DB-free root tests, when run, then they pass.
 
@@ -95,7 +95,9 @@ Story 14.3: "the file holds exactly the filtered rows in their order, built from
 
 **Measured cap** (node, AMD EPYC 9354P, entries of 3 changes, new layout): 500 → 1.4–2.2 s, 1000 → 1.4 s, 2000 → 2.9–3.4 s (797 kB), 5000 → 7.6 s (2.0 MB).
 
-**Residual risks:** the cap counts entries, not their changes (deferred: an export of 2000 many-change entries passes it at several times the measured cost). pdfmake's layout is one synchronous call: up to about 3 s on a server CPU at the cap, several seconds on a slow phone, with *Izvoz…* painted first. A tall entry that does not fit below the rows above it leaves up to about three quarters of that page blank (the 400 pt budget, chosen for few continuations). The row-height estimate takes 1 em a character; Roboto's widest glyph (1.18 em) is covered by the page's slack (pinned), but word-wrap waste on text of only the widest glyphs is not; the identifying cells of the longest names are pinned under the budget. A split change's later pieces do not repeat its field label, and *Bilo*'s and *Sada*'s pieces are paired by position, not meaning. The hook's and component's refusal wiring runs in no test (a node-only suite; the decision is the tested `historyExportPressOf`, and `exportHistory` refuses too); no e2e reaches 2001 rows. The browser writer (substitution against the browser `vfs_fonts`, yields, download) runs only in CI e2e.
+**Results of the second review's patches (2026-11-17, Node 24.19.0):** typecheck 0; lint 0; `pnpm build` 0, entry chunk 1,774.6 kB, `pdfmake-*.js` and `vfs_fonts-*.js` still separate chunks, precache 14 entries; web 172 files / 6507 tests pass; domain 16 / 855 pass; the same eight DB-free root files: 8 / 2957 pass. Re-rendered `history-realistic.pdf` (9 pages), `history-glyphs.pdf` (9) and `history-plain.pdf` (11) and rasterized them (`pdftoppm -png -r 60`): page 4 is the 90-change entry's second row, *16.11.2026 09:05*, *Đurđa Šoštarić*, *Raspored · promijenjeno*, *Ljiljana Kovačević, 1.–31.12.2026* and *(nastavak)* beside *Dan 30.12.* to *Dan 58.12.*; page 7 ends the 3000-character note's continuations and draws `Zoë � Anić`, `�� -> Smjena B`, `OK � � => gotovo` with no empty box; `pdftotext`: 90 of 90 day lines, 7 *(nastavak)*. The review's Artifact Renderer also rendered four harder fixtures (100-character unbroken names, a 3200-character URL beside 4200 characters of base64, 5000 `W`, Arabic, Hebrew, Devanagari, Thai, Korean, zalgo marks, a 4000-word note, 700 rows; 112 pages): nothing past a margin, no row cut, no text lost, no box.
+
+**Residual risks:** a name or text in a script Roboto lacks (Arabic, Hebrew, Devanagari, Thai, Korean, CJK) prints as a run of `�`, unreadable though flagged by the note (deferred: a wider font is Ask First). The cap counts entries, not their changes (deferred: an export of 2000 many-change entries passes it at several times the measured cost). pdfmake's layout is one synchronous call: up to about 3 s on a server CPU at the cap, several seconds on a slow phone, with *Izvoz…* painted first. A tall entry that does not fit below the rows above it leaves up to about three quarters of that page blank (the 400 pt budget, chosen for few continuations). The row-height estimate takes 1 em a character; Roboto's widest glyph (1.18 em) is covered by the page's slack (pinned), but word-wrap waste on text of only the widest glyphs is not; the identifying cells of the longest names are pinned under the budget. A split change's later pieces do not repeat its field label, and *Bilo*'s and *Sada*'s pieces are paired by position, not meaning. The hook's and component's refusal wiring runs in no test (a node-only suite; the decision is the tested `historyExportPressOf`, and `exportHistory` refuses too); no e2e reaches 2001 rows (deferred). The browser writer (substitution against the browser `vfs_fonts`, yields, download) runs only in CI e2e.
 
 ## Review Triage Log
 
@@ -110,7 +112,22 @@ Story 14.3: "the file holds exactly the filtered rows in their order, built from
 - `[low]` `[patch]` `yieldToUi` waited a task, not a frame: now `requestAnimationFrame` then a task. The fonts' coverage is read after a yield.
 - `[low]` `[patch]` The render test's prototype patch is restored after the suite; its coverage check reads everything pdfmake drew (title, header, columns, footers), not only table nodes. A nested-spread test line reformatted.
 - `[medium]` `[defer]` The cap counts entries, not their changes: `deferred-work.md`.
-- Rejected: marking the deferrals RESOLVED before merge (the founder's instruction; sprint item 69 stays `open`, CI pending); a pre-emptive over-limit hint (the spec refuses on the press); the newline at a piece boundary (the boundary is the row break); `findLastIndex` (inside the build's browser baseline); literal invisible characters (they are escapes; `hr.json` holds `�` as the character it shows).
+- Rejected: a finding that the deferrals should not be marked RESOLVED before merge (the founder's instruction; sprint item 69 stays `open`, CI pending); a pre-emptive over-limit hint (the spec refuses on the press); the newline at a piece boundary (the boundary is the row break); `findLastIndex` (inside the build's browser baseline); literal invisible characters (they are escapes; `hr.json` holds `�` as the character it shows).
+
+### 2026-11-17 — Second review (blind, edge-case, verification-gap, acceptance auditor, epic AC auditor, artifact renderer), unattended
+
+- Epic AC auditor: every deviation from 14.3's ACs is listed; lazy load and no second read still hold. No finding. Acceptance auditor: no AC, intent line or boundary violated.
+- `[medium]` `[patch]` `yieldToUi` waited on `requestAnimationFrame`, which a hidden tab never runs: an admin who switched tabs after *Izvoz* stalled the build at four yields. It now waits at most 100 ms (`HISTORY_EXPORT_FRAME_WAIT_MS`) for a frame; both paths tested with fake timers.
+- `[medium]` `[patch]` A digit or sign the font draws with a mark it lacks (`5` + U+20DD) lost its base to one `�`, and a letter with several marks moved covered marks ahead of one trailing `�`: now any covered non-mark base stays and each missing mark is replaced in place (tested).
+- `[low]` `[patch]` A supplementary variation selector (U+E0100–U+E01EF) was not invisible (spurious `�` and note), and the prepended concatenation marks (Arabic number sign, U+0600…), format characters that do draw, were dropped silently: both fixed and tested.
+- `[low]` `[patch]` `➡` (and the emoji `➡️`), `⬅`, `⟹`, `⟸`, `⟷` printed as `�`: transliterated (tested). `↑`/`↓` have no ASCII reading and stay `�`.
+- `[low]` `[patch]` A line cut at the character budget could part a letter from a mark the font draws apart: `linesOf` cuts by grapheme.
+- `[low]` `[patch]` The render test's continuation check was `>= 3` under a comment claiming the author is repeated: it now requires exactly the chunks' continuations in what pdfmake drew (7), the 90-change entry as four rows, and its subject drawn four times.
+- `[low]` `[patch]` The identifying-height pin covered a member and a team, but a swap's subject names up to four members and two teams (`subjectsOfRows`): pinned for six 100-character names through `formatList`.
+- `[low]` `[patch]` The spec: AC 1 named node positions, which the render test deliberately does not trust (reworded to what is checked); `status` was `done` with CI pending (now `in-review`, per the A11 done-rule); `review_loop_iteration`; the first log's "Rejected" line read as if the ledger edits were rejected (reworded).
+- `[medium]` `[defer]` Arabic, Hebrew, Devanagari, Thai, Korean and CJK text prints as runs of `�` (Artifact Renderer, rendered): readable output needs a wider embedded font, which this spec puts under Ask First (bundle and precache cost). `deferred-work.md`.
+- `[low]` `[defer]` The hook's and component's refusal wiring runs in no test: needs a CI e2e that seeds more than 2000 events (or a DOM test environment the web suite does not have). `deferred-work.md`.
+- Rejected: the PDF metadata title being substituted (the title is the build's fixed *Povijest promjena*, never user text: checked); the refusal logged as a failure inside `exportHistory` (defence in depth only, the hook refuses first, so a user never sees it); a second press not re-announcing the alert (the failure line behaves the same way; the alert is still on screen); the glyph note not naming NFKC replacements (its *npr.* gives examples; full-width and ligature forms are the same letters); `{limit, number} promjena` not pluralized (the limit is the constant 2000); identifying cells above the budget (bounded by the six-name pin above); a missing face throwing (it is the generic failed line, the right outcome); blank page space and sparse long-text continuations (the documented 400 pt budget and 1 em estimate, a deliberate upper bound); a split change's later pieces without the field label (the label is part of the change's text, not a separate field; documented); the render test patching pdfmake at module load (restored in `afterAll`, files are isolated); the cap measured only in node (documented, deferred with the entry count); duplication of `offsetOf` in `pdf.test.ts` (test-only, reads tables the coverage reader does not).
 
 ## Suggested Review Order
 

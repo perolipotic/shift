@@ -22,6 +22,7 @@ import {
   historyPdfCoverageOf,
 } from '@/features/history/services/pdf';
 import { initLocalization, t } from '@/lib/i18n';
+import { formatList } from '@/lib/i18n/format';
 import resources from '@/lib/i18n/locales/hr.json';
 
 /**
@@ -240,6 +241,15 @@ describe('a row taller than a page', () => {
       kind: 'Zamjena smjene · izmijenjeno',
       badge: t('history.reconstructed'),
     });
+
+    expect(historyIdentifyingHeightOf(tallest, t('history.export.continued'))).toBeLessThan(HISTORY_PDF_CHUNK_HEIGHT);
+  });
+
+  it('keeps the most a subject can name under the budget: every member and team column of a swap', () => {
+    // `subjectsOfRows` (domain `history.ts`): member_id, member_out_id, member_in_id,
+    // proposer_id, addressee_id and team_id, return_team_id, listed by `formatList`.
+    const names = Array.from({ length: 6 }, (_, index) => `${String(index)}${'Đ'.repeat(99)}`);
+    const tallest = exportRow(1, { author: 'Đ'.repeat(100), subject: formatList(names) });
 
     expect(historyIdentifyingHeightOf(tallest, t('history.export.continued'))).toBeLessThan(HISTORY_PDF_CHUNK_HEIGHT);
   });

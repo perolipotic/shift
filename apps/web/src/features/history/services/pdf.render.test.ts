@@ -9,6 +9,7 @@ import type { HistoryRow, HistoryRowChange } from '@/features/history/services/h
 import {
   HISTORY_PDF_FACES,
   HISTORY_PDF_FONT,
+  historyChunksOf,
   historyPdfCoverageOf,
   historyPdfDefinitionOf,
 } from '@/features/history/services/pdf';
@@ -210,7 +211,7 @@ async function render(model: HistoryExport, name: string) {
     return [];
   });
 
-  return { file, nodes, pages, definition, missing, ink: [...drawn] };
+  return { file, nodes, pages, definition, missing, ink: [...drawn], drawnText: ink };
 }
 
 beforeAll(async () => {
@@ -230,7 +231,7 @@ afterAll(() => {
 describe('the rendered PDF', () => {
   it('places every cell of a realistic export, the 90-change entry and the 3000-character note included', async () => {
     const model = exportOf(realisticRows());
-    const { file, nodes, pages, missing } = await render(model, 'history-realistic');
+    const { file, nodes, pages, missing, drawnText } = await render(model, 'history-realistic');
 
     expect(file.subarray(0, 5).toString('latin1')).toBe('%PDF-');
     expect(pages).toBeGreaterThan(3);
@@ -242,8 +243,18 @@ describe('the rendered PDF', () => {
       .filter((text): text is string => typeof text === 'string' && /^Dan \d+\.12\.: stara/.test(text));
 
     expect(days).toEqual(Array.from({ length: 90 }, (_, at) => `Dan ${at + 1}.12.: stara ${at + 1}`));
-    // Each of its continuations repeats the author and is marked.
-    expect(nodes.filter((node) => node['text'] === '(nastavak)').length).toBeGreaterThanOrEqual(3);
+    // Every continuation is drawn and marked: three for the 90-change entry, the rest the 3000-character note's.
+    const occurrences = (text: string): number => drawnText.split(squeezed(text)).length - 1;
+    const continuations = model.rows.reduce((sum, entry) => sum + historyChunksOf(entry).length - 1, 0);
+
+    const subject = 'Ljiljana Kovačević, 1.–31.12.2026';
+
+    expect(model.rows.filter((entry) => entry.subject === subject).map((entry) => historyChunksOf(entry).length)).toEqual([4]);
+    expect(continuations).toBeGreaterThan(3);
+    expect(occurrences('(nastavak)')).toBe(continuations);
+    // The 90-change entry's identifying cells are drawn on each of its four rows.
+    expect(occurrences(subject)).toBe(4);
+    expect(occurrences('Đurđa Šoštarić')).toBeGreaterThanOrEqual(4);
   });
 
   it('draws only characters the faces have, and says once that some were replaced', async () => {

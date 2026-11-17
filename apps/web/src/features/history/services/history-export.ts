@@ -235,20 +235,37 @@ export function historyExportPressOf(view: Pick<HistoryExportView, 'rows'>, buil
   return historyExportOverLimit(view) ? HISTORY_EXPORT_PRESS.refuse : HISTORY_EXPORT_PRESS.build;
 }
 
+/** The longest a yield waits for a frame: a hidden tab draws none, and the build must not wait for the admin to return. */
+export const HISTORY_EXPORT_FRAME_WAIT_MS = 100;
+
 /**
  * Lets the browser paint before the next stage of a build: the button's
  * *Izvoz…* first, then a frame between each stage the writer can split. A
  * frame is waited for (`requestAnimationFrame`, then a task, so the paint has
- * happened); where there is no frame to wait for (the node suite), a task.
+ * happened), but never longer than HISTORY_EXPORT_FRAME_WAIT_MS: a background
+ * tab runs no frames, and the build goes on without one. Where there is no
+ * frame to wait for (the node suite), a task.
  */
 export function yieldToUi(): Promise<void> {
   return new Promise((resolve) => {
+    let done = false;
     const task = (): void => {
+      if (done) return;
+      done = true;
       setTimeout(resolve, 0);
     };
 
-    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(task);
-    else task();
+    if (typeof requestAnimationFrame !== 'function') {
+      task();
+
+      return;
+    }
+    const timer = setTimeout(task, HISTORY_EXPORT_FRAME_WAIT_MS);
+
+    requestAnimationFrame(() => {
+      clearTimeout(timer);
+      task();
+    });
   });
 }
 

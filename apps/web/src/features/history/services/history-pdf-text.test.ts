@@ -33,6 +33,8 @@ describe('a string', () => {
 
   it('reads an arrow as the ASCII that says the same', () => {
     expect(drawableText('A → B ← C ↔ D ⇒ E', covers)).toEqual({ text: 'A -> B <- C <-> D => E', replaced: true });
+    // The heavy and emoji-styled arrows people type, and the long double ones.
+    expect(drawableText('A ➡️ B ⬅ C ⟹ D', covers)).toEqual({ text: 'A -> B <- C => D', replaced: true });
   });
 
   it('replaces an emoji with one replacement character per grapheme, a family or a flag included', () => {
@@ -57,6 +59,21 @@ describe('a string', () => {
 
   it('keeps a letter whose mark the font lacks, replacing only the mark', () => {
     expect(drawableText('a\u20DD', covers)).toEqual({ text: `a${REPLACEMENT}`, replaced: true });
+  });
+
+  it('keeps a digit or a sign whose mark the font lacks, and every missing mark in its place', () => {
+    expect(covers('\u20DD'.codePointAt(0) ?? 0)).toBe(false);
+    expect(covers('\u20E3'.codePointAt(0) ?? 0)).toBe(false);
+    expect(drawableText('5\u20DD', covers)).toEqual({ text: `5${REPLACEMENT}`, replaced: true });
+    expect(drawableText('#\u20E3', covers)).toEqual({ text: `#${REPLACEMENT}`, replaced: true });
+    expect(drawableText('a\u20DD\u20E3', covers)).toEqual({ text: `a${REPLACEMENT}${REPLACEMENT}`, replaced: true });
+  });
+
+  it('drops a supplementary variation selector, but replaces a format character that draws', () => {
+    expect(drawableText('a\u{E0100}b', covers)).toEqual({ text: 'ab', replaced: false });
+    // The Arabic number sign is a format character with a glyph: dropping it would hide it.
+    expect(covers(0x0600)).toBe(false);
+    expect(drawableText('\u0600', covers)).toEqual({ text: REPLACEMENT, replaced: true });
   });
 
   it('draws a compatibility form as its plain letters', () => {

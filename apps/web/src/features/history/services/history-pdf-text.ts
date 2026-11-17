@@ -32,15 +32,30 @@ const TRANSLITERATIONS: Readonly<Record<string, string>> = {
   '⇔': '<=>',
   '⟶': '->',
   '⟵': '<-',
+  '⟷': '<->',
+  '⟹': '=>',
+  '⟸': '<=',
   '➔': '->',
   '➜': '->',
+  '➡': '->',
+  '⬅': '<-',
 };
 
 /** What stands for a character the font cannot draw: the Unicode replacement character, which every Roboto face has (`pdf.test.ts`). */
 export const REPLACEMENT = '�';
 
-/** A character that draws nothing: a format character (a zero-width joiner) or a variation selector. */
-const INVISIBLE = /^[\p{Cf}\uFE00-\uFE0F]$/u;
+/**
+ * A character that draws nothing: a format character (a zero-width joiner, a
+ * tag) or a variation selector, the supplement's included. The prepended
+ * concatenation marks are format characters that DO draw (the Arabic number
+ * sign): they are replaced, never dropped.
+ */
+const INVISIBLE = /^[\p{Cf}\uFE00-\uFE0F\u{E0100}-\u{E01EF}]$/u;
+const DRAWN_FORMAT = /^[\u0600-\u0605\u06DD\u070F\u0890\u0891\u08E2\u{110BD}\u{110CD}]$/u;
+
+function invisible(character: string): boolean {
+  return INVISIBLE.test(character) && !DRAWN_FORMAT.test(character);
+}
 
 /** Whether the font draws a code point. */
 export type Covers = (point: number) => boolean;
@@ -68,7 +83,7 @@ export function drawableText(text: string, covers: Covers): { readonly text: str
     }
 
     // Invisible either way: a format character or a variation selector the font lacks.
-    const segment = [...grapheme].filter((character) => covers(character.codePointAt(0) ?? 0) || !INVISIBLE.test(character)).join('');
+    const segment = [...grapheme].filter((character) => covers(character.codePointAt(0) ?? 0) || !invisible(character)).join('');
 
     if (coveredAll(segment, covers)) {
       out += segment;
@@ -86,9 +101,10 @@ export function drawableText(text: string, covers: Covers): { readonly text: str
     } else if (compatible !== segment && coveredAll(compatible, covers)) {
       out += compatible;
       replaced = true;
-    } else if (covers(segment.codePointAt(0) ?? 0) && /^\p{L}/u.test(segment)) {
-      // A letter the font draws, with a mark it lacks: the letter stays, the mark is replaced.
-      out += [...segment].filter((character) => covers(character.codePointAt(0) ?? 0)).join('') + REPLACEMENT;
+    } else if (covers(segment.codePointAt(0) ?? 0) && !/^\p{M}/u.test(segment)) {
+      // A base the font draws (a letter, a digit, a sign), with a mark it lacks:
+      // the base stays and each missing mark is replaced, in place.
+      out += [...segment].map((character) => (covers(character.codePointAt(0) ?? 0) ? character : REPLACEMENT)).join('');
       replaced = true;
     } else {
       out += REPLACEMENT;

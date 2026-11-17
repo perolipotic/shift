@@ -2,6 +2,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
   HISTORY_EXPORT_FAILED,
+  HISTORY_EXPORT_FRAME_WAIT_MS,
   HISTORY_EXPORT_LIMIT,
   exportHistory,
   historyExportCount,
@@ -12,6 +13,7 @@ import {
   historyExportEmpty,
   historyExportMessageKey,
   historyExportOf,
+  yieldToUi,
   type HistoryExport,
   type HistoryExportInput,
   type HistoryExportView,
@@ -281,5 +283,50 @@ describe('the action', () => {
 
     await expect(exportHistory(inputOf(), () => Promise.reject(cause))).resolves.toBeNull();
     expect(logged).toHaveBeenCalledWith(HISTORY_EXPORT_FAILED, cause);
+  });
+});
+
+describe('a yield to the UI', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('waits for a frame, then a task', async () => {
+    vi.useFakeTimers();
+    let frame: (() => void) | null = null;
+
+    vi.stubGlobal('requestAnimationFrame', (callback: () => void) => {
+      frame = callback;
+
+      return 1;
+    });
+    let resolved = false;
+    const yielded = yieldToUi().then(() => {
+      resolved = true;
+    });
+
+    await vi.advanceTimersByTimeAsync(10);
+    expect(resolved).toBe(false);
+    (frame as (() => void) | null)?.();
+    await vi.advanceTimersByTimeAsync(0);
+    await yielded;
+    expect(resolved).toBe(true);
+  });
+
+  it('goes on without a frame in a hidden tab, which draws none', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('requestAnimationFrame', () => 1);
+    let resolved = false;
+    const yielded = yieldToUi().then(() => {
+      resolved = true;
+    });
+
+    await vi.advanceTimersByTimeAsync(HISTORY_EXPORT_FRAME_WAIT_MS - 1);
+    expect(resolved).toBe(false);
+    // The fallback fires at the limit, and the task it then queues runs next.
+    await vi.advanceTimersByTimeAsync(2);
+    await yielded;
+    expect(resolved).toBe(true);
   });
 });

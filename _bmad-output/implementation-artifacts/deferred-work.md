@@ -1577,3 +1577,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-epic-14-retro-a9-history-pdf.md`
   summary: The *Povijest promjena* PDF's 2000 cap counts entries, as the screen's *promjena* does, but pdfmake's cost grows with each entry's changes and text: 2000 entries of many changes each (a rotation edit) pass the cap at several times the measured 3 s. Weigh the cap by change lines (or estimated rows) if real exports show it.
   evidence: Epic 14 retro A9 (PDF) review (blind and edge-case layers). Measured only on entries of 3 changes; a typical entry has 1–3.
+
+## Deferred from: code review of spec-epic-14-retro-a9-history-pdf.md (2026-11-17)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-epic-14-retro-a9-history-pdf.md`
+  summary: In the *Povijest promjena* PDF, a name or text in a script pdfmake's Roboto lacks (Arabic, Hebrew, Devanagari, Thai, Korean, CJK) prints as a run of `�`: flagged by the header note, but the name cannot be read from the file. Greek and Cyrillic draw. Readable output needs a wider embedded font (for example a Noto subset registered as a fallback), a new asset with bundle and precache cost, which the spec puts under Ask First: a founder decision.
+  evidence: Second review of epic 14 retro A9 (PDF), Artifact Renderer layer: `h2-scripts.pdf` page 1 drew `محمد عبد الله` as `���� ��� ����` and `שלום עולם` as `���� ����`.
+- source_spec: `_bmad-output/implementation-artifacts/spec-epic-14-retro-a9-history-pdf.md`
+  summary: The over-limit refusal's wiring in `use-history-export.ts` and `history-export.tsx` (the `history.export.tooLarge` alert, no build, no failed line, cleared when the rows change) runs in no test: the web suite is node-only and no e2e reaches 2001 rows. Add a CI e2e in `e2e/tests/history/` that seeds more than 2000 events in one period (as `history-states.spec.ts` seeds 1101 renames) and asserts the alert, no download and no failed line.
+  evidence: Second review of epic 14 retro A9 (PDF), verification-gap layer. The decision (`historyExportPressOf`) and the service's own refusal are unit-tested.

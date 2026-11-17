@@ -6,6 +6,7 @@ import {
   type HistoryExportRow,
 } from '@/features/history/services/history-export';
 import { drawableExport, type Covers } from '@/features/history/services/history-pdf-text';
+import { graphemesOf } from '@/lib/i18n/format';
 
 /**
  * THE ONLY MODULE THAT KNOWS THE PDF WRITER (story 14.3; spine AD-11):
@@ -102,9 +103,10 @@ const LINE_CHARACTERS = Math.floor(FLEX_WIDTH / HISTORY_PDF_CHARACTER_WIDTH);
 /** The most lines one change's side may be estimated at: a longer side continues on the next row. */
 const SIDE_LINES = Math.floor((HISTORY_PDF_CHUNK_HEIGHT - CHANGE_GAP) / HISTORY_PDF_LINE_HEIGHT);
 
-/** `paragraph` cut into lines of at most `perLine` characters, after a space where one is near; joined back with `''`, it is `paragraph`. */
+/** `paragraph` cut into lines of at most `perLine` graphemes, after a space where one is near; joined back with `''`, it is `paragraph`. */
 function linesOf(paragraph: string, perLine = LINE_CHARACTERS): string[] {
-  const characters = [...paragraph];
+  // By grapheme, so a cut never parts a letter from a mark the font draws apart from it.
+  const characters = [...graphemesOf(paragraph)];
   const lines: string[] = [];
 
   while (characters.length > perLine) {
