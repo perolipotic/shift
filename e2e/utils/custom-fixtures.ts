@@ -13,7 +13,8 @@ import { TeamsPage } from '../pages/teams.page.ts';
 import { TodayPage } from '../pages/today.page.ts';
 import { NotificationsPage } from '../pages/notifications.page.ts';
 import { holdRotation, type RotationHold } from './database-helper.ts';
-import { readFixture, type Fixture, type FixtureBand } from './run-fixture.ts';
+import { midnightWait } from './dates.ts';
+import { readFixture, RUN_TIMEZONE, type Fixture, type FixtureBand } from './run-fixture.ts';
 
 export { expect } from '@playwright/test';
 
@@ -52,12 +53,50 @@ export interface RotationHoldFixtures {
 }
 
 /**
+ * Keeps every test on one side of midnight in the run's zone
+ * (spec-today-spec-midnight-safe; epic 14 retro). A test reads "today" in
+ * three places — its seed (`organization_today()` in SQL, or `new Date()` in
+ * Zagreb), its page (the browser clock, `timezoneId: 'Europe/Zagreb'`) and
+ * the RPCs the page calls — at different instants; four `today.spec.ts`
+ * cases failed when a shard ran from 23:55 to 00:05. One `now` is read as the
+ * test starts: closer to midnight than `midnightWait` allows, the test waits
+ * until just past it, its timeout raised by the wait. Playwright sets up auto
+ * fixtures before the test's other fixtures, its `beforeEach` hooks and its
+ * body; `beforeAll` hooks and worker fixtures run earlier and are NOT
+ * covered, so no spec seeds relative to today in them.
+ */
+export interface MidnightGuardFixtures {
+  readonly midnightGuard: void;
+}
+
+/**
  * `test` with the screens' page objects as test-scoped fixtures — one each,
  * and all of them as `pages` — and the run's
  * fixture as a worker-scoped one: read on first use inside a test, never when
  * a spec file is loaded, so listing the suite needs no provisioned run.
  */
-export const test = base.extend<PageObjects & PagesFixture & RotationHoldFixtures, { fixture: Fixture }>({
+export const test = base.extend<
+  PageObjects & PagesFixture & RotationHoldFixtures & MidnightGuardFixtures,
+  { fixture: Fixture }
+>({
+  midnightGuard: [
+    // eslint-disable-next-line no-empty-pattern -- Playwright requires the destructuring
+    async ({}, use, testInfo) => {
+      // `test.slow()` in a body is not known yet; `midnightWait` keeps 8 min at least.
+      const wait = midnightWait(new Date(), RUN_TIMEZONE, testInfo.timeout);
+      if (wait > 0) {
+        testInfo.annotations.push({
+          type: 'midnight-wait',
+          description: `started ${Math.ceil(wait / 1000)} s before 00:00:05 ${RUN_TIMEZONE}; waited until then`,
+        });
+        // 0 is no timeout at all (`--timeout=0`, `--debug`): left as it is.
+        if (testInfo.timeout > 0) testInfo.setTimeout(testInfo.timeout + wait);
+        await new Promise<void>((resolve) => setTimeout(resolve, wait));
+      }
+      await use();
+    },
+    { auto: true },
+  ],
   loginPage: async ({ page }, use) => {
     await use(new LoginPage(page));
   },
