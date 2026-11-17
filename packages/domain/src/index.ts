@@ -225,6 +225,7 @@ export {
   historyRecordOf,
   historyStatusOf,
   historyUnmatchedRequestIdsOf,
+  historyUnnamedMembersOf,
   type AuditEvent,
   type AuditOperation,
   type AuditOrigin,
@@ -242,6 +243,7 @@ export {
   type HistoryFilterOptions,
   type HistoryFilters,
   type HistoryKind,
+  type HistoryMemberEvent,
   type HistoryMemberIdentity,
   type HistoryOperand,
   type HistoryPeriod,
@@ -251,4 +253,5 @@ export {
   type HistoryRequestTableName,
   type HistoryStatus,
   type HistorySubjects,
+  type HistoryUnnamedMembers,
 } from './history.js';

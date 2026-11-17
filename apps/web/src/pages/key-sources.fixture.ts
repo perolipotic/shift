@@ -1131,10 +1131,12 @@ export const KEY_SOURCES = [
     // FIFTY-FOUR SINCE STORY 14.3: the export's failed and done lines; its
     // action's two labels come through `historyExportMessageKey` in
     // `@/features/history/services/history-export`, a key source.
+    // FIFTY-SIX SINCE EPIC 14 RETRO A9: the rows drawn in steps — the line
+    // that says how many are drawn, and *Prikaži još*.
     name: 'the Povijest promjena destination',
     file: POVIJEST_PROMJENA,
     keys: translationKeys,
-    strings: 54,
+    strings: 56,
   },
   {
     // STORY 14.2: the history's words — the record, action, field, value,

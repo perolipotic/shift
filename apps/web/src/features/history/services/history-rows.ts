@@ -828,3 +828,17 @@ export function historyTeamOptionsOf(
 export function historyKindOptionsOf(options: readonly HistoryFilterOption[]): readonly HistoryOptionView[] {
   return options.map((option) => ({ ...option, label: historyKindText(option.id) }));
 }
+
+/**
+ * How many rows *Povijest promjena* draws at first, and how many more each
+ * *Prikaži još* adds (epic 14 retro A9). Presentation only: the chips, the
+ * counts and the PDF read every row of the period.
+ */
+export const HISTORY_ROWS_STEP = 200;
+
+/** The first `limit` of `rows`, never fewer than one step; `rows` itself when all fit. */
+export function historyRowsShownOf(rows: readonly HistoryRow[], limit: number): readonly HistoryRow[] {
+  const shown = Math.max(limit, HISTORY_ROWS_STEP);
+
+  return rows.length <= shown ? rows : rows.slice(0, shown);
+}

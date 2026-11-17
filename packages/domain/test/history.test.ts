@@ -25,6 +25,7 @@ import {
   historyRecordOf,
   historyStatusOf,
   historyUnmatchedRequestIdsOf,
+  historyUnnamedMembersOf,
   type AuditEvent,
   type AuditRow,
   type HistoryContext,
@@ -1114,5 +1115,103 @@ describe('every real change names a field (retro A4)', () => {
       expect(change.field).not.toBeNull();
       for (const operand of [change.before, change.after]) expect(operand.type).not.toBe('raw');
     }
+  });
+});
+
+describe('a departed member is named from their DELETE event read beside the period (retro A9)', () => {
+  const GONE = 'member-gone';
+  const GONE_AUTH = 'auth-gone';
+  const goneDeleted = {
+    tableName: 'members',
+    oldRow: { id: GONE, auth_user_id: GONE_AUTH, name: 'Goran' },
+    newRow: null,
+  } as const;
+
+  it('asks for the member ids and actors no members row of the read carries, once each', () => {
+    const roster = event({
+      tableName: 'roster_overrides',
+      operation: 'INSERT',
+      newRow: { team_id: TEAM_A, member_out_id: GONE, member_in_id: IVO, date: '2026-11-12' },
+      actor: GONE_AUTH,
+    });
+    const swap = event({
+      tableName: 'swap_requests',
+      operation: 'UPDATE',
+      oldRow: { proposer_id: GONE, addressee_id: ANA },
+      newRow: { proposer_id: GONE, addressee_id: ANA },
+      actor: ANA_AUTH,
+    });
+    const ivo = event({
+      tableName: 'members',
+      operation: 'UPDATE',
+      oldRow: { id: IVO, auth_user_id: IVO_AUTH, name: 'I' },
+      newRow: { id: IVO, auth_user_id: IVO_AUTH, name: 'Ivo' },
+      actor: IVO_AUTH,
+    });
+    const system = event({ tableName: 'teams', operation: 'INSERT', newRow: {}, actor: null, sessionRole: 'postgres' });
+
+    expect(historyUnnamedMembersOf([roster, swap, ivo, system])).toEqual({
+      memberIds: [GONE, ANA],
+      authUserIds: [GONE_AUTH, ANA_AUTH],
+    });
+  });
+
+  it('asks for nobody when every name is in the read', () => {
+    const ana = event({
+      tableName: 'members',
+      operation: 'INSERT',
+      newRow: { id: ANA, auth_user_id: ANA_AUTH, name: 'Ana' },
+    });
+    const leave = event({ tableName: 'leave_records', operation: 'INSERT', newRow: { member_id: ANA } });
+
+    expect(historyUnnamedMembersOf([leave, ana])).toEqual({ memberIds: [], authUserIds: [] });
+  });
+
+  it('names the author from the departed rows, not as departed', () => {
+    const written = event({ tableName: 'teams', operation: 'INSERT', newRow: { name: 'A' }, actor: GONE_AUTH });
+
+    expect(historyEntriesOf([written], CONTEXT)[0]?.author).toEqual({ kind: 'departed' });
+    expect(historyEntriesOf([written], { ...CONTEXT, departed: [goneDeleted] })[0]?.author).toEqual({
+      kind: 'member',
+      memberId: GONE,
+    });
+  });
+
+  it('never draws a departed row as an entry of its own', () => {
+    const written = event({ tableName: 'teams', operation: 'INSERT', newRow: { name: 'A' }, actor: GONE_AUTH });
+
+    expect(historyEntriesOf([written], { ...CONTEXT, departed: [goneDeleted] })).toHaveLength(1);
+  });
+
+  it('keeps the current list over a departed row for the same auth user', () => {
+    const written = event({ tableName: 'teams', operation: 'INSERT', newRow: { name: 'A' }, actor: ANA_AUTH });
+    const stale = { tableName: 'members', oldRow: { id: 'member-old', auth_user_id: ANA_AUTH, name: 'Old' }, newRow: null };
+
+    expect(historyEntriesOf([written], { ...CONTEXT, departed: [stale] })[0]?.author).toEqual({
+      kind: 'member',
+      memberId: ANA,
+    });
+  });
+
+  it("ranks a departed row below the read's own members rows, and the newest DELETE first among departed rows", () => {
+    const rejoined = 'member-rejoined';
+    const written = event({ tableName: 'teams', operation: 'INSERT', newRow: { name: 'A' }, actor: GONE_AUTH });
+    // A rejoined auth user: the read holds their newer membership, the departed read an older one's DELETE.
+    const joined = event({
+      tableName: 'members',
+      operation: 'INSERT',
+      newRow: { id: rejoined, auth_user_id: GONE_AUTH, name: 'Goran novi' },
+    });
+    const older = { tableName: 'members', oldRow: { id: 'member-first', auth_user_id: GONE_AUTH, name: 'G' }, newRow: null };
+
+    expect(historyEntriesOf([written, joined], { ...CONTEXT, departed: [goneDeleted] })[0]?.author).toEqual({
+      kind: 'member',
+      memberId: rejoined,
+    });
+    // Oldest first, as `readHistoryDeparted` returns them: the newest DELETE names the author.
+    expect(historyEntriesOf([written], { ...CONTEXT, departed: [older, goneDeleted] })[0]?.author).toEqual({
+      kind: 'member',
+      memberId: GONE,
+    });
   });
 });

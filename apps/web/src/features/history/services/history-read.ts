@@ -2,12 +2,14 @@ import { queryOptions } from '@tanstack/react-query';
 import {
   historyReadWindowOf,
   historyUnmatchedRequestIdsOf,
+  historyUnnamedMembersOf,
   type AuditOperation,
   type AuditOrigin,
   type AuditRow,
   type HistoryPeriod,
   type HistoryRequestRow,
   type HistoryRequestTableName,
+  type HistoryUnnamedMembers,
 } from '@shift/domain';
 
 /**
@@ -38,6 +40,15 @@ import {
  * read by primary key under their own `*_select_own_organization` policies, in
  * chunks of {@link HISTORY_REQUEST_CHUNK} ids issued in parallel, with the few columns that name
  * a subject. A refusal or a malformed row makes the whole read unavailable.
+ *
+ * THE DEPARTED MEMBERS (epic 14 retro A9; AD-11 "Attribution"): the member ids
+ * and actors the events name but no `members` row of the read carries are looked up among the organization's `members` DELETE events — by
+ * `row_id`, and by the old row's `auth_user_id` for an actor — in chunks of
+ * {@link HISTORY_REQUEST_CHUNK}, inside the same query and beside the request
+ * read. The calls go out on most loads (a current member with no `members`
+ * event in the period is asked for too); the answers hold only the deleted. A member still in the
+ * organization is in the current list, so one with neither is deleted, and its
+ * DELETE row is its last. These rows name; they are never entries.
  */
 
 /** The table read (0061). */
@@ -130,6 +141,8 @@ export interface HistoryRead {
   readonly markers: readonly ReadAuditEvent[];
   /** The current rows of the requests whose decisions have no request event read (retro A3). */
   readonly requests: readonly HistoryRequestRow[];
+  /** The `members` DELETE events of the members the read names but holds no row for (retro A9), by `id`. */
+  readonly departed: readonly ReadAuditEvent[];
 }
 
 const OPERATIONS: readonly AuditOperation[] = ['INSERT', 'UPDATE', 'DELETE', 'HISTORY_BEGINS'];
@@ -320,6 +333,17 @@ export function readHistoryRequestOf(
   return { tableName: table, id, row: kept };
 }
 
+/** `all` in runs of {@link HISTORY_REQUEST_CHUNK}, one call each. */
+function chunksOf(all: readonly string[]): (readonly string[])[] {
+  const chunks: (readonly string[])[] = [];
+
+  for (let start = 0; start < all.length; start += HISTORY_REQUEST_CHUNK) {
+    chunks.push(all.slice(start, start + HISTORY_REQUEST_CHUNK));
+  }
+
+  return chunks;
+}
+
 async function readRequestChunk(
   table: HistoryTable,
   name: HistoryRequestTable,
@@ -354,18 +378,80 @@ export async function readHistoryRequests(
 ): Promise<readonly HistoryRequestRow[]> {
   signal?.throwIfAborted();
 
-  const reads = HISTORY_REQUEST_TABLES.flatMap((name) => {
-    const all = ids[name];
-    const chunks: (readonly string[])[] = [];
-
-    for (let start = 0; start < all.length; start += HISTORY_REQUEST_CHUNK) {
-      chunks.push(all.slice(start, start + HISTORY_REQUEST_CHUNK));
-    }
-
-    return chunks.map((chunk) => readRequestChunk(source(name), name, chunk));
-  });
+  const reads = HISTORY_REQUEST_TABLES.flatMap((name) =>
+    chunksOf(ids[name]).map((chunk) => readRequestChunk(source(name), name, chunk)),
+  );
 
   return (await Promise.all(reads)).flat();
+}
+
+/** The `members` table, whose DELETE events name a departed member. */
+const MEMBERS_TABLE_NAME = 'members';
+const DELETE: AuditOperation = 'DELETE';
+const ROW_ID = 'row_id';
+/** A PostgREST JSON path: the deleted row's auth user. */
+const OLD_AUTH_USER = 'old_row->>auth_user_id';
+
+async function readDepartedChunk(
+  audit: HistoryTable,
+  column: typeof ROW_ID | typeof OLD_AUTH_USER,
+  chunk: readonly string[],
+): Promise<readonly ReadAuditEvent[]> {
+  const asked = new Set(chunk);
+  const events = eventsOf(
+    await audit
+      .select(HISTORY_COLUMNS)
+      .eq('table_name', MEMBERS_TABLE_NAME)
+      .eq('operation', DELETE)
+      .in(column, chunk)
+      // Newest first, so the latest DELETE of an id comes first. A member row
+      // is deleted once, but an auth user could in principle lose a second
+      // membership (an operator's delete and re-insert): a page, not
+      // `chunk.length`, so no extra row pushes another id's out unseen.
+      .order(ID, DESCENDING)
+      .limit(HISTORY_PAGE_ROWS),
+  );
+
+  if (events.length >= HISTORY_PAGE_ROWS) throw new Error(HISTORY_UNAVAILABLE);
+
+  for (const event of events) {
+    const key = column === ROW_ID ? event.rowId : event.oldRow?.['auth_user_id'];
+
+    if (event.tableName !== MEMBERS_TABLE_NAME || event.operation !== DELETE || typeof key !== 'string' || !asked.has(key)) {
+      throw new Error(HISTORY_UNAVAILABLE);
+    }
+  }
+
+  return events;
+}
+
+/**
+ * The organization's `members` DELETE events of `unnamed`'s member ids (by
+ * `row_id`) and actors (by the old row's `auth_user_id`),
+ * {@link HISTORY_REQUEST_CHUNK} a call, every call issued at once, each event
+ * once, oldest first by `id`. No call when nobody is unnamed, nor when `signal`
+ * is already aborted; calls already issued are not cancelled (they are few and small).
+ *
+ * @throws Error(HISTORY_UNAVAILABLE) on a refusal or a row that is not a DELETE asked for.
+ */
+export async function readHistoryDeparted(
+  audit: HistoryTable,
+  unnamed: HistoryUnnamedMembers,
+  signal?: AbortSignal,
+): Promise<readonly ReadAuditEvent[]> {
+  signal?.throwIfAborted();
+
+  const reads = [
+    ...chunksOf(unnamed.memberIds).map((chunk) => readDepartedChunk(audit, ROW_ID, chunk)),
+    ...chunksOf(unnamed.authUserIds).map((chunk) => readDepartedChunk(audit, OLD_AUTH_USER, chunk)),
+  ];
+  const byId = new Map<number, ReadAuditEvent>();
+
+  for (const event of (await Promise.all(reads)).flat()) byId.set(event.id, event);
+
+  // Oldest first by `id`: `memberIdentitiesOf` reads them in this order, later winning; the hook
+  // reverses them for `namesFrom`, which reads newest first. Both end on the newest DELETE.
+  return [...byId.values()].sort((first, second) => first.id - second.id);
 }
 
 /** One period's snapshot key: `[root, from, to]`. */
@@ -388,10 +474,14 @@ export function historyQueryOptions(source: (table: HistoryTableName) => History
         readHistoryEvents(audit, period, signal),
         readHistoryMarkers(audit),
       ]);
-      // Only the decisions whose request has no event read: none, no read.
-      const requests = await readHistoryRequests(source, historyUnmatchedRequestIdsOf(events), signal);
+      // Only the decisions whose request has no event read, and the members
+      // the events name but cannot: none, no read. Both at once.
+      const [requests, departed] = await Promise.all([
+        readHistoryRequests(source, historyUnmatchedRequestIdsOf(events), signal),
+        readHistoryDeparted(audit, historyUnnamedMembersOf(events), signal),
+      ]);
 
-      return { events, markers, requests };
+      return { events, markers, requests, departed };
     },
     staleTime: 0,
     retry: 1,

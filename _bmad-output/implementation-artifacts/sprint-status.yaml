@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 11-16-2026 20:47
+last_updated: 11-17-2026 09:45
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -1151,7 +1151,7 @@ action_items:
       split loses context cells, uncapped main-thread PDF/rendering, non-Roboto boxes,
       departed member naming, amend-pairing proof, missing history e2e"
     owner: "PO"
-    status: open
+    status: open  # founder 2026-11-17: fix all; the four 14.2 deferrals built (spec-epic-14-retro-a9-history-page; built, CI pending); the 14.3 PDF deferrals go to another story
     ref: "_bmad-output/implementation-artifacts/epic-14-retro-2026-11-16.md"
   - id: "epic-14-retro-item-70-a10-process-render-the-artifact-is-a-sta"
     epic: 14

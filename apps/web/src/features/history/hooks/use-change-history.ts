@@ -110,8 +110,9 @@ export type HistoryView =
  *
  * THE READS: the organization (its zone, so the period is whole days in it),
  * one period of `audit_events` under one key (AD-13), with the current rows
- * of the requests whose decisions have no request event in it (retro A3),
- * and the four name lists under their own shared keys — members (who each
+ * of the requests whose decisions have no request event in it (retro A3)
+ * and the DELETE events of the departed members it names (retro A9), and
+ * the four name lists under their own shared keys — members (who each
  * auth user is), teams, shift types and absence types.
  *
  * THE CHIPS filter in the browser over the one snapshot; a value the period
@@ -194,8 +195,12 @@ export function useChangeHistory(search: HistorySearch, navigate: HistoryNavigat
       period,
       members: membersData.members.map((member) => ({ id: member.id, authUserId: member.authUserId })),
       requests: historyData.requests,
+      departed: historyData.departed,
     });
-    const names = historyNamesOf(events, {
+    // `namesFrom` reads newest first, so the departed members' DELETE rows go last, newest
+    // first: below the read's own rows, the newest DELETE winning among them. The current
+    // lists still win over all.
+    const names = historyNamesOf([...events, ...[...historyData.departed].reverse()], {
       members: membersData.members,
       teams: teamsData,
       shiftTypes: shiftTypesData.types,
