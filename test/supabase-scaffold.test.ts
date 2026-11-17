@@ -4837,6 +4837,19 @@ describe('the access-control migration', () => {
     readonly inserters: ReadonlySet<string>;
     /** The functions that run dynamic SQL (`execute`) naming an amend table. */
     readonly dynamic: readonly string[];
+    /**
+     * Each migration whose own top-level DML (`update`, `insert`, `merge`,
+     * `delete`, `copy`, `do`, `select`, `with`, `call`, closed over the
+     * functions it calls by name) writes an amend table, and the tables, or
+     * runs dynamic SQL naming one (`removed: ['execute']`). A migration is one
+     * transaction, so its removal and its insert would share one `now()`.
+     * Read only with `history`: in final mode a call resolves to the surviving
+     * definition, not the one live when the migration ran. An empty map also
+     * covers several files applied in one transaction: no file writes one at all.
+     */
+    readonly fixups: ReadonlyMap<string, { readonly removed: readonly string[]; readonly inserted: readonly string[] }>;
+    /** Every migration with top-level DML of any table: a floor that the statement reader works. */
+    readonly dmlFiles: readonly string[];
   }
 
   /**
@@ -4845,8 +4858,15 @@ describe('the access-control migration', () => {
    * one soft-removes (`update <table> … removed_at =`) and inserts into, closed
    * over the functions it calls. Comments stripped; `public.` and quoted
    * spellings read alike.
+   *
+   * With `history`, a drop forgets nothing: each name holds EVERY body it has
+   * had in any migration, so a writer since replaced or dropped is still read,
+   * and so is every call it made. That is what the backfill rests on: the rows
+   * 0061 reconstructed were written by whichever version was live then.
+   * Joining a name's versions over-reads (a removal in one version and an
+   * insert in another read as one writer), which can only fail the pin.
    */
-  function amendWritersOf(texts: readonly (readonly [string, string])[]): AmendWriters {
+  function amendWritersOf(texts: readonly (readonly [string, string])[], { history = false } = {}): AmendWriters {
     const bodies = new Map<string, string>();
     /** Each name's distinct argument lists since its last drop: a drop of one overload must not forget another. */
     const signatures = new Map<string, Set<string>>();
@@ -4859,8 +4879,13 @@ describe('the access-control migration', () => {
     const drop = new RegExp(String.raw`^drop\s+(?:function|procedure)\s+(?:if\s+exists\s+)?${name}`, 'i');
     const trigger = new RegExp(String.raw`^create\s+(?:or\s+replace\s+)?(?:constraint\s+)?trigger\b[\s\S]*?\bexecute\s+(?:function|procedure)\s+${name}\s*\(`, 'i');
 
-    for (const [, text] of texts) {
+    /** Each migration's own top-level DML statements, lower-cased and joined. */
+    const topLevel = new Map<string, string>();
+    const dml = /^(?:update|insert|merge|delete|copy|do|select|with|call)\b/i;
+
+    for (const [file, text] of texts) {
       for (const statement of sqlStatements(stripLineComments(text))) {
+        if (dml.test(statement)) topLevel.set(file, `${topLevel.get(file) ?? ''}\n;\n${statement.toLowerCase()}`);
         const creation = create.exec(statement);
         const created = creation?.[1]?.toLowerCase();
         const dropped = drop.exec(statement)?.[1]?.toLowerCase();
@@ -4875,7 +4900,7 @@ describe('the access-control migration', () => {
         }
         // Every name a `drop function a(…), b(…)` lists, unless the name has had more than one
         // argument list: then the drop may leave an overload, and its bodies are kept (over-read).
-        if (dropped !== undefined) {
+        if (dropped !== undefined && !history) {
           for (const listed of statement.toLowerCase().matchAll(new RegExp(String.raw`(?:(?:function|procedure)\s+(?:if\s+exists\s+)?|,\s*)${name}\s*(?:\(|,|$)`, 'g'))) {
             const fn = listed[1];
 
@@ -4892,11 +4917,12 @@ describe('the access-control migration', () => {
     const direct = (pattern: (table: string) => RegExp) =>
       new Map([...bodies].map(([fn, body]) => [fn, new Set(AMEND_TABLES.filter((table) => pattern(table).test(body)))]));
     // `set removed_at = …`, or `set (…, removed_at, …) = (…)`.
-    const removes = direct(
-      (table) => new RegExp(String.raw`\bupdate\s+${schema}"?${table}"?\b[^;]*?(?:\bremoved_at\s*=|\bset\s*\([^)]*\bremoved_at\b)`),
-    );
+    const removesTable = (table: string) =>
+      new RegExp(String.raw`\bupdate\s+${schema}"?${table}"?\b[^;]*?(?:\bremoved_at\s*=|\bset\s*\([^)]*\bremoved_at\b)`);
     // `insert into`, or a `merge into` (which can insert).
-    const inserts = direct((table) => new RegExp(String.raw`\b(?:insert|merge)\s+into\s+${schema}"?${table}"?\b`));
+    const insertsTable = (table: string) => new RegExp(String.raw`\b(?:insert|merge)\s+into\s+${schema}"?${table}"?\b`);
+    const removes = direct(removesTable);
+    const inserts = direct(insertsTable);
     const calls = new Map(
       [...bodies].map(([fn, body]) => [fn, [...bodies.keys()].filter((other) => other !== fn && new RegExp(String.raw`\b${other}\s*\(`).test(body))]),
     );
@@ -4933,7 +4959,26 @@ describe('the access-control migration', () => {
       if (both.length > 0) pairing.set(fn, both);
     }
 
-    return { removers, pairing, triggers, inserters, dynamic };
+    // A migration's own DML, directly and through every function it calls by name.
+    const fixups = new Map<string, { removed: string[]; inserted: string[] }>();
+
+    for (const [file, statements] of [...topLevel].sort(([first], [second]) => first.localeCompare(second))) {
+      const removed = new Set<string>(AMEND_TABLES.filter((table) => removesTable(table).test(statements)));
+      const inserted = new Set<string>(AMEND_TABLES.filter((table) => insertsTable(table).test(statements)));
+
+      // A `do` block's dynamic SQL naming an amend table is refused, as in a function body.
+      if (/\bexecute\s+(?:format\s*\(|'|\w)/.test(statements) && AMEND_TABLES.some((table) => statements.includes(table))) {
+        removed.add('execute');
+      }
+      for (const fn of bodies.keys()) {
+        if (!new RegExp(String.raw`\b${fn}"?\s*\(`).test(statements)) continue;
+        for (const table of closed(removes, fn)) removed.add(table);
+        for (const table of closed(inserts, fn)) inserted.add(table);
+      }
+      if (removed.size > 0 || inserted.size > 0) fixups.set(file, { removed: [...removed].sort(), inserted: [...inserted].sort() });
+    }
+
+    return { removers, pairing, triggers, inserters, dynamic, fixups, dmlFiles: [...topLevel.keys()].sort() };
   }
 
   it('pairs a soft-remove with an insert of one amend table in one function only in the amend RPCs (epic 14 retro A9)', () => {
@@ -4984,6 +5029,159 @@ describe('the access-control migration', () => {
     expect(writers.dynamic).toEqual([]);
   });
 
+  it('gives a backfilled removal and insert one instant only when one amend wrote both, in every version ever live (epic 14 retro A9)', () => {
+    // THE BACKFILLED HALF of `amendPairsOf` (`packages/domain/src/history.ts`):
+    // a `removed` UPDATE and an INSERT, both `origin = 'backfill'`, at one
+    // `occurred_at` and one key, are read as one *izmijenjeno*. The chain:
+    //   1. 0061 dates a removal at the row's `removed_at` and an insert at its `created_at`.
+    //   2. Every write of `removed_at` to an amend table, in every migration, is `now()`;
+    //      no insert names `created_at` or `removed_at`, `created_at` defaults to `now()`,
+    //      and no session may write either column (no update grant, column-scoped inserts).
+    //      So both instants are a transaction's `now()`, its start.
+    //   3. Only the three amend functions, in ANY version ever created (the rows 0061
+    //      reconstructed were written by whichever was live), and no migration's own
+    //      DML, soft-remove and insert one amend table in one transaction.
+    // WHAT THIS CANNOT PROVE: that two DIFFERENT transactions never began in the
+    // same microsecond, one removing and one inserting under one key. That rests
+    // on the real pre-0061 data (it is not checked against a database); the spec
+    // `spec-epic-14-a9-backfill-amend-pairing.md` says so. Nor does it read the
+    // operator scripts: `operator/demo-organization.sql` (local and staging only)
+    // inserts with an explicit `created_at` and never removes, asserted below.
+    const texts = migrationTexts();
+    const backfill = /-- BACKFILL BEGINS([\s\S]*?)-- BACKFILL ENDS/.exec(
+      readFileSync(join(supabaseRoot, 'migrations', '0061_audit_events.sql'), 'utf8'),
+    )?.[1];
+
+    // 1. The instants.
+    expect(backfill, '0061 has no backfill block').toBeDefined();
+    for (const [table, rank] of [['shift_type_overrides', 2], ['roster_overrides', 2], ['leave_records', 1]] as const) {
+      expect(backfill, `${table}'s removal is not dated at its removed_at`).toContain(
+        `('${table}', ${String(rank)}, 'removed_at', 'removed_by', array['removed_by', 'removed_at'])`,
+      );
+    }
+    expect(backfill, 'a backfilled insert is not dated at the row\'s created_at').toMatch(
+      /'INSERT',\s+attributed\.source,[\s\S]*?\(attributed\.source ->> 'created_at'\)::timestamptz,\s+0\s+from attributed/,
+    );
+    expect(backfill, 'a backfilled update is not dated at its pair\'s instant').toMatch(
+      /instants \(table_name, source, instant\) as \(\s+select distinct attributed\.table_name, attributed\.source, \(attributed\.source ->> pairs\.at_column\)::timestamptz/,
+    );
+    expect(backfill).toMatch(/instants\.instant,\s+1\s+from instants/);
+
+    // 2. Both instants are a transaction's now().
+    const stripped = texts.map(([, text]) => stripLineComments(text).toLowerCase()).join('\n;\n');
+    const table = String.raw`(?:"?\w+"?\.)?"?(${AMEND_TABLES.join('|')})"?\b`;
+    // The whole value, up to the next assignment or clause: `now() - interval '1 ms'` is not `now()`.
+    const removals = [
+      ...stripped.matchAll(
+        new RegExp(String.raw`\bupdate\s+${table}[^;]*?\bremoved_at\s*=\s*([^,;]+?)\s*(?:,|;|\bwhere\b|\bfrom\b|\breturning\b|$)`, 'g'),
+      ),
+    ];
+
+    // Every remove_* and amend_* version since 0019 writes one: 0019, 0022, 0026, 0029, 0035, 0036, 0039, 0043, 0054, 0058 and more.
+    expect(removals.length, 'the removal parser found the soft-removes').toBeGreaterThanOrEqual(20);
+    expect(new Set(removals.map((match) => match[2])), 'a removal is dated by something other than now()').toEqual(new Set(['now()']));
+    expect(stripped, 'a tuple `set (…, removed_at, …)` this check does not read').not.toMatch(
+      new RegExp(String.raw`\bupdate\s+${table}[^;]*?\bset\s*\([^)]*\bremoved_at\b`),
+    );
+    expect(stripped, 'an update rewrites an amend table\'s created_at').not.toMatch(
+      new RegExp(String.raw`\bupdate\s+${table}[^;]*?\bcreated_at\s*=`),
+    );
+    expect(stripped, 'an upsert into an amend table, whose update this check does not read').not.toMatch(
+      new RegExp(String.raw`\binsert\s+into\s+${table}[^;]*?\bon\s+conflict\b[^;]*?\bdo\s+update\b`),
+    );
+    expect(stripped, 'a trigger or function assigns an instant column of a row it is handed').not.toMatch(
+      /\bnew\.(created_at|removed_at)\s*:?=(?!=)/,
+    );
+    expect(stripped, 'a rule on an amend table, which this check does not read').not.toMatch(
+      new RegExp(String.raw`\bcreate\s+(?:or\s+replace\s+)?rule\b[^;]*?\bon\s+${table}`),
+    );
+    // Block comments are not stripped by the reader; none exists, so none can hide or fake a write.
+    expect(stripped, 'a block comment the statement reader would read as code').not.toContain('/*');
+    const inserts = [...stripped.matchAll(new RegExp(String.raw`\b(insert|merge)\s+into\s+${table}\s*(\([^)]*\))?`, 'g'))];
+
+    expect(inserts.length, 'the insert parser found the inserts').toBeGreaterThan(20);
+    expect(
+      inserts.filter(([, verb, , columns]) => verb !== 'insert' || columns === undefined || /\b(created_at|removed_at)\b/.test(columns)),
+      'an insert into an amend table names its instant, or names no columns',
+    ).toEqual([]);
+    for (const amended of AMEND_TABLES) {
+      expect(stripped, `${amended}.created_at does not default to now()`).toMatch(
+        new RegExp(String.raw`create table (?:public\.)?${amended} \([^;]*?\bcreated_at timestamptz not null default now\(\)`),
+      );
+    }
+    expect(stripped, 'a migration alters, adds, drops or renames an instant column of an amend table').not.toMatch(
+      new RegExp(
+        String.raw`\balter table\s+(?:if\s+exists\s+)?(?:only\s+)?${table}[^;]*\b(?:alter|add|drop|rename)\s+(?:column\s+)?(?:if\s+(?:not\s+)?exists\s+)?(created_at|removed_at)\b`,
+      ),
+    );
+    const statements = texts.flatMap(([, text]) =>
+      sqlStatements(stripLineComments(text)).map((statement) => statement.toLowerCase().replaceAll(/\s+/g, ' ')),
+    );
+    const grants = statements.filter((statement) => new RegExp(String.raw`^grant\b.* on (?:table )?(?:[^;]*,\s*)?${table}`).test(statement));
+
+    // 0019, 0026, 0028, 0054 and 0058: the three tables' column inserts and leave_records' two later columns.
+    expect(grants.length, 'the grant parser found the insert grants').toBe(5);
+    expect(
+      grants.filter((statement) => !/^grant insert \([^)]*\) on /.test(statement) || /\b(created_at|removed_at)\b/.test(statement)),
+      'a session may write an amend table\'s instant, or update it',
+    ).toEqual([]);
+    expect(
+      statements.filter((statement) => /^alter default privileges\b/.test(statement) || /^grant\b.* on all tables in schema\b/.test(statement)),
+      'a grant over every table, which the per-table check does not read',
+    ).toEqual([]);
+    for (const amended of AMEND_TABLES) {
+      // Supabase's default privileges grant every table privilege to anon and authenticated: the revoke is the lock.
+      expect(statements, `${amended} does not revoke Supabase's default insert and update`).toContain(
+        `revoke insert, update, delete, truncate, references, trigger on table public.${amended} from anon, authenticated`,
+      );
+    }
+    // `service_role` keeps every privilege, so: no Edge Function writes (or reads) an amend table.
+    const edge = collectFiles(join(supabaseRoot, 'functions'), (file) => /\.(?:[mc]?[tj]sx?|sql)$/.test(file));
+
+    expect(edge.length, 'the Edge Function sources were found').toBeGreaterThan(0);
+    expect(
+      edge.filter((file) => new RegExp(String.raw`\b(${AMEND_TABLES.join('|')})\b`).test(readFileSync(file, 'utf8'))),
+      'an Edge Function names an amend table',
+    ).toEqual([]);
+    // Every operator script, not only today's two: none soft-removes, directly or through a remove or amend.
+    const operator = collectFiles(join(supabaseRoot, 'operator'), (file) => file.endsWith('.sql'));
+
+    expect(operator.length, 'the operator scripts were found').toBeGreaterThanOrEqual(2);
+    for (const script of operator) {
+      expect(readFileSync(script, 'utf8'), `${script} soft-removes`).not.toMatch(
+        /\bremoved_at\b|\b(?:remove|amend)_(?:leave_record|roster_override|shift_type_override)\b/,
+      );
+    }
+
+    // 3. Every version of every function, and every migration's own DML.
+    const writers = amendWritersOf(texts, { history: true });
+
+    // The parser keys bodies by name and does not follow a rename; none happens.
+    expect(statements.filter((statement) => /^alter (?:function|procedure)\b.*\brename to\b/.test(statement))).toEqual([]);
+
+    expect(Object.fromEntries(writers.pairing)).toEqual({
+      amend_leave_record: ['leave_records'],
+      amend_roster_override: ['roster_overrides'],
+      amend_shift_type_override: ['shift_type_overrides'],
+    });
+    expect([...writers.removers.keys()].sort()).toEqual([
+      'amend_leave_record',
+      'amend_roster_override',
+      'amend_shift_type_override',
+      'remove_leave_record',
+      'remove_roster_override',
+      'remove_shift_type_override',
+    ]);
+    expect([...writers.removers.keys()].filter((fn) => writers.triggers.has(fn))).toEqual([]);
+    expect([...writers.triggers].filter((fn) => writers.inserters.has(fn))).toEqual([]);
+    expect(writers.triggers.size, 'the trigger parser found the triggers').toBeGreaterThan(10);
+    expect(writers.dynamic).toEqual([]);
+    expect(Object.fromEntries(writers.fixups), 'a migration writes an amend table itself').toEqual({});
+    expect(writers.dmlFiles, 'the top-level DML parser found the migrations\' own writes').toEqual(
+      expect.arrayContaining(['0033_replacement_resolution_lifetime.sql', '0061_audit_events.sql']),
+    );
+  });
+
   it('finds a remove-and-insert writer directly, through a call, and forgets a dropped one', () => {
     const body = (text: string) => `as $$\nbegin\n${text}\nend;\n$$;\n`;
     const writers = amendWritersOf([
@@ -5021,6 +5219,53 @@ describe('the access-control migration', () => {
     ]);
     expect([...writers.triggers]).toEqual(['remover']);
     expect(writers.dynamic, 'dynamic SQL naming an amend table is caught').toEqual(['dynamic']);
+  });
+
+  it('keeps every version ever created in history mode, and reads a migration\'s own writes', () => {
+    const body = (text: string) => `as $$\nbegin\n${text}\nend;\n$$;\n`;
+    const texts = [
+      [
+        '0001.sql',
+        `create function public.remover(p uuid) returns void language plpgsql ${body('  update public.roster_overrides set removed_at = now() where id = p;')}` +
+          `create function public.gone() returns void language plpgsql ${body("  update shift_type_overrides set removed_at = now();\n  insert into shift_type_overrides default values;")}` +
+          `create function public.replaced() returns void language plpgsql ${body('  update leave_records set removed_at = now();\n  insert into leave_records default values;')}`,
+      ],
+      [
+        '0002.sql',
+        'drop function if exists public.gone();\n' +
+          `create or replace function public.replaced() returns void language plpgsql ${body('  perform 1;')}`,
+      ],
+      [
+        '0003.sql',
+        "update public.roster_overrides set reason = 'x';\n" +
+          "insert into public.roster_overrides (id) values (gen_random_uuid());\n" +
+          'select public."remover"(null);\n',
+      ],
+      [
+        '0004.sql',
+        "do $$ begin perform public.remover(null); end $$;\nupdate public.teams set name = 'x';\n" +
+          '-- a comment naming insert into leave_records is not a write\n' +
+          "grant execute on function public.replaced() to authenticated;\n",
+      ],
+      ['0005.sql', "do $$ begin execute format('insert into %I default values', 'leave_records'); end $$;\n"],
+      // DML of no amend table, and a grant naming a pairing function, which is not a call.
+      ['0006.sql', "update public.teams set name = 'y';\ngrant execute on function public.replaced() to authenticated;\n"],
+    ] as const;
+    const final = amendWritersOf(texts);
+    const history = amendWritersOf(texts, { history: true });
+
+    // `create or replace` already joins a name's bodies; only the dropped one differs.
+    expect(Object.fromEntries(final.pairing)).toEqual({ replaced: ['leave_records'] });
+    expect(Object.fromEntries(history.pairing)).toEqual({ gone: ['shift_type_overrides'], replaced: ['leave_records'] });
+    expect(Object.fromEntries(history.fixups)).toEqual({
+      // Its own insert, and a removal through a call: one transaction pairs them.
+      '0003.sql': { removed: ['roster_overrides'], inserted: ['roster_overrides'] },
+      // A `do` block's call is read too; a `grant … function replaced(` and a comment are not writes.
+      '0004.sql': { removed: ['roster_overrides'], inserted: [] },
+      // Dynamic SQL in a `do` block is refused, not read.
+      '0005.sql': { removed: ['execute'], inserted: [] },
+    });
+    expect(history.dmlFiles).toEqual(['0003.sql', '0004.sql', '0005.sql', '0006.sql']);
   });
 });
 
