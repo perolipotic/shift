@@ -23,6 +23,7 @@ import {
   formatDayMonthRange,
   formatMonthName,
   formatList,
+  graphemesOf,
   formatLeaveDays,
   formatNumber,
   formatTime,
@@ -282,6 +283,8 @@ const UNZONED_ENTRY_POINTS = [
   'formatMinuteOfDay',
   // Story 5.4b. Names joined as prose: no instant at all.
   'formatList',
+  // Epic 14 retro A9. A string's graphemes, for the history PDF: no instant.
+  'graphemesOf',
 ];
 
 /**
@@ -486,6 +489,10 @@ describe('numbers use Croatian grouping and decimal separators', () => {
     // Story 5.4b: names joined as Croatian prose.
     expect(formatList(['Ante Bilić', 'Frane Lozić', 'Karlo Jelić'])).toBe('Ante Bilić, Frane Lozić i Karlo Jelić');
     expect(formatList(['Ante Bilić'])).toBe('Ante Bilić');
+  });
+
+  it('splits a string into its graphemes: a family emoji, a flag and a decomposed č are one each', () => {
+    expect(graphemesOf('a👩‍👩‍👧🇭🇷c\u030C')).toEqual(['a', '👩‍👩‍👧', '🇭🇷', 'c\u030C']);
   });
 
   it('renders a count without decimals when asked', () => {

@@ -266,6 +266,9 @@ const SANCTIONED_PLURAL_KEYS = [
   // STORY 14.3: the status line after a downloaded history PDF — its name and
   // how many changes it holds, `1 promjenom`, `3 promjene`, `5 promjena`.
   'history.export.done',
+  // EPIC 14 RETRO A9: the history PDF's refusal of more changes than one file
+  // takes — `prikazana je 2.001 promjena`, `… 2.002 promjene`, `… 4.500 promjena`.
+  'history.export.tooLarge',
   // EPIC 14 RETRO A4: a rotation pattern in the history, by its steps —
   // `1 korak: Dan`, `2 koraka: Dan i Noć`, `5 koraka: …`.
   'history.value.rotationPattern',
@@ -2653,6 +2656,10 @@ const SANCTIONED_SCREEN_KEYS = [
   'history.export.page',
   'history.export.before',
   'history.export.after',
+  // EPIC 14 RETRO A9 (PDF): *(nastavak)* on a row continuing an entry too tall
+  // for one page, and the note when a character the font lacks was replaced.
+  'history.export.continued',
+  'history.export.glyphNote',
   'history.chip.period',
   'history.chip.member',
   'history.chip.memberAll',

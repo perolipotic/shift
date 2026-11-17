@@ -92,6 +92,10 @@ export interface HistoryExport {
   readonly rows: readonly HistoryExportRow[];
   /** Each page's footer, `Stranica n od m`. */
   readonly pageText: (page: number, pages: number) => string;
+  /** Under a row's time on each row that continues an entry too tall for one page: *(nastavak)*. */
+  readonly continued: string;
+  /** The header line the writer adds when it replaced a character the font cannot draw (`./history-pdf-text`). */
+  readonly glyphNote: string;
 }
 
 /** The file's extension: a format, not copy. */
@@ -183,7 +187,86 @@ export function historyExportOf({ view, filters, generatedAt }: HistoryExportInp
     ],
     rows: view.rows.map(rowOf),
     pageText: (page, pages) => t('history.export.page', { page, pages }),
+    continued: t('history.export.continued'),
+    glyphNote: t('history.export.glyphNote'),
   };
+}
+
+/**
+ * The most changes one export builds (epic 14 retro A9). pdfmake lays a
+ * document out and renders it in ONE synchronous call, so the tab is frozen
+ * for as long as that takes, growing with the rows; nothing inside it can
+ * yield. Measured in node on a server CPU (AMD EPYC 9354P), entries of three
+ * changes: 2000 build in about 3 s and 5000 in about 8 s; a laptop or phone
+ * is two to four times slower. 2000 keeps the freeze to seconds and covers a
+ * busy month; above it the admin narrows the period or the filters.
+ */
+export const HISTORY_EXPORT_LIMIT = 2000;
+
+/** The changes an export of `view` holds: its rows, the start-of-history row not counted. */
+export function historyExportCount(view: Pick<HistoryExportView, 'rows'>): number {
+  return view.rows.filter((row) => !row.marker).length;
+}
+
+/** Whether the export refuses `view`: more changes than {@link HISTORY_EXPORT_LIMIT}. Nothing is built. */
+export function historyExportOverLimit(view: Pick<HistoryExportView, 'rows'>): boolean {
+  return historyExportCount(view) > HISTORY_EXPORT_LIMIT;
+}
+
+/** What the refusal says: how many changes are shown, the limit, and to narrow the period or the filters. */
+// A type, not an interface: `t()` takes it as its values.
+export type HistoryExportRefusal = {
+  readonly count: number;
+  readonly limit: number;
+};
+
+export function historyExportRefusalOf(view: Pick<HistoryExportView, 'rows'>): HistoryExportRefusal {
+  return { count: historyExportCount(view), limit: HISTORY_EXPORT_LIMIT };
+}
+
+/** What a press on the action does: nothing (no row, or a file already being built), refuse, or build. */
+export const HISTORY_EXPORT_PRESS = { ignore: 'ignore', refuse: 'refuse', build: 'build' } as const;
+
+export type HistoryExportPress = (typeof HISTORY_EXPORT_PRESS)[keyof typeof HISTORY_EXPORT_PRESS];
+
+export function historyExportPressOf(view: Pick<HistoryExportView, 'rows'>, building: boolean): HistoryExportPress {
+  if (building || historyExportEmpty(view)) return HISTORY_EXPORT_PRESS.ignore;
+
+  return historyExportOverLimit(view) ? HISTORY_EXPORT_PRESS.refuse : HISTORY_EXPORT_PRESS.build;
+}
+
+/** The longest a yield waits for a frame: a hidden tab draws none, and the build must not wait for the admin to return. */
+export const HISTORY_EXPORT_FRAME_WAIT_MS = 100;
+
+/**
+ * Lets the browser paint before the next stage of a build: the button's
+ * *Izvoz…* first, then a frame between each stage the writer can split. A
+ * frame is waited for (`requestAnimationFrame`, then a task, so the paint has
+ * happened), but never longer than HISTORY_EXPORT_FRAME_WAIT_MS: a background
+ * tab runs no frames, and the build goes on without one. Where there is no
+ * frame to wait for (the node suite), a task.
+ */
+export function yieldToUi(): Promise<void> {
+  return new Promise((resolve) => {
+    let done = false;
+    const task = (): void => {
+      if (done) return;
+      done = true;
+      setTimeout(resolve, 0);
+    };
+
+    if (typeof requestAnimationFrame !== 'function') {
+      task();
+
+      return;
+    }
+    const timer = setTimeout(task, HISTORY_EXPORT_FRAME_WAIT_MS);
+
+    requestAnimationFrame(() => {
+      clearTimeout(timer);
+      task();
+    });
+  });
 }
 
 /**
@@ -232,11 +315,16 @@ export async function exportHistory(
   write: HistoryExportWriter,
 ): Promise<HistoryExportDone | null> {
   try {
+    // The hook refuses first; a caller that did not is refused here, never built.
+    if (historyExportOverLimit(input.view)) throw new Error('HISTORY_EXPORT_OVER_LIMIT');
+    // The press has painted *Izvoz…* before any of the build runs.
+    await yieldToUi();
+
     const document = historyExportOf(input);
 
     await write(document);
 
-    return { fileName: document.fileName, count: input.view.rows.filter((row) => !row.marker).length };
+    return { fileName: document.fileName, count: historyExportCount(input.view) };
   } catch (cause) {
     console.error(HISTORY_EXPORT_FAILED, cause);
 

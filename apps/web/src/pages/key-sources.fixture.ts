@@ -1133,10 +1133,12 @@ export const KEY_SOURCES = [
     // `@/features/history/services/history-export`, a key source.
     // FIFTY-SIX SINCE EPIC 14 RETRO A9: the rows drawn in steps — the line
     // that says how many are drawn, and *Prikaži još*.
+    // FIFTY-SEVEN SINCE EPIC 14 RETRO A9 (PDF): the export's refusal of more
+    // changes than one file takes.
     name: 'the Povijest promjena destination',
     file: POVIJEST_PROMJENA,
     keys: translationKeys,
-    strings: 56,
+    strings: 57,
   },
   {
     // STORY 14.2: the history's words — the record, action, field, value,
@@ -1162,10 +1164,12 @@ export const KEY_SOURCES = [
     // the six column headings; a change's two sides and the line for none;
     // the two badges; the file's name and the page footer; and the action's
     // two labels, off `historyExportMessageKey`.
+    // 28 SINCE EPIC 14 RETRO A9 (PDF): a continuation's *(nastavak)* and the
+    // note on replaced characters.
     name: 'the change history export rules',
     file: HISTORY_EXPORT_KEYS,
     keys: (text: string) => [...translationKeys(text), ...messageKeyUnions(text)],
-    strings: 26,
+    strings: 28,
   },
   {
     // E884: the Stanje chip's five options and the five values its text says,

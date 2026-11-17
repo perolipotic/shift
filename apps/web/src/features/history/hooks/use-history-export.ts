@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 
 import {
+  HISTORY_EXPORT_PRESS,
   exportHistory,
   historyExportDisabled,
   historyExportEmpty,
   historyExportMessageKey,
+  historyExportPressOf,
+  historyExportRefusalOf,
   type HistoryExportDone,
   type HistoryExportView,
 } from '@/features/history/services/history-export';
@@ -24,6 +27,9 @@ import { writeHistoryExport } from '@/features/history/services/pdf';
  * built from: the ready view's `rows` keep their identity while the snapshot
  * and the chips do, so another period, filter or a refetch that changes the
  * rows shows no old line.
+ * Rows over `HISTORY_EXPORT_LIMIT` are refused on the press, before any build
+ * (epic 14 retro A9): an alert says how many there are and to narrow the
+ * period or the filters, kept against those rows as a failure is.
  * A result arriving after the screen unmounted is dropped. A second press
  * while a file is built is refused by a ref, so two quick presses cannot start
  * two builds.
@@ -31,6 +37,7 @@ import { writeHistoryExport } from '@/features/history/services/pdf';
 export function useHistoryExport(view: HistoryExportView, filters: HistorySearchFilters) {
   const [pending, setPending] = useState(false);
   const [failedRows, setFailedRows] = useState<readonly HistoryRow[] | null>(null);
+  const [refusedRows, setRefusedRows] = useState<readonly HistoryRow[] | null>(null);
   // The written file's status line, kept with the rows it was built from.
   const [written, setWritten] = useState<{
     readonly rows: readonly HistoryRow[];
@@ -48,14 +55,23 @@ export function useHistoryExport(view: HistoryExportView, filters: HistorySearch
   }, []);
 
   function start(): void {
-    if (inFlight.current || historyExportEmpty(view)) return;
+    const press = historyExportPressOf(view, inFlight.current);
+
+    if (press === HISTORY_EXPORT_PRESS.ignore) return;
 
     const built = view.rows;
 
-    inFlight.current = true;
-    setPending(true);
     setFailedRows(null);
     setWritten(null);
+    if (press === HISTORY_EXPORT_PRESS.refuse) {
+      setRefusedRows(built);
+
+      return;
+    }
+    setRefusedRows(null);
+
+    inFlight.current = true;
+    setPending(true);
     void exportHistory({ view, filters, generatedAt: new Date() }, writeHistoryExport).then((done) => {
       inFlight.current = false;
       if (!live.current) return;
@@ -75,6 +91,8 @@ export function useHistoryExport(view: HistoryExportView, filters: HistorySearch
     labelKey: historyExportMessageKey(pending),
     pending,
     failed: failedRows !== null && failedRows === view.rows,
+    /** The refusal's words, while the rows it refused are shown. */
+    refused: refusedRows !== null && refusedRows === view.rows ? historyExportRefusalOf(view) : null,
     /** The status line of the file just written, while its rows are shown. */
     written: written !== null && written.rows === view.rows ? written.done : null,
     start,
