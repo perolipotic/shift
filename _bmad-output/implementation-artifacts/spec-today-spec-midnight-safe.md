@@ -2,7 +2,7 @@
 title: 'No e2e test runs across midnight Europe/Zagreb'
 type: 'bugfix'
 created: '2026-11-17'
-status: 'in-review'
+status: 'done'
 baseline_commit: '20d5b5b9b9d8dbae697fd9966be95bdd3a6e910b'
 review_loop_iteration: 0
 context: []

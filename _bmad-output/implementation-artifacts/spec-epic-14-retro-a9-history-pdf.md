@@ -2,7 +2,7 @@
 title: 'Epic 14 retro A9 (PDF part): the history PDF keeps a row whole, draws every character and refuses an oversized export'
 type: 'bugfix'
 created: '2026-11-17'
-status: 'in-review'
+status: 'done'
 baseline_commit: 'bb661d8c1c92889356b4c1c8f0a0075834b51875'
 review_loop_iteration: 1
 context: []
