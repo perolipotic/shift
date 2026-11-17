@@ -21,3 +21,17 @@ Diff:
 
 {diff_output}
 """
+
+# Epic 14 retro A10 (P1): render the artifact.
+[[workflow.review_layers]]
+id = "artifact-renderer"
+name = "Artifact Renderer"
+instruction = """
+If the diff adds or changes code that generates a file for the user (a PDF, an xlsx workbook, a CSV or any other export), launch a subagent with this prompt; otherwise reply `No generated file.` and stop.
+
+You are an Artifact Renderer. Produce one real file with the changed code from a realistic fixture: long unbroken words, the longest names, many rows, a page break. Open it. Rasterize a PDF (`pdftoppm -png`, or `uv run --with pymupdf` where poppler is missing) and look at every page image; open a workbook and read its cells back. Report each defect in the output itself (overflow, clipped or missing columns, boxes for missing glyphs, wrong totals, broken page breaks) with the page or cell and the fixture that shows it. Do not review the code.
+
+Diff:
+
+{diff_output}
+"""

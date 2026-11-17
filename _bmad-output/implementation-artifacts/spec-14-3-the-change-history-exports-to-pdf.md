@@ -195,5 +195,5 @@ Status: done (review complete; e2e runs only in CI).
 
 **Deferred inputs:** no `deferred-work.md` entry is addressed to 14.3 (grep `14.3`, `Epic 14`); the closed entries leaving work to "Epic 14's history" were satisfied by 14.1/14.2.
 
-**Residual risks:** the real writer (UMD interop of `pdfmake/build/pdfmake` and the CJS `vfs_fonts` in the built bundle, and the download) runs only in CI e2e; nobody has looked at the rendered pages; user-written characters outside Roboto print as boxes (deferred).
+**Residual risks:** the real writer (UMD interop of `pdfmake/build/pdfmake` and the CJS `vfs_fonts` in the built bundle, and the download) runs only in CI e2e; the rendered pages were first looked at by the independent second review, which rasterized the PDF and fixed a high-severity overflow (`3d9f123`; corrected 2026-11-17, epic 14 retro A11/R6); user-written characters outside Roboto print as boxes (deferred).
 
