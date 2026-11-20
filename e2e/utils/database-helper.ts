@@ -226,6 +226,21 @@ export async function removeFormerMemberInSql(slug: string, memberId: string): P
         where o.slug = $1 and a.organization_id = o.id and a.member_id = $2`,
       [slug, memberId],
     );
+    // Story 18.2: the member's loans (0062), whose member key does not
+    // cascade, and any notification naming one.
+    await client.query(
+      `delete from notification_outbox n
+        using organizations o
+        where o.slug = $1 and n.organization_id = o.id
+          and n.subject_id in (select l.id from team_loans l where l.organization_id = o.id and l.member_id = $2)`,
+      [slug, memberId],
+    );
+    await client.query(
+      `delete from team_loans l
+        using organizations o
+        where o.slug = $1 and l.organization_id = o.id and l.member_id = $2`,
+      [slug, memberId],
+    );
     await client.query(
       `delete from auth.users u
         using members m join organizations o on o.id = m.organization_id
@@ -421,6 +436,15 @@ export async function removeLeaveMemberInSql(slug: string, memberId: string): Pr
     await client.query('begin');
     const scope = [member.organization_id, memberId];
     await client.query('delete from conflict_resolutions where organization_id = $1 and member_id = $2', scope);
+    // Story 18.2: the member's loans (0062), whose member key does not
+    // cascade, and any notification naming one.
+    await client.query(
+      `delete from notification_outbox
+        where organization_id = $1
+          and subject_id in (select id from team_loans where organization_id = $1 and member_id = $2)`,
+      scope,
+    );
+    await client.query('delete from team_loans where organization_id = $1 and member_id = $2', scope);
     // Story 10.2: the notifications their requests and leave wrote to OTHER
     // members (the admins' new-request rows), which no recipient key removes.
     await client.query(
@@ -690,6 +714,22 @@ export async function removeOfflineMemberInSql(slug: string, username: string): 
     await client.query(
       `delete from leave_allowances a using members m, organizations o
         where a.organization_id = m.organization_id and a.member_id = m.id
+          and o.id = m.organization_id and o.slug = $1 and m.username = $2`,
+      [slug, username],
+    );
+    // Story 18.2: the member's loans (0062), whose member key does not
+    // cascade, and any notification naming one.
+    await client.query(
+      `delete from notification_outbox n
+        using team_loans l, members m, organizations o
+        where n.organization_id = l.organization_id and n.subject_id = l.id
+          and l.organization_id = m.organization_id and l.member_id = m.id
+          and o.id = m.organization_id and o.slug = $1 and m.username = $2`,
+      [slug, username],
+    );
+    await client.query(
+      `delete from team_loans l using members m, organizations o
+        where l.organization_id = m.organization_id and l.member_id = m.id
           and o.id = m.organization_id and o.slug = $1 and m.username = $2`,
       [slug, username],
     );
@@ -1705,6 +1745,12 @@ export async function removeTeamInSql(slug: string, teamId: string): Promise<voi
     await client.query(`delete from notification_outbox where subject_id in (${naming})`, scope);
     await client.query(`delete from swap_request_decisions where request_id in (${naming})`, scope);
     await client.query(`delete from swap_requests where id in (${naming})`, scope);
+    // Story 18.2: a loan names its team by a key that does not cascade (0062).
+    // Any notification naming one, then the loans.
+    const lending = `select l.id from team_loans l join organizations o on o.id = l.organization_id
+                      where o.slug = $1 and l.team_id = $2`;
+    await client.query(`delete from notification_outbox where subject_id in (${lending})`, scope);
+    await client.query(`delete from team_loans where id in (${lending})`, scope);
     await client.query(
       `delete from teams where id = $2 and organization_id = (select id from organizations where slug = $1)`,
       scope,

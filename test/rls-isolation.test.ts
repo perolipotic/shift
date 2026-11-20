@@ -942,7 +942,7 @@ describe('the access-control layer is present, so nothing below passes vacuously
       );
       expect(
         policies.map((row) => row.policyname),
-        'stories 1.3a, 1.4a, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a, 3.5a, 3.6a, 5.1b, 5.4a, 9.2, 10.3, 10.4, 12.1, 13.1, 13.2, 13.3, 14.1 and 0025 own exactly these policies; a missing one refuses silently and looks like a working refusal',
+        'stories 1.3a, 1.4a, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a, 3.5a, 3.6a, 5.1b, 5.4a, 9.2, 10.3, 10.4, 12.1, 13.1, 13.2, 13.3, 14.1, 18.2 and 0025 own exactly these policies; a missing one refuses silently and looks like a working refusal',
       ).toEqual([
         // STORY 13.1 (0052): an active admin defines and renames a type or
         // sets its drawing flag. No delete. STORY 13.2 (0053, PO Q2): every
@@ -1049,6 +1049,11 @@ describe('the access-control layer is present, so nothing below passes vacuously
         'swap_request_decisions_select_own_organization',
         'swap_requests_insert_own_by_active_member',
         'swap_requests_select_own_organization',
+        // STORY 18.2 (0062): read and insert alone, and both an active admin's
+        // only (the table holds the reason); members read the live loans
+        // through `calendar_team_loans`. No update and no delete.
+        'team_loans_insert_by_own_active_admin',
+        'team_loans_select_by_own_active_admin',
         // STORY 1.7b: the status table's three, for the same reason — a
         // membership version is appended, and cancelled only before it has
         // decided any day.
@@ -26763,11 +26768,461 @@ describe('a member\'s allowance is versioned per leave year, append-only (story 
   );
 });
 
+// ------------------------------------ story 18.2: a loan is a recorded exception
+
+/**
+ * STORY 18.2 (`0062`, FR-88, AD-2, AD-3, AD-11). A loan lends one member to
+ * another team of the organization over an inclusive date range. Only an
+ * active admin inserts and reads the table (it holds the reason); every
+ * active member reads the live loans, without reason or author, through
+ * `calendar_team_loans()`. Two live loans of a member never share a date
+ * (23P01), a loan to an archived team or to the member's team on a covered
+ * date is the policy's refusal (42501), and no session updates or deletes
+ * one. Every case runs in a rolled-back transaction, on throwaway members and
+ * teams so no fixture history decides the home team.
+ */
+async function insertLoan(
+  client: Client,
+  loan: { organization: string; member: string; team: string; during: string; reason?: string; by?: string },
+): Promise<string> {
+  const reason = loan.reason ?? 'Pojačanje smjene.';
+  const { rows } =
+    loan.by === undefined
+      ? await client.query<{ id: string }>(
+          `insert into team_loans (organization_id, member_id, team_id, during, reason)
+           values ($1, $2, $3, $4::daterange, $5)
+           returning id::text as id`,
+          [loan.organization, loan.member, loan.team, loan.during, reason],
+        )
+      : await client.query<{ id: string }>(
+          `insert into team_loans (organization_id, member_id, team_id, during, reason, created_by)
+           values ($1, $2, $3, $4::daterange, $5, $6)
+           returning id::text as id`,
+          [loan.organization, loan.member, loan.team, loan.during, reason, loan.by],
+        );
+  const id = rows[0]?.id;
+  if (id === undefined) throw new Error('the loan insert returned no id');
+  return id;
+}
+
+/** `calendar_team_loans()`, as whoever the connection currently is. */
+async function calendarLoans(
+  client: Client,
+): Promise<{ id: string; memberId: string; teamId: string; startsOn: string; endsOn: string }[]> {
+  const { rows } = await client.query<{ id: string; memberId: string; teamId: string; startsOn: string; endsOn: string }>(
+    `select id::text as id, member_id::text as "memberId", team_id::text as "teamId",
+            starts_on::text as "startsOn", ends_on::text as "endsOn"
+       from public.calendar_team_loans()`,
+  );
+  return rows;
+}
+
+/**
+ * A throwaway member of `organization` on a throwaway home team from
+ * 2040-01-01, and a second throwaway team to lend them to, all as the owner.
+ */
+async function lendingScene(
+  client: Client,
+  organization: string,
+  by: string,
+): Promise<{ readonly member: MemberRow; readonly home: string; readonly other: string }> {
+  const member = await addThrowawayMember(client, organization);
+  const home = await addThrowawayTeam(client, organization, by);
+  const other = await addThrowawayTeam(client, organization, by);
+  await ownerMembership(client, { organization, member: member.id, team: home.id, from: '2040-01-01', by });
+  return { member, home: home.id, other: other.id };
+}
+
+const byId = (left: { readonly id: string }, right: { readonly id: string }): number => (left.id < right.id ? -1 : 1);
+
+describe('a loan is a recorded exception (story 18.2)', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'lets the $fixture admin lend a member to another team, attributed to the caller, recorded by one audit INSERT',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const organization = caller.organizationId;
+        const { member, other } = await lendingScene(client, organization, caller.authUserId);
+
+        await actAs(client, caller.authUserId, organization);
+        const id = await insertLoan(client, { organization, member: member.id, team: other, during: '[2046-01-10,2046-01-12]' });
+        const { rows } = await client.query<{ during: string; reason: string; createdBy: string; removedAt: string | null }>(
+          `select during::text as during, reason, created_by::text as "createdBy", removed_at as "removedAt"
+             from team_loans where id = $1`,
+          [id],
+        );
+        await actAsOwner(client);
+        const events = await auditEventsOf(client, 'team_loans', id);
+
+        expect(rows, slug).toEqual([
+          { during: '[2046-01-10,2046-01-13)', reason: 'Pojačanje smjene.', createdBy: caller.authUserId, removedAt: null },
+        ]);
+        expect(events.map((event) => [event.operation, event.actor, event.sessionRole, event.origin]), slug).toEqual([
+          ['INSERT', caller.authUserId, 'authenticated', 'trigger'],
+        ]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture overlapping live loan by exclusion, and stores one that only touches or follows a removed one',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const organization = caller.organizationId;
+        const { member, other } = await lendingScene(client, organization, caller.authUserId);
+        const third = await addThrowawayTeam(client, organization, caller.authUserId);
+
+        await actAs(client, caller.authUserId, organization);
+        const first = await insertLoan(client, { organization, member: member.id, team: other, during: '[2046-01-10,2046-01-12]' });
+        const overlap = await refusedThenContinue(client, () =>
+          insertLoan(client, { organization, member: member.id, team: third.id, during: '[2046-01-12,2046-01-20]' }),
+        );
+        const touching = await insertLoan(client, { organization, member: member.id, team: third.id, during: '[2046-01-13,2046-01-20]' });
+        await actAsOwner(client);
+        // Story 18.4 writes the removal; here the owner stands in for it.
+        await client.query('update team_loans set removed_by = $2, removed_at = now() where id = $1', [first, caller.authUserId]);
+        await actAs(client, caller.authUserId, organization);
+        const again = await insertLoan(client, { organization, member: member.id, team: other, during: '[2046-01-10,2046-01-12]' });
+        await actAsOwner(client);
+
+        expect(overlap.code, `${slug}: two live loans of a member share a date`).toBe('23P01');
+        expect(overlap.message).toContain('team_loans_no_overlap');
+        const { rows } = await client.query<{ id: string; live: boolean }>(
+          'select id::text as id, removed_at is null as live from team_loans where member_id = $1',
+          [member.id],
+        );
+        expect(rows.sort(byId), slug).toEqual(
+          [
+            { id: first, live: false },
+            { id: touching, live: true },
+            { id: again, live: true },
+          ].sort(byId),
+        );
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture loan to the member\'s team on any covered date, or to an archived team, and stores one to a team before or after their time on it',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const organization = caller.organizationId;
+        const { member, home, other } = await lendingScene(client, organization, caller.authUserId);
+        const archived = await addThrowawayTeam(client, organization, caller.authUserId, true);
+        // Home until 2049-12-31, then `other` from 2050-01-01.
+        await ownerMembership(client, { organization, member: member.id, team: other, from: '2050-01-01', by: caller.authUserId });
+
+        await actAs(client, caller.authUserId, organization);
+        const codes: Record<string, string> = {};
+        for (const [label, team, during] of [
+          ['home, wholly', home, '[2046-01-10,2046-01-12]'],
+          ['home, its last day', home, '[2049-12-31,2050-01-05]'],
+          ['the next team, its first day', other, '[2049-12-25,2050-01-01]'],
+          ['archived', archived.id, '[2046-02-10,2046-02-12]'],
+        ] as const) {
+          codes[label] = (
+            await refusedThenContinue(client, () => insertLoan(client, { organization, member: member.id, team, during }))
+          ).code;
+        }
+        const before = await insertLoan(client, { organization, member: member.id, team: other, during: '[2046-03-10,2046-03-12]' });
+        const after = await insertLoan(client, { organization, member: member.id, team: home, during: '[2050-02-01,2050-02-03]' });
+        await actAsOwner(client);
+
+        expect(codes, slug).toEqual({
+          'home, wholly': '42501',
+          'home, its last day': '42501',
+          'the next team, its first day': '42501',
+          archived: '42501',
+        });
+        const { rows } = await client.query<{ total: number }>(
+          'select count(*)::int as total from team_loans where id = any($1::uuid[])',
+          [[before, after]],
+        );
+        expect(rows[0]?.total, slug).toBe(2);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'lets the $fixture admin lend a member on no team',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const organization = caller.organizationId;
+        const teamless = await addThrowawayMember(client, organization);
+        const team = await addThrowawayTeam(client, organization, caller.authUserId);
+
+        await actAs(client, caller.authUserId, organization);
+        const id = await insertLoan(client, { organization, member: teamless.id, team: team.id, during: '[2046-01-10,2046-01-12]' });
+        const { rows } = await client.query('select id from team_loans where id = $1', [id]);
+        await actAsOwner(client);
+
+        expect(rows, slug).toHaveLength(1);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture reversed, empty, unbounded, infinite or out-of-years range, a blank or over-200 reason, a forged author, and every update and delete',
+    async ({ slug, admin, member: memberName }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, memberName);
+        const organization = caller.organizationId;
+        const { member, other } = await lendingScene(client, organization, caller.authUserId);
+
+        await actAs(client, caller.authUserId, organization);
+        const codes: Record<string, string> = {};
+        const messages: Record<string, string> = {};
+        for (const [label, during, reason] of [
+          ['reversed', '[2046-01-14,2046-01-10]', undefined],
+          ['empty', '[2046-01-10,2046-01-10)', undefined],
+          ['empty literal', 'empty', undefined],
+          ['no end', '[2046-01-10,)', undefined],
+          ['no start', '(,2046-01-10]', undefined],
+          ['infinite end', '[2046-01-10,infinity)', undefined],
+          ['infinite start', '[-infinity,2046-01-10]', undefined],
+          ['before year 1', '[0001-01-01 BC,0001-01-05 BC]', undefined],
+          ['after year 9999', '[9999-12-31,10000-01-01]', undefined],
+          ['blank reason', '[2046-01-10,2046-01-12]', ' \t ﻿ '],
+          ['empty reason', '[2046-01-10,2046-01-12]', ''],
+          ['201 code points', '[2046-01-10,2046-01-12]', 'ž'.repeat(201)],
+        ] as const) {
+          const refused = await refusedThenContinue(client, () =>
+            insertLoan(client, {
+              organization,
+              member: member.id,
+              team: other,
+              during,
+              ...(reason === undefined ? {} : { reason }),
+            }),
+          );
+          codes[label] = refused.code;
+          messages[label] = refused.message;
+        }
+        const forged = await refusedThenContinue(client, () =>
+          insertLoan(client, { organization, member: member.id, team: other, during: '[2046-01-10,2046-01-12]', by: self.authUserId }),
+        );
+        // No length cap on the range, unlike leave's 366 days; 200 code points
+        // after the trim is the reason's limit.
+        const long = await insertLoan(client, {
+          organization,
+          member: member.id,
+          team: other,
+          during: '[2046-01-01,2049-12-31]',
+          reason: `  ${'ž'.repeat(200)}  `,
+        });
+        const update = await refusedThenContinue(client, () =>
+          client.query(`update team_loans set during = '[2046-01-01,2046-01-02]' where id = $1`, [long]),
+        );
+        const removal = await refusedThenContinue(client, () =>
+          client.query('update team_loans set removed_by = $2, removed_at = now() where id = $1', [long, caller.authUserId]),
+        );
+        const deletion = await refusedThenContinue(client, () => client.query('delete from team_loans where id = $1', [long]));
+        await actAsOwner(client);
+
+        expect(codes, slug).toEqual({
+          reversed: '22000',
+          empty: '23514',
+          'empty literal': '23514',
+          'no end': '23514',
+          'no start': '23514',
+          // Unlike leave records (whose 366-day check subtracts an infinite date,
+          // 22008), an infinite bound is kept by canonicalization and refused
+          // by the years check.
+          'infinite end': '23514',
+          'infinite start': '23514',
+                    'before year 1': '23514',
+          'after year 9999': '23514',
+          'blank reason': '23514',
+          'empty reason': '23514',
+          '201 code points': '23514',
+        });
+        expect(messages['infinite end'], `${slug}: an infinite end was not refused by the years check`).toContain(
+          'team_loans_during_in_years',
+        );
+        expect(messages['infinite start'], `${slug}: an infinite start was not refused by the years check`).toContain(
+          'team_loans_during_in_years',
+        );
+        expect(forged.code, `${slug}: a loan was attributed to somebody else`).toBe('42501');
+        expect(update.code, `${slug}: a loan was changed`).toBe('42501');
+        expect(removal.code, `${slug}: a session wrote a removal (story 18.4's)`).toBe('42501');
+        expect(deletion.code, `${slug}: a loan was deleted`).toBe('42501');
+        const { rows } = await client.query<{ removedAt: string | null }>(
+          'select removed_at as "removedAt" from team_loans where id = $1',
+          [long],
+        );
+        expect(rows, slug).toEqual([{ removedAt: null }]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses the $fixture member-role account every loan write, shows it no row of the table, and every live loan of the organization through the read, without reason or author',
+    async ({ slug, admin, member: memberName }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, memberName);
+        const organization = caller.organizationId;
+        const { member, other } = await lendingScene(client, organization, caller.authUserId);
+        const colleague = await lendingScene(client, organization, caller.authUserId);
+
+        await actAs(client, caller.authUserId, organization);
+        const live = await insertLoan(client, { organization, member: member.id, team: other, during: '[2046-01-10,2046-01-12]' });
+        const another = await insertLoan(client, {
+          organization,
+          member: colleague.member.id,
+          team: colleague.other,
+          during: '[2046-02-01,2046-02-01]',
+        });
+        const removed = await insertLoan(client, { organization, member: member.id, team: other, during: '[2046-03-10,2046-03-12]' });
+        await actAsOwner(client);
+        await client.query('update team_loans set removed_by = $2, removed_at = now() where id = $1', [removed, caller.authUserId]);
+
+        await actAs(client, self.authUserId, organization);
+        const { rows: table } = await client.query('select id from team_loans');
+        const reads = await calendarLoans(client);
+        const { fields } = await client.query('select * from public.calendar_team_loans() limit 0');
+        const insert = await refusedThenContinue(client, () =>
+          insertLoan(client, { organization, member: self.id, team: other, during: '[2046-05-10,2046-05-12]' }),
+        );
+        const update = await refusedThenContinue(client, () =>
+          client.query(`update team_loans set reason = 'x' where id = $1`, [live]),
+        );
+        const deletion = await refusedThenContinue(client, () => client.query('delete from team_loans where id = $1', [live]));
+        await actAsOwner(client);
+
+        expect(table, `${slug}: a member-role account read the table, reasons and all`).toEqual([]);
+        expect(fields.map((field) => field.name), `${slug}: the read answers more than the five facts`).toEqual([
+          'id',
+          'member_id',
+          'team_id',
+          'starts_on',
+          'ends_on',
+        ]);
+        expect(
+          reads.filter((row) => [live, another, removed].includes(row.id)).sort(byId),
+          `${slug}: the member does not read exactly the live loans, with inclusive ends`,
+        ).toEqual(
+          [
+            { id: live, memberId: member.id, teamId: other, startsOn: '2046-01-10', endsOn: '2046-01-12' },
+            { id: another, memberId: colleague.member.id, teamId: colleague.other, startsOn: '2046-02-01', endsOn: '2046-02-01' },
+          ].sort(byId),
+        );
+        expect(insert.code, `${slug}: a member-role account lent somebody`).toBe('42501');
+        expect(update.code, `${slug}: a member-role account changed a loan`).toBe('42501');
+        expect(deletion.code, `${slug}: a member-role account deleted a loan`).toBe('42501');
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'reads and writes no $fixture loan for an admin or member inactive today',
+    async ({ slug, admin, member: memberName }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, memberName);
+        const organization = owner.organizationId;
+        const inactiveAdmin = await addThrowawayAdmin(client, organization);
+        const { member, other } = await lendingScene(client, organization, owner.authUserId);
+
+        await actAs(client, owner.authUserId, organization);
+        await insertLoan(client, { organization, member: member.id, team: other, during: '[2046-01-10,2046-01-12]' });
+        await actAsOwner(client);
+
+        const today = await organizationDay(client, organization);
+        for (const deactivated of [inactiveAdmin, self]) {
+          await ownerVersion(client, { organization, member: deactivated.id, active: false, from: today, by: owner.authUserId });
+        }
+
+        await actAs(client, inactiveAdmin.authUserId, organization);
+        const { rows: adminSees } = await client.query('select id from team_loans');
+        const adminReads = await calendarLoans(client);
+        const adminInsert = await refusedThenContinue(client, () =>
+          insertLoan(client, { organization, member: member.id, team: other, during: '[2046-02-10,2046-02-12]' }),
+        );
+        await actAs(client, self.authUserId, organization);
+        const memberReads = await calendarLoans(client);
+        await actAsOwner(client);
+
+        expect(adminSees, `${slug}: an inactive admin read loans`).toEqual([]);
+        expect(adminReads, `${slug}: an inactive admin read live loans`).toEqual([]);
+        expect(adminInsert.code, `${slug}: an inactive admin lent somebody`).toBe('42501');
+        expect(memberReads, `${slug}: an inactive member read live loans`).toEqual([]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(CROSS_TENANT)(
+    'refuses the $fixture admin a loan in $otherFixture, and one naming $otherFixture\'s member or team by the composite keys; neither read answers the other\'s loans',
+    async ({ slug, admin, otherSlug }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const organization = caller.organizationId;
+        const foreignFixture = FIXTURES.find((entry) => entry.slug === otherSlug);
+        const foreignOwner = await memberByUsername(client, otherSlug, foreignFixture?.admin ?? '');
+        const other = foreignOwner.organizationId;
+        const own = await lendingScene(client, organization, caller.authUserId);
+        const foreign = await lendingScene(client, other, foreignOwner.authUserId);
+
+        // As the owner: a loan in the other tenant, which this session may not read.
+        const { rows: seeded } = await client.query<{ id: string }>(
+          `insert into team_loans (organization_id, member_id, team_id, during, reason, created_by)
+           values ($1, $2, $3, '[2046-01-10,2046-01-12]', 'Pojačanje.', $4) returning id::text as id`,
+          [other, foreign.member.id, foreign.other, foreignOwner.authUserId],
+        );
+        const foreignLoan = seeded[0]?.id;
+        if (foreignLoan === undefined) throw new Error(`no loan seeded in ${otherSlug}`);
+
+        await actAs(client, caller.authUserId, organization);
+        const inOther = await refusedThenContinue(client, () =>
+          insertLoan(client, { organization: other, member: foreign.member.id, team: foreign.other, during: '[2046-02-10,2046-02-12]' }),
+        );
+        const foreignMember = await refusedThenContinue(client, () =>
+          insertLoan(client, { organization, member: foreign.member.id, team: own.other, during: '[2046-02-10,2046-02-12]' }),
+        );
+        const foreignTeam = await refusedThenContinue(client, () =>
+          insertLoan(client, { organization, member: own.member.id, team: foreign.other, during: '[2046-02-10,2046-02-12]' }),
+        );
+        const ownLoan = await insertLoan(client, { organization, member: own.member.id, team: own.other, during: '[2046-03-10,2046-03-12]' });
+        const { rows: table } = await client.query<{ id: string }>('select id::text as id from team_loans');
+        const reads = await calendarLoans(client);
+        // The organization claim names the other tenant, is absent, or is blank:
+        // the read answers nothing, though the caller's own organization has a live loan.
+        await actAs(client, caller.authUserId, other);
+        const claimingOther = await calendarLoans(client);
+        await actAs(client, caller.authUserId, null);
+        const noClaim = await calendarLoans(client);
+        await client.query('select set_config($1, $2, true)', [
+          'request.jwt.claims',
+          JSON.stringify({ sub: caller.authUserId, role: 'authenticated', organization_id: '' }),
+        ]);
+        const blankClaim = await calendarLoans(client);
+        await actAsOwner(client);
+
+        expect(reads.map((row) => row.id), `${slug}: the read missed the own organization's loan`).toContain(ownLoan);
+        expect(claimingOther, `${slug}: the read answered with the claim naming ${otherSlug}`).toEqual([]);
+        expect(noClaim, `${slug}: the read answered with no organization claim`).toEqual([]);
+        expect(blankClaim, `${slug}: the read answered with a blank organization claim`).toEqual([]);
+        expect(inOther.code, `${slug}: an admin lent somebody in ${otherSlug}`).toBe('42501');
+        expect(foreignMember.code, `${slug}: a loan named ${otherSlug}'s member`).toBe('23503');
+        expect(foreignMember.message).toContain('team_loans_member_fkey');
+        expect(foreignTeam.code, `${slug}: a loan named ${otherSlug}'s team`).toBe('23503');
+        expect(foreignTeam.message).toContain('team_loans_team_fkey');
+        expect(table.map((row) => row.id), `${slug}: the admin read ${otherSlug}'s loan`).not.toContain(foreignLoan);
+        expect(reads.map((row) => row.id), `${slug}: the read answered ${otherSlug}'s loan`).not.toContain(foreignLoan);
+      });
+    },
+  );
+});
+
 // ------------------------------------ story 14.1: every change is recorded
 
 /**
  * STORY 14.1 (`0061`, AD-3 and AD-11 as amended 2026-11-16, decision D4).
- * Every row write to the 21 audited tables is one `audit_events` row in the
+ * Every row write to the 22 audited tables is one `audit_events` row in the
  * writer's transaction, with whole rows, `auth.uid()`, the raw role and the
  * transaction id; an unchanged update writes none. An active admin reads the
  * organization's events and nobody else reads any; no session writes, changes,
@@ -26775,12 +27230,13 @@ describe('a member\'s allowance is versioned per leave year, append-only (story 
  * backfill block is run again here, DML only, in a rolled-back transaction.
  */
 
-/** The 21 audited tables (AD-11). */
+/** The 22 audited tables (AD-11; `team_loans` since story 18.2). */
 const AUDITED_TABLES = [
   'organizations', 'members', 'member_status_versions', 'team_membership_versions', 'teams', 'hour_bands',
   'shift_types', 'shift_type_versions', 'rotation_patterns', 'rotation_steps', 'rotation_assignments',
   'shift_type_overrides', 'roster_overrides', 'leave_records', 'conflict_resolutions', 'leave_requests',
   'leave_request_decisions', 'swap_requests', 'swap_request_decisions', 'absence_types', 'leave_allowances',
+  'team_loans',
 ] as const;
 
 interface AuditEvent {

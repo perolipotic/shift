@@ -4,6 +4,7 @@ import {
   CALENDAR_MEMBERS_FUNCTION,
   CALENDAR_OVERRIDES_FUNCTION,
   CALENDAR_ROSTER_OVERRIDES_FUNCTION,
+  CALENDAR_TEAM_LOANS_FUNCTION,
 } from '@/features/calendar/services/snapshot';
 import type { RotationAnswer, RotationTable } from '@/features/rotation/services/list';
 import { ANNUAL_LEAVE_ID } from '@/features/absence-types/services/list';
@@ -443,6 +444,16 @@ export function rosterOverridesAnswerOf(overrides: readonly Row[] = []): { reado
   return { data: overrides, error: null };
 }
 
+/** One row of `calendar_team_loans()` (0062, story 18.2): no reason, no author. */
+export function calendarLoanRow(id: string, memberId: unknown, teamId: unknown, startsOn: unknown, endsOn: unknown): Row {
+  return { id, member_id: memberId, team_id: teamId, starts_on: startsOn, ends_on: endsOn };
+}
+
+/** `calendar_team_loans()`'s answer: by default none. */
+export function loansAnswerOf(loans: readonly Row[] = []): { readonly data: unknown; readonly error: null } {
+  return { data: loans, error: null };
+}
+
 /** The session the calendar reads as: the viewer's. */
 export function viewerSession(authUserId = VIEWER_AUTH_USER): () => Promise<Session> {
   return () => Promise.resolve({ user: { id: authUserId } } as Session);
@@ -450,15 +461,17 @@ export function viewerSession(authUserId = VIEWER_AUTH_USER): () => Promise<Sess
 
 /**
  * A calendar table answering once with `answer`, the members rpc answering
- * with `members`, the overrides rpc with `overrides` and the roster overrides
- * rpc with `rosterOverrides` (story 3.6a), recording every select, filter and
- * rpc. It stands in for both of `readCalendar`'s sources.
+ * with `members`, the overrides rpc with `overrides`, the roster overrides
+ * rpc with `rosterOverrides` (story 3.6a) and the loans rpc with `loans`
+ * (story 18.2), recording every select, filter and rpc. It stands in for both
+ * of `readCalendar`'s sources.
  */
 export function calendarTableOf(
   answer: unknown,
   members: unknown = membersAnswerOf(),
   overrides: unknown = overridesAnswerOf(),
   rosterOverrides: unknown = rosterOverridesAnswerOf(),
+  loans: unknown = loansAnswerOf(),
 ): {
   readonly seen: unknown[][];
   select(columns: string, options: unknown): { filter(column: string, operator: string, value: string): Promise<never> };
@@ -471,10 +484,11 @@ export function calendarTableOf(
     rpc(fn) {
       seen.push(['rpc', fn]);
 
-      // The three functions the calendar may call (0018, 0019, 0026).
+      // The four functions the calendar may call (0018, 0019, 0026, 0062).
       if (fn === CALENDAR_MEMBERS_FUNCTION) return Promise.resolve(members as never);
       if (fn === CALENDAR_OVERRIDES_FUNCTION) return Promise.resolve(overrides as never);
       if (fn === CALENDAR_ROSTER_OVERRIDES_FUNCTION) return Promise.resolve(rosterOverrides as never);
+      if (fn === CALENDAR_TEAM_LOANS_FUNCTION) return Promise.resolve(loans as never);
 
       throw new Error(`unexpected rpc ${fn}`);
     },
