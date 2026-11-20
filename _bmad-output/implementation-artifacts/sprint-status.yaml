@@ -681,6 +681,27 @@ development_status:
   19-4-the-onboarding-wizard-guides-setup-and-pre-fills-nothing: backlog  # waits: AP2, UX review with mockups, D-S9
   19-5-abandoned-signups-are-cleaned-up-and-the-operator-keeps-cont: backlog  # waits: AP2, D-S5, D-S7
   epic-19-retrospective: optional
+
+  # Self-hosting (Epic 20), added 2026-11-20 by
+  # _bmad-output/planning-artifacts/sprint-change-proposal-2026-11-20-self-hosting.md
+  # (founder decision 2026-11-20: no Supabase cloud, no Cloudflare Pages; everything
+  # on our own server through Coolify). Keys hand-inserted, not regenerated.
+  #   H-1..H-15 = proposal §6 founder decisions, NOT yet ratified (2026-11-20).
+  #   Inputs = proposal §7 (domain/DNS, Resend, Coolify API token, Tailscale CI
+  #   credential, GHCR read token, backup target, uptime account, console access).
+  # Ready now (code/docs, no host change): 20.1, 20.2 (after 20.1), 20.3, 20.4's scripts.
+  # The pilot's production go-live waits for 20.9.
+  epic-20: backlog  # self-hosting on Coolify; no product change; gates pilot go-live
+  20-1-the-self-hosted-stack-is-defined-in-the-repository: backlog  # READY: code/docs; local run under its own project name, never the dev stack
+  20-2-edge-functions-run-behind-a-keyless-router: backlog  # READY after 20.1: code; security-review of the router before production
+  20-3-the-spa-ships-as-a-static-image-with-its-headers: backlog  # READY: code; CSP enforced only after 20.5 verifies it
+  20-4-the-host-is-closed-to-everything-but-the-web: backlog  # scripts READY; applying waits: H-2, H-3, H-4, H-5, H-10, H-15, founder go, provider console, security-review
+  20-5-staging-stands-up-on-coolify: backlog  # waits: 20.1-20.4, staging DNS, H-1, H-6, H-8, Tailscale ACL, GHCR read token
+  20-6-the-pipeline-deploys-through-coolify: backlog  # code after 20.2/20.3; enabling waits: Coolify API token, Tailscale OAuth client, 20.5
+  20-7-backups-leave-the-host-and-a-restore-is-rehearsed: backlog  # interim after 20.5; off-host waits: H-11 + target credential, H-12
+  20-8-someone-hears-when-shift-is-down: backlog  # waits: 20.5, H-13, Coolify alert channel
+  20-9-production-stands-up-on-coolify: backlog  # waits: 20.1-20.8, production DNS, Resend prod domain/key, all H decisions, restore drill passed, founder go
+  epic-20-retrospective: optional
 action_items:
   - id: "epic-4-retro-item-1-fix-c1-a-sati-name-for-a-member-no-longe"
     epic: 4
