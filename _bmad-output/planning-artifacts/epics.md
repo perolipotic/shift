@@ -21,6 +21,8 @@ This document provides the complete epic and story breakdown for shift, decompos
 
 Epics 16–19 were added on 2026-11-20 by `sprint-change-proposal-2026-11-20-v2-scope.md` (v2 scope). They were planned before the proposal's founder decisions D-S1 to D-S10 were ratified: each story names the decisions and the Architect pass it waits for (**Blocked on:**), and the recommended defaults stand for planning only. The SPEC package is updated after ratification (proposal §5.1); until then CAP-25 to CAP-28 and Q26 to Q30 below are taken from the proposal and the PRD (FR-80 to FR-101, NFR-27 to NFR-30).
 
+Epic 20 was added on 2026-11-20 by `sprint-change-proposal-2026-11-20-self-hosting.md`: Shift is hosted on our own server through Coolify, with no Supabase cloud and no Cloudflare Pages. It changes no product behaviour. Its later stories wait for the founder decisions H-1 to H-15 and the inputs that proposal lists.
+
 **Requirements basis:** the SPEC package is canonical. `prd.md` is a fully-absorbed source and is deliberately not an input — it retains a retired rotation table, a pre-narrowing FR-16, and pre-architecture conflict framing. The PRD **addendum** is an adopted companion and is an input, for the pilot seed configuration and the epic seed.
 
 ## Requirements Inventory
@@ -119,7 +121,7 @@ From `ARCHITECTURE-SPINE.md`. Each `AD` governs stories rather than becoming one
 - **AD-16** One privileged auth boundary — a single Edge Function exposing only `createUser`, `updateUserById`, `resetPassword` (each admin-authorized against the database) and `clearMustSetPassword` (any role, acting only on the caller), holding two clients (secret key for the auth call, caller's JWT for every domain write), performing no domain calculation. Deactivation does not use it: it is a versioned write through PostgREST, and the custom access token hook refuses a member inactive today; there is no ban/unban (2026-10-13, deferred-work sweep). Organization provisioning is an operator CLI task and does not use it.
 - **AD-17** The secret key (`sb_secret_*`) exists only in that function's environment, per environment; the SPA ships the publishable key only. Legacy `anon`/`service_role` keys are deprecated end of 2026 and unused.
 
-**Environment and platform.** Local (Supabase CLI) → free-tier staging → production; migrations are files in git, forward-only, never edited after promotion. Stack pinned and verified 2026-09-02: React 19.2.8, TypeScript 7.0.2, Vite 8.2.2, Tailwind 4.3.3, TanStack Router 1.170.32 / Query 5.102.8 / Table 9.2.4, supabase-js 2.113.0, i18next 26.4.1, Vitest (node environment). Known gap: TypeScript 7 has no stable programmatic API until 7.1, affecting typed linting; fallback is pinning TypeScript 5.x.
+**Environment and platform.** Local (Supabase CLI) → free-tier staging → production; migrations are files in git, forward-only, never edited after promotion. Stack pinned and verified 2026-09-02: React 19.2.8, TypeScript 7.0.2, Vite 8.2.2, Tailwind 4.3.3, TanStack Router 1.170.32 / Query 5.102.8 / Table 9.2.4, supabase-js 2.113.0, i18next 26.4.1, Vitest (node environment). Known gap: TypeScript 7 has no stable programmatic API until 7.1, affecting typed linting; fallback is pinning TypeScript 5.x. *Amended 2026-11-20 (self-hosting):* staging and production are self-hosted Supabase stacks on our own server, run by Coolify, not hosted projects; migrations reach them by `supabase db push --db-url` over the tailnet (Epic 20).
 
 ### UX Design Requirements
 
@@ -402,6 +404,14 @@ A stranger creates an account, verifies their email, creates an organization and
 **Capabilities covered:** CAP-28
 **Standalone:** operator provisioning keeps working; signup is a second door into the same provisioning transaction.
 **Implementation notes:** Architect pass 2 (AD-10, AD-12, AD-16 and the signup door) precedes 19.1, and a `security-review` of 19.1–19.5 precedes production. Ships to staging; production opening is the separate decision D-S5. Decisions D-S3, D-S4, D-S5, D-S7, D-S8, D-S9 and D-S10 pending ratification. Q28–Q30 are proven here.
+
+### Epic 20: Shift runs on our own server, and comes back from a backup (added 2026-11-20, sprint change)
+
+Both environments run on our own server through Coolify, with only HTTPS public, and the data survives losing that server.
+
+**Capabilities covered:** none (operations); proposed NFR-31–34.
+**Standalone:** no product behaviour changes; every gate of the pipeline stays.
+**Implementation notes:** the source is `sprint-change-proposal-2026-11-20-self-hosting.md`. 20.1–20.3 and 20.4's scripts are code that can be built now. Applying 20.4, and 20.5–20.9, wait for founder decisions H-1 to H-15 and the inputs in proposal §7 (domain and DNS, Resend, a Coolify API token, a Tailscale CI credential, a GHCR read token, a backup target). The pilot's production go-live waits for 20.9.
 
 
 ---
@@ -3263,3 +3273,253 @@ So that open signup never becomes a liability I cannot manage.
 **Given** this story ships
 **When** it is merged
 **Then** DEPLOY.md carries the housekeeping cron job, the scripts, the runbook, and the production opening checklist for D-S5 (security review done, D-S3 limits verified on hosted config, founder go)
+
+---
+
+## Epic 20: Shift runs on our own server, and comes back from a backup
+
+Damir opens `app.<domain>` on the station's tablet and it works exactly as it did on the test server. Nobody outside can reach the database or the admin consoles. When the server dies one night, the founder rebuilds it from last night's off-host backup before the next shift starts.
+
+Added 2026-11-20 by `sprint-change-proposal-2026-11-20-self-hosting.md` (§5.3), on the founder's decision that Shift uses no Supabase cloud, no Cloudflare Pages and no other hosted service in `DEPLOY.md`: everything runs on our own server through Coolify. No product behaviour changes. The spine's self-hosting amendments to AD-10, AD-14, AD-17, Stack, Conventions, Containers and environments and Deferred are applied with the proposal. Nothing in this epic touches the host, Coolify or a credential before the founder ratifies the H decisions it names.
+
+**Capabilities:** none (operations) · **Governed by:** AD-10, AD-14, AD-16, AD-17 (all as amended 2026-11-20) · **Proves:** proposed NFR-31–34 (applied to the PRD on ratification) · **Decisions:** H-1 to H-15 (pending ratification)
+
+**Planning status (2026-11-20):** 20.1, 20.2, 20.3 and 20.4's scripts are code and docs that can be built now. Applying 20.4, and 20.5–20.9, wait for founder decisions and inputs (proposal §6, §7). The pilot's production go-live waits for 20.9.
+
+### Story 20.1: The self-hosted stack is defined in the repository
+
+As the operator,
+I want each environment's Supabase stack to be a reviewed file in the repository,
+So that staging and production run exactly what was tested, and nothing is hand-built in a console.
+
+**Depends on:** none. **Blocked on:** nothing (code and docs; it runs locally under its own project name and ports and never touches the dev stack).
+
+**Acceptance Criteria:**
+
+**Given** `deploy/coolify/supabase/docker-compose.yml`
+**When** it is reviewed
+**Then** it is derived from Coolify's Supabase service template at a recorded commit, and runs Postgres, Kong, GoTrue, PostgREST, Storage (file backend on a named volume), postgres-meta, Studio and `edge-runtime` only (no Realtime, analytics, Vector, pooler, MinIO or imgproxy)
+**And** every image is pinned to a version, at the versions the pinned Supabase CLI runs locally, with Postgres 17
+**And** every secret is a Coolify-generated variable (`SERVICE_PASSWORD_*`), and none has a default value in the file
+**And** memory and CPU limits are set per service, with staging's lower
+
+**Given** GoTrue's and PostgREST's environment in the file
+**When** `test/supabase-scaffold.test.ts` runs
+**Then** it fails unless signup is off, the email provider is on, anonymous sign-ins are off, confirmations are off, the JWT expiry, refresh rotation, reuse interval and minimum password length match `config.toml`, the access token hook is enabled with `config.toml`'s URI, and PostgREST's schemas, extra search path and max rows match `[api]` (AD-10 as amended)
+
+**Given** the file
+**When** a test reads its published ports and Kong's routes
+**Then** no service publishes on `0.0.0.0` or `[::]`, Postgres and Studio publish on `127.0.0.1` only, and Kong has no route to Studio (H-5)
+
+**Given** the stack started locally under its own project name and ports
+**When** `supabase db push --db-url` applies every migration
+**Then** it succeeds from nothing, `pg_cron`, `pg_net` and Vault work, the `0005` bucket exists, a provisioned admin signs in and the decoded token carries `organization_id`, and a signup is refused
+**And** the result of probing whether this stack accepts opaque `sb_publishable_`/`sb_secret_` keys is recorded in the story and in AD-17's amendment, settling its key form
+
+**Given** this story ships
+**When** it is merged
+**Then** DEPLOY.md gains the stack's section (what runs, what does not and why, the local rehearsal)
+
+### Story 20.2: Edge Functions run on the self-hosted runtime behind a keyless router
+
+As the operator,
+I want `admin-auth` and `notify` to run on our own edge runtime with the same gate the hosted gateway gave them,
+So that a function that needs a session never runs without one, and the runtime holds no key it does not need.
+
+**Depends on:** 20.1. **Blocked on:** nothing (code). A `security-review` of the router precedes production.
+
+**Acceptance Criteria:**
+
+**Given** the router (`deploy/functions/main`)
+**When** a request names a function
+**Then** it serves only functions named in `config.toml`'s `[functions.*]` tables, answers 404 for any other name, and for a function with `verify_jwt = true` forwards the request only when GoTrue's `GET /auth/v1/user` accepts the bearer token (AD-14 as amended)
+**And** it holds no key and no JWT signing secret, reads no table, and contains no rule (AD-14, AD-16)
+
+**Given** the `shift-functions` image
+**When** it is built
+**Then** it is a pinned `edge-runtime` base with the router and every function copied in and its dependencies cached at build time, so a cold start fetches nothing from the network
+**And** `SUPABASE_URL` is the stack's internal Kong URL, and the secret key, Resend key, invoke secret and VAPID keys come from the container's environment only (AD-17 as amended)
+
+**Given** AD-17's key form settled by 20.1
+**When** both functions' configuration checks and `test/key-hygiene.test.ts` run
+**Then** they accept that form and still refuse a publishable key where the secret key belongs, and the reverse
+
+**Given** the 20.1 local stack running the image
+**When** the router's tests and an end-to-end probe run
+**Then** `notify` without a token answers `401 INVOKE_SECRET_REFUSED`, `admin-auth` without a session is refused before the handler runs, and an admin's `resetPassword` with no payload answers `400 PAYLOAD_INVALID`
+**And** the pg_cron job reaches `notify` at `http://supabase-kong:8000/functions/v1/notify`, and the outbox drains
+
+**Given** a function path that carries a bearer secret (v2's `calendar-feed`)
+**When** Kong logs the request
+**Then** the path after `/functions/v1/calendar-feed/` is redacted (NFR-27), ready for story 16.4
+
+### Story 20.3: The SPA ships as a static image with its headers
+
+As a member,
+I want the app served from our own server as fast and as safely as from a CDN,
+So that nothing changes for me except the address.
+
+**Depends on:** none. **Blocked on:** nothing (code); the CSP is enforced only after 20.5 verifies it.
+
+**Acceptance Criteria:**
+
+**Given** `deploy/web/Dockerfile`
+**When** CI builds it from the environment's `apps/web/dist`
+**Then** a pinned, non-root static server serves it, every deep link answers `index.html` with 200, and no `*.map` file is in the image
+
+**Given** `apps/web/public/_headers`
+**When** a test starts the image and reads the response headers
+**Then** they equal `_headers`' headers, `index.html` and `sw.js` are `Cache-Control: no-cache`, `/assets/*` are immutable for a year, and HSTS is set
+
+**Given** a Content-Security-Policy derived at build time from `VITE_SUPABASE_URL`
+**When** this story ships
+**Then** it is shipped as `Content-Security-Policy-Report-Only`, and becomes enforcing only in 20.5 after staging verifies that REST, Auth, Storage and functions stay reachable (closes the `deferred-work.md` CSP and HSTS entries there)
+
+### Story 20.4: The host is closed to everything but the web
+
+As the operator,
+I want only HTTPS reachable from the internet,
+So that the database, the consoles and SSH cannot be attacked from it.
+
+**Depends on:** none for the scripts. **Blocked on:** H-2, H-3, H-4, H-5, H-10, H-15 for applying them, the founder's go, and console access to the VPS provider. A `security-review` of the rules precedes applying them.
+
+**Acceptance Criteria:**
+
+**Given** `deploy/host/` scripts
+**When** they are applied
+**Then** `DOCKER-USER` (IPv4 and IPv6) lets established traffic and 80, 443/tcp and 443/udp in from `eth0` and drops every other new connection to a container port, keeping the existing dev-stack drop; `INPUT` admits sshd only from `tailscale0` and Coolify's Docker bridge; and a systemd unit re-applies the rules after Docker starts
+**And** the scripts are idempotent, and are applied from the provider's console with a timed auto-revert
+
+**Given** sshd
+**When** the drop-in is applied ahead of any cloud-init drop-in
+**Then** `sshd -T` shows `passwordauthentication no` and `permitrootlogin prohibit-password`, and Coolify still validates its server connection
+
+**Given** the host
+**When** the runbook's remaining steps are done
+**Then** a 4 GiB swapfile is active with `vm.swappiness=10`, Coolify's auto-update is off, unattended security upgrades stay on, and the monthly maintenance window is written down (H-10, H-15)
+
+**Given** a port scan from outside the host, of the IPv4 and the IPv6 address
+**When** the verification script runs
+**Then** only 80 and 443 answer, and the Coolify UI, Studio and Postgres answer over the tailnet
+
+### Story 20.5: Staging stands up on Coolify
+
+As the operator,
+I want a staging environment on our server that mirrors production,
+So that every promotion is rehearsed before it reaches the pilot.
+
+**Depends on:** 20.1–20.4. **Blocked on:** DNS for `staging.<domain>` and `api.staging.<domain>`, H-1, H-6, H-8, the Tailscale ACL, the GHCR read token, a staging Resend key (for e-mail only).
+
+**Acceptance Criteria:**
+
+**Given** the Coolify project `shift-staging`
+**When** the stack is created from 20.1's file
+**Then** every secret is freshly generated, and a check shows the JWT secret and both keys are not the demo values of Supabase's `.env.example` (H-6)
+**And** `api.staging.<domain>` and `staging.<domain>` serve over Let's Encrypt TLS through Traefik, and Postgres is reachable only through `tailscale serve`
+
+**Given** the fresh stack
+**When** it is first brought up
+**Then** `db push --db-url` over the tailnet runs before GoTrue runs with the hook enabled (AD-10 as amended), Vault holds the internal `notify_url` and the invoke secret, the edge-runtime's environment holds the function secrets, and the smoke organization is provisioned (DEPLOY §7)
+
+**Given** the staging app
+**When** the smoke and the DEPLOY §6 checks run against it
+**Then** they pass, a decoded token carries `organization_id`, a signup is refused, and the CSP from 20.3 is verified and switched to enforcing
+**And** Coolify's support for scheduled backups of a database inside a service is recorded (proposal §9 risk 3)
+
+**Given** this story ships
+**When** it is merged
+**Then** DEPLOY.md §2–§6 describe standing up an environment on Coolify, and say nothing of a hosted project for staging
+
+### Story 20.6: The pipeline deploys through Coolify
+
+As the operator,
+I want a merge to `main` to reach staging, and with approval production, without anyone at a console,
+So that every gate the pipeline has today still stands between a commit and the pilot.
+
+**Depends on:** 20.2, 20.3, 20.5. **Blocked on:** for enabling, the Coolify API token (deploy only), the Tailscale OAuth client, 20.5. The code can be written before.
+
+**Acceptance Criteria:**
+
+**Given** `.github/actions/deploy/action.yml`
+**When** it runs for an environment
+**Then** in order: `require-config.mjs` checks the new set (proposal §5.4), the runner joins the tailnet as an ephemeral `tag:ci` node, `db push --db-url` and `migration list --db-url` with `check-migrations.mjs`, `shift-functions:<sha>` is pushed and deployed with the `notify` probe, `apps/web` is built with that environment's values and passes the bundle check with no source map, and `shift-web` is pushed and deployed through the Coolify API
+**And** no `supabase link`, `config push`, `secrets set`, `functions deploy` or `wrangler` remains, and `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_REF`, `CLOUDFLARE_*` and the runtime secrets are no longer read from GitHub (AD-17 as amended)
+
+**Given** the job graph
+**When** a push to `main` runs with `DEPLOY_ENABLED=true`
+**Then** the job graph, the Environments' branch rules, the production approval, the smoke jobs and `ci-passed` are unchanged in behaviour
+
+**Given** a bad production deploy
+**When** the operator rolls back
+**Then** redeploying the previous image tag through Coolify restores the SPA and the functions, and DEPLOY.md §8.7 says so
+
+### Story 20.7: Backups leave the host, and a restore is rehearsed
+
+As the founder,
+I want last night's data safe somewhere other than the server,
+So that losing the server costs at most a day of entries.
+
+**Depends on:** 20.5 (interim), 20.9 (production schedule). **Blocked on:** H-11 and the backup target's credential, H-12.
+
+**Acceptance Criteria:**
+
+**Given** each stack's Postgres
+**When** the schedule runs (daily 02:30 Europe/Zagreb)
+**Then** a dump lands locally (7 kept) and on the off-host EU target with server-side encryption (30 kept), through Coolify's scheduled backup, or a pinned `pg_dump` sidecar if 20.5 found it unsupported
+**And** the storage volume and Coolify's data go to the same target nightly with `restic`, and a failure alerts the founder
+
+**Given** H-11 not yet decided
+**When** the interim runs
+**Then** local backups exist and a founder device pulls them nightly over the tailnet, with no credential for the copy on the host
+
+**Given** the latest off-host backup
+**When** the restore drill runs in a throwaway stack (never staging)
+**Then** it restores, the Vault secrets are re-created, the smoke account signs in, per-table row counts match the dump, the time taken is recorded against the RTO (H-12), and the stack is destroyed
+
+**Given** this story ships
+**When** it is merged
+**Then** DEPLOY.md carries the backup, restore and drill runbook, and the Coolify `APP_KEY`'s offline copy is confirmed (H-8)
+
+### Story 20.8: Someone hears when Shift is down
+
+As the founder,
+I want to be told when the app or the API stops answering,
+So that the pilot does not find out before I do.
+
+**Depends on:** 20.5. **Blocked on:** H-13, and an alert channel for Coolify (SMTP or chat).
+
+**Acceptance Criteria:**
+
+**Given** the external uptime checks on the app, `auth/v1/health` and `notify`'s `401 INVOKE_SECRET_REFUSED`
+**When** `shift-web` is stopped on staging
+**Then** the founder is alerted within 10 minutes (proposed NFR-34), and again on recovery
+
+**Given** Coolify's notifications
+**When** a backup or a deploy fails, a container stops, or disk use passes 80 %
+**Then** the founder is told
+
+**Given** this story ships
+**When** it is merged
+**Then** DEPLOY.md carries "the site is down" runbook
+
+### Story 20.9: Production stands up, and DEPLOY.md is the self-hosting runbook
+
+As the founder,
+I want production running on our server with every safeguard proven,
+So that the pilot can start.
+
+**Depends on:** 20.1–20.8. **Blocked on:** production DNS, the production Resend domain and key, every H decision, a passed restore drill, and the founder's go.
+
+**Acceptance Criteria:**
+
+**Given** the Coolify project `shift-production`
+**When** it is stood up as in 20.5
+**Then** its secrets are fresh and share no value with staging, its first `db push` runs outside the pilot's working hours, and the pilot organization is provisioned (DEPLOY §7)
+
+**Given** production
+**When** the checks run
+**Then** the DEPLOY §6 checks and `smoke-production` pass, backups and monitoring are verified on it, and an outside scan shows only 80 and 443
+
+**Given** `DEPLOY.md`
+**When** this story ships
+**Then** it contains no instruction for Supabase cloud or Cloudflare, and `DEPLOY_ENABLED` is `true`
