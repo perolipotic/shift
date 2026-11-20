@@ -485,7 +485,7 @@ describe('the access-control migration', () => {
     ).toEqual([]);
   });
 
-  it('declares exactly the sixty-one policies stories 1.3a, 1.4a, 1.4b, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a, 3.5a, 3.6a, 5.1b, 5.4a, 9.2, 10.3, 10.4, 12.1, 13.1, 13.3, 14.1, 0025 and 0036 reviewed, and no sixty-second', () => {
+  it('declares exactly the sixty-three policies stories 1.3a, 1.4a, 1.4b, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a, 3.5a, 3.6a, 5.1b, 5.4a, 9.2, 10.3, 10.4, 12.1, 13.1, 13.3, 14.1, 18.2, 0025 and 0036 reviewed, and no sixty-fourth', () => {
     // EXTENDED BY STORY 1.4a, exactly as this comment asked: `0004_organization
     // _settings.sql` adds `organizations_update_by_own_active_admin`, built by
     // copying `members_update_by_own_active_admin`, and its name is added here
@@ -645,6 +645,12 @@ describe('the access-control migration', () => {
       'swap_request_decisions_select_own_organization',
       'swap_requests_insert_own_by_active_member',
       'swap_requests_select_own_organization',
+      // STORY 18.2 (0062), and TWO, as 3.5a's: read and insert, both an active
+      // admin's alone (the table holds the reason, FR-92). No update and no
+      // delete policy: removal and amend are story 18.4's, and members read
+      // the live loans through `calendar_team_loans()`.
+      'team_loans_insert_by_own_active_admin',
+      'team_loans_select_by_own_active_admin',
       // STORY 1.7b, and THREE for the reason the status table has three: a
       // membership version is appended, cancelled only while it is not yet in
       // effect, and never changed.
@@ -3547,6 +3553,8 @@ describe('the access-control migration', () => {
     swap_request_decisions: ['organization_id', 'request_id'],
     absence_types: ['organization_id', 'id'],
     leave_allowances: ['organization_id', 'id'],
+    // STORY 18.2 (0062), attached in the migration that creates it.
+    team_loans: ['organization_id', 'id'],
   };
 
   /** AD-11's excluded organization tables, exactly. */
@@ -3656,7 +3664,7 @@ describe('the access-control migration', () => {
 
     expect(coverage.tables.length, 'too few organization tables were read for the pin to mean anything').toBeGreaterThanOrEqual(25);
     expect(coverage.uncovered, 'an organization table is neither audited nor named excluded in AD-11').toEqual([]);
-    expect(coverage.audited, 'the audited set is not AD-11\'s 21 tables').toEqual(Object.keys(AUDITED_TABLES).sort());
+    expect(coverage.audited, 'the audited set is not AD-11\'s 22 tables').toEqual(Object.keys(AUDITED_TABLES).sort());
     expect(coverage.attachedElsewhere, 'a table created after 0061 does not attach its audit triggers in its own migration').toEqual([]);
     expect(coverage.truncatable, 'a table audited after 0061 leaves TRUNCATE, which no row trigger sees, to a session role').toEqual([]);
     expect(
@@ -3787,7 +3795,9 @@ describe('the access-control migration', () => {
       return reads.map((read) => read[2] ?? '').sort();
     };
     const attributed = coverage.tables
-      .filter(({ table, attributed: carries }) => carries && Object.keys(AUDITED_TABLES).includes(table))
+      // The backfill reads the tables that existed when it ran; a table created
+      // after 0061 has no row from before its triggers.
+      .filter(({ table, migration, attributed: carries }) => carries && migration <= AUDIT_MIGRATION && Object.keys(AUDITED_TABLES).includes(table))
       .map(({ table }) => table)
       .sort();
     expect(attributed, 'AD-11 names 15 attributed tables').toHaveLength(15);
@@ -3904,12 +3914,18 @@ describe('the access-control migration', () => {
     expect(migration.match(/create (or replace )?trigger/gi), '0061 declares other than two triggers per audited table').toHaveLength(42);
     expect(migration, 'a constraint trigger (AD-3)').not.toMatch(/create constraint trigger/i);
 
-    // TRUNCATE, which row triggers do not see, is taken on all 21 from every session role.
+    // TRUNCATE, which row triggers do not see, is taken on all 21 from every
+    // session role. A table audited later takes it in its own migration (the pin above).
+    const auditedBy0061 = auditCoverage(migrationTexts(), AUDITED_TABLES)
+      .tables.filter(({ table, migration: createdIn }) => createdIn <= AUDIT_MIGRATION && table in AUDITED_TABLES)
+      .map(({ table }) => table)
+      .sort();
+    expect(auditedBy0061, '0061 audited 21 tables').toHaveLength(21);
     const truncate = /revoke truncate on table\s+([\s\S]*?)\s+from anon, authenticated, service_role;/.exec(migration)?.[1] ?? '';
     expect(
       truncate.split(',').map((table) => table.trim().replace(/^public\./, '')).sort(),
       'TRUNCATE is not revoked on exactly the 21 audited tables',
-    ).toEqual(Object.keys(AUDITED_TABLES).sort());
+    ).toEqual(auditedBy0061);
 
     // THE BACKFILL: last, between its literal markers, after every trigger,
     // and DML into audit_events alone (`test/rls-isolation.test.ts` runs it).
@@ -4780,7 +4796,7 @@ describe('the access-control migration', () => {
     return tables;
   }
 
-  it('draws every live column of the 21 audited tables as a named field or hides it as bookkeeping, never both or neither (epic 14 retro A4)', () => {
+  it('draws every live column of the 22 audited tables as a named field or hides it as bookkeeping, never both or neither (epic 14 retro A4)', () => {
     const live = liveColumnsOf(migrationTexts());
     const misplaced: string[] = [];
     const hiddenSeen = new Set<string>();
@@ -4820,6 +4836,121 @@ describe('the access-control migration', () => {
     ]);
 
     expect(live.get('notes')).toEqual(['organization_id', 'id', 'text_body', 'colour']);
+  });
+
+  // ------------------------------------------------ story 18.2: a loan is a recorded exception
+
+  it('stores a loan as a live-or-removed exception, refused by shape, read whole by an active admin and without its reason by every member (story 18.2)', () => {
+    // STORY 18.2 (0062, FR-88, AD-2, AD-3, AD-11): source text only; what each
+    // rule does is `test/rls-isolation.test.ts`, which runs in CI.
+    const loans = columnsOf('team_loans');
+    expect(loans.columns, 'team_loans stores something beyond its reviewed columns').toEqual([
+      'organization_id',
+      'id',
+      'member_id',
+      'team_id',
+      'during',
+      'reason',
+      'created_by',
+      'created_at',
+      'removed_by',
+      'removed_at',
+    ]);
+    expect(loans.body).toMatch(/organization_id uuid not null references organizations \(id\) on delete cascade/);
+    expect(loans.body).toMatch(/id uuid primary key default gen_random_uuid\(\)/);
+    expect(loans.body).toMatch(/member_id uuid not null,/);
+    expect(loans.body).toMatch(/team_id uuid not null,/);
+    expect(loans.body).toMatch(/during daterange not null,/);
+    expect(loans.body).toMatch(/reason text not null,/);
+    expect(loans.body).toMatch(/created_by uuid not null default auth\.uid\(\)/);
+    expect(loans.body).toMatch(/created_at timestamptz not null default now\(\)/);
+    expect(loans.body, 'a loan may name another tenant\'s member, or cascades').toMatch(
+      /constraint team_loans_member_fkey\s+foreign key \(organization_id, member_id\)\s+references members \(organization_id, id\),/,
+    );
+    expect(loans.body, 'a loan may name another tenant\'s team, or cascades').toMatch(
+      /constraint team_loans_team_fkey\s+foreign key \(organization_id, team_id\)\s+references teams \(organization_id, id\),/,
+    );
+    expect(loans.body).toMatch(/constraint team_loans_during_non_empty\s+check \(not isempty\(during\)\)/);
+    expect(loans.body).toMatch(/constraint team_loans_during_bounded\s+check \(not lower_inf\(during\) and not upper_inf\(during\)\)/);
+    expect(loans.body).toMatch(/constraint team_loans_during_lower_inclusive\s+check \(lower_inc\(during\)\)/);
+    expect(loans.body).toMatch(
+      /constraint team_loans_during_in_years\s+check \(lower\(during\) >= date '0001-01-01' and upper\(during\) <= date '10000-01-01'\)/,
+    );
+    expect(loans.body, 'a loan has a length cap (design note 3)').not.toMatch(/upper\(during\) - lower\(during\)/);
+    expect(loans.body, 'the reason is not trimmed by code point (0036)').toMatch(
+      /constraint team_loans_reason_length\s+check \(\s+char_length\(\s+pg_catalog\.btrim\(\s+reason,\s+U&'\\0009[^']*\\FEFF'\s+\)\s+\) between 1 and 200\s+\)/,
+    );
+    expect(loans.body).toMatch(/constraint team_loans_removal_complete\s+check \(\(removed_by is null\) = \(removed_at is null\)\)/);
+    expect(loans.body, 'two live loans of a member may overlap').toMatch(
+      /constraint team_loans_no_overlap\s+exclude using gist \(member_id with =, during with &&\)\s+where \(removed_at is null\)/,
+    );
+
+    const migration = stripLineComments(readFileSync(join(supabaseRoot, 'migrations', '0062_team_loans.sql'), 'utf8'));
+    expect(migration).toMatch(/alter table team_loans enable row level security;/);
+    expect(migration).toMatch(/create index \w+ on team_loans \(organization_id\);/);
+    expect(migration).toMatch(/create index \w+ on team_loans \(organization_id, member_id\);/);
+
+    const read = policyBody('team_loans_select_by_own_active_admin');
+    expect(read, 'the loan read is not a select').toMatch(/for select\s+to authenticated\b/);
+    expect(read, 'the loan read does not pin the claim').toMatch(
+      /organization_id = nullif\(\(\(select auth\.jwt\(\)\) ->> 'organization_id'\), ''\)::uuid/,
+    );
+    expect(read, 'a member-role account reads the table (it holds the reason)').toMatch(/and access\.member_role = 'admin'/);
+    expect(read, 'a member reads their own rows from the table').not.toMatch(/auth_user_id/);
+    const insert = policyBody('team_loans_insert_by_own_active_admin');
+    expect(insert, 'the loan write is not an insert').toMatch(/for insert\s+to authenticated\b/);
+    expect(insert, 'the loan write admits a member-role account').toMatch(/access\.member_role = 'admin'/);
+    expect(insert, 'the loan write does not pin its author').toMatch(/and created_by = \(select auth\.uid\(\)\)/);
+    expect(insert, 'a loan to an archived team is admitted').toMatch(
+      /not exists \(\s+select 1\s+from public\.teams team\s+where team\.organization_id = team_loans\.organization_id\s+and team\.id = team_loans\.team_id\s+and team\.archived\s+\)/,
+    );
+    expect(insert, 'a loan to the member\'s team on a covered date is admitted').toMatch(
+      /from public\.team_membership_versions version\s+where version\.organization_id = team_loans\.organization_id\s+and version\.member_id = team_loans\.member_id\s+and version\.team_id = team_loans\.team_id\s+and version\.effective_from < upper\(team_loans\.during\)\s+and not exists \(\s+select 1\s+from public\.team_membership_versions later\s+where later\.organization_id = version\.organization_id\s+and later\.member_id = version\.member_id\s+and later\.effective_from > version\.effective_from\s+and later\.effective_from <= lower\(team_loans\.during\)/,
+    );
+    expect(policyDeclarations(migration), '0062 declares a policy beyond the read and the insert').toHaveLength(2);
+
+    expect(migration).toMatch(
+      /revoke insert, update, delete, truncate, references, trigger on table public\.team_loans\s+from anon, authenticated;/,
+    );
+    expect(migration).toMatch(/revoke select on table public\.team_loans from anon;/);
+    expect(migration).toMatch(/revoke truncate on table public\.team_loans from anon, authenticated, service_role;/);
+    expect(migration, 'a session may insert more than the five facts of a loan').toMatch(
+      /grant insert \(organization_id, member_id, team_id, during, reason\) on table public\.team_loans\s+to authenticated;/,
+    );
+    const statements = migrationStatements();
+    expect(statements, 'a migration grants update or delete on team_loans').not.toMatch(
+      /grant[^;]*\b(update|delete|all)\b[^;]*on table public\.team_loans\b/i,
+    );
+    expect(statements, 'a migration grants anon something on team_loans').not.toMatch(
+      /grant[^;]*on table public\.team_loans to[^;]*\banon\b/i,
+    );
+
+    // THE CALENDAR READ: live loans of the claimed organization, no reason, no author.
+    const calendar = /create function public\.calendar_team_loans\(\)[\s\S]*?\$\$;/i.exec(migration)?.[0] ?? '';
+    expect(calendar, 'calendar_team_loans is not declared').not.toBe('');
+    expect(calendar).toMatch(
+      /returns table \(\s+id uuid,\s+member_id uuid,\s+team_id uuid,\s+starts_on date,\s+ends_on date\s+\)/,
+    );
+    expect(calendar).toMatch(/\bstable\b/);
+    expect(calendar).toMatch(/\bsecurity definer\b/);
+    expect(calendar).toMatch(/set search_path = ''/);
+    expect(calendar, 'the read answers the exclusive upper bound').toMatch(/upper\(l\.during\) - 1/);
+    expect(calendar, 'the read does not pin the claim').toMatch(
+      /l\.organization_id = nullif\(\(\(select auth\.jwt\(\)\) ->> 'organization_id'\), ''\)::uuid/,
+    );
+    expect(calendar, 'the read admits an inactive caller').toMatch(/where access\.is_active/);
+    expect(calendar, 'the read answers a removed loan').toMatch(/and l\.removed_at is null/);
+    expect(calendar, 'the read answers the reason or the author').not.toMatch(/\b(reason|created_by|removed_by)\b/);
+    for (const role of ['public', 'anon', 'service_role']) {
+      expect(migration).toContain(`revoke execute on function public.calendar_team_loans() from ${role};`);
+    }
+    expect(migration).toContain('grant execute on function public.calendar_team_loans() to authenticated;');
+    expect(migration.match(/create (or replace )?function/gi), '0062 defines a function beyond the read').toHaveLength(1);
+
+    // AD-3: the two audit triggers and no other.
+    expect(migration.match(/create (or replace )?trigger/gi), '0062 declares a trigger beyond the two audit triggers').toHaveLength(2);
+    expect(migration, 'a constraint trigger (AD-3)').not.toMatch(/create constraint trigger/i);
+    expect(migration, '0062 backfills a loan').not.toMatch(/\b(insert into|update public|delete from)\b/i);
   });
 
   // ------------------------------------------------ epic 14 retro A9: only an amend pairs a removal with an insert

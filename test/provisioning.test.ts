@@ -700,7 +700,7 @@ describe('every organization table carries row level security, and only its revi
               'leave_records', 'conflict_resolutions', 'leave_requests',
               'leave_request_decisions', 'notification_outbox', 'notification_settings',
               'push_subscriptions', 'swap_requests', 'swap_request_decisions',
-              'absence_types', 'leave_allowances', 'audit_events'
+              'absence_types', 'leave_allowances', 'audit_events', 'team_loans'
             )
           order by relname`,
       );
@@ -744,6 +744,8 @@ describe('every organization table carries row level security, and only its revi
         // STORY 12.1 (0049): the swap requests and their decisions.
         'swap_request_decisions',
         'swap_requests',
+        // STORY 18.2 (0062): a member's loans to another team, an active admin's read alone.
+        'team_loans',
         'team_membership_versions',
         'teams',
       ]);
@@ -1724,6 +1726,117 @@ describe('every organization table carries row level security, and only its revi
     }
   });
 
+  it.skipIf(noDatabase)('holds no privilege on team_loans but read and a five-column insert, and never update, delete or truncate (story 18.2)', async () => {
+    // As 3.5a's shift-type overrides: `authenticated` reads (narrowed by the
+    // policy to an active admin's organization) and inserts the five facts of
+    // a loan; no session updates or deletes one, names its id, attribution or
+    // removal, truncates it (0061's rule for an audited table), or holds
+    // anything as `anon`.
+    const client = await connect();
+    try {
+      const held = await heldPrivileges(client, 'team_loans', [
+        'organization_id',
+        'id',
+        'member_id',
+        'team_id',
+        'during',
+        'reason',
+        'created_by',
+        'created_at',
+        'removed_by',
+        'removed_at',
+      ]);
+      expect(held.tables).toEqual(['authenticated:SELECT']);
+      expect(held.columns, 'the writable loan columns changed, or anon holds one').toEqual([
+        'authenticated:INSERT:during',
+        'authenticated:INSERT:member_id',
+        'authenticated:INSERT:organization_id',
+        'authenticated:INSERT:reason',
+        'authenticated:INSERT:team_id',
+      ]);
+      const { rows: truncation } = await client.query<{ role: string }>(
+        `select role from unnest(array['anon', 'authenticated', 'service_role']) as role
+          where has_table_privilege(role, 'public.team_loans', 'TRUNCATE')`,
+      );
+      expect(truncation, 'a session role may truncate team_loans').toEqual([]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it.skipIf(noDatabase)('keys a loan to its tenant\'s member and team, refuses a live overlap by exclusion, and takes only the audit triggers (story 18.2)', async () => {
+    const client = await connect();
+    try {
+      const { rows: columns } = await client.query<{ column_name: string; is_nullable: string }>(
+        `select column_name, is_nullable from information_schema.columns
+          where table_schema = 'public' and table_name = 'team_loans'
+          order by ordinal_position`,
+      );
+      expect(columns.map((row) => [row.column_name, row.is_nullable])).toEqual([
+        ['organization_id', 'NO'],
+        ['id', 'NO'],
+        ['member_id', 'NO'],
+        ['team_id', 'NO'],
+        ['during', 'NO'],
+        ['reason', 'NO'],
+        ['created_by', 'NO'],
+        ['created_at', 'NO'],
+        ['removed_by', 'YES'],
+        ['removed_at', 'YES'],
+      ]);
+      const { rows: keys } = await client.query<{ conname: string; definition: string }>(
+        `select conname, pg_get_constraintdef(oid) as definition
+           from pg_constraint
+          where contype in ('p', 'f', 'x') and conrelid = 'public.team_loans'::regclass`,
+      );
+      expect(keys.map((row) => row.definition).sort()).toEqual([
+        'EXCLUDE USING gist (member_id WITH =, during WITH &&) WHERE ((removed_at IS NULL))',
+        'FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE',
+        'FOREIGN KEY (organization_id, member_id) REFERENCES members(organization_id, id)',
+        'FOREIGN KEY (organization_id, team_id) REFERENCES teams(organization_id, id)',
+        'PRIMARY KEY (id)',
+      ]);
+      expect(keys.map((row) => row.conname)).toContain('team_loans_no_overlap');
+      const { rows: checks } = await client.query<{ conname: string }>(
+        `select conname from pg_constraint where contype = 'c' and conrelid = 'public.team_loans'::regclass order by 1`,
+      );
+      expect(checks.map((row) => row.conname)).toEqual([
+        'team_loans_during_bounded',
+        'team_loans_during_in_years',
+        'team_loans_during_lower_inclusive',
+        'team_loans_during_non_empty',
+        'team_loans_reason_length',
+        'team_loans_removal_complete',
+      ]);
+      const { rows: indexes } = await client.query<{ indexdef: string }>(
+        `select indexdef from pg_indexes where schemaname = 'public' and tablename = 'team_loans'`,
+      );
+      expect(
+        indexes.some((row) => /\(organization_id\)$/.test(row.indexdef)),
+        'no index on team_loans leads with organization_id alone',
+      ).toBe(true);
+      expect(
+        indexes.some((row) => /\(organization_id, member_id\)$/.test(row.indexdef)),
+        'no index on team_loans serves one member\'s loans',
+      ).toBe(true);
+      const { rows: triggers } = await client.query<{ tgname: string }>(
+        `select tgname from pg_trigger where tgrelid = 'public.team_loans'::regclass and not tgisinternal
+            and tgfoid <> 'private.record_audit_event()'::regprocedure`,
+      );
+      expect(triggers, 'team_loans takes a trigger beyond the audit triggers (AD-3)').toEqual([]);
+      const { rows: policies } = await client.query<{ policyname: string; cmd: string; roles: string[] }>(
+        `select policyname, cmd, roles::text[] as roles from pg_policies
+          where schemaname = 'public' and tablename = 'team_loans' order by policyname`,
+      );
+      expect(policies).toEqual([
+        { policyname: 'team_loans_insert_by_own_active_admin', cmd: 'INSERT', roles: ['authenticated'] },
+        { policyname: 'team_loans_select_by_own_active_admin', cmd: 'SELECT', roles: ['authenticated'] },
+      ]);
+    } finally {
+      await client.end();
+    }
+  });
+
   it.skipIf(noDatabase)('holds no privilege on absence_types but read and a three-column insert, a two-column update, and never delete (story 13.1)', async () => {
     // As 2.1a's hour bands, less the delete: `authenticated` reads (narrowed
     // by the policy to an active member since 13.2's 0053), inserts the tenant, name and flag,
@@ -2249,8 +2362,9 @@ describe('every organization table carries row level security, and only its revi
     }
   });
 
-  // STORY 14.1 (0061, AD-3 and AD-11 as amended 2026-11-16): the 21 audited
-  // tables and the two `tg_argv` each one's triggers pass the recorder.
+  // STORY 14.1 (0061, AD-3 and AD-11 as amended 2026-11-16): the audited
+  // tables and the two `tg_argv` each one's triggers pass the recorder — 21
+  // in 0061, 22 since story 18.2's `team_loans` (0062).
   const AUDITED: Readonly<Record<string, readonly [string, string]>> = {
     organizations: ['id', 'id'],
     members: ['organization_id', 'id'],
@@ -2273,9 +2387,10 @@ describe('every organization table carries row level security, and only its revi
     swap_request_decisions: ['organization_id', 'request_id'],
     absence_types: ['organization_id', 'id'],
     leave_allowances: ['organization_id', 'id'],
+    team_loans: ['organization_id', 'id'],
   };
 
-  it.skipIf(noDatabase)('keeps the change history append-only, read by authenticated alone, and records each of the 21 audited tables through exactly its two triggers (story 14.1)', async () => {
+  it.skipIf(noDatabase)('keeps the change history append-only, read by authenticated alone, and records each of the 22 audited tables through exactly its two triggers (story 14.1)', async () => {
     const client = await connect();
     try {
       // APPEND-ONLY BY PRIVILEGE: `authenticated` SELECT, and nothing else for
@@ -2504,6 +2619,9 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'calendar_shift_type_overrides', argumentCount: 0 },
     // STORY 3.6a. The live roster overrides, on 3.5a's attributes.
     { name: 'calendar_roster_overrides', argumentCount: 0 },
+    // STORY 18.2. The live loans, read past the admin-only select policy with
+    // no reason and no author, on 3.5a's attributes.
+    { name: 'calendar_team_loans', argumentCount: 0 },
     // STORY 3.5b. The one function that writes: it soft-removes a live
     // override past the table's missing update grant, attributing the removal
     // itself, on the same attributes.
@@ -2690,6 +2808,8 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'calendar_shift_type_overrides', argumentCount: 0, expected: ['authenticated'] },
     // STORY 3.6a. The live roster overrides, on the same terms.
     { name: 'calendar_roster_overrides', argumentCount: 0, expected: ['authenticated'] },
+    // STORY 18.2. The live loans, on the same terms.
+    { name: 'calendar_team_loans', argumentCount: 0, expected: ['authenticated'] },
     // STORY 3.5b. The removal, on the same terms; the function itself refuses
     // every caller but an active admin of the claimed organization.
     { name: 'remove_shift_type_override', argumentCount: 1, expected: ['authenticated'] },

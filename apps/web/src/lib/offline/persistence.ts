@@ -76,12 +76,16 @@ export const DEVICE_SNAPSHOT_KEY = 'shift-query-cache';
  * IT STARTS AT 2. The unversioned busters written before it (the bare user
  * id) count as shape 1, so 1 must never be reused.
  *
+ * 3 SINCE STORY 18.2: the calendar entry's members and viewer gained `loans`.
+ * A shape-2 member has none, and every roster derived from it would ignore a
+ * loan the database holds until the next read.
+ *
  * TWO BUNDLES AT ONCE. While an old and a new bundle both run (a waiting
  * service worker under `registerType: 'prompt'`, or an old tab left open),
  * each deletes the other's blob on restore. That costs offline reading until
  * the next save, never correctness: neither hydrates the other's shape.
  */
-export const DEVICE_SNAPSHOT_SHAPE = 2;
+export const DEVICE_SNAPSHOT_SHAPE = 3;
 
 /**
  * The `buster` a snapshot of `userId`'s cache is saved and restored under:

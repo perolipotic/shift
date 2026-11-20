@@ -667,8 +667,8 @@ development_status:
   epic-17-retrospective: optional
 
   epic-18: in-progress  # team loans (CAP-27); no D-S decision, no Architect pass
-  18-1-the-loan-rule-in-the-domain: review  # built, CI pending (branch feat/18-1-the-loan-rule)
-  18-2-a-loan-is-a-recorded-exception: backlog  # READY after 18.1
+  18-1-the-loan-rule-in-the-domain: done  # #323
+  18-2-a-loan-is-a-recorded-exception: review  # built, CI pending (branch feat/18-2-a-loan-is-recorded)
   18-3-an-admin-lends-a-member-to-another-team: backlog  # READY after 18.2 (11.2 done)
   18-4-an-admin-amends-ends-early-or-removes-a-loan: backlog  # READY after 18.3
   18-5-loans-are-visible-wherever-rosters-are-read: backlog  # READY after 18.3

@@ -1,5 +1,7 @@
 import {
+  checkLoans,
   checkRosterOverrides,
+  type Loan,
   type MembershipVersion,
   type RosterOverride,
   type RotationAssignment,
@@ -115,7 +117,17 @@ import {
  * `organization_id` the same tripwire. Every active member reads them (0053).
  * An absence type write invalidates `CALENDAR_KEY` too.
  *
- * `select` AND THREE `rpc`s, AND NOTHING ELSE.
+ * THE LOANS (story 18.2). The table is an admin's alone (0062: it holds the
+ * reason), so every member reads the LIVE loans of the organization through
+ * `calendar_team_loans()`: each one's member, loan team and inclusive first
+ * and last date, and nothing else. A fourth rpc beside the select, under the
+ * same key. Each member's loans ride on their `members` entry and, for the
+ * viewer, on `viewer`, so every roster, month, hour, collision and staffing
+ * figure derived from this snapshot follows a loan through the domain's one
+ * rule (`effectiveTeamOn`, R11). No loan anywhere is `loans: []` on every
+ * member, which derives exactly as before (R11.4).
+ *
+ * `select` AND FOUR `rpc`s, AND NOTHING ELSE.
  */
 
 /** The relation the read starts from: the caller's own organization. */
@@ -149,6 +161,9 @@ export const CALENDAR_OVERRIDES_FUNCTION = 'calendar_shift_type_overrides';
 
 /** The function the live roster overrides are read through (0026, story 3.6a). */
 export const CALENDAR_ROSTER_OVERRIDES_FUNCTION = 'calendar_roster_overrides';
+
+/** The function the live loans are read through (0062, story 18.2): no reason, no author. */
+export const CALENDAR_TEAM_LOANS_FUNCTION = 'calendar_team_loans';
 
 /** The embedded column the members embed is filtered by: the viewer's own row alone. */
 export const CALENDAR_VIEWER_COLUMN = 'members.auth_user_id';
@@ -211,7 +226,7 @@ export interface CalendarTable {
   select(columns: string, options: CalendarCountOptions): CalendarSelectFilter;
 }
 
-/** As much of any of the three read rpcs' answers as this module reads. */
+/** As much of any of the four read rpcs' answers as this module reads. */
 export interface CalendarRpcAnswer {
   readonly data: unknown;
   readonly error: CalendarReadError | null;
@@ -263,6 +278,11 @@ export interface CalendarMember {
   readonly memberships: readonly MembershipVersion[];
   /** Every version of their active status, in `effectiveFrom` order; none is always active. */
   readonly statuses: readonly StatusVersion[];
+  /**
+   * Every live Loan of this member (story 18.2), in `from` order; none is
+   * never lent. The domain reads it as `RosterMember.loans` (R11).
+   */
+  readonly loans: readonly Loan[];
 }
 
 /** The signed-in member reading the calendar. */
@@ -281,6 +301,8 @@ export interface CalendarViewer {
   readonly memberships: readonly MembershipVersion[];
   /** Every version of the viewer's active status, in `effectiveFrom` order (story 3.4a). */
   readonly statuses: readonly StatusVersion[];
+  /** Every live Loan of the viewer (story 18.2), the same as their entry in `members`. */
+  readonly loans: readonly Loan[];
 }
 
 /** The one answer the calendar draws from. */
@@ -396,7 +418,8 @@ type CalendarRefusal =
   | 'memberships'
   | 'statuses'
   | 'override'
-  | 'rosterOverride';
+  | 'rosterOverride'
+  | 'loan';
 
 function unavailable(reason: CalendarRefusal, detail?: unknown): CalendarOutcome {
   if (detail === undefined) console.error(CALENDAR_UNAVAILABLE, reason);
@@ -483,14 +506,18 @@ function embedded(organization: Record<string, unknown>, relation: string): read
  * or on a second override of one team and date or one id twice. Unavailable,
  * too, on a roster overrides read that fails in any of those ways, or holds a
  * row naming no member or one member twice, or a member taken off or put on
- * one team's date twice (story 3.6a). What the database's keys
+ * one team's date twice (story 3.6a). Unavailable, finally, on a loans read
+ * that is rejected, errors or answers anything but an array, or on a loan row
+ * without a text id or member, naming a team the answer lacks, with a
+ * malformed first or last date, or ending before it starts, or on one id
+ * twice or two loans of one member sharing a date (story 18.2). What the database's keys
  * guarantee is re-checked, so a defect surfaces as the message, never as a
  * projection that throws.
  *
  * A VALID VERSION OF A MEMBER THE MEMBERS READ DOES NOT NAME IS IGNORED, as
  * 3.3b ignored it: the select and the rpc are two requests, so a member
  * created between them is a race, not a defect, and must not take the
- * calendar down.
+ * calendar down. A valid loan of such a member is ignored for the same reason.
  */
 export async function readCalendar(
   table: CalendarTable,
@@ -501,19 +528,21 @@ export async function readCalendar(
   let membersAnswered: CalendarRpcAnswer;
   let overridesAnswered: CalendarRpcAnswer;
   let rosterOverridesAnswered: CalendarRpcAnswer;
+  let loansAnswered: CalendarRpcAnswer;
 
   try {
     const current = await session();
 
     if (current === null) return unavailable('session');
 
-    [answered, membersAnswered, overridesAnswered, rosterOverridesAnswered] = await Promise.all([
+    [answered, membersAnswered, overridesAnswered, rosterOverridesAnswered, loansAnswered] = await Promise.all([
       table
         .select(CALENDAR_COLUMNS, CALENDAR_COUNT)
         .filter(CALENDAR_VIEWER_COLUMN, CALENDAR_VIEWER_OPERATOR, current.user.id),
       membersRead.rpc(CALENDAR_MEMBERS_FUNCTION),
       membersRead.rpc(CALENDAR_OVERRIDES_FUNCTION),
       membersRead.rpc(CALENDAR_ROSTER_OVERRIDES_FUNCTION),
+      membersRead.rpc(CALENDAR_TEAM_LOANS_FUNCTION),
     ]);
   } catch (cause) {
     return unavailable('rejected', cause);
@@ -668,7 +697,11 @@ export async function readCalendar(
 
   if (statuses === null) return unavailable('statuses');
 
-  const viewer = viewerOf(memberRows[0], organizationId, teamIds, memberIds, memberships, statuses);
+  const loans = loansOf(loansAnswered, teamIds, memberIds);
+
+  if (loans === null) return unavailable('loan');
+
+  const viewer = viewerOf(memberRows[0], organizationId, teamIds, memberIds, memberships, statuses, loans);
 
   if (viewer === null) return unavailable('viewer');
 
@@ -677,6 +710,7 @@ export async function readCalendar(
       ...identity,
       memberships: memberships.get(identity.id) ?? [],
       statuses: statuses.get(identity.id) ?? [],
+      loans: loans.get(identity.id) ?? [],
     }))
     .sort(compareMembers);
 
@@ -711,6 +745,75 @@ export async function readCalendar(
       rosterOverrides,
     },
   };
+}
+
+/**
+ * The live loans `calendar_team_loans()` answered, by member, each member's in
+ * `from` order, or `null`: a malformed answer, an error, data that is not an
+ * array, a row that does not validate — no text id or member, a team the
+ * answer lacks, a first or last date that is not a calendar date — one id
+ * twice, or loans of one member that `checkLoans` refuses (one ending before
+ * it starts, or two sharing a date: 0062's exclusion). A valid loan of a
+ * member the members read does not name is checked like any other and then
+ * left out, as {@link versionsByMemberOf} leaves out a version. Only the five
+ * columns are carried off a row.
+ */
+function loansOf(
+  answered: unknown,
+  teamIds: ReadonlySet<string>,
+  memberIds: ReadonlySet<string>,
+): ReadonlyMap<string, readonly Loan[]> | null {
+  if (!isRecord(answered) || answered['error'] !== null) return null;
+
+  const rows = answered['data'];
+
+  if (!Array.isArray(rows)) return null;
+
+  const ids = new Set<string>();
+  const byMember = new Map<string, Loan[]>();
+
+  for (const row of rows as readonly unknown[]) {
+    if (!isRecord(row)) return null;
+
+    const id = textAt(row, 'id');
+    const memberId = textAt(row, 'member_id');
+    const teamId = textAt(row, 'team_id');
+    const from = textAt(row, 'starts_on');
+    const to = textAt(row, 'ends_on');
+
+    if (id === null || memberId === null || teamId === null || !teamIds.has(teamId)) return null;
+    if (from === null || !isIsoDate(from) || to === null || !isIsoDate(to)) return null;
+    if (ids.has(id)) return null;
+
+    ids.add(id);
+
+    const loans = byMember.get(memberId) ?? [];
+
+    loans.push({ id, teamId, from, to });
+    byMember.set(memberId, loans);
+  }
+
+  const known = new Map<string, Loan[]>();
+
+  for (const [memberId, loans] of byMember) {
+    try {
+      checkLoans(loans);
+    } catch {
+      return null;
+    }
+
+    if (memberIds.has(memberId)) known.set(memberId, loans.sort(compareLoans));
+  }
+
+  return known;
+}
+
+/** By first date, then id: a total order, so equal loans never compare as unequal. */
+function compareLoans(left: Loan, right: Loan): number {
+  if (left.from !== right.from) return left.from < right.from ? -1 : 1;
+  if (left.id !== right.id) return left.id < right.id ? -1 : 1;
+
+  return 0;
 }
 
 /** A member id as a roster override answers it: text, or `null`; `undefined` for neither. */
@@ -1006,7 +1109,8 @@ function identitiesOf(answered: unknown): CalendarMemberIdentity[] | null {
  * ONE HISTORY PER PERSON (story 3.4a): the viewer's own embed is still
  * validated, as the tripwire it always was, but the memberships and statuses
  * carried are the organization-level ones under their id — exactly those of
- * their entry in `members`, positions included.
+ * their entry in `members`, positions included. Their loans (story 18.2) are
+ * those of their entry too.
  */
 function viewerOf(
   row: unknown,
@@ -1015,6 +1119,7 @@ function viewerOf(
   memberIds: ReadonlySet<string>,
   memberships: ReadonlyMap<string, readonly MembershipVersion[]>,
   statuses: ReadonlyMap<string, readonly StatusVersion[]>,
+  loans: ReadonlyMap<string, readonly Loan[]>,
 ): CalendarViewer | null {
   if (!isRecord(row) || textAt(row, 'organization_id') !== organizationId) return null;
 
@@ -1041,6 +1146,7 @@ function viewerOf(
     role,
     memberships: memberships.get(memberId) ?? [],
     statuses: statuses.get(memberId) ?? [],
+    loans: loans.get(memberId) ?? [],
   };
 }
 
