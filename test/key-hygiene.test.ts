@@ -449,6 +449,12 @@ describe('the VAPID boundary (story 10.4)', () => {
     const allowed = (entry: string): boolean =>
       entry.startsWith('supabase/functions/notify/') ||
       [
+        // Story 20.1: the self-hosted stack's edge-runtime environment, where
+        // the key lives in Coolify (AD-17 as amended), and the two placeholder
+        // templates that list it as an operator input.
+        'deploy/coolify/supabase/docker-compose.yml',
+        'deploy/coolify/supabase/staging.env.example',
+        'deploy/coolify/supabase/production.env.example',
         'supabase/functions/.env.example',
         '.github/actions/deploy/action.yml',
         '.github/workflows/pipeline.yml',

@@ -19,6 +19,11 @@ file, or in a migration, stop and rotate it — every RLS policy in the system i
 decorative until you do. The same goes for a Resend key (`re_*`): it is read by
 `notify` and nothing else (AD-17).
 
+> **Self-hosting (Epic 20).** Shift is moving off Supabase cloud and Cloudflare
+> Pages onto our own server, run by Coolify. The self-hosted stack that
+> replaces each Supabase project is defined in §9; the sections before it still
+> describe the hosted setup until story 20.9 rewrites them.
+
 ---
 
 ## 0. Prerequisites
@@ -1658,3 +1663,365 @@ that stops reading it: the deploy pushes the migration first, so between
 `db push` and the upload every signed-in screen that reads it fails (§5.2c), and
 rolling the SPA back afterwards lands on a bundle that reads a column that no
 longer exists.
+
+---
+
+## 9. Self-hosted stack (story 20.1)
+
+Shift is moving off hosted platforms onto our own server, run by Coolify
+(Epic 20, `sprint-change-proposal-2026-11-20-self-hosting.md`). Until story
+20.9 rewrites this runbook, the sections above still describe the hosted
+setup. This section describes the self-hosted Supabase stack that replaces a
+"Supabase project", one per environment. Nothing here has been started on the
+server yet: standing staging up is story 20.5.
+
+The stack is `deploy/coolify/supabase/docker-compose.yml`. It is derived from
+Coolify's Supabase service template at Coolify v4.7.6 (commit
+`b7cbdb480faa1a124423e3c3c886481848c96cf9`) and trimmed. **The repository's
+file is the source of truth.** It is pasted into a Coolify "Docker Compose"
+resource per environment (`shift-staging`, `shift-production`) and never edited
+in Coolify; a change is a reviewed PR here, then pasted again.
+
+### 9.1 What runs, and what does not
+
+| Service | Image (Supabase CLI 2.116.0's own) | Role | Reachable from |
+| --- | --- | --- | --- |
+| `supabase-db` | `supabase/postgres:17.6.1.165` | Postgres 17 with `pg_cron`, `pg_net`, Vault (as `[db] major_version`) | `127.0.0.1:<loopback-port>` only, published to the tailnet with `tailscale serve --tcp` |
+| `supabase-kong` | `kong:2.8.1` | the gateway; maps opaque keys to role JWTs (§9.2) | the internet, at `api.<domain>`, through Coolify's Traefik with TLS. **The only public route into the stack** |
+| `supabase-auth` | `supabase/gotrue:v2.196.0` | Auth, configured by its environment (§9.3) | the stack's network |
+| `supabase-rest` | `postgrest/postgrest:v16.1` | PostgREST | the stack's network |
+| `supabase-storage` | `supabase/storage-api:v1.70.3` | Storage, **file** backend on the named volume `supabase-storage-data` (logos only; uploads capped at the logo bucket's 2 MiB from `0005`) | the stack's network |
+| `supabase-meta` | `supabase/postgres-meta:v0.98.0` | Studio's database API | the stack's network |
+| `supabase-studio` | `supabase/studio:2026.08.17-sha-0c1da8f` | the dashboard | `127.0.0.1:<loopback-port>` only, over the tailnet. **No domain, no Kong route** |
+| `supabase-edge-functions` | `supabase/edge-runtime:v1.74.3` | the functions' runtime | through Kong's `/functions/v1/` |
+
+**Studio has no login of its own.** Whoever reaches its port is an
+administrator of the database. Its only protection is H-5: it publishes on the
+host's loopback, `tailscale serve` puts it on the tailnet, and the Tailscale
+ACL limits it to the founder's devices. It holds no JWT signing secret.
+
+**Not run, and why:** Realtime (Shift subscribes to nothing), analytics
+(Logflare) and Vector (the heaviest services; logs are read with `docker logs`
+through Coolify), Supavisor (PostgREST pools its own connections; pilot scale),
+MinIO and imgproxy (the file backend is enough for logos, and no image is
+transformed). Kong has no Studio catch-all, no `/pg/` route (pg-meta through
+the public gateway), no MCP and no SAML routes.
+
+**Until story 20.2** the `edge-runtime` service has no code: there is no main
+service at `/home/deno/functions/main`, so the runtime exits at start and
+Docker restarts it (every service is `restart: unless-stopped`). Its healthcheck is the template's `echo`, which proves
+nothing (the image ships no HTTP probe tool for certain); 20.2 replaces the
+image with `shift-functions` (this base with the router and both functions
+baked in) and replaces the healthcheck.
+
+**Limits and logs.** Every service has a `mem_limit` and `cpus`, defaulting to
+staging's value, so a variable left out fails low. Staging's is strictly below
+production's for every service: about 2.2 GiB and 1.0 CPU in all, against
+production's (`production.env.example`) about 2.9 GiB. Postgres's
+`shared_buffers` is 128 MB on staging, 256 MB on production. Every service
+logs through Docker's `json-file` driver, rotated at 10 MB with three files
+kept, so a noisy container cannot fill the disk.
+
+**Inputs.** `staging.env.example` and `production.env.example` list every
+variable the operator sets in Coolify, with placeholders only (`<domain>`,
+`<loopback-port>`): the app origin, two loopback ports, the sender, the limits,
+and the values no generator can make: `RESEND_API_KEY`, `VAPID_PUBLIC_KEY`,
+`VAPID_PRIVATE_KEY` and `VAPID_SUBJECT`. The compose refuses to start without
+any of `SHIFT_APP_URL`, the two loopback ports, `NOTIFY_EMAIL_FROM` and those
+four (`${NAME:?}`), and none has a default. Never write a real value,
+an address or a port into either file: the repository is public.
+
+### 9.2 Keys and secrets (AD-17 as amended by 20.1)
+
+Every other secret is **generated by Coolify** when the resource is created,
+and none has a default in the compose:
+
+| Variable | What it is | Held by |
+| --- | --- | --- |
+| `SERVICE_PASSWORD_JWT` | the JWT signing secret, the root of every key of the stack | GoTrue, PostgREST, Storage. **Never Kong, Studio or `edge-runtime`** |
+| `SERVICE_SUPABASEANON_KEY`, `SERVICE_SUPABASESERVICE_KEY` | the `anon` and `service_role` HS256 JWTs Coolify signs with it | Kong, Storage, Studio |
+| `SERVICE_PASSWORD_64_PUBLISHABLEKEY` | the publishable key is `sb_publishable_` + this | Kong, `edge-runtime` (`SHIFT_PUBLISHABLE_KEY`), the SPA's build |
+| `SERVICE_PASSWORD_64_SECRETKEY` | the secret key is `sb_secret_` + this | Kong, `edge-runtime` (`SHIFT_SECRET_KEY`) only |
+| `SERVICE_PASSWORD_64_NOTIFYINVOKE` | `NOTIFY_INVOKE_SECRET` (64 characters, matches `notify`'s shape) | `edge-runtime`, and the stack's Vault (§3a) |
+| `SERVICE_PASSWORD_POSTGRES` | Postgres's password: `postgres` and `supabase_admin` (superusers) and every service role (`roles.sql`), and `db push`'s | GoTrue, PostgREST, Storage, pg-meta and Studio. Each of those containers therefore holds a superuser password; none is reachable from outside the stack's network but Studio's loopback port |
+| `SERVICE_PASSWORD_PGMETACRYPTO` | pg-meta's encryption key | pg-meta, Studio |
+
+Each stack generates its own, so staging and production never share a value,
+and none is ever the demo value of Supabase's self-hosting `.env.example`.
+
+**The key form is the opaque one, `sb_publishable_…` / `sb_secret_…`, settled
+from the pinned sources.** No service behind Kong is authenticated by an `sb_`
+key: Kong maps it. (The `apikey` header itself is forwarded as it came,
+`hide_credentials: false`, as the CLI does.)
+Its request-transformer replaces `Authorization` with `Bearer <service_role
+JWT>` when `apikey` is the secret key and `Bearer <anon JWT>` when it is the
+publishable key, and passes through any `Authorization` that is not
+`Bearer sb_…` (a member's session token). That is the expression Supabase CLI
+2.116.0 builds for its own local stack (`legacyBuildKongBearerToken` in
+`kong.service.ts`). Coolify v4.7.6's template has the same expression
+(`LUA_AUTH_EXPR`, key-auth consumers for both forms), but maps to asymmetric
+role JWTs and only when the operator sets the opaque keys (otherwise it falls
+back to the JWTs alone); here the keys are always generated and map to the
+HS256 role JWTs, as the CLI's do. Kong takes the key from the `apikey` header
+only (`key_in_query: false`), the header the mapping reads, so a key is never
+written to the access log as part of a URL. So the functions' and the
+SPA's `sb_` guards stay exactly as they are, and the functions hold no JWT, no
+signing secret and no database password. Kong's entrypoint substitutes the keys
+into its declarative config with `awk` over `ENVIRON`, never `eval echo`, which
+would run the Lua `$(…)` as a shell command. **It fails closed:** Kong does not
+start if either role JWT is empty, either opaque key has fewer than 32
+characters after its prefix, any of the four holds a character outside
+`[A-Za-z0-9._-]` (which could break out of the Lua string it is spliced into),
+or the two keys or the two JWTs are the same value. So an empty generated value
+can never make the bare `sb_secret_` a `service_role` credential.
+
+One difference from the hosted platform: a hosted project refuses an
+`sb_secret_` key sent from a browser; this gateway does not. The secret key
+lives only in the `edge-runtime` environment and is never in a browser, so the
+difference matters only for a key that has already leaked, and the answer to
+that is rotation.
+
+The live confirmation is the probe in §9.5, run on the first stand-up.
+
+**Rotating the Postgres password.** `roles.sql` runs only when the data volume
+is empty, so changing `SERVICE_PASSWORD_POSTGRES` on a running stack also
+needs its `ALTER USER … WITH PASSWORD` statements (authenticator, pgbouncer,
+supabase_auth_admin, supabase_functions_admin, supabase_storage_admin) re-run
+by hand with the new value, and `postgres`'s and `supabase_admin`'s own
+(pg-meta and Studio log in as `supabase_admin`), before the services restart.
+
+### 9.3 Auth settings: `config.toml` stays the source
+
+A self-hosted GoTrue is configured by environment variables, not by
+`config push`. The compose mirrors `supabase/config.toml` literal for literal,
+and `test/supabase-scaffold.test.ts` fails, naming the variable and both
+values, when they differ:
+
+| Compose (GoTrue, PostgREST) | `config.toml` |
+| --- | --- |
+| `GOTRUE_DISABLE_SIGNUP=true` | not `[auth] enable_signup` |
+| `GOTRUE_EXTERNAL_EMAIL_ENABLED=true` | `[auth.email] enable_signup` (the provider, not the signup door, §5.2a) |
+| `GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED=false` | `[auth] enable_anonymous_sign_ins` |
+| `GOTRUE_MAILER_AUTOCONFIRM=true` | not `[auth.email] enable_confirmations` (also pinned `false` outright) |
+| `GOTRUE_MAILER_SECURE_EMAIL_CHANGE_ENABLED=true` | `[auth.email] double_confirm_changes` |
+| `GOTRUE_EXTERNAL_PHONE_ENABLED=false`, `GOTRUE_SMS_AUTOCONFIRM=true` | `[auth.sms] enable_signup`, not `enable_confirmations` |
+| `GOTRUE_JWT_EXP=3600`, `PGRST_APP_SETTINGS_JWT_EXP=3600` | `[auth] jwt_expiry` |
+| `GOTRUE_SECURITY_REFRESH_TOKEN_ROTATION_ENABLED=true`, `…_REUSE_INTERVAL=10` | `enable_refresh_token_rotation`, `refresh_token_reuse_interval` |
+| `GOTRUE_PASSWORD_MIN_LENGTH=10` | `minimum_password_length` |
+| `GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_ENABLED=true`, `…_URI=pg-functions://postgres/public/custom_access_token_hook` | `[auth.hook.custom_access_token]` |
+| `PGRST_DB_SCHEMAS`, `PGRST_DB_EXTRA_SEARCH_PATH`, `PGRST_DB_MAX_ROWS` | `[api] schemas`, `extra_search_path`, `max_rows` |
+
+Not mirrored: `site_url` and the redirect list (per environment: both are
+`SHIFT_APP_URL`), and `[auth.rate_limit]` (local only; story 19.1 owns
+production's limits). **No SMTP is configured until Epic 19** (AD-12: v1 sends
+no auth mail; autoconfirm is on and signup is off). The mailer's URL paths are
+the template's `/auth/v1/verify`, so a link GoTrue builds later goes through
+Kong's open route. To change an auth setting, change `config.toml` and the
+compose in one PR, then paste the compose into Coolify and redeploy GoTrue.
+
+### 9.4 The order rules on a fresh stack
+
+1. **GoTrue and Storage before the first `db push`.** Migration `0003`
+   creates `current_member_access()`, a SQL function whose body Postgres checks
+   at creation and which reads `auth.users.deleted_at` and `banned_until`;
+   those columns, and `auth.identities` that provisioning writes, come from
+   GoTrue's own migrations. Migration `0005` inserts the logo bucket into
+   `storage.buckets`, which Storage's own migrations create when it first
+   starts.
+2. **The hook's migration before GoTrue runs with the hook.**
+   `GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_ENABLED` names a function created by
+   `0003`. The same holds for every later change that enables a hook: the
+   migration first, then the GoTrue environment (§5.2b).
+3. Migrations are applied with `supabase db push --db-url` over the tailnet,
+   never through a public port and never by a container inside the stack.
+
+**The first Coolify deploy of a stack, in order** (story 20.5 runs it):
+
+1. Deploy the resource with the compose and its environment.
+2. Wait until `supabase-auth` and `supabase-storage` report healthy: GoTrue's
+   and Storage's own schema migrations have then run.
+3. `supabase db push --db-url` over the tailnet, then
+   `supabase migration list --db-url` and `check-migrations.mjs` (§5).
+4. Restart `supabase-auth`, so GoTrue starts with the hook's function present.
+
+Meanwhile GoTrue runs with a hook that does not exist yet. That is harmless:
+there are no users before the push and provisioning (§7), so it signs in
+nobody, and nothing issues a token. Story 20.5 also writes the self-hosted
+Vault setup (§3a), with `notify_url` set to the internal
+`http://supabase-kong:8000/functions/v1/notify`, never the public origin.
+
+### 9.5 The local rehearsal and the key probe (story 20.5's first act)
+
+This proves the stack before it holds anything: every migration applies from
+nothing, the extensions work, the hook runs, signup is refused, and the opaque
+keys work through Kong. **It was not run by story 20.1** (no container could be
+started then); it runs as story 20.5's first act, on the server that will host
+staging, before the Coolify resource is created (`deferred-work.md`).
+
+It runs under its own project name, `shift-rehearsal`, on its own loopback
+ports. **Never** use the project name or the ports of the local development
+stack (`supabase start`, ports 543xx), and never run `supabase stop` or
+`supabase db reset` here: they act on the development stack.
+
+```bash
+# 0. From the repository root, a scratch directory outside it, three free
+#    loopback ports, and a teardown that runs however the script ends.
+cd "$(git rev-parse --show-toplevel)"
+R=$(mktemp -d); PG_PORT=<free port>; KONG_PORT=<free port>; STUDIO_PORT=<free port>
+DC="docker compose -p shift-rehearsal --project-directory $R --env-file $R/.env -f $R/docker-compose.yml"
+teardown() {
+  $DC down -v
+  unset ADMIN_PW JWT PUB SEC DB_URL VAPID_PRIVATE_KEY RESEND_API_KEY \
+    $(sed -n 's/^\(SERVICE_[A-Z0-9_]*\)=.*/\1/p' "$R/.env" 2>/dev/null)
+  rm -rf "$R"
+}
+trap teardown EXIT
+set -eo pipefail   # a failed step stops here; the trap still tears down
+
+# 1. Coolify writes each `content:` bind to its `source` file; plain
+#    `docker compose` does not accept `content:` or `exclude_from_hc`. Render
+#    them, and publish Kong on the loopback for the rehearsal only.
+node --input-type=module -e '
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { parse, stringify } from "yaml";
+const out = process.argv[1];
+const compose = parse(readFileSync("deploy/coolify/supabase/docker-compose.yml", "utf8"));
+for (const service of Object.values(compose.services)) {
+  delete service.exclude_from_hc;
+  for (const volume of service.volumes ?? []) {
+    if (typeof volume !== "object" || volume.content === undefined) continue;
+    const file = join(out, volume.source);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, volume.content);
+    delete volume.content;
+  }
+}
+compose.services["supabase-kong"].ports = ["127.0.0.1:${KONG_LOOPBACK_PORT:?}:8000"];
+writeFileSync(join(out, "docker-compose.yml"), stringify(compose));
+' "$R"
+
+# 2. What Coolify would generate, generated locally into the scratch .env.
+JWT=$(openssl rand -hex 32)
+{
+  echo "SERVICE_PASSWORD_POSTGRES=$(openssl rand -hex 16)"
+  echo "SERVICE_PASSWORD_JWT=$JWT"
+  echo "SERVICE_PASSWORD_PGMETACRYPTO=$(openssl rand -hex 16)"
+  echo "SERVICE_PASSWORD_64_PUBLISHABLEKEY=$(openssl rand -hex 32)"
+  echo "SERVICE_PASSWORD_64_SECRETKEY=$(openssl rand -hex 32)"
+  echo "SERVICE_PASSWORD_64_NOTIFYINVOKE=$(openssl rand -hex 32)"
+  JWT=$JWT node -e '
+    const c = require("node:crypto"), s = process.env.JWT, now = Math.floor(Date.now() / 1000);
+    const b = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
+    const t = (role) => { const h = b({ alg: "HS256", typ: "JWT" }), p = b({ role, iss: "supabase", iat: now, exp: now + 86400 });
+      return `${h}.${p}.${c.createHmac("sha256", s).update(`${h}.${p}`).digest("base64url")}`; };
+    console.log(`SERVICE_SUPABASEANON_KEY=${t("anon")}`); console.log(`SERVICE_SUPABASESERVICE_KEY=${t("service_role")}`);'
+  echo "SERVICE_URL_SUPABASEKONG=http://127.0.0.1:$KONG_PORT"
+  echo "KONG_LOOPBACK_PORT=$KONG_PORT"
+  # The operator inputs, staging's limits; placeholders replaced with local values.
+  sed -e "s/^POSTGRES_LOOPBACK_PORT=.*/POSTGRES_LOOPBACK_PORT=$PG_PORT/" \
+      -e "s/^STUDIO_LOOPBACK_PORT=.*/STUDIO_LOOPBACK_PORT=$STUDIO_PORT/" \
+      -e 's#^SHIFT_APP_URL=.*#SHIFT_APP_URL=http://127.0.0.1:5173#' \
+      -e 's/<domain>/rehearsal.invalid/g' \
+      -e 's/^RESEND_API_KEY=$/RESEND_API_KEY=re_rehearsal/' \
+      deploy/coolify/supabase/staging.env.example
+} > "$R/.env"
+# A real VAPID pair, written over the template's two empty lines.
+VAPID=$(pnpm dlx web-push@3.6.7 generate-vapid-keys --json)
+sed -i -e "s/^VAPID_PUBLIC_KEY=$/VAPID_PUBLIC_KEY=$(node -pe 'JSON.parse(process.argv[1]).publicKey' "$VAPID")/" \
+       -e "s/^VAPID_PRIVATE_KEY=$/VAPID_PRIVATE_KEY=$(node -pe 'JSON.parse(process.argv[1]).privateKey' "$VAPID")/" \
+       "$R/.env"
+unset VAPID
+set -a; . "$R/.env"; set +a
+
+# 3. Order rule 1: Postgres, GoTrue, PostgREST and Storage first, until GoTrue
+#    and Storage are healthy (their own schema migrations have then run).
+#    GoTrue starts with a hook whose function does not exist yet; with no user
+#    it signs nobody in, and step 5 restarts it.
+$DC up -d --wait supabase-db supabase-auth supabase-rest supabase-storage
+
+# 4. Every migration, from nothing.
+DB_URL="postgresql://postgres:$SERVICE_PASSWORD_POSTGRES@127.0.0.1:$PG_PORT/postgres"
+pnpm exec supabase db push --db-url "$DB_URL"
+pnpm exec supabase migration list --db-url "$DB_URL"
+$DC exec -T supabase-db psql -U postgres -At -c "
+  select string_agg(extname, ',' order by extname) from pg_extension
+   where extname in ('pg_cron', 'pg_net', 'supabase_vault');
+  select vault.create_secret('rehearsal', 'rehearsal_probe') is not null;
+  select count(*) from cron.job;
+  select id from storage.buckets where id = 'organization-logos';"
+# -> pg_cron,pg_net,supabase_vault / t / at least 1 / organization-logos   ✅
+
+# 5. Order rule 2: GoTrue restarted now that the hook's function exists, then
+#    Kong, until both are healthy. (`edge-runtime` has no code until 20.2, so
+#    it is not waited for.)
+$DC restart supabase-auth
+$DC up -d --wait supabase-auth supabase-kong
+$DC up -d
+
+# 6. Provision an admin (§7.2's settings) in the rehearsal database. The
+#    password goes in on stdin as a psql variable, never on a command line.
+SLUG=rehearsal; ADMIN_USERNAME=admin
+ADMIN_EMAIL="$ADMIN_USERNAME@$SLUG.shift.invalid"   # §7.2: <username>@<slug>.shift.invalid
+read -rs ADMIN_PW   # 10 to 64 letters and digits: a throwaway, and safe to splice below
+case "$ADMIN_PW" in *[!A-Za-z0-9]*|'') echo 'letters and digits only' >&2; exit 1 ;; esac
+[ "${#ADMIN_PW}" -ge 10 ] || { echo 'at least 10 characters' >&2; exit 1; }
+{
+  printf '\\set pw %s\n' "$ADMIN_PW"
+  cat <<SQL
+select set_config('shift.organization_slug', '$SLUG', false),
+       set_config('shift.organization_name', 'Rehearsal', false),
+       set_config('shift.organization_type', 'Fire Department', false),
+       set_config('shift.organization_timezone', 'Europe/Zagreb', false),
+       set_config('shift.organization_locale', 'hr', false),
+       set_config('shift.leave_year_start_month', '1', false),
+       set_config('shift.leave_year_start_day', '1', false),
+       set_config('shift.admin_name', 'Admin', false),
+       set_config('shift.admin_username', '$ADMIN_USERNAME', false),
+       set_config('shift.admin_password', :'pw', false),
+       set_config('shift.admin_leave_allowance_days', '20', false);
+SQL
+  cat supabase/operator/provision-organization.sql
+} | $DC exec -T supabase-db psql -U postgres -v ON_ERROR_STOP=1 -q -f -
+
+# 7. The key probe and the sign-in, through Kong, with the OPAQUE keys only.
+API="http://127.0.0.1:$KONG_PORT"
+PUB="sb_publishable_$SERVICE_PASSWORD_64_PUBLISHABLEKEY"
+SEC="sb_secret_$SERVICE_PASSWORD_64_SECRETKEY"
+printf '{"email":"%s","password":"%s"}' "$ADMIN_EMAIL" "$ADMIN_PW" \
+  | curl -s -X POST "$API/auth/v1/token?grant_type=password" -H "apikey: $PUB" \
+      -H 'content-type: application/json' --data-binary @- \
+  | node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => {
+      const p = JSON.parse(s).access_token.split(".")[1];
+      const c = JSON.parse(Buffer.from(p, "base64url").toString());
+      console.log(c.role, c.organization_id); });'
+# -> authenticated <the organization's uuid>   ✅ the hook runs
+curl -s -o /dev/null -w '%{http_code}\n' -X POST "$API/auth/v1/signup" -H "apikey: $PUB" \
+  -H 'content-type: application/json' -d "{\"email\":\"x@rehearsal.invalid\",\"password\":\"$(openssl rand -hex 8)\"}"
+# -> 422 (signup_disabled)   ✅
+# supabase-js's shape: the key as apikey AND as a bearer token.
+curl -s "$API/rest/v1/organizations?select=id" -H "apikey: $PUB" -H "Authorization: Bearer $PUB"
+# -> []          ✅ mapped to anon. No migration revokes anon's SELECT on
+#                   organizations, and every policy is `to authenticated` (§7.4),
+#                   so anon reads zero rows. A 401 "JWT" error here means the
+#                   mapping failed: Kong forwarded the opaque key itself.
+# The secret key goes into a private config file, never onto a command line.
+SEC_CFG=$(mktemp)
+printf 'header = "apikey: %s"\nheader = "Authorization: Bearer %s"\n' "$SEC" "$SEC" > "$SEC_CFG"
+curl -s -K "$SEC_CFG" "$API/rest/v1/organizations?select=id"
+rm -f "$SEC_CFG"
+# -> one row     ✅ mapped to service_role
+WRONG_KEY="sb_publishable_$(openssl rand -hex 16)"   # a well-formed key that is not ours
+curl -s -o /dev/null -w '%{http_code}\n' "$API/rest/v1/organizations" -H "apikey: $WRONG_KEY"
+# -> 401         ✅ an unknown key is refused at the gateway
+curl -s -o /dev/null -w '%{http_code}\n' "$API/"
+# -> 404         ✅ no catch-all, no Studio
+
+# 8. The trap tears down on exit, volumes included. Nothing of the development
+#    stack was touched.
+```
+
+Record the result in story 20.5's spec. If the `sb_` probe fails (401 or
+`invalid JWT` with the opaque keys while the JWT keys work), stop: AD-17's other
+branch (the stack's `anon`/`service_role` JWTs, with every shape guard decoding
+the role claim) is then a founder-visible change, not a fix in place.
