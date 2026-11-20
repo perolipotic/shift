@@ -57,8 +57,9 @@ export interface RotationHoldFixtures {
  * (spec-today-spec-midnight-safe; epic 14 retro). A test reads "today" in
  * three places — its seed (`organization_today()` in SQL, or `new Date()` in
  * Zagreb), its page (the browser clock, `timezoneId: 'Europe/Zagreb'`) and
- * the RPCs the page calls — at different instants; four `today.spec.ts`
- * cases failed when a shard ran from 23:55 to 00:05. One `now` is read as the
+ * the RPCs the page calls — at different instants. (The four `today.spec.ts`
+ * cases first blamed on a crossing failed on the hour instead: before 07:00
+ * their free day read yesterday's Noć; spec-e2e-midnight-guard-gap.) One `now` is read as the
  * test starts: closer to midnight than `midnightWait` allows, the test waits
  * until just past it, its timeout raised by the wait. Playwright sets up auto
  * fixtures before the test's other fixtures, its `beforeEach` hooks and its

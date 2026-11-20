@@ -31,6 +31,7 @@ import {
 import { addDays, dayMonth, fullDate, weekdayOf } from '../../utils/dates.ts';
 import { escapeRegExp, fill, hr, plural } from '../../utils/i18n.ts';
 import { onlyRowsOf } from '../../utils/routes.ts';
+import { FREE_ALL_DAY_DAYS_BEFORE } from '../../utils/seeded-pattern.ts';
 import { expectNoHorizontalScroll } from '../../utils/layout.ts';
 import { ADMIN_STATE, MEMBER_STATE } from '../../utils/run-fixture.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
@@ -44,7 +45,10 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * range, equal to the seeded rotation's; the seven days equal *Kalendar*'s
  * *Moj raspored* for the same dates. A fresh member with leave today reads
  * the leave case with its range, and their return as the next shift. Nothing
- * scrolls sideways at 390 px.
+ * scrolls sideways at 390 px. A free-day test seeds the SECOND Slobodno
+ * (`FREE_ALL_DAY_DAYS_BEFORE`): on the first, yesterday's Noć runs to 07:00,
+ * so before 07:00 Zagreb the card reads the carry-over, not the free day
+ * (spec-e2e-midnight-guard-gap).
  *
  * Story 6.1b: below the week, the hours tile equals *Sati*'s month — its
  * total and every band's hours — and the leave tile equals *Godišnji*'s
@@ -289,10 +293,11 @@ test.describe('as a member', () => {
     fixture,
   }) => {
     test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
-    // Two days into the pattern: today is a Slobodno, and the Dan is in 2 days.
-    const rotation = await seeded(fixture.slug, fixture.team.id, 2);
+    // Three days into the pattern: today is the second Slobodno, after the
+    // first, so no Noć carries over at any hour, and the Dan is tomorrow.
+    const rotation = await seeded(fixture.slug, fixture.team.id, FREE_ALL_DAY_DAYS_BEFORE);
     const today = rotation.today;
-    expect(stepOn(rotation, today)).toBe(2);
+    expect(stepOn(rotation, today)).toBe(3);
     const [dan] = rotation.steps;
 
     await page.setViewportSize({ width: 390, height: 844 });
@@ -302,7 +307,7 @@ test.describe('as a member', () => {
 
     const card = todayPage.todayCard(danas.today.free);
     await expect(card).toBeVisible();
-    await expect(card).toContainText(rotation.steps[2]);
+    await expect(card).toContainText(rotation.steps[3]);
     await expect(card).toContainText(fixture.team.name);
     // E804: the card closes on "Tvoja smjena" and the one link to the team's
     // roster, from the calendar snapshot — no separate card after the week.
@@ -317,8 +322,8 @@ test.describe('as a member', () => {
     await expect(todayPage.needsYouCard).toHaveCount(0);
     await expect(todayPage.weekCard).toHaveCount(0);
 
-    const next = addDays(today, 2);
-    await expect(todayPage.nextShiftHeading).toHaveText(nextHeading(danas.next.heading, 2));
+    const next = addDays(today, 1);
+    await expect(todayPage.nextShiftHeading).toHaveText(nextHeading(danas.next.heading, 1));
     await expect(todayPage.nextShiftCard).toContainText(fill(danas.dateLine, { weekday: weekdayOf(next), date: fullDate(next) }));
     await expect(todayPage.nextShiftCard).toContainText(dan);
     await expect(todayPage.nextShiftCard).toContainText(rotation.ranges[0] ?? '');
@@ -335,7 +340,7 @@ test.describe('as a member', () => {
 
   test('the hours tile equals Sati and the leave tile equals Godišnji', async ({ todayPage, hoursPage, leavePage, fixture }) => {
     test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
-    await seeded(fixture.slug, fixture.team.id, 2);
+    await seeded(fixture.slug, fixture.team.id, FREE_ALL_DAY_DAYS_BEFORE);
 
     await expectTilesEqualDetailViews(todayPage, hoursPage, leavePage);
   });
@@ -346,7 +351,8 @@ test.describe('as a member', () => {
     fixture,
   }) => {
     test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
-    const rotation = await seeded(fixture.slug, fixture.team.id, 2);
+    // A Slobodno after a Slobodno: free at every hour (no Noć carried over).
+    const rotation = await seeded(fixture.slug, fixture.team.id, FREE_ALL_DAY_DAYS_BEFORE);
     const failed = (url: URL) => url.pathname.endsWith('/rest/v1/rpc/my_conflict_resolutions');
     await page.route(failed, (route) => route.fulfill({ status: 500, body: '{}' }));
 
@@ -354,7 +360,7 @@ test.describe('as a member', () => {
     await expect(todayPage.hoursTileUnavailable).toBeVisible();
     await expect(todayPage.hoursTile).toHaveCount(0);
     await expect(todayPage.leaveTile).toBeVisible();
-    await expect(todayPage.todayCard(danas.today.free)).toContainText(rotation.steps[2]);
+    await expect(todayPage.todayCard(danas.today.free)).toContainText(rotation.steps[3]);
     await expect(todayPage.unavailableAlert).toHaveCount(0);
 
     await page.unroute(failed);
@@ -394,9 +400,10 @@ test.describe('as a member', () => {
       fixture,
     }) => {
       test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
-      // Today is a Slobodno, so the case after the retry is the seeded one.
-      const rotation = await seeded(fixture.slug, fixture.team.id, 2);
-      expect(stepOn(rotation, rotation.today)).toBe(2);
+      // Today is a Slobodno after a Slobodno, so the case after the retry is
+      // the seeded free one at every hour (no Noć carried over).
+      const rotation = await seeded(fixture.slug, fixture.team.id, FREE_ALL_DAY_DAYS_BEFORE);
+      expect(stepOn(rotation, rotation.today)).toBe(3);
       await page.route(failed.route, (route) => route.fulfill({ status: 500, body: '{}' }));
 
       await todayPage.goto();
@@ -414,7 +421,7 @@ test.describe('as a member', () => {
       await todayPage.retryButton.click();
       await expect(todayPage.unavailableAlert).toHaveCount(0);
       await expect(todayPage.todayCard(danas.today.free)).toBeVisible();
-      await expect(todayPage.todayCard(danas.today.free)).toContainText(rotation.steps[2]);
+      await expect(todayPage.todayCard(danas.today.free)).toContainText(rotation.steps[3]);
     });
   }
 });
