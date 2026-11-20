@@ -2,7 +2,7 @@
 title: Shift Management Platform
 status: draft
 created: 2026-09-01
-updated: 2026-10-10
+updated: 2026-11-20
 ---
 
 # PRD: Shift Management Platform
@@ -52,7 +52,7 @@ The founding insight is a separation most tools blur: **the rotation pattern is 
 - **Payroll and finance functions.** Shift computes hours; it does not apply rates, run pay, or export to payroll.
 - **The public and external stakeholders.** There is no public-facing surface.
 - **Multi-site organizations** needing per-site rotations under a single tenant.
-- **Users belonging to more than one organization.** One account, one organization, in v1.
+- **Users belonging to more than one organization.** One account, one organization, in v1 and v2. A Loan (§5.23) moves a Member's effective Team within their own Organization; it is not a second membership (changed 2026-11-20, sprint-change-proposal-2026-11-20-v2-scope).
 
 ### 2.3 Key User Journeys
 
@@ -81,7 +81,7 @@ Downstream workflows and readers use these terms exactly. Introducing a synonym 
 - **Organization Type** — a descriptive label (e.g. "Fire Department"). Affects presentation and, later, onboarding templates. **Never** affects scheduling, hours, leave, or conflict logic.
 - **Member** — a person belonging to exactly one Organization. Has a name, optional email, active/inactive status, a Role, at most one Team, a Leave Allowance, and — where the Organization uses them — a Fire Rank and a Team Position. *"Member" always means the person, never the permission level.*
 - **Role** — a Member's permission level: **Admin** or **Member Role**. Where the permission level is meant, the term is always "Admin" or "Member Role", never bare "Member".
-- **Team** — a named group of Members within an Organization sharing one Rotation Assignment. A Member belongs to at most one Team in v1.
+- **Team** — a named group of Members within an Organization sharing one Rotation Assignment. A Member belongs to at most one Team; a Loan changes the Team they work with for a date range without changing that membership (changed 2026-11-20, sprint-change-proposal-2026-11-20-v2-scope).
 - **Fire Rank** — an optional, descriptive rank on a Member, from a fixed list, current-state. Exists only for an Organization whose Fire Ranks and Positions setting is on. Never affects scheduling, hours, leave or conflict logic.
 - **Team Position** — a Member's descriptive position within their Team (commander, driver, firefighter), versioned with the Team membership so it changes from a date forward. Required while the setting is on; absent without a Team. Inert like Fire Rank.
 - **Fire Ranks and Positions** — an Organization setting, off by default, gating the display and entry of Fire Rank and Team Position. Never deletes them.
@@ -95,7 +95,7 @@ Downstream workflows and readers use these terms exactly. Introducing a synonym 
 - **Rotation Assignment** — the binding of a Team to a Rotation Pattern with a **Rotation Offset** (position within the Cycle) and an **Anchor Date** (the date at which the Team sits at that Offset). Together these fully determine the Team's Projected Schedule.
 - **Projected Schedule** — the Shift Type a Team is assigned on each date, derived purely from its Rotation Assignment. Contains no exceptions.
 - **Scheduled Shift** — one (date, Team, Shift Type) entry in the Schedule, with a Shift Roster. Derived from the Projected Schedule and then modified by applicable Overrides. A midnight-crossing Scheduled Shift belongs to the date on which it starts.
-- **Shift Roster** — the Members expected to work a Scheduled Shift: the assigned Team's active Members, modified by Roster Overrides.
+- **Shift Roster** — the Members expected to work a Scheduled Shift: the active Members whose effective Team on that date is the assigned Team (their own Team, or the loan Team while a Loan covers the date), modified by Roster Overrides (changed 2026-11-20, sprint-change-proposal-2026-11-20-v2-scope).
 - **Schedule** — the Projected Schedule combined with the Override layer. What the Calendar shows. Never authored directly.
 - **Override** — a recorded exception to the Projected Schedule on a specific date, of one of two kinds. Carries author, timestamp, and reason. Overrides never modify a Rotation Pattern or Rotation Assignment.
   - **Shift Type Override** — changes the Shift Type for a Team on a date.
@@ -119,6 +119,11 @@ Downstream workflows and readers use these terms exactly. Introducing a synonym 
 - **Short-staffed Shift** — a working Scheduled Shift whose people at work — its Shift Roster after Overrides, minus every Member absent that date — number fewer than Minimum Members. Derived, never stored; it warns and never blocks.
 - **Notification** — an email or push message telling a Member about their own schedule or requests, or an Admin about an item waiting for a decision. Written as a code and operands by the request that asserts the fact it reports.
 - **Change History** — the Admin-only, append-only record of every write to an Organization's records: author, time, and values before and after.
+- **Loan** — an Exception lending one Member to one other Team of the same Organization for an inclusive date range. On those dates the Member's effective Team is the loan Team; their Team membership and every Rotation are untouched, and after the range they are back with their own Team without any further action (added 2026-11-20, sprint-change-proposal-2026-11-20-v2-scope).
+- **Calendar Feed** — a read-only subscription (iCalendar) of one Member's own at-work shifts, fetched by a calendar application from a personal URL (added 2026-11-20, sprint-change-proposal-2026-11-20-v2-scope).
+- **Feed Token** — the secret in a Calendar Feed's URL. Whoever holds it can read that feed, so it is revocable, stored only as a hash, and never shown to anyone but its Member (added 2026-11-20, sprint-change-proposal-2026-11-20-v2-scope).
+- **Shift Reminder** — a Notification a Member asked for, sent a chosen time before one of their own upcoming working shifts (added 2026-11-20, sprint-change-proposal-2026-11-20-v2-scope).
+- **Founding Admin** — the Admin who created an Organization through self-service signup. Signs in with their verified email address rather than an Admin-issued username (added 2026-11-20, sprint-change-proposal-2026-11-20-v2-scope).
 
 ## 4. Domain Invariants
 
@@ -140,7 +145,7 @@ The product's load-bearing rules. Architecture must make them structurally impos
 
 ### 5.1 Authentication and Access
 
-**Description:** Members sign in with email and password and reach only their own Organization. Organizations are provisioned by the platform operator — self-service onboarding is a go-to-market step, not an MVP requirement. Admins create Member accounts and issue credentials directly, because volunteer organizations frequently have no per-person work email and an invite-only flow would strand the pilot; invitation by email is available where an address exists. Role restriction is enforced at the data layer, not in the UI. Realizes UJ-1, UJ-2.
+**Description:** Members sign in with email and password and reach only their own Organization. Organizations are provisioned by the platform operator, or, from v2, created by a verified stranger through self-service signup (§5.24) (changed 2026-11-20, sprint-change-proposal-2026-11-20-v2-scope). Admins create Member accounts and issue credentials directly, because volunteer organizations frequently have no per-person work email and an invite-only flow would strand the pilot; invitation by email is available where an address exists. Role restriction is enforced at the data layer, not in the UI. Realizes UJ-1, UJ-2.
 
 **Functional Requirements:**
 
@@ -158,9 +163,9 @@ The platform operator can create an Organization together with its first Admin.
 
 **Consequences (testable):**
 - A newly created Organization has no Members besides its first Admin, and no Teams, Shift Types, or Rotation Patterns.
-- No user-facing surface allows creating an Organization.
+- Outside self-service signup (§5.24), no user-facing surface allows creating an Organization (changed 2026-11-20, sprint-change-proposal-2026-11-20-v2-scope).
 
-**Out of Scope:** self-service organization signup; billing; subscription plans; trials.
+**Out of Scope:** billing; subscription plans; trials. Self-service signup moved into v2 on 2026-11-20 (§5.24).
 
 #### FR-3: Admin creates Member credentials
 An Admin can create a Member account with credentials, or send an email invitation where an address exists.
@@ -190,10 +195,10 @@ A Member can reset their own password; an Admin can reset any Member's password 
 The system refuses every administrative write to a Member Role account.
 
 **Consequences (testable):**
-- A Member Role account is refused every write in §5.2, §5.3, §5.4, §5.5, §5.6, §5.8, §5.11 and every Conflict Resolution in §5.12 — at the data layer (DI-9).
+- A Member Role account is refused every write in §5.2, §5.3, §5.4, §5.5, §5.6, §5.8, §5.11, §5.23 (changed 2026-11-20, sprint-change-proposal-2026-11-20-v2-scope) and every Conflict Resolution in §5.12 — at the data layer (DI-9).
 - Removing the last Admin from an Organization is refused.
 - Refusal is identical whether attempted through the UI or by direct API call.
-- A Member Role account may write only rows it owns and that decide nothing: sending and withdrawing its own Leave Requests (FR-58, FR-59), proposing and withdrawing its own Swap Requests and answering one addressed to it (FR-66, FR-67, FR-69), and its own notification settings and push subscriptions (FR-64, FR-65). None of these is an administrative write (added 2026-10-10).
+- A Member Role account may write only rows it owns and that decide nothing: sending and withdrawing its own Leave Requests (FR-58, FR-59), proposing and withdrawing its own Swap Requests and answering one addressed to it (FR-66, FR-67, FR-69), and its own notification settings and push subscriptions (FR-64, FR-65). None of these is an administrative write (added 2026-10-10). From v2 it may also write its own Feed Token (FR-80, FR-82) and its own reminder settings (FR-85) (added 2026-11-20, sprint-change-proposal-2026-11-20-v2-scope).
 
 ### 5.2 Organization Settings and Branding
 
@@ -217,10 +222,10 @@ An Organization has an Organization Type, set when the Organization is provision
 - No branch anywhere in the domain logic reads Organization Type (DI-8).
 
 #### FR-8: Timezone and locale
-An Organization's timezone and locale are set when the Organization is provisioned. An Admin sees the timezone on the settings surface and cannot change either in the application.
+An Organization's timezone and locale are set when the Organization is provisioned, or when its Founding Admin creates it through signup (FR-94) (changed 2026-11-20, sprint-change-proposal-2026-11-20-v2-scope). An Admin sees the timezone on the settings surface and cannot change either in the application afterwards.
 
 **Consequences (testable):**
-- Saving the Organization settings never changes the timezone or the locale; changing either after provisioning is an operator action.
+- Saving the Organization settings never changes the timezone or the locale; changing either after provisioning or signup is an operator action.
 - Every date and time displayed anywhere resolves against the Organization timezone, not the viewer's device timezone.
 - Changing locale changes language, date format, number format, and pluralization with no deployment (DI-10).
 
@@ -314,7 +319,7 @@ An Admin can assign a Member to at most one Team, or leave them unassigned.
 - A Member normally belongs to exactly one Team. Unassigned is permitted, yields an empty schedule, and generates no Conflicts — this keeps onboarding representable rather than forcing a placeholder Team.
 - Moving a Member between Teams changes their schedule from the move date forward and rewrites no history.
 
-**Out of Scope:** simultaneous membership of multiple Teams; temporary loan to another Team (see §11.2).
+**Out of Scope:** simultaneous membership of multiple Teams. Temporary loan to another Team moved into v2 on 2026-11-20 (§5.23).
 
 #### FR-18a: Fire Ranks and Team Positions (added 2026-09-25, sprint change)
 An Admin of an Organization that switches on Fire Ranks and Positions can record each Member's Fire Rank and their Team Position.
@@ -533,7 +538,7 @@ Working and non-working shift types are distinguishable at a glance.
 - Day, night, non-working, and leave are each distinguishable without reading the label.
 - Distinction does not rely on color alone, and holds for an Organization defining Shift Types the design never anticipated.
 
-**Out of Scope for MVP:** weekly and daily views; drag-and-drop editing; print layout; iCal or calendar-subscription feeds. Re-confirmed out of v1, 2026-10-10.
+**Out of Scope:** weekly and daily views; drag-and-drop editing. Print layout and a Member's own calendar-subscription feed moved into v2 on 2026-11-20 (§5.21); two-way calendar sync and import from external calendars stay out.
 
 ### 5.10 Hours
 
@@ -813,14 +818,14 @@ A Member can see their own pending, approved, rejected and withdrawn requests.
 **Functional Requirements:**
 
 #### FR-62: Events and recipients
-The system notifies a Member when their leave request is decided, when an Admin records leave for them, when their own shifts change through a Roster or Shift Type Override, a swap, or a rotation change taking effect within the next 30 days, and when a swap is proposed to them or decided. It notifies every Admin when a new item waits in *Za odluku*.
+The system notifies a Member when their leave request is decided, when an Admin records leave for them, when their own shifts change through a Roster or Shift Type Override, a swap, a Loan of theirs being made, amended or removed (added 2026-11-20, sprint-change-proposal-2026-11-20-v2-scope), or a rotation change taking effect within the next 30 days, and when a swap is proposed to them or decided. It notifies every Admin when a new item waits in *Za odluku*.
 
 **Consequences (testable):**
 - Each notification is written by the same request that records the fact it reports, as a code and its operands. The sender computes no domain answer.
 - Each notification is sent at most once per recipient and channel.
 - A notification states facts in the Organization locale and links to the surface concerned.
 - No notification to a Member Role account names another Member's absence or Absence Type (NFR-5).
-- Shift reminders that need a projection outside the browser are out of v1.
+- Shift Reminders are the one notification no request asserts; they are specified in §5.22 (changed 2026-11-20, sprint-change-proposal-2026-11-20-v2-scope).
 
 #### FR-63: Email
 A Member with an email address receives notifications by email.
@@ -844,6 +849,7 @@ A Member can turn email and push on or off for themselves.
 - The settings show the recorded email address, or state that none is recorded.
 - A Member with neither channel available is told so in words.
 - A channel turned off receives nothing from that moment.
+- The same settings hold the Member's Shift Reminders (FR-85) (added 2026-11-20, sprint-change-proposal-2026-11-20-v2-scope).
 
 ### 5.17 Shift Swaps (added 2026-10-10, sprint-change-proposal-2026-10-10-v1-scope-expansion)
 
@@ -985,14 +991,245 @@ An Admin can export the filtered history to a PDF file.
 - It names the Organization, the period, the filter, and the time it was generated, in the Organization locale and timezone.
 - Only an Admin can export it.
 
+*Sections §5.21–§5.24 were added on 2026-11-20 by `sprint-change-proposal-2026-11-20-v2-scope.md`. They are v2: the pilot goes live on v1 in parallel, and none of them blocks it. Decisions marked D-S in that proposal are security-sensitive and await the founder's ratification; the consequences below state the recommended default.*
+
+### 5.21 Calendar Feed and Print (added 2026-11-20, sprint-change-proposal-2026-11-20-v2-scope)
+
+**Description:** A Member lives in their phone's calendar, not in Shift. They subscribe it once to a personal feed of their own shifts and the rota appears beside the rest of their life, and follows when it changes. The feed's URL is the only thing that authorizes it, so it is treated as a secret: revocable, stored only as a hash, and carrying as little as possible, because whatever it holds is copied to the calendar provider. The month also prints, for a noticeboard or a fridge. Realizes UJ-2.
+
+**Functional Requirements:**
+
+#### FR-80: Personal calendar feed
+A Member can create a personal Calendar Feed URL and add it to Google Calendar or Apple Calendar.
+
+**Consequences (testable):**
+- The URL contains a Feed Token of at least 256 bits of randomness; the system stores only its hash, so the URL is shown once at creation and on the Member's own surface only while they view it.
+- A Member has at most one live Feed Token.
+- The surface offers a subscribe link for Apple Calendar and the steps for Google Calendar, and states that a calendar application refreshes on its own schedule — Google's can lag up to a day — and that Shift is the source of truth.
+- The surface shows when a calendar last fetched the feed, or that none has.
+- A Member with no Team, or deactivated, gets no live feed (FR-82).
+
+#### FR-81: The feed holds only the Member's own at-work shifts
+The Calendar Feed lists the Member's own working Scheduled Shifts on which they are at work, and nothing else.
+
+**Consequences (testable):**
+- At work means: the Member is on the Shift Roster after Overrides and Loans, and holds no full-day Leave Record that date. A Half-day Record keeps the shift with the worked half's interval only.
+- Each event carries the Shift Type name, the Team name, and the start and end. No leave, no Absence Type, no other Member's name, no hours, no Organization address, and no note appears (NFR-5).
+- The window covers the past 31 days and the next 182 days, recomputed on every fetch; nothing derived is stored for it (DI-1).
+- Every event keeps the same identifier across fetches for the same Member, date and Team, so a calendar application updates it rather than duplicating it.
+- Changing a rotation, an Override, a Loan or a Leave Record changes the next fetch with no other action.
+
+#### FR-82: Revoke and regenerate the feed
+A Member can turn their feed off or replace its URL; an Admin can turn off any Member's feed in their Organization.
+
+**Consequences (testable):**
+- Replacing the URL invalidates the old one at once.
+- An Admin can see whether a Member's feed is on and turn it off, and never sees the URL or its token.
+- Deactivating a Member turns their feed off.
+- A revoked, replaced, deactivated or never-issued token receives the same response, indistinguishable in status, body and headers (NFR-27).
+- Creating, replacing and turning off a feed appear in the Change History without any token material (FR-78).
+
+#### FR-83: The feed is correct in time
+Every event in the feed carries its wall-clock times in the Organization timezone.
+
+**Consequences (testable):**
+- The feed declares the Organization timezone, so a calendar in another timezone shows the right instant.
+- On both daylight-saving transition dates, a shift shows its configured clock times; its real elapsed length may differ, and only that (Elapsed Duration; DI-6 governs hours, not the feed).
+- A midnight-crossing shift is one event starting on its start date (DI-5).
+- The feed is computed by the same domain logic as the application, never a second implementation (NFR-19, NFR-28).
+
+#### FR-84: Print the month
+Any Member can print the monthly Calendar under its current filter.
+
+**Consequences (testable):**
+- The print shows the month, the Organization name, the filter, the time it was printed, and the legend.
+- It shows exactly what the viewer's screen shows: a Member Role account prints no Conflict marks and no other Member's leave (FR-37, FR-38).
+- It reads in black and white: every state keeps its non-colour signal (NFR-25).
+- It fits a landscape A4 page and carries no navigation.
+
+### 5.22 Shift Reminders (added 2026-11-20, sprint-change-proposal-2026-11-20-v2-scope)
+
+**Description:** A Member who wants it is told before their shift, the evening before or a few hours ahead. A reminder is about the Member's own shift and nothing else, so it stays inside §6's "own schedule" line. Unlike every other Notification, no request asserts its fact, so it is computed from the schedule close to when it is due, by the same domain logic the application uses. Realizes UJ-2.
+
+**Functional Requirements:**
+
+#### FR-85: Reminder settings
+A Member can choose up to two reminder times for their shifts, or none.
+
+**Consequences (testable):**
+- Reminders are off until the Member turns them on.
+- The choices are a fixed list: 1, 2, 3, 6 or 12 hours before the shift starts, or the evening before at 20:00 in the Organization timezone. `[ASSUMPTION: this list; confirm with the pilot.]`
+- Reminders use the Member's channels as set in FR-65. Email reminders need their own switch on as well; push reminders follow the push switch (decision D-S6, recommended default).
+- A Member with no channel available is told so in words, as in FR-65.
+- The setting is the Member's own write (FR-5) and is not recorded in the Change History, like the other notification preferences (FR-78).
+
+#### FR-86: Reminder delivery
+For each chosen time, the system sends one reminder for each of the Member's upcoming at-work shifts (FR-81's rule).
+
+**Consequences (testable):**
+- A reminder is computed from the schedule as it stands no more than 15 minutes before it is due, so a change made earlier is reflected.
+- Each reminder is sent at most once per shift, chosen time and channel.
+- A reminder already sent is never retracted; a later change to the shift is reported by FR-62.
+- A shift the Member is absent from, or no longer rostered on, produces no reminder. A deactivated or unassigned Member receives none.
+- On both daylight-saving transition dates, "2 hours before" means two hours before the shift's real start instant.
+- The text names the Shift Type, the date, both clock times and the Team, in the Organization locale, and links to that day.
+
+#### FR-87: Reminders are only about the Member's own shifts
+A Shift Reminder never concerns anyone but its recipient.
+
+**Consequences (testable):**
+- No reminder names another Member, another Member's absence, or a Conflict.
+- An Admin receives reminders of their own shifts only, never of their Organization's coverage.
+
+### 5.23 Team Loans (added 2026-11-20, sprint-change-proposal-2026-11-20-v2-scope)
+
+**Description:** Organizations lend people between crews for a week or a month. Until v2 that was a Roster Override on every single date, twice — off one Team, onto the other — and nothing tied them together (§11.2 Q7). A Loan says it once: this Member works with that Team from this date to that date. It is an Exception like any other: it never touches a Rotation or the Member's Team membership (DI-2), it is attributable (DI-11), and the schedule, hours, conflicts and staffing warnings all follow it because they all read the Shift Roster. Realizes UJ-3.
+
+**Functional Requirements:**
+
+#### FR-88: Lend a Member to another Team
+An Admin can lend a Member to another Team of the same Organization for an inclusive date range.
+
+**Consequences (testable):**
+- A Loan to the Member's own Team, to an archived Team, or overlapping another Loan of the same Member is refused.
+- A Member with no Team can be lent; for the range they work with the loan Team.
+- The Loan records author, timestamp and reason (DI-11).
+- The Member's Team membership and every Rotation Pattern and Rotation Assignment are byte-identical before and after (DI-2).
+
+#### FR-89: A Loan moves the Member's shifts
+On each date a Loan covers, the Member is on the loan Team's Shift Rosters and off their own Team's.
+
+**Consequences (testable):**
+- Roster Overrides on those dates still apply on top of the Loan.
+- Hours follow the shifts the Member works with the loan Team (FR-40); Conflicts arise against the loan Team's shifts (FR-47); Short-staffed Shifts are derived for both Teams (FR-71).
+- A swap may give or take a shift held through a Loan (FR-66).
+- On the date after the range, the Member is back on their own Team's rosters with no action.
+- With no Loan in an Organization, every schedule, roster, hour, Conflict and staffing figure is identical to what it was before Loans existed.
+
+#### FR-90: Consequences before saving
+Saving, amending or removing a Loan reports its consequences first and blocks nothing.
+
+**Consequences (testable):**
+- The report lists, per date, the shifts the Member gains and loses.
+- It reports double booking on the range's boundary days, and the continuous duration where a shift of one Team runs into a shift of the other with no rest between (as FR-26).
+- It reports every Short-staffed Shift the change causes in either Team (FR-72).
+- It lists Roster Overrides on covered dates that the change would make inapplicable, for the Admin to keep or remove; none is silently discarded (as FR-24).
+- It never blocks the save.
+
+#### FR-91: Amend, end early or remove a Loan
+An Admin can change a Loan's dates or Team, end it early, or remove it.
+
+**Consequences (testable):**
+- Each change is attributable and reported before saving (FR-90).
+- Removing a Loan returns every covered date to the Member's own Team's roster exactly (DI-2).
+- The Member is notified of a Loan made, changed or removed (FR-62).
+
+#### FR-92: Loans are visible
+A Loan is visible wherever the Member's shifts are.
+
+**Consequences (testable):**
+- In the Calendar's Team view and day detail, a lent Member appears under the loan Team and is marked as lent, with words and a glyph, not colour alone (NFR-25).
+- The Member's own schedule and dashboard state which Team they are with and until when.
+- The directory shows the Member's own Team and, during a Loan, the Team they are currently with.
+- The hours explanation (FR-42b) names a shift's source as a Loan.
+- A Member Role account sees its own Loans and other Members' current Team; Loan reasons are visible only to Admins.
+
+### 5.24 Self-service Signup and Onboarding (added 2026-11-20, sprint-change-proposal-2026-11-20-v2-scope)
+
+**Description:** An organization finds Shift and starts on its own: create an account, verify the email, create the Organization, and be guided through Hour Bands, Teams, Shift Types and a Rotation, then invite Members. There is no billing, plan or trial. Because this is the first path strangers can use, it carries the product's most explicit security requirements: verification before anything exists, rate limits, no enumeration, and isolation identical to an operator-provisioned Organization. And because SM-5 is this product's proof, onboarding pre-fills nothing — a fast wizard bought with pilot-shaped defaults would trade SM-5 for SM-6 (SM-C3). Realizes UJ-1, UJ-5.
+
+**Functional Requirements:**
+
+#### FR-93: Create an account
+A visitor can create an account with an email address and a password, and must verify the address before anything else.
+
+**Consequences (testable):**
+- The account cannot create an Organization or reach any Organization's data until the address is verified.
+- The response to signing up is identical whether or not the address is already known (FR-99).
+- Verification is a link sent to the address; re-sending it is rate-limited.
+- The password rule is the one every account has (FR-3a's minimum).
+
+#### FR-94: Create an Organization
+A verified account with no Organization can create one, becoming its Founding Admin.
+
+**Consequences (testable):**
+- The Founding Admin enters the Organization name, a short address name (slug), an Organization Type, the timezone, the Leave Year start, and their own name and Leave Allowance. The timezone is proposed from their device and confirmed by them; the locale is the one complete shipped locale (NFR-8). No other field is pre-filled.
+- The Organization and its Founding Admin are created together or not at all; an Organization never exists without an Admin (FR-5).
+- One account founds at most one Organization, and an account that is already a Member of any Organization cannot found one.
+- Organization Type is the inert label of FR-7: it selects no template and changes no default.
+- The Founding Admin's verified address is their recorded email for notifications (FR-63).
+
+#### FR-95: The Founding Admin signs in and recovers by email
+A Founding Admin signs in with their verified email address and can reset their own password by email.
+
+**Consequences (testable):**
+- The sign-in surface accepts an email address in place of an Organization and username.
+- Every account an Admin creates (FR-3) keeps the Admin-issued username identity and the Admin-issued reset (FR-4).
+- A password-reset request answers identically whether or not the address is known (FR-99).
+- An Admin changing the Founding Admin's details never replaces their email identity.
+
+#### FR-96: Onboarding wizard
+A Founding Admin is guided through setting up the Organization, step by step.
+
+**Consequences (testable):**
+- Steps, in order: Hour Bands, Teams, Shift Types, Rotation Pattern and Rotation Assignments with the coverage preview (FR-25), Members (credentials or invitation, FR-3), done.
+- Each step is the shipped surface for that setting, so the wizard adds no second way to write anything (NFR-19).
+- Every step can be skipped and resumed later; the Admin dashboard offers the remaining steps until the wizard is finished or dismissed.
+- The wizard states progress in words and numbers.
+
+#### FR-97: Nothing is pre-filled
+A newly signed-up Organization starts empty, and onboarding suggests no configuration.
+
+**Consequences (testable):**
+- After signup the Organization holds no Team, Shift Type, Rotation Pattern, Rotation Assignment or Hour Band, and nothing beyond what every Organization is given (FR-74's annual-leave Absence Type).
+- No onboarding step pre-selects a count, a cycle length, a duration, a band boundary or a name.
+- No onboarding text, example or placeholder mentions a fire department, `Dan`/`Noć`/`Slobodno`, four Teams, a four-slot pattern or twelve-hour shifts (DI-8, SM-C3); a test asserts it.
+
+#### FR-98: Signup is limited against abuse
+The system limits signup without a paid or third-party service.
+
+**Consequences (testable):**
+- Sign-ups and verification emails are rate-limited per address and per network origin.
+- The number of Organizations created per day has an operator-set ceiling; beyond it, creation is refused with a neutral "try later".
+- Unverified accounts are deleted after 7 days, and verified accounts that never founded an Organization after 30 days; an account with a Member record is never deleted by this rule (decision D-S7, recommended default).
+- No captcha is required at launch; adding one is a founder decision (D-S3).
+
+#### FR-99: Nothing is enumerable
+No signup, verification, sign-in, recovery, feed or organization-creation response reveals whether an address, account, Organization or Feed Token exists.
+
+**Consequences (testable):**
+- Signing up with a known address, resending verification and requesting recovery each answer exactly as for an unknown address.
+- Sign-in failure is one message for every cause.
+- A taken slug is answered by proposing a different one, never by stating that another Organization holds it.
+- No anonymous surface lists Organizations or answers whether one exists.
+
+#### FR-100: A self-provisioned Organization is isolated like any other
+An Organization created through signup is isolated by exactly the mechanism of every other Organization (DI-9).
+
+**Consequences (testable):**
+- The isolation tests that prove NFR-1 for operator-provisioned Organizations pass unchanged for a self-provisioned one.
+- An authenticated, verified account with no Organization reads nothing and writes nothing anywhere except creating its Organization (FR-94).
+- Creating an Organization accepts no Organization identifier from the caller; everything is derived from the authenticated account.
+
+#### FR-101: The operator keeps control
+The platform operator can still provision Organizations (FR-2), and can suspend and restore any Organization.
+
+**Consequences (testable):**
+- A suspended Organization's Members can read and write nothing; restoring it changes no record.
+- The operator can list Organizations created through signup, with their creation time, for abuse review.
+- Suspension is an operator action, not a user-facing surface.
+
 ## 6. Non-Goals
 
 - **This is not a fire-department management system.** No interventions, incident reporting, equipment, vehicles, readiness, or training. Those are candidate industry modules layered on a validated core, never part of it.
 - **This is not a payroll or time-and-attendance system.** Hours are what was *scheduled*, not what was *attended*. No rates, no pay, no government reporting.
 - **This is not a workforce-optimization tool.** No demand forecasting, no auto-assignment, no optimization of coverage against predicted load.
-- **This is not a communication tool.** Notifications tell a Member about their own schedule and their own requests, and tell an Admin what waits for a decision (§5.16). No messaging, chat, broadcast, announcements, or SMS (changed 2026-10-10).
+- **This is not a communication tool.** Notifications tell a Member about their own schedule and their own requests, remind a Member who asks of their own upcoming shifts (§5.22), and tell an Admin what waits for a decision (§5.16). No messaging, chat, broadcast, announcements, or SMS (changed 2026-10-10; changed 2026-11-20, sprint-change-proposal-2026-11-20-v2-scope)
 - **This does not become a staffing optimizer.** One Minimum Members number warns. It never assigns anyone, never blocks a save, and never reads Fire Rank or Team Position, which stay inert (FR-18a) (added 2026-10-10).
-- **This does not become a general permission system.** Two Roles. Not a role builder, not per-resource ACLs.
+- **This does not become a general permission system.** Two Roles. Not a role builder, not per-resource ACLs. A Founding Admin is an Admin like any other (§5.24).
+- **This does not become a calendar platform.** A Member's feed is read-only and their own (§5.21). No two-way sync, no import from external calendars, no shared or team feeds, no weekly or daily views (added 2026-11-20, sprint-change-proposal-2026-11-20-v2-scope).
+- **This does not become a self-serve commerce product.** Signup creates an Organization and nothing else (§5.24): no billing, plans, trials, payment, marketplace, or onboarding templates. Onboarding pre-fills nothing, because configuration speed bought with pilot-shaped defaults destroys SM-5 (SM-C3) (added 2026-11-20, sprint-change-proposal-2026-11-20-v2-scope).
+- **A Loan does not become multi-membership.** A Member belongs to at most one Team; a Loan changes who they work with for a date range, as an Exception (§5.23). Loans never cross Organizations (added 2026-11-20, sprint-change-proposal-2026-11-20-v2-scope).
 - **This does not become a fire-department product by accretion.** Any requirement that cannot be expressed as Organization data is a requirement to reject or generalize (DI-8). The one recorded exception is FR-18a, whose fixed lists are descriptive, inert and gated by a setting.
 
 ## 7. MVP Scope
@@ -1001,30 +1238,32 @@ An Admin can export the filtered history to a PDF file.
 
 Authentication with Organization and Role resolution · operator-provisioned multi-tenant Organizations with enforced isolation · Organization profile, Organization Type, timezone, locale, Hour Bands, Leave Year, and branding · Members with Roles, status, Team, and Leave Allowance · Admin member list with search, sort, filter · read-only member directory · Teams of any number · configurable Shift Types including midnight-crossing and non-working · band-based day/night hour computation · Rotation Patterns of arbitrary cycle length · Rotation Assignments with Offset and Anchor Date · coverage and rest-gap warnings · schedule projection for any date · Shift Rosters · Shift Type and Roster Overrides with attribution and visible overridden state · monthly Calendar with Team/Member filters, filter reset, leave, conflicts, and uncovered shifts · shift counts and Band Hours per Member and Organization · Excel export of Organization hours · annual leave with allowance, Leave Day cost, and balance · leave/schedule Conflict detection with three explicit resolutions · Member and Admin dashboards · *added 2026-10-10:* installable PWA with offline reading · Member leave requests with Admin approval · email and push notifications · Minimum Members with short-staffed warnings · Member shift swaps with Admin approval · Absence Types, carry-over and half-day records · Admin change history with PDF export · Croatian UI on a fully internationalized architecture · responsive across mobile, tablet, desktop.
 
+**v2** (added 2026-11-20, sprint-change-proposal-2026-11-20-v2-scope), built after or alongside the pilot, in this recommended order: a Member's own read-only Calendar Feed and a printable month (§5.21) · opt-in Shift Reminders of the Member's own shifts (§5.22) · temporary Loans of a Member to another Team (§5.23) · self-service signup with email verification, a Founding Admin, and an onboarding wizard that pre-fills nothing (§5.24). Each is shippable on its own. Production signup opens only on a separate founder decision.
+
 ### 7.2 Out of Scope for MVP
 
 Grouped with reasons where the reason matters.
 
-*On 2026-10-10 leave requests, shift swaps, Absence Types, carry-over, part-day leave, minimum staffing, the change-history interface, PDF export of that history, notifications and PWA installation moved into v1 (`sprint-change-proposal-2026-10-10-v1-scope-expansion.md`). What remains below is re-confirmed out.*
+*On 2026-11-20 the Calendar Feed, print, Shift Reminders, temporary Loans and self-service signup moved into v2 (`sprint-change-proposal-2026-11-20-v2-scope.md`); the lines below are updated to match (changed 2026-11-20, sprint-change-proposal-2026-11-20-v2-scope).*
 
-**Deferred because the workflow is a feature in itself:**
-- Temporary loan of a Member to another Team.
+*On 2026-10-10 leave requests, shift swaps, Absence Types, carry-over, part-day leave, minimum staffing, the change-history interface, PDF export of that history, notifications and PWA installation moved into v1 (`sprint-change-proposal-2026-10-10-v1-scope-expansion.md`). What remains below is re-confirmed out.*
 
 **Deferred because MVP has no need:**
 - Public-holiday calendars; accrual over time; leave policies per Member group.
 - Breaks within a shift; overtime; actual attendance distinct from scheduled.
 - Export beyond FR-42a's Excel file of Organization hours and FR-79's change-history PDF (CSV, payroll formats, other surfaces); advanced reporting; analytics; team statistics.
 - Staffing rules beyond one Minimum Members warning (§5.18); qualification constraints; statutory rest-period enforcement.
-- Weekly and daily Calendar views; drag-and-drop editing; print; iCal feeds (re-confirmed 2026-10-10).
-- Multiple Teams per Member; multiple Organizations per user.
+- Weekly and daily Calendar views; drag-and-drop editing (re-confirmed 2026-10-10 and 2026-11-20). Two-way calendar sync, import from external calendars, and shared or team feeds (2026-11-20).
+- Multiple Teams per Member (a Loan is not one, §5.23); multiple Organizations per user; Loans between Organizations.
 
 **Deferred because it is a go-to-market decision, not a product one:**
-- Self-service organization signup and onboarding wizard.
-- Billing, subscription plans, payment processing.
+- Billing, subscription plans, trials, payment processing. (Self-service signup and the onboarding wizard moved into v2, §5.24.)
+- Onboarding templates by Organization Type, and any pre-filled configuration (SM-C3).
+- A captcha on signup, unless the founder enables one (§5.24 FR-98).
 - English or any second shipped language. The architecture is ready (§8.2); the translation is not in MVP.
 
 **Deferred because it is a different product:**
-- Notifications beyond FR-62's events: shift reminders, messaging, broadcast, SMS.
+- Notifications beyond FR-62's events and Shift Reminders (§5.22): messaging, broadcast, SMS; reminders about anyone but the recipient.
 - Native mobile applications.
 - Industry modules (interventions, equipment, vehicles, training, patrol routes, production lines).
 - Public API and third-party integrations.
@@ -1038,6 +1277,9 @@ Grouped with reasons where the reason matters.
 - **NFR-3.** Every Organization-scoped record carries its Organization reference; no record is reachable without it.
 - **NFR-4.** Uploaded branding assets are readable only by Members of the owning Organization.
 - **NFR-5.** Personal data held is limited to what scheduling requires: name, optional email, team, hours, and absence by type. No absence record has a reason, a diagnosis, or a free-text field. An Absence Type's name is visible only to Admins and to the Member themselves; to anyone else the Member reads as absent. Where an Organization names a type for sick leave, that fact is health data, and it is held under that visibility rule and no wider (changed 2026-10-10).
+- **NFR-27.** A bearer secret in a URL — a Feed Token — is at least 256 bits of randomness, stored only as a hash, revocable by its Member and by an Admin, revoked on deactivation, never written to a log in full, and indistinguishable when invalid from when never issued (added 2026-11-20, sprint-change-proposal-2026-11-20-v2-scope).
+- **NFR-29.** Signup is rate-limited per address and per network origin, creation of Organizations has a daily ceiling, and no signup, verification, sign-in, recovery, organization-creation or feed response reveals whether an address, account, Organization or token exists. No paid or third-party anti-abuse service is required (added 2026-11-20, sprint-change-proposal-2026-11-20-v2-scope).
+- **NFR-30.** An authenticated account with no Organization reads and writes nothing except creating its Organization, and a self-provisioned Organization passes the same isolation tests as an operator-provisioned one (DI-9, NFR-1) (added 2026-11-20, sprint-change-proposal-2026-11-20-v2-scope).
 
 ### 8.2 Internationalization and Localization
 
@@ -1061,6 +1303,7 @@ Grouped with reasons where the reason matters.
 - **NFR-17.** Every Domain Invariant in §4 has at least one automated test asserting it, executable without rendering a component or starting a browser.
 - **NFR-18.** The pilot configuration is a test fixture, and at least one structurally different configuration — different team count, cycle length, and shift durations — is a second fixture. Both run in the same suite (UJ-5).
 - **NFR-19.** There is one canonical implementation of each domain calculation. The same input produces the same output regardless of where it is invoked from.
+- **NFR-28.** Where a projection runs outside the browser (the Calendar Feed, Shift Reminders), it runs that same canonical implementation over the same asserted facts, and an automated test proves the server's results equal the browser's for both fixtures. Nothing derived is persisted for it (DI-1) (added 2026-11-20, sprint-change-proposal-2026-11-20-v2-scope).
 
 ### 8.5 Auditability
 
@@ -1139,11 +1382,14 @@ Ordered by how much they cost to get wrong.
 4. **What happens to future schedule and Overrides when a rotation changes mid-cycle?** FR-24 states explicit review; the mechanism is unspecified. *For `bmad-architecture`.*
 5. **What happens to a deactivated Member's future scheduled shifts?** *Answered 2026-10-10:* nothing Conflict-like. Where the Organization sets Minimum Members, a vacated shift shows as short-staffed (FR-71), and the deactivation's preview reports it (FR-72).
 6. **How much of another Member's information may a Member Role account see?** FR-16 assumes leave and hours are Admin-only. A volunteer organization may expect full transparency. *Product question.*
-7. **Can a Member be temporarily loaned to another Team?** Currently expressible only as repeated Roster Overrides (FR-31). Whether that is adequate or needs a first-class concept is a v2 question. *Deferred.*
-8. **Should one user eventually belong to multiple Organizations?** Out of scope now (§2.2); worth knowing whether it is ever intended, since it shapes the identity model. *For `bmad-architecture` to note, not to solve.*
+7. **Can a Member be temporarily loaned to another Team?** *Answered 2026-11-20:* yes, as a first-class Loan (§5.23), an Exception over a date range that moves the Member's effective Team and leaves their membership and every Rotation untouched.
+8. **Should one user eventually belong to multiple Organizations?** Out of scope now (§2.2); worth knowing whether it is ever intended, since it shapes the identity model. *For `bmad-architecture` to note, not to solve.* Signup (§5.24) keeps the rule: an account that is a Member anywhere cannot found an Organization (2026-11-20).
 9. **What retention applies to schedule and leave history, and to the change history (FR-78)?** Unbounded is assumed. *Deferred.*
 10. **Is WCAG 2.1 AA the accessibility target, and is a formal audit ever expected?** *For `bmad-ux`.*
 11. **Does the pilot need any absence reason recorded?** *Answered 2026-10-10:* no, never (NFR-5). Open: does the pilot record sick leave at all? If it does, admin-only visibility of the Absence Type is the minimum its legal basis requires (GDPR Art. 9(2)(b)). *Confirm with the pilot.*
+12. **How long are abandoned signups kept?** The recommended default deletes unverified accounts after 7 days and verified accounts without an Organization after 30 (FR-98). *Founder decision D-S7* (added 2026-11-20, sprint-change-proposal-2026-11-20-v2-scope).
+13. **Is a calendar application's refresh lag acceptable?** Google Calendar refreshes a subscribed feed on its own schedule, up to about a day, and nothing on Shift's side changes that. The product states it and remains the source of truth (FR-80); FR-62's change notifications cover late changes. *Confirm with the pilot after first use* (added 2026-11-20, sprint-change-proposal-2026-11-20-v2-scope).
+14. **The security-sensitive v2 defaults** — the Feed Token as a bearer secret (NFR-27), feed contents (FR-81), signup abuse limits and no captcha (FR-98), Auth email through the existing email provider, anti-enumeration (FR-99), self-provisioned isolation (FR-100), the Founding Admin's email identity (FR-95), and when production signup opens — are recorded as founder decisions D-S1 to D-S10 in `sprint-change-proposal-2026-11-20-v2-scope.md` §6. *Awaiting ratification* (added 2026-11-20, sprint-change-proposal-2026-11-20-v2-scope).
 
 ## 12. Assumptions Index
 
@@ -1156,3 +1402,5 @@ Every `[ASSUMPTION]` in this document, for explicit confirmation:
 - **§5.11 FR-44** — Leave Days are counted as dates in the range on which the Member had a working Scheduled Shift. *The most consequential assumption in the document — see §11.2 Q1.*
 - **§8.1 NFR-5** — *Settled 2026-10-10:* no absence reason is ever recorded. Whether the pilot records sick leave at all is still open. *See §11.2 Q11.*
 - **§8.7 NFR-26** — WCAG 2.1 AA is the target, without formal audit in MVP.
+- **§5.21 FR-81** — The feed window is the past 31 days and the next 182 days. *Added 2026-11-20.*
+- **§5.22 FR-85** — The reminder choices are 1, 2, 3, 6 or 12 hours before, or the evening before at 20:00, at most two, off by default. *Added 2026-11-20.*
