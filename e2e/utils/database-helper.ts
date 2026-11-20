@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import pg from 'pg';
 
 import { ANNUAL_LEAVE_COLUMN } from './i18n.ts';
+import { SEEDED_STEPS } from './seeded-pattern.ts';
 
 /**
  * The database the E2E run provisions into: the Supabase CLI's fixed local
@@ -1523,9 +1524,12 @@ export async function seedTeamRotation(
       typeIds.push(id);
     }
     const [dan, noc, slobodno] = typeIds as [string, string, string];
+    // The times `seeded-pattern.ts` reasons about, so the two cannot drift.
+    const [danStep, nocStep] = SEEDED_STEPS;
+    if (!danStep.working || !nocStep.working) throw new Error('E2E: the seeded pattern starts with two working steps');
     const times = [
-      [dan, '07:00', '19:00'],
-      [noc, '19:00', '07:00'],
+      [dan, danStep.start, danStep.end],
+      [noc, nocStep.start, nocStep.end],
     ] as const;
     for (const [shiftTypeId, start, end] of times) {
       await client.query(
