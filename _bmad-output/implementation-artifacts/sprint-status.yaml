@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 11-17-2026 09:45
+last_updated: 11-20-2026 12:00
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -640,6 +640,47 @@ development_status:
   15-7-every-filter-is-one-summary-bar-a-filtri-sheet-and-chips: done  # #259
   15-7b-the-month-is-a-compact-header-control: done  # #262, split from 15.7 (2026-11-03)
   epic-15-retrospective: done
+
+  # v2 scope (Epics 16-19), added 2026-11-20 by
+  # _bmad-output/planning-artifacts/sprint-change-proposal-2026-11-20-v2-scope.md
+  # (founder approved the scope 2026-11-20). Keys hand-inserted, not regenerated:
+  # a `generate` run would drop the split-story orphans above (known; see 1.1).
+  # Gates, recorded per story as "waits:" comments. A story does not start while
+  # any of its gates is open; its status stays backlog either way.
+  #   AP1 = Architect pass 1 (AD-1 note, AD-7, AD-14, AD-17, AD-18), before 16.2.
+  #   AP2 = Architect pass 2 (AD-10, AD-12, AD-16, signup door), before 19.1;
+  #         plus a security-review of 19.1-19.5 (and of 16.3-16.4) before production.
+  #   D-S1..D-S10 = proposal §6 founder decisions, NOT yet ratified (2026-11-20).
+  # Ready now (no gate): 16.1 and all of Epic 18 (in dependency order).
+  epic-16: backlog  # calendar feed and print (CAP-25); D-S1, D-S2, D-S8
+  16-1-the-month-prints: backlog  # READY: no Architect pass, no D-S decision
+  16-2-the-domain-package-runs-on-the-server: backlog  # waits: AP1
+  16-3-a-member-s-feed-token-is-a-revocable-secret: backlog  # waits: AP1 (via 16.2), D-S1
+  16-4-the-calendar-feed-serves-a-member-s-own-shifts: backlog  # waits: AP1, D-S1, D-S2, D-S8
+  16-5-a-member-subscribes-from-kalendar-na-mobitelu: backlog  # waits: AP1, D-S1, D-S2
+  epic-16-retrospective: optional
+
+  epic-17: backlog  # shift reminders (CAP-26); reuses 16.2; D-S6
+  17-1-a-member-chooses-their-reminders: backlog  # waits: AP1 (via 16.2), D-S6
+  17-2-the-remind-job-writes-reminders-that-fall-due: backlog  # waits: AP1, D-S6
+  17-3-reminders-reach-the-member-by-push-or-email: backlog  # waits: AP1, D-S6
+  epic-17-retrospective: optional
+
+  epic-18: backlog  # team loans (CAP-27); no D-S decision, no Architect pass
+  18-1-the-loan-rule-in-the-domain: backlog  # READY
+  18-2-a-loan-is-a-recorded-exception: backlog  # READY after 18.1
+  18-3-an-admin-lends-a-member-to-another-team: backlog  # READY after 18.2 (11.2 done)
+  18-4-an-admin-amends-ends-early-or-removes-a-loan: backlog  # READY after 18.3
+  18-5-loans-are-visible-wherever-rosters-are-read: backlog  # READY after 18.3
+  epic-18-retrospective: optional
+
+  epic-19: backlog  # self-service signup (CAP-28); staging only, production opening is D-S5
+  19-1-the-signup-door-opens-safely-on-staging: backlog  # waits: AP2, D-S3, D-S4, D-S9
+  19-2-a-stranger-creates-an-account: backlog  # waits: AP2, D-S3, D-S8, D-S10
+  19-3-a-verified-account-creates-its-organization: backlog  # waits: AP2, D-S3, D-S8, D-S9, D-S10
+  19-4-the-onboarding-wizard-guides-setup-and-pre-fills-nothing: backlog  # waits: AP2, UX review with mockups, D-S9
+  19-5-abandoned-signups-are-cleaned-up-and-the-operator-keeps-cont: backlog  # waits: AP2, D-S5, D-S7
+  epic-19-retrospective: optional
 action_items:
   - id: "epic-4-retro-item-1-fix-c1-a-sati-name-for-a-member-no-longe"
     epic: 4

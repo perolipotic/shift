@@ -19,6 +19,8 @@ inputDocuments:
 
 This document provides the complete epic and story breakdown for shift, decomposing the requirements from the SPEC package, the UX design contract, and the architecture spine into implementable stories.
 
+Epics 16–19 were added on 2026-11-20 by `sprint-change-proposal-2026-11-20-v2-scope.md` (v2 scope). They were planned before the proposal's founder decisions D-S1 to D-S10 were ratified: each story names the decisions and the Architect pass it waits for (**Blocked on:**), and the recommended defaults stand for planning only. The SPEC package is updated after ratification (proposal §5.1); until then CAP-25 to CAP-28 and Q26 to Q30 below are taken from the proposal and the PRD (FR-80 to FR-101, NFR-27 to NFR-30).
+
 **Requirements basis:** the SPEC package is canonical. `prd.md` is a fully-absorbed source and is deliberately not an input — it retains a retired rotation table, a pre-narrowing FR-16, and pre-architecture conflict framing. The PRD **addendum** is an adopted companion and is an input, for the pilot seed configuration and the epic seed.
 
 ## Requirements Inventory
@@ -51,6 +53,10 @@ Capabilities from `SPEC.md`. Each is an independently reviewable slice; `engine-
 - **CAP-22** — Shift swaps (added 2026-10-10). A member proposes their shift and, optionally, a colleague's shift in return; the colleague accepts; an admin approves. Until approval the schedule is unchanged; approval writes Roster Overrides attributed to the admin; the admin first sees each member's hour delta, any leave or double booking and any short-staffed result, which warn and never block; either member can withdraw before the decision.
 - **CAP-23** — Absence types, carry-over and part-day absence (added 2026-10-10). An Absence Type is organization data with a name and whether it draws down the allowance; every type raises a conflict against a rostered working shift and only drawing types change the balance; carried-over days are derived from the previous leave year's unused balance, capped by the organization's setting, and expire on its date; a half-day record costs 0.5; no record carries a reason.
 - **CAP-24** — Change history (added 2026-10-10). Every write to a rule, an exception, a decision, a request, a member or an organization setting (amended 2026-11-16, epic 14 retro A6, founder decision: a member's own notification preference is not recorded) appears with its author, time and before/after values, deletions included; filterable by date range, member, team and kind; the PDF holds exactly the filtered rows; member-role accounts reach none of it. History begins at the migration that introduces it, earlier entries reconstructed from existing attribution columns.
+- **CAP-25** — My shifts in my phone's calendar, and the month on paper (added 2026-11-20, `sprint-change-proposal-2026-11-20-v2-scope.md`; PRD FR-80 to FR-84). A member creates a personal feed URL, adds it to Google or Apple Calendar, and their at-work shifts appear with correct times in the organization timezone across DST; the feed holds only their own working shifts — no leave, absence type, other member or hours; the URL is a revocable secret stored only as a hash, and a revoked or unknown token answers exactly as a never-issued one; the month prints legibly in black and white under the current filter and visibility.
+- **CAP-26** — Shift reminders (added 2026-11-20; PRD FR-85 to FR-87). Opt-in, at most two lead times from a fixed list, delivered on the member's existing channels, computed by the canonical projection at most 15 minutes before due, sent at most once per shift, lead and channel, never about anyone else.
+- **CAP-27** — Temporary loan to another team (added 2026-11-20; PRD FR-88 to FR-92). On loan dates the member is on the loan team's rosters and off the home team's; overrides still apply; the rotation is untouched; loans never overlap per member, are attributable and removable, and show before saving their double booking, rest gap, short-staffed and override consequences (warn, never block); with no loan every derivation is byte-identical to before.
+- **CAP-28** — Self-service organization signup (added 2026-11-20; PRD FR-93 to FR-101). Email verification precedes any organization; one account founds at most one organization; the new organization is isolated exactly as an operator-provisioned one and the wizard pre-fills nothing; signup, verification and recovery answer identically whether or not an address is known; signup is rate-limited and has a global circuit breaker.
 
 ### NonFunctional Requirements
 
@@ -81,6 +87,11 @@ From `quality-requirements.md`.
 - **Q23** WCAG 2.1 AA target, without formal audit in MVP.
 - **Q24** A cached snapshot is never shown without its as-of time, never beside a fresh one, and never survives sign-out (added 2026-10-10).
 - **Q25** A notification is derived from a recorded fact, never a calculation the notifier makes on its own, and is sent at most once per recipient and channel (added 2026-10-10).
+- **Q26** A bearer-secret URL is stored only as a hash, revocable by its member and by an admin, revoked on deactivation, never logged in full, and indistinguishable when invalid (added 2026-11-20; NFR-27).
+- **Q27** Server-side projection runs the canonical domain package; a parity test proves it equals the browser's for both fixtures (added 2026-11-20; NFR-28).
+- **Q28** No signup, verification, recovery or organization-creation response reveals whether an address, account or organization exists (added 2026-11-20; NFR-29).
+- **Q29** A self-provisioned organization passes the same isolation suite as an operator-provisioned one; an authenticated account with no organization reads and writes nothing (added 2026-11-20; NFR-30).
+- **Q30** Signup is rate-limited per address and per network, and the number of organizations created per day has a configured ceiling (added 2026-11-20; NFR-29).
 
 **Localization contract** (`localization.md`) applies to every surface: no hard-coded user-facing string (L1, merge-blocking per L2); adding a language changes no component and no business logic (L3); domain returns keys, codes and values only (L4); a missing key degrades visibly and safely (L5); one centralized locale-aware formatting layer (L6); Croatian's three plural forms — an `count === 1` check is a defect (L7); every date and time in the organization timezone (L8). Terminology is settled: `Smjena` = Team, `Tip smjene` = Shift Type, `Sve smjene (N)` carries a count.
 
@@ -186,6 +197,17 @@ From `DESIGN.md` (visual) and `EXPERIENCE.md` (behavioural). Both are binding an
 - **UX-DR52** Decided requests — since story 9.5 *Odlučeno* lists approved and rejected leave requests beside decided collisions (and, since retro 8–9 C1, requests closed by a deactivation, badged *Zatvoren deaktivacijom*), newest decision first, each read-only with the request's first day, its badge (*Odobren*, *Odbijen* or *Zatvoren deaktivacijom*), the kind, the member, the range and `Odluka: {admin}, {datum} u {vrijeme}` (the words for an admin no longer in the organization when they are gone). Since retro 8–9 item 17 (0047) an approved request whose leave record an admin later amended or removed keeps *Odobren* and reads `Odsutnost je naknadno izmijenjena.` or `Odsutnost je naknadno uklonjena.` under it, here and on the member's own *Godišnji* list, derived on read from the linked leave record, never a new status. A withdrawn request was never decided and is not listed. It is still a read of stored decisions, never a history. Since story 12.4 decided swaps join it — approved, rejected and closed by a deactivation — each with the earlier of its dates, its badge (*Odobrena*, *Nije odobrena* or *Zatvorena deaktivacijom*), the kind, `{predlagatelj} → {kolega}`, the shifts and `Odluka: {admin}, {datum} u {vrijeme}`; an approved one whose override is no longer live in the calendar (amended or removed since) keeps *Odobrena* and reads *Zamjena je naknadno izmijenjena u kalendaru.*, derived on read. A withdrawn or declined swap was never decided and is not listed.
 - **UX-DR53** Glass (Epic 15, written by story 15.5; DESIGN.md §Elevation, glass and depth holds the values). Glass is for floating chrome only — the desktop sidebar, the phone tab bar, the phone's sticky month head, the layered panels (Dialog, ConfirmDialog, Popover, the docked sheets) and the rotation builder's save bar — through three `index.css` utilities and their tokens, never a screen's class string (the save bar is the one exception). Reading surfaces (tables, lists, the grid, forms, data cards) are at least 85 % opaque and carry no blur, and shift cells are fully opaque; the layered panels are glass at the reading alpha (`glass-reading`, .85 light, .92 dark). Chrome beside content is `glass` (.58), chrome content scrolls under is `glass-over-content` (.80, foreground-strength text only), and muted text appears only on .85 or more. Every text and boundary pair on glass is measured against the worst backdrop (the page, each blob and, under over-content glass and a panel, every opaque fill, the ink button and the scrim) at 4.5:1 for text and 3:1 for boundaries, icons and the ring, in both themes; the dark values are final and their worst ratios recorded. Without blur support and under reduced transparency glass is the opaque card with a `--border` hairline; under forced colours it is `Canvas` with a `CanvasText` border, and the borderless `chrome` Button draws a `ButtonText` border. Budget: blur 24 px at most, at most three blurred layers on a phone, no blur on a cell, row, card, list or Dialog `::backdrop`, static unblurred blobs; no frame over 50 ms in paint or composite while *Kalendar* scrolls on a low-end phone, and NFR-22 holds (measured by `pnpm test:perf`, a desktop Chromium proxy that throttles the CPU but not the GPU; the trace on a real low-end Android, NFR-22 included, is a human step).
 
+**Added 2026-11-20** (`sprint-change-proposal-2026-11-20-v2-scope.md` §5.5, drafted there with Croatian vocabulary each story finalizes in `hr.json`), each binding from the story that ships it:
+
+- **UX-DR54** Calendar subscription — *Više → Kalendar na mobitelu* (story 16.5): with no feed, one *Izradi poveznicu* and one sentence; with a feed, the URL masked by default with *Kopiraj*, *Dodaj u Google kalendar*, *Dodaj u Apple kalendar* (`webcal://`), `zadnje preuzimanje {datum vrijeme}` or `još nije preuzeto`, *Izradi novu poveznicu* with a warning that the old link stops working, and *Isključi*; a fixed note on Google's refresh lag and a note on what the feed does not contain.
+- **UX-DR55** Admin view of feeds — the member detail shows `Kalendar na mobitelu: uključen / isključen` and *Isključi poveznicu*, never the URL (story 16.5).
+- **UX-DR56** Print — *Kalendar → Ispiši* (story 16.1): A4 landscape print layout of the current month and filter, header with organization name, month, filter and `ispisano {datum vrijeme}`, the legend, glyphs not colour alone, each member-role account sees only what its screen shows, no navigation chrome.
+- **UX-DR57** Reminders — *Više → Obavijesti → Podsjetnici* (story 17.1): off by default; up to two of `1 h prije`, `2 h prije`, `3 h prije`, `6 h prije`, `12 h prije`, `večer prije u 20:00`; the channel each will use, or in words that none is available (FR-65); a separate email-reminder switch (D-S6). Reminder text `Sutra radiš: {smjena} {od}–{do}, {tim}` or `Za 2 h radiš: …`, linking to the day (story 17.3).
+- **UX-DR58** Loan dialog — member detail → *Posudi drugom timu* (stories 18.3, 18.4): team, *Od*, *Do*, then *Što se mijenja* (shifts gained and lost per date, boundary double booking, rest gap, Short-staffed Shifts in both teams, overrides needing review), one *Spremi*; amend, end early and remove use the same dialog.
+- **UX-DR59** Loan marks (story 18.5): `posuđen iz {tim}` with a glyph plus words in the day detail and Team filter; `u timu {tim} do {datum}` on the member's schedule and Danas; `trenutno u timu {tim}` in the directory; source `posudba` in the hours explanation.
+- **UX-DR60** Signup (story 19.2): `/registracija` with email, password, a note that this creates a new organization, and a link to *Prijava*; one neutral confirmation screen identical for new and known addresses; a throttled resend; *Prijava* gains `Nova organizacija? Registriraj se` and accepts an email address.
+- **UX-DR61** Create organization and wizard — `/postavljanje` (stories 19.3, 19.4): step 1 the organization and the Founding Admin, nothing selected or pre-filled; steps 2–7 embed shipped surfaces; a progress rail `korak 3 od 7`, *Preskoči za sada*, and a resumable *Danas* card; organization-neutral empty states, swept for pilot literals.
+
 ### FR Coverage Map
 
 Capabilities are the functional requirements (see basis note above). Every capability maps to exactly one epic.
@@ -216,10 +238,14 @@ Capabilities are the functional requirements (see basis note above). Every capab
 | CAP-22 Shift swaps | Epic 12 | swap record, proposal, acceptance, admin decision |
 | CAP-23 Absence types, carry-over, half days | Epic 13 | absence types, allowance per leave year, carry-over, half-day records |
 | CAP-24 Change history | Epic 14 | `audit_events`, history surface, PDF export |
+| CAP-25 Calendar feed and print | Epic 16 | print layout, server-side projection, feed tokens, `calendar-feed`, subscription surface |
+| CAP-26 Shift reminders | Epic 17 | reminder settings, `remind` job, push and email delivery |
+| CAP-27 Temporary loan to another team | Epic 18 | loan rule in `domain/roster`, `team_loans`, loan dialog, loan marks |
+| CAP-28 Self-service organization signup | Epic 19 | signup door, account, `create_organization`, onboarding wizard, housekeeping |
 
-**Non-functional allocation.** Q1–Q3 and Q6 land in Epic 1 and are re-asserted by every epic that adds a table. Q7–Q10 land in Epic 2 with the domain package and both fixtures, and each later epic extends the suite. Q11–Q12 land in Epic 3 with the first attributable writes. Q13–Q16 and Q21–Q23 are definition-of-done on every epic with a surface. Q17–Q18 are proven in Epic 3, Q19 in Epic 6, Q20 in Epic 1. The localization contract L1–L8 is definition-of-done everywhere. Added 2026-10-10: Q24 lands in Epic 8; Q25 in Epic 10; the amended Q5 in Epic 13 and the amended Q12 in Epic 14; Q2 is re-asserted by Epics 9 and 12, which add the first member-role domain writes (own requests only, never an administrative write).
+**Non-functional allocation.** Q1–Q3 and Q6 land in Epic 1 and are re-asserted by every epic that adds a table. Q7–Q10 land in Epic 2 with the domain package and both fixtures, and each later epic extends the suite. Q11–Q12 land in Epic 3 with the first attributable writes. Q13–Q16 and Q21–Q23 are definition-of-done on every epic with a surface. Q17–Q18 are proven in Epic 3, Q19 in Epic 6, Q20 in Epic 1. The localization contract L1–L8 is definition-of-done everywhere. Added 2026-10-10: Q24 lands in Epic 8; Q25 in Epic 10; the amended Q5 in Epic 13 and the amended Q12 in Epic 14; Q2 is re-asserted by Epics 9 and 12, which add the first member-role domain writes (own requests only, never an administrative write). Added 2026-11-20: Q26 and Q27 land in Epic 16 (Q27 re-asserted by Epic 17); Q25 is re-asserted by Epic 17; Q28–Q30 land in Epic 19; Q2 is re-asserted by Epic 18 (loans are admin-only).
 
-**UX design requirement allocation.** UX-DR1–2, 4–5, 31–32, 34, 40 land in Epic 1 — the theme layer and the i18n layer are built once, first. UX-DR3, 6, 13–16, 23, 35, 43 land in Epic 2, including the ramp-slot contrast verification, which belongs where shift types are first assigned to slots. UX-DR7–8, 12, 18–21, 24, 26, 30, 33, 36–39, 41–42 land in Epic 3 with the calendar, skeleton loading included. UX-DR17, 29, 44 land in Epic 4. UX-DR10–11, 22, 25, 27–28 land in Epic 5. UX-DR9 (duty-block) lands in Epic 6. Epic 7 (sprint change 2026-10-02) revises UX-DR1, 2, 10, 16–17, 19–20, 23, 25, 29–34, 36 and 40 on shipped surfaces; each line is rewritten by the story that ships its change, not up front. Epics 8–14 (sprint change 2026-10-10) add UX-DR45–52 and revise UX-DR4, 8, 12, 23, 25 and 31–33 the same way: UX-DR45 in Epic 8, UX-DR46, 47 and 52 in Epic 9 (47 and 52 extended by Epic 12), UX-DR49 in Epic 10, UX-DR48 in Epic 11, UX-DR50 in Epic 13, UX-DR51 in Epic 14. Epic 15 (sprint change 2026-10-30) revises UX-DR1, 3, 5, 11, 16, 26, 31/32 (form only), 40 and 45 and adds UX-DR53, written by story 15.5.
+**UX design requirement allocation.** UX-DR1–2, 4–5, 31–32, 34, 40 land in Epic 1 — the theme layer and the i18n layer are built once, first. UX-DR3, 6, 13–16, 23, 35, 43 land in Epic 2, including the ramp-slot contrast verification, which belongs where shift types are first assigned to slots. UX-DR7–8, 12, 18–21, 24, 26, 30, 33, 36–39, 41–42 land in Epic 3 with the calendar, skeleton loading included. UX-DR17, 29, 44 land in Epic 4. UX-DR10–11, 22, 25, 27–28 land in Epic 5. UX-DR9 (duty-block) lands in Epic 6. Epic 7 (sprint change 2026-10-02) revises UX-DR1, 2, 10, 16–17, 19–20, 23, 25, 29–34, 36 and 40 on shipped surfaces; each line is rewritten by the story that ships its change, not up front. Epics 8–14 (sprint change 2026-10-10) add UX-DR45–52 and revise UX-DR4, 8, 12, 23, 25 and 31–33 the same way: UX-DR45 in Epic 8, UX-DR46, 47 and 52 in Epic 9 (47 and 52 extended by Epic 12), UX-DR49 in Epic 10, UX-DR48 in Epic 11, UX-DR50 in Epic 13, UX-DR51 in Epic 14. Epic 15 (sprint change 2026-10-30) revises UX-DR1, 3, 5, 11, 16, 26, 31/32 (form only), 40 and 45 and adds UX-DR53, written by story 15.5. Epics 16–19 (sprint change 2026-11-20) add UX-DR54–61 and revise UX-DR31/32, 33 and 49 the same way: UX-DR54–56 in Epic 16, UX-DR57 in Epic 17, UX-DR58–59 in Epic 18, UX-DR60–61 in Epic 19.
 
 ## Epic List
 
@@ -344,6 +370,38 @@ Users said the app looks old-fashioned. Every screen takes direction G, "Staklo"
 **Capabilities covered:** none. It reworks the surfaces of every shipped epic.
 **Standalone:** every story restyles a surface that already works. No behaviour, data or copy changes.
 **Implementation notes:** the source is `sprint-change-proposal-2026-10-30-glass-redesign.md` and the G mockups in `ux-designs/ux-shift-2026-10-30-glass/`. 15.1 is a pilot, held unmerged until the product owner accepts it on a phone. Each story updates the DESIGN.md, EXPERIENCE.md and UX-DR lines it changes in the same PR.
+
+### Epic 16: My shifts are in my phone's calendar, and the month prints (added 2026-11-20, sprint change)
+
+A member subscribes their phone's calendar to their own shifts through a personal feed link, and anyone prints the month they see.
+
+**Capabilities covered:** CAP-25
+**Standalone:** print works on the shipped calendar alone; the feed only reads the projection and delivers it elsewhere.
+**Implementation notes:** Architect pass 1 (AD-1 scope note, AD-7, AD-14, AD-17, AD-18) precedes 16.2, which runs `@shift/domain` under Deno in an Edge Function with a parity suite. 16.1 (print) needs no pass and no decision. Decisions D-S1, D-S2 and D-S8 pending ratification. Q26 and Q27 are proven here.
+
+### Epic 17: A member who asks is reminded before their shift (added 2026-11-20, sprint change)
+
+A member opts into reminders of their own upcoming shifts, delivered on the channels they already have.
+
+**Capabilities covered:** CAP-26
+**Standalone:** off by default; with no member opted in, nothing changes.
+**Implementation notes:** reuses 16.2's server-side projection, so it follows Architect pass 1. Story 17.2 amends AD-18 with its one exception (a reminder is the only notification no request asserts). Decision D-S6 pending ratification.
+
+### Epic 18: A member is lent to another team for a while (added 2026-11-20, sprint change)
+
+An admin lends a member to another team for a date range, and rosters, hours, collisions and staffing follow without repeated roster overrides.
+
+**Capabilities covered:** CAP-27
+**Standalone:** with no loan, every derivation is byte-identical to before.
+**Implementation notes:** depends on no D-S decision and needs no Architect pass; 18.2 applies the AD-2 row and 18.3 the AD-5 row. 18.1 changes roster derivation under every figure, guarded by "no loan ⇒ identical output" over both fixtures.
+
+### Epic 19: An organization signs itself up (added 2026-11-20, sprint change)
+
+A stranger creates an account, verifies their email, creates an organization and is guided through setting it up, with nothing pre-filled and no billing.
+
+**Capabilities covered:** CAP-28
+**Standalone:** operator provisioning keeps working; signup is a second door into the same provisioning transaction.
+**Implementation notes:** Architect pass 2 (AD-10, AD-12, AD-16 and the signup door) precedes 19.1, and a `security-review` of 19.1–19.5 precedes production. Ships to staging; production opening is the separate decision D-S5. Decisions D-S3, D-S4, D-S5, D-S7, D-S8, D-S9 and D-S10 pending ratification. Q28–Q30 are proven here.
 
 
 ---
@@ -2655,3 +2713,553 @@ Split from Story 15.7 at the product owner's choice (2026-11-03). Spec: `spec-15
 **Given** this story ships
 **When** it is merged
 **Then** DESIGN.md (*month toolbar*), EXPERIENCE.md and UX-DR30 are updated in the same change.
+
+---
+
+## Epic 16: My shifts are in my phone's calendar, and the month prints
+
+Luka adds one link to Google Calendar once, and his shifts are there next to his day job's meetings. When the rota changes, his calendar follows within the day. Damir prints October for the station noticeboard.
+
+Added 2026-11-20 by `sprint-change-proposal-2026-11-20-v2-scope.md` (§5.6). Architect pass 1 (AD-1 note, AD-7, AD-14, AD-17, AD-18) precedes 16.2. A `security-review` of 16.3–16.4 precedes production.
+
+**Capabilities:** CAP-25 · **Governed by:** AD-1 (scope note), AD-7, AD-9/10, AD-14, AD-17 · **Proves:** Q26, Q27 · **UX:** UX-DR31/32, 33, 54, 55, 56 · **Decisions:** D-S1, D-S2, D-S8 (pending ratification)
+
+**Planning status (2026-11-20):** 16.1 is ready. 16.2 waits for Architect pass 1. 16.3–16.5 wait for Architect pass 1 (through 16.2) and for ratification of the D-S decisions each names. Until ratified, the recommended default in proposal §6 stands for planning only.
+
+### Story 16.1: The month prints
+
+As anyone who reads the schedule,
+I want to print the month I am looking at,
+So that it can hang on a noticeboard or go in a folder.
+
+**Depends on:** none. **Blocked on:** nothing (needs no Architect pass and no D-S decision).
+
+**Acceptance Criteria:**
+
+**Given** *Kalendar* in either mode, under any filter
+**When** the viewer chooses *Ispiši*
+**Then** the browser's own print dialog opens on a dedicated print layout of that month: A4 landscape, a header with the organization name, the month, the filter in words and `ispisano {datum vrijeme}`, the legend, and no navigation chrome (UX-DR56, decision D3)
+**And** no PDF library, no server call and no new dependency is added
+
+**Given** a member-role account
+**When** it prints
+**Then** the print holds exactly what its screen shows under its own visibility, built from the rendered snapshot and never a second read (AD-13)
+
+**Given** a black-and-white printer
+**When** the month prints
+**Then** every state reads from its glyph and label, never colour alone (NFR-25), and a midnight-crossing shift prints once on its start date (DI-5)
+
+**Given** this story ships
+**When** it is merged
+**Then** *Kalendar* gains *Ispiši*, and the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes (UX-DR31/32, 33, 56) are updated in the same change, with all copy in the `print` namespace of `hr.json` (L1)
+
+### Story 16.2: The domain package runs on the server
+
+As the product,
+I want the canonical domain package to project a member's schedule inside an Edge Function,
+So that a feed and a reminder say exactly what the app says.
+
+**Depends on:** Architect pass 1. Applies the AD-1 scope note and the AD-7 row. Starts with a spike on Deno module resolution (proposal §8 risk 2). **Blocked on:** Architect pass 1.
+
+**Acceptance Criteria:**
+
+**Given** `@shift/domain`
+**When** it is imported by an Edge Function under Deno
+**Then** it loads with no runtime dependency and no second implementation (AD-7, NFR-19); a Deno build or import map is part of the package's contract
+
+**Given** `member_schedule_inputs(member, from, to)`, a `SECURITY DEFINER` SQL function
+**When** it is called
+**Then** it returns only the asserted rows a member's projection needs and nothing derived (AD-1), and it is callable by no anon or authenticated session directly
+
+**Given** both fixtures (AD-15)
+**When** the parity suite runs
+**Then** the Deno projection, hours and R12 at-work selection equal the browser's for every member and every date of the tested window, and the server inputs equal what the browser's reads yield (Q27, NFR-28)
+
+**Given** this story ships
+**When** it is merged
+**Then** the spine carries the AD-1 scope note and the AD-7 row in the same change
+
+### Story 16.3: A member's feed token is a revocable secret
+
+As a member,
+I want a personal feed link that only I hold and can kill,
+So that my schedule leaves the app only where I put it.
+
+**Depends on:** 16.2. Applies the AD-2 row for the Feed Token and its AD-9/AD-10 RPCs. **Blocked on:** Architect pass 1 (through 16.2), D-S1.
+
+**Acceptance Criteria:**
+
+**Given** `calendar_feed_tokens`, organization-scoped with `organization_id` first and RLS (Q3)
+**When** a member creates their token
+**Then** it is at least 256 random bits, returned once, and stored only as a SHA-256 hash; at most one live token exists per member (D-S1, NFR-27, Q26)
+
+**Given** a member with a live token
+**When** they regenerate it or turn it off
+**Then** the old token stops working at once, and only their own token can be written (FR-5, FR-82)
+
+**Given** an admin
+**When** they turn off a member's feed in their organization
+**Then** it is revoked, the admin never sees the URL or the token, and no other organization's token is reachable (Q1, Q2)
+
+**Given** a member who is deactivated
+**When** the deactivation saves
+**Then** their token is revoked in the same transaction
+
+**Given** the audit trigger on `calendar_feed_tokens` (story 14.1 pattern)
+**When** a token is created or revoked
+**Then** the change history records the event and holds no token or hash material
+
+### Story 16.4: The calendar feed serves a member's own shifts
+
+As a member,
+I want my calendar app to fetch my shifts from one link,
+So that my phone shows when I work, at the right times.
+
+**Depends on:** 16.3. Applies the AD-14 and AD-17 rows for `calendar-feed`. **Blocked on:** Architect pass 1, D-S1, D-S2, D-S8.
+
+**Acceptance Criteria:**
+
+**Given** `GET /calendar-feed/{token}.ics` on a public function (`verify_jwt = false`) that holds the publishable key only
+**When** a live token is presented
+**Then** the function hashes it, reads through the one anon-callable `calendar_feed_inputs(token)` RPC, projects R12 with the domain package over the past 31 and next 182 days (D2), and answers `text/calendar` with `Cache-Control: private, max-age=900`
+**And** it writes nothing but the token's `last_fetched_at`
+
+**Given** the member's at-work shifts
+**When** the calendar is serialized
+**Then** it is an RFC 5545 calendar with a VTIMEZONE for the organization's timezone, one VEVENT per at-work shift with a stable UID per (member, date, team), and a SUMMARY of the Shift Type name and Team name and nothing more; no leave, Absence Type, other member, hours, address or note appears (D-S2, FR-81)
+**And** a Half-day Record keeps the shift with the worked half's interval (R12.2)
+
+**Given** golden files
+**When** they are compared
+**Then** both DST transitions and a midnight-crossing shift (DI-5) serialize correctly, and the ICS subset is hand-written with no new runtime dependency
+
+**Given** an unknown, revoked, replaced or deactivated token
+**When** it is presented
+**Then** every case gets one identical 404 in status, body, headers and timing class (D-S8, Q26)
+**And** the token is never written to a log in full
+
+**Given** the function's environment
+**When** the key-hygiene test runs
+**Then** `calendar-feed` holds no secret key (AD-17)
+
+### Story 16.5: A member subscribes from *Kalendar na mobitelu*
+
+As a member,
+I want to add my shifts to Google or Apple Calendar from one screen,
+So that I set it up once and forget it.
+
+**Depends on:** 16.4. **Blocked on:** Architect pass 1, D-S1, D-S2.
+
+**Acceptance Criteria:**
+
+**Given** *Više → Kalendar na mobitelu* with no feed
+**When** it opens
+**Then** it shows one *Izradi poveznicu* and one sentence on what it does (UX-DR54)
+
+**Given** a member with a feed
+**When** the screen renders
+**Then** it shows the URL masked by default with *Kopiraj*, *Dodaj u Google kalendar*, *Dodaj u Apple kalendar* (a `webcal://` link), `zadnje preuzimanje {datum vrijeme}` or `još nije preuzeto`, *Izradi novu poveznicu* with a warning that the old link stops working, and *Isključi*
+**And** a fixed note states the Google refresh lag, and a note states what the feed does not contain (leave, other people)
+
+**Given** a month on *Kalendar na mobitelu*
+**When** the member chooses to download it
+**Then** a `.ics` of that month comes from the same serializer as the feed
+
+**Given** an admin on a member's detail
+**When** it renders
+**Then** it shows `Kalendar na mobitelu: uključen / isključen` and *Isključi poveznicu*, never the URL (UX-DR55)
+
+**Given** this story ships
+**When** it is merged
+**Then** *Više* gains *Kalendar na mobitelu*, the copy is in the `feed` namespace of `hr.json`, and the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes (UX-DR31/32, 33, 54, 55) are updated in the same change
+
+---
+
+## Epic 17: A member who asks is reminded before their shift
+
+Ana turns on a reminder for the evening before. At 20:00 her phone says she works tomorrow, which shift and which team. Nobody else hears about it, and a member who never asked gets nothing.
+
+Added 2026-11-20 by `sprint-change-proposal-2026-11-20-v2-scope.md` (§5.6). Reuses 16.2's server-side projection, so Architect pass 1 precedes every story here.
+
+**Capabilities:** CAP-26 · **Governed by:** AD-14, AD-17, AD-18 (amended by 17.2) · **Proves:** Q25, Q27 · **UX:** UX-DR49, 57 · **Decisions:** D-S6 (pending ratification)
+
+**Planning status (2026-11-20):** every story waits for Architect pass 1 (through 16.2) and for D-S6.
+
+### Story 17.1: A member chooses their reminders
+
+As a member,
+I want to choose when I am reminded of my shifts, or not at all,
+So that reminders help and never nag.
+
+**Depends on:** 16.2. Applies the AD-2 row for reminder settings. **Blocked on:** Architect pass 1 (through 16.2), D-S6.
+
+**Acceptance Criteria:**
+
+**Given** a member-owned `reminder_settings` row, organization-scoped under RLS
+**When** a member has never opened *Obavijesti → Podsjetnici*
+**Then** reminders are off (D4)
+
+**Given** *Podsjetnici*
+**When** the member chooses
+**Then** they pick at most two of `1 h prije`, `2 h prije`, `3 h prije`, `6 h prije`, `12 h prije` and `večer prije u 20:00` (organization timezone), and only their own row can be written (FR-5, FR-85)
+**And** the screen shows the channel each reminder will use from the existing switches, or says in words that none is available (FR-65)
+**And** email reminders have their own switch, off by default; push is the default channel (D-S6)
+
+**Given** a reminder setting change
+**When** it saves
+**Then** it is not recorded in the change history, as with notification preferences (FR-78 amendment of 2026-11-16)
+
+**Given** this story ships
+**When** it is merged
+**Then** the copy is in the `reminders` namespace of `hr.json` and the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes (UX-DR49, 57) are updated in the same change
+
+### Story 17.2: The `remind` job writes reminders that fall due
+
+As a member who asked for reminders,
+I want each one written from my schedule as it stands just before it is due,
+So that a reminder is never about a shift I no longer work.
+
+**Depends on:** 17.1. Applies the AD-14, AD-17 and AD-18 amendment rows. **Blocked on:** Architect pass 1, D-S6.
+
+**Acceptance Criteria:**
+
+**Given** pg_cron every 5 minutes
+**When** it invokes `remind` with its invoke secret
+**Then** `remind` projects R12 with the domain package for members with reminders on, over shifts whose reminder falls due within the next 15 minutes (D5), and writes outbox rows only through a `service_role`-only RPC
+
+**Given** the outbox key `(code, subject, recipient, channel)`, with subject a deterministic UUID of (member, date, team, lead)
+**When** the job runs again or overlaps
+**Then** each reminder is written at most once (Q25, AD-18 exception)
+
+**Given** an inactive member, a member with no team, or a member absent for the full day
+**When** the job runs
+**Then** they get nothing (R12.1)
+
+**Given** test clocks at both DST transitions and a midnight-crossing shift
+**When** the job runs
+**Then** each lead falls due at the correct organization-local time, and `večer prije u 20:00` falls on the evening before the shift's start date
+
+**Given** the function's environment
+**When** the key-hygiene test runs
+**Then** the secret key is in `admin-auth`, `notify` and `remind` only (AD-17), and the spine records exactly four Edge Functions (AD-14)
+
+### Story 17.3: Reminders reach the member by push or email
+
+As a member,
+I want the reminder on the channel I chose, in my language, linking to the day,
+So that one tap shows me the shift.
+
+**Depends on:** 17.2. **Blocked on:** Architect pass 1, D-S6.
+
+**Acceptance Criteria:**
+
+**Given** a reminder outbox row
+**When** `notify` sends it
+**Then** the push and email texts come from the locale resource (`Sutra radiš: {smjena} {od}–{do}, {tim}`, `Za 2 h radiš: …`) and link to that day (UX-DR57, L4); `notify` computes no domain answer (AD-18)
+
+**Given** a member with push only, email only, both, or neither
+**When** a reminder is due
+**Then** the FR-65 channel rules and the separate email-reminder switch (D-S6) decide delivery, and a member with no channel gets nothing and was told so in *Podsjetnici*
+
+**Given** a reminder already sent
+**When** the shift changes afterwards
+**Then** the reminder is not retracted, and the FR-62 change notification covers it (D5)
+
+**Given** an e2e test with a fake clock
+**When** one lead is on
+**Then** exactly one reminder arrives per shift and channel, and with reminders off none arrives
+
+**Given** this story ships
+**When** it is merged
+**Then** DEPLOY.md gains the `remind` function, its secret and its cron job
+
+---
+
+## Epic 18: A member is lent to another team for a while
+
+Damir lends Ana from Team A to Team C for the week of the 10th. Her calendar, her hours and the staffing warnings of both teams follow, and on the 17th she is back on A with nothing to undo.
+
+Added 2026-11-20 by `sprint-change-proposal-2026-11-20-v2-scope.md` (§5.6). Depends on no D-S decision and needs no Architect pass beyond the AD-2 and AD-5 rows that 18.2 and 18.3 apply. Answers PRD §11.2 Q7.
+
+**Capabilities:** CAP-27 · **Governed by:** AD-2, AD-3, AD-5, AD-11 · **Proves:** Q2, Q9, Q11 · **UX:** UX-DR11, 23, 31/32, 58, 59
+
+**Planning status (2026-11-20):** ready. 18.1 can start now; 18.2–18.5 follow in order.
+
+### Story 18.1: The loan rule in the domain
+
+As the product,
+I want a member's effective team per date to come from one domain rule,
+So that every roster-reading figure follows a loan without a second implementation.
+
+**Depends on:** none. **Blocked on:** nothing.
+
+**Acceptance Criteria:**
+
+**Given** `domain/roster`
+**When** it derives the effective team of a member on a date
+**Then** it is the loan team if a Loan covers that date, else the home team (R11.1), and the base Shift Roster of team T on date d is the active members whose effective team on d is T, with Roster Overrides applied on top as before (R11.2)
+
+**Given** no Loan anywhere
+**When** rosters, hours, collisions, staffing and swap validity are derived over both fixtures
+**Then** every output is byte-identical to before (R11.4), and the existing suites and e2e month snapshots stay green
+
+**Given** the R11.6 worked example on the pilot fixture
+**When** a Team A member is lent to Team C for the 10th–12th
+**Then** A's rosters on those dates lose them, C's gain them, their hours follow C's Shift Types, and the 13th is A again
+**And** no Rotation Assignment or team membership changes (R11.5)
+
+### Story 18.2: A loan is a recorded exception
+
+As an admin,
+I want a loan stored as an attributable exception,
+So that it is removable and never touches a rotation.
+
+**Depends on:** 18.1. Applies the AD-2 row for the Loan. **Blocked on:** nothing.
+
+**Acceptance Criteria:**
+
+**Given** `team_loans`, organization-scoped with `organization_id` first, RLS and an audit trigger
+**When** a loan is written
+**Then** it holds member, loan team, inclusive from and to, and AD-11 attribution; an exclusion constraint refuses overlapping loans of one member, and a loan to the member's home team or to an archived team is refused (R11.3)
+
+**Given** a member-role account
+**When** it writes a loan through the UI or a direct API call
+**Then** it is refused (Q2, D7), and it can read only its own loans
+
+**Given** the snapshot the browser reads
+**When** loans exist
+**Then** they feed the 18.1 rule, and `member_schedule_inputs` (if 16.2 has shipped) returns them too, with a parity test proving both reads agree (proposal §8 risk 3)
+
+**Given** this story ships
+**When** it is merged
+**Then** the spine's AD-2 table carries the Loan row
+
+### Story 18.3: An admin lends a member to another team
+
+As an admin,
+I want to lend a member to another team and see what it changes before saving,
+So that I staff the other team without breaking my own.
+
+**Depends on:** 18.2, 11.2. Applies the AD-5 row for a Loan's save. **Blocked on:** nothing.
+
+**Acceptance Criteria:**
+
+**Given** the member detail
+**When** the admin chooses *Posudi drugom timu*
+**Then** a dialog takes team, *Od* and *Do* (UX-DR58)
+
+**Given** a filled dialog
+**When** *Što se mijenja* renders
+**Then** it lists shifts gained and lost per date, double booking on the boundary days, the rest gap as FR-26's figure, Short-staffed Shifts in both teams (FR-72), and Roster Overrides on covered dates that need review (AD-5), from the same "after" snapshot (UX-DR23); nothing blocks *Spremi* (warn, never block)
+
+**Given** the save
+**When** it succeeds
+**Then** the member is notified that they are lent (FR-62), and the change history records it
+
+**Given** this story ships
+**When** it is merged
+**Then** the copy is in the `loans` namespace of `hr.json`, and the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes (UX-DR23, 31/32, 58) are updated in the same change
+
+### Story 18.4: An admin amends, ends early or removes a loan
+
+As an admin,
+I want to change a loan through the same preview,
+So that a plan that changes is corrected, not worked around.
+
+**Depends on:** 18.3. **Blocked on:** nothing.
+
+**Acceptance Criteria:**
+
+**Given** an existing loan
+**When** the admin amends its range, ends it early or removes it
+**Then** the same dialog shows the same *Što se mijenja* for the change before *Spremi* (UX-DR58, FR-91)
+
+**Given** any of the three
+**When** it saves
+**Then** it is attributable (AD-11), recorded in the change history, refused if it would overlap another loan of the member, and the member is notified (FR-62)
+
+**Given** a removed loan
+**When** the dates are derived again
+**Then** they equal the dates with no loan ever recorded
+
+### Story 18.5: Loans are visible wherever rosters are read
+
+As anyone reading the schedule,
+I want to see who is on loan, from where and until when,
+So that a face on the wrong team is never a surprise.
+
+**Depends on:** 18.3. **Blocked on:** nothing.
+
+**Acceptance Criteria:**
+
+**Given** the calendar day detail and the Team filter
+**When** a lent member appears under the loan team
+**Then** they are marked `posuđen iz {tim}` with a glyph plus words, never colour alone (UX-DR59)
+
+**Given** the member's own schedule and Danas
+**When** a loan covers today or an upcoming date
+**Then** it reads `u timu {tim} do {datum}`
+
+**Given** the directory
+**When** a member is on loan
+**Then** it shows the home team plus `trenutno u timu {tim}`
+
+**Given** the hours explanation (FR-42b), the Excel export and the change history
+**When** a loan applies
+**Then** the explanation names the source `posudba`, the export follows rosters with no column change, and the change history words loan events from codes (L4)
+
+**Given** this story ships
+**When** it is merged
+**Then** the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes (UX-DR59) are updated in the same change
+
+---
+
+## Epic 19: An organization signs itself up
+
+A security company finds Shift, signs up, verifies the email, names the company, and is walked through hour bands, teams, shift types and a rotation, seeing its coverage preview before inviting the first guard. Nobody at Shift was involved, and nothing was pre-filled.
+
+Added 2026-11-20 by `sprint-change-proposal-2026-11-20-v2-scope.md` (§5.6). Architect pass 2 (AD-10, AD-12, AD-16 and the signup door) precedes 19.1. A `security-review` of 19.1–19.5 precedes production. The epic ships to staging; production opening is the separate decision D-S5. 19.4 gets a UX review with mockups before its spec freezes.
+
+**Capabilities:** CAP-28 · **Governed by:** AD-9, AD-10, AD-12 (amended by 19.2), AD-16, AD-17 · **Proves:** Q28, Q29, Q30, SM-5 · **UX:** UX-DR33, 60, 61 · **Decisions:** D-S3, D-S4, D-S5, D-S7, D-S8, D-S9, D-S10 (pending ratification)
+
+**Planning status (2026-11-20):** every story waits for Architect pass 2 and for the D-S decisions it names.
+
+### Story 19.1: The signup door opens safely on staging
+
+As the operator,
+I want signup enabled on staging behind verification and limits,
+So that strangers can be let in without reaching anything they should not.
+
+**Depends on:** Architect pass 2. **Blocked on:** Architect pass 2, D-S3, D-S4, D-S9.
+
+**Acceptance Criteria:**
+
+**Given** `supabase/config.toml` and the staging Auth config
+**When** this story ships
+**Then** `enable_signup` is on with email confirmations required, Auth email goes over SMTP through the existing Resend domain with Croatian templates from the locale resource (D-S4), and the hosted rate limits are set explicitly (D-S3); production is unchanged (D-S5)
+**And** the config comment that says there is no open signup is rewritten, and `test/supabase-scaffold.test.ts` changes in the same PR
+
+**Given** an authenticated, confirmed account with no `members` row
+**When** it reads or writes every table, every RPC, storage and all four Edge Functions
+**Then** it reads zero rows and every write is refused (Q29, NFR-30, D-S9)
+
+**Given** existing username sign-in
+**When** signup is enabled
+**Then** it is unaffected, and `clearMustSetPassword` stays harmless for an account with no organization (AD-16)
+
+### Story 19.2: A stranger creates an account
+
+As someone who wants Shift for their organization,
+I want to create an account and verify my email,
+So that I can set up my organization myself.
+
+**Depends on:** 19.1. Applies the AD-12 amendment row. **Blocked on:** Architect pass 2, D-S3, D-S8, D-S10.
+
+**Acceptance Criteria:**
+
+**Given** `/registracija`
+**When** it renders
+**Then** it takes email and password, says this creates a new organization and does not join one, and links back to *Prijava* (UX-DR60)
+
+**Given** a new address and an already-known one
+**When** each is submitted, and when a resend is requested
+**Then** both get the one neutral screen `Ako adresa može primiti poruku, poslali smo poveznicu za potvrdu.`, identical in status, body and timing class, and the resend is throttled (Q28, D-S8, D-S3)
+
+**Given** *Prijava*
+**When** an email address is entered in place of organization and username
+**Then** a verified email identity signs in, and *Prijava* offers `Nova organizacija? Registriraj se` (D8, D-S10)
+
+**Given** email recovery
+**When** it is requested
+**Then** it works only for email identities and answers identically for every address; `admin-auth`'s username change and reset never rewrite an email identity's address to a synthesized one (AD-12, proposal §8 risk 6)
+
+**Given** this story ships
+**When** it is merged
+**Then** the copy is in the `signup` namespace of `hr.json` and the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes (UX-DR33, 60) are updated in the same change
+
+### Story 19.3: A verified account creates its organization
+
+As a verified account holder,
+I want to create my organization and become its first admin,
+So that I own a tenant as isolated as any other.
+
+**Depends on:** 19.2. Applies the AD-9/AD-10 row for `create_organization`. **Blocked on:** Architect pass 2, D-S3, D-S8, D-S9, D-S10.
+
+**Acceptance Criteria:**
+
+**Given** `create_organization(...)`, `SECURITY DEFINER`, callable by an authenticated session
+**When** it is called
+**Then** it acts only on `auth.uid()`, accepts no organization id, and requires a confirmed email and no existing membership; it creates the Organization and its Founding Admin (`admin`, the verified email as `members.email`) in one transaction under the existing zero-admins trigger (D-S9)
+**And** one account founds at most one organization
+
+**Given** step 1 of `/postavljanje`
+**When** it saves
+**Then** it takes name, slug (proposed from the name, editable), Organization Type (a free inert label, D10), timezone (the browser zone proposed and confirmed, D11), locale (read-only), Leave Year start (required, nothing selected), and the Founding Admin's name and Leave Allowance (required, empty) (UX-DR61)
+
+**Given** a slug collision
+**When** the organization saves
+**Then** a suffixed slug is proposed without saying another organization holds the base (D-S8)
+
+**Given** the global daily ceiling (default 20, an operator setting)
+**When** it is reached
+**Then** creation is refused with a neutral "try later" (D-S3, Q30)
+
+**Given** a successful creation
+**When** the session refreshes
+**Then** the hook stamps the organization claim, and a self-provisioned fixture organization passes the full `test/rls-isolation.test.ts` suite (Q29, NFR-30)
+
+### Story 19.4: The onboarding wizard guides setup and pre-fills nothing
+
+As a Founding Admin,
+I want to be walked through setting up my organization,
+So that I reach a working schedule without help from Shift.
+
+**Depends on:** 19.3, and a UX review with mockups before the spec freezes. **Blocked on:** Architect pass 2 (through 19.1–19.3), the UX review, D-S9.
+
+**Acceptance Criteria:**
+
+**Given** `/postavljanje` after step 1
+**When** steps 2–7 render
+**Then** each embeds the shipped write path: Hour Bands, Teams, Shift Types, Rotation with the coverage preview, Members (credentials or invitation), done; there is no second implementation of any of them (D9, FR-96)
+
+**Given** every step
+**When** it renders
+**Then** it shows a progress rail `korak 3 od 7` and *Preskoči za sada*, and an unfinished setup resumes from a *Danas* card `Postavljanje: još 3 koraka` until finished or dismissed
+
+**Given** a freshly created organization
+**When** its data is read
+**Then** it holds no Team, Shift Type, Pattern or Hour Band and nothing beyond FR-74's annual-leave Absence Type (FR-97, SM-C3)
+
+**Given** the `onboarding` namespace of `hr.json`
+**When** the literal sweep runs
+**Then** it contains no fire-department term, `Dan`/`Noć`, four teams or 12 hours (DI-8, SM-C3), and empty states explain each concept with organization-neutral examples
+
+**Given** this story ships
+**When** it is merged
+**Then** the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes (UX-DR33, 61) are updated in the same change
+
+### Story 19.5: Abandoned signups are cleaned up and the operator keeps control
+
+As the operator,
+I want abandoned accounts removed and any organization suspendable,
+So that open signup never becomes a liability I cannot manage.
+
+**Depends on:** 19.3. **Blocked on:** Architect pass 2, D-S5, D-S7.
+
+**Acceptance Criteria:**
+
+**Given** a daily housekeeping job
+**When** it runs
+**Then** it deletes unconfirmed accounts after 7 days and confirmed accounts that never founded an organization after 30 days, and never touches an account that has a `members` row (D-S7)
+
+**Given** the operator's suspend and unsuspend scripts
+**When** an organization is suspended
+**Then** its claim reads nothing until it is unsuspended (FR-101)
+
+**Given** the abuse query
+**When** the operator runs it
+**Then** it lists recent signups and organizations created per day against the ceiling
+
+**Given** this story ships
+**When** it is merged
+**Then** DEPLOY.md carries the housekeeping cron job, the scripts, the runbook, and the production opening checklist for D-S5 (security review done, D-S3 limits verified on hosted config, founder go)

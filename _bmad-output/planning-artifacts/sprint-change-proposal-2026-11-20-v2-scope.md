@@ -479,3 +479,30 @@ Each has a recommended default (**bold**). Planning proceeds on the default. A s
 5. **Signup on the pilot's production project.** Opening signup changes hosted Auth config on the project the pilot uses. D-S5 keeps it a separate decision, and 19.1 asserts that existing username sign-in is unaffected.
 6. **AD-12's second identity kind** touches `admin-auth`'s username-change and reset paths (the `USERNAME_NOT_RESTORED` runbook in DEPLOY.md). If an Admin edits a Founding Admin's username, the email identity must not be rewritten. That is an explicit 19.2/19.3 test.
 7. **Resolved Q7 changes a domain function under every figure** (18.1). The "no loan ⇒ identical" property is the guard, and it needs to be asserted against both fixtures and the e2e month snapshots.
+
+## 9. Planning status (added 2026-11-20, after scope approval)
+
+The founder approved the scope and asked planning to continue without questions. §5.3 is therefore applied **ahead of** the §6 ratification: Epics 16–19 are written in full in `epics.md` (with CAP-25 to CAP-28, Q26 to Q30 and UX-DR54 to UX-DR61 in its inventory, taken from this proposal and the PRD until the SPEC is updated per §5.1), and every story is in `sprint-status.yaml` as `backlog`. The recommended defaults of §6 stand for planning only. Each story names its gates in `epics.md` (**Blocked on:**) and in `sprint-status.yaml` (`waits:`). No story with an open gate starts.
+
+| Story | Waits for an Architect pass | Waits for D-S ratification | State |
+|---|---|---|---|
+| 16.1 The month prints | — | — | **Ready** |
+| 16.2 The domain package runs on the server | Pass 1 (Deno/domain: AD-1 note, AD-7, AD-14, AD-17, AD-18) | — | Blocked |
+| 16.3 A member's feed token is a revocable secret | Pass 1 (via 16.2) | D-S1 | Blocked |
+| 16.4 The calendar feed serves a member's own shifts | Pass 1 | D-S1, D-S2, D-S8 | Blocked |
+| 16.5 A member subscribes from *Kalendar na mobitelu* | Pass 1 | D-S1, D-S2 | Blocked |
+| 17.1 A member chooses their reminders | Pass 1 (via 16.2) | D-S6 | Blocked |
+| 17.2 The `remind` job writes reminders that fall due | Pass 1 | D-S6 | Blocked |
+| 17.3 Reminders reach the member by push or email | Pass 1 | D-S6 | Blocked |
+| 18.1 The loan rule in the domain | — | — | **Ready** |
+| 18.2 A loan is a recorded exception | — | — | Ready after 18.1 |
+| 18.3 An admin lends a member to another team | — | — | Ready after 18.2 (11.2 done) |
+| 18.4 An admin amends, ends early or removes a loan | — | — | Ready after 18.3 |
+| 18.5 Loans are visible wherever rosters are read | — | — | Ready after 18.3 |
+| 19.1 The signup door opens safely on staging | Pass 2 (signup: AD-10, AD-12, AD-16, the door) | D-S3, D-S4, D-S9 | Blocked |
+| 19.2 A stranger creates an account | Pass 2 | D-S3, D-S8, D-S10 | Blocked |
+| 19.3 A verified account creates its organization | Pass 2 | D-S3, D-S8, D-S9, D-S10 | Blocked |
+| 19.4 The onboarding wizard guides setup and pre-fills nothing | Pass 2 (via 19.1–19.3), plus a UX review with mockups | D-S9 | Blocked |
+| 19.5 Abandoned signups are cleaned up and the operator keeps control | Pass 2 | D-S5, D-S7 | Blocked |
+
+A `security-review` of 16.3–16.4 and of 19.1–19.5 precedes production in every case. Production opening of signup stays D-S5.
