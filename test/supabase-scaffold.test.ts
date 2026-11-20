@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
+import { parse as parseYaml } from 'yaml';
 
 import { NAME_WHITESPACE } from '../apps/web/src/utils/name.ts';
 import { HISTORY_HIDDEN_COLUMNS, historyFieldOfColumn } from '../packages/domain/src/index.ts';
@@ -5344,5 +5345,170 @@ describe('the local auth provider configuration', () => {
       migrationStatements(),
       'the hook URI names a function no migration creates',
     ).toMatch(/create function public\.custom_access_token_hook\(event jsonb\)/i);
+  });
+
+  // ------------------------------------------------ the self-hosted stack (20.1)
+  // `config push` used to carry these settings to a hosted project. A self-hosted
+  // GoTrue and PostgREST read them from the compose file's environment instead
+  // (AD-10 as amended), so nothing would notice config.toml and the compose
+  // drifting apart. These pins are that notice: config.toml stays the single
+  // source, and the compose mirrors it literal for literal.
+
+  /** `key = ["a", "b"]` within one `[section]`, joined with commas. */
+  function list(section: string, key: string): string | undefined {
+    const config = readFileSync(join(supabaseRoot, 'config.toml'), 'utf8');
+    let current = '';
+    for (const line of config.split('\n')) {
+      const header = /^\[([^\]]+)\]/.exec(line.trim());
+      if (header !== null) {
+        current = header[1] ?? '';
+        continue;
+      }
+      if (current !== section) continue;
+      const pair = new RegExp(`^${key}\\s*=\\s*\\[(.*)\\]`).exec(line.trim());
+      if (pair !== null) {
+        return (pair[1] ?? '')
+          .split(',')
+          .map((item) => item.trim().replace(/^"(.*)"$/, '$1'))
+          .filter((item) => item !== '')
+          .join(',');
+      }
+    }
+    return undefined;
+  }
+
+  /** A boolean setting, inverted: config.toml says `enable_x`, GoTrue `DISABLE_X`. */
+  function not(value: string | undefined): string | undefined {
+    return value === 'true' ? 'false' : value === 'false' ? 'true' : value;
+  }
+
+  /** One service's environment in the stack's compose file, `name → value`. */
+  function stackEnvironment(service: string): Map<string, string> {
+    const compose = parseYaml(
+      readFileSync(join(repoRoot, 'deploy', 'coolify', 'supabase', 'docker-compose.yml'), 'utf8'),
+    ) as { services: Record<string, { environment?: string[] }> };
+    const entries = (compose.services[service]?.environment ?? []).map((entry): [string, string] => {
+      const at = entry.indexOf('=');
+      return at === -1 ? [entry, ''] : [entry.slice(0, at), entry.slice(at + 1)];
+    });
+    expect(entries.length, `the stack has no ${service} environment`).toBeGreaterThan(0);
+    return new Map(entries);
+  }
+
+  /** compose variable ← config.toml value, as the spec's mirror table states it. */
+  const GOTRUE_MIRROR: readonly (readonly [string, () => string | undefined])[] = [
+    ['GOTRUE_DISABLE_SIGNUP', () => not(setting('auth', 'enable_signup'))],
+    ['GOTRUE_EXTERNAL_EMAIL_ENABLED', () => setting('auth.email', 'enable_signup')],
+    ['GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED', () => setting('auth', 'enable_anonymous_sign_ins')],
+    ['GOTRUE_MAILER_AUTOCONFIRM', () => not(setting('auth.email', 'enable_confirmations'))],
+    ['GOTRUE_MAILER_SECURE_EMAIL_CHANGE_ENABLED', () => setting('auth.email', 'double_confirm_changes')],
+    ['GOTRUE_EXTERNAL_PHONE_ENABLED', () => setting('auth.sms', 'enable_signup')],
+    ['GOTRUE_SMS_AUTOCONFIRM', () => not(setting('auth.sms', 'enable_confirmations'))],
+    ['GOTRUE_JWT_EXP', () => setting('auth', 'jwt_expiry')],
+    ['GOTRUE_SECURITY_REFRESH_TOKEN_ROTATION_ENABLED', () => setting('auth', 'enable_refresh_token_rotation')],
+    ['GOTRUE_SECURITY_REFRESH_TOKEN_REUSE_INTERVAL', () => setting('auth', 'refresh_token_reuse_interval')],
+    ['GOTRUE_PASSWORD_MIN_LENGTH', () => setting('auth', 'minimum_password_length')],
+    ['GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_ENABLED', () => setting('auth.hook.custom_access_token', 'enabled')],
+    ['GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_URI', () => setting('auth.hook.custom_access_token', 'uri')],
+  ];
+
+  const POSTGREST_MIRROR: readonly (readonly [string, () => string | undefined])[] = [
+    ['PGRST_DB_SCHEMAS', () => list('api', 'schemas')],
+    ['PGRST_DB_EXTRA_SEARCH_PATH', () => list('api', 'extra_search_path')],
+    ['PGRST_DB_MAX_ROWS', () => setting('api', 'max_rows')],
+    ['PGRST_APP_SETTINGS_JWT_EXP', () => setting('auth', 'jwt_expiry')],
+  ];
+
+  function expectMirrored(
+    service: string,
+    mirror: readonly (readonly [string, () => string | undefined])[],
+  ): void {
+    const environment = stackEnvironment(service);
+    for (const [variable, source] of mirror) {
+      const expected = source();
+      const actual = environment.get(variable);
+      expect(expected, `config.toml no longer states what ${variable} mirrors`).toBeDefined();
+      expect(
+        actual,
+        `${service} ${variable}: the compose says ${String(actual)}, config.toml says ${String(expected)}`,
+      ).toBe(expected);
+    }
+  }
+
+  it("mirrors config.toml's auth settings into the self-hosted GoTrue, literal for literal", () => {
+    expectMirrored('supabase-auth', GOTRUE_MIRROR);
+  });
+
+  it('keeps email confirmations off, outright', () => {
+    // An absolute pin beside the parity check: parity alone would follow
+    // config.toml into confirmations ON, and a self-hosted GoTrue has no SMTP
+    // until Epic 19 (AD-12: v1 sends no auth mail), so every provisioned
+    // admin would wait forever for a mail that cannot be sent.
+    expect(setting('auth.email', 'enable_confirmations')).toBe('false');
+  });
+
+  it("mirrors config.toml's [api] into the self-hosted PostgREST", () => {
+    expectMirrored('supabase-rest', POSTGREST_MIRROR);
+  });
+
+  /**
+   * The `[api]` and `[auth*]` keys the mirror deliberately leaves out, each with
+   * its reason. Every other key there must be mirrored, so a new auth setting
+   * cannot reach the local stack alone.
+   */
+  const NOT_MIRRORED: Readonly<Record<string, string>> = {
+    'api.enabled': 'the CLI switch for the local API; the compose always runs PostgREST',
+    'api.port': 'the local stack’s host port; the compose publishes none',
+    'auth.enabled': 'the CLI switch for the local GoTrue; the compose always runs it',
+    'auth.site_url': 'per environment: SHIFT_APP_URL',
+    'auth.additional_redirect_urls': 'per environment: SHIFT_APP_URL',
+    'auth.rate_limit.*': 'local only; story 19.1 owns production’s limits',
+  };
+
+  /** Every `section.key` under `[api]`, `[auth]` and `[auth.*]` in config.toml. */
+  function authAndApiKeys(): string[] {
+    const config = readFileSync(join(supabaseRoot, 'config.toml'), 'utf8');
+    const keys: string[] = [];
+    let current = '';
+    for (const line of config.split('\n')) {
+      const header = /^\[([^\]]+)\]/.exec(line.trim());
+      if (header !== null) {
+        current = header[1] ?? '';
+        continue;
+      }
+      if (current !== 'api' && current !== 'auth' && !current.startsWith('auth.')) continue;
+      const pair = /^([A-Za-z_][A-Za-z0-9_]*)\s*=/.exec(line.trim());
+      if (pair !== null) keys.push(`${current}.${pair[1] ?? ''}`);
+    }
+    return keys;
+  }
+
+  it('mirrors every [api] and [auth*] key of config.toml, or names why not', () => {
+    // The mirror tables cite their config.toml keys in their sources; a key in
+    // none of them and not excused above is a setting the self-hosted stack
+    // would silently not enforce.
+    const mirrorSources = [...GOTRUE_MIRROR, ...POSTGREST_MIRROR].map(([, source]) => source.toString()).join('\n');
+    const keys = authAndApiKeys();
+    expect(keys.length, 'the reader found no auth or api key').toBeGreaterThan(10);
+    const unmirrored = keys.filter((key) => {
+      const section = key.slice(0, key.lastIndexOf('.'));
+      const name = key.slice(key.lastIndexOf('.') + 1);
+      if (key in NOT_MIRRORED || `${section}.*` in NOT_MIRRORED) return false;
+      const cited = new RegExp(`["']${section.replace(/\./g, '\\.')}["'],\\s*["']${name}["']`);
+      return !cited.test(mirrorSources);
+    });
+    expect(unmirrored, 'config.toml keys the compose does not mirror').toEqual([]);
+  });
+
+  it('reads both shapes the mirror depends on, and inverts only booleans', () => {
+    // The readers are what make the pins above mean anything: a list read as
+    // its first element, or an inversion of a non-boolean, would pass on a
+    // wrong value as easily as on a right one.
+    expect(list('api', 'schemas')).toBe('public,graphql_public');
+    expect(setting('api', 'schemas'), 'the scalar reader cannot read a list').not.toBe('public,graphql_public');
+    expect(not('true')).toBe('false');
+    expect(not('false')).toBe('true');
+    expect(not('3600')).toBe('3600');
+    expect(not(undefined)).toBeUndefined();
   });
 });
