@@ -4,7 +4,7 @@ type: 'feature'
 created: '2026-11-20'
 status: 'done'
 baseline_commit: '5a8bb9560b79d727587075a678771b621f044766'
-review_loop_iteration: 0
+review_loop_iteration: 1
 followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-18-context.md'
@@ -47,7 +47,7 @@ deferred: []
 
 ## Epic AC Deviations
 
-- AC 2, "the existing suites and e2e month snapshots stay green": the domain and web suites run locally. The e2e month snapshots run in CI only (STRICT DATABASE RULE). Not a change of substance; the result is recorded under Verification when CI reports.
+- AC 2, "the existing suites and e2e month snapshots stay green": the domain and web suites and the DB-free root tests run locally. The e2e month snapshots and the DB-connecting root tests run in CI only (STRICT DATABASE RULE). Not a change of substance; the result is recorded under Verification when CI reports.
 - AC 2, "swap validity ... byte-identical": swap validity is a web derivation (`apps/web/src/features/swaps/services/swap-proposal.ts`), not a domain one. It decides validity from `rosterOn`, which is covered by the digest. No swap-specific digest exists, and the domain cannot hold one. Reinterpreted, not deferred.
 
 </intent-contract>
@@ -84,6 +84,8 @@ deferred: []
 
 ## Spec Change Log
 
+- 2026-11-20, follow-up review: the AC 2 deviation in Epic AC Deviations now also names the DB-connecting root tests as CI-only. They were already listed under Verification as not run locally. The epic AC auditor found the deviation list left them out. No change of substance.
+
 ## Review Triage Log
 
 ### 2026-11-20 — Review pass
@@ -113,6 +115,37 @@ deferred: []
     - Swap validity untested in the web. It is the listed deviation; Design Note 8 clarifies it.
     - R11.5 not naming the Rotation Pattern. The proposal's wording is kept.
 
+### 2026-11-20 — Follow-up review (fresh eyes, unattended)
+- Layers: blind, edge-case, verification-gap, acceptance, epic AC (5 of 5; the artifact renderer was skipped because the diff generates no file).
+- Digest provenance re-checked independently. `loans.test.ts` was copied into a detached worktree at `origin/main` (= `baseline_commit` 5a8bb95) and the two R11.4 tests were run on that engine. Both pinned digests matched. Coverage: every domain figure reached through a roster (`shiftRoster`, `rosterOn`, `scheduleOfMonth`, `memberScheduleOfMonth`) is in the digest or derives from a digested one. `leaveDaysOfMonth`, `halfDayShiftOf` and `checkHalfDay` read `memberScheduleOfMonth`. `peopleAtWorkOn` reads `scheduleOfMonth` and `rosterOn`.
+- intent_gap: 0
+- bad_spec: 0
+- patch: 6 (high 0, medium 1, low 5)
+- defer: 0 (the out-of-scope items are folded into the existing 18.2 entry in `deferred-work.md`)
+- reject: 14
+- addressed_findings:
+  - `[medium]` `[patch]` `loansOf` still let the month and the rosters read two different loan lists (edge-case, verification-gap, acceptance and blind, each on its own). If `input.loans` was non-empty and the member's `members` entry had no `loans`, nothing threw: the month put the member on the loan team while `shiftRoster` over `members` kept them home. An entry without `loans` now counts as holding none and is compared. A member with no entry is on no base roster, so `input.loans` is still read alone. Tests: both directions, no entry, and bad loans read from the entry.
+  - `[low]` `[patch]` `loansKeyOf` sorted tuple arrays by their comma-joined strings, so ids holding a comma could make two loans compare as equal (edge-case, blind). Each loan is now JSON-encoded before sorting. Two such loans can only collide when they share every date, which is an overlap, so the old code gave the wrong error rather than a wrong figure. Test pins that the error is now "never overlap".
+  - `[low]` `[patch]` The R11.4 test's comment says roster overrides are applied, but nothing asserted it (blind). It now asserts that some roster has an applied override.
+  - `[low]` `[patch]` Staffing during a loan was tested only without leave (blind). New test: the lent member's leave on a covered date lowers C's count at work, and A's is unchanged.
+  - `[low]` `[patch]` `loanOn` with a malformed date had no test (blind). Added.
+  - `[low]` `[patch]` The 18.2 deferral did not warn about `members` lists filtered by home team, or about the new entry-has-no-loans throw. It also did not ask 18.2 to define a "live" loan, or name the snapshot's two `RosterMember` builders (blind). The entry is extended. The AC 2 deviation now also names the DB-connecting root tests (epic AC).
+  - Rejected:
+    - The spec says `done` while the sprint says `review` (blind, acceptance). The spec's `status` is bmad-build's lifecycle field. Delivery state is sprint-status, which correctly stays `review` (built, CI pending) under DONE MEANS MERGED WITH GREEN CI.
+    - `deferred: []` and `defer: 0` beside two new ledger entries. Those entries were written in planning, as the build rules require, not deferred by review.
+    - Excel export not in the digest (acceptance, blind). Story 18.1's AC 2 does not name export. The export is a web reader of `rosterOn` and `memberScheduleOfMonth`, which are digested. It has the same standing as swap validity.
+    - The swap reinterpretation was not escalated (blind). The founder approved unattended decisions recorded in the spec, and Epic AC Deviations is the sanctioned place.
+    - Repeated `checkLoans` and `membershipOn` checks per date (blind). They sort lists of a handful of loans or versions per member, the same per-call pattern as `membershipOn` before loans. No measured cost.
+    - An opaque digest on failure (blind). It is the chosen guard. The R11.6 and matrix tests localise behaviour, and a moved digest is investigated by diffing `derivedFiguresOf` against `baseline_commit`.
+    - The digest's provenance can't be checked (blind). It was re-run on the baseline engine in this review (above).
+    - No collision test for the double shift R11.3 allows (blind). That collision rule is the existing one for any member put on a second team. It is not loan-specific and is covered by the collision suites.
+    - The hours source reads "rotation" until 18.5 (blind). This is 18.5's AC and is already recorded. Sequencing 18.3 against 18.5 is sprint planning.
+    - R11.5 leaves out the Rotation Pattern, and cross-organization loans are not covered (blind, acceptance). The proposal's wording is kept. Organization scoping is the store's (18.2).
+    - The follow-up review is not tracked (blind). This is it.
+    - Duplicate member ids in `members` (edge-case). This contract predates loans: no roster function checks for it.
+    - The "differ" throw is missing from the I/O matrix (acceptance). It is a precondition breach documented in Design Note 1, the JSDoc and the tests. The matrix is frozen.
+    - A `members` entry missing altogether is not refused (acceptance). This predates loans: such a member was never on a base roster, and memberships are read from the input alone too.
+
 ## Design Notes
 
 Decisions made unattended (founder: decide and record):
@@ -132,6 +165,8 @@ Decisions made unattended (founder: decide and record):
 8. **Swap validity follows today wherever it reads `rosterOn`.** Whether the colleague is on the shift is one of those reads. `swap-proposal.ts:356` rebuilds a schedule input without `loans`. Since this review, that path reads the member's `members` entry, so once 18.2 fills `members[].loans` it follows too. The 18.2 deferral stays open: the snapshot must still be fed and the mappers checked.
 
 ## Verification
+
+**Follow-up review (2026-11-20, after its patches):** `pnpm --filter @shift/domain build && pnpm typecheck` clean. `pnpm lint` clean. Domain: 17 files, 886 tests passed (31 in `loans.test.ts`). Web: 172 files, 6507 passed. Root DB-free: 2 files, 1978 passed. Both baseline digests were re-run on the engine at `origin/main` (= `baseline_commit`) and matched. The DB-connecting root tests and e2e were not run locally (STRICT DATABASE RULE); CI is the gate.
 
 **Commands (run 2026-11-20, after the review patches):**
 - `pnpm --filter @shift/domain build && pnpm typecheck` -- clean.

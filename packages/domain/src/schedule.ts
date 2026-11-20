@@ -217,7 +217,8 @@ export interface MemberScheduleInput {
   /**
    * Every live Loan of the same member, in any order (story 18.1). Absent,
    * the loans of this member's entry in `members` are read; given, they must
-   * be the same loans. None anywhere, they are never lent.
+   * be the same loans as that entry's (an entry without `loans` holding none).
+   * None anywhere, they are never lent.
    */
   readonly loans?: readonly Loan[] | undefined;
   /** Every rotation version, of any team; only the teams the member belongs to or is lent to are read. */
@@ -238,22 +239,30 @@ export interface MemberScheduleInput {
   readonly workingShiftTypeIds: readonly string[];
 }
 
-/** A loan list's identity, order-free: the key two lists of the same loans share. */
+/**
+ * A loan list's identity, order-free: the key two lists of the same loans
+ * share. Each loan is encoded on its own before sorting, so ids holding a
+ * comma cannot make two different loans sort as equals.
+ */
 function loansKeyOf(loans: readonly Loan[]): string {
-  return JSON.stringify(loans.map((loan) => [loan.id, loan.teamId, loan.from, loan.to]).sort());
+  return JSON.stringify(loans.map((loan) => JSON.stringify([loan.id, loan.teamId, loan.from, loan.to])).sort());
 }
 
 /**
  * The member's loans (story 18.1): `input.loans`, else those of their entry
- * in `input.members`, else none — checked by `checkLoans`.
+ * in `input.members`, else none — checked by `checkLoans`. An entry without
+ * `loans` holds none, so `input.loans` must then be empty too: the rosters
+ * read the entry, and the month must judge each date by the same list. A
+ * member with no entry is on no base roster, and `input.loans` is read alone.
  *
- * @throws RangeError when both are given and hold different loans, and on any
+ * @throws RangeError when `input.loans` is given, the member has an entry in
+ *   `input.members`, and the two hold different loans; and on any
  *   precondition of `checkLoans`.
  */
 function loansOf(input: MemberScheduleInput): readonly Loan[] {
-  const entry = input.members.find((member) => member.id === input.memberId)?.loans;
-  const loans = input.loans ?? entry ?? [];
-  if (input.loans !== undefined && entry !== undefined && loansKeyOf(input.loans) !== loansKeyOf(entry)) {
+  const entry = input.members.find((member) => member.id === input.memberId);
+  const loans = input.loans ?? entry?.loans ?? [];
+  if (input.loans !== undefined && entry !== undefined && loansKeyOf(input.loans) !== loansKeyOf(entry.loans ?? [])) {
     throw new RangeError(`the loans of member ${input.memberId} differ from those of their entry in the members`);
   }
   checkLoans(loans);

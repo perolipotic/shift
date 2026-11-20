@@ -239,6 +239,7 @@ describe('R11.4 — with no Loan, every derived figure is what it was before Loa
       // Non-trivial: the organization has collisions, short-staffed shifts and applied overrides.
       expect(figures.collisions.length).toBeGreaterThan(0);
       expect(figures.shortStaffed.length).toBeGreaterThan(0);
+      expect(figures.rosters.some((roster) => roster.applied.length > 0)).toBe(true);
       expect(digestOf(figures)).toBe(BEFORE_LOANS[fixture.name]);
     });
   }
@@ -388,6 +389,15 @@ describe('R11.6 — the worked example on the pilot fixture', () => {
     expect(short.every((shift) => shift.teamId === A && shift.atWork === 3)).toBe(true);
   });
 
+  it("a lent member's leave on a covered date lowers the loan team's count at work, not the home team's", () => {
+    const date = COVERED.find((one) => scheduledType(C, one) !== 'pilot-slobodno')!;
+    const leave = [{ id: 'leave-lent', memberId: LENT, from: date, to: date }];
+    const withLeave = { ...staffingInput(lent, []), leaveRecords: leave };
+    expect(peopleAtWorkOn(withLeave, C, date)!.atWork).toBe(peopleAtWorkOn(staffingInput(lent, []), C, date)!.atWork - 1);
+    const homeBefore = peopleAtWorkOn(staffingInput(lent, []), A, date);
+    expect(peopleAtWorkOn(withLeave, A, date)).toEqual(homeBefore);
+  });
+
   it('roster overrides still apply on top: one on C may take the lent member off, one on A taking them off is inert', () => {
     const date = COVERED.find((one) => scheduledType(C, one) !== 'pilot-slobodno')!;
     const offC: RosterOverride = { id: 'off-c', teamId: C, date, memberOutId: LENT, memberInId: `${A}-4` };
@@ -426,6 +436,7 @@ describe('effectiveTeamOn, loanOn and checkLoans (R11.1, R11.3)', () => {
     expect(effectiveTeamOn({ memberships: [home], loans: [loan] }, '2026-03-13')?.teamId).toBe('a');
     expect(loanOn([loan], '2026-03-11')).toBe(loan);
     expect(loanOn([loan], '2026-03-13')).toBeNull();
+    expect(() => loanOn([loan], '2026-3-11')).toThrow(RangeError);
   });
 
   it('lends a member on no team: for the range they work with the loan team (FR-88)', () => {
@@ -575,6 +586,32 @@ describe("a lent member's own month (memberScheduleOfMonth, through the one rule
     expect(() => memberScheduleOfMonth({ memberId: 'm', memberships, statuses: [], loans: [], members, ...base }, '2026-03')).toThrow(
       'differ from those of their entry',
     );
+    // An entry WITHOUT `loans` holds none: a lent month over a never-lent roster entry is refused too.
+    const unlent: RosterMember[] = [{ id: 'm', memberships, statuses: [] }];
+    expect(() => memberScheduleOfMonth({ memberId: 'm', memberships, statuses: [], loans, members: unlent, ...base }, '2026-03')).toThrow(
+      'differ from those of their entry',
+    );
+    expect(teamsOf({ memberId: 'm', memberships, statuses: [], loans: [], members: unlent, ...base }, '2026-03')['2026-03-11']).toEqual([a]);
+    // With no entry the member is on no base roster, and `loans` is read alone.
+    expect(teamsOf({ memberId: 'm', memberships, statuses: [], loans, members: [], ...base }, '2026-03')['2026-03-11']).toEqual([b]);
+    // Bad loans read from the entry are refused as well as given ones.
+    const overlapping: RosterMember[] = [{ id: 'm', memberships, statuses: [], loans: [...loans, { ...loans[0]!, id: 'f' }] }];
+    expect(() => memberScheduleOfMonth({ memberId: 'm', memberships, statuses: [], members: overlapping, ...base }, '2026-03')).toThrow(
+      'never overlap',
+    );
+  });
+
+  it('compares two loan lists loan by loan: ids holding a comma never make two loans read alike', () => {
+    const memberships = [{ teamId: a!, position: null, effectiveFrom: SEEDED_EFFECTIVE_FROM }];
+    // Joined with commas these two loans read alike; they overlap, and that is what is refused.
+    const loans: readonly Loan[] = [
+      { id: 'x,y', teamId: b!, from: '2026-03-10', to: '2026-03-10' },
+      { id: 'x', teamId: `y,${b!}`, from: '2026-03-10', to: '2026-03-10' },
+    ];
+    const members: RosterMember[] = [{ id: 'm', memberships, statuses: [], loans }];
+    expect(() =>
+      memberScheduleOfMonth({ memberId: 'm', memberships, statuses: [], loans: [...loans].reverse(), members, ...base }, '2026-03'),
+    ).toThrow('never overlap');
   });
 
   it("a loan changes who works, never a team's shift type: the team grid is unchanged", () => {
