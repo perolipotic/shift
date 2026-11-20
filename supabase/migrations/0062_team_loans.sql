@@ -51,10 +51,15 @@
 --     the member's team on a covered date, an update or a delete;
 --   * 23503 — a composite key: another tenant's member or team;
 --   * 23514 — a check: an empty or unbounded range, a bound outside years
---     0001–9999, a blank or over-200 reason, or a half-recorded removal;
---   * 22000 — a reversed range (`to` before `from`), and 22008 — an
---     `infinity` or `-infinity` bound. Postgres refuses both while building
---     and canonicalizing the range value, before any check is evaluated.
+--     0001–9999 (an `infinity` or `-infinity` bound among them), a blank or
+--     over-200 reason, or a half-recorded removal;
+--   * 22000 — a reversed range (`to` before `from`), which Postgres refuses
+--     while building the range value, before any check is evaluated.
+--
+-- Unlike 0028, an infinite bound is 23514 here, not 22008: Postgres keeps an
+-- infinite date bound as it is when canonicalizing, and 0028's 22008 came
+-- from its 366-day check (`upper - lower` of an infinite date), which this
+-- table does not have.
 --
 -- No trigger but AD-3's two audit triggers, and one definer read.
 
@@ -115,8 +120,8 @@ create table team_loans (
 
   -- In years 0001–9999, for the reason 0016 gives. The upper bound is
   -- exclusive, so the last date a loan may include is 9999-12-31. An
-  -- `infinity` bound never reaches this check: canonicalizing the range
-  -- refuses it first (22008).
+  -- `infinity` or `-infinity` bound is refused here too: it is a bound
+  -- (`lower_inf` and `upper_inf` answer false), outside the years.
   constraint team_loans_during_in_years
     check (lower(during) >= date '0001-01-01' and upper(during) <= date '10000-01-01'),
 

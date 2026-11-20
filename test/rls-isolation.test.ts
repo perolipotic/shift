@@ -26975,6 +26975,7 @@ describe('a loan is a recorded exception (story 18.2)', () => {
 
         await actAs(client, caller.authUserId, organization);
         const codes: Record<string, string> = {};
+        const messages: Record<string, string> = {};
         for (const [label, during, reason] of [
           ['reversed', '[2046-01-14,2046-01-10]', undefined],
           ['empty', '[2046-01-10,2046-01-10)', undefined],
@@ -26989,17 +26990,17 @@ describe('a loan is a recorded exception (story 18.2)', () => {
           ['empty reason', '[2046-01-10,2046-01-12]', ''],
           ['201 code points', '[2046-01-10,2046-01-12]', 'ž'.repeat(201)],
         ] as const) {
-          codes[label] = (
-            await refusedThenContinue(client, () =>
-              insertLoan(client, {
-                organization,
-                member: member.id,
-                team: other,
-                during,
-                ...(reason === undefined ? {} : { reason }),
-              }),
-            )
-          ).code;
+          const refused = await refusedThenContinue(client, () =>
+            insertLoan(client, {
+              organization,
+              member: member.id,
+              team: other,
+              during,
+              ...(reason === undefined ? {} : { reason }),
+            }),
+          );
+          codes[label] = refused.code;
+          messages[label] = refused.message;
         }
         const forged = await refusedThenContinue(client, () =>
           insertLoan(client, { organization, member: member.id, team: other, during: '[2046-01-10,2046-01-12]', by: self.authUserId }),
@@ -27028,15 +27029,23 @@ describe('a loan is a recorded exception (story 18.2)', () => {
           'empty literal': '23514',
           'no end': '23514',
           'no start': '23514',
-          // `infinity` is past every date a range can be canonicalized around.
-          'infinite end': '22008',
-          'infinite start': '22008',
-          'before year 1': '23514',
+          // Unlike leave records (whose 366-day check subtracts an infinite date,
+          // 22008), an infinite bound is kept by canonicalization and refused
+          // by the years check.
+          'infinite end': '23514',
+          'infinite start': '23514',
+                    'before year 1': '23514',
           'after year 9999': '23514',
           'blank reason': '23514',
           'empty reason': '23514',
           '201 code points': '23514',
         });
+        expect(messages['infinite end'], `${slug}: an infinite end was not refused by the years check`).toContain(
+          'team_loans_during_in_years',
+        );
+        expect(messages['infinite start'], `${slug}: an infinite start was not refused by the years check`).toContain(
+          'team_loans_during_in_years',
+        );
         expect(forged.code, `${slug}: a loan was attributed to somebody else`).toBe('42501');
         expect(update.code, `${slug}: a loan was changed`).toBe('42501');
         expect(removal.code, `${slug}: a session wrote a removal (story 18.4's)`).toBe('42501');

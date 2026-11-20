@@ -3800,7 +3800,7 @@ describe('the access-control migration', () => {
       .filter(({ table, migration, attributed: carries }) => carries && migration <= AUDIT_MIGRATION && Object.keys(AUDITED_TABLES).includes(table))
       .map(({ table }) => table)
       .sort();
-    expect(attributed, 'AD-11 names 15 attributed tables').toHaveLength(15);
+    expect(attributed, 'AD-11 names 15 attributed tables that existed when 0061 backfilled').toHaveLength(15);
     expect(cte('attributed', 'decided'), 'the backfill reads other than the attributed tables').toEqual(attributed);
     expect(cte('decided', 'instants')).toEqual(['leave_request_decisions', 'swap_request_decisions']);
 

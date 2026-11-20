@@ -1098,12 +1098,14 @@ describe('the read', () => {
         { ...good, id: 'l2', member_id: 'not-yet-named', starts_on: '2026-09-11' },
       ]),
     ]) {
+      logged.mockClear();
       expect(
         await read(tableOf(answerOf(PILOT), membersAnswerOf(), overridesAnswerOf(), rosterOverridesAnswerOf(), loans)),
         JSON.stringify(loans),
       ).toEqual(REFUSED);
+      // Each case is refused for the loans' reason, not for another read's.
+      expect(logged.mock.calls, JSON.stringify(loans)).toEqual([[CALENDAR_UNAVAILABLE, 'loan']]);
     }
-    expect(logged).toHaveBeenCalledWith(CALENDAR_UNAVAILABLE, 'loan');
     vi.restoreAllMocks();
   });
 
