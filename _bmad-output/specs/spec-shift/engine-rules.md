@@ -206,3 +206,12 @@ Leave Requests (CAP-19) and Swap Requests (CAP-22) are stored assertions by a Me
 - **R10.3** Short-staffed is derived on read (AD-1), never stored, and never resolved: it ends only when the roster, the absence or the setting changes.
 - **R10.4** Short-staffed never blocks a save. Every write that can change it reports the shifts it would newly make short-staffed before saving, as `{ code: 'SHORT_STAFFED', date, team, atWork, minimum }` (AD-8). Minimum Members is current-state (AD-2), so changing it changes the report for past dates too.
 - **R10.5** Worked example. A team of four on a working shift, Minimum Members 3. One Member on leave: 3 at work, not short-staffed. Two Members on leave: 2 at work, short-staffed. One of those two replaced by an Override: 3 at work, not short-staffed. The same team with Minimum Members empty: never short-staffed.
+
+## 11. Loans (added 2026-11-20, sprint-change-proposal-2026-11-20-v2-scope; implemented by story 18.1)
+
+- **R11.1** The effective Team of a Member on a date is the loan Team if a Loan of theirs covers the date, else their own Team. A Member with no Team can be lent; on the covered dates they work with the loan Team.
+- **R11.2** The base Shift Roster of Team T on date d is the active Members whose effective Team on d is T. Roster Overrides then apply on top as before. On the loan Team the Member holds no position. An inactive Member is on no roster, lent or not.
+- **R11.3** Loans of one Member never overlap. A Loan to the Member's own Team or to an archived Team is refused when it is written. The engine treats overlapping or malformed Loans as a breached precondition. Because the own Team is versioned, a Loan that later points at it derives as the own Team, position kept. A Roster Override may still put a lent Member on another Team's shift, their own Team's included: a double shift, as for any Member.
+- **R11.4** With no Loan, R11.2 equals the existing roster rule exactly. Every schedule, roster, hour, Conflict and staffing figure is byte-identical to what it was before Loans existed.
+- **R11.5** A Loan never changes a Rotation Assignment or a Team membership.
+- **R11.6** Worked example on the pilot fixture. A Member of Team A is lent to Team C for the 10th to the 12th. A's rosters on those dates lose them and C's gain them. Their hours follow C's Shift Types. The 13th is A again. A Roster Override on A that takes them off on a covered date no longer applies, and one on C does.

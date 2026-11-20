@@ -182,10 +182,15 @@ export {
 
 export {
   activeOn,
+  checkLoans,
   checkRosterOverrides,
+  effectiveTeamOn,
+  loanOn,
   membershipOn,
   rosterOn,
   shiftRoster,
+  type EffectiveTeamOn,
+  type Loan,
   type MembershipOn,
   type MembershipVersion,
   type RosterEntry,
