@@ -169,6 +169,7 @@ export function collisionsOf(input: CollisionInput): readonly Collision[] {
       memberId: member.id,
       memberships: member.memberships,
       statuses: member.statuses,
+      loans: member.loans,
       assignments: input.assignments,
       steps: input.steps,
       overrides: input.overrides,

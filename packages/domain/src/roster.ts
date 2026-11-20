@@ -13,6 +13,15 @@
  * them applied; with none, it is {@link shiftRoster} exactly. Rank and
  * position are carried, never read by a rule.
  *
+ * LOANS (story 18.1, engine rules R11): a Loan lends a member to another team
+ * for an inclusive date range. On a date it covers, the member's EFFECTIVE
+ * team ({@link effectiveTeamOn}) is the loan team, else it is the home team of
+ * {@link membershipOn} (R11.1); every roster is built from effective teams
+ * (R11.2), so everything that reads a roster — the member's month, hours,
+ * leave cost, collisions, staffing, a swap's validity — follows a loan with
+ * no second implementation. A loan changes no membership version and no
+ * rotation (R11.5). A member with no loans derives exactly as before (R11.4).
+ *
  * Every breached precondition throws a `RangeError` naming the offending value.
  */
 
@@ -46,13 +55,38 @@ export interface MembershipOn {
   readonly position: string | null;
 }
 
-/** What a roster is derived from: one member's id and their two version histories. */
+/**
+ * One Loan of a member (story 18.1, R11): from `from` to `to`, both inclusive
+ * calendar dates, the member works with `teamId` instead of their home team.
+ * The member is the one whose `loans` hold it. A Loan is an exception, never a
+ * version: it is dated, removable, and loans of one member never share a date
+ * (R11.3).
+ */
+export interface Loan {
+  readonly id: string;
+  readonly teamId: string;
+  readonly from: string;
+  readonly to: string;
+}
+
+/** What a roster is derived from: one member's id, their two version histories and their loans. */
 export interface RosterMember {
   readonly id: string;
   /** Every membership version of this member, in any order. */
   readonly memberships: readonly MembershipVersion[];
   /** Every status version of this member, in any order. */
   readonly statuses: readonly StatusVersion[];
+  /** Every live Loan of this member, in any order (story 18.1); absent or empty, they are never lent. */
+  readonly loans?: readonly Loan[] | undefined;
+}
+
+/**
+ * The team a member works with on a date (R11.1): `teamId`, their position in
+ * it, and the Loan that put them there — `null` on their home team. On a loan
+ * team the position is `null`: a position is held in the home team.
+ */
+export interface EffectiveTeamOn extends MembershipOn {
+  readonly loanId: string | null;
 }
 
 /** One member on a team's roster on a date. */
@@ -127,18 +161,86 @@ export function membershipOn(memberships: readonly MembershipVersion[], date: st
 }
 
 /**
- * The roster of `teamId` on `date`: every member of `members` who is active on
- * that date ({@link activeOn}) and whose team on it ({@link membershipOn}) is
- * `teamId`, with their position, in the order of `members`.
+ * Every precondition of one member's loans (R11.3): each `from` and `to` a
+ * calendar date, `from` on or before `to`, ids distinct, and no two loans
+ * sharing a date. A loan to the member's home team is NOT a breach here: the
+ * home team is versioned, so a later team move can make it so, and on such a
+ * date the effective team is the home team either way. Refusing one when it
+ * is written is the store's (story 18.2).
+ *
+ * @throws RangeError on the first breach, naming it.
+ */
+export function checkLoans(loans: readonly Loan[]): void {
+  const ids = new Set<string>();
+  for (const loan of loans) {
+    checkDate(`loan ${loan.id} to team ${loan.teamId} starts on`, loan.from);
+    checkDate(`loan ${loan.id} to team ${loan.teamId} ends on`, loan.to);
+    if (loan.to < loan.from) {
+      throw new RangeError(`loan ${loan.id} runs from ${JSON.stringify(loan.from)} to ${JSON.stringify(loan.to)}, which ends before it starts`);
+    }
+    if (ids.has(loan.id)) throw new RangeError(`two loans have the id ${JSON.stringify(loan.id)}`);
+    ids.add(loan.id);
+  }
+  const ordered = [...loans].sort((left, right) => (left.from < right.from ? -1 : left.from > right.from ? 1 : 0));
+  for (let index = 1; index < ordered.length; index += 1) {
+    const before = ordered[index - 1]!;
+    const after = ordered[index]!;
+    if (after.from <= before.to) {
+      throw new RangeError(`loans ${JSON.stringify(before.id)} and ${JSON.stringify(after.id)} share ${JSON.stringify(after.from)}; loans of one member never overlap`);
+    }
+  }
+}
+
+/**
+ * The Loan of `loans` covering `date`, or `null` when none does.
+ *
+ * @throws RangeError when `date` is not a calendar `YYYY-MM-DD`, and on any
+ *   precondition of {@link checkLoans}.
+ */
+export function loanOn(loans: readonly Loan[], date: string): Loan | null {
+  checkDate('the date', date);
+  checkLoans(loans);
+  return loans.find((loan) => loan.from <= date && date <= loan.to) ?? null;
+}
+
+/**
+ * THE LOAN RULE (R11.1): the team a member works with on `date` — the loan
+ * team when one of their loans covers it, with no position; else their home
+ * team and position ({@link membershipOn}), or `null` when they have none. A
+ * member on no team can be lent. Active status is not read here: an inactive
+ * member is on no roster whatever their effective team.
+ *
+ * With no loan covering `date`, or one naming the home team that date (which
+ * the store refuses, but a later team move can produce), this is
+ * {@link membershipOn} with `loanId: null`: the home team, position kept.
+ *
+ * @throws RangeError on any precondition of {@link membershipOn} or {@link loanOn}.
+ */
+export function effectiveTeamOn(
+  member: Pick<RosterMember, 'memberships' | 'loans'>,
+  date: string,
+): EffectiveTeamOn | null {
+  const home = membershipOn(member.memberships, date);
+  const loan = loanOn(member.loans ?? [], date);
+  if (loan === null || loan.teamId === home?.teamId) return home === null ? null : { ...home, loanId: null };
+  return { teamId: loan.teamId, position: null, loanId: loan.id };
+}
+
+/**
+ * The roster of `teamId` on `date` (R11.2): every member of `members` who is
+ * active on that date ({@link activeOn}) and whose EFFECTIVE team on it
+ * ({@link effectiveTeamOn}) is `teamId`, with their position, in the order of
+ * `members`. With no loan, the effective team is the home team of
+ * {@link membershipOn}, so the roster is exactly the one before loans (R11.4).
  *
  * @throws RangeError on any precondition of {@link activeOn} or
- *   {@link membershipOn} for any member.
+ *   {@link effectiveTeamOn} for any member.
  */
 export function shiftRoster(members: readonly RosterMember[], teamId: string, date: string): readonly RosterEntry[] {
   checkDate('the date', date);
   const roster: RosterEntry[] = [];
   for (const member of members) {
-    const membership = membershipOn(member.memberships, date);
+    const membership = effectiveTeamOn(member, date);
     const active = activeOn(member.statuses, date);
     if (active && membership !== null && membership.teamId === teamId) {
       roster.push({ memberId: member.id, position: membership.position });

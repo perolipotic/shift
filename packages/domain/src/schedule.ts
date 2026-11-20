@@ -26,12 +26,15 @@ import { checkDate, civilDayNumber, dateOfCivilDay } from './calendar.js';
 import { applyOverride, overridesByTeamAndDate, type ScheduledShiftType, type ShiftTypeOverride } from './overrides.js';
 import { projectedShiftTypeOn, type RotationAssignment, type RotationStep } from './projection.js';
 import {
+  checkLoans,
+  effectiveTeamOn,
   orderedVersions,
   rosterOverrideApplies,
   rosterOverridesAt,
   rosterOverridesByTeamAndDate,
   shiftRoster,
   versionOn,
+  type Loan,
   type MembershipVersion,
   type RosterMember,
   type RosterOverride,
@@ -211,7 +214,14 @@ export interface MemberScheduleInput {
   readonly memberships: readonly MembershipVersion[];
   /** Every status version of the same member, in any order; none means always active. */
   readonly statuses: readonly StatusVersion[];
-  /** Every rotation version, of any team; only the teams the member belongs to are read. */
+  /**
+   * Every live Loan of the same member, in any order (story 18.1). Absent,
+   * the loans of this member's entry in `members` are read; given, they must
+   * be the same loans as that entry's (an entry without `loans` holding none).
+   * None anywhere, they are never lent.
+   */
+  readonly loans?: readonly Loan[] | undefined;
+  /** Every rotation version, of any team; only the teams the member belongs to or is lent to are read. */
   readonly assignments: readonly RotationAssignment[];
   /** The steps of every pattern a version names. */
   readonly steps: readonly RotationStep[];
@@ -227,6 +237,36 @@ export interface MemberScheduleInput {
   readonly rosterOverrides: readonly RosterOverride[];
   /** The ids of the working shift types: a roster override applies only on a working shift. */
   readonly workingShiftTypeIds: readonly string[];
+}
+
+/**
+ * A loan list's identity, order-free: the key two lists of the same loans
+ * share. Each loan is encoded on its own before sorting, so ids holding a
+ * comma cannot make two different loans sort as equals.
+ */
+function loansKeyOf(loans: readonly Loan[]): string {
+  return JSON.stringify(loans.map((loan) => JSON.stringify([loan.id, loan.teamId, loan.from, loan.to])).sort());
+}
+
+/**
+ * The member's loans (story 18.1): `input.loans`, else those of their entry
+ * in `input.members`, else none — checked by `checkLoans`. An entry without
+ * `loans` holds none, so `input.loans` must then be empty too: the rosters
+ * read the entry, and the month must judge each date by the same list. A
+ * member with no entry is on no base roster, and `input.loans` is read alone.
+ *
+ * @throws RangeError when `input.loans` is given, the member has an entry in
+ *   `input.members`, and the two hold different loans; and on any
+ *   precondition of `checkLoans`.
+ */
+function loansOf(input: MemberScheduleInput): readonly Loan[] {
+  const entry = input.members.find((member) => member.id === input.memberId);
+  const loans = input.loans ?? entry?.loans ?? [];
+  if (input.loans !== undefined && entry !== undefined && loansKeyOf(input.loans) !== loansKeyOf(entry.loans ?? [])) {
+    throw new RangeError(`the loans of member ${input.memberId} differ from those of their entry in the members`);
+  }
+  checkLoans(loans);
+  return loans;
 }
 
 /**
@@ -264,27 +304,36 @@ export interface MemberScheduleDay {
 
 /**
  * One member's schedule of `month`: a row per date, in order. The team on a
- * date is the membership version with the greatest `effectiveFrom` on or
- * before it (none before the first version) — the rule of `membershipOn` —
- * and no team at all on a date the member is inactive (`activeOn`); the shift
+ * date is their EFFECTIVE team (R11.1, the rule of `effectiveTeamOn`): the
+ * loan team when one of their loans covers it, else the membership version
+ * with the greatest `effectiveFrom` on or before it (none before the first
+ * version) — the rule of `membershipOn` — and no team at all on a date the
+ * member is inactive (`activeOn`); the shift
  * type is {@link scheduledShiftTypeOn} for that team's rotation versions and
  * overrides. The roster overrides that APPLY (the rule of `rosterOn`) then
- * drop the own team's working shift the member was taken off, and add each
- * working shift of another team they were put on.
+ * drop the effective team's working shift the member was taken off, and add
+ * each working shift of another team they were put on.
+ *
+ * Their loans are `input.loans`, or, when it is absent, those of their entry
+ * in `input.members` — the list the rosters read — so the month and the
+ * rosters never judge one date by two different loan lists.
  *
  * @throws RangeError when `month` is not a `YYYY-MM` in years 0001–9999, when
  *   a membership or status version's `effectiveFrom` is not a calendar
  *   `YYYY-MM-DD`, when two membership versions or two status versions share
  *   an `effectiveFrom`, when an override's date is not a calendar date or two
  *   overrides name one team and date, on any precondition of
- *   {@link projectedShiftTypeOn} for a team the member is in or is put on, and
- *   on any of `checkRosterOverrides` or `shiftRoster`.
+ *   {@link projectedShiftTypeOn} for a team the member is in, is lent to or is
+ *   put on, on any of `checkRosterOverrides`, `checkLoans` or `shiftRoster`,
+ *   and when `input.loans` and this member's entry in `input.members` hold
+ *   different loans.
  */
 export function memberScheduleOfMonth(input: MemberScheduleInput, month: string): readonly MemberScheduleDay[] {
   const dates = datesOfMonth(month);
 
   const memberships = orderedVersions('team membership', input.memberships);
   const statuses = orderedVersions('member status', input.statuses);
+  const loans = loansOf(input);
 
   const versionsOf = new Map<string, RotationAssignment[]>();
   for (const assignment of input.assignments) {
@@ -310,7 +359,7 @@ export function memberScheduleOfMonth(input: MemberScheduleInput, month: string)
   return dates.map((date) => {
     const shifts: MemberShift[] = [];
     const active = versionOn(statuses, date)?.active ?? true;
-    const teamId = active ? (versionOn(memberships, date)?.teamId ?? null) : null;
+    const teamId = active ? (effectiveTeamOn({ memberships, loans }, date)?.teamId ?? null) : null;
 
     if (teamId !== null) {
       const scheduled = scheduledOf(teamId, date);
