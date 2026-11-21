@@ -59,6 +59,9 @@ export const CALENDAR_SCREEN_PARTS = {
   // and the Osoba picker draw, and *Moj raspored*'s notice of the viewer's loan.
   loanMark: ['components', 'loan-mark.tsx'],
   loanNoticeLine: ['features', 'calendar', 'components', 'loan-notice-line.tsx'],
+  // Story 16.1 (UX-DR56): the printed month's header. *Ispiši*'s print and
+  // the time it names are `@/hooks/print`, which draws nothing.
+  printHeader: ['features', 'calendar', 'components', 'calendar-print-header.tsx'],
 } as const;
 
 /**

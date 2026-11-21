@@ -317,9 +317,12 @@ const CALENDAR_SEARCH_ORDER = [
   DAY_TEAM_SEARCH_PARAM,
 ] as const;
 
-/** A cell's shape: at least 30 px high, the cell radius (`rounded-cell`, 8 px: at most 10 px whatever the other radii become, story 15.1), the label never truncated. */
+/**
+ * A cell's shape: at least 30 px high, the cell radius (`rounded-cell`, 8 px: at most 10 px whatever the other radii become, story 15.1), the label never truncated.
+ * PRINTED (story 16.1) it is one line — the name, the marks and the range side by side, wrapping only where the column is narrow — so a month fits an A4 page.
+ */
 export const CALENDAR_CELL_CLASS =
-  'flex min-h-[30px] flex-col items-start justify-center gap-0.5 whitespace-nowrap rounded-cell px-2 py-1 text-xs font-semibold';
+  'flex min-h-[30px] flex-col items-start justify-center gap-0.5 whitespace-nowrap rounded-cell px-2 py-1 text-xs font-semibold print:min-h-0 print:flex-row print:flex-wrap print:items-baseline print:justify-start print:gap-x-1.5 print:whitespace-normal print:[overflow-wrap:anywhere] print:px-1 print:py-0 print:leading-tight';
 
 /**
  * A grid cell below 640 px, on top of {@link CALENDAR_CELL_CLASS}: a 44 × 44 px
@@ -331,8 +334,8 @@ export const COMPRESSED_CELL_CLASS = 'max-sm:min-h-11 max-sm:min-w-11 max-sm:ite
 /** A cell in the day list, on top of {@link CALENDAR_CELL_CLASS}: it takes the row's remaining width. */
 export const DAY_CELL_CLASS = 'min-w-0 flex-1';
 
-/** A range in the grid: dropped below 1024 px, never abbreviated. */
-export const GRID_RANGE_CLASS = 'hidden font-normal tabular-nums lg:inline';
+/** A range in the grid: dropped below 1024 px, never abbreviated; always PRINTED (story 16.1), so a midnight-crossing shift shows both clock times on its start date (DI-5). */
+export const GRID_RANGE_CLASS = 'hidden font-normal tabular-nums lg:inline print:inline';
 
 /** A range in the day list: always shown. */
 export const DAY_RANGE_CLASS = 'font-normal tabular-nums';

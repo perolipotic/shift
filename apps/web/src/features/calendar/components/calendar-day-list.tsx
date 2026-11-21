@@ -34,7 +34,7 @@ function renderDayButton(
     <Button
       type="button"
       variant="ghost"
-      className="h-auto min-h-11 min-w-0 flex-1 items-stretch whitespace-normal p-0 text-left"
+      className="h-auto min-h-11 min-w-0 flex-1 items-stretch whitespace-normal p-0 text-left print:min-h-0"
       aria-label={label ?? undefined}
       aria-haspopup={DAY_DETAIL_POPUP}
       onClick={(event) => {
@@ -53,13 +53,13 @@ function renderDay(openDay: OpenDay, day: CalendarDay, labels: readonly (string 
       aria-current={day.isToday ? 'date' : undefined}
       className={
         day.isToday
-          ? 'flex min-h-11 items-center gap-3 border-l-4 border-foreground py-1 pl-2 pr-1 font-bold'
-          : 'flex min-h-11 items-center gap-3 py-1 pl-3 pr-1'
+          ? 'flex min-h-11 items-center gap-3 border-l-4 border-foreground py-1 pl-2 pr-1 font-bold print:min-h-0 print:break-inside-avoid print:py-px'
+          : 'flex min-h-11 items-center gap-3 py-1 pl-3 pr-1 print:min-h-0 print:break-inside-avoid print:py-px'
       }
     >
-      <span className="w-20 shrink-0 text-sm">
-        <span className="block tabular-nums">{day.dayMonth}</span>
-        <span className="block text-xs font-normal text-muted-foreground">{day.weekday}</span>
+      <span className="w-20 shrink-0 text-sm print:w-28 print:text-xs">
+        <span className="block tabular-nums print:inline">{day.dayMonth}</span>
+        <span className="block text-xs font-normal text-muted-foreground print:ml-1 print:inline">{day.weekday}</span>
       </span>
       {day.shifts.length === 0 ? (
         <span className="text-sm text-muted-foreground">{t(dayEmptyMessageKey(day))}</span>

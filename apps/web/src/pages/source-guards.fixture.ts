@@ -1082,7 +1082,8 @@ export const SCREENS = [
   // picker footer's.
   // THIRTY-FIVE SINCE STORY 12.2: a member's *Predloži zamjenu* in the day
   // detail's footer, a `<Button asChild>` link to the swap proposal.
-  { name: 'the Kalendar destination', file: KALENDAR, expectedFields: 6, expectedButtons: 35 },
+  // THIRTY-SIX SINCE STORY 16.1: *Ispiši* at the end of the Card's head row.
+  { name: 'the Kalendar destination', file: KALENDAR, expectedFields: 6, expectedButtons: 36 },
   // STORY 12.2. On the swap proposal: the colleague and return `<Select>`s,
   // *Pošalji*, *Odustani* (a `<Button asChild>` link back to Kalendar), the
   // snapshot's unavailable alert's retry, *Natrag na Kalendar* above the title

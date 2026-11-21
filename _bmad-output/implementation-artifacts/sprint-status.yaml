@@ -652,8 +652,8 @@ development_status:
   #         plus a security-review of 19.1-19.5 (and of 16.3-16.4) before production.
   #   D-S1..D-S10 = proposal §6 founder decisions, NOT yet ratified (2026-11-20).
   # Ready now (no gate): 16.1 and all of Epic 18 (in dependency order).
-  epic-16: backlog  # calendar feed and print (CAP-25); D-S1, D-S2, D-S8
-  16-1-the-month-prints: backlog  # READY: no Architect pass, no D-S decision
+  epic-16: in-progress  # calendar feed and print (CAP-25); D-S1, D-S2, D-S8
+  16-1-the-month-prints: review  # built, CI pending
   16-2-the-domain-package-runs-on-the-server: backlog  # waits: AP1
   16-3-a-member-s-feed-token-is-a-revocable-secret: backlog  # waits: AP1 (via 16.2), D-S1
   16-4-the-calendar-feed-serves-a-member-s-own-shifts: backlog  # waits: AP1, D-S1, D-S2, D-S8

@@ -991,3 +991,123 @@
     );
   }
 }
+
+/* STORY 16.1 (UX-DR56, FR-84, decision D3): THE MONTH PRINTS. The browser's
+ * own print of *Kalendar*, never a PDF library. Everything here is scoped to
+ * a page that holds `[data-print-month]` (`pages/kalendar.tsx`), so no other
+ * screen prints any differently.
+ *
+ * A4 LANDSCAPE through a NAMED page, so the size is the calendar's alone; a
+ * browser without named pages prints the same layout on its default page.
+ *
+ * ONLY THE MONTH: every element that is neither the month's `<main>`, inside
+ * it, nor one of its ancestors is not drawn — the sidebar, the tab bar, the
+ * collapse, the shell's message and anything portalled — and the ancestors
+ * are plain blocks, so the shell's row and padding leave no gap and the table
+ * breaks across pages as a table does. Inside the month, the sticky head (the
+ * month control and the mode switch) and any open dialog are not drawn
+ * either; the page hides the rest of its controls with `print:hidden`.
+ *
+ * BLACK ON WHITE, IN EITHER THEME (NFR-25): text is black, no fill or shadow
+ * or hatch is drawn (the month's own surfaces are opaque, never glass), and
+ * the borders are a grey that reads on paper. Every state
+ * keeps its glyph and its words (`modifiers.ts`); the rings, the short-staffed
+ * edge and the hatches, which are shadows and backgrounds a printer drops,
+ * become the outlines and borders forced colours already draws, in black. */
+@page calendar-month {
+  size: A4 landscape;
+  margin: 8mm;
+}
+
+@media print {
+  /* `:root:has(…)` ties the dark block's specificity and comes later, so the
+   * dark hairline and foreground never reach paper. */
+  :root:has([data-print-month]) {
+    /* Every rem 14 px on paper, so a 31-day month of a few teams fits one page. */
+    font-size: 14px;
+    color-scheme: light;
+    --border: oklch(0.7 0 0);
+    --input: oklch(0.7 0 0);
+    --foreground: oklch(0 0 0);
+  }
+
+  body:has([data-print-month]) :not([data-print-month], [data-print-month] *, :has([data-print-month])) {
+    display: none !important;
+  }
+
+  body:has([data-print-month]),
+  body:has([data-print-month]) :has([data-print-month]) {
+    display: block !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: none !important;
+  }
+
+  body:has([data-print-month])::before {
+    display: none;
+  }
+
+  [data-print-month] {
+    page: calendar-month;
+  }
+
+  [data-print-month],
+  [data-print-month] * {
+    color: oklch(0 0 0) !important;
+    background-color: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  [data-print-month] [data-sticky-head],
+  [data-print-month] dialog {
+    display: none !important;
+  }
+
+  [data-print-month] .modifier-ring-conflict,
+  [data-print-month] .modifier-ring-conflict-short-staffed {
+    outline: 2px solid oklch(0 0 0) !important;
+    outline-offset: -2px !important;
+  }
+
+  [data-print-month] .modifier-ring-overridden,
+  [data-print-month] .modifier-ring-overridden-short-staffed {
+    outline: 2px dashed oklch(0 0 0) !important;
+    outline-offset: -2px !important;
+  }
+
+  [data-print-month] .modifier-ring-conflict-overridden,
+  [data-print-month] .modifier-ring-conflict-overridden-short-staffed {
+    outline: 4px double oklch(0 0 0) !important;
+    outline-offset: -4px !important;
+  }
+
+  /* The edge is the ring's depth deeper, as under forced colours, so 3 px of
+   * it still shows inside an outline. */
+  [data-print-month] .modifier-edge-short-staffed {
+    border-block-end: 3px solid oklch(0 0 0) !important;
+  }
+
+  [data-print-month] .modifier-ring-conflict-short-staffed,
+  [data-print-month] .modifier-ring-overridden-short-staffed {
+    border-block-end: 5px solid oklch(0 0 0) !important;
+  }
+
+  [data-print-month] .modifier-ring-conflict-overridden-short-staffed {
+    border-block-end: 7px solid oklch(0 0 0) !important;
+  }
+
+  [data-print-month] .modifier-hatch-leave {
+    border: 2px dotted oklch(0 0 0) !important;
+  }
+
+  [data-print-month] .modifier-hatch-uncovered {
+    border: 2px dashed oklch(0 0 0) !important;
+  }
+
+  [data-print-month] .modifier-hatch-leave-uncovered {
+    border: 2px dotted oklch(0 0 0) !important;
+    border-inline-style: dashed !important;
+  }
+}
