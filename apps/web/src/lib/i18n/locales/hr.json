@@ -402,6 +402,7 @@
       "swapRequestDecision": "Odluka o zamjeni",
       "absenceType": "Vrsta odsutnosti",
       "leaveAllowance": "Pravo na godišnji",
+      "loan": "Posudba",
       "other": "Zapis"
     },
     "action": {
@@ -1074,7 +1075,8 @@
       "source": {
         "rotation": "rotacija",
         "change": "promjena",
-        "replacement": "zamjena"
+        "replacement": "zamjena",
+        "loan": "posudba"
       }
     },
     "error": {
@@ -2340,6 +2342,13 @@
       "denied": "Posudbu nije moguće spremiti: tim je možda arhiviran, osoba je možda u tom timu tih dana ili nemaš ovlasti. Provjeri i pokušaj ponovno.",
       "failed": "Posudbu sada nije moguće spremiti. Pokušaj ponovno.",
       "unchanged": "Tim i datumi jednaki su spremljenima. Promijeni ih, upiši novi razlog ili ukloni posudbu."
+    },
+    "mark": {
+      "lentFrom": "posudba iz tima {team}",
+      "lentFromNone": "posudba, bez svog tima",
+      "with": "U timu {team} do {to}.",
+      "ahead": "Od {from}. u timu {team} do {to}.",
+      "now": "trenutno u timu {team}"
     }
   }
 }

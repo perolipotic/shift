@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 
+import { useLoanTeams } from '@/features/calendar/hooks/use-loan-teams';
 import { positionsShown } from '@/features/members/utils/position';
 import { ranksShown } from '@/features/members/utils/rank';
 import {
@@ -84,7 +85,10 @@ export function useTeamRoster(id: string) {
   // the cached roster is drawn offline; none beside a refusal.
   const offline = offlineNoteOf(freshness, timeZone, refusal === TEAM_ROSTER_UNAVAILABLE);
 
-  return { roster, refusal, loading, shown, positionShown, offline };
+  // STORY 18.5: `trenutno u timu {tim}` under a lent member; empty until known.
+  const loanTeams = useLoanTeams();
+
+  return { roster, refusal, loading, shown, positionShown, offline, loanTeams };
 }
 
 /** What the roster screen's parts are drawn from. */

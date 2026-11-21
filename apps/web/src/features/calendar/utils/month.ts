@@ -3,6 +3,7 @@ import {
   adjacentMonth,
   datesOfMonth,
   deriveShiftTimes,
+  effectiveTeamOn,
   leaveSpanOf,
   memberScheduleOfMonth,
   membershipOn,
@@ -18,6 +19,7 @@ import {
   type CollisionResolution,
   type DutyLeg,
   type LeaveRange,
+  type Loan,
   type MemberScheduleInput,
   type MembershipVersion,
   type OverrideStanding,
@@ -41,6 +43,7 @@ import {
   type CalendarSnapshot,
   minimumOfCalendar,
 } from '@/features/calendar/services/snapshot';
+import { lentFromShownOf, loanNoticeShownOf, type LentFrom, type LoanNotice } from '@/features/calendar/utils/loan-marks';
 import {
   formatIsoDayMonth,
   formatIsoMonthName,
@@ -753,6 +756,11 @@ export interface CalendarFilterPerson {
   readonly name: string;
   readonly teamId: string | null;
   readonly teamName: string | null;
+  /**
+   * STORY 18.5 (UX-DR59): `teamId` is a loan team, and whom they were lent
+   * from ({@link filterTeamOf}). ABSENT for everyone not lent then.
+   */
+  readonly lentFrom?: LentFrom;
 }
 
 /** The filter of *Sve smjene*: one team (story 3.3a) or one person (story 3.3b). */
@@ -878,6 +886,11 @@ export interface CalendarMonth extends MonthHeader {
    * (deferred-work E822, `kalendar.ownNote` or `kalendar.ownNoteNoTeam`).
    */
   readonly ownTeamName: string | null;
+  /**
+   * STORY 18.5 (UX-DR59): the viewer's loan covering today, else their next
+   * one, which *Moj raspored* states under its sentence. ABSENT with none.
+   */
+  readonly ownLoan?: LoanNotice;
 }
 
 /** The day list, or its own read failure — which the grid does not share. */
@@ -1199,6 +1212,43 @@ export function monthTeamOf(
 }
 
 /**
+ * STORY 18.5 — WHERE KALENDAR'S OSOBA PICKER PLACES A PERSON (UX-DR59): under
+ * the loan team, marked with whom they were lent from, when a loan covers the
+ * LOAN DATE — today when `dates` hold it, else their last active date of
+ * `dates` — and they are active then; otherwise their team for the month,
+ * {@link monthTeamOf}'s, exactly as before. *Sati* keeps `monthTeamOf`.
+ *
+ * @throws RangeError on any precondition of `monthTeamOf`, `activeOn` or
+ *   `effectiveTeamOn`.
+ */
+export function filterTeamOf(
+  snapshot: Pick<CalendarSnapshot, 'teams'>,
+  member: {
+    readonly memberships: readonly MembershipVersion[];
+    readonly statuses: readonly StatusVersion[];
+    readonly loans?: readonly Loan[] | undefined;
+  },
+  dates: readonly string[],
+  today: string,
+): { readonly teamId: string | null; readonly lentFrom: LentFrom | null } {
+  const loanDate = dates.includes(today) ? today : lastActiveDateOf(member, dates);
+
+  if (loanDate !== null && (member.loans ?? []).length > 0 && activeOn(member.statuses, loanDate)) {
+    const effective = effectiveTeamOn(member, loanDate);
+    // A loan to a team archived since is placed as before: no active team holds it.
+    const active = snapshot.teams.some((team) => team.id === effective?.teamId && !team.archived);
+
+    if (effective !== null && effective.loanId !== null && active) {
+      const lentFrom = lentFromShownOf(snapshot, member, effective.teamId, loanDate);
+
+      if (lentFrom !== null) return { teamId: effective.teamId, lentFrom };
+    }
+  }
+
+  return { teamId: monthTeamOf(member, dates), lentFrom: null };
+}
+
+/**
  * The team the grid is narrowed to: `smjena` when it names one of the active
  * `teams`, and `null` otherwise. An unknown or archived id — a bookmark that
  * outlived its team — is every team, the harmless direction (`chooseTeam`).
@@ -1275,13 +1325,16 @@ export function calendarMonthOf(
   // Each person with their team for the month (story 7.5) — a team the
   // snapshot does not name is a defect, as on *Sati*, and the guarded outcome
   // turns it into the read failure.
+  // STORY 18.5: a person lent on the loan date is placed under the loan team, marked.
   const offered = people.map((member) => {
-    const teamId = monthTeamOf(member, dates);
+    const { teamId, lentFrom } = filterTeamOf(snapshot, member, dates, today);
     const teamName = teamId === null ? null : teamNames.get(teamId);
 
     if (teamName === undefined) throw new RangeError(`team ${String(teamId)} is not in the snapshot`);
 
-    return { member, filtered: { id: member.id, name: member.name, teamId, teamName } };
+    const filtered: CalendarFilterPerson = { id: member.id, name: member.name, teamId, teamName };
+
+    return { member, filtered: lentFrom === null ? filtered : { ...filtered, lentFrom } };
   });
   const teamCounts = Object.fromEntries(
     teams.map((team) => [team.id, offered.filter((one) => one.filtered.teamId === team.id).length]),
@@ -1319,6 +1372,7 @@ export function calendarMonthOf(
     })),
     days: dayListOutcomeOf(snapshot, snapshot.viewer, month, today, marks),
     ownTeamName: ownTeamNameOf(snapshot, dates, teamNames),
+    ...ownLoanFieldOf(snapshot, today),
     person:
       chosenOne === null
         ? null
@@ -1365,6 +1419,17 @@ function ownTeamNameOf(
   const teamId = monthTeamOf(snapshot.viewer, dates);
 
   return teamId === null ? null : (teamNames.get(teamId) ?? null);
+}
+
+/**
+ * The `ownLoan` field of a month (story 18.5): the viewer's loan notice at
+ * `today`, present only with one. A notice that cannot be derived is none,
+ * logged, never a failed month: the month's figures do not depend on it.
+ */
+function ownLoanFieldOf(snapshot: CalendarSnapshot, today: string): { readonly ownLoan?: LoanNotice } {
+  const notice = loanNoticeShownOf(snapshot, snapshot.viewer.loans, today);
+
+  return notice === null ? {} : { ownLoan: notice };
 }
 
 /** A month to draw, or the calendar's one read failure. */

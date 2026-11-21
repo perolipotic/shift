@@ -16,7 +16,7 @@ const SKELETON_ROWS = [0, 1, 2];
  * indentation, so the sign-in suite's scoped extraction reads each one.
  */
 export function TeamRoster({ screen }: { readonly screen: TeamRosterScreen }): ReactNode {
-  const { roster, loading, shown, positionShown } = screen;
+  const { roster, loading, shown, positionShown, loanTeams } = screen;
 
   function renderRoster(team: TeamRosterAnswer): ReactNode {
     return (
@@ -27,7 +27,7 @@ export function TeamRoster({ screen }: { readonly screen: TeamRosterScreen }): R
         <p className="text-sm font-medium">
           {t('smjene.roster.count', { count: team.members.length })}
         </p>
-        <RosterLines members={team.members} shown={shown} positionShown={positionShown} />
+        <RosterLines members={team.members} shown={shown} positionShown={positionShown} loanTeams={loanTeams} />
       </div>
     );
   }

@@ -10,6 +10,7 @@ import { PageHeader, PageTitle } from '@/components/ui/page-header';
 import { CalendarFilters, calendarFilterSummaryOf } from '@/features/calendar/components/calendar-filters';
 import { CalendarModeSwitch } from '@/features/calendar/components/calendar-mode-switch';
 import { CalendarMonthBody } from '@/features/calendar/components/calendar-month-body';
+import { LoanNoticeLine } from '@/features/calendar/components/loan-notice-line';
 import { DayDetailDialog } from '@/features/calendar/components/day-detail-dialog';
 import { useCalendarScreen } from '@/features/calendar/hooks/use-calendar-screen';
 import { useOverrideForm } from '@/features/calendar/hooks/use-override-form';
@@ -190,6 +191,10 @@ export function KalendarScreen() {
           {month === null || mode !== MODE_SVE ? null : <CalendarFilters shown={month} onFilter={screen.filter} />}
           {ownNote === null ? null : (
             <p className="min-w-0 px-4 pb-4 pt-2 text-sm text-muted-foreground sm:pt-0">{ownNote}</p>
+          )}
+          {/* STORY 18.5 (UX-DR59): the viewer's own loan, covering today or ahead. */}
+          {ownNote === null || month?.ownLoan === undefined ? null : (
+            <LoanNoticeLine notice={month.ownLoan} className="-mt-3 min-w-0 px-4 pb-4 text-sm text-muted-foreground" />
           )}
           <CalendarMonthBody screen={screen} />
         </Card>

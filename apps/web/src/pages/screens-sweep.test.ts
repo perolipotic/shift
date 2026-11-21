@@ -396,7 +396,8 @@ describe('the screen is read at all, so every sweep below means something', () =
     // NINETY-FOUR SINCE STORY 14.2: Povijest promjena and its rules.
     // NINETY-FIVE SINCE STORY 14.3: the change history export's rules.
     // NINETY-SIX SINCE STORY 18.3: the loan dialog's rules.
-    expect(KEY_SOURCES).toHaveLength(96);
+    // NINETY-SEVEN SINCE STORY 18.5: the loan marks' rules.
+    expect(KEY_SOURCES).toHaveLength(97);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
@@ -519,13 +520,22 @@ describe('the screen is read at all, so every sweep below means something', () =
     );
 
     for (const part of swapParts) expect(KALENDAR, 'the swap status line left the set').toContain(part);
+    // STORY 18.5: the loan mark is shared from `@/components/loan-mark` (the
+    // day detail, the Osoba picker, *Ljudi*, a roster) and is in the set still.
+    const sharedLoanMark = join(srcRoot, ...CALENDAR_SCREEN_PARTS.loanMark);
+
+    expect(KALENDAR, 'the shared loan mark left the set').toContain(sharedLoanMark);
     expect(
       found.filter((file) => !exempt.has(file)).sort(),
       'the calendar file set and the feature folders disagree',
     ).toEqual(
       KALENDAR.filter(
         (file) =>
-          file !== KALENDAR_PAGE && file !== SHARED_MONTH_NAV && file !== SHARED_FILTER_BAR && !swapParts.includes(file),
+          file !== KALENDAR_PAGE &&
+          file !== SHARED_MONTH_NAV &&
+          file !== SHARED_FILTER_BAR &&
+          file !== sharedLoanMark &&
+          !swapParts.includes(file),
       ).sort(),
     );
   });

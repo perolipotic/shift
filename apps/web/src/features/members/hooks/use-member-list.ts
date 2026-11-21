@@ -27,6 +27,7 @@ import {
   type MembersFilters,
   type MembersSearch,
 } from '@/features/members/services/list';
+import { useLoanTeams } from '@/features/calendar/hooks/use-loan-teams';
 import { MEMBERS_TABLE_SURFACE_KEYS } from '@/features/members/services/surface-keys';
 import { retryRead } from '@/features/teams/services/dependents';
 import { ZONE_NOT_NEEDED, offlineNoteOf, zoneFromReads } from '@/lib/offline/freshness';
@@ -122,6 +123,11 @@ export function useMemberList(search: MembersSearch, navigate: MembersNavigate) 
   // SKELETON ROWS while the status filter waits for today: rows unfiltered by
   // status under `Status: aktivni` would be a false list (`svi` needs no today).
   const loading = state.loading || membersAwaitTodayOf(members, today, filters.status);
+  // STORY 18.5 (UX-DR59): `trenutno u timu {tim}` beside a lent member's team.
+  // From the calendar snapshot, which holds every live loan without its
+  // reason; while it is pending or failed no line is drawn, and the list —
+  // its rows, counts and filters, all the one members read — is unchanged.
+  const loanTeams = useLoanTeams();
 
   // THE SUMMARY LINE COMES OUT OF THE SAME CALL, counting the very rows drawn.
   // Every input is a dependency, which `react-hooks/exhaustive-deps` checks.
@@ -243,6 +249,7 @@ export function useMemberList(search: MembersSearch, navigate: MembersNavigate) 
     retry,
     loading,
     today,
+    loanTeams,
     summary,
     narrowed,
     unanswered,

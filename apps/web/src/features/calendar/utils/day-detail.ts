@@ -2,9 +2,9 @@ import {
   activeOn,
   daysBetween,
   deriveShiftTimes,
+  effectiveTeamOn,
   MINUTES_PER_DAY,
   memberScheduleOfMonth,
-  membershipOn,
   monthOf,
   rosterOn,
   scheduledShiftTypeOn,
@@ -35,6 +35,7 @@ import {
   type CandidateGroupKind,
   type CandidateLeave,
 } from '@/features/calendar/utils/replacement-candidates';
+import { lentFromShownOf, type LentFrom } from '@/features/calendar/utils/loan-marks';
 import { compareText, formatDate, formatIsoDate, formatTime } from '@/lib/i18n/format';
 import { rosterLineOf, rosterPositionMessageKey, type RosterLine } from '@/features/members/utils/position';
 import { rosterRankMessageKey } from '@/features/members/utils/rank';
@@ -88,7 +89,7 @@ import { shiftTimesShownOf, type ShiftTypeRow } from '@/features/shift-types/ser
  *
  * WHAT AN ADMIN MAY CHANGE ON A SHIFT (story 3.6b) is decided here as well:
  * the members to take off and to put on ({@link rosterOffersOf}), against the
- * DEFAULT roster alone (`shiftRoster`, `activeOn` and `membershipOn` from
+ * DEFAULT roster alone (`shiftRoster`, `activeOn` and `effectiveTeamOn` from
  * `@shift/domain`), the browser's preflight ({@link rosterEntryOf}) and what
  * a removal names ({@link rosterRemovalTargetOf}). The database's checks and
  * its partial keys stay authoritative. A member chosen to put on who already
@@ -120,6 +121,12 @@ export interface DayDetailMember {
   readonly fireRank: string | null;
   /** Their position in the team on that date; shown, never used. */
   readonly position: string | null;
+  /**
+   * STORY 18.5 (UX-DR59): on this team through a Loan, and whom from — the
+   * `posudba iz tima {tim}` mark. ABSENT for everyone else, so a day with no loan
+   * is the detail it was (R11.4).
+   */
+  readonly lentFrom?: LentFrom;
 }
 
 /** The day detail's `<dialog>` element's id. */
@@ -327,7 +334,11 @@ export function dayDetailOf(snapshot: CalendarSnapshot, teamId: string, date: st
       throw new RangeError(`member ${entry.memberId} is rostered but is not in the snapshot`);
     }
 
-    return { id: entry.memberId, name: member?.name ?? null, fireRank: member?.fireRank ?? null, position: entry.position };
+    const listed = { id: entry.memberId, name: member?.name ?? null, fireRank: member?.fireRank ?? null, position: entry.position };
+    // A member put on by a roster override is never marked: the override, not a loan, put them here.
+    const lentFrom = member === undefined || entry.added ? null : lentFromShownOf(snapshot, member, teamId, date);
+
+    return lentFrom === null ? listed : { ...listed, lentFrom };
   });
 
   return {
@@ -720,7 +731,7 @@ const NO_ROSTER_OFFERS: RosterOffers = { set: false, remove: false, out: [], in:
  * grouping that cannot be derived is logged and groups nobody either.
  *
  * @throws RangeError on any precondition of `shiftRoster`, `activeOn`,
- *   `membershipOn` or `replacementCandidatesOf`.
+ *   `effectiveTeamOn` or `replacementCandidatesOf`.
  */
 export function rosterOffersOf(
   snapshot: CalendarSnapshot | null,
@@ -760,7 +771,8 @@ export function rosterOffersOf(
     if (named.has(member.id) || onDefaultIds.has(member.id)) continue;
     if (!activeOn(member.statuses, isoDate)) continue;
 
-    const own = membershipOn(member.memberships, isoDate);
+    // STORY 18.5: the team they are WITH that day — a loan team on a loan.
+    const own = effectiveTeamOn(member, isoDate);
 
     put.push({
       id: member.id,

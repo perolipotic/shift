@@ -55,6 +55,10 @@ export const CALENDAR_SCREEN_PARTS = {
   // with, and the hook that takes it off the history entry. Neither writes.
   swapProposedHook: ['features', 'swaps', 'hooks', 'use-swap-proposed.ts'],
   swapProposedLine: ['features', 'swaps', 'components', 'swap-proposed-line.tsx'],
+  // Story 18.5 (UX-DR59): the loan mark — glyph and words — the day detail
+  // and the Osoba picker draw, and *Moj raspored*'s notice of the viewer's loan.
+  loanMark: ['components', 'loan-mark.tsx'],
+  loanNoticeLine: ['features', 'calendar', 'components', 'loan-notice-line.tsx'],
 } as const;
 
 /**
@@ -95,6 +99,14 @@ export const CALENDAR_SCREEN_EXEMPT: readonly { readonly file: string; readonly 
   {
     file: 'services/surface-keys.ts',
     why: "the month's reads as one snapshot (story 8.2), the keys its offline freshness is decided over; renders nothing and declares no key, executed by surface-keys.test.ts",
+  },
+  {
+    file: 'utils/loan-marks.ts',
+    why: 'story 18.5: where a loan is said (the mark, the notice, the directory line), executed by loan-marks.test.ts; a key source of its own',
+  },
+  {
+    file: 'hooks/use-loan-teams.ts',
+    why: "story 18.5: who is on loan today, for Ljudi and a team's roster; reads the snapshot's one binding and draws nothing here",
   },
   {
     file: 'utils/month.ts',

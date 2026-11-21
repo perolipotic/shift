@@ -333,6 +333,14 @@ export interface MemberShift {
   readonly overridden: boolean;
   readonly rosterChanged: boolean;
   readonly viaOverride: boolean;
+  /**
+   * The Loan that put the member on this team that date (story 18.5): set
+   * only on their effective team's shift when a loan covers the date
+   * (`effectiveTeamOn`'s `loanId`), and ABSENT otherwise — never `null` — so
+   * a month with no loan is exactly what it was before loans (R11.4). A shift
+   * a roster override put them on carries none.
+   */
+  readonly loanId?: string;
 }
 
 /**
@@ -409,13 +417,18 @@ export function memberScheduleOfMonth(input: MemberScheduleInput, month: string)
   return dates.map((date) => {
     const shifts: MemberShift[] = [];
     const active = versionOn(statuses, date)?.active ?? true;
-    const teamId = active ? (effectiveTeamOn({ memberships, loans }, date)?.teamId ?? null) : null;
+    const effective = active ? effectiveTeamOn({ memberships, loans }, date) : null;
+    const teamId = effective?.teamId ?? null;
 
     if (teamId !== null) {
       const scheduled = scheduledOf(teamId, date);
       const applied = appliedRosterOverrides(rosterOverrides, input.members, working, scheduled, teamId, date);
       if (!applied.some((override) => override.memberOutId === input.memberId)) {
-        shifts.push({ ...cellOf(teamId, scheduled), rosterChanged: applied.length > 0, viaOverride: false });
+        const shift = { ...cellOf(teamId, scheduled), rosterChanged: applied.length > 0, viaOverride: false };
+        // Story 18.5: the loan's id only on a shift a loan put there, so a
+        // month with no loan is the same object as before (R11.4).
+        const loanId = effective?.loanId ?? null;
+        shifts.push(loanId === null ? shift : { ...shift, loanId });
       }
     }
 

@@ -79,7 +79,7 @@ export function TodayBody({
 
   return (
     <>
-      <TodayCard todayCase={view.todayCase} ownTeam={view.ownTeam} />
+      <TodayCard todayCase={view.todayCase} ownTeam={view.ownTeam} loan={view.loan} />
       <NextShiftCard next={view.next} returning={view.returning} />
       {/* STORY 12.3: *Zamjene*, only while the viewer has a swap to show. */}
       <MySwapsCard surfaceKeys={MEMBER_TODAY_SURFACE_KEYS} />

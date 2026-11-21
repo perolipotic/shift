@@ -1489,6 +1489,8 @@ describe('the calendar only reads, and projects nothing of its own', () => {
   // STORY 12.2: the swap proposal's status line on the month, and its hook, from the swaps feature.
   const swapProposedHook = `${srcRoot}${CALENDAR_SCREEN_PARTS.swapProposedHook.join('/')}`;
   const swapProposedLine = `${srcRoot}${CALENDAR_SCREEN_PARTS.swapProposedLine.join('/')}`;
+  // STORY 18.5: the loan mark, shared from `@/components`.
+  const loanMark = `${srcRoot}${CALENDAR_SCREEN_PARTS.loanMark.join('/')}`;
   const files = [
     ...readdirSync(directory, { recursive: true, encoding: 'utf8' })
       .map(slashed)
@@ -1499,6 +1501,7 @@ describe('the calendar only reads, and projects nothing of its own', () => {
     filterBar,
     swapProposedHook,
     swapProposedLine,
+    loanMark,
   ];
   const stripped = (file: string) =>
     readFileSync(file, 'utf8')

@@ -2896,6 +2896,16 @@ const SANCTIONED_SCREEN_KEYS = [
   'obavijesti.loanRemoved.subject',
   'obavijesti.loanRemoved.body',
   'smjene.error.lentTo',
+  // Story 18.5: where a loan is said (UX-DR59) — the mark under the loan team,
+  // the member's own notice, the directory's line — the hours source and the
+  // change history's record. A team is *tim*, never `smjena`.
+  'loans.mark.lentFrom',
+  'loans.mark.lentFromNone',
+  'loans.mark.with',
+  'loans.mark.ahead',
+  'loans.mark.now',
+  'sati.explain.source.loan',
+  'history.record.loan',
 ];
 
 /** Everything the resource file is permitted to hold, together. */

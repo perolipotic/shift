@@ -6,6 +6,9 @@ import {
   HOURS_FIGURE_BAND,
   HOURS_FIGURE_LEAVE,
   HOURS_FIGURE_TOTAL,
+  HOURS_SOURCE_LOAN,
+  HOURS_SOURCE_REPLACEMENT,
+  HOURS_SOURCE_ROTATION,
   LEAVE_HALF_FIRST,
   collisionsOf,
   datesOfMonth,
@@ -15,6 +18,7 @@ import {
   memberScheduleOfMonth,
   checkLoans,
   effectiveTeamOn,
+  loanAheadOf,
   loanOn,
   membershipOn,
   peopleAtWorkOn,
@@ -331,7 +335,7 @@ describe('R11.6 — the worked example on the pilot fixture', () => {
     for (const date of COVERED) {
       const type = scheduledType(C, date);
       expect(days.find((day) => day.date === date)!.shifts).toEqual([
-        { teamId: C, shiftTypeId: type, projectedShiftTypeId: type, overridden: false, rosterChanged: false, viaOverride: false },
+        { teamId: C, shiftTypeId: type, projectedShiftTypeId: type, overridden: false, rosterChanged: false, viaOverride: false, loanId: LOAN.id },
       ]);
     }
     expect(days.find((day) => day.date === '2026-03-13')!.shifts.map((shift) => shift.teamId)).toEqual([A]);
@@ -356,7 +360,15 @@ describe('R11.6 — the worked example on the pilot fixture', () => {
     expect(memberHoursOfMonth(lentInput, '2026-03')).toEqual(memberHoursOfMonth(movedInput, '2026-03'));
     expect(memberHoursOfMonth(lentInput, '2026-03')).not.toEqual(memberHoursOfMonth(inputOf(home), '2026-03'));
     for (const figure of figuresOf(fixture)) {
-      expect(explainMemberHours(lentInput, '2026-03', figure)).toEqual(explainMemberHours(movedInput, '2026-03', figure));
+      // The same operands, but a loan's shift names its source (story 18.5): `LOAN` where the move reads `ROTATION`.
+      const explained = explainMemberHours(lentInput, '2026-03', figure);
+      const asMoved = explainMemberHours(movedInput, '2026-03', figure);
+      expect(explained.minutes).toBe(asMoved.minutes);
+      expect(explained.operands).toEqual(
+        asMoved.operands.map((operand) =>
+          COVERED.includes(operand.date) && operand.source === HOURS_SOURCE_ROTATION ? { ...operand, source: HOURS_SOURCE_LOAN } : operand,
+        ),
+      );
     }
     expect(leaveCostOf(lentInput, '2026-03-01', '2026-03-31')).toBe(leaveCostOf(movedInput, '2026-03-01', '2026-03-31'));
 
@@ -554,7 +566,7 @@ describe("a lent member's own month (memberScheduleOfMonth, through the one rule
     const memberships = [{ teamId: a!, position: null, effectiveFrom: SEEDED_EFFECTIVE_FROM }];
     const days = memberScheduleOfMonth({ memberId: 'm', memberships, statuses: [], loans, members: [], ...base }, '2026-03');
     expect(days.find((day) => day.date === '2026-03-10')!.shifts).toEqual([
-      { teamId: 'no-rotation', shiftTypeId: null, projectedShiftTypeId: null, overridden: false, rosterChanged: false, viaOverride: false },
+      { teamId: 'no-rotation', shiftTypeId: null, projectedShiftTypeId: null, overridden: false, rosterChanged: false, viaOverride: false, loanId: 'z' },
     ]);
   });
 
@@ -675,5 +687,122 @@ describe('rosterOverridesMadeInertOf (story 18.3): the overrides a loan stops ap
     expect(rosterOverridesMadeInertOf(before, before, LOAN.from, LOAN.to)).toEqual([]);
     expect(() => rosterOverridesMadeInertOf(before, before, LOAN.to, LOAN.from)).toThrow(RangeError);
     expect(() => rosterOverridesMadeInertOf(before, before, '2026-02-30', LOAN.to)).toThrow(RangeError);
+  });
+});
+
+describe('story 18.5 — a loan is marked where it is read', () => {
+  const fixture = FIXTURES[0]!;
+  const [a, b, c] = PILOT_TEAMS.map((team) => team.id);
+  const working = workingOf(fixture);
+  const base = { assignments: fixture.assignments, steps: fixture.steps, overrides: [], workingShiftTypeIds: working };
+  const LOAN: Loan = { id: 'n', teamId: c!, from: '2026-03-10', to: '2026-03-12' };
+  const lent: RosterMember = {
+    id: 'lent',
+    memberships: [{ teamId: a!, position: 'voditelj', effectiveFrom: SEEDED_EFFECTIVE_FROM }],
+    statuses: [],
+    loans: [LOAN],
+  };
+  const inputOf = (member: RosterMember, rosterOverrides: readonly RosterOverride[] = []) => ({
+    memberId: member.id,
+    memberships: member.memberships,
+    statuses: member.statuses,
+    members: [member],
+    rosterOverrides,
+    ...base,
+  });
+
+  it("puts `loanId` on the loan team's shift alone: never on a home day, never on a shift an override put them on", () => {
+    const rosterOverrides: readonly RosterOverride[] = [{ id: 'put', teamId: b!, date: '2026-03-11', memberOutId: null, memberInId: 'lent' }];
+    const days = memberScheduleOfMonth(inputOf(lent, rosterOverrides), '2026-03');
+    let lentShifts = 0;
+    for (const day of days) {
+      const covered = day.date >= LOAN.from && day.date <= LOAN.to;
+      const own = day.shifts.find((shift) => !shift.viaOverride);
+      if (own !== undefined) {
+        expect(Object.hasOwn(own, 'loanId')).toBe(covered);
+        if (covered) {
+          expect(own.loanId).toBe(LOAN.id);
+          lentShifts += 1;
+        }
+      }
+      for (const put of day.shifts.filter((shift) => shift.viaOverride)) expect(Object.hasOwn(put, 'loanId')).toBe(false);
+    }
+    // Not vacuous: the loan team works on at least one covered date.
+    expect(lentShifts).toBeGreaterThan(0);
+  });
+
+  it('carries no `loanId` key at all with no loan, an empty list, or a loan to the home team (R11.4)', () => {
+    for (const loans of [undefined, [], [{ ...LOAN, teamId: a! }]]) {
+      const member: RosterMember = { ...lent, loans };
+      const days = memberScheduleOfMonth(inputOf(member), '2026-03');
+      expect(days.flatMap((day) => day.shifts).some((shift) => Object.hasOwn(shift, 'loanId'))).toBe(false);
+    }
+  });
+
+  it('names the source `LOAN` on a loan day, `REPLACEMENT` over it, and never on a home day', () => {
+    const organization = frozen({
+      fixture,
+      members: membersOf(fixture).map((member) => (member.id === `${a}-1` ? { ...member, loans: [LOAN] } : member)),
+    });
+    const input = frozen({
+      ...hoursInputOf(organization, organization.members.find((member) => member.id === `${a}-1`)!),
+      overrides: [],
+      rosterOverrides: [],
+    });
+    const operands = explainMemberHours(input, '2026-03', { code: HOURS_FIGURE_TOTAL }).operands;
+    const covered = operands.filter((operand) => operand.date >= LOAN.from && operand.date <= LOAN.to);
+    expect(covered.length).toBeGreaterThan(0);
+    for (const operand of covered) expect(operand.source).toBe(HOURS_SOURCE_LOAN);
+    for (const operand of operands.filter((one) => !covered.includes(one))) expect(operand.source).not.toBe(HOURS_SOURCE_LOAN);
+
+    // A roster override putting the lent member on A's shift reads as a replacement: on a
+    // loan date A works (its home schedule), so the replacement shift is really there.
+    const day = covered[0]!.date;
+    const unlent = frozen({ fixture, members: membersOf(fixture) });
+    const home = frozen({
+      ...hoursInputOf(unlent, unlent.members.find((member) => member.id === `${a}-1`)!),
+      overrides: [],
+      rosterOverrides: [],
+    });
+    const homeDay = explainMemberHours(home, '2026-03', { code: HOURS_FIGURE_TOTAL }).operands.find(
+      (one) => one.date >= LOAN.from && one.date <= LOAN.to,
+    )!.date;
+    const put = frozen({
+      ...input,
+      rosterOverrides: [{ id: 'back', teamId: a!, date: homeDay, memberOutId: null, memberInId: `${a}-1` }],
+    });
+    const sources = explainMemberHours(put, '2026-03', { code: HOURS_FIGURE_TOTAL })
+      .operands.filter((one) => one.date === homeDay)
+      .map((one) => [one.teamId, one.source]);
+    // A roster override's shift never carries `loanId`: `REPLACEMENT` there, never `LOAN`.
+    expect(sources).toContainEqual([a, HOURS_SOURCE_REPLACEMENT]);
+    expect(sources).not.toContainEqual([a, HOURS_SOURCE_LOAN]);
+
+    // A shift-type override of C on a loan day: still `LOAN`, never `CHANGE` (LOAN > CHANGE).
+    const changedType = PILOT_SHIFT_TYPES.find((type) => type.isWorking && type.id !== covered[0]!.shiftTypeId)!;
+    const changed = frozen({ ...input, overrides: [{ teamId: c!, date: day, shiftTypeId: changedType.id }] });
+    const changedSources = explainMemberHours(changed, '2026-03', { code: HOURS_FIGURE_TOTAL })
+      .operands.filter((one) => one.date === day)
+      .map((one) => one.source);
+
+    expect(changedSources).toEqual([HOURS_SOURCE_LOAN]);
+    expect(memberScheduleOfMonth(changed, '2026-03').find((one) => one.date === day)?.shifts[0]).toMatchObject({
+      overridden: true,
+      loanId: LOAN.id,
+    });
+  });
+
+  it('announces the loan covering a date, else the first one ahead, never one wholly past (loanAheadOf)', () => {
+    const later: Loan = { id: 'l', teamId: b!, from: '2026-04-01', to: '2026-04-02' };
+    const sooner: Loan = { id: 's', teamId: b!, from: '2026-03-20', to: '2026-03-21' };
+    const loans = [later, LOAN, sooner];
+    expect(loanAheadOf(loans, '2026-03-09')).toEqual(LOAN);
+    expect(loanAheadOf(loans, '2026-03-10')).toEqual(LOAN);
+    expect(loanAheadOf(loans, '2026-03-12')).toEqual(LOAN);
+    expect(loanAheadOf(loans, '2026-03-13')).toEqual(sooner);
+    expect(loanAheadOf(loans, '2026-04-02')).toEqual(later);
+    expect(loanAheadOf(loans, '2026-04-03')).toBeNull();
+    expect(loanAheadOf([], '2026-03-10')).toBeNull();
+    expect(() => loanAheadOf(loans, '2026-02-30')).toThrow(RangeError);
   });
 });

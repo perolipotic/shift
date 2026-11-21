@@ -12,6 +12,7 @@ import {
   type RefObject,
 } from 'react';
 
+import { LoanMark, lentFromText } from '@/components/loan-mark';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -599,6 +600,8 @@ export interface PickerOption {
   readonly count: string | null;
   /** The heading drawn above it, where a group starts. */
   readonly group: string | null;
+  /** STORY 18.5: a lent person's `posudba iz tima {tim}`, drawn under the name with the loan glyph; absent otherwise. */
+  readonly note?: string;
 }
 
 /**
@@ -697,7 +700,16 @@ export function OptionList({
               onPick(option.id);
             }}
           >
-            <span className="min-w-0 break-words">{option.name}</span>
+            {option.note === undefined ? (
+              <span className="min-w-0 break-words">{option.name}</span>
+            ) : (
+              <span className="grid min-w-0 gap-0.5">
+                <span className="min-w-0 break-words">{option.name}</span>
+                {/* Muted on a plain row, `foreground` on the pressed one, as the count. */}
+                <span className="sr-only">{t('ljudi.status.separator')}</span>
+                <LoanMark className="text-xs text-muted-foreground group-aria-pressed:text-foreground">{option.note}</LoanMark>
+              </span>
+            )}
             {option.count === null ? null : (
               // Muted on a plain row; `foreground` on the pressed one, whose
               // `primary`/10 tint leaves muted text under 4.5:1 (story 15.2,
@@ -842,12 +854,15 @@ function PersonOptions({
       nameOf={(person) => person.name}
       rowsOf={(matching) =>
         peopleGroupsOf(matching, model.teams).flatMap((group) =>
-          group.people.map((person, index) => ({
-            id: person.id,
-            name: person.name,
-            count: null,
-            group: index === 0 ? (group.teamName ?? t('filter.noTeam')) : null,
-          })),
+          group.people.map((person, index) => {
+            const option = {
+              id: person.id,
+              name: person.name,
+              count: null,
+              group: index === 0 ? (group.teamName ?? t('filter.noTeam')) : null,
+            };
+            return person.lentFrom === undefined ? option : { ...option, note: lentFromText(person.lentFrom) };
+          }),
         )
       }
       pinned={{ id: null, name: t('filter.allPeople', { count: model.people.length }), count: null, group: null }}

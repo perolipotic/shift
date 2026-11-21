@@ -95,9 +95,10 @@ describe('the kind of an event', () => {
     ['swap_request_decisions', 'swap-request-decision'],
     ['absence_types', 'absence-type'],
     ['leave_allowances', 'leave-allowance'],
+    ['team_loans', 'loan'],
   ];
 
-  it('names one record per audited table, all 21, and nothing else', () => {
+  it('names one record per audited table, all 22, and nothing else', () => {
     expect(TABLES.map(([table]) => historyRecordOf(table))).toEqual(TABLES.map(([, record]) => record));
     expect(new Set([...TABLES.map(([, record]) => record), 'other'])).toEqual(new Set(HISTORY_RECORDS));
     expect(historyRecordOf('audit_events')).toBeNull();
@@ -453,7 +454,7 @@ describe('an amend is one entry', () => {
     expect(entry.subjects.members).toEqual([IVO, ANA]);
   });
 
-  it('pairs a loan amend (story 18.4) on the member, though its team and dates change; its record stays 18.5\'s', () => {
+  it('pairs a loan amend (story 18.4) on the member, though its team and dates change; its record is `loan` (18.5)', () => {
     const loan = { id: 'n1', member_id: ANA, team_id: TEAM_A, during: '[2026-11-10,2026-11-13)', reason: 'r', removed_at: null };
     const removal = event({
       tableName: 'team_loans',
@@ -479,6 +480,33 @@ describe('an amend is one entry', () => {
 
     expect(amended.map((entry) => entry.eventIds)).toEqual([[removal.id, insert.id]]);
     expect(entries.map((entry) => entry.kind.action).sort()).toEqual(['added', 'amended']);
+    // Story 18.5: a loan is its own record, never `other`.
+    expect(entries.map((entry) => entry.kind.record)).toEqual(['loan', 'loan']);
+  });
+
+  it('reads a loan event (story 18.5) as record `loan`: added, removed, its team, range and reason named', () => {
+    const loan = { id: 'n1', member_id: ANA, team_id: TEAM_A, during: '[2026-11-10,2026-11-13)', reason: 'Pomoć', removed_at: null };
+    const added = event({ tableName: 'team_loans', operation: 'INSERT', newRow: loan });
+    const removed = event({
+      tableName: 'team_loans',
+      operation: 'UPDATE',
+      oldRow: loan,
+      newRow: { ...loan, removed_at: 'x', removed_by: ANA_AUTH },
+    });
+
+    expect(historyKindOf(added)).toEqual({ record: 'loan', action: 'added' });
+    expect(historyKindOf(removed)).toEqual({ record: 'loan', action: 'removed' });
+    expect(historyChangesOf(null, loan, 'team_loans').map((change) => change.field)).toEqual([
+      'member',
+      'team',
+      'during',
+      'reason',
+    ]);
+    expect(historyChangesOf(null, loan, 'team_loans').find((change) => change.field === 'during')?.after).toEqual({
+      type: 'range',
+      from: '2026-11-10',
+      to: '2026-11-12',
+    });
   });
 
   it('pairs several under one key in id order, and leaves an unmatched one its own entry', () => {
@@ -940,7 +968,7 @@ describe('every real change names a field (retro A4)', () => {
     );
   });
 
-  /** Every column of the 21 audited tables as 0002–0059 leave them, with a value of its type. */
+  /** Every column of the 22 audited tables as 0002–0062 leave them, with a value of its type. */
   const AT = '2026-11-10T08:00:00+00:00';
   const BOOKKEEPING = { organization_id: ORG, created_by: ANA_AUTH, created_at: AT };
   const LIVE = { removed_by: null, removed_at: null };
@@ -1099,6 +1127,15 @@ describe('every real change names a field (retro A4)', () => {
     },
     absence_types: { organization_id: ORG, id: 'a', name: 'Godišnji', draws_allowance: true, created_at: AT },
     leave_allowances: { ...BOOKKEEPING, id: 7, member_id: ANA, leave_year: 2026, days: 20 },
+    team_loans: {
+      ...BOOKKEEPING,
+      ...LIVE,
+      id: 'n',
+      member_id: ANA,
+      team_id: 't',
+      during: '[2026-11-10,2026-11-13)',
+      reason: 'Pomoć',
+    },
   };
 
   /** A different value of the same type. */
@@ -1115,7 +1152,7 @@ describe('every real change names a field (retro A4)', () => {
 
   const LIFECYCLE_AT = new Set(['removed_at', 'confirmed_at', 'closed_at', 'answered_at']);
 
-  it('covers the 21 audited tables', () => {
+  it('covers the 22 audited tables', () => {
     expect(Object.keys(AUDITED).map((table) => historyRecordOf(table))).not.toContain(null);
     expect(new Set(Object.keys(AUDITED).map((table) => historyRecordOf(table)))).toEqual(
       new Set(HISTORY_RECORDS.filter((record) => record !== 'other')),

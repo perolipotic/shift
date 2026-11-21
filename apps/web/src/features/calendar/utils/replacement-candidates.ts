@@ -1,8 +1,8 @@
 import {
   activeOn,
   dutiesOf,
+  effectiveTeamOn,
   memberScheduleOfMonth,
-  membershipOn,
   monthOf,
   rosterOn,
   shiftRoster,
@@ -124,7 +124,7 @@ export function candidateLeaveOf(leave: ReadonlyMap<string, readonly LeaveRange[
  * The candidates to put on `teamId`'s shift on `date`, in the three groups
  * and their fixed order, every group present.
  *
- * @throws RangeError on any precondition of `activeOn`, `membershipOn`,
+ * @throws RangeError on any precondition of `activeOn`, `effectiveTeamOn`,
  *   `shiftRoster`, `rosterOn` or `memberScheduleOfMonth`.
  */
 export function replacementCandidatesOf(
@@ -165,7 +165,8 @@ export function replacementCandidatesOf(
       id: member.id,
       name: member.name,
       fireRank: member.fireRank,
-      position: membershipOn(member.memberships, date)?.position ?? null,
+      // Story 18.5: their position where they are that day — none on a loan team.
+      position: effectiveTeamOn(member, date)?.position ?? null,
     };
 
     if (onLeave.has(member.id)) {

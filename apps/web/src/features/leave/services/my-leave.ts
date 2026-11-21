@@ -227,7 +227,8 @@ export function myLeaveOf(sources: MyLeaveSources, now: Date): MyLeave {
   // Either way the viewer's is there, so its absence is a fault, not a state.
   if (own === undefined) return { kind: MY_LEAVE_UNAVAILABLE };
 
-  if (viewer.memberships.length === 0) return { kind: MY_LEAVE_UNSCHEDULED };
+  // STORY 18.5: a viewer with no team but a loan is scheduled on the loan's dates.
+  if (viewer.memberships.length === 0 && viewer.loans.length === 0) return { kind: MY_LEAVE_UNSCHEDULED };
 
   const recorded = leaveRecordsOf(rows, viewer.memberId);
 

@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import type { ReactNode, SyntheticEvent } from 'react';
 
+import { LoanMark, lentFromText } from '@/components/loan-mark';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { UsersThree } from '@/components/ui/icon';
@@ -94,9 +95,18 @@ function renderRoster(shown: DayDetail, usesFireRanks: boolean): ReactNode {
           (key) => t(key),
         );
 
+        // STORY 18.5 (UX-DR59): a lent member's `posudba iz tima {tim}`, glyph and words.
+        const lent = member.lentFrom === undefined ? null : lentFromText(member.lentFrom);
+
         return (
           <li key={member.id} className="min-w-0 break-words text-base">
             {line.key === null ? line.text : t(line.key, line.values)}
+            {lent === null ? null : (
+              <>
+                <span className="sr-only">{t('ljudi.status.separator')}</span>
+                <LoanMark className="ml-2 text-sm text-muted-foreground">{lent}</LoanMark>
+              </>
+            )}
           </li>
         );
       })}

@@ -181,6 +181,10 @@ export const FEATURE_PUBLIC = {
     'services/snapshot-skew', // conflicts, hours, today
     'utils/day-detail', // conflicts, swaps
     'utils/empty-day', // today
+    // Story 18.5: the loan mark and notice (UX-DR59), for the directory and *Danas*.
+    'utils/loan-marks', // members, today
+    'components/loan-notice-line', // today
+    'hooks/use-loan-teams', // members, teams
     'utils/grid-keys', // today
     'utils/modifiers', // conflicts, hours, today
     'utils/month', // conflicts, hours, leave, members, pages, swaps, today

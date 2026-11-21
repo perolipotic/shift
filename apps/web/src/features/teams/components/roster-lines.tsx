@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 
+import { LoanTeamNote } from '@/components/loan-mark';
 import { Avatar } from '@/components/ui/avatar';
 import { rosterLineOf, rosterPositionMessageKey } from '@/features/members/utils/position';
 import { rosterRankMessageKey } from '@/features/members/utils/rank';
@@ -20,10 +21,16 @@ export function RosterLines({
   members,
   shown,
   positionShown,
+  loanTeams,
 }: {
   readonly members: readonly TeamRosterMember[];
   readonly shown: boolean;
   readonly positionShown: boolean;
+  /**
+   * STORY 18.5 (UX-DR59): the team a loan puts a member with today, by id
+   * (`useLoanTeams`), drawn as `trenutno u timu {tim}` under their line.
+   */
+  readonly loanTeams: ReadonlyMap<string, string>;
 }): ReactNode {
   if (members.length === 0) return null;
 
@@ -35,15 +42,23 @@ export function RosterLines({
         const position = rosterPositionMessageKey(member.position, positionShown);
         // WHICH SENTENCE is `rosterLineOf`'s decision, executed in a test.
         const line = rosterLineOf(member.name, rank, position, (key) => t(key));
+        const text = line.key === null ? line.text : t(line.key, line.values);
+        const loanTeam = loanTeams.get(member.id);
 
         return (
           <li key={member.id} className="flex min-w-0 items-center gap-3 text-base">
             {/* EMPTY for a name with no letter, so the names stay aligned. */}
             <Avatar>{initials}</Avatar>
             {/* TEXT, never a colour or an icon: rank and position are words. */}
-            <span className="min-w-0 break-words">
-              {line.key === null ? line.text : t(line.key, line.values)}
-            </span>
+            {/* STORY 18.5: the loan line only for a member on loan today; otherwise the line as before. */}
+            {loanTeam === undefined ? (
+              <span className="min-w-0 break-words">{text}</span>
+            ) : (
+              <span className="grid min-w-0 gap-0.5">
+                <span className="min-w-0 break-words">{text}</span>
+                <LoanTeamNote team={loanTeam} />
+              </span>
+            )}
           </li>
         );
       })}

@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
 
+import { LoanTeamNote } from '@/components/loan-mark';
 import { SortControl } from '@/components/sort-control';
 import { SORT_DIRECTION_GLYPHS } from '@/components/sort-glyphs';
 import { Button } from '@/components/ui/button';
@@ -29,6 +30,7 @@ import {
   sortDirectionIndicatorOf,
   sortIndicatorOf,
   sortStateOf,
+  TEAM_COLUMN,
 } from '@/features/members/services/list';
 
 /** How many skeleton rows stand in for the list while it loads. Enough to show
@@ -60,7 +62,7 @@ const SKELETON_ROWS = [0, 1, 2, 3, 4];
  * currently sorted, so a screen reader reports a control that is not there.
  */
 export function MemberTable({ list }: { readonly list: MemberList }): ReactNode {
-  const { sort, pressColumn, unanswered, loading, narrowed, today } = list;
+  const { sort, pressColumn, unanswered, loading, narrowed, today, loanTeams } = list;
   const isPhone = usePhone();
 
   return unanswered && !loading ? null : (
@@ -162,6 +164,7 @@ export function MemberTable({ list }: { readonly list: MemberList }): ReactNode 
                     {MEMBER_COLUMNS.map((column) => (
                       <TableCell key={column.key} className={cellClassNameOf(column)}>
                         <CellView cell={column.cell(member, today)} />
+                        {column.key === TEAM_COLUMN ? <LoanTeamNote team={loanTeams.get(member.id) ?? null} /> : null}
                       </TableCell>
                     ))}
                     <TableCell className="text-right">

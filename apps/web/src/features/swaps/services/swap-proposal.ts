@@ -1,8 +1,8 @@
 import {
   activeOn,
   adjacentMonth,
+  effectiveTeamOn,
   memberScheduleOfMonth,
-  membershipOn,
   monthOf,
   type CollisionResolution,
 } from '@shift/domain';
@@ -271,7 +271,8 @@ export function swapColleaguesOf(snapshot: CalendarSnapshot, given: DayDetail): 
         id: member.id,
         name: member.name,
         fireRank: member.fireRank,
-        position: membershipOn(member.memberships, given.isoDate)?.position ?? null,
+        // Story 18.5: their position where they are that day — none on a loan team.
+        position: effectiveTeamOn(member, given.isoDate)?.position ?? null,
         blocked: applied.ok ? null : applied.code,
       });
     }

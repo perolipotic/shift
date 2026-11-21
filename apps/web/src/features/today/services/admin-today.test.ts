@@ -710,6 +710,24 @@ describe('Odsutnost danas', () => {
     ).toBe('Od sutra: Dora Dorić (Smjena A), 02.10.–09.10.');
   });
 
+  it('names the team a lent absentee is with that day (story 18.5): the loan team, today and tomorrow', () => {
+    const rows = [leaveOf('leave-ana', ANA, '2026-09-28', '2026-10-04'), leaveOf('leave-dora', DORA, '2026-10-02', '2026-10-09')];
+    const lent = {
+      ...pilot,
+      members: pilot.members.map((member) =>
+        member.id === ANA
+          ? { ...member, loans: [{ id: 'loan-ana', teamId: 'pilot-smjena-c', from: '2026-10-01', to: '2026-10-01' }] }
+          : member.id === DORA
+            ? { ...member, loans: [{ id: 'loan-dora', teamId: 'pilot-smjena-d', from: '2026-10-02', to: '2026-10-02' }] }
+            : member,
+      ),
+    } as CalendarSnapshot;
+    const { absences } = viewOf(lent, rows);
+
+    expect(absences.today.map((one) => one.teamName)).toEqual(['Smjena C']);
+    expect(absences.tomorrow.map((one) => one.teamName)).toEqual(['Smjena D']);
+  });
+
   it('states a one-day absence as its one date, never 01.10.–01.10.', () => {
     const rows = [leaveOf('leave-ana', ANA, TODAY, TODAY), leaveOf('leave-dora', DORA, '2026-10-02', '2026-10-02')];
     const { absences } = viewOf(pilot, rows);
