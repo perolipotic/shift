@@ -34,7 +34,10 @@ digest_of() {
   local ref="$1" out err
   err="$(mktemp)"
   if ! out="$(docker buildx imagetools inspect --format '{{json .Manifest}}' "$ref" 2> "$err")"; then
-    if grep -qiE 'not found|manifest unknown|name unknown' "$err"; then
+    # A network failure can also say "not found" (a host that does not
+    # resolve): it is an error, never "absent".
+    if grep -qiE 'not found|manifest unknown|name unknown' "$err" \
+      && ! grep -qiE 'no such host|host not found|dial tcp|lookup |i/o timeout|connection refused|tls:' "$err"; then
       rm -f "$err"
       return 0
     fi

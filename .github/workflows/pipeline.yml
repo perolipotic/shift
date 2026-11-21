@@ -142,7 +142,9 @@ jobs:
             echo ""
             echo "- environments \`staging\` and \`production\`, both restricted to the \`main\` branch, production with a required reviewer"
             echo "- on EACH environment, secrets \`SUPABASE_DB_PASSWORD\`, \`COOLIFY_API_TOKEN\`, \`TS_OAUTH_CLIENT_ID\`, \`TS_OAUTH_SECRET\` and variables \`APP_ORIGINS\`, \`SUPABASE_API_URL\`, \`SUPABASE_PUBLISHABLE_KEY\`, \`VAPID_PUBLIC_KEY\`, \`DB_HOST\`, \`DB_PORT\`, \`COOLIFY_API_URL\`, \`COOLIFY_WEB_UUID\`, \`COOLIFY_FUNCTIONS_UUID\`"
-            echo "- each environment's stack stood up in Coolify (story 20.5), pulling \`shift-web:<environment>\` and \`shift-functions:<environment>\` from GHCR"
+            echo "- each environment's stack stood up in Coolify (story 20.5), pulling \`shift-web:<environment>\` and \`shift-functions:<environment>\` from GHCR with a \`read:packages\`-only credential on the server"
+            echo "- the tailnet ACL: \`tag:ci\` reaches the Postgres ports and the Coolify API only; the OAuth client creates \`tag:ci\` keys only"
+            echo "- before a production release with migrations: a backup in Coolify, then the production variable \`PRE_MIGRATION_BACKUP_AT\` (DEPLOY.md §8.2)"
             echo "- no deploy credential as a repository secret; no runtime secret in GitHub at all (they live in Coolify)"
           } >> "$GITHUB_STEP_SUMMARY"
 

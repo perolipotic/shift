@@ -1458,17 +1458,20 @@ migration is applied for a release whose images would be refused.
 3. **The bundle check** (`scripts/ci/check-bundle.mjs`): no `sb_secret_` key,
    no JWT whose `role` is not `anon`, no Resend key, and not the private half
    of this environment's VAPID public key. GitHub holds none of the stack's
-   runtime secrets any more, so the check refuses their shapes, not their
-   values. Then every `*.map` is deleted.
+   runtime secrets any more, so the check refuses these shapes, not values:
+   a secret with no recognisable shape (the invoke secret, the JWT signing
+   secret, the Postgres password) is not looked for, and stays out of the
+   bundle because no `VITE_*` carries it. Then every `*.map` is deleted.
 4. **Build `shift-web` and probe it offline** with the same probe as the
    `web-image` job (`scripts/ci/probe-web-image.sh`, §9.7), against this
    build's `_headers`.
 5. **`shift-functions`.** Staging builds it and probes it offline
    (`scripts/ci/probe-functions-image.sh`, §9.6), unless GHCR already holds
    the probed build of the same sources (`:src-<hash>` of `deploy/functions`,
-   both functions and `.dockerignore`), which is reused, so a release that
-   changes only the SPA never restarts the stack. Production never rebuilds
-   it: it deploys the digest staging deployed in the same run.
+   both functions, `.dockerignore` and the probe), which is reused, so a
+   release that changes only the SPA never restarts the stack. Production
+   never rebuilds it: it deploys the digest staging deployed in the same run,
+   and fails if none was handed over.
 6. **Push to GHCR** (`scripts/ci/registry.sh push`), logged in with the job's
    own `GITHUB_TOKEN` on stdin: `ghcr.io/<owner>/shift-functions:<sha>` and
    `:src-<hash>`, and `ghcr.io/<owner>/shift-web:<environment>-<sha>`.
@@ -1507,16 +1510,20 @@ migration is applied for a release whose images would be refused.
     Postgres reports a start time after the request, which shows the restart
     ran; which digest the functions container then runs is not visible from
     the runner (story 20.5 checks it on the host). If the digest equals the
-    last one verified here (`:<environment>-live`), nothing restarts. If the
-    step fails after moving the channel tag, it puts the tag back on the
-    digest it named before, so a later unrelated restart never brings up an
-    unverified image. `psql` and a connection are checked before the
-    migration, with a 10-second connect timeout. The logic is
-    `scripts/ci/deploy-images.sh`.
-11. **The `notify` probe**: a POST to `$SUPABASE_API_URL/functions/v1/notify`
-    with no token must answer `401 {"code":"INVOKE_SECRET_REFUSED"}`, retried
-    for up to five minutes while the stack starts. Then `:<environment>-live`
-    records the digest.
+    last one verified here (`:<environment>-live`) and the channel tag names
+    it too, nothing restarts. `psql` and a connection are checked before the
+    migration, and every database step has a 10-second connect timeout. The
+    logic is `scripts/ci/deploy-images.sh`.
+11. **The `notify` probe**, in the same step: a POST to
+    `$SUPABASE_API_URL/functions/v1/notify` with no token must answer
+    `401 {"code":"INVOKE_SECRET_REFUSED"}`, retried for up to five minutes
+    while the stack starts. Only then does `:<environment>-live` record the
+    digest. **If anything in steps 10–11 fails** after the channel tag was
+    moved, the tag is put back on the digest it named before, so a later
+    restart brings the verified image back. The stack may already run the new
+    one (the restart may have happened): the job's warning says so, and
+    §8.7 is the way back. On an environment's first deploy there is nothing
+    to put back, and the job says that instead.
 12. **Deploy `shift-web`**, after the migration and the functions (§5.2c):
     `registry.sh point` moves `ghcr.io/<owner>/shift-web:<environment>` to the
     probed digest, `POST /api/v1/deploy?uuid=<uuid>&force=false`
@@ -1528,11 +1535,15 @@ migration is applied for a release whose images would be refused.
     `Cache-Control: no-cache` (it keeps polling while the old container still
     answers with the old headers). A failure puts the channel tag back.
     Traefik must add no security header of its own (no Coolify header
-    middleware on this resource): a second value would fail the check.
-13. The run summary names both images by digest, failed runs included; the
-    job's outputs give the smoke jobs the app origin and the API URL. The
-    worst case of the waits (restart, probe, origin) is about 25 minutes, so
-    the deploy jobs' timeout is 45.
+    middleware on this resource): a second value would fail the check. As
+    for the functions, the container may already be the new one when the
+    check fails: redeploy (§8.7) to return to the restored tag.
+13. The run summary names both images by digest, failed runs included (a
+    failed run's digests are not a rollback target); the job's outputs give
+    the smoke jobs the app origin and the API URL. The waits are bounded by
+    wall clock (restart 10 minutes, probe 5, origin 10, each plus one last
+    try), about 26 minutes at worst, so with the builds the deploy jobs'
+    timeout is 45.
 
 The pipeline uses no `supabase link`, `config push`, `secrets set`,
 `functions deploy` or `wrangler`, and holds no Supabase account token, no
@@ -1587,15 +1598,28 @@ environment's own; staging and production never share one (H-8).
 | `SUPABASE_API_URL` | variable | the stack's public API origin, Kong's domain: `https://api.staging.<domain>` or `https://api.<domain>` |
 | `SUPABASE_PUBLISHABLE_KEY` | variable | the stack's publishable key, `sb_publishable_` + Coolify's `SERVICE_PASSWORD_64_PUBLISHABLEKEY` (§9.2). Public by design: it is inlined into the bundle |
 | `VAPID_PUBLIC_KEY` | variable | the stack's Web Push public key (87 characters), the same value as its `VAPID_PUBLIC_KEY` in Coolify |
-| `DB_HOST` | variable | the server's tailnet host, where `tailscale serve` publishes the stack's Postgres: its MagicDNS name (`<name>` or `<name>.<tailnet>.ts.net`) or Tailscale address. A public host name is refused: the database password goes to it |
+| `DB_HOST` | variable | the server's tailnet host, where `tailscale serve` publishes the stack's Postgres: its full MagicDNS name (`<name>.<tailnet>.ts.net`) or Tailscale address (Tailscale's CGNAT range). A public host name or a bare label is refused: the database password goes to it, and a bare label could be answered by the runner's own DNS |
 | `DB_PORT` | variable | that environment's Postgres port on the tailnet |
-| `COOLIFY_API_URL` | variable | Coolify's API origin **on the tailnet**, `http://<tailnet name>:<port>` (plain http is accepted for a tailnet name only) |
+| `COOLIFY_API_URL` | variable | Coolify's API origin **on the tailnet**, `http://<name>.<tailnet>.ts.net:<port>` or a Tailscale address (plain http is accepted for a tailnet host only) |
 | `COOLIFY_WEB_UUID` | variable | the `shift-web` application's uuid in Coolify |
 | `COOLIFY_FUNCTIONS_UUID` | variable | the Supabase stack's (service's) uuid in Coolify |
 
 **5. The tailnet ACL** (the founder's): `tag:ci` may reach the two Postgres
 ports and the Coolify API port on the server, and nothing else; the OAuth
 client may create keys for `tag:ci` only. Keys it creates are ephemeral.
+
+What this does NOT separate (accepted until 20.9): both environments join as
+the same `tag:ci`, so a staging job can reach production's Postgres port (it
+still needs production's password, which only the approved production job
+holds), and a Coolify API token is scoped to a team, not a project, so
+staging's deploy-only token could queue a deploy or restart of a production
+resource. Such a call can only redeploy what production's channel tags name,
+and only the approved production job moves those; it is still a restart the
+production reviewer did not approve. Per-environment tags
+(`tag:ci-staging`, `tag:ci-production`) and per-environment Coolify teams
+are the fix, owned by 20.9. The Tailscale action passes the OAuth secret to
+`tailscale up` as an argument on the (single-use) runner; it never reaches
+the log.
 
 **6. Production migrations: the backup before them** (H-12;
 `PRE_MIGRATION_BACKUP_AT`, a `production` Environment variable). When a

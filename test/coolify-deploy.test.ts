@@ -78,7 +78,7 @@ describe('require-config: the self-hosted configuration set (story 20.6)', () =>
     SUPABASE_API_URL: 'https://api.example.org',
     DB_HOST: 'host-name.example.ts.net',
     DB_PORT: '5432',
-    COOLIFY_API_URL: 'http://host-name:8000',
+    COOLIFY_API_URL: 'http://host-name.example.ts.net:8000',
     COOLIFY_WEB_UUID: 'abcdefgh0123456789xyzabc',
     COOLIFY_API_TOKEN: `7|${repeat('t', 48)}`,
     TS_OAUTH_SECRET: `tskey-client-${repeat('c', 20)}-${repeat('d', 20)}`,
@@ -88,7 +88,7 @@ describe('require-config: the self-hosted configuration set (story 20.6)', () =>
 
   it('accepts the shapes it should', () => {
     expect(reasons(good)).toEqual([]);
-    expect(reasons({ ...good, COOLIFY_API_URL: 'https://host-name.example.ts.net', DB_HOST: 'host-name' })).toEqual([]);
+    expect(reasons({ ...good, COOLIFY_API_URL: 'https://host-name.example.ts.net', DB_HOST: '100.101.102.103' })).toEqual([]);
   });
 
   it('refuses the slips a paste makes, naming each item and never its value', () => {
@@ -114,11 +114,15 @@ describe('require-config: the self-hosted configuration set (story 20.6)', () =>
     expect(found.join('\n')).not.toContain(repeat('t', 48));
     // The superuser password goes to DB_HOST: a public name is refused, and
     // so is any host but a tailnet one for Coolify's token, over https too.
-    for (const host of ['db.example.org', 'localhost', 'Host-Name']) {
+    // A bare label is refused too: the runner's own search domain could
+    // answer it if MagicDNS does not. So is an address outside 100.64.0.0/10
+    // or with an octet above 255.
+    for (const host of ['db.example.org', 'localhost', 'Host-Name', 'host-name', 'ts.net', '100.64.999.1', '100.128.0.1']) {
       expect(reasons({ ...good, DB_HOST: host }), host).toHaveLength(1);
     }
     expect(reasons({ ...good, COOLIFY_API_URL: 'https://coolify.example.org' })).toHaveLength(1);
     expect(reasons({ ...good, COOLIFY_API_URL: 'http://localhost:8000' })).toHaveLength(1);
+    expect(reasons({ ...good, COOLIFY_API_URL: 'http://host-name:8000' })).toHaveLength(1);
     expect(reasons({ ...good, SUPABASE_API_URL: 'http://api.example.org' })).toHaveLength(1);
     expect(reasons({ ...good, DB_PORT: '0' })).toHaveLength(1);
   });
@@ -410,9 +414,10 @@ const digestC = `sha256:${repeat('c', 64)}`;
 mkdirSync(bin, { recursive: true });
 // docker: `push` reports $PUSH_DIGEST and records it for the tag; `imagetools
 // inspect` answers from the record ("not found" for an unknown tag or digest;
-// $REGISTRY_ERROR makes every read fail another way); `imagetools create`
+// $REGISTRY_ERROR makes every read fail another way, with $REGISTRY_ERROR_TEXT;
+// $MISSING_SAYS replaces "not found"); `imagetools create`
 // copies the source's digest to the new tag unless $CREATE_DIGEST says
-// otherwise; anything else (a build) is refused.
+// otherwise; a build exits $BUILD_STATUS (0); anything else is refused.
 writeFileSync(
   join(bin, 'docker'),
   [
@@ -421,15 +426,16 @@ writeFileSync(
     'lookup() { grep -F "$1 " "$STATE" 2> /dev/null | tail -n 1 | cut -d" " -f2; }',
     'case "$1 $2 $3" in',
     '  "tag "*) exit 0 ;;',
+    '  "build "*) exit "${BUILD_STATUS:-0}" ;;',
     '  "push "*) echo "$2 $PUSH_DIGEST" >> "$STATE"; echo "latest: digest: $PUSH_DIGEST size: 1234" ;;',
     '  "buildx imagetools inspect")',
-    '    [ -z "${REGISTRY_ERROR:-}" ] || { echo "ERROR: unauthorized: authentication required" >&2; exit 1; }',
+    '    [ -z "${REGISTRY_ERROR:-}" ] || { echo "ERROR: ${REGISTRY_ERROR_TEXT:-unauthorized: authentication required}" >&2; exit 1; }',
     '    ref="${!#}"',
     '    case "$ref" in',
     '      *@sha256:*) d="${ref#*@}"; grep -qF " $d" "$STATE" 2> /dev/null || d="" ;;',
     '      *) d="$(lookup "$ref")" ;;',
     '    esac',
-    '    [ -n "$d" ] || { echo "ERROR: $ref: not found" >&2; exit 1; }',
+    '    [ -n "$d" ] || { echo "ERROR: $ref: ${MISSING_SAYS:-not found}" >&2; exit 1; }',
     '    printf \'{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"%s","size":1}\\n\' "$d" ;;',
     '  "buildx imagetools create")',
     '    src="${!#}"; tag=""',
@@ -496,6 +502,12 @@ describe('registry.sh: what is pushed and pointed at is the probed digest', () =
     const failed = registry(fake.env, ['digest', `${repository}:staging`], { REGISTRY_ERROR: '1' });
     expect(failed.status).toBe(1);
     expect(failed.stderr).toContain('cannot read');
+    // A network failure that happens to say "not found" is still a failure.
+    const network = registry(fake.env, ['digest', `${repository}:staging`], {
+      REGISTRY_ERROR: '1',
+      REGISTRY_ERROR_TEXT: 'failed to do request: dial tcp: lookup ghcr.io: no such host (host not found)',
+    });
+    expect(network.status).toBe(1);
   });
 
   it('points a channel tag at a digest as a carbon copy, and verifies it', () => {
@@ -541,18 +553,29 @@ function deployImages(args: readonly string[], env: Record<string, string>) {
   });
 }
 
-/** A fake Coolify API on the loopback: answers each request with `reply` and records it. */
-async function fakeCoolify(reply: readonly [number, unknown]) {
+/**
+ * A fake Coolify API on the loopback: answers each API request with `reply`
+ * and records it. It also stands in for the stack's public API: `notify`
+ * answers `notifyReply` (by default the refusal the probe expects).
+ */
+async function fakeCoolify(
+  reply: readonly [number, unknown],
+  notifyReply: readonly [number, unknown] = [401, { code: 'INVOKE_SECRET_REFUSED' }],
+) {
   const calls: string[] = [];
+  const notifyCalls: string[] = [];
   const server = createServer((request, response) => {
-    calls.push(`${request.method ?? ''} ${request.url ?? ''} ${request.headers.authorization ?? ''}`);
-    response.writeHead(reply[0], { 'content-type': 'application/json' }).end(JSON.stringify(reply[1]));
+    const line = `${request.method ?? ''} ${request.url ?? ''} ${request.headers.authorization ?? ''}`;
+    const answer = request.url === '/functions/v1/notify' ? notifyReply : reply;
+    (request.url === '/functions/v1/notify' ? notifyCalls : calls).push(line);
+    response.writeHead(answer[0], { 'content-type': 'application/json' }).end(JSON.stringify(answer[1]));
   });
   await new Promise<void>((ready) => server.listen(0, '127.0.0.1', ready));
   const { port } = server.address() as AddressInfo;
   return {
     url: `http://127.0.0.1:${String(port)}`,
     calls,
+    notifyCalls,
     close: () => {
       server.close();
     },
@@ -579,7 +602,10 @@ describe('deploy-images.sh: the image half of a deploy (story 20.6)', () => {
     COOLIFY_API_URL: url,
     COOLIFY_API_TOKEN: token,
     STACK_UUID: stack,
-    DB_URL: 'postgresql://postgres@host-name:1/postgres',
+    SUPABASE_URL: url,
+    NOTIFY_TRIES: '2',
+    NOTIFY_INTERVAL: '0',
+    DB_URL: 'postgresql://postgres@host-name.example.ts.net:1/postgres',
   });
 
   it('hashes every source the functions Dockerfile copies, and the probe that passed it', () => {
@@ -609,6 +635,55 @@ describe('deploy-images.sh: the image half of a deploy (story 20.6)', () => {
     expect(fake.log()).not.toMatch(/^build /m);
   });
 
+  it('refuses to build in production: it deploys the digest staging handed over, or nothing', async () => {
+    const fake = stand('production-empty');
+    const result = await deployImages(['functions-image'], { ...fake.env, REPOSITORY: repository, ENVIRONMENT: 'production' });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('none was handed over');
+    expect(fake.log()).toBe('');
+  });
+
+  it('builds, probes, then pushes under the commit and source tags when no probed build of these sources exists', async () => {
+    const probe = join(scratch, 'probe-stand-in.sh');
+    writeFileSync(probe, '#!/usr/bin/env bash\necho "probe $1" >> "$DOCKER_LOG"\nexit "${PROBE_STATUS:-0}"\n');
+    // GHCR may say "denied" rather than "not found" before the package exists:
+    // the reuse lookup then builds rather than failing the first deploy.
+    for (const missingSays of ['not found', 'denied: permission_denied']) {
+      const fake = stand(`build-${missingSays.slice(0, 6)}`);
+      const result = await deployImages(['functions-image'], {
+        ...fake.env,
+        REPOSITORY: repository,
+        ENVIRONMENT: 'staging',
+        FUNCTIONS_PROBE: probe,
+        PUSH_DIGEST: digestC,
+        MISSING_SAYS: missingSays,
+      });
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout.trim()).toBe(`${repository}@${digestC}`);
+      const log = fake.log();
+      const build = log.indexOf('build --pull -f deploy/functions/Dockerfile');
+      const probed = log.indexOf(`probe shift-functions:deploy-${repeat('9', 40)}`);
+      const push = log.indexOf('push ');
+      expect(build).toBeGreaterThan(-1);
+      expect(probed).toBeGreaterThan(build);
+      expect(push).toBeGreaterThan(probed);
+      expect(fake.digest(`${repository}:${repeat('9', 40)}`)).toBe(digestC);
+      expect(fake.digest(`${repository}:src-${sourceHash()}`)).toBe(digestC);
+    }
+
+    const failing = stand('build-probe-fails');
+    const refused = await deployImages(['functions-image'], {
+      ...failing.env,
+      REPOSITORY: repository,
+      ENVIRONMENT: 'staging',
+      FUNCTIONS_PROBE: probe,
+      PUSH_DIGEST: digestC,
+      PROBE_STATUS: '1',
+    });
+    expect(refused.status).not.toBe(0);
+    expect(failing.log()).not.toMatch(/^push /m);
+  });
+
   it('reuses the probed build of the same sources without building, and tags it with this commit', async () => {
     const fake = stand('reuse', [`${repository}:src-${sourceHash()} ${digestB}`]);
     const result = await deployImages(['functions-image'], { ...fake.env, REPOSITORY: repository });
@@ -619,13 +694,32 @@ describe('deploy-images.sh: the image half of a deploy (story 20.6)', () => {
   });
 
   it('does not restart the stack when the digest is the one last verified', async () => {
-    const fake = stand('unchanged', [`${repository}:staging-live ${digestA}`]);
+    const fake = stand('unchanged', [`${repository}:staging-live ${digestA}`, `${repository}:staging ${digestA}`]);
     const coolify = await fakeCoolify(restarting);
     try {
       const result = await deployImages(['deploy-functions'], functionsEnv(fake, coolify.url, `${repository}@${digestA}`));
       expect(result.status, result.stderr).toBe(0);
       expect(result.stdout).toContain('unchanged');
       expect(coolify.calls).toEqual([]);
+      // The notify probe still runs.
+      expect(coolify.notifyCalls).toEqual(['POST /functions/v1/notify ']);
+    } finally {
+      coolify.close();
+    }
+  });
+
+  it('restarts when the channel tag names another digest than the verified one, even if -live matches', async () => {
+    const fake = stand('channel-drift', [`${repository}:staging-live ${digestA}`, `${repository}:staging ${digestB}`]);
+    const coolify = await fakeCoolify(restarting);
+    try {
+      const result = await deployImages(['deploy-functions'], {
+        ...functionsEnv(fake, coolify.url, `${repository}@${digestA}`),
+        RESTARTED: 't',
+      });
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).not.toContain('unchanged');
+      expect(coolify.calls).toEqual([`POST /api/v1/services/${stack}/restart?latest=true Bearer ${token}`]);
+      expect(fake.digest(`${repository}:staging`)).toBe(digestA);
     } finally {
       coolify.close();
     }
@@ -649,6 +743,9 @@ describe('deploy-images.sh: the image half of a deploy (story 20.6)', () => {
       expect(log.indexOf('select now()')).toBeGreaterThan(-1);
       expect(log.indexOf('select now()')).toBeLessThan(log.indexOf('imagetools create'));
       expect(fake.digest(`${repository}:staging`)).toBe(digestB);
+      // Probed, then recorded as verified: the very tag the skip reads.
+      expect(coolify.notifyCalls.length).toBeGreaterThan(0);
+      expect(fake.digest(`${repository}:staging-live`)).toBe(digestB);
     } finally {
       coolify.close();
     }
@@ -665,6 +762,61 @@ describe('deploy-images.sh: the image half of a deploy (story 20.6)', () => {
       expect(result.status).toBe(1);
       expect(result.stderr).toContain('did not restart in time');
       expect(fake.digest(`${repository}:staging`)).toBe(digestA);
+      expect(result.stderr).toContain('may already be the new image');
+    } finally {
+      coolify.close();
+    }
+  });
+
+  it('puts the channel tag back and records nothing as verified when notify fails after the restart', async () => {
+    const fake = stand('probe-fails', [
+      `${repository}:staging-live ${digestA}`,
+      `${repository}:staging ${digestA}`,
+      `${repository}:x ${digestB}`,
+    ]);
+    const coolify = await fakeCoolify(restarting, [502, { message: 'bad gateway' }]);
+    try {
+      const result = await deployImages(['deploy-functions'], {
+        ...functionsEnv(fake, coolify.url, `${repository}@${digestB}`),
+        RESTARTED: 't',
+      });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('expected 401 INVOKE_SECRET_REFUSED, last got 502');
+      expect(fake.digest(`${repository}:staging`)).toBe(digestA);
+      expect(fake.digest(`${repository}:staging-live`)).toBe(digestA);
+    } finally {
+      coolify.close();
+    }
+  });
+
+  it('says there is nothing to put back when a first deploy fails', async () => {
+    const fake = stand('first', [`${repository}:x ${digestB}`]);
+    const coolify = await fakeCoolify(restarting);
+    try {
+      const result = await deployImages(['deploy-functions'], {
+        ...functionsEnv(fake, coolify.url, `${repository}@${digestB}`),
+        RESTARTED: 'f',
+      });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('nothing to put back');
+    } finally {
+      coolify.close();
+    }
+  });
+
+  it('puts the channel tag back when the move itself is not verified', async () => {
+    const fake = stand('drift', [`${repository}:staging ${digestA}`, `${repository}:x ${digestB}`]);
+    const coolify = await fakeCoolify(restarting);
+    try {
+      const result = await deployImages(['deploy-functions'], {
+        ...functionsEnv(fake, coolify.url, `${repository}@${digestB}`),
+        CREATE_DIGEST: digestC,
+      });
+      expect(result.status).not.toBe(0);
+      expect(coolify.calls).toEqual([]);
+      // The restore is itself a move, which the stand-in also drifts: the
+      // failure to put it back is an error, never silent.
+      expect(result.stderr).toMatch(/putting .*:staging back on/);
     } finally {
       coolify.close();
     }
@@ -870,8 +1022,6 @@ describe('the pipeline deploys through Coolify (story 20.6)', () => {
       'supabase db push',
       'supabase migration list (local and remote must agree)',
       'Deploy shift-functions',
-      'notify refuses a caller without the invoke secret',
-      'Record the verified functions digest',
       'Deploy shift-web',
       'Log out of GHCR',
       'Summary',
@@ -905,9 +1055,12 @@ describe('the pipeline deploys through Coolify (story 20.6)', () => {
     expect(runOf('shift-functions (build and probe, or reuse)')).toContain(
       'bash scripts/ci/deploy-images.sh functions-image',
     );
+    // The build branch runs above with a stand-in probe; in CI it is the real
+    // one, which nothing in the action or the pipeline replaces.
     expect(read('scripts', 'ci', 'deploy-images.sh')).toContain(
-      'bash "$here/probe-functions-image.sh" "shift-functions:deploy-$GITHUB_SHA"',
+      'FUNCTIONS_PROBE="${FUNCTIONS_PROBE:-$here/probe-functions-image.sh}"',
     );
+    expect(`${actionText}\n${pipelineText}`).not.toContain('FUNCTIONS_PROBE');
     expect(runOf('Push shift-web (probed, not yet deployed)')).toContain(
       'bash scripts/ci/registry.sh push "shift-web:deploy-$GITHUB_SHA"',
     );
@@ -918,7 +1071,12 @@ describe('the pipeline deploys through Coolify (story 20.6)', () => {
     );
     // psql and a connection are checked before the migration, never after it.
     expect(runOf('supabase migration list (before)')).toContain('command -v psql');
-    for (const name of ['supabase migration list (before)', 'Deploy shift-functions']) {
+    for (const name of [
+      'supabase migration list (before)',
+      'supabase db push',
+      'supabase migration list (local and remote must agree)',
+      'Deploy shift-functions',
+    ]) {
       expect(steps.find((step) => step.name === name)?.env?.['PGCONNECT_TIMEOUT'], name).toBe('10');
     }
     expect(steps.find((step) => step.name === 'Summary')?.if).toBe('always()');

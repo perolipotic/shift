@@ -80,10 +80,13 @@ outputs:
     description: The stack's public API origin.
     value: ${{ steps.origin.outputs.supabase-url }}
   functions-image:
-    description: The shift-functions reference by digest now running in this environment.
+    description: >-
+      The shift-functions reference by digest this run deployed (verified by
+      the notify probe when the job succeeded; which digest the container runs
+      is checked on the host, not from here).
     value: ${{ steps.functions-image.outputs.ref }}
   web-image:
-    description: The shift-web reference by digest now running in this environment.
+    description: The shift-web reference by digest this run pushed (live when the job succeeded).
     value: ${{ steps.web-push.outputs.ref }}
 
 runs:
@@ -161,6 +164,7 @@ runs:
       id: functions-image
       shell: bash
       env:
+        ENVIRONMENT: ${{ inputs.environment }}
         GIVEN: ${{ inputs.functions-image }}
         REPOSITORY: ${{ steps.origin.outputs.functions-repository }}
       run: |
@@ -228,6 +232,7 @@ runs:
       shell: bash
       env:
         PGPASSWORD: ${{ inputs.db-password }}
+        PGCONNECT_TIMEOUT: '10'
         DB_HOST: ${{ inputs.db-host }}
         DB_PORT: ${{ inputs.db-port }}
       run: pnpm exec supabase db push --db-url "postgresql://postgres@$DB_HOST:$DB_PORT/postgres" --yes
@@ -236,6 +241,7 @@ runs:
       shell: bash
       env:
         PGPASSWORD: ${{ inputs.db-password }}
+        PGCONNECT_TIMEOUT: '10'
         DB_HOST: ${{ inputs.db-host }}
         DB_PORT: ${{ inputs.db-port }}
       run: |
@@ -249,10 +255,14 @@ runs:
     # digest and the stack is restarted with its images pulled again: the
     # whole stack, Postgres included (about a minute; DEPLOY.md §8.1). The
     # restart happens only when the digest differs from the last one verified
-    # here (`<environment>-live`). The restart is shown by Postgres having
-    # started after the request, then by the notify probe; which digest the
-    # container runs is not visible from here (20.5 checks it on the host).
-    # The logic is scripts/ci/deploy-images.sh, tested with stand-ins.
+    # here (`<environment>-live`) and the channel tag names it too. The
+    # restart is shown by Postgres having started after the request, then by
+    # the notify probe (DEPLOY.md §6: a 401 INVOKE_SECRET_REFUSED to a caller
+    # without the invoke secret; no token is sent, so it can never trigger a
+    # send); only then is the digest recorded as `<environment>-live`. Which
+    # digest the container runs is not visible from here (20.5 checks it on
+    # the host). The logic, the probe included, is scripts/ci/deploy-images.sh,
+    # tested with stand-ins: a failure anywhere in it puts the channel tag back.
     - name: Deploy shift-functions
       shell: bash
       env:
@@ -261,39 +271,12 @@ runs:
         COOLIFY_API_URL: ${{ inputs.coolify-api-url }}
         COOLIFY_API_TOKEN: ${{ inputs.coolify-api-token }}
         STACK_UUID: ${{ inputs.coolify-functions-uuid }}
+        SUPABASE_URL: ${{ steps.origin.outputs.supabase-url }}
         PGPASSWORD: ${{ inputs.db-password }}
         PGCONNECT_TIMEOUT: '10'
         DB_HOST: ${{ inputs.db-host }}
         DB_PORT: ${{ inputs.db-port }}
       run: DB_URL="postgresql://postgres@$DB_HOST:$DB_PORT/postgres" bash scripts/ci/deploy-images.sh deploy-functions
-
-    # DEPLOY.md §6: notify is live behind Kong and the router, and refuses a
-    # caller without the invoke secret before it claims anything. Sends no
-    # token, so it can never trigger a send. Retried while the stack starts.
-    - name: notify refuses a caller without the invoke secret
-      shell: bash
-      env:
-        SUPABASE_URL: ${{ steps.origin.outputs.supabase-url }}
-      run: |
-        status=''
-        for _ in $(seq 1 30); do
-          body="$(curl -sS -m 15 -o - -w '\n%{http_code}' -X POST "$SUPABASE_URL/functions/v1/notify" || true)"
-          status="${body##*$'\n'}"
-          if [ "$status" = "401" ] && grep -q '"code":"INVOKE_SECRET_REFUSED"' <<< "${body%$'\n'*}"; then
-            echo "notify answers 401 INVOKE_SECRET_REFUSED"
-            exit 0
-          fi
-          sleep 10
-        done
-        echo "::error title=notify probe::expected 401 INVOKE_SECRET_REFUSED, last got ${status:-no answer}"
-        exit 1
-
-    - name: Record the verified functions digest
-      shell: bash
-      env:
-        ENVIRONMENT: ${{ inputs.environment }}
-        REF: ${{ steps.functions-image.outputs.ref }}
-      run: bash scripts/ci/registry.sh point "$REF" "$ENVIRONMENT-live"
 
     # ------------------------------------------------------------------- web
     # After the migration and the functions (§5.2c, and from 0045 the outbox
@@ -336,8 +319,8 @@ runs:
           echo "- app: ${APP_ORIGIN}"
           echo "- API: ${SUPABASE_URL}"
           echo "- commit: ${GITHUB_SHA}"
-          echo "- shift-web: \`${WEB_REF:-not pushed}\`"
-          echo "- shift-functions: \`${FUNCTIONS_REF:-not resolved}\`"
+          echo "- shift-web (pushed): \`${WEB_REF:-not pushed}\`"
+          echo "- shift-functions (resolved): \`${FUNCTIONS_REF:-not resolved}\`"
           echo ""
-          echo "To roll back to this release later: DEPLOY.md §8.7, with the two digests above."
+          echo "Live only if this job succeeded. To roll back to a successful release later: DEPLOY.md §8.7, with its two digests."
         } >> "$GITHUB_STEP_SUMMARY"

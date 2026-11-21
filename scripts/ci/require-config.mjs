@@ -53,11 +53,12 @@ export const FORMATS = {
   // Story 20.6: the self-hosted stack's configuration (DEPLOY.md §8.2).
   // The stack's public API origin (Kong's domain), `https://api.<domain>`.
   'https-origin': (value) => (isOrigin(value, ['https:']) ? null : 'is not a bare https origin (https://host, no path)'),
-  // Postgres's host on the tailnet (H-5): a MagicDNS name or a Tailscale
-  // address, never a public name, a URL, a user@ or a port. The superuser
-  // password goes to it.
+  // Postgres's host on the tailnet (H-5): a full MagicDNS name or a Tailscale
+  // address, never a public name, a bare label (the runner's own DNS search
+  // domain could answer it), a URL, a user@ or a port. The superuser password
+  // goes to it.
   'tailnet-host': (value) =>
-    isTailnetHost(value) ? null : 'is not a tailnet host (a MagicDNS name, <name>.<tailnet>.ts.net, or 100.64.0.0/10)',
+    isTailnetHost(value) ? null : 'is not a tailnet host (<name>.<tailnet>.ts.net, or an address in 100.64.0.0/10)',
   port: (value) =>
     /^[1-9][0-9]{0,4}$/.test(value) && Number(value) <= 65535 ? null : 'is not a TCP port (1–65535)',
   // Coolify's API is reached over the tailnet only (H-2).
@@ -86,16 +87,17 @@ function isOrigin(value, protocols) {
 }
 
 /**
- * A tailnet host: one MagicDNS label (not `localhost`), a name under
- * `.ts.net`, or a Tailscale address (100.64.0.0/10).
+ * A tailnet host: a full MagicDNS name (`<name>.<tailnet>.ts.net`) or a
+ * Tailscale address (100.64.0.0/10). A bare label is refused: if MagicDNS is
+ * not answering, the runner's own search domain would resolve it.
  *
  * @param {string} host
  */
 function isTailnetHost(host) {
   const label = '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?';
-  if (new RegExp(`^${label}$`).test(host)) return host !== 'localhost';
-  if (new RegExp(`^(?:${label}\\.)+ts\\.net$`).test(host)) return true;
-  return /^100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.([0-9]{1,3})\.([0-9]{1,3})$/.test(host);
+  if (new RegExp(`^${label}\\.(?:${label}\\.)*ts\\.net$`).test(host)) return true;
+  const octet = '(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])';
+  return new RegExp(`^100\\.(?:6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\\.${octet}\\.${octet}$`).test(host);
 }
 
 /**
@@ -105,7 +107,7 @@ function isTailnetHost(host) {
  * @returns {string | null}
  */
 function tailnetUrlProblem(value) {
-  const shape = 'is not a Coolify API origin on the tailnet (http://<tailnet name>:<port>, lowercase, no path)';
+  const shape = 'is not a Coolify API origin on the tailnet (http://<name>.<tailnet>.ts.net:<port>, lowercase, no path)';
   if (!isOrigin(value, ['http:', 'https:'])) return shape;
   return isTailnetHost(new URL(value).hostname) ? null : `${shape}: the host is not a tailnet host`;
 }

@@ -5,7 +5,7 @@ created: '2026-11-21'
 status: 'in-review'
 baseline_revision: '5dfb1def7b47d6927afaf7d30524647a23488f94'
 baseline_commit: '5dfb1def7b47d6927afaf7d30524647a23488f94'
-review_loop_iteration: 1
+review_loop_iteration: 2
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-20-context.md'
   - '{project-root}/_bmad-output/planning-artifacts/sprint-change-proposal-2026-11-20-self-hosting.md'
@@ -89,9 +89,36 @@ context:
 - Given the scripts, when `test/coolify-deploy.test.ts` runs, then every matrix row above holds with fakes.
 
 
+### Review Findings (2026-11-21, CI/CD security review)
+
+Layers: blind, edge-case, verification-gap, acceptance, epic-AC (artifact renderer: no generated file), plus a security pass by the review lead over the focus list: secrets to PR/fork jobs, logs, argv, summaries and bundles; per-job `permissions`; environment protection; `${{ }}` injection; the Tailscale node; registry tag moves and rollback; the backup gate; the DB password; half-deployed failure paths; the Coolify calls against v4.7.6 (re-read upstream: `routes/api.php`, `DeployController`, `ServicesController::action_restart`, `ApplicationDeploymentJob`); inertness when unconfigured. Held, no change: no `pull_request_target`; deploy jobs gated on push + `main` + `DEPLOY_ENABLED` + Environment, `packages: write` on those two alone; every action pinned (`tailscale/github-action@064b105…` is the v4.4.0 tag, checked); no `${{ }}` in any `run:` (commit messages and branch names reach none); `PGPASSWORD` and `--password-stdin` only; Coolify routes and abilities, `latest` and the "queued" message match v4.7.6; a `sha256-` application tag is read as a digest (`deploy_dockerimage_buildpack`), so §8.7's rollback holds.
+
+- [x] [Review][Patch] A failed `notify` probe left the new digest on `:<environment>` (the probe ran after the trap's script exited 0) [.github/actions/deploy/action.yml, scripts/ci/deploy-images.sh] — the probe and the `-live` record moved into `deploy-images.sh deploy-functions`; any failure there puts the tag back. Tested.
+- [x] [Review][Patch] The restart was skipped on `-live` alone, though the channel tag could name another digest [scripts/ci/deploy-images.sh] — skips only when `-live` and `:<environment>` both name REF. Tested.
+- [x] [Review][Patch] The restore was armed after the move (an unverified move stayed), silent on a first deploy, and a failed restore was a warning [scripts/ci/deploy-images.sh] — armed before the move; "nothing to put back" and a failed restore are `::error`; the warning says the container may already run the new image (§8.7). Tested.
+- [x] [Review][Patch] Production rebuilt the functions if staging's hand-over was empty [scripts/ci/deploy-images.sh] — fails instead. Tested.
+- [x] [Review][Patch] The build branch (build → probe → push with `src-<hash>`) ran in no test; the `-live` write and read were never tied [test/coolify-deploy.test.ts] — executed with a stand-in probe (`FUNCTIONS_PROBE`, set by nothing in CI, which a test holds); a failing probe pushes nothing.
+- [x] [Review][Patch] GHCR may refuse to read a package that does not exist yet, failing the first deploy at the reuse lookup [scripts/ci/deploy-images.sh] — that lookup rebuilds on an error (costs a build only). Tested with a "denied" answer.
+- [x] [Review][Patch] `digest_of` read a network error mentioning "not found" as absent [scripts/ci/registry.sh] — network errors excluded. Tested.
+- [x] [Review][Patch] `tailnet-host` accepted a bare label (the runner's search domain could answer it, and the superuser password goes there) and octets above 255 [scripts/ci/require-config.mjs] — `.ts.net` FQDN or 100.64.0.0/10 with bounded octets only; DEPLOY §8.2 says so. Tested.
+- [x] [Review][Patch] `db push` and the second `migration list` had no `PGCONNECT_TIMEOUT` [.github/actions/deploy/action.yml] — added, held by the test.
+- [x] [Review][Patch] The waits' documented bounds were wrong (psql and curl time per try) [scripts/ci/deploy-images.sh, DEPLOY.md §8.1] — restart and probe also bounded by wall clock (600 s, 300 s); the docs give the true worst case.
+- [x] [Review][Patch] The spine and both env templates still called the commit tags immutable and rolled back by tag [ARCHITECTURE-SPINE.md AD-14, deploy/coolify/supabase/*.env.example] — by digest, as §8.7.
+- [x] [Review][Patch] The outputs and the summary called the digests "now running" and a rollback handle on a failed run [.github/actions/deploy/action.yml] — reworded.
+- [x] [Review][Patch] The "Deploys skipped" summary left out the GHCR read credential, the tailnet ACL and `PRE_MIGRATION_BACKUP_AT` [.github/workflows/pipeline.yml] — listed.
+- [x] [Review][Patch] DEPLOY §8.1 implied the bundle check covers every runtime secret [DEPLOY.md] — says which shapes it looks for and which it cannot.
+- [x] [Review][Defer] One `tag:ci` and team-scoped Coolify tokens span both environments (staging can reach production's Postgres port and queue a production restart) — residual documented in DEPLOY §8.2 step 5; fix owned by 20.9.
+- [x] [Review][Defer] The Tailscale action passes the OAuth secret as an argument (third-party, masked, single-use runner) — workload identity considered in 20.9.
+- [x] [Review][Defer] A stale `PRE_MIGRATION_BACKUP_AT` lets a second migrating release through within 24 h — 20.7's automated backup.
+- [x] [Review][Defer] `restart?latest=true` re-pulls every tag-pinned image of the stack — digest pinning, 20.9.
+- [x] [Review][Defer] `APP_ORIGINS` accepts several origins where the functions' CORS answers one — 20.5.
+
+Dismissed (6): the web deploy should redeploy the old image on a failed live check (an automatic second deploy in a failure path can mask the cause; the job says how to return, §8.7); Coolify's deployment status is never read (`GET /deployments/{uuid}` needs `read`, against H-9); `wait-for-web` could pass on an old container whose `index.html` matches (every app change renames hashed assets, and the headers are checked too); padded or hex VAPID keys (padded is matched; the public key's shape is enforced by `require-config`); the `sha256-` rollback is unverified (read in v4.7.6's source); the deferred-work entries' wording.
+
 ## Spec Change Log
 
 - **Review loop 1 (2026-11-21), patches only.** Four reviewers (blind, edge-case, verification-gap, epic-AC). Triggering findings and amendments: the AC1a deviation understated that both images are pushed before the tailnet (frozen wording corrected under the founder's standing delegation, no change of intent); the action's restart/reuse branches ran in no test, so they moved into `scripts/ci/deploy-images.sh` and are executed against stand-ins for docker, psql and Coolify; the source hash is held to cover every `COPY` of the functions Dockerfile and the probe script; `registry.sh digest` no longer reads a registry error as "absent"; a failed deploy puts the channel tag back; `psql`, a connection and `PGCONNECT_TIMEOUT` are checked before the migration; the restart call must say "queued"; the summary runs on failure; job timeout 45 min; `DB_HOST` and the Coolify URL must be tailnet hosts; the unused `timestamp` format dropped; `wait-for-web` keeps polling through a stale-header window and joins a repeated header; `check-bundle` ignores a role-less JWT and finds an unquoted or padded VAPID key; rollback is by digest (tags are not immutable); DEPLOY §8.4 says the manual path promotes only published digests. Known-bad states avoided: a skipped restart on an unreadable registry, an unverified image behind a channel tag after a failed deploy, a migration applied before discovering `psql` is missing. KEEP: deploy-only token, channel tags moved to the probed digest, production deploys staging's functions digest, build/probe/check before any server contact.
+- **Review loop 2 (2026-11-21), CI/CD security review, patches only.** Five layers and a security pass (see Review Findings). Amendments: the `notify` probe and the `-live` record run inside `deploy-images.sh deploy-functions`, under the restore trap (the action loses two steps); the restart is skipped only when `-live` and the channel tag both name the digest; the restore is armed before the move and says when nothing can be put back; production refuses an empty hand-over; the reuse lookup rebuilds on a registry error; `tailnet-host` requires a `.ts.net` FQDN or a bounded 100.64.0.0/10 address; every database step has `PGCONNECT_TIMEOUT`; the waits are bounded by wall clock. Known-bad states avoided: an unverified functions digest behind the channel tag after a failed probe, a skipped restart while the stack may run another digest, a production build of its own, the superuser password sent to a host the runner's DNS resolved. KEEP: everything above; no change of intent.
 
 ## Design Notes
 
@@ -104,11 +131,11 @@ context:
 
 **Commands:**
 - `pnpm typecheck && pnpm lint` -- clean.
-- `pnpm exec vitest run test/resource-hygiene.test.ts test/self-hosted-stack.test.ts test/ci-scripts.test.ts test/functions-router.test.ts test/web-image.test.ts test/host-hardening.test.ts test/coolify-deploy.test.ts` -- green.
+- `pnpm exec vitest run test/resource-hygiene.test.ts test/self-hosted-stack.test.ts test/ci-scripts.test.ts test/functions-router.test.ts test/web-image.test.ts test/host-hardening.test.ts test/coolify-deploy.test.ts test/static-hosting.test.ts test/key-hygiene.test.ts` -- green (review loop 2: 2219 passed, 20 skipped).
 - `uvx actionlint` (with ShellCheck), `shellcheck -x scripts/ci/registry.sh scripts/ci/deploy-images.sh`, ShellCheck over every `run:` of the composite action -- clean.
 
 **Manual checks:**
-- `test/static-hosting.test.ts`, `test/key-hygiene.test.ts` and `test/notify-boundary.test.ts` are edited but NOT run locally (outside the allowed list; `notify-boundary` opens a database). Unverified until CI runs them.
+- `test/notify-boundary.test.ts` is edited but NOT run locally (it opens a database). Unverified until CI runs it. (`static-hosting` and `key-hygiene` ran in review loop 2.)
 - Nothing ran against GHCR, Tailscale or Coolify (no credentials exist); the Coolify calls are written from v4.7.6's source and are 20.5's first-enable check (`deferred-work.md`).
 
 ## Suggested Review Order
