@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 11-21-2026 18:00
+last_updated: 11-21-2026 20:00
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -660,8 +660,29 @@ development_status:
   #         17.1-17.3 (D-S6); each also waits on its story dependencies.
   #   AP2 = Architect pass 2 (AD-10, AD-12, AD-16, signup door), before 19.1;
   #         plus a security-review of 19.1-19.5 (and of 16.3-16.4) before production.
-  #   D-S1..D-S10 = proposal §6 founder decisions, NOT yet ratified (2026-11-20).
-  # Ready now: 16.2 (AP1 done 2026-11-21); D-S1–D-S10 ratified by the founder 2026-11-21.
+  #         DONE 2026-11-21 (branch docs/architect-pass-2-signup): AD-10 (org-less
+  #         accounts read nothing, proven from the catalog; suspension; the
+  #         before-user-created hook), AD-11, AD-12 (second identity kind: email
+  #         sign-in and recovery for the Founding Admin, one synthesized-address
+  #         predicate), AD-14 (no new function), AD-16 (admin-auth refuses renaming
+  #         an email identity; reset never sends email), AD-17 (GoTrue's own Resend
+  #         SMTP key) amended; AD-21 (signup door: three switches shut by default,
+  #         Kong/GoTrue limits, client IP chain), AD-22 (Kong auth allow-list, one
+  #         answer for signup/recover/resend), AD-23 (create_organization), AD-24
+  #         (onboarding over shipped surfaces, progress derived), AD-25
+  #         (housekeeping, operator suspend) added; checklist
+  #         architecture/architecture-shift-2026-09-02/SECURITY-REVIEW-EPIC-19.md.
+  #         GoTrue v2.196.0 checked against its source. AP2 no longer gates a story.
+  #         Unblocked by AP2: 19.1 (READY; its staging application waits 20.5).
+  #         Then 19.2 after 19.1, 19.3 after 19.2, 19.5 after 19.3; 19.4 after 19.3
+  #         AND the UX review with mockups (planned: bmad-ux, update intent, run
+  #         while 19.1-19.3 are built; mockups of /registracija, /potvrda,
+  #         /zaboravljena-lozinka, /postavljanje steps 1-7 at phone and desktop,
+  #         the Danas card and empty states; the founder accepts it). Production
+  #         opening stays D-S5: the security review (checklist section H), then
+  #         the founder's go.
+  #   D-S1..D-S10 = proposal §6 founder decisions, ratified at the defaults 2026-11-21.
+  # Ready now: 16.2 (AP1 done 2026-11-21) and 19.1 (AP2 done 2026-11-21); D-S1–D-S10 ratified by the founder 2026-11-21.
   epic-16: in-progress  # calendar feed and print (CAP-25); D-S1, D-S2, D-S8 ratified 2026-11-21
   16-1-the-month-prints: done  # #335
   16-2-the-domain-package-runs-on-the-server: backlog  # READY (AP1 done 2026-11-21)
@@ -684,12 +705,12 @@ development_status:
   18-5-loans-are-visible-wherever-rosters-are-read: done  # #332
   epic-18-retrospective: done
 
-  epic-19: backlog  # self-service signup (CAP-28); staging only, production opening is D-S5
-  19-1-the-signup-door-opens-safely-on-staging: backlog  # waits: AP2 (D-S ratified 2026-11-21)
-  19-2-a-stranger-creates-an-account: backlog  # waits: AP2 (D-S ratified 2026-11-21)
-  19-3-a-verified-account-creates-its-organization: backlog  # waits: AP2 (D-S ratified 2026-11-21)
-  19-4-the-onboarding-wizard-guides-setup-and-pre-fills-nothing: backlog  # waits: AP2, UX review with mockups (D-S ratified 2026-11-21)
-  19-5-abandoned-signups-are-cleaned-up-and-the-operator-keeps-cont: backlog  # waits: AP2 (D-S ratified 2026-11-21)
+  epic-19: backlog  # self-service signup (CAP-28); staging only; production opening is D-S5 (security review, then the founder's go)
+  19-1-the-signup-door-opens-safely-on-staging: backlog  # READY (AP2 done 2026-11-21, D-S ratified); its staging application waits 20.5
+  19-2-a-stranger-creates-an-account: backlog  # after 19.1 (AP2 done 2026-11-21)
+  19-3-a-verified-account-creates-its-organization: backlog  # after 19.2 (AP2 done 2026-11-21)
+  19-4-the-onboarding-wizard-guides-setup-and-pre-fills-nothing: backlog  # after 19.3; waits: UX review with mockups (AP2 done 2026-11-21)
+  19-5-abandoned-signups-are-cleaned-up-and-the-operator-keeps-cont: backlog  # after 19.3 (AP2 done 2026-11-21)
   epic-19-retrospective: optional
 
   # Self-hosting (Epic 20), added 2026-11-20 by

@@ -3141,6 +3141,8 @@ Added 2026-11-20 by `sprint-change-proposal-2026-11-20-v2-scope.md` (§5.6). Arc
 
 **Planning status (2026-11-20):** every story waits for Architect pass 2 and for the D-S decisions it names.
 
+**Planning status (2026-11-21, Architect pass 2 done):** the founder ratified D-S1–D-S10 at their defaults. AP2 amended AD-10, AD-11, AD-12, AD-14, AD-16 and AD-17, and added AD-21 to AD-25. Its security-review checklist is `architecture/architecture-shift-2026-09-02/SECURITY-REVIEW-EPIC-19.md`. 19.1 is ready; its staging application waits for 20.5. 19.2, 19.3 and 19.5 follow their dependencies. 19.4 also waits for the UX review with mockups. The "Blocked on: Architect pass 2, D-S…" lines below are cleared by this. **Governed by** now also reads AD-21 (the door), AD-22 (neutral answers), AD-23 (`create_organization`), AD-24 (onboarding) and AD-25 (housekeeping and suspension).
+
 ### Story 19.1: The signup door opens safely on staging
 
 As the operator,
@@ -3155,6 +3157,7 @@ So that strangers can be let in without reaching anything they should not.
 **When** this story ships
 **Then** `enable_signup` is on with email confirmations required, Auth email goes over SMTP through the existing Resend domain with Croatian templates from the locale resource (D-S4), and the hosted rate limits are set explicitly (D-S3); production is unchanged (D-S5)
 **And** the config comment that says there is no open signup is rewritten, and `test/supabase-scaffold.test.ts` changes in the same PR
+**And** (amended 2026-11-21, AP2) "hosted rate limits" means the self-hosted stack's limits as AD-21 lists them. Those are GoTrue's environment, Kong's per-IP `rate-limiting`, and Kong's trusted proxy with `GOTRUE_RATE_LIMIT_HEADER=X-Real-IP`, which closes the 20.1 client-IP deferral. They also include the three switches that are shut by default, the before-user-created hook, the auth entrypoint's refusal to run a half-built door, and Kong's `auth-v1-mail` neutral answers (AD-22)
 
 **Given** an authenticated, confirmed account with no `members` row
 **When** it reads or writes every table, every RPC, storage and all four Edge Functions
@@ -3238,6 +3241,7 @@ So that I reach a working schedule without help from Shift.
 **Given** `/postavljanje` after step 1
 **When** steps 2–7 render
 **Then** each embeds the shipped write path: Hour Bands, Teams, Shift Types, Rotation with the coverage preview, Members (credentials or invitation), done; there is no second implementation of any of them (D9, FR-96)
+**And** (amended 2026-11-21, AP2, AD-24) "invitation" is the shipped hand-off of admin-issued credentials; no email-invitation path is built. Progress is derived from the rows; only `organizations.onboarding_dismissed` is stored
 
 **Given** every step
 **When** it renders
@@ -3280,6 +3284,7 @@ So that open signup never becomes a liability I cannot manage.
 **Given** this story ships
 **When** it is merged
 **Then** DEPLOY.md carries the housekeeping cron job, the scripts, the runbook, and the production opening checklist for D-S5 (security review done, D-S3 limits verified on hosted config, founder go)
+**And** (amended 2026-11-21, AP2, AD-25) "hosted config" means the production stack's own configuration. The checklist is section H of `SECURITY-REVIEW-EPIC-19.md`, and suspension is `organizations.suspended`, which only the operator writes
 
 ---
 
