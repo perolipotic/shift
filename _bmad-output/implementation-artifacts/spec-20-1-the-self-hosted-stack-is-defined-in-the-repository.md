@@ -2,7 +2,7 @@
 title: 'Story 20.1: The self-hosted stack is defined in the repository'
 type: 'feature'
 created: '2026-11-20'
-status: 'in-review'
+status: 'done'
 baseline_revision: '6344faed04509441f55f6a85591c4e986b5daf02'
 baseline_commit: '6344faed04509441f55f6a85591c4e986b5daf02'
 review_loop_iteration: 0

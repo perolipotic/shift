@@ -927,9 +927,10 @@ export default [
     },
   },
 
-  // ------------------------------------------- Deno: the one Edge Function
+  // ------------------------------- Deno: the Edge Functions and their router
   {
-    files: ['supabase/functions/**/*.ts'],
+    // and the functions router that runs them on the self-hosted stack (20.2)
+    files: ['supabase/functions/**/*.ts', 'deploy/functions/**/*.ts'],
     languageOptions: {
       globals: {
         ...globals.worker,

@@ -349,7 +349,14 @@ services:
       - KONG_PLUGINS=request-transformer,cors,key-auth,acl,post-function
       - KONG_NGINX_PROXY_PROXY_BUFFER_SIZE=160k
       - KONG_NGINX_PROXY_PROXY_BUFFERS=64 160k
-      - 'KONG_PROXY_ACCESS_LOG=/dev/stdout combined'
+      # NFR-27 (story 20.2): the access log is written in `shift_redacted`, from
+      # the included file below: no query string on any route (Storage's
+      # signed `?token=`), nothing after a function's name (v2's
+      # `calendar-feed/<token>`), no referer.
+      - KONG_NGINX_HTTP_INCLUDE=/home/kong/log-redaction.conf
+      - 'KONG_PROXY_ACCESS_LOG=/dev/stdout shift_redacted'
+      # The one origin the functions route answers CORS for (story 20.2).
+      - SHIFT_APP_URL=${SHIFT_APP_URL:?}
       # Both role JWTs and both opaque keys; NOT the signing secret.
       - SUPABASE_ANON_KEY=${SERVICE_SUPABASEANON_KEY}
       - SUPABASE_SERVICE_KEY=${SERVICE_SUPABASESERVICE_KEY}
@@ -399,6 +406,18 @@ services:
           if [ "$SUPABASE_ANON_KEY" = "$SUPABASE_SERVICE_KEY" ]; then
             echo "kong-entrypoint: the anon and service_role JWTs are the same value" >&2; exit 1
           fi
+          # The app's origin, spliced into the functions route's CORS `origins`
+          # (YAML): an http(s) origin with no path, and only the characters Kong
+          # 2.8's cors plugin compares as a plain string, never as a regex.
+          case "$SHIFT_APP_URL" in
+            http'://'?*|https'://'?*) ;;  # quoted: no literal scheme-and-host here
+            *) echo "kong-entrypoint: SHIFT_APP_URL is not an http(s) origin" >&2; exit 1 ;;
+          esac
+          case "${SHIFT_APP_URL#*://}" in */*) echo "kong-entrypoint: SHIFT_APP_URL carries a path" >&2; exit 1 ;; esac
+          # A browser's Origin is lower-case and starts with the host.
+          case "${SHIFT_APP_URL#*://}" in [a-z0-9]*) ;; *) echo "kong-entrypoint: SHIFT_APP_URL has no host" >&2; exit 1 ;; esac
+          case "$SHIFT_APP_URL" in *[A-Z]*) echo "kong-entrypoint: SHIFT_APP_URL is not lower-case" >&2; exit 1 ;; esac
+          case "$SHIFT_APP_URL" in *[!A-Za-z0-9.:/-]*) echo "kong-entrypoint: SHIFT_APP_URL holds a character outside [A-Za-z0-9.:/-]" >&2; exit 1 ;; esac
 
           # A caller's own `Authorization` passes through unless it is
           # `Bearer sb_…`; otherwise `apikey` decides: the secret key becomes the
@@ -422,6 +441,26 @@ services:
           }' /home/kong/temp.yml > "$KONG_DECLARATIVE_CONFIG"
 
           exec /docker-entrypoint.sh kong docker-start
+      - type: bind
+        source: ./volumes/api/log-redaction.conf
+        target: /home/kong/log-redaction.conf
+        content: |
+          # Included in nginx's http block (KONG_NGINX_HTTP_INCLUDE). NFR-27:
+          # a token is never written to a log in full. The first rule that
+          # matches wins:
+          #   1. a function's path: its name, then `[redacted]` for whatever
+          #      follows it (a sub-path, an encoded character, a query);
+          #   2. any other request with a query string: the path, then
+          #      `?[redacted]` (Storage's signed URLs carry `?token=`);
+          #   3. anything else, as sent.
+          # (Variables are written `$name`, never in braces: braces are what
+          # Coolify reads as its own variables.)
+          map $request_uri $shift_logged_uri {
+            "~*^(?<shift_function>[^?]*?/functions/v1/[a-z0-9_-]*)[^a-z0-9_-]" "$shift_function[redacted]";
+            "~^(?<shift_path>[^?]*)[?]" "$shift_path?[redacted]";
+            default $request_uri;
+          }
+          log_format shift_redacted '$remote_addr - [$time_local] "$request_method $shift_logged_uri $server_protocol" $status $body_bytes_sent $request_time "$http_user_agent"';
       - type: bind
         source: ./volumes/api/kong.yml
         target: /home/kong/temp.yml
@@ -616,8 +655,12 @@ services:
                           kong.service.request.clear_header("authorization")
                         end
 
-            ## Edge Functions. Story 20.2's router decides which function needs
-            ## a session; Kong only forwards.
+            ## Edge Functions. The router (story 20.2, `deploy/functions/main`)
+            ## decides which function exists and which needs a session; Kong
+            ## forwards with no key-auth (the cron job's invoke secret, and from
+            ## 16.4 a feed token, are not keys). CORS for the app's origin only:
+            ## Kong answers the preflight, and every reply, the router's own
+            ## refusals included, names that origin and nothing wider.
             - name: functions-v1
               url: http://supabase-edge-functions:9000/
               read_timeout: 150000
@@ -628,6 +671,15 @@ services:
                     - /functions/v1/
               plugins:
                 - name: cors
+                  config:
+                    origins:
+                      - $SHIFT_APP_URL
+                    methods:
+                      - GET
+                      - POST
+                      - OPTIONS
+                    credentials: false
+                    max_age: 3600
 
   supabase-auth:
     image: supabase/gotrue:v2.196.0
@@ -829,12 +881,12 @@ services:
       - NEXT_PUBLIC_ENABLE_LOGS=false
 
   supabase-edge-functions:
-    # Story 20.2 replaces this with the `shift-functions` image (this base,
-    # with the router and the functions baked in) and its healthcheck. Until
-    # then the runtime has no main service at /home/deno/functions/main, so it
-    # exits at start and restarts; the `echo` healthcheck below proves nothing
-    # (the image ships no HTTP probe tool for certain).
-    image: supabase/edge-runtime:v1.74.3
+    # `shift-functions` (story 20.2): CLI 2.116.0's `supabase/edge-runtime:v1.74.3`
+    # with the router (`deploy/functions/main`) as its main service and each
+    # function bundled in at build time, built by CI from
+    # `deploy/functions/Dockerfile`. The reference is per environment
+    # (`<registry>/shift-functions:<sha>`) and holds no secret.
+    image: ${SHIFT_FUNCTIONS_IMAGE:?}
     restart: unless-stopped
     mem_limit: ${FUNCTIONS_MEM_LIMIT:-448m}
     cpus: ${FUNCTIONS_CPUS:-0.15}
@@ -846,12 +898,21 @@ services:
     depends_on:
       supabase-kong:
         condition: service_healthy
+      supabase-auth:
+        condition: service_healthy
+    # The main service listens: a TCP connect with the image's own bash (it
+    # ships no HTTP client). Not an HTTP probe: the router answers no health
+    # path, only its functions (anything else is 404).
     healthcheck:
-      test: ['CMD', 'echo', 'Edge Functions is healthy']
+      test: ['CMD', 'bash', '-c', 'exec 3<>/dev/tcp/127.0.0.1/9000']
       timeout: 5s
       interval: 5s
       retries: 3
     environment:
+      # The router's only own variable: GoTrue, asked directly on the stack's
+      # network for every `verify_jwt` function (Kong's auth route would need
+      # an apikey, and the router holds none).
+      - SHIFT_AUTH_URL=http://supabase-auth:9999
       # The internal gateway: a function's own calls never leave the host.
       - SUPABASE_URL=http://supabase-kong:8000
       # The functions' own names (AD-17). The opaque keys are the same values

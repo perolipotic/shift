@@ -1693,7 +1693,7 @@ in Coolify; a change is a reviewed PR here, then pasted again.
 | `supabase-storage` | `supabase/storage-api:v1.70.3` | Storage, **file** backend on the named volume `supabase-storage-data` (logos only; uploads capped at the logo bucket's 2 MiB from `0005`) | the stack's network |
 | `supabase-meta` | `supabase/postgres-meta:v0.98.0` | Studio's database API | the stack's network |
 | `supabase-studio` | `supabase/studio:2026.08.17-sha-0c1da8f` | the dashboard | `127.0.0.1:<loopback-port>` only, over the tailnet. **No domain, no Kong route** |
-| `supabase-edge-functions` | `supabase/edge-runtime:v1.74.3` | the functions' runtime | through Kong's `/functions/v1/` |
+| `supabase-edge-functions` | `shift-functions` (story 20.2): `supabase/edge-runtime:v1.74.3` with the router and both functions baked in, built by CI | the router, `admin-auth` and `notify` (§9.6) | through Kong's `/functions/v1/` |
 
 **Studio has no login of its own.** Whoever reaches its port is an
 administrator of the database. Its only protection is H-5: it publishes on the
@@ -1707,12 +1707,9 @@ MinIO and imgproxy (the file backend is enough for logos, and no image is
 transformed). Kong has no Studio catch-all, no `/pg/` route (pg-meta through
 the public gateway), no MCP and no SAML routes.
 
-**Until story 20.2** the `edge-runtime` service has no code: there is no main
-service at `/home/deno/functions/main`, so the runtime exits at start and
-Docker restarts it (every service is `restart: unless-stopped`). Its healthcheck is the template's `echo`, which proves
-nothing (the image ships no HTTP probe tool for certain); 20.2 replaces the
-image with `shift-functions` (this base with the router and both functions
-baked in) and replaces the healthcheck.
+**The functions** run the `shift-functions` image (story 20.2), whose base is
+the edge-runtime the CLI pins; its router, the image and the gateway's part are
+§9.6.
 
 **Limits and logs.** Every service has a `mem_limit` and `cpus`, defaulting to
 staging's value, so a variable left out fails low. Staging's is strictly below
@@ -1724,10 +1721,11 @@ kept, so a noisy container cannot fill the disk.
 
 **Inputs.** `staging.env.example` and `production.env.example` list every
 variable the operator sets in Coolify, with placeholders only (`<domain>`,
-`<loopback-port>`): the app origin, two loopback ports, the sender, the limits,
+`<loopback-port>`, `<registry>`, `<sha>`): the app origin, the functions
+image (§9.6), two loopback ports, the sender, the limits,
 and the values no generator can make: `RESEND_API_KEY`, `VAPID_PUBLIC_KEY`,
 `VAPID_PRIVATE_KEY` and `VAPID_SUBJECT`. The compose refuses to start without
-any of `SHIFT_APP_URL`, the two loopback ports, `NOTIFY_EMAIL_FROM` and those
+any of `SHIFT_APP_URL`, `SHIFT_FUNCTIONS_IMAGE`, the two loopback ports, `NOTIFY_EMAIL_FROM` and those
 four (`${NAME:?}`), and none has a default. Never write a real value,
 an address or a port into either file: the repository is public.
 
@@ -1878,6 +1876,10 @@ teardown() {
 trap teardown EXIT
 set -eo pipefail   # a failed step stops here; the trap still tears down
 
+# 1a. The functions image, built locally from this checkout (story 20.2);
+#     nothing is pushed.
+docker build -f deploy/functions/Dockerfile -t shift-functions:rehearsal .
+
 # 1. Coolify writes each `content:` bind to its `source` file; plain
 #    `docker compose` does not accept `content:` or `exclude_from_hc`. Render
 #    them, and publish Kong on the loopback for the rehearsal only.
@@ -1922,6 +1924,7 @@ JWT=$(openssl rand -hex 32)
   sed -e "s/^POSTGRES_LOOPBACK_PORT=.*/POSTGRES_LOOPBACK_PORT=$PG_PORT/" \
       -e "s/^STUDIO_LOOPBACK_PORT=.*/STUDIO_LOOPBACK_PORT=$STUDIO_PORT/" \
       -e 's#^SHIFT_APP_URL=.*#SHIFT_APP_URL=http://127.0.0.1:5173#' \
+      -e 's#^SHIFT_FUNCTIONS_IMAGE=.*#SHIFT_FUNCTIONS_IMAGE=shift-functions:rehearsal#' \
       -e 's/<domain>/rehearsal.invalid/g' \
       -e 's/^RESEND_API_KEY=$/RESEND_API_KEY=re_rehearsal/' \
       deploy/coolify/supabase/staging.env.example
@@ -1953,11 +1956,10 @@ $DC exec -T supabase-db psql -U postgres -At -c "
 # -> pg_cron,pg_net,supabase_vault / t / at least 1 / organization-logos   ✅
 
 # 5. Order rule 2: GoTrue restarted now that the hook's function exists, then
-#    Kong, until both are healthy. (`edge-runtime` has no code until 20.2, so
-#    it is not waited for.)
+#    Kong and the rest, the functions included, until all are healthy.
 $DC restart supabase-auth
 $DC up -d --wait supabase-auth supabase-kong
-$DC up -d
+$DC up -d --wait
 
 # 6. Provision an admin (§7.2's settings) in the rehearsal database. The
 #    password goes in on stdin as a psql variable, never on a command line.
@@ -2017,11 +2019,131 @@ curl -s -o /dev/null -w '%{http_code}\n' "$API/rest/v1/organizations" -H "apikey
 curl -s -o /dev/null -w '%{http_code}\n' "$API/"
 # -> 404         ✅ no catch-all, no Studio
 
+# 7b. The functions, through Kong and the router (story 20.2, §9.6).
+curl -s -w ' %{http_code}\n' -X POST "$API/functions/v1/notify"
+# -> {"code":"INVOKE_SECRET_REFUSED"} 401   ✅ notify answers, no token
+curl -s -w ' %{http_code}\n' -X POST "$API/functions/v1/admin-auth"
+# -> {"code":"AUTHORIZATION_MISSING"} 401   ✅ refused by the router, before the handler
+curl -s -w ' %{http_code}\n' "$API/functions/v1/nope"
+# -> {"code":"FUNCTION_NOT_FOUND"} 404      ✅ only config.toml's functions exist
+# An admin's session, accepted by GoTrue, reaches the handler. The token goes
+# into a private config file, never onto a command line.
+TOKEN=$(printf '{"email":"%s","password":"%s"}' "$ADMIN_EMAIL" "$ADMIN_PW" \
+  | curl -s -X POST "$API/auth/v1/token?grant_type=password" -H "apikey: $PUB" \
+      -H 'content-type: application/json' --data-binary @- \
+  | node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => console.log(JSON.parse(s).access_token));')
+TOKEN_CFG="$R/token.cfg"   # inside the scratch directory: the trap removes it
+printf 'header = "Authorization: Bearer %s"\n' "$TOKEN" > "$TOKEN_CFG"
+curl -s -w ' %{http_code}\n' -K "$TOKEN_CFG" -X POST "$API/functions/v1/admin-auth" \
+  -H "Origin: $SHIFT_APP_URL" -H 'content-type: application/json' -d '{"operation":"resetPassword"}'
+# -> {"code":"PAYLOAD_INVALID"} 400         ✅
+rm -f "$TOKEN_CFG"; unset TOKEN
+curl -s -D - -o /dev/null -X OPTIONS "$API/functions/v1/admin-auth" -H "Origin: $SHIFT_APP_URL" \
+  -H 'Access-Control-Request-Method: POST' | grep -i '^access-control-allow-origin'
+# -> Access-Control-Allow-Origin: <the app's origin>   ✅ and never `*`
+# The cron path: Vault's notify_url is the INTERNAL gateway, never the public
+# origin. The invoke secret goes in on stdin as a psql variable.
+{
+  printf '\\set secret %s\n' "$SERVICE_PASSWORD_64_NOTIFYINVOKE"
+  echo "select vault.create_secret('http://supabase-kong:8000/functions/v1/notify', 'notify_url');"
+  echo "select vault.create_secret(:'secret', 'notify_invoke_secret');"
+} | $DC exec -T supabase-db psql -U postgres -v ON_ERROR_STOP=1 -q -f -
+sleep 75   # the notify job runs every minute
+$DC exec -T supabase-db psql -U postgres -At -c "
+  select status_code from net._http_response order by id desc limit 1;
+  select count(*) from notification_outbox where sent_at is null and failed_at is null;"
+# -> 200 / 0     ✅ the job reached notify on the stack's network; the outbox is drained
+$DC logs supabase-kong | grep -c 'functions/v1/notify'
+# -> at least 1  ✅ the job's calls are in Kong's log
+MARK="probe$(openssl rand -hex 8)"
+curl -s -o /dev/null "$API/functions/v1/notify/$MARK?token=$MARK"
+curl -s -o /dev/null "$API/storage/v1/object/sign/organization-logos/x.png?token=$MARK"
+sleep 1; $DC logs supabase-kong | grep -c "$MARK" || true   # grep exits 1 on no match
+# -> 0           ✅ neither a function's sub-path nor a query reaches the log (§9.6)
+
 # 8. The trap tears down on exit, volumes included. Nothing of the development
 #    stack was touched.
 ```
 
-Record the result in story 20.5's spec. If the `sb_` probe fails (401 or
+Record the result in story 20.5's spec, including step 7b (story 20.2's
+end-to-end probe, `deferred-work.md`). If the `sb_` probe fails (401 or
 `invalid JWT` with the opaque keys while the JWT keys work), stop: AD-17's other
 branch (the stack's `anon`/`service_role` JWTs, with every shape guard decoding
 the role claim) is then a founder-visible change, not a fix in place.
+
+### 9.6 The functions: router, image and gateway (story 20.2)
+
+On a hosted project the platform's gateway decided which function needed a
+session. On our stack that is the **router**, `deploy/functions/main`: the
+`edge-runtime` main service, platform plumbing and not an Edge Function
+(AD-14 as amended). It:
+
+- serves only the functions in its table, which a test holds equal to
+  `supabase/config.toml`'s `[functions.*]` tables (`admin-auth`, `notify`).
+  Any other name, an empty path or a percent-encoded name is
+  `404 {"code":"FUNCTION_NOT_FOUND"}`;
+- for a function with `verify_jwt = true` (`admin-auth`), asks GoTrue
+  `GET /user` with the caller's bearer token, **directly on the stack's
+  network** (`SHIFT_AUTH_URL=http://supabase-auth:9999`). Not through Kong:
+  Kong's auth route needs an `apikey`, and the router holds none. GoTrue's 200
+  forwards the request untouched; no bearer token, or GoTrue refusing it, is
+  `401 {"code":"AUTHORIZATION_MISSING"}` (the code the SPA already turns into
+  "sign in again"); GoTrue down, slow (5 s), rate-limiting or unaddressed is
+  `503 {"code":"AUTHORIZATION_UNVERIFIED"}`, never a pass and never a
+  sign-out. **Stricter than the hosted gateway**, which let any validly
+  signed JWT through, the anon key's included: here only a live user
+  session passes, so a key alone never reaches `admin-auth` (whose every
+  operation needs a session anyway);
+- gives each function's worker only the variables its own handler reads:
+  `admin-auth` never sees the Resend key, the invoke secret or the VAPID
+  private key; `notify` never sees the publishable key;
+- holds no key and no JWT signing secret, reads no table, and logs fixed codes
+  only (`router: AUTHORIZATION_UNVERIFIED`, `router: FUNCTION_UNAVAILABLE`),
+  never a URL, a header or a token.
+
+`notify` (`verify_jwt = false`) is forwarded as it came: its own invoke secret
+check answers the cron job, and anyone else gets
+`401 {"code":"INVOKE_SECRET_REFUSED"}`. A function added later (v2's
+`calendar-feed`, `remind`) is added to `config.toml`, the router's table and
+the Dockerfile together, or the test fails.
+
+**The image.** `deploy/functions/Dockerfile` builds `shift-functions` from the
+repository root: base `supabase/edge-runtime:v1.74.3` (the CLI's pin), the
+router, both functions, and each function **bundled at build time** into an
+eszip with its npm dependencies inside (`edge-runtime bundle`). The router
+starts each worker from its bundle with remote modules disallowed, so a cold
+start reads a local file and fetches nothing; a missing bundle is
+`500 {"code":"FUNCTION_UNAVAILABLE"}`, never a fall-back to source. The image
+holds code only: no key, no secret, no address. CI's `functions-image` job
+builds it on every run (never pushed: pushing and tagging by commit is story
+20.6) and probes it on an `--internal` network beside a stand-in GoTrue
+(`scripts/ci/probe-functions-image.sh`): both workers start from their
+bundles, and `admin-auth`'s handler answers `PAYLOAD_INVALID`.
+The compose names it per environment as `SHIFT_FUNCTIONS_IMAGE`
+(`<registry>/shift-functions:<sha>`). Its healthcheck is a TCP connect to the
+main service with the image's own `bash`; the router answers no health path.
+
+**CORS.** Kong's functions route answers CORS for `SHIFT_APP_URL` alone (no
+credentials, `GET`/`POST`/`OPTIONS`): Kong answers the preflight itself, and
+every reply, the router's refusals included, names the app's origin, never
+`*`. Kong refuses to start if `SHIFT_APP_URL` is not a plain `http(s)` origin
+with no path (a character outside `[A-Za-z0-9.:/-]` would make Kong read it as
+a regex). The handlers keep their own `SHIFT_ALLOWED_ORIGINS` check.
+
+**The access log (NFR-27).** Kong writes its access log in the format
+`shift_redacted`, from the `log-redaction.conf` bind
+(`KONG_NGINX_HTTP_INCLUDE`): a function's path is logged up to its name and
+`[redacted]` after it (so `calendar-feed/<token>` never reaches a log), every
+other query string is `?[redacted]` (Storage's signed URLs carry `?token=`),
+and the referer is not logged. Two logs this file cannot redact, both checked
+on the host by story 20.5 (`deferred-work.md`):
+
+- **Kong's error log** prints the request line when an upstream fails
+  (`request: "GET /functions/v1/...`). Read it only on the host; before 16.4
+  ships `calendar-feed`, decide whether to raise Kong's log level or accept it.
+- **Traefik's access log** is Coolify's proxy, off by default. Keep it off; if
+  it is ever turned on, drop the request path and query fields.
+
+**Cron.** Vault's `notify_url` on a self-hosted stack is
+`http://supabase-kong:8000/functions/v1/notify`, the internal gateway: the
+scheduled call never leaves the host (§9.4, §9.5 step 7b).

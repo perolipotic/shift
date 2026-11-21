@@ -1,0 +1,12 @@
+# The build context of the images built from the repository root
+# (`deploy/functions/Dockerfile`, story 20.2). Each Dockerfile COPYs only what
+# it names; this keeps local secrets and bulk out of the context entirely.
+.git
+**/node_modules
+**/.env
+**/.env.*
+!**/.env.example
+**/.dev.vars
+_bmad
+_bmad-output
+.claude
