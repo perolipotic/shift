@@ -700,7 +700,8 @@ describe('every organization table carries row level security, and only its revi
               'leave_records', 'conflict_resolutions', 'leave_requests',
               'leave_request_decisions', 'notification_outbox', 'notification_settings',
               'push_subscriptions', 'swap_requests', 'swap_request_decisions',
-              'absence_types', 'leave_allowances', 'audit_events', 'team_loans'
+              'absence_types', 'leave_allowances', 'audit_events', 'team_loans',
+              'calendar_feed_tokens'
             )
           order by relname`,
       );
@@ -720,6 +721,8 @@ describe('every organization table carries row level security, and only its revi
         'absence_types',
         // STORY 14.1 (0061): the change history, an active admin's read alone.
         'audit_events',
+        // STORY 16.3 (0067): the feed tokens, on with no policy and no privilege.
+        'calendar_feed_tokens',
         'conflict_resolutions',
         'hour_bands',
         // STORY 13.3 (0055): the versions of a member's allowance.
@@ -2754,6 +2757,17 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // `private.signup_settings`, which no session role may, and counts
     // `auth.users` against `members`, on the access token hook's attributes.
     { name: 'before_user_created_hook', argumentCount: 1 },
+    // STORY 16.3 (0067). The feed tokens: no session holds a privilege on the
+    // table, so every read and write is one of these definers, the lookup
+    // (anon's) included; the status trigger and the hash-free audit recorder.
+    { name: 'create_calendar_feed_token', argumentCount: 0 },
+    { name: 'revoke_own_calendar_feed_token', argumentCount: 0 },
+    { name: 'revoke_member_calendar_feed_token', argumentCount: 1 },
+    { name: 'calendar_feed_status', argumentCount: 0 },
+    { name: 'member_calendar_feed_status', argumentCount: 1 },
+    { name: 'calendar_feed_inputs', argumentCount: 1 },
+    { name: 'revoke_calendar_feed_on_status_change', argumentCount: 0, schema: 'private' },
+    { name: 'record_calendar_feed_token_event', argumentCount: 0, schema: 'private' },
   ];
 
   it.skipIf(noDatabase).each(ACCESS_CONTROL_FUNCTIONS)(
@@ -2947,6 +2961,21 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'live_team_loans', argumentCount: 1, expected: [], schema: 'private' },
     { name: 'live_leave_records', argumentCount: 1, expected: [], schema: 'private' },
     { name: 'member_schedule_inputs', argumentCount: 3, expected: [], schema: 'private' },
+    // STORY 16.3 (0067). A member's own token and state, an admin's revoke and
+    // read, all `authenticated`; the lookup is `anon`'s alone (the feed holds
+    // the publishable key only, AD-17); the lock, the state shape, the status
+    // trigger and the recorder are nobody's.
+    { name: 'create_calendar_feed_token', argumentCount: 0, expected: ['authenticated'] },
+    { name: 'revoke_own_calendar_feed_token', argumentCount: 0, expected: ['authenticated'] },
+    { name: 'revoke_member_calendar_feed_token', argumentCount: 1, expected: ['authenticated'] },
+    { name: 'calendar_feed_status', argumentCount: 0, expected: ['authenticated'] },
+    { name: 'member_calendar_feed_status', argumentCount: 1, expected: ['authenticated'] },
+    { name: 'calendar_feed_inputs', argumentCount: 1, expected: ['anon'] },
+    { name: 'lock_calendar_feed_tokens', argumentCount: 1, expected: [], schema: 'private' },
+    { name: 'calendar_feed_state', argumentCount: 2, expected: [], schema: 'private' },
+    { name: 'calendar_feed_member_live', argumentCount: 2, expected: [], schema: 'private' },
+    { name: 'revoke_calendar_feed_on_status_change', argumentCount: 0, expected: [], schema: 'private' },
+    { name: 'record_calendar_feed_token_event', argumentCount: 0, expected: [], schema: 'private' },
     // STORY 18.3 (0063). The loan notification trigger, on 0043's terms.
     { name: 'notify_team_loan', argumentCount: 0, expected: [], schema: 'private' },
     // STORY 18.4 (0064). The loan team rule its definers and re-check call,
@@ -3027,6 +3056,11 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'live_roster_overrides', argumentCount: 1, schema: 'private' },
     { name: 'live_team_loans', argumentCount: 1, schema: 'private' },
     { name: 'live_leave_records', argumentCount: 1, schema: 'private' },
+    // STORY 16.3 (0067). The per-member lock and the state shape run as their
+    // caller, always a definer owned by the migration role.
+    { name: 'lock_calendar_feed_tokens', argumentCount: 1, schema: 'private' },
+    { name: 'calendar_feed_state', argumentCount: 2, schema: 'private' },
+    { name: 'calendar_feed_member_live', argumentCount: 2, schema: 'private' },
   ] as { name: string; argumentCount: number; schema?: string }[])('runs $name as the caller, with an empty search_path', async ({ name, argumentCount, schema }) => {
     // INVOKER, the opposite of the helper and the hook. They are reached from
     // the helper, the hook and the zero-admins function as the owner, and from

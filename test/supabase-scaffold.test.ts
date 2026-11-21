@@ -3557,6 +3557,23 @@ describe('the access-control migration', () => {
     team_loans: ['organization_id', 'id'],
   };
 
+  /**
+   * STORY 16.3 (0067, AD-11 as amended): a table audited by its OWN recorder,
+   * because one of its columns is a credential no audit row may hold. The two
+   * trigger statements exactly, as `auditCoverage` normalizes them.
+   */
+  const OWN_RECORDER_TRIGGERS: Readonly<Record<string, readonly [string, string]>> = {
+    calendar_feed_tokens: [
+      'create trigger calendar_feed_tokens_audit after insert or delete on public.calendar_feed_tokens for each row execute function private.record_calendar_feed_token_event()',
+      "create trigger calendar_feed_tokens_audit_update after update on public.calendar_feed_tokens for each row when ((pg_catalog.to_jsonb(old) - 'last_fetched_at') is distinct from (pg_catalog.to_jsonb(new) - 'last_fetched_at')) execute function private.record_calendar_feed_token_event()",
+    ],
+  };
+
+  /** What each own recorder drops from both rows, so no audit row holds it. */
+  const OWN_RECORDER_DROPS: Readonly<Record<string, readonly string[]>> = {
+    calendar_feed_tokens: ['token_hash', 'last_fetched_at'],
+  };
+
   /** AD-11's excluded organization tables, exactly. */
   const AUDIT_EXCLUDED = ['audit_events', 'notification_outbox', 'notification_settings', 'push_subscriptions'];
 
@@ -3620,9 +3637,10 @@ describe('the access-control migration', () => {
       );
     const declaredIn = (table: string): string[] => {
       const args = argumentsOf[table];
-      if (args === undefined) return [];
-      const call = `execute function private.record_audit_event('${args[0]}', '${args[1]}')`;
-      const both = [
+      const own = Object.hasOwn(OWN_RECORDER_TRIGGERS, table) ? OWN_RECORDER_TRIGGERS[table] : undefined;
+      if (args === undefined && own === undefined) return [];
+      const call = args === undefined ? '' : `execute function private.record_audit_event('${args[0]}', '${args[1]}')`;
+      const both = own ?? [
         `create trigger ${table}_audit after insert or delete on public.${table} for each row ${call}`,
         `create trigger ${table}_audit_update after update on public.${table} for each row when (old.* is distinct from new.*) ${call}`,
       ];
@@ -3664,7 +3682,9 @@ describe('the access-control migration', () => {
 
     expect(coverage.tables.length, 'too few organization tables were read for the pin to mean anything').toBeGreaterThanOrEqual(25);
     expect(coverage.uncovered, 'an organization table is neither audited nor named excluded in AD-11').toEqual([]);
-    expect(coverage.audited, 'the audited set is not AD-11\'s 22 tables').toEqual(Object.keys(AUDITED_TABLES).sort());
+    expect(coverage.audited, 'the audited set is not AD-11\'s 22 tables and the one with its own recorder').toEqual(
+      [...Object.keys(AUDITED_TABLES), ...Object.keys(OWN_RECORDER_TRIGGERS)].sort(),
+    );
     expect(coverage.attachedElsewhere, 'a table created after 0061 does not attach its audit triggers in its own migration').toEqual([]);
     expect(coverage.truncatable, 'a table audited after 0061 leaves TRUNCATE, which no row trigger sees, to a session role').toEqual([]);
     expect(
@@ -3804,11 +3824,22 @@ describe('the access-control migration', () => {
     expect(cte('attributed', 'decided'), 'the backfill reads other than the attributed tables').toEqual(attributed);
     expect(cte('decided', 'instants')).toEqual(['leave_request_decisions', 'swap_request_decisions']);
 
-    // NOTHING WRITES `audit_events` but 0061: the trigger function and the backfill.
+    // NOTHING WRITES `audit_events` but 0061 (the trigger function and the
+    // backfill) and, since story 16.3, 0067's own recorder for the feed
+    // tokens, inside its one function body and nowhere else in that file.
     const writes = /\b(insert into|update|delete from|truncate( table)?)\s+(public\.)?audit_events\b/i;
+    const OWN_RECORDER = /create function private\.record_calendar_feed_token_event\(\) returns trigger[\s\S]*?\$\$;/;
     for (const [name, text] of migrationTexts()) {
       if (name === AUDIT_MIGRATION) continue;
-      expect(stripLineComments(text), `${name} writes audit_events`).not.toMatch(writes);
+      const stripped = stripLineComments(text);
+      if (name === '0067_calendar_feed_tokens.sql') {
+        const recorder = OWN_RECORDER.exec(stripped)?.[0] ?? '';
+        expect(recorder, '0067 has no own recorder').toMatch(writes);
+        expect(recorder.match(/\binsert into public\.audit_events\b/g), 'the own recorder writes more than one insert').toHaveLength(1);
+        expect(stripped.replace(OWN_RECORDER, ''), `${name} writes audit_events outside its recorder`).not.toMatch(writes);
+        continue;
+      }
+      expect(stripped, `${name} writes audit_events`).not.toMatch(writes);
     }
     expect(stripLineComments(readFileSync(join(supabaseRoot, 'migrations', AUDIT_MIGRATION), 'utf8'))).toMatch(writes);
   });
@@ -4796,13 +4827,15 @@ describe('the access-control migration', () => {
     return tables;
   }
 
-  it('draws every live column of the 22 audited tables as a named field or hides it as bookkeeping, never both or neither (epic 14 retro A4)', () => {
+  it('draws every recorded live column of the 23 audited tables as a named field or hides it as bookkeeping, never both or neither (epic 14 retro A4)', () => {
     const live = liveColumnsOf(migrationTexts());
     const misplaced: string[] = [];
     const hiddenSeen = new Set<string>();
 
-    for (const table of Object.keys(AUDITED_TABLES)) {
-      const columns = live.get(table) ?? [];
+    for (const table of [...Object.keys(AUDITED_TABLES), ...Object.keys(OWN_RECORDER_TRIGGERS)]) {
+      // A table with its own recorder is drawn from what that recorder keeps.
+      const dropped = Object.hasOwn(OWN_RECORDER_DROPS, table) ? (OWN_RECORDER_DROPS[table] ?? []) : [];
+      const columns = (live.get(table) ?? []).filter((column) => !dropped.includes(column));
 
       expect(columns.length, `${table} was not parsed from the migrations`).toBeGreaterThan(1);
       for (const column of columns) {
@@ -6045,5 +6078,139 @@ describe('the signup door migration (story 19.1, 0066)', () => {
     expect(hook).toMatch(
       /where u\.created_at > pg_catalog\.now\(\) - interval '24 hours'\s+and not exists \(select 1 from public\.members m where m\.auth_user_id = u\.id\)/,
     );
+  });
+});
+
+describe("a member's feed token (0067, story 16.3)", () => {
+  const migration = (): string =>
+    stripLineComments(readFileSync(join(supabaseRoot, 'migrations', '0067_calendar_feed_tokens.sql'), 'utf8'));
+  /** One `create function <name>(…` through its closing `$$;`. */
+  const bodyOf = (sql: string, name: string): string =>
+    new RegExp(`create function ${name.replace('.', '\\.')}\\([\\s\\S]*?\\$\\$;`).exec(sql)?.[0] ?? '';
+  const escaped = (text: string): string => text.replace(/[.()]/g, (c) => `\\${c}`);
+
+  /** Every function 0067 creates, its signature as `revoke` names it, and who may execute it. */
+  const FUNCTIONS: readonly (readonly [string, string, readonly string[]])[] = [
+    ['public.create_calendar_feed_token', '', ['authenticated']],
+    ['public.revoke_own_calendar_feed_token', '', ['authenticated']],
+    ['public.revoke_member_calendar_feed_token', 'uuid', ['authenticated']],
+    ['public.calendar_feed_status', '', ['authenticated']],
+    ['public.member_calendar_feed_status', 'uuid', ['authenticated']],
+    ['public.calendar_feed_inputs', 'text', ['anon']],
+    ['private.lock_calendar_feed_tokens', 'uuid', []],
+    ['private.calendar_feed_state', 'uuid, uuid', []],
+    ['private.calendar_feed_member_live', 'uuid, uuid', []],
+    ['private.revoke_calendar_feed_on_status_change', '', []],
+    ['private.record_calendar_feed_token_event', '', []],
+  ];
+
+  it('stores only the hash, organization first, with no privilege for any session role (AD-14, D-S1)', () => {
+    const sql = migration();
+    const table = /create table public\.calendar_feed_tokens \(([\s\S]*?)\n\);/.exec(sql)?.[1] ?? '';
+    expect(table, 'calendar_feed_tokens is not declared').not.toBe('');
+    expect(table.trim(), 'organization_id is not the first column (Q3)').toMatch(
+      /^organization_id uuid not null references public\.organizations \(id\) on delete cascade,/,
+    );
+    expect(table).toMatch(/\btoken_hash bytea not null\b/);
+    expect(table).toMatch(/constraint calendar_feed_tokens_token_hash_key unique \(token_hash\)/);
+    expect(table).toMatch(/check \(octet_length\(token_hash\) = 32\)/);
+    expect(table, 'the token text has a column').not.toMatch(/\btoken (text|varchar|bytea)\b/);
+    expect(table, 'a token can expire').not.toMatch(/expires/);
+    expect(table).toMatch(
+      /foreign key \(organization_id, member_id\)\s+references public\.members \(organization_id, id\)\s+on delete cascade/,
+    );
+    expect(sql, 'more than one live token per member is representable').toMatch(
+      /create unique index calendar_feed_tokens_one_live\s+on public\.calendar_feed_tokens \(organization_id, member_id\)\s+where removed_at is null;/,
+    );
+    expect(sql).toMatch(/alter table public\.calendar_feed_tokens enable row level security;/);
+    expect(sql).toContain('revoke all on table public.calendar_feed_tokens from public, anon, authenticated, service_role;');
+    expect(sql, 'a session role is granted on the table').not.toMatch(/grant [^;]* on (table )?public\.calendar_feed_tokens\b/i);
+    expect(sql, 'the table carries a policy').not.toMatch(/\bcreate policy\b/i);
+    expect(sql, 'row level security is forced or disabled').not.toMatch(/force row level security|disable row level security/i);
+  });
+
+  it('issues 32 random bytes as 43-character base64url, returned once and stored as SHA-256 of the text', () => {
+    const body = bodyOf(migration(), 'public.create_calendar_feed_token');
+    expect(body, 'create_calendar_feed_token is not declared').not.toBe('');
+    expect(body).toMatch(/returns text/);
+    expect(body).toMatch(
+      /pg_catalog\.rtrim\(\s+pg_catalog\.translate\(pg_catalog\.encode\(extensions\.gen_random_bytes\(32\), 'base64'\), '\+\/', '-_'\),\s+'='\s+\)/,
+    );
+    expect(body).toContain("pg_catalog.sha256(pg_catalog.convert_to(token, 'UTF8'))");
+    expect(body, 'the old token is not revoked before the new one is stored').toMatch(
+      /update public\.calendar_feed_tokens t\s+set removed_by[\s\S]*?insert into public\.calendar_feed_tokens/,
+    );
+    expect(body, 'creation is not serialized per member before the access check').toMatch(
+      /perform private\.lock_calendar_feed_tokens\(own_member\);[\s\S]*current_member_access/,
+    );
+    expect(body, 'the caller is not their own member').toMatch(/m\.auth_user_id = \(select auth\.uid\(\)\)/);
+  });
+
+  it('declares every function with an empty search_path and grants each to its one role, or to none', () => {
+    const sql = migration();
+    for (const [name, args, roles] of FUNCTIONS) {
+      expect(bodyOf(sql, name), `${name} is not declared`).toMatch(/set search_path = ''/);
+      const signature = `${name}(${args})`;
+      const revoked = ['public', 'anon', 'authenticated', 'service_role'].filter((role) => !roles.includes(role));
+      expect(sql, `${signature} keeps a default EXECUTE`).toContain(`revoke execute on function ${signature} from ${revoked.join(', ')};`);
+      expect(
+        [...sql.matchAll(new RegExp(`grant execute on function ${escaped(signature)} to (\\w+);`, 'g'))].map((match) => match[1]),
+        `${signature} is granted other than to its role`,
+      ).toEqual([...roles]);
+    }
+    expect(sql.match(/\bgrant execute on function [^;]* to anon;/g), 'a second function is anon-executable').toHaveLength(1);
+  });
+
+  it('answers the state as { live, created_at, last_fetched_at } and nothing else', () => {
+    const body = bodyOf(migration(), 'private.calendar_feed_state');
+    const keys = [...body.matchAll(/'(\w+)', /g)].map((match) => match[1]);
+    expect(new Set(keys)).toEqual(new Set(['live', 'created_at', 'last_fetched_at']));
+    expect(body, 'live ignores the member rule').toContain('private.calendar_feed_member_live(t.organization_id, t.member_id)');
+    const rule = bodyOf(migration(), 'private.calendar_feed_member_live');
+    expect(rule, 'the member rule is not the active-today rule').toContain(
+      'public.member_active_on(m.id, public.organization_today(m.organization_id))',
+    );
+    expect(rule, 'the member rule is not current_member_access\'s account clause').toMatch(
+      /u\.deleted_at is null\s+and \(u\.banned_until is null or u\.banned_until <= now\(\)\)/,
+    );
+    expect(body, 'the state reads the hash').not.toMatch(/token_hash/);
+  });
+
+  it('looks up by 64 lowercase hex characters, misses with one null, and serves the window over the one assembly', () => {
+    const body = bodyOf(migration(), 'public.calendar_feed_inputs');
+    expect(body).toMatch(/returns jsonb/);
+    expect(body).toMatch(/\bvolatile\b/);
+    expect(body).toMatch(/security definer/);
+    expect(body).toContain("p_token_hash !~ '^[0-9a-f]{64}$'");
+    expect(body).toContain("t.token_hash = pg_catalog.decode(p_token_hash, 'hex')");
+    expect(body).toMatch(
+      /and t\.removed_at is null\s+and private\.calendar_feed_member_live\(t\.organization_id, t\.member_id\)/,
+    );
+    expect(body.match(/return null;/g), 'a miss answers other than null').toHaveLength(2);
+    expect(body, 'the fetch stamp is not throttled to 15 minutes').toMatch(
+      /set last_fetched_at = now\(\)\s+where t\.id = hit_id\s+and \(t\.last_fetched_at is null or t\.last_fetched_at < now\(\) - interval '15 minutes'\)/,
+    );
+    expect(body).toMatch(/window_from := today - 31;\s+window_to := today \+ 182;/);
+    expect(body).toContain("'inputs', private.member_schedule_inputs(hit_member, window_from, window_to)");
+    expect(body.match(/\b(update|insert into|delete from) public\./g), 'the lookup writes more than the fetch stamp').toHaveLength(1);
+  });
+
+  it('revokes on a deactivation already in effect and on a reactivation (AD-14 as amended by Architect pass 1)', () => {
+    const sql = migration();
+    const body = bodyOf(sql, 'private.revoke_calendar_feed_on_status_change');
+    expect(body).toContain('(not new.active and new.effective_from <= public.organization_today(new.organization_id))');
+    expect(body).toMatch(/new\.active and exists \([\s\S]*?not earlier\.active\s+and earlier\.effective_from < new\.effective_from/);
+    expect(body).toMatch(/set removed_by = new\.created_by,\s+removed_at = now\(\)/);
+    expect(sql).toMatch(
+      /create trigger member_status_versions_revoke_calendar_feed\s+after insert on public\.member_status_versions\s+for each row\s+execute function private\.revoke_calendar_feed_on_status_change\(\);/,
+    );
+  });
+
+  it('records the table in the change history with no hash material, and no fetch stamp alone (AD-11)', () => {
+    const body = bodyOf(migration(), 'private.record_calendar_feed_token_event');
+    expect(body).toContain("pg_catalog.to_jsonb(old) - 'token_hash' - 'last_fetched_at'");
+    expect(body).toContain("pg_catalog.to_jsonb(new) - 'token_hash' - 'last_fetched_at'");
+    expect(body.match(/to_jsonb\((old|new)\)/g), 'a row is recorded with its hash').toHaveLength(2);
+    expect(body).toMatch(/security definer/);
   });
 });
