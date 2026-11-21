@@ -139,14 +139,14 @@ async function lookup(client: Client, hash: string | null): Promise<Record<strin
 interface TokenRow {
   readonly id: string;
   readonly hash: string;
-  readonly revokedAt: string | null;
-  readonly revokedBy: string | null;
+  readonly removedAt: string | null;
+  readonly removedBy: string | null;
   readonly lastFetchedAt: string | null;
 }
 
 async function tokensOf(client: Client, who: Member): Promise<TokenRow[]> {
   const { rows } = await client.query<TokenRow>(
-    `select id, encode(token_hash, 'hex') as hash, removed_at::text as "revokedAt", removed_by as "revokedBy",
+    `select id, encode(token_hash, 'hex') as hash, removed_at::text as "removedAt", removed_by as "removedBy",
             last_fetched_at::text as "lastFetchedAt"
        from calendar_feed_tokens
       where organization_id = $1 and member_id = $2
@@ -172,7 +172,7 @@ describe('the feed token table (0067)', () => {
       const { rows } = await client.query<{ grant: string }>(
         `select role || ':' || privilege as grant
            from unnest(array['anon', 'authenticated', 'service_role']) as role,
-                unnest(array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER']) as privilege
+                unnest(array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER', 'MAINTAIN']) as privilege
           where has_table_privilege(role, 'public.calendar_feed_tokens', privilege)`,
       );
       expect(rows, 'a session role holds a table privilege').toEqual([]);
@@ -259,8 +259,8 @@ describe.each(FIXTURES)('a $fixture member\'s feed token (0067)', ({ slug, admin
 
       const rows = await tokensOf(client, who);
       expect(rows.map((row) => row.hash)).toEqual([hexOf(first), hexOf(second)]);
-      expect(rows.filter((row) => row.revokedAt === null), 'more than one token is live').toHaveLength(1);
-      expect(rows[0]?.revokedBy, 'the regeneration is not the member\'s').toBe(who.authUserId);
+      expect(rows.filter((row) => row.removedAt === null), 'more than one token is live').toHaveLength(1);
+      expect(rows[0]?.removedBy, 'the regeneration is not the member\'s').toBe(who.authUserId);
 
       expect(await lookup(client, hexOf(first)), 'a replaced token still works').toBeNull();
       expect(await lookup(client, hexOf(second))).not.toBeNull();
@@ -319,6 +319,7 @@ describe.each(FIXTURES)('a $fixture member\'s feed token (0067)', ({ slug, admin
         return rows[0]?.count ?? 0;
       };
       const before = await events();
+      expect(before, 'the creation is not recorded under the token\'s id').toBe(1);
 
       await client.query(`update calendar_feed_tokens set last_fetched_at = now() - interval '5 minutes' where id = $1`, [row.id]);
       const recent = (await tokensOf(client, who))[0]?.lastFetchedAt;
@@ -345,8 +346,16 @@ describe.each(FIXTURES)('a $fixture member\'s feed token (0067)', ({ slug, admin
       await client.query('select public.revoke_own_calendar_feed_token()');
       await actAsOwner(client);
 
-      const { rows } = await client.query<{ operation: string; oldRow: Record<string, unknown> | null; newRow: Record<string, unknown> | null; text: string }>(
-        `select operation, old_row as "oldRow", new_row as "newRow", coalesce(old_row::text, '') || coalesce(new_row::text, '') as text
+      const { rows } = await client.query<{
+        operation: string;
+        rowId: string;
+        actor: string | null;
+        oldRow: Record<string, unknown> | null;
+        newRow: Record<string, unknown> | null;
+        text: string;
+      }>(
+        `select operation, row_id as "rowId", actor, old_row as "oldRow", new_row as "newRow",
+                coalesce(old_row::text, '') || coalesce(new_row::text, '') as text
            from audit_events
           where table_name = 'calendar_feed_tokens' and organization_id = $1
             and coalesce(new_row, old_row) ->> 'member_id' = $2
@@ -364,6 +373,88 @@ describe.each(FIXTURES)('a $fixture member\'s feed token (0067)', ({ slug, admin
         }
       }
       expect(rows[1]?.newRow?.['removed_at']).not.toBeNull();
+
+      // Each event names its token and its author (both tokens share one `now()`, so match by hash).
+      const idOf = new Map((await tokensOf(client, who)).map((token) => [token.hash, token.id]));
+      expect(rows.map((row) => row.rowId)).toEqual([
+        idOf.get(hexOf(first)),
+        idOf.get(hexOf(first)),
+        idOf.get(hexOf(second)),
+        idOf.get(hexOf(second)),
+      ]);
+      expect(rows.map((row) => row.actor)).toEqual([who.authUserId, who.authUserId, who.authUserId, who.authUserId]);
+    });
+  });
+
+  it.skipIf(noDatabase)('is not served, nor read as live, for an account that is banned or deleted', async () => {
+    await inRolledBackTransaction(async (client) => {
+      const who = await member(client, slug, memberName);
+      const own = await member(client, slug, admin);
+      const token = await createToken(client, who);
+      const adminRead = async (): Promise<Record<string, unknown>> => {
+        await actAs(client, own.authUserId, own.organizationId);
+        const { rows } = await client.query<{ state: Record<string, unknown> }>('select public.member_calendar_feed_status($1) as state', [who.id]);
+        await actAsOwner(client);
+        return rows[0]?.state ?? {};
+      };
+      expect((await adminRead())['live']).toBe(true);
+
+      for (const [column, value] of [
+        ['banned_until', "now() + interval '1 day'"],
+        ['deleted_at', 'now()'],
+      ] as const) {
+        // Owner scene: the account is banned (or deleted), then restored.
+        await client.query(`update auth.users set ${column} = ${value} where id = $1`, [who.authUserId]);
+        expect(await lookup(client, hexOf(token)), `a ${column} account's feed was served`).toBeNull();
+        expect(await adminRead(), `a ${column} account's feed reads as live`).toEqual({ live: false, created_at: null, last_fetched_at: null });
+        await client.query(`update auth.users set ${column} = null where id = $1`, [who.authUserId]);
+      }
+      // A ban that has passed is no ban (current_member_access()'s clause).
+      await client.query("update auth.users set banned_until = now() - interval '1 day' where id = $1", [who.authUserId]);
+      expect(await lookup(client, hexOf(token)), 'a lapsed ban still blocks the feed').not.toBeNull();
+    });
+  });
+
+  it.skipIf(noDatabase)('records no hash in the history for an admin revoke, a deactivation revoke or a cascaded delete', async () => {
+    await inRolledBackTransaction(async (client) => {
+      const own = await member(client, slug, admin);
+      // Owner scene, before any actAs: a disposable account whose member row is deleted below.
+      const who = await addAccount(client, own.organizationId, 'member_role');
+      const tokens = [await createToken(client, who)];
+      await actAs(client, own.authUserId, own.organizationId);
+      await client.query('select public.revoke_member_calendar_feed_token($1)', [who.id]);
+      await actAsOwner(client);
+      tokens.push(await createToken(client, who));
+      await actAs(client, own.authUserId, own.organizationId);
+      await insertStatusVersion(client, who, false, 0);
+      await actAsOwner(client);
+      // Owner scene: a reactivation (so a token may be made again), then the member is deleted.
+      await client.query('delete from member_status_versions where member_id = $1', [who.id]);
+      tokens.push(await createToken(client, who));
+      const hashes = (await tokensOf(client, who)).map((row) => row.hash);
+      expect(hashes).toHaveLength(3);
+      await client.query('delete from members where id = $1', [who.id]);
+
+      const { rows } = await client.query<{ operation: string; actor: string | null; keys: string[]; text: string }>(
+        `select operation, actor,
+                array(select jsonb_object_keys(coalesce(new_row, '{}'::jsonb) || coalesce(old_row, '{}'::jsonb))) as keys,
+                coalesce(old_row::text, '') || coalesce(new_row::text, '') as text
+           from audit_events
+          where table_name = 'calendar_feed_tokens' and organization_id = $1
+            and coalesce(new_row, old_row) ->> 'member_id' = $2
+          order by id`,
+        [who.organizationId, who.id],
+      );
+      expect(rows.map((row) => row.operation)).toEqual(['INSERT', 'UPDATE', 'INSERT', 'UPDATE', 'INSERT', 'DELETE', 'DELETE', 'DELETE']);
+      expect(rows[1]?.actor, 'the admin revoke is not the admin\'s').toBe(own.authUserId);
+      expect(rows[3]?.actor, 'the deactivation revoke is not the author\'s').toBe(own.authUserId);
+      for (const row of rows) {
+        expect(row.keys, `a ${row.operation} audit row holds the hash`).not.toContain('token_hash');
+        expect(row.keys, `a ${row.operation} audit row holds a fetch`).not.toContain('last_fetched_at');
+        for (const secret of [...tokens, ...hashes]) {
+          expect(row.text.includes(secret), `a ${row.operation} audit row holds token material`).toBe(false);
+        }
+      }
     });
   });
 
@@ -416,7 +507,7 @@ describe.each(FIXTURES)('a $fixture member\'s feed token (0067)', ({ slug, admin
       }
       await actAsOwner(client);
       expect(await lookup(client, hexOf(token)), 'an admin-revoked token still works').toBeNull();
-      expect((await tokensOf(client, who))[0]?.revokedBy).toBe(own.authUserId);
+      expect((await tokensOf(client, who))[0]?.removedBy).toBe(own.authUserId);
     });
   });
 
@@ -474,8 +565,8 @@ describe.each(FIXTURES)('a $fixture member\'s feed token (0067)', ({ slug, admin
       const deactivation = await insertStatusVersion(client, who, false, 0);
       await actAsOwner(client);
       const revoked = await tokensOf(client, who);
-      expect(revoked.every((row) => row.revokedAt !== null), 'a deactivation in effect left the token live').toBe(true);
-      expect(revoked[0]?.revokedBy).toBe(own.authUserId);
+      expect(revoked.every((row) => row.removedAt !== null), 'a deactivation in effect left the token live').toBe(true);
+      expect(revoked[0]?.removedBy).toBe(own.authUserId);
       expect(await lookup(client, hexOf(now))).toBeNull();
 
       // Owner scene: undo that deactivation (a scheduled one replaces it below).
@@ -486,7 +577,7 @@ describe.each(FIXTURES)('a $fixture member\'s feed token (0067)', ({ slug, admin
       await actAs(client, own.authUserId, own.organizationId);
       const future = await insertStatusVersion(client, who, false, 1);
       await actAsOwner(client);
-      expect((await tokensOf(client, who)).filter((row) => row.revokedAt === null), 'a scheduled deactivation revoked at once').toHaveLength(1);
+      expect((await tokensOf(client, who)).filter((row) => row.removedAt === null), 'a scheduled deactivation revoked at once').toHaveLength(1);
       expect(await lookup(client, hexOf(scheduled)), 'a scheduled deactivation ended the feed early').not.toBeNull();
 
       // Owner scene: its date arrives (the version is moved to today; no insert, so no trigger).
@@ -501,7 +592,7 @@ describe.each(FIXTURES)('a $fixture member\'s feed token (0067)', ({ slug, admin
       await actAs(client, own.authUserId, own.organizationId);
       await insertStatusVersion(client, who, true, 1);
       await actAsOwner(client);
-      expect((await tokensOf(client, who)).filter((row) => row.revokedAt === null), 'a reactivation left a token live').toEqual([]);
+      expect((await tokensOf(client, who)).filter((row) => row.removedAt === null), 'a reactivation left a token live').toEqual([]);
     });
   });
 });

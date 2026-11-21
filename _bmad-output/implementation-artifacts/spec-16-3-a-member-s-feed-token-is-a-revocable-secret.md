@@ -4,7 +4,7 @@ type: 'feature'
 created: '2026-11-21'
 status: 'in-review'
 baseline_commit: '7e4604216a2530adbbf4ce17860b33fb03a9ef31'
-review_loop_iteration: 1
+review_loop_iteration: 2
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-16-context.md'
 ---
@@ -86,6 +86,7 @@ Status: built, CI pending (no PR yet). Baseline: `main` at #339 (16.2); touches 
 ## Spec Change Log
 
 - 2026-11-21, review 1 (unattended; founder: decide and record). Findings: the frozen Boundaries named `revoked_*` and an audit that kept `last_fetched_at`; the Epic AC Deviations omitted the own recorder, the `other` history record and the AD-2/AD-10 header; the edge-case layer found the lookup served a deleted or banned account. Amended: the Boundaries, the Deviations and decisions 2, 6, 7, in place. Avoids: a spec that contradicts the migration and a feed alive for an account that cannot sign in. KEEP: the hash-only table with no privilege, the own recorder, the per-member lock, the lookup in 16.3.
+- 2026-11-21, review 2, the security review the epic requires (D-S1, D-S8; NFR-27; unattended, founder: decide and record). Five layers (blind hunter, edge-case hunter, verification gap, acceptance auditor, epic AC auditor; no generated file). No finding changed the migration or the frozen sections: the defects were in the unrun suite's proof, which is patched. Avoids: a CI-green suite that would miss a banned account's feed, a hash in a revoke's or a cascade's audit row, or a recorder writing the wrong `row_id`/`actor`. KEEP: 0067 as reviewed.
 
 ## Design Notes
 
@@ -96,13 +97,14 @@ Decisions (founder: decide and record):
 4. **Serialization:** one advisory lock per member (`shift.calendar_feed_tokens:<member>`) in create, revokes and the status trigger, so a regenerate race leaves exactly one live token.
 5. **No AD-2 row:** the token feeds no derivation (as suspension).
 6. **Member rule** `private.calendar_feed_member_live`: active today AND `current_member_access()`'s account clause (not deleted, not banned), stated once for the state and the lookup.
-7. **Kept as is:** the lookup's `FOR UPDATE` spans the assembly (a revoke waits at most one fetch; pilot scale); the state reads are VOLATILE (they call 0008's VOLATILE readers; supabase-js `rpc` POSTs); a token whose member's scheduled deactivation arrived stays unrevoked but dead until a reactivation revokes it (the lookup's rule, AD-14).
+7. **Kept as is:** the lookup's `FOR UPDATE` spans the assembly (a revoke waits at most one fetch; pilot scale; its cost, a row lock written on every hit, the 15-minute throttle included, is accepted for the guarantee that a revoke committing during a fetch wins, review 2); the state reads are VOLATILE (they call 0008's VOLATILE readers; supabase-js `rpc` POSTs); a token whose member's scheduled deactivation arrived stays unrevoked but dead until a reactivation revokes it (the lookup's rule, AD-14).
 
 ## Verification
 
 **Commands:**
 - `pnpm typecheck`, `pnpm lint`, `pnpm build`
-- `pnpm exec vitest run test/resource-hygiene.test.ts test/supabase-scaffold.test.ts test/key-hygiene.test.ts test/localization-guard.test.ts test/import-cycles.test.ts test/feature-boundaries.test.ts test/runtime-parity.test.ts`
+- `pnpm --filter @shift/domain test`
+- `pnpm exec vitest run test/resource-hygiene.test.ts test/supabase-scaffold.test.ts test/key-hygiene.test.ts test/localization-guard.test.ts test/import-cycles.test.ts test/feature-boundaries.test.ts test/runtime-parity.test.ts` (review 2 ran the four the orchestrator allows: resource-hygiene, supabase-scaffold, key-hygiene, runtime-parity)
 
 **Results (2026-11-21):** `pnpm typecheck`, `pnpm lint`, `pnpm build` pass; `pnpm --filter @shift/domain test` 20 files, 950 tests pass; the seven root files: 2470 tests, all pass but one, "numbers migrations 0001, 0002, … with no gaps", which fails by design while `0066` (19.1, PR #341) is not on `main` (deferred-work, numbering entry).
 
@@ -151,3 +153,30 @@ Decisions (founder: decide and record):
 
 - DB suite (unrun): deactivation, scheduled date, reactivation.
   [`calendar-feed-tokens.test.ts:466`](../../test/calendar-feed-tokens.test.ts#L466)
+
+**Review 2 (security review; five layers):**
+
+Patched (all in `test/calendar-feed-tokens.test.ts`; 0067 unchanged):
+- The account clause had a source pin only: new case, a banned and then a deleted account's feed is not served and reads not live, and a lapsed ban serves again.
+- Audit rows were proven hash-free only for create, regenerate and the member's revoke: new case covering an admin revoke, a deactivation revoke and the cascade DELETE of a deleted member (`old_row` alone), with no `token_hash`, `last_fetched_at`, token or hash text, and the admin as the actor of both revokes.
+- The recorder's `row_id` and `actor` were never asserted, and the stamp case passed as 0 = 0 on a wrong `row_id`: the AD-11 case pins `row_id` per token and `actor` per row; the stamp case pins one creation event first.
+- The table-privilege probe missed PG 17's `MAINTAIN`: added.
+- `tokensOf` named the `removed_*` pair `revokedAt`/`revokedBy`: renamed `removedAt`/`removedBy`.
+- Docs: the deferred-work 16.2 entry's resolved gate now names the account clause; the security-review entry is narrowed to what 16.4 still owes and gains the miss timing and `pg_read_all_data`; a retention entry (19.5) for revoked rows; the 16.5 entry notes a regeneration's two events; the Verification commands list `@shift/domain`.
+
+Rejected, with reasons:
+- *A scheduled reactivation revokes a live feed early; the reactivation test matches any earlier inactive version; a backdated deactivation revokes an active member* (blind hunter, acceptance auditor): 0008's insert policy writes versions only in date order, dated today or later, each flipping `active`, and only once the latest is in effect, so a deactivation and a reactivation cannot both be scheduled ahead, an active insert always follows an inactive latest, and an inactive one dated `<=` today is dated today.
+- *Only INSERT revokes* (blind hunter, edge-case hunter): 0008 grants no UPDATE, and its DELETE cancels only a version not yet in effect, which never decided a day. An owner or `service_role` writer outside the policy is the operator, as for every 0008 rule.
+- *A lifted ban revives the link* (blind hunter, edge-case hunter): a ban is the auth layer's, not the product's deactivation; the feed follows sign-in, as `current_member_access()` does. Deactivation is the revocation (AD-14).
+- *`for update` on every hit* (blind hunter, edge-case hunter): decision 7, its cost now recorded.
+- *Miss timing tells a former token's holder whether it was replaced or its member deactivated* (edge-case hunter): it needs a token once held, from which it learns no more than the link stopped working; a 256-bit token is not guessable, and every unknown hash takes the same index probe. Recorded for 16.4's timing class (security-review entry).
+- *`member_role` is not a role value* (blind hunter): it is 0002's (`check (role in ('admin', 'member_role'))`), and a member with no version is active (0008).
+- *The admin's read shows `last_fetched_at`* (blind hunter): frozen Boundaries (the state reads' one shape); an admin learns that a calendar polls, not what or where.
+- *A raw 23505 under a lost race; a revoke with no `removed_by`; the recorder drifting from 0061's* (blind hunter): the lock serializes every writer; `removed_by` is the version's author, null only for an owner insert, as 0041's closes; 0061's recorder cannot be replaced (scaffold pin), so the copy cannot drift from it.
+- *The spine's reader note, thin ACs, the digest literal* (blind hunter): the spine amends by appended clauses; the ACs and the I/O matrix are frozen; the digest was rejected in review 1.
+
+Deferred: the two-connection race test, the 404's timing class and the `pg_read_all_data` roles (security review of 16.4); retention of revoked rows (19.5).
+
+Checked and found sound, by reading (nothing ran against a database): no session role reaches `token_hash` (no privilege, no policy, no view, no read or RPC returns it, no audit row holds it; a 23505 on `token_hash` would print it but needs a SHA-256 collision); the lookup's every miss is the one null with no write, its input checked before `decode`; `gen_random_bytes(32)` gives 256 bits, 44 base64 characters with no line break; the per-member lock and READ COMMITTED's per-statement snapshot serialize regenerations and order a creation against a deactivation either way; the admin functions resolve the member within the claimed organization; the suite builds owner scenes before `actAs`, takes a savepoint before every refusal it continues after, and its `pg_get_triggerdef` text follows the deparse the existing pins prove (`old.*`, `'…'::text`, `private.` qualified).
+
+**Results (review 2, 2026-11-21):** `pnpm typecheck`, `pnpm lint`, `pnpm build` pass; `pnpm --filter @shift/domain test` 20 files, 950 tests pass; the four allowed root files 2100 tests, all pass but the numbering pin (expected until `0066`).
