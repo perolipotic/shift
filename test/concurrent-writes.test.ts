@@ -99,10 +99,11 @@ async function addAccount(
   return { id: member.id, authUserId: user.id };
 }
 
-async function addTeam(client: Client, organization: string, createdBy: string): Promise<string> {
+/** A committed team, as the owner. Names are unique per organization, so a second team is named. */
+async function addTeam(client: Client, organization: string, createdBy: string, name = 'Smjena'): Promise<string> {
   const { rows } = await client.query<{ id: string }>(
-    `insert into teams (organization_id, name, created_by) values ($1, 'Smjena', $2) returning id`,
-    [organization, createdBy],
+    `insert into teams (organization_id, name, created_by) values ($1, $2, $3) returning id`,
+    [organization, name, createdBy],
   );
   const team = rows[0];
   if (team === undefined) throw new Error('teams insert returned no row');
@@ -363,6 +364,44 @@ async function insertAssignment(
 
 async function archive(client: Client, team: string): Promise<{ rowCount: number | null }> {
   return client.query('update teams set archived = true where id = $1', [team]);
+}
+
+/** A loan of `member` to `team` over the inclusive `[from, to]`, attributed by 0062's defaults. */
+async function insertLoan(
+  client: Client,
+  loan: { organization: string; member: string; team: string; from: string; to: string },
+): Promise<{ rowCount: number | null }> {
+  return client.query(
+    `insert into team_loans (organization_id, member_id, team_id, during, reason)
+     values ($1, $2, $3, daterange($4::date, $5::date, '[]'), 'Pojačanje.')`,
+    [loan.organization, loan.member, loan.team, loan.from, loan.to],
+  );
+}
+
+/** A committed live loan, as the OWNER (past the policy, so `created_by` is named). */
+async function ownerLoan(
+  client: Client,
+  loan: { organization: string; member: string; team: string; from: string; to: string; by: string },
+): Promise<string> {
+  return insertedId(
+    client,
+    `insert into team_loans (organization_id, member_id, team_id, during, reason, created_by)
+     values ($1, $2, $3, daterange($4::date, $5::date, '[]'), 'Pojačanje.', $6) returning id`,
+    [loan.organization, loan.member, loan.team, loan.from, loan.to, loan.by],
+  );
+}
+
+/** 0064's amend: the loan moved onto `team` over the inclusive `[from, to]`, the reason kept. */
+async function amendLoan(
+  client: Client,
+  amend: { loan: string; team: string; from: string; to: string },
+): Promise<{ rowCount: number | null }> {
+  return client.query('select public.amend_team_loan($1::uuid, $2::uuid, $3::date, $4::date)', [
+    amend.loan,
+    amend.team,
+    amend.from,
+    amend.to,
+  ]);
 }
 
 afterAll(async () => {
@@ -890,7 +929,7 @@ describe('rotation writes to one organization wait for each other (0035)', () =>
 });
 
 describe('a caller demoted while the write waited no longer writes as an admin (0035)', () => {
-  for (const write of ['a team move', 'a promotion', 'a rotation step'] as const) {
+  for (const write of ['a team move', 'a promotion', 'a rotation step', 'a loan'] as const) {
     it.skipIf(noDatabase)(`refuses ${write} whose caller was demoted while it waited`, async () => {
       // `current_member_access()` is STABLE, so the policy saw A as an admin
       // on the statement's snapshot. The BEFORE ROW trigger re-reads A.
@@ -920,7 +959,10 @@ describe('a caller demoted while the write waited no longer writes as an admin (
         const second = pending(
           write === 'a team move'
             ? insertMembership(t2, { organization, member: member.id, team, from })
-            : write === 'a promotion'
+            : write === 'a loan'
+              ? // 0064: `team_loans` inserts take the lock and the re-check.
+                insertLoan(t2, { organization, member: member.id, team, from, to: from })
+              : write === 'a promotion'
               ? t2.query(`update members set role = 'admin' where id = $1`, [member.id])
               : t2.query(
                   `insert into rotation_steps (organization_id, pattern_id, position, shift_type_id)
@@ -1172,6 +1214,17 @@ describe('the remaining definers take the organization lock before their admin c
       fn: 'decide_swap_request',
       sql: `select public.decide_swap_request($1::uuid, 'approved', 'x')`,
       message: 'SWAP_REQUEST_DECISION_REFUSED',
+    },
+    // 0064: the loan's amend and removal, behind the same lock.
+    {
+      fn: 'amend_team_loan',
+      sql: 'select public.amend_team_loan($1::uuid, $1::uuid, current_date, current_date)',
+      message: 'TEAM_LOAN_AMEND_REFUSED',
+    },
+    {
+      fn: 'remove_team_loan',
+      sql: 'select public.remove_team_loan($1::uuid)',
+      message: 'TEAM_LOAN_REMOVAL_REFUSED',
     },
   ] as const;
 
@@ -1582,6 +1635,176 @@ describe('a deactivation and an approval of the same member wait for each other 
       LONG_CASE_MS,
     );
   }
+});
+
+describe('a loan and a team archive or a team move wait for each other (0064)', () => {
+  /**
+   * A member on no team, the team they are lent to, a second team, and a
+   * committed live loan of the member to the first team over `[from, to]`,
+   * all as the OWNER, before any connection takes the request role. Every
+   * date is ahead of today: each loan ends after today (so it blocks an
+   * archive, 0064 §5) and each team move is scheduled.
+   * `after` is a day past the loan, for a second loan that shares no date.
+   */
+  async function lendingScene() {
+    return fixture(async (client) => {
+      const organization = await addOrganization(client);
+      const a = await addAccount(client, organization, 'admin');
+      const member = await addAccount(client, organization, 'member_role');
+      const lentTo = await addTeam(client, organization, a.authUserId, 'Smjena A');
+      const from = await organizationDay(client, organization, 3);
+      const to = await organizationDay(client, organization, 5);
+      return {
+        organization,
+        a,
+        b: await addAccount(client, organization, 'admin'),
+        member,
+        lentTo,
+        other: await addTeam(client, organization, a.authUserId, 'Smjena B'),
+        from,
+        to,
+        after: await organizationDay(client, organization, 6),
+        loan: await ownerLoan(client, { organization, member: member.id, team: lentTo, from, to, by: a.authUserId }),
+      };
+    });
+  }
+
+  const LIVE_LOANS_OF_TEAM = 'select count(*)::int as total from team_loans where team_id = $1 and removed_at is null';
+
+  for (const write of ['a loan insert', 'amend_team_loan'] as const) {
+    for (const behind of ['an archive of its team', 'a team move making its team home'] as const) {
+      for (const t1Ends of ['commit', 'rollback'] as const) {
+        it.skipIf(noDatabase)(
+          t1Ends === 'commit'
+            ? `refuses ${write} that waited behind ${behind}`
+            : `admits the same ${write} once ${behind} is rolled back (the control)`,
+          async () => {
+            // 0062's policy reads both team conjuncts inline, on the snapshot
+            // taken before the wait, and the amend runs past it as the owner.
+            // Behind the lock, 0064's re-check (the insert) and the definer's
+            // own `team_loan_team_refused` (the amend) read them again.
+            const { organization, a, b, member, lentTo, other, from, to, after, loan } = await lendingScene();
+            // The insert lends to the second team, after the existing loan;
+            // the amend moves the existing loan onto it.
+            const team = other;
+
+            await race(async (t1, t2, observer) => {
+              await t1.query('begin');
+              await actAs(t1, a, organization);
+              expect(
+                (behind === 'an archive of its team'
+                  ? await archive(t1, team)
+                  : await insertMembership(t1, { organization, member: member.id, team, from })
+                ).rowCount,
+              ).toBe(1);
+
+              const pid = await backendPid(t2);
+              await t2.query('begin');
+              await actAs(t2, b, organization);
+              const second = pending(
+                write === 'a loan insert'
+                  ? insertLoan(t2, { organization, member: member.id, team, from: after, to: after })
+                  : amendLoan(t2, { loan, team, from, to }),
+              );
+              await waitUntilBlocked(observer, pid, organization, second);
+
+              await t1.query(t1Ends);
+
+              if (t1Ends === 'commit') {
+                expect(await second.outcome).toMatchObject({
+                  ok: false,
+                  code: '42501',
+                  message:
+                    write === 'a loan insert'
+                      ? 'new row violates row-level security policy for table "team_loans"'
+                      : 'TEAM_LOAN_TEAM_REFUSED',
+                });
+                await t2.query('rollback');
+                expect(
+                  await count(observer, LIVE_LOANS_OF_TEAM, team),
+                  'a loan landed on an archived team, or on the member\'s own',
+                ).toBe(0);
+                expect(await count(observer, LIVE_LOANS_OF_TEAM, lentTo), 'the refused write removed the loan').toBe(1);
+              } else {
+                expect(await second.outcome).toEqual({ ok: true, rowCount: 1 });
+              }
+            });
+          },
+        );
+      }
+    }
+  }
+
+  for (const write of ['a loan insert', 'an amend moving a loan onto the team'] as const) {
+    for (const t1Ends of ['commit', 'rollback'] as const) {
+      it.skipIf(noDatabase)(
+        t1Ends === 'commit'
+          ? `refuses an archive that waited behind ${write}`
+          : `lets the same archive land once ${write} is rolled back (the control)`,
+        async () => {
+          // The other order. 0064's `teams_refuse_write_while_lent_to` reads
+          // `team_loans` after the lock, and sees the committed loan.
+          const { organization, a, b, member, other, from, to, after, loan } = await lendingScene();
+          const team = other;
+
+          await race(async (t1, t2, observer) => {
+            await t1.query('begin');
+            await actAs(t1, a, organization);
+            expect(
+              (write === 'a loan insert'
+                ? await insertLoan(t1, { organization, member: member.id, team, from: after, to: after })
+                : await amendLoan(t1, { loan, team, from, to })
+              ).rowCount,
+            ).toBe(1);
+
+            const pid = await backendPid(t2);
+            await t2.query('begin');
+            await actAs(t2, b, organization);
+            const second = pending(archive(t2, team));
+            await waitUntilBlocked(observer, pid, organization, second);
+
+            await t1.query(t1Ends);
+
+            if (t1Ends === 'commit') {
+              expect(await second.outcome).toMatchObject({ ok: false, code: '23514', message: 'TEAM_HAS_LOANS' });
+              await t2.query('rollback');
+              expect(
+                await count(observer, 'select count(*)::int as total from teams where id = $1 and archived', team),
+                'a team with a current or future loan was archived',
+              ).toBe(0);
+            } else {
+              expect(await second.outcome).toEqual({ ok: true, rowCount: 1 });
+            }
+          });
+        },
+      );
+    }
+  }
+
+  it.skipIf(noDatabase)('lets a team move that waited behind a loan insert land, though it makes the loan point home', async () => {
+    // The other order of a team move: it is not refused (story 18.4, design
+    // note 15), and the domain derives such a date as the home team (R11.3).
+    // It still waits on the lock.
+    const { organization, a, b, member, other, after } = await lendingScene();
+    const team = other;
+
+    await race(async (t1, t2, observer) => {
+      await t1.query('begin');
+      await actAs(t1, a, organization);
+      expect((await insertLoan(t1, { organization, member: member.id, team, from: after, to: after })).rowCount).toBe(1);
+
+      const pid = await backendPid(t2);
+      await t2.query('begin');
+      await actAs(t2, b, organization);
+      const second = pending(insertMembership(t2, { organization, member: member.id, team, from: after }));
+      await waitUntilBlocked(observer, pid, organization, second);
+
+      await t1.query('commit');
+
+      expect(await second.outcome).toEqual({ ok: true, rowCount: 1 });
+      expect(await count(observer, LIVE_LOANS_OF_TEAM, team), 'the committed loan is gone').toBe(1);
+    });
+  });
 });
 
 describe('an archive waits for a rotation write, and a rotation write for an archive (0036, 0037)', () => {

@@ -118,6 +118,7 @@ context:
 - `pnpm --filter @shift/domain test`, `pnpm --filter ./apps/web test` -- pass.
 - `pnpm exec vitest run test/resource-hygiene.test.ts test/supabase-scaffold.test.ts test/key-hygiene.test.ts test/localization-guard.test.ts test/import-cycles.test.ts test/feature-boundaries.test.ts` -- pass.
 - Not run locally: 0063, provisioning, rls-isolation, notify-boundary, e2e (STRICT DATABASE RULE); CI is the gate. They fail locally only because 0063 is unapplied; their expected trigger text, codes and operands were reasoned, not executed.
+- CI (recorded 2026-11-21, epic 18 retro A7): #328 merged with `CI passed` green; the 0063 cases passed on their first run.
 
 **Results (2026-11-21, after the second review's patches):** typecheck and lint clean; domain 17 files, 893 passed; web 174 files, 6560 passed (36 in `loan.test.ts`); DB-free root (resource-hygiene, supabase-scaffold, key-hygiene, localization-guard, import-cycles, feature-boundaries) 2415 passed, 2 skipped. Every matrix row is covered in `loan.test.ts` at the service level; the "card says saved" and erasure-dialog rows have no rendered or e2e test (deferred to 18.4). Matrix dates are illustrative: on the pilot fixture A is off on the 10th and 11th, so the tests use the dates the fixture works (the 12th).
 
@@ -171,12 +172,12 @@ None (no bad_spec loopback). Design Notes 4–7 added from the review.
 
 ## Auto Run Result
 
-Status: done (built; sprint status `review`, CI pending).
+Status: done (merged as #328, squash `93740d3`, with `CI passed` green; sprint status `done`). Residual risks rewritten to the CI facts by epic 18 retro A7 (2026-11-21).
 
 **Residual risks:**
-- `0063`, the provisioning trigger pin, the rls-isolation `LOAN_MADE` cases and the notify-boundary render case have never run; CI may need small fixes.
-- The dialog's hook and component are verified by typecheck, lint and structural pins only; a manual test on the stack and 18.4's e2e are the checks.
-- A mistaken loan can be removed only by SQL until 18.4.
+- Settled by CI: `0063`, the provisioning trigger pin, the rls-isolation `LOAN_MADE` cases and the notify-boundary render case passed on their first CI run (two earlier runs were cancelled by new pushes). No CI-only fix was pushed.
+- Settled by 18.4: `e2e/tests/people/member-loan.spec.ts` drives the dialog (lend, a refusal kept, an erasure confirmed) and passed in #330's green run `44862703557` (575 e2e tests).
+- Settled by 18.4: a loan is amended or removed through `amend_team_loan` and `remove_team_loan`.
 
 ## Suggested Review Order
 

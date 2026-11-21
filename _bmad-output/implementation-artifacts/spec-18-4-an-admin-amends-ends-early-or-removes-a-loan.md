@@ -132,6 +132,7 @@ context:
 - `pnpm --filter @shift/domain test`, `pnpm --filter ./apps/web test` -- pass.
 - `pnpm exec vitest run test/resource-hygiene.test.ts test/supabase-scaffold.test.ts test/key-hygiene.test.ts test/localization-guard.test.ts test/import-cycles.test.ts test/feature-boundaries.test.ts` -- pass.
 - Not run locally: 0064, provisioning, rls-isolation, concurrent-writes, notify-boundary, e2e (STRICT DATABASE RULE); CI is the gate. They fail locally only because 0064 is unapplied.
+- CI (recorded 2026-11-21, epic 18 retro A7): #330 merged with `CI passed` green after two failed runs and the CI-only fix `e0e5359`; see the residual risks.
 
 **Results (2026-11-21, after the second review's patches):** typecheck and lint clean; domain 17 files, 894 passed; web 174 files, 6587 passed; DB-free root (6 files) 2436 passed, 2 skipped. The scaffold's new pins ran; the new rls-isolation cases (reason-only amend, past loan moved ahead) have not run, and CI is their gate.
 
@@ -139,12 +140,12 @@ context:
 
 ## Auto Run Result
 
-Status: done (built; sprint status `review`, CI pending).
+Status: done (merged as #330, squash `3cd84d1`, with `CI passed` green; sprint status `done`). Residual risks rewritten to the CI facts by epic 18 retro A7 (2026-11-21).
 
 **Residual risks:**
-- `0064`, its provisioning, concurrent-writes, rls-isolation and notify-boundary pins, and the e2e spec have never run; their codes, trigger texts and flows were reasoned, so CI may need small fixes.
+- Settled by CI, after two failed runs and one CI-only fix. Run `44860638669` (`0cd357f`, the pre-review commit) failed four rls-isolation cases, two on each fixture: the amend case expected a trimmed reason (`'Kraće.'`) that the database stores as sent (the second review patched it in `90b36ef` while that run was going on), and the archive case "refuses archiving a … team with a loan ending today or later, and archives one whose loans are past". Run `44861712934` (`85df0ec`) still failed the archive case: its third scene ("a removed future loan … no longer blocks an archive", added by the first review) was built by `lendingScene` after `actAs` had switched the session's role, and `lendingScene` writes `auth.users`, which needs the owner. `e0e5359` moved the scene before the role switch, and the next run, `44862703557`, was green, with 575 e2e tests including `member-loan.spec.ts`. The provisioning, concurrent-writes and notify-boundary pins passed on their first run.
 - The definers rely on the session's `role` setting staying `authenticated` inside a SECURITY DEFINER function for the re-check trigger to fire on their insert (0023's reading); the definer's own team check stands either way.
-- No race test exercises the new lock on `team_loans` inserts (deferred).
+- Addressed by epic 18 retro A4: `test/concurrent-writes.test.ts` races a `team_loans` insert and `amend_team_loan` behind an archive, a team move and a demotion, and an archive behind both, with rollback controls; written unrun, CI pending.
 
 ## Suggested Review Order
 
@@ -197,8 +198,8 @@ Status: done (built; sprint status `review`, CI pending).
   [`history.ts:303`](../../packages/domain/src/history.ts#L303)
 - Amend pairing proof names the loan amend.
   [`supabase-scaffold.test.ts:5282`](../../test/supabase-scaffold.test.ts#L5282)
-- DB behaviour, unrun.
+- DB behaviour (green in CI on #330, after `e0e5359`).
   [`rls-isolation.test.ts:27331`](../../test/rls-isolation.test.ts#L27331)
-- e2e, unrun.
+- e2e (green in CI on #330).
   [`member-loan.spec.ts:1`](../../e2e/tests/people/member-loan.spec.ts#L1)
 

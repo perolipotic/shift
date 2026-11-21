@@ -29,6 +29,10 @@ persistent_facts = [
   "A GENERATED FILE IS OPENED, NOT ONLY ITS DEFINITION. A story that generates a file (PDF, xlsx, any export) produces one real file from a realistic fixture (long unbroken words, the longest names, many rows, a page break) and opens it: a PDF is rasterized (`pdftoppm`, or `uv run --with pymupdf` where poppler is missing) and the page images are looked at; a workbook is opened and its cells read back. The spec's Verification names the file and what was seen. Asserting the document definition alone is not verification.",
   # Epic 14 retro A11 (P2): status ran ahead of verification.
   "DONE MEANS MERGED WITH GREEN CI. A story's sprint status reaches `done` only after its PR has merged with the `CI passed` check green. Until then it stays `review`, with a note `built, CI pending` (and the PR number once there is one). The spec's residual-risk lines are rewritten when a later review or CI run settles them.",
+  # Epic 18 retro A7 (R4, V1): four merged specs still said their tests "have never run".
+  "A STORY SET DONE GETS ITS SPEC REWRITTEN IN THE SAME CHANGE. The change that sets a story to `done` after its merge (usually the next story's) also rewrites that story's spec: its `Status:` line names the PR and the squash, and every residual-risk line about tests not yet run says what CI showed, from `gh pr view <n> --json statusCheckRollup` and `gh run view --log-failed`. Name each failed run and its cause, each fix pushed only for CI (by commit), and the green run. A risk CI did not settle stays, and says so. A merged spec whose lines still say a test has never run is a defect.",
+  # Epic 18 retro A7 (V1, P2): 18.4's archive scene was built after `actAs`, and only CI found it.
+  "DB-TEST SCENES ARE BUILT AS THE OWNER, BEFORE `actAs`. A DB-connecting test written unrun builds every fixture or scene that writes `auth.users`, or bypasses a policy (`lendingScene`, `addThrowawayMember`, an owner insert naming `created_by`), while the connection is still the owner: before the case's first `actAs`, or after an explicit switch back (`actAsOwner`). Never build one between `actAs` and the write under test. Each expected code and message is read from the migration's own `raise` or constraint, not reasoned from a neighbour's.",
 ]
 
 [[workflow.review_layers]]
@@ -50,4 +54,24 @@ CONTENT:
 {diff_output}
 
 Do not invoke any skill. Return only the review result.
+"""
+
+# Epic 18 retro A7 (V1, P2): an unrun DB test's scene order passed two reviews; only CI found it.
+[[workflow.review_layers]]
+id = "unrun-db-test-auditor"
+name = "Unrun DB Test Auditor"
+instruction = """
+If the diff adds or changes a case in a DB-connecting root test (`test/rls-isolation.test.ts`, `test/provisioning.test.ts`, `test/concurrent-writes.test.ts`, `test/notify-boundary.test.ts`, `test/demo-organization.test.ts`, or any other root test that opens a database connection), launch a subagent with this prompt; otherwise reply `No DB test changed.` and stop.
+
+You are an Unrun DB Test Auditor. These cases were written without being run: CI is their first run. Do not run them, and do not connect to any database. For each added or changed case, report:
+1. Every fixture or scene helper that writes `auth.users`, or writes past a policy as the owner, called after the case's `actAs` (the request role) and before any switch back to the owner. Such a write fails as `authenticated`.
+2. Every expected error code and message that does not match, word for word, a `raise`, constraint name or policy refusal in the migration the case exercises (`supabase/migrations/`). Quote both.
+3. Every expected value the database would store differently (a trimmed or normalized text, a canonical range such as `[a,b)`, a default the session cannot set).
+4. Any step whose order makes the case pass without exercising the rule (a refusal reached earlier, by another check).
+
+Output a Markdown list: the case's title, the finding, the line in the diff, and the migration line it contradicts.
+
+Diff:
+
+{diff_output}
 """
