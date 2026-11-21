@@ -220,7 +220,7 @@ export function MemberTeamCard({ edit }: { readonly edit: MemberEdit }): ReactNo
                   type="button"
                   variant="outline"
                   aria-label={t('loans.amendName', { name: member.name, ...values })}
-                  disabled={loanPending}
+                  disabled={loanPending || !loanDialog.amendable}
                   onClick={(event) => {
                     loanDialog.openAmend(loan, event.currentTarget);
                   }}

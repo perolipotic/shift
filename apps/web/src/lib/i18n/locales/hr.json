@@ -1988,7 +1988,7 @@
       "saveUnavailable": "Spremanje trenutačno nije moguće. Pokušaj ponovno.",
       "unknown": "Ova smjena ne postoji u organizaciji.",
       "inUse": "Smjenu nije moguće arhivirati dok je netko u njoj ili je u nju zakazan. Premjesti te osobe u drugu smjenu ili je arhiviraj kad u njoj više nikoga nema.",
-      "lentTo": "Smjenu nije moguće arhivirati dok joj je netko posuđen danas ili kasnije. Skrati ili ukloni te posudbe, pa je arhiviraj."
+      "lentTo": "Tim nije moguće arhivirati dok mu je netko posuđen danas ili kasnije. Skrati ili ukloni te posudbe, pa ga arhiviraj."
     },
     "membership": {
       "column": "Smjena",
@@ -2325,7 +2325,7 @@
     "endToday": "Završi danas",
     "remove": "Ukloni posudbu",
     "removeHint": "Dani posudbe bit će kao da posudbe nikad nije bilo.",
-    "inactive": "{count, plural, one {# dan} few {# dana} other {# dana}} posudbe osoba nije aktivna: tada se ništa ne mijenja.",
+    "inactive": "Osoba nije aktivna {count, plural, one {# dan} few {# dana} other {# dana}} posudbe: tada se ništa ne mijenja.",
     "confirmRemoval": "Potvrdi uklanjanje posudbe osobe {name}",
     "error": {
       "unpicked": "Odaberi tim.",

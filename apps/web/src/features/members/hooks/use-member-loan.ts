@@ -185,9 +185,9 @@ export function useMemberLoan(screen: MemberScreen) {
   }, [gone, id]);
 
   /**
-   * After a landed write, or a closed dialog: the opener, else the card. An
-   * amend's row may be gone (its loan was replaced), so an amend falls back to
-   * the card, never to *Posudi drugom timu*.
+   * After a landed lend, or a closed dialog: the opener, else the card. An
+   * amend's row may be gone (its loan was replaced meanwhile), so an amend
+   * falls back to the card, never to *Posudi drugom timu*.
    */
   function focusLanded(): void {
     const amended = amendOpener.current;
@@ -358,7 +358,11 @@ export function useMemberLoan(screen: MemberScreen) {
       setSaved({ member: lent.id, raised: write.kind });
       setErased({ member: lent.id, raised: removed });
       setOpen(null);
-      focusLanded();
+      // An amend or a removal replaces the loan's row once the calendar is
+      // re-read, so its button would take focus and then unmount (review):
+      // the card's heading takes it instead.
+      if (write.kind === LOAN_LEND) focusLanded();
+      else focusLater([], byId(MEMBER_TEAM_HEADING_ID));
     }
 
     // A LANDED WRITE is re-read wherever a roster shows, and the leave and
@@ -543,6 +547,8 @@ export function useMemberLoan(screen: MemberScreen) {
     loanDialog: {
       /** The teams the card's button offers now, or `null` for no button. */
       available,
+      /** Whether *Izmijeni posudbu* can open: the member, the teams and today read (review). */
+      amendable: member !== null && activeTeams !== null && today !== null,
       /** What the open dialog was opened on, or `null`. */
       opening,
       /** Whether the open dialog removes its loan (*Ukloni posudbu*). */

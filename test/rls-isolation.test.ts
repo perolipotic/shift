@@ -27357,7 +27357,7 @@ describe('a loan is amended, ended early or removed (story 18.4, 0064)', () => {
   }
 
   it.skipIf(noDatabase).each(FIXTURES)(
-    'lets the $fixture admin amend a loan: the old row removed by the caller, the replacement inserted, one LOAN_CHANGED, paired in the history',
+    'lets the $fixture admin amend a loan: the old row removed by the caller, the replacement inserted, one LOAN_CHANGED (none for a reason alone), both audited',
     async ({ slug, admin }) => {
       await inRolledBackTransaction(async (client) => {
         const caller = await memberByUsername(client, slug, admin);
@@ -27370,7 +27370,10 @@ describe('a loan is amended, ended early or removed (story 18.4, 0064)', () => {
         await actAs(client, caller.authUserId, organization);
         const first = await insertLoan(client, { organization, member: member.id, team: other, during: `[${await day(10)},${await day(12)}]` });
         const kept = await amend(client, { id: first, team: third.id, from: await day(10), to: await day(14) });
+        // Stored as sent: 0062 checks the trimmed length and never rewrites the reason.
         const retold = await amend(client, { id: kept, team: third.id, from: await day(10), to: await day(11), reason: '  Kraće.  ' });
+        // The same team and dates, a new reason: not news (FR-92, review).
+        const reworded = await amend(client, { id: retold, team: third.id, from: await day(10), to: await day(11), reason: 'Drugi razlog.' });
         await actAsOwner(client);
 
         const { rows } = await client.query<{ id: string; team: string; during: string; reason: string; createdBy: string; removedBy: string | null }>(
@@ -27383,8 +27386,10 @@ describe('a loan is amended, ended early or removed (story 18.4, 0064)', () => {
 
         expect(byLoan.get(first)?.removedBy, `${slug}: the amend's removal is not the caller's`).toBe(caller.authUserId);
         expect(byLoan.get(kept), slug).toMatchObject({ team: third.id, reason: 'Pojačanje smjene.', createdBy: caller.authUserId, removedBy: caller.authUserId });
-        expect(byLoan.get(retold), slug).toMatchObject({ team: third.id, reason: 'Kraće.', createdBy: caller.authUserId, removedBy: null });
+        expect(byLoan.get(retold), slug).toMatchObject({ team: third.id, reason: '  Kraće.  ', createdBy: caller.authUserId, removedBy: caller.authUserId });
         expect(byLoan.get(retold)?.during).toBe(`[${await day(10)},${await day(12)})`);
+        expect(byLoan.get(reworded), slug).toMatchObject({ team: third.id, reason: 'Drugi razlog.', removedBy: null });
+        expect(await rowsOf(client, reworded), `${slug}: a reason-only amend was told`).toEqual([]);
         // One notice per change: never LOAN_MADE for a replacement.
         expect(await rowsOf(client, kept), slug).toEqual([`email:LOAN_CHANGED:${member.id}`]);
         expect(await rowsOf(client, retold), slug).toEqual([`email:LOAN_CHANGED:${member.id}`]);
@@ -27473,7 +27478,7 @@ describe('a loan is amended, ended early or removed (story 18.4, 0064)', () => {
   );
 
   it.skipIf(noDatabase).each(FIXTURES)(
-    'tells the $fixture member of an amend into the past, nobody of an amend of a wholly past loan, and refuses another tenant\'s loan id',
+    'tells the $fixture member of an amend into the past or of a past loan moved ahead, nobody of an amend of a wholly past loan, and refuses another tenant\'s loan id',
     async ({ slug, admin }) => {
       await inRolledBackTransaction(async (client) => {
         const caller = await memberByUsername(client, slug, admin);
@@ -27500,6 +27505,9 @@ describe('a loan is amended, ended early or removed (story 18.4, 0064)', () => {
         // Wholly past → wholly past: a correction of history, nobody is told.
         const past = await insertLoan(client, { organization, member: member.id, team: other, during: `[${await day(-20)},${await day(-18)}]` });
         const corrected = await amend(client, { id: past, team: other, from: await day(-20), to: await day(-19) });
+        // Wholly past → ahead: the new range is current, so the member is told (review).
+        const late = await insertLoan(client, { organization, member: member.id, team: other, during: `[${await day(-30)},${await day(-28)}]` });
+        const movedAhead = await amend(client, { id: late, team: other, from: await day(60), to: await day(62) });
         const foreignRemove = await refusedThenContinue(client, () => remove(client, foreignLoan));
         const foreignAmend = await refusedThenContinue(client, () =>
           amend(client, { id: foreignLoan, team: other, from: '2046-02-10', to: '2046-02-11' }),
@@ -27508,6 +27516,7 @@ describe('a loan is amended, ended early or removed (story 18.4, 0064)', () => {
 
         expect(await rowsOf(client, intoPast), slug).toEqual([`email:LOAN_CHANGED:${member.id}`]);
         expect(await rowsOf(client, corrected), `${slug}: a correction of a wholly past loan was told`).toEqual([]);
+        expect(await rowsOf(client, movedAhead), `${slug}: a past loan moved ahead was not told`).toEqual([`email:LOAN_CHANGED:${member.id}`]);
         expect([foreignRemove.code, foreignRemove.message], slug).toEqual(['P0002', 'TEAM_LOAN_NOT_LIVE']);
         expect([foreignAmend.code, foreignAmend.message], slug).toEqual(['P0002', 'TEAM_LOAN_NOT_LIVE']);
         const { rows } = await client.query<{ live: boolean }>('select removed_at is null as live from team_loans where id = $1', [foreignLoan]);

@@ -584,6 +584,7 @@ describe('Amend / change team / end early / remove: the edit\'s one "after"', ()
     // C works Dan 10. and Noć 11.; D (the pilot's fourth team) works on the 10.–12. too, all inside the range.
     expect(lines(LOAN_LOST).length).toBeGreaterThan(0);
     expect(lines(LOAN_LOST).every(([date, team]) => team === 'Smjena C' && date !== undefined && date >= LIVE.from && date <= LIVE.to)).toBe(true);
+    expect(lines(LOAN_GAINED).length).toBeGreaterThan(0);
     expect(lines(LOAN_GAINED).every(([date, team]) => team === 'Smjena D' && date !== undefined && date >= LIVE.from && date <= LIVE.to)).toBe(true);
     expect(lines(LOAN_LOST)).toContainEqual(['2026-10-10', 'Smjena C']);
   });
@@ -694,7 +695,7 @@ describe('Amend / change team / end early / remove: the edit\'s one "after"', ()
     expect(loanInactiveDaysOf(inactive, { memberId: ANA, replaces: LIVE, span: SPAN })).toBe(0);
     expect(loanEditSnapshotOf(inactive, SPAN).ok).toBe(true);
     expect(shownLoanPreviewOf(inactive, SPAN)?.inactiveDays).toBe(2);
-    expect(t('loans.inactive', { count: 2 })).toBe('2 dana posudbe osoba nije aktivna: tada se ništa ne mijenja.');
+    expect(t('loans.inactive', { count: 2 })).toBe('Osoba nije aktivna 2 dana posudbe: tada se ništa ne mijenja.');
     expect(t('loans.inactive', { count: 1 })).toContain('1 dan ');
   });
 

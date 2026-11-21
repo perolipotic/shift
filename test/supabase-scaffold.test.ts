@@ -5065,6 +5065,10 @@ describe('the access-control migration', () => {
     expect(notifier, 'an amend\'s removal is told').toMatch(
       /if tg_op = 'UPDATE' and suppressed = 'amend' then\s+perform private\.remember_amended\(/,
     );
+    expect(notifier, 'a reason-only amend is told').toMatch(
+      /previous := private\.take_amended\(\);[\s\S]*?if previous ->> 'team' = new\.team_id::text and previous ->> 'during' = new\.during::text then\s+return null;/,
+    );
+    expect(notifier).toMatch(/'team', old\.team_id,\s+'during', old\.during::text/);
     expect(notifier, 'a wholly past loan is told').toMatch(/current_live := pg_catalog\.upper\(new\.during\) - 1 >= today;/);
     expect(notifier, 'the reason or the author is an operand (FR-92)').not.toMatch(/new\.(reason|created_by|removed_by)/);
     expect(migration).toMatch(

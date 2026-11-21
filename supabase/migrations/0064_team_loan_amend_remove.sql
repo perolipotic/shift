@@ -45,7 +45,8 @@
 --
 --      * a plain insert: `LOAN_MADE`, exactly as 0063;
 --      * an amend: one `LOAN_CHANGED`, with the replacement's operands, to
---        the member when the old or the new range is current;
+--        the member when the old or the new range is current; none when only
+--        the reason changed (the same team and dates; FR-92 never shows it);
 --      * a removal: `LOAN_REMOVED`, with the removed loan's operands, when it
 --        was current.
 --
@@ -290,13 +291,20 @@ begin
   -- An amend's removal: kept for the insert that follows in the same call.
   if tg_op = 'UPDATE' and suppressed = 'amend' then
     perform private.remember_amended(pg_catalog.jsonb_build_object(
-      'members', case when current_live then pg_catalog.jsonb_build_array(old.member_id) else '[]'::jsonb end
+      'members', case when current_live then pg_catalog.jsonb_build_array(old.member_id) else '[]'::jsonb end,
+      'team', old.team_id,
+      'during', old.during::text
     ));
     return null;
   end if;
 
   if tg_op = 'INSERT' and suppressed = 'amend' then
     previous := private.take_amended();
+    -- A reason-only amend (the same team and dates) is not news: the member
+    -- is never shown the reason (FR-92), so nobody is told.
+    if previous ->> 'team' = new.team_id::text and previous ->> 'during' = new.during::text then
+      return null;
+    end if;
   end if;
 
   select t.name into team_name

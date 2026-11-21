@@ -62,7 +62,7 @@ export function MemberLoanDialog({ edit }: { readonly edit: MemberEdit }): React
   const gate = useWriteGate();
   const opening = dialog.opening;
   const { picker, loanFromField, loanToField, loanReasonField } = dialog;
-  const amending = opening?.held.replaces !== null && opening !== null;
+  const amending = opening !== null && opening.held.replaces !== null;
   const locked = pending || dialog.removing;
   const describedBy = dialog.refusal === null ? undefined : MEMBER_LOAN_ERROR_ID;
   const invalid = (field: string): boolean => dialog.invalidField === field;

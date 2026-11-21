@@ -2875,7 +2875,8 @@ const SANCTIONED_SCREEN_KEYS = [
   // notices, the amend dialog's fields and switch — and the member's two
   // notifications (`LOAN_CHANGED`, `LOAN_REMOVED`, mirrored in `notify`); the
   // team archive's refusal while a loan to it is current. Still *tim*, never
-  // `smjen`, in `loans`; `smjene.error.lentTo` speaks as its namespace does.
+  // `smjen`, in `loans`; `smjene.error.lentTo` says *tim* too, though its
+  // namespace says `Smjena` (review: a loan's copy never calls a team `smjen`).
   'loans.amended',
   'loans.removed',
   'loans.listHeading',

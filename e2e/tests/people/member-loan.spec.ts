@@ -25,7 +25,7 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * Under the run's rotation hold, a team of the test's own gets the seeded
  * rotation from today (`[Dan, Noć, Slobodno, Slobodno]`) and a fresh member
  * on it from today. The member is lent to the fixture's team (which has no
- * rotation), the loan is amended (ended later), then removed; a refusal is
+ * rotation), the loan is ended early (*Završi danas*), then removed; a refusal is
  * kept in the dialog; and a loan that would erase a conflict waits for the
  * erasure dialog. Everything written — the seed, the member with their loans
  * and leave, and the team — is removed in the `afterEach` whatever happens.
