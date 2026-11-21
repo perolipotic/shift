@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="hr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Postavljanje na Danas</title>
+<meta name="description" content="Epic 19: the resumable Postavljanje card on admin Danas, its dismissal, and the empty states of a freshly created organization.">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap&subset=latin-ext" rel="stylesheet">
+<style>
+:root{
+ --canvas:#CFD8E4;--canvas-ink:#1E293B;--canvas-mut:#475569;--note:#F8FAFC;--note-bd:#94A3B8;
+ --bg:#E8EDF5;--fg:#0F172A;--card:#FFFFFF;--muted:#F1F5F9;--mfg:#556275;--bd:#E2E8F0;--input:#6E7D93;--ring:#13296B;
+ --pri:#2F55B8;--prifg:#FFFFFF;--pritint:rgba(47,85,184,.13);
+ --ink:#111827;--inkfg:#FFFFFF;
+ --glass:rgba(255,255,255,.58);--glassoc:rgba(255,255,255,.80);--glassrd:rgba(255,255,255,.85);--glassbd:rgba(255,255,255,.80);--glassact:#FFFFFF;
+ --scrim:rgba(15,23,42,.32);--gsh:0 10px 40px rgba(30,40,70,.10);
+ --b1:#B9D3FF;--b2:#E2CCFF;--b3:#C6F0E2;
+ --s1:#E4F0FA;--s1f:#14496F;--s3:#EFE7F7;--s3f:#4B3168;--s4:#FDF0DC;--s4f:#6E4A12;--nw:#F0F3F6;--nwf:#8D9AA7;
+ --bandd:#0B1628;--banddf:#CBD5E1;--unc:rgba(160,110,20,.22);
+ --sh:0 1px 3px rgba(0,0,0,.07),0 4px 16px rgba(0,0,0,.05);--skel:#E2E8F0;
+ color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+ --canvas:#03070D;--canvas-ink:#E2E8F0;--canvas-mut:#94A3B8;--note:#0B1424;--note-bd:#475569;
+ --bg:#0A1020;--fg:#E2E8F0;--card:#132035;--muted:#1C2B44;--mfg:#94A3B8;--bd:rgba(255,255,255,.10);--input:rgba(255,255,255,.40);--ring:#B4D2FD;
+ --pri:#3FA0FA;--prifg:#0B1628;--pritint:rgba(63,160,250,.16);
+ --ink:#F1F5F9;--inkfg:#0B1220;
+ --glass:rgba(15,23,42,.58);--glassoc:rgba(15,23,42,.80);--glassrd:rgba(19,32,53,.92);--glassbd:rgba(255,255,255,.10);--glassact:rgba(255,255,255,.12);
+ --scrim:rgba(0,0,0,.55);--gsh:0 10px 40px rgba(0,0,0,.45);
+ --b1:rgba(29,58,122,.45);--b2:rgba(59,36,102,.45);--b3:rgba(14,74,60,.45);
+ --s1:#00415D;--s1f:#B8E2FA;--s3:#3C324C;--s3f:#CBB4E8;--s4:#42361D;--s4f:#E8C88A;--nw:#0E1828;--nwf:#8494A8;
+ --bandd:#070E1A;--banddf:#C0CBDA;--unc:rgba(230,170,60,.16);
+ --sh:0 1px 3px rgba(0,0,0,.30),0 4px 16px rgba(0,0,0,.22);--skel:#1C2B44;
+ color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+ --canvas:#03070D;--canvas-ink:#E2E8F0;--canvas-mut:#94A3B8;--note:#0B1424;--note-bd:#475569;
+ --bg:#0A1020;--fg:#E2E8F0;--card:#132035;--muted:#1C2B44;--mfg:#94A3B8;--bd:rgba(255,255,255,.10);--input:rgba(255,255,255,.40);--ring:#B4D2FD;
+ --pri:#3FA0FA;--prifg:#0B1628;--pritint:rgba(63,160,250,.16);
+ --ink:#F1F5F9;--inkfg:#0B1220;
+ --glass:rgba(15,23,42,.58);--glassoc:rgba(15,23,42,.80);--glassrd:rgba(19,32,53,.92);--glassbd:rgba(255,255,255,.10);--glassact:rgba(255,255,255,.12);
+ --scrim:rgba(0,0,0,.55);--gsh:0 10px 40px rgba(0,0,0,.45);
+ --b1:rgba(29,58,122,.45);--b2:rgba(59,36,102,.45);--b3:rgba(14,74,60,.45);
+ --s1:#00415D;--s1f:#B8E2FA;--s3:#3C324C;--s3f:#CBB4E8;--s4:#42361D;--s4f:#E8C88A;--nw:#0E1828;--nwf:#8494A8;
+ --bandd:#070E1A;--banddf:#C0CBDA;--unc:rgba(230,170,60,.16);
+ --sh:0 1px 3px rgba(0,0,0,.30),0 4px 16px rgba(0,0,0,.22);--skel:#1C2B44;
+ color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--canvas);color:var(--canvas-ink);font:14px/1.5 'Outfit',ui-sans-serif,system-ui,sans-serif;overflow-x:hidden;font-variant-numeric:tabular-nums}
+svg.i{width:18px;height:18px;flex:0 0 auto;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+svg.i.sm{width:15px;height:15px}svg.i.lg{width:22px;height:22px}
+/* presentation chrome (not product UI) */
+.doc{max-width:1480px;margin:0 auto;padding:28px 16px 80px}
+.doc>header{display:flex;gap:16px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;margin-bottom:8px}
+.doc h1.t{font-size:26px;font-weight:700;margin:0 0 6px;letter-spacing:-.01em}
+.lead{color:var(--canvas-mut);max-width:90ch;margin:0 0 6px;font-size:14px}
+.doc h2.s{font-size:19px;font-weight:700;margin:44px 0 6px}
+.why{color:var(--canvas-mut);font-size:12.5px;margin:0 0 10px;max-width:62ch}
+.row{display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap}
+.col{flex:0 0 auto;max-width:100%}
+.col>.why{min-height:40px;max-width:390px}
+.cap{font-size:13px;font-weight:700;margin:0 0 2px}
+.note{background:var(--note);border:1.5px dashed var(--note-bd);border-radius:10px;padding:10px 12px;font-size:12.5px;color:var(--canvas-ink);max-width:440px}
+.note ul{margin:4px 0 0;padding-left:18px}.note li{margin:2px 0}
+.flag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;border:1.5px solid currentColor;border-radius:99px;padding:0 7px;margin-right:4px}
+.theme{display:inline-flex;border:1.5px solid var(--note-bd);border-radius:99px;padding:3px;gap:2px;background:var(--note)}
+.theme button{border:0;background:transparent;color:var(--canvas-ink);font:inherit;font-size:12px;font-weight:600;padding:5px 11px;border-radius:99px;cursor:pointer;min-height:32px}
+.theme button[aria-pressed="true"]{background:var(--canvas-ink);color:var(--canvas)}
+/* frames */
+.ph{width:390px;max-width:100%;height:800px;background:var(--bg);color:var(--fg);border-radius:30px;border:1px solid rgba(0,0,0,.25);box-shadow:0 18px 50px rgba(0,0,0,.28);overflow:hidden;display:flex;flex-direction:column;position:relative;isolation:isolate}
+.ph.tall{height:900px}.ph.short{height:640px}.ph.xs{height:560px}
+.blobs{position:absolute;inset:0;z-index:-1;background:
+ radial-gradient(40% 30% at 12% 8%,var(--b1),transparent 70%),
+ radial-gradient(38% 32% at 92% 30%,var(--b2),transparent 70%),
+ radial-gradient(40% 30% at 30% 96%,var(--b3),transparent 70%),var(--bg)}
+.ph .sbar{height:34px;flex:0 0 auto;display:flex;justify-content:space-between;align-items:center;padding:0 24px;font-size:12px;font-weight:600}
+.ph .scr{flex:1;overflow:hidden;padding:4px 16px 16px;position:relative}
+.dkw{max-width:100%;overflow-x:auto;border-radius:14px}
+.dk{width:1080px;height:720px;background:var(--bg);color:var(--fg);border-radius:14px;border:1px solid rgba(0,0,0,.25);box-shadow:0 18px 50px rgba(0,0,0,.28);overflow:hidden;display:flex;position:relative;isolation:isolate}
+.dk.tall{height:860px}.dk.xl{height:1400px}
+.dk .main{flex:1;overflow:hidden;padding:28px 32px}
+/* primitives (DESIGN.md, direction G) */
+.ptitle{font-weight:700;font-size:24px;letter-spacing:-.01em;margin:0;line-height:1.2}
+.pdesc{font-size:13.5px;color:var(--mfg);margin:4px 0 0}
+.phead{margin:6px 0 16px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:16px;box-shadow:var(--sh)}
+.card .ch{padding:13px 16px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:8px}
+.card .ct{font-weight:700;font-size:15px;flex:1;margin:0}
+.card .cb{padding:14px 16px}
+.mut{color:var(--mfg)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;padding:0 16px;border-radius:14px;font:inherit;font-weight:600;font-size:14px;border:1.5px solid transparent;white-space:nowrap;text-decoration:none;color:var(--fg)}
+.btn.p{background:var(--ink);color:var(--inkfg)}
+.btn.o{background:var(--card);border-color:var(--input)}
+.btn.g{background:transparent}
+.btn.w{width:100%}
+.btn[disabled]{opacity:.5}
+.ibtn{width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center;border-radius:14px;background:transparent;color:var(--fg)}
+.badge{display:inline-flex;align-items:center;gap:4px;border-radius:99px;font-size:12px;font-weight:600;padding:1px 9px;white-space:nowrap}
+.badge.d{background:var(--pritint);color:var(--fg)}
+.badge.s{background:var(--muted);color:var(--fg)}
+.badge.o{border:1.5px solid var(--input);color:var(--fg);padding:0 8px}
+.field{display:flex;flex-direction:column;gap:5px;margin-bottom:14px}
+.field>label,.flabel{font-size:13.5px;font-weight:600}
+.inp{min-height:44px;border:1.5px solid var(--input);border-radius:14px;background:var(--card);color:var(--fg);padding:0 12px;display:flex;align-items:center;gap:8px;font-size:14px}
+.inp .ph-t,.inp.ph-t{color:var(--mfg)}
+.inp.sel::after{content:"";margin-left:auto;width:8px;height:8px;border-right:2px solid var(--mfg);border-bottom:2px solid var(--mfg);transform:rotate(45deg) translate(-2px,-2px)}
+.inp.focus{box-shadow:0 0 0 2px var(--card),0 0 0 4px var(--ring)}
+.inp.dim{background:var(--muted);border-style:dashed}
+.inp .end{margin-left:auto;display:flex;color:var(--mfg)}
+.out{min-height:44px;border:1.5px dashed var(--input);border-radius:14px;background:var(--muted);padding:10px 12px;font-size:14px}
+.hint{font-size:12.5px;color:var(--mfg)}
+.chk{display:flex;gap:6px;align-items:center;font-size:12.5px;color:var(--mfg)}
+.chk.ok{color:var(--fg)}
+.notice{border:1.5px solid var(--input);background:var(--card);border-radius:14px;padding:10px 12px;font-size:13.5px;font-weight:500;display:flex;gap:8px;align-items:flex-start}
+.callout{background:color-mix(in srgb,var(--pri) 5%,var(--bg));border:1px solid color-mix(in srgb,var(--pri) 20%,transparent);border-radius:16px;padding:12px 14px;font-size:13.5px;display:flex;gap:10px}
+.callout .itile{width:34px;height:34px;border-radius:12px;background:var(--pritint);display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+.callout b{display:block;margin-bottom:2px}
+.callout p{margin:0 0 4px}
+.lnk{color:var(--fg);text-decoration:underline;text-underline-offset:3px;font-weight:600}
+.sep{height:1px;background:var(--bd);margin:14px 0}
+.tbl{width:100%;border-collapse:collapse;font-size:13.5px}
+.tbl th{text-align:left;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--mfg);background:var(--muted);padding:8px 12px;font-weight:700}
+.tbl td{padding:10px 12px;border-top:1px solid var(--bd)}
+.av{width:32px;height:32px;border-radius:50%;background:var(--muted);display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex:0 0 auto}
+.chip{display:inline-flex;align-items:center;border-radius:8px;font-size:12px;font-weight:700;padding:2px 8px;white-space:nowrap}
+.chip.s1{background:var(--s1);color:var(--s1f)}.chip.s3{background:var(--s3);color:var(--s3f)}.chip.s4{background:var(--s4);color:var(--s4f)}.chip.nw{background:var(--nw);color:var(--nwf)}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13.5px}
+/* glass chrome */
+.glass{background:var(--glass);border:1px solid var(--glassbd);box-shadow:var(--gsh);backdrop-filter:blur(24px) saturate(160%)}
+.glassoc{background:var(--glassoc);border:1px solid var(--glassbd);box-shadow:var(--gsh);backdrop-filter:blur(24px) saturate(160%)}
+.glassrd{background:var(--glassrd);border:1px solid var(--glassbd);box-shadow:var(--gsh);backdrop-filter:blur(24px) saturate(160%)}
+.lockup{display:flex;align-items:center;gap:10px}
+.lockup .tile{width:34px;height:34px;border-radius:11px;background:var(--ink);color:var(--inkfg);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px}
+.lockup b{font-size:15px}
+/* auth frame */
+.auth-dk{display:flex;gap:16px;padding:16px;width:100%}
+.brandp{width:440px;border-radius:24px;padding:36px;display:flex;flex-direction:column}
+.brandp h2{font-size:30px;line-height:1.15;margin:auto 0 10px;font-weight:700;letter-spacing:-.01em}
+.brandp p{margin:0;color:var(--fg);font-size:15px;max-width:34ch}
+.authc{flex:1;display:flex;align-items:center;justify-content:center}
+.authc .card{width:420px}
+.authc .card .cb{padding:24px}
+.ph .authp{padding:10px 4px}
+.foot{font-size:13.5px;margin-top:14px;display:flex;gap:6px;flex-wrap:wrap;justify-content:center}
+/* setup frame */
+.stop{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0 12px}
+.stop .who{font-size:12.5px;color:var(--mfg);text-align:right;line-height:1.3}
+.rail{list-style:none;margin:0;padding:6px}
+.rail li{display:flex;align-items:center;gap:10px;min-height:44px;padding:4px 10px;border-radius:12px;font-size:14px}
+.rail li .n{width:26px;height:26px;border-radius:50%;border:1.5px solid var(--input);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex:0 0 auto}
+.rail li.done .n{background:var(--ink);color:var(--inkfg);border-color:var(--ink)}
+.rail li.cur{background:var(--muted);font-weight:700}
+.rail li.cur .lbl{text-decoration:underline;text-underline-offset:3px}
+.rail li .st{margin-left:auto;font-size:12px;color:var(--mfg);font-weight:500}
+.prog{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin:8px 0 2px}
+.prog span{height:6px;border-radius:3px;background:var(--bd);box-shadow:inset 0 0 0 1px var(--input)}
+.prog span.done{background:var(--ink);box-shadow:none}
+.prog span.cur{background:var(--pri);box-shadow:none}
+.sfoot{display:flex;gap:8px;justify-content:space-between;align-items:center;margin-top:16px}
+.ph .sfoot{position:absolute;left:0;right:0;bottom:0;padding:12px 16px 22px;margin:0;border-radius:22px 22px 0 0}
+.timeline{display:flex;height:34px;border-radius:10px;overflow:hidden;border:1px solid var(--bd)}
+.timeline .u{flex:1;background-color:var(--muted);background-image:repeating-linear-gradient(45deg,var(--unc) 0 4px,transparent 4px 8px);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:var(--fg)}
+.scale{display:flex;justify-content:space-between;font-size:11px;color:var(--mfg);margin-top:3px}
+.empty{padding:22px 16px;text-align:left;font-size:14px}
+.empty b{display:block;margin-bottom:2px}
+/* dialog / sheet */
+.scrim{position:absolute;inset:0;background:var(--scrim);z-index:3}
+.dlg{position:absolute;z-index:4;border-radius:16px;color:var(--fg)}
+.dlg .dh{display:flex;align-items:center;gap:8px;padding:10px 10px 10px 20px;border-bottom:1px solid var(--bd)}
+.dlg .dh h3{margin:0;font-size:17px;font-weight:700;flex:1}
+.dlg .db{padding:16px 20px}
+.dlg .df{display:flex;justify-content:flex-end;gap:8px;padding:12px 20px 16px;border-top:1px solid var(--bd)}
+.sheet{position:absolute;left:0;right:0;bottom:0;border-radius:22px 22px 0 0;z-index:4;padding:8px 16px 22px;color:var(--fg)}
+.grab{width:40px;height:4px;border-radius:2px;background:var(--input);opacity:.6;margin:2px auto 10px}
+/* app shell (Danas mockups) */
+.side{width:232px;flex:0 0 auto;margin:16px 0 16px 16px;border-radius:24px;padding:12px 10px;display:flex;flex-direction:column}
+.side .lockup{padding:6px 6px 14px;border-bottom:1px solid var(--bd);margin-bottom:6px}
+.sgl{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--fg);padding:12px 10px 4px}
+.ni{display:flex;align-items:center;gap:10px;min-height:42px;padding:0 10px;border-radius:12px;font-size:13.5px;font-weight:500}
+.ni.on{background:var(--glassact);font-weight:700;box-shadow:var(--sh)}
+.ni.on span{text-decoration:underline;text-underline-offset:3px}
+.tabs{position:absolute;left:16px;right:16px;bottom:14px;border-radius:99px;display:grid;grid-template-columns:repeat(5,1fr);padding:6px;z-index:2}
+.tab{display:flex;flex-direction:column;align-items:center;gap:2px;min-height:50px;justify-content:center;font-size:11px;font-weight:500;border-radius:99px}
+.tab.on{background:var(--glassact);font-weight:700;box-shadow:var(--sh)}
+.tab.on span{text-decoration:underline;text-underline-offset:3px}
+.edge-d{border-left:4px solid #D93A46}
+.stat{font-size:22px;font-weight:700;line-height:1.2}
+.list{list-style:none;margin:0;padding:0}
+.list li{display:flex;align-items:center;gap:10px;min-height:44px;border-top:1px solid var(--bd);padding:6px 0;font-size:14px}
+.list li:first-child{border-top:0}
+</style>
+</head>
+<body>
+<div class="doc">
+<header>
+ <div><h1 class="t">Kartica Postavljanje i prazna stanja</h1><p class="lead">Story 19.4 (AD-24). The card resumes an unfinished setup from <i>Danas</i>; the empty states are what a Founding Admin meets on every destination before setup is done.</p>
+ <p class="lead"><a class="lnk" href="index.html">Svi ekrani epika 19</a> · direction G („Staklo”), Outfit, ink actions; spines (DESIGN.md, EXPERIENCE.md) win on conflict. Sample data is invented and organization-neutral: <i>Tvrtka Primjer</i>, <code>tvrtka-primjer</code>, <code>ivana.horvat@example.com</code>.</p></div>
+ <div class="theme" role="group" aria-label="Tema"><button data-v="system" aria-pressed="true">Sustav</button><button data-v="light">Svijetla</button><button data-v="dark">Tamna</button></div>
+</header>
+<h2 class="s">1 · Kartica Postavljanje na Danas (UX-DR69)</h2><p class="why" style="max-width:96ch">Drawn for an active admin of an organization founded by signup, until no fact step is left or it is dismissed (AD-24); an operator-provisioned organization never sees it. It is first on admin <i>Danas</i>, above <i>Treba tebe</i>, because in an organization with no rotation it is the only work there is. It counts the five fact steps in words and numbers (<code>{n} od 5</code>, three plural forms), lists those not done, each a link to its step, and offers <i>Nastavi: {prvi}</i> and <i>Sakrij</i>. It is outside <i>Danas</i>'s freshness set (as the loan line is): drawn once its reads are there, never holding the skeleton.</p><div class="row"><div class="col"><p class="cap">Desktop · još 3 koraka</p><p class="why"></p><div class="dkw"><div class="dk tall"><div class="blobs"></div><div class="side glass"><div class="lockup"><div class="tile">T</div><div><b>Tvrtka Primjer</b></div></div>
+<div class="sgl">Pregled</div><div class="ni on"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11l8-7 8 7v9H4z"/></svg><span>Danas</span></div><div class="ni"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg><span>Kalendar</span></div><div class="ni"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg><span>Za odluku</span></div><div class="ni"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.2c2.4.2 4 1.8 4.5 4.8"/></svg><span>Ljudi</span></div><div class="ni"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>Sati</span></div><div class="ni"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/></svg><span>Godišnji</span></div><div class="sgl">Postavke</div><div class="ni"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9a7 7 0 0 1 12-3l3 3M20 15a7 7 0 0 1-12 3l-3-3"/><path d="M19 4v5h-5M5 20v-5h5"/></svg><span>Postavke rotacije</span></div><div class="ni"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg><span>Organizacija</span></div>
+<div style="margin-top:auto;display:flex;gap:10px;align-items:center;padding:10px 6px 2px;border-top:1px solid var(--bd)"><span class="av">IH</span><span style="font-size:13px"><b>Ivana Horvat</b><br><span class="hint">Administrator</span></span></div></div><div class="main"><div style="max-width:760px"><div class="phead"><h1 class="ptitle">Danas</h1><p class="pdesc">subota, 21.11.2026.</p></div><div class="card" style="margin-bottom:14px"><div class="ch"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg><h2 class="ct">Postavljanje: još 3 koraka</h2></div><div class="cb">
+<p class="mut" style="margin:0 0 6px">Postavljeno 2 od 5. Dok rotacija nije spremljena, raspored ne nastaje.</p>
+<ul class="list"><li><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/></svg><a class="lnk" style="flex:1">Tipovi smjena</a></li><li><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/></svg><a class="lnk" style="flex:1">Rotacija</a></li><li><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/></svg><a class="lnk" style="flex:1">Ljudi</a></li></ul>
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><a class="btn p">Nastavi: Tipovi smjena</a><a class="btn g">Sakrij</a></div></div></div><div class="card" style="margin-bottom:14px"><div class="ch"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><h2 class="ct">Treba tebe</h2></div><div class="cb"><div class="stat">0</div><p class="mut" style="margin:0">Ništa ne čeka odluku.</p></div></div><div class="card" style="margin-bottom:14px"><div class="ch"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.2c2.4.2 4 1.8 4.5 4.8"/></svg><h2 class="ct">Pokrivenost danas</h2></div><div class="cb"><p style="margin:0"><b>Još nema nijedne smjene.</b></p><p class="mut" style="margin:2px 0 0">Kad postaviš smjene i rotaciju, ovdje piše tko danas radi.</p></div></div></div></div></div></div></div><div class="col"><p class="cap">Phone · još 1 korak</p><p class="why"></p><div class="ph tall"><div class="blobs"></div><div class="sbar"><span>9:41</span><span>●●●</span></div><div class="scr"><div class="phead"><h1 class="ptitle">Danas</h1><p class="pdesc">subota, 21.11.2026.</p></div><div class="card" style="margin-bottom:14px"><div class="ch"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg><h2 class="ct">Postavljanje: još 1 korak</h2></div><div class="cb">
+<p class="mut" style="margin:0 0 6px">Postavljeno 4 od 5.</p>
+<ul class="list"><li><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/></svg><a class="lnk" style="flex:1">Ljudi</a></li></ul>
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><a class="btn p">Nastavi: Ljudi</a><a class="btn g">Sakrij</a></div></div></div><div class="card" style="margin-bottom:14px"><div class="ch"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><h2 class="ct">Treba tebe</h2></div><div class="cb"><div class="stat">0</div><p class="mut" style="margin:0">Ništa ne čeka odluku.</p></div></div><div class="card" style="margin-bottom:14px"><div class="ch"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.2c2.4.2 4 1.8 4.5 4.8"/></svg><h2 class="ct">Pokrivenost danas</h2></div><div class="cb"><p style="margin:0"><b>Još nema nijedne smjene.</b></p><p class="mut" style="margin:2px 0 0">Kad postaviš smjene i rotaciju, ovdje piše tko danas radi.</p></div></div><div class="tabs glassoc"><div class="tab on"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11l8-7 8 7v9H4z"/></svg><span>Danas</span></div><div class="tab"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg><span>Kalendar</span></div><div class="tab"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg><span>Za odluku</span></div><div class="tab"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.2c2.4.2 4 1.8 4.5 4.8"/></svg><span>Ljudi</span></div><div class="tab"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg><span>Više</span></div></div></div></div></div><div class="col"><p class="cap">Phone · Sakrij</p><p class="why">One neutral question naming its consequence; the confirm is neutral, never <code>destructive</code>. Writes <code>organizations.onboarding_dismissed</code>, the one stored fact.</p><div class="ph tall"><div class="blobs"></div><div class="sbar"><span>9:41</span><span>●●●</span></div><div class="scr"><div class="phead"><h1 class="ptitle">Danas</h1><p class="pdesc">subota, 21.11.2026.</p></div><div class="card" style="margin-bottom:14px"><div class="ch"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg><h2 class="ct">Postavljanje: još 3 koraka</h2></div><div class="cb">
+<p class="mut" style="margin:0 0 6px">Postavljeno 2 od 5. Dok rotacija nije spremljena, raspored ne nastaje.</p>
+<ul class="list"><li><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/></svg><a class="lnk" style="flex:1">Tipovi smjena</a></li><li><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/></svg><a class="lnk" style="flex:1">Rotacija</a></li><li><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/></svg><a class="lnk" style="flex:1">Ljudi</a></li></ul>
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><a class="btn p">Nastavi: Tipovi smjena</a><a class="btn g">Sakrij</a></div></div></div><div class="card" style="margin-bottom:14px"><div class="ch"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><h2 class="ct">Treba tebe</h2></div><div class="cb"><div class="stat">0</div><p class="mut" style="margin:0">Ništa ne čeka odluku.</p></div></div><div class="card" style="margin-bottom:14px"><div class="ch"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.2c2.4.2 4 1.8 4.5 4.8"/></svg><h2 class="ct">Pokrivenost danas</h2></div><div class="cb"><p style="margin:0"><b>Još nema nijedne smjene.</b></p><p class="mut" style="margin:2px 0 0">Kad postaviš smjene i rotaciju, ovdje piše tko danas radi.</p></div></div><div class="tabs glassoc"><div class="tab on"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11l8-7 8 7v9H4z"/></svg><span>Danas</span></div><div class="tab"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg><span>Kalendar</span></div><div class="tab"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg><span>Za odluku</span></div><div class="tab"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.2c2.4.2 4 1.8 4.5 4.8"/></svg><span>Ljudi</span></div><div class="tab"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg><span>Više</span></div></div><div class="scrim"></div><div class="dlg glassrd" style="left:12px;right:12px;top:260px">
+<div class="dh"><h3>Sakriti postavljanje?</h3><span class="ibtn"><svg class="i " viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></span></div><div class="db">
+<p style="margin:0 0 8px">Kartica se više neće prikazivati nijednom administratoru.</p><p class="mut" style="margin:0">Preostale korake i dalje postavljaš na njihovim stranicama: <i>Postavke rotacije</i> i <i>Ljudi</i>.</p></div>
+<div class="df"><a class="btn o">Odustani</a><a class="btn o">Sakrij postavljanje</a></div></div></div></div><div class="note" style="margin-top:12px"><b>Decision (UX-DR69):</b> dismissal is per organization (one column), so it hides the card for every admin. After it, <code>/postavljanje</code> still opens by URL and every step remains on its shipped page (<i>Organizacija → Satni pojasi</i>, <i>Ljudi</i>, <i>Postavke rotacije</i>); no new entry point is added.</div></div></div><h2 class="s">2 · Prazna stanja nove organizacije (UX-DR70)</h2><p class="why" style="max-width:96ch">Every destination an admin can open before setup is finished says what is true and why, in organization-neutral words, and where setup is not done offers the way to it. The reason is named, as for an inactive member: "no team exists" is never shown as "no team works today". Existing strings that already hold are kept (<i>Nijedna smjena nije u upotrebi…</i>, <i>Ništa ne čeka odluku.</i>, <i>Za rotaciju je potrebna barem jedna smjena u upotrebi.</i>); the new or changed ones are in UX-DR70.</p><div class="row"><div class="col"><p class="cap">Kalendar · nema smjena</p><p class="why">The admin gets <i>Nastavi postavljanje</i> while the setup card would be drawn; a member never sees it.</p><div class="ph short"><div class="blobs"></div><div class="sbar"><span>9:41</span><span>●●●</span></div><div class="scr"><div class="phead"><h1 class="ptitle">Kalendar</h1><p class="pdesc">Studeni 2026.</p></div><div class="card" style="margin-bottom:14px"><div class="ch"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg><h2 class="ct">Studeni 2026.</h2></div><div class="cb"><p style="margin:0"><b>Nijedna smjena nije u upotrebi, pa kalendar nema što prikazati.</b></p><p class="mut" style="margin:4px 0 10px">Raspored nastaje iz smjena, tipova smjena i rotacije.</p><a class="btn o">Nastavi postavljanje</a></div></div><div class="tabs glassoc"><div class="tab"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11l8-7 8 7v9H4z"/></svg><span>Danas</span></div><div class="tab on"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg><span>Kalendar</span></div><div class="tab"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg><span>Za odluku</span></div><div class="tab"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.2c2.4.2 4 1.8 4.5 4.8"/></svg><span>Ljudi</span></div><div class="tab"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg><span>Više</span></div></div></div></div></div><div class="col"><p class="cap">Ljudi · samo ti</p><p class="why"></p><div class="ph short"><div class="blobs"></div><div class="sbar"><span>9:41</span><span>●●●</span></div><div class="scr"><div class="phead"><h1 class="ptitle">Ljudi</h1><p class="pdesc">Osobe i smjene organizacije.</p></div><div class="card" style="margin-bottom:14px"><div class="ch"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.2c2.4.2 4 1.8 4.5 4.8"/></svg><h2 class="ct">Osobe</h2></div><div class="cb"><ul class="list"><li><span class="av">IH</span><span style="flex:1"><b>Ivana Horvat</b><br><span class="hint">Administrator · bez smjene</span></span><span class="badge s">Aktivno</span></li></ul><p class="mut" style="margin:8px 0 10px">Za sada si jedina osoba u organizaciji.</p><a class="btn p"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Dodaj osobu</a></div></div><div class="tabs glassoc"><div class="tab"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11l8-7 8 7v9H4z"/></svg><span>Danas</span></div><div class="tab"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg><span>Kalendar</span></div><div class="tab"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg><span>Za odluku</span></div><div class="tab on"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.2c2.4.2 4 1.8 4.5 4.8"/></svg><span>Ljudi</span></div><div class="tab"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg><span>Više</span></div></div></div></div></div><div class="col"><p class="cap">Postavke rotacije · nema smjena</p><p class="why"></p><div class="ph short"><div class="blobs"></div><div class="sbar"><span>9:41</span><span>●●●</span></div><div class="scr"><div class="phead"><h1 class="ptitle">Postavke rotacije</h1><p class="pdesc">Uzorak i pomaci smjena.</p></div><div class="card" style="margin-bottom:14px"><div class="ch"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9a7 7 0 0 1 12-3l3 3M20 15a7 7 0 0 1-12 3l-3-3"/><path d="M19 4v5h-5M5 20v-5h5"/></svg><h2 class="ct">Rotacija</h2></div><div class="cb"><p style="margin:0"><b>Za rotaciju je potrebna barem jedna smjena u upotrebi.</b></p><p class="mut" style="margin:4px 0 10px">Dodaj smjene i barem jedan radni tip smjene, pa ovdje složi uzorak.</p><a class="btn o">Smjene</a></div></div><div class="tabs glassoc"><div class="tab"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11l8-7 8 7v9H4z"/></svg><span>Danas</span></div><div class="tab"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg><span>Kalendar</span></div><div class="tab"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg><span>Za odluku</span></div><div class="tab"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.2c2.4.2 4 1.8 4.5 4.8"/></svg><span>Ljudi</span></div><div class="tab on"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg><span>Više</span></div></div></div></div></div><div class="col"><p class="cap">Sati · nema rasporeda</p><p class="why">Replaces <i>U ovom mjesecu nema nijedne osobe.</i> when the organization has people but no rotation.</p><div class="ph short"><div class="blobs"></div><div class="sbar"><span>9:41</span><span>●●●</span></div><div class="scr"><div class="phead"><h1 class="ptitle">Sati</h1><p class="pdesc">Studeni 2026.</p></div><div class="card" style="margin-bottom:14px"><div class="ch"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><h2 class="ct">Sati u studenom 2026.</h2></div><div class="cb"><p style="margin:0"><b>U ovom mjesecu nitko nema nijednu smjenu.</b></p><p class="mut" style="margin:4px 0 0">Sati se računaju iz rasporeda; raspored još nije postavljen.</p></div></div><div class="tabs glassoc"><div class="tab"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11l8-7 8 7v9H4z"/></svg><span>Danas</span></div><div class="tab"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg><span>Kalendar</span></div><div class="tab"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg><span>Za odluku</span></div><div class="tab"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.2c2.4.2 4 1.8 4.5 4.8"/></svg><span>Ljudi</span></div><div class="tab on"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg><span>Više</span></div></div></div></div></div></div>
+</div>
+<script>
+(function(){
+ var KEY='shift-mock-theme',root=document.documentElement;
+ function apply(v){ if(v==='light'||v==='dark'){root.setAttribute('data-theme',v);} else {root.removeAttribute('data-theme');}
+  document.querySelectorAll('.theme button').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.v===(v||'system')));}); }
+ var saved=null; try{saved=localStorage.getItem(KEY);}catch(e){}
+ var q=new URLSearchParams(location.search).get('theme'); if(q==='light'||q==='dark') saved=q;
+ apply(saved);
+ document.addEventListener('click',function(e){var b=e.target.closest('.theme button'); if(!b)return;
+  var v=b.dataset.v==='system'?null:b.dataset.v; apply(v); try{ if(v)localStorage.setItem(KEY,v); else localStorage.removeItem(KEY);}catch(e){} });
+})();
+</script>
+</body>
+</html>

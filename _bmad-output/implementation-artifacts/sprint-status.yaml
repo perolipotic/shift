@@ -709,7 +709,7 @@ development_status:
   19-1-the-signup-door-opens-safely-on-staging: backlog  # READY (AP2 done 2026-11-21, D-S ratified); its staging application waits 20.5
   19-2-a-stranger-creates-an-account: backlog  # after 19.1 (AP2 done 2026-11-21)
   19-3-a-verified-account-creates-its-organization: backlog  # after 19.2 (AP2 done 2026-11-21)
-  19-4-the-onboarding-wizard-guides-setup-and-pre-fills-nothing: backlog  # after 19.3; waits: UX review with mockups (AP2 done 2026-11-21)
+  19-4-the-onboarding-wizard-guides-setup-and-pre-fills-nothing: backlog  # after 19.3; UX review with mockups done 2026-11-21 (ux-shift-2026-11-21-signup, UX-DR62–70), pending founder acceptance (AP2 done 2026-11-21)
   19-5-abandoned-signups-are-cleaned-up-and-the-operator-keeps-cont: backlog  # after 19.3 (AP2 done 2026-11-21)
   epic-19-retrospective: optional
 
