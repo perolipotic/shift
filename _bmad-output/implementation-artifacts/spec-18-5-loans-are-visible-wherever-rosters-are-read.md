@@ -16,7 +16,7 @@ context:
 
 **Problem:** Since 18.1–18.4 every roster, hour and staffing figure follows a loan, but nothing says so: a lent member appears on another team's day with no mark, *Danas* and the directory name only the home team, the hours explanation calls a loan shift `rotacija`, loan events read as record `Zapis` in *Povijest promjena*, and a lent member with no team reads as unscheduled on *Danas* and in leave costing (FR-92, UX-DR59).
 
-**Approach:** The domain marks a shift held through a loan (`MemberShift.loanId`, present only then) and gives it the hours source `LOAN`, names the record `loan` for `team_loans`, and picks the loan to announce (`loanAheadOf`). The web draws one mark (`LoanMark`: an icon plus words, never colour alone) in the day detail and the Kalendar Osoba picker (`posuđen iz {tim}`), a notice on *Moj raspored* and *Danas* (`U timu {tim} do {datum}`), a line in the directory (`trenutno u timu {tim}`), `posudba` in the hours explanation, and the record word `Posudba`; the readers that answer "with which team today" read the effective team.
+**Approach:** The domain marks a shift held through a loan (`MemberShift.loanId`, present only then) and gives it the hours source `LOAN`, names the record `loan` for `team_loans`, and picks the loan to announce (`loanAheadOf`). The web draws one mark (`LoanMark`: an icon plus words, never colour alone) in the day detail and the Kalendar Osoba picker (`posudba iz tima {tim}`), a notice on *Moj raspored* and *Danas* (`U timu {tim} do {datum}`), a line in the directory (`trenutno u timu {tim}`), `posudba` in the hours explanation, and the record word `Posudba`; the readers that answer "with which team today" read the effective team.
 
 ## Boundaries & Constraints
 
@@ -39,8 +39,8 @@ context:
 | Scenario | Input / State | Expected Output / Behavior | Error Handling |
 |----------|--------------|---------------------------|----------------|
 | No loan | pilot fixture | every output equal to before; no field added | none |
-| Day detail | A member lent to C 10.–12., C's 11th | listed under C with `posuđen iz A` | none |
-| Teamless lent | no team, lent to C | mark `posuđen, bez svog tima`; *Danas* ready; leave costing ready | none |
+| Day detail | A member lent to C 10.–12., C's 11th | listed under C with `posudba iz tima A` | none |
+| Teamless lent | no team, lent to C | mark `posudba, bez svog tima`; *Danas* ready; leave costing ready | none |
 | Hours | shift on a loan day | source `LOAN` → `posudba`; with a roster override → `zamjena` | none |
 | Notice current | loan 10.–12., today 11th | `U timu C do 12.12.2026.` | none |
 | Notice ahead | loan 20.–22., today 11th | `Od 20.12.2026. u timu C do 22.12.2026.` | none |
@@ -95,11 +95,13 @@ context:
 
 ## Spec Change Log
 
+- 2026-11-21 (review 2) — the mark's copy, by founder decision relayed by the orchestrator: `posuđen iz {tim}` put the stored team name in the nominative after *iz* and was masculine for everyone; it now reads `posudba iz tima {tim}`, and the teamless one `posudba, bez svog tima`. The frozen Intent and matrix rows carry the new wording; the epic AC 1 and UX-DR59 (`epics.md`), EXPERIENCE.md, DESIGN.md, `epic-18-context.md`, `hr.json`, the code comments and the tests follow; the deferred entry is RESOLVED.
+
 ## Design Notes
 
 1. Glyph: the existing `ArrowRight` icon, as the calendar's modifier icons are drawn (`size-3`, `aria-hidden`), followed by the words; no new asset, no colour.
 2. `loanId` rather than a boolean: the web names the loan's team and dates from it.
-3. A teamless lent member's mark reads `posuđen, bez svog tima`: there is no team to name.
+3. A teamless lent member's mark reads `posudba, bez svog tima`: there is no team to name.
 4. The directory does not read loans itself: the calendar snapshot already holds every live loan without reason (`calendar_team_loans()`), is cached and persisted, and is refreshed by every loan write (`use-member-loan.ts` invalidates `CALENDAR_KEY`).
 5. "The directory" is two surfaces on `/ljudi`: the admin's list and, for a member-role session, the read-only directory of team rosters (story 7.17), whose lines are a team's roster's (`RosterLines`). All three draw the line. Those rosters come from `team_roster()` (membership only), so a lent member stays under the home team there with `trenutno u timu {tim}`; the loan team's own roster page does not list them (no migration in this story: deferred).
 6. Ahead of a loan the notice adds its first date (`Od {od}. u timu …`), the date's ordinal dot kept mid-sentence, as the matrix writes it.
@@ -107,7 +109,7 @@ context:
 8. Every mark and notice is GUARDED (`lentFromShownOf`, `loanNoticeShownOf`, `currentLoanTeamsOf`): one that cannot be derived is absent and logged `LOAN_MARKS_UNAVAILABLE`, never a failed day detail, month, *Danas* or list (review).
 9. *Danas* counts a teamless member as scheduled only for a loan covering today or ahead (today's view has nothing to show from a past loan); the leave sections count any live loan, because a past leave on a past loan's dates is still costed. An inactive member gets no directory line (review).
 10. *Moj raspored*'s notice sits under its sentence (`ownNote`), which exists exactly when the mode is *Moj raspored*; the day detail never marks a member a roster override put on, which `rosterOn` cannot do for a member already on the default roster anyway.
-11. The mark keeps the approved copy `posuđen iz {tim}` (epic AC 1, UX-DR59); its case and gender are a founder decision (deferred).
+11. The mark reads `posudba iz tima {tim}` (`posudba, bez svog tima` with no team): the founder replaced the approved `posuđen iz {tim}`, which put a stored team name in the nominative after `iz` and was masculine for everyone (review 2, see the Spec Change Log).
 
 ## Review Triage Log
 
@@ -118,6 +120,13 @@ context:
 - Rejected: render tests (the web suite is node-only by convention, AD-15); the `RESOLVED …` prefix keeping the old text (the ledger's convention); Ljudi's and the roster's key-source counts (`@/components/loan-mark` is swept in the Kalendar set, and the key sweep passes); the spec's `Od {od}` in the frozen Always (design note 6 records the built `Od {od}.`, matching the frozen matrix); recording the loan team's roster as an epic AC deviation (no AC names it); one notice for a current and a later loan (the AC asks for the covering one).
 - Epic AC audit: no unmet AC; the deviations listed match; two minor unlisted points (the teamless wording, one notice at a time) are recorded in design notes 3 and 11 and here.
 
+### 2026-11-21 — Review pass 2 (unattended, `bmad-code-review`)
+- Layers: blind, edge-case, verification-gap, acceptance, epic AC — fresh-context subagents on `git diff origin/main...HEAD`; the artifact renderer was skipped (no generated file).
+- Copy (orchestrator decision): the mark is `posudba iz tima {tim}` / `posudba, bez svog tima` (Spec Change Log). Every other new string checked for case after a preposition and gender: `U timu {tim} do {do}.`, `Od {od}. u timu {tim} do {do}.`, `trenutno u timu {tim}` (the team name in apposition to *timu*, which takes the case), `posudba`, `Posudba` — correct, gender-neutral, and none calls a team `smjena`.
+- Patched: the directory line's "today" froze with the page (`useLoanTeams` read `new Date()` on a render nothing triggered at midnight) — it now reads `useOrganizationToday` (the minute ticker, moved at the organization's midnight) and memoizes the map on the snapshot and the date; the dead zone guard (`organizationIsoDate` falls back to UTC, never throws) is gone with `loanTeamsNowOf`. `currentLoanTeamsOf` is guarded per member, so one underivable loan loses only its own line. An admin's *Danas* had no loan notice (epic AC 2 names *Danas*): `adminOwnLoanOf` states it under the subtitle. A team roster's line changed its markup with no loan (R11.4): the old span is kept unless the member is on loan today. `member-rows.tsx` formatting. Tests: the picker on a month's last active date (positive) and inactive on the loan date; the organization's zone against UTC across midnight; the guarded notice keeping *Danas* ready and the month whole; one member's bad loan leaving the others' lines; the admin notice; the domain's `loanId` check is no longer vacuous on a covered day without a shift, and the `REPLACEMENT` check now runs on a loan date the home team works (it had checked nothing).
+- Deferred: the history record's team field reads the shared label `Smjena` (`history.field.team`) while loan copy says *tim* — an app-wide terminology decision (deferred-work).
+- Rejected: a loan to an archived team in the notice, the directory line or the leave overview — 0064 refuses to archive a team while a live loan to it ends today or later, so only past loans can name an archived team, and only the picker (handled) reads past dates; the unguarded `loanAheadOf` in *Danas*'s unscheduled rule — it has `effectiveTeamOn`'s preconditions, which the schedule computed right after asserts on the same loans, so a guard would only move the failure; *Bez smjene* above a teamless member's notice (both true: no team of their own, with D until the date); the leave sections' any-loan rule (design note 9 gives the reason); `loans.length` unguarded in the leave sections (the type is required there; typecheck holds it); LOAN hiding a changed type on a loan day (the precedence is the spec's); the frozen `Od {od}` (rejected in pass 1); `status: 'done'` with sprint status `review` (the spec's status is the build's, the sprint status the merge's, as in 18.4); the shared `ljudi.status.separator` (one separator, reused deliberately); render and e2e coverage (deferred in pass 1); history actions `dodano` / `izmijenjeno` against the matrix's feminine forms (every record uses the neutral actions; the matrix names the events, not the words); the roster page (deferred in pass 1); the epic AC deviations the auditor found unlisted (the teamless wording, one notice at a time) — recorded in design notes 3 and 11 and pass 1, and the frozen section is not reopened for them.
+
 ## Verification
 
 Baseline: `3cd84d1`, the 18.4 merge (#330), the latest merge touching the hot files (`hr.json`, the structural pins).
@@ -127,6 +136,8 @@ Baseline: `3cd84d1`, the 18.4 merge (#330), the latest merge touching the hot fi
 - `pnpm --filter @shift/domain test`, `pnpm --filter ./apps/web test` -- pass.
 - `pnpm exec vitest run test/resource-hygiene.test.ts test/supabase-scaffold.test.ts test/key-hygiene.test.ts test/localization-guard.test.ts test/import-cycles.test.ts test/feature-boundaries.test.ts` -- pass.
 
+**Results (2026-11-21, after review pass 2):** typecheck and lint clean; domain 17 files, 905 passed; web 176 files, 6640 passed; DB-free root (6 files) 2443 passed, 2 skipped.
+
 **Results (2026-11-21, after the review's patches):** typecheck and lint clean; domain 17 files, 905 passed; web 176 files, 6636 passed; DB-free root (6 files) 2443 passed, 2 skipped. No migration, so no DB test is affected; no e2e was run locally (CI is the gate).
 
 ## Auto Run Result
@@ -135,7 +146,7 @@ Status: done (built; sprint status `review  # built, CI pending`).
 
 **Residual risks:**
 - The drawn marks (notice, picker note, directory line) are covered at the model level only; their e2e is deferred.
-- The mark's Croatian (`posuđen iz {tim}`, the approved copy) waits for a founder decision (deferred).
+- The mark's Croatian is settled (`posudba iz tima {tim}`, founder decision in review 2).
 
 ## Suggested Review Order
 

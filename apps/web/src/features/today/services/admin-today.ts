@@ -13,6 +13,7 @@ import {
 
 import type { CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { calendarMarksOf } from '@/features/calendar/services/marks';
+import type { LoanNotice } from '@/features/calendar/utils/loan-marks';
 import { DAY_NO_ROTATION, DAY_OFF, dayDetailOf } from '@/features/calendar/utils/day-detail';
 import { MODIFIER_CONFLICT, MODIFIER_SHORT_STAFFED } from '@/features/calendar/utils/modifiers';
 import {
@@ -1009,6 +1010,16 @@ export function adminStatusOf(today: Today): AdminStatus | null {
       return unhandled;
     }
   }
+}
+
+/**
+ * STORY 18.5 (UX-DR59): the admin's own loan notice on their *Danas* — the
+ * member view's `loan` (covering today, else the next), stated under the
+ * subtitle as on a member's *Danas*. `undefined` with none, or while today is
+ * not read.
+ */
+export function adminOwnLoanOf(today: Today): LoanNotice | undefined {
+  return today.kind === TODAY_READY ? today.view.loan : undefined;
 }
 
 /** The sentence a status without shifts is stated in. Exhaustive. */

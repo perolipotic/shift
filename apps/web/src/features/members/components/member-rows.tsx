@@ -55,7 +55,9 @@ export function MemberRows({ list }: { readonly list: MemberList }): ReactNode {
       {/* TWO CONTAINERS rather than one ternary, as in the table: the bare-JSX
           sweep reads every run between a `>` and the next `<`. */}
       {loading ? SKELETON_ROWS.map((row) => <StackedSkeletonRow key={row} avatar />) : null}
-      {loading ? null : narrowed.rows.map((member) => (
+      {loading
+        ? null
+        : narrowed.rows.map((member) => (
             <MemberRow key={member.id} member={member} today={today} loanTeam={loanTeams.get(member.id) ?? null} />
           ))}
     </StackedList>

@@ -9,7 +9,7 @@ import type { LentFrom } from '@/utils/loan-mark';
  * STORY 18.5 — THE LOAN MARK (UX-DR59, NFR-25): a glyph AND words, never
  * colour alone. The glyph is the existing `ArrowRight` icon, drawn as the
  * calendar's modifier icons are (`size-3`, hidden from assistive technology);
- * the words carry the meaning (`posuđen iz {tim}`, `trenutno u timu {tim}`),
+ * the words carry the meaning (`posudba iz tima {tim}`, `trenutno u timu {tim}`),
  * already translated by the caller. The text takes the surrounding colour,
  * so no new colour token is drawn anywhere.
  */
@@ -22,7 +22,7 @@ export function LoanMark({ children, className }: { readonly children: string; r
   );
 }
 
-/** A lent member's mark in words: `posuđen iz {tim}`, or `posuđen, bez svog tima` with no team of their own. */
+/** A lent member's mark in words: `posudba iz tima {tim}`, or `posudba, bez svog tima` with no team of their own. */
 export function lentFromText(lentFrom: LentFrom): string {
   return lentFrom.teamName === null ? t('loans.mark.lentFromNone') : t('loans.mark.lentFrom', { team: lentFrom.teamName });
 }

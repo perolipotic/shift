@@ -2344,8 +2344,8 @@
       "unchanged": "Tim i datumi jednaki su spremljenima. Promijeni ih, upiši novi razlog ili ukloni posudbu."
     },
     "mark": {
-      "lentFrom": "posuđen iz {team}",
-      "lentFromNone": "posuđen, bez svog tima",
+      "lentFrom": "posudba iz tima {team}",
+      "lentFromNone": "posudba, bez svog tima",
       "with": "U timu {team} do {to}.",
       "ahead": "Od {from}. u timu {team} do {to}.",
       "now": "trenutno u timu {team}"

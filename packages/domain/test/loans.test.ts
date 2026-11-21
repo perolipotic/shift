@@ -714,13 +714,21 @@ describe('story 18.5 — a loan is marked where it is read', () => {
   it("puts `loanId` on the loan team's shift alone: never on a home day, never on a shift an override put them on", () => {
     const rosterOverrides: readonly RosterOverride[] = [{ id: 'put', teamId: b!, date: '2026-03-11', memberOutId: null, memberInId: 'lent' }];
     const days = memberScheduleOfMonth(inputOf(lent, rosterOverrides), '2026-03');
+    let lentShifts = 0;
     for (const day of days) {
       const covered = day.date >= LOAN.from && day.date <= LOAN.to;
       const own = day.shifts.find((shift) => !shift.viaOverride);
-      expect(own === undefined ? covered : Object.hasOwn(own, 'loanId')).toBe(covered);
-      if (covered) expect(own?.loanId).toBe(LOAN.id);
+      if (own !== undefined) {
+        expect(Object.hasOwn(own, 'loanId')).toBe(covered);
+        if (covered) {
+          expect(own.loanId).toBe(LOAN.id);
+          lentShifts += 1;
+        }
+      }
       for (const put of day.shifts.filter((shift) => shift.viaOverride)) expect(Object.hasOwn(put, 'loanId')).toBe(false);
     }
+    // Not vacuous: the loan team works on at least one covered date.
+    expect(lentShifts).toBeGreaterThan(0);
   });
 
   it('carries no `loanId` key at all with no loan, an empty list, or a loan to the home team (R11.4)', () => {
@@ -747,19 +755,28 @@ describe('story 18.5 — a loan is marked where it is read', () => {
     for (const operand of covered) expect(operand.source).toBe(HOURS_SOURCE_LOAN);
     for (const operand of operands.filter((one) => !covered.includes(one))) expect(operand.source).not.toBe(HOURS_SOURCE_LOAN);
 
-    // A roster override putting the lent member on A's shift that day reads as a replacement.
+    // A roster override putting the lent member on A's shift reads as a replacement: on a
+    // loan date A works (its home schedule), so the replacement shift is really there.
     const day = covered[0]!.date;
+    const unlent = frozen({ fixture, members: membersOf(fixture) });
+    const home = frozen({
+      ...hoursInputOf(unlent, unlent.members.find((member) => member.id === `${a}-1`)!),
+      overrides: [],
+      rosterOverrides: [],
+    });
+    const homeDay = explainMemberHours(home, '2026-03', { code: HOURS_FIGURE_TOTAL }).operands.find(
+      (one) => one.date >= LOAN.from && one.date <= LOAN.to,
+    )!.date;
     const put = frozen({
       ...input,
-      rosterOverrides: [{ id: 'back', teamId: a!, date: day, memberOutId: null, memberInId: `${a}-1` }],
+      rosterOverrides: [{ id: 'back', teamId: a!, date: homeDay, memberOutId: null, memberInId: `${a}-1` }],
     });
     const sources = explainMemberHours(put, '2026-03', { code: HOURS_FIGURE_TOTAL })
-      .operands.filter((one) => one.date === day)
+      .operands.filter((one) => one.date === homeDay)
       .map((one) => [one.teamId, one.source]);
-    expect(sources).toContainEqual([c, HOURS_SOURCE_LOAN]);
-    // A roster override's shift never carries `loanId`: `REPLACEMENT` there, whatever A works that day.
-    const putOn = sources.filter(([teamId]) => teamId === a);
-    for (const one of putOn) expect(one).toEqual([a, HOURS_SOURCE_REPLACEMENT]);
+    // A roster override's shift never carries `loanId`: `REPLACEMENT` there, never `LOAN`.
+    expect(sources).toContainEqual([a, HOURS_SOURCE_REPLACEMENT]);
+    expect(sources).not.toContainEqual([a, HOURS_SOURCE_LOAN]);
 
     // A shift-type override of C on a loan day: still `LOAN`, never `CHANGE` (LOAN > CHANGE).
     const changedType = PILOT_SHIFT_TYPES.find((type) => type.isWorking && type.id !== covered[0]!.shiftTypeId)!;

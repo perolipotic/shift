@@ -10,12 +10,12 @@ import {
   lentFromOf,
   loanNoticeMessageKey,
   loanNoticeOf,
-  loanTeamsNowOf,
 } from '@/features/calendar/utils/loan-marks';
 import { calendarMonthOf, calendarSearchOf, filterTeamOf } from '@/features/calendar/utils/month';
 import { hoursSourceMessageKey } from '@/features/hours/services/hours-explanation';
 import { historyRecordMessageKey } from '@/features/history/services/history-rows';
 import { CASE_FREE, TODAY_READY, TODAY_UNSCHEDULED, todayViewOf } from '@/features/today/services/today';
+import { adminOwnLoanOf } from '@/features/today/services/admin-today';
 import { LEAVE_READY, LEAVE_UNSCHEDULED, memberLeaveBaseOf } from '@/features/leave/services/leave-section-base';
 import { MY_LEAVE_READY, MY_LEAVE_UNSCHEDULED, myLeaveOf } from '@/features/leave/services/my-leave';
 import { replacementCandidatesOf } from '@/features/calendar/utils/replacement-candidates';
@@ -24,6 +24,7 @@ import { swapColleaguesOf } from '@/features/swaps/services/swap-proposal';
 import { organizationHoursOf } from '@/features/hours/services/organization-hours';
 import { lentFromText } from '@/components/loan-mark';
 import { initLocalization, t } from '@/lib/i18n';
+import { organizationTodayAt } from '@/utils/organization-today';
 import {
   PILOT,
   SEEDED,
@@ -129,13 +130,13 @@ afterEach(() => {
 });
 
 describe('the mark under the loan team (day detail, UX-DR59)', () => {
-  it('lists a lent member under C marked `posuđen iz Smjena A`, a teamless one `posuđen, bez svog tima`', () => {
+  it('lists a lent member under C marked `posudba iz tima Smjena A`, a teamless one `posudba, bez svog tima`', () => {
     const roster = detailOn(lent, C, '2026-09-12').roster;
 
     expect(roster.find((one) => one.id === ZORAN)?.lentFrom).toEqual({ teamName: 'Smjena A' });
     expect(roster.find((one) => one.id === NINA)?.lentFrom).toEqual({ teamName: null });
-    expect(lentFromText({ teamName: 'Smjena A' })).toBe('posuđen iz Smjena A');
-    expect(lentFromText({ teamName: null })).toBe('posuđen, bez svog tima');
+    expect(lentFromText({ teamName: 'Smjena A' })).toBe('posudba iz tima Smjena A');
+    expect(lentFromText({ teamName: null })).toBe('posudba, bez svog tima');
   });
 
   it('carries no `lentFrom` key at all with no loan, or on a home day (R11.4)', () => {
@@ -222,6 +223,20 @@ describe("the notice of one's own loan (Moj raspored, Danas)", () => {
 
     expect(ready(lent).loan).toMatchObject({ kind: LOAN_NOTICE_WITH, teamName: 'Smjena D' });
     expect(Object.hasOwn(ready(plain), 'loan')).toBe(false);
+    // An admin's *Danas* states the same notice under its subtitle.
+    expect(adminOwnLoanOf(todayViewOf(lent, [], now))).toMatchObject({ kind: LOAN_NOTICE_WITH, teamName: 'Smjena D' });
+    expect(adminOwnLoanOf(todayViewOf(plain, [], now))).toBeUndefined();
+  });
+
+  it('draws Danas and the month without the notice, logged, when the loan team cannot be named', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const broken = { ...lent, teams: lent.teams.filter((team) => team.id !== D) } as CalendarSnapshot;
+    const today = todayViewOf(broken, [], new Date('2026-09-11T10:00:00Z'));
+
+    expect(today.kind).toBe(TODAY_READY);
+    if (today.kind === TODAY_READY) expect(Object.hasOwn(today.view, 'loan')).toBe(false);
+    expect(Object.hasOwn(calendarMonthOf(broken, calendarSearchOf({}), '2026-09-11'), 'ownLoan')).toBe(false);
+    expect(error).toHaveBeenCalledWith(LOAN_MARKS_UNAVAILABLE, expect.any(RangeError));
   });
 
   it('keeps a teamless viewer scheduled while a loan of theirs covers today or lies ahead (deferred-work 18.2)', async () => {
@@ -272,6 +287,21 @@ describe("Kalendar's Osoba picker (the Team filter)", () => {
     expect(plainMonth.filter.people.some((person) => Object.hasOwn(person, 'lentFrom'))).toBe(false);
   });
 
+  it("reads a month not holding today on its last active date: a loan covering 30.09. places them under it", async () => {
+    const monthEnd = await snapshotOf({ loans: [calendarLoanRow('loan-end', ZORAN, C, '2026-09-29', '2026-09-30')] });
+
+    expect(filterTeamOf(monthEnd, memberOf(monthEnd, ZORAN), dates, '2026-10-05')).toEqual({
+      teamId: C,
+      lentFrom: { teamName: 'Smjena A' },
+    });
+  });
+
+  it('places a person inactive on the loan date by their team for the month, unmarked', () => {
+    const zoran = { ...memberOf(lent, ZORAN), statuses: [{ active: false, effectiveFrom: '2026-09-11' }] };
+
+    expect(filterTeamOf(lent, zoran, dates, '2026-09-11')).toEqual({ teamId: A, lentFrom: null });
+  });
+
   it('places a person lent to a team archived since as before: no active team holds the loan', () => {
     const archived = {
       ...lent,
@@ -308,12 +338,28 @@ describe("the directory's `trenutno u timu {tim}`", () => {
   });
 
   it("reads today in the organization's zone, and logs and draws nothing on a snapshot it cannot read", () => {
-    expect([...loanTeamsNowOf(lent, new Date('2026-09-11T10:00:00Z'))]).toEqual([[ZORAN, 'Smjena C']]);
-    expect(loanTeamsNowOf(null, new Date()).size).toBe(0);
+    // The hook's today (`useOrganizationToday`): at 10:00 UTC on 11.09., Zoran's loan.
+    const at = (instant: string) => organizationTodayAt(null, lent.timeZone, new Date(instant)).today;
+
+    expect([...currentLoanTeamsOf(lent, at('2026-09-11T10:00:00Z'))]).toEqual([[ZORAN, 'Smjena C']]);
+    // 22:30 UTC on 12.09. is already the 13th in Zagreb, after both loans: no line (UTC would still show two).
+    expect(at('2026-09-12T22:30:00Z')).toBe('2026-09-13');
+    expect(currentLoanTeamsOf(lent, at('2026-09-12T22:30:00Z')).size).toBe(0);
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const broken = { ...lent, teams: [] } as CalendarSnapshot;
 
     expect(currentLoanTeamsOf(broken, '2026-09-11').size).toBe(0);
+    expect(error).toHaveBeenCalledWith(LOAN_MARKS_UNAVAILABLE, expect.any(RangeError));
+  });
+
+  it('loses only the line it cannot derive: one member\'s unknown loan team leaves the others', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const mixed = await snapshotOf({
+      loans: [ZORAN_TO_C, calendarLoanRow('loan-nina-d', NINA, D, '2026-09-11', '2026-09-11')],
+    });
+    const broken = { ...mixed, teams: mixed.teams.filter((team) => team.id !== C) } as CalendarSnapshot;
+
+    expect([...currentLoanTeamsOf(broken, '2026-09-11')]).toEqual([[NINA, 'Smjena D']]);
     expect(error).toHaveBeenCalledWith(LOAN_MARKS_UNAVAILABLE, expect.any(RangeError));
   });
 });

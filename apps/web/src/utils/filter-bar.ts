@@ -41,7 +41,7 @@ export interface FilterPersonOption {
   readonly teamId: string | null;
   /** That team's name as stored, archived or not; `null` with no team. */
   readonly teamName: string | null;
-  /** STORY 18.5: `teamId` is a loan team, and whom they were lent from (`posuđen iz {tim}`); absent otherwise. */
+  /** STORY 18.5: `teamId` is a loan team, and whom they were lent from (`posudba iz tima {tim}`); absent otherwise. */
   readonly lentFrom?: LentFrom;
 }
 

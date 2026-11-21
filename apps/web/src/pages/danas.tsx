@@ -2,6 +2,7 @@ import { createRoute } from '@tanstack/react-router';
 import { useState, type ReactNode } from 'react';
 
 import { OfflineNote } from '@/components/offline-note';
+import { LoanNoticeLine } from '@/features/calendar/components/loan-notice-line';
 import { PageDescription, PageHeader, PageTitle } from '@/components/ui/page-header';
 import { t } from '@/lib/i18n';
 import { appLayoutRoute } from '@/pages/_app';
@@ -14,6 +15,7 @@ import {
   STATUS_DUTY,
   STATUS_UNSCHEDULED,
   STATUS_WORKING,
+  adminOwnLoanOf,
   adminStatusMessageKey,
   adminStatusOf,
   adminStatusShiftMessageKey,
@@ -86,21 +88,26 @@ export function DanasScreen() {
   function renderDateLine(): ReactNode {
     if (date !== null && admin) {
       const status = adminStatusOf(today);
+      // STORY 18.5 (UX-DR59): the admin's own loan, covering today or ahead, as on a member's *Danas*.
+      const loan = adminOwnLoanOf(today);
 
       return (
-        <PageDescription className="flex flex-wrap items-center gap-x-2 tabular-nums">
-          <span>
-            {status === null
-              ? t('danas.dateLine', { weekday: date.weekday, date: date.text })
-              : t('danas.admin.subtitle', { weekday: date.weekday, date: date.text, status: statusText(status) })}
-          </span>
-          {status === null || status.kind === STATUS_UNSCHEDULED || ownTeam === null ? null : (
-            <>
-              <span aria-hidden>{t('danas.admin.separator')}</span>
-              <OwnTeamLink team={ownTeam} />
-            </>
-          )}
-        </PageDescription>
+        <>
+          <PageDescription className="flex flex-wrap items-center gap-x-2 tabular-nums">
+            <span>
+              {status === null
+                ? t('danas.dateLine', { weekday: date.weekday, date: date.text })
+                : t('danas.admin.subtitle', { weekday: date.weekday, date: date.text, status: statusText(status) })}
+            </span>
+            {status === null || status.kind === STATUS_UNSCHEDULED || ownTeam === null ? null : (
+              <>
+                <span aria-hidden>{t('danas.admin.separator')}</span>
+                <OwnTeamLink team={ownTeam} />
+              </>
+            )}
+          </PageDescription>
+          {loan === undefined ? null : <LoanNoticeLine notice={loan} className="text-sm text-muted-foreground" />}
+        </>
       );
     }
 

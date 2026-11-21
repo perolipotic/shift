@@ -42,16 +42,23 @@ export function RosterLines({
         const position = rosterPositionMessageKey(member.position, positionShown);
         // WHICH SENTENCE is `rosterLineOf`'s decision, executed in a test.
         const line = rosterLineOf(member.name, rank, position, (key) => t(key));
+        const text = line.key === null ? line.text : t(line.key, line.values);
+        const loanTeam = loanTeams.get(member.id);
 
         return (
           <li key={member.id} className="flex min-w-0 items-center gap-3 text-base">
             {/* EMPTY for a name with no letter, so the names stay aligned. */}
             <Avatar>{initials}</Avatar>
             {/* TEXT, never a colour or an icon: rank and position are words. */}
-            <span className="grid min-w-0 gap-0.5">
-              <span className="min-w-0 break-words">{line.key === null ? line.text : t(line.key, line.values)}</span>
-              <LoanTeamNote team={loanTeams.get(member.id) ?? null} />
-            </span>
+            {/* STORY 18.5: the loan line only for a member on loan today; otherwise the line as before. */}
+            {loanTeam === undefined ? (
+              <span className="min-w-0 break-words">{text}</span>
+            ) : (
+              <span className="grid min-w-0 gap-0.5">
+                <span className="min-w-0 break-words">{text}</span>
+                <LoanTeamNote team={loanTeam} />
+              </span>
+            )}
           </li>
         );
       })}

@@ -885,7 +885,7 @@ export const KEY_SOURCES = [
     // shift the viewer already proposed, *Zamjena predložena · {kolega}*, and
     // an unknown colleague's words.
     // ONE HUNDRED AND EIGHTY-TWO SINCE STORY 18.5: the loan mark's two
-    // wordings (`posuđen iz {tim}`, `posuđen, bez svog tima`) and the
+    // wordings (`posudba iz tima {tim}`, `posudba, bez svog tima`) and the
     // directory's `trenutno u timu {tim}` with its hidden separator, from the
     // shared `@/components/loan-mark`, and the day detail's separator before
     // a lent member's mark.

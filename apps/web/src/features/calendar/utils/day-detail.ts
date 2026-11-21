@@ -123,7 +123,7 @@ export interface DayDetailMember {
   readonly position: string | null;
   /**
    * STORY 18.5 (UX-DR59): on this team through a Loan, and whom from — the
-   * `posuđen iz {tim}` mark. ABSENT for everyone else, so a day with no loan
+   * `posudba iz tima {tim}` mark. ABSENT for everyone else, so a day with no loan
    * is the detail it was (R11.4).
    */
   readonly lentFrom?: LentFrom;

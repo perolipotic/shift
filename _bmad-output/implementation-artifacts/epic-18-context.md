@@ -66,7 +66,7 @@ An admin lends one member to another team of the same organization for an inclus
   - Amend, end early and remove use the same dialog and the same preview.
   - It follows the existing save-time warning pattern: warnings are shown in numbers at save and never as standing banners.
 - **Loan marks:**
-  - Calendar day detail and Team filter: a lent member appears under the loan team marked `posuđen iz {tim}`, with a glyph plus words and never colour alone.
+  - Calendar day detail and Team filter: a lent member appears under the loan team marked `posudba iz tima {tim}`, with a glyph plus words and never colour alone.
   - The member's own schedule and *Danas*: `u timu {tim} do {datum}`.
   - Directory: the home team, plus `trenutno u timu {tim}` during a loan.
   - Hours explanation: the source is named `posudba`.

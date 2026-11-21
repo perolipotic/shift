@@ -1,5 +1,8 @@
+import { useMemo } from 'react';
+
 import { useCalendarSnapshot } from '@/features/calendar/hooks/use-calendar-snapshot';
-import { loanTeamsNowOf } from '@/features/calendar/utils/loan-marks';
+import { currentLoanTeamsOf } from '@/features/calendar/utils/loan-marks';
+import { useOrganizationToday } from '@/hooks/organization-today';
 
 /**
  * STORY 18.5 (UX-DR59): who is on loan TODAY, and with which team, by member
@@ -12,8 +15,11 @@ import { loanTeamsNowOf } from '@/features/calendar/utils/loan-marks';
 export function useLoanTeams(): ReadonlyMap<string, string> {
   const calendarRead = useCalendarSnapshot();
   const snapshot = calendarRead.data ?? null;
+  // The organization's today in the snapshot's zone (L8), moved at its
+  // midnight by the minute ticker, so a page left open overnight drops
+  // yesterday's loans without a reload; the map is rebuilt only when the
+  // snapshot or the date changes.
+  const { today } = useOrganizationToday(snapshot === null ? null : snapshot.timeZone);
 
-  // Derived on every render, never memoized on the snapshot alone, so a page
-  // left open past midnight reads the new day's loans on its next render.
-  return loanTeamsNowOf(snapshot, new Date());
+  return useMemo(() => currentLoanTeamsOf(snapshot, today), [snapshot, today]);
 }

@@ -600,7 +600,7 @@ export interface PickerOption {
   readonly count: string | null;
   /** The heading drawn above it, where a group starts. */
   readonly group: string | null;
-  /** STORY 18.5: a lent person's `posuđen iz {tim}`, drawn under the name with the loan glyph; absent otherwise. */
+  /** STORY 18.5: a lent person's `posudba iz tima {tim}`, drawn under the name with the loan glyph; absent otherwise. */
   readonly note?: string;
 }
 

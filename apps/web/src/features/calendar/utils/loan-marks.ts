@@ -1,7 +1,7 @@
 import { activeOn, effectiveTeamOn, loanAheadOf, membershipOn, type Loan, type MembershipVersion } from '@shift/domain';
 
 import type { CalendarSnapshot } from '@/features/calendar/services/snapshot';
-import { formatIsoDate, organizationIsoDate } from '@/lib/i18n/format';
+import { formatIsoDate } from '@/lib/i18n/format';
 import type { LentFrom } from '@/utils/loan-mark';
 
 export type { LentFrom } from '@/utils/loan-mark';
@@ -126,48 +126,27 @@ export function currentLoanTeamsOf(
 ): ReadonlyMap<string, string> {
   if (snapshot === null || today === null) return NO_LOAN_TEAMS;
 
-  try {
-    const teams = new Map<string, string>();
+  const teams = new Map<string, string>();
 
-    for (const member of snapshot.members) {
-      // An inactive member is on no roster, lent or not: no line.
-      if ((member.loans ?? []).length === 0 || !activeOn(member.statuses, today)) continue;
+  for (const member of snapshot.members) {
+    // An inactive member is on no roster, lent or not: no line.
+    if ((member.loans ?? []).length === 0) continue;
+
+    // Guarded per member: one that cannot be derived loses only their own line.
+    try {
+      if (!activeOn(member.statuses, today)) continue;
 
       const effective = effectiveTeamOn(member, today);
 
       if (effective === null || effective.loanId === null) continue;
       teams.set(member.id, teamNameOf(snapshot, effective.teamId));
+    } catch (cause) {
+      if (!(cause instanceof RangeError)) throw cause;
+      console.error(LOAN_MARKS_UNAVAILABLE, cause);
     }
-
-    return teams.size === 0 ? NO_LOAN_TEAMS : teams;
-  } catch (cause) {
-    if (!(cause instanceof RangeError)) throw cause;
-    console.error(LOAN_MARKS_UNAVAILABLE, cause);
-
-    return NO_LOAN_TEAMS;
-  }
-}
-
-/**
- * {@link currentLoanTeamsOf} at `now`, in the organization's zone the
- * snapshot carries (L8). Empty with no snapshot, or — logged — when its zone
- * cannot be read.
- */
-export function loanTeamsNowOf(snapshot: CalendarSnapshot | null, now: Date): ReadonlyMap<string, string> {
-  if (snapshot === null) return NO_LOAN_TEAMS;
-
-  let today: string;
-
-  try {
-    today = organizationIsoDate(now, snapshot.timeZone);
-  } catch (cause) {
-    if (!(cause instanceof RangeError)) throw cause;
-    console.error(LOAN_MARKS_UNAVAILABLE, cause);
-
-    return NO_LOAN_TEAMS;
   }
 
-  return currentLoanTeamsOf(snapshot, today);
+  return teams.size === 0 ? NO_LOAN_TEAMS : teams;
 }
 
 /**

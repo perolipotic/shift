@@ -95,7 +95,7 @@ function renderRoster(shown: DayDetail, usesFireRanks: boolean): ReactNode {
           (key) => t(key),
         );
 
-        // STORY 18.5 (UX-DR59): a lent member's `posuđen iz {tim}`, glyph and words.
+        // STORY 18.5 (UX-DR59): a lent member's `posudba iz tima {tim}`, glyph and words.
         const lent = member.lentFrom === undefined ? null : lentFromText(member.lentFrom);
 
         return (
