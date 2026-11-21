@@ -10,9 +10,10 @@ import { defineConfig } from 'vitest/config';
 // the client tree, the static-host fallback, and the shape of the Supabase
 // scaffold. Package-local tests stay in their own package and run via `pnpm -r`.
 export default defineConfig({
-  // `apps/web`'s own alias, for the one root test that drives an `apps/web`
-  // module (`rls-isolation.test.ts` → `features/leave/services/leave-write.ts`,
-  // which reads dates through `@/lib/i18n/format`).
+  // `apps/web`'s own alias, for the root tests that drive `apps/web` modules
+  // (`rls-isolation.test.ts` → `features/leave/services/leave-write.ts`, which
+  // reads dates through `@/lib/i18n/format`; `schedule-inputs-parity.test.ts`
+  // → the calendar snapshot, the leave list and the schedule-inputs adapter).
   resolve: {
     alias: { '@': fileURLToPath(new URL('./apps/web/src', import.meta.url)) },
   },

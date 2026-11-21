@@ -75,6 +75,14 @@ console.log(`edge-runtime: ${status}, ${body.length} bytes, sha256 ${digest(body
 console.log(`node:         ${expected.length} bytes, sha256 ${digest(expected)}`);
 if (!status.includes(' 200 ') || !body.equals(expected)) {
   console.log('FAIL  the probe under edge-runtime differs from the probe under Node');
+  // Where they part, with a little context either side: enough to name the
+  // differing value without uploading either answer.
+  let at = 0;
+  while (at < body.length && at < expected.length && body[at] === expected[at]) at += 1;
+  const around = (bytes) => bytes.subarray(Math.max(0, at - 120), at + 120).toString('utf8');
+  console.log(`first difference at byte ${at}`);
+  console.log(`edge-runtime: …${around(body)}…`);
+  console.log(`node:         …${around(expected)}…`);
   process.exit(1);
 }
 console.log('ok    byte-identical');

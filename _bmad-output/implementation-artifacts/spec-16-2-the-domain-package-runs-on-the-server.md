@@ -105,3 +105,28 @@ Decisions (founder: decide and record):
 **Residual risk (CI settles):** `test/schedule-inputs-parity.test.ts`, the provisioning entries and 0065 have never run against a database (STRICT DATABASE RULE); the `runtime-parity` job has never run on a runner (docker there, chroot here). The existing DB suites now exercise the four re-created reads.
 
 **Review (five layers):** patched — the probe projects every month of the window (Epic AC auditor); a transition at a range's first instant is kept, an unreadable `Intl` part throws, a team given twice throws (edge cases); the purity scan tokenizes comments, strings and template interpolations in one pass; the read-parity scene adds loans and leave wholly outside the window and one straddling it, a confirmed shift-type override and a pending roster override (verification gap, blind hunter); the parity script stops waiting on a crashed container; `test/provisioning.test.ts` lists the five new `private` functions in its grantee sweep, owner and invoker inventories (unrun DB test auditor: the sweep would have failed CI); deferred-work records that the assembly's callers are its gate and that `deploy-staging` waits on `runtime-parity` from 16.4. Rejected or left: non-inlined `SET` helpers (pilot scale; the browser reads return the same rows), tag-only image pins (an existing 20.9 item), historic LMT and double transitions, non-canonical zone aliases, audit rows the scene leaves (no FK; fresh CI stack).
+
+**Review 2 (2026-11-21, unattended; blind hunter, edge cases, verification gap, acceptance + epic AC, unrun DB test; no generated file, so no artifact render):**
+- **The migration.** The four re-created reads were diffed against 0022, 0039, 0062 and 0058. Columns, order, the claim pin, the active-caller pin, definer, `search_path` and the author subquery are all unchanged. `create or replace` keeps the grants. The claim and `removed_at` moved into `private.live_*(claim)`, which means the same thing. The assembly is definer, executable by no role, has an empty `search_path`, and is scoped to the member's organization in every subquery. It carries no name, reason, author or flag beyond team and shift-type names (the SUMMARY needs them). The provisioning inventories match 0065 exactly. The scene violates no constraint or trigger, and the one expected code matches 0065's raise.
+- **Patched:**
+  - **The purity scan could be fooled.** Regex literals with a quote or `//`, a `}` inside `${…}`, `globalThis['Date']`, an escaped identifier, and `localeCompare`/`toLocale*`, which read ICU without naming `Intl`, all got past it. The rule is now also in eslint, scope-aware: `no-restricted-globals` bans `Date`, `Intl`, `Temporal`, `globalThis` and `performance` in `packages/domain/src`, with `zone.ts` allowed `Intl` only. `no-restricted-properties` bans the locale methods. All four bypass shapes were confirmed to fail lint.
+  - **R12 parity was nearly vacuous.** The seed gives nobody a team, so the shift-type override and both leave records changed no shift. The scene's loan now runs 150–166, and the override is on the lent team. The window test asserts R12 over the server assembly: shifts on the loan, the override's type on its date, nothing on the full days, and only the SECOND half on the half day.
+  - **A CI mismatch printed only digests.** `runtime-parity.sh` now prints the first differing byte with context. The comparison was exercised locally on both outcomes.
+  - **Stale text:** the probe's header ("each transition month"), the parity file's CI note, the root `vitest.config.ts` alias comment, and deferred-work's 18.2 RESOLVED, which is now marked pending the first CI run.
+- **Rejected:**
+  - **Read parity sorts lists before comparing.** R12 is order-independent (`at-work.test.ts`), and an unrun suite should not hinge on jsonb's array order. The canonical order holds by construction on both sides.
+  - **`effectiveFrom` sorts with no tie-break.** One version per date is each table's key.
+  - **A half with one timed and one untimed working shift is not split.** That is hours' rule (`hours.ts` counts working shifts, timed or not), and R12.2 says "as in hours".
+  - **A multi-day half is not refused.** `checkRange` already refuses it.
+  - **`archived` is never read by R12.** The browser shows an archived team's shifts too, and the feed decides presentation.
+  - **No window cap in SQL.** The callers' windows are fixed (16.4, 17.2) and R12 refuses more than 732 days.
+  - **The "Node" side runs under Vitest.** It loads the same `dist` in V8, and a transform cannot change the bytes the answer serializes.
+  - **The script is mode 644.** It is run with `bash`.
+  - **The image might lack `bash`, `/dev/tcp` or `timeout`.** The functions-image probe already uses all three on this base.
+  - **The tag-only pin.** An existing 20.9 item.
+  - **`runtime-parity` runs on docs-only PRs.** So does `functions-image`. It is one image pull.
+  - **`FUNCTIONS_SOURCES` hashes more than it needs.** That is AC 4 by intent: a redundant image is cheaper than a stale one.
+  - **Importing `snapshot.ts` from the root suite.** The client throws only on first use, `@/` is aliased at the root, and the module graph holds only `apps/web` dependencies.
+  - **A partial `beforeAll` or audit rows leave residue.** CI's stack is fresh, and the `test/rls-isolation.test.ts` precedent is noted.
+  - **LMT sub-minute offsets, non-canonical zone ids, double transitions within 12 h or 24 h, and instants past ±8.64e15.** As in review 1. Native `Intl` errors are `RangeError`s too.
+  - **The AD-1/AD-7 spine notes predate this change (AP1, #337).** The story's "Depends on" line names that.

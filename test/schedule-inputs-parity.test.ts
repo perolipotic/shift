@@ -27,11 +27,15 @@ import { FIXTURES, connect, localApiEndpoint, noDatabase, organizationId } from 
  * COMMITTED SCENE: PostgREST reads only what is committed, so the scene is
  * written as the OWNER before any request (each row naming the fixture
  * admin as `created_by`), and `afterAll` deletes it with the outbox rows its
- * notification triggers wrote, by subject. Its dates are 150–165 days ahead,
- * inside the window and clear of the seed.
+ * notification triggers wrote, by subject. Its exceptions are 150–166 days
+ * ahead, inside the window and clear of the seed, with rows wholly before,
+ * across and after the window's edges. The seed gives nobody a team, so the
+ * member's one team is the loan: the override and the leave fall inside it,
+ * and R12 over the server's assembly is seen applying them.
  *
- * WRITTEN UNRUN (story 16.2): this file opens a database, so it runs in CI
- * alone, on the fresh stack (STRICT DATABASE RULE).
+ * WRITTEN UNRUN (story 16.2): this file opens a database, so it runs only in
+ * CI's `test` job, on that job's fresh stack, one root file after another
+ * (STRICT DATABASE RULE).
  */
 
 /**
@@ -92,6 +96,7 @@ interface Viewer {
 interface SceneRows {
   readonly member: string;
   readonly loan: string;
+  readonly lentTo: string;
   readonly rosterOverride: string;
   readonly override: string;
   readonly fullDay: string;
@@ -108,6 +113,8 @@ interface FixtureScene {
   readonly organization: string;
   readonly window: { readonly from: string; readonly to: string };
   readonly viewers: readonly Viewer[];
+  /** Where the scene's exceptions fall inside its loan, for R12 to be seen applying them. */
+  readonly dates: { readonly override: string; readonly fullDay: readonly string[]; readonly halfDay: string; readonly workingType: string };
 }
 
 const scenes: FixtureScene[] = [];
@@ -142,7 +149,9 @@ async function buildScene(client: Client, fixture: (typeof FIXTURES)[number]): P
 
   const at = (days: number) => dayOf(client, organization, days);
   const loanFrom = await at(150);
-  const loanTo = await at(152);
+  // Through the override and both leave dates, so R12 has shifts there to apply them to: the seed
+  // holds no team membership, and the loan is the member's one team.
+  const loanTo = await at(166);
   const rosterDate = await at(155);
   const overrideDate = await at(156);
   const leaveFrom = await at(160);
@@ -211,7 +220,7 @@ async function buildScene(client: Client, fixture: (typeof FIXTURES)[number]): P
       // Confirmed (0022's check: `confirmed_by` with `confirmed_at`), so `writtenAt` is `confirmed_at`, not `created_at`, on both sides.
       `insert into shift_type_overrides (organization_id, team_id, date, shift_type_id, reason, created_by, confirmed_by, confirmed_at)
        values ($1, $2, $3::date, $4, 'Paritet.', $5, $5, now() + interval '1.234567 second') returning id`,
-      [organization, home, overrideDate, working.id, admin.authUserId],
+      [organization, lentTo, overrideDate, working.id, admin.authUserId],
   );
   scene.overrides.push(override);
   const fullDay = await fullDayOf(leaveFrom, leaveTo);
@@ -235,7 +244,8 @@ async function buildScene(client: Client, fixture: (typeof FIXTURES)[number]): P
   ).rows;
 
   return {
-    rows: { member: member.id, loan, rosterOverride, override, fullDay, halfDay, straddling, outside },
+    rows: { member: member.id, loan, lentTo, rosterOverride, override, fullDay, halfDay, straddling, outside },
+    dates: { override: overrideDate, fullDay: [leaveFrom, leaveTo], halfDay: halfDate, workingType: working.id },
     fixture: fixture.fixture,
     organization,
     window: { from: await at(-31), to: await at(182) },
@@ -423,6 +433,21 @@ describe('read parity: the server assembly equals the browser\'s read (AD-19)', 
           expect(leave, `${one.fixture}: a record outside the window`).not.toContain(id);
         }
         expect(JSON.stringify(inputs)).not.toMatch(/Paritet/);
+
+        // R12 over it, so the parity above is not of empty projections: on the lent team, the
+        // confirmed override replaces the date's type, the full days hold nothing, the half day
+        // keeps only its worked half.
+        const shifts = atWorkShiftsOf(inputs, one.window.from, one.window.to);
+        const { dates } = one;
+        expect(shifts.filter((shift) => shift.loanId === rows.loan).length, `${one.fixture}: shifts on the loan`).toBeGreaterThan(0);
+        expect(
+          shifts.filter((shift) => shift.date === dates.override).map((shift) => [shift.teamId === rows.lentTo, shift.shiftTypeId, shift.loanId]),
+          `${one.fixture}: the override in force`,
+        ).toEqual([[true, dates.workingType, rows.loan]]);
+        expect(shifts.filter((shift) => dates.fullDay.includes(shift.date)), `${one.fixture}: the full days`).toEqual([]);
+        for (const shift of shifts.filter((candidate) => candidate.date === dates.halfDay)) {
+          expect(shift.workedHalf, `${one.fixture}: the half day`).toBe('SECOND');
+        }
       }
     } finally {
       await client.end();

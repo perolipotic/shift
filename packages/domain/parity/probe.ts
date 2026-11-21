@@ -2,7 +2,7 @@
  * THE RUNTIME-PARITY PROBE (story 16.2; AD-7, AD-19 test 2): one JSON of
  * everything a server projection computes, over the parity fixture, for
  * both fixtures — R12 for every member over the parity window, the month
- * schedule and every member's hours of each transition month, `zone.ts`'s
+ * schedule and every member's hours of every month of that window, `zone.ts`'s
  * conversions and transitions, and a WebCrypto SHA-256 of the token vector.
  *
  * The same probe runs twice and the two answers must be byte-identical:
