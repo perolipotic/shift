@@ -2736,6 +2736,8 @@ Added 2026-11-20 by `sprint-change-proposal-2026-11-20-v2-scope.md` (§5.6). Arc
 
 **Planning status (2026-11-20):** 16.1 is ready. 16.2 waits for Architect pass 1. 16.3–16.5 wait for Architect pass 1 (through 16.2) and for ratification of the D-S decisions each names. Until ratified, the recommended default in proposal §6 stands for planning only.
 
+**Planning status (2026-11-21, Architect pass 1 done):** AP1 has amended AD-1, AD-6, AD-7, AD-14, AD-17 and AD-18, and added AD-19 and AD-20 to the spine. **16.2 is ready.** 16.3 still waits for D-S1, 16.4 for D-S1, D-S2 and D-S8, and 16.5 for D-S1 and D-S2, each also after its predecessor. The spine marks every clause that depends on one of those decisions "pending founder ratification".
+
 ### Story 16.1: The month prints
 
 As anyone who reads the schedule,
@@ -2769,7 +2771,7 @@ As the product,
 I want the canonical domain package to project a member's schedule inside an Edge Function,
 So that a feed and a reminder say exactly what the app says.
 
-**Depends on:** Architect pass 1. Applies the AD-1 scope note and the AD-7 row. Starts with a spike on Deno module resolution (proposal §8 risk 2). **Blocked on:** Architect pass 1.
+**Depends on:** Architect pass 1. Applies the AD-1 scope note and the AD-7 row. Starts with a spike on Deno module resolution (proposal §8 risk 2); AP1 has spiked it, so 16.2 confirms the import-map target (AD-7). **Blocked on:** nothing (Architect pass 1 done 2026-11-21).
 
 **Acceptance Criteria:**
 
@@ -2795,7 +2797,7 @@ As a member,
 I want a personal feed link that only I hold and can kill,
 So that my schedule leaves the app only where I put it.
 
-**Depends on:** 16.2. Applies the AD-2 row for the Feed Token and its AD-9/AD-10 RPCs. **Blocked on:** Architect pass 1 (through 16.2), D-S1.
+**Depends on:** 16.2. Applies the AD-2 row for the Feed Token and its AD-9/AD-10 RPCs. **Blocked on:** D-S1 (Architect pass 1 done).
 
 **Acceptance Criteria:**
 
@@ -2813,7 +2815,7 @@ So that my schedule leaves the app only where I put it.
 
 **Given** a member who is deactivated
 **When** the deactivation saves
-**Then** their token is revoked in the same transaction
+**Then** their feed answers the one 404 from the deactivation's effective date (the lookup's "active today" rule); an inactive version already in effect when saved revokes the live token in the same transaction, and a later reactivation revokes any token still live (AD-14 as amended by Architect pass 1, pending D-S1)
 
 **Given** the audit trigger on `calendar_feed_tokens` (story 14.1 pattern)
 **When** a token is created or revoked
@@ -2825,7 +2827,7 @@ As a member,
 I want my calendar app to fetch my shifts from one link,
 So that my phone shows when I work, at the right times.
 
-**Depends on:** 16.3. Applies the AD-14 and AD-17 rows for `calendar-feed`. **Blocked on:** Architect pass 1, D-S1, D-S2, D-S8.
+**Depends on:** 16.3. Applies the AD-14 and AD-17 rows for `calendar-feed`. **Blocked on:** D-S1, D-S2, D-S8 (Architect pass 1 done).
 
 **Acceptance Criteria:**
 
@@ -2858,7 +2860,7 @@ As a member,
 I want to add my shifts to Google or Apple Calendar from one screen,
 So that I set it up once and forget it.
 
-**Depends on:** 16.4. **Blocked on:** Architect pass 1, D-S1, D-S2.
+**Depends on:** 16.4. **Blocked on:** D-S1, D-S2 (Architect pass 1 done).
 
 **Acceptance Criteria:**
 
@@ -2895,13 +2897,15 @@ Added 2026-11-20 by `sprint-change-proposal-2026-11-20-v2-scope.md` (§5.6). Reu
 
 **Planning status (2026-11-20):** every story waits for Architect pass 1 (through 16.2) and for D-S6.
 
+**Planning status (2026-11-21, Architect pass 1 done):** every story still waits for D-S6, and 17.1 also for 16.2. The spine's `remind` and reminder clauses (AD-14, AD-18) mark their channel rules "pending founder ratification of D-S6".
+
 ### Story 17.1: A member chooses their reminders
 
 As a member,
 I want to choose when I am reminded of my shifts, or not at all,
 So that reminders help and never nag.
 
-**Depends on:** 16.2. Applies the AD-2 row for reminder settings. **Blocked on:** Architect pass 1 (through 16.2), D-S6.
+**Depends on:** 16.2. Applies the AD-2 row for reminder settings. **Blocked on:** D-S6 (Architect pass 1 done).
 
 **Acceptance Criteria:**
 
@@ -2929,13 +2933,14 @@ As a member who asked for reminders,
 I want each one written from my schedule as it stands just before it is due,
 So that a reminder is never about a shift I no longer work.
 
-**Depends on:** 17.1. Applies the AD-14, AD-17 and AD-18 amendment rows. **Blocked on:** Architect pass 1, D-S6.
+**Depends on:** 17.1. Applies the AD-14, AD-17 and AD-18 amendment rows. **Blocked on:** D-S6 (Architect pass 1 done).
 
 **Acceptance Criteria:**
 
 **Given** pg_cron every 5 minutes
 **When** it invokes `remind` with its invoke secret
-**Then** `remind` projects R12 with the domain package for members with reminders on, over shifts whose reminder falls due within the next 15 minutes (D5), and writes outbox rows only through a `service_role`-only RPC
+**Then** `remind` projects R12 with the domain package for members with reminders on, over shifts whose reminder falls due in `[now − 15 min, now + 5 min)` with the shift not yet started (D5; AD-14 as amended by Architect pass 1), and writes outbox rows only through a `service_role`-only RPC
+**And** a queued reminder whose shift has started is settled `REMINDER_EXPIRED` at claim time and never sent (AD-18)
 
 **Given** the outbox key `(code, subject, recipient, channel)`, with subject a deterministic UUID of (member, date, team, lead)
 **When** the job runs again or overlaps
@@ -2959,7 +2964,7 @@ As a member,
 I want the reminder on the channel I chose, in my language, linking to the day,
 So that one tap shows me the shift.
 
-**Depends on:** 17.2. **Blocked on:** Architect pass 1, D-S6.
+**Depends on:** 17.2. **Blocked on:** D-S6 (Architect pass 1 done).
 
 **Acceptance Criteria:**
 

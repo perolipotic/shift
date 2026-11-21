@@ -648,22 +648,32 @@ development_status:
   # Gates, recorded per story as "waits:" comments. A story does not start while
   # any of its gates is open; its status stays backlog either way.
   #   AP1 = Architect pass 1 (AD-1 note, AD-7, AD-14, AD-17, AD-18), before 16.2.
+  #         DONE 2026-11-21 (branch docs/architect-pass-1-server-domain): AD-1 note,
+  #         AD-6, AD-7, AD-14, AD-17, AD-18 amended, AD-19 (one server read assembly
+  #         + parity) and AD-20 (packages/ics) added. Deno spike: edge-runtime
+  #         v1.74.3 = Deno 2.1.4; domain src/ does NOT resolve (.js specifiers),
+  #         the tsc-built dist via a deno.json import map bundles and runs,
+  #         byte-identical to Node. Clauses on D-S1/2/6/8 are marked "pending
+  #         founder ratification"; AP1 no longer gates any story.
+  #         Unblocked by AP1: 16.2 (no D-S gate). Still waiting on D-S only:
+  #         16.3 (D-S1), 16.4 (D-S1, D-S2, D-S8), 16.5 (D-S1, D-S2),
+  #         17.1-17.3 (D-S6); each also waits on its story dependencies.
   #   AP2 = Architect pass 2 (AD-10, AD-12, AD-16, signup door), before 19.1;
   #         plus a security-review of 19.1-19.5 (and of 16.3-16.4) before production.
   #   D-S1..D-S10 = proposal §6 founder decisions, NOT yet ratified (2026-11-20).
-  # Ready now (no gate): 16.1 and all of Epic 18 (in dependency order).
-  epic-16: in-progress  # calendar feed and print (CAP-25); D-S1, D-S2, D-S8
-  16-1-the-month-prints: review  # built, CI pending
-  16-2-the-domain-package-runs-on-the-server: backlog  # waits: AP1
-  16-3-a-member-s-feed-token-is-a-revocable-secret: backlog  # waits: AP1 (via 16.2), D-S1
-  16-4-the-calendar-feed-serves-a-member-s-own-shifts: backlog  # waits: AP1, D-S1, D-S2, D-S8
-  16-5-a-member-subscribes-from-kalendar-na-mobitelu: backlog  # waits: AP1, D-S1, D-S2
+  # Ready now: 16.2 (AP1 done 2026-11-21); D-S1–D-S10 ratified by the founder 2026-11-21.
+  epic-16: in-progress  # calendar feed and print (CAP-25); D-S1, D-S2, D-S8 ratified 2026-11-21
+  16-1-the-month-prints: done  # #335
+  16-2-the-domain-package-runs-on-the-server: backlog  # READY (AP1 done 2026-11-21)
+  16-3-a-member-s-feed-token-is-a-revocable-secret: backlog  # after 16.2 (D-S1 ratified 2026-11-21)
+  16-4-the-calendar-feed-serves-a-member-s-own-shifts: backlog  # after 16.3 (D-S1, D-S2, D-S8 ratified 2026-11-21)
+  16-5-a-member-subscribes-from-kalendar-na-mobitelu: backlog  # after 16.4 (D-S1, D-S2 ratified 2026-11-21)
   epic-16-retrospective: optional
 
   epic-17: backlog  # shift reminders (CAP-26); reuses 16.2; D-S6
-  17-1-a-member-chooses-their-reminders: backlog  # waits: AP1 (via 16.2), D-S6
-  17-2-the-remind-job-writes-reminders-that-fall-due: backlog  # waits: AP1, D-S6
-  17-3-reminders-reach-the-member-by-push-or-email: backlog  # waits: AP1, D-S6
+  17-1-a-member-chooses-their-reminders: backlog  # waits: D-S6, 16.2 (AP1 done)
+  17-2-the-remind-job-writes-reminders-that-fall-due: backlog  # waits: D-S6, 17.1 (AP1 done)
+  17-3-reminders-reach-the-member-by-push-or-email: backlog  # waits: D-S6, 17.2 (AP1 done)
   epic-17-retrospective: optional
 
   epic-18: done  # accepted with open items, 2026-11-21 (retro): #323, #325, #328, #330, #332 merged with CI green; founder decisions open (retro A1 member-wide loan read, A2 tim/Smjena, A3 promotion check)
