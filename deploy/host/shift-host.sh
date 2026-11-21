@@ -6,6 +6,7 @@
 #   shift-host.sh apply <component...|all>     change the host (root)
 #   shift-host.sh confirm                      keep an applied firewall/sshd change
 #   shift-host.sh revert                       undo an unconfirmed firewall/sshd change
+#   shift-host.sh revert --all                 nothing pending: remove the whole hardening
 #   shift-host.sh status                       what is in force now
 #   shift-host.sh render [4|6]                 print the rendered firewall rules
 #   shift-host.sh boot                         load the confirmed firewall (the systemd unit)
@@ -22,7 +23,9 @@
 #   (default 300) unless `confirm` runs first, and enables a boot-time unit
 #   that does the same revert if the host reboots before `confirm`.
 # - `revert` puts back the last CONFIRMED state: the confirmed firewall if
-#   there was one (else none), and the sshd drop-in exactly as it was.
+#   there was one (else none), and the sshd drop-in exactly as it was. With
+#   nothing pending it refuses, unless `--all` asks to remove the confirmed
+#   hardening too (the console's way out after `confirm`).
 # - Apply them from the VPS provider's console, not over SSH: a session with
 #   sshd among its ancestors is refused unless --allow-ssh-session is given.
 # - Only this script's own chains (SHIFT-INPUT, SHIFT-DOCKER-USER) and files
@@ -45,6 +48,7 @@ readonly STAGE_DIR=/var/lib/shift-host/staged
 readonly UNIT_NAME=shift-host-firewall.service
 readonly BOOT_REVERT_UNIT=shift-host-revert-at-boot.service
 readonly REVERT_UNIT=shift-host-revert
+readonly LOCK_FILE=/run/shift-host.lock
 readonly SSHD_DROPIN=/etc/ssh/sshd_config.d/00-shift-hardening.conf
 readonly SYSCTL_DROPIN=/etc/sysctl.d/99-shift-swap.conf
 readonly APT_DROPIN=/etc/apt/apt.conf.d/52shift-unattended-upgrades
@@ -63,6 +67,8 @@ MODE=plan
 ENV_FILE=""
 ALLOW_SSH_SESSION=0
 FROM_TIMER=0
+REVERT_ALL=0
+FIREWALL_CHECKED=0
 REVERT_AFTER_ARG=""
 SRC_DIR=""
 COMPONENTS=()
@@ -135,6 +141,21 @@ state_copy() {
 state_remove() {
   if [[ $APPLY -eq 1 ]]; then
     rm -rf -- "$@"
+  fi
+}
+
+# One changing run at a time: apply, confirm, revert (timer, boot, manual)
+# and boot (the firewall unit, restarted with Docker). A revert or boot waits
+# its turn; an apply or confirm refuses while another run holds the lock.
+take_lock() {
+  local how=$1
+  if [[ $APPLY -eq 1 ]]; then
+    exec 9>"$LOCK_FILE"
+    if [[ $how == wait ]]; then
+      flock 9
+    else
+      flock -n 9 || die "another shift-host run is active (lock $LOCK_FILE)"
+    fi
   fi
 }
 
@@ -235,11 +256,14 @@ resolve_coolify() {
   local id name driver subnet
   driver=$(docker network inspect -f '{{.Driver}}' "$COOLIFY_NETWORK" 2>/dev/null) || return 1
   [[ $driver == bridge ]] || die "Docker network '$COOLIFY_NETWORK' is a '$driver' network, not a bridge"
-  id=$(docker network inspect -f '{{.Id}}' "$COOLIFY_NETWORK")
-  name=$(docker network inspect -f '{{index .Options "com.docker.network.bridge.name"}}' "$COOLIFY_NETWORK")
+  id=$(docker network inspect -f '{{.Id}}' "$COOLIFY_NETWORK") || return 1
+  [[ $id =~ ^[0-9a-f]{12,}$ ]] || return 1
+  name=$(docker network inspect -f '{{index .Options "com.docker.network.bridge.name"}}' "$COOLIFY_NETWORK") || return 1
   [[ $name == "<no value>" ]] && name=""
   COOLIFY_BRIDGE=${name:-br-${id:0:12}}
-  for subnet in $(docker network inspect -f '{{range .IPAM.Config}}{{.Subnet}} {{end}}' "$COOLIFY_NETWORK"); do
+  local subnets
+  subnets=$(docker network inspect -f '{{range .IPAM.Config}}{{.Subnet}} {{end}}' "$COOLIFY_NETWORK") || return 1
+  for subnet in $subnets; do
     if [[ $subnet == *:* ]]; then
       if [[ -n $COOLIFY_SUBNET6 ]]; then
         warn "Coolify network has more than one IPv6 subnet; using $COOLIFY_SUBNET6"
@@ -262,7 +286,7 @@ resolve_coolify() {
 
 # What `apply` resolved, kept for `boot` in case Docker cannot be asked.
 load_recorded_coolify() {
-  local file=$STATE_DIR/coolify.env line
+  local file=${1:-$STATE_DIR/coolify.env} line
   [[ -f $file ]] || return 1
   while IFS= read -r line; do
     case $line in
@@ -276,15 +300,36 @@ load_recorded_coolify() {
 }
 
 # A wrong interface name would make every rule RETURN: fail loudly instead.
+# True when a route line names exactly this device (eth0, not eth0.100).
+route_on_dev() { awk -v dev="$1" '{ for (n = 1; n < NF; n++) if ($n == "dev" && $(n + 1) == dev) found = 1 } END { exit !found }'; }
+
 check_interfaces() {
   ip link show dev "$PUBLIC_IF" >/dev/null 2>&1 || die "PUBLIC_IF '$PUBLIC_IF' does not exist on this host"
-  ip -4 route show default | grep -qw "dev $PUBLIC_IF" ||
+  ip -4 route show default | route_on_dev "$PUBLIC_IF" ||
     die "PUBLIC_IF '$PUBLIC_IF' does not carry the IPv4 default route ($(ip -4 route show default | head -n1))"
   local v6
   v6=$(ip -6 route show default 2>/dev/null | head -n1)
-  if [[ -n $v6 && $v6 != *"dev $PUBLIC_IF"* ]]; then
+  if [[ -n $v6 ]] && ! route_on_dev "$PUBLIC_IF" <<<"$v6"; then
     warn "the IPv6 default route is not on $PUBLIC_IF: $v6"
   fi
+  # With forwarding on (Docker turns it on), the kernel ignores router
+  # advertisements unless accept_ra is 2: an RA-learnt route would expire.
+  if [[ $v6 == *"proto ra"* && $(sysctl -n net.ipv6.conf.all.forwarding 2>/dev/null) == 1 &&
+    $(sysctl -n "net.ipv6.conf.$PUBLIC_IF.accept_ra" 2>/dev/null) != 2 ]]; then
+    warn "the IPv6 default route comes from router advertisements, forwarding is on and net.ipv6.conf.$PUBLIC_IF.accept_ra is not 2: IPv6 will be lost when the route expires (not this firewall's doing; set accept_ra=2)"
+  fi
+  if ! ss -Hlun "sport = :$TAILSCALE_UDP_PORT" 2>/dev/null | grep -q .; then
+    warn "nothing listens on UDP $TAILSCALE_UDP_PORT: check TAILSCALE_UDP_PORT against tailscaled's --port"
+  fi
+  if ! sshd -T 2>/dev/null | grep -qx "port $SSH_PORT"; then
+    warn "sshd -T does not list port $SSH_PORT: check SSH_PORT ($(sshd -T 2>/dev/null | grep '^port ' | tr '\n' ' '))"
+  fi
+  local other
+  for other in ufw.service firewalld.service netfilter-persistent.service nftables.service; do
+    if systemctl is-enabled --quiet "$other" 2>/dev/null; then
+      warn "$other is enabled: it may flush or override these rules at boot; check it"
+    fi
+  done
   ip link show dev "$TAILSCALE_IF" >/dev/null 2>&1 || die "TAILSCALE_IF '$TAILSCALE_IF' does not exist (is Tailscale up?)"
   ip link show dev "$COOLIFY_BRIDGE" >/dev/null 2>&1 || die "the Coolify bridge '$COOLIFY_BRIDGE' does not exist"
   # These rules filter only PUBLIC_IF (and SSH everywhere). Say so for any
@@ -311,7 +356,8 @@ in_ssh_session() {
     stat=$(</proc/"$pid"/stat)
     comm=${stat#*(}
     comm=${comm%)*}
-    [[ $comm == sshd* ]] && return 0
+    # Tailscale SSH runs the shell under tailscaled.
+    [[ $comm == sshd* || $comm == tailscaled* ]] && return 0
     stat=${stat##*) }
     read -r _ pid _ <<<"$stat"
   done
@@ -399,10 +445,12 @@ rule_count() {
 # The live chains hold exactly the rendered rules: each one present (-C), and
 # no more of them than rendered.
 firewall_in_force() {
-  local fam ipt chain want rule
+  local fam ipt chain want rule rules
   local -a args
   for fam in 4 6; do
     ipt=$(ipt_of "$fam")
+    # Rendered first: a render that fails is "not in force", never zero rules.
+    rules=$(render_family "$fam") || return 1
     for chain in SHIFT-INPUT SHIFT-DOCKER-USER; do
       if [[ $chain == SHIFT-DOCKER-USER ]] && ! chain_exists "$fam" DOCKER-USER; then
         continue
@@ -414,8 +462,8 @@ firewall_in_force() {
         want=$((want + 1))
         read -ra args <<<"${rule#-A "$chain" }"
         "$ipt" -w -C "$chain" "${args[@]}" 2>/dev/null || return 1
-      done < <(render_family "$fam")
-      [[ $(rule_count "$fam" "$chain") -eq $want ]] || return 1
+      done <<<"$rules"
+      [[ $want -gt 0 && $(rule_count "$fam" "$chain") -eq $want ]] || return 1
     done
     jump_is_first "$fam" INPUT SHIFT-INPUT || return 1
     if chain_exists "$fam" DOCKER-USER; then
@@ -424,36 +472,40 @@ firewall_in_force() {
   done
 }
 
-# Creates (if missing) and flushes our two chains, loads the rendered appends
-# in one restore, and puts the jumps first. Flush-then-load leaves the chains
-# empty for an instant: open, never closed. IPv4 needs Docker's DOCKER-USER
-# (strict); IPv6 without it (Docker's ip6tables off) is filtered on INPUT,
-# where Docker's userland proxy delivers it.
+# Loads each family in ONE restore that declares our two chains (creating or
+# flushing them) and appends the rendered rules: the kernel swaps them in at
+# once, and a restore it refuses leaves the chains as they were. Both
+# families are rendered before either is loaded. Then the jumps go first.
+# IPv4 needs Docker's DOCKER-USER (strict); IPv6 without it (Docker's
+# ip6tables off) is filtered on INPUT, where Docker's userland proxy
+# delivers it, but not when Docker has IPv6 networks to forward to.
 load_firewall() {
-  local strict=$1 fam ipt chain
+  local strict=$1 fam ipt rules4 rules6 rules
   if ! chain_exists 4 DOCKER-USER; then
     [[ $strict -eq 1 ]] && die "IPv4 has no DOCKER-USER chain (is Docker running, on its iptables backend?)"
     warn "IPv4 has no DOCKER-USER chain yet; published ports are not filtered for IPv4"
   fi
   if ! chain_exists 6 DOCKER-USER; then
+    if [[ $strict -eq 1 ]] && docker network ls -q 2>/dev/null | xargs -r docker network inspect -f '{{.EnableIPv6}}' 2>/dev/null | grep -qx true; then
+      die "IPv6 has no DOCKER-USER chain but Docker has IPv6 networks: forwarded IPv6 would not be filtered (turn Docker's ip6tables on)"
+    fi
     warn "IPv6 has no DOCKER-USER chain (Docker's ip6tables off?); IPv6 is filtered on INPUT only"
+  fi
+  if [[ $APPLY -eq 1 ]]; then
+    rules4=$(render_family 4) || die "the IPv4 rules did not render; nothing was loaded"
+    rules6=$(render_family 6) || die "the IPv6 rules did not render; nothing was loaded"
   fi
   for fam in 4 6; do
     ipt=$(ipt_of "$fam")
-    for chain in SHIFT-INPUT SHIFT-DOCKER-USER; do
-      if ! chain_exists "$fam" "$chain"; then
-        run "$ipt" -w -N "$chain"
-      fi
-      run "$ipt" -w -F "$chain"
-    done
     if [[ $APPLY -eq 1 ]]; then
-      # Rendered first, so a render that fails stops here, before any restore.
-      local rules
-      rules=$(render_family "$fam")
+      rules=$rules4
+      [[ $fam == 6 ]] && rules=$rules6
+      [[ $rules == "*filter"$'\n'* ]] || die "the IPv$fam rules do not start with *filter"
+      rules="*filter"$'\n'":SHIFT-INPUT - [0:0]"$'\n'":SHIFT-DOCKER-USER - [0:0]"$'\n'"${rules#"*filter"$'\n'}"
       run "$ipt-restore" -w --noflush <<<"$rules" ||
-        die "$ipt-restore refused the rendered rules; the SHIFT-* chains are empty (open), nothing is closed"
+        die "$ipt-restore refused the IPv$fam rules; its SHIFT-* chains are as they were"
     else
-      run "$ipt-restore" -w --noflush "<the rules '$SELF render $fam' prints>"
+      run "$ipt-restore" -w --noflush "<:SHIFT-INPUT and :SHIFT-DOCKER-USER, then the rules '$SELF render $fam' prints>"
     fi
     ensure_first_jump "$fam" INPUT SHIFT-INPUT
     if chain_exists "$fam" DOCKER-USER; then
@@ -477,21 +529,41 @@ unload_firewall() {
   done
 }
 
+# No SHIFT-* chain and no jump to one, in either family.
+firewall_absent() {
+  local fam
+  for fam in 4 6; do
+    [[ $(jump_count "$fam" INPUT SHIFT-INPUT) -eq 0 && $(jump_count "$fam" DOCKER-USER SHIFT-DOCKER-USER) -eq 0 ]] || return 1
+    ! chain_exists "$fam" SHIFT-INPUT && ! chain_exists "$fam" SHIFT-DOCKER-USER || return 1
+  done
+}
+
 docker_major() {
   local version
   version=$(docker version --format '{{.Server.Version}}' 2>/dev/null) || return 1
+  [[ ${version%%.*} =~ ^[0-9]+$ ]] || return 1
   printf '%s\n' "${version%%.*}"
 }
 
-component_firewall() {
-  say "firewall (H-2, H-3, H-4): only 80/443 public; SSH from $TAILSCALE_IF and Coolify's bridge"
+# The firewall's refusals, checked once, and BEFORE `apply` arms anything.
+firewall_preflight() {
+  [[ $FIREWALL_CHECKED -eq 1 ]] && return 0
   local major
   major=$(docker_major) || die "cannot ask Docker for its version (is it running?)"
   if ((major < MIN_DOCKER_MAJOR)); then
     warn "Docker Engine $major is older than $MIN_DOCKER_MAJOR: loopback-published ports are reachable from the LAN; SHIFT-DOCKER-USER drops them, upgrade in the maintenance window"
   fi
-  resolve_coolify || die "Docker network '$COOLIFY_NETWORK' not found or has no IPv4 subnet: refusing, SSH from Coolify would be cut"
+  # Asked even when host.env pins the bridge: no Coolify network, no apply.
+  docker network inspect "$COOLIFY_NETWORK" >/dev/null 2>&1 ||
+    die "Docker network '$COOLIFY_NETWORK' not found: refusing, SSH from Coolify would be cut"
+  resolve_coolify || die "Docker network '$COOLIFY_NETWORK' has no IPv4 subnet: refusing, SSH from Coolify would be cut"
   check_interfaces
+  FIREWALL_CHECKED=1
+}
+
+component_firewall() {
+  say "firewall (H-2, H-3, H-4): only 80/443 public; SSH from $TAILSCALE_IF and Coolify's bridge"
+  firewall_preflight
   say "  Coolify network $COOLIFY_NETWORK: bridge $COOLIFY_BRIDGE, $COOLIFY_SUBNET4${COOLIFY_SUBNET6:+, $COOLIFY_SUBNET6}"
   if firewall_in_force; then
     ok "SHIFT-INPUT and SHIFT-DOCKER-USER hold the rendered rules and are jumped to first (IPv4 and IPv6)"
@@ -500,7 +572,8 @@ component_firewall() {
   fi
   if [[ $APPLY -eq 1 ]] || ! firewall_in_force; then
     load_firewall 1
-    state_write "$STATE_DIR/coolify.env" \
+    # Staged: it becomes the boot's fallback only on confirm.
+    state_write "$STAGE_DIR/coolify.env" \
       "$(printf 'COOLIFY_BRIDGE=%s\nCOOLIFY_SUBNET4=%s\nCOOLIFY_SUBNET6=%s' "$COOLIFY_BRIDGE" "$COOLIFY_SUBNET4" "$COOLIFY_SUBNET6")"
     if [[ $APPLY -eq 1 ]] && ! firewall_in_force; then
       die "the loaded rules do not match the rendered ones; the revert will undo them"
@@ -531,9 +604,14 @@ install_self() {
 }
 
 stage_firewall() {
-  state_remove "$STAGE_DIR"
   state_copy "$SRC_DIR/firewall/shift-v4.rules" "$STAGE_DIR/firewall/shift-v4.rules"
   state_copy "$SRC_DIR/firewall/shift-v6.rules" "$STAGE_DIR/firewall/shift-v6.rules"
+}
+
+# The env this apply runs with, for `confirm` and for a revert of it (which
+# must reload the same SSH_SERVICE). It becomes the confirmed host.env only
+# when a firewall change is confirmed.
+stage_env() {
   if [[ -n $ENV_FILE ]]; then
     state_copy "$ENV_FILE" "$STAGE_DIR/host.env"
   elif [[ -f $CONF_DIR/host.env ]]; then
@@ -559,15 +637,19 @@ sshd_hardened() {
     [[ $(sshd_effective permitrootlogin) =~ ^(prohibit-password|without-password)$ ]]
 }
 
+# Coolify logs in as root by key, and so does the operator: no key, no apply.
+# A key line may start with options (from=, restrict, ...).
+sshd_preflight() {
+  if ! grep -Ev '^[[:space:]]*#' /root/.ssh/authorized_keys 2>/dev/null |
+    grep -Eq '(^|[[:space:],"])(ssh-(ed25519|rsa|dss)|ecdsa-sha2-[a-z0-9]+|sk-[a-z0-9@.-]+) [A-Za-z0-9+/=]{16,}'; then
+    die "/root/.ssh/authorized_keys holds no key: refusing to turn passwords off"
+  fi
+}
+
 component_sshd() {
   say "sshd (H-4): key-only, root by key only, read before cloud-init's drop-in"
   local src=$SRC_DIR/sshd/00-shift-hardening.conf
-  # Coolify logs in as root by key, and so does the operator: no key, no apply.
-  # A key line may start with options (from=, restrict, ...).
-  if ! grep -Eq '(^|[[:space:],"])(ssh-(ed25519|rsa|dss)|ecdsa-sha2-[a-z0-9]+|sk-[a-z0-9@.-]+) [A-Za-z0-9+/=]{16,}' \
-    /root/.ssh/authorized_keys 2>/dev/null; then
-    die "/root/.ssh/authorized_keys holds no key: refusing to turn passwords off"
-  fi
+  sshd_preflight
   local ours other
   ours=$(basename -- "$SSHD_DROPIN")
   while IFS= read -r other; do
@@ -575,6 +657,10 @@ component_sshd() {
       warn "$other sorts before $ours and is read first: check it sets none of the hardened keywords"
     fi
   done < <(find /etc/ssh/sshd_config.d -maxdepth 1 -name '*.conf' -printf '%f\n' 2>/dev/null | sort)
+  # sshd -T without -C does not evaluate Match blocks.
+  if grep -Eiqs '^[[:space:]]*Match[[:space:]]' /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf; then
+    warn "a Match block exists in sshd's configuration: sshd -T does not evaluate it; check it re-enables no password login"
+  fi
   if [[ ! -d /run/sshd && $APPLY -eq 0 ]]; then
     say "  note: /run/sshd is missing, so sshd -T cannot answer until it exists"
   fi
@@ -638,6 +724,7 @@ component_swap() {
   if swapon --show=NAME --noheadings 2>/dev/null | grep -qxF -- "$SWAPFILE"; then
     if (($(stat -c %s -- "$SWAPFILE") < want_bytes)); then
       drift "$SWAPFILE is active but smaller than ${SWAP_SIZE_MIB} MiB: swapoff, remove and re-run apply swap in the maintenance window"
+      [[ $APPLY -eq 0 ]] || die "$SWAPFILE is smaller than ${SWAP_SIZE_MIB} MiB; not resized while active"
     else
       ok "$SWAPFILE is active ($(($(stat -c %s -- "$SWAPFILE") / 1024 / 1024)) MiB)"
     fi
@@ -652,9 +739,16 @@ component_swap() {
       [[ $fstype != btrfs ]] || die "$dir is on btrfs: a swapfile there needs a no-CoW file; make it by hand"
       avail=$(df --output=avail -m -- "$dir" | tail -n1 | tr -d ' ')
       ((avail > SWAP_SIZE_MIB + 2048)) || die "only ${avail} MiB free beside $SWAPFILE"
-      run fallocate -l "${SWAP_SIZE_MIB}MiB" -- "$SWAPFILE"
-      run chmod 600 -- "$SWAPFILE"
-      run mkswap -- "$SWAPFILE"
+      # Created 0600 before it holds anything; taken back if it cannot be made swap.
+      run install -m 0600 /dev/null "$SWAPFILE"
+      if ! run fallocate -l "${SWAP_SIZE_MIB}MiB" -- "$SWAPFILE"; then
+        run rm -f -- "$SWAPFILE"
+        die "fallocate refused $SWAPFILE; it was removed"
+      fi
+      if ! run mkswap -- "$SWAPFILE"; then
+        run rm -f -- "$SWAPFILE"
+        die "mkswap refused $SWAPFILE; it was removed"
+      fi
       fresh=1
     else
       [[ -f $SWAPFILE ]] || die "$SWAPFILE exists and is not a file"
@@ -676,6 +770,7 @@ component_swap() {
     die "/etc/fstab names $SWAPFILE but not as swap: fix it by hand"
   else
     drift "add $SWAPFILE to /etc/fstab"
+    state_copy /etc/fstab "$STATE_DIR/fstab.before"
     append_line "$SWAPFILE none swap sw 0 0" /etc/fstab
   fi
   if [[ -f $SYSCTL_DROPIN ]] && cmp -s -- "$src" "$SYSCTL_DROPIN" && [[ $(sysctl -n vm.swappiness) == "$SWAPPINESS" ]]; then
@@ -738,14 +833,19 @@ component_coolify() {
   local rows enabled
   rows=$(coolify_psql 'select count(*) from instance_settings') ||
     die "cannot read Coolify's settings from container $COOLIFY_DB_CONTAINER"
-  [[ $rows -ge 1 ]] || die "Coolify's instance_settings is empty: finish Coolify's own setup first"
-  enabled=$(coolify_psql 'select bool_or(is_auto_update_enabled) from instance_settings')
+  [[ $rows =~ ^[0-9]+$ ]] || die "unexpected answer from Coolify's database: $rows"
+  ((rows >= 1)) || die "Coolify's instance_settings is empty: finish Coolify's own setup first"
+  # NULL counts as on: only a row that is false everywhere is off.
+  enabled=$(coolify_psql 'select bool_or(is_auto_update_enabled is not false) from instance_settings')
   if [[ $enabled == f ]]; then
     ok "is_auto_update_enabled is false"
   else
     drift "turn Coolify auto-update off (the same field as Settings > Auto Update in the UI)"
     run docker exec -i "$COOLIFY_DB_CONTAINER" psql -U "$COOLIFY_DB_USER" -d "$COOLIFY_DB_NAME" -v ON_ERROR_STOP=1 \
-      -c 'update instance_settings set is_auto_update_enabled = false where is_auto_update_enabled'
+      -c 'update instance_settings set is_auto_update_enabled = false where is_auto_update_enabled is not false'
+    if [[ $APPLY -eq 1 && $(coolify_psql 'select bool_or(is_auto_update_enabled is not false) from instance_settings') != f ]]; then
+      die "Coolify's is_auto_update_enabled is still not false after the update"
+    fi
   fi
   # Coolify's own .env: its init and its upgrade script read AUTOUPDATE, so the
   # setting survives a manual upgrade.
@@ -773,12 +873,16 @@ pending_has() { [[ -f $STATE_DIR/pending ]] && grep -qx "$1" "$STATE_DIR/pending
 prepare_guarded_apply() {
   install_self
   state_write "$STATE_DIR/pending" "$(printf '%s\n' "${GUARDED[@]}")"
+  state_remove "$STAGE_DIR"
+  stage_env
   if pending_has firewall; then
     stage_firewall
     if systemctl is-enabled --quiet "$UNIT_NAME" 2>/dev/null; then
       state_write "$STATE_DIR/unit-was-enabled" "1"
-      # An unconfirmed firewall never comes back at boot.
+      # An unconfirmed firewall never comes back at boot, and a Docker
+      # restart (PartOf) does not load the confirmed rules over it.
       run systemctl disable "$UNIT_NAME"
+      run systemctl stop "$UNIT_NAME"
     else
       state_remove "$STATE_DIR/unit-was-enabled"
     fi
@@ -787,10 +891,13 @@ prepare_guarded_apply() {
     record_sshd_dropin
   fi
   run systemctl enable "$BOOT_REVERT_UNIT"
-  run systemctl reset-failed "$REVERT_UNIT.timer" "$REVERT_UNIT.service"
+  # Not loaded on a first apply, which reset-failed reports as an error.
+  run systemctl reset-failed "$REVERT_UNIT.timer" "$REVERT_UNIT.service" 2>/dev/null || true
+  # RemainAfterElapse=no: once fired, the timer is gone, not "active".
   run systemd-run --unit="$REVERT_UNIT" --collect \
     --description="Shift host: revert an unconfirmed firewall/sshd change" \
     --on-active="${REVERT_AFTER}s" --timer-property=AccuracySec=1s \
+    --timer-property=RemainAfterElapse=no \
     "$INSTALLED_BIN" revert --from-timer
   say "A revert is armed: in ${REVERT_AFTER}s, or at the next boot, the change is undone unless confirmed."
 }
@@ -801,6 +908,14 @@ confirm_hint() {
   say "Now, from a NEW session over the tailnet: log in by key, and validate the"
   say "server in Coolify (Servers > localhost > Validate). Then, within the window:"
   say "  sudo $INSTALLED_BIN confirm"
+}
+
+# A guarded apply that stops part-way still has its revert armed: say so.
+guarded_exit_hint() {
+  local status=$?
+  if [[ $status -ne 0 ]]; then
+    warn "apply stopped part-way; the firewall/sshd change is PENDING and is reverted ${REVERT_AFTER}s after it was armed, or at the next boot. '$INSTALLED_BIN status', then 'confirm' or 'revert'"
+  fi
 }
 
 clear_pending() {
@@ -815,7 +930,7 @@ do_confirm() {
   SRC_DIR=$STAGE_DIR
   load_config "$STAGE_DIR/host.env"
   if pending_has firewall; then
-    resolve_coolify || load_recorded_coolify || die "the Coolify bridge is unknown"
+    resolve_coolify || load_recorded_coolify "$STAGE_DIR/coolify.env" || die "the Coolify bridge is unknown"
     firewall_in_force || die "the firewall is not what was applied: run '$INSTALLED_BIN revert' and apply again"
   fi
   if pending_has sshd; then
@@ -830,7 +945,13 @@ do_confirm() {
     if [[ -f $STAGE_DIR/host.env ]]; then
       put_file "$STAGE_DIR/host.env" "$CONF_DIR/host.env" 0600
     fi
+    if [[ -f $STAGE_DIR/coolify.env ]]; then
+      state_copy "$STAGE_DIR/coolify.env" "$STATE_DIR/coolify.env"
+    fi
     run systemctl enable "$UNIT_NAME"
+    # Started too (it reloads the same rules once this run lets go of the
+    # lock), so PartOf=docker.service restarts it with Docker from now on.
+    run systemctl start --no-block "$UNIT_NAME" || warn "$UNIT_NAME did not start; the confirmed rules are in force, check 'systemctl status $UNIT_NAME'"
   fi
   clear_pending
   say "Confirmed. $UNIT_NAME re-applies the confirmed firewall at boot."
@@ -843,6 +964,8 @@ do_revert() {
   local failed=0 everything=0
   if [[ ! -f $STATE_DIR/pending ]]; then
     [[ $FROM_TIMER -eq 0 ]] || return 0
+    [[ $REVERT_ALL -eq 1 ]] ||
+      die "nothing is pending; to remove the CONFIRMED hardening (firewall and sshd drop-in) as well, run '$INSTALLED_BIN revert --all'"
     say "Nothing is pending: removing the whole hardening (firewall and sshd drop-in)."
     everything=1
   fi
@@ -856,13 +979,17 @@ do_revert() {
         load_config "$CONF_DIR/host.env"
         resolve_coolify || load_recorded_coolify || die "the Coolify bridge is unknown"
         load_firewall 0
+        # set -e does not act inside a `( ) ||`: the outcome is checked instead.
+        firewall_in_force
       ) || failed=1
       run systemctl enable "$UNIT_NAME" || failed=1
+      run systemctl start --no-block "$UNIT_NAME" || failed=1
     else
       say "Removing the SHIFT-* chains and their jumps."
       (
         set -e
         unload_firewall
+        firewall_absent
       ) || failed=1
       run systemctl disable "$UNIT_NAME" 2>/dev/null
     fi
@@ -879,11 +1006,12 @@ do_revert() {
   if [[ $FROM_TIMER -eq 0 ]] && revert_armed; then
     run systemctl stop "$REVERT_UNIT.timer" || failed=1
   fi
-  clear_pending
   set -e
   if [[ $failed -eq 1 ]]; then
-    die "the revert did not complete; check '$INSTALLED_BIN status' from the console"
+    # Pending is kept, so the revert-at-boot unit and a manual `revert` try again.
+    die "the revert did not complete (still pending; run '$INSTALLED_BIN revert' again, or reboot); check '$INSTALLED_BIN status' from the console"
   fi
+  clear_pending
   say "Reverted to the last confirmed state."
 }
 
@@ -932,6 +1060,11 @@ parse_args() {
         ;;
       --from-timer | --at-boot)
         FROM_TIMER=1
+        shift
+        ;;
+      --all)
+        [[ $MODE == revert ]] || die "--all is for revert"
+        REVERT_ALL=1
         shift
         ;;
       all)
@@ -989,21 +1122,34 @@ main() {
     boot)
       require_root
       APPLY=1
+      take_lock wait
       SRC_DIR=$SHARE_DIR
       load_config "$CONF_DIR/host.env"
       if ! resolve_coolify && ! load_recorded_coolify; then
         warn "the Coolify bridge is unknown: loading the rules WITHOUT Coolify's SSH admission"
       fi
       load_firewall 0
+      # Loaded anyway (SSH stays dropped everywhere but the tailnet), but a
+      # missing public interface means its rules filter nothing: fail loudly.
+      ip link show dev "$PUBLIC_IF" >/dev/null 2>&1 ||
+        die "PUBLIC_IF '$PUBLIC_IF' does not exist: the public rules filter NOTHING; fix $CONF_DIR/host.env and re-apply"
       ;;
     confirm)
       APPLY=1
+      take_lock now
       do_confirm
       ;;
     revert)
       APPLY=1
+      take_lock wait
       SRC_DIR=$SHARE_DIR
-      load_config "$CONF_DIR/host.env"
+      # The env the pending apply ran with (its SSH_SERVICE); the confirmed
+      # firewall is restored with the confirmed host.env, inside do_revert.
+      if [[ -f $STATE_DIR/pending && -f $STAGE_DIR/host.env ]]; then
+        load_config "$STAGE_DIR/host.env"
+      else
+        load_config "$CONF_DIR/host.env"
+      fi
       do_revert
       ;;
     status)
@@ -1019,6 +1165,14 @@ main() {
       elif [[ ${#COMPONENTS[@]} -eq 0 ]]; then
         COMPONENTS=("${ALL_COMPONENTS[@]}")
       fi
+      # Each once, in a fixed order: the guarded firewall and sshd first, so
+      # the revert window is spent on them, not on apt or fallocate.
+      local wanted=() c
+      for c in "${ALL_COMPONENTS[@]}"; do
+        if has_component "$c"; then wanted+=("$c"); fi
+      done
+      COMPONENTS=("${wanted[@]}")
+      take_lock now
       GUARDED=()
       if has_component firewall; then GUARDED+=(firewall); fi
       if has_component sshd; then GUARDED+=(sshd); fi
@@ -1029,11 +1183,14 @@ main() {
         if revert_armed || [[ -f $STATE_DIR/pending ]]; then
           die "an unconfirmed change is pending: confirm or revert it first"
         fi
-        # The revert is armed BEFORE anything changes, so a component that
-        # fails half-way is still undone.
+        # Refusals first, so a refused apply changes nothing; then the revert
+        # is armed BEFORE anything changes, so a component that fails
+        # half-way is still undone.
+        if has_component firewall; then firewall_preflight; fi
+        if has_component sshd; then sshd_preflight; fi
         prepare_guarded_apply
+        trap guarded_exit_hint EXIT
       fi
-      local c
       for c in "${COMPONENTS[@]}"; do
         "component_$c"
       done

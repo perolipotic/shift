@@ -50,6 +50,7 @@ context:
 - *"the monthly maintenance window is written down"*: DEPLOY §9.8 proposes a window for the founder to ratify with H-10; it is not decided here.
 - *"INPUT admits sshd only from tailscale0 and Coolify's Docker bridge"*: **widened by `lo`** as well. A local connection to sshd never crosses an interface the internet can reach, and dropping it would break local tooling for nothing. (Added in review, 2026-11-21.)
 - *"the Coolify UI, Studio and Postgres answer over the tailnet"*: **DEFERRED in part to 20.5.** Studio and Postgres are on the tailnet only once 20.5 has stood a stack up behind `tailscale serve`, so 20.4's verification proves the Coolify UI and SSH over the tailnet, and 20.5 runs `verify-exposure.sh` again with `--studio-url` and `--postgres-port`. Recorded in the application's deferred entry. (Added in review, 2026-11-21.)
+- *"unattended security upgrades stay on"*: **narrowed**. The apt drop-in holds Docker Engine, containerd and runc (`Package-Blacklist`), because upgrading them restarts every container; their security fixes wait for the monthly window, where they are upgraded by hand. For the founder to ratify with H-10. (Added in review loop 2, 2026-11-21.)
 
 </frozen-after-approval>
 
@@ -84,6 +85,49 @@ context:
 ## Spec Change Log
 
 - **2026-11-21, review loop 1 (patch findings; no bad_spec loopback).** Triggers: the verification-gap layer found that `render_family` died on the `@NAME@` in the IPv4 template's own header comment, so `render`, `plan`, `apply firewall` and `boot` could never work, and no test rendered a template; the blind and edge-case layers found that `revert` removed a confirmed firewall when only sshd was pending, that an unconfirmed re-apply reverted to an open host, that a reboot before `confirm` left the sshd change in place, and about twenty smaller gaps. Amended: render skips comments; the firewall templates and host.env are staged at apply and promoted only by `confirm`, which first checks what is in force; `revert` restores the last confirmed state, only for what was pending, and runs to the end; a `shift-host-revert-at-boot.service` does the same at boot; and further guards (interfaces, Tailscale's `ts-*` jumps, `-C` checks of the live rules, `-w`, the sshd ancestry check, `/run/sshd`, Docker held from unattended upgrades, Coolify's `AUTOUPDATE`, swap size). The epic-AC layer's two unlisted deviations (`lo`, Studio/Postgres waiting for 20.5) were added to `## Epic AC Deviations`, inside the frozen block, for the founder to see. The matrix's Lockout row still holds for a first apply (the last confirmed state is then "none"). KEEP: rules as data in two templates, RETURN never ACCEPT, `--ctorigdstport`, own chains only, the revert armed before anything changes, tests that never execute the scripts.
+
+- **2026-11-21, review loop 2 (security and lockout review; patch findings; no bad_spec loopback).** Triggers: `apply` failed on a first run (`systemctl reset-failed` on an unloaded revert unit), a fired revert timer stayed "active (elapsed)" and blocked the next apply, the revert reported success when a step inside its `( set -e ) ||` subshells failed (bash ignores `set -e` there) and cleared pending on failure, a refused apply had already armed the revert, the revert used default `SSH_SERVICE` on a first apply, flush-then-load could leave the chains empty (open) when a restore was refused, `firewall_in_force` read a failed render as zero rules in force, and `grep -w "dev eth0"` matched `eth0.100`. Amended: each family loads in one restore that declares the two chains (atomic; a refused restore keeps the old rules), both rendered first; refusals checked before arming; one lock for every changing mode; `revert` with nothing pending needs `--all`; published-port RETURNs also require `--ctstate DNAT`; `verify-exposure.sh` takes the Tailscale port; and smaller guards (see Review Log). KEEP: everything loop 1 kept.
+
+## Review Log
+
+**Loop 2, 2026-11-21** (`bmad-code-review`, unattended; layers: blind, edge-case, verification-gap, acceptance, epic-AC; artifact renderer not applicable). Nothing was run on any host; rule syntax was checked with `iptables-restore`/`ip6tables-restore` inside a throwaway network namespace only (both templates, rendered with sample values, load and pass `-C`; the declare-and-load payload is idempotent and a refused restore keeps the old chain).
+
+Patched:
+- First apply stopped by `systemctl reset-failed` on unloaded units → `2>/dev/null || true`.
+- Fired transient timer stayed active (`RemainAfterElapse` default yes) → `--timer-property=RemainAfterElapse=no`.
+- Revert subshells under `||` ignore `set -e` → each ends with an outcome check (`firewall_in_force` / new `firewall_absent`); a failed revert keeps pending (the boot unit and a manual revert retry).
+- Refused apply armed the revert first → `firewall_preflight` / `sshd_preflight` run before `prepare_guarded_apply`; the Coolify network is asked even when pinned.
+- Revert of a first apply ignored the apply's env → the env is staged for every guarded apply and `revert` loads it while pending.
+- Flush, then load: open gap, and open on a refused restore → one restore per family declaring `:SHIFT-INPUT`/`:SHIFT-DOCKER-USER`; both families rendered before either loads.
+- `firewall_in_force` passed on a failed render (0 = 0) → render first, `want > 0`.
+- `grep -w` matched VLAN/alias devices → `route_on_dev` compares the device field exactly.
+- Unconfirmed apply overwrote the boot's recorded Coolify bridge → staged, promoted on confirm.
+- Docker restart while pending loaded the confirmed rules over the applied ones → the firewall unit is stopped as well as disabled while pending; confirm (and a revert that restores) starts it `--no-block`, so `PartOf=docker.service` acts before the next boot.
+- No lock between apply, confirm, timer/boot revert and `boot` → `take_lock` (`flock` on `/run/shift-host.lock`; revert and boot wait, apply and confirm refuse).
+- Manual `revert` with nothing pending silently removed the confirmed hardening → needs `--all`.
+- A guarded apply dying in a later component printed no hint → EXIT trap names the pending revert; components run once each, firewall and sshd first.
+- Forwarded 80/443 RETURNs matched any original destination (an L2 neighbour routing to a container's own IP) → also `--ctstate DNAT`.
+- IPv6 without Docker's `DOCKER-USER` while Docker has IPv6 networks → refused (strict).
+- `boot` exited 0 with a missing `PUBLIC_IF` (rules filter nothing) → fails loudly after loading.
+- Warnings added: RA-learnt IPv6 route with forwarding on and `accept_ra` ≠ 2; nothing on `TAILSCALE_UDP_PORT`; `SSH_PORT` not in `sshd -T`; ufw/firewalld/netfilter-persistent/nftables enabled; `Match` blocks (unseen by `sshd -T`).
+- Key check passed on a commented-out key; Tailscale SSH not seen as SSH; Docker version not numeric; `docker network inspect` failures inside `resolve_coolify`; NULL `is_auto_update_enabled` (now `is not false`, re-read after the update); non-numeric psql count; undersized active swap passed `apply`; swapfile created 0644 and left behind when `mkswap` failed; fstab appended without a copy.
+- `verify-exposure.sh`: Tailscale's UDP port hard-coded → `--tailscale-udp-port`; the UDP PASS names the ports probed; DEPLOY says a provider firewall makes the scan green and that root's SSH keys are used.
+- Jump position documented as "after Tailscale's" while inserted at 1 → docs say position 1 (the check ignores `ts-*` above it).
+- Unlisted epic-AC deviation (Docker, containerd, runc held from unattended upgrades) → listed above.
+
+Rejected:
+- Stage the binary so the revert runs the last confirmed code: the timer and boot revert must understand the state the new apply wrote (staged env, staged Coolify record), which an older copy (or none, on a first apply) cannot; with render-before-load and atomic restore, a new-code bug can no longer leave the chains empty. The security-review reads the exact commit.
+- `sshd -T -C` with a Match context: would need a committed sample address and still not cover every Match; replaced by a warning on any `Match` block plus the over-the-tailnet method check in `verify-exposure.sh`, which the real daemon answers.
+- Plan stops at the first refused precondition: a refusal is the plan's answer; the founder fixes it and plans again.
+- More nmap retries / rescans: an open port answers every retry; the cost is a far longer full scan against DROP, and the scan is re-run after the first reboot.
+- Host.env laxities (`..` in paths, duplicate keys, loose CIDR shape, file mode): a root-only file the founder writes; iptables refuses a bad CIDR and the restore is now atomic.
+- Resolving `AuthorizedKeysFile`: this host's Coolify and operator keys are root's `authorized_keys` (DEPLOY step 1 checks it); the drop-in does not change where keys are read from.
+- Tailscale not held from upgrades: its repository is not an unattended-upgrades origin by default.
+- Boot loads without Coolify's SSH line when the bridge is unknown: fail-closed for Coolify only, with the recorded bridge as fallback, and better than no firewall.
+- `Package-Blacklist` regex breadth: matches only the Docker/containerd family it intends.
+- Editing the frozen block (loop 1 and now): left for the founder to ratify, as the Spec Change Log says.
+
+Deferred (deferred-work.md): drift alerting; container-to-host reach; netfilter backend parity; the CI netns proof (existing entry, updated).
 
 ## Design Notes
 

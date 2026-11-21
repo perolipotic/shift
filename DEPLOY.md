@@ -2285,7 +2285,7 @@ ports), Studio and Postgres are reached over the tailnet only.
 
 | Component | What `shift-host.sh apply <component>` does | Decision |
 | --- | --- | --- |
-| `firewall` | Loads two chains of its own, `SHIFT-INPUT` and `SHIFT-DOCKER-USER`, for IPv4 and IPv6 (`deploy/host/firewall/shift-v4.rules`, `shift-v6.rules`), and puts one jump to each first in `INPUT` and `DOCKER-USER` (after Tailscale's own `ts-*` jumps, if tailscaled adds any). Docker's chains and the rules already in `DOCKER-USER` (the development stack's drop) are left as they are. Installs `shift-host-firewall.service`, which reloads the CONFIRMED rules after Docker starts | H-2, H-3, H-4 |
+| `firewall` | Loads two chains of its own, `SHIFT-INPUT` and `SHIFT-DOCKER-USER`, for IPv4 and IPv6 (`deploy/host/firewall/shift-v4.rules`, `shift-v6.rules`), and puts one jump to each at position 1 of `INPUT` and `DOCKER-USER` (tailscaled may later put its own `ts-*` jumps above it; they only admit tailnet traffic, so the check ignores them). Docker's chains and the rules already in `DOCKER-USER` (the development stack's drop) are left as they are. Installs `shift-host-firewall.service`, which reloads the CONFIRMED rules after Docker starts | H-2, H-3, H-4 |
 | `sshd` | Installs `/etc/ssh/sshd_config.d/00-shift-hardening.conf` (key only, `PermitRootLogin prohibit-password`), checks it with `sshd -t` and `sshd -T`, reloads sshd; refuses if root's `authorized_keys` holds no key | H-4 |
 | `swap` | A 4 GiB `/swapfile`, in `/etc/fstab`, and `vm.swappiness = 10` (`/etc/sysctl.d/99-shift-swap.conf`) | H-15 |
 | `upgrades` | Keeps unattended security upgrades on, sets `Unattended-Upgrade::Automatic-Reboot "false"`, and holds Docker Engine and containerd back from unattended upgrades (`/etc/apt/apt.conf.d/52shift-unattended-upgrades`) | H-10 |
@@ -2346,7 +2346,7 @@ keep them, and enable the boot unit that reloads them.
 # 0. On the host, as root, on the PROVIDER'S CONSOLE (not SSH: apply refuses a
 #    session with sshd among its ancestors for firewall and sshd, unless
 #    --allow-ssh-session is given; tmux or screen hide that, so do not use
-#    them). Check out exactly the commit the security-review approved.
+#    them, and Tailscale SSH counts as SSH). Check out exactly the commit the security-review approved.
 git clone <this repository's clone URL> /root/shift
 cd /root/shift
 git checkout --detach <the reviewed commit>
@@ -2401,15 +2401,23 @@ with nmap:
 ```bash
 sudo deploy/host/verify-exposure.sh --ipv4 <public IPv4> --ipv6 <public IPv6> \
   --tailnet-host <the host's tailnet name> --coolify-port <Coolify's port> \
-  --studio-url <Studio's tailscale-serve URL> --postgres-port <its tailscale-serve port>
+  --studio-url <Studio's tailscale-serve URL> --postgres-port <its tailscale-serve port> \
+  --tailscale-udp-port <host.env's TAILSCALE_UDP_PORT, if not 41641>
 # -> PASS  IPv4 ...: only 80 and 443 answer on TCP
-# -> PASS  IPv4 ...: no UDP port answers but 443 (and Tailscale's)
+# -> PASS  IPv4 ...: of the UDP ports probed (...), none answers but 443 (and Tailscale's)
 # -> PASS  IPv6 ... (the same two)
 # -> PASS  SSH over the tailnet offers publickey only (a password is refused)
 # -> PASS  SSH by key works / Coolify UI / Studio / Postgres answer over the tailnet
 ```
 
-A full TCP scan of each address must find exactly 80 and 443. If the
+A provider's own firewall in front of the host makes this scan green
+whatever the host's rules say: scan with it open (or absent), so the scan
+judges the host. The script runs as root, so the tailnet SSH checks use
+root's keys and `known_hosts` on the scanning machine.
+
+A full TCP scan of each address must find exactly 80 and 443. The UDP half
+probes common ports only, and a silent UDP service reads like a dropped port;
+for UDP, the rules (`render`) are the proof. If the
 scanning machine has no IPv6 route, the IPv6 lines FAIL: scan from one that
 has. **Studio and Postgres** exist on the tailnet only once story 20.5 has
 stood a stack up: before that, run without `--studio-url` and
@@ -2421,8 +2429,9 @@ unit.
 **Locked out?** The console still works whatever the firewall says. Before
 `confirm`: `/usr/local/sbin/shift-host revert` there, or reboot (the
 revert-at-boot unit undoes both the firewall and the sshd change). After
-`confirm`, `revert` with nothing pending removes the whole hardening, firewall
-and sshd drop-in. A later re-apply (with a new `--env` file) goes through the
+`confirm`, `revert` with nothing pending refuses; `revert --all` removes the
+whole hardening, firewall and sshd drop-in. A revert that fails keeps the
+change pending, so run it again (or reboot) until it reports success. A later re-apply (with a new `--env` file) goes through the
 same `apply`, check, `confirm`; left unconfirmed, it reverts to the last
 confirmed state.
 
@@ -2437,7 +2446,10 @@ and Coolify does not update itself. In the window:
 1. A manual backup of each production database (story 20.7's procedure).
 2. `apt update && apt full-upgrade`, Docker Engine included; reboot if
    `/var/run/reboot-required` exists.
-3. Coolify, by hand, after reading its release notes, from its UI.
+3. Coolify, by hand, after reading its release notes, from its UI. Then
+   `shift-host plan firewall`: if the upgrade recreated Coolify's network
+   (a new bridge or subnet), `systemctl restart shift-host-firewall` loads
+   the rules for it, or Validate Server fails until the next reboot.
 4. After the reboot: `shift-host status` shows both chains and
    `shift-host-firewall.service` active; `shift-host plan` says nothing to
    change; `verify-exposure.sh` passes from outside; `free -h` shows the swap.

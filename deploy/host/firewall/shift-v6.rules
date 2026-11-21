@@ -32,9 +32,9 @@
 -A SHIFT-DOCKER-USER ! -i @PUBLIC_IF@ -j RETURN
 -A SHIFT-DOCKER-USER -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
 -A SHIFT-DOCKER-USER -m conntrack --ctorigdst ::1/128 -j DROP
--A SHIFT-DOCKER-USER -p tcp -m conntrack --ctorigdstport 80 --ctdir ORIGINAL -j RETURN
--A SHIFT-DOCKER-USER -p tcp -m conntrack --ctorigdstport 443 --ctdir ORIGINAL -j RETURN
--A SHIFT-DOCKER-USER -p udp -m conntrack --ctorigdstport 443 --ctdir ORIGINAL -j RETURN
+-A SHIFT-DOCKER-USER -p tcp -m conntrack --ctstate DNAT --ctorigdstport 80 --ctdir ORIGINAL -j RETURN
+-A SHIFT-DOCKER-USER -p tcp -m conntrack --ctstate DNAT --ctorigdstport 443 --ctdir ORIGINAL -j RETURN
+-A SHIFT-DOCKER-USER -p udp -m conntrack --ctstate DNAT --ctorigdstport 443 --ctdir ORIGINAL -j RETURN
 -A SHIFT-DOCKER-USER -j DROP
 
 COMMIT

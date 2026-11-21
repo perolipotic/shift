@@ -51,9 +51,9 @@ const SSH_DROP = '-p tcp --dport @SSH_PORT@ -j DROP';
 const PUBLIC_ONLY = '! -i @PUBLIC_IF@ -j RETURN';
 const ESTABLISHED = '-m conntrack --ctstate RELATED,ESTABLISHED -j RETURN';
 const WEB_PORTS = [
-  '-p tcp -m conntrack --ctorigdstport 80 --ctdir ORIGINAL -j RETURN',
-  '-p tcp -m conntrack --ctorigdstport 443 --ctdir ORIGINAL -j RETURN',
-  '-p udp -m conntrack --ctorigdstport 443 --ctdir ORIGINAL -j RETURN',
+  '-p tcp -m conntrack --ctstate DNAT --ctorigdstport 80 --ctdir ORIGINAL -j RETURN',
+  '-p tcp -m conntrack --ctstate DNAT --ctorigdstport 443 --ctdir ORIGINAL -j RETURN',
+  '-p udp -m conntrack --ctstate DNAT --ctorigdstport 443 --ctdir ORIGINAL -j RETURN',
 ];
 
 const EXPECTED: Record<'4' | '6', Record<'SHIFT-INPUT' | 'SHIFT-DOCKER-USER', string[]>> = {
@@ -253,7 +253,7 @@ describe('shift-host.sh', () => {
   });
 
   it('changes the host only through run or the helpers that check APPLY', () => {
-    const helpers = ['run', 'put_file', 'append_line', 'state_write', 'state_copy', 'state_remove'];
+    const helpers = ['run', 'put_file', 'append_line', 'state_write', 'state_copy', 'state_remove', 'take_lock'];
     const helperLines = new Set<number>();
     const lines = script.split('\n');
     for (const name of helpers) {
@@ -321,7 +321,7 @@ describe('shift-host.sh', () => {
     const session = functionBody(script, 'in_ssh_session');
     expect(session).toContain('SSH_CONNECTION');
     expect(session).toContain('/proc/$pid/stat');
-    expect(session).toContain('[[ $comm == sshd* ]]');
+    expect(session).toContain('[[ $comm == sshd* || $comm == tailscaled* ]]');
   });
 
   it('enables the boot unit only on confirm, or when a revert restores a confirmed firewall', () => {
@@ -369,10 +369,16 @@ describe('shift-host.sh', () => {
     expect(ensure).toContain('run "$ipt" -w -I "$parent" 1 -j "$target"');
     expect(functionBody(script, 'jump_is_first')).toContain("grep -v -- ' -j ts-'");
     const load = functionBody(script, 'load_firewall');
-    expect(load).toContain('run "$ipt" -w -F "$chain"');
-    expect(load).toContain('rules=$(render_family "$fam")');
+    // One restore per family declares (creates or flushes) our chains and
+    // loads them at once; both families render before either loads.
+    expect(load).not.toContain('-w -F "$chain"');
+    expect(load).toContain(`":SHIFT-INPUT - [0:0]"$'\\n'":SHIFT-DOCKER-USER - [0:0]"`);
+    expect(load.indexOf('rules6=$(render_family 6)')).toBeLessThan(load.indexOf('run "$ipt-restore" -w --noflush <<<"$rules"'));
     expect(load).toContain('run "$ipt-restore" -w --noflush <<<"$rules"');
-    expect(functionBody(script, 'firewall_in_force')).toContain('"$ipt" -w -C "$chain" "${args[@]}"');
+    const inForce = functionBody(script, 'firewall_in_force');
+    expect(inForce).toContain('"$ipt" -w -C "$chain" "${args[@]}"');
+    expect(inForce).toContain('rules=$(render_family "$fam") || return 1');
+    expect(inForce).toContain('$want -gt 0 &&');
     const swap = functionBody(script, 'component_swap');
     expect(swap).toContain('swapon --show=NAME --noheadings');
     expect(swap).toContain('$1 == f && $3 == "swap"');
@@ -381,23 +387,66 @@ describe('shift-host.sh', () => {
   });
 
   it('refuses where applying would cut Coolify or the operator off, or filter nothing', () => {
-    expect(functionBody(script, 'component_firewall')).toContain('refusing, SSH from Coolify would be cut');
+    const preflight = functionBody(script, 'firewall_preflight');
+    expect(preflight).toContain('refusing, SSH from Coolify would be cut');
+    expect(preflight).toContain('docker network inspect "$COOLIFY_NETWORK" >/dev/null');
+    expect(functionBody(script, 'component_firewall')).toContain('firewall_preflight');
+    // Refused before anything is armed.
+    const main = functionBody(script, 'main');
+    expect(main.indexOf('firewall_preflight')).toBeLessThan(main.indexOf('prepare_guarded_apply'));
+    expect(main.indexOf('sshd_preflight')).toBeLessThan(main.indexOf('prepare_guarded_apply'));
+    expect(functionBody(script, 'load_firewall')).toContain('Docker has IPv6 networks');
     expect(functionBody(script, 'load_firewall')).toContain('IPv4 has no DOCKER-USER chain');
     const interfaces = functionBody(script, 'check_interfaces');
     expect(interfaces).toContain('does not carry the IPv4 default route');
+    expect(interfaces).toContain('route_on_dev "$PUBLIC_IF"');
+    expect(interfaces).not.toContain('grep -qw "dev $PUBLIC_IF"');
+    expect(interfaces).toContain('accept_ra');
     expect(interfaces).toContain("TAILSCALE_IF '$TAILSCALE_IF' does not exist");
     expect(interfaces).toContain('is NOT filtered by these rules');
     const sshd = functionBody(script, 'component_sshd');
-    expect(sshd).toContain('/root/.ssh/authorized_keys');
-    expect(sshd).toContain('refusing to turn passwords off');
+    const keys = functionBody(script, 'sshd_preflight');
+    expect(keys).toContain('/root/.ssh/authorized_keys');
+    expect(keys).toContain("grep -Ev '^[[:space:]]*#'");
+    expect(keys).toContain('refusing to turn passwords off');
+    expect(sshd).toContain('sshd_preflight');
+    expect(sshd).toContain('Match block');
     expect(sshd).toContain('if ! sshd -t; then');
     expect(sshd).toContain('the drop-in was taken back');
     expect(functionBody(script, 'sshd_privsep_dir')).toContain('/run/sshd');
   });
 
+  it('review loop 2: the ways back cannot be blocked, raced or reported done when they failed', () => {
+    const prepare = functionBody(script, 'prepare_guarded_apply');
+    // A first apply has no revert unit loaded: reset-failed must not stop it.
+    expect(prepare).toContain('run systemctl reset-failed "$REVERT_UNIT.timer" "$REVERT_UNIT.service" 2>/dev/null || true');
+    // A fired timer is gone, so it never reads as armed afterwards.
+    expect(prepare).toContain('--timer-property=RemainAfterElapse=no');
+    expect(prepare).toContain('run systemctl stop "$UNIT_NAME"');
+    expect(prepare.indexOf('stage_env')).toBeLessThan(prepare.indexOf('systemd-run'));
+    const revert = functionBody(script, 'do_revert');
+    // set -e is ignored inside `( ) ||`: the outcome is checked instead.
+    expect(revert).toContain('firewall_in_force\n      ) || failed=1');
+    expect(revert).toContain('firewall_absent\n      ) || failed=1');
+    // A failed revert stays pending, so it is tried again.
+    expect(revert.indexOf('clear_pending')).toBeGreaterThan(revert.indexOf('if [[ $failed -eq 1 ]]'));
+    // Nothing pending removes the confirmed hardening only when asked.
+    expect(revert).toContain('[[ $REVERT_ALL -eq 1 ]] ||');
+    const main = functionBody(script, 'main');
+    expect(main).toContain('load_config "$STAGE_DIR/host.env"');
+    for (const mode of ['take_lock wait', 'take_lock now']) expect(main).toContain(mode);
+    expect(functionBody(script, 'take_lock')).toContain('flock -n 9');
+    expect(main).toContain('trap guarded_exit_hint EXIT');
+    const confirm = functionBody(script, 'do_confirm');
+    expect(confirm).toContain('load_recorded_coolify "$STAGE_DIR/coolify.env"');
+    expect(confirm).toContain('state_copy "$STAGE_DIR/coolify.env" "$STATE_DIR/coolify.env"');
+    expect(confirm).toContain('run systemctl start --no-block "$UNIT_NAME"');
+    expect(functionBody(script, 'component_firewall')).toContain('state_write "$STAGE_DIR/coolify.env"');
+  });
+
   it('warns below Docker Engine 28 (loopback ports reachable from the LAN)', () => {
     expect(script).toMatch(/^readonly MIN_DOCKER_MAJOR=28$/m);
-    expect(functionBody(script, 'component_firewall')).toContain('((major < MIN_DOCKER_MAJOR))');
+    expect(functionBody(script, 'firewall_preflight')).toContain('((major < MIN_DOCKER_MAJOR))');
   });
 
   it('turns Coolify auto-update off in its database and its own .env, and refuses an empty table', () => {
@@ -514,6 +563,11 @@ describe('verify-exposure.sh', () => {
     expect(verify).toContain('--ipv4 and --ipv6 are both required');
     expect(verify).toContain('--host-timeout');
     expect(functionBody(verify, 'scan')).toContain('fail "$label: the TCP scan did not run');
+    // Tailscale's port is the host's, scanned and excused by value, and the
+    // UDP verdict names the ports it probed (a silent UDP service is not seen).
+    expect(verify).toContain('readonly UDP_PORTS=$COMMON_UDP_PORTS,$TAILSCALE_UDP_PORT');
+    expect(verify).not.toMatch(/== 41641/);
+    expect(functionBody(verify, 'scan')).toContain('of the UDP ports probed ($UDP_PORTS)');
   });
 
   it('proves over the tailnet that SSH offers publickey only, and that key login works', () => {

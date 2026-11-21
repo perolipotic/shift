@@ -8,14 +8,17 @@
 #   sudo verify-exposure.sh --ipv4 <public IPv4> --ipv6 <public IPv6> \
 #     [--tailnet-host <the host's tailnet name>] [--coolify-port <port>] \
 #     [--studio-url <Studio's tailscale-serve URL>] [--postgres-port <port>] \
-#     [--ssh-user root]
+#     [--ssh-user root] [--tailscale-udp-port <host.env's TAILSCALE_UDP_PORT>]
 #
 # Public half, for EACH address:
 # - a full TCP scan (1-65535) finds exactly 80 and 443 open, so SSH, the
 #   Coolify UI and its realtime and terminal ports, Traefik's dashboard,
 #   Studio and Postgres do not answer;
-# - a UDP scan of the ports a host commonly serves finds nothing open but 443
-#   (and Tailscale's port, which answers only to its peers);
+# - a UDP scan of the ports a host commonly serves (and Tailscale's) finds
+#   nothing open but 443 (and Tailscale's port, which answers only to its
+#   peers). It is a probe of those ports only, and a UDP service that does not
+#   answer nmap reads as open|filtered, like a dropped port: the TCP scan and
+#   the rules themselves are the proof that nothing else is exposed;
 # - 443/udp answers HTTP/3, when this curl supports it.
 # If this machine has no IPv6 route, the IPv6 checks FAIL, never skip.
 #
@@ -35,8 +38,9 @@ COOLIFY_PORT=""
 STUDIO_URL=""
 POSTGRES_PORT=""
 SSH_USER=root
+TAILSCALE_UDP_PORT=41641
 FAILED=0
-readonly UDP_PORTS=53,67,68,69,123,137,161,443,500,1900,4500,5353,11211,41641
+readonly COMMON_UDP_PORTS=53,67,68,69,123,137,161,443,500,1900,4500,5353,11211
 
 pass() { printf 'PASS  %s\n' "$*"; }
 fail() {
@@ -50,7 +54,7 @@ die() {
 
 while [[ $# -gt 0 ]]; do
   case $1 in
-    --ipv4 | --ipv6 | --tailnet-host | --coolify-port | --studio-url | --postgres-port | --ssh-user)
+    --ipv4 | --ipv6 | --tailnet-host | --coolify-port | --studio-url | --postgres-port | --ssh-user | --tailscale-udp-port)
       [[ $# -ge 2 && -n $2 ]] || die "$1 needs a value"
       case $1 in
         --ipv4) IPV4=$2 ;;
@@ -60,6 +64,7 @@ while [[ $# -gt 0 ]]; do
         --studio-url) STUDIO_URL=$2 ;;
         --postgres-port) POSTGRES_PORT=$2 ;;
         --ssh-user) SSH_USER=$2 ;;
+        --tailscale-udp-port) TAILSCALE_UDP_PORT=$2 ;;
       esac
       shift 2
       ;;
@@ -76,6 +81,8 @@ done
 [[ $IPV6 =~ ^[0-9A-Fa-f:]+$ && $IPV6 == *:* ]] || die "--ipv6 is not an IPv6 address: $IPV6"
 [[ -z $COOLIFY_PORT || $COOLIFY_PORT =~ ^[0-9]{1,5}$ ]] || die "--coolify-port is not a port"
 [[ -z $POSTGRES_PORT || $POSTGRES_PORT =~ ^[0-9]{1,5}$ ]] || die "--postgres-port is not a port"
+[[ $TAILSCALE_UDP_PORT =~ ^[0-9]{1,5}$ ]] || die "--tailscale-udp-port is not a port"
+readonly UDP_PORTS=$COMMON_UDP_PORTS,$TAILSCALE_UDP_PORT
 [[ $(id -u) -eq 0 ]] || die "run as root: nmap's UDP scan needs it"
 command -v nmap >/dev/null || die "nmap is required"
 command -v curl >/dev/null || die "curl is required"
@@ -112,10 +119,10 @@ scan() {
   else
     local unexpected=""
     for port in ${ports//,/ }; do
-      [[ $port == 443 || $port == 41641 ]] || unexpected+="$port "
+      [[ $port == 443 || $port == "$TAILSCALE_UDP_PORT" ]] || unexpected+="$port "
     done
     if [[ -z $unexpected ]]; then
-      pass "$label: no UDP port answers but 443 (and Tailscale's)"
+      pass "$label: of the UDP ports probed ($UDP_PORTS), none answers but 443 (and Tailscale's)"
     else
       fail "$label: UDP ports answer: $unexpected"
     fi

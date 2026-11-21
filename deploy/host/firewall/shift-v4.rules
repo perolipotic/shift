@@ -6,7 +6,7 @@
 # owns, after creating and flushing them. It never writes any other chain:
 # Docker's chains and every rule already in DOCKER-USER (the development
 # stack's drop included) stay as they are. INPUT and DOCKER-USER each get one
-# jump, at position 1, to the chain below.
+# jump, at position 1 (Tailscale's ts-* jumps may sit above it), to the chain below.
 #
 # RETURN, not ACCEPT: an admitted packet goes on to the rules after the jump,
 # so nothing that was dropped before is admitted now.
@@ -40,9 +40,9 @@
 # Engine before 28 (a neighbour routes 127.0.0.1 to this host). Drop it here
 # whatever the Engine version (deferred-work, OWNER 20.4).
 -A SHIFT-DOCKER-USER -m conntrack --ctorigdst 127.0.0.0/8 -j DROP
--A SHIFT-DOCKER-USER -p tcp -m conntrack --ctorigdstport 80 --ctdir ORIGINAL -j RETURN
--A SHIFT-DOCKER-USER -p tcp -m conntrack --ctorigdstport 443 --ctdir ORIGINAL -j RETURN
--A SHIFT-DOCKER-USER -p udp -m conntrack --ctorigdstport 443 --ctdir ORIGINAL -j RETURN
+-A SHIFT-DOCKER-USER -p tcp -m conntrack --ctstate DNAT --ctorigdstport 80 --ctdir ORIGINAL -j RETURN
+-A SHIFT-DOCKER-USER -p tcp -m conntrack --ctstate DNAT --ctorigdstport 443 --ctdir ORIGINAL -j RETURN
+-A SHIFT-DOCKER-USER -p udp -m conntrack --ctstate DNAT --ctorigdstport 443 --ctdir ORIGINAL -j RETURN
 -A SHIFT-DOCKER-USER -j DROP
 
 COMMIT
