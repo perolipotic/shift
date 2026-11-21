@@ -294,7 +294,21 @@ async function tokenFor(email: string): Promise<string> {
   const body = (await response.json()) as Record<string, unknown>;
   const token = body['access_token'];
   if (typeof token !== 'string' || token === '') throw new Error(`${email} could not sign in: ${String(response.status)}`);
+  await usableAfterIssue(token);
   return token;
+}
+
+/**
+ * PostgREST refuses a token whose `iat` is later than its own clock (PGRST303
+ * "JWT issued at future"), and GoTrue's `iat` can round up past PostgREST's
+ * reading in the same second (CI run on 76e6f63). Wait until the issuing
+ * second has passed, as a browser that signs in and then reads always has.
+ */
+async function usableAfterIssue(token: string): Promise<void> {
+  const payload = JSON.parse(Buffer.from(token.split('.')[1] ?? '', 'base64url').toString('utf8')) as { iat?: unknown };
+  if (typeof payload.iat !== 'number') return;
+  const waitMs = (payload.iat + 1) * 1000 - Date.now();
+  if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, Math.min(waitMs, 5000)));
 }
 
 function userIdOf(token: string): string {
