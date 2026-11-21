@@ -308,14 +308,20 @@ function restOf(token: string) {
   const endpoint = apiEndpoint;
   if (endpoint === undefined) throw new Error('unreachable: gated by skipIf');
   const headers = { apikey: endpoint.key, authorization: `Bearer ${token}`, 'content-type': 'application/json' };
-  const answerOf = async (response: Response) => {
-    const body: unknown = await response.json();
+  // Every answer, by path, with its status and body: a refusal names only its check, so a failure
+  // prints what PostgREST actually said.
+  const answers: string[] = [];
+  const answerOf = async (path: string, response: Response) => {
+    const text = await response.text();
+    answers.push(`${path} ${String(response.status)} ${text.slice(0, 600)}`);
+    const body: unknown = JSON.parse(text);
     return response.ok
       ? { data: body as readonly unknown[], error: null }
       : { data: null, error: body as { code?: string; message?: string } };
   };
 
   return {
+    answers,
     select: (columns: string, _options: unknown) => ({
       filter: async (column: string, operator: string, value: string): Promise<CalendarAnswer> => {
         const query = new URLSearchParams({ select: columns, [column]: `${operator}.${value}` });
@@ -324,11 +330,11 @@ function restOf(token: string) {
         });
         const range = response.headers.get('content-range') ?? '';
         const total = Number(range.split('/')[1]);
-        return { ...(await answerOf(response)), count: Number.isInteger(total) ? total : null };
+        return { ...(await answerOf('organizations', response)), count: Number.isInteger(total) ? total : null };
       },
     }),
     rpc: async (fn: string) =>
-      answerOf(await fetch(`${endpoint.url}/rest/v1/rpc/${fn}`, { method: 'POST', headers, body: '{}' })),
+      answerOf(`rpc/${fn}`, await fetch(`${endpoint.url}/rest/v1/rpc/${fn}`, { method: 'POST', headers, body: '{}' })),
   };
 }
 
@@ -338,7 +344,7 @@ async function browserInputsOf(viewer: Viewer, window: { from: string; to: strin
   const { readCalendar, readMyLeaveRows, leaveRecordsOf, scheduleInputsOfCalendar } = await browserModules();
   const session = () => Promise.resolve({ user: { id: userIdOf(token) } });
   const calendar = await readCalendar(rest, rest, session);
-  if (!calendar.ok) throw new Error(`${viewer.email}: the calendar is ${calendar.code}`);
+  if (!calendar.ok) throw new Error(`${viewer.email}: the calendar is ${calendar.code}\n${rest.answers.join('\n')}`);
   expect(calendar.snapshot.viewer.memberId).toBe(viewer.memberId);
 
   const rows = await readMyLeaveRows(rest);
@@ -396,8 +402,10 @@ describe('read parity: the server assembly equals the browser\'s read (AD-19)', 
         if (one === undefined) throw new Error(`${fixture.fixture} has no scene`);
         const client = await connect();
         try {
-          for (const viewer of one.viewers) {
-            const browser = await browserInputsOf(viewer, one.window);
+          for (const [index, viewer] of one.viewers.entries()) {
+            const browser = await browserInputsOf(viewer, one.window).catch((cause: unknown) => {
+              throw new Error(`viewer ${String(index + 1)} of ${String(one.viewers.length)}: ${String(cause)}`, { cause });
+            });
             const server = await serverInputsOf(client, viewer.memberId, one.window);
 
             expect(ordered(server), `${viewer.email}: the assemblies differ`).toEqual(ordered(browser));
