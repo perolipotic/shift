@@ -506,3 +506,8 @@ The founder approved the scope and asked planning to continue without questions.
 | 19.5 Abandoned signups are cleaned up and the operator keeps control | Pass 2 | D-S5, D-S7 | Blocked |
 
 A `security-review` of 16.3–16.4 and of 19.1–19.5 precedes production in every case. Production opening of signup stays D-S5.
+
+
+## Ratification (2026-11-21)
+
+The founder accepted D-S1 to D-S10 at the recommended defaults ("D-S defaulti prihvaćeni"). D-S1 sub-choices from architect pass 1 are taken at their defaults: the feed token is stored as a plain SHA-256 hash that no role can read; Kong logs at `crit` so no token path is logged; a member with no team of their own may hold a live feed (they can be lent). D-S5 stands as written: signup ships to staging only, and production opens only on the founder's separate go after the security review.
