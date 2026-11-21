@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="hr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Registracija i prijava</title>
+<meta name="description" content="Epic 19 signup screens: Prijava with email, /registracija, the neutral check-your-email answer, /potvrda and password recovery, at phone and desktop width.">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap&subset=latin-ext" rel="stylesheet">
+<style>
+:root{
+ --canvas:#CFD8E4;--canvas-ink:#1E293B;--canvas-mut:#475569;--note:#F8FAFC;--note-bd:#94A3B8;
+ --bg:#E8EDF5;--fg:#0F172A;--card:#FFFFFF;--muted:#F1F5F9;--mfg:#556275;--bd:#E2E8F0;--input:#6E7D93;--ring:#13296B;
+ --pri:#2F55B8;--prifg:#FFFFFF;--pritint:rgba(47,85,184,.13);
+ --ink:#111827;--inkfg:#FFFFFF;
+ --glass:rgba(255,255,255,.58);--glassoc:rgba(255,255,255,.80);--glassrd:rgba(255,255,255,.85);--glassbd:rgba(255,255,255,.80);--glassact:#FFFFFF;
+ --scrim:rgba(15,23,42,.32);--gsh:0 10px 40px rgba(30,40,70,.10);
+ --b1:#B9D3FF;--b2:#E2CCFF;--b3:#C6F0E2;
+ --s1:#E4F0FA;--s1f:#14496F;--s3:#EFE7F7;--s3f:#4B3168;--s4:#FDF0DC;--s4f:#6E4A12;--nw:#F0F3F6;--nwf:#8D9AA7;
+ --bandd:#0B1628;--banddf:#CBD5E1;--unc:rgba(160,110,20,.22);
+ --sh:0 1px 3px rgba(0,0,0,.07),0 4px 16px rgba(0,0,0,.05);--skel:#E2E8F0;
+ color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+ --canvas:#03070D;--canvas-ink:#E2E8F0;--canvas-mut:#94A3B8;--note:#0B1424;--note-bd:#475569;
+ --bg:#0A1020;--fg:#E2E8F0;--card:#132035;--muted:#1C2B44;--mfg:#94A3B8;--bd:rgba(255,255,255,.10);--input:rgba(255,255,255,.40);--ring:#B4D2FD;
+ --pri:#3FA0FA;--prifg:#0B1628;--pritint:rgba(63,160,250,.16);
+ --ink:#F1F5F9;--inkfg:#0B1220;
+ --glass:rgba(15,23,42,.58);--glassoc:rgba(15,23,42,.80);--glassrd:rgba(19,32,53,.92);--glassbd:rgba(255,255,255,.10);--glassact:rgba(255,255,255,.12);
+ --scrim:rgba(0,0,0,.55);--gsh:0 10px 40px rgba(0,0,0,.45);
+ --b1:rgba(29,58,122,.45);--b2:rgba(59,36,102,.45);--b3:rgba(14,74,60,.45);
+ --s1:#00415D;--s1f:#B8E2FA;--s3:#3C324C;--s3f:#CBB4E8;--s4:#42361D;--s4f:#E8C88A;--nw:#0E1828;--nwf:#8494A8;
+ --bandd:#070E1A;--banddf:#C0CBDA;--unc:rgba(230,170,60,.16);
+ --sh:0 1px 3px rgba(0,0,0,.30),0 4px 16px rgba(0,0,0,.22);--skel:#1C2B44;
+ color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+ --canvas:#03070D;--canvas-ink:#E2E8F0;--canvas-mut:#94A3B8;--note:#0B1424;--note-bd:#475569;
+ --bg:#0A1020;--fg:#E2E8F0;--card:#132035;--muted:#1C2B44;--mfg:#94A3B8;--bd:rgba(255,255,255,.10);--input:rgba(255,255,255,.40);--ring:#B4D2FD;
+ --pri:#3FA0FA;--prifg:#0B1628;--pritint:rgba(63,160,250,.16);
+ --ink:#F1F5F9;--inkfg:#0B1220;
+ --glass:rgba(15,23,42,.58);--glassoc:rgba(15,23,42,.80);--glassrd:rgba(19,32,53,.92);--glassbd:rgba(255,255,255,.10);--glassact:rgba(255,255,255,.12);
+ --scrim:rgba(0,0,0,.55);--gsh:0 10px 40px rgba(0,0,0,.45);
+ --b1:rgba(29,58,122,.45);--b2:rgba(59,36,102,.45);--b3:rgba(14,74,60,.45);
+ --s1:#00415D;--s1f:#B8E2FA;--s3:#3C324C;--s3f:#CBB4E8;--s4:#42361D;--s4f:#E8C88A;--nw:#0E1828;--nwf:#8494A8;
+ --bandd:#070E1A;--banddf:#C0CBDA;--unc:rgba(230,170,60,.16);
+ --sh:0 1px 3px rgba(0,0,0,.30),0 4px 16px rgba(0,0,0,.22);--skel:#1C2B44;
+ color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--canvas);color:var(--canvas-ink);font:14px/1.5 'Outfit',ui-sans-serif,system-ui,sans-serif;overflow-x:hidden;font-variant-numeric:tabular-nums}
+svg.i{width:18px;height:18px;flex:0 0 auto;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+svg.i.sm{width:15px;height:15px}svg.i.lg{width:22px;height:22px}
+/* presentation chrome (not product UI) */
+.doc{max-width:1480px;margin:0 auto;padding:28px 16px 80px}
+.doc>header{display:flex;gap:16px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;margin-bottom:8px}
+.doc h1.t{font-size:26px;font-weight:700;margin:0 0 6px;letter-spacing:-.01em}
+.lead{color:var(--canvas-mut);max-width:90ch;margin:0 0 6px;font-size:14px}
+.doc h2.s{font-size:19px;font-weight:700;margin:44px 0 6px}
+.why{color:var(--canvas-mut);font-size:12.5px;margin:0 0 10px;max-width:62ch}
+.row{display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap}
+.col{flex:0 0 auto;max-width:100%}
+.col>.why{min-height:40px;max-width:390px}
+.cap{font-size:13px;font-weight:700;margin:0 0 2px}
+.note{background:var(--note);border:1.5px dashed var(--note-bd);border-radius:10px;padding:10px 12px;font-size:12.5px;color:var(--canvas-ink);max-width:440px}
+.note ul{margin:4px 0 0;padding-left:18px}.note li{margin:2px 0}
+.flag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;border:1.5px solid currentColor;border-radius:99px;padding:0 7px;margin-right:4px}
+.theme{display:inline-flex;border:1.5px solid var(--note-bd);border-radius:99px;padding:3px;gap:2px;background:var(--note)}
+.theme button{border:0;background:transparent;color:var(--canvas-ink);font:inherit;font-size:12px;font-weight:600;padding:5px 11px;border-radius:99px;cursor:pointer;min-height:32px}
+.theme button[aria-pressed="true"]{background:var(--canvas-ink);color:var(--canvas)}
+/* frames */
+.ph{width:390px;max-width:100%;height:800px;background:var(--bg);color:var(--fg);border-radius:30px;border:1px solid rgba(0,0,0,.25);box-shadow:0 18px 50px rgba(0,0,0,.28);overflow:hidden;display:flex;flex-direction:column;position:relative;isolation:isolate}
+.ph.tall{height:900px}.ph.short{height:640px}.ph.xs{height:560px}
+.blobs{position:absolute;inset:0;z-index:-1;background:
+ radial-gradient(40% 30% at 12% 8%,var(--b1),transparent 70%),
+ radial-gradient(38% 32% at 92% 30%,var(--b2),transparent 70%),
+ radial-gradient(40% 30% at 30% 96%,var(--b3),transparent 70%),var(--bg)}
+.ph .sbar{height:34px;flex:0 0 auto;display:flex;justify-content:space-between;align-items:center;padding:0 24px;font-size:12px;font-weight:600}
+.ph .scr{flex:1;overflow:hidden;padding:4px 16px 16px;position:relative}
+.dkw{max-width:100%;overflow-x:auto;border-radius:14px}
+.dk{width:1080px;height:720px;background:var(--bg);color:var(--fg);border-radius:14px;border:1px solid rgba(0,0,0,.25);box-shadow:0 18px 50px rgba(0,0,0,.28);overflow:hidden;display:flex;position:relative;isolation:isolate}
+.dk.tall{height:860px}.dk.xl{height:1400px}
+.dk .main{flex:1;overflow:hidden;padding:28px 32px}
+/* primitives (DESIGN.md, direction G) */
+.ptitle{font-weight:700;font-size:24px;letter-spacing:-.01em;margin:0;line-height:1.2}
+.pdesc{font-size:13.5px;color:var(--mfg);margin:4px 0 0}
+.phead{margin:6px 0 16px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:16px;box-shadow:var(--sh)}
+.card .ch{padding:13px 16px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:8px}
+.card .ct{font-weight:700;font-size:15px;flex:1;margin:0}
+.card .cb{padding:14px 16px}
+.mut{color:var(--mfg)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;padding:0 16px;border-radius:14px;font:inherit;font-weight:600;font-size:14px;border:1.5px solid transparent;white-space:nowrap;text-decoration:none;color:var(--fg)}
+.btn.p{background:var(--ink);color:var(--inkfg)}
+.btn.o{background:var(--card);border-color:var(--input)}
+.btn.g{background:transparent}
+.btn.w{width:100%}
+.btn[disabled]{opacity:.5}
+.ibtn{width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center;border-radius:14px;background:transparent;color:var(--fg)}
+.badge{display:inline-flex;align-items:center;gap:4px;border-radius:99px;font-size:12px;font-weight:600;padding:1px 9px;white-space:nowrap}
+.badge.d{background:var(--pritint);color:var(--fg)}
+.badge.s{background:var(--muted);color:var(--fg)}
+.badge.o{border:1.5px solid var(--input);color:var(--fg);padding:0 8px}
+.field{display:flex;flex-direction:column;gap:5px;margin-bottom:14px}
+.field>label,.flabel{font-size:13.5px;font-weight:600}
+.inp{min-height:44px;border:1.5px solid var(--input);border-radius:14px;background:var(--card);color:var(--fg);padding:0 12px;display:flex;align-items:center;gap:8px;font-size:14px}
+.inp .ph-t,.inp.ph-t{color:var(--mfg)}
+.inp.sel::after{content:"";margin-left:auto;width:8px;height:8px;border-right:2px solid var(--mfg);border-bottom:2px solid var(--mfg);transform:rotate(45deg) translate(-2px,-2px)}
+.inp.focus{box-shadow:0 0 0 2px var(--card),0 0 0 4px var(--ring)}
+.inp.dim{background:var(--muted);border-style:dashed}
+.inp .end{margin-left:auto;display:flex;color:var(--mfg)}
+.out{min-height:44px;border:1.5px dashed var(--input);border-radius:14px;background:var(--muted);padding:10px 12px;font-size:14px}
+.hint{font-size:12.5px;color:var(--mfg)}
+.chk{display:flex;gap:6px;align-items:center;font-size:12.5px;color:var(--mfg)}
+.chk.ok{color:var(--fg)}
+.notice{border:1.5px solid var(--input);background:var(--card);border-radius:14px;padding:10px 12px;font-size:13.5px;font-weight:500;display:flex;gap:8px;align-items:flex-start}
+.callout{background:color-mix(in srgb,var(--pri) 5%,var(--bg));border:1px solid color-mix(in srgb,var(--pri) 20%,transparent);border-radius:16px;padding:12px 14px;font-size:13.5px;display:flex;gap:10px}
+.callout .itile{width:34px;height:34px;border-radius:12px;background:var(--pritint);display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+.callout b{display:block;margin-bottom:2px}
+.callout p{margin:0 0 4px}
+.lnk{color:var(--fg);text-decoration:underline;text-underline-offset:3px;font-weight:600}
+.sep{height:1px;background:var(--bd);margin:14px 0}
+.tbl{width:100%;border-collapse:collapse;font-size:13.5px}
+.tbl th{text-align:left;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--mfg);background:var(--muted);padding:8px 12px;font-weight:700}
+.tbl td{padding:10px 12px;border-top:1px solid var(--bd)}
+.av{width:32px;height:32px;border-radius:50%;background:var(--muted);display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex:0 0 auto}
+.chip{display:inline-flex;align-items:center;border-radius:8px;font-size:12px;font-weight:700;padding:2px 8px;white-space:nowrap}
+.chip.s1{background:var(--s1);color:var(--s1f)}.chip.s3{background:var(--s3);color:var(--s3f)}.chip.s4{background:var(--s4);color:var(--s4f)}.chip.nw{background:var(--nw);color:var(--nwf)}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13.5px}
+/* glass chrome */
+.glass{background:var(--glass);border:1px solid var(--glassbd);box-shadow:var(--gsh);backdrop-filter:blur(24px) saturate(160%)}
+.glassoc{background:var(--glassoc);border:1px solid var(--glassbd);box-shadow:var(--gsh);backdrop-filter:blur(24px) saturate(160%)}
+.glassrd{background:var(--glassrd);border:1px solid var(--glassbd);box-shadow:var(--gsh);backdrop-filter:blur(24px) saturate(160%)}
+.lockup{display:flex;align-items:center;gap:10px}
+.lockup .tile{width:34px;height:34px;border-radius:11px;background:var(--ink);color:var(--inkfg);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px}
+.lockup b{font-size:15px}
+/* auth frame */
+.auth-dk{display:flex;gap:16px;padding:16px;width:100%}
+.brandp{width:440px;border-radius:24px;padding:36px;display:flex;flex-direction:column}
+.brandp h2{font-size:30px;line-height:1.15;margin:auto 0 10px;font-weight:700;letter-spacing:-.01em}
+.brandp p{margin:0;color:var(--fg);font-size:15px;max-width:34ch}
+.authc{flex:1;display:flex;align-items:center;justify-content:center}
+.authc .card{width:420px}
+.authc .card .cb{padding:24px}
+.ph .authp{padding:10px 4px}
+.foot{font-size:13.5px;margin-top:14px;display:flex;gap:6px;flex-wrap:wrap;justify-content:center}
+/* setup frame */
+.stop{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0 12px}
+.stop .who{font-size:12.5px;color:var(--mfg);text-align:right;line-height:1.3}
+.rail{list-style:none;margin:0;padding:6px}
+.rail li{display:flex;align-items:center;gap:10px;min-height:44px;padding:4px 10px;border-radius:12px;font-size:14px}
+.rail li .n{width:26px;height:26px;border-radius:50%;border:1.5px solid var(--input);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex:0 0 auto}
+.rail li.done .n{background:var(--ink);color:var(--inkfg);border-color:var(--ink)}
+.rail li.cur{background:var(--muted);font-weight:700}
+.rail li.cur .lbl{text-decoration:underline;text-underline-offset:3px}
+.rail li .st{margin-left:auto;font-size:12px;color:var(--mfg);font-weight:500}
+.prog{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin:8px 0 2px}
+.prog span{height:6px;border-radius:3px;background:var(--bd);box-shadow:inset 0 0 0 1px var(--input)}
+.prog span.done{background:var(--ink);box-shadow:none}
+.prog span.cur{background:var(--pri);box-shadow:none}
+.sfoot{display:flex;gap:8px;justify-content:space-between;align-items:center;margin-top:16px}
+.ph .sfoot{position:absolute;left:0;right:0;bottom:0;padding:12px 16px 22px;margin:0;border-radius:22px 22px 0 0}
+.timeline{display:flex;height:34px;border-radius:10px;overflow:hidden;border:1px solid var(--bd)}
+.timeline .u{flex:1;background-color:var(--muted);background-image:repeating-linear-gradient(45deg,var(--unc) 0 4px,transparent 4px 8px);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:var(--fg)}
+.scale{display:flex;justify-content:space-between;font-size:11px;color:var(--mfg);margin-top:3px}
+.empty{padding:22px 16px;text-align:left;font-size:14px}
+.empty b{display:block;margin-bottom:2px}
+/* dialog / sheet */
+.scrim{position:absolute;inset:0;background:var(--scrim);z-index:3}
+.dlg{position:absolute;z-index:4;border-radius:16px;color:var(--fg)}
+.dlg .dh{display:flex;align-items:center;gap:8px;padding:10px 10px 10px 20px;border-bottom:1px solid var(--bd)}
+.dlg .dh h3{margin:0;font-size:17px;font-weight:700;flex:1}
+.dlg .db{padding:16px 20px}
+.dlg .df{display:flex;justify-content:flex-end;gap:8px;padding:12px 20px 16px;border-top:1px solid var(--bd)}
+.sheet{position:absolute;left:0;right:0;bottom:0;border-radius:22px 22px 0 0;z-index:4;padding:8px 16px 22px;color:var(--fg)}
+.grab{width:40px;height:4px;border-radius:2px;background:var(--input);opacity:.6;margin:2px auto 10px}
+/* app shell (Danas mockups) */
+.side{width:232px;flex:0 0 auto;margin:16px 0 16px 16px;border-radius:24px;padding:12px 10px;display:flex;flex-direction:column}
+.side .lockup{padding:6px 6px 14px;border-bottom:1px solid var(--bd);margin-bottom:6px}
+.sgl{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--fg);padding:12px 10px 4px}
+.ni{display:flex;align-items:center;gap:10px;min-height:42px;padding:0 10px;border-radius:12px;font-size:13.5px;font-weight:500}
+.ni.on{background:var(--glassact);font-weight:700;box-shadow:var(--sh)}
+.ni.on span{text-decoration:underline;text-underline-offset:3px}
+.tabs{position:absolute;left:16px;right:16px;bottom:14px;border-radius:99px;display:grid;grid-template-columns:repeat(5,1fr);padding:6px;z-index:2}
+.tab{display:flex;flex-direction:column;align-items:center;gap:2px;min-height:50px;justify-content:center;font-size:11px;font-weight:500;border-radius:99px}
+.tab.on{background:var(--glassact);font-weight:700;box-shadow:var(--sh)}
+.tab.on span{text-decoration:underline;text-underline-offset:3px}
+.edge-d{border-left:4px solid #D93A46}
+.stat{font-size:22px;font-weight:700;line-height:1.2}
+.list{list-style:none;margin:0;padding:0}
+.list li{display:flex;align-items:center;gap:10px;min-height:44px;border-top:1px solid var(--bd);padding:6px 0;font-size:14px}
+.list li:first-child{border-top:0}
+</style>
+</head>
+<body>
+<div class="doc">
+<header>
+ <div><h1 class="t">Registracija, potvrda i nova lozinka</h1><p class="lead">Story 19.2 surfaces, reviewed for story 19.4's UX gate (AD-22, AD-24). Every answer that could name an address is one neutral answer; nothing is pre-filled; Croatian copy, second person singular, no exclamation marks.</p>
+ <p class="lead"><a class="lnk" href="index.html">Svi ekrani epika 19</a> · direction G („Staklo”), Outfit, ink actions; spines (DESIGN.md, EXPERIENCE.md) win on conflict. Sample data is invented and organization-neutral: <i>Tvrtka Primjer</i>, <code>tvrtka-primjer</code>, <code>ivana.horvat@example.com</code>.</p></div>
+ <div class="theme" role="group" aria-label="Tema"><button data-v="system" aria-pressed="true">Sustav</button><button data-v="light">Svijetla</button><button data-v="dark">Tamna</button></div>
+</header>
+<h2 class="s">1 · Prijava prima i e-mail (UX-DR62)</h2><p class="why" style="max-width:96ch">One entry field, <i>Korisničko ime ili e-mail</i> (AD-12: an entry with <code>@</code> is an address). The Organizacija field stays where it is, so nothing jumps; while the entry holds an <code>@</code> it is dimmed, not required and not sent. <i>Nova organizacija? Registriraj se</i> sits under the form only on <code>/prijava</code> without a slug: a member arriving from their organization's link is never offered a new organization.</p><div class="row"><div class="col"><p class="cap">Desktop · e-mail upisan</p><p class="why">From 1024 px the glass brand panel sits beside the form (story 15.3).</p><div class="dkw"><div class="dk "><div class="blobs"></div><div class="auth-dk"><div class="brandp glass"><div class="lockup"><div class="tile">S</div><b>Shift</b></div>
+<h2>Raspored kojem možeš vjerovati.</h2><p>Tko radi i kada, sati i godišnji odmor na jednom mjestu.</p></div><div class="authc"><div class="card"><div class="cb"><h1 class="ptitle" style="margin-bottom:18px">Prijava</h1><div class="field"><label>Organizacija</label><div class="inp dim"><span class="ph-t">nije potrebna</span></div><span class="hint">Za prijavu e-mailom organizacija nije potrebna.</span></div>
+<div class="field"><label>Korisničko ime ili e-mail</label><div class="inp "><span>ivana.horvat@example.com</span></div></div>
+<div class="field"><label>Lozinka</label><div class="inp"><span>•••••••••</span><span class="end"><svg class="i " viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></svg></span></div></div>
+<button class="btn p w">Prijava</button>
+<p class="foot"><a class="lnk">Zaboravljena lozinka?</a></p><p class="foot"><span class="mut">Nova organizacija?</span> <a class="lnk">Registriraj se</a></p></div></div></div></div></div></div></div><div class="col"><p class="cap">Phone · prazno</p><p class="why">The placeholder is organization-neutral (was <code>npr. dvd-kastel-novi</code>).</p><div class="ph "><div class="blobs"></div><div class="sbar"><span>9:41</span><span>●●●</span></div><div class="scr"><div class="authp"><div class="lockup" style="margin:6px 0 22px"><div class="tile">S</div><b>Shift</b></div><h1 class="ptitle" style="margin-bottom:18px">Prijava</h1><div class="field"><label>Organizacija</label><div class="inp "><span class="ph-t">npr. naziv-organizacije</span></div><span class="hint">Kratica organizacije je na poveznici za prijavu ili je dobiješ od administratora.</span></div>
+<div class="field"><label>Korisničko ime ili e-mail</label><div class="inp "></div></div>
+<div class="field"><label>Lozinka</label><div class="inp"><span class="end"><svg class="i " viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></svg></span></div></div>
+<button class="btn p w">Prijava</button>
+<p class="foot"><a class="lnk">Zaboravljena lozinka?</a></p><p class="foot"><span class="mut">Nova organizacija?</span> <a class="lnk">Registriraj se</a></p></div></div></div><div class="note" style="margin-top:12px"><b>Open item O1.</b> <code>auth.organization.placeholder</code> today reads <code>npr. dvd-kastel-novi</code>, a pilot literal on the page every stranger reaches after confirming. Recommended: <code>npr. naziv-organizacije</code>.</div></div><div class="col"><p class="cap">Phone · s poveznice organizacije</p><p class="why"><code>/prijava/tvrtka-primjer</code>: the slug is a read-only row and there is no signup offer.</p><div class="ph "><div class="blobs"></div><div class="sbar"><span>9:41</span><span>●●●</span></div><div class="scr"><div class="authp"><div class="lockup" style="margin:6px 0 22px"><div class="tile">S</div><b>Shift</b></div><h1 class="ptitle" style="margin-bottom:18px">Prijava</h1><div class="field"><span class="flabel">Organizacija</span><div class="out" style="display:flex;justify-content:space-between;align-items:center"><span class="mono">tvrtka-primjer</span><a class="lnk">Promijeni</a></div></div>
+<div class="field"><label>Korisničko ime ili e-mail</label><div class="inp "></div></div>
+<div class="field"><label>Lozinka</label><div class="inp"><span class="end"><svg class="i " viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></svg></span></div></div>
+<button class="btn p w">Prijava</button>
+<p class="foot"><a class="lnk">Zaboravljena lozinka?</a></p></div></div></div></div><div class="col"><p class="cap">Phone · neuspjela prijava e-mailom</p><p class="why">One message for every cause of an email sign-in (FR-99); the username path keeps its own one message. Which kind was typed is the user's own fact, so naming it reveals nothing.</p><div class="ph "><div class="blobs"></div><div class="sbar"><span>9:41</span><span>●●●</span></div><div class="scr"><div class="authp"><div class="lockup" style="margin:6px 0 22px"><div class="tile">S</div><b>Shift</b></div><h1 class="ptitle" style="margin-bottom:18px">Prijava</h1><div class="notice" role="alert" style="margin-bottom:14px"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l9.5 16.5h-19z"/><path d="M12 10v4.5M12 17.5v.01"/></svg><span>E-mail ili lozinka nisu točni.</span></div><div class="field"><label>Organizacija</label><div class="inp dim"><span class="ph-t">nije potrebna</span></div><span class="hint">Za prijavu e-mailom organizacija nije potrebna.</span></div>
+<div class="field"><label>Korisničko ime ili e-mail</label><div class="inp "><span>ivana.horvat@example.com</span></div></div>
+<div class="field"><label>Lozinka</label><div class="inp"><span>•••••••••</span><span class="end"><svg class="i " viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></svg></span></div></div>
+<button class="btn p w">Prijava</button>
+<p class="foot"><a class="lnk">Zaboravljena lozinka?</a></p><p class="foot"><span class="mut">Nova organizacija?</span> <a class="lnk">Registriraj se</a></p></div></div></div></div></div><h2 class="s">2 · /registracija (UX-DR63)</h2><p class="why" style="max-width:96ch">Email and one password with the show/hide toggle and the live floor check of <i>Postavi svoju lozinku</i> (10, the same constant). No repeat field: an email identity recovers by email, and the toggle lets the user read what they typed. The shape of the address and the floor are checked before anything is sent, so the masked answer never surprises someone who typed correctly (AD-22). No captcha (D-S3), no terms checkbox (open item O2).</p><div class="row"><div class="col"><p class="cap">Desktop</p><p class="why"></p><div class="dkw"><div class="dk "><div class="blobs"></div><div class="auth-dk"><div class="brandp glass"><div class="lockup"><div class="tile">S</div><b>Shift</b></div>
+<h2>Raspored kojem možeš vjerovati.</h2><p>Tko radi i kada, sati i godišnji odmor na jednom mjestu.</p></div><div class="authc"><div class="card"><div class="cb"><h1 class="ptitle">Nova organizacija</h1>
+<p class="pdesc" style="margin-bottom:16px">Registracijom stvaraš novu organizaciju u kojoj si administrator.</p>
+<div class="callout" style="margin-bottom:16px"><div class="itile"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.5v.01"/></svg></div><div><b>Tvoja organizacija već koristi Shift?</b><p>Ne registriraj se. Korisničko ime i lozinku dobivaš od svog administratora.</p></div></div>
+<div class="field"><label>E-mail</label><div class="inp "></div><span class="hint">Na ovu adresu šaljemo poveznicu za potvrdu.</span></div>
+<div class="field"><label>Lozinka</label><div class="inp"><span class="end"><svg class="i " viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></svg></span></div><div class="chk "><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/></svg>Najmanje 10 znakova (upisano: 0)</div></div>
+<button class="btn p w">Registriraj se</button>
+<p class="foot"><span class="mut">Već imaš račun?</span> <a class="lnk">Prijava</a></p></div></div></div></div></div></div></div><div class="col"><p class="cap">Phone · upisano</p><p class="why"></p><div class="ph tall"><div class="blobs"></div><div class="sbar"><span>9:41</span><span>●●●</span></div><div class="scr"><div class="authp"><div class="lockup" style="margin:6px 0 22px"><div class="tile">S</div><b>Shift</b></div><h1 class="ptitle">Nova organizacija</h1>
+<p class="pdesc" style="margin-bottom:16px">Registracijom stvaraš novu organizaciju u kojoj si administrator.</p>
+<div class="callout" style="margin-bottom:16px"><div class="itile"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.5v.01"/></svg></div><div><b>Tvoja organizacija već koristi Shift?</b><p>Ne registriraj se. Korisničko ime i lozinku dobivaš od svog administratora.</p></div></div>
+<div class="field"><label>E-mail</label><div class="inp "><span>ivana.horvat@example.com</span></div><span class="hint">Na ovu adresu šaljemo poveznicu za potvrdu.</span></div>
+<div class="field"><label>Lozinka</label><div class="inp"><span>••••••••••••</span><span class="end"><svg class="i " viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></svg></span></div><div class="chk ok"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Najmanje 10 znakova (upisano: 12)</div></div>
+<button class="btn p w">Registriraj se</button>
+<p class="foot"><span class="mut">Već imaš račun?</span> <a class="lnk">Prijava</a></p></div></div></div></div><div class="col"><p class="cap">Phone · lokalno odbijeno</p><p class="why">Refused on the page, with no request: a value that cannot be an address, or a short password. Typed values stay.</p><div class="ph tall"><div class="blobs"></div><div class="sbar"><span>9:41</span><span>●●●</span></div><div class="scr"><div class="authp"><div class="lockup" style="margin:6px 0 22px"><div class="tile">S</div><b>Shift</b></div><h1 class="ptitle">Nova organizacija</h1>
+<p class="pdesc" style="margin-bottom:16px">Registracijom stvaraš novu organizaciju u kojoj si administrator.</p>
+<div class="callout" style="margin-bottom:16px"><div class="itile"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.5v.01"/></svg></div><div><b>Tvoja organizacija već koristi Shift?</b><p>Ne registriraj se. Korisničko ime i lozinku dobivaš od svog administratora.</p></div></div>
+<div class="notice" role="alert" style="margin-bottom:14px"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l9.5 16.5h-19z"/><path d="M12 10v4.5M12 17.5v.01"/></svg><span>Upiši ispravnu adresu e-pošte, npr. ime@domena.hr. Lozinka mora imati najmanje 10 znakova.</span></div><div class="field"><label>E-mail</label><div class="inp "><span>ivana.horvat.example.com</span></div><span class="hint">Na ovu adresu šaljemo poveznicu za potvrdu.</span></div>
+<div class="field"><label>Lozinka</label><div class="inp"><span>•••••••</span><span class="end"><svg class="i " viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></svg></span></div><div class="chk "><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/></svg>Najmanje 10 znakova (upisano: 7)</div></div>
+<button class="btn p w">Registriraj se</button>
+<p class="foot"><span class="mut">Već imaš račun?</span> <a class="lnk">Prijava</a></p></div></div></div></div></div><h2 class="s">3 · Jedan neutralan odgovor (UX-DR63, FR-99, AD-22)</h2><p class="why" style="max-width:96ch">The one screen after <i>Registriraj se</i>, identical for a new, a known confirmed and a known unconfirmed address, because the gateway answers <code>200 {}</code> for all of them and the SPA never reads the body. The address shown is what the user typed (theirs, so it reveals nothing) with a way back to correct it. <i>Pošalji ponovno</i> is throttled on the page for 60 s (<code>GOTRUE_SMTP_MAX_FREQUENCY</code>); after a resend the same neutral sentence comes back as a status line. A 429 from Kong's per-IP limit is the one other answer: it says nothing was sent, which is about this network, never about the address.</p><div class="row"><div class="col"><p class="cap">Phone · poslano</p><p class="why"></p><div class="ph short"><div class="blobs"></div><div class="sbar"><span>9:41</span><span>●●●</span></div><div class="scr"><div class="authp"><div class="lockup" style="margin:6px 0 22px"><div class="tile">S</div><b>Shift</b></div><div class="itile" style="width:44px;height:44px;border-radius:14px;background:var(--pritint);display:flex;align-items:center;justify-content:center;margin-bottom:12px"><svg class="i lg" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5.5" width="18" height="13" rx="2"/><path d="M3.5 7l8.5 6 8.5-6"/></svg></div>
+<h1 class="ptitle">Provjeri e-poštu</h1>
+<p style="margin:8px 0 6px;font-size:15px">Ako adresa može primiti poruku, poslali smo poveznicu za potvrdu.</p>
+<p class="hint" style="margin:0 0 4px">Upisana adresa: <b style="color:var(--fg)">ivana.horvat@example.com</b> · <a class="lnk">Ispravi adresu</a></p>
+<p class="hint" style="margin:0 0 16px">Poveznica vrijedi sat vremena. Poruku potraži i u neželjenoj pošti.</p>
+<button class="btn o w">Pošalji ponovno</button>
+<p class="foot"><a class="lnk">Prijava</a></p></div></div></div></div><div class="col"><p class="cap">Phone · nakon ponovnog slanja</p><p class="why">The countdown is in the button's name, announced politely once, not every second.</p><div class="ph short"><div class="blobs"></div><div class="sbar"><span>9:41</span><span>●●●</span></div><div class="scr"><div class="authp"><div class="lockup" style="margin:6px 0 22px"><div class="tile">S</div><b>Shift</b></div><div class="itile" style="width:44px;height:44px;border-radius:14px;background:var(--pritint);display:flex;align-items:center;justify-content:center;margin-bottom:12px"><svg class="i lg" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5.5" width="18" height="13" rx="2"/><path d="M3.5 7l8.5 6 8.5-6"/></svg></div>
+<h1 class="ptitle">Provjeri e-poštu</h1>
+<p style="margin:8px 0 6px;font-size:15px">Ako adresa može primiti poruku, poslali smo poveznicu za potvrdu.</p>
+<p class="hint" style="margin:0 0 4px">Upisana adresa: <b style="color:var(--fg)">ivana.horvat@example.com</b> · <a class="lnk">Ispravi adresu</a></p>
+<p class="hint" style="margin:0 0 16px">Poveznica vrijedi sat vremena. Poruku potraži i u neželjenoj pošti.</p>
+<div class="notice" role="status" style="margin-bottom:12px"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><span>Ako adresa može primiti poruku, poslali smo novu poveznicu.</span></div><button class="btn o w" disabled>Pošalji ponovno za 0:48</button>
+<p class="foot"><a class="lnk">Prijava</a></p></div></div></div></div><div class="col"><p class="cap">Phone · ograničenje mreže (429)</p><p class="why"></p><div class="ph short"><div class="blobs"></div><div class="sbar"><span>9:41</span><span>●●●</span></div><div class="scr"><div class="authp"><div class="lockup" style="margin:6px 0 22px"><div class="tile">S</div><b>Shift</b></div><div class="itile" style="width:44px;height:44px;border-radius:14px;background:var(--pritint);display:flex;align-items:center;justify-content:center;margin-bottom:12px"><svg class="i lg" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5.5" width="18" height="13" rx="2"/><path d="M3.5 7l8.5 6 8.5-6"/></svg></div>
+<h1 class="ptitle">Provjeri e-poštu</h1>
+<p style="margin:8px 0 6px;font-size:15px">Ako adresa može primiti poruku, poslali smo poveznicu za potvrdu.</p>
+<p class="hint" style="margin:0 0 4px">Upisana adresa: <b style="color:var(--fg)">ivana.horvat@example.com</b> · <a class="lnk">Ispravi adresu</a></p>
+<p class="hint" style="margin:0 0 16px">Poveznica vrijedi sat vremena. Poruku potraži i u neželjenoj pošti.</p>
+<div class="notice" role="alert" style="margin-bottom:12px"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l9.5 16.5h-19z"/><path d="M12 10v4.5M12 17.5v.01"/></svg><span>Poruku trenutačno ne možemo poslati. Pokušaj ponovno za sat vremena.</span></div><button class="btn o w" disabled>Pošalji ponovno</button>
+<p class="foot"><a class="lnk">Prijava</a></p></div></div></div></div></div><h2 class="s">4 · Nepotvrđena prijava i /potvrda (UX-DR63)</h2><p class="why" style="max-width:96ch"><code>email_not_confirmed</code> needs the right password, so a sign-in with it may say the address is unconfirmed and offer a new link; the resend then lands on screen 3. <code>/potvrda?token_hash=…&type=signup</code> verifies only when <i>Potvrdi</i> is pressed, never on load (a mail scanner consumes nothing, AD-22). Success goes straight to step 1 of <code>/postavljanje</code> with the status line <i>Adresa je potvrđena.</i>, on whichever device opened the link. A used or expired link gets one neutral page; it cannot resend, because the token carries no address the page may name.</p><div class="row"><div class="col"><p class="cap">Phone · prijava nepotvrđenom adresom</p><p class="why"></p><div class="ph xs"><div class="blobs"></div><div class="sbar"><span>9:41</span><span>●●●</span></div><div class="scr"><div class="authp"><div class="lockup" style="margin:6px 0 22px"><div class="tile">S</div><b>Shift</b></div><h1 class="ptitle">Potvrdi adresu e-pošte</h1>
+<p style="margin:8px 0 14px;font-size:15px">Prije prve prijave potvrdi adresu poveznicom iz poruke koju smo poslali.</p>
+<button class="btn p w">Pošalji novu poveznicu</button>
+<p class="hint" style="margin:10px 0 0">Poruku potraži i u neželjenoj pošti. Poveznica vrijedi sat vremena.</p>
+<p class="foot"><a class="lnk">Natrag na prijavu</a></p></div></div></div></div><div class="col"><p class="cap">Phone · /potvrda</p><p class="why"></p><div class="ph xs"><div class="blobs"></div><div class="sbar"><span>9:41</span><span>●●●</span></div><div class="scr"><div class="authp"><div class="lockup" style="margin:6px 0 22px"><div class="tile">S</div><b>Shift</b></div><h1 class="ptitle">Potvrdi adresu</h1><p style="margin:8px 0 16px;font-size:15px">Pritisni <b>Potvrdi</b> i nastavi na postavljanje organizacije.</p><button class="btn p w">Potvrdi</button></div></div></div></div><div class="col"><p class="cap">Phone · /potvrda, u tijeku</p><p class="why">The one button disables and reads its state; no spinner screen.</p><div class="ph xs"><div class="blobs"></div><div class="sbar"><span>9:41</span><span>●●●</span></div><div class="scr"><div class="authp"><div class="lockup" style="margin:6px 0 22px"><div class="tile">S</div><b>Shift</b></div><h1 class="ptitle">Potvrdi adresu</h1><p style="margin:8px 0 16px;font-size:15px">Pritisni <b>Potvrdi</b> i nastavi na postavljanje organizacije.</p><button class="btn p w" disabled>Potvrđivanje…</button></div></div></div></div><div class="col"><p class="cap">Phone · poveznica ne vrijedi</p><p class="why"></p><div class="ph xs"><div class="blobs"></div><div class="sbar"><span>9:41</span><span>●●●</span></div><div class="scr"><div class="authp"><div class="lockup" style="margin:6px 0 22px"><div class="tile">S</div><b>Shift</b></div><h1 class="ptitle">Poveznica više ne vrijedi</h1><p style="margin:8px 0 16px;font-size:15px">Poveznica je već iskorištena ili je istekla.</p>
+<p style="margin:0 0 16px">Prijavi se svojom adresom i lozinkom. Ako adresa još nije potvrđena, ponudit ćemo ti novu poveznicu.</p><a class="btn p w">Prijava</a></div></div></div></div></div><h2 class="s">5 · /zaboravljena-lozinka i nova lozinka (UX-DR64)</h2><p class="why" style="max-width:96ch"><i>Zaboravljena lozinka?</i> still opens in place, now with both paths: an email identity gets the link page; a username identity is told, as today, that the administrator sets it. <code>/zaboravljena-lozinka</code> answers one sentence for every address (FR-99); an entry with no <code>@</code> is refused on the page (<i>Upiši adresu e-pošte.</i>). The link opens <code>/potvrda?type=recovery</code> on the set-password form, whose <i>Spremi novu lozinku</i> is the click that verifies and saves; a used or expired link is screen 4's page with <i>Zatraži novu poveznicu</i>.</p><div class="row"><div class="col"><p class="cap">Phone · Zaboravljena lozinka? u mjestu</p><p class="why"></p><div class="ph short"><div class="blobs"></div><div class="sbar"><span>9:41</span><span>●●●</span></div><div class="scr"><div class="authp"><div class="lockup" style="margin:6px 0 22px"><div class="tile">S</div><b>Shift</b></div><h1 class="ptitle" style="margin-bottom:14px">Prijava</h1>
+<div class="card" style="box-shadow:none;margin-bottom:14px"><div class="cb">
+<b style="display:block;margin-bottom:4px">Prijavljuješ se e-mailom?</b><p style="margin:0 0 10px">Pošaljemo ti poveznicu za novu lozinku.</p><a class="btn o w">Nova lozinka e-mailom</a>
+<div class="sep"></div>
+<b style="display:block;margin-bottom:4px">Prijavljuješ se korisničkim imenom?</b><p style="margin:0">Lozinku postavlja administrator. Javi mu se: on ti daje novu lozinku, a stare prijave tada prestaju vrijediti.</p>
+</div></div>
+<p class="foot"><a class="lnk">Natrag na prijavu</a></p></div></div></div></div><div class="col"><p class="cap">Phone · /zaboravljena-lozinka</p><p class="why"></p><div class="ph short"><div class="blobs"></div><div class="sbar"><span>9:41</span><span>●●●</span></div><div class="scr"><div class="authp"><div class="lockup" style="margin:6px 0 22px"><div class="tile">S</div><b>Shift</b></div><h1 class="ptitle">Nova lozinka</h1><p class="pdesc" style="margin-bottom:16px">Upiši adresu kojom se prijavljuješ. Poslat ćemo ti poveznicu za novu lozinku.</p>
+<div class="field"><label>E-mail</label><div class="inp focus "><span>ivana.horvat@example.com</span></div></div><button class="btn p w">Pošalji poveznicu</button>
+<p class="hint" style="margin-top:12px">Prijavljuješ se korisničkim imenom? Lozinku postavlja administrator.</p><p class="foot"><a class="lnk">Natrag na prijavu</a></p></div></div></div></div><div class="col"><p class="cap">Phone · odgovor</p><p class="why">Same throttle and 429 behaviour as screen 3.</p><div class="ph short"><div class="blobs"></div><div class="sbar"><span>9:41</span><span>●●●</span></div><div class="scr"><div class="authp"><div class="lockup" style="margin:6px 0 22px"><div class="tile">S</div><b>Shift</b></div><h1 class="ptitle">Provjeri e-poštu</h1><p style="margin:8px 0 6px;font-size:15px">Ako adresa može primiti poruku, poslali smo poveznicu za novu lozinku.</p>
+<p class="hint" style="margin:0 0 16px">Upisana adresa: <b style="color:var(--fg)">ivana.horvat@example.com</b>. Poveznica vrijedi sat vremena.</p><button class="btn o w">Pošalji ponovno</button><p class="foot"><a class="lnk">Natrag na prijavu</a></p></div></div></div></div><div class="col"><p class="cap">Phone · /potvrda?type=recovery</p><p class="why"></p><div class="ph short"><div class="blobs"></div><div class="sbar"><span>9:41</span><span>●●●</span></div><div class="scr"><div class="authp"><div class="lockup" style="margin:6px 0 22px"><div class="tile">S</div><b>Shift</b></div><h1 class="ptitle">Postavi novu lozinku</h1><p class="pdesc" style="margin-bottom:16px">Nakon spremanja nastavljaš prijavljen.</p>
+<div class="field"><label>Nova lozinka</label><div class="inp focus"><span class="end"><svg class="i " viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></svg></span></div></div><div class="chk" style="margin:-8px 0 12px"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/></svg>Najmanje 10 znakova (upisano: 0)</div>
+<div class="field"><label>Ponovi novu lozinku</label><div class="inp"><span class="end"><svg class="i " viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></svg></span></div></div><div class="chk" style="margin:-8px 0 14px"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/></svg>Lozinke se podudaraju</div>
+<button class="btn p w">Spremi novu lozinku</button></div></div></div></div></div>
+</div>
+<script>
+(function(){
+ var KEY='shift-mock-theme',root=document.documentElement;
+ function apply(v){ if(v==='light'||v==='dark'){root.setAttribute('data-theme',v);} else {root.removeAttribute('data-theme');}
+  document.querySelectorAll('.theme button').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.v===(v||'system')));}); }
+ var saved=null; try{saved=localStorage.getItem(KEY);}catch(e){}
+ var q=new URLSearchParams(location.search).get('theme'); if(q==='light'||q==='dark') saved=q;
+ apply(saved);
+ document.addEventListener('click',function(e){var b=e.target.closest('.theme button'); if(!b)return;
+  var v=b.dataset.v==='system'?null:b.dataset.v; apply(v); try{ if(v)localStorage.setItem(KEY,v); else localStorage.removeItem(KEY);}catch(e){} });
+})();
+</script>
+</body>
+</html>
