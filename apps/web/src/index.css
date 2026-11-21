@@ -207,6 +207,18 @@
  * first one that does on the same hook as the tokens. */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
+/* STORY 16.1: `print-month:` is `print:` inside the printed month alone
+ * (`[data-print-month]`, `pages/kalendar.tsx`). A class shared with another
+ * screen — the cell's shape, the grid's range, which *Danas* draws too —
+ * takes its paper density through this, so no other screen prints differently. */
+@custom-variant print-month {
+  @media print {
+    [data-print-month] & {
+      @slot;
+    }
+  }
+}
+
 /* Every subset the package ships. Croatian's diacritics live in latin-ext;
  * the latin subset carries none of them, so a narrower entry point would fall
  * back mid-word on exactly the strings that matter — Noć, Godišnji, and
@@ -1013,22 +1025,22 @@
  * the borders are a grey that reads on paper. Every state
  * keeps its glyph and its words (`modifiers.ts`); the rings, the short-staffed
  * edge and the hatches, which are shadows and backgrounds a printer drops,
- * become the outlines and borders forced colours already draws, in black. */
-@page calendar-month {
-  size: A4 landscape;
-  margin: 8mm;
-}
-
+ * become the outlines and borders forced colours already draws, in black.
+ * The theme's tokens are NOT redeclared here (one declaration per theme,
+ * `theme-tokens.test.ts`): the paper's text and border colours are set on
+ * the month's elements themselves, so the dark theme's never reach paper. */
 @media print {
-  /* `:root:has(…)` ties the dark block's specificity and comes later, so the
-   * dark hairline and foreground never reach paper. */
+  @page calendar-month {
+    size: A4 landscape;
+    margin: 8mm;
+  }
+
+  /* Every rem 14 px on paper, so a 31-day month of a few teams fits one page;
+   * nothing above the month clips or scrolls it, whatever a dialog set. */
   :root:has([data-print-month]) {
-    /* Every rem 14 px on paper, so a 31-day month of a few teams fits one page. */
     font-size: 14px;
     color-scheme: light;
-    --border: oklch(0.7 0 0);
-    --input: oklch(0.7 0 0);
-    --foreground: oklch(0 0 0);
+    overflow: visible !important;
   }
 
   body:has([data-print-month]) :not([data-print-month], [data-print-month] *, :has([data-print-month])) {
@@ -1041,10 +1053,15 @@
     margin: 0 !important;
     padding: 0 !important;
     background: none !important;
+    overflow: visible !important;
+    height: auto !important;
+    min-height: 0 !important;
   }
 
+  /* The page's blobs (`body::before`), a pseudo-element the hiding rule
+   * above cannot reach. */
   body:has([data-print-month])::before {
-    display: none;
+    display: none !important;
   }
 
   [data-print-month] {
@@ -1058,6 +1075,18 @@
     background-image: none !important;
     box-shadow: none !important;
     text-shadow: none !important;
+    border-color: oklch(0.7 0 0) !important;
+  }
+
+  /* Today's bar, in black; every mark below sets its own black. */
+  [data-print-month] .border-foreground {
+    border-color: oklch(0 0 0) !important;
+  }
+
+  /* Sticky heads and date column flow on paper, so each page lays out the
+   * table as a table, the header row repeated. */
+  [data-print-month] .sticky {
+    position: static !important;
   }
 
   [data-print-month] [data-sticky-head],
@@ -1083,7 +1112,22 @@
     outline-offset: -4px !important;
   }
 
-  /* The edge is the ring's depth deeper, as under forced colours, so 3 px of
+  [data-print-month] .modifier-hatch-leave {
+    border: 2px dotted oklch(0 0 0) !important;
+  }
+
+  [data-print-month] .modifier-hatch-uncovered {
+    border: 2px dashed oklch(0 0 0) !important;
+  }
+
+  [data-print-month] .modifier-hatch-leave-uncovered {
+    border: 2px dotted oklch(0 0 0) !important;
+    border-inline-style: dashed !important;
+  }
+
+  /* After the hatches, whose border is all four sides: a cell both hatched
+   * and short-staffed keeps the edge as its bottom side, as under forced
+   * colours. The edge is the ring's depth deeper, as under forced colours, so 3 px of
    * it still shows inside an outline. */
   [data-print-month] .modifier-edge-short-staffed {
     border-block-end: 3px solid oklch(0 0 0) !important;
@@ -1098,16 +1142,30 @@
     border-block-end: 7px solid oklch(0 0 0) !important;
   }
 
-  [data-print-month] .modifier-hatch-leave {
-    border: 2px dotted oklch(0 0 0) !important;
+  /* A RING ON A HATCHED CELL sits inside the hatch's 2 px border, so both
+   * show (an outline at the border's own depth would paint over it), with
+   * the inline padding to keep the label clear (the line's own leading
+   * clears a single ring above and below). A short-staffed edge under it
+   * still reads as one solid bottom bar: the ring's black lies inside it. */
+  [data-print-month]
+    :is(.modifier-ring-conflict, .modifier-ring-overridden, .modifier-ring-conflict-short-staffed, .modifier-ring-overridden-short-staffed):is(
+      .modifier-hatch-leave,
+      .modifier-hatch-uncovered,
+      .modifier-hatch-leave-uncovered
+    ) {
+    outline-offset: -4px !important;
+    padding-inline: 4px !important;
   }
 
-  [data-print-month] .modifier-hatch-uncovered {
-    border: 2px dashed oklch(0 0 0) !important;
+  [data-print-month]
+    :is(.modifier-ring-conflict-overridden, .modifier-ring-conflict-overridden-short-staffed):is(
+      .modifier-hatch-leave,
+      .modifier-hatch-uncovered,
+      .modifier-hatch-leave-uncovered
+    ) {
+    outline-offset: -6px !important;
+    padding: 2px 6px !important;
   }
 
-  [data-print-month] .modifier-hatch-leave-uncovered {
-    border: 2px dotted oklch(0 0 0) !important;
-    border-inline-style: dashed !important;
-  }
+
 }

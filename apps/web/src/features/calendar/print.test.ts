@@ -13,6 +13,7 @@ import {
 } from '@/features/calendar/components/calendar-print-header';
 import { readCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import {
+  CALENDAR_CELL_CLASS,
   GRID_RANGE_CLASS,
   MODE_MOJ,
   MODE_SVE,
@@ -174,6 +175,13 @@ describe('the header the page prints, from the rendered month', () => {
     expect(calendarPrintHeaderOf({ refused: false, snapshot, month, mode: null, printedAt: PRINTED })).toBeNull();
   });
 
+  it('offers no print of Moj raspored when the viewer is missing from the members, and still prints Sve smjene', () => {
+    const nameless = { ...snapshot, members: snapshot.members.filter((member) => member.id !== snapshot.viewer.memberId) };
+
+    expect(calendarPrintHeaderOf({ refused: false, snapshot: nameless, month: monthIn(MODE_MOJ), mode: MODE_MOJ, printedAt: PRINTED })).toBeNull();
+    expect(calendarPrintHeaderOf({ refused: false, snapshot: nameless, month: monthIn(MODE_SVE), mode: MODE_SVE, printedAt: PRINTED })).not.toBeNull();
+  });
+
   it("prints the viewer's loan notice the screen shows: the loan is in the month the print draws", () => {
     // The print is the screen's DOM; this pins the model both draw from.
     expect(monthIn(MODE_MOJ).ownLoan).toMatchObject({ teamName: 'Smjena D' });
@@ -209,12 +217,14 @@ describe('the print stylesheet and the page it prints', () => {
 
   it('is A4 landscape on a named page the month alone takes', () => {
     expect(css).toMatch(/@page calendar-month \{\s*size: A4 landscape;/);
+    // Every print rule, the page too, inside the print media query: the screen reads none of it.
+    expect(css).toMatch(/@media print \{\s*@page calendar-month \{/);
     expect(css).toMatch(/\[data-print-month\] \{\s*page: calendar-month;/);
   });
 
   it('draws only the month: everything neither it, inside it, nor holding it is not drawn', () => {
-    expect(css).toContain(
-      'body:has([data-print-month]) :not([data-print-month], [data-print-month] *, :has([data-print-month])) {\n    display: none !important;',
+    expect(css).toMatch(
+      /body:has\(\[data-print-month\]\) :not\(\[data-print-month\], \[data-print-month\] \*, :has\(\[data-print-month\]\)\) \{\s*display: none !important;/,
     );
     expect(css).toMatch(/\[data-print-month\] \[data-sticky-head\],\s*\[data-print-month\] dialog \{\s*display: none !important;/);
   });
@@ -223,9 +233,12 @@ describe('the print stylesheet and the page it prints', () => {
     expect(css).toMatch(
       /\[data-print-month\],\s*\[data-print-month\] \* \{\s*color: oklch\(0 0 0\) !important;\s*background-color: transparent !important;\s*background-image: none !important;\s*box-shadow: none !important;/,
     );
-    // Dark's tokens are `:root[data-theme="dark"]` (0,2,0): the paper's must tie it and come later.
-    expect(css).toMatch(/:root:has\(\[data-print-month\]\) \{[^}]*--border: oklch\(0\.7 0 0\);[^}]*--foreground: oklch\(0 0 0\);/);
-    expect(css.indexOf(':root:has([data-print-month])')).toBeGreaterThan(css.indexOf(':root[data-theme="dark"]'));
+    // The paper's borders are set on the month's elements, never by redeclaring a theme token
+    // (one declaration per theme), so the dark theme's hairline cannot reach paper.
+    expect(css).toMatch(/\[data-print-month\] \* \{[^}]*border-color: oklch\(0\.7 0 0\) !important;/);
+    expect(css).toMatch(/\[data-print-month\] \.border-foreground \{\s*border-color: oklch\(0 0 0\) !important;/);
+    const printBlock = css.slice(css.indexOf('@page calendar-month'));
+    expect(printBlock).not.toMatch(/--(border|input|foreground):/);
   });
 
   it('gives every ring, edge and hatch a black outline or border in print', () => {
@@ -243,6 +256,13 @@ describe('the print stylesheet and the page it prints', () => {
     ]) {
       expect(css, `${utility} prints as colour alone`).toContain(`[data-print-month] .${utility}`);
     }
+    // A hatch's border is all four sides; the short-staffed edge comes after it, so a cell both
+    // hatched and short-staffed keeps its bottom edge, as under forced colours.
+    // A ring on a hatched cell is drawn inside the hatch's border, never over it.
+    expect(css).toMatch(/\.modifier-ring-conflict, [^)]*\):is\(\s*\.modifier-hatch-leave,[^{]*\{\s*outline-offset: -4px !important;/);
+    expect(css.lastIndexOf('[data-print-month] .modifier-hatch-leave-uncovered')).toBeLessThan(
+      css.indexOf('[data-print-month] .modifier-edge-short-staffed'),
+    );
   });
 
   it('marks the month for the stylesheet and keeps the controls off paper', () => {
@@ -250,15 +270,30 @@ describe('the print stylesheet and the page it prints', () => {
     expect(page).toContain('<PageHeader className="print:hidden">');
     expect(page).toContain('<div className="min-w-0 print:hidden">');
     expect(page).toContain("{t('print.action')}");
+    // The loan notice is drawn on paper, though the sentence it follows is not.
+    expect(page).toMatch(/<LoanNoticeLine\s+notice=\{month\.ownLoan\}\s+className="(?![^"]*print:hidden)[^"]*print:mt-0/);
   });
 
   it("prints through the browser's own dialog and nothing else (D3)", () => {
     expect(hook).toContain('window.print();');
+    // The page's stamp: subscribed on mount, committed synchronously, and taken before Ispiši prints.
+    expect(hook).toMatch(/useEffect\(\(\) => onEveryPrint\(\{ window, media: window\.matchMedia\('print'\) \}, stamp\)/);
+    expect(hook).toMatch(/flushSync\(\(\) => \{\s*setPrintedAt\(new Date\(\)\);/);
+    expect(hook).toMatch(/stamp\(\);\s*window\.print\(\);/);
     expect(hook).not.toMatch(/fetch|supabase|pdfmake|import\(/);
     expect(page).not.toMatch(/pdfmake|history-pdf|\.pdf\b/);
   });
 
   it("prints a grid cell's range at every width, so a midnight-crossing shift shows both times (DI-5)", () => {
-    expect(GRID_RANGE_CLASS.split(' ')).toContain('print:inline');
+    expect(GRID_RANGE_CLASS.split(' ')).toContain('print-month:inline');
+  });
+
+  it('keeps the classes Danas shares off its print: print-month:, never print:', () => {
+    // CALENDAR_CELL_CLASS and GRID_RANGE_CLASS reach Danas's week grid and list.
+    for (const shared of [CALENDAR_CELL_CLASS, GRID_RANGE_CLASS]) {
+      expect(shared.split(' ').filter((name) => name.startsWith('print:'))).toEqual([]);
+    }
+    expect(CALENDAR_CELL_CLASS).toContain('print-month:flex-row');
+    expect(css).toMatch(/@custom-variant print-month \{\s*@media print \{\s*\[data-print-month\] & \{\s*@slot;/);
   });
 });

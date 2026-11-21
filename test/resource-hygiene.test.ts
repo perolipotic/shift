@@ -3027,7 +3027,7 @@ const LEAVE_OVERVIEW_NAMESPACE = 'godisnji.overview.';
 
 /**
  * STORY 16.1: the printed month (`print.*`) says *Moj raspored*'s filter in
- * words, `Moj raspored · {smjena}` or `… · bez smjene`, as *Kalendar*'s own
+ * words, `Moj raspored: {ime} · {smjena}` or `… · bez smjene`, as *Kalendar*'s own
  * sentence does, so `smjen` names the Team there, and `tip… smjen…` is
  * refused: a shift type is shown by its name.
  */

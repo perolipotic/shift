@@ -18,8 +18,8 @@ A member subscribes their phone's calendar (Google or Apple) to their own at-wor
 
 **Print (16.1, ready, no gate):**
 - *Kalendar* gains *Ispiši*, in both modes (*Moj raspored* and *Sve smjene*) and under any filter. It opens the browser's own print dialog on a dedicated print layout of the current month.
-- The layout is A4 landscape and fits the page. It has no navigation chrome (no tabs, sidebar, toolbar or filter bar).
-- The header holds the organization name, the month, the current filter in words, and `ispisano {datum vrijeme}` (organization timezone, through the shared formatting layer). The persistent legend is printed too.
+- The layout is A4 landscape; a 31-day month of up to about six teams fits one page, and a wider one continues with the header row repeated (spec 16.1, Design Notes). It has no navigation chrome (no tabs, sidebar, toolbar or filter bar).
+- The header holds the organization name, the month, the current filter in words, and `Ispisano: {datum} u {vrijeme}` (spec 16.1's recorded deviation; organization timezone, through the shared formatting layer). The persistent legend is printed too.
 - The print holds exactly what the viewer's screen shows under their own visibility. A member-role account prints no conflict (`⚠`) or uncovered (`◌`) marks and no other member's leave. In *Sve smjene* it prints no leave at all, its own included. The short-staffed mark is admin-only, as on screen. The legend lists only the marks that can appear for that viewer.
 - It must read on a black-and-white printer: every state keeps its glyph and label (shift-type label, `⚠`, `✎`, `◷`, `◌`, the short-staffed glyph) and never relies on colour alone.
 - A midnight-crossing shift prints once, on its start date, with both clock times.
@@ -49,7 +49,7 @@ A member subscribes their phone's calendar (Google or Apple) to their own at-wor
 
 ## UX & Interaction Patterns
 
-- Terminology: `Smjena` means a team and `Tip smjene` a shift type. Follow the surrounding screen's wording: *Sve smjene (N)*, and team names exactly as stored. The filter in words should match the calendar's summary line, e.g. `Prikazano: Smjena B · 4 osobe od 17` or `Prikazano: Luka Knežević · Smjena A`. In *Moj raspored* it should match that mode's own sentence, `Tvoj raspored · Smjena A`.
+- Terminology: `Smjena` means a team and `Tip smjene` a shift type. Follow the surrounding screen's wording: *Sve smjene (N)*, and team names exactly as stored. The filter in words should match the calendar's summary line, e.g. `Prikazano: Smjena B · 4 osobe od 17` or `Prikazano: Luka Knežević · Smjena A`. In *Moj raspored* it names the viewer, `Moj raspored: {ime} · Smjena A` (spec 16.1's recorded deviation from that mode's on-screen sentence, `Tvoj raspored · Smjena A`).
 - The legend is persistent wherever glyphs render, never a tooltip. The five-mark vocabulary: `⚠` *čeka odluku*, `✎` overridden, `◷` *Odsutnost*, `◌` uncovered, and the short-staffed glyph *Premalo ljudi*.
 - Shift cells always show their label. They show the time range when width allows, and drop it rather than abbreviate it.
 - Subscription screen (16.5, UX-DR54): *Više → Kalendar na mobitelu*. With no feed it shows *Izradi poveznicu* and one sentence. With a feed it shows:

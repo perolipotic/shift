@@ -4,7 +4,7 @@ type: 'feature'
 created: '2026-11-21'
 status: 'done'
 baseline_commit: '595b5115c24436e96dbdec6ffd8753cc7597843a'
-review_loop_iteration: 0
+review_loop_iteration: 1
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-16-context.md'
 ---
@@ -115,6 +115,22 @@ Baseline: `595b511`, the 18.5 merge (#332), the last merge touching the hot file
 - Rejected: hiding today's emphasis and the swap status line on paper (the print is what the screen shows); Ctrl+P while loading or refused prints what the screen shows, header-less (no month to name); a header repeated on every page (one page holds a 31-day month of up to about six teams; beyond that `thead` repeats, see residual risks); overridden and uncovered both dashed (forced colours' shapes; the glyphs `✎`/`◌` tell them apart and uncovered is admin-only); a render test of `KalendarScreen` (the web suite is node-only, AD-15; the PDF harness is the render check); `window.print` absence guards (every supported browser has it).
 - Deferred: none.
 
+### 2026-11-21 — Review pass 2 (unattended, `bmad-code-review`)
+- Layers: blind, edge-case, verification-gap and acceptance + epic AC as fresh-context subagents on `git diff origin/main...HEAD` (passed as a file); the Artifact Renderer layer was run by the reviewer itself on a copy of the DB-free harness (`rv.mjs`: the four matrix cases, ring × hatch × short-staffed combinations injected into the grid, the same under emulated forced colours, and a 12-team month), printed by Playwright's headless Chromium, rasterized with `pdftoppm` and looked at.
+- intent_gap 0, bad_spec 0, decision_needed 0.
+- Patched:
+  1. **`theme-tokens.test.ts` failed (3 tests)**: `:root:has([data-print-month])` redeclared `--border`, `--input`, `--foreground`, a second light-scope declaration (and `rawToken` would have read the print value as the light theme's). The tokens are no longer touched: `[data-print-month] *` sets `border-color: oklch(0.7 0 0) !important`, `.border-foreground` (today's bar) black; pinned (no token declared in the print block). The dark render still prints grey rules and a black bar.
+  2. **The cell's print density leaked to *Danas***: `CALENDAR_CELL_CLASS` and `GRID_RANGE_CLASS` are drawn by *Danas*'s week grid and list, and their `print:` utilities changed how *Danas* prints (Never: "a change to what any other screen prints"). A `print-month:` custom variant (`@media print { [data-print-month] & }`) replaces `print:` in both; pinned.
+  3. **A hatched, short-staffed cell lost its bottom edge on paper**: the hatch's `border` shorthand (same specificity, `!important`) came after the edge's `border-block-end`. The hatches now precede the edge rules; pinned by order; rendered (05.10. uncovered + short-staffed keeps its solid bottom bar).
+  4. **A ring hid the hatch on paper**: the outline at −2/−4 px lay exactly on the hatch's 2 px border (the admin month's 07.–08.10., conflict on a leave date, printed a solid ring alone). A ring on a hatched cell is now inset inside the border (−4/−6 px, inline padding); pinned; rendered, every combination shows both. A first version deepened the short-staffed edge and padded the block, which pushed the 6-team month onto a second sheet; dropped.
+  5. **A range could break mid-time** in narrow columns (`overflow-wrap: anywhere` on the cell): the range is `print-month:[overflow-wrap:normal]`, so it breaks only at its dash (rendered at 12 teams: `07:00–` / `19:00`).
+  6. **Hardening**: `@page` moved inside `@media print`, pinned; the month's ancestors and `:root` print `overflow: visible`, `height: auto` (no clip by a scroll lock); sticky cells `position: static` in the month; the blob rule `!important` and commented.
+  7. **Tests**: the viewer-missing branch (no *Moj raspored* print, *Sve smjene* still prints); the hook's wiring (subscribe on mount, `flushSync`, stamp before `window.print()`) and the loan notice off `print:hidden` source-pinned; the hiding-rule pin whitespace-tolerant.
+  8. **Docs**: `epic-16-context.md` brought to the recorded deviations (`Moj raspored: {ime} · …`, `Ispisano: … u …`, one page up to about six teams); DESIGN.md's paper row gives the 3/5/7 px edge, the both-hatch, the ring inside a hatch and `print-month:`; the hygiene comment's `Moj raspored` wording.
+- Rejected: a legend of print shapes (the legend's swatches already print as the outlines, and every mark keeps its glyph); `:has()` fallback (every supported browser has it); a `matchMedia` guard (every supported browser has it; the web suite never renders the page); forced colours repainting the print's rings in system colours (forced colours own the colours by design; the shapes are the same — the hatch-under-ring case is deferred); `[data-print-month] dialog` "matches nothing" (the app's dialog is a native `<dialog>`, rendered in `<main>`); `print.*` exempted as a namespace (as `kalendar.*`, `history.*` are); *Ispiši* not at the row's end below 640 px (it is the row's last item, wrapping); keeping the *Moj raspored* sentence when the viewer is missing (the snapshot always holds the viewer; no *Ispiši* then); the offline note and the swap line printing (the screen shows them; the print is the screen); spec `status: done` vs sprint `review` (the workflow's own states); the frozen block's earlier amendment (recorded in the Spec Change Log for the founder).
+- Deferred (`deferred-work.md`): later sheets carry no organization, month or page number; under forced colours a ring paints over a hatch (screen, and print when forced colours apply).
+- Results after the patches: typecheck and lint clean; `pnpm build` passed; domain 905 passed; web 177 files, 6658 passed; the 12 DB-free root files (the four theme/typography/localization ones included) 3382 passed.
+
 ## Auto Run Result
 
 Status: done (built; sprint status `review  # built, CI pending`).
@@ -132,7 +148,7 @@ Status: done (built; sprint status `review  # built, CI pending`).
 **Residual risks:**
 - Real browsers' print engines other than headless Chromium (Safari, Firefox, a phone's) were not exercised; a browser without named pages prints on its default page.
 - A month whose teams or names do not fit one page continues on a second with the header row only; the organization, month and filter are on the first sheet alone.
-- `test/theme-applied.test.ts`, `test/theme-tokens.test.ts`, `test/typography-coverage.test.ts` and `test/localization-applied.test.ts` read `index.css`, the icon facade or `hr.json` but are outside the allowed local set; CI runs them.
+- ~~The four theme/typography/localization root tests were not run locally~~ — run in review 2: `theme-tokens` failed on the print block's token redeclarations, fixed there; all four pass.
 - The screen composition in the harness is a copy of `pages/kalendar.tsx`'s, not the page itself (it needs the router, the query client and Supabase).
 
 ## Suggested Review Order

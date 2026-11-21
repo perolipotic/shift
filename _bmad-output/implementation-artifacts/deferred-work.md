@@ -1816,3 +1816,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-20-6-the-pipeline-deploys-through-coolify.md`
   summary: OWNER 20.5 (decide with the stand-up). `APP_ORIGINS` still accepts several origins (only the first is checked and smoked), but the stack's functions CORS answers `SHIFT_APP_URL` alone; restrict it to one origin or say what the others are for, and consider checking that it equals the stack's `SHIFT_APP_URL`.
   evidence: Review 2 of story 20.6 (blind layer). Pre-existing shape of `APP_ORIGINS`; the CORS side is 20.1/20.2's.
+
+## Deferred from: story 16.1, the month prints (2026-11-21)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-16-1-the-month-prints.md`
+  summary: A printed month that runs past one sheet (more than about six teams, or long names) repeats only the table's header row on later sheets; the organization, the month, the filter and `Ispisano: …` are on the first sheet alone, and no sheet is numbered. Consider `@page calendar-month` margin boxes (a page counter, `1 / 2`, needs no copy; a running title would need the header's words in CSS, e.g. `string-set`, which Chromium lacks) or a repeated print header, so a second sheet pinned on its own can be identified.
+  evidence: Review 2 of story 16.1 (blind, acceptance and renderer layers): a 12-team October printed to two A4 landscape sheets, the second headed by the column row only. Out of the epic AC's scope (one header), recorded as a residual risk in the spec.
+- source_spec: `_bmad-output/implementation-artifacts/spec-16-1-the-month-prints.md`
+  summary: UNDER FORCED COLOURS a ring's inset outline (offset −2/−4 px, `!important`) is drawn at the hatch's own 2 px border depth, so on a cell both ringed and hatched (conflict or overridden on a leave or uncovered date) the outline paints over the hatch's dotted/dashed border and the hatch's shape is lost — on screen, and on paper when a browser keeps forced colours for print (the utilities' layered `!important` outranks the unlayered print rules). `index.css`'s modifier comment claims the two "still show together". The print without forced colours draws the ring inside the border (16.1's review); the same inset (−4/−6 px with inline padding) for the forced-colours utilities is a screen change outside 16.1.
+  evidence: Review 2 of story 16.1 (edge-case layer), confirmed by a headless Chromium print under `emulateMedia({ forcedColors: 'active' })`: the 02.10. cell with `modifier-ring-conflict modifier-hatch-leave` showed the solid ring alone.
