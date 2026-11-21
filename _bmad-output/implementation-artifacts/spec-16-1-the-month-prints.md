@@ -57,7 +57,7 @@ context:
 
 ## Code Map
 
-- `apps/web/src/pages/kalendar.tsx` -- `<main data-print-month>`, `print:` layout, `CalendarPrintHeader` first, `PageHeader`/filter wrapper/`ownNote` `print:hidden`, *Ispiši* in the head row once `printHeader` exists.
+- `apps/web/src/pages/kalendar.tsx` -- `<main data-print-month>`, `print:` layout, `CalendarPrintHeader` first, `PageHeader`/filter wrapper/`ownNote` `print:hidden`, *Ispiši* (`printAction`, one button) once `printHeader` exists: from 640 px at the end of the Card's head row, below it the `PageHeader`'s `PageActions` under the title — never in the phone's sticky head.
 - `apps/web/src/features/calendar/components/calendar-print-header.tsx` (new) -- `calendarPrintHeaderTextOf`, `ownScheduleWordsOf`, `CalendarPrintHeader` (`hidden print:block`).
 - `apps/web/src/hooks/print.ts` (new) -- `usePrintMonth`: `printedAt` + `print()` (`flushSync`, `beforeprint`). Outside the calendar set: the literal sweep refuses an event-name literal in a screen part.
 - `apps/web/src/features/calendar/components/calendar-filters.tsx` -- `calendarFilterWordsOf` (the bar's summary, always).
@@ -86,13 +86,15 @@ context:
 ## Spec Change Log
 
 - 2026-11-21 (review, unattended) — Epic AC auditor and blind review: four deviations were real but unlisted (named-page fallback, the `Ispisano:` wording, *Moj raspored*'s words, `filter.summary.*` reuse); they are added to Epic AC Deviations, and *Moj raspored*'s words now name the viewer (`Moj raspored: {ime} · …`, from the blind review: "Moj points at nobody" on a noticeboard). The founder asked for decisions to be recorded, not asked; no human approved the frozen block before this, so it was amended here and says so. KEEP: print is the screen's DOM under a scoped stylesheet; no second read.
+- 2026-11-21 (CI, PR #335, e2e shard 2) — `e2e/tests/calendar/layout.spec.ts` › the phone's sticky head (deferred-work E816) failed at 390 px: "holds the month toolbar alone, at most 160 px" (the head 165 px, budget `STICKY_HEAD_MAX` 160) and "says the active filters in one line" (the summary line's bottom at 189 px, budget 161). Cause: on a phone the head row wraps — month toolbar (225 px) on the first line, the full-width mode switch on the second — so *Ispiši* after the switch opened a third 44 px line (113 → 165 px). Decision: *Ispiši* stays one button with its word, its slot chosen by `usePhone()` as the month control's is: from 640 px unchanged at the end of the head row; below 640 px the page header's action (`PageActions`) under the `<h1>`, which scrolls away, so the phone's head is the toolbar alone again (113 px at 320, 360, 390 and 639 px, measured in the harness). Rejected: icon-only below 640 px (at 320 px only 13 px remain beside the month toolbar, and beside the full-width switch its two halves would overflow their words); beside the legend or under the grid (a second component to thread `print` into, and out of reach on a long month). The e2e budgets are unchanged. The frozen block's "the sticky head (month control, mode switch, *Ispiši*)" not drawn on paper still holds: the page header that holds *Ispiši* on a phone is not drawn either. Supersedes review 2's rejected "*Ispiši* not at the row's end below 640 px". Pinned in `print.test.ts` (one `t('print.action')`, the two slots, the head's slot after the month and the switch); the Button count stays 36.
 
 ## Design Notes
 
 1. Hiding by `body:has([data-print-month]) :not([data-print-month], [data-print-month] *, :has([data-print-month]))` needs no change to `chrome.tsx` (a hot file) and also catches portals; the ancestors become blocks so the shell's row and padding leave no gap and the table paginates.
 2. A 31-day month of up to about six teams fits one page (14 px root on paper, one-line cells, equal columns); more teams or long names wrap, and a longer month continues with the header row repeated (`thead`), rows never split.
-3. Printing from a phone prints the full names: print media width is the page's, so `sm:`/`lg:` apply.
-4. Named pages are supported by Chromium and Firefox; a browser without them prints the same layout on its default page (the dialog still offers landscape).
+3. *Ispiši*'s slot follows the viewport (CI fix, see the Spec Change Log): the phone's sticky head has a 160 px budget for the toolbar and its one summary line, and its wrapped row (month, then mode switch) has no room for a third control at 320 px.
+4. Printing from a phone prints the full names: print media width is the page's, so `sm:`/`lg:` apply.
+5. Named pages are supported by Chromium and Firefox; a browser without them prints the same layout on its default page (the dialog still offers landscape).
 
 ## Verification
 
@@ -144,6 +146,8 @@ Status: done (built; sprint status `review  # built, CI pending`).
 - Before the density pass the admin month took two pages with the header row repeated on the second; that continuation is what a wider organization gets.
 
 **Results (2026-11-21, after the review's patches):** typecheck and lint clean; domain 17 files, 905 passed; web 177 files, 6656 passed; DB-free root (8 files) 2531 passed; `pnpm build` passed. No migration, no e2e run locally (CI is the gate).
+
+**Results (2026-11-21, CI fix of the phone's sticky head):** typecheck and lint clean; web 177 files, 6658 passed; the eight DB-free root files 3106 passed (`localization-applied` after `pnpm build`); `pnpm build` passed. The harness, its head row now composed as the page's (`MonthNav` in it below 640 px, *Ispiši* in its slot), measured the sticky head at 113 px at 320, 360, 390 and 639 px (165 px before), with *Ispiši* 80 × 44 px under the `<h1>`. The two `layout.spec.ts` budget tests are left to CI.
 
 **Residual risks:**
 - Real browsers' print engines other than headless Chromium (Safari, Firefox, a phone's) were not exercised; a browser without named pages prints on its default page.

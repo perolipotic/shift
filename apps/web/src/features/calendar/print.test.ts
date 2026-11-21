@@ -270,6 +270,12 @@ describe('the print stylesheet and the page it prints', () => {
     expect(page).toContain('<PageHeader className="print:hidden">');
     expect(page).toContain('<div className="min-w-0 print:hidden">');
     expect(page).toContain("{t('print.action')}");
+    // ONE *Ispiši*, its slot chosen by `usePhone()`: from 640 px the end of the Card's head row,
+    // below it the page header's action. Never in the phone's sticky head, whose 160 px budget
+    // (deferred-work E816) a third row beside the month toolbar and the mode switch broke.
+    expect(page.split("{t('print.action')}").length - 1, 'Ispiši is drawn twice').toBe(1);
+    expect(page).toContain('{isPhone && printAction !== null ? <PageActions>{printAction}</PageActions> : null}');
+    expect(page).toMatch(/\{isPhone \? monthNav : null\}[\s\S]*?\{isPhone \? null : printAction\}\s*<\/div>\s*<\/StickyHead>/);
     // The loan notice is drawn on paper, though the sentence it follows is not.
     expect(page).toMatch(/<LoanNoticeLine\s+notice=\{month\.ownLoan\}\s+className="(?![^"]*print:hidden)[^"]*print:mt-0/);
   });

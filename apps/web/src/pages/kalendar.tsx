@@ -7,7 +7,7 @@ import { Card } from '@/components/ui/card';
 import { Printer } from '@/components/ui/icon';
 import { OfflineNote } from '@/components/offline-note';
 import { Notice } from '@/components/ui/notice';
-import { PageHeader, PageTitle } from '@/components/ui/page-header';
+import { PageActions, PageHeader, PageTitle } from '@/components/ui/page-header';
 import { CalendarFilters, calendarFilterSummaryOf } from '@/features/calendar/components/calendar-filters';
 import { CalendarModeSwitch } from '@/features/calendar/components/calendar-mode-switch';
 import { CalendarMonthBody } from '@/features/calendar/components/calendar-month-body';
@@ -112,8 +112,10 @@ import { keepFocusOnAlert } from '@/utils/retry-focus';
  * month, with one polite status line naming the date, the shift and the
  * colleague (`useSwapProposed`).
  *
- * THE MONTH PRINTS (story 16.1, UX-DR56, decision D3): *Ispiši*, at the end
- * of the Card's head row in both modes once a month is drawn, opens the
+ * THE MONTH PRINTS (story 16.1, UX-DR56, decision D3): *Ispiši*, in both
+ * modes once a month is drawn — from 640 px at the end of the Card's head
+ * row, below it the page header's action under the title, never in the
+ * phone's sticky head (its 160 px budget, deferred-work E816) — opens the
  * browser's own print dialog (`usePrintMonth`). What prints is THIS page —
  * the same snapshot, the same marks under the viewer's own visibility, never a
  * second read (AD-13) — under the print stylesheet (`index.css`, scoped by
@@ -151,11 +153,24 @@ export function KalendarScreen() {
       : month.ownTeamName === null
         ? t('kalendar.ownNoteNoTeam')
         : t('kalendar.ownNote', { team: month.ownTeamName });
-  // STORY 12.2: the polite line a landed swap proposal returns with.
-  const { proposed: swapProposed, lineField: swapLine } = useSwapProposed();
   // STORY 16.1: the printed header, once a month is drawn.
   const { printedAt, print } = usePrintMonth();
   const printHeader = calendarPrintHeaderOf({ refused: refusal !== null, snapshot, month, mode, printedAt });
+  // *Ispiši* is ONE button, its slot chosen by `usePhone()` as the month
+  // control's is, the other way round: from 640 px at the end of the Card's
+  // head row, below 640 px the page header's action under the title, which
+  // scrolls away. The phone's sticky head holds the month toolbar alone
+  // (deferred-work E816, its 160 px budget): beside the mode switch the
+  // button opened a third row.
+  const printAction =
+    printHeader === null ? null : (
+      <Button className="h-11 gap-2 px-3 sm:ml-auto" type="button" variant="outline" onClick={print}>
+        <Printer aria-hidden className="size-4 shrink-0" />
+        {t('print.action')}
+      </Button>
+    );
+  // STORY 12.2: the polite line a landed swap proposal returns with.
+  const { proposed: swapProposed, lineField: swapLine } = useSwapProposed();
   const overrideForm = useOverrideForm(snapshot, screen.detail, screen.leaveKeys, screen.leaveRecords);
   const rosterForm = useRosterForm(
     snapshot,
@@ -177,6 +192,7 @@ export function KalendarScreen() {
         <PageTitle asChild>
           <h1>{t('nav.kalendar')}</h1>
         </PageTitle>
+        {isPhone && printAction !== null ? <PageActions>{printAction}</PageActions> : null}
         {isPhone ? null : monthNav}
       </PageHeader>
       <OfflineNote offline={screen.offline} />
@@ -206,12 +222,7 @@ export function KalendarScreen() {
               <div className="flex min-w-0 flex-wrap items-center gap-2 px-4 py-2 sm:gap-3 sm:py-4">
                 {isPhone ? monthNav : null}
                 {mode === null ? null : <CalendarModeSwitch chosen={mode} onChoose={screen.choose} />}
-                {printHeader === null ? null : (
-                  <Button className="h-11 gap-2 px-3 sm:ml-auto" type="button" variant="outline" onClick={print}>
-                    <Printer aria-hidden className="size-4 shrink-0" />
-                    {t('print.action')}
-                  </Button>
-                )}
+                {isPhone ? null : printAction}
               </div>
             </StickyHead>
           )}
