@@ -36,7 +36,7 @@ trap cleanup EXIT
 
 docker network create --internal "$network" > /dev/null
 docker run -d --name "$gotrue" --network "$network" --network-alias gotrue-stub "$BUSYBOX_IMAGE" \
-  sh -c 'mkdir -p /www && echo "{\"id\":\"probe\"}" > /www/user && exec httpd -f -p 9999 -h /www' > /dev/null
+  sh -c 'mkdir -p /www && echo "{\"id\":\"probe\",\"aud\":\"authenticated\"}" > /www/user && exec httpd -f -p 9999 -h /www' > /dev/null
 
 docker run -d --name "$name" --network "$network" \
   -e SHIFT_AUTH_URL=http://gotrue-stub:9999 \
@@ -92,6 +92,9 @@ expect() {
 expect 404 FUNCTION_NOT_FOUND GET /nope
 expect 404 FUNCTION_NOT_FOUND GET /_internal/health
 expect 404 FUNCTION_NOT_FOUND POST /admin%2Dauth
+# A dot segment the runtime's URL parser would resolve: refused on the raw
+# path, so no function runs under a spelling Kong's log does not name.
+expect 404 FUNCTION_NOT_FOUND POST /notify/%2e%2e/admin-auth
 # notify's worker starts from its bundle and its own check answers.
 expect 401 INVOKE_SECRET_REFUSED POST /notify
 expect 401 INVOKE_SECRET_REFUSED POST /notify 'Authorization: Bearer not-the-secret\r\n'

@@ -9,7 +9,8 @@
  *      `[functions.*]` tables of `supabase/config.toml` (pinned by
  *      `test/functions-router.test.ts`). Any other first path segment is 404.
  *   2. For a function with `verify_jwt = true`, it forwards the request only
- *      after GoTrue's `GET /user` has accepted the caller's bearer token. It
+ *      after GoTrue's `GET /user` has accepted the caller's bearer token
+ *      (a 200 carrying a user). It
  *      verifies nothing itself: it holds no key and no JWT signing secret.
  *   3. It hands the request, untouched, to that function's worker.
  *
@@ -75,9 +76,12 @@ export const FUNCTION_NOT_FOUND = 'FUNCTION_NOT_FOUND';
  */
 export const AUTHORIZATION_MISSING = 'AUTHORIZATION_MISSING';
 /**
- * GoTrue could not be asked (down, slow, misaddressed, or `SHIFT_AUTH_URL`
- * unset). Fail closed, and never with the sign-out code: an outage is not a
- * lost session.
+ * GoTrue could not be asked (down, slow, rate-limited, answering a 3xx or a
+ * 200 that is not a user, or `SHIFT_AUTH_URL` unset). Fail closed, and never
+ * with the sign-out code: an outage is not a lost session. (A 4xx is GoTrue
+ * refusing the session, 404 for a deleted user included, so a host
+ * misaddressed to answer 404 would read as a refusal: the compose pins
+ * `SHIFT_AUTH_URL`, and `test/self-hosted-stack.test.ts` holds it.)
  */
 export const AUTHORIZATION_UNVERIFIED = 'AUTHORIZATION_UNVERIFIED';
 /** The function's worker could not be started (its bundle is missing, or the runtime refused). */
@@ -85,6 +89,8 @@ export const FUNCTION_UNAVAILABLE = 'FUNCTION_UNAVAILABLE';
 
 /** How long GoTrue may take to answer before the request is refused 503. */
 export const VERIFY_TIMEOUT_MS = 5_000;
+/** GoTrue's user is a few kB; a larger 200 is not GoTrue's answer. */
+const MAX_USER_BYTES = 65_536;
 
 export interface RouterDependencies {
   /** GoTrue's internal base URL (`SHIFT_AUTH_URL`), or null when unset. */
@@ -105,13 +111,31 @@ function refuse(status: number, code: string): Response {
 }
 
 /**
+ * A spelling of the path that a URL parser would rewrite before the name is
+ * read: a `.` or `..` segment, any `%2e` (WHATWG reads `%2e%2e` as `..`), or
+ * a backslash (read as `/` for http). Kong 2.8 forwards these unnormalised
+ * and logs the raw path, so `/notify/%2e%2e/admin-auth` would run `admin-auth`
+ * under a Kong log line naming `notify`. The router refuses them all.
+ */
+const REWRITTEN_PATH = /\\|%2e|(?:^|\/)\.{1,2}(?:\/|$)/i;
+
+/**
  * The first path segment, as sent. Never percent-decoded: `admin%2Dauth` is
- * not `admin-auth`, so an encoded name cannot reach a function under a
- * spelling Kong's access log would not recognise.
+ * not `admin-auth`. The name must also be the first segment of the RAW path
+ * (no dot segment, no `%2e`, no backslash): otherwise it is `''`, which no
+ * function is, so a function is only ever reached under the spelling Kong's
+ * access log records.
  */
 export function functionNameOf(url: string): string {
   const { pathname } = new URL(url);
-  return pathname.split('/')[1] ?? '';
+  const name = pathname.split('/')[1] ?? '';
+
+  const authority = url.indexOf('://');
+  const pathStart = authority === -1 ? -1 : url.indexOf('/', authority + 3);
+  const raw = pathStart === -1 ? '' : (url.slice(pathStart).split(/[?#]/)[0] ?? '');
+  if (REWRITTEN_PATH.test(raw)) return '';
+  if ((raw.split('/')[1] ?? '') !== name) return '';
+  return name;
 }
 
 /** `Bearer <token>`, case-insensitive scheme, one token, nothing else. */
@@ -139,11 +163,23 @@ async function askGoTrue(dependencies: RouterDependencies, token: string): Promi
     return 'unverified';
   }
 
-  // The verdict is the status; the body (the user) is not needed.
-  await answer.body?.cancel().catch(() => undefined);
+  if (answer.status !== 200) {
+    await answer.body?.cancel().catch(() => undefined);
+    if (answer.status >= 400 && answer.status < 500 && answer.status !== 429) return 'refused';
+    return 'unverified';
+  }
 
-  if (answer.status === 200) return 'accepted';
-  if (answer.status >= 400 && answer.status < 500 && answer.status !== 429) return 'refused';
+  // A 200 counts only when it is GoTrue's user: a JSON object with a string
+  // `id` and `aud`. Anything else answering 200 at that address (a
+  // misaddressed or impostor host) has not accepted a session: 503, not a pass.
+  try {
+    const text = await answer.text();
+    if (text.length > MAX_USER_BYTES) return 'unverified';
+    const user = JSON.parse(text) as { id?: unknown; aud?: unknown } | null;
+    if (typeof user?.id === 'string' && user.id !== '' && typeof user.aud === 'string') return 'accepted';
+  } catch {
+    // Not JSON, or the body did not arrive in time.
+  }
   return 'unverified';
 }
 

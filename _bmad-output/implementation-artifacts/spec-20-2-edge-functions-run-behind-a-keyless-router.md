@@ -2,7 +2,7 @@
 title: 'Story 20.2: Edge Functions run on the self-hosted runtime behind a keyless router'
 type: 'feature'
 created: '2026-11-20'
-status: 'done'
+status: 'in-review'
 baseline_revision: '4fd6a30fc250b9829f8253ab8a47dd612900202c'
 baseline_commit: '4fd6a30fc250b9829f8253ab8a47dd612900202c'
 review_loop_iteration: 0
@@ -95,6 +95,7 @@ warnings: [oversized]
 
 - 2026-11-21, review (epic-AC auditor): the epic's `GET /auth/v1/user` vs the router's direct `GET /user` was decided in Design Notes and the spine but missing from `## Epic AC Deviations`. Amended: the deviation line added there (recording only; the intent is unchanged, and the founder said to decide and record). Known-bad state avoided: an unlisted deviation. KEEP: GoTrue asked directly; the router holds no apikey.
 - 2026-11-21, review (blind layer): the Always rule reads "a GoTrue 4xx → 401"; the code reads 429 as "cannot be asked" (503). Kept, under the same rule's "never a sign-out code for an outage": a rate limit is not a refused session. Recorded in Design Notes and the spine.
+- 2026-11-21, security review: (a) "compares the first path segment undecoded" was not quite what the code did: the WHATWG parser resolves `.`/`..`/`%2e` segments and reads `\` as `/`, so `/notify/%2e%2e/admin-auth` ran `admin-auth` (still gated) under a Kong log line naming `notify`. Tightened to the rule's intent: the name must be the RAW path's first segment, and a path with a dot segment, any `%2e` or a backslash is 404. (b) "forward only when GoTrue answers 200" now also needs the 200 to carry GoTrue's user (a JSON object with a string `id` and `aud`); any other 200 is 503 `AUTHORIZATION_UNVERIFIED`, a confused GoTrue being an outage, not a sign-out. (c) The first Epic AC Deviation understates CI: the probe also checks `400 PAYLOAD_INVALID` through the gated path, the 503 with GoTrue gone, and the dot-segment 404. Frozen text left as is, this line records it. KEEP: both changes only refuse more; nothing that passed before and should pass is refused.
 
 ## Design Notes
 
@@ -135,6 +136,31 @@ Layers: blind hunter, edge-case hunter, verification gap, epic-AC auditor. Run u
 - [x] [Review][Defer] The bundle's transitive npm packages are not locked → 20.9 (deferred-work)
 
 Rejected, with reasons: exit at start on a missing `SHIFT_AUTH_URL` (the frozen rule is fail-closed 503, and a restart loop would also stop `notify`); preloading bundles in the healthcheck (the CI probe starts both workers from the built image); a multi-stage image without source and a non-root user (the source is not loadable with remote modules off and an eszip given; the base runs as root as the CLI's does; 20.9 may revisit with digests); a function name that is itself a token (`/functions/v1/<token>`: no function takes one, and it is a 404); chunked responses in the probe (the runtime answered with a length, and the probe now matches the body anywhere); skipping the image job on docs-only PRs and layer caching (minutes, not correctness); committing the chroot harness (a one-off verification method, described here); the outbox drain with no seeded row (with none queued, `waiting = 0` and a 200 are what the rehearsal can show; 20.5 runs it on real data); `ci-passed` reading `needs` (verified: it reads the whole object).
+
+### Security Review Findings (2026-11-21)
+
+Layers: blind hunter, edge-case hunter, verification gap, acceptance auditor + epic-AC auditor, and a security layer (router bypass, fail-closed, worker env, Kong CORS and log, Dockerfile supply chain, CI on public PRs, handler fit). Run unattended; the first launch died on an API rate limit and all five were rerun.
+
+- [x] [Review][Patch] A dot segment, `%2e` or backslash made the function that runs differ from the one Kong logs (`/notify/%2e%2e/admin-auth` → `admin-auth`, logged as `notify[redacted]`); not a bypass (gate and dispatch use one name) → `functionNameOf` requires the raw path's first segment and refuses those spellings (404); Vitest cases, a raw-request router case, and a CI probe line that checks it on the real runtime [router.ts, functions-router.test.ts, probe-functions-image.sh, DEPLOY.md §9.6]
+- [x] [Review][Patch] Any HTTP 200 at `SHIFT_AUTH_URL` counted as an accepted session → the 200 must be GoTrue's user (JSON, string `id` and `aud`, ≤ 64 kB), else 503; the CI stand-in GoTrue now answers that shape; DEPLOY.md §9.6 keeps Coolify's "Connect to Predefined Network" off [router.ts, functions-router.test.ts, probe-functions-image.sh, DEPLOY.md]
+- [x] [Review][Patch] `AUTHORIZATION_UNVERIFIED`'s comment claimed a misaddressed GoTrue is 503; a host answering 404 reads as a refusal (as a deleted user's 404 must) → comment corrected, and it names the compose pin that prevents it [router.ts]
+- [x] [Review][Patch] `SHIFT_APP_URL` with an empty or default port (`…:`, `https://…:443`, `http://…:80`) passed Kong's check but never equals a browser's Origin → refused [docker-compose.yml, self-hosted-stack.test.ts]
+- [x] [Review][Patch] The functions healthcheck had no `start_period` on a 0.15 CPU share → 30 s [docker-compose.yml]
+- [x] [Review][Patch] Rehearsal 7b built the login JSON with `printf` (a quote in the password broke it) and went on with `Bearer undefined` → node builds the JSON, and no token stops the step [DEPLOY.md §9.5]
+- [x] [Review][Patch] Spec frontmatter said `done` while the story is in review → `in-review` [this spec]
+- [x] [Review][Patch] deferred-work said the CI probe runs with `--network none` → `--internal` network with a stand-in GoTrue [deferred-work.md]
+- [x] [Review][Patch] The first Epic AC Deviation understates what CI now probes → recorded in the Spec Change Log [this spec]
+- [x] [Review][Patch] Dangling eslint comment [eslint.config.js]
+- [x] [Review][Defer] Worker memory caps vs `FUNCTIONS_MEM_LIMIT` → 20.5 (deferred-work)
+- [x] [Review][Defer] Runtime-only facts held with fakes: per-worker env isolation in the built image, the `WorkerAlreadyRetired` name, edge-runtime's own logs vs NFR-27 → 20.5, 20.9 (deferred-work)
+- [x] [Review][Defer] The probed CI image is discarded, and the probe's busybox and the base are pinned by tag → 20.6, 20.9 (deferred-work)
+- [x] [Review][Defer] No request-body size limit on the functions route → 20.9 (deferred-work)
+
+Verified safe (security layer): `//admin-auth`, `/`, `__proto__`, `main`, `_internal`, `admin%2Dauth` are 404; Host-header and absolute-form tricks change only the origin, and one parsed name serves gate and dispatch; no method is exempt from the gate (Kong answers real preflights); duplicate or comma-joined `Authorization` cannot match the single-token rule, and the worker gets the header that was verified; GoTrue answers the anon/service_role JWTs (no `sub`), `sb_` keys, expired and revoked sessions with 4xx; 3xx (`redirect: 'manual'`), 429, 5xx, timeouts and an unset URL are 503; workers get only their own names, pooled per service path; Kong 2.8's cors takes the checked origin as a literal and overwrites the handler's ACAO; the log map redacts every query and everything after a function's name (`$request_uri` is path and query even for absolute-form requests); the Dockerfile copies only the router and the two functions, and remote modules are off at run time; the CI job runs on `pull_request` (not `_target`) with `contents: read`, `persist-credentials: false`, no secret, no cache and no push, so a fork PR builds only its own code on a throwaway runner; neither handler reads the path, and `notify`'s invoke-secret bearer reaches it untouched.
+
+Rejected, with reasons: retrying a retired worker with `forceCreate: false` (edge-runtime's own reference main service does the same; the pool replaces a retired worker); one code for start and runtime failures, and no status in the 503 log (fixed codes by design, per the frozen matrix); a token as the first segment (rejected in the first review: no function takes one, it is a 404); a 405 for other methods (each handler enforces its own; the router holds no rule, AD-16); the probe's character-count `Content-Length` (its bodies are ASCII); a refusing stand-in GoTrue in CI (busybox httpd cannot vary by header; the refusal mapping is Vitest's); the new `depends_on: supabase-auth` stopping `notify` (Kong already waits for a healthy GoTrue, and the runtime for a healthy Kong: nothing new); `http://` origins in production (local stacks need them; the env examples and their test pin `https://`); a wider `.dockerignore` (the Dockerfile copies named paths only); two GoTrue calls per `admin-auth` request (the price of a router that holds no key, Design Notes); Kong's admin access log (the admin API listens on the container's loopback and serves no caller); date and step-number slips and closing 20.1 here (#324 had merged; bookkeeping); the 429 wording and the outbox drain (decided in the first review).
+
+**Result (2026-11-21, security review):** the seven allowed test files: 2336 passed, 2 skipped; `pnpm typecheck` and `pnpm lint` clean. No container was started; the new CI probe line runs on CI's runner.
 
 ## Suggested Review Order
 

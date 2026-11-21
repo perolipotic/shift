@@ -49,6 +49,7 @@ interface Call {
 /** A router over a fake GoTrue (answering `gotrue`) and a fake worker that echoes what it got. */
 function harness(
   gotrue: number | 'throw' | 'hang' = 200,
+  user = '{"id":"user","aud":"authenticated"}',
   overrides: Partial<RouterDependencies> = {},
 ): {
   route: (request: Request) => Promise<Response>;
@@ -69,7 +70,7 @@ function harness(
           init.signal?.addEventListener('abort', () => reject(new DOMException('timed out', 'TimeoutError')));
         });
       }
-      return Promise.resolve(new Response('{"id":"user"}', { status: gotrue }));
+      return Promise.resolve(new Response(user, { status: gotrue }));
     },
     forward: (name, entry, request) => {
       forwarded.push({ name, entry, request });
@@ -107,6 +108,32 @@ describe('the functions router (story 20.2): which functions exist', () => {
     expect(functionNameOf('http://x:9000/notify/a/b?c=d')).toBe('notify');
     expect(functionNameOf('http://x:9000/admin%2Dauth')).toBe('admin%2Dauth');
     expect(functionNameOf('http://x:9000/')).toBe('');
+
+    // The name must be the RAW path's first segment: no spelling a URL parser
+    // rewrites (a dot segment, `%2e`, a backslash), so the function that runs
+    // is the one Kong's access log names.
+    for (const path of [
+      '/notify/%2e%2e/admin-auth',
+      '/notify/%2E./admin-auth',
+      '/admin-auth/%2e%2e/notify',
+      '/x/../admin-auth',
+      '/./admin-auth',
+      '/x\\..\\admin-auth',
+      '/admin-auth\\x',
+      '/notify/a/%2e',
+      '/notify/./a',
+    ]) {
+      expect(functionNameOf(`http://x:9000${path}`), path).toBe('');
+    }
+    expect(functionNameOf('http://x:9000/notify/a.b/c..d?e=..')).toBe('notify');
+
+    // As the runtime hands it over (a Request here would normalise the URL first).
+    const raw = { url: 'http://x:9000/notify/%2e%2e/admin-auth', method: 'POST', headers: new Headers({ authorization: 'Bearer good' }) } as unknown as Request;
+    const refused = harness();
+    const answer = await refused.route(raw);
+    expect(answer.status).toBe(404);
+    expect(refused.calls).toEqual([]);
+    expect(refused.forwarded).toEqual([]);
 
     const { route, forwarded } = harness();
     const response = await route(request('/notify/anything?x=1'));
@@ -183,22 +210,33 @@ describe('the functions router (story 20.2): verify_jwt', () => {
     }
   }, 20_000);
 
+  it('fails closed 503 on a 200 that is not GoTrue’s user (a misaddressed or impostor host)', async () => {
+    for (const user of ['', 'ok', '<html></html>', 'null', '[]', '{}', '{"id":"user"}', '{"aud":"authenticated"}', '{"id":"","aud":"authenticated"}', '{"id":1,"aud":"authenticated"}', `{"id":"user","aud":"authenticated","pad":"${'x'.repeat(70_000)}"}`]) {
+      const { route, forwarded, logged } = harness(200, user);
+      const response = await route(request('/admin-auth', { authorization: 'Bearer good' }));
+      expect(response.status, user.slice(0, 40)).toBe(503);
+      expect(await codeOf(response)).toBe(AUTHORIZATION_UNVERIFIED);
+      expect(forwarded).toEqual([]);
+      expect(logged).toEqual([AUTHORIZATION_UNVERIFIED]);
+    }
+  });
+
   it('fails closed when SHIFT_AUTH_URL is unset or blank, and trims a trailing slash', async () => {
     for (const authUrl of [null, '', '   ']) {
-      const { route, calls, forwarded } = harness(200, { authUrl });
+      const { route, calls, forwarded } = harness(200, undefined, { authUrl });
       const response = await route(request('/admin-auth', { authorization: 'Bearer good' }));
       expect(response.status).toBe(503);
       expect(await codeOf(response)).toBe(AUTHORIZATION_UNVERIFIED);
       expect(calls).toEqual([]);
       expect(forwarded).toEqual([]);
     }
-    const { route, calls } = harness(200, { authUrl: `${GOTRUE}/` });
+    const { route, calls } = harness(200, undefined, { authUrl: `${GOTRUE}/` });
     await route(request('/admin-auth', { authorization: 'Bearer good' }));
     expect(calls[0]?.url).toBe(`${GOTRUE}/user`);
   });
 
   it('answers 500 FUNCTION_UNAVAILABLE when no worker can be started, and logs only the code', async () => {
-    const { route, logged } = harness(200, {
+    const { route, logged } = harness(200, undefined, {
       forward: () => Promise.reject(new Error('readfile /home/deno/functions/notify/bundle.eszip: secret-looking detail')),
     });
     const response = await route(request('/notify'));

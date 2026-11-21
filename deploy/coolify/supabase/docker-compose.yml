@@ -418,6 +418,8 @@ services:
           case "${SHIFT_APP_URL#*://}" in [a-z0-9]*) ;; *) echo "kong-entrypoint: SHIFT_APP_URL has no host" >&2; exit 1 ;; esac
           case "$SHIFT_APP_URL" in *[A-Z]*) echo "kong-entrypoint: SHIFT_APP_URL is not lower-case" >&2; exit 1 ;; esac
           case "$SHIFT_APP_URL" in *[!A-Za-z0-9.:/-]*) echo "kong-entrypoint: SHIFT_APP_URL holds a character outside [A-Za-z0-9.:/-]" >&2; exit 1 ;; esac
+          # A browser's Origin never carries an empty or a default port.
+          case "$SHIFT_APP_URL" in *:|https'://'*:443|http'://'*:80) echo "kong-entrypoint: SHIFT_APP_URL has an empty or default port" >&2; exit 1 ;; esac
 
           # A caller's own `Authorization` passes through unless it is
           # `Bearer sb_…`; otherwise `apikey` decides: the secret key becomes the
@@ -908,6 +910,8 @@ services:
       timeout: 5s
       interval: 5s
       retries: 3
+      # A cold start on a 0.15 CPU share: failures here do not count.
+      start_period: 30s
     environment:
       # The router's only own variable: GoTrue, asked directly on the stack's
       # network for every `verify_jwt` function (Kong's auth route would need

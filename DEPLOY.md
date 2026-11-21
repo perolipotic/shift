@@ -2028,10 +2028,15 @@ curl -s -w ' %{http_code}\n' "$API/functions/v1/nope"
 # -> {"code":"FUNCTION_NOT_FOUND"} 404      ✅ only config.toml's functions exist
 # An admin's session, accepted by GoTrue, reaches the handler. The token goes
 # into a private config file, never onto a command line.
-TOKEN=$(printf '{"email":"%s","password":"%s"}' "$ADMIN_EMAIL" "$ADMIN_PW" \
+# (The login JSON is built by node, so a quote or backslash in the password
+# cannot break it; no token, and the step stops here instead of probing with
+# `Bearer undefined`.)
+TOKEN=$(ADMIN_EMAIL="$ADMIN_EMAIL" ADMIN_PW="$ADMIN_PW" \
+    node -e 'process.stdout.write(JSON.stringify({ email: process.env.ADMIN_EMAIL, password: process.env.ADMIN_PW }))' \
   | curl -s -X POST "$API/auth/v1/token?grant_type=password" -H "apikey: $PUB" \
       -H 'content-type: application/json' --data-binary @- \
-  | node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => console.log(JSON.parse(s).access_token));')
+  | node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => { let t; try { t = JSON.parse(s).access_token; } catch {} if (typeof t === "string" && t !== "") console.log(t); });')
+[ -n "$TOKEN" ] || { echo 'FAIL  no admin session: check ADMIN_EMAIL and ADMIN_PW' >&2; false; }
 TOKEN_CFG="$R/token.cfg"   # inside the scratch directory: the trap removes it
 printf 'header = "Authorization: Bearer %s"\n' "$TOKEN" > "$TOKEN_CFG"
 curl -s -w ' %{http_code}\n' -K "$TOKEN_CFG" -X POST "$API/functions/v1/admin-auth" \
@@ -2080,20 +2085,27 @@ session. On our stack that is the **router**, `deploy/functions/main`: the
 
 - serves only the functions in its table, which a test holds equal to
   `supabase/config.toml`'s `[functions.*]` tables (`admin-auth`, `notify`).
-  Any other name, an empty path or a percent-encoded name is
-  `404 {"code":"FUNCTION_NOT_FOUND"}`;
+  Any other name, an empty path, a percent-encoded name, or a path a URL
+  parser would rewrite (a `.`/`..` segment, any `%2e`, a backslash) is
+  `404 {"code":"FUNCTION_NOT_FOUND"}`: Kong forwards and logs the raw path, so
+  a function runs only under the name Kong's access log records;
 - for a function with `verify_jwt = true` (`admin-auth`), asks GoTrue
   `GET /user` with the caller's bearer token, **directly on the stack's
   network** (`SHIFT_AUTH_URL=http://supabase-auth:9999`). Not through Kong:
   Kong's auth route needs an `apikey`, and the router holds none. GoTrue's 200
-  forwards the request untouched; no bearer token, or GoTrue refusing it, is
+  with a user (a JSON object with a string `id` and `aud`) forwards the
+  request untouched; a 200 with anything else is not GoTrue's and is the 503
+  below; no bearer token, or GoTrue refusing it, is
   `401 {"code":"AUTHORIZATION_MISSING"}` (the code the SPA already turns into
   "sign in again"); GoTrue down, slow (5 s), rate-limiting or unaddressed is
   `503 {"code":"AUTHORIZATION_UNVERIFIED"}`, never a pass and never a
   sign-out. **Stricter than the hosted gateway**, which let any validly
   signed JWT through, the anon key's included: here only a live user
   session passes, so a key alone never reaches `admin-auth` (whose every
-  operation needs a session anyway);
+  operation needs a session anyway). The check trusts the address: keep
+  the resource's "Connect to Predefined Network" option off, so
+  `supabase-auth` and `supabase-kong` resolve on this stack's own network
+  only (20.5 checks it on the host);
 - gives each function's worker only the variables its own handler reads:
   `admin-auth` never sees the Resend key, the invoke secret or the VAPID
   private key; `notify` never sees the publishable key;

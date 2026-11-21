@@ -761,6 +761,9 @@ describe('the self-hosted stack (story 20.2): the functions route, its CORS and 
       'https://app.example.test x',
       'https://:443',
       'https://App.Example.test',
+      'https://app.example.test:',
+      'https://app.example.test:443',
+      'http://app.example.test:80',
     ];
     for (const shell of BUSYBOX === null ? (['host'] as const) : (['host', 'busybox'] as const)) {
       for (const origin of cases) {
