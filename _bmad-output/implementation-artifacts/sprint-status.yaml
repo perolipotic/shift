@@ -695,7 +695,7 @@ development_status:
   20-1-the-self-hosted-stack-is-defined-in-the-repository: done  # #324
   20-2-edge-functions-run-behind-a-keyless-router: done  # #327; security-review of the router before production (20.9); live probe in 20.5's rehearsal (DEPLOY.md §9.5 step 7b)
   20-3-the-spa-ships-as-a-static-image-with-its-headers: done  # #329; CSP Report-Only, enforced only after 20.5 verifies it
-  20-4-the-host-is-closed-to-everything-but-the-web: backlog  # scripts READY; applying waits: H-2, H-3, H-4, H-5, H-10, H-15, founder go, provider console, security-review
+  20-4-the-host-is-closed-to-everything-but-the-web: review  # built (scripts only), CI pending; applying needs the founder's go
   20-5-staging-stands-up-on-coolify: backlog  # waits: 20.1-20.4, staging DNS, H-1, H-6, H-8, Tailscale ACL, GHCR read token
   20-6-the-pipeline-deploys-through-coolify: backlog  # code after 20.2/20.3; enabling waits: Coolify API token, Tailscale OAuth client, 20.5
   20-7-backups-leave-the-host-and-a-restore-is-rehearsed: backlog  # interim after 20.5; off-host waits: H-11 + target credential, H-12

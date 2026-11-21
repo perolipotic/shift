@@ -1,0 +1,48 @@
+# Story 20.4 (H-2, H-3, H-4): the host's IPv4 rules.
+#
+# A template: `shift-host.sh` replaces each @NAME@ with its value from
+# host.env (or from `docker network inspect` for the Coolify bridge), then
+# loads the result with `iptables-restore --noflush` into the two chains it
+# owns, after creating and flushing them. It never writes any other chain:
+# Docker's chains and every rule already in DOCKER-USER (the development
+# stack's drop included) stay as they are. INPUT and DOCKER-USER each get one
+# jump, at position 1, to the chain below.
+#
+# RETURN, not ACCEPT: an admitted packet goes on to the rules after the jump,
+# so nothing that was dropped before is admitted now.
+*filter
+
+# ---- SHIFT-INPUT: traffic to the host itself -------------------------------
+-A SHIFT-INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
+-A SHIFT-INPUT -i lo -j RETURN
+# SSH only from the tailnet and from Coolify's own bridge, which is how Coolify
+# reaches its server (H-4). Every other source of a new SSH connection, the
+# public interface first, is dropped.
+-A SHIFT-INPUT -i @TAILSCALE_IF@ -p tcp --dport @SSH_PORT@ -j RETURN
+-A SHIFT-INPUT -i @COOLIFY_BRIDGE@ -s @COOLIFY_SUBNET4@ -p tcp --dport @SSH_PORT@ -j RETURN
+-A SHIFT-INPUT -p tcp --dport @SSH_PORT@ -j DROP
+# Everything below is about the public interface only.
+-A SHIFT-INPUT ! -i @PUBLIC_IF@ -j RETURN
+-A SHIFT-INPUT -p icmp -j RETURN
+-A SHIFT-INPUT -p udp --sport 67 --dport 68 -j RETURN
+-A SHIFT-INPUT -p udp --dport @TAILSCALE_UDP_PORT@ -j RETURN
+-A SHIFT-INPUT -p tcp -m multiport --dports 80,443 -j RETURN
+-A SHIFT-INPUT -p udp --dport 443 -j RETURN
+-A SHIFT-INPUT -j DROP
+
+# ---- SHIFT-DOCKER-USER: traffic Docker forwards to a published port ---------
+# DOCKER-USER sees a packet after Docker's DNAT, so its destination port is the
+# container's. The ORIGINAL destination port is the one the internet asked for,
+# and the only one these rules judge.
+-A SHIFT-DOCKER-USER ! -i @PUBLIC_IF@ -j RETURN
+-A SHIFT-DOCKER-USER -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
+# A port published on 127.0.0.1 is reachable from the same L2 segment on Docker
+# Engine before 28 (a neighbour routes 127.0.0.1 to this host). Drop it here
+# whatever the Engine version (deferred-work, OWNER 20.4).
+-A SHIFT-DOCKER-USER -m conntrack --ctorigdst 127.0.0.0/8 -j DROP
+-A SHIFT-DOCKER-USER -p tcp -m conntrack --ctorigdstport 80 --ctdir ORIGINAL -j RETURN
+-A SHIFT-DOCKER-USER -p tcp -m conntrack --ctorigdstport 443 --ctdir ORIGINAL -j RETURN
+-A SHIFT-DOCKER-USER -p udp -m conntrack --ctorigdstport 443 --ctdir ORIGINAL -j RETURN
+-A SHIFT-DOCKER-USER -j DROP
+
+COMMIT

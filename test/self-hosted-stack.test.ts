@@ -915,6 +915,8 @@ describe('the self-hosted stack (story 20.1): the public repository', () => {
     // not addresses either.
     const allowed = new Set([
       '127.0.0.1',
+      // The loopback network, as 20.4's firewall drops it (`127.0.0.0/8`).
+      '127.0.0.0',
       '0.0.0.0',
       ...Object.values(CLI_IMAGES).map((image) => image.slice(image.lastIndexOf(':') + 1)),
     ]);

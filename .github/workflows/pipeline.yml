@@ -82,6 +82,15 @@ jobs:
             zricethezav/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f \
             git /repo --config /repo/.gitleaks.toml --redact --no-banner --log-level info
 
+      # Story 20.4's host scripts are never run in CI (they change a host's
+      # firewall and sshd); ShellCheck is their static gate, and
+      # test/host-hardening.test.ts pins what they do. ShellCheck ships with
+      # the ubuntu-24.04 runner image.
+      - name: ShellCheck
+        run: |
+          shellcheck --version
+          shellcheck -x deploy/host/*.sh deploy/web/render-headers.sh
+
       - uses: ./.github/actions/setup
 
       - name: ESLint

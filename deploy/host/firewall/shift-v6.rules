@@ -1,0 +1,40 @@
+# Story 20.4 (H-2, H-3, H-4): the host's IPv6 rules.
+#
+# The same policy as shift-v4.rules, loaded with `ip6tables-restore --noflush`.
+# IPv6 is not optional: Docker publishes on [::] as well as 0.0.0.0, and a
+# port its userland proxy serves on [::] arrives on INPUT, not FORWARD, which
+# is why SHIFT-INPUT also drops every other new connection on the public
+# interface.
+#
+# ICMPv6 is admitted before anything else is judged: neighbour discovery and
+# router advertisements are ICMPv6, and without them the host loses IPv6.
+#
+# A line naming @COOLIFY_SUBNET6@ is left out when Coolify's network has no
+# IPv6 subnet.
+*filter
+
+# ---- SHIFT-INPUT: traffic to the host itself -------------------------------
+-A SHIFT-INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
+-A SHIFT-INPUT -i lo -j RETURN
+-A SHIFT-INPUT -p ipv6-icmp -j RETURN
+-A SHIFT-INPUT -i @TAILSCALE_IF@ -p tcp --dport @SSH_PORT@ -j RETURN
+-A SHIFT-INPUT -i @COOLIFY_BRIDGE@ -s @COOLIFY_SUBNET6@ -p tcp --dport @SSH_PORT@ -j RETURN
+-A SHIFT-INPUT -p tcp --dport @SSH_PORT@ -j DROP
+# Everything below is about the public interface only.
+-A SHIFT-INPUT ! -i @PUBLIC_IF@ -j RETURN
+-A SHIFT-INPUT -p udp --sport 547 --dport 546 -j RETURN
+-A SHIFT-INPUT -p udp --dport @TAILSCALE_UDP_PORT@ -j RETURN
+-A SHIFT-INPUT -p tcp -m multiport --dports 80,443 -j RETURN
+-A SHIFT-INPUT -p udp --dport 443 -j RETURN
+-A SHIFT-INPUT -j DROP
+
+# ---- SHIFT-DOCKER-USER: traffic Docker forwards to a published port ---------
+-A SHIFT-DOCKER-USER ! -i @PUBLIC_IF@ -j RETURN
+-A SHIFT-DOCKER-USER -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
+-A SHIFT-DOCKER-USER -m conntrack --ctorigdst ::1/128 -j DROP
+-A SHIFT-DOCKER-USER -p tcp -m conntrack --ctorigdstport 80 --ctdir ORIGINAL -j RETURN
+-A SHIFT-DOCKER-USER -p tcp -m conntrack --ctorigdstport 443 --ctdir ORIGINAL -j RETURN
+-A SHIFT-DOCKER-USER -p udp -m conntrack --ctorigdstport 443 --ctdir ORIGINAL -j RETURN
+-A SHIFT-DOCKER-USER -j DROP
+
+COMMIT

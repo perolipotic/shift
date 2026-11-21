@@ -1,0 +1,25 @@
+# Story 20.4 (H-3): re-applies the host's firewall after Docker starts.
+#
+# iptables rules live in memory, so a reboot clears them; Docker re-creates its
+# own chains when it starts, and these rules need its DOCKER-USER chain. Hence:
+# after docker.service, and restarted with it (PartOf). `boot` loads the
+# CONFIRMED rules (/usr/local/share/shift-host, /etc/shift-host/host.env) and
+# changes nothing else.
+#
+# Installed by `shift-host.sh apply firewall`, but ENABLED only by
+# `shift-host.sh confirm` (and disabled while a firewall change is pending), so
+# an unconfirmed rule set never comes back at boot; shift-host-revert-at-boot
+# then puts back the last confirmed one.
+[Unit]
+Description=Shift host firewall: only 80/443 public, SSH from the tailnet and Coolify
+After=docker.service tailscaled.service
+Wants=docker.service
+PartOf=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/shift-host boot
+
+[Install]
+WantedBy=multi-user.target docker.service
