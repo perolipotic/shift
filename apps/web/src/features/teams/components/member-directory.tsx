@@ -35,7 +35,8 @@ const SKELETON_ROWS = [0, 1, 2];
  * indentation, so the sign-in suite's scoped extraction reads each one.
  */
 export function MemberDirectory({ screen }: { readonly screen: MemberDirectoryScreen }): ReactNode {
-  const { directory, search, searchField, changeSearch, clearSearch, retryable, retry, shown, positionShown } = screen;
+  const { directory, search, searchField, changeSearch, clearSearch, retryable, retry, shown, positionShown, loanTeams } =
+    screen;
 
   function renderGroup(group: DirectoryGroup): ReactNode {
     const headingId = directoryHeadingIdOf(group);
@@ -53,7 +54,7 @@ export function MemberDirectory({ screen }: { readonly screen: MemberDirectorySc
               {t('smjene.roster.count', { count: group.members.length })}
             </span>
           </div>
-          <RosterLines members={group.members} shown={shown} positionShown={positionShown} />
+          <RosterLines members={group.members} shown={shown} positionShown={positionShown} loanTeams={loanTeams} />
         </section>
       </Card>
     );

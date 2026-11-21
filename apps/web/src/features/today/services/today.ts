@@ -6,6 +6,7 @@ import {
   isHalfDay,
   leaveRangeCostOf,
   leaveSpanOf,
+  loanAheadOf,
   membershipOn,
   monthOf,
   type LeaveHalf,
@@ -23,6 +24,7 @@ import {
   type CalendarDay,
   type CalendarMarks,
 } from '@/features/calendar/utils/month';
+import { loanNoticeShownOf, type LoanNotice } from '@/features/calendar/utils/loan-marks';
 import { leaveRecordsOf, type LeaveRecord } from '@/features/leave/services/leave-list';
 import { leaveHalfOptionsOf } from '@/features/leave/services/leave-section';
 import type { MemberTeam } from '@/features/members/services/list';
@@ -64,7 +66,8 @@ import { dayAfter } from '@/utils/dates';
  * on a working or a non-working day); on any other duty; working (a working
  * shift today); or free (only non-working types, or none). Once the
  * carried-over shift ends, today is the free or the leave case again. A
- * viewer with no membership at all is unscheduled, and has no next shift
+ * viewer with no membership at all and no loan ahead (story 18.5) is
+ * unscheduled, and has no next shift
  * and no week.
  *
  * A HALF DAY IS AT WORK (story 13.7, R10.1). A half-day record is an
@@ -116,7 +119,7 @@ export const WEEK_DAYS = 7;
 export const TODAY_LOADING = 'loading';
 /** A read failed, or what it answered cannot be trusted: one alert, no case. */
 export const TODAY_UNAVAILABLE = 'unavailable';
-/** The viewer has no membership at all: their own sentence, no next shift and no week. */
+/** The viewer has no membership at all, and no loan ahead: their own sentence, no next shift and no week. */
 export const TODAY_UNSCHEDULED = 'unscheduled';
 /** Everything read: today's case, the next shift and the week. */
 export const TODAY_READY = 'ready';
@@ -237,6 +240,17 @@ export interface TodayView {
   readonly week: readonly TodayWeekDay[];
   /** The viewer's team today, `null` for none (`Bez smjene`): {@link ownTeamOf}. */
   readonly ownTeam: MemberTeam | null;
+  /**
+   * STORY 18.5 (UX-DR59): the viewer's loan covering today, else their next
+   * one (`U timu {tim} do {datum}.`). ABSENT with none, so a view with no
+   * loan is the view it was.
+   */
+  readonly loan?: LoanNotice;
+}
+
+/** The `loan` field of a view: present only with a notice. */
+function loanFieldOf(notice: LoanNotice | null): { readonly loan?: LoanNotice } {
+  return notice === null ? {} : { loan: notice };
 }
 
 export type Today =
@@ -301,7 +315,11 @@ export function todayViewOf(snapshot: CalendarSnapshot, rows: readonly unknown[]
     const today = calendarTodayOf(snapshot, now);
     const shown = todayDateOf(today);
 
-    if (viewer.memberships.length === 0) return { kind: TODAY_UNSCHEDULED, today: shown };
+    // STORY 18.5: a viewer with no team is scheduled while a loan of theirs
+    // covers today or lies ahead; with none, or only past ones, unscheduled.
+    if (viewer.memberships.length === 0 && loanAheadOf(viewer.loans, today) === null) {
+      return { kind: TODAY_UNSCHEDULED, today: shown };
+    }
 
     const records = leaveRecordsOf(rows, viewer.memberId);
 
@@ -405,6 +423,7 @@ export function todayViewOf(snapshot: CalendarSnapshot, rows: readonly unknown[]
         returning: todayCase.kind === CASE_LEAVE && todayCase.half === undefined,
         week: weekOf(days, today, records),
         ownTeam: ownTeamOf(snapshot, today),
+        ...loanFieldOf(loanNoticeShownOf(snapshot, viewer.loans, today)),
       },
     };
   } catch (cause) {

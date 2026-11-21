@@ -320,6 +320,21 @@ describe('the rows', () => {
     expect(teams).toEqual({ [VIEWER_MEMBER]: 'Smjena A', [ANA]: 'Smjena B', [CEDO]: 'Smjena A', [DORA]: null });
   });
 
+  it('names the team a lent member is with today (story 18.5), a teamless one included', () => {
+    const lent = {
+      ...pilot,
+      members: pilot.members.map((member) =>
+        member.id === ANA || member.id === DORA
+          ? { ...member, loans: [{ id: `loan-${member.id}`, teamId: 'pilot-smjena-c', from: '2026-09-20', to: '2026-09-30' }] }
+          : member,
+      ),
+    } as CalendarSnapshot;
+    const overview = readyOf(leaveOverviewOf(sourcesOf(lent), NO_FILTERS, NOW));
+    const teams = Object.fromEntries(overview.rows.map((row) => [row.memberId, row.team?.name ?? null]));
+
+    expect(teams).toEqual({ [VIEWER_MEMBER]: 'Smjena A', [ANA]: 'Smjena C', [CEDO]: 'Smjena A', [DORA]: 'Smjena C' });
+  });
+
   it("counts only this leave year's days: Ana's New Year edge and next year's record leave the year's balance", () => {
     const overview = readyOf(leaveOverviewOf(sourcesOf(pilot), NO_FILTERS, NOW));
     const ana = overview.rows.find((row) => row.memberId === ANA);

@@ -1,3 +1,5 @@
+import type { LentFrom } from '@/utils/loan-mark';
+
 /**
  * THE FILTER BAR'S MODEL (story 7.5), shared by *Kalendar* and *Sati*: the
  * two chips, the summary line, the pickers' options and what each press
@@ -39,6 +41,8 @@ export interface FilterPersonOption {
   readonly teamId: string | null;
   /** That team's name as stored, archived or not; `null` with no team. */
   readonly teamName: string | null;
+  /** STORY 18.5: `teamId` is a loan team, and whom they were lent from (`posuđen iz {tim}`); absent otherwise. */
+  readonly lentFrom?: LentFrom;
 }
 
 /** One chip: its key, and the chosen option's name, or `null` for `sve`. */

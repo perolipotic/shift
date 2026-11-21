@@ -1,4 +1,4 @@
-import { leaveAllowanceOn, membershipOn } from '@shift/domain';
+import { effectiveTeamOn, leaveAllowanceOn } from '@shift/domain';
 
 import type { CalendarSnapshot, CalendarSurfaceState, CalendarViewer } from '@/features/calendar/services/snapshot';
 import { calendarTodayOf } from '@/features/calendar/utils/month';
@@ -477,7 +477,8 @@ function allowanceInYearOf(member: MemberListRow, organization: LeaveOrganizatio
 }
 
 /**
- * The team a snapshot member is on today, by the domain's own reading, or
+ * The team a snapshot member is WITH today, by the domain's own reading (a
+ * loan team on a loan, `effectiveTeamOn`, story 18.5), or
  * `null` — also for a team the snapshot does not hold, which names no team
  * rather than taking the whole overview down: the figures do not depend on it.
  */
@@ -486,7 +487,7 @@ function teamTodayOf(snapshot: CalendarSnapshot, memberId: string, today: string
 
   if (scheduled === undefined) return null;
 
-  const membership = membershipOn(scheduled.memberships, today);
+  const membership = effectiveTeamOn(scheduled, today);
 
   if (membership === null) return null;
 

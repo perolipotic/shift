@@ -1,6 +1,7 @@
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 
+import { useLoanTeams } from '@/features/calendar/hooks/use-loan-teams';
 import { positionsShown } from '@/features/members/utils/position';
 import { ranksShown } from '@/features/members/utils/rank';
 import {
@@ -140,6 +141,8 @@ export function useMemberDirectory(search: string, navigate: DirectoryNavigate) 
   // snapshot arrives, or if it fails, names only.
   const snapshot = organizationData !== undefined && organizationData.ok ? organizationData.snapshot : null;
 
+  const loanTeams = useLoanTeams();
+
   /** Read again every read the directory counts as failed — and only those (`directoryRetryOf`). */
   function retry(): void {
     const plan = directoryRetryOf(teamsRead, rosterList, ownRead);
@@ -186,6 +189,8 @@ export function useMemberDirectory(search: string, navigate: DirectoryNavigate) 
     retry,
     shown: ranksShown(snapshot),
     positionShown: positionsShown(snapshot),
+    // STORY 18.5: `trenutno u timu {tim}` under a lent member; empty until known.
+    loanTeams,
   };
 }
 

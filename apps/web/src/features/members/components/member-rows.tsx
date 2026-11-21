@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
 
+import { LoanTeamNote } from '@/components/loan-mark';
 import { Avatar } from '@/components/ui/avatar';
 import { CaretRight } from '@/components/ui/icon';
 import {
@@ -47,14 +48,16 @@ const SKELETON_ROWS = [0, 1, 2, 3, 4];
  * heading, even where the position carries it (`labelHidden`).
  */
 export function MemberRows({ list }: { readonly list: MemberList }): ReactNode {
-  const { loading, narrowed, today } = list;
+  const { loading, narrowed, today, loanTeams } = list;
 
   return (
     <StackedList aria-label={t('ljudi.caption')} aria-busy={loading}>
       {/* TWO CONTAINERS rather than one ternary, as in the table: the bare-JSX
           sweep reads every run between a `>` and the next `<`. */}
       {loading ? SKELETON_ROWS.map((row) => <StackedSkeletonRow key={row} avatar />) : null}
-      {loading ? null : narrowed.rows.map((member) => <MemberRow key={member.id} member={member} today={today} />)}
+      {loading ? null : narrowed.rows.map((member) => (
+            <MemberRow key={member.id} member={member} today={today} loanTeam={loanTeams.get(member.id) ?? null} />
+          ))}
     </StackedList>
   );
 }
@@ -63,9 +66,12 @@ export function MemberRows({ list }: { readonly list: MemberList }): ReactNode {
 function MemberRow({
   member,
   today,
+  loanTeam,
 }: {
   readonly member: MemberListRow;
   readonly today: string | null;
+  /** STORY 18.5: the team a loan puts them with today, or `null`. */
+  readonly loanTeam: string | null;
 }): ReactNode {
   const name = memberColumnOf(NAME_COLUMN);
   const team = memberColumnOf(TEAM_COLUMN);
@@ -94,6 +100,7 @@ function MemberRow({
         </StackedField>
         <StackedField label={t(team.label)} labelHidden>
           <CellView cell={team.cell(member, today)} />
+          <LoanTeamNote team={loanTeam} />
         </StackedField>
         <StackedField label={t(level.label)} labelHidden separated>
           <CellView cell={level.cell(member, today)} />

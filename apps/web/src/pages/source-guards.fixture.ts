@@ -621,8 +621,11 @@ export const ORGANIZATION_HOURS_KEYS = join(srcRoot, 'features', 'hours', 'servi
 /** Story 4.3's rules: the export's headings, sheet and file names, and its action's two labels. */
 export const HOURS_EXPORT_KEYS = join(srcRoot, 'features', 'hours', 'services', 'hours-export.ts');
 
-/** Story 7.14's rules: a figure's explanation, its words and the three words a shift's source reads as. */
+/** Story 7.14's rules: a figure's explanation, its words and the words a shift's source reads as (four since story 18.5). */
 export const HOURS_EXPLANATION_KEYS = join(srcRoot, 'features', 'hours', 'services', 'hours-explanation.ts');
+
+/** Story 18.5's rules: the notice of a member's own loan (UX-DR59). */
+export const LOAN_MARKS_KEYS = join(srcRoot, 'features', 'calendar', 'utils', 'loan-marks.ts');
 
 /** Story 3.5b's override writes: the six refusals the day detail's form and confirmation render. */
 export const CALENDAR_OVERRIDE_WRITE_KEYS = join(srcRoot, 'features', 'calendar', 'services', 'override-write.ts');

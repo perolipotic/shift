@@ -2,6 +2,7 @@ import {
   HOURS_FIGURE_LEAVE,
   HOURS_FIGURE_TOTAL,
   HOURS_SOURCE_CHANGE,
+  HOURS_SOURCE_LOAN,
   HOURS_SOURCE_REPLACEMENT,
   HOURS_SOURCE_ROTATION,
   collisionKeyOf,
@@ -165,7 +166,11 @@ export function leaveDecisionMessageKey(
  */
 export function hoursSourceMessageKey(
   source: HoursSource,
-): 'sati.explain.source.rotation' | 'sati.explain.source.change' | 'sati.explain.source.replacement' {
+):
+  | 'sati.explain.source.rotation'
+  | 'sati.explain.source.change'
+  | 'sati.explain.source.replacement'
+  | 'sati.explain.source.loan' {
   switch (source) {
     case HOURS_SOURCE_ROTATION:
       return 'sati.explain.source.rotation';
@@ -173,6 +178,9 @@ export function hoursSourceMessageKey(
       return 'sati.explain.source.change';
     case HOURS_SOURCE_REPLACEMENT:
       return 'sati.explain.source.replacement';
+    // Story 18.5: a shift a Loan put the member on (`posudba`, UX-DR59).
+    case HOURS_SOURCE_LOAN:
+      return 'sati.explain.source.loan';
   }
 }
 

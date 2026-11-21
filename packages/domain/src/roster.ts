@@ -204,6 +204,28 @@ export function loanOn(loans: readonly Loan[], date: string): Loan | null {
 }
 
 /**
+ * The Loan a member is told of on `date` (story 18.5, UX-DR59): the one
+ * covering it, else the first starting after it, else `null` — so a loan
+ * wholly before `date` is never announced.
+ *
+ * @throws RangeError when `date` is not a calendar `YYYY-MM-DD`, and on any
+ *   precondition of {@link checkLoans}.
+ */
+export function loanAheadOf(loans: readonly Loan[], date: string): Loan | null {
+  const covering = loanOn(loans, date);
+
+  if (covering !== null) return covering;
+
+  let ahead: Loan | null = null;
+
+  for (const loan of loans) {
+    if (loan.from > date && (ahead === null || loan.from < ahead.from)) ahead = loan;
+  }
+
+  return ahead;
+}
+
+/**
  * THE LOAN RULE (R11.1): the team a member works with on `date` — the loan
  * team when one of their loans covers it, with no position; else their home
  * team and position ({@link membershipOn}), or `null` when they have none. A

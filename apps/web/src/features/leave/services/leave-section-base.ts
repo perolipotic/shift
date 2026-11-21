@@ -280,7 +280,10 @@ export function memberLeaveBaseOf(sources: MemberLeaveSources, memberId: string,
 
   const scheduled = snapshot.members.find((candidate) => candidate.id === memberId);
 
-  if (scheduled === undefined || scheduled.memberships.length === 0) return { kind: LEAVE_UNSCHEDULED };
+  // STORY 18.5: a member with no team but a loan is scheduled on the loan's dates.
+  if (scheduled === undefined || (scheduled.memberships.length === 0 && scheduled.loans.length === 0)) {
+    return { kind: LEAVE_UNSCHEDULED };
+  }
 
   const input = leaveRecordsInputOf(
     snapshot,

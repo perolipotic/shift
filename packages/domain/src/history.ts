@@ -74,6 +74,8 @@ export const HISTORY_RECORDS = [
   'swap-request-decision',
   'absence-type',
   'leave-allowance',
+  // Story 18.5: a Loan (`team_loans`, 0062).
+  'loan',
   // A table this build does not know yet (an audited table added after it):
   // drawn as a generic record, its fields as raw operands, never a failed read.
   'other',
@@ -269,6 +271,7 @@ const RECORD_OF_TABLE: Readonly<Record<string, HistoryRecord>> = {
   swap_request_decisions: 'swap-request-decision',
   absence_types: 'absence-type',
   leave_allowances: 'leave-allowance',
+  team_loans: 'loan',
 };
 
 /** The record an audited table holds, or `null` for a table this build does not know. */
@@ -299,7 +302,7 @@ const AMEND_KEYS: Readonly<Record<string, readonly string[]>> = {
   roster_overrides: ['team_id', 'date'],
   shift_type_overrides: ['team_id', 'date'],
   // Story 18.4 (0064's `amend_team_loan`): the replacement keeps the member;
-  // its team and dates may change. The record and its wording are 18.5's.
+  // its team and dates may change. Story 18.5 names the record `loan`.
   team_loans: ['member_id'],
 };
 

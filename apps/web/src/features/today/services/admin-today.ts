@@ -2,11 +2,12 @@ import {
   activeOn,
   collisionKeyOf,
   deriveShiftTimes,
+  effectiveTeamOn,
   isHalfDay,
-  membershipOn,
   shiftTypeVersionOn,
   shortStaffedShiftsOf,
   type LeaveHalf,
+  type Loan,
   type MembershipVersion,
 } from '@shift/domain';
 
@@ -787,13 +788,16 @@ function coverageOf(
   return { rows, off, noRotation };
 }
 
-/** The team `memberships` name on `date`, by name, or `null` for none. */
+/**
+ * The team `member` is WITH on `date` (the domain's `effectiveTeamOn`: a loan
+ * team on a loan, story 18.5), by name, or `null` for none.
+ */
 function teamNameOn(
   snapshot: CalendarSnapshot,
-  memberships: readonly MembershipVersion[],
+  member: { readonly memberships: readonly MembershipVersion[]; readonly loans?: readonly Loan[] | undefined },
   date: string,
 ): string | null {
-  const membership = membershipOn(memberships, date);
+  const membership = effectiveTeamOn(member, date);
 
   if (membership === null) return null;
 
@@ -831,7 +835,7 @@ function absencesOf(snapshot: CalendarSnapshot, records: readonly OrganizationLe
       absentToday.push({
         memberId: member.id,
         name: member.name,
-        teamName: teamNameOn(snapshot, member.memberships, today),
+        teamName: teamNameOn(snapshot, member, today),
         from: dayMonthOf(current.from),
         to: dayMonthOf(current.to),
         oneDay: current.from === current.to,
@@ -847,7 +851,7 @@ function absencesOf(snapshot: CalendarSnapshot, records: readonly OrganizationLe
       fromTomorrow.push({
         memberId: member.id,
         name: member.name,
-        teamName: teamNameOn(snapshot, member.memberships, tomorrow),
+        teamName: teamNameOn(snapshot, member, tomorrow),
         from: dayMonthOf(next.from),
         to: dayMonthOf(next.to),
         oneDay: next.from === next.to,

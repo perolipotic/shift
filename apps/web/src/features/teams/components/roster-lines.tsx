@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 
+import { LoanTeamNote } from '@/components/loan-mark';
 import { Avatar } from '@/components/ui/avatar';
 import { rosterLineOf, rosterPositionMessageKey } from '@/features/members/utils/position';
 import { rosterRankMessageKey } from '@/features/members/utils/rank';
@@ -20,10 +21,16 @@ export function RosterLines({
   members,
   shown,
   positionShown,
+  loanTeams,
 }: {
   readonly members: readonly TeamRosterMember[];
   readonly shown: boolean;
   readonly positionShown: boolean;
+  /**
+   * STORY 18.5 (UX-DR59): the team a loan puts a member with today, by id
+   * (`useLoanTeams`), drawn as `trenutno u timu {tim}` under their line.
+   */
+  readonly loanTeams: ReadonlyMap<string, string>;
 }): ReactNode {
   if (members.length === 0) return null;
 
@@ -41,8 +48,9 @@ export function RosterLines({
             {/* EMPTY for a name with no letter, so the names stay aligned. */}
             <Avatar>{initials}</Avatar>
             {/* TEXT, never a colour or an icon: rank and position are words. */}
-            <span className="min-w-0 break-words">
-              {line.key === null ? line.text : t(line.key, line.values)}
+            <span className="grid min-w-0 gap-0.5">
+              <span className="min-w-0 break-words">{line.key === null ? line.text : t(line.key, line.values)}</span>
+              <LoanTeamNote team={loanTeams.get(member.id) ?? null} />
             </span>
           </li>
         );

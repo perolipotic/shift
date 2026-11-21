@@ -217,16 +217,21 @@ function shiftTypesById(input: MemberHoursInput, probeDate: string): ReadonlyMap
 export const HOURS_SOURCE_ROTATION = 'ROTATION';
 export const HOURS_SOURCE_CHANGE = 'CHANGE';
 export const HOURS_SOURCE_REPLACEMENT = 'REPLACEMENT';
+/** Story 18.5: a shift of the loan team a Loan put the member on (`posudba`). */
+export const HOURS_SOURCE_LOAN = 'LOAN';
 
 /**
  * The rotation's projection (`ROTATION`), a shift-type override that replaced
- * it (`CHANGE`), or a roster override that put the member on another team's
- * shift (`REPLACEMENT`, which wins when both apply).
+ * it (`CHANGE`), a roster override that put the member on another team's
+ * shift (`REPLACEMENT`, which wins when both apply), or a Loan that put them
+ * on the loan team (`LOAN`, story 18.5: below `REPLACEMENT`, above `CHANGE`,
+ * as the loan is why the shift is theirs at all).
  */
 export type HoursSource =
   | typeof HOURS_SOURCE_ROTATION
   | typeof HOURS_SOURCE_CHANGE
-  | typeof HOURS_SOURCE_REPLACEMENT;
+  | typeof HOURS_SOURCE_REPLACEMENT
+  | typeof HOURS_SOURCE_LOAN;
 
 /** What a shift is in the month's hours: worked, leave, or worked with no times. */
 const HOURS_KIND_WORKED = 'WORKED';
@@ -295,6 +300,7 @@ interface MonthWalk {
 
 function sourceOf(shift: MemberShift): HoursSource {
   if (shift.viaOverride) return HOURS_SOURCE_REPLACEMENT;
+  if (shift.loanId !== undefined) return HOURS_SOURCE_LOAN;
   return shift.overridden ? HOURS_SOURCE_CHANGE : HOURS_SOURCE_ROTATION;
 }
 

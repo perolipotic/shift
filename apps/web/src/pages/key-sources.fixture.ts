@@ -24,6 +24,7 @@ import {
   HOUR_BAND_LIST_KEYS,
   HOUR_BAND_WRITE_KEYS,
   HOURS_EXPLANATION_KEYS,
+  LOAN_MARKS_KEYS,
   HOURS_EXPORT_KEYS,
   HISTORY_EXPORT_KEYS,
   HISTORY_ROWS_KEYS,
@@ -883,7 +884,14 @@ export const KEY_SOURCES = [
     // ONE HUNDRED AND SEVENTY-SEVEN SINCE STORY 12.3: the footer's mark on a
     // shift the viewer already proposed, *Zamjena predložena · {kolega}*, and
     // an unknown colleague's words.
-    strings: 177,
+    // ONE HUNDRED AND EIGHTY-TWO SINCE STORY 18.5: the loan mark's two
+    // wordings (`posuđen iz {tim}`, `posuđen, bez svog tima`) and the
+    // directory's `trenutno u timu {tim}` with its hidden separator, from the
+    // shared `@/components/loan-mark`, and the day detail's separator before
+    // a lent member's mark.
+    // ONE HUNDRED AND EIGHTY-THREE SINCE ITS REVIEW: the Osoba picker's hidden
+    // separator before a lent person's mark (`@/components/filter-bar`).
+    strings: 183,
   },
   {
     // STORY 12.2. On the swap proposal: its heading (twice, once while the
@@ -1063,7 +1071,9 @@ export const KEY_SOURCES = [
     name: 'the Sati destination',
     file: SATI,
     keys: translationKeys,
-    strings: 106,
+    // ONE HUNDRED AND SEVEN SINCE STORY 18.5: the shared Osoba picker's hidden
+    // separator before a lent person's mark.
+    strings: 107,
   },
   {
     // STORY 5.2c. THREE on Godišnji: its own `nav.godisnji` heading, the
@@ -1158,8 +1168,9 @@ export const KEY_SOURCES = [
     // three earlier-saved words, and the three unknown names inside them.
     // 150 SINCE ITS REVIEW: a rotation step's ordinal label, and the two
     // marks on sides that differ but read alike.
+    // 151 SINCE STORY 18.5: the loan record's word, `Posudba`.
     keys: (text: string) => [...translationKeys(text), ...messageKeyUnions(text)],
-    strings: 150,
+    strings: 151,
   },
   {
     // STORY 14.3: the PDF's words — the title (the caption), the header's
@@ -1467,10 +1478,19 @@ export const KEY_SOURCES = [
     // queue's own, off `leaveDecisionMessageKey`.
     // ELEVEN SINCE STORY 13.2: the leave's fixed name is gone; a leave column's
     // dialog is named by `leaveColumnNameOf`, `@/features/hours/services/my-hours`'s.
+    // TWELVE SINCE STORY 18.5: a loan shift's source, `posudba`.
     name: 'the hours explanation rules',
     file: HOURS_EXPLANATION_KEYS,
     keys: (text: string) => [...translationKeys(text), ...messageKeyUnions(text)],
-    strings: 11,
+    strings: 12,
+  },
+  {
+    // STORY 18.5: a member's own loan, covering today or ahead, off
+    // `loanNoticeMessageKey` (UX-DR59).
+    name: 'the loan marks rules',
+    file: LOAN_MARKS_KEYS,
+    keys: messageKeyUnions,
+    strings: 2,
   },
   {
     // STORY 5.1c: the leave card's four reasons for no preview (incomplete,

@@ -2,7 +2,9 @@ import { useId, type ReactNode } from 'react';
 
 import { Card } from '@/components/ui/card';
 import type { MemberTeam } from '@/features/members/services/list';
+import { LoanNoticeLine } from '@/features/calendar/components/loan-notice-line';
 import { dayEmptyMessageKey } from '@/features/calendar/utils/empty-day';
+import type { LoanNotice } from '@/features/calendar/utils/loan-marks';
 import { DutyBlock } from '@/features/today/components/duty-block';
 import { OwnTeamLine } from '@/features/today/components/own-team-line';
 import { leaveHalfNamedOf } from '@/features/leave/services/leave-section';
@@ -100,9 +102,12 @@ function renderDetail(todayCase: Exclude<TodayCase, { readonly kind: typeof CASE
 export function TodayCard({
   todayCase,
   ownTeam,
+  loan,
 }: {
   readonly todayCase: TodayCase;
   readonly ownTeam: MemberTeam | null;
+  /** STORY 18.5: the viewer's loan covering today or ahead, under their team; absent with none. */
+  readonly loan?: LoanNotice | undefined;
 }): ReactNode {
   const headingId = useId();
 
@@ -112,6 +117,7 @@ export function TodayCard({
         {/* STORY 13.7: a half day on a duty is named under the duty-block. */}
         {todayCase.half === undefined ? null : renderHalf(todayCase.half)}
         <OwnTeamLine team={ownTeam} />
+        {loan === undefined ? null : <LoanNoticeLine notice={loan} />}
       </DutyBlock>
     );
   }
@@ -127,6 +133,7 @@ export function TodayCard({
         </h2>
         {renderDetail(todayCase)}
         <OwnTeamLine team={ownTeam} />
+        {loan === undefined ? null : <LoanNoticeLine notice={loan} />}
       </section>
     </Card>
   );
