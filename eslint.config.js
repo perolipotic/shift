@@ -802,6 +802,46 @@ export default [
       ],
     },
   },
+  // AD-6 (story 16.2): the engine is nominal wall-clock minutes, and only
+  // `src/zone.ts` reaches the runtime's clock or zone data, through `Intl`
+  // alone. Scope-aware, so no comment, string, regex literal or escaped
+  // identifier hides a use from it, and `globalThis` (a computed
+  // `globalThis['Da' + 'te']`) is banned with them. The locale-dependent
+  // methods read ICU data without naming `Intl`; Node and edge-runtime may
+  // answer them differently. `test/purity.test.ts` scans the same rule.
+  {
+    files: ['packages/domain/src/**/*.ts'],
+    rules: {
+      'no-restricted-globals': [
+        'error',
+        ...['Date', 'Intl', 'Temporal', 'globalThis', 'performance'].map((name) => ({
+          name,
+          message: `packages/domain is nominal wall-clock minutes (AD-6): only src/zone.ts reaches the clock or zone data, through Intl alone. Not ${name}.`,
+        })),
+      ],
+      'no-restricted-properties': [
+        'error',
+        ...['localeCompare', 'toLocaleString', 'toLocaleDateString', 'toLocaleTimeString', 'toLocaleUpperCase', 'toLocaleLowerCase'].map(
+          (property) => ({
+            property,
+            message: `packages/domain answers alike in every runtime (AD-6, AD-19): ${property} reads the runtime's locale data. Compare code units instead.`,
+          }),
+        ),
+      ],
+    },
+  },
+  {
+    files: ['packages/domain/src/zone.ts'],
+    rules: {
+      'no-restricted-globals': [
+        'error',
+        ...['Date', 'Temporal', 'globalThis', 'performance'].map((name) => ({
+          name,
+          message: `src/zone.ts converts through Intl alone (AD-6 as amended): not ${name}.`,
+        })),
+      ],
+    },
+  },
 
   // ------------------------------------------------------ browser: apps/web
   {
@@ -933,8 +973,9 @@ export default [
 
   // ------------------------------- Deno: the Edge Functions and their router
   {
-    // The functions, and the router that runs them on the self-hosted stack (20.2).
-    files: ['supabase/functions/**/*.ts', 'deploy/functions/**/*.ts'],
+    // The functions, the router that runs them on the self-hosted stack (20.2),
+    // and the runtime-parity probe's entry (16.2), which runs under the same runtime.
+    files: ['supabase/functions/**/*.ts', 'deploy/functions/**/*.ts', 'deploy/parity/**/*.ts'],
     languageOptions: {
       globals: {
         ...globals.worker,

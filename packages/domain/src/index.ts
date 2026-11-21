@@ -206,6 +206,27 @@ export {
 } from './roster.js';
 
 export {
+  MAX_AT_WORK_RANGE_DAYS,
+  atWorkShiftsOf,
+  type AtWorkShift,
+  type ScheduleInputs,
+  type ScheduleLeave,
+  type ScheduleMember,
+  type ScheduleTeam,
+  type StampedRosterOverride,
+} from './at-work.js';
+
+export {
+  MAX_ZONE_RANGE_DAYS,
+  checkTimeZone,
+  instantOf,
+  offsetMinutesAt,
+  utcIsoOf,
+  zoneTransitionsOf,
+  type ZoneTransition,
+} from './zone.js';
+
+export {
   DEFAULT_HISTORY_PERIOD,
   HISTORY_ACTIONS,
   HISTORY_FIELDS,

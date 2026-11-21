@@ -100,6 +100,10 @@ export const CALENDAR_SCREEN_EXEMPT: readonly { readonly file: string; readonly 
     why: 'the rule telling rows newer than the snapshot from rows that cannot be trusted (story 5.5d), shared with Za odluku, Sati and Danas; renders nothing and declares no key, executed by marks.test.ts',
   },
   {
+    file: 'services/schedule-inputs.ts',
+    why: "story 16.2: the snapshot and the viewer's own leave as the domain's ScheduleInputs, the browser's side of the read parity (AD-19); renders nothing and declares no key, executed by schedule-inputs.test.ts",
+  },
+  {
     file: 'services/surface-keys.ts',
     why: "the month's reads as one snapshot (story 8.2), the keys its offline freshness is decided over; renders nothing and declares no key, executed by surface-keys.test.ts",
   },
