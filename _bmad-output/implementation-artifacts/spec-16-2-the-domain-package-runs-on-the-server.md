@@ -138,3 +138,4 @@ Decisions (founder: decide and record):
 
 
 - 2026-11-21, CI root cause: the read-parity refusal was PostgREST answering `organizations` 401 PGRST303 "JWT issued at future" for a token GoTrue had just issued (run on 76e6f63, captured by the diagnostic transport). A test defect, not a product one: the test now waits until the token's issuing second has passed before its first read (`usableAfterIssue`).
+- 2026-11-21, follow-up: waiting out the issuing second was not enough (PGRST303 again on 2a37253): an idle PostgREST's cached clock lags. The test now shows the fresh token to PostgREST until it is accepted (≤ 5 tries, 1 s apart) before the read under test. Whether a real browser can meet PGRST303 right after sign-in on the self-hosted stack is recorded in deferred-work for 20.5 to check.

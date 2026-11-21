@@ -299,16 +299,24 @@ async function tokenFor(email: string): Promise<string> {
 }
 
 /**
- * PostgREST refuses a token whose `iat` is later than its own clock (PGRST303
- * "JWT issued at future"), and GoTrue's `iat` can round up past PostgREST's
- * reading in the same second (CI run on 76e6f63). Wait until the issuing
- * second has passed, as a browser that signs in and then reads always has.
+ * PostgREST refuses a token whose `iat` is later than its own cached clock
+ * (PGRST303 "JWT issued at future"). In CI the refusal came both right after
+ * sign-in (run on 76e6f63) and after waiting out the issuing second (run on
+ * 2a37253): an idle PostgREST's cached clock can lag. So the token is first
+ * shown to PostgREST until it is accepted (at most five tries, a second
+ * apart), and the read under test starts on a warm, agreeing clock.
  */
 async function usableAfterIssue(token: string): Promise<void> {
-  const payload = JSON.parse(Buffer.from(token.split('.')[1] ?? '', 'base64url').toString('utf8')) as { iat?: unknown };
-  if (typeof payload.iat !== 'number') return;
-  const waitMs = (payload.iat + 1) * 1000 - Date.now();
-  if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, Math.min(waitMs, 5000)));
+  const endpoint = apiEndpoint;
+  if (endpoint === undefined) throw new Error('unreachable: gated by skipIf');
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const response = await fetch(`${endpoint.url}/rest/v1/organizations?select=id&limit=1`, {
+      headers: { apikey: endpoint.key, authorization: `Bearer ${token}` },
+    });
+    const text = await response.text();
+    if (response.ok || !text.includes('PGRST303')) return;
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
 }
 
 function userIdOf(token: string): string {

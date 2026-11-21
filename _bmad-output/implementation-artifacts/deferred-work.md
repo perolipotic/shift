@@ -1843,3 +1843,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-16-2-the-domain-package-runs-on-the-server.md`
   summary: OWNER 16.4 (consider). Read parity covers every member of both fixtures who can sign in (active today, with an account); a member inactive today, or without an account, has no browser session, so their server assembly is compared with no browser read. If the feed's lookup ever serves such a member (it does not: AD-14's lookup requires active today), add a comparison through an admin's snapshot and `leave_overview_records()`.
   evidence: `test/schedule-inputs-parity.test.ts`; 16.2 spec decision 4.
+
+## Deferred from: story 16.2 CI (2026-11-21)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-16-2-the-domain-package-runs-on-the-server.md`
+  summary: OWNER 20.5 (check). In CI the local stack's PostgREST answered a freshly issued GoTrue token with 401 PGRST303 "JWT issued at future", twice, even after the issuing second had passed (its cached clock lags when idle). The SPA reads right after sign-in; on the self-hosted stack check whether a first read can meet PGRST303 and, if so, how the SPA answers it (a retry, or `PGRST_JWT_...` clock-skew settings if the pinned PostgREST offers one). e2e never showed it.
+  evidence: CI runs on 76e6f63 and 2a37253 (`test/schedule-inputs-parity.test.ts`); the test now warms the token up before its read.
