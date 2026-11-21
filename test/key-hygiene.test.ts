@@ -487,6 +487,55 @@ describe('the VAPID boundary (story 10.4)', () => {
   });
 });
 
+/**
+ * Story 19.1 (AD-17 as amended, D-S4): GoTrue's own SMTP key. It is the
+ * Resend key of the stack's auth resource alone, sending-only, never
+ * `notify`'s `RESEND_API_KEY`. The compose names it only as
+ * `${GOTRUE_SMTP_PASS:-}`, with no literal default, so a shut stack starts
+ * without one; GoTrue's wrapper refuses an open door without it.
+ */
+describe('GoTrue’s SMTP key (story 19.1)', () => {
+  const composePath = join(repoRoot, 'deploy', 'coolify', 'supabase', 'docker-compose.yml');
+  const compose = readFileSync(composePath, 'utf8');
+
+  it('is named in the compose only as an empty-defaulted reference, and given to GoTrue alone', () => {
+    const references = [...compose.matchAll(/\$\{GOTRUE_SMTP_PASS([^}]*)\}/g)].map((match) => match[0]);
+    expect(references).toEqual(['${GOTRUE_SMTP_PASS:-}']);
+    expect(compose).toContain('      - GOTRUE_SMTP_PASS=${GOTRUE_SMTP_PASS:-}\n');
+    // Its other mentions are the wrapper's two presence tests, and comments.
+    const bare = compose
+      .split('\n')
+      .filter((line) => /GOTRUE_SMTP_PASS/.test(line) && !line.includes('${GOTRUE_SMTP_PASS:-}') && !line.trim().startsWith('#'));
+    expect(bare.map((line) => line.trim())).toEqual([
+      '[ -n "$GOTRUE_SMTP_PASS" ] || refuse "signup is open with no GOTRUE_SMTP_PASS"',
+      'if [ "$GOTRUE_DISABLE_SIGNUP" = false ] || [ -n "$GOTRUE_SMTP_PASS" ]; then',
+    ]);
+    // Never notify's key: the edge-runtime alone reads RESEND_API_KEY.
+    const auth = compose.slice(compose.indexOf('\n  supabase-auth:\n'), compose.indexOf('\n  supabase-rest:\n'));
+    expect(auth).not.toContain('RESEND_API_KEY');
+    const functions = compose.slice(compose.indexOf('\n  supabase-edge-functions:\n'));
+    expect(functions).not.toContain('GOTRUE_SMTP_PASS');
+  });
+
+  it('carries no value in either template, and is named in DEPLOY.md', () => {
+    for (const file of ['staging.env.example', 'production.env.example']) {
+      const text = readFileSync(join(repoRoot, 'deploy', 'coolify', 'supabase', file), 'utf8');
+      expect(text, file).toMatch(/^GOTRUE_SMTP_PASS=$/m);
+    }
+    expect(readFileSync(join(repoRoot, 'DEPLOY.md'), 'utf8')).toContain('GOTRUE_SMTP_PASS');
+  });
+
+  it('is never read by the SPA, a function, a migration or config.toml', () => {
+    const files = [
+      ...collectFiles(join(repoRoot, 'apps'), byExtension(...CODE_EXTENSIONS)),
+      ...collectFiles(join(repoRoot, 'supabase'), byExtension('.ts', '.sql', '.toml')),
+      ...collectFiles(join(repoRoot, 'deploy', 'functions'), byExtension('.ts')),
+    ];
+    expect(files.length).toBeGreaterThan(0);
+    expect(show(files.filter((file) => readFileSync(file, 'utf8').includes('GOTRUE_SMTP_PASS')))).toEqual([]);
+  });
+});
+
 describe('secret key hygiene: the scanner itself', () => {
   // Comment-stripping that swallowed too much would make every naming assertion
   // above pass vacuously, so each rule is proved to strip its own comments and

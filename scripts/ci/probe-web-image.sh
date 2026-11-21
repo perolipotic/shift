@@ -134,6 +134,13 @@ expect /assets/nope.js 404 text/plain no-cache
 expect /assets/ 404 text/plain no-cache
 expect /assets/x.js.map 404 text/plain no-cache
 expect "/$asset.map" 404 text/plain no-cache
+# Story 19.1: the Auth email templates GoTrue fetches, each a real template;
+# a missing one, and the directory, are the plain 404, never the shell.
+expect /auth-email/confirmation.html 200 text/html no-cache token_hash
+expect /auth-email/recovery.html 200 text/html no-cache token_hash
+expect /auth-email/email-change.html 200 text/html no-cache token_hash
+expect /auth-email/nope.html 404 text/plain no-cache
+expect /auth-email/ 404 text/plain no-cache
 # Cloudflare's files are not in the image: the path is a client route.
 expect /_headers 200 text/html no-cache "$shell_marker"
 expect /_redirects 200 text/html no-cache "$shell_marker"

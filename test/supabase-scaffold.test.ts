@@ -5589,7 +5589,7 @@ describe('the local auth provider configuration', () => {
     return undefined;
   }
 
-  it('leaves the email provider on while open signup stays refused', () => {
+  it('leaves the email provider on, and carries staging’s open door while production’s stays shut (story 19.1)', () => {
     // Two switches with confusingly similar names, and only one of them is the
     // signup door. `[auth] enable_signup` becomes GOTRUE_DISABLE_SIGNUP and
     // refuses self-registration; `[auth.email] enable_signup` becomes
@@ -5602,10 +5602,11 @@ describe('the local auth provider configuration', () => {
       'the email/password provider must be on, or every admin-issued credential is unusable',
     ).toBe('true');
 
-    expect(
-      setting('auth', 'enable_signup'),
-      'there is no open signup anywhere in this system',
-    ).toBe('false');
+    // STORY 19.1 (AD-21): config.toml carries local and staging's values, so
+    // the door is open here; the compose shuts it by default and production's
+    // template keeps it shut (the switch mirror below pins all three).
+    expect(setting('auth', 'enable_signup'), 'config.toml is staging’s door, which opens').toBe('true');
+    expect(stackTemplate('production.env.example').get('SHIFT_DISABLE_SIGNUP'), 'production opens the door').toBe('true');
 
     expect(
       setting('auth', 'enable_anonymous_sign_ins'),
@@ -5685,12 +5686,33 @@ describe('the local auth provider configuration', () => {
     return new Map(entries);
   }
 
+  /** One env template beside the stack's compose file, `KEY → value`, one pair of quotes removed. */
+  function stackTemplate(file: string): Map<string, string> {
+    const text = readFileSync(join(repoRoot, 'deploy', 'coolify', 'supabase', file), 'utf8');
+    return new Map(
+      text
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line !== '' && !line.startsWith('#'))
+        .map((line): [string, string] => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1).replace(/^"(.*)"$/, '$1')]),
+    );
+  }
+
+  /**
+   * STORY 19.1 (AD-21): the door's two GoTrue switches. Each is the compose
+   * variable `${SHIFT_X:-true}` (shut when unset), staging's template mirrors
+   * config.toml, and production's template keeps it `true`. As the triple
+   * GoTrue variable, operator input, config.toml value.
+   */
+  const SWITCH_MIRROR: readonly (readonly [string, string, () => string | undefined])[] = [
+    ['GOTRUE_DISABLE_SIGNUP', 'SHIFT_DISABLE_SIGNUP', () => not(setting('auth', 'enable_signup'))],
+    ['GOTRUE_MAILER_AUTOCONFIRM', 'SHIFT_MAILER_AUTOCONFIRM', () => not(setting('auth.email', 'enable_confirmations'))],
+  ];
+
   /** compose variable ← config.toml value, as the spec's mirror table states it. */
   const GOTRUE_MIRROR: readonly (readonly [string, () => string | undefined])[] = [
-    ['GOTRUE_DISABLE_SIGNUP', () => not(setting('auth', 'enable_signup'))],
     ['GOTRUE_EXTERNAL_EMAIL_ENABLED', () => setting('auth.email', 'enable_signup')],
     ['GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED', () => setting('auth', 'enable_anonymous_sign_ins')],
-    ['GOTRUE_MAILER_AUTOCONFIRM', () => not(setting('auth.email', 'enable_confirmations'))],
     ['GOTRUE_MAILER_SECURE_EMAIL_CHANGE_ENABLED', () => setting('auth.email', 'double_confirm_changes')],
     ['GOTRUE_EXTERNAL_PHONE_ENABLED', () => setting('auth.sms', 'enable_signup')],
     ['GOTRUE_SMS_AUTOCONFIRM', () => not(setting('auth.sms', 'enable_confirmations'))],
@@ -5700,6 +5722,11 @@ describe('the local auth provider configuration', () => {
     ['GOTRUE_PASSWORD_MIN_LENGTH', () => setting('auth', 'minimum_password_length')],
     ['GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_ENABLED', () => setting('auth.hook.custom_access_token', 'enabled')],
     ['GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_URI', () => setting('auth.hook.custom_access_token', 'uri')],
+    // STORY 19.1 (AD-21, AD-22).
+    ['GOTRUE_MAILER_OTP_EXP', () => setting('auth.email', 'otp_expiry')],
+    ['GOTRUE_MAILER_OTP_LENGTH', () => setting('auth.email', 'otp_length')],
+    ['GOTRUE_HOOK_BEFORE_USER_CREATED_ENABLED', () => setting('auth.hook.before_user_created', 'enabled')],
+    ['GOTRUE_HOOK_BEFORE_USER_CREATED_URI', () => setting('auth.hook.before_user_created', 'uri')],
   ];
 
   const POSTGREST_MIRROR: readonly (readonly [string, () => string | undefined])[] = [
@@ -5729,12 +5756,45 @@ describe('the local auth provider configuration', () => {
     expectMirrored('supabase-auth', GOTRUE_MIRROR);
   });
 
-  it('keeps email confirmations off, outright', () => {
-    // An absolute pin beside the parity check: parity alone would follow
-    // config.toml into confirmations ON, and a self-hosted GoTrue has no SMTP
-    // until Epic 19 (AD-12: v1 sends no auth mail), so every provisioned
-    // admin would wait forever for a mail that cannot be sent.
-    expect(setting('auth.email', 'enable_confirmations')).toBe('false');
+  it('shuts the door in the compose and in production, and opens it on staging exactly as config.toml does (story 19.1)', () => {
+    // AD-21's first switch. A missing variable fails CLOSED, production's
+    // template can never open it, and staging's mirrors config.toml.
+    const environment = stackEnvironment('supabase-auth');
+    const staging = stackTemplate('staging.env.example');
+    const production = stackTemplate('production.env.example');
+    for (const [variable, input, source] of SWITCH_MIRROR) {
+      expect(environment.get(variable), `${variable} is not shut by default`).toBe(`\${${input}:-true}`);
+      expect(production.get(input), `production.env.example ${input} opens the door`).toBe('true');
+      expect(source(), `config.toml no longer states what ${variable} mirrors`).toBeDefined();
+      expect(staging.get(input), `staging.env.example ${input} differs from config.toml`).toBe(source());
+    }
+  });
+
+  it('keeps email confirmations on, outright, with a bounded code (story 19.1)', () => {
+    // An absolute pin beside the parity check: an open door with confirmations
+    // off would let an unverified address found an organization (AD-21).
+    // Every account the system creates itself is confirmed at creation, so no
+    // username sign-in waits for a mail.
+    expect(setting('auth.email', 'enable_confirmations')).toBe('true');
+    expect(setting('auth.email', 'otp_expiry')).toBe('3600');
+    expect(setting('auth.email', 'otp_length')).toBe('10');
+  });
+
+  it('enables the before-user-created hook everywhere and points it at 0065’s function, which only the auth service may run (story 19.1)', () => {
+    expect(setting('auth.hook.before_user_created', 'enabled')).toBe('true');
+    expect(setting('auth.hook.before_user_created', 'uri')).toBe('pg-functions://postgres/public/before_user_created_hook');
+    const migrations = migrationStatements();
+    expect(migrations).toMatch(/create function public\.before_user_created_hook\(event jsonb\) returns jsonb/i);
+    expect(migrations).toMatch(/grant execute on function public\.before_user_created_hook\(jsonb\) to supabase_auth_admin/i);
+    for (const role of ['public', 'anon', 'authenticated', 'service_role']) {
+      expect(migrations, `the hook is still executable by ${role}`).toMatch(
+        new RegExp(`revoke execute on function public\\.before_user_created_hook\\(jsonb\\) from ${role}`, 'i'),
+      );
+    }
+    // No other grant of it, anywhere.
+    expect(migrations.match(/grant [^;]*before_user_created_hook[^;]*;/gi)).toEqual([
+      'grant execute on function public.before_user_created_hook(jsonb) to supabase_auth_admin;',
+    ]);
   });
 
   it("mirrors config.toml's [api] into the self-hosted PostgREST", () => {
@@ -5777,7 +5837,9 @@ describe('the local auth provider configuration', () => {
     // The mirror tables cite their config.toml keys in their sources; a key in
     // none of them and not excused above is a setting the self-hosted stack
     // would silently not enforce.
-    const mirrorSources = [...GOTRUE_MIRROR, ...POSTGREST_MIRROR].map(([, source]) => source.toString()).join('\n');
+    const mirrorSources = [...GOTRUE_MIRROR, ...POSTGREST_MIRROR, ...SWITCH_MIRROR.map(([variable, , source]) => [variable, source] as const)]
+      .map(([, source]) => source.toString())
+      .join('\n');
     const keys = authAndApiKeys();
     expect(keys.length, 'the reader found no auth or api key').toBeGreaterThan(10);
     const unmirrored = keys.filter((key) => {
@@ -5895,5 +5957,93 @@ describe('the server read assembly (0065, story 16.2)', () => {
     const sql = migration();
     expect(sql).not.toMatch(/\bcreate table\b|\balter table\b|\bcreate (or replace )?trigger\b|\b(create|alter|drop) policy\b/i);
     expect(sql).not.toMatch(/\b(insert into|update public\.|delete from)\b/i);
+  });
+});
+
+describe('the signup door migration (story 19.1, 0065)', () => {
+  const SIGNUP_MIGRATION = '0065_signup_door.sql';
+  const migration = (): string =>
+    stripLineComments(readFileSync(join(supabaseRoot, 'migrations', SIGNUP_MIGRATION), 'utf8'));
+  /** One `create function` statement of 0065, whole. */
+  const functionNamed = (name: string): string =>
+    sqlStatements(migration()).find((statement) => statement.trimStart().toLowerCase().startsWith(`create function ${name}(`)) ?? '';
+
+  it('creates the switch as a closed singleton no session role may touch, and seeds it', () => {
+    const sql = migration();
+    expect(sql).toMatch(/create table private\.signup_settings \(\s*id\s+boolean primary key default true check \(id\),/);
+    expect(sql).toMatch(/\bopen\s+boolean not null default false,/);
+    expect(sql).toMatch(/\baccounts_per_day\s+integer not null default 100 check \(accounts_per_day > 0\)/);
+    expect(sql).toMatch(/\borganizations_per_day\s+integer not null default 20 check \(organizations_per_day > 0\)/);
+    expect(sql).toMatch(/\battempts_per_account\s+integer not null default 10 check \(attempts_per_account > 0\)/);
+    expect(sql).toContain('alter table private.signup_settings enable row level security;');
+    expect(sql).toContain('insert into private.signup_settings (id) values (true);');
+    for (const role of ['public', 'anon', 'authenticated', 'service_role']) {
+      expect(sql, `${role} keeps a privilege on signup_settings`).toContain(`revoke all on table private.signup_settings from ${role};`);
+    }
+    // No migration grants on it, writes a policy for it, or opens it.
+    const all = migrationStatements();
+    expect(all).not.toMatch(/grant [^;]* on (table )?private\.signup_settings\b/i);
+    expect(all).not.toMatch(/create policy [^;]* on private\.signup_settings\b/i);
+    expect(all).not.toMatch(/update private\.signup_settings\b/i);
+    // AD-11: no organization_id, so outside the change history, and no recorder.
+    expect(all).not.toMatch(/create trigger \w+ [^;]* on private\.signup_settings\b/i);
+  });
+
+  it('opens the switch on the local stack only, in the seed', () => {
+    const seed = stripLineComments(readFileSync(join(supabaseRoot, 'seed.sql'), 'utf8'));
+    expect(seed.match(/update private\.signup_settings set open = true where id;/g)).toHaveLength(1);
+    for (const script of readdirSync(operatorRoot).filter((name) => name.endsWith('.sql'))) {
+      expect(readFileSync(join(operatorRoot, script), 'utf8'), `${script} names the switch`).not.toMatch(/signup_settings/);
+    }
+  });
+
+  it('states the address predicate once, immutable, ASCII-only and with no session grant', () => {
+    const kind = functionNamed('private.address_kind');
+    expect(kind).toMatch(/returns text\s+language plpgsql\s+immutable\s+parallel safe\s+set search_path = ''/);
+    // D5: ASCII lower-casing, so a locale's or Unicode's case fold cannot make
+    // the SQL home disagree with Kong's Lua and the SPA.
+    expect(kind).toMatch(/'ABCDEFGHIJKLMNOPQRSTUVWXYZ',\s+'abcdefghijklmnopqrstuvwxyz'/);
+    expect(kind).not.toMatch(/\blower\(/);
+    expect(kind).toMatch(
+      /pg_catalog\.btrim\(address, pg_catalog\.chr\(9\) \|\| pg_catalog\.chr\(10\) \|\| pg_catalog\.chr\(11\)\s+\|\| pg_catalog\.chr\(12\) \|\| pg_catalog\.chr\(13\) \|\| pg_catalog\.chr\(32\)\)/,
+    );
+    expect(kind).toContain("domain_part = 'shift.invalid' or pg_catalog.right(domain_part, 14) = '.shift.invalid'");
+    expect(functionNamed('private.is_synthesized_address')).toContain("select private.address_kind(address) = 'synthesized';");
+    for (const name of ['private.address_kind', 'private.is_synthesized_address']) {
+      for (const role of ['public', 'anon', 'authenticated', 'service_role']) {
+        expect(migration(), `${name} is executable by ${role}`).toContain(`revoke execute on function ${name}(text) from ${role};`);
+      }
+      expect(migrationStatements()).not.toMatch(new RegExp(`grant execute on function ${name.replace('.', '\\.')}\\(`, 'i'));
+    }
+  });
+
+  it('refuses every reason with one answer, as a definer that writes nothing', () => {
+    const hook = functionNamed('public.before_user_created_hook');
+    expect(hook).toMatch(/returns jsonb\s+language plpgsql\s+stable\s+security definer\s+set search_path = ''/);
+    expect(hook).toContain(`refused   constant jsonb := '{"error": {"http_code": 403, "message": "SIGNUP_REFUSED"}}'::jsonb;`);
+    // Every refusal is that one value; the only other answer is `{}`.
+    const answers = [...hook.matchAll(/\breturn ([^;]+);/g)].map((match) => match[1]);
+    expect(answers.filter((answer) => answer !== 'refused')).toEqual(["'{}'::jsonb"]);
+    expect(answers.filter((answer) => answer === 'refused')).toHaveLength(4);
+    // No other message, and no write of any kind.
+    expect(hook.match(/SIGNUP_REFUSED|"message"/g)).toEqual(['"message"', 'SIGNUP_REFUSED']);
+    expect(hook).not.toMatch(/\b(insert into|update\s+\w+\.\w+\s+set|delete from|truncate|perform|execute)\b/i);
+    expect(hook).not.toMatch(/\braise\b/i);
+    // The four reasons, in AD-21's order.
+    expect(hook).toContain('if not found or not settings.open then');
+    expect(hook).toContain("if private.address_kind(address) <> 'email' then");
+    expect(hook).toContain("if not (candidate ~ '^[^[:space:]@]+$' and candidate = pg_catalog.lower(candidate)) then");
+    // The derived username is lower-cased ASCII-only, as the predicate does,
+    // so the check above is not a tautology: a letter `lower()` would still
+    // change (a non-ASCII capital) is refused, as the constraint would.
+    expect(hook).toMatch(/candidate := pg_catalog\.translate\(\s+pg_catalog\.split_part\(/);
+    expect(hook).not.toMatch(/candidate := pg_catalog\.lower\(/);
+    expect(hook).toContain('if recent >= settings.accounts_per_day then');
+    // members_username_check's own shape (0007), which the third reason states.
+    expect(migrationStatements()).toContain("check (username ~ '^[^[:space:]@]+$' and username = lower(username))");
+    // D4: accounts with no members row, created in the last 24 hours.
+    expect(hook).toMatch(
+      /where u\.created_at > pg_catalog\.now\(\) - interval '24 hours'\s+and not exists \(select 1 from public\.members m where m\.auth_user_id = u\.id\)/,
+    );
   });
 });

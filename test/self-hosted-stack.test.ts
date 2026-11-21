@@ -10,6 +10,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
+import { authEmailTemplates } from '../apps/web/src/lib/auth-email.ts';
 import { collectFiles } from './source-scan.ts';
 
 /**
@@ -84,6 +86,23 @@ const OPERATOR_SECRETS = ['RESEND_API_KEY', 'VAPID_PRIVATE_KEY'];
 /** Kong's route prefixes: auth, REST, GraphQL, Storage, Functions. Nothing else. */
 const KONG_ROUTE_PREFIXES = ['/auth/v1/', '/rest/v1/', '/graphql/v1', '/storage/v1/', '/functions/v1/'];
 
+/**
+ * The services that take a role's key and map it to its JWT (story 19.1 split
+ * the auth catch-all into AD-22's allow-list; the admin API takes the secret
+ * key alone and is checked beside these).
+ */
+const KEYED_SERVICES = [
+  'auth-v1-mail',
+  'auth-v1-token',
+  'auth-v1-verify',
+  'auth-v1-user',
+  'auth-v1-logout',
+  'auth-v1-health',
+  'rest-v1-create-organization',
+  'rest-v1',
+  'graphql-v1',
+];
+
 // ------------------------------------------------------------------ the reads
 
 interface Bind {
@@ -109,10 +128,17 @@ interface Compose {
   services: Record<string, Service>;
 }
 
+interface KongRoute {
+  name?: string;
+  strip_path?: boolean;
+  methods?: string[];
+  paths?: string[];
+}
+
 interface KongService {
   name: string;
   url: string;
-  routes?: { paths?: string[] }[];
+  routes?: KongRoute[];
   plugins?: { name: string; config?: Record<string, unknown> }[];
 }
 
@@ -206,14 +232,33 @@ function envTemplate(file: string): Map<string, string> {
 /** busybox, when the host has it: Kong's entrypoint is also run under its sh and awk. */
 const BUSYBOX = ['/usr/bin/busybox', '/bin/busybox'].find((candidate) => existsSync(candidate)) ?? null;
 
-/** Fixed fake values for running Kong's entrypoint: none is a real key. */
+/**
+ * The per-IP limits' staging values (AD-21 as amended by story 19.1), which
+ * are the compose's defaults and both templates' values until D-S5.
+ */
+const STAGING_LIMITS = {
+  SHIFT_LIMIT_MAIL_HOUR: '5',
+  SHIFT_LIMIT_MAIL_DAY: '20',
+  SHIFT_LIMIT_TOKEN_MINUTE: '60',
+  SHIFT_LIMIT_TOKEN_HOUR: '1440',
+  SHIFT_LIMIT_VERIFY_MINUTE: '15',
+  SHIFT_LIMIT_VERIFY_HOUR: '360',
+  SHIFT_LIMIT_CREATE_ORGANIZATION_HOUR: '10',
+} as const;
+
+/** Fixed fake values for running Kong's entrypoint: none is a real key, and the network is TEST-NET-1. */
 const FAKE = {
   SUPABASE_ANON_KEY: 'eyJfake.anon.sig',
   SUPABASE_SERVICE_KEY: 'eyJfake.service.sig',
   SUPABASE_PUBLISHABLE_KEY: `sb_publishable_${'p'.repeat(64)}`,
   SUPABASE_SECRET_KEY: `sb_secret_${'s'.repeat(32)}`,
   SHIFT_APP_URL: 'https://app.example.test',
+  KONG_TRUSTED_IPS: '192.0.2.0/24',
+  ...STAGING_LIMITS,
 } as const;
+
+/** A made-up password for the mail-route bodies, joined so no secret scanner reads it as a credential. */
+const FAKE_PASSWORD = ['lozinka', '1234'].join('-');
 
 /**
  * Runs the compose's own Kong entrypoint under `sh`, minus its final `exec`,
@@ -473,7 +518,7 @@ describe('the self-hosted stack (story 20.1): exposure', () => {
   });
 
   it('keeps key-auth, header-only, and the role ACL on the auth, REST and GraphQL routes', () => {
-    for (const name of ['auth-v1', 'rest-v1', 'graphql-v1']) {
+    for (const name of [...KEYED_SERVICES, 'auth-v1-admin']) {
       const plugins = kong.services.find((candidate) => candidate.name === name)?.plugins ?? [];
       const keyAuth = plugins.find((plugin) => plugin.name === 'key-auth');
       expect(keyAuth, `${name} has no key-auth`).toBeDefined();
@@ -481,7 +526,8 @@ describe('the self-hosted stack (story 20.1): exposure', () => {
       // written to Kong's access log.
       expect(keyAuth?.config?.['key_in_query'], `${name} accepts a key in the query`).toBe(false);
       const acl = plugins.find((plugin) => plugin.name === 'acl');
-      expect(acl?.config?.['allow'], `${name} ACL`).toEqual(['admin', 'anon']);
+      // Story 19.1: the admin API answers the secret key alone.
+      expect(acl?.config?.['allow'], `${name} ACL`).toEqual(name === 'auth-v1-admin' ? ['admin'] : ['admin', 'anon']);
       // Kong orders plugins by priority, not by this list: key-auth (1250)
       // and acl (950) run before request-transformer (801), so an unknown key
       // is refused before any mapping.
@@ -520,7 +566,7 @@ describe('the self-hosted stack (story 20.1): keys and secrets (AD-17)', () => {
     expect(keysOf('service_role').sort()).toEqual(['$SUPABASE_SECRET_KEY', '$SUPABASE_SERVICE_KEY']);
 
     // Every route that forwards a key to a service maps it first.
-    for (const name of ['auth-v1', 'rest-v1', 'graphql-v1', 'storage-v1']) {
+    for (const name of [...KEYED_SERVICES, 'auth-v1-admin', 'storage-v1']) {
       const block = kongTemplate.slice(kongTemplate.indexOf(`- name: ${name}\n`));
       const next = block.indexOf('\n            - name: ', 1);
       expect(block.slice(0, next === -1 ? undefined : next), `${name} forwards an unmapped key`).toContain(
@@ -561,7 +607,7 @@ describe('the self-hosted stack (story 20.1): keys and secrets (AD-17)', () => {
       ` or (headers.apikey == '${FAKE.SUPABASE_PUBLISHABLE_KEY}' and 'Bearer ${FAKE.SUPABASE_ANON_KEY}')` +
       ' or headers.apikey)';
 
-    for (const name of ['auth-v1', 'rest-v1', 'graphql-v1', 'storage-v1']) {
+    for (const name of [...KEYED_SERVICES, 'auth-v1-admin', 'storage-v1']) {
       const route = config.services.find((candidate) => candidate.name === name);
       const transformer = route?.plugins?.find((plugin) => plugin.name === 'request-transformer')?.config as
         | { add?: { headers?: string[] }; replace?: { headers?: string[] } }
@@ -909,6 +955,1101 @@ describe('the self-hosted stack (story 20.1): limits and environment templates',
       }
       expect(template.get('SHIFT_APP_URL'), `${file} SHIFT_APP_URL`).toMatch(/^https:\/\/[a-z.]*<domain>$/);
     }
+  });
+});
+
+// ------------------------------------------------------- story 19.1: the door
+
+/** AD-12's vectors, shared by every home of the predicate. */
+const ADDRESS_VECTORS = (
+  JSON.parse(readFileSync(join(repoRoot, 'test', 'fixtures', 'synthesized-addresses.json'), 'utf8')) as {
+    vectors: { address: string; kind: 'synthesized' | 'email' | 'malformed' }[];
+  }
+).vectors;
+
+/** The subset of fengari (Lua 5.3 in JavaScript) this file uses. */
+interface Fengari {
+  lua: {
+    LUA_OK: number;
+    lua_pcall(state: unknown, args: number, results: number, handler: number): number;
+    lua_setglobal(state: unknown, name: Uint8Array): void;
+    lua_getglobal(state: unknown, name: Uint8Array): number;
+    lua_pushstring(state: unknown, value: Uint8Array): void;
+    lua_pushnil(state: unknown): void;
+    lua_pushinteger(state: unknown, value: number): void;
+    lua_tostring(state: unknown, index: number): Uint8Array;
+    lua_pop(state: unknown, count: number): void;
+  };
+  lauxlib: {
+    luaL_newstate(): unknown;
+    luaL_loadstring(state: unknown, code: Uint8Array): number;
+  };
+  lualib: { luaL_openlibs(state: unknown): void };
+  to_luastring(value: string): Uint8Array;
+  to_jsstring(value: Uint8Array): string;
+}
+
+const fengari = createRequire(import.meta.url)('fengari') as Fengari;
+
+/** A fresh Lua state with the standard libraries, as Kong's sandbox has them. */
+function luaState(): unknown {
+  const state = fengari.lauxlib.luaL_newstate();
+  fengari.lualib.luaL_openlibs(state);
+  return state;
+}
+
+/** Whether a chunk compiles; the error message when it does not. */
+function luaCompiles(code: string): string | null {
+  const state = luaState();
+  const status = fengari.lauxlib.luaL_loadstring(state, fengari.to_luastring(code));
+  return status === fengari.lua.LUA_OK ? null : fengari.to_jsstring(fengari.lua.lua_tostring(state, -1));
+}
+
+/** The rendered config, by the compose's own entrypoint with the fake inputs. */
+function renderedKong(): KongConfig {
+  const { status, stderr, rendered } = runKongEntrypoint(FAKE);
+  expect(status, stderr).toBe(0);
+  return parse(rendered) as KongConfig;
+}
+
+function kongService(config: KongConfig, name: string): KongService {
+  const found = config.services.find((candidate) => candidate.name === name);
+  expect(found, `Kong has no ${name}`).toBeDefined();
+  return found ?? { name, url: '' };
+}
+
+function pluginOf(definition: KongService, name: string): Record<string, unknown> | undefined {
+  return definition.plugins?.find((plugin) => plugin.name === name)?.config;
+}
+
+/** Every access-phase chunk of a service's `pre-function` or `post-function`, in order. */
+function phaseChunks(definition: KongService, plugin: 'pre-function' | 'post-function'): string[] {
+  return (pluginOf(definition, plugin)?.['access'] as string[] | undefined) ?? [];
+}
+
+/** Every Lua chunk a service runs in the access phase, the pre-function's first, as Kong orders them. */
+function accessChunks(definition: KongService): string[] {
+  return [...phaseChunks(definition, 'pre-function'), ...phaseChunks(definition, 'post-function')];
+}
+
+/** The service's own access-phase Lua: the post-function's last chunk. */
+function accessLua(definition: KongService): string {
+  const access = phaseChunks(definition, 'post-function');
+  expect(access.length, `${definition.name} has no post-function`).toBeGreaterThan(0);
+  return access.at(-1) ?? '';
+}
+
+/**
+ * The raw paths a service's pre-function lets through (story 19.1's
+ * rehearsal: Kong 2.8 matches a regex route on the normalized path, so each
+ * route refuses any spelling but its own, before any other plugin), or
+ * `null` when it has no such table.
+ */
+function guardedPaths(definition: KongService): string[] | null {
+  const first = phaseChunks(definition, 'pre-function')[0] ?? '';
+  const table = /^\s*local allowed = \{ (.*) \}$/m.exec(first)?.[1];
+  if (table === undefined) return null;
+  expect(first).toContain('if not allowed[kong.request.get_path()] then');
+  expect(first).toContain(`return kong.response.exit(404, '{"message":"no Route matched with those values"}'`);
+  return [...table.matchAll(/\["([^"]+)"\] = true/g)].map((match) => match[1] ?? '');
+}
+
+/**
+ * A stand-in for Kong's PDK, ngx and the two modules the sandbox may require,
+ * in Lua, so the rendered chunks RUN here: `kong.response.exit` records the
+ * answer and stops the chunk (as ngx.exit does), `ngx.timer.at` records the
+ * callback, which runs after the chunks, and `resty.http` records each relay.
+ * `cjson.safe` is a small JSON reader and writer (the writer sorts keys).
+ * fengari is Lua 5.3 and Kong runs LuaJIT: only the rehearsal (spec,
+ * Verification) proves the chunks run on the pinned image.
+ */
+const KONG_STAND_IN = String.raw`
+local json = { null = setmetatable({}, { __tostring = function() return "null" end }) }
+local function skip(s, i) return (s:find("[^ \t\r\n]", i)) or (#s + 1) end
+local value_at
+local function string_at(s, i)
+  local out, j = {}, i + 1
+  while true do
+    local c = s:sub(j, j)
+    if c == "" then error("unterminated string") end
+    if c == '"' then return table.concat(out), j + 1 end
+    if c == "\\" then
+      local e = s:sub(j + 1, j + 1)
+      local map = { ['"'] = '"', ["\\"] = "\\", ["/"] = "/", b = "\b", f = "\f", n = "\n", r = "\r", t = "\t" }
+      if map[e] then out[#out + 1] = map[e]; j = j + 2
+      elseif e == "u" then
+        local code = tonumber(s:sub(j + 2, j + 5), 16)
+        if not code then error("bad escape") end
+        out[#out + 1] = utf8.char(code); j = j + 6
+      else error("bad escape") end
+    else out[#out + 1] = c; j = j + 1 end
+  end
+end
+value_at = function(s, i)
+  i = skip(s, i)
+  local c = s:sub(i, i)
+  if c == "{" then
+    local object = {}
+    i = skip(s, i + 1)
+    if s:sub(i, i) == "}" then return object, i + 1 end
+    while true do
+      if s:sub(i, i) ~= '"' then error("expected a key") end
+      local key; key, i = string_at(s, i)
+      i = skip(s, i)
+      if s:sub(i, i) ~= ":" then error("expected a colon") end
+      local value; value, i = value_at(s, i + 1)
+      object[key] = value
+      i = skip(s, i)
+      local d = s:sub(i, i)
+      if d == "}" then return object, i + 1 end
+      if d ~= "," then error("expected a comma") end
+      i = skip(s, i + 1)
+    end
+  elseif c == "[" then
+    local array = {}
+    i = skip(s, i + 1)
+    if s:sub(i, i) == "]" then return array, i + 1 end
+    while true do
+      local value; value, i = value_at(s, i)
+      array[#array + 1] = value
+      i = skip(s, i)
+      local d = s:sub(i, i)
+      if d == "]" then return array, i + 1 end
+      if d ~= "," then error("expected a comma") end
+      i = i + 1
+    end
+  elseif c == '"' then return string_at(s, i)
+  elseif s:sub(i, i + 3) == "true" then return true, i + 4
+  elseif s:sub(i, i + 4) == "false" then return false, i + 5
+  elseif s:sub(i, i + 3) == "null" then return json.null, i + 4
+  end
+  local number = s:match("^-?%d+%.?%d*[eE]?[-+]?%d*", i)
+  if number == nil or number == "" then error("expected a value") end
+  return tonumber(number), i + #number
+end
+function json.decode(s)
+  local value, i = value_at(s, 1)
+  if skip(s, i) <= #s then error("trailing characters") end
+  return value
+end
+function json.encode(v)
+  if v == nil or v == json.null then return "null" end
+  local t = type(v)
+  if t == "boolean" or t == "number" then return tostring(v) end
+  if t == "string" then
+    return '"' .. (v:gsub('[%c"\\]', function(c) return string.format("\\u%04x", c:byte()) end)) .. '"'
+  end
+  if t == "table" then
+    if #v > 0 then
+      local items = {}
+      for _, item in ipairs(v) do items[#items + 1] = json.encode(item) end
+      return "[" .. table.concat(items, ",") .. "]"
+    end
+    local keys = {}
+    for key in pairs(v) do keys[#keys + 1] = tostring(key) end
+    table.sort(keys)
+    local items = {}
+    for _, key in ipairs(keys) do items[#items + 1] = json.encode(key) .. ":" .. json.encode(v[key]) end
+    return "{" .. table.concat(items, ",") .. "}"
+  end
+  return json.encode(tostring(v))
+end
+
+local EXIT = {}
+function run(chunks_json, request_json)
+  local chunks = json.decode(chunks_json)
+  local request = json.decode(request_json)
+  local body = request.body
+  if body == json.null then body = nil end
+  local record = { relays = {}, logs = {}, timers = 0 }
+  local timers = {}
+  local cjson = {
+    decode = function(s) local ok, value = pcall(json.decode, s); if ok then return value end return nil end,
+    encode = json.encode,
+    null = json.null,
+  }
+  local http = {
+    new = function()
+      return {
+        set_timeout = function() end,
+        request_uri = function(_, url, options)
+          record.relays[#record.relays + 1] = { url = url, method = options.method, body = options.body, headers = options.headers }
+          return { status = request.relay_status or 202 }
+        end,
+      }
+    end,
+  }
+  local env = setmetatable({
+    kong = {
+      request = {
+        get_path = function() return request.path end,
+        get_method = function() return request.method end,
+        get_raw_body = function() return body end,
+      },
+      response = {
+        exit = function(status, answer, headers)
+          record.exit = { status = status, body = answer, headers = headers }
+          error(EXIT, 0)
+        end,
+      },
+      client = { get_forwarded_ip = function() return "203.0.113.7" end },
+      service = { request = { set_raw_body = function(raw) record.forwarded = raw end } },
+    },
+    ngx = {
+      ERR = "ERR",
+      log = function(_, ...)
+        local parts = {}
+        for _, part in ipairs({ ... }) do parts[#parts + 1] = tostring(part) end
+        record.logs[#record.logs + 1] = table.concat(parts)
+      end,
+      timer = { at = function(_, callback) timers[#timers + 1] = callback; record.timers = record.timers + 1; return true end },
+      unescape_uri = function(s) return (s:gsub("%%(%x%x)", function(hex) return string.char(tonumber(hex, 16)) end)) end,
+    },
+    require = function(name)
+      if name == "cjson.safe" then return cjson end
+      if name == "resty.http" then return http end
+      error("the sandbox may not require " .. name)
+    end,
+  }, { __index = _G })
+  for _, code in ipairs(chunks) do
+    local chunk, problem = load(code, "chunk", "t", env)
+    if not chunk then record.error = problem; break end
+    local ok, failure = pcall(chunk)
+    if not ok then
+      if failure ~= EXIT then record.error = tostring(failure) end
+      break
+    end
+  end
+  for _, callback in ipairs(timers) do callback(false) end
+  return json.encode(record)
+end
+`;
+
+interface KongRelay {
+  url: string;
+  method: string;
+  body: string;
+  headers: Record<string, string>;
+}
+
+interface KongRun {
+  exit?: { status: number; body: string; headers?: Record<string, string> };
+  relays: KongRelay[];
+  logs: string[];
+  timers: number;
+  forwarded?: string;
+  error?: string;
+}
+
+interface KongRequest {
+  path: string;
+  method: string;
+  /** The raw body; `null` is a body Kong could not read. */
+  body: string | null;
+  /** What the stand-in GoTrue answers a relay with (default 202). */
+  relay_status?: number;
+}
+
+let standIn: unknown = null;
+
+/** Runs a service's rendered access-phase Lua, pre-function first, against one request. */
+function runKongLua(definition: KongService, request: KongRequest): KongRun {
+  if (standIn === null) {
+    standIn = luaState();
+    expect(fengari.lauxlib.luaL_loadstring(standIn, fengari.to_luastring(KONG_STAND_IN))).toBe(fengari.lua.LUA_OK);
+    expect(fengari.lua.lua_pcall(standIn, 0, 0, 0)).toBe(fengari.lua.LUA_OK);
+  }
+  const state = standIn;
+  fengari.lua.lua_getglobal(state, fengari.to_luastring('run'));
+  fengari.lua.lua_pushstring(state, fengari.to_luastring(JSON.stringify(accessChunks(definition))));
+  fengari.lua.lua_pushstring(state, fengari.to_luastring(JSON.stringify(request)));
+  const status = fengari.lua.lua_pcall(state, 2, 1, 0);
+  const answer = fengari.to_jsstring(fengari.lua.lua_tostring(state, -1));
+  fengari.lua.lua_pop(state, 1);
+  expect(status, answer).toBe(fengari.lua.LUA_OK);
+  // The writer cannot tell an empty list from an empty object.
+  const parsed = JSON.parse(answer) as Omit<KongRun, 'relays' | 'logs'> & { relays: unknown; logs: unknown };
+  const relays = Array.isArray(parsed.relays) ? (parsed.relays as KongRelay[]) : [];
+  const logs = Array.isArray(parsed.logs) ? (parsed.logs as string[]) : [];
+  expect(parsed.error, `${definition.name} failed in Lua: ${parsed.error ?? ''}`).toBeUndefined();
+  return { ...parsed, relays, logs };
+}
+
+/** Lua with its comments and string literals removed: what a syntax check may read. */
+function luaWithoutStringsAndComments(code: string): string {
+  let out = '';
+  let at = 0;
+  while (at < code.length) {
+    if (code.startsWith('--[[', at)) {
+      const end = code.indexOf(']]', at + 4);
+      at = end < 0 ? code.length : end + 2;
+    } else if (code.startsWith('--', at)) {
+      const end = code.indexOf('\n', at);
+      at = end < 0 ? code.length : end;
+    } else if (code.startsWith('[[', at)) {
+      const end = code.indexOf(']]', at + 2);
+      at = end < 0 ? code.length : end + 2;
+      out += '""';
+    } else if (code[at] === '"' || code[at] === "'") {
+      const quote = code[at];
+      let end = at + 1;
+      while (end < code.length && code[end] !== quote) end += code[end] === '\\' ? 2 : 1;
+      at = end + 1;
+      out += '""';
+    } else {
+      out += code[at];
+      at += 1;
+    }
+  }
+  return out;
+}
+
+/** The Lua 5.3 syntax LuaJIT (Kong's) does not have, in code with no strings or comments. */
+const LUA_53_ONLY: readonly (readonly [string, RegExp])[] = [
+  ['integer division //', /\/\//],
+  ['bitwise &', /&/],
+  ['bitwise |', /\|/],
+  ['bitwise ~', /~(?!=)/],
+  ['shift <<', /<</],
+  ['shift >>', />>/],
+  ['the utf8 library', /\butf8\./],
+];
+
+function lua53Only(code: string): string[] {
+  const plain = luaWithoutStringsAndComments(code);
+  return LUA_53_ONLY.filter(([, pattern]) => pattern.test(plain)).map(([name]) => name);
+}
+
+/** The predicate as Kong runs it: cut from the rendered mail post-function. */
+function renderedPredicate(config: KongConfig): string {
+  const lua = accessLua(kongService(config, 'auth-v1-mail'));
+  const start = lua.indexOf('local function address_kind(');
+  const end = lua.indexOf('-- end address_kind');
+  expect(start, 'the mail route has no address_kind').toBeGreaterThanOrEqual(0);
+  expect(end, 'the mail route has no end of address_kind').toBeGreaterThan(start);
+  return lua.slice(start, end);
+}
+
+/** Runs the predicate on one address in a Lua state that holds it. */
+function luaAddressKind(state: unknown, address: string | null): string {
+  fengari.lua.lua_getglobal(state, fengari.to_luastring('address_kind'));
+  if (address === null) fengari.lua.lua_pushnil(state);
+  else fengari.lua.lua_pushstring(state, fengari.to_luastring(address));
+  const status = fengari.lua.lua_pcall(state, 1, 1, 0);
+  const answer = fengari.to_jsstring(fengari.lua.lua_tostring(state, -1));
+  fengari.lua.lua_pop(state, 1);
+  expect(status, answer).toBe(fengari.lua.LUA_OK);
+  return answer;
+}
+
+/**
+ * Kong 2.8's answer for a raw path, as far as these routes need it. The
+ * router (modelled here in JavaScript) matches the NORMALIZED path
+ * (percent-decoded, `//` collapsed: what the spec's rehearsal found on the
+ * pinned image): a route path with a regex character is a regex anchored at
+ * the start (the `$` anchors the end), any other is a prefix, and regex
+ * routes are tried first. Then the matched route's own rendered Lua decides,
+ * run in fengari: a 404 from its pre-function or post-function is no route.
+ * The rehearsal (spec, Verification) runs the real router.
+ */
+function kongRouteFor(config: KongConfig, method: string, raw: string): string | null {
+  const normalized = (() => {
+    try {
+      return decodeURIComponent(raw).replace(/\/{2,}/g, '/');
+    } catch {
+      return raw.replace(/\/{2,}/g, '/');
+    }
+  })();
+  const matched = kongRouteForNormalized(config, method, normalized);
+  if (matched === null) return null;
+  const answered = runKongLua(kongService(config, matched), { path: raw, method, body: '{}' });
+  return answered.exit?.status === 404 ? null : matched;
+}
+
+function kongRouteForNormalized(config: KongConfig, method: string, path: string): string | null {
+  const candidates = config.services.flatMap((definition) =>
+    (definition.routes ?? []).flatMap((route) =>
+      (route.paths ?? []).map((routePath) => ({ name: definition.name, methods: route.methods, routePath })),
+    ),
+  );
+  const regex = (routePath: string): boolean => /[^A-Za-z0-9._~/%-]/.test(routePath);
+  const fits = (methods: string[] | undefined): boolean => methods === undefined || methods.includes(method);
+  for (const candidate of candidates.filter(({ routePath }) => regex(routePath))) {
+    if (fits(candidate.methods) && new RegExp(`^${candidate.routePath}`).test(path)) return candidate.name;
+  }
+  const prefixes = candidates
+    .filter(({ routePath }) => !regex(routePath))
+    .sort((a, b) => b.routePath.length - a.routePath.length);
+  for (const candidate of prefixes) {
+    if (fits(candidate.methods) && path.startsWith(candidate.routePath)) return candidate.name;
+  }
+  return null;
+}
+
+/** The auth service's environment, its `${…}` resolved from a template and the fake inputs. */
+function resolvedAuthEnvironment(template: Map<string, string>, extra: Readonly<Record<string, string>> = {}): Record<string, string> {
+  const inputs: Record<string, string> = { ...Object.fromEntries(template), SHIFT_APP_URL: FAKE.SHIFT_APP_URL, ...extra };
+  const resolved: Record<string, string> = {};
+  for (const [key, value] of environment('supabase-auth')) {
+    resolved[key] = value.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*)|:\?)?\}/g, (_, name: string, fallback?: string) => {
+      const given = inputs[name];
+      return given !== undefined && given !== '' ? given : (fallback ?? '');
+    });
+  }
+  return resolved;
+}
+
+/**
+ * Runs the compose's own auth wrapper under `sh` (or busybox's), with `wget`
+ * answering from `served` (URL → body; a missing URL fails as a 404 does),
+ * each URL failing its first `failFirst` fetches, `sleep` recorded rather than
+ * slept, and `auth` standing in for GoTrue. Returns the status, stderr,
+ * whether GoTrue was started, and how many fetches and sleeps there were.
+ */
+function runAuthEntrypoint(
+  env: Readonly<Record<string, string>>,
+  served: Readonly<Record<string, string>> = {},
+  shell: 'host' | 'busybox' = 'host',
+  failFirst = 0,
+): { status: number; stderr: string; started: boolean; fetches?: number; sleeps?: number } {
+  const directory = mkdtempSync(join(tmpdir(), 'shift-auth-'));
+  try {
+    const bin = join(directory, 'bin');
+    const pages = join(directory, 'pages');
+    mkdirSync(bin);
+    mkdirSync(pages);
+    const script = join(directory, 'auth-entrypoint.sh');
+    writeFileSync(script, boundContent('supabase-auth', '/usr/local/etc/auth-entrypoint.sh'));
+    const named = Object.entries(served).map(([url, body], index) => ({ url, file: join(pages, String(index)), body }));
+    for (const { file, body } of named) writeFileSync(file, body);
+    const cases = named
+      .map(({ url, file }) => `  '${url}') [ "$(wc -l < '${file}.tries')" -gt ${String(failFirst)} ] || exit 8; cat '${file}' ;;`)
+      .join('\n');
+    for (const { file } of named) writeFileSync(`${file}.tries`, '');
+    const counter = join(directory, 'counts');
+    writeFileSync(
+      join(bin, 'wget'),
+      `#!/bin/sh\nfor last; do :; done\necho fetch >> '${counter}'\ncase "$last" in\n${named
+        .map(({ url, file }) => `  '${url}') echo x >> '${file}.tries' ;;`)
+        .join('\n')}\nesac\ncase "$last" in\n${cases}\n  *) exit 8 ;;\nesac\n`,
+      { mode: 0o755 },
+    );
+    writeFileSync(join(bin, 'sleep'), `#!/bin/sh\necho sleep >> '${counter}'\n`, { mode: 0o755 });
+    writeFileSync(counter, '');
+    writeFileSync(join(bin, 'auth'), '#!/bin/sh\necho AUTH_STARTED\n', { mode: 0o755 });
+    const counted = (): { fetches: number; sleeps: number } => {
+      const lines = readFileSync(counter, 'utf8').split('\n');
+      return { fetches: lines.filter((line) => line === 'fetch').length, sleeps: lines.filter((line) => line === 'sleep').length };
+    };
+    let path = `${bin}:${process.env['PATH'] ?? '/usr/bin:/bin'}`;
+    if (shell === 'busybox' && BUSYBOX !== null) {
+      for (const applet of ['sh', '[', 'cat']) symlinkSync(BUSYBOX, join(bin, applet));
+      path = `${bin}:/nonexistent`;
+    }
+    try {
+      const stdout = execFileSync(shell === 'busybox' && BUSYBOX !== null ? BUSYBOX : 'sh', shell === 'busybox' ? ['sh', script] : [script], {
+        env: { ...env, PATH: path },
+        stdio: ['ignore', 'pipe', 'pipe'],
+        encoding: 'utf8',
+      });
+      const result = { status: 0, stderr: '', started: stdout.includes('AUTH_STARTED') };
+      return failFirst > 0 ? { ...result, ...counted() } : result;
+    } catch (error) {
+      const failed = error as { status?: number; stderr?: string; stdout?: string };
+      const result = { status: failed.status ?? -1, stderr: String(failed.stderr ?? ''), started: String(failed.stdout ?? '').includes('AUTH_STARTED') };
+      return failFirst > 0 ? { ...result, ...counted() } : result;
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+/** The three templates GoTrue would fetch, as the web build emits them, at the fake origin. */
+function servedTemplates(): Record<string, string> {
+  const resource = JSON.parse(
+    readFileSync(join(repoRoot, 'apps', 'web', 'src', 'lib', 'i18n', 'locales', 'hr.json'), 'utf8'),
+  ) as unknown;
+  return Object.fromEntries(
+    authEmailTemplates(resource).map(({ file, html }) => [`${FAKE.SHIFT_APP_URL}/auth-email/${file}`, html]),
+  );
+}
+
+describe('the self-hosted stack (story 19.1): the signup door in GoTrue (AD-21)', () => {
+  const staging = envTemplate('staging.env.example');
+  const production = envTemplate('production.env.example');
+  /** A staging stack with every guard met: the key is a fake, never a real one. */
+  const open = (): Record<string, string> => resolvedAuthEnvironment(staging, { GOTRUE_SMTP_PASS: 'not-a-real-key' });
+
+  it('shuts the door by default, keeps it shut in production and opens it on staging alone', () => {
+    const env = environment('supabase-auth');
+    expect(env.get('GOTRUE_DISABLE_SIGNUP')).toBe('${SHIFT_DISABLE_SIGNUP:-true}');
+    expect(env.get('GOTRUE_MAILER_AUTOCONFIRM')).toBe('${SHIFT_MAILER_AUTOCONFIRM:-true}');
+    expect(production.get('SHIFT_DISABLE_SIGNUP'), 'production.env.example opens the door').toBe('true');
+    expect(production.get('SHIFT_MAILER_AUTOCONFIRM'), 'production.env.example turns confirmations off').toBe('true');
+    expect(staging.get('SHIFT_DISABLE_SIGNUP')).toBe('false');
+    expect(staging.get('SHIFT_MAILER_AUTOCONFIRM')).toBe('false');
+  });
+
+  it('runs GoTrue through the wrapper, which ends by starting the image’s own command', () => {
+    expect(service('supabase-auth').entrypoint).toEqual(['sh', '/usr/local/etc/auth-entrypoint.sh']);
+    const wrapper = boundContent('supabase-auth', '/usr/local/etc/auth-entrypoint.sh');
+    expect(wrapper.trimEnd().split('\n').at(-1)).toBe('exec auth');
+    expect(wrapper).not.toMatch(/^\s*eval\b/m);
+    // Coolify reads `${…}` as its own variables: the wrapper uses none.
+    expect(wrapper).not.toContain('${');
+    // The key is tested for presence, never printed: twice, the open door's
+    // guard and the mail checks' condition.
+    expect([...wrapper.matchAll(/\$GOTRUE_SMTP_PASS\b/g)].length).toBe(2);
+    expect(wrapper).toContain('[ -n "$GOTRUE_SMTP_PASS" ] || refuse');
+    expect(wrapper).toContain('if [ "$GOTRUE_DISABLE_SIGNUP" = false ] || [ -n "$GOTRUE_SMTP_PASS" ]; then');
+  });
+
+  it('starts a shut stack with no SMTP key, and staging’s open door with every guard met', () => {
+    // busybox's sh runs its own `wget` applet whatever PATH says, so the
+    // template fetch is stubbed under the host's sh only; busybox runs every
+    // guard before it (GoTrue's image is Alpine, its sh busybox's).
+    if (BUSYBOX !== null) {
+      expect(runAuthEntrypoint(resolvedAuthEnvironment(production), {}, 'busybox'), 'busybox production').toEqual({
+        status: 0,
+        stderr: '',
+        started: true,
+      });
+    }
+    expect(runAuthEntrypoint(resolvedAuthEnvironment(production)), 'production').toEqual({ status: 0, stderr: '', started: true });
+    expect(runAuthEntrypoint(open(), servedTemplates()), 'staging').toEqual({ status: 0, stderr: '', started: true });
+    // The compose default with no environment at all is a shut door.
+    const bare = resolvedAuthEnvironment(new Map());
+    expect(bare['GOTRUE_DISABLE_SIGNUP']).toBe('true');
+    expect(runAuthEntrypoint(bare).started).toBe(true);
+  });
+
+  it('refuses any boolean that is not exactly true or false, as Go’s ParseBool would read it', () => {
+    const booleans = [...environment('supabase-auth').entries()]
+      .filter(([, value]) => value === 'true' || value === 'false' || /:-(true|false)\}$/.test(value))
+      .map(([key]) => key);
+    expect(booleans.length, 'too few booleans were read').toBeGreaterThanOrEqual(10);
+    for (const name of booleans) {
+      for (const odd of ['0', '1', 'f', 't', 'False', 'TRUE', '', ' true']) {
+        const result = runAuthEntrypoint({ ...resolvedAuthEnvironment(production), [name]: odd });
+        expect(result.status, `${name}=${JSON.stringify(odd)}`).not.toBe(0);
+        expect(result.started).toBe(false);
+        expect(result.stderr).toContain(`${name} is not exactly true or false`);
+      }
+    }
+  });
+
+  it('refuses a half-built open door and names the guard', () => {
+    const urls = servedTemplates();
+    const recovery = `${FAKE.SHIFT_APP_URL}/auth-email/recovery.html`;
+    const cases: [Record<string, string>, Record<string, string>, string][] = [
+      [{ GOTRUE_MAILER_AUTOCONFIRM: 'true' }, urls, 'GOTRUE_MAILER_AUTOCONFIRM'],
+      [{ GOTRUE_SMTP_PASS: '' }, urls, 'GOTRUE_SMTP_PASS'],
+      [{ GOTRUE_SMTP_HOST: '' }, urls, 'GOTRUE_SMTP_HOST'],
+      [{ GOTRUE_SMTP_USER: '' }, urls, 'GOTRUE_SMTP_USER'],
+      [{ GOTRUE_SMTP_ADMIN_EMAIL: '' }, urls, 'GOTRUE_SMTP_ADMIN_EMAIL'],
+      [{ GOTRUE_HOOK_BEFORE_USER_CREATED_ENABLED: 'false' }, urls, 'before-user-created hook off'],
+      [{ GOTRUE_HOOK_BEFORE_USER_CREATED_URI: 'pg-functions://postgres/public/custom_access_token_hook' }, urls, 'GOTRUE_HOOK_BEFORE_USER_CREATED_URI'],
+      [{ GOTRUE_RATE_LIMIT_HEADER: '' }, urls, 'GOTRUE_RATE_LIMIT_HEADER'],
+      [{ GOTRUE_MAILER_OTP_EXP: '3601' }, urls, 'GOTRUE_MAILER_OTP_EXP'],
+      [{ GOTRUE_MAILER_OTP_EXP: '86400' }, urls, 'GOTRUE_MAILER_OTP_EXP'],
+      [{ GOTRUE_MAILER_OTP_EXP: '0' }, urls, 'GOTRUE_MAILER_OTP_EXP'],
+      [{ GOTRUE_MAILER_OTP_EXP: '' }, urls, 'GOTRUE_MAILER_OTP_EXP'],
+      [{ GOTRUE_MAILER_OTP_EXP: '1h' }, urls, 'GOTRUE_MAILER_OTP_EXP'],
+      [{ GOTRUE_MAILER_OTP_LENGTH: '6' }, urls, 'GOTRUE_MAILER_OTP_LENGTH'],
+      [{ GOTRUE_MAILER_OTP_LENGTH: '' }, urls, 'GOTRUE_MAILER_OTP_LENGTH'],
+      [{ GOTRUE_MAILER_TEMPLATES_RECOVERY: recovery.replace('https:', 'http:') }, urls, 'GOTRUE_MAILER_TEMPLATES_RECOVERY is not an https URL'],
+      [{}, Object.fromEntries(Object.entries(urls).filter(([url]) => url !== recovery)), 'GOTRUE_MAILER_TEMPLATES_RECOVERY does not answer 200'],
+      [{}, { ...urls, [recovery]: '<p>{{ .ConfirmationURL }}</p>' }, 'GOTRUE_MAILER_TEMPLATES_RECOVERY serves no token_hash link'],
+    ];
+    for (const shell of BUSYBOX === null ? (['host'] as const) : (['host', 'busybox'] as const)) {
+      for (const [override, served, named] of cases) {
+        // Under busybox, only the guards before the fetch (see above).
+        if (shell === 'busybox' && named.startsWith('GOTRUE_MAILER_TEMPLATES_')) continue;
+        const result = runAuthEntrypoint({ ...open(), ...override }, served, shell);
+        expect(result.status, `${shell} ${JSON.stringify(override)} ${named}`).not.toBe(0);
+        expect(result.started, named).toBe(false);
+        expect(result.stderr, named).toContain(named);
+      }
+    }
+    // Every guard the open door needs is one the shut door does not: the same
+    // overrides on production's environment all start.
+    for (const [override] of cases) {
+      expect(runAuthEntrypoint({ ...resolvedAuthEnvironment(production), ...override }).started, JSON.stringify(override)).toBe(true);
+    }
+  });
+
+  it('retries a template fetch 6 times, 5 s apart, before refusing, so a slow web origin does not crash-loop sign-in', () => {
+    // COUPLED TO THE APP ORIGIN (DEPLOY.md §9.9). Each URL fails its first
+    // five fetches and then answers: the start goes on.
+    const late = runAuthEntrypoint(open(), servedTemplates(), 'host', 5);
+    expect(late.started, late.stderr).toBe(true);
+    expect(late.fetches).toBe(18);
+    expect(late.sleeps).toBe(15);
+    // Six failures each: refused after the sixth try, five sleeps.
+    const down = runAuthEntrypoint(open(), servedTemplates(), 'host', 6);
+    expect(down.started).toBe(false);
+    expect(down.stderr).toContain('GOTRUE_MAILER_TEMPLATES_CONFIRMATION does not answer 200');
+    expect(down.fetches).toBe(6);
+    expect(down.sleeps).toBe(5);
+  });
+
+  it('checks the OTP and the templates whenever GoTrue can send mail, on a shut stack too', () => {
+    // Production with a key set: recovery and resend still reach GoTrue.
+    const shutWithKey = (): Record<string, string> => resolvedAuthEnvironment(production, { GOTRUE_SMTP_PASS: 'not-a-real-key' });
+    expect(runAuthEntrypoint(shutWithKey(), servedTemplates()).started).toBe(true);
+    const recovery = `${FAKE.SHIFT_APP_URL}/auth-email/recovery.html`;
+    for (const [override, served, named] of [
+      [{ GOTRUE_MAILER_OTP_LENGTH: '6' }, servedTemplates(), 'GOTRUE_MAILER_OTP_LENGTH is not 10'],
+      [{ GOTRUE_MAILER_OTP_EXP: '86400' }, servedTemplates(), 'GOTRUE_MAILER_OTP_EXP'],
+      [{}, { ...servedTemplates(), [recovery]: '<p>{{ .ConfirmationURL }}</p>' }, 'GOTRUE_MAILER_TEMPLATES_RECOVERY serves no token_hash link'],
+      [{}, {}, 'GOTRUE_MAILER_TEMPLATES_CONFIRMATION does not answer 200'],
+    ] as const) {
+      const result = runAuthEntrypoint({ ...shutWithKey(), ...override }, served);
+      expect(result.started, named).toBe(false);
+      expect(result.stderr, named).toContain(named);
+    }
+    // With no key, a shut stack sends nothing and checks none of it.
+    expect(runAuthEntrypoint({ ...resolvedAuthEnvironment(production), GOTRUE_MAILER_OTP_LENGTH: '6' }).started).toBe(true);
+  });
+
+  it('builds every link on the site URL, which is the app origin', () => {
+    expect(environment('supabase-auth').get('GOTRUE_SITE_URL')).toBe('${SHIFT_APP_URL:?}');
+    for (const html of Object.values(servedTemplates())) {
+      const links = [...html.matchAll(/href="([^"]*)"/g)].map((match) => match[1] ?? '');
+      expect(links.length).toBeGreaterThan(0);
+      for (const link of links) expect(link.startsWith('{{ .SiteURL }}/potvrda?token_hash={{ .TokenHash }}&amp;type='), link).toBe(true);
+    }
+  });
+
+  it('sets the OTP bound, the client-address header and GoTrue’s own limits', () => {
+    const env = environment('supabase-auth');
+    expect(env.get('GOTRUE_MAILER_OTP_EXP')).toBe('3600');
+    expect(env.get('GOTRUE_MAILER_OTP_LENGTH')).toBe('10');
+    expect(env.get('GOTRUE_RATE_LIMIT_HEADER')).toBe('X-Real-IP');
+    expect(env.get('GOTRUE_RATE_LIMIT_EMAIL_SENT')).toBe('${SHIFT_AUTH_EMAIL_PER_HOUR:-10}');
+    expect(staging.get('SHIFT_AUTH_EMAIL_PER_HOUR')).toBe('10');
+    expect(env.get('GOTRUE_RATE_LIMIT_VERIFY')).toBe('30');
+    expect(env.get('GOTRUE_RATE_LIMIT_TOKEN_REFRESH')).toBe('150');
+    expect(env.get('GOTRUE_SMTP_MAX_FREQUENCY')).toBe('60s');
+    // Resend's SMTP (AD-17 as amended); the key is GoTrue's own.
+    expect(env.get('GOTRUE_SMTP_HOST')).toBe('smtp.resend.com');
+    expect(env.get('GOTRUE_SMTP_PORT')).toBe('465');
+    expect(env.get('GOTRUE_SMTP_USER')).toBe('resend');
+    expect(env.get('GOTRUE_SMTP_PASS')).toBe('${GOTRUE_SMTP_PASS:-}');
+    expect(env.get('GOTRUE_HOOK_BEFORE_USER_CREATED_ENABLED')).toBe('true');
+    expect(env.get('GOTRUE_HOOK_BEFORE_USER_CREATED_URI')).toBe('pg-functions://postgres/public/before_user_created_hook');
+    for (const [variable, file] of [
+      ['GOTRUE_MAILER_TEMPLATES_CONFIRMATION', 'confirmation.html'],
+      ['GOTRUE_MAILER_TEMPLATES_RECOVERY', 'recovery.html'],
+      ['GOTRUE_MAILER_TEMPLATES_EMAIL_CHANGE', 'email-change.html'],
+    ] as const) {
+      expect(env.get(variable)).toBe(`\${SHIFT_APP_URL:?}/auth-email/${file}`);
+    }
+  });
+});
+
+describe('the self-hosted stack (story 19.1): Kong is the anti-enumeration boundary (AD-22)', () => {
+  const staging = envTemplate('staging.env.example');
+  const production = envTemplate('production.env.example');
+
+  it('loads rate-limiting and a sandbox that may require resty.http and cjson.safe alone, and hides its headers', () => {
+    const env = environment('supabase-kong');
+    expect(env.get('KONG_PLUGINS')?.split(',').sort()).toEqual(
+      ['acl', 'cors', 'key-auth', 'pre-function', 'post-function', 'rate-limiting', 'request-transformer'].sort(),
+    );
+    expect(env.get('KONG_UNTRUSTED_LUA')).toBe('sandbox');
+    expect(env.get('KONG_UNTRUSTED_LUA_SANDBOX_REQUIRES')).toBe('resty.http,cjson.safe');
+    expect(env.get('KONG_HEADERS')).toBe('off');
+    expect(env.get('KONG_TRUSTED_IPS')).toBe('${SHIFT_PROXY_CIDR:?}');
+    expect(env.get('KONG_REAL_IP_HEADER')).toBe('X-Forwarded-For');
+    expect(env.get('KONG_REAL_IP_RECURSIVE')).toBe('on');
+    for (const [file, template] of [
+      ['staging.env.example', staging],
+      ['production.env.example', production],
+    ] as const) {
+      expect(template.get('SHIFT_PROXY_CIDR'), `${file} names a network`).toBe('<proxy-cidr>');
+    }
+  });
+
+  it('refuses to start Kong trusting every address, or no list at all', () => {
+    const refused = [
+      '',
+      '0.0.0.0/0',
+      '::/0',
+      '192.0.2.0/24,0.0.0.0/0',
+      '0.0.0.0/00',
+      '192.0.2.0/24,',
+      ',192.0.2.0/24',
+      '192.0.2.0/24 ',
+      '192.0.2.0/24;x',
+      '*',
+      // Wider than an IPv4 /8 or an IPv6 /32 trusts strangers too.
+      '10.0.0.0/7',
+      '128.0.0.0/1',
+      '2001:db8::/31',
+      '2000::/3',
+      '192.0.2.0/24/8',
+      '192.0.2.0/abc',
+      '192.0.2.0/1000',
+    ];
+    for (const shell of BUSYBOX === null ? (['host'] as const) : (['host', 'busybox'] as const)) {
+      for (const trusted of refused) {
+        const { status, rendered } = runKongEntrypoint({ ...FAKE, KONG_TRUSTED_IPS: trusted }, shell);
+        expect(status, `${shell} ${JSON.stringify(trusted)}`).not.toBe(0);
+        expect(rendered).toBe('');
+      }
+      for (const accepted of ['192.0.2.0/24,2001:db8::/32', '10.0.0.0/8', '192.0.2.7', '2001:db8::/128', '172.16.0.0/12,fd00::/48']) {
+        expect(runKongEntrypoint({ ...FAKE, KONG_TRUSTED_IPS: accepted }, shell).status, `${shell} ${accepted}`).toBe(0);
+      }
+    }
+    const { KONG_TRUSTED_IPS: _unset, ...withoutTrusted } = FAKE;
+    expect(runKongEntrypoint(withoutTrusted).status).not.toBe(0);
+  });
+
+  it('is an allow-list under /auth/v1/: each route anchored, every other path and method Kong’s 404', () => {
+    const config = renderedKong();
+    const auth = config.services
+      .map((definition) => ({
+        name: definition.name,
+        routes: (definition.routes ?? []).filter((route) => (route.paths ?? []).some((path) => path.startsWith('/auth/v1/'))),
+      }))
+      .filter(({ routes }) => routes.length > 0)
+      .map(({ name, routes }) => ({ name, methods: routes[0]?.methods ?? null, paths: routes.flatMap((route) => route.paths ?? []) }));
+    expect(auth).toEqual([
+      { name: 'auth-v1-mail', methods: ['POST', 'OPTIONS'], paths: ['/auth/v1/signup$', '/auth/v1/recover$', '/auth/v1/resend$'] },
+      { name: 'auth-v1-token', methods: ['POST', 'OPTIONS'], paths: ['/auth/v1/token$'] },
+      { name: 'auth-v1-verify', methods: ['POST', 'OPTIONS'], paths: ['/auth/v1/verify$'] },
+      { name: 'auth-v1-user', methods: ['GET', 'PUT', 'OPTIONS'], paths: ['/auth/v1/user$'] },
+      { name: 'auth-v1-logout', methods: ['POST', 'OPTIONS'], paths: ['/auth/v1/logout$'] },
+      { name: 'auth-v1-health', methods: ['GET', 'OPTIONS'], paths: ['/auth/v1/health$'] },
+      { name: 'auth-v1-open-jwks', methods: ['GET', 'OPTIONS'], paths: ['/auth/v1/\\.well-known/jwks\\.json$'] },
+      { name: 'auth-v1-admin', methods: ['GET', 'POST', 'PUT', 'DELETE'], paths: ['/auth/v1/admin/'] },
+    ]);
+    // No catch-all is left, under any name.
+    expect(config.services.map(({ name }) => name)).not.toContain('auth-v1');
+    expect(config.services.map(({ name }) => name)).not.toContain('auth-v1-open');
+
+    const allowed: [string, string, string][] = [
+      ['POST', '/auth/v1/signup', 'auth-v1-mail'],
+      ['POST', '/auth/v1/recover', 'auth-v1-mail'],
+      ['POST', '/auth/v1/resend', 'auth-v1-mail'],
+      ['OPTIONS', '/auth/v1/signup', 'auth-v1-mail'],
+      ['POST', '/auth/v1/token', 'auth-v1-token'],
+      ['POST', '/auth/v1/verify', 'auth-v1-verify'],
+      ['GET', '/auth/v1/user', 'auth-v1-user'],
+      ['PUT', '/auth/v1/user', 'auth-v1-user'],
+      ['POST', '/auth/v1/logout', 'auth-v1-logout'],
+      ['GET', '/auth/v1/health', 'auth-v1-health'],
+      ['GET', '/auth/v1/.well-known/jwks.json', 'auth-v1-open-jwks'],
+      ['POST', '/auth/v1/admin/users', 'auth-v1-admin'],
+      ['GET', '/auth/v1/admin/users/8d0f1a3c-5e7b-4d1f-9a3c-5e7b9d1f3a5c', 'auth-v1-admin'],
+      ['PUT', '/auth/v1/admin/users/x', 'auth-v1-admin'],
+      ['DELETE', '/auth/v1/admin/users/x', 'auth-v1-admin'],
+      ['POST', '/rest/v1/rpc/create_organization', 'rest-v1-create-organization'],
+    ];
+    for (const [method, path, name] of allowed) expect(kongRouteFor(config, method, path), `${method} ${path}`).toBe(name);
+
+    const closed = [
+      '/auth/v1/otp',
+      '/auth/v1/magiclink',
+      '/auth/v1/reauthenticate',
+      '/auth/v1/invite',
+      '/auth/v1/authorize',
+      '/auth/v1/callback',
+      '/auth/v1/factors',
+      '/auth/v1/sso',
+      '/auth/v1/settings',
+      '/auth/v1/signup/',
+      '/auth/v1//signup',
+      '//auth/v1/signup',
+      '/auth/v1/signup;x',
+      '/auth/v1/sign%75p',
+      '/auth/v1/SIGNUP',
+      '/auth/v1/token/',
+      '/auth/v1/verify/x',
+      '/auth/v1/userx',
+      '/auth/v1/xwell-known/jwksxjson',
+      '/auth/v1/',
+      '/auth/v1',
+      '/auth/v1/recover%2f',
+      '/rest/v1/rpc/create%5Forganization',
+      '/rest/v1/rpc//create_organization',
+      '//rest/v1/rpc/create_organization',
+      '/auth/v1/admin//users',
+      '/auth/v1/admin/users;x',
+      '/auth/v1/admin/%75sers',
+      '/auth/v1/admin/../token',
+      '/auth/v1/admin/./users',
+    ];
+    for (const path of closed) {
+      for (const method of ['GET', 'POST', 'PUT']) {
+        expect(kongRouteFor(config, method, path), `${method} ${path}`).toBeNull();
+      }
+    }
+    // Every regex route's pre-function guards its raw path: exactly its own
+    // paths pass, and each variant of them is the 404, run in the Lua.
+    for (const definition of config.services) {
+      const regexPaths = (definition.routes ?? []).flatMap((route) => route.paths ?? []).filter((path) => path.endsWith('$'));
+      if (regexPaths.length === 0) {
+        expect(guardedPaths(definition), `${definition.name} guards a prefix route`).toBeNull();
+        continue;
+      }
+      const own = regexPaths.map((path) => path.slice(0, -1).replaceAll('\\.', '.'));
+      expect(guardedPaths(definition), definition.name).toEqual(own);
+      for (const path of own) {
+        const segments = path.split('/');
+        const last = segments.at(-1) ?? '';
+        const variants = [
+          `${path}/`,
+          path.replace('/v1/', '/v1//'),
+          `/${path}`,
+          `${path};x`,
+          path.toUpperCase(),
+          [...segments.slice(0, -1), `%${last.charCodeAt(0).toString(16)}${last.slice(1)}`].join('/'),
+        ];
+        const guard: KongService = { ...definition, plugins: (definition.plugins ?? []).filter((plugin) => plugin.name === 'pre-function') };
+        expect(runKongLua(guard, { path, method: 'POST', body: '{}' }).exit, `${path} is refused by its own guard`).toBeUndefined();
+        for (const variant of variants) {
+          expect(runKongLua(guard, { path: variant, method: 'POST', body: '{}' }).exit?.status, `${definition.name} ${variant}`).toBe(404);
+        }
+      }
+    }
+    // The admin API is a prefix, guarded by its own rule: no cors (no browser
+    // calls it) and its pre-function first, before key-auth.
+    const admin = kongService(config, 'auth-v1-admin');
+    expect(admin.plugins?.map((plugin) => plugin.name)).toEqual(['pre-function', 'key-auth', 'request-transformer', 'acl']);
+    // A GET on verify consumes nothing: no route takes it.
+    expect(kongRouteFor(config, 'GET', '/auth/v1/verify')).toBeNull();
+    expect(kongRouteFor(config, 'GET', '/auth/v1/signup')).toBeNull();
+  });
+
+  it('limits the mail routes, the token and verify routes and create_organization per IP, from the compose’s variables', () => {
+    const config = renderedKong();
+    const expected: Record<string, Record<string, number>> = {
+      'auth-v1-mail': { hour: 5, day: 20 },
+      'auth-v1-token': { minute: 60, hour: 1440 },
+      'auth-v1-verify': { minute: 15, hour: 360 },
+      'rest-v1-create-organization': { hour: 10 },
+    };
+    const limited = config.services.filter((definition) => pluginOf(definition, 'rate-limiting') !== undefined).map(({ name }) => name);
+    expect(limited.sort()).toEqual(Object.keys(expected).sort());
+    for (const [name, windows] of Object.entries(expected)) {
+      expect(pluginOf(kongService(config, name), 'rate-limiting'), name).toEqual({
+        ...windows,
+        limit_by: 'ip',
+        policy: 'local',
+        hide_client_headers: true,
+      });
+    }
+    // Each limit is a compose variable defaulting to staging's value, which
+    // both templates carry until D-S5 sets production's.
+    const env = environment('supabase-kong');
+    for (const [name, value] of Object.entries(STAGING_LIMITS)) {
+      expect(env.get(name), name).toBe(`\${${name}:-${value}}`);
+      expect(kongTemplate, name).toContain(`$${name}\n`);
+      expect(staging.get(name), `staging ${name}`).toBe(value);
+      expect(production.get(name), `production ${name}`).toMatch(/^[1-9][0-9]*$/);
+    }
+  });
+
+  it('refuses to start Kong with a limit that is not a positive integer, or a window wider than the next', () => {
+    const cases: Record<string, string>[] = [
+      ...Object.keys(STAGING_LIMITS).flatMap((name) => ['', '0', '-1', '1.5', '5x', '012', '99999999', '5\n  x: 1'].map((value) => ({ [name]: value }))),
+      { SHIFT_LIMIT_MAIL_HOUR: '21' },
+      { SHIFT_LIMIT_TOKEN_MINUTE: '1441' },
+      { SHIFT_LIMIT_VERIFY_MINUTE: '361' },
+    ];
+    for (const override of cases) {
+      const { status, rendered } = runKongEntrypoint({ ...FAKE, ...override });
+      expect(status, JSON.stringify(override)).not.toBe(0);
+      expect(rendered).toBe('');
+    }
+  });
+
+  it('compiles every rendered Lua chunk, uses no Lua 5.3-only syntax, and writes no `$` name Kong’s awk would substitute', () => {
+    // fengari is Lua 5.3, Kong runs LuaJIT (5.1 with extensions): a chunk that
+    // compiles here could still use what LuaJIT lacks, so that syntax is
+    // refused outright. Only the rehearsal proves the chunks run on the image.
+    const config = renderedKong();
+    const functions = config.services.flatMap((definition) => accessChunks(definition).map((code) => ({ name: definition.name, code })));
+    expect([...new Set(functions.map(({ name }) => name))].sort()).toEqual([
+      'auth-v1-admin',
+      'auth-v1-health',
+      'auth-v1-logout',
+      'auth-v1-mail',
+      'auth-v1-open-jwks',
+      'auth-v1-token',
+      'auth-v1-user',
+      'auth-v1-verify',
+      'rest-v1',
+      'rest-v1-create-organization',
+      'storage-v1',
+    ]);
+    for (const { name, code } of functions) {
+      expect(luaCompiles(code), name).toBeNull();
+      expect(lua53Only(code), name).toEqual([]);
+    }
+    expect(luaCompiles('local x = ('), 'the compiler accepts anything').not.toBeNull();
+    // The check itself, both polarities: strings and comments are not code.
+    expect(lua53Only('local a = 7 // 2 local b = 1 & 2 local c = 1 | 2 local d = ~1 local e = 1 << 2 local f = 1 >> 2 local g = utf8.char(1)')).toEqual(
+      LUA_53_ONLY.map(([name]) => name),
+    );
+    expect(lua53Only('local url = "http://x" -- a // comment | &\nif a ~= b then end local s = \'a & b\'')).toEqual([]);
+    // The template, before substitution: no Lua may carry `$name`.
+    for (const definition of kong.services) {
+      for (const code of accessChunks(definition)) {
+        expect(code, definition.name).not.toMatch(/\$[A-Za-z_]/);
+        expect(code, definition.name).not.toContain('${');
+      }
+    }
+  });
+
+  it('decides an address’s kind in the rendered Lua exactly as the vector file does (AD-12)', () => {
+    const state = luaState();
+    const loaded = fengari.lauxlib.luaL_loadstring(state, fengari.to_luastring(`${renderedPredicate(renderedKong())}\nreturn address_kind`));
+    expect(loaded, 'the rendered predicate does not compile').toBe(fengari.lua.LUA_OK);
+    expect(fengari.lua.lua_pcall(state, 0, 1, 0)).toBe(fengari.lua.LUA_OK);
+    fengari.lua.lua_setglobal(state, fengari.to_luastring('address_kind'));
+
+    expect(ADDRESS_VECTORS.length).toBeGreaterThan(30);
+    for (const kind of ['synthesized', 'email', 'malformed']) {
+      expect(ADDRESS_VECTORS.some((vector) => vector.kind === kind), kind).toBe(true);
+    }
+    for (const { address, kind } of ADDRESS_VECTORS) {
+      expect(luaAddressKind(state, address), JSON.stringify(address)).toBe(kind);
+    }
+    // A body with no address at all is malformed, never relayed.
+    expect(luaAddressKind(state, null)).toBe('malformed');
+  });
+
+  it('answers the mail routes itself, relays an email identity only, from a timer, with the client’s address and its route’s fields', () => {
+    const mail = kongService(renderedKong(), 'auth-v1-mail');
+    const post = (path: string, body: string | null, relay_status?: number): KongRun =>
+      runKongLua(mail, { path, method: 'POST', body, ...(relay_status === undefined ? {} : { relay_status }) });
+    const answeredAtOnce = (run: KongRun): void => {
+      expect(run.exit?.status).toBe(200);
+      expect(run.exit?.body).toBe('{}');
+      expect(run.exit?.headers).toEqual({ 'Content-Type': 'application/json' });
+    };
+
+    const cases: [string, Record<string, unknown>, Record<string, unknown>][] = [
+      [
+        '/auth/v1/signup',
+        { email: 'Nova.Osoba@Example.com', password: FAKE_PASSWORD, data: { x: 1 }, gotrue_meta_security: {}, code_challenge: 'c' },
+        { email: 'Nova.Osoba@Example.com', password: FAKE_PASSWORD },
+      ],
+      ['/auth/v1/recover', { email: 'stara@example.com', gotrue_meta_security: {} }, { email: 'stara@example.com' }],
+      ['/auth/v1/resend', { email: 'stara@example.com', type: 'email_change' }, { email: 'stara@example.com', type: 'signup' }],
+    ];
+    for (const [path, sent, relayed] of cases) {
+      const run = post(path, JSON.stringify(sent));
+      answeredAtOnce(run);
+      expect(run.timers, path).toBe(1);
+      expect(run.relays.map(({ url, method }) => [url, method]), path).toEqual([[`http://supabase-auth:9999/${path.slice(9)}`, 'POST']]);
+      expect(JSON.parse(run.relays[0]?.body ?? 'null'), path).toEqual(relayed);
+      expect(run.relays[0]?.headers, path).toEqual({ 'Content-Type': 'application/json', 'X-Real-IP': '203.0.113.7' });
+      expect(run.logs, path).toEqual([]);
+    }
+
+    // No relay, the same answer: synthesized, malformed, unreadable, no
+    // password, no address, not an object.
+    const unrelayed: (string | null)[] = [
+      JSON.stringify({ email: 'ana@dvd.SHIFT.invalid.', password: FAKE_PASSWORD }),
+      JSON.stringify({ email: 'a@@example.com', password: FAKE_PASSWORD }),
+      JSON.stringify({ email: "o'brien@example.com", password: FAKE_PASSWORD }),
+      JSON.stringify({ email: 'nova@example.com' }),
+      JSON.stringify({ password: FAKE_PASSWORD }),
+      JSON.stringify(['nova@example.com']),
+      'not json',
+      '',
+      null,
+    ];
+    for (const body of unrelayed) {
+      const run = post('/auth/v1/signup', body);
+      answeredAtOnce(run);
+      expect(run.timers, String(body)).toBe(0);
+      expect(run.relays, String(body)).toEqual([]);
+    }
+    // D8 and the unread body: a fixed code, never the address.
+    expect(post('/auth/v1/recover', null).logs).toEqual(['AUTH_MAIL_RELAY recover UNREAD']);
+    const failed = post('/auth/v1/signup', JSON.stringify({ email: 'nova@example.com', password: FAKE_PASSWORD }), 500);
+    expect(failed.logs).toEqual(['AUTH_MAIL_RELAY signup 500']);
+    for (const line of failed.logs) expect(line).not.toContain('@');
+  });
+
+  it('passes verify only as a rebuilt {token_hash, type}, and refuses every other body with 400 {}', () => {
+    const verify = kongService(renderedKong(), 'auth-v1-verify');
+    const send = (body: string | null, method = 'POST'): KongRun => runKongLua(verify, { path: '/auth/v1/verify', method, body });
+    const hash = 'a'.repeat(56);
+
+    const passed = send(JSON.stringify({ token_hash: hash, type: 'signup', gotrue_meta_security: { captcha_token: null } }));
+    expect(passed.exit).toBeUndefined();
+    expect(JSON.parse(passed.forwarded ?? 'null')).toEqual({ token_hash: hash, type: 'signup' });
+    for (const type of ['recovery', 'email_change']) {
+      expect(JSON.parse(send(JSON.stringify({ token_hash: hash, type })).forwarded ?? 'null')).toEqual({ token_hash: hash, type });
+    }
+
+    for (const body of [
+      JSON.stringify({ token_hash: hash, type: 'signup', email: 'x@example.com' }),
+      JSON.stringify({ email: 'x@example.com', token: '1234567890', type: 'signup' }),
+      JSON.stringify({ token_hash: 'a'.repeat(129), type: 'signup' }),
+      JSON.stringify({ token_hash: 'pkce_abc', type: 'signup' }),
+      JSON.stringify({ token_hash: 'zz11', type: 'signup' }),
+      JSON.stringify({ token_hash: '', type: 'signup' }),
+      JSON.stringify({ token_hash: 12345, type: 'signup' }),
+      JSON.stringify({ token_hash: [hash], type: 'signup' }),
+      JSON.stringify({ token_hash: hash, type: 'magiclink' }),
+      JSON.stringify({ token_hash: hash }),
+      JSON.stringify([hash, 'signup']),
+      'not json',
+      null,
+    ]) {
+      const run = send(body);
+      expect(run.exit, String(body)).toEqual({ status: 400, body: '{}', headers: { 'Content-Type': 'application/json' } });
+      expect(run.forwarded, String(body)).toBeUndefined();
+    }
+    expect(send(JSON.stringify({ token_hash: hash, type: 'signup' }), 'OPTIONS').exit?.status).toBe(400);
+  });
+
+  it('refuses a PUT /user naming email or phone in any case, or unreadable, and passes a password change', () => {
+    const user = kongService(renderedKong(), 'auth-v1-user');
+    const put = (body: string | null, method = 'PUT'): KongRun => runKongLua(user, { path: '/auth/v1/user', method, body });
+    for (const body of [
+      JSON.stringify({ email: 'nova@example.com' }),
+      JSON.stringify({ EMAIL: 'nova@example.com' }),
+      JSON.stringify({ Email: 'nova@example.com', password: 'nova-lozinka-1' }),
+      JSON.stringify({ phone: '+385' }),
+      JSON.stringify({ PHONE: '+385' }),
+      'not json',
+      '',
+      null,
+    ]) {
+      expect(put(body).exit, String(body)).toEqual({ status: 422, body: '{}', headers: { 'Content-Type': 'application/json' } });
+    }
+    expect(put(JSON.stringify({ password: 'nova-lozinka-1' })).exit).toBeUndefined();
+    expect(put(JSON.stringify({ data: { theme: 'dark' } })).exit).toBeUndefined();
+    expect(put(null, 'GET').exit, 'a read is no change').toBeUndefined();
+  });
+
+  it('refuses every other REST spelling of create_organization, and passes the route’s own path and other RPCs', () => {
+    const config = renderedKong();
+    const rest = kongService(config, 'rest-v1');
+    const own = kongService(config, 'rest-v1-create-organization');
+    for (const path of [
+      '/rest/v1/rpc/create%255Forganization',
+      '/rest/v1/rpc/create%5Forganization',
+      '/rest/v1/rpc/CREATE_ORGANIZATION',
+      '/rest/v1//rpc/create_organization',
+      '/rest/v1/rpc/create_organization/',
+      '/rest/v1/rpc/create_organization',
+    ]) {
+      expect(runKongLua(rest, { path, method: 'POST', body: '{}' }).exit?.status, path).toBe(404);
+    }
+    for (const path of ['/rest/v1/rpc/current_member_access', '/rest/v1/members', '/rest/v1/rpc/team_roster']) {
+      expect(runKongLua(rest, { path, method: 'POST', body: '{}' }).exit, path).toBeUndefined();
+    }
+    expect(runKongLua(own, { path: '/rest/v1/rpc/create_organization', method: 'POST', body: '{}' }).exit).toBeUndefined();
+    expect(runKongLua(own, { path: '/rest/v1/rpc/create%5Forganization', method: 'POST', body: '{}' }).exit?.status).toBe(404);
   });
 });
 

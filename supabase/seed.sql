@@ -612,3 +612,11 @@ select organizations.id,
   join members member_in on member_in.organization_id = organizations.id
                         and member_in.username = 'tomislav.juric'
  where organizations.slug = 'zastita-split';
+
+-- Story 19.1 (AD-21): the signup door's database switch, OPEN on the local
+-- stack only, so the CLI's GoTrue (`[auth] enable_signup = true`) and its mail
+-- catcher can be used by hand and, from 19.2, by e2e. 0065 seeds it closed,
+-- and nothing but this file and the operator's SQL on staging ever opens it.
+-- Every account above is confirmed at creation (`email_confirmed_at = now()`),
+-- so confirmations being on locally changes no sign-in.
+update private.signup_settings set open = true where id;

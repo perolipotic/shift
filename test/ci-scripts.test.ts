@@ -15,6 +15,7 @@ import {
   missing,
   parseRequirements,
   problems,
+  refusedFor,
   vapidPairProblem,
 } from '../scripts/ci/require-config.mjs';
 import { rewriteAuthUrls, stripComment, withoutLocalRateLimits } from '../scripts/ci/set-auth-urls.mjs';
@@ -215,7 +216,9 @@ describe('set-auth-urls: the local rate limits never reach a hosted project', ()
     const end = before.findIndex((line, index) => index > start && line.startsWith('['));
     expect(dropped.split('\n')).toEqual([...before.slice(0, start), ...before.slice(end)]);
     expect(dropped).toContain('[auth.hook.custom_access_token]');
-    expect(dropped).toContain('enable_signup = false');
+    expect(dropped).toContain('[auth.hook.before_user_created]');
+    // Story 19.1: config.toml carries staging's open door (AD-21).
+    expect(dropped).toContain('enable_signup = true');
   });
 
   it('ends the table at the next header', () => {
@@ -445,6 +448,28 @@ describe('require-config: a deploy names what it is missing', () => {
       SUPABASE_PROJECT_REF: 'abcdefghij0123456789',
     });
     expect(passed.status).toBe(0);
+  });
+
+  it('refuses VITE_SIGNUP_ENABLED for production, whatever the job asks for (story 19.1, AD-21)', () => {
+    expect(refusedFor('production', { VITE_SIGNUP_ENABLED: 'true' })).toEqual(['VITE_SIGNUP_ENABLED']);
+    expect(refusedFor('production', { VITE_SIGNUP_ENABLED: '1' })).toEqual(['VITE_SIGNUP_ENABLED']);
+    expect(refusedFor('production', { VITE_SIGNUP_ENABLED: 'False' })).toEqual(['VITE_SIGNUP_ENABLED']);
+    expect(refusedFor('production', { VITE_SIGNUP_ENABLED: 'false' })).toEqual([]);
+    expect(refusedFor('production', { VITE_SIGNUP_ENABLED: '' })).toEqual([]);
+    expect(refusedFor('production', {})).toEqual([]);
+    expect(refusedFor('staging', { VITE_SIGNUP_ENABLED: 'true' })).toEqual([]);
+
+    const args = ['--environment', 'production', 'var:SUPABASE_PROJECT_REF'];
+    const refused = run('require-config.mjs', args, { SUPABASE_PROJECT_REF: 'x', VITE_SIGNUP_ENABLED: 'true' });
+    expect(refused.status).toBe(1);
+    expect(refused.stdout).toContain('::error title=Refused variable::VITE_SIGNUP_ENABLED is set for "production"');
+    expect(run('require-config.mjs', args, { SUPABASE_PROJECT_REF: 'x' }).status).toBe(0);
+    expect(
+      run('require-config.mjs', ['--environment', 'staging', 'var:SUPABASE_PROJECT_REF'], {
+        SUPABASE_PROJECT_REF: 'x',
+        VITE_SIGNUP_ENABLED: 'true',
+      }).status,
+    ).toBe(0);
   });
 
   it('exits 2 when given nothing to check, or a malformed requirement', () => {

@@ -48,6 +48,9 @@ const PERMITTED_DIST_ENTRIES = new Set([
   'maskable-icon-512x512.png',
   // STORY 10.4. The push handlers the worker imports, copied from public/.
   'push-sw.js',
+  // STORY 19.1. The Auth email templates GoTrue fetches from the app origin,
+  // built from hr.json (`src/lib/auth-email.ts`); never precached.
+  'auth-email',
 ]);
 
 /** Workbox's runtime, which `sw.js` imports; its name carries a content hash. */

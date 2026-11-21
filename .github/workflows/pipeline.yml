@@ -534,6 +534,7 @@ jobs:
           COOLIFY_FUNCTIONS_UUID: ${{ vars.COOLIFY_FUNCTIONS_UUID }}
           TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           TS_OAUTH_SECRET: ${{ secrets.TS_OAUTH_SECRET }}
+          VITE_SIGNUP_ENABLED: ${{ vars.VITE_SIGNUP_ENABLED }}
         run: >-
           node scripts/ci/require-config.mjs --environment staging
           var:APP_ORIGINS var:SUPABASE_API_URL:https-origin var:SUPABASE_PUBLISHABLE_KEY:publishable
@@ -564,10 +565,10 @@ jobs:
           ts-oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           registry-token: ${{ github.token }}
 
-  # The SPA, the Supabase environment it was built with, signup refused,
-  # admin-auth CORS, and — with the smoke account configured — a sign-in that
-  # never signs out. Writes nothing, except that an OPEN signup means the probe
-  # just created an account, which its failure message names (DEPLOY.md §8.3).
+  # The SPA, the Supabase environment it was built with, Kong's one answer on
+  # the signup route (story 19.1: `200 {}`, for a synthesized address Kong
+  # never relays), admin-auth CORS, and — with the smoke account configured —
+  # a sign-in that never signs out. Writes nothing (DEPLOY.md §8.3).
   # The `staging` environment for the smoke account's secret; staging has no
   # required reviewer, so this never waits.
   smoke-staging:
@@ -650,6 +651,8 @@ jobs:
           COOLIFY_FUNCTIONS_UUID: ${{ vars.COOLIFY_FUNCTIONS_UUID }}
           TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           TS_OAUTH_SECRET: ${{ secrets.TS_OAUTH_SECRET }}
+          # Story 19.1 (AD-21): refused for production by require-config itself.
+          VITE_SIGNUP_ENABLED: ${{ vars.VITE_SIGNUP_ENABLED }}
         run: >-
           node scripts/ci/require-config.mjs --environment production
           var:APP_ORIGINS var:SUPABASE_API_URL:https-origin var:SUPABASE_PUBLISHABLE_KEY:publishable

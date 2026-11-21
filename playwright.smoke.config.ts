@@ -1,9 +1,11 @@
 import { defineConfig, devices } from '@playwright/test';
 
 /**
- * The remote smoke: a short check of a deployed environment that writes nothing
- * — except, if signup turns out to be OPEN, the one account its signup probe
- * then creates (`smoke/deployment.spec.ts`). Run by the pipeline after each
+ * The remote smoke: a short check of a deployed environment that writes
+ * nothing. Its signup probe sends a synthesized address, which Kong never
+ * relays and the before-user-created hook refuses (story 19.1), so it creates
+ * no account whether the door is shut or open (`smoke/deployment.spec.ts`).
+ * Run by the pipeline after each
  * deploy, and against the local stack in the e2e job
  * (`.github/workflows/pipeline.yml`). It is not
  * the E2E suite: there is no web server to start, no stack to check and no

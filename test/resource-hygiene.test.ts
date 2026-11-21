@@ -2913,6 +2913,27 @@ const SANCTIONED_SCREEN_KEYS = [
   'print.own',
   'print.ownNoTeam',
   'print.printedAt',
+  // STORY 19.1 (AD-21, D-S4): the Croatian Auth email GoTrue sends, built into
+  // `dist/auth-email/*.html` by `apps/web/src/lib/auth-email.ts`; each
+  // `subject` is also the compose's `GOTRUE_MAILER_SUBJECTS_*`
+  // (`test/auth-email.test.ts`). No screen says these.
+  'signup.email.confirmation.subject',
+  'signup.email.confirmation.heading',
+  'signup.email.confirmation.body',
+  'signup.email.confirmation.action',
+  'signup.email.confirmation.ignore',
+  'signup.email.recovery.subject',
+  'signup.email.recovery.heading',
+  'signup.email.recovery.body',
+  'signup.email.recovery.action',
+  'signup.email.recovery.ignore',
+  'signup.email.emailChange.subject',
+  'signup.email.emailChange.heading',
+  'signup.email.emailChange.body',
+  'signup.email.emailChange.action',
+  'signup.email.emailChange.ignore',
+  'signup.email.expiry',
+  'signup.email.fallback',
 ];
 
 /** Everything the resource file is permitted to hold, together. */

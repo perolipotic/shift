@@ -2750,6 +2750,10 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // STORY 16.2 (0065). The server's one read assembly, past every policy,
     // as the owner; only the definer entry points of 16.4 and 17.2 call it.
     { name: 'member_schedule_inputs', argumentCount: 3, schema: 'private' },
+    // STORY 19.1 (0065). The before-user-created hook reads
+    // `private.signup_settings`, which no session role may, and counts
+    // `auth.users` against `members`, on the access token hook's attributes.
+    { name: 'before_user_created_hook', argumentCount: 1 },
   ];
 
   it.skipIf(noDatabase).each(ACCESS_CONTROL_FUNCTIONS)(
@@ -2969,6 +2973,13 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // `service_role` (a secret-key operator update). It is immutable and reads
     // no table, so the grant discloses nothing. `anon` writes none of them.
     { name: 'name_key', argumentCount: 1, expected: ['authenticated', 'service_role'], schema: 'private' },
+    // STORY 19.1 (0065). The signup hook, on the access token hook's terms:
+    // it takes its subject as an argument, so the auth service alone runs it.
+    { name: 'before_user_created_hook', argumentCount: 1, expected: ['supabase_auth_admin'] },
+    // AD-12's address predicate. Its callers are definers (the hook, and from
+    // 19.3 `create_organization`), so no session role holds it.
+    { name: 'address_kind', argumentCount: 1, expected: [], schema: 'private' },
+    { name: 'is_synthesized_address', argumentCount: 1, expected: [], schema: 'private' },
   ];
 
   it.skipIf(noDatabase).each([
@@ -2999,6 +3010,9 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'refuse_truncate', argumentCount: 0 },
     // 0024's name key reads nothing; it runs as whoever writes the name.
     { name: 'name_key', argumentCount: 1, schema: 'private' },
+    // STORY 19.1 (0065). AD-12's predicate reads nothing either.
+    { name: 'address_kind', argumentCount: 1, schema: 'private' },
+    { name: 'is_synthesized_address', argumentCount: 1, schema: 'private' },
     // 0043's flag readers read and write only transaction-local settings,
     // and run as whichever trigger calls them (the owner).
     { name: 'notify_suppression', argumentCount: 0, schema: 'private' },

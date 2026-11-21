@@ -40,11 +40,16 @@ describe('the keys rendered and the keys declared are the same set', () => {
    * And never `obavijesti.*` (story 10.1): those are the emails the `notify`
    * Edge Function renders from its pinned copy of the namespace
    * (`test/notify-boundary.test.ts`). No screen renders them.
+   *
+   * Nor `signup.email.*` (story 19.1): the Auth email GoTrue sends, built into
+   * `dist/auth-email/*.html` by `lib/auth-email.ts` at build. No screen renders
+   * them either; `test/auth-email.test.ts` holds every one to a template.
    */
   const declared = (): string[] =>
     resourceKeys()
       .filter((key) => !key.startsWith('count.') || key === 'count.days')
       .filter((key) => !key.startsWith('obavijesti.'))
+      .filter((key) => !key.startsWith('signup.email.'))
       .sort();
 
   it('renders every screen key the resource file declares', () => {
