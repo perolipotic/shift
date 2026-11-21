@@ -96,8 +96,9 @@ case "${1:-}" in
       exit 1
     fi
     if [ -n "${GIVEN:-}" ]; then
-      [[ "$GIVEN" == "$REPOSITORY@"* ]] && [[ "${GIVEN#*@}" =~ ^sha256:[0-9a-f]{64}$ ]] \
-        || { echo "::error title=shift-functions::$GIVEN is not $REPOSITORY by digest" >&2; exit 1; }
+      if ! [[ "$GIVEN" == "$REPOSITORY@"* && "${GIVEN#*@}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+        echo "::error title=shift-functions::$GIVEN is not $REPOSITORY by digest" >&2; exit 1
+      fi
       found="$(registry digest "$GIVEN")"
       [ "$found" = "${GIVEN#*@}" ] \
         || { echo "::error title=shift-functions::$GIVEN is not in the registry" >&2; exit 1; }

@@ -87,8 +87,9 @@ case "$command" in
     [ "$#" -eq 2 ] || usage
     ref="$1" tag="$2"
     repository="${ref%@*}" digest="${ref#*@}"
-    [[ "$repository" =~ $REPOSITORY_RE ]] && [[ "$digest" =~ $DIGEST_RE ]] \
-      || { echo "registry: not a <repository>@sha256:<digest> reference: $ref" >&2; exit 2; }
+    if ! [[ "$repository" =~ $REPOSITORY_RE && "$digest" =~ $DIGEST_RE ]]; then
+      echo "registry: not a <repository>@sha256:<digest> reference: $ref" >&2; exit 2
+    fi
     [[ "$tag" =~ $TAG_RE ]] || { echo "registry: not a tag: $tag" >&2; exit 2; }
     # A carbon copy of the one source manifest (no new index wrapped around
     # it), so the tag names the very digest that was probed.
