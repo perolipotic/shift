@@ -2,14 +2,14 @@
 title: '16.2 The domain package runs on the server'
 type: 'feature'
 created: '2026-11-21'
-status: 'in-review'
+status: 'done'
 baseline_commit: 'ce82d6cff83d72132dd5a14cf73719d56ff9bf7c'
 review_loop_iteration: 0
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-16-context.md'
 ---
 
-Status: built, CI pending (no PR yet). Baseline: `main` at #337 (Architect pass 1); touches no hot file.
+Status: done. Merged as #339, squash `7e46042` (2026-11-21), after `CI passed` went green on `165f88b` (run 44908712909). Baseline: `main` at #337 (Architect pass 1); touches no hot file.
 
 <frozen-after-approval reason="human-owned intent — do not modify unless human renegotiates">
 
@@ -102,7 +102,7 @@ Decisions (founder: decide and record):
 - `pnpm --filter ./apps/web test` -- 178 files, 6665 tests pass (after listing the new service in `calendar-screen.fixture.ts`).
 - `pnpm exec vitest run test/resource-hygiene.test.ts test/supabase-scaffold.test.ts test/functions-router.test.ts test/self-hosted-stack.test.ts test/coolify-deploy.test.ts test/ci-scripts.test.ts test/runtime-parity.test.ts` -- 7 files, 2227 tests pass.
 
-**Residual risk (CI settles):** `test/schedule-inputs-parity.test.ts`, the provisioning entries and 0065 have never run against a database (STRICT DATABASE RULE); the `runtime-parity` job has never run on a runner (docker there, chroot here). The existing DB suites now exercise the four re-created reads.
+**Residual risk, settled by CI (#339):** 0065, `test/schedule-inputs-parity.test.ts` and the provisioning entries ran on CI's fresh stack, and the `runtime-parity` job ran on a runner (`edge-runtime` v1.74.3 under docker). Runs: 44903974050 on `18d0eb6` failed one read-parity case (`CALENDAR_UNAVAILABLE members` for `ivan.maric`); 44905714485 on `7779bda` (the diagnostic transport) had `Test` and `Runtime parity` green, and its e2e shards were cancelled by the next push; 44906264201 on `76e6f63` and 44907344236 on `2a37253` failed the same case, now named as PostgREST's 401 PGRST303 "JWT issued at future"; `165f88b` (warm the token up until PostgREST accepts it, `usableAfterIssue`) was pushed only for CI, and run 44908712909 on it passed every job, `CI passed` included. The existing DB suites exercise the four re-created reads, green in that run. Still open, and not CI's to settle: whether a real browser can meet PGRST303 right after sign-in on the self-hosted stack (deferred-work, OWNER 20.5).
 
 **Review (five layers):** patched — the probe projects every month of the window (Epic AC auditor); a transition at a range's first instant is kept, an unreadable `Intl` part throws, a team given twice throws (edge cases); the purity scan tokenizes comments, strings and template interpolations in one pass; the read-parity scene adds loans and leave wholly outside the window and one straddling it, a confirmed shift-type override and a pending roster override (verification gap, blind hunter); the parity script stops waiting on a crashed container; `test/provisioning.test.ts` lists the five new `private` functions in its grantee sweep, owner and invoker inventories (unrun DB test auditor: the sweep would have failed CI); deferred-work records that the assembly's callers are its gate and that `deploy-staging` waits on `runtime-parity` from 16.4. Rejected or left: non-inlined `SET` helpers (pilot scale; the browser reads return the same rows), tag-only image pins (an existing 20.9 item), historic LMT and double transitions, non-canonical zone aliases, audit rows the scene leaves (no FK; fresh CI stack).
 

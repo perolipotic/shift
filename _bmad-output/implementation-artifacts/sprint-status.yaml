@@ -685,8 +685,8 @@ development_status:
   # Ready now: 16.2 (AP1 done 2026-11-21) and 19.1 (AP2 done 2026-11-21); D-S1–D-S10 ratified by the founder 2026-11-21.
   epic-16: in-progress  # calendar feed and print (CAP-25); D-S1, D-S2, D-S8 ratified 2026-11-21
   16-1-the-month-prints: done  # #335
-  16-2-the-domain-package-runs-on-the-server: review  # built, CI pending
-  16-3-a-member-s-feed-token-is-a-revocable-secret: backlog  # after 16.2 (D-S1 ratified 2026-11-21)
+  16-2-the-domain-package-runs-on-the-server: done  # #339
+  16-3-a-member-s-feed-token-is-a-revocable-secret: review  # built, CI pending
   16-4-the-calendar-feed-serves-a-member-s-own-shifts: backlog  # after 16.3 (D-S1, D-S2, D-S8 ratified 2026-11-21)
   16-5-a-member-subscribes-from-kalendar-na-mobitelu: backlog  # after 16.4 (D-S1, D-S2 ratified 2026-11-21)
   epic-16-retrospective: optional
@@ -706,7 +706,7 @@ development_status:
   epic-18-retrospective: done
 
   epic-19: in-progress  # self-service signup (CAP-28); staging only; production opening is D-S5 (security review, then the founder's go)
-  19-1-the-signup-door-opens-safely-on-staging: review  # built; code review 2 applied 2026-11-21; CI pending (first run of the DB suites); staging apply waits for 20.5
+  19-1-the-signup-door-opens-safely-on-staging: done  # #341
   19-2-a-stranger-creates-an-account: backlog  # after 19.1 (AP2 done 2026-11-21)
   19-3-a-verified-account-creates-its-organization: backlog  # after 19.2 (AP2 done 2026-11-21)
   19-4-the-onboarding-wizard-guides-setup-and-pre-fills-nothing: backlog  # after 19.3; UX review with mockups done 2026-11-21 (ux-shift-2026-11-21-signup, UX-DR62–70), pending founder acceptance (AP2 done 2026-11-21)
