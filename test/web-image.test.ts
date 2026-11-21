@@ -103,7 +103,7 @@ describe('the shift-web image (story 20.3): dist/_headers as nginx lines', () =>
     ['a block other than /*', '/*\n  X: a\n/app/*\n  Y: b\n'],
     ['a second /* block', '/*\n  X: a\n/*\n  Y: b\n'],
     ['a Cache-Control (nginx sets it per location)', '/*\n  Cache-Control: no-store\n'],
-    ...['Content-Type', 'content-length', 'Server', 'Date', 'ETag', 'Last-Modified', 'Vary', 'Content-Encoding'].map(
+    ...['Content-Type', 'content-length', 'Server', 'Date', 'ETag', 'Last-Modified', 'Vary', 'Content-Encoding', 'Accept-Ranges', 'Content-Range', 'Connection', 'Keep-Alive', 'Transfer-Encoding', 'Location', 'Expires'].map(
       (name): [string, string] => [`a ${name} (nginx sets it)`, `/*\n  ${name}: x\n`],
     ),
     ['a non-ASCII value', '/*\n  X: café\n'],
@@ -268,7 +268,7 @@ describe('the shift-web image (story 20.3): the Dockerfile', () => {
   });
 
   it('renders the headers from the built dist/_headers with the script', () => {
-    expect(instructions).toContain('COPY deploy/web/render-headers.sh apps/web/dist/_headers /tmp/render/');
+    expect(instructions).toContain('COPY --chmod=0644 deploy/web/render-headers.sh apps/web/dist/_headers /tmp/render/');
     expect(instructions).toContain(
       'RUN sh /tmp/render/render-headers.sh /tmp/render/_headers > /tmp/security-headers.conf',
     );
@@ -395,5 +395,33 @@ describe('the shift-web image (story 20.3): CI builds and probes it, never pushe
     expect(probe).toContain("find /usr/share/nginx/html -name '*.map'");
     expect(probe).toMatch(/-user 101 -o -group 101 -perm -0020 -o -perm -0002/);
     expect(probe).toContain('trap cleanup EXIT');
+  });
+
+  it('probes revalidation, a refusal made before any location, the HEALTHCHECK and busybox refusals', () => {
+    for (const line of [
+      'EXTRA="If-Modified-Since: $modified\\r\\n" expect "$path" 304 - "$cache"',
+      'expect / 400 - none',
+      "docker inspect --format '{{index .Config.Healthcheck.Test 1}}'",
+      'docker run --rm --network none --read-only --entrypoint sh',
+      'Content-Security-Policy(-Report-Only)?: ',
+    ]) {
+      expect(probe, line).toContain(line);
+    }
+    // The entry chunk is the one the built page names, not any index-*.js.
+    expect(probe).toContain('<script type="module"');
+  });
+
+  /**
+   * The CI `test` job's build has a placeholder origin, so `static-hosting.test.ts`
+   * asserts the plugin's origin wiring with an origin and not only the null
+   * branch. Dropping that line would make the assertion vacuous silently.
+   */
+  it('gives the test job’s build a placeholder origin, written before the build', () => {
+    const build = (pipeline.jobs['test']?.steps ?? []).find((step) => step.name === 'Build');
+
+    expect(build?.run?.split('\n').filter((line) => line.trim() !== '')).toEqual([
+      "printf 'VITE_SUPABASE_URL=https://api.example.test\\n' > apps/web/.env.production.local",
+      'pnpm build',
+    ]);
   });
 });

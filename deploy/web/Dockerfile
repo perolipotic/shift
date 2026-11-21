@@ -23,7 +23,8 @@
 # ---- render: dist/_headers -> nginx header lines (the base's busybox sh/awk)
 FROM nginxinc/nginx-unprivileged:1.30.6-alpine3.24@sha256:f5116ed4606f3eb015dd4a8e28cb9b351476dc0ad4bc6e9f93b19cec130cdf03 AS render
 
-COPY deploy/web/render-headers.sh apps/web/dist/_headers /tmp/render/
+# Readable by the render stage's uid 101 whatever mode the context gave them.
+COPY --chmod=0644 deploy/web/render-headers.sh apps/web/dist/_headers /tmp/render/
 # A dist built before the CSP plugin, or stale, has no policy line: refused,
 # so no image ships without a Content-Security-Policy.
 RUN grep -Eq '^[[:space:]]+Content-Security-Policy(-Report-Only)?:' /tmp/render/_headers \

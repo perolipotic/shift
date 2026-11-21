@@ -97,6 +97,9 @@ const BASE64_SHA256 = /^[A-Za-z0-9+/]{43}=$/;
  * `<style>` blocks and a `style=` attribute (the boot fallback), and React sets
  * `style` attributes. Images and requests reach the Supabase origin (REST,
  * Auth, Storage's logos); nothing else leaves the page's own origin.
+ * Functions sit under the same origin (`/functions/v1`); a push subscription is
+ * the browser's own request, outside the policy. The app opens no Realtime
+ * channel: one would need the origin's `wss:` form in `connect-src` as well.
  */
 export function contentSecurityPolicy({ supabaseOrigin, scriptHashes }: PolicyInputs): string {
   for (const hash of scriptHashes) {
@@ -178,10 +181,15 @@ export interface BuiltHeadersInputs {
  * The build's whole step (story 20.3): the `_headers` text with this page's and
  * this origin's policy added to its one `/*` block. Throws on an origin no
  * policy can name, on a `_headers` without exactly one `/*` block, and on one
- * that already sets the header. `vite.config.ts` only reads and writes the
+ * that already sets either policy header (enforcing or Report-Only). `vite.config.ts` only reads and writes the
  * files around it.
  */
 export function headersWithPolicy({ headers, page, supabaseUrl, sha256Base64 }: BuiltHeadersInputs): string {
+  // Either policy header, not only the one added: an enforcing policy beside
+  // the Report-Only one would be enforced unverified.
+  if (/^[ \t]+content-security-policy(?:-report-only)?[ \t]*:/im.test(headers)) {
+    throw new Error('_headers already sets a Content-Security-Policy');
+  }
   const supabaseOrigin = supabaseOriginOf(supabaseUrl);
   const scriptHashes = inlineScriptsOf(page).map((script) => sha256Base64(script));
   return withHeaderInAllPaths(headers, CSP_HEADER, contentSecurityPolicy({ supabaseOrigin, scriptHashes }));

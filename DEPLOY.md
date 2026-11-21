@@ -2195,9 +2195,10 @@ turns each header into `add_header <Name> "<value>" always;`, value unchanged,
 and every nginx location includes the result, so every response, errors
 included, carries every header. The script refuses, and the image build fails,
 on a block other than `/*` or a second `/*` block, a `!` detach, a header
-named twice, a header nginx sets itself (`Cache-Control`, `Content-Type`,
-`Content-Length`, `Server`, `Date`, `ETag`, `Last-Modified`, `Vary`,
-`Content-Encoding`), or a value holding `"`, `$`, `\`, a control character or
+named twice, a header nginx sets itself or that frames the response
+(`Cache-Control`, `Content-Type`, `Content-Length`, `Server`, `Date`, `ETag`,
+`Last-Modified`, `Vary`, `Content-Encoding`, `Accept-Ranges`, `Content-Range`,
+`Connection`, `Keep-Alive`, `Transfer-Encoding`, `Location`, `Expires`), or a value holding `"`, `$`, `\`, a control character or
 a non-ASCII character. Nothing else in the image sets a security header.
 
 **The CSP.** The Vite build (`vite.config.ts`, from
@@ -2235,7 +2236,9 @@ attribute, and React writes `style` attributes.
 
 A missing root file such as `/sw.js` keeps answering the shell with 200, as
 Cloudflare Pages did: the fallback rule is the same for every path outside
-`/assets/` (parity, a reviewed decision).
+`/assets/` (parity, a reviewed decision), with one exception: a missing
+`/site.webmanifest` is a plain-text 404, never the shell under the manifest's
+type (every build emits it).
 
 **No source map** is in the image: `.dockerignore` keeps the web build's maps
 (`apps/web/dist/**/*.map`) out of the build context, and the build fails if
@@ -2247,9 +2250,12 @@ pre-plugin `dist`).
 job's `dist` (never pushed) and probes it with `--network none` and a
 read-only root (`scripts/ci/probe-web-image.sh`): the table above, every
 header of that `dist/_headers` exactly once with its exact value on every
-answer (the 404s, a `POST`'s 405 and a `HEAD` included), gzip on the entry
-chunk, uid 101, no map, and no file outside `/tmp` writable by uid 101. The
-image's `HEALTHCHECK` fetches `/` with its own busybox `wget` every 30 s.
+answer (the 404s, a `POST`'s 405, a `HEAD`, a revalidation's 304 and the 400
+nginx gives an oversized header before choosing a location included), gzip on
+the entry chunk the page names, uid 101, no map, no file outside `/tmp`
+writable by uid 101, the image's own `HEALTHCHECK` command, and
+`render-headers.sh`'s refusals under the image's busybox. The image's
+`HEALTHCHECK` fetches `/` with its own busybox `wget` every 30 s.
 That `dist` is built with no environment's `VITE_*`, so
 it proves the image only. Story 20.6's deploy job builds `shift-web` per
 environment from that environment's own build (its `VITE_SUPABASE_URL`, so

@@ -38,15 +38,19 @@ mapfile -t expected < <(awk '
     print name ": " value
   }
 ' "$dist/_headers")
-if [ "${#expected[@]}" -lt 6 ]; then
-  echo "FAIL  expected the five public/_headers headers and the build's CSP, found ${#expected[@]}"
-  exit 1
-fi
-printf '%s\n' "${expected[@]}" | grep -q '^Content-Security-Policy-Report-Only: ' \
-  || { echo "FAIL  $dist/_headers has no Content-Security-Policy-Report-Only line"; exit 1; }
+# The block must hold today's five headers and the build's policy (Report-Only
+# until 20.5 enforces it; either name is a policy), whatever else it holds.
+for named in X-Content-Type-Options Referrer-Policy X-Frame-Options Permissions-Policy Strict-Transport-Security; do
+  printf '%s\n' "${expected[@]}" | grep -q "^$named: " \
+    || { echo "FAIL  $dist/_headers has no $named line"; exit 1; }
+done
+printf '%s\n' "${expected[@]}" | grep -Eq '^Content-Security-Policy(-Report-Only)?: ' \
+  || { echo "FAIL  $dist/_headers has no Content-Security-Policy line"; exit 1; }
 
-asset="$(cd "$dist" && find assets -maxdepth 1 -name 'index-*.js' | head -n 1)"
-[ -n "$asset" ] || { echo "FAIL  no assets/index-*.js in $dist"; exit 1; }
+# The entry chunk, as the built page names it (not any index-*.js: rolldown may
+# emit several, some under gzip_min_length).
+asset="$(grep -oE '<script type="module"[^>]* src="/assets/[^"]+\.js"' "$dist/index.html" | head -n 1 | sed -E 's/.* src="\/(assets\/[^"]+)"/\1/')"
+[ -n "$asset" ] && [ -f "$dist/$asset" ] || { echo "FAIL  no entry chunk named by $dist/index.html"; exit 1; }
 stylesheet="$(cd "$dist" && find assets -maxdepth 1 -name 'index-*.css' | head -n 1)"
 [ -n "$stylesheet" ] || { echo "FAIL  no assets/index-*.css in $dist"; exit 1; }
 
@@ -142,8 +146,31 @@ PROTO=1.1 EXTRA='Accept-Encoding: gzip\r\n' expect "/$asset" 200 application/jav
 grep -qix 'Content-Encoding: gzip' <<< "$last_head" || fail "/$asset: not gzipped for Accept-Encoding: gzip"
 grep -qix 'Vary: Accept-Encoding' <<< "$last_head" || fail "/$asset: no Vary: Accept-Encoding"
 
+# Revalidation (what no-cache causes): a 304 carries every header too, and the
+# same Cache-Control as the 200.
+for path in / "/$asset"; do
+  modified="$( (request GET "$path" || true) | tr -d '\r' | sed -n 's/^Last-Modified: //p' | head -n 1)"
+  if [ -z "$modified" ]; then fail "$path: no Last-Modified"; continue; fi
+  if [ "$path" = / ]; then cache=no-cache; else cache='public, max-age=31536000, immutable'; fi
+  EXTRA="If-Modified-Since: $modified\r\n" expect "$path" 304 - "$cache"
+done
+
+# A request nginx refuses before choosing a location (a header over
+# large_client_header_buffers): the server-level include still applies.
+EXTRA="X-Oversized: $(printf '%*s' 9000 '' | tr ' ' a)\r\n" expect / 400 - none
+
 # A missing asset's body must not be the shell.
 if [[ "$(request GET /assets/nope.js || true)" == *"$shell_marker"* ]]; then fail '/assets/nope.js answered the shell'; fi
+
+# The image's own HEALTHCHECK command, run as the image runs it.
+check="$(docker inspect --format '{{index .Config.Healthcheck.Test 1}}' "$name" 2> /dev/null || true)"
+if [ -z "$check" ]; then
+  fail "the image has no HEALTHCHECK"
+elif docker exec "$name" sh -c "$check"; then
+  echo "ok    the HEALTHCHECK passes"
+else
+  fail "the HEALTHCHECK fails: $check"
+fi
 
 # The process runs as uid 101.
 uid="$(docker exec "$name" awk '/^Uid:/ { print $2 }' /proc/1/status)"
@@ -159,6 +186,31 @@ maps="$(docker exec "$name" find /usr/share/nginx/html -name '*.map' 2>&1 || ech
 writable="$(docker exec --user 0 "$name" find / -xdev -path /tmp -prune -o \
   \( -user 101 -o -group 101 -perm -0020 -o -perm -0002 \) ! -type l -print 2>&1 || echo 'find failed')"
 [ -z "$writable" ] && echo "ok    no file outside /tmp is writable by uid 101" || fail "writable by uid 101: $writable"
+
+# render-headers.sh's refusals under the image's own busybox sh and awk (the
+# shell the Dockerfile's render stage runs it in): non-zero, nothing on stdout.
+script="$(dirname "$0")/../../deploy/web/render-headers.sh"
+fixtures="$(mktemp -d)"
+printf '/*\n  X: a"b\n' > "$fixtures/quote"
+printf '/*\n  X: $host\n' > "$fixtures/dollar"
+printf '/*\n  X: a\001b\n' > "$fixtures/control"
+printf '/*\n  X: caf\303\251\n' > "$fixtures/non-ascii"
+printf '/*\n  X: a\r\n' > "$fixtures/crlf"
+printf '/*\n  X: a\n/*\n  Y: b\n' > "$fixtures/second-block"
+printf '/*\n  Cache-Control: no-store\n' > "$fixtures/nginx-header"
+chmod a+r "$fixtures"/* && chmod a+rx "$fixtures"
+for fixture in "$fixtures"/*; do
+  status=0
+  out="$(docker run --rm --network none --read-only --entrypoint sh \
+    -v "$(realpath "$script"):/render.sh:ro" -v "$fixture:/_headers:ro" "$image" /render.sh /_headers 2> /dev/null)" \
+    || status=$?
+  if [ "$status" != 0 ] && [ -z "$out" ]; then
+    echo "ok    busybox render refuses $(basename "$fixture")"
+  else
+    fail "busybox render accepted $(basename "$fixture") (exit $status): $out"
+  fi
+done
+rm -rf "$fixtures"
 
 echo '--- container log'
 docker logs "$name" 2>&1 | tail -n 20

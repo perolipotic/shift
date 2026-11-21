@@ -2,10 +2,10 @@
 title: 'Story 20.3: The SPA ships as a static image with its headers'
 type: 'feature'
 created: '2026-11-21'
-status: 'done'
+status: 'in-review'
 baseline_revision: '3b7d7d934c32116fdddf0562df21ad59d3c7a4c4'
 baseline_commit: '3b7d7d934c32116fdddf0562df21ad59d3c7a4c4'
-review_loop_iteration: 0
+review_loop_iteration: 1
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-20-context.md'
   - '{project-root}/_bmad-output/implementation-artifacts/spec-20-2-edge-functions-run-behind-a-keyless-router.md'
@@ -78,7 +78,7 @@ context:
 - [x] `deploy/web/render-headers.sh` -- POSIX sh + awk: `/*` block → `add_header Name "value" always;`, with the refusals above.
 - [x] `deploy/web/default.conf` -- server on 8080: fallback, `/assets/` immutable + `=404`, `\.map$` 404, manifest type, gzip, `server_tokens off`, `absolute_redirect off`; the headers include in every location.
 - [x] `deploy/web/Dockerfile` -- render stage + final stage on the pinned image (tag and digest), root-owned files, `nginx -t`, `USER 101`.
-- [x] `.dockerignore` -- `**/*.map`.
+- [x] `.dockerignore` -- `apps/web/dist/**/*.map` (narrowed from `**/*.map` in review).
 - [x] `scripts/ci/probe-web-image.sh`, `.github/workflows/pipeline.yml` -- job `web-image` (needs `build`): download `web-dist`, build (no push), run `--network none --read-only`, probe the matrix plus uid, no map, no writable file; required by `ci-passed`.
 - [x] `test/web-image.test.ts` -- render script run under `sh` (real `_headers` and refusals), config and Dockerfile pins, CI job shape (no secrets, no push, no login).
 - [x] `test/static-hosting.test.ts` -- HSTS pinned; the built `_headers` carries the Report-Only CSP whose script hashes match the built page.
@@ -95,7 +95,7 @@ context:
 
 nginx-unprivileged over Caddy (root by default, larger) and static-web-server (smaller project): F5-maintained, ~20 MB, non-root by design. The CSP is computed in the Vite build, not in the image, so it is derived from the very `VITE_SUPABASE_URL` the bundle was built with and cannot drift from it; the image only translates. No `report-uri`: there is no endpoint to receive reports; 20.5 reads the browser's Report-Only console messages on staging. Enforcing = changing `CSP_HEADER`.
 
-Reviewed decision (review, 2026-11-21): the fallback stays as frozen. Every unknown path outside `/assets/` answers `index.html` with 200, so a missing root file such as `/sw.js` keeps answering the shell, as Cloudflare Pages did (parity). Only `/assets/` is different: a missing file there, and the `/assets/` directory itself (which `try_files` would otherwise answer with 403), is a plain-text 404.
+Reviewed decision (review, 2026-11-21): the fallback stays as frozen. Every unknown path outside `/assets/` answers `index.html` with 200, so a missing root file such as `/sw.js` keeps answering the shell, as Cloudflare Pages did (parity). Only `/assets/` is different: a missing file there, and the `/assets/` directory itself (which `try_files` would otherwise answer with 403), is a plain-text 404. One root path is also exact: `/site.webmanifest`, typed `application/manifest+json`, is a plain 404 if the build ever lacks it (the shell under a manifest type would be worse); every build emits it.
 
 ## Verification
 
@@ -131,6 +131,34 @@ Layers: blind hunter, edge-case hunter, verification gap, epic-AC auditor (no un
 - [x] [Review][Defer] No automated refresh of the pinned base image → 20.9 (deferred-work)
 
 Rejected, with reasons: a 404 for missing root-level files (the frozen fallback; parity with Pages, recorded above); a browser CSP check in e2e or a report endpoint (20.5 verifies on staging; a collector is a new service); `\.map$` matching a client route ending in `.map` (no route does); a founder sign-off on HSTS (the founder delegated the decision; recorded in the deviations); COOP/CORP (headers equal today's hosting; a later hardening choice).
+
+### Review Findings (2026-11-21, second pass)
+
+Layers: blind hunter, edge-case hunter, verification gap, acceptance auditor, epic-AC auditor (no unlisted deviation; every deferred AC has its entry); artifact renderer skipped (no generated file). Run unattended. Focus: header parity, CSP against every origin the app talks to, nginx pitfalls, the service worker's caching, render-script injection, CI safety on a public repo, the `.env.production.local` placeholder.
+
+- [x] [Review][Patch] Headers nginx also emits or that frame the response (`Accept-Ranges`, `Content-Range`, `Connection`, `Keep-Alive`, `Transfer-Encoding`, `Location`, `Expires`) were not refused → refused, tested [render-headers.sh, web-image.test.ts, DEPLOY.md]
+- [x] [Review][Patch] `headersWithPolicy` refused only a second Report-Only line, not an enforcing `Content-Security-Policy` already in `_headers` → either name refused, tested [content-security-policy.ts]
+- [x] [Review][Patch] The render stage (uid 101) read context files with whatever mode they arrived → `COPY --chmod=0644` [Dockerfile]
+- [x] [Review][Patch] The probe required the Report-Only name, so 20.5's one-constant enforcement would fail it; it counted headers instead of naming them → either policy name; the five `public/_headers` names checked by name [probe-web-image.sh]
+- [x] [Review][Patch] The probe took any `assets/index-*.js` (arbitrary order, maybe under `gzip_min_length`) → the entry chunk `index.html` names [probe-web-image.sh]
+- [x] [Review][Patch] Unprobed: a revalidation's 304, a 400 nginx makes before choosing a location (the server-level include), the HEALTHCHECK command, the render refusals under the image's busybox → all four probed (`If-Modified-Since`; a 9000-byte header; the inspected `Healthcheck.Test` run in the container; seven refusal fixtures through the image's `sh`) and pinned [probe-web-image.sh, web-image.test.ts, DEPLOY.md]
+- [x] [Review][Patch] The `test` job's placeholder origin line, which alone makes the origin-wiring assertion non-vacuous, was unpinned → pinned [web-image.test.ts]
+- [x] [Review][Patch] Docs drift: spec `status: done` while CI is pending (→ `in-review`, as 20.2), the `.dockerignore` task line, the spine's partial refusal list, the manifest's plain 404 undocumented, the 20.5 entry not naming REST/Auth/Storage/Functions [spec, ARCHITECTURE-SPINE.md, DEPLOY.md, deferred-work.md]
+- [x] [Review][Defer] COOP/CORP had no owner → 20.9 (deferred-work)
+
+Rejected, with reasons:
+- `gzip_types` lacks `text/javascript`: nginx's `conf/mime.types` maps `js` to `application/javascript` (checked on nginx master, 2026-11-21).
+- `alias` path traversal: the config uses `root` only, no `alias`.
+- `add_header` inheritance: every location has its own include, the server level covers pre-location errors, and `Cache-Control` is the only other header; correct as written.
+- CSP breaking the real app when enforced: Supabase REST, Auth, Storage (signed logo URLs built on `VITE_SUPABASE_URL`) and Functions (`/functions/v1`) share the one origin in `connect-src`/`img-src`; no Realtime channel (no `wss:` needed; noted in the policy's comment); the web-push subscription is the browser's own request and the push send is server-side; fonts are self-hosted woff2 (`font-src 'self'`), pdfmake's fonts are JS; no `createObjectURL`/`FileReader`/`data:` images in `src`; the PDF downloads through an anchor, not a frame; no inline event handlers; the SW's `importScripts` is same-origin and `sw.js` gets the same policy. 20.5 still verifies in a browser.
+- Service worker caching: `sw.js`, `push-sw.js` and the workbox runtime are `no-cache` (revalidated on every check); correct.
+- Render-script injection: names are tokens, values printable ASCII without `"`, `$`, `\`, output only from END after every line passed; mawk and busybox awk now also run the test file (58/58 each).
+- CI on a public repo: `pull_request` (not `_target`), `contents: read`, no secret or `vars`, `persist-credentials: false`, SHA-pinned actions, no push or login.
+- `.env.production.local` leaking: Vitest's `test` mode never reads it, the `test` job uploads no dist, the e2e and `web-image` jobs run on other runners from the `build` job's artifact.
+- A `vite build --watch` re-run hitting "already sets": no script runs a watch build, and the guard is intended.
+- Report-Only without a collector, the unnamed one-off failure before the first patches, the `test`/`build` dist split, the spine's runbook detail, the broad `find /` writable check: recorded before, documented in the pipeline comment, or intended (CI verifies).
+
+**Result (second pass):** `pnpm build`; the seven root files: 2164 passed, 0 failed, 0 skipped; `test/web-image.test.ts` also under mawk and busybox awk: 58/58 each; `pnpm --filter ./apps/web test`: 6541 passed; `pnpm typecheck`, `pnpm lint` clean. The new probe steps run in CI only (no container may run here); their refusal fixtures were run through `busybox sh` on the host: each exits 1 with nothing on stdout.
 
 ## Suggested Review Order
 

@@ -20,9 +20,11 @@
 #   - a `!` detach;
 #   - a header line with no `:`, an empty or non-token name, or an empty value;
 #   - a name given twice (case-insensitively);
-#   - a header nginx sets itself (Cache-Control, Content-Type,
-#     Content-Length, Server, Date, ETag, Last-Modified, Vary,
-#     Content-Encoding): `add_header` would send it a second time;
+#   - a header nginx sets itself or that frames the response (Cache-Control,
+#     Content-Type, Content-Length, Server, Date, ETag, Last-Modified, Vary,
+#     Content-Encoding, Accept-Ranges, Content-Range, Connection, Keep-Alive,
+#     Transfer-Encoding, Location, Expires): `add_header` would send it a
+#     second time, and a second framing header can break the response;
 #   - a value holding `"`, `$`, `\`, a control character (each would end or
 #     rewrite nginx's quoted string) or a non-ASCII byte;
 #   - a file with no header at all.
@@ -67,7 +69,7 @@ LC_ALL=C awk '
     # Printable ASCII only (space to tilde): no byte above 127.
     if (value !~ /^[ -~]+$/) refuse("a value with a non-ASCII character for " name)
     key = tolower(name)
-    if (key ~ /^(cache-control|content-type|content-length|server|date|etag|last-modified|vary|content-encoding)$/) {
+    if (key ~ /^(cache-control|content-type|content-length|server|date|etag|last-modified|vary|content-encoding|accept-ranges|content-range|connection|keep-alive|transfer-encoding|location|expires)$/) {
       refuse("a header nginx sets itself: " name)
     }
     if (key in seen) refuse("a header named twice: " name)

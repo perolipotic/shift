@@ -134,6 +134,14 @@ describe('headersWithPolicy (the build’s step)', () => {
       /not an http\(s\) URL/,
     );
   });
+
+  it('refuses a _headers that already sets either policy header', () => {
+    for (const name of ['Content-Security-Policy', 'content-security-policy-report-only']) {
+      expect(() =>
+        headersWithPolicy({ headers: `${headers}  ${name}: default-src 'none'\n`, page, supabaseUrl: '', sha256Base64 }),
+      ).toThrow(/already sets a Content-Security-Policy/);
+    }
+  });
 });
 
 describe('contentSecurityPolicy', () => {
