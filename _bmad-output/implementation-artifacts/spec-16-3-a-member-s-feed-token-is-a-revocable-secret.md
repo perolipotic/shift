@@ -9,7 +9,9 @@ context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-16-context.md'
 ---
 
-Status: built, CI pending (no PR yet). Baseline: `main` at #339 (16.2); touches no hot file. Migration `0067` (19.1, PR #341, holds `0066`); renumber at merge if needed.
+Status: built, CI pending. Baseline: `main` at #339 (16.2); rebased onto `main` at #341 (19.1, `0066`), so `0067` follows with no gap. Touches no hot file.
+
+**After the rebase onto 19.1 (2026-11-21):** 19.1's claimless-account sweep (`test/claimless-account.test.ts`) now reaches 0067. The table: `authenticated` holds no privilege on `calendar_feed_tokens`, so its read, insert, update and delete each end 42501, which the sweep accepts. The functions: the five `authenticated`-executable ones each read the `organization_id` claim first, and a claimless session has none, so each raises 42501 `CALENDAR_FEED_REFUSED` before any read or write that depends on an argument: the three with no uuid argument answer a refusal ("says nothing"), and the two admin ones answer the same refusal for a real and an absent member id. `calendar_feed_inputs` is `anon`'s alone and is not swept. No exception (`UNSWEPT_ALLOWED`, `ALLOWED_TO_SUCCEED`) is needed.
 
 <frozen-after-approval reason="human-owned intent — do not modify unless human renegotiates">
 
