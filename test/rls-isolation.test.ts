@@ -27533,13 +27533,14 @@ describe('a loan is amended, ended early or removed (story 18.4, 0064)', () => {
         const organization = caller.organizationId;
         const { member, other } = await lendingScene(client, organization, caller.authUserId);
         const { member: second, other: pastTeam } = await lendingScene(client, organization, caller.authUserId);
+        // A removed future loan does not block: the way out of TEAM_HAS_LOANS.
+        // Its scene is built as the owner, before the role switch (auth.users).
+        const { other: freed } = await lendingScene(client, organization, caller.authUserId);
         const day = (offset: number) => organizationDay(client, organization, offset);
 
         await actAs(client, caller.authUserId, organization);
         await insertLoan(client, { organization, member: member.id, team: other, during: `[${await day(-3)},${await day(0)}]` });
         await insertLoan(client, { organization, member: second.id, team: pastTeam, during: `[${await day(-5)},${await day(-1)}]` });
-        // A removed future loan does not block: the way out of TEAM_HAS_LOANS.
-        const { other: freed } = await lendingScene(client, organization, caller.authUserId);
         const removable = await insertLoan(client, { organization, member: second.id, team: freed, during: `[${await day(5)},${await day(6)}]` });
         const lentTo = await refusedThenContinue(client, () => client.query('update teams set archived = true where id = $1', [other]));
         await client.query('update teams set archived = true where id = $1', [pastTeam]);
