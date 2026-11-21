@@ -2268,3 +2268,188 @@ Encrypt) and redirects HTTP to HTTPS; a browser honours HSTS only from an
 HTTPS answer, so the first visit over HTTPS pins the host for a year.
 Run it with a read-only root and a tmpfs on `/tmp` if Coolify allows it; it
 needs no other writable path.
+
+### 9.8 The host: closed to everything but the web (story 20.4)
+
+**Not applied yet.** The scripts below are in the repository; applying them
+waits for the founder's go, the ratification of H-2, H-3, H-4, H-5, H-10 and
+H-15, console access to the VPS provider, and a `security-review` of the rules
+(`deploy/host/firewall/`) and of `deploy/host/shift-host.sh`. Nothing in this
+section has been run on any host.
+
+After it, the only services the internet reaches are 80/tcp, 443/tcp and
+443/udp, over IPv4 and IPv6. The host also still answers ICMP, receives its
+DHCP replies, and accepts Tailscale's WireGuard UDP port (which answers only
+to tailnet peers). SSH, the Coolify UI and API (and its realtime and terminal
+ports), Studio and Postgres are reached over the tailnet only.
+
+| Component | What `shift-host.sh apply <component>` does | Decision |
+| --- | --- | --- |
+| `firewall` | Loads two chains of its own, `SHIFT-INPUT` and `SHIFT-DOCKER-USER`, for IPv4 and IPv6 (`deploy/host/firewall/shift-v4.rules`, `shift-v6.rules`), and puts one jump to each at position 1 of `INPUT` and `DOCKER-USER` (tailscaled may later put its own `ts-*` jumps above it; they only admit tailnet traffic, so the check ignores them). Docker's chains and the rules already in `DOCKER-USER` (the development stack's drop) are left as they are. Installs `shift-host-firewall.service`, which reloads the CONFIRMED rules after Docker starts | H-2, H-3, H-4 |
+| `sshd` | Installs `/etc/ssh/sshd_config.d/00-shift-hardening.conf` (key only, `PermitRootLogin prohibit-password`), checks it with `sshd -t` and `sshd -T`, reloads sshd; refuses if root's `authorized_keys` holds no key | H-4 |
+| `swap` | A 4 GiB `/swapfile`, in `/etc/fstab`, and `vm.swappiness = 10` (`/etc/sysctl.d/99-shift-swap.conf`) | H-15 |
+| `upgrades` | Keeps unattended security upgrades on, sets `Unattended-Upgrade::Automatic-Reboot "false"`, and holds Docker Engine and containerd back from unattended upgrades (`/etc/apt/apt.conf.d/52shift-unattended-upgrades`) | H-10 |
+| `coolify` | Sets Coolify's `is_auto_update_enabled` to false (the field the UI's Settings > Auto Update writes) and pins `AUTOUPDATE=false` in Coolify's own `/data/coolify/source/.env`, which its init and its upgrade script read | H-10 |
+
+**The rules, in words.** On the public interface (`PUBLIC_IF`, usually
+`eth0`; the script refuses one that does not carry the default route), a new
+connection is admitted only to 80/tcp, 443/tcp or 443/udp, whether it goes to
+a container (`SHIFT-DOCKER-USER`, judged by the connection's ORIGINAL
+destination port, because `DOCKER-USER` sees packets after Docker's DNAT) or
+to the host itself (`SHIFT-INPUT`, which also admits ICMP, DHCP replies and
+Tailscale's UDP port). Everything else new from the public interface is
+dropped, on both families: a port Docker publishes on `[::]` through its
+userland proxy reaches `INPUT`, not `FORWARD`. SSH is admitted only from `lo`,
+the tailnet interface and Coolify's own Docker network (bridge and subnets
+read from `docker network inspect coolify`): Coolify reaches its own host over
+SSH from there, so a rule that admitted only the tailnet would cut Coolify off
+its server. Traffic arriving on the tailnet is not filtered here; the
+Tailscale ACL decides who reaches what (H-5). Any OTHER interface with an
+address (a provider's private network, say) is filtered for SSH only, and
+`plan` names it. Admitted packets `RETURN` rather than `ACCEPT`, so nothing
+that was dropped before is admitted now.
+
+**Docker Engine 28 or later.** Before 28, a port published on `127.0.0.1`
+(Postgres and Studio, §9.1) was reachable from other hosts on the same L2
+segment. `SHIFT-DOCKER-USER` drops forwarded traffic from the public interface
+whose original destination is `127.0.0.0/8` or `::1` whatever the version, and
+`plan` warns below 28; upgrade in the maintenance window if it does.
+
+**What the host firewall does not reach.** Traffic between containers of one
+stack never crosses the public interface. postgres-meta answering `/query`
+without authentication to its stack's network, and `pg_net` being executable
+by `anon` and `authenticated`, are therefore not closed here: the network
+split is story 20.5's, the `REVOKE` a migration story of its own
+(`deferred-work.md`).
+
+#### Applying it (the founder, from the provider's console)
+
+`shift-host.sh` with no mode is `plan`: it changes nothing and prints what it
+would run. It exits 3 when something would change and 0 when nothing would.
+`apply` needs the components named.
+
+Applying `firewall` or `sshd` FIRST records what is there and arms two ways
+back, so a step that fails half-way is still undone:
+
+- a transient timer that runs `revert` after `REVERT_AFTER` seconds (300 by
+  default) unless `confirm` runs;
+- `shift-host-revert-at-boot.service`, which runs the same `revert` if the
+  host reboots before `confirm`.
+
+`revert` goes back to the last CONFIRMED state: the confirmed firewall if
+there was one (otherwise no `SHIFT-*` rules at all), and the sshd drop-in
+exactly as it was. `confirm` checks first that the live rules equal the
+applied ones and that `sshd -T` shows the hardened values; only then does it
+keep them, and enable the boot unit that reloads them.
+
+```bash
+# 0. On the host, as root, on the PROVIDER'S CONSOLE (not SSH: apply refuses a
+#    session with sshd among its ancestors for firewall and sshd, unless
+#    --allow-ssh-session is given; tmux or screen hide that, so do not use
+#    them, and Tailscale SSH counts as SSH). Check out exactly the commit the security-review approved.
+git clone <this repository's clone URL> /root/shift
+cd /root/shift
+git checkout --detach <the reviewed commit>
+git rev-parse HEAD                                  # -> the reviewed commit
+
+# 1. Re-inspect the host before changing anything (proposal §1.3). Note what
+#    listens, the current rules, sshd's effective values and the interfaces.
+#    Keep the notes off the repository: it is public.
+ss -ltnup
+iptables -S; ip6tables -S
+sshd -T | grep -E '^(port|passwordauthentication|permitrootlogin|kbdinteractiveauthentication) '
+ls /etc/ssh/sshd_config.d/
+ip -br addr; ip route show default; ip -6 route show default
+docker version --format '{{.Server.Version}}'      # 28 or later
+docker network inspect coolify --format '{{.Driver}} {{json .IPAM.Config}}'
+grep -c . /root/.ssh/authorized_keys                # at least one key, Coolify's included
+
+# 2. The host's values, from step 1, in a file outside the checkout.
+install -m 0600 deploy/host/host.env.example /root/host.env
+"${EDITOR:-nano}" /root/host.env                    # PUBLIC_IF, SSH_PORT, TAILSCALE_IF, ...
+
+# 3. Read the rules exactly as they will be loaded, and the plan.
+deploy/host/shift-host.sh render --env /root/host.env
+deploy/host/shift-host.sh plan --env /root/host.env
+
+# 4. Firewall and sshd together, under the revert.
+deploy/host/shift-host.sh apply firewall sshd --env /root/host.env
+# -> A revert is armed: in 300s, or at the next boot, the change is undone unless confirmed.
+
+# 5. Within the window, from a NEW session on a tailnet device (keep the
+#    console open):
+#    - ssh root@<the host's tailnet name>        by key; a password is refused
+#    - the Coolify UI at http://<tailnet name>:<Coolify's port>
+#    - Coolify > Servers > localhost > Validate Server   ✅ (SSH from its bridge)
+#    - https://app.<domain> and https://api.<domain> answer, once they exist
+#    All good: confirm, on the console.
+/usr/local/sbin/shift-host confirm
+#    Anything wrong: do nothing and the timer reverts, or revert now.
+/usr/local/sbin/shift-host revert
+
+# 6. The rest. No timer: none of these can cut access.
+deploy/host/shift-host.sh apply swap upgrades coolify --env /root/host.env
+
+# 7. Everything in force. The installed copy plans from the confirmed files.
+/usr/local/sbin/shift-host plan                     # -> Nothing to change. (exit 0)
+/usr/local/sbin/shift-host status
+```
+
+Then, **from a machine outside the host** (not routed through it), as root,
+with nmap:
+
+```bash
+sudo deploy/host/verify-exposure.sh --ipv4 <public IPv4> --ipv6 <public IPv6> \
+  --tailnet-host <the host's tailnet name> --coolify-port <Coolify's port> \
+  --studio-url <Studio's tailscale-serve URL> --postgres-port <its tailscale-serve port> \
+  --tailscale-udp-port <host.env's TAILSCALE_UDP_PORT, if not 41641>
+# -> PASS  IPv4 ...: only 80 and 443 answer on TCP
+# -> PASS  IPv4 ...: of the UDP ports probed (...), none answers but 443 (and Tailscale's)
+# -> PASS  IPv6 ... (the same two)
+# -> PASS  SSH over the tailnet offers publickey only (a password is refused)
+# -> PASS  SSH by key works / Coolify UI / Studio / Postgres answer over the tailnet
+```
+
+A provider's own firewall in front of the host makes this scan green
+whatever the host's rules say: scan with it open (or absent), so the scan
+judges the host. The script runs as root, so the tailnet SSH checks use
+root's keys and `known_hosts` on the scanning machine.
+
+A full TCP scan of each address must find exactly 80 and 443. The UDP half
+probes common ports only, and a silent UDP service reads like a dropped port;
+for UDP, the rules (`render`) are the proof. If the
+scanning machine has no IPv6 route, the IPv6 lines FAIL: scan from one that
+has. **Studio and Postgres** exist on the tailnet only once story 20.5 has
+stood a stack up: before that, run without `--studio-url` and
+`--postgres-port`, and run the full command again as part of 20.5; the epic's
+"Studio and Postgres answer over the tailnet" is proved then. Run the scan
+again after the first reboot in the maintenance window, to prove the boot
+unit.
+
+**Locked out?** The console still works whatever the firewall says. Before
+`confirm`: `/usr/local/sbin/shift-host revert` there, or reboot (the
+revert-at-boot unit undoes both the firewall and the sshd change). After
+`confirm`, `revert` with nothing pending refuses; `revert --all` removes the
+whole hardening, firewall and sshd drop-in. A revert that fails keeps the
+change pending, so run it again (or reboot) until it reports success. A later re-apply (with a new `--env` file) goes through the
+same `apply`, check, `confirm`; left unconfirmed, it reverts to the last
+confirmed state.
+
+#### The monthly maintenance window (H-10, H-15)
+
+Proposed, to be ratified with H-10: **the first Saturday of each month,
+07:00–09:00 Europe/Zagreb**, outside the hours the pilot's teams plan in.
+Nothing reboots or upgrades itself outside it: unattended upgrades install
+security fixes but never reboot and never touch Docker Engine or containerd,
+and Coolify does not update itself. In the window:
+
+1. A manual backup of each production database (story 20.7's procedure).
+2. `apt update && apt full-upgrade`, Docker Engine included; reboot if
+   `/var/run/reboot-required` exists.
+3. Coolify, by hand, after reading its release notes, from its UI. Then
+   `shift-host plan firewall`: if the upgrade recreated Coolify's network
+   (a new bridge or subnet), `systemctl restart shift-host-firewall` loads
+   the rules for it, or Validate Server fails until the next reboot.
+4. After the reboot: `shift-host status` shows both chains and
+   `shift-host-firewall.service` active; `shift-host plan` says nothing to
+   change; `verify-exposure.sh` passes from outside; `free -h` shows the swap.

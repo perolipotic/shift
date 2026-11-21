@@ -1,0 +1,25 @@
+// Story 20.4 (H-10): automatic OS security updates stay on; the host never
+// reboots itself. A kernel update waits for the monthly maintenance window
+// (DEPLOY.md §9.8), where someone is watching when every stack restarts.
+//
+// apt reads /etc/apt/apt.conf.d in lexical order and a later value wins, so
+// 52 overrides 20auto-upgrades and 50unattended-upgrades for these keys.
+// `shift-host.sh` checks the result with `apt-config dump`.
+//
+// Docker Engine and containerd are never upgraded unattended, whichever
+// archive they come from: upgrading them restarts every container. They are
+// upgraded by hand in the window, like Coolify.
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
+Unattended-Upgrade::Automatic-Reboot "false";
+Unattended-Upgrade::Package-Blacklist {
+  "docker-ce";
+  "docker-ce-cli";
+  "docker-ce-rootless-extras";
+  "docker-buildx-plugin";
+  "docker-compose-plugin";
+  "docker.io";
+  "containerd.io";
+  "containerd";
+  "runc";
+};

@@ -1,0 +1,19 @@
+# Story 20.4: the second way back from an unconfirmed change.
+#
+# `shift-host.sh apply firewall|sshd` arms a transient timer that reverts the
+# change unless `confirm` runs, but a transient timer does not survive a
+# reboot. This unit does: `apply` enables it, `confirm` and `revert` disable
+# it, and it runs only while a change is pending. It puts back the last
+# confirmed firewall (or none) and the sshd drop-in exactly as it was.
+[Unit]
+Description=Shift host: revert an unconfirmed firewall/sshd change at boot
+ConditionPathExists=/var/lib/shift-host/pending
+After=docker.service tailscaled.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/shift-host revert --at-boot
+
+[Install]
+WantedBy=multi-user.target
