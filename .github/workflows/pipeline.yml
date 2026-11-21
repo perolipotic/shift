@@ -8,8 +8,11 @@
 #                      then (shard 1) the remote smoke against the same servers;
 #                      skipped on a pull request that changes docs alone
 #            e2e-report  merges the four shards' reports into one HTML report
-#            ci-passed   the one required check on main: quality, build, test and
-#                        e2e passed (e2e may be skipped on a docs-only PR)
+#            functions-image  builds the `shift-functions` image (story 20.2),
+#                        never pushed, and probes it with no route to the internet
+#            ci-passed   the one required check on main: quality, build, test,
+#                        functions-image and e2e passed (e2e may be skipped on a
+#                        docs-only PR)
 #   main only, and only when vars.DEPLOY_ENABLED == 'true':
 #            deploy-staging → smoke-staging → deploy-production (approval) → smoke-production
 #            notify    on any failure on main
@@ -126,6 +129,28 @@ jobs:
             echo "- on EACH environment's database, the Vault secrets \`notify_url\` and \`notify_invoke_secret\` (DEPLOY.md §3a)"
             echo "- no deploy credential as a repository secret"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # Story 20.2: the self-hosted stack's functions image, BUILT ONLY. Nothing is
+  # pushed and no registry credential exists here (pushing is story 20.6's
+  # deploy). The probe runs it on an `--internal` network beside a stand-in
+  # GoTrue: both functions' workers must start from the bundles the build made
+  # (admin-auth's handler answers `PAYLOAD_INVALID`), and with GoTrue gone a
+  # token sent to a `verify_jwt` function must be refused, never passed.
+  functions-image:
+    name: Functions image (build, offline probe)
+    needs: quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build shift-functions (not pushed)
+        run: docker build --pull -f deploy/functions/Dockerfile -t "shift-functions:ci-$GITHUB_SHA" .
+
+      - name: Probe it offline
+        run: bash scripts/ci/probe-functions-image.sh "shift-functions:ci-$GITHUB_SHA"
 
   test:
     name: Test (Vitest, local Supabase)
@@ -360,7 +385,7 @@ jobs:
   # A flake on main does not, and a docs-only PR skips E2E even then.
   ci-passed:
     name: CI passed
-    needs: [quality, build, test, changes, e2e]
+    needs: [quality, build, test, functions-image, changes, e2e]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -605,7 +630,7 @@ jobs:
   # ------------------------------------------------------------------ notify
   notify:
     name: Notify
-    needs: [quality, build, test, e2e, deploy-staging, smoke-staging, deploy-production, smoke-production]
+    needs: [quality, build, test, functions-image, e2e, deploy-staging, smoke-staging, deploy-production, smoke-production]
     if: (failure() || cancelled()) && github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 5

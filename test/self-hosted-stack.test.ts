@@ -152,6 +152,32 @@ function boundContent(name: string, target: string): string {
 }
 
 const kongTemplate = boundContent('supabase-kong', '/home/kong/temp.yml');
+const logRedaction = boundContent('supabase-kong', '/home/kong/log-redaction.conf');
+
+/** The `FROM` of the `shift-functions` image (story 20.2). */
+const FUNCTIONS_BASE =
+  /^FROM\s+(\S+)\s*$/m.exec(readFileSync(join(deployRoot, 'functions', 'Dockerfile'), 'utf8'))?.[1] ?? '';
+
+/**
+ * nginx's `map` in `log-redaction.conf`, applied as nginx applies it: the
+ * regex rules in order (`~*` case-insensitive), the first match wins, its
+ * named captures substituted into the value as `$name`; otherwise `default`.
+ * PCRE's and JavaScript's syntax agree on every construct the rules use; the
+ * rules were also run in the pinned Kong (spec, Verification).
+ */
+function loggedUri(requestUri: string): string {
+  const body = /map \$request_uri \$shift_logged_uri \{([^}]*)\}/.exec(logRedaction)?.[1];
+  expect(body, 'log-redaction.conf has no map of $request_uri').toBeDefined();
+  for (const line of (body ?? '').split('\n').map((text) => text.trim())) {
+    const rule = /^"(~\*?)(.*)" "(.*)";$/.exec(line);
+    if (rule === null) continue;
+    const match = new RegExp(rule[2] ?? '', rule[1] === '~*' ? 'i' : '').exec(requestUri);
+    if (match === null) continue;
+    return (rule[3] ?? '').replace(/\$([a-z_]+)/g, (_, name: string) => match.groups?.[name] ?? '');
+  }
+  expect(body).toMatch(/^\s*default \$request_uri;$/m);
+  return requestUri;
+}
 const kongEntrypoint = boundContent('supabase-kong', '/home/kong/kong-entrypoint.sh');
 const kong = parse(kongTemplate) as KongConfig;
 
@@ -186,6 +212,7 @@ const FAKE = {
   SUPABASE_SERVICE_KEY: 'eyJfake.service.sig',
   SUPABASE_PUBLISHABLE_KEY: `sb_publishable_${'p'.repeat(64)}`,
   SUPABASE_SECRET_KEY: `sb_secret_${'s'.repeat(32)}`,
+  SHIFT_APP_URL: 'https://app.example.test',
 } as const;
 
 /**
@@ -316,6 +343,14 @@ describe('the self-hosted stack (story 20.1): what runs', () => {
     ).toBe(CLI_VERSION);
 
     for (const [name, image] of Object.entries(CLI_IMAGES)) {
+      // Story 20.2: the functions run a CI-built image whose BASE is the pin.
+      if (name === 'supabase-edge-functions') {
+        expect(service(name).image, 'the functions image is not the per-environment reference').toBe(
+          '${SHIFT_FUNCTIONS_IMAGE:?}',
+        );
+        expect(FUNCTIONS_BASE, `the functions image's base is not at CLI ${CLI_VERSION}'s version`).toBe(image);
+        continue;
+      }
       expect(pinned(service(name).image), `${name} is not pinned`).toBe(true);
       expect(service(name).image, `${name} is not at CLI ${CLI_VERSION}'s version`).toBe(image);
     }
@@ -590,6 +625,8 @@ describe('the self-hosted stack (story 20.1): keys and secrets (AD-17)', () => {
     // comes from on this stack.
     const functions = environment('supabase-edge-functions');
     const expected: Readonly<Record<string, RegExp>> = {
+      // The router's own (story 20.2): GoTrue on the stack's network.
+      SHIFT_AUTH_URL: /^http:\/\/supabase-auth:9999$/,
       SUPABASE_URL: /^http:\/\/supabase-kong:8000$/,
       SHIFT_SECRET_KEY: /^sb_secret_\$\{SERVICE_PASSWORD_64_SECRETKEY\}$/,
       SHIFT_PUBLISHABLE_KEY: /^sb_publishable_\$\{SERVICE_PASSWORD_64_PUBLISHABLEKEY\}$/,
@@ -661,6 +698,126 @@ describe('the self-hosted stack (story 20.1): keys and secrets (AD-17)', () => {
         const generated = references(value).some((reference) => GENERATED_SECRET.test(reference.name));
         expect(generated || operator.test(value), `${name} ${key}=${value}`).toBe(true);
       }
+    }
+  });
+});
+
+describe('the self-hosted stack (story 20.2): the functions route, its CORS and the access log', () => {
+  const functionsRoute = (config: KongConfig): KongService | undefined =>
+    config.services.find((candidate) => candidate.name === 'functions-v1');
+
+  it('runs the shift-functions image with the router as its main service, after GoTrue', () => {
+    const definition = service('supabase-edge-functions') as Service & {
+      command?: string[];
+      depends_on?: Record<string, { condition?: string }>;
+      healthcheck?: { test?: string[] };
+    };
+    expect(definition.command).toEqual(['start', '--main-service', '/home/deno/functions/main']);
+    // The router asks GoTrue for every `verify_jwt` call.
+    expect(definition.depends_on?.['supabase-auth']?.condition).toBe('service_healthy');
+    expect(definition.depends_on?.['supabase-kong']?.condition).toBe('service_healthy');
+    // A real probe (the main service listens), no longer the template's `echo`.
+    expect(definition.healthcheck?.test).toEqual(['CMD', 'bash', '-c', 'exec 3<>/dev/tcp/127.0.0.1/9000']);
+  });
+
+  it('forwards /functions/v1/ with no key-auth, and answers CORS for the app’s origin alone', () => {
+    const route = functionsRoute(kong);
+    expect(route?.url).toBe('http://supabase-edge-functions:9000/');
+    // The router reads the function's name from the first path segment, so
+    // Kong must strip `/functions/v1/` before forwarding.
+    expect(route?.routes).toEqual([{ name: 'functions-v1-all', strip_path: true, paths: ['/functions/v1/'] }]);
+    const plugins = route?.plugins ?? [];
+    // The router is the gate: the invoke secret and a feed token are not keys.
+    expect(plugins.map((plugin) => plugin.name)).toEqual(['cors']);
+    expect(plugins[0]?.config).toEqual({
+      origins: ['$SHIFT_APP_URL'],
+      methods: ['GET', 'POST', 'OPTIONS'],
+      credentials: false,
+      max_age: 3600,
+    });
+    expect(environment('supabase-kong').get('SHIFT_APP_URL')).toBe('${SHIFT_APP_URL:?}');
+
+    // Rendered by the compose's own entrypoint: the origin itself, nothing wider.
+    const { status, stderr, rendered } = runKongEntrypoint(FAKE);
+    expect(status, stderr).toBe(0);
+    expect(functionsRoute(parse(rendered) as KongConfig)?.plugins?.[0]?.config?.['origins']).toEqual([
+      FAKE.SHIFT_APP_URL,
+    ]);
+  });
+
+  it('refuses to start Kong with an app origin that is not a plain http(s) origin', () => {
+    // Kong 2.8's cors plugin reads an origin with any character outside
+    // [A-Za-z0-9.:/-] as a REGEX; a path never equals a browser's Origin.
+    const cases = [
+      '',
+      'app.example.test',
+      'ftp://app.example.test',
+      'https://',
+      'https://app.example.test/',
+      'https://app.example.test/x',
+      'https://*.example.test',
+      'https://app.example.test,https://other.test',
+      "https://app.example.test'",
+      'https://app.example.test x',
+      'https://:443',
+      'https://App.Example.test',
+      'https://app.example.test:',
+      'https://app.example.test:443',
+      'http://app.example.test:80',
+    ];
+    for (const shell of BUSYBOX === null ? (['host'] as const) : (['host', 'busybox'] as const)) {
+      for (const origin of cases) {
+        const { status, rendered } = runKongEntrypoint({ ...FAKE, SHIFT_APP_URL: origin }, shell);
+        expect(status, `${shell} ${JSON.stringify(origin)}`).not.toBe(0);
+        expect(rendered).toBe('');
+      }
+      const { status } = runKongEntrypoint({ ...FAKE, SHIFT_APP_URL: 'http://127.0.0.1:5173' }, shell);
+      expect(status, `${shell} a local origin with a port`).toBe(0);
+    }
+  });
+
+  it('writes the access log in the redacting format, which never logs a query, a token path or a referer', () => {
+    const env = environment('supabase-kong');
+    expect(env.get('KONG_PROXY_ACCESS_LOG')).toBe('/dev/stdout shift_redacted');
+    expect(env.get('KONG_NGINX_HTTP_INCLUDE')).toBe('/home/kong/log-redaction.conf');
+
+    const format = /^log_format shift_redacted '(.*)';$/m.exec(logRedaction)?.[1];
+    expect(format, 'no shift_redacted log_format').toBeDefined();
+    expect(format).toContain('$shift_logged_uri');
+    // Nothing that carries the raw URI, the query or the referer.
+    for (const variable of ['$request ', '$request"', '$request_uri', '$uri', '$args', '$query_string', '$arg_', '$http_referer', '$http_authorization', '$http_apikey']) {
+      expect(format, variable).not.toContain(variable);
+    }
+    // No brace form, which Coolify would read as its own variable.
+    expect(logRedaction).not.toMatch(/\$\{/);
+  });
+
+  it('redacts a function’s path after its name, and every query string', () => {
+    const cases: [string, string][] = [
+      // NFR-27: v2's calendar feed, however the path is spelled.
+      ['/functions/v1/calendar-feed/SECRET', '/functions/v1/calendar-feed[redacted]'],
+      ['/functions/v1/calendar-feed/SECRET/x.ics?y=1', '/functions/v1/calendar-feed[redacted]'],
+      ['/functions/v1/calendar-feed%2FSECRET', '/functions/v1/calendar-feed[redacted]'],
+      ['//functions/v1/calendar-feed/SECRET', '//functions/v1/calendar-feed[redacted]'],
+      ['/FUNCTIONS/V1/Calendar-Feed/SECRET', '/FUNCTIONS/V1/Calendar-Feed[redacted]'],
+      ['/functions/v1/notify?token=SECRET', '/functions/v1/notify[redacted]'],
+      ['/functions/v1/notify', '/functions/v1/notify'],
+      ['/functions/v1/admin-auth', '/functions/v1/admin-auth'],
+      // Storage's signed URL, and any other query.
+      ['/storage/v1/object/sign/organization-logos/a.png?token=SECRET', '/storage/v1/object/sign/organization-logos/a.png?[redacted]'],
+      ['/rest/v1/members?select=id', '/rest/v1/members?[redacted]'],
+      ['/rest/v1/x?next=/functions/v1/calendar-feed/SECRET', '/rest/v1/x?[redacted]'],
+      ['/auth/v1/user', '/auth/v1/user'],
+    ];
+    for (const [sent, logged] of cases) {
+      expect(loggedUri(sent), sent).toBe(logged);
+      expect(loggedUri(sent), sent).not.toContain('SECRET');
+    }
+  });
+
+  it('names the functions image per environment, as a placeholder in both templates', () => {
+    for (const file of ['staging.env.example', 'production.env.example']) {
+      expect(envTemplate(file).get('SHIFT_FUNCTIONS_IMAGE'), file).toBe('<registry>/shift-functions:<sha>');
     }
   });
 });

@@ -455,6 +455,10 @@ describe('the VAPID boundary (story 10.4)', () => {
         'deploy/coolify/supabase/docker-compose.yml',
         'deploy/coolify/supabase/staging.env.example',
         'deploy/coolify/supabase/production.env.example',
+        // Story 20.2: the router passes it, by name, to notify's worker
+        // alone; the CI probe sets it empty.
+        'deploy/functions/main/router.ts',
+        'scripts/ci/probe-functions-image.sh',
         'supabase/functions/.env.example',
         '.github/actions/deploy/action.yml',
         '.github/workflows/pipeline.yml',
