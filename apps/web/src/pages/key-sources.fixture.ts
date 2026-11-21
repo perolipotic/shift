@@ -39,6 +39,7 @@ import {
   MEMBER_LIST,
   MEMBER_LIST_KEYS,
   MEMBER_MOVE_PREVIEW_KEYS,
+  MEMBER_LOAN_KEYS,
   STAFFING_BLOCK,
   MEMBER_WRITE_KEYS,
   memberListKeys,
@@ -1682,10 +1683,18 @@ export const KEY_SOURCES = [
     // record's or a range's cost (the row, the removal prompt, *Bilo* and the
     // preview's cost) now go through one `leaveCostText`, which makes one
     // `count.days` call of its own and names the half: +4 − 4 + 1.
+    // ONE HUNDRED AND EIGHTY-EIGHT SINCE STORY 18.3: the *Smjena* card's
+    // `Posudi drugom timu`, its accessible name, the saved line and what the
+    // guarded write removed (4); the loan dialog's title, its two descriptions,
+    // close, the four labels and the placeholder, *Što se mijenja* with
+    // `i još {n}`, the double, rest-gap and inert lines' fixed keys (heading,
+    // note), the unchecked line and its retry, cancel, *Spremi* and the erasure
+    // dialog's save (20). ONE HUNDRED AND NINETY SINCE ITS REVIEW: *Razlog*'s
+    // hint and the neutral words for an inert override's unnamed member.
     name: 'the member edit form',
     file: MEMBER_EDIT,
     keys: translationKeys,
-    strings: 164,
+    strings: 190,
   },
   {
     // THIRTEEN on the member write path's rules: eleven `ljudi.form.error.*`
@@ -1788,6 +1797,16 @@ export const KEY_SOURCES = [
     file: MEMBER_MOVE_PREVIEW_KEYS,
     keys: messageKeyUnions,
     strings: 4,
+  },
+  {
+    // STORY 18.3: the loan dialog's eleven refusals (`loanRefusalMessageKey`),
+    // its four shift lines, each with or without a range
+    // (`loanShiftMessageKey`), and its three inert-override lines
+    // (`loanInertMessageKey`).
+    name: 'the loan dialog rules',
+    file: MEMBER_LOAN_KEYS,
+    keys: messageKeyUnions,
+    strings: 18,
   },
   {
     // ONE on the lockup: the accessible name it falls back to when the

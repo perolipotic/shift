@@ -191,6 +191,41 @@ export function dutiesOf<Leg extends DutyLeg>(legs: readonly Leg[]): readonly Du
   return duties;
 }
 
+/**
+ * Every pair of `legs` whose half-open spans overlap (story 18.3): two
+ * working shifts at once, a double booking. A leg ending exactly as another
+ * starts touches it and does not overlap — that is a duty ({@link dutiesOf}).
+ * Each pair is `[earlier, later]` by absolute start (input order on a tie),
+ * and the pairs are in the order of their first leg, then their second. Each
+ * leg object is returned as given.
+ *
+ * @throws RangeError on any precondition of {@link dutiesOf}'s legs.
+ */
+export function overlappingLegsOf<Leg extends DutyLeg>(legs: readonly Leg[]): readonly (readonly [Leg, Leg])[] {
+  for (const leg of legs) checkLeg(leg);
+
+  // `sort` is stable: two legs with one start keep their input order.
+  const spans = legs
+    .map((leg) => {
+      const start = legStart(leg);
+
+      return { leg, start, end: start + leg.durationMinutes };
+    })
+    .sort((a, b) => a.start - b.start);
+  const pairs: (readonly [Leg, Leg])[] = [];
+
+  spans.forEach((span, index) => {
+    for (const other of spans.slice(index + 1)) {
+      // Sorted by start: once one starts at or after this one's end, none later overlaps it.
+      if (other.start >= span.end) break;
+
+      pairs.push([span.leg, other.leg]);
+    }
+  });
+
+  return pairs;
+}
+
 /** The phase of the span `[start, end)` at `now`. */
 function phaseOf(start: number, end: number, now: number): DutyPhase {
   if (now < start) return DUTY_UPCOMING;

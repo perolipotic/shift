@@ -395,7 +395,8 @@ describe('the screen is read at all, so every sweep below means something', () =
     // NINETY-TWO SINCE STORY 13.1b: the absence type list's and write's rules.
     // NINETY-FOUR SINCE STORY 14.2: Povijest promjena and its rules.
     // NINETY-FIVE SINCE STORY 14.3: the change history export's rules.
-    expect(KEY_SOURCES).toHaveLength(95);
+    // NINETY-SIX SINCE STORY 18.3: the loan dialog's rules.
+    expect(KEY_SOURCES).toHaveLength(96);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"

@@ -9,6 +9,7 @@ import {
   dutiesOf,
   dutyProgressOf,
   momentOf,
+  overlappingLegsOf,
   type DutyLeg,
 } from '../src/index.js';
 import { at } from './fixtures.js';
@@ -123,6 +124,33 @@ describe('dutiesOf', () => {
     expect(() => dutiesOf([{ date: '2026-10-01', startMinute: -1, durationMinutes: 60 }])).toThrow(RangeError);
     expect(() => dutiesOf([{ date: '2026-10-01', startMinute: 0, durationMinutes: 0 }])).toThrow(RangeError);
     expect(() => dutiesOf([{ date: '2026-10-01', startMinute: 0, durationMinutes: 1441 }])).toThrow(RangeError);
+  });
+});
+
+describe('overlappingLegsOf (story 18.3)', () => {
+  it('pairs two legs at once, earlier first, and returns the caller’s own objects', () => {
+    const home = { ...noc('2026-10-01'), id: 'home' };
+    const lent = { date: '2026-10-02', startMinute: at(6), durationMinutes: 720, id: 'lent' };
+
+    expect(overlappingLegsOf([lent, home])).toEqual([[home, lent]]);
+  });
+
+  it('never pairs legs that only touch or are apart: those are a duty, or two shifts', () => {
+    expect(overlappingLegsOf([noc('2026-09-30'), dan('2026-10-01')])).toEqual([]);
+    expect(overlappingLegsOf([dan('2026-10-01'), dan('2026-10-03')])).toEqual([]);
+    expect(overlappingLegsOf([])).toEqual([]);
+  });
+
+  it('pairs every overlapping two of three, in start order, input order on a tie', () => {
+    const first = { ...dan('2026-10-01'), id: 'a' };
+    const second = { ...dan('2026-10-01'), id: 'b' };
+    const late = { date: '2026-10-01', startMinute: at(18), durationMinutes: 120, id: 'c' };
+
+    expect(overlappingLegsOf([late, first, second]).map(([x, y]) => `${x.id}${y.id}`)).toEqual(['ab', 'ac', 'bc']);
+  });
+
+  it('refuses a leg out of range', () => {
+    expect(() => overlappingLegsOf([{ date: '2026-10-01', startMinute: 0, durationMinutes: 0 }])).toThrow(RangeError);
   });
 });
 

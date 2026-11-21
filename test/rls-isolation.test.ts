@@ -27218,6 +27218,96 @@ describe('a loan is a recorded exception (story 18.2)', () => {
   );
 });
 
+// ------------------------------------ story 18.3: the lent member is told
+
+/**
+ * STORY 18.3 (`0063`, FR-62). `private.notify_team_loan()`, an AFTER INSERT
+ * trigger on `team_loans`, writes `LOAN_MADE` to the lent member through
+ * `notify_members` and its recipient rules: an email row with an address, a
+ * push row with a device, never to the member whose session wrote it, and
+ * nothing for a loan wholly before the organization's today. The operands are
+ * the inclusive dates and the loan team's name: never the reason or the
+ * author. Every case runs in a rolled-back transaction.
+ */
+describe('the lent member is told of a loan (story 18.3, 0063)', () => {
+  const P256DH = `B${'k'.repeat(86)}`;
+  const AUTH = 'a'.repeat(22);
+
+  /** One loan's outbox rows as `channel:code:recipient`, sorted, as the owner. */
+  async function loanRowsOf(client: Client, loan: string): Promise<string[]> {
+    const { rows } = await client.query<{ row: string }>(
+      `select channel || ':' || code || ':' || recipient_member_id::text as row
+         from notification_outbox where subject_id = $1 order by 1`,
+      [loan],
+    );
+    return rows.map(({ row }) => row);
+  }
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'tells the $fixture lent member by email and by push, with the dates and the loan team, and nothing of a wholly past loan',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const organization = caller.organizationId;
+        const { member, other } = await lendingScene(client, organization, caller.authUserId);
+        await client.query('update members set email = $2 where id = $1', [member.id, `${member.id}@example.org`]);
+        await client.query(
+          `insert into push_subscriptions (organization_id, member_id, endpoint, p256dh, auth)
+           values ($1, $2, $3, $4, $5)`,
+          [organization, member.id, `https://fcm.googleapis.com/fcm/send/0063-${member.id}`, P256DH, AUTH],
+        );
+        const { rows: teams } = await client.query<{ name: string }>('select name from teams where id = $1', [other]);
+        const day = (offset: number) => organizationDay(client, organization, offset);
+        const ahead = `[${await day(10)},${await day(12)}]`;
+        const past = `[${await day(-12)},${await day(-10)}]`;
+        const endingToday = `[${await day(-3)},${await day(0)}]`;
+
+        await actAs(client, caller.authUserId, organization);
+        const told = await insertLoan(client, { organization, member: member.id, team: other, during: ahead });
+        const silent = await insertLoan(client, { organization, member: member.id, team: other, during: past });
+        const today = await insertLoan(client, { organization, member: member.id, team: other, during: endingToday });
+        await actAsOwner(client);
+        const { rows: operands } = await client.query<{ operands: Record<string, unknown> }>(
+          `select operands from notification_outbox where subject_id = $1 and channel = 'email'`,
+          [told],
+        );
+
+        expect(await loanRowsOf(client, told), slug).toEqual([`email:LOAN_MADE:${member.id}`, `push:LOAN_MADE:${member.id}`]);
+        expect(operands.map((row) => row.operands), slug).toEqual([
+          { startDate: await day(10), endDate: await day(12), teamName: teams[0]?.name },
+        ]);
+        expect(await loanRowsOf(client, silent), `${slug}: a wholly past loan was told`).toEqual([]);
+        expect(await loanRowsOf(client, today), `${slug}: a loan ending today was not told`).toEqual([
+          `email:LOAN_MADE:${member.id}`,
+          `push:LOAN_MADE:${member.id}`,
+        ]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'tells nobody when the $fixture admin lends themselves, or a member with no address and no device',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const organization = caller.organizationId;
+        const { member, other } = await lendingScene(client, organization, caller.authUserId);
+        await client.query('update members set email = null where id = $1', [member.id]);
+        await client.query('update members set email = $2 where id = $1', [caller.id, `${caller.id}@example.org`]);
+        const during = `[${await organizationDay(client, organization, 10)},${await organizationDay(client, organization, 12)}]`;
+
+        await actAs(client, caller.authUserId, organization);
+        const unreachable = await insertLoan(client, { organization, member: member.id, team: other, during });
+        const self = await insertLoan(client, { organization, member: caller.id, team: other, during });
+        await actAsOwner(client);
+
+        expect(await loanRowsOf(client, unreachable), `${slug}: a member with no channel was told`).toEqual([]);
+        expect(await loanRowsOf(client, self), `${slug}: the admin was told of their own loan`).toEqual([]);
+      });
+    },
+  );
+});
+
 // ------------------------------------ story 14.1: every change is recorded
 
 /**

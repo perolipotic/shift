@@ -284,7 +284,7 @@ describe('notify renders from a pinned copy of the obavijesti namespace', () => 
       const rendered = render(
         code,
         'hr',
-        { startDate: '2046-03-02', endDate: '2046-03-06', date: '2046-03-02', effectiveFrom: '2046-03-02', shiftTypeName: 'Dnevna', memberName: 'Ana Kovač', proposerName: 'Ana Kovač', addresseeName: 'Ivo Babić', requestId: REQUEST_ID },
+        { startDate: '2046-03-02', endDate: '2046-03-06', date: '2046-03-02', effectiveFrom: '2046-03-02', shiftTypeName: 'Dnevna', memberName: 'Ana Kovač', proposerName: 'Ana Kovač', addresseeName: 'Ivo Babić', requestId: REQUEST_ID, teamName: 'Smjena C' },
         TARGET,
       );
       if (!rendered.ok) throw new Error(`${code} did not render`);
@@ -498,6 +498,14 @@ const EVERY_CODE: readonly {
     subject: 'Zamjena 02.03.2046 nije odobrena',
     text: `${ORGANIZATION_NAME}: zamjena smjene 02.03.2046 nije odobrena. Pogledaj u aplikaciji: {link}`,
   },
+  // STORY 18.3 (0063): the lent member, told of the loan; the team name is text.
+  {
+    code: 'LOAN_MADE',
+    operands: { startDate: '2046-03-02', endDate: '2046-03-06', teamName: 'Smjena C' },
+    path: '/kalendar',
+    subject: 'Od 02.03.2046 do 06.03.2046 radiš u timu Smjena C',
+    text: `${ORGANIZATION_NAME}: od 02.03.2046 do 06.03.2046 radiš u timu Smjena C. Pogledaj kalendar: {link}`,
+  },
 ];
 
 describe("notify renders every 10.2 code with the organization's name and its sign-in link", () => {
@@ -534,7 +542,18 @@ describe("notify renders every 10.2 code with the organization's name and its si
       const variant = RETURN_VARIANT_OF[key];
       const halves = HALF_VARIANT_OF[key];
 
-      const allowed = ['organizationName', 'link', 'date', 'startDate', 'endDate', 'effectiveFrom', 'shiftTypeName'];
+      // STORY 18.3: a loan names the loan team, which the lent member reads
+      // anyway on every roster (R11.2); never another member, the reason or the author.
+      const allowed = [
+        'organizationName',
+        'link',
+        'date',
+        'startDate',
+        'endDate',
+        'effectiveFrom',
+        'shiftTypeName',
+        ...(code === 'LOAN_MADE' ? ['teamName'] : []),
+      ];
       const checked = [
         { message: OBAVIJESTI[key], names: allowed },
         // Only a two-way variant may name the return date.

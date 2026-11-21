@@ -346,7 +346,7 @@ export const FEATURE_PUBLIC = {
     'services/surface-keys', // shift-types
   ],
   'shift-types': [
-    'services/list', // calendar, history, rotation, pages
+    'services/list', // calendar, history, members, rotation, pages
     'services/write', // pages
   ],
   // Story 11.2: every save that can newly leave a working shift short of people
