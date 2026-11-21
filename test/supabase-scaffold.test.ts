@@ -4953,6 +4953,45 @@ describe('the access-control migration', () => {
     expect(migration, '0062 backfills a loan').not.toMatch(/\b(insert into|update public|delete from)\b/i);
   });
 
+  // ------------------------------------------------ story 18.3: the lent member is told
+
+  it('tells the lent member through notify_members alone, never of a wholly past loan, with no reason or author (story 18.3)', () => {
+    // STORY 18.3 (0063, FR-62, AD-18): source text only; what the trigger
+    // writes is `test/rls-isolation.test.ts`, which runs in CI.
+    const migration = stripLineComments(
+      readFileSync(join(supabaseRoot, 'migrations', '0063_team_loan_notifications.sql'), 'utf8'),
+    );
+    const notifier = /create function private\.notify_team_loan\(\) returns trigger[\s\S]*?\$\$;/i.exec(migration)?.[0];
+
+    expect(notifier, 'notify_team_loan is not declared').toBeDefined();
+    expect(notifier).toMatch(/security definer/i);
+    expect(notifier).toMatch(/set search_path = ''/);
+    expect(notifier, 'a loan row bypasses notify_members').not.toMatch(/notification_outbox/);
+    expect(notifier?.match(/private\.notify_members\(/g), 'the loan writes once').toHaveLength(1);
+    expect(notifier).toMatch(/'LOAN_MADE', new\.id, array\[new\.member_id\]/);
+    expect(notifier, 'a wholly past loan is told').toMatch(
+      /if today is null or pg_catalog\.upper\(new\.during\) - 1 < today then\s+return null;\s+end if;/,
+    );
+    expect(notifier).toMatch(/'startDate', pg_catalog\.to_char\(pg_catalog\.lower\(new\.during\), 'YYYY-MM-DD'\)/);
+    expect(notifier).toMatch(/'endDate', pg_catalog\.to_char\(pg_catalog\.upper\(new\.during\) - 1, 'YYYY-MM-DD'\)/);
+    expect(notifier).toMatch(/'teamName', team_name/);
+    expect(notifier, 'the team name is read outside the loan\'s organization').toMatch(
+      /from public\.teams t\s+where t\.organization_id = new\.organization_id\s+and t\.id = new\.team_id;/,
+    );
+    expect(notifier, 'the reason or the author is an operand (FR-92)').not.toMatch(/new\.(reason|created_by)/);
+    expect(migration).toMatch(
+      /create trigger team_loans_notify_insert\s+after insert on public\.team_loans\s+for each row\s+when \(new\.removed_at is null\)\s+execute function private\.notify_team_loan\(\);/,
+    );
+    expect(migration.match(/create (or replace )?trigger/gi), '0063 declares a trigger beyond the notification').toHaveLength(1);
+    expect(migration.match(/create (or replace )?function/gi), '0063 defines a function beyond the notifier').toHaveLength(1);
+    expect(migration).toContain(
+      'revoke execute on function private.notify_team_loan() from public, anon, authenticated, service_role;',
+    );
+    expect(migration, '0063 changes notify_members, 0062 or an earlier function').not.toMatch(
+      /create or replace|alter table|drop |\bgrant\b|create policy/i,
+    );
+  });
+
   // ------------------------------------------------ epic 14 retro A9: only an amend pairs a removal with an insert
 
   /** The tables whose soft-remove and insert of one key in one transaction *Povijest promjena* reads as one amend. */

@@ -57,7 +57,7 @@ describe('every select is the one Select primitive, in the one Input look', () =
     );
   }
 
-  it('finds all fourteen, so the comparison is not vacuous', () => {
+  it('finds all fifteen, so the comparison is not vacuous', () => {
     // FOURTEEN AGAIN SINCE STORY 13.4: the carry-over expiry's day and month.
     // THIRTEEN: the twelve visual refresh B held to one literal, and the shift
     // type kind on `/postavke-rotacije`, which that block never listed.
@@ -68,7 +68,8 @@ describe('every select is the one Select primitive, in the one Input look', () =
     // FOURTEEN SINCE STORY 7.13: so is the member list's.
     // TWELVE SINCE STORY 7.18: the accent and the fire-rank setting are
     // radio groups in their dialogs, not selects.
-    expect(selectClasses()).toHaveLength(14);
+    // FIFTEEN SINCE STORY 18.3: the member page's loan dialog's team.
+    expect(selectClasses()).toHaveLength(15);
   });
 
   it('composes only the 44 px height onto each, so no screen restyles the primitive', () => {
@@ -343,7 +344,8 @@ describe('every form refuses in Croatian, never in the browser’s language (B29
         .filter((input) => input.includes('name="reason"')),
     );
 
-    expect(reasons, 'the three reason inputs are not found').toHaveLength(3);
+    // FOUR SINCE STORY 18.3: the loan dialog's *Razlog*.
+    expect(reasons, 'the four reason inputs are not found').toHaveLength(4);
     for (const input of reasons) expect(input).not.toMatch(/\bmaxLength=/);
   });
 });

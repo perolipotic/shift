@@ -376,6 +376,10 @@ export const MEMBER_EDIT: readonly string[] = [
   // STORY 9.4: the dialog's conflict lines, extracted unchanged and shared
   // with a leave request's decision screen.
   join(LEAVE_FEATURE, 'components', 'leave-conflict-lines.tsx'),
+  // STORY 18.3: the *Smjena* card's loan dialog and its hook. Its rules are
+  // `MEMBER_LOAN_KEYS`, a key source of its own.
+  join(MEMBERS_FEATURE, 'hooks', 'use-member-loan.ts'),
+  join(MEMBERS_FEATURE, 'components', 'member-loan-dialog.tsx'),
 ];
 
 /** The two team pages, which only compose (source structure B6), and their hooks. */
@@ -723,6 +727,9 @@ export const MEMBER_FACTS_KEYS = join(srcRoot, 'features', 'members', 'utils', '
 /** Decision 16's *Što se mijenja*: the team dialog's two lines, each with or without a range. */
 export const MEMBER_MOVE_PREVIEW_KEYS = join(srcRoot, 'features', 'members', 'services', 'team-move-preview.ts');
 
+/** Story 18.3: the loan dialog's refusals, shift lines and inert-override lines, off `\w*MessageKey` unions. */
+export const MEMBER_LOAN_KEYS = join(srcRoot, 'features', 'members', 'services', 'loan.ts');
+
 /** Story 11.2: the short-staffed block, drawn in every *Što se mijenja* a save that can cause one has. */
 export const STAFFING_BLOCK = join(srcRoot, 'features', 'staffing', 'components', 'short-staffed-block.tsx');
 
@@ -979,7 +986,9 @@ export const SCREENS = [
   // FORTY-NINE SINCE THE DEFERRED-WORK SWEEP: the retries beside the member
   // read's and the teams read's failures. The reset's password moved into a
   // dialog with its `Sakrij lozinku`; its close is the shared header's.
-  { name: 'the member edit form', file: MEMBER_EDIT, expectedFields: 12, expectedButtons: 37 },
+  // SIXTEEN FIELDS SINCE STORY 18.3: the loan dialog's *Tim*, *Od*, *Do* and
+  // *Razlog*; and its card button, retry, cancel and *Spremi*.
+  { name: 'the member edit form', file: MEMBER_EDIT, expectedFields: 16, expectedButtons: 41 },
   // STORY 1.7a. FOUR on the team list: the link back to `Ljudi`, the one name
   // `<Input>`, the add `<Button>`, and ONE row link written once inside the map
   // over the teams — the same count at zero teams as at nine. SIX on one team:

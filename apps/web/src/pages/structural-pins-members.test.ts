@@ -1652,7 +1652,8 @@ describe('the two member forms write through the seam and keep nothing back', ()
     // and — since story 7.12 — the leave record's, one body for new and amend.
     const screen = source(MEMBER_EDIT);
 
-    expect(occurrences(screen, '<Fragment key={opening.key}>'), 'a dialog body is not keyed to its opening').toBe(5);
+    // SIX SINCE STORY 18.3: the loan dialog.
+    expect(occurrences(screen, '<Fragment key={opening.key}>'), 'a dialog body is not keyed to its opening').toBe(6);
     expect(screen, 'the edit screen still keys a form to the row').not.toContain('memberFormKey(');
   });
 
@@ -1888,6 +1889,10 @@ describe('the two member forms write through the seam and keep nothing back', ()
         'member-name',
         'member-username',
         'member-email',
+        // STORY 18.3: the loan dialog's *Od*, *Do* and *Razlog*, marked by its own refusals.
+        'member-loan-from',
+        'member-loan-to',
+        'member-loan-reason',
       ],
       leaveId: 'id={MEMBER_ALLOWANCE_FIELD_ID}',
       leaveMark: 'aria-invalid={invalidField === MEMBER_ALLOWANCE_FIELD_ID}',

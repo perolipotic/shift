@@ -176,6 +176,10 @@ export const OBAVIJESTI = {
     subject: 'Zamjena {date} (zauzvrat {returnDate}) nije odobrena',
     body: '{organizationName}: zamjena smjene {date} (zauzvrat {returnDate}) nije odobrena. Pogledaj u aplikaciji: {link}',
   },
+  loanMade: {
+    subject: 'Od {startDate} do {endDate} radiš u timu {teamName}',
+    body: '{organizationName}: od {startDate} do {endDate} radiš u timu {teamName}. Pogledaj kalendar: {link}',
+  },
   footer: 'Obavijesti e-poštom možeš isključiti u aplikaciji, pod Obavijesti: {link}',
 } as const;
 
@@ -221,6 +225,8 @@ export const MESSAGE_OF_CODE: Readonly<Record<string, MessageKey>> = {
   SWAP_REQUEST_WAITING: 'swapRequestWaiting',
   SWAP_REQUEST_APPROVED: 'swapRequestApproved',
   SWAP_REQUEST_REJECTED: 'swapRequestRejected',
+  // Story 18.3 (0063): the lent member, told of the loan.
+  LOAN_MADE: 'loanMade',
 };
 
 /**
@@ -295,6 +301,7 @@ export function linkPathOf(key: MessageKey, operands: Readonly<Record<string, un
     case 'teamShiftTypeRemoved':
     case 'rotationChanges':
     case 'rotationChangeCancelled':
+    case 'loanMade':
       return '/kalendar';
     case 'swapRequestProposed':
     case 'swapRequestAccepted':

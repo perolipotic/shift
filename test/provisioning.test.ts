@@ -1819,11 +1819,16 @@ describe('every organization table carries row level security, and only its revi
         indexes.some((row) => /\(organization_id, member_id\)$/.test(row.indexdef)),
         'no index on team_loans serves one member\'s loans',
       ).toBe(true);
-      const { rows: triggers } = await client.query<{ tgname: string }>(
-        `select tgname from pg_trigger where tgrelid = 'public.team_loans'::regclass and not tgisinternal
+      const { rows: triggers } = await client.query<{ definition: string }>(
+        `select pg_get_triggerdef(oid) as definition from pg_trigger
+          where tgrelid = 'public.team_loans'::regclass and not tgisinternal
             and tgfoid <> 'private.record_audit_event()'::regprocedure`,
       );
-      expect(triggers, 'team_loans takes a trigger beyond the audit triggers (AD-3)').toEqual([]);
+      // Story 18.3 (0063): the lent member's notification, AFTER and per row,
+      // which refuses nothing (AD-3).
+      expect(triggers.map((row) => row.definition), 'team_loans takes a trigger beyond the audit triggers and the notification (AD-3)').toEqual([
+        'CREATE TRIGGER team_loans_notify_insert AFTER INSERT ON public.team_loans FOR EACH ROW WHEN ((new.removed_at IS NULL)) EXECUTE FUNCTION private.notify_team_loan()',
+      ]);
       const { rows: policies } = await client.query<{ policyname: string; cmd: string; roles: string[] }>(
         `select policyname, cmd, roles::text[] as roles from pg_policies
           where schemaname = 'public' and tablename = 'team_loans' order by policyname`,
@@ -2906,6 +2911,8 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // STORY 14.1 (0061). The change history's recorder, on 0052's terms: run
     // as the owner when an audit trigger fires, and callable by nobody.
     { name: 'record_audit_event', argumentCount: 0, expected: [], schema: 'private' },
+    // STORY 18.3 (0063). The loan notification trigger, on 0043's terms.
+    { name: 'notify_team_loan', argumentCount: 0, expected: [], schema: 'private' },
     // STORY 10.3 (0044). The outbox filter (a definer: it reads another
     // member's setting) and the settings row's `updated_at` stamp, triggers
     // callable by nobody.

@@ -19,6 +19,7 @@ import {
   membershipOn,
   peopleAtWorkOn,
   rosterOn,
+  rosterOverridesMadeInertOf,
   scheduleOfMonth,
   shiftRoster,
   shortStaffedShiftsOf,
@@ -619,5 +620,60 @@ describe("a lent member's own month (memberScheduleOfMonth, through the one rule
     const memberships = [{ teamId: a!, position: null, effectiveFrom: SEEDED_EFFECTIVE_FROM }];
     const grid = (members: readonly RosterMember[]) => scheduleOfMonth({ teamIds: [a!, b!, c!], ...base, members }, '2026-03');
     expect(grid([{ id: 'm', memberships, statuses: [], loans }])).toEqual(grid([{ id: 'm', memberships, statuses: [] }]));
+  });
+});
+
+describe('rosterOverridesMadeInertOf (story 18.3): the overrides a loan stops applying', () => {
+  const fixture = FIXTURES[0]!;
+  const [a, b, c] = PILOT_TEAMS.map((team) => team.id);
+  const LENT = `${a!}-1`;
+  const LOAN: Loan = { id: 'loan', teamId: c!, from: '2026-03-10', to: '2026-03-12' };
+  const LOAN_DATES = ['2026-03-10', '2026-03-11', '2026-03-12'];
+  const base = {
+    teamIds: [a!, b!, c!],
+    assignments: fixture.assignments,
+    steps: fixture.steps,
+    overrides: [],
+    workingShiftTypeIds: workingOf(fixture),
+  };
+  const members = membersOf(fixture);
+  const lent = members.map((member) => (member.id === LENT ? { ...member, loans: [LOAN] } : member));
+  const typeOf = (teamId: string, date: string): string | null =>
+    scheduleOfMonth({ ...base, teamIds: [teamId], members, rosterOverrides: [] }, '2026-03').find((row) => row.date === date)!
+      .cells[0]!.shiftTypeId;
+  const workingDateOf = (teamId: string): string =>
+    LOAN_DATES.find((date) => workingOf(fixture).includes(typeOf(teamId, date) ?? ''))!;
+  const inputs = (rosterOverrides: readonly RosterOverride[]) =>
+    frozen([
+      { ...base, members, rosterOverrides },
+      { ...base, members: lent, rosterOverrides },
+    ] as const);
+
+  it("lists an override on the home team taking the lent member off: it applies before, and is inert once they are C's", () => {
+    const date = workingDateOf(a!);
+    const off: RosterOverride = { id: 'off', teamId: a!, date, memberOutId: LENT, memberInId: `${b!}-4` };
+    const [before, after] = inputs([off]);
+    expect(rosterOverridesMadeInertOf(before, after, LOAN.from, LOAN.to)).toEqual([off]);
+  });
+
+  it('lists one putting them on C, now their base roster; never one that still applies, one inert before, or one outside the range', () => {
+    const dateA = workingDateOf(a!);
+    const dateC = workingDateOf(c!);
+    const still: RosterOverride = { id: 'still', teamId: a!, date: dateA, memberOutId: `${a!}-4`, memberInId: null };
+    // Inert before (they are on A's roster) and applying after (a double shift): never listed.
+    const back: RosterOverride = { id: 'back', teamId: a!, date: dateA, memberOutId: null, memberInId: LENT };
+    const outside: RosterOverride = { id: 'outside', teamId: a!, date: '2026-03-20', memberOutId: LENT, memberInId: null };
+    const onC: RosterOverride = { id: 'on-c', teamId: c!, date: dateC, memberOutId: null, memberInId: LENT };
+    const [before, after] = inputs([still, back, outside, onC]);
+    expect(rosterOverridesMadeInertOf(before, after, LOAN.from, LOAN.to)).toEqual([onC]);
+  });
+
+  it('lists nothing with no change, and refuses a reversed or malformed range', () => {
+    const date = workingDateOf(a!);
+    const off: RosterOverride = { id: 'off', teamId: a!, date, memberOutId: LENT, memberInId: null };
+    const [before] = inputs([off]);
+    expect(rosterOverridesMadeInertOf(before, before, LOAN.from, LOAN.to)).toEqual([]);
+    expect(() => rosterOverridesMadeInertOf(before, before, LOAN.to, LOAN.from)).toThrow(RangeError);
+    expect(() => rosterOverridesMadeInertOf(before, before, '2026-02-30', LOAN.to)).toThrow(RangeError);
   });
 });

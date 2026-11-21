@@ -18,6 +18,13 @@ export const MEMBER_TEAM_HEADING_ID = 'member-team-heading';
 export const MEMBER_TEAM_DIALOG_HEADING_ID = 'member-team-dialog-heading';
 export const MEMBER_TEAM_ERROR_ID = 'member-team-error';
 
+/** *Posudi drugom timu* (story 18.3): its dialog's title and its refusal. */
+export const MEMBER_LOAN_DIALOG_HEADING_ID = 'member-loan-dialog-heading';
+export const MEMBER_LOAN_ERROR_ID = 'member-loan-error';
+/** *Najviše 200 znakova.* under *Razlog*, which describes the field; with the refusal beside it once there is one. */
+export const MEMBER_LOAN_REASON_HINT_ID = 'member-loan-reason-hint';
+export const MEMBER_LOAN_REASON_HINT_AND_ERROR = `${MEMBER_LOAN_REASON_HINT_ID} ${MEMBER_LOAN_ERROR_ID}`;
+
 /** *Pravo*, on the leave card: its dialog's title and its one field. */
 export const MEMBER_ALLOWANCE_DIALOG_HEADING_ID = 'member-allowance-dialog-heading';
 export const MEMBER_ALLOWANCE_FIELD_ID = 'member-leave';

@@ -24,6 +24,8 @@ import { ShortStaffedBlock } from '@/features/staffing/components/short-staffed-
 import { t } from '@/lib/i18n';
 import { keepFocusOnAlert } from '@/utils/retry-focus';
 import type { MemberEdit } from '@/features/members/hooks/use-member-edit';
+import { MemberLoanDialog } from '@/features/members/components/member-loan-dialog';
+import { loanRefusalMessageKey } from '@/features/members/services/loan';
 import { memberErasureCopyOf } from '@/features/members/utils/erasure-copy';
 import { type MemberListRow } from '@/features/members/services/list';
 import {
@@ -87,6 +89,11 @@ export function MemberTeamCard({ edit }: { readonly edit: MemberEdit }): ReactNo
     armTeam,
     teamErased,
     teamDialog,
+    loanDialog,
+    loanPending,
+    loanSaved,
+    loanErased,
+    loanCardRefusal,
   } = edit;
 
   /**
@@ -166,6 +173,19 @@ export function MemberTeamCard({ edit }: { readonly edit: MemberEdit }): ReactNo
             )}
           </Notice>
         ) : null}
+        {/* STORY 18.3: the loan dialog closed because the record moved. */}
+        {loanCardRefusal === null ? null : (
+          <Notice role="alert">{t(loanRefusalMessageKey(loanCardRefusal))}</Notice>
+        )}
+        {/* STORY 18.3: a landed loan, and what its guarded write removed. */}
+        {loanSaved ? (
+          <Notice role="status">
+            <span className="block">{t('loans.saved')}</span>
+            {loanErased === 0 ? null : (
+              <span className="mt-2 block">{t('ljudi.erasures.removed', { count: loanErased })}</span>
+            )}
+          </Notice>
+        ) : null}
       </CardContent>
     );
   }
@@ -204,23 +224,42 @@ export function MemberTeamCard({ edit }: { readonly edit: MemberEdit }): ReactNo
             </h2>
           </CardTitle>
           {/* ITS ACCESSIBLE NAME CARRIES THE MEMBER; its visible word is the action. */}
-          {teamDialog.available === null ? null : (
-            <Button
-              ref={teamDialog.opener}
-              className="h-11"
-              type="button"
-              variant="outline"
-              aria-label={t(teamOfferMessageKey(TEAM_MOVE), { name: member.name })}
-              disabled={teamPending}
-              onClick={teamDialog.open}
-            >
-              {t('smjene.membership.change')}
-            </Button>
+          {teamDialog.available === null && loanDialog.available === null ? null : (
+            <div className="flex flex-wrap gap-2">
+              {teamDialog.available === null ? null : (
+                <Button
+                  ref={teamDialog.opener}
+                  className="h-11"
+                  type="button"
+                  variant="outline"
+                  aria-label={t(teamOfferMessageKey(TEAM_MOVE), { name: member.name })}
+                  disabled={teamPending}
+                  onClick={teamDialog.open}
+                >
+                  {t('smjene.membership.change')}
+                </Button>
+              )}
+              {/* STORY 18.3: a loan to another team, from the same card. */}
+              {loanDialog.available === null ? null : (
+                <Button
+                  ref={loanDialog.opener}
+                  className="h-11"
+                  type="button"
+                  variant="outline"
+                  aria-label={t('loans.lendName', { name: member.name })}
+                  disabled={loanPending}
+                  onClick={loanDialog.open}
+                >
+                  {t('loans.lend')}
+                </Button>
+              )}
+            </div>
           )}
         </CardHeader>
         {renderTeam(member, organizationToday)}
       </Card>
       <MemberTeamDialog edit={edit} />
+      <MemberLoanDialog edit={edit} />
       <MemberTeamWithdrawal edit={edit} />
       <MemberTeamErasures edit={edit} />
     </>

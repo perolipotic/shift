@@ -6,6 +6,7 @@ import { CALENDAR_KEY, calendarSurfaceStateOf } from '@/features/calendar/servic
 import { useErasureReads } from '@/features/conflicts/hooks/use-erasure-reads';
 import type { MemberScreen } from '@/features/members/hooks/member-edit-context';
 import { useMemberBasics } from '@/features/members/hooks/use-member-basics';
+import { useMemberLoan } from '@/features/members/hooks/use-member-loan';
 import { useMemberReset } from '@/features/members/hooks/use-member-reset';
 import { useMemberStatus } from '@/features/members/hooks/use-member-status';
 import { useMemberTeam } from '@/features/members/hooks/use-member-team';
@@ -205,6 +206,7 @@ export function useMemberEdit(id: string) {
   const reset = useMemberReset(screen);
   const status = useMemberStatus(screen);
   const team = useMemberTeam(screen);
+  const loan = useMemberLoan(screen);
 
   return {
     // The basics and the allowance dialogs' save.
@@ -226,6 +228,8 @@ export function useMemberEdit(id: string) {
     ...status,
     // The team block.
     ...team,
+    // The team block's loan dialog (story 18.3).
+    ...loan,
     today,
     offersPosition,
     positionsRefusal,

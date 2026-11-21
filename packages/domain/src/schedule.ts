@@ -206,6 +206,56 @@ function appliedRosterOverrides(
   return candidates.filter((override) => rosterOverrideApplies(base, members, override));
 }
 
+/**
+ * The roster overrides a change makes INERT (story 18.3): each in-force
+ * override of `before.rosterOverrides` dated in `[from, to]` that applies in
+ * `before` and does not in `after` — by the one rule of {@link scheduleOfMonth}
+ * on each side: the team's scheduled type that date is a working one, and
+ * {@link rosterOverrideApplies} holds over that side's `shiftRoster`. In the
+ * order of `before.rosterOverrides`. `teamIds` is not read: every team an
+ * override names is judged; one `after.rosterOverrides` does not hold applies
+ * nowhere there. Nothing is discarded; the caller lists them.
+ *
+ * @throws RangeError when `from` or `to` is not a calendar `YYYY-MM-DD` or `to`
+ *   is before `from`, and on any precondition of {@link scheduleOfMonth}'s
+ *   inputs on either side.
+ */
+export function rosterOverridesMadeInertOf(
+  before: ScheduleInput,
+  after: ScheduleInput,
+  from: string,
+  to: string,
+): readonly RosterOverride[] {
+  checkDate('the first date', from);
+  checkDate('the last date', to);
+  if (to < from) throw new RangeError(`the range ${from}–${to} ends before it starts`);
+
+  const sideOf = (input: ScheduleInput) => {
+    const indexed = rosterOverridesByTeamAndDate(input.rosterOverrides);
+    const overrides = overridesByTeamAndDate(input.overrides);
+    const working = new Set(input.workingShiftTypeIds);
+
+    return (override: RosterOverride): boolean => {
+      const versions = input.assignments.filter((assignment) => assignment.teamId === override.teamId);
+      const scheduled = applyOverride(
+        overrides,
+        override.teamId,
+        override.date,
+        projectedShiftTypeOn(versions, input.steps, override.date),
+      );
+      const applied = appliedRosterOverrides(indexed, input.members, working, scheduled, override.teamId, override.date);
+
+      return applied.some((one) => one.id === override.id);
+    };
+  };
+  const appliesBefore = sideOf(before);
+  const appliesAfter = sideOf(after);
+
+  return before.rosterOverrides.filter(
+    (override) => override.date >= from && override.date <= to && appliesBefore(override) && !appliesAfter(override),
+  );
+}
+
 /** What one member's month is derived from: their membership and status histories and the configuration. */
 export interface MemberScheduleInput {
   /** The member's id, which a roster override names (story 3.6a). */

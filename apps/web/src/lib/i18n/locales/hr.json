@@ -2259,6 +2259,10 @@
       "subject": "Zamjena {date} (zauzvrat {returnDate}) nije odobrena",
       "body": "{organizationName}: zamjena smjene {date} (zauzvrat {returnDate}) nije odobrena. Pogledaj u aplikaciji: {link}"
     },
+    "loanMade": {
+      "subject": "Od {startDate} do {endDate} radiš u timu {teamName}",
+      "body": "{organizationName}: od {startDate} do {endDate} radiš u timu {teamName}. Pogledaj kalendar: {link}"
+    },
     "footer": "Obavijesti e-poštom možeš isključiti u aplikaciji, pod Obavijesti: {link}"
   },
   "popunjenost": {
@@ -2269,5 +2273,49 @@
     "unknown": "Popunjenost smjena sada ne mogu provjeriti.",
     "short": "premalo ljudi",
     "dayShort": "Premalo ljudi: {atWork}"
+  },
+  "loans": {
+    "lend": "Posudi drugom timu",
+    "lendName": "Posudi osobu {name} drugom timu",
+    "dialogHeading": "Posudi drugom timu",
+    "now": "{name} · sada u timu {team}",
+    "nowNone": "{name} · sada bez tima",
+    "team": "Tim",
+    "choose": "Odaberi tim",
+    "from": "Od",
+    "to": "Do",
+    "reason": "Razlog",
+    "reasonHint": "Najviše 200 znakova.",
+    "changes": "Što se mijenja",
+    "lost": "Gubi {type} u timu {team} · {weekday} {date} · {range}",
+    "lostNoRange": "Gubi {type} u timu {team} · {weekday} {date}",
+    "gained": "Dobiva {type} u timu {team} · {weekday} {date} · {range}",
+    "gainedNoRange": "Dobiva {type} u timu {team} · {weekday} {date}",
+    "more": "i još {count}",
+    "double": "Dvostruko · {weekday} {date} · {firstType} u timu {firstTeam} i {secondType} u timu {secondTeam} u isto vrijeme",
+    "restGap": "{weekday} {date} · {teams} · {duration} rada bez odmora",
+    "inertHeading": "Promjene rasporeda koje više ne vrijede",
+    "inertSwap": "{weekday} {date} · {team} · izlazi: {out}, ulazi: {in}",
+    "inertOut": "{weekday} {date} · {team} · izlazi: {out}",
+    "inertIn": "{weekday} {date} · {team} · ulazi: {in}",
+    "unknownMember": "Nepoznata osoba",
+    "inertNote": "Ostaju spremljene. Ukloniti ih možeš u kalendaru, u detalju dana.",
+    "cancel": "Odustani od posudbe",
+    "save": "Spremi",
+    "confirm": "Potvrdi posudbu osobe {name}",
+    "saved": "Posudba je spremljena.",
+    "error": {
+      "unpicked": "Odaberi tim.",
+      "from": "Upiši datum početka posudbe.",
+      "to": "Upiši datum završetka posudbe.",
+      "order": "Datum završetka ne smije biti prije datuma početka.",
+      "reason": "Upiši razlog, 1–200 znakova.",
+      "stale": "Podaci o osobi ili timu su se u međuvremenu promijenili. Provjeri ih i pokušaj ponovno.",
+      "archived": "Taj tim je arhiviran. Odaberi tim u upotrebi.",
+      "home": "Osoba je u tom timu barem jedan od tih dana. Odaberi drugi tim ili druge datume.",
+      "overlap": "Osoba je barem jedan od tih dana već posuđena. Odaberi druge datume.",
+      "denied": "Posudbu nije moguće spremiti: tim je možda arhiviran, osoba je možda u tom timu tih dana ili nemaš ovlasti. Provjeri i pokušaj ponovno.",
+      "failed": "Posudbu sada nije moguće spremiti. Pokušaj ponovno."
+    }
   }
 }
