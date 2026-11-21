@@ -671,9 +671,9 @@ development_status:
   epic-16-retrospective: optional
 
   epic-17: backlog  # shift reminders (CAP-26); reuses 16.2; D-S6
-  17-1-a-member-chooses-their-reminders: backlog  # waits: D-S6, 16.2 (AP1 done)
-  17-2-the-remind-job-writes-reminders-that-fall-due: backlog  # waits: D-S6, 17.1 (AP1 done)
-  17-3-reminders-reach-the-member-by-push-or-email: backlog  # waits: D-S6, 17.2 (AP1 done)
+  17-1-a-member-chooses-their-reminders: backlog  # after 16.2 (D-S6 ratified 2026-11-21)
+  17-2-the-remind-job-writes-reminders-that-fall-due: backlog  # after 17.1 (D-S6 ratified 2026-11-21)
+  17-3-reminders-reach-the-member-by-push-or-email: backlog  # after 17.2 (D-S6 ratified 2026-11-21)
   epic-17-retrospective: optional
 
   epic-18: done  # accepted with open items, 2026-11-21 (retro): #323, #325, #328, #330, #332 merged with CI green; founder decisions open (retro A1 member-wide loan read, A2 tim/Smjena, A3 promotion check)
@@ -685,11 +685,11 @@ development_status:
   epic-18-retrospective: done
 
   epic-19: backlog  # self-service signup (CAP-28); staging only, production opening is D-S5
-  19-1-the-signup-door-opens-safely-on-staging: backlog  # waits: AP2, D-S3, D-S4, D-S9
-  19-2-a-stranger-creates-an-account: backlog  # waits: AP2, D-S3, D-S8, D-S10
-  19-3-a-verified-account-creates-its-organization: backlog  # waits: AP2, D-S3, D-S8, D-S9, D-S10
-  19-4-the-onboarding-wizard-guides-setup-and-pre-fills-nothing: backlog  # waits: AP2, UX review with mockups, D-S9
-  19-5-abandoned-signups-are-cleaned-up-and-the-operator-keeps-cont: backlog  # waits: AP2, D-S5, D-S7
+  19-1-the-signup-door-opens-safely-on-staging: backlog  # waits: AP2 (D-S ratified 2026-11-21)
+  19-2-a-stranger-creates-an-account: backlog  # waits: AP2 (D-S ratified 2026-11-21)
+  19-3-a-verified-account-creates-its-organization: backlog  # waits: AP2 (D-S ratified 2026-11-21)
+  19-4-the-onboarding-wizard-guides-setup-and-pre-fills-nothing: backlog  # waits: AP2, UX review with mockups (D-S ratified 2026-11-21)
+  19-5-abandoned-signups-are-cleaned-up-and-the-operator-keeps-cont: backlog  # waits: AP2 (D-S ratified 2026-11-21)
   epic-19-retrospective: optional
 
   # Self-hosting (Epic 20), added 2026-11-20 by

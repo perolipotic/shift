@@ -2738,6 +2738,8 @@ Added 2026-11-20 by `sprint-change-proposal-2026-11-20-v2-scope.md` (§5.6). Arc
 
 **Planning status (2026-11-21, Architect pass 1 done):** AP1 has amended AD-1, AD-6, AD-7, AD-14, AD-17 and AD-18, and added AD-19 and AD-20 to the spine. **16.2 is ready.** 16.3 still waits for D-S1, 16.4 for D-S1, D-S2 and D-S8, and 16.5 for D-S1 and D-S2, each also after its predecessor. The spine marks every clause that depends on one of those decisions "pending founder ratification".
 
+**Ratified 2026-11-21:** the founder accepted D-S1–D-S10 at the proposal's defaults, so the D-S waits above are lifted; 16.3–16.5 and 17.1–17.3 now wait only on the story before them. Epic 19 still waits on Architect pass 2.
+
 ### Story 16.1: The month prints
 
 As anyone who reads the schedule,
@@ -2897,7 +2899,7 @@ Added 2026-11-20 by `sprint-change-proposal-2026-11-20-v2-scope.md` (§5.6). Reu
 
 **Planning status (2026-11-20):** every story waits for Architect pass 1 (through 16.2) and for D-S6.
 
-**Planning status (2026-11-21, Architect pass 1 done):** every story still waits for D-S6, and 17.1 also for 16.2. The spine's `remind` and reminder clauses (AD-14, AD-18) mark their channel rules "pending founder ratification of D-S6".
+**Planning status (2026-11-21, Architect pass 1 done):** every story still waits for D-S6, and 17.1 also for 16.2. The spine's `remind` and reminder clauses (AD-14, AD-18) mark their channel rules "ratified by the founder 2026-11-21 (D-S6)".
 
 ### Story 17.1: A member chooses their reminders
 
