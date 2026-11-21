@@ -2906,6 +2906,13 @@ const SANCTIONED_SCREEN_KEYS = [
   'loans.mark.now',
   'sati.explain.source.loan',
   'history.record.loan',
+  // STORY 16.1 (UX-DR56): the month's print — *Ispiši* and the printed
+  // header's title, *Moj raspored*'s filter in words and the time printed.
+  'print.action',
+  'print.title',
+  'print.own',
+  'print.ownNoTeam',
+  'print.printedAt',
 ];
 
 /** Everything the resource file is permitted to hold, together. */
@@ -3017,6 +3024,14 @@ const DIRECTORY_NAMESPACE = 'ljudi.directory.';
  * `tip… smjen…` is refused: the overview never names a shift type.
  */
 const LEAVE_OVERVIEW_NAMESPACE = 'godisnji.overview.';
+
+/**
+ * STORY 16.1: the printed month (`print.*`) says *Moj raspored*'s filter in
+ * words, `Moj raspored: {ime} · {smjena}` or `… · bez smjene`, as *Kalendar*'s own
+ * sentence does, so `smjen` names the Team there, and `tip… smjen…` is
+ * refused: a shift type is shown by its name.
+ */
+const PRINT_NAMESPACE = 'print.';
 
 /**
  * The leave card's replacement guard (story 5.4e), ONE KEY and no namespace:
@@ -3285,6 +3300,7 @@ function teamTermOutOfTurn(key: string, message: string): boolean {
     !key.startsWith(RESOLUTION_NAMESPACE) &&
     !key.startsWith(DIRECTORY_NAMESPACE) &&
     !key.startsWith(LEAVE_OVERVIEW_NAMESPACE) &&
+    !key.startsWith(PRINT_NAMESPACE) &&
     key !== LEAVE_REPLACEMENT_KEY &&
     key !== MEMBER_NO_TEAM_KEY &&
     key !== DEACTIVATION_CONSEQUENCE_KEY &&
@@ -3430,6 +3446,8 @@ describe('the messages obey the voice rules that bind every string', () => {
     // the Team or the Shift Type, under the builder's overrides rule.
     //
     // AMENDED BY STORY 14.2: `history` names both, under the same rule.
+    //
+    // AMENDED BY STORY 16.1: `print` names the Team, as `kalendar` does.
     const found = leafKeys(resource())
       .map((key) => ({ key, message: String(messageAt(key)) }))
       .filter(({ key, message }) => teamTermOutOfTurn(key, message));

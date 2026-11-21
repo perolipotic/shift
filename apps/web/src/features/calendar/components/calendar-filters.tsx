@@ -3,6 +3,8 @@ import type { ReactNode } from 'react';
 import { FilterBar, activeFilterSummaryOf } from '@/components/filter-bar';
 import { calendarFilterBarOf } from '@/features/calendar/utils/filters';
 import type { CalendarFilterChange, CalendarMonth } from '@/features/calendar/utils/month';
+import { t } from '@/lib/i18n';
+import { filterSummaryMessageKey, filterSummaryValuesOf } from '@/utils/filter-bar';
 
 /**
  * THE FILTERS of *Sve smjene* (story 7.5): the shared filter bar under the
@@ -28,4 +30,16 @@ export function CalendarFilters({
 /** The active filters of *Sve smjene* as one line, or `null` with none on: the phone's sticky head repeats it (deferred-work E816). */
 export function calendarFilterSummaryOf(shown: CalendarMonth): string | null {
   return activeFilterSummaryOf(calendarFilterBarOf(shown));
+}
+
+/**
+ * STORY 16.1 (UX-DR56): what *Sve smjene* shows, in words, for the printed
+ * month's header — the summary line the bar itself shows, with no filter on
+ * too (`Prikazano: sve smjene (4) · 17 osoba`), so the paper says what the
+ * screen said.
+ */
+export function calendarFilterWordsOf(shown: CalendarMonth): string {
+  const { summary } = calendarFilterBarOf(shown);
+
+  return t(filterSummaryMessageKey(summary), filterSummaryValuesOf(summary));
 }

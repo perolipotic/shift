@@ -4,12 +4,14 @@ import { MonthNav } from '@/components/month-nav';
 import { StickyHead } from '@/components/sticky-head';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Printer } from '@/components/ui/icon';
 import { OfflineNote } from '@/components/offline-note';
 import { Notice } from '@/components/ui/notice';
-import { PageHeader, PageTitle } from '@/components/ui/page-header';
+import { PageActions, PageHeader, PageTitle } from '@/components/ui/page-header';
 import { CalendarFilters, calendarFilterSummaryOf } from '@/features/calendar/components/calendar-filters';
 import { CalendarModeSwitch } from '@/features/calendar/components/calendar-mode-switch';
 import { CalendarMonthBody } from '@/features/calendar/components/calendar-month-body';
+import { CalendarPrintHeader, calendarPrintHeaderOf } from '@/features/calendar/components/calendar-print-header';
 import { LoanNoticeLine } from '@/features/calendar/components/loan-notice-line';
 import { DayDetailDialog } from '@/features/calendar/components/day-detail-dialog';
 import { useCalendarScreen } from '@/features/calendar/hooks/use-calendar-screen';
@@ -25,6 +27,7 @@ import {
 import { calendarMessageKey } from '@/features/calendar/services/snapshot';
 import { SwapProposedLine } from '@/features/swaps/components/swap-proposed-line';
 import { useSwapProposed } from '@/features/swaps/hooks/use-swap-proposed';
+import { usePrintMonth } from '@/hooks/print';
 import { usePhone } from '@/hooks/viewport';
 import { t } from '@/lib/i18n';
 import { appLayoutRoute } from '@/pages/_app';
@@ -109,6 +112,18 @@ import { keepFocusOnAlert } from '@/utils/retry-focus';
  * month, with one polite status line naming the date, the shift and the
  * colleague (`useSwapProposed`).
  *
+ * THE MONTH PRINTS (story 16.1, UX-DR56, decision D3): *Ispiši*, in both
+ * modes once a month is drawn — from 640 px at the end of the Card's head
+ * row, below it the page header's action under the title, never in the
+ * phone's sticky head (its 160 px budget, deferred-work E816) — opens the
+ * browser's own print dialog (`usePrintMonth`). What prints is THIS page —
+ * the same snapshot, the same marks under the viewer's own visibility, never a
+ * second read (AD-13) — under the print stylesheet (`index.css`, scoped by
+ * `data-print-month`): A4 landscape, the shell, the page header, the sticky
+ * head and the filter bar not drawn, and in their place `CalendarPrintHeader`:
+ * the organization, the month, the filter in words and the time printed. The
+ * legend, the loan notice and the as-of note print as the screen shows them.
+ *
  * The session guard is NOT here. It is registered once on the pathless `_app`
  * layout this route nests under.
  */
@@ -138,6 +153,22 @@ export function KalendarScreen() {
       : month.ownTeamName === null
         ? t('kalendar.ownNoteNoTeam')
         : t('kalendar.ownNote', { team: month.ownTeamName });
+  // STORY 16.1: the printed header, once a month is drawn.
+  const { printedAt, print } = usePrintMonth();
+  const printHeader = calendarPrintHeaderOf({ refused: refusal !== null, snapshot, month, mode, printedAt });
+  // *Ispiši* is ONE button, its slot chosen by `usePhone()` as the month
+  // control's is, the other way round: from 640 px at the end of the Card's
+  // head row, below 640 px the page header's action under the title, which
+  // scrolls away. The phone's sticky head holds the month toolbar alone
+  // (deferred-work E816, its 160 px budget): beside the mode switch the
+  // button opened a third row.
+  const printAction =
+    printHeader === null ? null : (
+      <Button className="h-11 gap-2 px-3 sm:ml-auto" type="button" variant="outline" onClick={print}>
+        <Printer aria-hidden className="size-4 shrink-0" />
+        {t('print.action')}
+      </Button>
+    );
   // STORY 12.2: the polite line a landed swap proposal returns with.
   const { proposed: swapProposed, lineField: swapLine } = useSwapProposed();
   const overrideForm = useOverrideForm(snapshot, screen.detail, screen.leaveKeys, screen.leaveRecords);
@@ -151,11 +182,17 @@ export function KalendarScreen() {
   );
 
   return (
-    <main className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6" aria-busy={loading}>
-      <PageHeader>
+    <main
+      data-print-month
+      className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6 print:max-w-none print:gap-2 print:p-0"
+      aria-busy={loading}
+    >
+      {printHeader === null ? null : <CalendarPrintHeader text={printHeader} />}
+      <PageHeader className="print:hidden">
         <PageTitle asChild>
           <h1>{t('nav.kalendar')}</h1>
         </PageTitle>
+        {isPhone && printAction !== null ? <PageActions>{printAction}</PageActions> : null}
         {isPhone ? null : monthNav}
       </PageHeader>
       <OfflineNote offline={screen.offline} />
@@ -177,7 +214,7 @@ export function KalendarScreen() {
         </div>
       )}
       {refusal !== null ? null : (
-        <Card className="min-w-0">
+        <Card className="min-w-0 print:rounded-none print:border-0">
           {/* From 640 px the head's row holds the mode switch alone; the month is in the page header.
               Until the mode is known there it has nothing to hold, so no empty row opens the Card. */}
           {!isPhone && mode === null ? null : (
@@ -185,16 +222,21 @@ export function KalendarScreen() {
               <div className="flex min-w-0 flex-wrap items-center gap-2 px-4 py-2 sm:gap-3 sm:py-4">
                 {isPhone ? monthNav : null}
                 {mode === null ? null : <CalendarModeSwitch chosen={mode} onChoose={screen.choose} />}
+                {isPhone ? null : printAction}
               </div>
             </StickyHead>
           )}
-          {month === null || mode !== MODE_SVE ? null : <CalendarFilters shown={month} onFilter={screen.filter} />}
+          {month === null || mode !== MODE_SVE ? null : (
+            <div className="min-w-0 print:hidden">
+              <CalendarFilters shown={month} onFilter={screen.filter} />
+            </div>
+          )}
           {ownNote === null ? null : (
-            <p className="min-w-0 px-4 pb-4 pt-2 text-sm text-muted-foreground sm:pt-0">{ownNote}</p>
+            <p className="min-w-0 px-4 pb-4 pt-2 text-sm text-muted-foreground sm:pt-0 print:hidden">{ownNote}</p>
           )}
           {/* STORY 18.5 (UX-DR59): the viewer's own loan, covering today or ahead. */}
           {ownNote === null || month?.ownLoan === undefined ? null : (
-            <LoanNoticeLine notice={month.ownLoan} className="-mt-3 min-w-0 px-4 pb-4 text-sm text-muted-foreground" />
+            <LoanNoticeLine notice={month.ownLoan} className="-mt-3 min-w-0 px-4 pb-4 text-sm text-muted-foreground print:mt-0 print:pb-2" />
           )}
           <CalendarMonthBody screen={screen} />
         </Card>

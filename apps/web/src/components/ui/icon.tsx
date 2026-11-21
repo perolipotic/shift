@@ -51,6 +51,7 @@ import moon from "@phosphor-icons/core/fill/moon-fill.svg?raw"
 import paperPlaneRight from "@phosphor-icons/core/fill/paper-plane-right-fill.svg?raw"
 import pencilSimple from "@phosphor-icons/core/fill/pencil-simple-fill.svg?raw"
 import plus from "@phosphor-icons/core/fill/plus-fill.svg?raw"
+import printer from "@phosphor-icons/core/fill/printer-fill.svg?raw"
 import recordBold from "@phosphor-icons/core/bold/record-bold.svg?raw"
 import repeat from "@phosphor-icons/core/fill/repeat-fill.svg?raw"
 import rows from "@phosphor-icons/core/fill/rows-fill.svg?raw"
@@ -214,6 +215,7 @@ export const Moon = glyph(moon, "moon")
 export const PaperPlaneRight = glyph(paperPlaneRight, "paper-plane-right")
 export const PencilSimple = glyph(pencilSimple, "pencil-simple")
 export const Plus = glyph(plus, "plus")
+export const Printer = glyph(printer, "printer")
 export const Repeat = glyph(repeat, "repeat")
 export const Rows = glyph(rows, "rows")
 export const ShieldCheck = glyph(shieldCheck, "shield-check")

@@ -39,7 +39,7 @@ function renderCell(
       onClick={(event) => {
         screen.openDay(cell.teamId, date, event.currentTarget);
       }}
-      className="scroll-ml-28 scroll-mt-11 cursor-pointer px-1 py-1 outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      className="scroll-ml-28 scroll-mt-11 cursor-pointer px-1 py-1 outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring print:px-0.5 print:py-px"
     >
       <CalendarCellBox cell={cell} inGrid />
     </TableCell>
@@ -94,6 +94,7 @@ export function CalendarGrid({
       >
         <Table
           ref={screen.gridRef}
+          className="print:table-fixed"
           role="grid"
           aria-readonly
           aria-labelledby={MONTH_HEADING_ID}
@@ -108,7 +109,7 @@ export function CalendarGrid({
             <TableRow>
               <TableHead
                 scope="col"
-                className="sticky left-0 top-0 z-30 h-11 w-28 min-w-28 bg-muted shadow-[inset_0_-1px_0_var(--border)] forced-colors:border-b forced-colors:border-[CanvasText]"
+                className="sticky left-0 top-0 z-30 h-11 w-28 min-w-28 bg-muted shadow-[inset_0_-1px_0_var(--border)] forced-colors:border-b forced-colors:border-[CanvasText] print:h-auto print:border-b print:px-1 print:py-1"
               >
                 {t('kalendar.columnDate')}
               </TableHead>
@@ -116,7 +117,7 @@ export function CalendarGrid({
                 <TableHead
                   key={team.id}
                   scope="col"
-                  className="sticky top-0 z-20 h-11 whitespace-nowrap bg-muted normal-case shadow-[inset_0_-1px_0_var(--border)] forced-colors:border-b forced-colors:border-[CanvasText] max-sm:text-center"
+                  className="sticky top-0 z-20 h-11 whitespace-nowrap bg-muted normal-case shadow-[inset_0_-1px_0_var(--border)] forced-colors:border-b forced-colors:border-[CanvasText] max-sm:text-center print:h-auto print:whitespace-normal print:[overflow-wrap:anywhere] print:border-b print:px-1 print:py-1"
                 >
                   <span aria-hidden className="sm:hidden">
                     {team.letter}
@@ -128,17 +129,17 @@ export function CalendarGrid({
           </TableHeader>
           <TableBody>
             {shown.rows.map((row, rowIndex) => (
-              <TableRow key={row.date} aria-current={row.isToday ? 'date' : undefined}>
+              <TableRow key={row.date} aria-current={row.isToday ? 'date' : undefined} className="print:break-inside-avoid">
                 <TableHead
                   scope="row"
                   className={
                     row.isToday
-                      ? 'sticky left-0 z-10 h-auto whitespace-nowrap border-l-4 border-foreground bg-card py-1 text-sm font-bold normal-case tracking-normal text-foreground'
-                      : 'sticky left-0 z-10 h-auto whitespace-nowrap bg-card py-1 text-sm font-medium normal-case tracking-normal text-foreground'
+                      ? 'sticky left-0 z-10 h-auto whitespace-nowrap border-l-4 border-foreground bg-card py-1 text-sm font-bold normal-case tracking-normal text-foreground print:whitespace-normal print:px-1 print:py-px print:text-xs'
+                      : 'sticky left-0 z-10 h-auto whitespace-nowrap bg-card py-1 text-sm font-medium normal-case tracking-normal text-foreground print:whitespace-normal print:px-1 print:py-px print:text-xs'
                   }
                 >
-                  <span className="block tabular-nums">{row.dayMonth}</span>
-                  <span className="block text-xs font-normal text-muted-foreground">{row.weekday}</span>
+                  <span className="block tabular-nums print:inline">{row.dayMonth}</span>
+                  <span className="block text-xs font-normal text-muted-foreground print:ml-1 print:inline">{row.weekday}</span>
                 </TableHead>
                 {row.cells.map((cell, column) =>
                   renderCell(

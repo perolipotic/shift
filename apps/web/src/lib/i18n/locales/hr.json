@@ -2350,5 +2350,12 @@
       "ahead": "Od {from}. u timu {team} do {to}.",
       "now": "trenutno u timu {team}"
     }
+  },
+  "print": {
+    "action": "Ispiši",
+    "title": "Raspored · {month} {year}",
+    "own": "Moj raspored: {name} · {team}",
+    "ownNoTeam": "Moj raspored: {name} · bez smjene",
+    "printedAt": "Ispisano: {date} u {time}"
   }
 }

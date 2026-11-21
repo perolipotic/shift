@@ -891,7 +891,10 @@ export const KEY_SOURCES = [
     // a lent member's mark.
     // ONE HUNDRED AND EIGHTY-THREE SINCE ITS REVIEW: the Osoba picker's hidden
     // separator before a lent person's mark (`@/components/filter-bar`).
-    strings: 183,
+    // ONE HUNDRED AND EIGHTY-EIGHT SINCE STORY 16.1: the printed month —
+    // *Ispiši*, the header's title and time printed, and *Moj raspored*'s
+    // filter in words with and without a team.
+    strings: 188,
   },
   {
     // STORY 12.2. On the swap proposal: its heading (twice, once while the
