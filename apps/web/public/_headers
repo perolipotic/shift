@@ -1,8 +1,14 @@
-# Cloudflare Pages response headers for every path. No Content-Security-Policy
-# yet: its connect-src needs the deployed Supabase origin, and nothing can
-# verify one while deploys are off (see deferred-work.md).
+# The SPA's response headers for every path. The `shift-web` image (story
+# 20.3, deploy/web/) serves this block, as built, on every response, errors
+# included: its nginx header lines are rendered from the BUILT dist/_headers at
+# image build, so only one `/*` block may exist, with no `!` detach. The build
+# appends the Content-Security-Policy-Report-Only line, derived from
+# VITE_SUPABASE_URL and the page's inline scripts
+# (apps/web/src/lib/content-security-policy.ts). HSTS: one year, subdomains,
+# no preload. Cloudflare Pages reads the same file while it is still used.
 /*
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
   X-Frame-Options: DENY
   Permissions-Policy: accelerometer=(), autoplay=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), midi=(), payment=(), usb=(), browsing-topics=()
+  Strict-Transport-Security: max-age=31536000; includeSubDomains

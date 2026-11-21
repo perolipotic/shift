@@ -1,6 +1,7 @@
 # The build context of the images built from the repository root
-# (`deploy/functions/Dockerfile`, story 20.2). Each Dockerfile COPYs only what
-# it names; this keeps local secrets and bulk out of the context entirely.
+# (`deploy/functions/Dockerfile`, story 20.2; `deploy/web/Dockerfile`, story
+# 20.3). Each Dockerfile COPYs only what it names; this keeps local secrets and
+# bulk out of the context entirely.
 .git
 **/node_modules
 **/.env
@@ -10,3 +11,7 @@
 _bmad
 _bmad-output
 .claude
+# Story 20.3: the web build's hidden source maps (the whole original source,
+# comments included) never reach an image; deploy/web/Dockerfile also fails
+# if one is left.
+apps/web/dist/**/*.map

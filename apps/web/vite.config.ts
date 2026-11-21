@@ -1,9 +1,14 @@
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+
+import { headersWithPolicy, supabaseOriginOf } from './src/lib/content-security-policy';
 
 /** The addresses a loopback caller arrives from. */
 const LOOPBACK: ReadonlySet<string> = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
@@ -42,6 +47,51 @@ function checkoutAnswer(): Plugin {
   };
 }
 
+/**
+ * BUILD ONLY (story 20.3): once the bundle is written, the Content-Security-
+ * Policy is derived from this build's `VITE_SUPABASE_URL` and the SHA-256 of
+ * each inline script of the written `index.html`, and appended to
+ * `dist/_headers`' `/*` block (`headersWithPolicy` in
+ * `src/lib/content-security-policy.ts`; this plugin only reads and writes the
+ * files). The
+ * `shift-web` image serves that block on every response (`deploy/web/`). A
+ * missing `index.html` or `_headers`, or an origin no policy can name, fails
+ * the build.
+ */
+function contentSecurityPolicyHeader(): Plugin {
+  let outDir = '';
+  let supabaseUrl: string | undefined;
+  return {
+    name: 'shift-content-security-policy',
+    apply: 'build',
+    configResolved(config) {
+      outDir = resolve(config.root, config.build.outDir);
+      supabaseUrl = config.env['VITE_SUPABASE_URL'] as string | undefined;
+      // Refuse an unusable origin before anything is bundled.
+      supabaseOriginOf(supabaseUrl);
+    },
+    writeBundle: {
+      order: 'post',
+      handler() {
+        const page = join(outDir, 'index.html');
+        const headers = join(outDir, '_headers');
+        if (!existsSync(page)) throw new Error(`${page} is missing: no Content-Security-Policy can be derived`);
+        if (!existsSync(headers)) throw new Error(`${headers} is missing: nowhere to put the Content-Security-Policy`);
+
+        writeFileSync(
+          headers,
+          headersWithPolicy({
+            headers: readFileSync(headers, 'utf8'),
+            page: readFileSync(page, 'utf8'),
+            supabaseUrl,
+            sha256Base64: (text) => createHash('sha256').update(text, 'utf8').digest('base64'),
+          }),
+        );
+      },
+    },
+  };
+}
+
 // AD-14: a static SPA build. No SSR, no application server, no prerender step.
 // The publishable key (AD-17) is injected at build time through VITE_* env
 // vars; the secret key never enters this build.
@@ -50,6 +100,7 @@ export default defineConfig({
     react(),
     tailwindcss(),
     checkoutAnswer(),
+    contentSecurityPolicyHeader(),
     // STORY 8.1. AD-14 stays intact: the PWA adds client-side pieces only, a
     // manifest and a service worker generated at build time, with no server.
     //

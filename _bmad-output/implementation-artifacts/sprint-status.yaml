@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 11-21-2026 02:20
+last_updated: 11-21-2026 12:00
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -694,7 +694,7 @@ development_status:
   epic-20: in-progress  # self-hosting on Coolify; no product change; gates pilot go-live
   20-1-the-self-hosted-stack-is-defined-in-the-repository: done  # #324
   20-2-edge-functions-run-behind-a-keyless-router: done  # #327; security-review of the router before production (20.9); live probe in 20.5's rehearsal (DEPLOY.md §9.5 step 7b)
-  20-3-the-spa-ships-as-a-static-image-with-its-headers: backlog  # READY: code; CSP enforced only after 20.5 verifies it
+  20-3-the-spa-ships-as-a-static-image-with-its-headers: review  # built, CI pending; CSP Report-Only, enforced only after 20.5 verifies it
   20-4-the-host-is-closed-to-everything-but-the-web: backlog  # scripts READY; applying waits: H-2, H-3, H-4, H-5, H-10, H-15, founder go, provider console, security-review
   20-5-staging-stands-up-on-coolify: backlog  # waits: 20.1-20.4, staging DNS, H-1, H-6, H-8, Tailscale ACL, GHCR read token
   20-6-the-pipeline-deploys-through-coolify: backlog  # code after 20.2/20.3; enabling waits: Coolify API token, Tailscale OAuth client, 20.5
