@@ -1940,6 +1940,9 @@ describe('the self-hosted stack (story 19.1): Kong is the anti-enumeration bound
       ],
       ['/auth/v1/recover', { email: 'stara@example.com', gotrue_meta_security: {} }, { email: 'stara@example.com' }],
       ['/auth/v1/resend', { email: 'stara@example.com', type: 'email_change' }, { email: 'stara@example.com', type: 'signup' }],
+      // Review 2: the address is relayed as the predicate judged it, ASCII
+      // white space trimmed (GoTrue's format check refuses a padded one).
+      ['/auth/v1/recover', { email: ' \tstara@example.com\r\n' }, { email: 'stara@example.com' }],
     ];
     for (const [path, sent, relayed] of cases) {
       const run = post(path, JSON.stringify(sent));
@@ -1957,6 +1960,14 @@ describe('the self-hosted stack (story 19.1): Kong is the anti-enumeration bound
       JSON.stringify({ email: 'ana@dvd.SHIFT.invalid.', password: FAKE_PASSWORD }),
       JSON.stringify({ email: 'a@@example.com', password: FAKE_PASSWORD }),
       JSON.stringify({ email: "o'brien@example.com", password: FAKE_PASSWORD }),
+      // Review 2: not printable ASCII, never relayed. GoTrue's ToLower folds
+      // U+0130 to `i` and U+212A to `k`, so these would name a synthesized
+      // address there; a no-break space is not trimmed by the predicate.
+      JSON.stringify({ email: 'ana@dvd.sh\u0130ft.invalid', password: FAKE_PASSWORD }),
+      JSON.stringify({ email: 'ana@\u212Aastel.shift.invalid', password: FAKE_PASSWORD }),
+      JSON.stringify({ email: 'ana@shift.invalid\u00a0', password: FAKE_PASSWORD }),
+      JSON.stringify({ email: 'nova@example.com\u00a0', password: FAKE_PASSWORD }),
+      JSON.stringify({ email: 'nova@ex\u00e4mple.com', password: FAKE_PASSWORD }),
       JSON.stringify({ email: 'nova@example.com' }),
       JSON.stringify({ password: FAKE_PASSWORD }),
       JSON.stringify(['nova@example.com']),
@@ -2035,6 +2046,10 @@ describe('the self-hosted stack (story 19.1): Kong is the anti-enumeration bound
     const config = renderedKong();
     const rest = kongService(config, 'rest-v1');
     const own = kongService(config, 'rest-v1-create-organization');
+    // Review 2: the guard runs first of all, before cors and key-auth, so a
+    // variant is 404 with or without a key, as on the allow-listed routes.
+    expect(rest.plugins?.[0]?.name).toBe('pre-function');
+    expect(phaseChunks(rest, 'post-function')).toEqual([]);
     for (const path of [
       '/rest/v1/rpc/create%255Forganization',
       '/rest/v1/rpc/create%5Forganization',

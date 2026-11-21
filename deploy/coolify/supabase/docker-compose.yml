@@ -686,13 +686,19 @@ services:
                           -- file): a fixed code, so a dropped request still shows.
                           if raw == nil then ngx.log(ngx.ERR, "AUTH_MAIL_RELAY ", route, " UNREAD") end
                           local body = cjson.decode(raw or "")
-                          if type(body) == "table" and address_kind(body.email) == "email" then
+                          -- The address as the predicate judged it: ASCII white
+                          -- space trimmed. Relayed only when every byte is printable
+                          -- ASCII, as GoTrue's own format check demands, so no
+                          -- Unicode case fold in GoTrue (U+0130, U+212A) can turn an
+                          -- address Kong called `email` into a synthesized one.
+                          local address = type(body) == "table" and type(body.email) == "string" and body.email:gsub("^[ \t\n\v\f\r]+", ""):gsub("[ \t\n\v\f\r]+$", "") or nil
+                          if address ~= nil and address_kind(address) == "email" and not address:find("[^\33-\126]") then
                             if route == "signup" then
-                              if type(body.password) == "string" then payload = { email = body.email, password = body.password } end
+                              if type(body.password) == "string" then payload = { email = address, password = body.password } end
                             elseif route == "recover" then
-                              payload = { email = body.email }
+                              payload = { email = address }
                             else
-                              payload = { email = body.email, type = "signup" }
+                              payload = { email = address, type = "signup" }
                             end
                           end
                         end
@@ -1152,6 +1158,21 @@ services:
                   paths:
                     - /rest/v1/
               plugins:
+                - name: pre-function
+                  config:
+                    access:
+                      - |
+                        -- D3: any other spelling of create_organization (percent-
+                        -- encoded, doubled `/`, upper case) is Kong's 404 here, so
+                        -- the route above, and its limit, cannot be gone around.
+                        -- A pre-function, as on the allow-listed routes: it runs
+                        -- before cors and key-auth, so a variant is 404 with or
+                        -- without a key (review 2 of 19.1).
+                        local seen = kong.request.get_path()
+                        for _ = 1, 4 do seen = ngx.unescape_uri(seen) end
+                        if string.lower(seen):find("create_organization", 1, true) then
+                          return kong.response.exit(404, '{"message":"no Route matched with those values"}', { ["Content-Type"] = "application/json; charset=utf-8" })
+                        end
                 - name: cors
                 - name: key-auth
                   config:
@@ -1173,18 +1194,6 @@ services:
                     allow:
                       - admin
                       - anon
-                - name: post-function
-                  config:
-                    access:
-                      - |
-                        -- D3: any other spelling of create_organization (percent-
-                        -- encoded, doubled `/`, upper case) is Kong's 404 here, so
-                        -- the route above, and its limit, cannot be gone around.
-                        local seen = kong.request.get_path()
-                        for _ = 1, 4 do seen = ngx.unescape_uri(seen) end
-                        if string.lower(seen):find("create_organization", 1, true) then
-                          return kong.response.exit(404, '{"message":"no Route matched with those values"}', { ["Content-Type"] = "application/json" })
-                        end
 
             ## Secure GraphQL routes
             - name: graphql-v1

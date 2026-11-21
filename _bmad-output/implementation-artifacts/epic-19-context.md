@@ -43,7 +43,7 @@ Let an organization start using Shift with nobody at Shift involved. A stranger 
   - **The predicate.** An account is a username identity exactly when its address is synthesized (`shift.invalid` or a subdomain of it). Every other account is an email identity. No column stores the kind.
   - **Three homes, one vector file.** The predicate lives in `isSynthesizedAddress` (SPA), `private.is_synthesized_address` (SQL) and Kong's rendered Lua. All three run `test/fixtures/synthesized-addresses.json`.
   - **Sign-in.** An entry containing `@` is an email sign-in with no slug. Any other entry is a username plus the slug.
-  - **The Founding Admin's username** is `lower(split_part(email,'@',1))`. The trigger `members_username_follows_email_identity` (23514 `SIGN_IN_IS_EMAIL`) holds it to the address.
+  - **The Founding Admin's username** is the trimmed address's local part, lower-cased ASCII-only (`translate` over A–Z, as 0066's hook derives it; deferred-work, OWNER 19.3), not `lower()`. The trigger `members_username_follows_email_identity` (23514 `SIGN_IN_IS_EMAIL`) holds it to the address.
   - **Recovery** goes through `/recover` and is for email identities only.
   - **Email links** are `/potvrda?token_hash=…&type=…`, verified by `verifyOtp` only when the user clicks.
 - **`admin-auth` (AD-16).** `updateUserById` maps the trigger's refusal to 409 `SIGN_IN_IS_EMAIL` and makes no auth call. `resetPassword` never sends `email`. `clearMustSetPassword` is harmless for an account with no claim. No new Edge Function is added, so the count stays four.

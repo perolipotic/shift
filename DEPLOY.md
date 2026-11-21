@@ -491,6 +491,8 @@ git add supabase/migrations/0003_<name>.sql && git commit
 
 ### 5.2 Promote to staging
 
+> **Superseded for the self-hosted stacks (story 19.1).** `config.toml` now carries local and staging's auth values (`[auth] enable_signup = true`, confirmations on), so a `config push` of it would OPEN signup on a hosted project. The signup door, its switches and its probe are §9.9's.
+
 ```bash
 # Confirm you are logged in (§0) and the staging project is not paused (§2):
 pnpm exec supabase link --project-ref <staging-ref>
@@ -668,13 +670,15 @@ Then verify on staging, against the Preview deployment:
 
 ### 5.3 Promote to production
 
+> **Superseded for the self-hosted stacks (story 19.1).** `config.toml` now carries local and staging's auth values (`[auth] enable_signup = true`, confirmations on), so a `config push` of it would OPEN signup on a hosted project. The signup door, its switches and its probe are §9.9's.
+
 Only after staging has been verified.
 
 ```bash
 pnpm exec supabase link --project-ref <production-ref>
 pnpm exec supabase db push
 pnpm exec supabase migration list
-pnpm exec supabase config push                   # 5.2a applies here too
+pnpm exec supabase config push                   # NEVER for production since 19.1: it would open signup (5.2a)
 pnpm exec supabase functions deploy admin-auth   # only if the function changed
 pnpm exec supabase functions deploy notify       # only if the function changed
 ```
@@ -2723,8 +2727,9 @@ refuses is logged by Kong as `AUTH_MAIL_RELAY <route> <status>`, never with
 the address (or `UNREAD` when Kong could not read the body), so a masked
 outage still shows in its log. `verify` passes only `{token_hash, type}` with a
 hex hash; a `PUT /user` naming `email` or `phone` is 422. Each route's spelling
-check runs before every other plugin, so a variant is 404 with or without a
-key. The admin API takes GET, POST, PUT and DELETE with the secret key alone,
+check, and the REST catch-all's refusal of any other spelling of
+`create_organization`, runs before every other plugin, so a variant is 404
+with or without a key. The admin API takes GET, POST, PUT and DELETE with the secret key alone,
 and refuses a doubled `/`, `;`, `%` or a dot segment. Kong
 adds no `Server`, `Via` or latency header (`KONG_HEADERS=off`).
 

@@ -2,7 +2,7 @@
 title: '19.1 The signup door opens safely on staging'
 type: 'feature'
 created: '2026-11-21'
-status: 'done'
+status: 'review'
 baseline_commit: '6baf5ff7d13bc2e52b1ec56fb44e05bf2fe9b17c'
 review_loop_iteration: 0
 context:
@@ -84,15 +84,63 @@ Baseline: `origin/main` at #338 (AP2). Touches the hot file `hr.json` (and `test
 - Given the repo, when the allowed root suites, web tests, typecheck, lint and build run, then they pass.
 - Given the rendered Kong config, when the rehearsal sends the matrix's requests, then each answer is as listed, and the F1 result is recorded below.
 
+### Review Findings
+
+Review 2 (2026-11-21, `bmad-code-review`, unattended; a security review of auth on a public repository, against SECURITY-REVIEW-EPIC-19.md A–G). Layers: Blind Hunter, Edge Case Hunter, Verification Gap, Acceptance Auditor, Epic AC Auditor, plus the reviewer's own pass over the Kong Lua, the wrapper, the hook, the sweep, the env and `fengari`. Artifact Renderer: no generated export (the templates were read back from `dist/` and pinned by `test/auth-email.test.ts`). 9 patched, 3 deferred, 22 dismissed, 0 decision-needed.
+
+- [x] [Review][Patch] The mail relay judged the trimmed address but relayed the untrimmed one, and relayed non-ASCII addresses Lua called `email` that GoTrue's Unicode `ToLower` folds (U+0130 to `i`, U+212A to `k`) into synthesized ones; it now relays the ASCII-trimmed address, printable ASCII only (GoTrue v2.196.0's own `badoux/checkmail` format check is ASCII-only, read from the pinned binary), rerun on the pinned LuaJIT [docker-compose.yml:694]
+- [x] [Review][Patch] The REST catch-all's `create_organization` guard was a post-function (401 without a key, another Content-Type, contrary to DEPLOY.md §9.9); it is a pre-function now, pinned [docker-compose.yml:1153]
+- [x] [Review][Patch] Email copy holding `{{` or `}}` would be parsed by GoTrue as template syntax; the build refuses it [apps/web/src/lib/auth-email.ts:67]
+- [x] [Review][Patch] The hook's non-ASCII-capital refusal was never executed; the hook test calls it, with the expectation read from the database's own `lower()` [test/claimless-account.test.ts:603]
+- [x] [Review][Patch] The Croatian copy addressed men only ("Ako si to bio ti", "nisi zatražio"); neutral now ("Ako zahtjev nije tvoj") [hr.json `signup.email`]
+- [x] [Review][Patch] Two deferred-work entries were wrong about NBSP-padded addresses (GoTrue answers them 400 before the hook, so 19.2's probe uses a mixed-case `.shift.invalid` one); corrected [deferred-work.md]
+- [x] [Review][Patch] DEPLOY.md §5.2 and §5.3 still listed a hosted `config push` without the 19.1 warning; the banner and an explicit NEVER for production added [DEPLOY.md:492]
+- [x] [Review][Patch] Stale or garbled docs: `epic-19-context.md`'s `lower(split_part(…))` username rule, the spine's F1 timing, D4's sentence [epic-19-context.md:46]
+- [x] [Review][Patch] The "production is unchanged" and client-IP readings sat outside the deviation list; recorded with the reason in Design Notes (the list is frozen) [this spec]
+- [x] [Review][Defer] No deployed check observes production's door (the smoke's `422` cannot be seen through Kong) — deferred, OWNER the D-S5 review (section H)
+- [x] [Review][Defer] A template outage after GoTrue starts is silent — deferred, OWNER 20.5
+- [x] [Review][Defer] The busybox branches of the shell tests run only where the host has busybox (20.1's pattern) — deferred, OWNER the next story touching the stack test
+
+Dismissed, each with its reason: GraphQL reaching `create_organization` (already deferred, OWNER 19.3); `ana@shift.invalid..` relayed (GoTrue's format check refuses a doubled or trailing dot); the trusted-network bound (an operator input; a prefix above 32/128 makes Kong refuse to start, fail closed; `::ffff:0:0/96` never matches an IPv4 peer in nginx's `set_real_ip_from`); the smoke meeting the mail limit (one counted POST per run; its variants are 404 in the pre-function, before the limit); one actor spending the mail budget (A10, the founder's decision at D-S5); the email-change copy for the old address (no path sends that mail: Kong refuses `PUT /user` with `email`, and the admin API sends none; the template exists so GoTrue never falls back); the expiry copy (`GOTRUE_MAILER_OTP_EXP=3600` is a compose literal under the scaffold's parity pin, not an operator input); the wrapper's start-up wait (D6, fail-closed, documented in §9.9); the sweep varying uuids only (no executable public function looks a row up by a text key: its text arguments are reasons, outcomes and a push endpoint, and the row snapshot catches a write); the sweep's schema scope (Storage is swept, `private` holds no session-role privilege, anon is not AD-10's account); no audit of `signup_settings` (operator-only over the tailnet, excluded by AD-11; 19.3 enforces its other ceilings); `lower()` in the hook against D5 (D5 is the predicate's rule; the username check uses `lower()` on purpose, to equal `members_username_check` in the same database); the GoTrue limits as literals (only Kong's limits are D-S5 inputs; subjects are pinned to `hr.json`); the relay's dropped fields (the spec's "Narrowed" deviation); A6 checked against the CLI's GoTrue (20.5 runs §9.9's probe on the pinned image); username sign-in (CI's e2e and RLS suites sign in usernames with this `config.toml`); the status mismatch, the unrun DB suites and the eight-versus-nine command list (the STRICT DATABASE RULE; CI is their first run, and review 2 ran the ten allowed files); `fengari` (below).
+
+**Checklist coverage (SECURITY-REVIEW-EPIC-19.md, the rows 19.1 owns).** Evidence names a test that runs in CI unless marked otherwise.
+- A1 shut defaults and production template: `test/supabase-scaffold.test.ts` and `test/self-hosted-stack.test.ts` ("shuts the door by default…"). Met.
+- A2 the wrapper refuses `0`, `f`, `False` and each half-built guard: `test/self-hosted-stack.test.ts` runs the wrapper under `sh` (and busybox where present; deferred above), and the chroot run under the GoTrue image's busybox. Met.
+- A3 `signup_settings` closed, no session-role privilege: `test/claimless-account.test.ts` (DB, first run in CI) and the scaffold's source pin. Met, pending CI.
+- A4 `require-config` refuses `VITE_SIGNUP_ENABLED` for production: `test/ci-scripts.test.ts`, run as a process; `test/coolify-deploy.test.ts` pins both jobs. Met (no build reads the flag yet; deferred to 19.2).
+- A5 one refusal for each reason, nothing written, execute for `supabase_auth_admin` only: `test/claimless-account.test.ts` (now with the non-ASCII capital), `test/provisioning.test.ts`, migration 0066:151–209 (`security definer`, `search_path = ''`, every name qualified). Timing and codes cannot enumerate through Kong, which answers `200 {}` before GoTrue runs (B1/B2). Met, pending CI.
+- A6 `POST /admin/users` skips the hook: `test/claimless-account.test.ts` against the CLI's GoTrue; on the pinned image, 20.5's §9.9 probe. Partly (local only).
+- A7 `rate-limiting` on the four routes, `limit_by: ip`, `hide_client_headers`, 429 when exceeded, no Traefik middleware: `test/self-hosted-stack.test.ts` render pins and the rehearsal (sixth mail request 429). Met.
+- A8 client address, trusted network never /0: entrypoint guards and their tests, `KONG_REAL_IP_RECURSIVE=on` (the rightmost untrusted hop wins, so a client's own `X-Forwarded-For` entries never do), rehearsal (an untrusted peer's headers ignored). The host half is 20.5's. Partly (staging probe open).
+- A9 `GOTRUE_RATE_LIMIT_EMAIL_SENT` and `SMTP_MAX_FREQUENCY` set: compose, pinned. The Resend budget figure is D-S5's. Partly.
+- A10 accepted denial of service: the founder's decision at D-S5. Open (not 19.1's to close).
+- B1/B2 one `200 {}`, identical headers, Kong answers first: fengari tests and the rehearsal (6–7 ms against 1.5 s); staging probe 19.2. Met offline.
+- B3 a synthesized, malformed, unreadable or (review 2) non-ASCII body never reaches GoTrue: fengari tests. Met.
+- B4 allow-list and path variants 404, with or without a key: fengari tests over every guard and the rehearsal; review 2 moved the REST guard ahead of key-auth too. HEAD is in no route's methods (404); OPTIONS reaches cors only after the raw-path guard; a mail route never proxies (its post-function always exits). Met.
+- B4a verify passes `{token_hash, type}` only, hex hash, OTP 3600 s and 10 characters: fengari tests, wrapper guard, config pins. Met.
+- B4b `PUT /user` with `email` or `phone` in any case refused: fengari tests; Go's case-insensitive JSON keys have no Unicode fold for either name. Met.
+- B9 a masked failure stays visible as `AUTH_MAIL_RELAY <route> <status|UNREAD>` with no address: fengari tests. Met.
+- C1 the predicate's homes agree on the vectors: Lua in fengari (runs), SQL in the DB suite (CI); the SPA's home is 19.2's. Partly, pending CI.
+- C6/C7 `token_hash` links by POST, app origin only: `test/auth-email.test.ts`, the GET-on-verify 404, `GOTRUE_SITE_URL`/`GOTRUE_URI_ALLOW_LIST=${SHIFT_APP_URL}`, and the relay drops `redirect_to`. Met for 19.1's part.
+- E1/E2/E4 a claimless account reads and writes nothing, `clearMustSetPassword` changes only its flag, no session writes `signup_settings`: `test/claimless-account.test.ts` (first run in CI); the sweep counts only 42501 or zero rows, and the triggers on tables `authenticated` may insert into answer 42501 or defer to the policy for a caller with no claim (0023, 0035, 0036, 0039, 0041, 0064, read in review 2). Met, pending CI.
+- G1 GoTrue's own Resend key, only as `${GOTRUE_SMTP_PASS:-}`: `test/key-hygiene.test.ts`. Met in the repository.
+- G2 no address in Kong's relay log: fengari tests; the staging log search is 20.5's. Partly.
+- G3 bundle check: `test/static-hosting.test.ts` (run in review 2). Met.
+- B5–B8, C2–C5, D, F: owned by 19.2–19.5.
+
+**`fengari` (supply chain).** `fengari@0.1.5` (MIT, fengari-lua) is a root devDependency, imported only by `test/self-hosted-stack.test.ts`, never by the web or functions images. It and its three dependencies (`readline-sync@1.4.10` MIT, `sprintf-js@1.1.3` BSD-3-Clause, `tmp@0.2.7` MIT, past the 0.2.4 fix for the symlink write advisory) declare no install script, and the lockfile holds their sha512 integrity. It runs Lua 5.3 against LuaJIT's 5.1 dialect, so the test refuses 5.3-only syntax, and the rehearsal on the pinned image is what proves the chunks run there; review 2 reran its new relay lines on the image's own LuaJIT. Accepted.
+
 ## Spec Change Log
 
 - 2026-11-21 (build) — The Code Map grew, outside the frozen block: `apps/web/src/lib/auth-email.ts` (the template builder the Vite plugin and `test/auth-email.test.ts` share), `apps/web/src/pages/key-sweep.test.ts` (leaves `signup.email.*` out of the screen-key sweep, as it leaves `obavijesti.*`), `test/static-hosting.test.ts` (`auth-email` sanctioned in `dist/`), `test/provisioning.test.ts` (grantee and attribute entries for 0066's three functions, unrun), `smoke/deployment.spec.ts` (the signup probe now asserts Kong's one `200 {}` for a synthesized address, which writes nothing, and 404s on closed paths; the old `422 signup_disabled` can no longer be seen through Kong). `test/self-hosted-stack.test.ts` "has files to read" did not break: the auth wrapper is a `content:` bind in the compose, as Kong's entrypoint is.
 - 2026-11-21 (build, rehearsal) — Kong 2.8.1 matches a regex route on the NORMALIZED path (`//`, `%75` reached the signup route). Each allow-listed route therefore carries a raw-path guard that passes only its paths as written and answers anything else with Kong's own 404 body. Recorded in the spine (AD-22 as amended).
 - 2026-11-21 (review 1, applied) — the guards moved to a `pre-function` (in `KONG_PLUGINS`), which runs before cors, key-auth and the limits, so a variant is 404 with or without a key (rehearsed again); the admin route took methods, lost cors and gained a prefix guard; the mail route logs `AUTH_MAIL_RELAY <route> UNREAD`; verify takes a hex hash only; Kong refuses a trusted network wider than an IPv4 /8 or an IPv6 /32; the auth wrapper retries each template fetch 6 times 5 s apart and checks the OTP and templates whenever SMTP is set; nginx serves `/auth-email/` as itself or a plain 404, never index.html, and the web probe asserts the three templates; the hook's username reason is ASCII-only and no longer tautological; the smoke tells the local CLI stack (403 `SIGNUP_REFUSED`) from a deployed one; the stack test runs every rendered chunk in fengari behind a stand-in PDK and refuses Lua 5.3-only syntax; the claimless sweep counts only 42501 or zero rows as refused, counts real ids, names unswept functions and runs in repeatable read.
 
+- 2026-11-21 (review 2, applied) — migration renumbered `0066_signup_door.sql` (16.2 owns `0065`); the mail relay sends the ASCII-trimmed address and relays printable ASCII only; the REST catch-all's guard is a pre-function; the template build refuses Go template delimiters; the hook test covers a non-ASCII capital; neutral Croatian copy; deferred-work, DEPLOY.md §5.2/§5.3, the epic context and the spine corrected. See Review Findings.
+
 ## Design Notes
 
-Decisions (founder: decide and record): D1 the scope split above. D2 the hook is enabled in every environment, because the door is shut by `GOTRUE_DISABLE_SIGNUP` and `signup_settings`. D3 the limits: mail 5/h and 20/day; token 60/min and 1440/h; verify 15/min and 360/h; `rpc/create_organization` 10/h. The REST catch-all refuses (404) any other spelling of `create_organization` (percent-encoded, doubled `/`, upper case), so the limit cannot be bypassed. D4 the `accounts_per_day` ceiling counts `auth.users` rows accounts with no `members` row created in the last 24 h. D5 the predicate lower-cases ASCII only, in every home, so a Unicode case fold cannot make the homes disagree. D6 the template fetch at start goes to the app origin over HTTPS (busybox `wget` and `ssl_client` are in the GoTrue image). D7 the CORS preflight is allowed on every browser-called auth route (methods include `OPTIONS`). D8 a mail relay that fails logs `AUTH_MAIL_RELAY <route> <status>` and never the address.
+Decisions (founder: decide and record): D1 the scope split above. D2 the hook is enabled in every environment, because the door is shut by `GOTRUE_DISABLE_SIGNUP` and `signup_settings`. D3 the limits: mail 5/h and 20/day; token 60/min and 1440/h; verify 15/min and 360/h; `rpc/create_organization` 10/h. The REST catch-all refuses (404) any other spelling of `create_organization` (percent-encoded, doubled `/`, upper case), so the limit cannot be bypassed. D4 the `accounts_per_day` ceiling counts the `auth.users` rows created in the last 24 h that have no `members` row. D5 the predicate lower-cases ASCII only, in every home, so a Unicode case fold cannot make the homes disagree. D6 the template fetch at start goes to the app origin over HTTPS (busybox `wget` and `ssl_client` are in the GoTrue image). D7 the CORS preflight is allowed on every browser-called auth route (methods include `OPTIONS`). D8 a mail relay that fails logs `AUTH_MAIL_RELAY <route> <status>` and never the address.
 
 Findings from planning, checked against the pinned images. The rootfs extracted with `docker image save` is in the scratchpad: Kong at `/tmp/claude-0/-root-ai-agency-projects-shift/15d9a6a8-661d-4657-8658-921e573ab7c3/scratchpad/kongroot`, GoTrue at `…/scratchpad/gtroot`.
 - **Kong 2.8.1's sandbox** (`kong/tools/sandbox.lua`, `kong-lua-sandbox.lua`, `pre-function/_handler.lua`). The function environment is the sandbox's base set (`type`, `pairs`, `ipairs`, `tostring`, `pcall`, `string.*`, `table.*`, `math.*`, `os.time`/`clock`/`date`) plus the real `kong` and `ngx`, so `ngx.timer.at` is reachable. `require` loads only the names in `untrusted_lua_sandbox_requires`. That makes the setting `KONG_UNTRUSTED_LUA_SANDBOX_REQUIRES=resty.http,cjson.safe`. LuaJIT runs with no instruction quota. Offline, this shows that F1 is *allowed*. Whether it *works* (DNS from a timer, the cosocket) is what the chroot rehearsal shows.
@@ -115,6 +163,7 @@ Epic AC readings recorded after review:
 - "production is unchanged" is read as "production's door stays shut". The shared compose does change production's Kong (the allow-list, `SHIFT_PROXY_CIDR` required, headers off, the limits) and GoTrue (the hook enabled, the SMTP and template variables), and the smoke's signup expectation.
 - The 20.1 client-IP deferral is closed in the repository and confirmed on the host by 20.5.
 - The DB suite's RPC criterion is "the same answer with real ids as with absent ids, and nothing for functions without ids" (D14), and the suite is unrun until CI.
+- (Review 2.) Both readings above, "production is unchanged" and the 20.1 client-IP deferral (closed in the repository; its host half stays open in deferred-work, OWNER 20.5), are epic-AC narrowings. They are recorded here, not in `## Epic AC Deviations`, because that section is in the frozen block; a renegotiation by the founder would move them there. The claimless AC is also narrower than "every table": the catalog sweep covers `public` (and Storage), because no session role holds a privilege in `private` (the scaffold pins it), and the Edge Functions are called in-process, not over HTTP through the 20.2 router.
 
 Decisions taken while building (decide and record):
 
@@ -171,10 +220,10 @@ Decisions taken while building (decide and record):
 **The door's three switches**
 
 - GoTrue's switch, shut by default; production's template keeps it shut.
-  [`docker-compose.yml:1317`](../../deploy/coolify/supabase/docker-compose.yml#L1317)
+  [`docker-compose.yml:1326`](../../deploy/coolify/supabase/docker-compose.yml#L1326)
 
 - The wrapper that refuses a half-built open door.
-  [`docker-compose.yml:1388`](../../deploy/coolify/supabase/docker-compose.yml#L1388)
+  [`docker-compose.yml:1392`](../../deploy/coolify/supabase/docker-compose.yml#L1392)
 
 - The database switch and the one-answer hook.
   [`0066_signup_door.sql:151`](../../supabase/migrations/0066_signup_door.sql#L151)
@@ -213,3 +262,9 @@ Decisions taken while building (decide and record):
 
 - The GoTrue wrapper run under sh and busybox.
   [`self-hosted-stack.test.ts:1474`](../../test/self-hosted-stack.test.ts#L1474)
+
+**Results (2026-11-21, review 2 applied):**
+- `pnpm typecheck`, `pnpm lint` -- clean. `pnpm build` -- pass. `pnpm --filter ./apps/web test` -- 177 files, 6658 passed.
+- The ten allowed root files (the eight above plus `test/static-hosting.test.ts` and `test/web-image.test.ts`) -- 2369 passed, 1 failed: `numbers migrations 0001, 0002, … with no gaps`, at the 0065 gap this branch leaves for 16.2's `0065_member_schedule_inputs.sql`. With a placeholder `0065` (made and deleted at once) it passes; it passes for good once the branch is rebased onto a main holding 16.2. A mutation check (the ASCII gate removed) fails the relay test.
+- The new relay lines run on the pinned Kong image's own LuaJIT 2.1 (`chroot` in a private network namespace): the trim and the ASCII test answer as the fengari test expects.
+- NOT RUN (the caller's rules): `test/claimless-account.test.ts`, `test/provisioning.test.ts`, `smoke/deployment.spec.ts`, e2e, `scripts/ci/probe-web-image.sh`. No docker container was started.

@@ -61,6 +61,12 @@ function stringAt(node: unknown, path: readonly string[]): string {
   if (typeof current !== 'string' || current.trim() === '') {
     throw new Error(`hr.json has no message at ${path.join('.')}: the Auth email templates cannot be built`);
   }
+  // GoTrue parses each template as a Go template: copy holding a delimiter
+  // would be read as an action (or fail to parse, and GoTrue would fall back
+  // to its default English mail). The copy is text, never template syntax.
+  if (current.includes('{{') || current.includes('}}')) {
+    throw new Error(`hr.json's ${path.join('.')} holds a Go template delimiter ({{ or }}): the Auth email templates cannot be built`);
+  }
   return current;
 }
 

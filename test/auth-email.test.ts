@@ -131,6 +131,15 @@ describe('the Auth email templates (story 19.1)', () => {
     expect(() => emailCopyOf({})).toThrow(/hr\.json has no message/);
   });
 
+  it('refuses copy that GoTrue would read as template syntax (review 2)', () => {
+    const tampered = structuredClone(resource) as { signup: { email: { recovery: { body: string }; fallback: string } } };
+    tampered.signup.email.recovery.body = 'Pozdrav {{ .Email }}';
+    expect(() => emailCopyOf(tampered)).toThrow(/signup\.email\.recovery\.body holds a Go template delimiter/);
+    const closing = structuredClone(resource) as { signup: { email: { fallback: string } } };
+    closing.signup.email.fallback = 'kraj }}';
+    expect(() => emailCopyOf(closing)).toThrow(/signup\.email\.fallback holds a Go template delimiter/);
+  });
+
   it.skipIf(notBuilt)('is emitted by the web build as exactly these files, which the worker never precaches', () => {
     const emitted = readdirSync(join(dist, AUTH_EMAIL_DIRECTORY)).sort();
     expect(emitted).toEqual(AUTH_EMAIL_TEMPLATES.map(({ file }) => file).sort());

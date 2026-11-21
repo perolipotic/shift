@@ -595,6 +595,14 @@ describe('the switch and the before-user-created hook (story 19.1, AD-21)', () =
       for (const address of ['ana@dvd-kastel-novi.shift.invalid', 'ana@SHIFT.INVALID.', 'ana', 'ana@@example.com', '"a"@example.com', 'a b@example.com', '', null]) {
         expect(await hook(address), JSON.stringify(address)).toEqual(SIGNUP_REFUSED);
       }
+      // Review 2: the username half the ASCII cases above never reach. A
+      // local part `lower()` would still change fails `members_username_check`
+      // (0007) at founding, so the hook refuses it; which letters `lower()`
+      // changes is this database's locale, so the expectation is read from it.
+      const { rows: folds } = await client.query<{ changes: boolean }>(`select 'Ána' <> lower('Ána') as changes`);
+      expect(await hook('Ána@example.com'), 'a non-ASCII capital in the local part').toEqual(
+        folds[0]?.changes === true ? SIGNUP_REFUSED : {},
+      );
 
       await client.query('update private.signup_settings set open = false where id');
       expect(await hook('nova.organizacija@example.com'), 'a closed door').toEqual(SIGNUP_REFUSED);
