@@ -1822,12 +1822,25 @@ describe('every organization table carries row level security, and only its revi
       const { rows: triggers } = await client.query<{ definition: string }>(
         `select pg_get_triggerdef(oid) as definition from pg_trigger
           where tgrelid = 'public.team_loans'::regclass and not tgisinternal
-            and tgfoid <> 'private.record_audit_event()'::regprocedure`,
+            and tgfoid <> 'private.record_audit_event()'::regprocedure
+          order by 1`,
       );
       // Story 18.3 (0063): the lent member's notification, AFTER and per row,
-      // which refuses nothing (AD-3).
-      expect(triggers.map((row) => row.definition), 'team_loans takes a trigger beyond the audit triggers and the notification (AD-3)').toEqual([
+      // which refuses nothing (AD-3). Story 18.4 (0064): the removal's notice,
+      // 0023's lock and 0035's caller and team re-check on an insert.
+      expect(triggers.map((row) => row.definition), 'team_loans takes a trigger beyond the audit triggers, the notices, the lock and the re-check (AD-3)').toEqual([
         'CREATE TRIGGER team_loans_notify_insert AFTER INSERT ON public.team_loans FOR EACH ROW WHEN ((new.removed_at IS NULL)) EXECUTE FUNCTION private.notify_team_loan()',
+        'CREATE TRIGGER team_loans_notify_removal AFTER UPDATE OF removed_at ON public.team_loans FOR EACH ROW WHEN (((old.removed_at IS NULL) AND (new.removed_at IS NOT NULL))) EXECUTE FUNCTION private.notify_team_loan()',
+        'CREATE TRIGGER team_loans_refuse_write_by_stale_admin BEFORE INSERT ON public.team_loans FOR EACH ROW EXECUTE FUNCTION refuse_write_by_stale_admin()',
+        'CREATE TRIGGER team_loans_serialize_organization_writes BEFORE INSERT ON public.team_loans FOR EACH STATEMENT EXECUTE FUNCTION serialize_organization_writes()',
+      ]);
+      const { rows: archive } = await client.query<{ definition: string }>(
+        `select pg_get_triggerdef(oid) as definition from pg_trigger
+          where tgrelid = 'public.teams'::regclass and tgname = 'teams_refuse_write_while_lent_to'`,
+      );
+      // Story 18.4 (0064): a team with a current or future loan is not archived.
+      expect(archive.map((row) => row.definition)).toEqual([
+        'CREATE TRIGGER teams_refuse_write_while_lent_to BEFORE UPDATE OF archived ON public.teams FOR EACH ROW WHEN ((new.archived AND (NOT old.archived))) EXECUTE FUNCTION private.refuse_archive_while_lent_to()',
       ]);
       const { rows: policies } = await client.query<{ policyname: string; cmd: string; roles: string[] }>(
         `select policyname, cmd, roles::text[] as roles from pg_policies
@@ -2648,6 +2661,12 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'remove_leave_record', argumentCount: 1 },
     // 0054 (13.2b) added the type, dropping the three-argument signature.
     { name: 'amend_leave_record', argumentCount: 5 },
+    // STORY 18.4 (0064). The loan's soft-remove and its atomic amend, on
+    // 5.2a's attributes; the amend asks 0062's team rule itself, as the owner.
+    { name: 'remove_team_loan', argumentCount: 1 },
+    { name: 'amend_team_loan', argumentCount: 5 },
+    { name: 'team_loan_team_refused', argumentCount: 4, schema: 'private' },
+    { name: 'refuse_archive_while_lent_to', argumentCount: 0, schema: 'private' },
     // STORY 5.2c. The member's own live leave records, read past 0028's
     // select policy so no author leaves, on 3.6a's attributes.
     { name: 'my_leave_records', argumentCount: 0 },
@@ -2829,6 +2848,9 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // STORY 5.2a. The leave record's removal and amend, on 3.6b's terms.
     { name: 'remove_leave_record', argumentCount: 1, expected: ['authenticated'] },
     { name: 'amend_leave_record', argumentCount: 5, expected: ['authenticated'] },
+    // STORY 18.4 (0064). The loan's removal and amend, on 5.2a's terms.
+    { name: 'remove_team_loan', argumentCount: 1, expected: ['authenticated'] },
+    { name: 'amend_team_loan', argumentCount: 5, expected: ['authenticated'] },
     // STORY 5.2c. The member's own leave records, on 3.6a's read's terms.
     { name: 'my_leave_records', argumentCount: 0, expected: ['authenticated'] },
     // STORY 7.15. The admin's leave overview, on 5.2c's terms; the function
@@ -2913,6 +2935,10 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'record_audit_event', argumentCount: 0, expected: [], schema: 'private' },
     // STORY 18.3 (0063). The loan notification trigger, on 0043's terms.
     { name: 'notify_team_loan', argumentCount: 0, expected: [], schema: 'private' },
+    // STORY 18.4 (0064). The loan team rule its definers and re-check call,
+    // and the archive refusal's trigger function, on 0043's terms.
+    { name: 'team_loan_team_refused', argumentCount: 4, expected: [], schema: 'private' },
+    { name: 'refuse_archive_while_lent_to', argumentCount: 0, expected: [], schema: 'private' },
     // STORY 10.3 (0044). The outbox filter (a definer: it reads another
     // member's setting) and the settings row's `updated_at` stamp, triggers
     // callable by nobody.

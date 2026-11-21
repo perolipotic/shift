@@ -24,6 +24,9 @@ export const MEMBER_LOAN_ERROR_ID = 'member-loan-error';
 /** *Najviše 200 znakova.* under *Razlog*, which describes the field; with the refusal beside it once there is one. */
 export const MEMBER_LOAN_REASON_HINT_ID = 'member-loan-reason-hint';
 export const MEMBER_LOAN_REASON_HINT_AND_ERROR = `${MEMBER_LOAN_REASON_HINT_ID} ${MEMBER_LOAN_ERROR_ID}`;
+/** Story 18.4: the amend dialog's *Ukloni posudbu* switch and its hint. */
+export const MEMBER_LOAN_REMOVE_SWITCH_ID = 'member-loan-remove';
+export const MEMBER_LOAN_REMOVE_HINT_ID = 'member-loan-remove-hint';
 
 /** *Pravo*, on the leave card: its dialog's title and its one field. */
 export const MEMBER_ALLOWANCE_DIALOG_HEADING_ID = 'member-allowance-dialog-heading';

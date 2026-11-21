@@ -22,10 +22,11 @@ import { Notice } from '@/components/ui/notice';
 import { Select } from '@/components/ui/select';
 import { ShortStaffedBlock } from '@/features/staffing/components/short-staffed-block';
 import { t } from '@/lib/i18n';
+import { formatIsoDate } from '@/lib/i18n/format';
 import { keepFocusOnAlert } from '@/utils/retry-focus';
 import type { MemberEdit } from '@/features/members/hooks/use-member-edit';
 import { MemberLoanDialog } from '@/features/members/components/member-loan-dialog';
-import { loanRefusalMessageKey } from '@/features/members/services/loan';
+import { loanRefusalMessageKey, loanSavedMessageKey } from '@/features/members/services/loan';
 import { memberErasureCopyOf } from '@/features/members/utils/erasure-copy';
 import { type MemberListRow } from '@/features/members/services/list';
 import {
@@ -92,8 +93,10 @@ export function MemberTeamCard({ edit }: { readonly edit: MemberEdit }): ReactNo
     loanDialog,
     loanPending,
     loanSaved,
+    loanSavedKind,
     loanErased,
     loanCardRefusal,
+    memberLoans,
   } = edit;
 
   /**
@@ -177,15 +180,57 @@ export function MemberTeamCard({ edit }: { readonly edit: MemberEdit }): ReactNo
         {loanCardRefusal === null ? null : (
           <Notice role="alert">{t(loanRefusalMessageKey(loanCardRefusal))}</Notice>
         )}
-        {/* STORY 18.3: a landed loan, and what its guarded write removed. */}
-        {loanSaved ? (
+        {/* STORY 18.3: a landed loan, and what its guarded write removed; 18.4: an amend or a removal too. */}
+        {loanSaved && loanSavedKind !== null ? (
           <Notice role="status">
-            <span className="block">{t('loans.saved')}</span>
+            <span className="block">{t(loanSavedMessageKey(loanSavedKind))}</span>
             {loanErased === 0 ? null : (
               <span className="mt-2 block">{t('ljudi.erasures.removed', { count: loanErased })}</span>
             )}
           </Notice>
         ) : null}
+      </CardContent>
+    );
+  }
+
+  /**
+   * STORY 18.4: the member's live loans, by first date, each with *Izmijeni
+   * posudbu*, which opens the loan dialog on it. Nothing while there is none.
+   * Its accessible name carries the member, the team and the dates.
+   */
+  function renderLoans(member: MemberListRow): ReactNode {
+    if (memberLoans.length === 0) return null;
+
+    return (
+      <CardContent className="grid gap-2 pt-0">
+        <h3 className="text-sm font-semibold">{t('loans.listHeading')}</h3>
+        <ul className="grid gap-2">
+          {memberLoans.map(({ loan, team }) => {
+            const values = {
+              team: team ?? t('loans.unknownTeam'),
+              from: formatIsoDate(loan.from) ?? loan.from,
+              to: formatIsoDate(loan.to) ?? loan.to,
+            };
+
+            return (
+              <li key={loan.id} className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                <span className="min-w-0 break-words text-sm">{t('loans.listItem', values)}</span>
+                <Button
+                  className="h-11"
+                  type="button"
+                  variant="outline"
+                  aria-label={t('loans.amendName', { name: member.name, ...values })}
+                  disabled={loanPending || !loanDialog.amendable}
+                  onClick={(event) => {
+                    loanDialog.openAmend(loan, event.currentTarget);
+                  }}
+                >
+                  {t('loans.amend')}
+                </Button>
+              </li>
+            );
+          })}
+        </ul>
       </CardContent>
     );
   }
@@ -257,6 +302,7 @@ export function MemberTeamCard({ edit }: { readonly edit: MemberEdit }): ReactNo
           )}
         </CardHeader>
         {renderTeam(member, organizationToday)}
+        {renderLoans(member)}
       </Card>
       <MemberTeamDialog edit={edit} />
       <MemberLoanDialog edit={edit} />

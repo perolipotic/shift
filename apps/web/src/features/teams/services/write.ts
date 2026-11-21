@@ -45,6 +45,11 @@ export const TEAM_UNKNOWN = 'TEAM_UNKNOWN';
  * answering an ARCHIVE is this rule, not a lost permission.
  */
 export const TEAM_IN_USE = 'TEAM_IN_USE';
+/**
+ * Somebody is lent to the team today or later (story 18.4): 0064's 23514
+ * `TEAM_HAS_LOANS`. The loans are ended or removed first.
+ */
+export const TEAM_LENT_TO = 'TEAM_LENT_TO';
 
 export type TeamWriteFailure =
   | typeof TEAM_NAME_EMPTY
@@ -55,7 +60,8 @@ export type TeamWriteFailure =
   | typeof TEAM_WRITE_INVALID
   | typeof TEAM_WRITE_UNAVAILABLE
   | typeof TEAM_UNKNOWN
-  | typeof TEAM_IN_USE;
+  | typeof TEAM_IN_USE
+  | typeof TEAM_LENT_TO;
 
 export type TeamWriteOutcome =
   | { readonly ok: true }
@@ -105,6 +111,8 @@ export function enteredTeamName(value: string): string | null {
 const INSUFFICIENT_PRIVILEGE = '42501';
 const UNIQUE_VIOLATION = '23505';
 const CHECK_VIOLATION = '23514';
+/** 0064's archive refusal while a loan to the team is current. */
+const LENT_TO_MESSAGE = 'TEAM_HAS_LOANS';
 const VALUE_CLASSES = ['22', '23'];
 
 /**
@@ -136,6 +144,7 @@ export function teamWriteFailureOf(error: TeamWriteError): TeamWriteFailure {
  */
 export function archiveFailureOf(error: TeamWriteError): TeamWriteFailure {
   if (error.code === INSUFFICIENT_PRIVILEGE) return TEAM_IN_USE;
+  if (error.code === CHECK_VIOLATION && error.message === LENT_TO_MESSAGE) return TEAM_LENT_TO;
 
   return teamWriteFailureOf(error);
 }
@@ -232,7 +241,8 @@ export function teamWriteMessageKey(
   | 'smjene.error.invalid'
   | 'smjene.error.saveUnavailable'
   | 'smjene.error.unknown'
-  | 'smjene.error.inUse' {
+  | 'smjene.error.inUse'
+  | 'smjene.error.lentTo' {
   if (failure === TEAM_NAME_EMPTY) return 'smjene.error.empty';
   if (failure === TEAM_NAME_TOO_LONG) return 'smjene.error.tooLong';
   if (failure === TEAM_NAME_TAKEN) return 'smjene.error.taken';
@@ -242,6 +252,7 @@ export function teamWriteMessageKey(
   if (failure === TEAM_WRITE_UNAVAILABLE) return 'smjene.error.saveUnavailable';
   if (failure === TEAM_UNKNOWN) return 'smjene.error.unknown';
   if (failure === TEAM_IN_USE) return 'smjene.error.inUse';
+  if (failure === TEAM_LENT_TO) return 'smjene.error.lentTo';
 
   const unhandled: never = failure;
 

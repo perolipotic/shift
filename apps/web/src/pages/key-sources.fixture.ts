@@ -356,10 +356,13 @@ export const KEY_SOURCES = [
     //
     // ELEVEN SINCE 0036: a name over the maximum. (0036's archive of a team
     // in a rotation was withdrawn by 0037.)
+    //
+    // TWELVE SINCE STORY 18.4: 0064's archive refusal while a loan to the team
+    // is current (`smjene.error.lentTo`).
     name: 'the team write rules',
     file: TEAM_WRITE_KEYS,
     keys: memberListKeys,
-    strings: 11,
+    strings: 12,
   },
   {
     // STORY 1.8. FOUR on the roster: the heading while there is no roster to
@@ -1691,10 +1694,16 @@ export const KEY_SOURCES = [
     // note), the unchecked line and its retry, cancel, *Spremi* and the erasure
     // dialog's save (20). ONE HUNDRED AND NINETY SINCE ITS REVIEW: *Razlog*'s
     // hint and the neutral words for an inert override's unnamed member.
+    // TWO HUNDRED AND ONE SINCE STORY 18.4: the card's loan list — its heading,
+    // a row, the unknown team, *Izmijeni posudbu* and its accessible name — and
+    // the amend dialog's title, *Razlog*'s keep hint, *Završi danas*, *Ukloni
+    // posudbu* and its hint, the inactive-days line and the removal's erasure
+    // save (12); the card's saved line now goes through `loanSavedMessageKey`
+    // (−1).
     name: 'the member edit form',
     file: MEMBER_EDIT,
     keys: translationKeys,
-    strings: 190,
+    strings: 201,
   },
   {
     // THIRTEEN on the member write path's rules: eleven `ljudi.form.error.*`
@@ -1803,10 +1812,12 @@ export const KEY_SOURCES = [
     // its four shift lines, each with or without a range
     // (`loanShiftMessageKey`), and its three inert-override lines
     // (`loanInertMessageKey`).
+    // TWENTY-TWO SINCE STORY 18.4: what a landed lend, amend or removal says
+    // (`loanSavedMessageKey`), and the amend that changes nothing.
     name: 'the loan dialog rules',
     file: MEMBER_LOAN_KEYS,
     keys: messageKeyUnions,
-    strings: 18,
+    strings: 22,
   },
   {
     // ONE on the lockup: the accessible name it falls back to when the

@@ -13,6 +13,7 @@ import {
   ARCHIVE_IDLE,
   TEAM_ARCHIVED,
   TEAM_IN_USE,
+  TEAM_LENT_TO,
   TEAM_NAME_EMPTY,
   TEAM_NAME_TAKEN,
   TEAM_NAME_TOO_LONG,
@@ -271,6 +272,7 @@ describe('a database refusal names its problem', () => {
     expect(teamWriteMessageKey(TEAM_NAME_EMPTY)).toBe('smjene.error.empty');
     expect(teamWriteMessageKey(TEAM_STALE)).toBe('smjene.error.stale');
     expect(teamWriteMessageKey(TEAM_IN_USE)).toBe('smjene.error.inUse');
+    expect(teamWriteMessageKey(TEAM_LENT_TO)).toBe('smjene.error.lentTo');
     expect(teamWriteMessageKey(TEAM_NAME_TOO_LONG)).toBe('smjene.error.tooLong');
   });
 });
@@ -284,6 +286,12 @@ describe('an archive of a team somebody is on is refused by name (story 1.7b)', 
     expect(archiveFailureOf({ code: '23505' })).toBe(TEAM_NAME_TAKEN);
     expect(archiveFailureOf({ code: '40001' })).toBe(TEAM_WRITE_UNAVAILABLE);
     expect(archiveFailureOf({})).toBe(TEAM_WRITE_UNAVAILABLE);
+  });
+
+  it("reads 0064's 23514 TEAM_HAS_LOANS on an archive as a current loan to the team (story 18.4)", () => {
+    expect(archiveFailureOf({ code: '23514', message: 'TEAM_HAS_LOANS' })).toBe(TEAM_LENT_TO);
+    // Any other check on an archive reads as before.
+    expect(archiveFailureOf({ code: '23514', message: 'teams_name_not_blank' })).toBe(TEAM_NAME_EMPTY);
   });
 
 

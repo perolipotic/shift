@@ -1915,6 +1915,10 @@ describe('every write verb 0023, 0035 and 0036 name waits on the lock', () => {
         // 0049: the swap requests take the lock, as 0040's requests do, and no
         // refusing trigger.
         { table: 'swap_requests', trigger: 'swap_requests_serialize_organization_writes', type: 2 | 4 | 8 | 16, columns: null },
+        // 0064 (story 18.4): a loan insert takes the lock, and the caller's and
+        // the loan team's re-check, ROW level and BEFORE.
+        { table: 'team_loans', trigger: 'team_loans_refuse_write_by_stale_admin', type: 1 | 2 | 4, columns: null },
+        { table: 'team_loans', trigger: 'team_loans_serialize_organization_writes', type: 2 | 4, columns: null },
         { table: 'team_membership_versions', trigger: 'team_membership_versions_refuse_truncate', type: 2 | 32, columns: null },
         { table: 'team_membership_versions', trigger: 'team_membership_versions_refuse_write_by_stale_admin', type: 1 | 2 | 4 | 8 | 16, columns: null },
         { table: 'team_membership_versions', trigger: 'team_membership_versions_serialize_organization_writes', type: 2 | 4 | 8 | 16, columns: null },

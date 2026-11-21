@@ -6,6 +6,8 @@ import { memberScheduleInputOf } from '@/features/calendar/utils/month';
 import { CHECK_READY, CHECK_REFUSED, CHECK_UNAVAILABLE, type ErasureReads } from '@/features/conflicts/services/erasure-check';
 import type { MemberListRow } from '@/features/members/services/list';
 import {
+  AMEND_TEAM_LOAN_FUNCTION,
+  LOAN_AMEND,
   LOAN_ARCHIVED,
   LOAN_DENIED,
   LOAN_DRAFT_ID,
@@ -17,16 +19,31 @@ import {
   LOAN_FROM_INVALID,
   LOAN_GAINED,
   LOAN_HOME,
+  LOAN_LEND,
   LOAN_LOST,
   LOAN_ORDER,
   LOAN_OVERLAP,
   LOAN_REASON,
+  LOAN_REMOVE,
   LOAN_STALE,
   LOAN_TO_INVALID,
+  LOAN_UNCHANGED,
   LOAN_UNPICKED,
   LOAN_UNPICKED_VALUE,
+  REMOVE_TEAM_LOAN_FUNCTION,
+  amendLoan,
   enteredSpanOf,
   lendMember,
+  loanAmendChoicesOf,
+  loanAmendPreflightOf,
+  loanEditSnapshotOf,
+  loanEditWindowOf,
+  loanEndsTodayOfferedOf,
+  loanInactiveDaysOf,
+  loanSavedMessageKey,
+  loanWriteEditOf,
+  memberLoansOf,
+  removeLoan,
   loanChangeSnapshotOf,
   loanChoicesOf,
   loanErasureCheckOf,
@@ -40,6 +57,8 @@ import {
   previewableSpanOf,
   shownLoanPreviewOf,
   shownLoanShortStaffedOf,
+  type LoanEdit,
+  type LoanRpc,
   type LoanSpan,
   type LoanTable,
 } from '@/features/members/services/loan';
@@ -63,6 +82,7 @@ import {
   membershipRow,
   overridesAnswerOf,
   rosterOverridesAnswerOf,
+  statusRow,
   viewerRow,
   viewerSession,
 } from '@/features/rotation/rotation.fixture';
@@ -91,17 +111,25 @@ interface Setup {
   readonly overrides?: readonly Row[];
   readonly rosterOverrides?: readonly Row[];
   readonly loans?: readonly Row[];
+  readonly statuses?: readonly Row[];
   readonly minimumMembers?: number;
 }
 
-async function snapshotOf({ versions = [], overrides = [], rosterOverrides = [], loans = [], minimumMembers }: Setup = {}): Promise<CalendarSnapshot> {
+async function snapshotOf({
+  versions = [],
+  overrides = [],
+  rosterOverrides = [],
+  loans = [],
+  statuses = [],
+  minimumMembers,
+}: Setup = {}): Promise<CalendarSnapshot> {
   const source = calendarTableOf(
     {
       data: [
         calendarOrganizationRow(PILOT, {
           viewers: [viewerRow([membershipRow(B, SEEDED)], { role: 'admin' })],
           versions: [memberMembershipRow(VIEWER_MEMBER, B, SEEDED), memberMembershipRow(ANA, A, SEEDED), ...versions],
-          statuses: [],
+          statuses,
           minimumMembers,
         }),
       ],
@@ -508,5 +536,296 @@ describe('Past loan', () => {
     expect(loanPreflightOf(ANA, [{ id: C, name: 'Smjena C' }], { teamId: C, from: past.from, to: past.to, reason: 'Ispravak' })).toMatchObject({
       ok: true,
     });
+  });
+});
+
+// ------------------------------------------------------------------ story 18.4
+
+/**
+ * Story 18.4's amend, end early and removal, executed (AD-15): every row of
+ * the spec's matrix but the DB-only ones (the notices, the definers' own
+ * refusals, the archive trigger), over the same fixture. Ana's live loan
+ * `LIVE` is to C for 10.–12.
+ */
+describe('Amend / change team / end early / remove: the edit\'s one "after"', () => {
+  const LIVE_ID = '00000000-0000-4000-8000-00000000f0a1';
+  const LIVE = { id: LIVE_ID, teamId: C, from: '2026-10-10', to: '2026-10-12' } as const;
+  let lent: CalendarSnapshot;
+
+  beforeAll(async () => {
+    lent = await snapshotOf({ loans: [calendarLoanRow(LIVE_ID, ANA, C, LIVE.from, LIVE.to)] });
+  });
+
+  const amendOf = (span: Partial<LoanSpan>): LoanEdit => ({ memberId: ANA, replaces: LIVE, span: { ...SPAN, ...span } });
+  const removal: LoanEdit = { memberId: ANA, replaces: LIVE, span: null };
+  const loansOf = (snapshot: CalendarSnapshot) => snapshot.members.find((member) => member.id === ANA)?.loans;
+
+  it('Amend: replaces the live loan by the draft, and previews only the dates the change makes (13.–14.)', () => {
+    const applied = loanEditSnapshotOf(lent, amendOf({ to: '2026-10-14' }));
+
+    if (!applied.ok) throw new Error(applied.code);
+    expect(loansOf(applied.after)).toEqual([{ id: LOAN_DRAFT_ID, teamId: C, from: '2026-10-10', to: '2026-10-14' }]);
+
+    const preview = shownLoanPreviewOf(lent, amendOf({ to: '2026-10-14' }));
+
+    // 13.: A's Noć lost; 14.: C's Dan gained. Nothing on 10.–12., which stay C's.
+    expect(preview?.shifts.map((line) => [line.side, line.date, line.team])).toEqual([
+      [LOAN_LOST, '2026-10-13', 'Smjena A'],
+      [LOAN_GAINED, '2026-10-14', 'Smjena C'],
+    ]);
+    expect(loanEditWindowOf(amendOf({ to: '2026-10-14' }))).toEqual({ memberId: ANA, teamId: C, from: '2026-10-10', to: '2026-10-14' });
+  });
+
+  it('Change team: C to D is C lost and D gained over the same dates', () => {
+    const preview = shownLoanPreviewOf(lent, amendOf({ teamId: D }));
+    const lines = (side: string) =>
+      preview?.shifts.filter((line) => line.side === side).map((line) => [line.date, line.team]) ?? [];
+
+    // C works Dan 10. and Noć 11.; D (the pilot's fourth team) works on the 10.–12. too, all inside the range.
+    expect(lines(LOAN_LOST).length).toBeGreaterThan(0);
+    expect(lines(LOAN_LOST).every(([date, team]) => team === 'Smjena C' && date !== undefined && date >= LIVE.from && date <= LIVE.to)).toBe(true);
+    expect(lines(LOAN_GAINED).length).toBeGreaterThan(0);
+    expect(lines(LOAN_GAINED).every(([date, team]) => team === 'Smjena D' && date !== undefined && date >= LIVE.from && date <= LIVE.to)).toBe(true);
+    expect(lines(LOAN_LOST)).toContainEqual(['2026-10-10', 'Smjena C']);
+  });
+
+  it('End early: *Završi danas* only while the loan has begun and ends after today; the amend is an earlier *Do*', () => {
+    expect(loanEndsTodayOfferedOf(LIVE, '2026-10-11')).toBe(true);
+    expect(loanEndsTodayOfferedOf(LIVE, '2026-10-10')).toBe(true);
+    expect(loanEndsTodayOfferedOf(LIVE, '2026-10-12')).toBe(false);
+    expect(loanEndsTodayOfferedOf(LIVE, '2026-10-09')).toBe(false);
+    expect(loanEndsTodayOfferedOf(LIVE, null)).toBe(false);
+
+    // Ended on the 11th: the 12th returns to A (Dan), the window stays 10.–12.
+    const preview = shownLoanPreviewOf(lent, amendOf({ to: '2026-10-11' }));
+
+    expect(preview?.shifts.map((line) => [line.side, line.date, line.team])).toEqual([[LOAN_GAINED, '2026-10-12', 'Smjena A']]);
+    expect(loanEditWindowOf(amendOf({ to: '2026-10-11' }))).toEqual({ memberId: ANA, teamId: C, from: '2026-10-10', to: '2026-10-12' });
+  });
+
+  it('Remove: the "after" equals the snapshot with no loan ever recorded, and the preview regains the home shifts', () => {
+    const applied = loanEditSnapshotOf(lent, removal);
+
+    if (!applied.ok) throw new Error(applied.code);
+    expect(loansOf(applied.after)).toEqual([]);
+
+    // Every date derives as with no loan ever recorded (FR-91, DI-2).
+    const input = (snapshot: CalendarSnapshot) => {
+      const member = snapshot.members.find((candidate) => candidate.id === ANA);
+
+      if (member === undefined) throw new Error('no member');
+
+      return memberScheduleInputOf(snapshot, { memberId: ANA, memberships: member.memberships, statuses: member.statuses });
+    };
+    expect(memberScheduleOfMonth(input(applied.after), '2026-10')).toEqual(memberScheduleOfMonth(input(plain), '2026-10'));
+
+    const preview = shownLoanPreviewOf(lent, removal);
+
+    expect(preview?.shifts.some((line) => line.side === LOAN_GAINED && line.team === 'Smjena A' && line.date === '2026-10-12')).toBe(true);
+    expect(preview?.shifts.some((line) => line.side === LOAN_LOST && line.team === 'Smjena C')).toBe(true);
+    expect(loanEditWindowOf(removal)).toEqual({ memberId: ANA, teamId: C, from: LIVE.from, to: LIVE.to });
+  });
+
+  it('Overlap: an amend meeting another live loan is refused, but never by its own loan', async () => {
+    expect(loanEditSnapshotOf(lent, amendOf({ from: '2026-10-11', to: '2026-10-13' })).ok).toBe(true);
+
+    const two = await snapshotOf({
+      loans: [calendarLoanRow(LIVE_ID, ANA, C, LIVE.from, LIVE.to), calendarLoanRow('00000000-0000-4000-8000-00000000f0a2', ANA, D, '2026-10-14', '2026-10-15')],
+    });
+
+    expect(loanEditSnapshotOf(two, amendOf({ to: '2026-10-14' }))).toEqual({ ok: false, code: LOAN_OVERLAP });
+  });
+
+  it('Home / archived: the amended team is refused as a lend\'s is', () => {
+    expect(loanEditSnapshotOf(lent, amendOf({ teamId: A }))).toEqual({ ok: false, code: LOAN_HOME });
+
+    const archived = { ...lent, teams: lent.teams.map((team) => (team.id === D ? { ...team, archived: true } : team)) };
+
+    expect(loanEditSnapshotOf(archived, amendOf({ teamId: D }))).toEqual({ ok: false, code: LOAN_ARCHIVED });
+  });
+
+  it('Gone: a loan removed or amended meanwhile is stale, for the amend and the removal', async () => {
+    expect(loanEditSnapshotOf(plain, amendOf({}))).toEqual({ ok: false, code: LOAN_STALE });
+    expect(loanEditSnapshotOf(plain, removal)).toEqual({ ok: false, code: LOAN_STALE });
+    expect(loanEditSnapshotOf(lent, { ...removal, memberId: 'gone' })).toEqual({ ok: false, code: LOAN_STALE });
+    expect(shownLoanPreviewOf(plain, removal)).toBeNull();
+    expect(
+      await loanErasureCheckOf(() => Promise.resolve({ calendar: plain, records: [], resolutions: [] }), removal, true),
+    ).toEqual({ kind: CHECK_REFUSED, code: LOAN_STALE });
+    expect(loanWriteFailureOf({ code: 'P0002', message: 'TEAM_LOAN_NOT_LIVE' })).toBe(LOAN_STALE);
+    expect(loanRefusalMessageKey(LOAN_STALE)).toBe('loans.error.stale');
+  });
+
+  it("Erasure: a removal takes Ana off C's Noć of the 11th, where she has leave, and names that conflict", async () => {
+    const check = await loanErasureCheckOf(
+      () => Promise.resolve({ calendar: lent, records: [recordOf('leave-11', '2026-10-11', '2026-10-12')], resolutions: [] }),
+      removal,
+      true,
+    );
+
+    if (check.kind !== CHECK_READY) throw new Error(check.kind);
+    expect(check.rows.map((row) => [row.memberName, row.date, row.teamName])).toEqual([['Ana Anić', '2026-10-11', 'Smjena C']]);
+
+    // Leave on A's Dan of the 12th, which the removal gives back: a new conflict, nothing erased.
+    const none = await loanErasureCheckOf(
+      () => Promise.resolve({ calendar: lent, records: [recordOf('leave-12', '2026-10-12', '2026-10-13')], resolutions: [] }),
+      removal,
+      true,
+    );
+
+    expect(none).toEqual({ kind: CHECK_READY, rows: [] });
+  });
+
+  it('Short-staffed: derived over the edit\'s window, for both teams', async () => {
+    const minimum = await snapshotOf({ loans: [calendarLoanRow(LIVE_ID, ANA, C, LIVE.from, LIVE.to)], minimumMembers: 1 });
+    const report = shownLoanShortStaffedOf(minimum, amendOf({ teamId: D }), LEAVE_READ);
+
+    expect(report?.kind).toBe(SHORT_STAFFED_KNOWN);
+    expect(shownLoanShortStaffedOf(minimum, null, LEAVE_READ)).toBeNull();
+  });
+
+  it('Inactive: counts the new loan\'s dates the member is inactive on, warns, and never refuses', async () => {
+    const inactive = await snapshotOf({ statuses: [statusRow(ANA, false, '2026-10-11')] });
+
+    expect(loanInactiveDaysOf(inactive, SPAN)).toBe(2);
+    expect(loanInactiveDaysOf(plain, SPAN)).toBe(0);
+    expect(loanInactiveDaysOf(inactive, { memberId: ANA, replaces: LIVE, span: null })).toBe(0);
+    // An amend counts only the dates its old loan did not cover: 13.–14. here.
+    expect(loanInactiveDaysOf(inactive, { memberId: ANA, replaces: LIVE, span: { ...SPAN, to: '2026-10-14' } })).toBe(2);
+    expect(loanInactiveDaysOf(inactive, { memberId: ANA, replaces: LIVE, span: SPAN })).toBe(0);
+    expect(loanEditSnapshotOf(inactive, SPAN).ok).toBe(true);
+    expect(shownLoanPreviewOf(inactive, SPAN)?.inactiveDays).toBe(2);
+    expect(t('loans.inactive', { count: 2 })).toBe('Osoba nije aktivna 2 dana posudbe: tada se ništa ne mijenja.');
+    expect(t('loans.inactive', { count: 1 })).toContain('1 dan ');
+  });
+
+  it("lists the member's live loans by first date with their team, and offers the loan's own team in an amend", async () => {
+    const two = await snapshotOf({
+      loans: [calendarLoanRow('00000000-0000-4000-8000-00000000f0a2', ANA, D, '2026-10-20', '2026-10-21'), calendarLoanRow(LIVE_ID, ANA, C, LIVE.from, LIVE.to)],
+    });
+
+    expect(memberLoansOf(two, ANA).map(({ loan, team }) => [loan.id, team])).toEqual([
+      [LIVE_ID, 'Smjena C'],
+      ['00000000-0000-4000-8000-00000000f0a2', 'Smjena D'],
+    ]);
+    expect(memberLoansOf(null, ANA)).toEqual([]);
+    expect(memberLoansOf(two, 'gone')).toEqual([]);
+
+    const teams = [A, B, C, D].map((id): TeamRow => ({ id, organizationId: 'organization-1', name: id, archived: false }));
+    const ana: MemberListRow = {
+      id: ANA,
+      organizationId: 'organization-1',
+      name: 'Ana Anić',
+      username: 'ana',
+      email: null,
+      role: 'member_role',
+      leaveAllowanceDays: 20,
+      leaveAllowance: { startingDays: 20, versions: [] },
+      leaveYearStart: { month: 1, day: 1 },
+      fireRank: null,
+      authUserId: 'account-ana',
+      statusVersions: [],
+      teamVersions: [{ team: { id: A, name: 'Smjena A' }, position: null, effectiveFrom: SEEDED }],
+      timeZone: 'Europe/Zagreb',
+    };
+    // A loan to A, the member's team today (a move after the loan): A is offered too.
+    const offered = loanAmendChoicesOf(ana, teams, TODAY, { ...LIVE, teamId: A })?.map((choice) => choice.id) ?? [];
+
+    expect(offered).toContain(A);
+    expect(loanAmendChoicesOf(ana, teams, TODAY, LIVE)?.map((choice) => choice.id)).not.toContain(A);
+    expect(loanAmendChoicesOf(ana, null, TODAY, LIVE)).toBeNull();
+    // No team left to offer: empty, not null, so the dialog still opens for a removal (review).
+    expect(loanAmendChoicesOf(ana, [{ id: A, organizationId: 'organization-1', name: A, archived: false }], TODAY, LIVE)).toEqual([]);
+  });
+
+  it('preflights an amend: an empty reason keeps the stored one (null), a typed one is checked', () => {
+    const choices = [{ id: C, name: 'Smjena C' }];
+    const entered = { teamId: C, from: SPAN.from, to: SPAN.to, reason: '   ' };
+
+    expect(loanAmendPreflightOf(ANA, choices, entered)).toEqual({ ok: true, draft: { ...SPAN, reason: null } });
+    expect(loanAmendPreflightOf(ANA, choices, { ...entered, reason: ' Novi ' })).toEqual({ ok: true, draft: { ...SPAN, reason: 'Novi' } });
+    expect(loanAmendPreflightOf(ANA, choices, { ...entered, reason: 'x'.repeat(201) })).toEqual({ ok: false, code: LOAN_REASON });
+    expect(loanAmendPreflightOf(ANA, choices, { ...entered, to: '2026-10-09' })).toEqual({ ok: false, code: LOAN_ORDER });
+    // Nothing to save: the stored team and dates, and no new reason (review).
+    const stored = { id: 'loan-1', teamId: C, from: SPAN.from, to: SPAN.to };
+    expect(loanAmendPreflightOf(ANA, choices, entered, stored)).toEqual({ ok: false, code: LOAN_UNCHANGED });
+    expect(loanAmendPreflightOf(ANA, choices, { ...entered, reason: 'Novi' }, stored).ok).toBe(true);
+    expect(loanAmendPreflightOf(ANA, choices, { ...entered, to: '2026-10-11' }, stored).ok).toBe(true);
+    expect(loanRefusalMessageKey(LOAN_UNCHANGED)).toBe('loans.error.unchanged');
+  });
+
+  it('reads each write as its edit, and says what landed', () => {
+    const draft = { ...SPAN, reason: 'x' };
+
+    expect(loanWriteEditOf({ kind: LOAN_LEND, draft })).toEqual({ memberId: ANA, replaces: null, span: draft });
+    expect(loanWriteEditOf({ kind: LOAN_AMEND, loan: LIVE, draft: { ...draft, reason: null } }).replaces).toBe(LIVE);
+    expect(loanWriteEditOf({ kind: LOAN_REMOVE, memberId: ANA, loan: LIVE })).toEqual(removal);
+    expect(([LOAN_LEND, LOAN_AMEND, LOAN_REMOVE] as const).map((kind) => t(loanSavedMessageKey(kind)))).toEqual([
+      'Posudba je spremljena.',
+      'Posudba je izmijenjena.',
+      'Posudba je uklonjena.',
+    ]);
+  });
+});
+
+describe("DB refusal: 0064's two definers and their answers", () => {
+  function rpcAnswering(answer: unknown): LoanRpc & { readonly sent: unknown[] } {
+    const sent: unknown[] = [];
+
+    return {
+      sent,
+      rpc(fn: string, args: unknown) {
+        sent.push([fn, args]);
+
+        return answer instanceof Error ? Promise.reject(answer) : Promise.resolve(answer as never);
+      },
+    } as LoanRpc & { readonly sent: unknown[] };
+  }
+
+  const draft = { ...SPAN, reason: 'Vježba' };
+
+  it('amends with the team, the inclusive dates and the reason, or none to keep it, and lands on the replacement id', async () => {
+    const client = rpcAnswering({ data: 'replacement-id', error: null });
+
+    expect(await amendLoan(client, 'loan-1', draft)).toEqual({ ok: true });
+    expect(await amendLoan(client, 'loan-1', { ...draft, reason: null })).toEqual({ ok: true });
+    expect(client.sent).toEqual([
+      [AMEND_TEAM_LOAN_FUNCTION, { p_loan_id: 'loan-1', p_team_id: C, p_from: SPAN.from, p_to: SPAN.to, p_reason: 'Vježba' }],
+      [AMEND_TEAM_LOAN_FUNCTION, { p_loan_id: 'loan-1', p_team_id: C, p_from: SPAN.from, p_to: SPAN.to }],
+    ]);
+  });
+
+  it('removes by the loan id alone', async () => {
+    const client = rpcAnswering({ data: null, error: null });
+
+    expect(await removeLoan(client, 'loan-1')).toEqual({ ok: true });
+    expect(client.sent).toEqual([[REMOVE_TEAM_LOAN_FUNCTION, { p_loan_id: 'loan-1' }]]);
+  });
+
+  it.each([
+    [{ code: '23P01' }, LOAN_OVERLAP],
+    [{ code: '42501', message: 'TEAM_LOAN_AMEND_REFUSED' }, LOAN_DENIED],
+    // The amend's own team refusal comes after the fresh check: the screen is behind, and re-reads.
+    [{ code: '42501', message: 'TEAM_LOAN_TEAM_REFUSED' }, LOAN_STALE],
+    [{ code: 'P0002', message: 'TEAM_LOAN_NOT_LIVE' }, LOAN_STALE],
+    [{ code: '23514', message: 'new row violates check constraint "team_loans_reason_length"' }, LOAN_REASON],
+    [{ code: '22000' }, LOAN_FAILED],
+  ])('maps a refused call %o to %s, for the amend and the removal', async (error, code) => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    expect(await amendLoan(rpcAnswering({ data: null, error }), 'loan-1', draft)).toEqual({ ok: false, code });
+    expect(await removeLoan(rpcAnswering({ data: null, error }), 'loan-1')).toEqual({ ok: false, code });
+  });
+
+  it('fails without a request on a bad range, and on a thrown, malformed or id-less answer', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const client = rpcAnswering({ data: 'x', error: null });
+
+    expect(await amendLoan(client, 'loan-1', { ...draft, to: '2026-10-09' })).toEqual({ ok: false, code: LOAN_FAILED });
+    expect(client.sent).toEqual([]);
+    expect(await amendLoan(rpcAnswering(new Error('network')), 'loan-1', draft)).toEqual({ ok: false, code: LOAN_FAILED });
+    expect(await amendLoan(rpcAnswering(null), 'loan-1', draft)).toEqual({ ok: false, code: LOAN_FAILED });
+    expect(await amendLoan(rpcAnswering({ data: null, error: null }), 'loan-1', draft)).toEqual({ ok: false, code: LOAN_FAILED });
+    expect(await removeLoan(rpcAnswering({ error: 'x' }), 'loan-1')).toEqual({ ok: false, code: LOAN_FAILED });
   });
 });

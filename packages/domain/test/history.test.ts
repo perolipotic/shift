@@ -453,6 +453,34 @@ describe('an amend is one entry', () => {
     expect(entry.subjects.members).toEqual([IVO, ANA]);
   });
 
+  it('pairs a loan amend (story 18.4) on the member, though its team and dates change; its record stays 18.5\'s', () => {
+    const loan = { id: 'n1', member_id: ANA, team_id: TEAM_A, during: '[2026-11-10,2026-11-13)', reason: 'r', removed_at: null };
+    const removal = event({
+      tableName: 'team_loans',
+      operation: 'UPDATE',
+      transactionId: '777',
+      oldRow: loan,
+      newRow: { ...loan, removed_at: 'x', removed_by: ANA_AUTH },
+    });
+    const insert = event({
+      tableName: 'team_loans',
+      operation: 'INSERT',
+      transactionId: '777',
+      newRow: { ...loan, id: 'n2', team_id: TEAM_B, during: '[2026-11-10,2026-11-15)' },
+    });
+    const other = event({
+      tableName: 'team_loans',
+      operation: 'INSERT',
+      transactionId: '777',
+      newRow: { ...loan, id: 'n3', member_id: IVO },
+    });
+    const entries = historyEntriesOf([other, insert, removal], CONTEXT);
+    const amended = entries.filter((entry) => entry.kind.action === 'amended');
+
+    expect(amended.map((entry) => entry.eventIds)).toEqual([[removal.id, insert.id]]);
+    expect(entries.map((entry) => entry.kind.action).sort()).toEqual(['added', 'amended']);
+  });
+
   it('pairs several under one key in id order, and leaves an unmatched one its own entry', () => {
     const removals = [1, 2].map(() =>
       event({

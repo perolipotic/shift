@@ -4992,10 +4992,120 @@ describe('the access-control migration', () => {
     );
   });
 
+  // ------------------------------------------- story 18.4: amend, end early or remove a loan
+
+  it('amends and removes a loan through two attributed definers behind the lock, and notifies once (story 18.4)', () => {
+    // STORY 18.4 (0064, FR-91, FR-62, AD-11): source text only; what the
+    // functions and triggers do is `test/rls-isolation.test.ts`, run in CI.
+    const migration = stripLineComments(
+      readFileSync(join(supabaseRoot, 'migrations', '0064_team_loan_amend_remove.sql'), 'utf8'),
+    );
+    const fn = (name: string): string =>
+      new RegExp(String.raw`create (?:or replace )?function ${name.replaceAll('.', '\\.')}\([\s\S]*?\$\$;`, 'i').exec(migration)?.[0] ?? '';
+    const remove = fn('public.remove_team_loan');
+    const amend = fn('public.amend_team_loan');
+    const rule = fn('private.team_loan_team_refused');
+    const notifier = fn('private.notify_team_loan');
+    const recheck = fn('public.refuse_write_by_stale_admin');
+    const archive = fn('private.refuse_archive_while_lent_to');
+
+    for (const [name, body, refusal] of [
+      ['remove_team_loan', remove, 'TEAM_LOAN_REMOVAL_REFUSED'],
+      ['amend_team_loan', amend, 'TEAM_LOAN_AMEND_REFUSED'],
+    ] as const) {
+      expect(body, `${name} is not declared`).not.toBe('');
+      expect(body).toMatch(/security definer/);
+      expect(body).toMatch(/set search_path = ''/);
+      // 0023's key, taken before the caller is read.
+      expect(body, `${name} does not take the organization lock first`).toMatch(
+        /begin\s+if claimed is not null then\s+perform pg_catalog\.pg_advisory_xact_lock\(\s+pg_catalog\.hashtextextended\('shift\.organization_writes:' \|\| claimed::text, 0\)/,
+      );
+      expect(body, `${name} does not re-read an active admin`).toMatch(
+        /access\.organization_id = claimed\s+and access\.is_active\s+and access\.member_role = 'admin'/,
+      );
+      expect(body).toContain(`message = '${refusal}'`);
+      expect(body, `${name} does not attribute the removal (AD-11)`).toMatch(
+        /update public\.team_loans l\s+set removed_by = auth\.uid\(\),\s+removed_at = now\(\)\s+where l\.id = p_loan_id\s+and l\.organization_id = claimed\s+and l\.removed_at is null/,
+      );
+      expect(body).toMatch(/errcode = 'no_data_found',\s+message = 'TEAM_LOAN_NOT_LIVE'/);
+    }
+    expect(remove, 'the removal inserts').not.toMatch(/insert into/);
+    expect(amend).toMatch(/returns uuid/);
+    expect(amend, 'the amend does not flag its two writes').toMatch(
+      /set_config\('shift\.notify_suppress', 'amend', true\);[\s\S]*update public\.team_loans[\s\S]*insert into public\.team_loans[\s\S]*set_config\('shift\.notify_suppress', '', true\);/,
+    );
+    expect(amend, 'the replacement is not the old row\'s member, or names its own attribution').toMatch(
+      /insert into public\.team_loans \(organization_id, member_id, team_id, during, reason\)\s+values \(claimed, amended_member, p_team_id, replacement_during, coalesce\(p_reason, amended_reason\)\)/,
+    );
+    expect(amend, 'the owner\'s insert skips the policy\'s team conjuncts').toMatch(
+      /if private\.team_loan_team_refused\(claimed, amended_member, p_team_id, replacement_during\) then\s+raise exception using\s+errcode = 'insufficient_privilege',\s+message = 'TEAM_LOAN_TEAM_REFUSED';/,
+    );
+    expect(amend.indexOf('team_loan_team_refused(')).toBeLessThan(amend.indexOf('insert into public.team_loans'));
+    for (const signature of ['remove_team_loan(uuid)', 'amend_team_loan(uuid, uuid, date, date, text)']) {
+      for (const role of ['public', 'anon', 'service_role']) {
+        expect(migration).toContain(`revoke execute on function public.${signature} from ${role};`);
+      }
+      expect(migration).toContain(`grant execute on function public.${signature} to authenticated;`);
+    }
+
+    // The team rule: 0062's two conjuncts, verbatim but for the parameters.
+    expect(rule).toMatch(/volatile/);
+    expect(rule).toMatch(/team\.id = p_team_id\s+and team\.archived/);
+    expect(rule).toMatch(/version\.effective_from < pg_catalog\.upper\(p_during\)/);
+    expect(rule).toMatch(/later\.effective_from > version\.effective_from\s+and later\.effective_from <= pg_catalog\.lower\(p_during\)/);
+    expect(migration).toMatch(
+      /revoke execute on function private\.team_loan_team_refused\(uuid, uuid, uuid, daterange\)\s+from public, anon, authenticated, service_role;/,
+    );
+
+    // One notice per change.
+    expect(notifier, 'a loan row bypasses notify_members').not.toMatch(/notification_outbox/);
+    expect(notifier).toMatch(/'LOAN_MADE', new\.id, array\[new\.member_id\]/);
+    expect(notifier).toMatch(/'LOAN_CHANGED', new\.id,\s+private\.amended_members\(previous\)/);
+    expect(notifier).toMatch(/'LOAN_REMOVED', new\.id, array\[new\.member_id\]/);
+    expect(notifier, 'an amend\'s removal is told').toMatch(
+      /if tg_op = 'UPDATE' and suppressed = 'amend' then\s+perform private\.remember_amended\(/,
+    );
+    expect(notifier, 'a reason-only amend is told').toMatch(
+      /previous := private\.take_amended\(\);[\s\S]*?if previous ->> 'team' = new\.team_id::text and previous ->> 'during' = new\.during::text then\s+return null;/,
+    );
+    expect(notifier).toMatch(/'team', old\.team_id,\s+'during', old\.during::text/);
+    expect(notifier, 'a wholly past loan is told').toMatch(/current_live := pg_catalog\.upper\(new\.during\) - 1 >= today;/);
+    expect(notifier, 'the reason or the author is an operand (FR-92)').not.toMatch(/new\.(reason|created_by|removed_by)/);
+    expect(migration).toMatch(
+      /create trigger team_loans_notify_removal\s+after update of removed_at on public\.team_loans\s+for each row\s+when \(old\.removed_at is null and new\.removed_at is not null\)\s+execute function private\.notify_team_loan\(\);/,
+    );
+
+    // The lock and the re-check on an insert.
+    expect(migration).toMatch(
+      /create trigger team_loans_serialize_organization_writes\s+before insert on public\.team_loans\s+for each statement\s+execute function public\.serialize_organization_writes\(\);/,
+    );
+    expect(migration).toMatch(
+      /create trigger team_loans_refuse_write_by_stale_admin\s+before insert on public\.team_loans\s+for each row\s+execute function public\.refuse_write_by_stale_admin\(\);/,
+    );
+    expect(recheck, '0036\'s re-check is not kept whole').toMatch(/tg_table_name in \('team_membership_versions', 'rotation_assignments'\)/);
+    expect(recheck).toMatch(/tg_table_name = 'rotation_steps'/);
+    expect(recheck).toMatch(
+      /tg_table_name = 'team_loans' then\s+if private\.team_loan_team_refused\(new\.organization_id, new\.member_id, new\.team_id, new\.during\) then/,
+    );
+
+    // No archive while a loan is current.
+    expect(archive).toMatch(/current_setting\('role'\) <> 'authenticated' or pg_catalog\.pg_trigger_depth\(\) > 1/);
+    expect(archive).toMatch(/l\.removed_at is null\s+and \(\s+public\.organization_today\(new\.organization_id\) is null\s+or pg_catalog\.upper\(l\.during\) - 1 >= public\.organization_today\(new\.organization_id\)/);
+    expect(archive).toMatch(/errcode = 'check_violation',\s+message = 'TEAM_HAS_LOANS'/);
+    expect(migration).toMatch(
+      /create trigger teams_refuse_write_while_lent_to\s+before update of archived on public\.teams\s+for each row\s+when \(new\.archived and not old\.archived\)\s+execute function private\.refuse_archive_while_lent_to\(\);/,
+    );
+
+    expect(migration, '0064 grants a write on team_loans or adds a policy').not.toMatch(
+      /grant (insert|update|delete)[^;]* on table|create policy|alter table/i,
+    );
+    expect(migration, 'a constraint trigger (AD-3)').not.toMatch(/create constraint trigger/i);
+  });
+
   // ------------------------------------------------ epic 14 retro A9: only an amend pairs a removal with an insert
 
   /** The tables whose soft-remove and insert of one key in one transaction *Povijest promjena* reads as one amend. */
-  const AMEND_TABLES = ['leave_records', 'roster_overrides', 'shift_type_overrides'] as const;
+  const AMEND_TABLES = ['leave_records', 'roster_overrides', 'shift_type_overrides', 'team_loans'] as const;
 
   interface AmendWriters {
     /** Each function's final definition that soft-removes an amend table, directly or through a function it calls. */
@@ -5172,19 +5282,24 @@ describe('the access-control migration', () => {
       amend_leave_record: ['leave_records'],
       amend_roster_override: ['roster_overrides'],
       amend_shift_type_override: ['shift_type_overrides'],
+      // Story 18.4 (0064): the loan amend, paired on `member_id` (`AMEND_KEYS`).
+      amend_team_loan: ['team_loans'],
     });
     expect(Object.fromEntries(writers.removers)).toEqual({
       amend_leave_record: ['leave_records'],
       amend_roster_override: ['roster_overrides'],
       amend_shift_type_override: ['shift_type_overrides'],
+      amend_team_loan: ['team_loans'],
       remove_leave_record: ['leave_records'],
       remove_roster_override: ['roster_overrides'],
       remove_shift_type_override: ['shift_type_overrides'],
+      remove_team_loan: ['team_loans'],
     });
     expect([...writers.inserters].sort(), 'the functions that insert into an amend table').toEqual([
       'amend_leave_record',
       'amend_roster_override',
       'amend_shift_type_override',
+      'amend_team_loan',
       'decide_leave_request',
       'decide_swap_request',
       'replace_conflict_member',
@@ -5209,7 +5324,8 @@ describe('the access-control migration', () => {
     //      no insert names `created_at` or `removed_at`, `created_at` defaults to `now()`,
     //      and no session may write either column (no update grant, column-scoped inserts).
     //      So both instants are a transaction's `now()`, its start.
-    //   3. Only the three amend functions, in ANY version ever created (the rows 0061
+    //   3. Only the amend functions (three, and 0064's `amend_team_loan`, whose table
+    //      0061 backfilled nothing of), in ANY version ever created (the rows 0061
     //      reconstructed were written by whichever was live), and no migration's own
     //      DML, soft-remove and insert one amend table in one transaction.
     // WHAT THIS CANNOT PROVE: that two DIFFERENT transactions never began in the
@@ -5290,8 +5406,9 @@ describe('the access-control migration', () => {
     );
     const grants = statements.filter((statement) => new RegExp(String.raw`^grant\b.* on (?:table )?(?:[^;]*,\s*)?${table}`).test(statement));
 
-    // 0019, 0026, 0028, 0054 and 0058: the three tables' column inserts and leave_records' two later columns.
-    expect(grants.length, 'the grant parser found the insert grants').toBe(5);
+    // 0019, 0026, 0028, 0054 and 0058: the three tables' column inserts and leave_records' two later columns;
+    // 0062: team_loans' column insert (story 18.4 made it an amend table).
+    expect(grants.length, 'the grant parser found the insert grants').toBe(6);
     expect(
       grants.filter((statement) => !/^grant insert \([^)]*\) on /.test(statement) || /\b(created_at|removed_at)\b/.test(statement)),
       'a session may write an amend table\'s instant, or update it',
@@ -5320,7 +5437,7 @@ describe('the access-control migration', () => {
     expect(operator.length, 'the operator scripts were found').toBeGreaterThanOrEqual(2);
     for (const script of operator) {
       expect(readFileSync(script, 'utf8'), `${script} soft-removes`).not.toMatch(
-        /\bremoved_at\b|\b(?:remove|amend)_(?:leave_record|roster_override|shift_type_override)\b/,
+        /\bremoved_at\b|\b(?:remove|amend)_(?:leave_record|roster_override|shift_type_override|team_loan)\b/,
       );
     }
 
@@ -5334,14 +5451,17 @@ describe('the access-control migration', () => {
       amend_leave_record: ['leave_records'],
       amend_roster_override: ['roster_overrides'],
       amend_shift_type_override: ['shift_type_overrides'],
+      amend_team_loan: ['team_loans'],
     });
     expect([...writers.removers.keys()].sort()).toEqual([
       'amend_leave_record',
       'amend_roster_override',
       'amend_shift_type_override',
+      'amend_team_loan',
       'remove_leave_record',
       'remove_roster_override',
       'remove_shift_type_override',
+      'remove_team_loan',
     ]);
     expect([...writers.removers.keys()].filter((fn) => writers.triggers.has(fn))).toEqual([]);
     expect([...writers.triggers].filter((fn) => writers.inserters.has(fn))).toEqual([]);
