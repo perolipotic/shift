@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 11-21-2026 07:44
+last_updated: 11-21-2026 18:00
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -697,7 +697,7 @@ development_status:
   20-3-the-spa-ships-as-a-static-image-with-its-headers: done  # #329; CSP Report-Only, enforced only after 20.5 verifies it
   20-4-the-host-is-closed-to-everything-but-the-web: review  # built (scripts only), CI pending; applying needs the founder's go
   20-5-staging-stands-up-on-coolify: backlog  # waits: 20.1-20.4, staging DNS, H-1, H-6, H-8, Tailscale ACL, GHCR read token
-  20-6-the-pipeline-deploys-through-coolify: backlog  # code after 20.2/20.3; enabling waits: Coolify API token, Tailscale OAuth client, 20.5
+  20-6-the-pipeline-deploys-through-coolify: review  # built (inert until configured), CI pending; enabling waits: Coolify API token, Tailscale OAuth client, GHCR read token on the host, 20.5
   20-7-backups-leave-the-host-and-a-restore-is-rehearsed: backlog  # interim after 20.5; off-host waits: H-11 + target credential, H-12
   20-8-someone-hears-when-shift-is-down: backlog  # waits: 20.5, H-13, Coolify alert channel
   20-9-production-stands-up-on-coolify: backlog  # waits: 20.1-20.8, production DNS, Resend prod domain/key, all H decisions, restore drill passed, founder go

@@ -816,9 +816,25 @@ describe('the self-hosted stack (story 20.2): the functions route, its CORS and 
   });
 
   it('names the functions image per environment, as a placeholder in both templates', () => {
-    for (const file of ['staging.env.example', 'production.env.example']) {
-      expect(envTemplate(file).get('SHIFT_FUNCTIONS_IMAGE'), file).toBe('<registry>/shift-functions:<sha>');
+    // Story 20.6: the environment's channel tag, which the pipeline moves to
+    // the probed digest; the owner stays a placeholder (public repository).
+    for (const [file, environment] of [
+      ['staging.env.example', 'staging'],
+      ['production.env.example', 'production'],
+    ] as const) {
+      expect(envTemplate(file).get('SHIFT_FUNCTIONS_IMAGE'), file).toBe(
+        `ghcr.io/<owner>/shift-functions:${environment}`,
+      );
     }
+  });
+
+  it('pulls the functions image on every start, so a moved channel tag is never stale (story 20.6)', () => {
+    const pullPolicy = (name: string): unknown => (service(name) as Service & { pull_policy?: string }).pull_policy;
+    expect(pullPolicy('supabase-edge-functions')).toBe('always');
+    // Every other image is pinned by version: pulling it again changes nothing.
+    expect(Object.keys(compose.services).filter((name) => pullPolicy(name) !== undefined)).toEqual([
+      'supabase-edge-functions',
+    ]);
   });
 });
 

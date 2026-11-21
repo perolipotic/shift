@@ -886,9 +886,13 @@ services:
     # `shift-functions` (story 20.2): CLI 2.116.0's `supabase/edge-runtime:v1.74.3`
     # with the router (`deploy/functions/main`) as its main service and each
     # function bundled in at build time, built by CI from
-    # `deploy/functions/Dockerfile`. The reference is per environment
-    # (`<registry>/shift-functions:<sha>`) and holds no secret.
+    # `deploy/functions/Dockerfile`. The reference is per environment and
+    # holds no secret: the channel tag `ghcr.io/<owner>/shift-functions:<environment>`,
+    # which the deploy pipeline (story 20.6) points at the probed digest
+    # before it restarts the stack with its images pulled again. Pulled on
+    # every start, so a moved tag is never served from a stale local copy.
     image: ${SHIFT_FUNCTIONS_IMAGE:?}
+    pull_policy: always
     restart: unless-stopped
     mem_limit: ${FUNCTIONS_MEM_LIMIT:-448m}
     cpus: ${FUNCTIONS_CPUS:-0.15}
