@@ -103,6 +103,7 @@ context:
 - `pnpm --filter ./apps/web test` -- pass.
 - `pnpm exec vitest run test/resource-hygiene.test.ts test/supabase-scaffold.test.ts` -- pass.
 - Not run locally: the migration, `test/provisioning.test.ts`, `test/rls-isolation.test.ts`, e2e (STRICT DATABASE RULE). They fail locally only because 0062 is unapplied; CI is the gate.
+- CI (recorded 2026-11-21, epic 18 retro A7): #325 merged with `CI passed` green; the 0062 DB cases passed in the Vitest job of the first run that reached it (`44831942009`), a run that failed overall on three unrelated `today.spec.ts` cases. See the residual risks for the two unrelated failed runs.
 
 **Results (2026-11-20, after the review patches):** typecheck and lint clean; domain 17 files, 886 passed; web 173 files, 6520 passed; DB-free root 2 files, 1979 passed. Every DB row of the matrix is covered by `test/rls-isolation.test.ts`, the Snapshot row by `snapshot.test.ts`; the DB rows run in CI only.
 
@@ -127,9 +128,9 @@ context:
 
 ## Auto Run Result
 
-Status: done (built; sprint status `review`, CI pending).
+Status: done (merged as #325, squash `4fd6a30`, with `CI passed` green; sprint status `done`). Residual risks rewritten to the CI facts by epic 18 retro A7 (2026-11-21).
 
 **Residual risks:**
-- `test/provisioning.test.ts`, `test/rls-isolation.test.ts` and e2e have never run against 0062; their expected codes and constraint texts were reasoned, so CI may need small fixes.
-- A team archived concurrently with a loan insert can slip past the policy; archiving a team with live loans is not refused (18.4).
-- Members read every live loan of their organization (no reason, no author): the recorded AC 2 reinterpretation, for the founder to confirm.
+- Settled by CI: the 0062 cases in `test/provisioning.test.ts` and `test/rls-isolation.test.ts` passed on the first run that reached the Vitest job (`44831942009`, `135ea5c`), after the second review's 22008 → 23514 fix; e2e passed on the green run #325 merged with. Two runs failed for reasons outside 18.2: `44830867800` (`4d49e42`) in the gitleaks step ("leaks found: 2", likely from epic 20's branch, not verified), and `44831942009` on three `today.spec.ts` cases at 00:09 Europe/Zagreb (the known midnight flake, addressed by #326). No CI-only fix was pushed for 18.2.
+- Settled by 18.4 (`0064`): a team archive and a loan insert serialize on 0023's lock and the re-check, and archiving a team with a current or future loan is refused (`TEAM_HAS_LOANS`). The race is tested in `test/concurrent-writes.test.ts` since epic 18 retro A4, written unrun (CI pending).
+- Members read every live loan of their organization (no reason, no author): the recorded AC 2 reinterpretation, for the founder to confirm. Still open: epic 18 retro A1.

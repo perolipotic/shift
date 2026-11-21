@@ -175,10 +175,11 @@ Decisions made unattended (founder: decide and record):
 - `pnpm --filter ./apps/web test` -- 172 files, 6507 tests passed.
 - `pnpm exec vitest run test/resource-hygiene.test.ts test/supabase-scaffold.test.ts` -- 2 files, 1978 tests passed.
 - Not run locally: the DB-connecting root tests and e2e, including the month snapshots (STRICT DATABASE RULE; the stack is in use). CI is the gate.
+- CI (recorded 2026-11-21, epic 18 retro A7): #323 merged with `CI passed` green, the DB-connecting Vitest job and all four Playwright shards included. Two earlier runs were cancelled by new pushes; none failed.
 
 ## Auto Run Result
 
-Status: done (built; sprint status `review`, CI pending).
+Status: done (merged as #323, squash `61976e7`, with `CI passed` green; sprint status `done`). Residual risks rewritten to the CI facts by epic 18 retro A7 (2026-11-21).
 
 **Summary:** R11 lives once in `@shift/domain`. `effectiveTeamOn` gives the loan team on a covered date and the home team otherwise. `shiftRoster` and `memberScheduleOfMonth` derive from it, so rosters, member months, hours, explanations, leave cost, collisions and staffing follow a loan. With no loan, every figure equals the baseline engine's over both fixtures (pinned digests).
 
@@ -200,6 +201,6 @@ Status: done (built; sprint status `review`, CI pending).
 **Process note:** the implementation was written by the orchestrating session, not a fresh step-03 subagent. The no-loan digests had to be captured on the unchanged engine before any source edit, so test-first and implementation ran in one context. Review ran with the five context-free subagents.
 
 **Residual risks:**
-- The e2e month snapshots and DB-connecting suites are unverified until CI.
+- Settled by CI: the e2e month snapshots and the DB-connecting suites passed on #323's green run. Two earlier runs were cancelled by new pushes; none failed, and no CI-only fix was pushed.
 - Every web caller of `shiftRoster`/`rosterOn` now runs the loan path. With no loans it returns the old result, as the digests prove.
 - `memberScheduleOfMonth` now throws if a caller passes `loans` that differ from the member's `members` entry. No web caller passes `loans` today.

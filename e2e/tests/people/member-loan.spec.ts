@@ -14,13 +14,19 @@ import {
   type SeededLeaveMember,
   type SeededRotation,
 } from '../../utils/database-helper.ts';
-import { addDays } from '../../utils/dates.ts';
-import { fill, hr, plural } from '../../utils/i18n.ts';
+import { CalendarPage } from '../../pages/calendar.page.ts';
+import { HistoryPage } from '../../pages/history.page.ts';
+import { LoginPage } from '../../pages/login.page.ts';
+import { PeoplePage } from '../../pages/people.page.ts';
+import { TodayPage } from '../../pages/today.page.ts';
+import { addDays, fullDate } from '../../utils/dates.ts';
+import { escapeRegExp, fill, hr, plural } from '../../utils/i18n.ts';
 import { ADMIN_STATE } from '../../utils/run-fixture.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
 
 /**
- * Stories 18.3 and 18.4: the member page's loan dialog, driven end to end.
+ * Stories 18.3, 18.4 and 18.5: the member page's loan dialog, driven end to
+ * end, and the marks a loan draws (epic 18 retro A5).
  *
  * Under the run's rotation hold, a team of the test's own gets the seeded
  * rotation from today (`[Dan, Noć, Slobodno, Slobodno]`) and a fresh member
@@ -195,4 +201,112 @@ test('a loan that would erase a conflict waits for the erasure dialog, and write
   await expect.poll(() => teamLoansOfInSql(fixture.slug, person.id)).toEqual([
     { teamId: fixture.team.id, from: date, to: date, live: true },
   ]);
+});
+
+test('a loan is drawn where rosters are read: day detail, Osoba picker, Ljudi, history, and the member’s Danas and Moj raspored', async ({
+  browser,
+  fixture,
+  page,
+  peoplePage,
+  calendarPage,
+}) => {
+  test.slow();
+  // Story 18.5's marks (epic 18 retro A5). Under the run's rotation hold, a
+  // team of the test's own (`lentTo`) gets the seeded rotation from today, so
+  // today is its Dan; a second team (`home`) has none. A fresh member on
+  // `home` from today is lent to `lentTo` from today to today + 3 through the
+  // dialog, so the history holds the admin's own *Posudba*.
+  hold = holdRotation(fixture.slug);
+  await hold.ready;
+  const own: { readonly slug: string; members: string[]; teams: string[] } = { slug: fixture.slug, members: [], teams: [] };
+  written = own;
+  const suffix = randomBytes(3).toString('hex');
+  const lentTo = await seedExtraTeam(fixture.slug, `Smjena ${suffix}`);
+  own.teams.push(lentTo.id);
+  const home = await seedExtraTeam(fixture.slug, `Matična ${suffix}`);
+  own.teams.push(home.id);
+  seed = await seedTeamRotation(fixture.slug, lentTo.id, suffix);
+  const today = seed.today;
+  const person = await seedLeaveMember(fixture.slug, home.id, today, 40);
+  own.members.push(person.id);
+  const to = addDays(today, 3);
+  const lentFrom = fill(loans.mark.lentFrom, { team: home.name });
+  const withTeam = fill(loans.mark.now, { team: lentTo.name });
+  const notice = fill(loans.mark.with, { team: lentTo.name, to: fullDate(to) });
+
+  await peoplePage.gotoMember(person.id);
+  await peoplePage.lendButton(person.name).click();
+  const lend = peoplePage.lendDialog;
+  await expect(lend).toBeVisible();
+  await lend.getByLabel(loans.team).selectOption({ label: lentTo.name });
+  await lend.getByLabel(loans.from).fill(today);
+  await lend.getByLabel(loans.to).fill(to);
+  await lend.getByLabel(loans.reason).fill('Pojačanje');
+  await lend.getByRole('button', { name: loans.save, exact: true }).click();
+  await expect(lend).toHaveCount(0);
+  await expect(peoplePage.statusWith(loans.saved)).toBeVisible();
+  await expect.poll(() => teamLoansOfInSql(fixture.slug, person.id)).toEqual([
+    { teamId: lentTo.id, from: today, to, live: true },
+  ]);
+
+  // THE DAY DETAIL: today's Dan of the loan team lists them, marked with the team they come from.
+  await calendarPage.goto(`?prikaz=sve&mjesec=${today.slice(0, 7)}`);
+  await (await calendarPage.cellOf(lentTo.name, today)).click();
+  const detail = calendarPage.detailOf(lentTo.name, today);
+  await expect(detail).toBeVisible();
+  const line = calendarPage.rosterLinesIn(detail).filter({ hasText: person.name });
+  await expect(line).toHaveCount(1);
+  await expect(line).toContainText(lentFrom);
+  await page.keyboard.press('Escape');
+  await expect(detail).toHaveCount(0);
+
+  // THE OSOBA PICKER: placed under the loan team, not their own, with the same mark.
+  const filters = calendarPage.filters;
+  await filters.openSheet();
+  await filters.personField.click();
+  await expect(filters.personPicker).toBeVisible();
+  await filters.personSearch.fill(person.name);
+  // The option's name is the person's, then a hidden separator and the mark.
+  const option = filters.personPicker.getByRole('button', { name: new RegExp(`^${escapeRegExp(person.name)}(?=,|\\s|$)`) });
+  await expect(option).toHaveCount(1);
+  await expect(option).toContainText(lentFrom);
+  await expect(filters.personGroup(lentTo.name)).toBeVisible();
+  await expect(filters.personGroup(home.name)).toHaveCount(0);
+
+  // LJUDI, the admin's list: the row keeps their own team, then `trenutno u timu …`.
+  await peoplePage.goto();
+  await peoplePage.searchInput.fill(person.name);
+  const row = peoplePage.memberRow(person.name);
+  await expect(row).toContainText(home.name);
+  await expect(row).toContainText(withTeam);
+
+  // POVIJEST PROMJENA: one *Posudba · dodano* under the person.
+  const historyPage = new HistoryPage(page);
+  await historyPage.goto(`?osoba=${person.id}`);
+  const added = historyPage.kindText(hr.history.record.loan, hr.history.action.added);
+  await expect(historyPage.table.getByRole('row').filter({ hasText: added })).toHaveCount(1);
+
+  // AS THE MEMBER, in a fresh context of their own (never a stored state; `today.spec.ts`'s `signedInAs`).
+  const context = await browser.newContext({
+    storageState: { cookies: [], origins: [] },
+    viewport: { width: 1280, height: 900 },
+  });
+  try {
+    const memberPage = await context.newPage();
+    await new LoginPage(memberPage).signIn(fixture.slug, person.username, person.password);
+    // DANAS: `U timu {tim} do {do}.`
+    await expect(new TodayPage(memberPage).text(notice)).toBeVisible();
+    // MOJ RASPORED: the same notice.
+    const kalendar = new CalendarPage(memberPage);
+    await kalendar.goto('?prikaz=moj');
+    await expect(kalendar.text(notice)).toBeVisible();
+    // The members' directory: under their own team, `trenutno u timu …`.
+    const ljudi = new PeoplePage(memberPage);
+    await ljudi.goto();
+    const group = ljudi.directoryGroup(home.name);
+    await expect(group).toContainText(person.name);
+    await expect(group).toContainText(withTeam);
+  } finally {
+    await context.close();
+  }
 });

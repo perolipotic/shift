@@ -1263,14 +1263,14 @@ action_items:
       (loan insert/amend_team_loan behind archive, team move, demotion; archive behind
       a loan insert), CI-only (deferred-work 1718, 1724)"
     owner: "dev"
-    status: open
+    status: done  # built on test/epic-18-retro-a4-a5-a7 (spec-epic-18-retro-a4-a5-a7.md); its new DB and e2e cases are CI-only, CI pending (no PR yet)
     ref: "_bmad-output/implementation-artifacts/epic-18-retro-2026-11-21.md"
   - id: "epic-18-retro-item-76-a5-e2e-for-the-drawn-loan-marks-danas-no"
     epic: 18
     action: "A5: e2e for the drawn loan marks (Danas notice, posudba iz tima {tim}
       in day detail, trenutno u timu {tim} on Ljudi), CI-only (deferred-work 1772)"
     owner: "dev"
-    status: open
+    status: done  # built on test/epic-18-retro-a4-a5-a7 (spec-epic-18-retro-a4-a5-a7.md); its new DB and e2e cases are CI-only, CI pending (no PR yet)
     ref: "_bmad-output/implementation-artifacts/epic-18-retro-2026-11-21.md"
   - id: "epic-18-retro-item-77-a6-po-triage-of-the-remaining-loan-defer"
     epic: 18
@@ -1287,5 +1287,5 @@ action_items:
       two CI failures and e0e5359); review checklist for unrun DB tests: scenes built
       as owner before actAs (V1, P2, R4)"
     owner: "Perolipotic (process); dev for the spec edits"
-    status: open
+    status: done  # specs 18.1-18.4 rewritten to the CI facts; bmad-build.toml facts and an unrun-DB-test review layer (build and code-review) on test/epic-18-retro-a4-a5-a7
     ref: "_bmad-output/implementation-artifacts/epic-18-retro-2026-11-21.md"

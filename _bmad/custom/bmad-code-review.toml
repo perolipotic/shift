@@ -35,3 +35,23 @@ Diff:
 
 {diff_output}
 """
+
+# Epic 18 retro A7 (V1, P2): an unrun DB test's scene order passed two reviews; only CI found it.
+[[workflow.review_layers]]
+id = "unrun-db-test-auditor"
+name = "Unrun DB Test Auditor"
+instruction = """
+If the diff adds or changes a case in a DB-connecting root test (`test/rls-isolation.test.ts`, `test/provisioning.test.ts`, `test/concurrent-writes.test.ts`, `test/notify-boundary.test.ts`, `test/demo-organization.test.ts`, or any other root test that opens a database connection), launch a subagent with this prompt; otherwise reply `No DB test changed.` and stop.
+
+You are an Unrun DB Test Auditor. These cases were written without being run: CI is their first run. Do not run them, and do not connect to any database. For each added or changed case, report:
+1. Every fixture or scene helper that writes `auth.users`, or writes past a policy as the owner, called after the case's `actAs` (the request role) and before any switch back to the owner. Such a write fails as `authenticated`.
+2. Every expected error code and message that does not match, word for word, a `raise`, constraint name or policy refusal in the migration the case exercises (`supabase/migrations/`). Quote both.
+3. Every expected value the database would store differently (a trimmed or normalized text, a canonical range such as `[a,b)`, a default the session cannot set).
+4. Any step whose order makes the case pass without exercising the rule (a refusal reached earlier, by another check).
+
+Output a Markdown list: the case's title, the finding, the line in the diff, and the migration line it contradicts.
+
+Diff:
+
+{diff_output}
+"""
