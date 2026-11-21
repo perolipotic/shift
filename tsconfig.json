@@ -33,6 +33,7 @@
     "test/**/*.ts",
     "supabase/functions/**/*.ts",
     "deploy/functions/**/*.ts",
+    "deploy/parity/**/*.ts",
     "scripts/ci/**/*.mjs",
     "vitest.config.ts"
   ]

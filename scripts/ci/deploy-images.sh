@@ -39,7 +39,14 @@ coolify() { node "$here/coolify.mjs" "$@"; }
 # The paths a shift-functions image is built from, and the probe that passed
 # it: a change to any of them is a new image. test/coolify-deploy.test.ts holds
 # this list to cover every COPY of deploy/functions/Dockerfile.
-FUNCTIONS_SOURCES=(deploy/functions supabase/functions/admin-auth supabase/functions/notify .dockerignore scripts/ci/probe-functions-image.sh)
+#
+# AD-7 (story 16.2): and the tracked sources of `@shift/domain`, which the
+# server projections (`calendar-feed` 16.4, `remind` 17.2) run as its built
+# `dist`, with what builds it: its package.json and tsconfig*.json, the base
+# tsconfig and the lockfile. Never `dist` itself (untracked, so `git ls-tree`
+# cannot see it). Otherwise a change to the domain alone would reuse an image
+# running the old rules beside a new SPA. `@shift/ics` joins in 16.4.
+FUNCTIONS_SOURCES=(deploy/functions supabase/functions/admin-auth supabase/functions/notify .dockerignore scripts/ci/probe-functions-image.sh packages/domain/src packages/domain/package.json packages/domain/tsconfig.json packages/domain/tsconfig.test.json tsconfig.base.json pnpm-lock.yaml)
 
 # Moves <repository>:<tag> to $1 and arms a trap that moves it back to what it
 # named before if the script then fails. Armed BEFORE the move, so a move whose

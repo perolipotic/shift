@@ -685,7 +685,7 @@ development_status:
   # Ready now: 16.2 (AP1 done 2026-11-21) and 19.1 (AP2 done 2026-11-21); D-S1–D-S10 ratified by the founder 2026-11-21.
   epic-16: in-progress  # calendar feed and print (CAP-25); D-S1, D-S2, D-S8 ratified 2026-11-21
   16-1-the-month-prints: done  # #335
-  16-2-the-domain-package-runs-on-the-server: backlog  # READY (AP1 done 2026-11-21)
+  16-2-the-domain-package-runs-on-the-server: review  # built, CI pending
   16-3-a-member-s-feed-token-is-a-revocable-secret: backlog  # after 16.2 (D-S1 ratified 2026-11-21)
   16-4-the-calendar-feed-serves-a-member-s-own-shifts: backlog  # after 16.3 (D-S1, D-S2, D-S8 ratified 2026-11-21)
   16-5-a-member-subscribes-from-kalendar-na-mobitelu: backlog  # after 16.4 (D-S1, D-S2 ratified 2026-11-21)

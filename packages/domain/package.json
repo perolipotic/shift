@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "//": "NO `dependencies` KEY. Purity (AD-7) is a module-resolution property: with pnpm's isolated linker, an import of react or @supabase/supabase-js here cannot resolve and `pnpm build` fails. Adding a runtime dependency is a spec violation, not a refactor.",
+  "//deno": "THE DENO CONTRACT (AD-7, story 16.2). Edge Functions consume this package as its tsc-built `dist` (the `exports` target below), through the bare specifier `@shift/domain` mapped in the function's own `deno.json` `imports` onto `<relative>/packages/domain/dist/index.js`: never `src/` (Deno 2.1.4 does not resolve its `.js` specifiers onto `.ts` files), never an `npm:` or `jsr:` specifier, never a copy. `deploy/parity/deno.json` is the reference map, and CI's `runtime-parity` job holds the package's answers byte-identical under Node and the pinned edge-runtime.",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

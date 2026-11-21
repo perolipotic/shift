@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { createECDH, createHash } from 'node:crypto';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -622,6 +622,22 @@ describe('deploy-images.sh: the image half of a deploy (story 20.6)', () => {
     expect(sources).toEqual(expect.arrayContaining(['.dockerignore', 'scripts/ci/probe-functions-image.sh']));
   });
 
+  it('hashes the domain package the server projections run, and what builds it, never its dist (AD-7, story 16.2)', () => {
+    expect(sources).toEqual(
+      expect.arrayContaining([
+        'packages/domain/src',
+        'packages/domain/package.json',
+        'packages/domain/tsconfig.json',
+        'packages/domain/tsconfig.test.json',
+        'tsconfig.base.json',
+        'pnpm-lock.yaml',
+      ]),
+    );
+    expect(sources.filter((source) => /(^|\/)dist(\/|$)/.test(source))).toEqual([]);
+    // Every source exists in the checkout (a renamed or removed path would hash nothing).
+    for (const source of sources) expect(existsSync(join(repoRoot, source)), source).toBe(true);
+  });
+
   it('deploys a given digest as it is, and refuses one of another repository, not by digest, or not in the registry', async () => {
     const fake = stand('given', [`${repository}:abc ${digestA}`]);
     const env = { ...fake.env, REPOSITORY: repository };
@@ -1083,7 +1099,16 @@ describe('the pipeline deploys through Coolify (story 20.6)', () => {
   });
 
   it('keeps the gates: CI passed, the smoke jobs and the notify job see the deploy jobs as before', () => {
-    expect(pipeline.jobs['ci-passed']?.needs).toEqual(['quality', 'build', 'test', 'functions-image', 'web-image', 'changes', 'e2e']);
+    expect(pipeline.jobs['ci-passed']?.needs).toEqual([
+      'quality',
+      'build',
+      'test',
+      'functions-image',
+      'runtime-parity',
+      'web-image',
+      'changes',
+      'e2e',
+    ]);
     expect(pipeline.jobs['notify']?.needs).toEqual(expect.arrayContaining([...deployJobs, 'smoke-staging', 'smoke-production']));
     expect(pipeline.jobs['smoke-production']?.needs).toBe('deploy-production');
     // The build-only image jobs still push nothing (stories 20.2, 20.3).

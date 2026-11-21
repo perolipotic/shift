@@ -2747,6 +2747,9 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // STORY 14.1 (0061). The change history's recorder inserts into
     // `audit_events`, which no session may write.
     { name: 'record_audit_event', argumentCount: 0, schema: 'private' },
+    // STORY 16.2 (0065). The server's one read assembly, past every policy,
+    // as the owner; only the definer entry points of 16.4 and 17.2 call it.
+    { name: 'member_schedule_inputs', argumentCount: 3, schema: 'private' },
   ];
 
   it.skipIf(noDatabase).each(ACCESS_CONTROL_FUNCTIONS)(
@@ -2933,6 +2936,13 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // STORY 14.1 (0061). The change history's recorder, on 0052's terms: run
     // as the owner when an audit trigger fires, and callable by nobody.
     { name: 'record_audit_event', argumentCount: 0, expected: [], schema: 'private' },
+    // STORY 16.2 (0065). The four "live" helpers and the read assembly, in
+    // `private`, callable by nobody: definers owned by the migration role call them.
+    { name: 'live_shift_type_overrides', argumentCount: 1, expected: [], schema: 'private' },
+    { name: 'live_roster_overrides', argumentCount: 1, expected: [], schema: 'private' },
+    { name: 'live_team_loans', argumentCount: 1, expected: [], schema: 'private' },
+    { name: 'live_leave_records', argumentCount: 1, expected: [], schema: 'private' },
+    { name: 'member_schedule_inputs', argumentCount: 3, expected: [], schema: 'private' },
     // STORY 18.3 (0063). The loan notification trigger, on 0043's terms.
     { name: 'notify_team_loan', argumentCount: 0, expected: [], schema: 'private' },
     // STORY 18.4 (0064). The loan team rule its definers and re-check call,
@@ -2997,6 +3007,12 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'amended_members', argumentCount: 1, schema: 'private' },
     // 0044's `updated_at` stamp writes only the row it is given.
     { name: 'touch_notification_settings', argumentCount: 0, schema: 'private' },
+    // STORY 16.2 (0065). The "live" helpers read as their caller, always a
+    // definer owned by the migration role.
+    { name: 'live_shift_type_overrides', argumentCount: 1, schema: 'private' },
+    { name: 'live_roster_overrides', argumentCount: 1, schema: 'private' },
+    { name: 'live_team_loans', argumentCount: 1, schema: 'private' },
+    { name: 'live_leave_records', argumentCount: 1, schema: 'private' },
   ] as { name: string; argumentCount: number; schema?: string }[])('runs $name as the caller, with an empty search_path', async ({ name, argumentCount, schema }) => {
     // INVOKER, the opposite of the helper and the hook. They are reached from
     // the helper, the hook and the zero-admins function as the owner, and from

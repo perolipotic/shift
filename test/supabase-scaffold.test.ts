@@ -5802,3 +5802,98 @@ describe('the local auth provider configuration', () => {
     expect(not(undefined)).toBeUndefined();
   });
 });
+
+describe('the server read assembly (0065, story 16.2)', () => {
+  const migration = (): string =>
+    stripLineComments(readFileSync(join(supabaseRoot, 'migrations', '0065_member_schedule_inputs.sql'), 'utf8'));
+  const LIVE = [
+    ['live_shift_type_overrides', 'shift_type_overrides'],
+    ['live_roster_overrides', 'roster_overrides'],
+    ['live_team_loans', 'team_loans'],
+    ['live_leave_records', 'leave_records'],
+  ] as const;
+
+  it('states "live" once, in four private helpers executable by no role (AD-19)', () => {
+    const sql = migration();
+    for (const [helper, table] of LIVE) {
+      const body = new RegExp(`create function private\\.${helper}\\(p_organization uuid\\)[\\s\\S]*?\\$\\$;`).exec(sql)?.[0] ?? '';
+      expect(body, `${helper} is not declared`).not.toBe('');
+      expect(body).toContain(`returns setof public.${table}`);
+      expect(body).toMatch(/\bstable\b/);
+      expect(body).toMatch(/security invoker/);
+      expect(body).toMatch(/set search_path = ''/);
+      expect(body, `${helper} does not pin the organization`).toMatch(/\.organization_id = p_organization/);
+      expect(body, `${helper} is not the live predicate`).toMatch(/\.removed_at is null/);
+      expect(sql).toContain(`revoke execute on function private.${helper}(uuid) from public, anon, authenticated, service_role;`);
+    }
+  });
+
+  it('re-creates the four browser reads over the helpers, with their columns, pins and grants kept', () => {
+    const sql = migration();
+    const reads = [
+      ['calendar_shift_type_overrides', 'live_shift_type_overrides'],
+      ['calendar_roster_overrides', 'live_roster_overrides'],
+      ['calendar_team_loans', 'live_team_loans'],
+      ['my_leave_records', 'live_leave_records'],
+    ] as const;
+    for (const [read, helper] of reads) {
+      const body = new RegExp(`create or replace function public\\.${read}\\(\\)[\\s\\S]*?\\$\\$;`).exec(sql)?.[0] ?? '';
+      expect(body, `${read} is not re-created`).not.toBe('');
+      expect(body, `${read} does not read through ${helper}`).toContain(
+        `from private.${helper}(nullif(((select auth.jwt()) ->> 'organization_id'), '')::uuid)`,
+      );
+      expect(body, `${read} restates the live predicate`).not.toMatch(/removed_at/);
+      expect(body, `${read} lost the active caller pin`).toMatch(/where access\.is_active/);
+      expect(body).toMatch(/security definer/);
+      expect(body).toMatch(/set search_path = ''/);
+    }
+    expect(sql, 'a re-created read is dropped, which would drop its grants').not.toMatch(/drop function/);
+    const own = /create or replace function public\.my_leave_records\(\)[\s\S]*?\$\$;/.exec(sql)?.[0] ?? '';
+    expect(own, "the member's read is not the caller's own").toMatch(/and m\.auth_user_id = \(select auth\.uid\(\)\)/);
+    expect(own).toMatch(
+      /returns table \(\s*id uuid,\s*member_id uuid,\s*during daterange,\s*absence_type_id uuid,\s*draws_allowance boolean,\s*half text\s*\)/,
+    );
+  });
+
+  it("assembles one member's inputs in one definer that no role may execute, with no name, reason or author", () => {
+    const sql = migration();
+    const body =
+      /create function private\.member_schedule_inputs\(p_member uuid, p_from date, p_to date\)[\s\S]*?\$\$;/.exec(sql)?.[0] ?? '';
+    expect(body, 'member_schedule_inputs is not declared').not.toBe('');
+    expect(body).toMatch(/returns jsonb/);
+    expect(body).toMatch(/\bstable\b/);
+    expect(body).toMatch(/security definer/);
+    expect(body).toMatch(/set search_path = ''/);
+    expect(sql).toContain(
+      'revoke execute on function private.member_schedule_inputs(uuid, date, date) from public, anon, authenticated, service_role;',
+    );
+    expect(sql, 'the assembly is granted to a role').not.toMatch(/grant execute on function private\.member_schedule_inputs/);
+    for (const key of [
+      'organizationId', 'timeZone', 'memberId', 'teams', 'shiftTypes', 'steps', 'assignments', 'assignmentStamps',
+      'members', 'memberships', 'statuses', 'loans', 'overrides', 'rosterOverrides', 'leave', 'writtenAt', 'createdAt',
+    ]) {
+      expect(body, `the assembly lacks ${key}`).toContain(`'${key}'`);
+    }
+    expect(body, 'the assembly carries a reason, author, rank or account').not.toMatch(
+      /\b(m|o|l|r)\.(name|reason|created_by|removed_by|fire_rank|auth_user_id|email|role)\b/,
+    );
+    expect(body, 'a stamp is not integer µs').toMatch(
+      /\(extract\(epoch from coalesce\(o\.confirmed_at, o\.created_at\)\) \* 1000000\)::bigint/,
+    );
+    expect(body).toMatch(/\(extract\(epoch from a\.created_at\) \* 1000000\)::bigint/);
+    expect(body, "another member's leave is read").toMatch(/where r\.member_id = p_member/);
+    expect(body, 'a bad window is not refused').toMatch(
+      /errcode = 'invalid_parameter_value', message = 'SCHEDULE_INPUTS_WINDOW'/,
+    );
+    for (const [helper] of LIVE) {
+      expect(body, `the assembly does not read ${helper}`).toContain(`private.${helper}(v_organization)`);
+    }
+    expect(body, 'the assembly restates the live predicate').not.toMatch(/removed_at/);
+  });
+
+  it('takes no table, column, trigger or policy, and writes nothing', () => {
+    const sql = migration();
+    expect(sql).not.toMatch(/\bcreate table\b|\balter table\b|\bcreate (or replace )?trigger\b|\b(create|alter|drop) policy\b/i);
+    expect(sql).not.toMatch(/\b(insert into|update public\.|delete from)\b/i);
+  });
+});

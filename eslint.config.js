@@ -933,8 +933,9 @@ export default [
 
   // ------------------------------- Deno: the Edge Functions and their router
   {
-    // The functions, and the router that runs them on the self-hosted stack (20.2).
-    files: ['supabase/functions/**/*.ts', 'deploy/functions/**/*.ts'],
+    // The functions, the router that runs them on the self-hosted stack (20.2),
+    // and the runtime-parity probe's entry (16.2), which runs under the same runtime.
+    files: ['supabase/functions/**/*.ts', 'deploy/functions/**/*.ts', 'deploy/parity/**/*.ts'],
     languageOptions: {
       globals: {
         ...globals.worker,

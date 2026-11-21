@@ -111,6 +111,22 @@ describe('domain purity', () => {
     expect(violations(files, SOURCE_ALLOWS_BARE)).toEqual([]);
   });
 
+  it('names Intl and the built-in date object in zone.ts alone (AD-6, story 16.2)', () => {
+    const files = collectSourceFiles(sourceRoot);
+    const naming = files
+      .filter((file) => /\b(?:Intl|Date)\b/.test(codeOf(readFileSync(file, 'utf8'))))
+      .map((file) => relative(sourceRoot, file));
+
+    expect(files.some((file) => file.endsWith('zone.ts'))).toBe(true);
+    expect(naming.filter((file) => file !== 'zone.ts')).toEqual([]);
+    // The detector itself: a module that reached for either is found.
+    expect(/\b(?:Intl|Date)\b/.test(codeOf(`const now = ${'Da'}te.now(); // Intl in a comment`))).toBe(true);
+    expect(/\b(?:Intl|Date)\b/.test(codeOf('const checked = checkDate(x); /* Date */ // Intl'))).toBe(false);
+    expect(/\b(?:Intl|Date)\b/.test(codeOf("const url = 'https://x'; const now = " + 'Da' + 'te.now();'))).toBe(true);
+    expect(/\b(?:Intl|Date)\b/.test(codeOf('const at = `${' + 'In' + 'tl.DateTimeFormat}`;'))).toBe(true);
+    expect(/\b(?:Intl|Date)\b/.test(codeOf('const text = `the Date is ${value}`;'))).toBe(false);
+  });
+
   it('imports nothing beyond node builtins and the runner from test', () => {
     const files = collectSourceFiles(testRoot);
 
@@ -161,6 +177,25 @@ describe('domain purity', () => {
     expect(violationsIn(`${IMPORT} { y } from "../sibling/y.ts"`)).toEqual([]);
   });
 });
+
+/**
+ * A source with its comments and string literals blanked: what the code
+ * itself names. A message saying "the date" or a doc comment naming `Intl`
+ * is not a use.
+ */
+function codeOf(source: string): string {
+  // One left-to-right pass, so a `//` inside a string is never read as a
+  // comment, nor a quote inside a comment as a string. A template literal
+  // keeps its `${...}` expressions, which are code.
+  return source.replace(
+    /\/\*[\s\S]*?\*\/|\/\/[^\n]*|`(?:\\[\s\S]|[^`\\])*`|'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"/g,
+    (token) => {
+      if (token.startsWith('/')) return ' ';
+      if (token.startsWith('`')) return [...token.matchAll(/\$\{([^}]*)\}/g)].map((match) => ` ${match[1] ?? ''} `).join('');
+      return "''";
+    },
+  );
+}
 
 /** The same check as {@link violations}, against a source string. */
 function violationsIn(source: string): string[] {

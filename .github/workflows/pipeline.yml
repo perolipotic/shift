@@ -10,12 +10,14 @@
 #            e2e-report  merges the four shards' reports into one HTML report
 #            functions-image  builds the `shift-functions` image (story 20.2),
 #                        never pushed, and probes it with no route to the internet
+#            runtime-parity  the domain probe under Node and under the pinned
+#                        edge-runtime, byte for byte (story 16.2)
 #            web-image   builds the `shift-web` image (story 20.3) from the build
 #                        job's apps/web/dist, never pushed, and probes it with
 #                        no network
 #            ci-passed   the one required check on main: quality, build, test,
-#                        functions-image, web-image and e2e passed (e2e may be
-#                        skipped on a docs-only PR)
+#                        functions-image, runtime-parity, web-image and e2e
+#                        passed (e2e may be skipped on a docs-only PR)
 #   main only, and only when vars.DEPLOY_ENABLED == 'true':
 #            deploy-staging → smoke-staging → deploy-production (approval) → smoke-production
 #            Story 20.6: each deploy job targets a self-hosted stack run by
@@ -93,7 +95,7 @@ jobs:
       - name: ShellCheck
         run: |
           shellcheck --version
-          shellcheck -x deploy/host/*.sh deploy/web/render-headers.sh scripts/ci/registry.sh scripts/ci/deploy-images.sh
+          shellcheck -x deploy/host/*.sh deploy/web/render-headers.sh scripts/ci/registry.sh scripts/ci/deploy-images.sh scripts/ci/runtime-parity.sh
 
       - uses: ./.github/actions/setup
 
@@ -169,6 +171,36 @@ jobs:
 
       - name: Probe it offline
         run: bash scripts/ci/probe-functions-image.sh "shift-functions:ci-$GITHUB_SHA"
+
+  # Story 16.2 (AD-7, AD-19): the domain package under the functions' own
+  # runtime. The probe runs under Node over the built packages/domain/dist
+  # (test/runtime-parity.test.ts, which writes its answer), then under the
+  # pinned edge-runtime from the same dist through deploy/parity/deno.json's
+  # import map, bundled and served with --network none; the two answers must
+  # be byte-identical. The pin is the functions image's base, held equal by
+  # test/runtime-parity.test.ts.
+  runtime-parity:
+    name: Runtime parity (Node and edge-runtime)
+    needs: quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      EDGE_RUNTIME_IMAGE: supabase/edge-runtime:v1.74.3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+
+      - name: Build @shift/domain
+        run: pnpm --filter @shift/domain build
+
+      - name: The probe under Node
+        run: SHIFT_PARITY_OUT="$RUNNER_TEMP/parity-node.json" pnpm exec vitest run test/runtime-parity.test.ts
+
+      - name: The probe under edge-runtime, compared
+        run: bash scripts/ci/runtime-parity.sh "$EDGE_RUNTIME_IMAGE" "$RUNNER_TEMP/parity-node.json"
 
   # Story 20.3: the SPA's image, BUILT ONLY, from the `build` job's dist (built
   # with no environment's VITE_*, so its CSP names no Supabase origin): this
@@ -437,7 +469,7 @@ jobs:
   # A flake on main does not, and a docs-only PR skips E2E even then.
   ci-passed:
     name: CI passed
-    needs: [quality, build, test, functions-image, web-image, changes, e2e]
+    needs: [quality, build, test, functions-image, runtime-parity, web-image, changes, e2e]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -687,7 +719,7 @@ jobs:
   # ------------------------------------------------------------------ notify
   notify:
     name: Notify
-    needs: [quality, build, test, functions-image, web-image, e2e, deploy-staging, smoke-staging, deploy-production, smoke-production]
+    needs: [quality, build, test, functions-image, runtime-parity, web-image, e2e, deploy-staging, smoke-staging, deploy-production, smoke-production]
     if: (failure() || cancelled()) && github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
