@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 11-21-2026 18:00
+last_updated: 11-21-2026 07:44
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -666,13 +666,13 @@ development_status:
   17-3-reminders-reach-the-member-by-push-or-email: backlog  # waits: AP1, D-S6
   epic-17-retrospective: optional
 
-  epic-18: in-progress  # team loans (CAP-27); no D-S decision, no Architect pass
+  epic-18: done  # accepted with open items, 2026-11-21 (retro): #323, #325, #328, #330, #332 merged with CI green; founder decisions open (retro A1 member-wide loan read, A2 tim/Smjena, A3 promotion check)
   18-1-the-loan-rule-in-the-domain: done  # #323
   18-2-a-loan-is-a-recorded-exception: done  # #325
   18-3-an-admin-lends-a-member-to-another-team: done  # #328
   18-4-an-admin-amends-ends-early-or-removes-a-loan: done  # #330
-  18-5-loans-are-visible-wherever-rosters-are-read: review  # built, CI pending
-  epic-18-retrospective: optional
+  18-5-loans-are-visible-wherever-rosters-are-read: done  # #332
+  epic-18-retrospective: done
 
   epic-19: backlog  # self-service signup (CAP-28); staging only, production opening is D-S5
   19-1-the-signup-door-opens-safely-on-staging: backlog  # waits: AP2, D-S3, D-S4, D-S9
@@ -1232,3 +1232,60 @@ action_items:
     # 2026-11-17: done-rule and spec-14-3 line merged in #315; Node 24.19.0 and poppler installed on this machine
     status: done
     ref: "_bmad-output/implementation-artifacts/epic-14-retro-2026-11-16.md"
+  - id: "epic-18-retro-item-72-a1-ratify-or-reverse-the-member-wide-loa"
+    epic: 18
+    action: "A1: ratify or reverse the member-wide loan read (calendar_team_loans
+      returns every live loan's member, team and dates, no reason or author) against
+      PRD prd.md:1135 and 18.2 AC 2 'only its own loans'; ratified -> amend PRD, epic
+      AC, epic-18-context; reversed -> a story (R1)"
+    owner: "Perolipotic (founder)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-18-retro-2026-11-21.md"
+  - id: "epic-18-retro-item-73-a2-decide-the-team-terminology-loan-copy"
+    epic: 18
+    action: "A2: decide the team terminology: loan copy says tim while the product
+      says Smjena (EXPERIENCE.md:92, history.field.team -> 'Smjena: Smjena C', smjene.error.lentTo
+      'Tim ...'); then a copy story (R2, deferred-work 1775)"
+    owner: "Perolipotic (founder)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-18-retro-2026-11-21.md"
+  - id: "epic-18-retro-item-74-a3-before-0062-0064-are-promoted-past-lo"
+    epic: 18
+    action: "A3: before 0062-0064 are promoted past local/staging, run the data check
+      for live loans to teams archived under 0062 (deferred-work 1730) and approve
+      the push alongside epic 14 A2 (0061)"
+    owner: "Perolipotic (founder) approves; dev writes the check"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-18-retro-2026-11-21.md"
+  - id: "epic-18-retro-item-75-a4-team_loans-race-tests-in-test-concurr"
+    epic: 18
+    action: "A4: team_loans race tests in test/concurrent-writes.test.ts, both orders
+      (loan insert/amend_team_loan behind archive, team move, demotion; archive behind
+      a loan insert), CI-only (deferred-work 1718, 1724)"
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-18-retro-2026-11-21.md"
+  - id: "epic-18-retro-item-76-a5-e2e-for-the-drawn-loan-marks-danas-no"
+    epic: 18
+    action: "A5: e2e for the drawn loan marks (Danas notice, posudba iz tima {tim}
+      in day detail, trenutno u timu {tim} on Ljudi), CI-only (deferred-work 1772)"
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-18-retro-2026-11-21.md"
+  - id: "epic-18-retro-item-77-a6-po-triage-of-the-remaining-loan-defer"
+    epic: 18
+    action: "A6: PO triage of the remaining loan deferrals: loan team's roster page
+      (1766), TEAM_HAS_LOANS naming members (1721), amend preview cap (1727); 16.2
+      parity (1688) stays with 16.2"
+    owner: "PO (founder)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-18-retro-2026-11-21.md"
+  - id: "epic-18-retro-item-78-a7-process-when-a-story-is-set-done-afte"
+    epic: 18
+    action: "A7: process: when a story is set done after merge, rewrite its spec's
+      residual-risk lines and record CI-only fixes; correct spec-18-1..18-4 now (18.4:
+      two CI failures and e0e5359); review checklist for unrun DB tests: scenes built
+      as owner before actAs (V1, P2, R4)"
+    owner: "Perolipotic (process); dev for the spec edits"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-18-retro-2026-11-21.md"
