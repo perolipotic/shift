@@ -298,6 +298,9 @@ const AMEND_KEYS: Readonly<Record<string, readonly string[]>> = {
   leave_records: ['member_id'],
   roster_overrides: ['team_id', 'date'],
   shift_type_overrides: ['team_id', 'date'],
+  // Story 18.4 (0064's `amend_team_loan`): the replacement keeps the member;
+  // its team and dates may change. The record and its wording are 18.5's.
+  team_loans: ['member_id'],
 };
 
 // ---------------------------------------------------------------- fields

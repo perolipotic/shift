@@ -1,4 +1,5 @@
 import {
+  activeOn,
   daysBetween,
   dutiesOf,
   memberScheduleOfMonth,
@@ -58,6 +59,15 @@ import { trimName } from '@/utils/name';
  *
  * WARNS, NEVER BLOCKS: nothing in the preview gates *Spremi*. Only an
  * erasure waits on a confirmation, as for every configuration write.
+ *
+ * AMEND, END EARLY, REMOVE (story 18.4; FR-91): a {@link LoanEdit} names the
+ * live loan it replaces and the loan as it will stand, or none for a
+ * removal. Its "after" ({@link loanEditSnapshotOf}) is the member's loans
+ * with the old one replaced by the draft, or without it; everything the lend
+ * derives is derived over its window ({@link loanEditWindowOf}): from the
+ * earlier first date to the later last date of the two ranges. The writes are
+ * 0064's definers, `amend_team_loan` and `remove_team_loan`
+ * ({@link amendLoan}, {@link removeLoan}); 0064 notifies the member once.
  */
 
 /** The table a loan is inserted into (0062). */
@@ -102,6 +112,8 @@ export const LOAN_OVERLAP = 'overlap';
 export const LOAN_DENIED = 'denied';
 /** Anything else: try again. */
 export const LOAN_FAILED = 'failed';
+/** An amend that changes nothing: the same team and dates, and no new reason (story 18.4). */
+export const LOAN_UNCHANGED = 'unchanged';
 
 /** Logged when a loan's check or write, or a re-read after it, could not be settled. */
 export const LOAN_UNAVAILABLE = 'LOAN_UNAVAILABLE';
@@ -113,7 +125,8 @@ export type LoanEntryRefusal =
   | typeof LOAN_TO_INVALID
   | typeof LOAN_ORDER
   | typeof LOAN_REASON
-  | typeof LOAN_STALE;
+  | typeof LOAN_STALE
+  | typeof LOAN_UNCHANGED;
 
 /** What the fresh snapshot refuses: the database would refuse it anyway. */
 export type LoanSnapshotRefusal =
@@ -123,8 +136,13 @@ export type LoanSnapshotRefusal =
   | typeof LOAN_HOME
   | typeof LOAN_OVERLAP;
 
-/** What the insert answers when it is refused. */
-export type LoanWriteFailure = typeof LOAN_OVERLAP | typeof LOAN_DENIED | typeof LOAN_REASON | typeof LOAN_FAILED;
+/** What the insert, the amend or the removal answers when it is refused (an amend's or removal's gone loan is {@link LOAN_STALE}). */
+export type LoanWriteFailure =
+  | typeof LOAN_OVERLAP
+  | typeof LOAN_DENIED
+  | typeof LOAN_REASON
+  | typeof LOAN_STALE
+  | typeof LOAN_FAILED;
 
 export type LoanRefusal = LoanEntryRefusal | LoanSnapshotRefusal | LoanWriteFailure;
 
@@ -172,6 +190,30 @@ export function loanChoicesOf(
   return choices.length === 0 ? null : choices;
 }
 
+/**
+ * The teams an amend offers (story 18.4, design note 3): the lend's, plus the
+ * loan's own team when it is active and not offered already (the member's
+ * team today, after a move). `null` while the teams or today are unknown;
+ * empty when none is left, so the dialog still opens for a removal (review).
+ */
+export function loanAmendChoicesOf(
+  member: MemberListRow,
+  activeTeams: readonly TeamRow[] | null,
+  today: string | null,
+  loan: Loan,
+): readonly LoanChoice[] | null {
+  if (activeTeams === null || today === null) return null;
+
+  const offered = loanChoicesOf(member, activeTeams, today) ?? [];
+  const own = activeTeams.find((team) => team.id === loan.teamId && !team.archived);
+
+  if (own === undefined || offered.some((choice) => choice.id === own.id)) return offered;
+
+  return activeTeams
+    .filter((team) => team.id === own.id || offered.some((choice) => choice.id === team.id))
+    .map((team) => ({ id: team.id, name: team.name }));
+}
+
 /** The choice `value` names, or `undefined` for the placeholder or one not offered. */
 export function loanChoiceOf(choices: readonly LoanChoice[] | null, value: string): LoanChoice | undefined {
   return value === LOAN_UNPICKED_VALUE ? undefined : choices?.find((choice) => choice.id === value);
@@ -215,6 +257,42 @@ export function loanPreflightOf(
   return { ok: true, draft: { memberId, teamId: team.id, from: entered.from, to: entered.to, reason } };
 }
 
+/** An amend as entered and preflighted: the reason is `null` to keep the stored one (design note 2). */
+export interface LoanAmendDraft extends Omit<LoanDraft, 'reason'> {
+  readonly reason: string | null;
+}
+
+export type LoanAmendPreflight =
+  | { readonly ok: true; readonly draft: LoanAmendDraft }
+  | { readonly ok: false; readonly code: LoanEntryRefusal };
+
+/**
+ * An amend's preflight: the lend's, but an empty *Razlog* keeps the stored
+ * reason (`null`); a typed one is checked as the lend checks it.
+ */
+export function loanAmendPreflightOf(
+  memberId: string,
+  choices: readonly LoanChoice[] | null,
+  entered: { readonly teamId: string; readonly from: string; readonly to: string; readonly reason: string },
+  stored: Loan | null = null,
+): LoanAmendPreflight {
+  const kept = trimName(entered.reason) === '';
+  // A placeholder reason passes the lend's check; `null` is what is sent.
+  const preflight = loanPreflightOf(memberId, choices, kept ? { ...entered, reason: 'x' } : entered);
+
+  if (!preflight.ok) return preflight;
+
+  const { draft } = preflight;
+
+  // NOTHING TO SAVE (review): the same team and dates and no new reason would
+  // replace the row by an identical one and tell the member of nothing.
+  if (kept && stored !== null && draft.teamId === stored.teamId && draft.from === stored.from && draft.to === stored.to) {
+    return { ok: false, code: LOAN_UNCHANGED };
+  }
+
+  return { ok: true, draft: { ...draft, reason: kept ? null : draft.reason } };
+}
+
 // ------------------------------------------------------------- the "after"
 
 /** The part of a draft the "after" reads: no reason. */
@@ -232,13 +310,15 @@ export type LoanChangeApplied =
  *
  * @throws RangeError on any precondition of `membershipOn` over the member's versions.
  */
-export function loanChangeSnapshotOf(calendar: CalendarSnapshot, span: LoanSpan): LoanChangeApplied {
+export function loanChangeSnapshotOf(calendar: CalendarSnapshot, span: LoanSpan, replaces: string | null = null): LoanChangeApplied {
   if (span.to < span.from) return { ok: false, code: LOAN_ORDER };
 
   const member = calendar.members.find((candidate) => candidate.id === span.memberId);
   const team = calendar.teams.find((candidate) => candidate.id === span.teamId);
 
   if (member === undefined || team === undefined) return { ok: false, code: LOAN_STALE };
+  // AN AMEND'S LOAN, gone meanwhile (removed or amended): 0064's `TEAM_LOAN_NOT_LIVE`.
+  if (replaces !== null && !member.loans.some((loan) => loan.id === replaces)) return { ok: false, code: LOAN_STALE };
   if (team.archived) return { ok: false, code: LOAN_ARCHIVED };
 
   // THE HOME TEAM ON ANY COVERED DATE: the version in effect on `from`, or one
@@ -250,19 +330,99 @@ export function loanChangeSnapshotOf(calendar: CalendarSnapshot, span: LoanSpan)
     );
 
   if (home) return { ok: false, code: LOAN_HOME };
-  if (member.loans.some((loan) => loan.from <= span.to && span.from <= loan.to)) return { ok: false, code: LOAN_OVERLAP };
+
+  // THE OTHER LIVE LOANS: an amend's own loan is removed before its replacement is inserted.
+  const others = member.loans.filter((loan) => loan.id !== replaces);
+
+  if (others.some((loan) => loan.from <= span.to && span.from <= loan.to)) return { ok: false, code: LOAN_OVERLAP };
 
   const draft: Loan = { id: LOAN_DRAFT_ID, teamId: span.teamId, from: span.from, to: span.to };
-  const lent = [...member.loans, draft];
 
+  return { ok: true, after: withLoansOf(calendar, member.id, [...others, draft]) };
+}
+
+/** `calendar` with `loans` as the member's (and the viewer's, when the viewer is the member). A new object. */
+function withLoansOf(calendar: CalendarSnapshot, memberId: string, loans: readonly Loan[]): CalendarSnapshot {
   return {
-    ok: true,
-    after: {
-      ...calendar,
-      members: calendar.members.map((candidate) => (candidate.id === member.id ? { ...candidate, loans: lent } : candidate)),
-      viewer: calendar.viewer.memberId === member.id ? { ...calendar.viewer, loans: lent } : calendar.viewer,
-    },
+    ...calendar,
+    members: calendar.members.map((candidate) => (candidate.id === memberId ? { ...candidate, loans } : candidate)),
+    viewer: calendar.viewer.memberId === memberId ? { ...calendar.viewer, loans } : calendar.viewer,
   };
+}
+
+/**
+ * A change to a loan (story 18.4): the live loan it replaces (`null` for a
+ * new loan) and the loan as it will stand (`null` for a removal). Never both
+ * `null`.
+ */
+export interface LoanEdit {
+  readonly memberId: string;
+  readonly replaces: Loan | null;
+  readonly span: LoanSpan | null;
+}
+
+/** A span read as the edit lending it; an edit as it is. */
+export function loanEditOf(change: LoanSpan | LoanEdit): LoanEdit {
+  return 'replaces' in change ? change : { memberId: change.memberId, replaces: null, span: change };
+}
+
+/**
+ * The calendar snapshot as the edit would leave it, or the refusal its write
+ * would meet anyway: a removal's loan gone meanwhile, or the member, is
+ * {@link LOAN_STALE}; a lend or an amend is {@link loanChangeSnapshotOf}'s.
+ *
+ * @throws RangeError on any precondition of `membershipOn` over the member's versions.
+ */
+export function loanEditSnapshotOf(calendar: CalendarSnapshot, change: LoanSpan | LoanEdit): LoanChangeApplied {
+  const edit = loanEditOf(change);
+
+  if (edit.span !== null) return loanChangeSnapshotOf(calendar, edit.span, edit.replaces?.id ?? null);
+
+  const member = calendar.members.find((candidate) => candidate.id === edit.memberId);
+  const removed = edit.replaces;
+
+  if (member === undefined || removed === null || !member.loans.some((loan) => loan.id === removed.id)) {
+    return { ok: false, code: LOAN_STALE };
+  }
+
+  return { ok: true, after: withLoansOf(calendar, member.id, member.loans.filter((loan) => loan.id !== removed.id)) };
+}
+
+/**
+ * The dates an edit changes, as one span: from the earlier first date to the
+ * later last date of the replaced loan and the new one (a removal: the
+ * removed loan; a lend: its own). The preview, the short-staffed block and
+ * the erasure check read it. Its `teamId` is the new loan's, else the old.
+ */
+export function loanEditWindowOf(change: LoanSpan | LoanEdit): LoanSpan {
+  const edit = loanEditOf(change);
+  const ranges = [edit.replaces, edit.span].filter((range): range is Loan | LoanSpan => range !== null);
+  const first = ranges.map((range) => range.from).sort()[0] ?? '';
+  const last = ranges.map((range) => range.to).sort().at(-1) ?? '';
+
+  return { memberId: edit.memberId, teamId: edit.span?.teamId ?? edit.replaces?.teamId ?? '', from: first, to: last };
+}
+
+/**
+ * How many dates of the new loan the member is inactive on (deferred-work,
+ * answered in 18.4: warned, never refused). The domain puts an inactive
+ * member on no roster, so the loan changes nothing on those dates. An
+ * amend counts only the dates its old loan did not cover. 0 for a removal,
+ * or a member the snapshot lacks.
+ *
+ * @throws RangeError on any precondition of `activeOn` over the member's versions.
+ */
+export function loanInactiveDaysOf(calendar: CalendarSnapshot, change: LoanSpan | LoanEdit): number {
+  const edit = loanEditOf(change);
+  const member = calendar.members.find((candidate) => candidate.id === edit.memberId);
+
+  if (edit.span === null || member === undefined) return 0;
+
+  const old = edit.replaces;
+
+  return datesBetween(edit.span.from, edit.span.to)
+    .filter((date) => old === null || date < old.from || date > old.to)
+    .filter((date) => !activeOn(member.statuses, date)).length;
 }
 
 // --------------------------------------------------------------- the preview
@@ -329,6 +489,11 @@ export interface LoanPreview {
   readonly doubles: readonly LoanDoubleLine[];
   readonly restGaps: readonly LoanRestGapLine[];
   readonly inert: readonly LoanInertLine[];
+}
+
+/** The preview the dialog shows: {@link LoanPreview}, and the dates of the new loan the member is inactive on. */
+export interface ShownLoanPreview extends LoanPreview {
+  readonly inactiveDays: number;
 }
 
 /** Every date from `from` to `to`, both included. */
@@ -552,17 +717,23 @@ export function previewableSpanOf(span: LoanSpan | null): span is LoanSpan {
  * that changes, or a derivation that throws (logged, never rethrown: a
  * missing preview never gates the save).
  */
-export function shownLoanPreviewOf(snapshot: CalendarSnapshot | null, span: LoanSpan | null): LoanPreview | null {
-  if (snapshot === null || !previewableSpanOf(span)) return null;
+export function shownLoanPreviewOf(snapshot: CalendarSnapshot | null, change: LoanSpan | LoanEdit | null): ShownLoanPreview | null {
+  const window = change === null ? null : loanEditWindowOf(change);
+
+  if (snapshot === null || change === null || !previewableSpanOf(window)) return null;
 
   try {
-    const applied = loanChangeSnapshotOf(snapshot, span);
+    const applied = loanEditSnapshotOf(snapshot, change);
 
     if (!applied.ok) return null;
 
-    const preview = loanPreviewOf(snapshot, applied.after, span);
+    const preview = { ...loanPreviewOf(snapshot, applied.after, window), inactiveDays: loanInactiveDaysOf(snapshot, change) };
     const empty =
-      preview.shifts.length === 0 && preview.doubles.length === 0 && preview.restGaps.length === 0 && preview.inert.length === 0;
+      preview.shifts.length === 0 &&
+      preview.doubles.length === 0 &&
+      preview.restGaps.length === 0 &&
+      preview.inert.length === 0 &&
+      preview.inactiveDays === 0;
 
     return empty ? null : preview;
   } catch (cause) {
@@ -582,15 +753,17 @@ export function shownLoanPreviewOf(snapshot: CalendarSnapshot | null, span: Loan
  */
 export function shownLoanShortStaffedOf(
   snapshot: CalendarSnapshot | null,
-  span: LoanSpan | null,
+  change: LoanSpan | LoanEdit | null,
   leave: StaffingLeaveSource | null,
 ): ShortStaffedReport | null {
-  if (snapshot === null || !previewableSpanOf(span) || minimumOfCalendar(snapshot) === null) return null;
+  const window = change === null ? null : loanEditWindowOf(change);
+
+  if (snapshot === null || change === null || !previewableSpanOf(window) || minimumOfCalendar(snapshot) === null) return null;
 
   try {
-    const applied = loanChangeSnapshotOf(snapshot, span);
+    const applied = loanEditSnapshotOf(snapshot, change);
 
-    return applied.ok ? configurationReportOf(snapshot, applied.after, { from: span.from, to: span.to }, leave) : null;
+    return applied.ok ? configurationReportOf(snapshot, applied.after, { from: window.from, to: window.to }, leave) : null;
   } catch (cause) {
     return unknownReportOf(cause);
   }
@@ -611,17 +784,19 @@ export type LoanErasureCheck =
  */
 export async function loanErasureCheckOf(
   read: () => Promise<ErasureReads>,
-  span: LoanSpan,
+  change: LoanSpan | LoanEdit,
   online: boolean,
 ): Promise<LoanErasureCheck> {
+  const window = loanEditWindowOf(change);
+
   return checkedOf(
     read,
     ({ calendar, records, resolutions }): LoanErasureCheck => {
-      const applied = loanChangeSnapshotOf(calendar, span);
+      const applied = loanEditSnapshotOf(calendar, change);
 
       if (!applied.ok) return { kind: CHECK_REFUSED, code: applied.code };
 
-      const outcome = erasuresOutcomeOf(() => erasuresOf(calendar, applied.after, span.from, records, resolutions));
+      const outcome = erasuresOutcomeOf(() => erasuresOf(calendar, applied.after, window.from, records, resolutions));
 
       return outcome.ok ? { kind: CHECK_READY, rows: outcome.rows } : { kind: CHECK_UNAVAILABLE };
     },
@@ -649,6 +824,9 @@ export interface LoanTable {
 export type LoanWriteOutcome = { readonly ok: true } | { readonly ok: false; readonly code: LoanWriteFailure };
 
 const INSUFFICIENT_PRIVILEGE = '42501';
+const NO_DATA_FOUND = 'P0002';
+/** 0064's amend, refusing an archived or home team itself. */
+const TEAM_REFUSED_MESSAGE = 'TEAM_LOAN_TEAM_REFUSED';
 const EXCLUSION_VIOLATION = '23P01';
 const CHECK_VIOLATION = '23514';
 /** 0062's reason check, which a `23514` names. */
@@ -664,6 +842,11 @@ const REASON_CHECK = 'team_loans_reason_length';
  * range check, `22000`, `23503`, the unforeseen — {@link LOAN_FAILED}.
  */
 export function loanWriteFailureOf(error: LoanWriteError): LoanWriteFailure {
+  // 0064: the amended or removed loan is no longer live (`TEAM_LOAN_NOT_LIVE`),
+  // or the amend's team was archived or became the member's own meanwhile
+  // (`TEAM_LOAN_TEAM_REFUSED`, after the fresh check): the screen is behind.
+  if (error.code === NO_DATA_FOUND) return LOAN_STALE;
+  if (error.code === INSUFFICIENT_PRIVILEGE && error.message === TEAM_REFUSED_MESSAGE) return LOAN_STALE;
   if (error.code === EXCLUSION_VIOLATION) return LOAN_OVERLAP;
   if (error.code === INSUFFICIENT_PRIVILEGE) return LOAN_DENIED;
   if (error.code === CHECK_VIOLATION && `${error.message ?? ''} ${error.details ?? ''}`.includes(REASON_CHECK)) {
@@ -726,6 +909,157 @@ export async function lendMember(table: LoanTable, organizationId: string, draft
   return { ok: false, code };
 }
 
+/** 0064's two definers. */
+export const AMEND_TEAM_LOAN_FUNCTION = 'amend_team_loan';
+export const REMOVE_TEAM_LOAN_FUNCTION = 'remove_team_loan';
+
+export interface LoanRpcAnswer {
+  readonly data?: unknown;
+  readonly error: LoanWriteError | null;
+}
+
+/** The two calls and nothing else. */
+export interface LoanRpc {
+  rpc(
+    fn: typeof AMEND_TEAM_LOAN_FUNCTION,
+    args: { p_loan_id: string; p_team_id: string; p_from: string; p_to: string; p_reason?: string },
+  ): PromiseLike<LoanRpcAnswer>;
+  rpc(fn: typeof REMOVE_TEAM_LOAN_FUNCTION, args: { p_loan_id: string }): PromiseLike<LoanRpcAnswer>;
+}
+
+type LoanCalled = { readonly ok: true; readonly data: unknown } | { readonly ok: false; readonly code: LoanWriteFailure };
+
+/** A settled call: the answer, or the failure (logged unless it is a refusal's code). */
+async function calledLoan(call: () => PromiseLike<LoanRpcAnswer>): Promise<LoanCalled> {
+  let answered: LoanRpcAnswer;
+
+  try {
+    answered = await call();
+  } catch (cause) {
+    console.error(LOAN_FAILED, cause);
+
+    return { ok: false, code: LOAN_FAILED };
+  }
+
+  if (typeof answered !== 'object' || answered === null) {
+    console.error(LOAN_FAILED, typeof answered);
+
+    return { ok: false, code: LOAN_FAILED };
+  }
+
+  const error: unknown = answered.error;
+
+  if (error === null) return { ok: true, data: answered.data };
+
+  if (typeof error !== 'object') {
+    console.error(LOAN_FAILED, typeof error);
+
+    return { ok: false, code: LOAN_FAILED };
+  }
+
+  const code = loanWriteFailureOf(error as LoanWriteError);
+
+  if (code === LOAN_FAILED) console.error(code, (error as LoanWriteError).code);
+
+  return { ok: false, code };
+}
+
+/**
+ * Amend the live loan `loanId` to `draft` (0064's `amend_team_loan`): the
+ * team, the inclusive range and, unless `null` keeps the stored one, the
+ * reason. Ending early is an earlier `to`. A bad range is
+ * {@link LOAN_FAILED} without a request; a landed amend that names no
+ * replacement is {@link LOAN_FAILED} too.
+ */
+export async function amendLoan(client: LoanRpc, loanId: string, draft: LoanAmendDraft): Promise<LoanWriteOutcome> {
+  if (!isIsoDate(draft.from) || !isIsoDate(draft.to) || draft.to < draft.from) {
+    console.error(LOAN_FAILED, 'not a calendar range');
+
+    return { ok: false, code: LOAN_FAILED };
+  }
+
+  const called = await calledLoan(() =>
+    client.rpc(AMEND_TEAM_LOAN_FUNCTION, {
+      p_loan_id: loanId,
+      p_team_id: draft.teamId,
+      p_from: draft.from,
+      p_to: draft.to,
+      ...(draft.reason === null ? {} : { p_reason: draft.reason }),
+    }),
+  );
+
+  if (!called.ok) return called;
+  if (typeof called.data === 'string' && called.data !== '') return { ok: true };
+
+  console.error(LOAN_FAILED, 'no replacement id');
+
+  return { ok: false, code: LOAN_FAILED };
+}
+
+/** Remove the live loan `loanId` (0064's `remove_team_loan`): soft-removed, attributed to the caller. */
+export async function removeLoan(client: LoanRpc, loanId: string): Promise<LoanWriteOutcome> {
+  const called = await calledLoan(() => client.rpc(REMOVE_TEAM_LOAN_FUNCTION, { p_loan_id: loanId }));
+
+  return called.ok ? { ok: true } : called;
+}
+
+/** A lend's write. */
+export const LOAN_LEND = 'lend';
+/** An amend's write: the dates, the team, ending early. */
+export const LOAN_AMEND = 'amend';
+/** A removal's write. */
+export const LOAN_REMOVE = 'remove';
+
+/** Which write: a lend, an amend or a removal. */
+export type LoanWriteKind = typeof LOAN_LEND | typeof LOAN_AMEND | typeof LOAN_REMOVE;
+
+/** What *Spremi* writes, once preflighted: the lend's insert, or one of 0064's two definers. */
+export type LoanWrite =
+  | { readonly kind: typeof LOAN_LEND; readonly draft: LoanDraft }
+  | { readonly kind: typeof LOAN_AMEND; readonly loan: Loan; readonly draft: LoanAmendDraft }
+  | { readonly kind: typeof LOAN_REMOVE; readonly memberId: string; readonly loan: Loan };
+
+/** The edit a write makes: what its erasure check and preview derive. */
+export function loanWriteEditOf(write: LoanWrite): LoanEdit {
+  switch (write.kind) {
+    case LOAN_LEND:
+      return { memberId: write.draft.memberId, replaces: null, span: write.draft };
+    case LOAN_AMEND:
+      return { memberId: write.draft.memberId, replaces: write.loan, span: write.draft };
+    case LOAN_REMOVE:
+      return { memberId: write.memberId, replaces: write.loan, span: null };
+  }
+}
+
+/** What a landed write says on the card. */
+export function loanSavedMessageKey(kind: LoanWriteKind): 'loans.saved' | 'loans.amended' | 'loans.removed' {
+  return kind === LOAN_LEND ? 'loans.saved' : kind === LOAN_AMEND ? 'loans.amended' : 'loans.removed';
+}
+
+// ------------------------------------------------------------ the member's loans
+
+/** One live loan of the member as the card lists it: the loan, and its team's name (`null` when the read lacks it). */
+export interface MemberLoan {
+  readonly loan: Loan;
+  readonly team: string | null;
+}
+
+/** The member's live loans in the snapshot, by first date: what the card offers to amend. Empty while unread. */
+export function memberLoansOf(snapshot: CalendarSnapshot | null, memberId: string): readonly MemberLoan[] {
+  const member = snapshot?.members.find((candidate) => candidate.id === memberId);
+
+  if (snapshot === null || member === undefined) return [];
+
+  return [...member.loans]
+    .sort((first, second) => (first.from < second.from ? -1 : first.from > second.from ? 1 : 0))
+    .map((loan) => ({ loan, team: snapshot.teams.find((team) => team.id === loan.teamId)?.name ?? null }));
+}
+
+/** Whether *Završi danas* applies: the loan has begun and ends after today. */
+export function loanEndsTodayOfferedOf(loan: Loan, today: string | null): boolean {
+  return today !== null && loan.from <= today && today < loan.to;
+}
+
 // ------------------------------------------------------------- the messages
 
 /** The alert a refusal says. */
@@ -742,7 +1076,8 @@ export function loanRefusalMessageKey(
   | 'loans.error.home'
   | 'loans.error.overlap'
   | 'loans.error.denied'
-  | 'loans.error.failed' {
+  | 'loans.error.failed'
+  | 'loans.error.unchanged' {
   switch (code) {
     case LOAN_UNPICKED:
       return 'loans.error.unpicked';
@@ -766,6 +1101,8 @@ export function loanRefusalMessageKey(
       return 'loans.error.denied';
     case LOAN_FAILED:
       return 'loans.error.failed';
+    case LOAN_UNCHANGED:
+      return 'loans.error.unchanged';
   }
 }
 

@@ -1987,7 +1987,8 @@
       "invalid": "Unesena vrijednost nije dopuštena.",
       "saveUnavailable": "Spremanje trenutačno nije moguće. Pokušaj ponovno.",
       "unknown": "Ova smjena ne postoji u organizaciji.",
-      "inUse": "Smjenu nije moguće arhivirati dok je netko u njoj ili je u nju zakazan. Premjesti te osobe u drugu smjenu ili je arhiviraj kad u njoj više nikoga nema."
+      "inUse": "Smjenu nije moguće arhivirati dok je netko u njoj ili je u nju zakazan. Premjesti te osobe u drugu smjenu ili je arhiviraj kad u njoj više nikoga nema.",
+      "lentTo": "Smjenu nije moguće arhivirati dok joj je netko posuđen danas ili kasnije. Skrati ili ukloni te posudbe, pa je arhiviraj."
     },
     "membership": {
       "column": "Smjena",
@@ -2263,6 +2264,14 @@
       "subject": "Od {startDate} do {endDate} radiš u timu {teamName}",
       "body": "{organizationName}: od {startDate} do {endDate} radiš u timu {teamName}. Pogledaj kalendar: {link}"
     },
+    "loanChanged": {
+      "subject": "Posudba je izmijenjena: od {startDate} do {endDate} radiš u timu {teamName}",
+      "body": "{organizationName}: tvoja posudba je izmijenjena. Od {startDate} do {endDate} radiš u timu {teamName}. Pogledaj kalendar: {link}"
+    },
+    "loanRemoved": {
+      "subject": "Posudba u timu {teamName} je uklonjena",
+      "body": "{organizationName}: posudba u timu {teamName} od {startDate} do {endDate} je uklonjena. Pogledaj kalendar: {link}"
+    },
     "footer": "Obavijesti e-poštom možeš isključiti u aplikaciji, pod Obavijesti: {link}"
   },
   "popunjenost": {
@@ -2304,6 +2313,20 @@
     "save": "Spremi",
     "confirm": "Potvrdi posudbu osobe {name}",
     "saved": "Posudba je spremljena.",
+    "amended": "Posudba je izmijenjena.",
+    "removed": "Posudba je uklonjena.",
+    "listHeading": "Posudbe",
+    "listItem": "U timu {team} od {from} do {to}",
+    "unknownTeam": "Nepoznat tim",
+    "amend": "Izmijeni posudbu",
+    "amendName": "Izmijeni posudbu osobe {name} u timu {team} od {from} do {to}",
+    "amendHeading": "Izmijeni posudbu",
+    "reasonKeepHint": "Ostavi prazno i razlog ostaje isti. Najviše 200 znakova.",
+    "endToday": "Završi danas",
+    "remove": "Ukloni posudbu",
+    "removeHint": "Dani posudbe bit će kao da posudbe nikad nije bilo.",
+    "inactive": "{count, plural, one {# dan} few {# dana} other {# dana}} posudbe osoba nije aktivna: tada se ništa ne mijenja.",
+    "confirmRemoval": "Potvrdi uklanjanje posudbe osobe {name}",
     "error": {
       "unpicked": "Odaberi tim.",
       "from": "Upiši datum početka posudbe.",
@@ -2315,7 +2338,8 @@
       "home": "Osoba je u tom timu barem jedan od tih dana. Odaberi drugi tim ili druge datume.",
       "overlap": "Osoba je barem jedan od tih dana već posuđena. Odaberi druge datume.",
       "denied": "Posudbu nije moguće spremiti: tim je možda arhiviran, osoba je možda u tom timu tih dana ili nemaš ovlasti. Provjeri i pokušaj ponovno.",
-      "failed": "Posudbu sada nije moguće spremiti. Pokušaj ponovno."
+      "failed": "Posudbu sada nije moguće spremiti. Pokušaj ponovno.",
+      "unchanged": "Tim i datumi jednaki su spremljenima. Promijeni ih, upiši novi razlog ili ukloni posudbu."
     }
   }
 }

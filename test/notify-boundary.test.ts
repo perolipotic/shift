@@ -506,6 +506,22 @@ const EVERY_CODE: readonly {
     subject: 'Od 02.03.2046 do 06.03.2046 radiš u timu Smjena C',
     text: `${ORGANIZATION_NAME}: od 02.03.2046 do 06.03.2046 radiš u timu Smjena C. Pogledaj kalendar: {link}`,
   },
+  // STORY 18.4 (0064): one notice for an amend (the replacement's dates and
+  // team), one for a removal (the removed loan's).
+  {
+    code: 'LOAN_CHANGED',
+    operands: { startDate: '2046-03-02', endDate: '2046-03-04', teamName: 'Smjena D' },
+    path: '/kalendar',
+    subject: 'Posudba je izmijenjena: od 02.03.2046 do 04.03.2046 radiš u timu Smjena D',
+    text: `${ORGANIZATION_NAME}: tvoja posudba je izmijenjena. Od 02.03.2046 do 04.03.2046 radiš u timu Smjena D. Pogledaj kalendar: {link}`,
+  },
+  {
+    code: 'LOAN_REMOVED',
+    operands: { startDate: '2046-03-02', endDate: '2046-03-06', teamName: 'Smjena C' },
+    path: '/kalendar',
+    subject: 'Posudba u timu Smjena C je uklonjena',
+    text: `${ORGANIZATION_NAME}: posudba u timu Smjena C od 02.03.2046 do 06.03.2046 je uklonjena. Pogledaj kalendar: {link}`,
+  },
 ];
 
 describe("notify renders every 10.2 code with the organization's name and its sign-in link", () => {
@@ -552,7 +568,7 @@ describe("notify renders every 10.2 code with the organization's name and its si
         'endDate',
         'effectiveFrom',
         'shiftTypeName',
-        ...(code === 'LOAN_MADE' ? ['teamName'] : []),
+        ...(['LOAN_MADE', 'LOAN_CHANGED', 'LOAN_REMOVED'].includes(code) ? ['teamName'] : []),
       ];
       const checked = [
         { message: OBAVIJESTI[key], names: allowed },

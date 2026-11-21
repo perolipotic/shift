@@ -803,6 +803,33 @@ export async function seedLeaveRecord(slug: string, memberId: string, from: stri
   }
 }
 
+/** One of a member's loans as stored (story 18.4): the team, the inclusive dates, and whether it is live. */
+export interface StoredTeamLoan {
+  readonly teamId: string;
+  readonly from: string;
+  readonly to: string;
+  readonly live: boolean;
+}
+
+/** Every loan of `memberId` in the run organization `slug`, live or removed, by first date and liveness (story 18.4). Read-only. */
+export async function teamLoansOfInSql(slug: string, memberId: string): Promise<StoredTeamLoan[]> {
+  const client = await connect();
+  try {
+    const { rows } = await client.query<StoredTeamLoan>(
+      `select l.team_id::text as "teamId", lower(l.during)::text as "from", (upper(l.during) - 1)::text as "to",
+              l.removed_at is null as live
+         from team_loans l join organizations o on o.id = l.organization_id
+        where o.slug = $1 and l.member_id = $2
+        order by lower(l.during), l.removed_at is null, l.created_at`,
+      [slug, memberId],
+    );
+
+    return rows;
+  } finally {
+    await client.end();
+  }
+}
+
 /** How a request {@link seedLeaveRequest} writes stands: pending, or closed as 0040's definers close one. */
 export type SeededRequestStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn';
 

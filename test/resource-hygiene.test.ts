@@ -272,6 +272,9 @@ const SANCTIONED_PLURAL_KEYS = [
   // EPIC 14 RETRO A4: a rotation pattern in the history, by its steps —
   // `1 korak: Dan`, `2 koraka: Dan i Noć`, `5 koraka: …`.
   'history.value.rotationPattern',
+  // STORY 18.4: the loan dialog's warning of dates the member is inactive on —
+  // `1 dan`, `3 dana`, `5 dana`.
+  'loans.inactive',
 ];
 
 /** The flat screen strings the application is permitted to ship, by the story
@@ -2868,6 +2871,30 @@ const SANCTIONED_SCREEN_KEYS = [
   'loans.error.failed',
   'obavijesti.loanMade.subject',
   'obavijesti.loanMade.body',
+  // STORY 18.4: the loan's amend and removal (FR-91) — the card's list and its
+  // notices, the amend dialog's fields and switch — and the member's two
+  // notifications (`LOAN_CHANGED`, `LOAN_REMOVED`, mirrored in `notify`); the
+  // team archive's refusal while a loan to it is current. Still *tim*, never
+  // `smjen`, in `loans`; `smjene.error.lentTo` speaks as its namespace does.
+  'loans.amended',
+  'loans.removed',
+  'loans.listHeading',
+  'loans.listItem',
+  'loans.unknownTeam',
+  'loans.amend',
+  'loans.amendName',
+  'loans.amendHeading',
+  'loans.reasonKeepHint',
+  'loans.endToday',
+  'loans.remove',
+  'loans.removeHint',
+  'loans.confirmRemoval',
+  'loans.error.unchanged',
+  'obavijesti.loanChanged.subject',
+  'obavijesti.loanChanged.body',
+  'obavijesti.loanRemoved.subject',
+  'obavijesti.loanRemoved.body',
+  'smjene.error.lentTo',
 ];
 
 /** Everything the resource file is permitted to hold, together. */

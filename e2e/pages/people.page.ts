@@ -551,6 +551,30 @@ export class PeoplePage extends BasePage {
     return this.dialog(membership.dialogHeading);
   }
 
+  // ------------------------------------------------------------ the loans
+
+  /** *Posudi drugom timu* on the *Smjena* card (story 18.3), named for the member. */
+  lendButton(name: string): Locator {
+    return this.page.getByRole('button', { name: fill(hr.loans.lendName, { name }) });
+  }
+
+  /** The lend dialog (story 18.3). */
+  get lendDialog(): Locator {
+    return this.dialog(hr.loans.dialogHeading);
+  }
+
+  /** The amend dialog (story 18.4): the same dialog, opened on a live loan. */
+  get amendLoanDialog(): Locator {
+    return this.dialog(hr.loans.amendHeading);
+  }
+
+  /** A listed loan's *Izmijeni posudbu* (story 18.4): its name carries the member and the team, then the dates. */
+  amendLoanButton(name: string, team: string): Locator {
+    const prefix = fill(hr.loans.amendName, { name, team, from: '\u0000', to: '\u0000' }).split('\u0000')[0] ?? '';
+
+    return this.page.getByRole('button', { name: new RegExp(`^${escapeRegExp(prefix)}`) });
+  }
+
   /** *Nova smjena*, which opens on `Odaberi smjenu`. */
   get teamSelect(): Locator {
     return this.teamDialog.getByLabel(membership.team, { exact: true });

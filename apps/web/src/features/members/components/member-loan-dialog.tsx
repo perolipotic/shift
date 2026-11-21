@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { Select } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { ErasureDialog } from '@/features/conflicts/components/erasure-dialog';
 import type { MemberEdit } from '@/features/members/hooks/use-member-edit';
 import {
@@ -14,19 +15,22 @@ import {
   LOAN_FIELD_REASON,
   LOAN_FIELD_TEAM,
   LOAN_FIELD_TO,
+  LOAN_REMOVE,
   LOAN_UNPICKED_VALUE,
   loanDateValuesOf,
   loanInertMessageKey,
   loanRefusalMessageKey,
   loanShiftMessageKey,
   type LoanPerson,
-  type LoanPreview,
+  type ShownLoanPreview,
 } from '@/features/members/services/loan';
 import {
   MEMBER_LOAN_DIALOG_HEADING_ID,
   MEMBER_LOAN_ERROR_ID,
   MEMBER_LOAN_REASON_HINT_AND_ERROR,
   MEMBER_LOAN_REASON_HINT_ID,
+  MEMBER_LOAN_REMOVE_HINT_ID,
+  MEMBER_LOAN_REMOVE_SWITCH_ID,
 } from '@/features/members/utils/element-ids';
 import { memberErasureCopyOf } from '@/features/members/utils/erasure-copy';
 import { shiftTypeDurationMessageKey } from '@/features/shift-types/services/list';
@@ -47,12 +51,19 @@ import { durationValuesOf } from '@/utils/time';
  * refusal keeps it open with what was entered, a landed loan closes it.
  * Keyed to the opening, so each one starts empty. Nothing it shows gates the
  * save.
+ *
+ * STORY 18.4: opened on a live loan, the same dialog is *Izmijeni posudbu*:
+ * the fields filled with the loan, *Razlog* left empty to keep the stored one,
+ * *Završi danas* while the loan has begun and ends after today, and *Ukloni
+ * posudbu*, which switches *Što se mijenja* and *Spremi* to the removal.
  */
 export function MemberLoanDialog({ edit }: { readonly edit: MemberEdit }): ReactNode {
   const { form, loanPending: pending, loanDialog: dialog } = edit;
   const gate = useWriteGate();
   const opening = dialog.opening;
   const { picker, loanFromField, loanToField, loanReasonField } = dialog;
+  const amending = opening?.held.replaces !== null && opening !== null;
+  const locked = pending || dialog.removing;
   const describedBy = dialog.refusal === null ? undefined : MEMBER_LOAN_ERROR_ID;
   const invalid = (field: string): boolean => dialog.invalidField === field;
 
@@ -64,12 +75,15 @@ export function MemberLoanDialog({ edit }: { readonly edit: MemberEdit }): React
   }
 
   /** One shift, double, rest-gap and inert line each, in that order. */
-  function renderPreview(preview: LoanPreview | null): ReactNode {
+  function renderPreview(preview: ShownLoanPreview | null): ReactNode {
     if (preview === null) return null;
 
     return (
       <span className="grid gap-1 text-sm">
         <span className="block font-medium">{t('loans.changes')}</span>
+        {preview.inactiveDays === 0 ? null : (
+          <span className="block">{t('loans.inactive', { count: preview.inactiveDays })}</span>
+        )}
         {preview.shifts.map((line) => (
           <span key={JSON.stringify([line.side, line.date, line.team, line.type])} className="block">
             {t(loanShiftMessageKey(line), {
@@ -145,8 +159,8 @@ export function MemberLoanDialog({ edit }: { readonly edit: MemberEdit }): React
             ref={picker}
             id="member-loan-team"
             name="team"
-            defaultValue={LOAN_UNPICKED_VALUE}
-            disabled={pending}
+            defaultValue={dialog.picked}
+            disabled={locked}
             onChange={dialog.pickTeam}
             aria-invalid={invalid(LOAN_FIELD_TEAM)}
             aria-describedby={describedBy}
@@ -170,7 +184,7 @@ export function MemberLoanDialog({ edit }: { readonly edit: MemberEdit }): React
               type="date"
               required
               defaultValue={dialog.from}
-              readOnly={pending}
+              readOnly={locked}
               onChange={dialog.enterFrom}
               aria-invalid={invalid(LOAN_FIELD_FROM)}
               aria-describedby={describedBy}
@@ -186,12 +200,18 @@ export function MemberLoanDialog({ edit }: { readonly edit: MemberEdit }): React
               type="date"
               required
               defaultValue={dialog.to}
-              readOnly={pending}
+              readOnly={locked}
               onChange={dialog.enterTo}
               aria-invalid={invalid(LOAN_FIELD_TO)}
               aria-describedby={describedBy}
               className="h-11"
             />
+            {/* STORY 18.4: ending early is an earlier *Do*; this sets it to today. */}
+            {opening.held.endsToday && !dialog.removing ? (
+              <Button className="h-11 justify-self-start" type="button" variant="outline" disabled={pending} onClick={dialog.endToday}>
+                {t('loans.endToday')}
+              </Button>
+            ) : null}
           </div>
         </div>
         <div className="grid gap-2">
@@ -201,17 +221,34 @@ export function MemberLoanDialog({ edit }: { readonly edit: MemberEdit }): React
             id="member-loan-reason"
             name="reason"
             type="text"
-            required
+            required={!amending}
             autoComplete="off"
-            readOnly={pending}
+            readOnly={locked}
             aria-invalid={invalid(LOAN_FIELD_REASON)}
             aria-describedby={describedBy === undefined ? MEMBER_LOAN_REASON_HINT_ID : MEMBER_LOAN_REASON_HINT_AND_ERROR}
             className="h-11 w-full"
           />
           <p id={MEMBER_LOAN_REASON_HINT_ID} className="text-sm text-muted-foreground">
-            {t('loans.reasonHint')}
+            {amending ? t('loans.reasonKeepHint') : t('loans.reasonHint')}
           </p>
         </div>
+        {amending ? (
+          <div className="flex min-h-11 min-w-0 items-center gap-3">
+            <Switch
+              id={MEMBER_LOAN_REMOVE_SWITCH_ID}
+              checked={dialog.removing}
+              disabled={pending}
+              onCheckedChange={dialog.toggleRemoval}
+              aria-describedby={MEMBER_LOAN_REMOVE_HINT_ID}
+            />
+            <div className="grid min-w-0 gap-1">
+              <Label htmlFor={MEMBER_LOAN_REMOVE_SWITCH_ID}>{t('loans.remove')}</Label>
+              <span id={MEMBER_LOAN_REMOVE_HINT_ID} className="break-words text-sm text-muted-foreground">
+                {t('loans.removeHint')}
+              </span>
+            </div>
+          </div>
+        ) : null}
         {/* COMPUTED, as the team dialog's: a polite live region, always there.
             Neutral text: it never gates the save. */}
         <output aria-live="polite" className="grid gap-2">
@@ -285,7 +322,9 @@ export function MemberLoanDialog({ edit }: { readonly edit: MemberEdit }): React
         {opening === null ? null : (
           <>
             <DialogHeader closeLabel={t('ljudi.page.close')} onClose={dialog.close}>
-              <DialogTitle id={MEMBER_LOAN_DIALOG_HEADING_ID}>{t('loans.dialogHeading')}</DialogTitle>
+              <DialogTitle id={MEMBER_LOAN_DIALOG_HEADING_ID}>
+                {opening.held.replaces === null ? t('loans.dialogHeading') : t('loans.amendHeading')}
+              </DialogTitle>
               <DialogDescription>
                 {current === null ? t('loans.nowNone', { name }) : t('loans.now', { name, team: current })}
               </DialogDescription>
@@ -320,7 +359,12 @@ function MemberLoanErasures({ edit }: { readonly edit: MemberEdit }): ReactNode 
       decisions={loanErasures.decisions}
       busy={loanPending}
       firstErasure={loanErasures.firstErasure}
-      copy={memberErasureCopyOf(shown.rows, t('loans.confirm', { name: shown.subject.name }))}
+      copy={memberErasureCopyOf(
+        shown.rows,
+        shown.subject.write.kind === LOAN_REMOVE
+          ? t('loans.confirmRemoval', { name: shown.subject.name })
+          : t('loans.confirm', { name: shown.subject.name }),
+      )}
       scrollRows
       gate={gate}
       onDecide={loanErasures.decide}

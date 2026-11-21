@@ -988,7 +988,9 @@ export const SCREENS = [
   // dialog with its `Sakrij lozinku`; its close is the shared header's.
   // SIXTEEN FIELDS SINCE STORY 18.3: the loan dialog's *Tim*, *Od*, *Do* and
   // *Razlog*; and its card button, retry, cancel and *Spremi*.
-  { name: 'the member edit form', file: MEMBER_EDIT, expectedFields: 16, expectedButtons: 41 },
+  // FORTY-THREE BUTTONS SINCE STORY 18.4: a loan row's *Izmijeni posudbu* and
+  // the amend dialog's *Završi danas*. *Ukloni posudbu* is the shared Switch.
+  { name: 'the member edit form', file: MEMBER_EDIT, expectedFields: 16, expectedButtons: 43 },
   // STORY 1.7a. FOUR on the team list: the link back to `Ljudi`, the one name
   // `<Input>`, the add `<Button>`, and ONE row link written once inside the map
   // over the teams — the same count at zero teams as at nine. SIX on one team:
