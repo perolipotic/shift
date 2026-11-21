@@ -346,7 +346,36 @@ services:
       # supabase/cli issue 14
       - KONG_DNS_ORDER=LAST,A,CNAME
       - KONG_DNS_NOT_FOUND_TTL=1
-      - KONG_PLUGINS=request-transformer,cors,key-auth,acl,post-function
+      # `rate-limiting` (story 19.1, AD-21): Kong 2.8.1's bundled plugin, DB-less
+      # with `policy: local`. `pre-function` (19.1, AD-22): each allow-listed
+      # route's raw-path guard, which runs before every other plugin.
+      - KONG_PLUGINS=request-transformer,cors,key-auth,acl,pre-function,post-function,rate-limiting
+      # AD-22 (story 19.1): the mail routes answer at once and relay to GoTrue
+      # from a timer, with `resty.http`. Untrusted Lua stays sandboxed; the
+      # sandbox may load these two modules and no other.
+      - KONG_UNTRUSTED_LUA=sandbox
+      - KONG_UNTRUSTED_LUA_SANDBOX_REQUIRES=resty.http,cjson.safe
+      # AD-21: the client's address. Kong believes `X-Forwarded-For` only from
+      # the proxy's own network (Coolify's Traefik on the host), never from
+      # everywhere: the entrypoint refuses a /0. Kong's template then sends
+      # `X-Real-IP` as the resolved client, overwriting any value a client sent,
+      # and GoTrue's per-IP limits read it (`GOTRUE_RATE_LIMIT_HEADER`).
+      - KONG_TRUSTED_IPS=${SHIFT_PROXY_CIDR:?}
+      - KONG_REAL_IP_HEADER=X-Forwarded-For
+      - KONG_REAL_IP_RECURSIVE=on
+      # No `Server`, `Via` or `X-Kong-*-Latency` header: GoTrue's latency is
+      # not published (AD-22).
+      - KONG_HEADERS=off
+      # The per-IP limits (AD-21 as amended by 19.1: Kong 2.8 has no 5-minute
+      # window). Each defaults to staging's value; production's are set by the
+      # D-S5 checklist. The entrypoint refuses anything but a positive integer.
+      - SHIFT_LIMIT_MAIL_HOUR=${SHIFT_LIMIT_MAIL_HOUR:-5}
+      - SHIFT_LIMIT_MAIL_DAY=${SHIFT_LIMIT_MAIL_DAY:-20}
+      - SHIFT_LIMIT_TOKEN_MINUTE=${SHIFT_LIMIT_TOKEN_MINUTE:-60}
+      - SHIFT_LIMIT_TOKEN_HOUR=${SHIFT_LIMIT_TOKEN_HOUR:-1440}
+      - SHIFT_LIMIT_VERIFY_MINUTE=${SHIFT_LIMIT_VERIFY_MINUTE:-15}
+      - SHIFT_LIMIT_VERIFY_HOUR=${SHIFT_LIMIT_VERIFY_HOUR:-360}
+      - SHIFT_LIMIT_CREATE_ORGANIZATION_HOUR=${SHIFT_LIMIT_CREATE_ORGANIZATION_HOUR:-10}
       - KONG_NGINX_PROXY_PROXY_BUFFER_SIZE=160k
       - KONG_NGINX_PROXY_PROXY_BUFFERS=64 160k
       # NFR-27 (story 20.2): the access log is written in `shift_redacted`, from
@@ -421,6 +450,58 @@ services:
           # A browser's Origin never carries an empty or a default port.
           case "$SHIFT_APP_URL" in *:|https'://'*:443|http'://'*:80) echo "kong-entrypoint: SHIFT_APP_URL has an empty or default port" >&2; exit 1 ;; esac
 
+          # AD-21 (story 19.1): the proxy network Kong trusts for
+          # `X-Forwarded-For`. A list of addresses and CIDRs, never a /0, which
+          # would let any client name its own address to every per-IP limit.
+          case "$KONG_TRUSTED_IPS" in
+            '') echo "kong-entrypoint: KONG_TRUSTED_IPS (SHIFT_PROXY_CIDR) is empty" >&2; exit 1 ;;
+            *[!0-9A-Fa-f.:/,]*) echo "kong-entrypoint: KONG_TRUSTED_IPS holds a character outside an address list" >&2; exit 1 ;;
+          esac
+          case ",$KONG_TRUSTED_IPS," in
+            *'/0'*) echo "kong-entrypoint: KONG_TRUSTED_IPS trusts every address (0.0.0.0/0, ::/0) or writes a prefix with a leading zero" >&2; exit 1 ;;
+            *,,*) echo "kong-entrypoint: KONG_TRUSTED_IPS has an empty entry" >&2; exit 1 ;;
+          esac
+          # And no network wider than an IPv4 /8 or an IPv6 /32: the proxy's
+          # own network is far narrower, and a wide one trusts strangers.
+          saved_ifs=$IFS
+          IFS=,
+          set -f
+          for entry in $KONG_TRUSTED_IPS; do
+            case "$entry" in
+              */*/*) echo "kong-entrypoint: KONG_TRUSTED_IPS holds a malformed entry" >&2; exit 1 ;;
+              */*) ;;
+              *) continue ;;
+            esac
+            prefix=$(printf '%s' "$entry" | cut -d/ -f2)
+            case "$prefix" in ''|*[!0-9]*|????*) echo "kong-entrypoint: KONG_TRUSTED_IPS holds a malformed prefix" >&2; exit 1 ;; esac
+            case "$entry" in
+              *:*) minimum=32 ;;
+              *) minimum=8 ;;
+            esac
+            if [ "$prefix" -lt "$minimum" ]; then
+              echo "kong-entrypoint: KONG_TRUSTED_IPS trusts a network wider than /$minimum" >&2; exit 1
+            fi
+          done
+          set +f
+          IFS=$saved_ifs
+          # Each limit is spliced into YAML as a number: a positive integer, no
+          # more than seven digits, and each window no wider than the next.
+          positive() {
+            case "$2" in
+              ''|*[!0-9]*|0*|????????*) echo "kong-entrypoint: $1 is not a positive integer" >&2; exit 1 ;;
+            esac
+          }
+          positive SHIFT_LIMIT_MAIL_HOUR "$SHIFT_LIMIT_MAIL_HOUR"
+          positive SHIFT_LIMIT_MAIL_DAY "$SHIFT_LIMIT_MAIL_DAY"
+          positive SHIFT_LIMIT_TOKEN_MINUTE "$SHIFT_LIMIT_TOKEN_MINUTE"
+          positive SHIFT_LIMIT_TOKEN_HOUR "$SHIFT_LIMIT_TOKEN_HOUR"
+          positive SHIFT_LIMIT_VERIFY_MINUTE "$SHIFT_LIMIT_VERIFY_MINUTE"
+          positive SHIFT_LIMIT_VERIFY_HOUR "$SHIFT_LIMIT_VERIFY_HOUR"
+          positive SHIFT_LIMIT_CREATE_ORGANIZATION_HOUR "$SHIFT_LIMIT_CREATE_ORGANIZATION_HOUR"
+          if [ "$SHIFT_LIMIT_MAIL_HOUR" -gt "$SHIFT_LIMIT_MAIL_DAY" ] || [ "$SHIFT_LIMIT_TOKEN_MINUTE" -gt "$SHIFT_LIMIT_TOKEN_HOUR" ] || [ "$SHIFT_LIMIT_VERIFY_MINUTE" -gt "$SHIFT_LIMIT_VERIFY_HOUR" ]; then
+            echo "kong-entrypoint: a rate limit's shorter window allows more than its longer one" >&2; exit 1
+          fi
+
           # A caller's own `Authorization` passes through unless it is
           # `Bearer sb_…`; otherwise `apikey` decides: the secret key becomes the
           # service_role JWT, the publishable key the anon JWT. The same mapping
@@ -494,53 +575,428 @@ services:
           ### no pg-meta, no catch-all.
           ###
           services:
-            ## Open Auth routes
-            - name: auth-v1-open
-              url: http://supabase-auth:9999/verify
-              routes:
-                - name: auth-v1-open
-                  strip_path: true
-                  paths:
-                    - /auth/v1/verify
-              plugins:
-                - name: cors
-            - name: auth-v1-open-callback
-              url: http://supabase-auth:9999/callback
-              routes:
-                - name: auth-v1-open-callback
-                  strip_path: true
-                  paths:
-                    - /auth/v1/callback
-              plugins:
-                - name: cors
-            - name: auth-v1-open-authorize
-              url: http://supabase-auth:9999/authorize
-              routes:
-                - name: auth-v1-open-authorize
-                  strip_path: true
-                  paths:
-                    - /auth/v1/authorize
-              plugins:
-                - name: cors
-            - name: auth-v1-open-jwks
-              url: http://supabase-auth:9999/.well-known/jwks.json
-              routes:
-                - name: auth-v1-open-jwks
-                  strip_path: true
-                  paths:
-                    - /auth/v1/.well-known/jwks.json
-              plugins:
-                - name: cors
-
-            ## Secure Auth routes
-            - name: auth-v1
+            ## Auth: an ALLOW-LIST (AD-22, story 19.1). Each path is a route of
+            ## its own, a regex anchored by its trailing `$` (Kong 2.8 anchors the
+            ## start), so a trailing `/` or a `;` matches nothing. Every other
+            ## path under `/auth/v1/` (otp, magiclink, reauthenticate, invite,
+            ## authorize, callback, factors, sso, settings, a GET on verify, ...)
+            ## is Kong's own 404.
+            ## There is no catch-all. OPTIONS is in every browser-called route's
+            ## methods, so `cors` answers its preflight before key-auth (D7).
+            ## The rehearsal (spec 19.1) found that Kong 2.8 matches a regex
+            ## route on the NORMALIZED path, so each route's pre-function also
+            ## refuses any spelling but its own (a doubled `/`, `%75`).
+            ##
+            ## signup, recover and resend: one route, so one limit counts all
+            ## three. GoTrue never answers the client (AD-22).
+            - name: auth-v1-mail
               url: http://supabase-auth:9999/
               routes:
-                - name: auth-v1-all
+                - name: auth-v1-mail
                   strip_path: true
+                  methods:
+                    - POST
+                    - OPTIONS
                   paths:
-                    - /auth/v1/
+                    - /auth/v1/signup$
+                    - /auth/v1/recover$
+                    - /auth/v1/resend$
               plugins:
+                - name: pre-function
+                  config:
+                    access:
+                      - |
+                        -- AD-22: Kong 2.8 matches a route on the normalized path, so a
+                        -- doubled `/` or a percent-encoded letter reaches it too. Only
+                        -- the path as the allow-list writes it passes; any other
+                        -- spelling is Kong's own 404. A pre-function runs first of
+                        -- all (before cors, key-auth and the limit), so a variant is
+                        -- 404 with or without a key, and counts against no limit.
+                        local allowed = { ["/auth/v1/signup"] = true, ["/auth/v1/recover"] = true, ["/auth/v1/resend"] = true }
+                        if not allowed[kong.request.get_path()] then
+                          return kong.response.exit(404, '{"message":"no Route matched with those values"}', { ["Content-Type"] = "application/json; charset=utf-8" })
+                        end
+                - name: cors
+                - name: key-auth
+                  config:
+                    hide_credentials: false
+                    # The header only: the mapping below reads `headers.apikey`,
+                    # and a key in the query string would be logged by Kong.
+                    key_in_query: false
+                - name: request-transformer
+                  config:
+                    add:
+                      headers:
+                        - "Authorization: $LUA_AUTH_EXPR"
+                    replace:
+                      headers:
+                        - "Authorization: $LUA_AUTH_EXPR"
+                - name: acl
+                  config:
+                    hide_groups_header: true
+                    allow:
+                      - admin
+                      - anon
+                - name: rate-limiting
+                  config:
+                    hour: $SHIFT_LIMIT_MAIL_HOUR
+                    day: $SHIFT_LIMIT_MAIL_DAY
+                    limit_by: ip
+                    policy: local
+                    hide_client_headers: true
+                - name: post-function
+                  config:
+                    access:
+                      - |
+                        -- AD-22: one answer, `200 {}`, for every body, made here and
+                        -- never by GoTrue. A readable body with an email
+                        -- identity's address is then relayed in the background,
+                        -- rebuilt from its route's fields alone.
+                        local cjson = require("cjson.safe")
+                        local http = require("resty.http")
+                        -- address_kind: AD-12's predicate, the same rule as
+                        -- private.address_kind (0066) and the vectors in
+                        -- test/fixtures/synthesized-addresses.json.
+                        local function address_kind(address)
+                          if type(address) ~= "string" then return "malformed" end
+                          local first, last = 1, #address
+                          local function blank(byte) return byte == 32 or (byte >= 9 and byte <= 13) end
+                          while first <= last and blank(address:byte(first)) do first = first + 1 end
+                          while last >= first and blank(address:byte(last)) do last = last - 1 end
+                          local normalized = address:sub(first, last):gsub("[A-Z]", string.lower)
+                          if normalized:find('"', 1, true) or normalized:find("'", 1, true) then return "malformed" end
+                          local at = normalized:find("@", 1, true)
+                          if at == nil or normalized:find("@", at + 1, true) then return "malformed" end
+                          local local_part = normalized:sub(1, at - 1)
+                          local domain = normalized:sub(at + 1)
+                          if domain:sub(-1) == "." then domain = domain:sub(1, -2) end
+                          if local_part == "" or domain == "" then return "malformed" end
+                          if domain == "shift.invalid" or domain:sub(-14) == ".shift.invalid" then
+                            return "synthesized"
+                          end
+                          return "email"
+                        end
+                        -- end address_kind
+                        local routes = { ["/auth/v1/signup"] = "signup", ["/auth/v1/recover"] = "recover", ["/auth/v1/resend"] = "resend" }
+                        local route = routes[kong.request.get_path()]
+                        local payload
+                        if route ~= nil and kong.request.get_method() == "POST" then
+                          local raw = kong.request.get_raw_body()
+                          -- nil when Kong could not read the body (one buffered to a
+                          -- file): a fixed code, so a dropped request still shows.
+                          if raw == nil then ngx.log(ngx.ERR, "AUTH_MAIL_RELAY ", route, " UNREAD") end
+                          local body = cjson.decode(raw or "")
+                          -- The address as the predicate judged it: ASCII white
+                          -- space trimmed. Relayed only when every byte is printable
+                          -- ASCII, as GoTrue's own format check demands, so no
+                          -- Unicode case fold in GoTrue (U+0130, U+212A) can turn an
+                          -- address Kong called `email` into a synthesized one.
+                          local address = type(body) == "table" and type(body.email) == "string" and body.email:gsub("^[ \t\n\v\f\r]+", ""):gsub("[ \t\n\v\f\r]+$", "") or nil
+                          if address ~= nil and address_kind(address) == "email" and not address:find("[^\33-\126]") then
+                            if route == "signup" then
+                              if type(body.password) == "string" then payload = { email = address, password = body.password } end
+                            elseif route == "recover" then
+                              payload = { email = address }
+                            else
+                              payload = { email = address, type = "signup" }
+                            end
+                          end
+                        end
+                        if payload ~= nil then
+                          local encoded = cjson.encode(payload)
+                          local client_ip = kong.client.get_forwarded_ip()
+                          -- D8: a failed relay is logged as a fixed code and
+                          -- GoTrue's status, never with the address.
+                          local scheduled = ngx.timer.at(0, function(premature)
+                            if premature then return end
+                            local client = http.new()
+                            client:set_timeout(15000)
+                            local answer = client:request_uri("http://supabase-auth:9999/" .. route, {
+                              method = "POST",
+                              body = encoded,
+                              headers = { ["Content-Type"] = "application/json", ["X-Real-IP"] = client_ip },
+                            })
+                            local status = answer and answer.status or 0
+                            if status < 200 or status > 299 then
+                              ngx.log(ngx.ERR, "AUTH_MAIL_RELAY ", route, " ", status)
+                            end
+                          end)
+                          if not scheduled then ngx.log(ngx.ERR, "AUTH_MAIL_RELAY ", route, " 0") end
+                        end
+                        return kong.response.exit(200, "{}", { ["Content-Type"] = "application/json" })
+
+            ## The password and refresh grants, with their limit.
+            - name: auth-v1-token
+              url: http://supabase-auth:9999/token
+              routes:
+                - name: auth-v1-token
+                  strip_path: true
+                  methods:
+                    - POST
+                    - OPTIONS
+                  paths:
+                    - /auth/v1/token$
+              plugins:
+                - name: pre-function
+                  config:
+                    access:
+                      - |
+                        -- AD-22: Kong 2.8 matches a route on the normalized path, so a
+                        -- doubled `/` or a percent-encoded letter reaches it too. Only
+                        -- the path as the allow-list writes it passes; any other
+                        -- spelling is Kong's own 404. A pre-function runs first of
+                        -- all (before cors, key-auth and the limit), so a variant is
+                        -- 404 with or without a key, and counts against no limit.
+                        local allowed = { ["/auth/v1/token"] = true }
+                        if not allowed[kong.request.get_path()] then
+                          return kong.response.exit(404, '{"message":"no Route matched with those values"}', { ["Content-Type"] = "application/json; charset=utf-8" })
+                        end
+                - name: cors
+                - name: key-auth
+                  config:
+                    hide_credentials: false
+                    # The header only: the mapping below reads `headers.apikey`,
+                    # and a key in the query string would be logged by Kong.
+                    key_in_query: false
+                - name: request-transformer
+                  config:
+                    add:
+                      headers:
+                        - "Authorization: $LUA_AUTH_EXPR"
+                    replace:
+                      headers:
+                        - "Authorization: $LUA_AUTH_EXPR"
+                - name: acl
+                  config:
+                    hide_groups_header: true
+                    allow:
+                      - admin
+                      - anon
+                - name: rate-limiting
+                  config:
+                    minute: $SHIFT_LIMIT_TOKEN_MINUTE
+                    hour: $SHIFT_LIMIT_TOKEN_HOUR
+                    limit_by: ip
+                    policy: local
+                    hide_client_headers: true
+
+            ## POST only: a mail scanner's GET consumes nothing (AD-12).
+            - name: auth-v1-verify
+              url: http://supabase-auth:9999/verify
+              routes:
+                - name: auth-v1-verify
+                  strip_path: true
+                  methods:
+                    - POST
+                    - OPTIONS
+                  paths:
+                    - /auth/v1/verify$
+              plugins:
+                - name: pre-function
+                  config:
+                    access:
+                      - |
+                        -- AD-22: Kong 2.8 matches a route on the normalized path, so a
+                        -- doubled `/` or a percent-encoded letter reaches it too. Only
+                        -- the path as the allow-list writes it passes; any other
+                        -- spelling is Kong's own 404. A pre-function runs first of
+                        -- all (before cors, key-auth and the limit), so a variant is
+                        -- 404 with or without a key, and counts against no limit.
+                        local allowed = { ["/auth/v1/verify"] = true }
+                        if not allowed[kong.request.get_path()] then
+                          return kong.response.exit(404, '{"message":"no Route matched with those values"}', { ["Content-Type"] = "application/json; charset=utf-8" })
+                        end
+                - name: cors
+                - name: key-auth
+                  config:
+                    hide_credentials: false
+                    # The header only: the mapping below reads `headers.apikey`,
+                    # and a key in the query string would be logged by Kong.
+                    key_in_query: false
+                - name: request-transformer
+                  config:
+                    add:
+                      headers:
+                        - "Authorization: $LUA_AUTH_EXPR"
+                    replace:
+                      headers:
+                        - "Authorization: $LUA_AUTH_EXPR"
+                - name: acl
+                  config:
+                    hide_groups_header: true
+                    allow:
+                      - admin
+                      - anon
+                - name: rate-limiting
+                  config:
+                    minute: $SHIFT_LIMIT_VERIFY_MINUTE
+                    hour: $SHIFT_LIMIT_VERIFY_HOUR
+                    limit_by: ip
+                    policy: local
+                    hide_client_headers: true
+                - name: post-function
+                  config:
+                    access:
+                      - |
+                        -- AD-22: a link's `{token_hash, type}` and nothing else
+                        -- (supabase-js adds `gotrue_meta_security`, which is
+                        -- dropped). An email-plus-code body never reaches GoTrue.
+                        local cjson = require("cjson.safe")
+                        local types = { signup = true, recovery = true, email_change = true }
+                        local function refuse()
+                          return kong.response.exit(400, "{}", { ["Content-Type"] = "application/json" })
+                        end
+                        if kong.request.get_method() ~= "POST" then return refuse() end
+                        local body = cjson.decode(kong.request.get_raw_body() or "")
+                        if type(body) ~= "table" then return refuse() end
+                        for key in pairs(body) do
+                          if key ~= "token_hash" and key ~= "type" and key ~= "gotrue_meta_security" then return refuse() end
+                        end
+                        -- GoTrue's token hash is a hex digest (no PKCE: the relay drops a
+                        -- code_challenge), so nothing else is a link's.
+                        local hash = body.token_hash
+                        if type(hash) ~= "string" or #hash > 128 or not hash:find("^%x+$") then return refuse() end
+                        if types[body.type] ~= true then return refuse() end
+                        kong.service.request.set_raw_body(cjson.encode({ token_hash = hash, type = body.type }))
+
+            ## The session's own user: read it, or change its password or data.
+            - name: auth-v1-user
+              url: http://supabase-auth:9999/user
+              routes:
+                - name: auth-v1-user
+                  strip_path: true
+                  methods:
+                    - GET
+                    - PUT
+                    - OPTIONS
+                  paths:
+                    - /auth/v1/user$
+              plugins:
+                - name: pre-function
+                  config:
+                    access:
+                      - |
+                        -- AD-22: Kong 2.8 matches a route on the normalized path, so a
+                        -- doubled `/` or a percent-encoded letter reaches it too. Only
+                        -- the path as the allow-list writes it passes; any other
+                        -- spelling is Kong's own 404. A pre-function runs first of
+                        -- all (before cors, key-auth and the limit), so a variant is
+                        -- 404 with or without a key, and counts against no limit.
+                        local allowed = { ["/auth/v1/user"] = true }
+                        if not allowed[kong.request.get_path()] then
+                          return kong.response.exit(404, '{"message":"no Route matched with those values"}', { ["Content-Type"] = "application/json; charset=utf-8" })
+                        end
+                - name: cors
+                - name: key-auth
+                  config:
+                    hide_credentials: false
+                    # The header only: the mapping below reads `headers.apikey`,
+                    # and a key in the query string would be logged by Kong.
+                    key_in_query: false
+                - name: request-transformer
+                  config:
+                    add:
+                      headers:
+                        - "Authorization: $LUA_AUTH_EXPR"
+                    replace:
+                      headers:
+                        - "Authorization: $LUA_AUTH_EXPR"
+                - name: acl
+                  config:
+                    hide_groups_header: true
+                    allow:
+                      - admin
+                      - anon
+                - name: post-function
+                  config:
+                    access:
+                      - |
+                        -- AD-12, AD-22: no session changes its sign-in address,
+                        -- or probes one. A `PUT` naming `email` or `phone`, in
+                        -- any case (GoTrue's JSON reader ignores case), or one
+                        -- whose body cannot be read, is refused here.
+                        if kong.request.get_method() == "PUT" then
+                          local body = require("cjson.safe").decode(kong.request.get_raw_body() or "")
+                          local refused = type(body) ~= "table"
+                          if not refused then
+                            for key in pairs(body) do
+                              local name = type(key) == "string" and string.lower(key) or ""
+                              if name == "email" or name == "phone" then refused = true end
+                            end
+                          end
+                          if refused then return kong.response.exit(422, "{}", { ["Content-Type"] = "application/json" }) end
+                        end
+            - name: auth-v1-logout
+              url: http://supabase-auth:9999/logout
+              routes:
+                - name: auth-v1-logout
+                  strip_path: true
+                  methods:
+                    - POST
+                    - OPTIONS
+                  paths:
+                    - /auth/v1/logout$
+              plugins:
+                - name: pre-function
+                  config:
+                    access:
+                      - |
+                        -- AD-22: Kong 2.8 matches a route on the normalized path, so a
+                        -- doubled `/` or a percent-encoded letter reaches it too. Only
+                        -- the path as the allow-list writes it passes; any other
+                        -- spelling is Kong's own 404. A pre-function runs first of
+                        -- all (before cors, key-auth and the limit), so a variant is
+                        -- 404 with or without a key, and counts against no limit.
+                        local allowed = { ["/auth/v1/logout"] = true }
+                        if not allowed[kong.request.get_path()] then
+                          return kong.response.exit(404, '{"message":"no Route matched with those values"}', { ["Content-Type"] = "application/json; charset=utf-8" })
+                        end
+                - name: cors
+                - name: key-auth
+                  config:
+                    hide_credentials: false
+                    # The header only: the mapping below reads `headers.apikey`,
+                    # and a key in the query string would be logged by Kong.
+                    key_in_query: false
+                - name: request-transformer
+                  config:
+                    add:
+                      headers:
+                        - "Authorization: $LUA_AUTH_EXPR"
+                    replace:
+                      headers:
+                        - "Authorization: $LUA_AUTH_EXPR"
+                - name: acl
+                  config:
+                    hide_groups_header: true
+                    allow:
+                      - admin
+                      - anon
+            - name: auth-v1-health
+              url: http://supabase-auth:9999/health
+              routes:
+                - name: auth-v1-health
+                  strip_path: true
+                  methods:
+                    - GET
+                    - OPTIONS
+                  paths:
+                    - /auth/v1/health$
+              plugins:
+                - name: pre-function
+                  config:
+                    access:
+                      - |
+                        -- AD-22: Kong 2.8 matches a route on the normalized path, so a
+                        -- doubled `/` or a percent-encoded letter reaches it too. Only
+                        -- the path as the allow-list writes it passes; any other
+                        -- spelling is Kong's own 404. A pre-function runs first of
+                        -- all (before cors, key-auth and the limit), so a variant is
+                        -- 404 with or without a key, and counts against no limit.
+                        local allowed = { ["/auth/v1/health"] = true }
+                        if not allowed[kong.request.get_path()] then
+                          return kong.response.exit(404, '{"message":"no Route matched with those values"}', { ["Content-Type"] = "application/json; charset=utf-8" })
+                        end
                 - name: cors
                 - name: key-auth
                   config:
@@ -563,6 +1019,136 @@ services:
                       - admin
                       - anon
 
+            ## The signing keys' public half: no key needed, as before.
+            - name: auth-v1-open-jwks
+              url: http://supabase-auth:9999/.well-known/jwks.json
+              routes:
+                - name: auth-v1-open-jwks
+                  strip_path: true
+                  methods:
+                    - GET
+                    - OPTIONS
+                  paths:
+                    - /auth/v1/\.well-known/jwks\.json$
+              plugins:
+                - name: pre-function
+                  config:
+                    access:
+                      - |
+                        -- AD-22: Kong 2.8 matches a route on the normalized path, so a
+                        -- doubled `/` or a percent-encoded letter reaches it too. Only
+                        -- the path as the allow-list writes it passes; any other
+                        -- spelling is Kong's own 404. A pre-function runs first of
+                        -- all (before cors, key-auth and the limit), so a variant is
+                        -- 404 with or without a key, and counts against no limit.
+                        local allowed = { ["/auth/v1/.well-known/jwks.json"] = true }
+                        if not allowed[kong.request.get_path()] then
+                          return kong.response.exit(404, '{"message":"no Route matched with those values"}', { ["Content-Type"] = "application/json; charset=utf-8" })
+                        end
+                - name: cors
+
+            ## The admin API: the secret key alone (`admin-auth`, the operator).
+            - name: auth-v1-admin
+              url: http://supabase-auth:9999/admin/
+              routes:
+                - name: auth-v1-admin
+                  strip_path: true
+                  methods:
+                    - GET
+                    - POST
+                    - PUT
+                    - DELETE
+                  paths:
+                    - /auth/v1/admin/
+              plugins:
+                - name: pre-function
+                  config:
+                    access:
+                      - |
+                        -- AD-22: the admin API is a prefix (`users`, `users/<id>`), so
+                        -- it passes only a plain spelling of one: no doubled `/`, `;`,
+                        -- `%`-encoding or dot segment. No browser calls it, so it has
+                        -- no cors plugin.
+                        local path = kong.request.get_path()
+                        if path:sub(1, 15) ~= "/auth/v1/admin/" or path:find("//", 1, true) or path:find(";", 1, true)
+                          or path:find("%", 1, true) or path:find("/.", 1, true) then
+                          return kong.response.exit(404, '{"message":"no Route matched with those values"}', { ["Content-Type"] = "application/json; charset=utf-8" })
+                        end
+                - name: key-auth
+                  config:
+                    hide_credentials: false
+                    # The header only: the mapping below reads `headers.apikey`,
+                    # and a key in the query string would be logged by Kong.
+                    key_in_query: false
+                - name: request-transformer
+                  config:
+                    add:
+                      headers:
+                        - "Authorization: $LUA_AUTH_EXPR"
+                    replace:
+                      headers:
+                        - "Authorization: $LUA_AUTH_EXPR"
+                - name: acl
+                  config:
+                    hide_groups_header: true
+                    allow:
+                      - admin
+
+            ## AD-23's one definer (story 19.3), limited per IP (AD-21). Its own
+            ## route, so the REST catch-all below never carries it.
+            - name: rest-v1-create-organization
+              url: http://supabase-rest:3000/rpc/create_organization
+              routes:
+                - name: rest-v1-create-organization
+                  strip_path: true
+                  methods:
+                    - POST
+                    - OPTIONS
+                  paths:
+                    - /rest/v1/rpc/create_organization$
+              plugins:
+                - name: pre-function
+                  config:
+                    access:
+                      - |
+                        -- AD-22: Kong 2.8 matches a route on the normalized path, so a
+                        -- doubled `/` or a percent-encoded letter reaches it too. Only
+                        -- the path as the allow-list writes it passes; any other
+                        -- spelling is Kong's own 404. A pre-function runs first of
+                        -- all (before cors, key-auth and the limit), so a variant is
+                        -- 404 with or without a key, and counts against no limit.
+                        local allowed = { ["/rest/v1/rpc/create_organization"] = true }
+                        if not allowed[kong.request.get_path()] then
+                          return kong.response.exit(404, '{"message":"no Route matched with those values"}', { ["Content-Type"] = "application/json; charset=utf-8" })
+                        end
+                - name: cors
+                - name: key-auth
+                  config:
+                    hide_credentials: false
+                    # The header only: the mapping below reads `headers.apikey`,
+                    # and a key in the query string would be logged by Kong.
+                    key_in_query: false
+                - name: request-transformer
+                  config:
+                    add:
+                      headers:
+                        - "Authorization: $LUA_AUTH_EXPR"
+                    replace:
+                      headers:
+                        - "Authorization: $LUA_AUTH_EXPR"
+                - name: acl
+                  config:
+                    hide_groups_header: true
+                    allow:
+                      - admin
+                      - anon
+                - name: rate-limiting
+                  config:
+                    hour: $SHIFT_LIMIT_CREATE_ORGANIZATION_HOUR
+                    limit_by: ip
+                    policy: local
+                    hide_client_headers: true
+
             ## Secure REST routes
             - name: rest-v1
               url: http://supabase-rest:3000/
@@ -572,6 +1158,21 @@ services:
                   paths:
                     - /rest/v1/
               plugins:
+                - name: pre-function
+                  config:
+                    access:
+                      - |
+                        -- D3: any other spelling of create_organization (percent-
+                        -- encoded, doubled `/`, upper case) is Kong's 404 here, so
+                        -- the route above, and its limit, cannot be gone around.
+                        -- A pre-function, as on the allow-listed routes: it runs
+                        -- before cors and key-auth, so a variant is 404 with or
+                        -- without a key (review 2 of 19.1).
+                        local seen = kong.request.get_path()
+                        for _ = 1, 4 do seen = ngx.unescape_uri(seen) end
+                        if string.lower(seen):find("create_organization", 1, true) then
+                          return kong.response.exit(404, '{"message":"no Route matched with those values"}', { ["Content-Type"] = "application/json; charset=utf-8" })
+                        end
                 - name: cors
                 - name: key-auth
                   config:
@@ -686,6 +1287,9 @@ services:
   supabase-auth:
     image: supabase/gotrue:v2.196.0
     restart: unless-stopped
+    # AD-21 (story 19.1): the wrapper below refuses a half-built open door,
+    # then runs the image's own command (`auth`).
+    entrypoint: ['sh', '/usr/local/etc/auth-entrypoint.sh']
     mem_limit: ${AUTH_MEM_LIMIT:-112m}
     cpus: ${AUTH_CPUS:-0.1}
     logging:
@@ -715,13 +1319,17 @@ services:
       - GOTRUE_JWT_AUD=authenticated
       - GOTRUE_JWT_DEFAULT_GROUP_NAME=authenticated
       - GOTRUE_JWT_SECRET=${SERVICE_PASSWORD_JWT}
-      # MIRRORED FROM supabase/config.toml, which stays the single source of the
-      # auth settings (AD-10 as amended). `test/supabase-scaffold.test.ts` fails
-      # when one of these differs from config.toml: change both, in one PR.
-      - GOTRUE_DISABLE_SIGNUP=true
+      # THE DOOR (AD-21, story 19.1). Shut unless this stack's environment opens
+      # it: a missing variable fails CLOSED. `staging.env.example` opens it
+      # (both `false`, config.toml's values); `production.env.example` keeps
+      # both `true`. `test/supabase-scaffold.test.ts` pins all three.
+      - GOTRUE_DISABLE_SIGNUP=${SHIFT_DISABLE_SIGNUP:-true}
+      - GOTRUE_MAILER_AUTOCONFIRM=${SHIFT_MAILER_AUTOCONFIRM:-true}
+      # MIRRORED FROM supabase/config.toml, the source of the local and staging
+      # auth settings (AD-10 as amended). `test/supabase-scaffold.test.ts`
+      # fails when one of these differs from config.toml: change both, in one PR.
       - GOTRUE_EXTERNAL_EMAIL_ENABLED=true
       - GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED=false
-      - GOTRUE_MAILER_AUTOCONFIRM=true
       - GOTRUE_MAILER_SECURE_EMAIL_CHANGE_ENABLED=true
       - GOTRUE_EXTERNAL_PHONE_ENABLED=false
       - GOTRUE_SMS_AUTOCONFIRM=true
@@ -729,16 +1337,128 @@ services:
       - GOTRUE_SECURITY_REFRESH_TOKEN_ROTATION_ENABLED=true
       - GOTRUE_SECURITY_REFRESH_TOKEN_REUSE_INTERVAL=10
       - GOTRUE_PASSWORD_MIN_LENGTH=10
-      # No SMTP until Epic 19 (AD-12: v1 sends no auth mail). The paths are the
-      # template's, so a link GoTrue builds later goes through Kong's open route.
+      - GOTRUE_MAILER_OTP_EXP=3600
+      - GOTRUE_MAILER_OTP_LENGTH=10
+      # GoTrue builds `{{ .ConfirmationURL }}` from these; Shift's templates do
+      # not use it (their links are `/potvrda?token_hash=…`, AD-12), and Kong
+      # refuses a GET on `/auth/v1/verify` (AD-22), so a default English mail
+      # GoTrue falls back to is useless rather than consumable.
       - GOTRUE_MAILER_URLPATHS_INVITE=/auth/v1/verify
       - GOTRUE_MAILER_URLPATHS_CONFIRMATION=/auth/v1/verify
       - GOTRUE_MAILER_URLPATHS_RECOVERY=/auth/v1/verify
       - GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE=/auth/v1/verify
-      # The hook's function is created by migration 0003. ORDER RULE: that
-      # migration is pushed before GoTrue starts or restarts with this enabled.
+      # Auth email (AD-17 as amended, D-S4): SMTP through Resend, with GoTrue's
+      # OWN sending-only key, set in Coolify on this resource alone. Empty by
+      # default, so a shut stack (production) starts without one; the wrapper
+      # refuses an open door without it.
+      - GOTRUE_SMTP_HOST=smtp.resend.com
+      - GOTRUE_SMTP_PORT=465
+      - GOTRUE_SMTP_USER=resend
+      - GOTRUE_SMTP_PASS=${GOTRUE_SMTP_PASS:-}
+      - GOTRUE_SMTP_ADMIN_EMAIL=${SHIFT_AUTH_EMAIL_FROM:-}
+      - GOTRUE_SMTP_SENDER_NAME=Shift
+      - GOTRUE_SMTP_MAX_FREQUENCY=60s
+      # The Croatian templates, built from hr.json's `signup.email` keys into
+      # the SPA's `dist/auth-email/` (`apps/web/src/lib/auth-email.ts`), fetched
+      # from the app origin over HTTPS (D6). The subjects are the same keys'
+      # `subject`; `test/auth-email.test.ts` pins both to hr.json.
+      - GOTRUE_MAILER_TEMPLATES_CONFIRMATION=${SHIFT_APP_URL:?}/auth-email/confirmation.html
+      - GOTRUE_MAILER_TEMPLATES_RECOVERY=${SHIFT_APP_URL:?}/auth-email/recovery.html
+      - GOTRUE_MAILER_TEMPLATES_EMAIL_CHANGE=${SHIFT_APP_URL:?}/auth-email/email-change.html
+      - GOTRUE_MAILER_SUBJECTS_CONFIRMATION=Potvrdi adresu e-pošte za Shift
+      - GOTRUE_MAILER_SUBJECTS_RECOVERY=Nova lozinka za Shift
+      - GOTRUE_MAILER_SUBJECTS_EMAIL_CHANGE=Potvrdi novu adresu e-pošte za Shift
+      # GoTrue's own limits (AD-21). Its per-IP ones read the client's address
+      # from Kong's `X-Real-IP`, and are off without this header. Email sent is
+      # per hour for the whole stack: Resend's daily budget is shared with
+      # `notify` (A9).
+      - GOTRUE_RATE_LIMIT_HEADER=X-Real-IP
+      - GOTRUE_RATE_LIMIT_EMAIL_SENT=${SHIFT_AUTH_EMAIL_PER_HOUR:-10}
+      - GOTRUE_RATE_LIMIT_VERIFY=30
+      - GOTRUE_RATE_LIMIT_TOKEN_REFRESH=150
+      # The hooks' functions are created by migrations 0003 and 0066. ORDER
+      # RULE: each is pushed before GoTrue starts or restarts with it enabled.
       - GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_ENABLED=true
       - GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_URI=pg-functions://postgres/public/custom_access_token_hook
+      # On in every environment (D2): the door is shut by GOTRUE_DISABLE_SIGNUP
+      # and `private.signup_settings`, never by this hook being off.
+      - GOTRUE_HOOK_BEFORE_USER_CREATED_ENABLED=true
+      - GOTRUE_HOOK_BEFORE_USER_CREATED_URI=pg-functions://postgres/public/before_user_created_hook
+    volumes:
+      - type: bind
+        source: ./volumes/auth/auth-entrypoint.sh
+        target: /usr/local/etc/auth-entrypoint.sh
+        content: |
+          #!/bin/sh
+          # AD-21: GoTrue will not run an open door half-built. Run by busybox
+          # sh in the image (and by `sh` in test/self-hosted-stack.test.ts),
+          # then hands over to the image's own command.
+          set -e
+          refuse() { echo "auth-entrypoint: $1" >&2; exit 1; }
+
+          # GoTrue reads a boolean with Go's ParseBool, which also takes 1, t,
+          # T, TRUE, True, 0, f, F, FALSE and False. Only `true` and `false`
+          # pass here, so no spelling can mean what the pins do not see.
+          boolean() {
+            case "$2" in true|false) ;; *) refuse "$1 is not exactly true or false" ;; esac
+          }
+          boolean GOTRUE_DISABLE_SIGNUP "$GOTRUE_DISABLE_SIGNUP"
+          boolean GOTRUE_MAILER_AUTOCONFIRM "$GOTRUE_MAILER_AUTOCONFIRM"
+          boolean GOTRUE_EXTERNAL_EMAIL_ENABLED "$GOTRUE_EXTERNAL_EMAIL_ENABLED"
+          boolean GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED "$GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED"
+          boolean GOTRUE_MAILER_SECURE_EMAIL_CHANGE_ENABLED "$GOTRUE_MAILER_SECURE_EMAIL_CHANGE_ENABLED"
+          boolean GOTRUE_EXTERNAL_PHONE_ENABLED "$GOTRUE_EXTERNAL_PHONE_ENABLED"
+          boolean GOTRUE_SMS_AUTOCONFIRM "$GOTRUE_SMS_AUTOCONFIRM"
+          boolean GOTRUE_SECURITY_REFRESH_TOKEN_ROTATION_ENABLED "$GOTRUE_SECURITY_REFRESH_TOKEN_ROTATION_ENABLED"
+          boolean GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_ENABLED "$GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_ENABLED"
+          boolean GOTRUE_HOOK_BEFORE_USER_CREATED_ENABLED "$GOTRUE_HOOK_BEFORE_USER_CREATED_ENABLED"
+
+          # Each template is fetched from the app origin, over HTTPS (D6), and
+          # must carry a `token_hash` link: GoTrue falls back to its default
+          # English mail when a fetch fails, and that mail's link is a GET on
+          # `/auth/v1/verify`, which Kong refuses.
+          #
+          # COUPLED TO THE APP ORIGIN (DEPLOY.md §9.9): the web resource must be
+          # up. After a host reboot it may come up later than GoTrue, so each
+          # fetch is tried 6 times, 5 s apart, before the start is refused (and
+          # Coolify restarts GoTrue, which tries again).
+          template() {
+            case "$2" in https'://'?*) ;; *) refuse "$1 is not an https URL" ;; esac
+            tries=1
+            until fetched=$(wget -q -T 10 -O - "$2" 2>/dev/null); do
+              [ "$tries" -lt 6 ] || refuse "$1 does not answer 200"
+              tries=$((tries + 1))
+              sleep 5
+            done
+            case "$fetched" in *token_hash*) ;; *) refuse "$1 serves no token_hash link" ;; esac
+          }
+
+          if [ "$GOTRUE_DISABLE_SIGNUP" = false ]; then
+            [ "$GOTRUE_MAILER_AUTOCONFIRM" = false ] || refuse "signup is open with GOTRUE_MAILER_AUTOCONFIRM on"
+            [ -n "$GOTRUE_SMTP_HOST" ] || refuse "signup is open with no GOTRUE_SMTP_HOST"
+            [ -n "$GOTRUE_SMTP_USER" ] || refuse "signup is open with no GOTRUE_SMTP_USER"
+            [ -n "$GOTRUE_SMTP_PASS" ] || refuse "signup is open with no GOTRUE_SMTP_PASS"
+            [ -n "$GOTRUE_SMTP_ADMIN_EMAIL" ] || refuse "signup is open with no GOTRUE_SMTP_ADMIN_EMAIL"
+            [ "$GOTRUE_HOOK_BEFORE_USER_CREATED_ENABLED" = true ] || refuse "signup is open with the before-user-created hook off"
+            [ "$GOTRUE_HOOK_BEFORE_USER_CREATED_URI" = 'pg-functions://postgres/public/before_user_created_hook' ] || refuse "signup is open with GOTRUE_HOOK_BEFORE_USER_CREATED_URI naming another function"
+            [ -n "$GOTRUE_RATE_LIMIT_HEADER" ] || refuse "signup is open with no GOTRUE_RATE_LIMIT_HEADER (GoTrue's per-IP limits are off without it)"
+          fi
+
+          # Whenever GoTrue can send mail (its key is set), the code it mails
+          # is bounded and every template it would send is Shift's: also on a
+          # shut stack, where recovery and resend still reach it (AD-22).
+          if [ "$GOTRUE_DISABLE_SIGNUP" = false ] || [ -n "$GOTRUE_SMTP_PASS" ]; then
+            case "$GOTRUE_MAILER_OTP_EXP" in
+              ''|*[!0-9]*|0*|?????*) refuse "GOTRUE_MAILER_OTP_EXP is not a number of seconds up to 3600" ;;
+            esac
+            [ "$GOTRUE_MAILER_OTP_EXP" -le 3600 ] || refuse "GOTRUE_MAILER_OTP_EXP is over 3600"
+            [ "$GOTRUE_MAILER_OTP_LENGTH" = 10 ] || refuse "GOTRUE_MAILER_OTP_LENGTH is not 10"
+            template GOTRUE_MAILER_TEMPLATES_CONFIRMATION "$GOTRUE_MAILER_TEMPLATES_CONFIRMATION"
+            template GOTRUE_MAILER_TEMPLATES_RECOVERY "$GOTRUE_MAILER_TEMPLATES_RECOVERY"
+            template GOTRUE_MAILER_TEMPLATES_EMAIL_CHANGE "$GOTRUE_MAILER_TEMPLATES_EMAIL_CHANGE"
+          fi
+
+          exec auth
 
   supabase-rest:
     image: postgrest/postgrest:v16.1

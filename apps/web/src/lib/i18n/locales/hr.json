@@ -2357,5 +2357,32 @@
     "own": "Moj raspored: {name} · {team}",
     "ownNoTeam": "Moj raspored: {name} · bez smjene",
     "printedAt": "Ispisano: {date} u {time}"
+  },
+  "signup": {
+    "email": {
+      "confirmation": {
+        "subject": "Potvrdi adresu e-pošte za Shift",
+        "heading": "Potvrdi adresu e-pošte",
+        "body": "Ovom adresom otvoren je račun u Shiftu. Ako je zahtjev tvoj, potvrdi adresu i nastavi s postavljanjem organizacije.",
+        "action": "Potvrdi adresu",
+        "ignore": "Ako zahtjev nije tvoj, zanemari ovu poruku. Bez potvrde račun se ne može koristiti."
+      },
+      "recovery": {
+        "subject": "Nova lozinka za Shift",
+        "heading": "Postavi novu lozinku",
+        "body": "Za račun u Shiftu s ovom adresom zatražena je nova lozinka.",
+        "action": "Postavi novu lozinku",
+        "ignore": "Ako zahtjev nije tvoj, zanemari ovu poruku. Lozinka ostaje ista."
+      },
+      "emailChange": {
+        "subject": "Potvrdi novu adresu e-pošte za Shift",
+        "heading": "Potvrdi novu adresu e-pošte",
+        "body": "Za račun u Shiftu zatražena je promjena adrese e-pošte na ovu adresu.",
+        "action": "Potvrdi novu adresu",
+        "ignore": "Ako zahtjev nije tvoj, zanemari ovu poruku. Adresa ostaje ista."
+      },
+      "expiry": "Poveznica vrijedi jedan sat i može se upotrijebiti jednom.",
+      "fallback": "Ako gumb ne radi, otvori ovu poveznicu u pregledniku:"
+    }
   }
 }

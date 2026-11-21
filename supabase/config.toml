@@ -43,27 +43,45 @@ refresh_token_reuse_interval = 10
 # the same number the set-password step refuses below locally
 # (`apps/web/src/features/auth/services/set-password.ts`, `PASSWORD_MIN_LENGTH`).
 minimum_password_length = 10
-# Identity without email: accounts are created by an admin through the
-# admin-auth function, or by the operator provisioning script for the very
-# first one. There is no open signup anywhere in this system.
+# The signup door (AD-21, story 19.1). This file carries LOCAL AND STAGING's
+# values; production's closed door lives in
+# `deploy/coolify/supabase/production.env.example` (AD-10 as amended). The
+# compose reads `GOTRUE_DISABLE_SIGNUP=${SHIFT_DISABLE_SIGNUP:-true}`, so a
+# stack is shut unless its environment opens it, and `staging.env.example`
+# opens it with exactly this value (`test/supabase-scaffold.test.ts` pins all
+# three). Signup is open on a stack only while all three switches are open:
+# this one, `private.signup_settings.open` (0066; `seed.sql` opens it locally)
+# and the SPA's `VITE_SIGNUP_ENABLED`. Accounts created by an admin
+# (`admin-auth`) or by the operator script are username identities, confirmed
+# at creation, and unaffected by any of it.
 #
-# Two different switches, and only this one closes that door.
+# Two different switches, and only this one is the door.
 # `[auth] enable_signup` becomes GOTRUE_DISABLE_SIGNUP, which refuses
 # self-registration and nothing else. `[auth.email] enable_signup` below
 # becomes GOTRUE_EXTERNAL_EMAIL_ENABLED, which turns the email/password
 # provider off entirely — sign-in included. Setting that one false does not
 # harden signup; it makes every admin-issued credential unusable, and a
 # password grant answers 422 "Email logins are disabled".
-enable_signup = false
+enable_signup = true
 enable_anonymous_sign_ins = false
 
 [auth.email]
 # The email/password provider, not the signup door — see the note above. It is
-# on because admin-issued credentials are the only way anyone signs in, and
-# open signup stays refused by `[auth] enable_signup = false`.
+# on because every credential, admin-issued or signed up, is an email/password
+# one.
 enable_signup = true
-enable_confirmations = false
+# AD-21: an address is verified before it can found an organization, so
+# confirmations are on wherever the door can open. Every account the system
+# creates itself is confirmed at creation (`admin-auth`'s `email_confirm`, the
+# seed, the operator scripts), so no username sign-in waits for a mail. Locally
+# the CLI's mail catcher receives the mail, with the CLI's default templates:
+# the Croatian ones link to `/potvrda`, which 19.2 builds (deferred-work.md).
+enable_confirmations = true
 double_confirm_changes = true
+# AD-22: a link's `token_hash` is the only thing `/auth/v1/verify` accepts, but
+# the code a mail could carry is bounded too: an hour, and 10 characters.
+otp_expiry = 3600
+otp_length = 10
 
 [auth.sms]
 enable_signup = false
@@ -108,6 +126,16 @@ token_refresh = 1000
 [auth.hook.custom_access_token]
 enabled = true
 uri = "pg-functions://postgres/public/custom_access_token_hook"
+
+# AD-21: refuses every new account unless `private.signup_settings` is open,
+# the address is an email identity's and the 24-hour ceiling holds, all with
+# one `SIGNUP_REFUSED` (0066). Enabled everywhere (story 19.1, D2): the door is
+# shut by `enable_signup` and the switch, never by this hook being off. The
+# same order rule as the hook above: 0066 is applied before it is enabled.
+# GoTrue does not run it for `POST /admin/users`, so `admin-auth` is unaffected.
+[auth.hook.before_user_created]
+enabled = true
+uri = "pg-functions://postgres/public/before_user_created_hook"
 
 [edge_runtime]
 enabled = true

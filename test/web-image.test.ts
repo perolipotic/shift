@@ -183,7 +183,7 @@ describe('the shift-web image (story 20.3): the nginx config', () => {
 
     expect(serverLevel).toContain(HEADERS_INCLUDE);
     expect(locations.map((block) => block.head).sort()).toEqual(
-      ['/', '/assets/', '= /assets/', '= /site.webmanifest', '~ \\.map$', '@missing'].sort(),
+      ['/', '/assets/', '= /assets/', '= /site.webmanifest', '~ \\.map$', '@missing', '/auth-email/', '~ ^/auth-email/[a-z-]+\\.html$'].sort(),
     );
     for (const block of locations) expect(block.body, block.head).toContain(HEADERS_INCLUDE);
   });
@@ -223,6 +223,17 @@ describe('the shift-web image (story 20.3): the nginx config', () => {
     expect(directives.filter((line) => line.includes('immutable'))).toEqual([
       `add_header Cache-Control "${IMMUTABLE}";`,
     ]);
+  });
+
+  it('serves an Auth email template as itself, and anything else under /auth-email/ as the plain 404, never index.html (story 19.1)', () => {
+    const template = location('~ ^/auth-email/[a-z-]+\\.html$').body;
+    expect(template).toMatch(/try_files \$uri @missing;/);
+    expect(template).toContain('add_header Cache-Control "no-cache" always;');
+    expect(template).not.toContain('index.html');
+    const rest = location('/auth-email/').body;
+    expect(rest).toContain('return 404 "Not found\\n";');
+    expect(rest).toContain('default_type text/plain;');
+    expect(rest).not.toContain('index.html');
   });
 
   it('answers every *.map 404, and serves the manifest as application/manifest+json', () => {
@@ -388,6 +399,12 @@ describe('the shift-web image (story 20.3): CI builds and probes it, never pushe
       `PROTO=1.1 EXTRA='Accept-Encoding: gzip\\r\\n' expect "/$asset" 200 application/javascript`,
       "grep -qix 'Content-Encoding: gzip' <<< \"$last_head\"",
       "grep -qix 'Vary: Accept-Encoding' <<< \"$last_head\"",
+      // Story 19.1: the three Auth email templates, and a missing one is no shell.
+      'expect /auth-email/confirmation.html 200 text/html no-cache token_hash',
+      'expect /auth-email/recovery.html 200 text/html no-cache token_hash',
+      'expect /auth-email/email-change.html 200 text/html no-cache token_hash',
+      'expect /auth-email/nope.html 404 text/plain no-cache',
+      'expect /auth-email/ 404 text/plain no-cache',
     ]) {
       expect(probe, line).toContain(line);
     }

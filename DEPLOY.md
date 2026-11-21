@@ -491,6 +491,8 @@ git add supabase/migrations/0003_<name>.sql && git commit
 
 ### 5.2 Promote to staging
 
+> **Superseded for the self-hosted stacks (story 19.1).** `config.toml` now carries local and staging's auth values (`[auth] enable_signup = true`, confirmations on), so a `config push` of it would OPEN signup on a hosted project. The signup door, its switches and its probe are §9.9's.
+
 ```bash
 # Confirm you are logged in (§0) and the staging project is not paused (§2):
 pnpm exec supabase link --project-ref <staging-ref>
@@ -502,6 +504,8 @@ pnpm exec supabase functions deploy notify       # only if the function changed
 ```
 
 #### 5.2a Why `config push` is not optional
+
+> **Superseded for the self-hosted stacks (story 19.1).** `config.toml` now carries local and staging's auth values (`[auth] enable_signup = true`, confirmations on), so a `config push` of it would OPEN signup on a hosted project. The signup door, its switches and its probe are §9.9's.
 
 `supabase/config.toml` governs the **local** stack only. Nothing in a migration
 carries it. So a remote project that has never had `config push` run against it
@@ -666,13 +670,15 @@ Then verify on staging, against the Preview deployment:
 
 ### 5.3 Promote to production
 
+> **Superseded for the self-hosted stacks (story 19.1).** `config.toml` now carries local and staging's auth values (`[auth] enable_signup = true`, confirmations on), so a `config push` of it would OPEN signup on a hosted project. The signup door, its switches and its probe are §9.9's.
+
 Only after staging has been verified.
 
 ```bash
 pnpm exec supabase link --project-ref <production-ref>
 pnpm exec supabase db push
 pnpm exec supabase migration list
-pnpm exec supabase config push                   # 5.2a applies here too
+pnpm exec supabase config push                   # NEVER for production since 19.1: it would open signup (5.2a)
 pnpm exec supabase functions deploy admin-auth   # only if the function changed
 pnpm exec supabase functions deploy notify       # only if the function changed
 ```
@@ -1114,6 +1120,8 @@ Only the owner can still truncate them, and a truncate by the owner is not
 recorded.
 
 ### Signup is off, remotely
+
+> **Superseded for the self-hosted stacks (story 19.1).** `config.toml` now carries local and staging's auth values (`[auth] enable_signup = true`, confirmations on), so a `config push` of it would OPEN signup on a hosted project. The signup door, its switches and its probe are §9.9's.
 
 `config push` (§5.2a) is the only thing that turns Supabase's default open
 signup off on a remote project, so verify the outcome rather than trusting the
@@ -1674,18 +1682,20 @@ API and have never run against our instance.
 `smoke/` with `playwright.smoke.config.ts` — no web server, no global setup,
 nothing provisioned. Against `SMOKE_BASE_URL` it checks that `/` and a deep link
 answer 200 with the SPA shell, that `/prijava` renders with no
-`SUPABASE_ENVIRONMENT_MISSING` in the console, that signup is refused with
-`422 signup_disabled` (§6), that `admin-auth` answers CORS for the deployed
-origin, and, with the smoke account configured, that sign-in lands on `/danas`.
-It never signs out: a sign-out revokes every session of the account.
+`SUPABASE_ENVIRONMENT_MISSING` in the console, that Kong answers the signup
+route with its one `200 {}` and no `Server`, `Via` or `X-Kong-*` header, and
+closes `/auth/v1/otp`, `/magiclink`, `/signup/` and a GET on `/verify` with 404
+(story 19.1, §9.9), that `admin-auth` answers CORS for the deployed origin,
+and, with the smoke account configured, that sign-in lands on `/danas`. It
+never signs out: a sign-out revokes every session of the account.
 
-**It is not read-only in one case.** The signup probe posts a real signup. On a
-correctly configured project it is refused; if signup is open, **the probe has
-just created an account** (`smoke-probe-<uuid>@example.invalid`) on that
-project. The failure message names the address: delete it under
-*Authentication → Users* (Studio, over the tailnet), check the stack's
-`GOTRUE_DISABLE_SIGNUP` (§9.3), redeploy it and re-probe (§6). The
-probe never retries, so one failed run creates at most one such account.
+**It writes nothing.** The signup probe's address is synthesized
+(`smoke-probe-<uuid>@smoke.shift.invalid`), which Kong answers itself and never
+relays to GoTrue (AD-22), and which the before-user-created hook would refuse
+anyway, so the probe creates no account whether the stack's door is shut or
+open. Whether the door is shut is read from the stack's environment and
+`private.signup_settings` (§9.9), not probed: Kong gives every address one
+answer by design.
 
 Run it locally against the dev server; the project URL and publishable key fall
 back to `apps/web/.env.local`:
@@ -1738,6 +1748,8 @@ missing. It also means **an `it.skip`, `it.todo` or `describe.skip` in a root
 test now fails CI**: remove the case, or finish it, instead of parking it.
 
 ### 8.6 What replaced `config push`
+
+> **Superseded for the self-hosted stacks (story 19.1).** `config.toml` now carries local and staging's auth values (`[auth] enable_signup = true`, confirmations on), so a `config push` of it would OPEN signup on a hosted project. The signup door, its switches and its probe are §9.9's.
 
 On the hosted platform, `supabase config push` sent `config.toml`'s auth and
 API settings to each project on every deploy. A self-hosted stack has no such
@@ -1935,10 +1947,12 @@ values, when they differ:
 
 | Compose (GoTrue, PostgREST) | `config.toml` |
 | --- | --- |
-| `GOTRUE_DISABLE_SIGNUP=true` | not `[auth] enable_signup` |
+| `GOTRUE_DISABLE_SIGNUP=${SHIFT_DISABLE_SIGNUP:-true}` | not `[auth] enable_signup`, through `staging.env.example`; production's template keeps `true` (§9.9) |
 | `GOTRUE_EXTERNAL_EMAIL_ENABLED=true` | `[auth.email] enable_signup` (the provider, not the signup door, §5.2a) |
 | `GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED=false` | `[auth] enable_anonymous_sign_ins` |
-| `GOTRUE_MAILER_AUTOCONFIRM=true` | not `[auth.email] enable_confirmations` (also pinned `false` outright) |
+| `GOTRUE_MAILER_AUTOCONFIRM=${SHIFT_MAILER_AUTOCONFIRM:-true}` | not `[auth.email] enable_confirmations` (pinned `true` outright), through `staging.env.example`; production's keeps `true` |
+| `GOTRUE_MAILER_OTP_EXP=3600`, `GOTRUE_MAILER_OTP_LENGTH=10` | `[auth.email] otp_expiry`, `otp_length` |
+| `GOTRUE_HOOK_BEFORE_USER_CREATED_ENABLED=true`, `…_URI=pg-functions://postgres/public/before_user_created_hook` | `[auth.hook.before_user_created]` |
 | `GOTRUE_MAILER_SECURE_EMAIL_CHANGE_ENABLED=true` | `[auth.email] double_confirm_changes` |
 | `GOTRUE_EXTERNAL_PHONE_ENABLED=false`, `GOTRUE_SMS_AUTOCONFIRM=true` | `[auth.sms] enable_signup`, not `enable_confirmations` |
 | `GOTRUE_JWT_EXP=3600`, `PGRST_APP_SETTINGS_JWT_EXP=3600` | `[auth] jwt_expiry` |
@@ -1948,11 +1962,11 @@ values, when they differ:
 | `PGRST_DB_SCHEMAS`, `PGRST_DB_EXTRA_SEARCH_PATH`, `PGRST_DB_MAX_ROWS` | `[api] schemas`, `extra_search_path`, `max_rows` |
 
 Not mirrored: `site_url` and the redirect list (per environment: both are
-`SHIFT_APP_URL`), and `[auth.rate_limit]` (local only; story 19.1 owns
-production's limits). **No SMTP is configured until Epic 19** (AD-12: v1 sends
-no auth mail; autoconfirm is on and signup is off). The mailer's URL paths are
-the template's `/auth/v1/verify`, so a link GoTrue builds later goes through
-Kong's open route. To change an auth setting, change `config.toml` and the
+`SHIFT_APP_URL`), and `[auth.rate_limit]` (local only; the deployed limits are
+GoTrue's own and Kong's, §9.9). Since story 19.1, `config.toml` is the source
+of local and STAGING's auth settings; production's closed door lives in
+`production.env.example` (AD-10 as amended). GoTrue's SMTP, templates, subjects
+and limits are §9.9's. To change an auth setting, change `config.toml` and the
 compose in one PR, then paste the compose into Coolify and redeploy GoTrue.
 
 ### 9.4 The order rules on a fresh stack
@@ -1966,8 +1980,12 @@ compose in one PR, then paste the compose into Coolify and redeploy GoTrue.
    starts.
 2. **The hook's migration before GoTrue runs with the hook.**
    `GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_ENABLED` names a function created by
-   `0003`. The same holds for every later change that enables a hook: the
-   migration first, then the GoTrue environment (§5.2b).
+   `0003`, and `GOTRUE_HOOK_BEFORE_USER_CREATED_ENABLED` one created by `0066`
+   (story 19.1). The same holds for every later change that enables a hook:
+   the migration first, then the GoTrue environment (§5.2b). Until `0066` is
+   pushed, a user-creating path other than `POST /admin/users` fails on the
+   missing function; Kong leaves only `/signup` open (§9.9), and the door is
+   shut by `GOTRUE_DISABLE_SIGNUP` anyway.
 3. Migrations are applied with `supabase db push --db-url` over the tailnet,
    never through a public port and never by a container inside the stack.
 
@@ -2136,9 +2154,13 @@ printf '{"email":"%s","password":"%s"}' "$ADMIN_EMAIL" "$ADMIN_PW" \
       const c = JSON.parse(Buffer.from(p, "base64url").toString());
       console.log(c.role, c.organization_id); });'
 # -> authenticated <the organization's uuid>   ✅ the hook runs
-curl -s -o /dev/null -w '%{http_code}\n' -X POST "$API/auth/v1/signup" -H "apikey: $PUB" \
-  -H 'content-type: application/json' -d "{\"email\":\"x@rehearsal.invalid\",\"password\":\"$(openssl rand -hex 8)\"}"
-# -> 422 (signup_disabled)   ✅
+curl -s -w ' %{http_code}\n' -X POST "$API/auth/v1/signup" -H "apikey: $PUB" \
+  -H 'content-type: application/json' -d "{\"email\":\"x@rehearsal.shift.invalid\",\"password\":\"$(openssl rand -hex 8)\"}"
+# -> {} 200   ✅ Kong's one answer (story 19.1, §9.9); a synthesized address is
+#                never relayed, so this creates nothing. Whether the door is shut
+#                is the environment's and signup_settings', not this probe's.
+curl -s -o /dev/null -w '%{http_code}\n' -X POST "$API/auth/v1/otp" -H "apikey: $PUB" -d '{}'
+# -> 404   ✅ the allow-list (AD-22)
 # supabase-js's shape: the key as apikey AND as a bearer token.
 curl -s "$API/rest/v1/organizations?select=id" -H "apikey: $PUB" -H "Authorization: Bearer $PUB"
 # -> []          ✅ mapped to anon. No migration revokes anon's SELECT on
@@ -2589,3 +2611,136 @@ and Coolify does not update itself. In the window:
 4. After the reboot: `shift-host status` shows both chains and
    `shift-host-firewall.service` active; `shift-host plan` says nothing to
    change; `verify-exposure.sh` passes from outside; `free -h` shows the swap.
+
+### 9.9 The signup door (story 19.1)
+
+Self-service signup (epic 19) is open on a stack only while **three switches**
+are all open, and each is shut by default (AD-21). This section is the
+operator's side of them, of Kong's anti-enumeration allow-list (AD-22) and of
+the Auth email GoTrue sends. Production stays shut: opening it is the
+founder's decision at D-S5, after the security review in
+`SECURITY-REVIEW-EPIC-19.md` (section H gives the order).
+
+1. **GoTrue's environment.** `SHIFT_DISABLE_SIGNUP` and
+   `SHIFT_MAILER_AUTOCONFIRM`, both `true` unless set. `staging.env.example`
+   sets both `false`; `production.env.example` keeps both `true`.
+2. **The database.** `private.signup_settings` (migration `0066`), one row,
+   `open = false` when created. No session role holds any privilege on it, so
+   the operator opens and closes it over the tailnet with the Postgres
+   password, never through the API:
+
+   ```sql
+   update private.signup_settings set open = true where id;   -- open
+   update private.signup_settings set open = false where id;  -- the circuit breaker
+   select * from private.signup_settings;                     -- the ceilings
+   ```
+
+   Closing it stops new accounts at once (the before-user-created hook
+   refuses every one), and from 19.3 new organizations too. It does NOT stop
+   mail to addresses that already exist: a resend or a recovery for an
+   unconfirmed or a confirmed account, or a repeat signup of a known address,
+   still reaches GoTrue and spends the Resend budget. Shutting mail is the
+   GoTrue environment (`SHIFT_DISABLE_SIGNUP=true`, and removing
+   `GOTRUE_SMTP_PASS`), then a restart of the auth resource. The ceilings
+   (`accounts_per_day` 100, `organizations_per_day` 20,
+   `attempts_per_account` 10) are changed the same way.
+3. **The SPA.** `VITE_SIGNUP_ENABLED` (from 19.2) renders the signup screens.
+   It is a cosmetic switch, not a control: `require-config.mjs` refuses it for
+   production, so production's deploy fails if the variable is set on that
+   environment to anything but `false`.
+
+**Production relays `/recover` to a GoTrue with no SMTP key.** Kong's mail
+routes are the same on every stack. On production no email identity exists,
+so nothing is sent and nothing is lost: GoTrue's failure is logged by Kong as
+`AUTH_MAIL_RELAY recover <status>`.
+
+**GoTrue will not start a half-built open door.** Its entrypoint is a wrapper
+in the compose (`/usr/local/etc/auth-entrypoint.sh`). It refuses any boolean
+that is not exactly `true` or `false`, and with `GOTRUE_DISABLE_SIGNUP=false`
+it exits, naming the guard, unless autoconfirm is off, GoTrue's SMTP host,
+user, key and sender are set, the before-user-created hook is on, the
+client-address header is set, the OTP is 3600 s or less and 10 characters
+long, and each template URL answers 200 over HTTPS with a `token_hash` link.
+Whenever `GOTRUE_SMTP_PASS` is set, even with the door shut, the OTP and the
+templates are checked too. A refused start shows in `supabase-auth`'s log as
+`auth-entrypoint: …`; fix the named value in Coolify and restart the resource.
+
+**GoTrue's start is coupled to the app origin.** With the door open or a key
+set, GoTrue fetches its three templates from `SHIFT_APP_URL` at start, so the
+web resource (`shift-web`) must answer them. The wrapper tries each fetch 6
+times, 5 s apart; after that it refuses, and Coolify restarts GoTrue, which
+tries again. After a host reboot sign-in waits on the web resource, never
+loops forever on it. If the web resource is down for long, sign-in is down
+with it: bring the web resource back first. `shift-web` serves
+`/auth-email/<name>.html` as itself and anything else under `/auth-email/` as
+a plain 404, never the SPA's `index.html`.
+
+**Auth email** goes over SMTP through Resend (AD-17 as amended):
+
+- `GOTRUE_SMTP_PASS` is **GoTrue's own** Resend key: create one per stack in
+  Resend, sending-only and restricted to the sending domain, and set it in
+  Coolify on the stack's environment beside the compose. It is never
+  `notify`'s `RESEND_API_KEY`, never a GitHub secret, never in this
+  repository. Revoking one key leaves the other path working. A shut stack
+  (production) may leave it empty.
+- `SHIFT_AUTH_EMAIL_FROM` is the sender address, on the verified domain.
+- The templates are built from `hr.json`'s `signup.email` keys into the SPA's
+  `dist/auth-email/` (confirmation, recovery, email change) and served from
+  the app origin; GoTrue fetches them from `SHIFT_APP_URL`. Their subjects are
+  in the compose. Each link is `/potvrda?token_hash=…&type=…`, which 19.2
+  builds. Locally the CLI's default templates and its mail catcher stay in
+  place until then.
+- `SHIFT_AUTH_EMAIL_PER_HOUR` (10 on staging) caps GoTrue's mail for the whole
+  stack; Resend's daily allowance is shared with `notify` (checklist A9).
+
+**The client's address (AD-21).** `SHIFT_PROXY_CIDR` is the network of
+Coolify's Traefik on the host, as CIDRs: read it on the host with
+`docker network inspect coolify` (the subnet of its IPAM config) and set it in
+Coolify, never here. Kong believes `X-Forwarded-For` from those peers alone
+(`KONG_TRUSTED_IPS`; it refuses an empty value, any `/0`, and a network wider
+than an IPv4 /8 or an IPv6 /32), sends GoTrue the
+resolved client as `X-Real-IP`, overwriting a client's own, and GoTrue's
+per-IP limits read it (`GOTRUE_RATE_LIMIT_HEADER`). Story 20.5 confirms on the
+host, for IPv4 and IPv6, that Kong's access log shows each client's own
+address, not Docker's gateway.
+
+**Kong's limits** are per client address (`rate-limiting`, `policy: local`),
+each an operator input defaulting to staging's value: the mail routes (signup,
+recover and resend together) 5 an hour and 20 a day, `/auth/v1/token` 60 a
+minute and 1440 an hour, `/auth/v1/verify` 15 a minute and 360 an hour, and
+`rpc/create_organization` 10 an hour. Kong 2.8 has no 5-minute window, so
+AD-21's per-5-minute figures became these (the spine records it); the
+per-minute windows allow bursts up to 2.5 times AD-21's 5-minute figures, and
+only the hourly ceilings hold its rate (accepted for staging, revisited at
+D-S5). A limit
+answers Kong's own 429, the same for every address. Production's values are
+set by the D-S5 checklist.
+
+**Kong's `/auth/v1/` is an allow-list (AD-22).** `signup`, `recover` and
+`resend` (POST), `token`, `verify` (POST only), `user` (GET, PUT), `logout`,
+`health`, `.well-known/jwks.json` and `admin/*` (the secret key alone). Every
+other path, and any other spelling of these (a doubled `/`, `%75`, a trailing
+`/`, `;`, upper case), is Kong's 404. The mail routes answer `200 {}` at once,
+whatever the body, and relay to GoTrue in the background only an email
+identity's address, rebuilt from the route's own fields; a relay GoTrue
+refuses is logged by Kong as `AUTH_MAIL_RELAY <route> <status>`, never with
+the address (or `UNREAD` when Kong could not read the body), so a masked
+outage still shows in its log. `verify` passes only `{token_hash, type}` with a
+hex hash; a `PUT /user` naming `email` or `phone` is 422. Each route's spelling
+check, and the REST catch-all's refusal of any other spelling of
+`create_organization`, runs before every other plugin, so a variant is 404
+with or without a key. The admin API takes GET, POST, PUT and DELETE with the secret key alone,
+and refuses a doubled `/`, `;`, `%` or a dot segment. Kong
+adds no `Server`, `Via` or latency header (`KONG_HEADERS=off`).
+
+**Opening staging,** once story 20.5 stands it up and 19.2 has shipped the
+screens: set the inputs above in Coolify (`SHIFT_DISABLE_SIGNUP=false`,
+`SHIFT_MAILER_AUTOCONFIRM=false`, `GOTRUE_SMTP_PASS`, `SHIFT_AUTH_EMAIL_FROM`,
+`SHIFT_PROXY_CIDR`), push migrations (`0066` before GoTrue restarts, §9.4),
+redeploy, check `supabase-auth`'s log shows no `auth-entrypoint:` refusal,
+then open `signup_settings` by SQL. Closing is the reverse: the SQL first
+(immediate), then the environment.
+
+**A dump carries the switch.** A staging dump holds
+`signup_settings.open = true`. Production restores only from production's own
+dumps (story 20.7), never from staging's.

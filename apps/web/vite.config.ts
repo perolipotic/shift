@@ -8,6 +8,7 @@ import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
+import { AUTH_EMAIL_DIRECTORY, authEmailTemplates } from './src/lib/auth-email';
 import { headersWithPolicy, supabaseOriginOf } from './src/lib/content-security-policy';
 
 /** The addresses a loopback caller arrives from. */
@@ -92,6 +93,27 @@ function contentSecurityPolicyHeader(): Plugin {
   };
 }
 
+/**
+ * BUILD ONLY (story 19.1, AD-21): the Croatian Auth email templates, built
+ * from `hr.json`'s `signup.email` keys (`src/lib/auth-email.ts`) and emitted
+ * as `dist/auth-email/*.html`. GoTrue fetches them from the app origin
+ * (`GOTRUE_MAILER_TEMPLATES_*`). They are no part of the app: the worker
+ * never precaches them (`globIgnores` below). A missing message fails the
+ * build.
+ */
+function authEmail(): Plugin {
+  const resource = fileURLToPath(new URL('./src/lib/i18n/locales/hr.json', import.meta.url));
+  return {
+    name: 'shift-auth-email',
+    apply: 'build',
+    generateBundle() {
+      for (const { file, html } of authEmailTemplates(JSON.parse(readFileSync(resource, 'utf8')))) {
+        this.emitFile({ type: 'asset', fileName: `${AUTH_EMAIL_DIRECTORY}/${file}`, source: html });
+      }
+    },
+  };
+}
+
 // AD-14: a static SPA build. No SSR, no application server, no prerender step.
 // The publishable key (AD-17) is injected at build time through VITE_* env
 // vars; the secret key never enters this build.
@@ -101,6 +123,7 @@ export default defineConfig({
     tailwindcss(),
     checkoutAnswer(),
     contentSecurityPolicyHeader(),
+    authEmail(),
     // STORY 8.1. AD-14 stays intact: the PWA adds client-side pieces only, a
     // manifest and a service worker generated at build time, with no server.
     //
@@ -168,7 +191,16 @@ export default defineConfig({
         // chunk after its module (`pdfmake.js`, `vfs_fonts.js`);
         // `test/static-hosting.test.ts` finds the writer chunks by their
         // contents and proves `sw.js` lists neither.
-        globIgnores: ['**/node_modules/**/*', 'push-sw.js', 'assets/pdfmake-*.js', 'assets/vfs_fonts-*.js'],
+        //
+        // STORY 19.1. The Auth email templates GoTrue fetches are no part of
+        // the app, and never precached.
+        globIgnores: [
+          '**/node_modules/**/*',
+          'push-sw.js',
+          'assets/pdfmake-*.js',
+          'assets/vfs_fonts-*.js',
+          'auth-email/**',
+        ],
         importScripts: ['push-sw.js'],
         navigateFallback: '/index.html',
         sourcemap: false,

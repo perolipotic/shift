@@ -8,12 +8,9 @@ import { publishableKey, smokeAccount, supabaseUrl } from './support/env.ts';
  * The remote smoke: DEPLOY.md §5.2c and §6, run by the pipeline instead of by
  * hand.
  *
- * It writes nothing on purpose, with ONE exception to know about: the signup
- * probe. On a correctly configured project that request is refused, but if
- * signup is open the probe has just CREATED an account on that project — which
- * is the finding, and which must then be deleted by hand. That case never
- * retries, so one failure is at most one account, and its failure message
- * names the address to delete.
+ * It writes nothing on purpose. The signup probe (story 19.1) sends a
+ * synthesized address, which Kong answers itself and never relays to GoTrue
+ * (AD-22), so it creates no account whether the stack's door is shut or open.
  *
  * It never signs out either: a sign-out revokes every session of the account
  * (`e2e/README.md`), including a person's own.
@@ -50,29 +47,64 @@ test('renders the sign-in screen, and the build carries a usable Supabase enviro
   expect(messages.filter((line) => line.includes('SUPABASE_ENVIRONMENT_MISSING'))).toEqual([]);
 });
 
+/**
+ * Whether the smoke is pointed at the local CLI stack: its Kong is the CLI's,
+ * with no allow-list and no mail route (AD-22 is the deployed compose's), so
+ * GoTrue answers the signup probe itself there.
+ */
+function againstLocalStack(): boolean {
+  const host = new URL(supabaseUrl()).hostname;
+  return host === '127.0.0.1' || host === 'localhost' || host === '[::1]';
+}
+
 test.describe('signup', () => {
-  // Never retried: if signup is open, every attempt creates an account.
+  // Never retried, as before: one probe, one answer.
   test.describe.configure({ retries: 0 });
 
-  test('is refused with 422 signup_disabled', async ({ request }) => {
-    // `config push` is the only thing that turns Supabase's default open signup
-    // off remotely (DEPLOY.md §5.2a), so the outcome is probed, not the exit
-    // code. A random `.invalid` address, so an account created by an OPEN
-    // result cannot be mistaken for a real one.
-    const probe = `smoke-probe-${crypto.randomUUID()}@example.invalid`;
+  /** A synthesized address: Kong never relays it, and the hook refuses it, so the probe writes nothing. */
+  const probeBody = (): Record<string, string> => ({
+    email: `smoke-probe-${crypto.randomUUID()}@smoke.shift.invalid`,
+    password: `probe-${crypto.randomUUID()}`,
+  });
+
+  test('is answered by Kong with one 200 {}, or locally refused by the hook, and creates nothing (story 19.1)', async ({ request }) => {
     const response = await request.post(`${supabaseUrl()}/auth/v1/signup`, {
       headers: { apikey: publishableKey(), 'content-type': 'application/json' },
-      data: { email: probe, password: `probe-${crypto.randomUUID()}` },
+      data: probeBody(),
       timeout: REQUEST_TIMEOUT_MS,
     });
+    const body = await response.text();
 
-    const body: unknown = await response.json().catch(() => null);
-    const hint =
-      `signup is not refused on ${supabaseUrl()} (HTTP ${String(response.status())}). ` +
-      `This probe may have CREATED the account ${probe} on that project: delete it ` +
-      '(Authentication → Users), re-run `supabase config push` and re-probe (DEPLOY.md §6).';
-    expect(response.status(), hint).toBe(422);
-    expect(body, hint).toMatchObject({ error_code: 'signup_disabled' });
+    if (againstLocalStack()) {
+      // The CLI's GoTrue, behind the CLI's Kong: the before-user-created hook
+      // (0066) refuses a synthesized address with its one answer.
+      expect(response.status(), `the local hook did not refuse the probe: ${body}`).toBe(403);
+      expect(body).toContain('SIGNUP_REFUSED');
+      return;
+    }
+
+    // AD-22: Kong answers every signup, recover and resend itself, with
+    // `200 {}`, and relays only an email identity's address. KONG_HEADERS=off:
+    // no Server, Via or X-Kong-* header names the gateway or GoTrue's latency.
+    const hint = `the signup route on ${supabaseUrl()} is not Kong's one answer (HTTP ${String(response.status())}): DEPLOY.md §9.9`;
+    expect(response.status(), hint).toBe(200);
+    expect(body, hint).toBe('{}');
+    const names = Object.keys(response.headers());
+    expect(names.filter((name) => name === 'server' || name === 'via' || name.startsWith('x-kong')), hint).toEqual([]);
+  });
+
+  test('closes every other auth path and spelling, as Kong\'s own 404 (story 19.1)', async ({ request }) => {
+    test.skip(againstLocalStack(), 'the CLI\'s Kong has no allow-list; AD-22 is the deployed compose\'s (DEPLOY.md §9.9)');
+    // A POST with the key, as a client creating an account or a passwordless
+    // session would send it: a GET on a POST-only route would prove nothing.
+    for (const path of ['/auth/v1/otp', '/auth/v1/magiclink', '/auth/v1/signup/', '/auth/v1//signup', '/auth/v1/sign%75p']) {
+      const response = await request.post(`${supabaseUrl()}${path}`, {
+        headers: { apikey: publishableKey(), 'content-type': 'application/json' },
+        data: probeBody(),
+        timeout: REQUEST_TIMEOUT_MS,
+      });
+      expect(response.status(), `POST ${path}`).toBe(404);
+    }
   });
 });
 

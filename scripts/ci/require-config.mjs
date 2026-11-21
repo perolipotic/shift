@@ -191,6 +191,34 @@ export function vapidPairProblem(privateKey, publicKey, privateName = 'VAPID_PRI
 }
 
 /**
+ * Story 19.1 (AD-21's third switch): the build variables an environment may
+ * not carry, whatever the job asks for. `VITE_SIGNUP_ENABLED` renders the
+ * signup screens (from 19.2), and production opening is the founder's
+ * decision at D-S5, made by a reviewed PR that changes this table, never by a
+ * variable set on the environment. Unset, empty or exactly `false` passes.
+ *
+ * @type {Readonly<Record<string, readonly string[]>>}
+ */
+export const REFUSED_BY_ENVIRONMENT = {
+  production: ['VITE_SIGNUP_ENABLED'],
+};
+
+/**
+ * The variables refused for this environment that are set to anything but
+ * empty or `false`. Never names a value.
+ *
+ * @param {string} environment
+ * @param {Readonly<Record<string, string | undefined>>} env
+ * @returns {string[]}
+ */
+export function refusedFor(environment, env) {
+  return (REFUSED_BY_ENVIRONMENT[environment] ?? []).filter((name) => {
+    const value = env[name] ?? '';
+    return value !== '' && value !== 'false';
+  });
+}
+
+/**
  * The requirements whose value is absent or whitespace-only.
  *
  * @param {readonly Requirement[]} requirements
@@ -242,8 +270,16 @@ function main(argv) {
     process.exit(2);
   }
 
+  const refused = refusedFor(environment, process.env);
+  for (const name of refused) {
+    process.stdout.write(
+      `::error title=Refused variable::${name} is set for "${environment}", which may not open the signup door ` +
+        '(AD-21, D-S5): unset it on the environment, or open the door by a reviewed PR (DEPLOY.md §9.9).\n',
+    );
+  }
+
   const found = problems(requirements, process.env);
-  if (found.length === 0) {
+  if (found.length === 0 && refused.length === 0) {
     console.warn(`all ${String(specs.length)} required secrets and variables are set for ${environment}`);
     return;
   }
@@ -251,7 +287,8 @@ function main(argv) {
   // Annotations are read from stdout.
   for (const line of describe(found, environment)) process.stdout.write(`${line}\n`);
   console.error(
-    `${String(found.length)} required item(s) missing or invalid: ${found.map(({ requirement }) => requirement.name).join(', ')}`,
+    `${String(found.length)} required item(s) missing or invalid, ${String(refused.length)} refused: ` +
+      [...found.map(({ requirement }) => requirement.name), ...refused].join(', '),
   );
   process.exit(1);
 }

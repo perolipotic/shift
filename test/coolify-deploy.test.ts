@@ -985,6 +985,15 @@ describe('the pipeline deploys through Coolify (story 20.6)', () => {
     }
   });
 
+  it('hands require-config the signup switch on production, which refuses it (story 19.1, AD-21)', () => {
+    const step = pipeline.jobs['deploy-production']?.steps?.find((candidate) => candidate.name === 'Check configuration');
+    expect(step?.env?.['VITE_SIGNUP_ENABLED']).toBe('${{ vars.VITE_SIGNUP_ENABLED }}');
+    expect(step?.run).toContain('--environment production');
+    // The refusal is require-config's own table, not a requirement word, so
+    // the two jobs' requirement lists stay equal (above).
+    expect(read('scripts/ci/require-config.mjs')).toMatch(/production: \['VITE_SIGNUP_ENABLED'\]/);
+  });
+
   it('reads no hosted-platform credential and no runtime secret from GitHub (AD-17 as amended)', () => {
     for (const forbidden of [
       'supabase link',
