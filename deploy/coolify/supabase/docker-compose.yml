@@ -655,7 +655,7 @@ services:
                         local cjson = require("cjson.safe")
                         local http = require("resty.http")
                         -- address_kind: AD-12's predicate, the same rule as
-                        -- private.address_kind (0065) and the vectors in
+                        -- private.address_kind (0066) and the vectors in
                         -- test/fixtures/synthesized-addresses.json.
                         local function address_kind(address)
                           if type(address) ~= "string" then return "malformed" end
@@ -1367,7 +1367,7 @@ services:
       - GOTRUE_RATE_LIMIT_EMAIL_SENT=${SHIFT_AUTH_EMAIL_PER_HOUR:-10}
       - GOTRUE_RATE_LIMIT_VERIFY=30
       - GOTRUE_RATE_LIMIT_TOKEN_REFRESH=150
-      # The hooks' functions are created by migrations 0003 and 0065. ORDER
+      # The hooks' functions are created by migrations 0003 and 0066. ORDER
       # RULE: each is pushed before GoTrue starts or restarts with it enabled.
       - GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_ENABLED=true
       - GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_URI=pg-functions://postgres/public/custom_access_token_hook

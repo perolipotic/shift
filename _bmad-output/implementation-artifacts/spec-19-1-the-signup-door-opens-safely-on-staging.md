@@ -10,7 +10,7 @@ context:
   - '{project-root}/_bmad-output/planning-artifacts/architecture/architecture-shift-2026-09-02/SECURITY-REVIEW-EPIC-19.md'
 ---
 
-Baseline: `origin/main` at #338 (AP2). Touches the hot file `hr.json` (and `test/resource-hygiene.test.ts`'s key list); story 16.2, built in parallel, does not touch them. Migration `0065` is the next free number at the time of writing; 16.2 may also take `0065`, so one of the two is renumbered at merge.
+Baseline: `origin/main` at #338 (AP2). Touches the hot file `hr.json` (and `test/resource-hygiene.test.ts`'s key list); story 16.2, built in parallel, does not touch them. Migration `0065` was the next free number at the time of writing; story 16.2 (PR #339) took `0065` (`0065_member_schedule_inputs.sql`), so this story's migration is renumbered `0066_signup_door.sql`.
 
 <frozen-after-approval reason="human-owned intent — do not modify unless human renegotiates">
 
@@ -59,7 +59,7 @@ Baseline: `origin/main` at #338 (AP2). Touches the hot file `hr.json` (and `test
 
 ## Code Map
 
-- `supabase/migrations/0065_signup_door.sql` -- new: `private.address_kind`, `private.is_synthesized_address`, `private.signup_settings` (seeded, closed, all revoked), `public.before_user_created_hook` (definer, `search_path = ''`, `supabase_auth_admin` only), modelled on `0003`'s access-token hook grants.
+- `supabase/migrations/0066_signup_door.sql` -- new: `private.address_kind`, `private.is_synthesized_address`, `private.signup_settings` (seeded, closed, all revoked), `public.before_user_created_hook` (definer, `search_path = ''`, `supabase_auth_admin` only), modelled on `0003`'s access-token hook grants.
 - `supabase/seed.sql` -- opens `signup_settings` locally.
 - `supabase/config.toml` -- `[auth] enable_signup`, `[auth.email] enable_confirmations`/`otp_expiry`/`otp_length`, `[auth.hook.before_user_created]`; "no open signup" comment rewritten.
 - `deploy/coolify/supabase/docker-compose.yml` -- Kong (allow-list, post-functions, `rate-limiting`, trusted IPs, headers off, sandbox requires, entrypoint guards); GoTrue (switches, SMTP, hook, limits, OTP, templates, subjects, entrypoint wrapper).
@@ -86,7 +86,7 @@ Baseline: `origin/main` at #338 (AP2). Touches the hot file `hr.json` (and `test
 
 ## Spec Change Log
 
-- 2026-11-21 (build) — The Code Map grew, outside the frozen block: `apps/web/src/lib/auth-email.ts` (the template builder the Vite plugin and `test/auth-email.test.ts` share), `apps/web/src/pages/key-sweep.test.ts` (leaves `signup.email.*` out of the screen-key sweep, as it leaves `obavijesti.*`), `test/static-hosting.test.ts` (`auth-email` sanctioned in `dist/`), `test/provisioning.test.ts` (grantee and attribute entries for 0065's three functions, unrun), `smoke/deployment.spec.ts` (the signup probe now asserts Kong's one `200 {}` for a synthesized address, which writes nothing, and 404s on closed paths; the old `422 signup_disabled` can no longer be seen through Kong). `test/self-hosted-stack.test.ts` "has files to read" did not break: the auth wrapper is a `content:` bind in the compose, as Kong's entrypoint is.
+- 2026-11-21 (build) — The Code Map grew, outside the frozen block: `apps/web/src/lib/auth-email.ts` (the template builder the Vite plugin and `test/auth-email.test.ts` share), `apps/web/src/pages/key-sweep.test.ts` (leaves `signup.email.*` out of the screen-key sweep, as it leaves `obavijesti.*`), `test/static-hosting.test.ts` (`auth-email` sanctioned in `dist/`), `test/provisioning.test.ts` (grantee and attribute entries for 0066's three functions, unrun), `smoke/deployment.spec.ts` (the signup probe now asserts Kong's one `200 {}` for a synthesized address, which writes nothing, and 404s on closed paths; the old `422 signup_disabled` can no longer be seen through Kong). `test/self-hosted-stack.test.ts` "has files to read" did not break: the auth wrapper is a `content:` bind in the compose, as Kong's entrypoint is.
 - 2026-11-21 (build, rehearsal) — Kong 2.8.1 matches a regex route on the NORMALIZED path (`//`, `%75` reached the signup route). Each allow-listed route therefore carries a raw-path guard that passes only its paths as written and answers anything else with Kong's own 404 body. Recorded in the spine (AD-22 as amended).
 - 2026-11-21 (review 1, applied) — the guards moved to a `pre-function` (in `KONG_PLUGINS`), which runs before cors, key-auth and the limits, so a variant is 404 with or without a key (rehearsed again); the admin route took methods, lost cors and gained a prefix guard; the mail route logs `AUTH_MAIL_RELAY <route> UNREAD`; verify takes a hex hash only; Kong refuses a trusted network wider than an IPv4 /8 or an IPv6 /32; the auth wrapper retries each template fetch 6 times 5 s apart and checks the OTP and templates whenever SMTP is set; nginx serves `/auth-email/` as itself or a plain 404, never index.html, and the web probe asserts the three templates; the hook's username reason is ASCII-only and no longer tautological; the smoke tells the local CLI stack (403 `SIGNUP_REFUSED`) from a deployed one; the stack test runs every rendered chunk in fengari behind a stand-in PDK and refuses Lua 5.3-only syntax; the claimless sweep counts only 42501 or zero rows as refused, counts real ids, names unswept functions and runs in repeatable read.
 
@@ -177,7 +177,7 @@ Decisions taken while building (decide and record):
   [`docker-compose.yml:1388`](../../deploy/coolify/supabase/docker-compose.yml#L1388)
 
 - The database switch and the one-answer hook.
-  [`0065_signup_door.sql:151`](../../supabase/migrations/0065_signup_door.sql#L151)
+  [`0066_signup_door.sql:151`](../../supabase/migrations/0066_signup_door.sql#L151)
 
 - The SPA switch, refused for production.
   [`require-config.mjs:203`](../../scripts/ci/require-config.mjs#L203)
@@ -196,7 +196,7 @@ Decisions taken while building (decide and record):
 **The address predicate**
 
 - The SQL home; the Lua home is in the mail route, and both run the vector file.
-  [`0065_signup_door.sql:66`](../../supabase/migrations/0065_signup_door.sql#L66)
+  [`0066_signup_door.sql:66`](../../supabase/migrations/0066_signup_door.sql#L66)
 
 **Auth email**
 

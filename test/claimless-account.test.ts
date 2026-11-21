@@ -63,7 +63,7 @@ const PILOT = FIXTURES[0];
 /** AD-23's one definer, the only function a claimless account may succeed with. */
 const ALLOWED_TO_SUCCEED = new Set(['create_organization']);
 
-/** The hook's one refusal (0065), word for word. */
+/** The hook's one refusal (0066), word for word. */
 const SIGNUP_REFUSED = { error: { http_code: 403, message: 'SIGNUP_REFUSED' } };
 
 const VECTORS = (
@@ -831,7 +831,7 @@ describe('a claimless session at the API (story 19.1, AD-10, AD-16)', () => {
   }, 30_000);
 
   it.skipIf(noAdminApi)('creates a username identity through POST /admin/users with the hook on, which the hook would refuse (A6)', async () => {
-    // The hook refuses every synthesized address (0065). The admin API
+    // The hook refuses every synthesized address (0066). The admin API
     // creating one proves GoTrue does not run the hook there, so `admin-auth`
     // and the operator script are unaffected.
     const endpoint = apiEndpoint;

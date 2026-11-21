@@ -1,4 +1,4 @@
--- 0065_signup_door.sql
+-- 0066_signup_door.sql
 --
 -- Forward-only. Once this file has been promoted past local it is never edited;
 -- a correction is a new migration with a higher number.

@@ -77,7 +77,7 @@ test.describe('signup', () => {
 
     if (againstLocalStack()) {
       // The CLI's GoTrue, behind the CLI's Kong: the before-user-created hook
-      // (0065) refuses a synthesized address with its one answer.
+      // (0066) refuses a synthesized address with its one answer.
       expect(response.status(), `the local hook did not refuse the probe: ${body}`).toBe(403);
       expect(body).toContain('SIGNUP_REFUSED');
       return;

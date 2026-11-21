@@ -5780,7 +5780,7 @@ describe('the local auth provider configuration', () => {
     expect(setting('auth.email', 'otp_length')).toBe('10');
   });
 
-  it('enables the before-user-created hook everywhere and points it at 0065’s function, which only the auth service may run (story 19.1)', () => {
+  it('enables the before-user-created hook everywhere and points it at 0066’s function, which only the auth service may run (story 19.1)', () => {
     expect(setting('auth.hook.before_user_created', 'enabled')).toBe('true');
     expect(setting('auth.hook.before_user_created', 'uri')).toBe('pg-functions://postgres/public/before_user_created_hook');
     const migrations = migrationStatements();
@@ -5960,11 +5960,11 @@ describe('the server read assembly (0065, story 16.2)', () => {
   });
 });
 
-describe('the signup door migration (story 19.1, 0065)', () => {
-  const SIGNUP_MIGRATION = '0065_signup_door.sql';
+describe('the signup door migration (story 19.1, 0066)', () => {
+  const SIGNUP_MIGRATION = '0066_signup_door.sql';
   const migration = (): string =>
     stripLineComments(readFileSync(join(supabaseRoot, 'migrations', SIGNUP_MIGRATION), 'utf8'));
-  /** One `create function` statement of 0065, whole. */
+  /** One `create function` statement of 0066, whole. */
   const functionNamed = (name: string): string =>
     sqlStatements(migration()).find((statement) => statement.trimStart().toLowerCase().startsWith(`create function ${name}(`)) ?? '';
 

@@ -50,7 +50,7 @@ minimum_password_length = 10
 # stack is shut unless its environment opens it, and `staging.env.example`
 # opens it with exactly this value (`test/supabase-scaffold.test.ts` pins all
 # three). Signup is open on a stack only while all three switches are open:
-# this one, `private.signup_settings.open` (0065; `seed.sql` opens it locally)
+# this one, `private.signup_settings.open` (0066; `seed.sql` opens it locally)
 # and the SPA's `VITE_SIGNUP_ENABLED`. Accounts created by an admin
 # (`admin-auth`) or by the operator script are username identities, confirmed
 # at creation, and unaffected by any of it.
@@ -129,9 +129,9 @@ uri = "pg-functions://postgres/public/custom_access_token_hook"
 
 # AD-21: refuses every new account unless `private.signup_settings` is open,
 # the address is an email identity's and the 24-hour ceiling holds, all with
-# one `SIGNUP_REFUSED` (0065). Enabled everywhere (story 19.1, D2): the door is
+# one `SIGNUP_REFUSED` (0066). Enabled everywhere (story 19.1, D2): the door is
 # shut by `enable_signup` and the switch, never by this hook being off. The
-# same order rule as the hook above: 0065 is applied before it is enabled.
+# same order rule as the hook above: 0066 is applied before it is enabled.
 # GoTrue does not run it for `POST /admin/users`, so `admin-auth` is unaffected.
 [auth.hook.before_user_created]
 enabled = true

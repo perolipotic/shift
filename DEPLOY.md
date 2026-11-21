@@ -1976,9 +1976,9 @@ compose in one PR, then paste the compose into Coolify and redeploy GoTrue.
    starts.
 2. **The hook's migration before GoTrue runs with the hook.**
    `GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_ENABLED` names a function created by
-   `0003`, and `GOTRUE_HOOK_BEFORE_USER_CREATED_ENABLED` one created by `0065`
+   `0003`, and `GOTRUE_HOOK_BEFORE_USER_CREATED_ENABLED` one created by `0066`
    (story 19.1). The same holds for every later change that enables a hook:
-   the migration first, then the GoTrue environment (§5.2b). Until `0065` is
+   the migration first, then the GoTrue environment (§5.2b). Until `0066` is
    pushed, a user-creating path other than `POST /admin/users` fails on the
    missing function; Kong leaves only `/signup` open (§9.9), and the door is
    shut by `GOTRUE_DISABLE_SIGNUP` anyway.
@@ -2620,7 +2620,7 @@ founder's decision at D-S5, after the security review in
 1. **GoTrue's environment.** `SHIFT_DISABLE_SIGNUP` and
    `SHIFT_MAILER_AUTOCONFIRM`, both `true` unless set. `staging.env.example`
    sets both `false`; `production.env.example` keeps both `true`.
-2. **The database.** `private.signup_settings` (migration `0065`), one row,
+2. **The database.** `private.signup_settings` (migration `0066`), one row,
    `open = false` when created. No session role holds any privilege on it, so
    the operator opens and closes it over the tailnet with the Postgres
    password, never through the API:
@@ -2731,7 +2731,7 @@ adds no `Server`, `Via` or latency header (`KONG_HEADERS=off`).
 **Opening staging,** once story 20.5 stands it up and 19.2 has shipped the
 screens: set the inputs above in Coolify (`SHIFT_DISABLE_SIGNUP=false`,
 `SHIFT_MAILER_AUTOCONFIRM=false`, `GOTRUE_SMTP_PASS`, `SHIFT_AUTH_EMAIL_FROM`,
-`SHIFT_PROXY_CIDR`), push migrations (`0065` before GoTrue restarts, §9.4),
+`SHIFT_PROXY_CIDR`), push migrations (`0066` before GoTrue restarts, §9.4),
 redeploy, check `supabase-auth`'s log shows no `auth-entrypoint:` refusal,
 then open `signup_settings` by SQL. Closing is the reverse: the SQL first
 (immediate), then the environment.
