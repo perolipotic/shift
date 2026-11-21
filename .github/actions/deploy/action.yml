@@ -1,63 +1,73 @@
 name: Deploy one environment
 description: >-
-  DEPLOY.md §5.2 / §5.2b, in order, against one hosted environment:
-  link, db push, migration list, config push, secrets set, functions deploy
-  admin-auth and notify, then a build with that environment's VITE_* values and a
-  Cloudflare Pages Direct Upload. Runs after actions/checkout and ./setup, and
-  after the calling job has checked that every input is set
-  (scripts/ci/require-config.mjs, including the shape of the project ref and
-  the publishable key), so no remote command runs on a partial or malformed
-  configuration.
+  Story 20.6 (DEPLOY.md §8.1): one self-hosted environment, a Coolify project
+  on our own server. Builds, checks and probes both images on the runner,
+  joins the tailnet as an ephemeral tag:ci node, applies the migrations over
+  it (a production migration only after a recorded backup), pushes the
+  probed images to GHCR, points the environment's channel tags at their
+  digests, asks Coolify to deploy them with a deploy-only token, and proves
+  what is live. Runs after actions/checkout and ./setup, and after the
+  calling job has checked every input (scripts/ci/require-config.mjs), so no
+  remote command runs on a partial or malformed configuration. No runtime
+  secret of the stack passes through here: they live in Coolify (AD-17 as
+  amended).
 
 inputs:
   environment:
-    description: The GitHub Environment name (staging or production), for the summary.
-    required: true
-  pages-branch:
-    description: The Pages branch to deploy to (staging for the preview alias, main for production).
+    description: The GitHub Environment, and the channel tag Coolify pulls (staging or production).
     required: true
   app-origins:
     description: >-
-      Comma-separated bare origins the app is served from. The first is the
-      auth site URL; all are redirect URLs and admin-auth CORS origins.
+      Comma-separated bare https origins the app is served from; the first is
+      the one the deploy checks and the smoke targets.
     required: true
-  supabase-project-ref:
-    required: true
-  supabase-access-token:
-    required: true
-  supabase-db-password:
+  supabase-api-url:
+    description: The stack's public API origin (Kong), https://api.<domain>. Public.
     required: true
   supabase-publishable-key:
-    required: true
-  supabase-secret-key:
-    required: true
-  # Story 10.1 (AD-17, amended): read by the notify function and nothing else.
-  resend-api-key:
-    required: true
-  notify-invoke-secret:
-    description: >-
-      The bearer token the notify cron job sends. The same value must be in
-      this environment's Vault as notify_invoke_secret (DEPLOY.md §3a).
-    required: true
-  notify-email-from:
-    description: The sender, on a domain verified in Resend (SPF and DKIM).
-    required: true
-  # Story 10.4: the VAPID key pair and its subject. The private key is read by
-  # notify alone; the public key by notify and, as VITE_VAPID_PUBLIC_KEY, by
-  # the SPA build (AD-17, amended).
-  vapid-private-key:
+    description: The stack's sb_publishable_ key, inlined into the bundle. Public.
     required: true
   vapid-public-key:
+    description: The stack's Web Push public key, inlined into the bundle. Public.
     required: true
-  vapid-subject:
-    description: Who a push service may contact, as mailto:addr or an https URL.
+  db-host:
+    description: Postgres's tailnet name (published by tailscale serve on the host).
     required: true
-  cloudflare-api-token:
+  db-port:
     required: true
-  cloudflare-account-id:
+  db-password:
+    description: The stack's Postgres password, for db push and migration list only.
     required: true
-  cloudflare-pages-project:
+  coolify-api-url:
+    description: Coolify's API origin on the tailnet.
     required: true
+  coolify-api-token:
+    description: A Coolify API token with the deploy ability only.
+    required: true
+  coolify-web-uuid:
+    description: The shift-web Docker-image application's uuid in Coolify.
+    required: true
+  coolify-functions-uuid:
+    description: The Supabase stack's (service's) uuid in Coolify.
+    required: true
+  ts-oauth-client-id:
+    required: true
+  ts-oauth-secret:
+    required: true
+  registry-token:
+    description: The job's GITHUB_TOKEN, with packages write (GHCR).
+    required: true
+  functions-image:
+    description: >-
+      A shift-functions reference by digest to deploy as it is (production
+      deploys the one staging probed and deployed). Empty: build it, or reuse
+      the probed build of the same sources.
+    required: false
+    default: ''
+  pre-migration-backup-at:
+    description: Production only, when migrations are pending - the UTC time of the backup taken for them.
+    required: false
+    default: ''
 
 outputs:
   app-origin:
@@ -67,231 +77,250 @@ outputs:
     description: The normalized comma-separated origin list.
     value: ${{ steps.origin.outputs.origins }}
   supabase-url:
-    description: The environment's Supabase project URL.
+    description: The stack's public API origin.
     value: ${{ steps.origin.outputs.supabase-url }}
+  functions-image:
+    description: >-
+      The shift-functions reference by digest this run deployed (verified by
+      the notify probe when the job succeeded; which digest the container runs
+      is checked on the host, not from here).
+    value: ${{ steps.functions-image.outputs.ref }}
+  web-image:
+    description: The shift-web reference by digest this run pushed (live when the job succeeded).
+    value: ${{ steps.web-push.outputs.ref }}
 
 runs:
   using: composite
   steps:
-    # The one parse of APP_ORIGINS (scripts/ci/origins.mjs, https only): its
-    # normalized list and first origin feed site_url, the redirect URLs,
-    # SHIFT_ALLOWED_ORIGINS, the Environment URL and the smoke. Nothing below
-    # re-parses the raw variable.
-    - name: Resolve origins
+    # The one parse of APP_ORIGINS (scripts/ci/origins.mjs, https only), and
+    # the two GHCR repositories under the repository's owner (lowercase, as
+    # the registry requires).
+    - name: Resolve origins and repositories
       id: origin
       shell: bash
       env:
         APP_ORIGINS: ${{ inputs.app-origins }}
-        PROJECT_REF: ${{ inputs.supabase-project-ref }}
+        SUPABASE_API_URL: ${{ inputs.supabase-api-url }}
+        ENVIRONMENT: ${{ inputs.environment }}
       run: |
+        case "$ENVIRONMENT" in staging|production) ;; *) echo "::error::unknown environment $ENVIRONMENT"; exit 1 ;; esac
         node scripts/ci/origins.mjs "$APP_ORIGINS"
-        echo "supabase-url=https://$PROJECT_REF.supabase.co" >> "$GITHUB_OUTPUT"
+        owner="${GITHUB_REPOSITORY_OWNER,,}"
+        {
+          echo "supabase-url=$SUPABASE_API_URL"
+          echo "functions-repository=ghcr.io/$owner/shift-functions"
+          echo "web-repository=ghcr.io/$owner/shift-web"
+        } >> "$GITHUB_OUTPUT"
 
-    # ------------------------------------------------------------- Supabase
-    # SUPABASE_ACCESS_TOKEN authenticates the CLI (DEPLOY.md §0) and
-    # SUPABASE_DB_PASSWORD is the database password `link`, `db push` and
-    # `migration list` read. Both reach the CLI through the environment only,
-    # never as an argument.
-    - name: supabase link
-      shell: bash
-      env:
-        SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase-access-token }}
-        SUPABASE_DB_PASSWORD: ${{ inputs.supabase-db-password }}
-        PROJECT_REF: ${{ inputs.supabase-project-ref }}
-      run: pnpm exec supabase link --project-ref "$PROJECT_REF"
+    # ------------------------------------------------- images, on the runner
+    # Everything that can refuse a release runs before the tailnet and the
+    # migration, so no migration is applied for images that would be refused.
 
-    # FIRST: creates the access token hook's function before config push tells
-    # GoTrue to call it (§5.2b), and adds any column before the SPA that selects
-    # it is published (§5.2c). Migrations only: never --include-seed.
-    - name: supabase db push
-      shell: bash
-      env:
-        SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase-access-token }}
-        SUPABASE_DB_PASSWORD: ${{ inputs.supabase-db-password }}
-      run: pnpm exec supabase db push --yes
-
-    - name: supabase migration list (local and remote must agree)
-      shell: bash
-      env:
-        SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase-access-token }}
-        SUPABASE_DB_PASSWORD: ${{ inputs.supabase-db-password }}
-      run: |
-        # JSON, so nothing scrapes a table (scripts/ci/check-migrations.mjs);
-        # it fails on drift and on a listing in which it recognised no row.
-        pnpm exec supabase migration list --output-format json > "$RUNNER_TEMP/migrations.json"
-        node scripts/ci/check-migrations.mjs "$RUNNER_TEMP/migrations.json"
-
-    # site_url / additional_redirect_urls are the only per-environment values
-    # in config.toml, and `[auth.rate_limit]` is local only, so it is dropped.
-    # Rewritten in this runner's copy only; the committed file keeps its local
-    # values.
-    - name: Point [auth] URLs at this environment
-      shell: bash
-      env:
-        ORIGINS: ${{ steps.origin.outputs.origins }}
-      run: node scripts/ci/set-auth-urls.mjs "$ORIGINS"
-
-    # THEN: signup off, the hook on, this environment's URLs (§5.2a). A failure
-    # here leaves self-service signup open, so it stops the job.
-    - name: supabase config push
-      shell: bash
-      env:
-        SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase-access-token }}
-        PROJECT_REF: ${{ inputs.supabase-project-ref }}
-      run: pnpm exec supabase config push --project-ref "$PROJECT_REF" --yes
-
-    # From a file, never as NAME=VALUE arguments (§3). The file is written from
-    # the environment by a heredoc, is readable by this user only, and is
-    # removed however the step ends. Function secrets are per project, so one
-    # file carries both functions' values; only `notify` reads the RESEND_,
-    # NOTIFY_ and VAPID_ names (test/key-hygiene.test.ts).
-    - name: supabase secrets set (admin-auth and notify)
-      shell: bash
-      env:
-        SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase-access-token }}
-        PROJECT_REF: ${{ inputs.supabase-project-ref }}
-        FUNCTION_SECRET_KEY: ${{ inputs.supabase-secret-key }}
-        FUNCTION_PUBLISHABLE_KEY: ${{ inputs.supabase-publishable-key }}
-        ORIGINS: ${{ steps.origin.outputs.origins }}
-        APP_ORIGIN: ${{ steps.origin.outputs.app-origin }}
-        FUNCTION_RESEND_API_KEY: ${{ inputs.resend-api-key }}
-        FUNCTION_INVOKE_SECRET: ${{ inputs.notify-invoke-secret }}
-        FUNCTION_EMAIL_FROM: ${{ inputs.notify-email-from }}
-        FUNCTION_VAPID_PRIVATE_KEY: ${{ inputs.vapid-private-key }}
-        FUNCTION_VAPID_PUBLIC_KEY: ${{ inputs.vapid-public-key }}
-        FUNCTION_VAPID_SUBJECT: ${{ inputs.vapid-subject }}
-      run: |
-        env_file="$RUNNER_TEMP/functions.env"
-        trap 'rm -f "$env_file"' EXIT
-        umask 077
-        cat > "$env_file" <<EOF
-        SHIFT_SECRET_KEY=${FUNCTION_SECRET_KEY}
-        SHIFT_PUBLISHABLE_KEY=${FUNCTION_PUBLISHABLE_KEY}
-        SHIFT_ALLOWED_ORIGINS=${ORIGINS}
-        NOTIFY_INVOKE_SECRET=${FUNCTION_INVOKE_SECRET}
-        RESEND_API_KEY=${FUNCTION_RESEND_API_KEY}
-        NOTIFY_EMAIL_FROM=${FUNCTION_EMAIL_FROM}
-        SHIFT_APP_URL=${APP_ORIGIN}
-        VAPID_PRIVATE_KEY=${FUNCTION_VAPID_PRIVATE_KEY}
-        VAPID_PUBLIC_KEY=${FUNCTION_VAPID_PUBLIC_KEY}
-        VAPID_SUBJECT=${FUNCTION_VAPID_SUBJECT}
-        EOF
-        pnpm exec supabase secrets set --env-file "$env_file" --project-ref "$PROJECT_REF"
-
-    - name: supabase functions deploy admin-auth
-      shell: bash
-      env:
-        SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase-access-token }}
-        PROJECT_REF: ${{ inputs.supabase-project-ref }}
-      run: pnpm exec supabase functions deploy admin-auth --project-ref "$PROJECT_REF"
-
-    # Story 10.1. The cron job (0042) calls it every minute once this
-    # environment's Vault holds notify_url and notify_invoke_secret (§3a).
-    # Story 10.4: straight after db push and BEFORE the SPA. From 0045 the
-    # outbox holds push rows, which only this notify sends as push (an older
-    # one would email them).
-    - name: supabase functions deploy notify
-      shell: bash
-      env:
-        SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase-access-token }}
-        PROJECT_REF: ${{ inputs.supabase-project-ref }}
-      run: pnpm exec supabase functions deploy notify --project-ref "$PROJECT_REF"
-
-    # The post-deploy probe (DEPLOY.md §6): notify is live and refuses a
-    # caller without the invoke secret before it claims anything. Sends no
-    # token, so it can never trigger a send.
-    - name: notify refuses a caller without the invoke secret
-      shell: bash
-      env:
-        SUPABASE_URL: ${{ steps.origin.outputs.supabase-url }}
-      run: |
-        body="$(curl -sS -o - -w '\n%{http_code}' -X POST "$SUPABASE_URL/functions/v1/notify")"
-        status="${body##*$'\n'}"
-        if [ "$status" != "401" ] || ! grep -q '"code":"INVOKE_SECRET_REFUSED"' <<<"${body%$'\n'*}"; then
-          echo "::error title=notify probe::expected 401 INVOKE_SECRET_REFUSED, got ${status}"
-          exit 1
-        fi
-
-    # ---------------------------------------------------------------- Pages
     # Vite inlines VITE_* at build time, so each environment builds its own
-    # bundle; the Stage 2 artifact is never reused (spec, Design Notes). The
-    # `...` builds @shift/web and everything it depends on (DEPLOY.md §4).
+    # bundle (and its own CSP, which names this API origin).
     - name: Build apps/web for ${{ inputs.environment }}
       shell: bash
       env:
-        VITE_SUPABASE_URL: ${{ steps.origin.outputs.supabase-url }}
+        VITE_SUPABASE_URL: ${{ inputs.supabase-api-url }}
         VITE_SUPABASE_PUBLISHABLE_KEY: ${{ inputs.supabase-publishable-key }}
-        # Story 10.4: the VAPID PUBLIC key, which a device subscribes under.
         VITE_VAPID_PUBLIC_KEY: ${{ inputs.vapid-public-key }}
       run: pnpm --filter "@shift/web..." build
 
-    # AD-17, on the bundle about to ship: this environment's secret key value,
-    # its Resend key, its notify invoke secret and its VAPID private key, and
-    # any key-shaped sb_secret_ value, must be absent.
+    # AD-17 on the bundle about to ship: no sb_secret_ key, no JWT whose role
+    # is not anon, no Resend key, and not the private half of this
+    # environment's VAPID public key (scripts/ci/check-bundle.mjs).
     - name: The bundle carries no secret
       shell: bash
       env:
-        FUNCTION_SECRET_KEY: ${{ inputs.supabase-secret-key }}
-        FUNCTION_RESEND_API_KEY: ${{ inputs.resend-api-key }}
-        FUNCTION_INVOKE_SECRET: ${{ inputs.notify-invoke-secret }}
-        FUNCTION_VAPID_PRIVATE_KEY: ${{ inputs.vapid-private-key }}
-      run: |
-        if grep -rqF -- "$FUNCTION_SECRET_KEY" apps/web/dist; then
-          echo "::error title=Secret in bundle::this environment's secret key is in apps/web/dist"
-          exit 1
-        fi
-        if grep -rqF -- "$FUNCTION_RESEND_API_KEY" apps/web/dist; then
-          echo "::error title=Secret in bundle::this environment's Resend key is in apps/web/dist"
-          exit 1
-        fi
-        if grep -rqF -- "$FUNCTION_INVOKE_SECRET" apps/web/dist; then
-          echo "::error title=Secret in bundle::this environment's notify invoke secret is in apps/web/dist"
-          exit 1
-        fi
-        if grep -rqF -- "$FUNCTION_VAPID_PRIVATE_KEY" apps/web/dist; then
-          echo "::error title=Secret in bundle::this environment's VAPID private key is in apps/web/dist"
-          exit 1
-        fi
-        if grep -rqE 'sb_secret_[A-Za-z0-9_-]{20}' apps/web/dist; then
-          echo "::error title=Secret in bundle::a key-shaped sb_secret_ value is in apps/web/dist"
-          exit 1
-        fi
+        VAPID_PUBLIC_KEY: ${{ inputs.vapid-public-key }}
+      run: node scripts/ci/check-bundle.mjs apps/web/dist "$VAPID_PUBLIC_KEY"
 
-    # The build's source maps are `hidden` (vite.config.ts): no chunk names
-    # them, and they stay off the CDN, which would otherwise serve the whole
-    # original source to anyone who asks (DEPLOY.md §4).
+    # The build's source maps are `hidden` (vite.config.ts); none is published
+    # (and deploy/web/Dockerfile fails if one is left).
     - name: No source map is published
       shell: bash
       run: find apps/web/dist -name '*.map' -type f -delete
 
-    # Direct Upload: the Pages project has no Git connection (DEPLOY.md §4), so
-    # this is the only way anything is published, and it runs only after every
-    # gate before it passed.
-    - name: wrangler pages deploy
+    - name: Build shift-web and probe it offline
+      shell: bash
+      run: |
+        docker build --pull -f deploy/web/Dockerfile -t "shift-web:deploy-$GITHUB_SHA" .
+        bash scripts/ci/probe-web-image.sh "shift-web:deploy-$GITHUB_SHA" apps/web/dist
+
+    # GHCR, with the job's own GITHUB_TOKEN (packages: write on the deploy
+    # jobs only), on stdin. Logged out at the end however the job ends.
+    - name: Log in to GHCR
       shell: bash
       env:
-        CLOUDFLARE_API_TOKEN: ${{ inputs.cloudflare-api-token }}
-        CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare-account-id }}
-        PAGES_PROJECT: ${{ inputs.cloudflare-pages-project }}
-        PAGES_BRANCH: ${{ inputs.pages-branch }}
-        WRANGLER_SEND_METRICS: 'false'
-      run: |
-        pnpm exec wrangler pages deploy apps/web/dist \
-          --project-name "$PAGES_PROJECT" \
-          --branch "$PAGES_BRANCH" \
-          --commit-hash "$GITHUB_SHA"
+        REGISTRY_TOKEN: ${{ inputs.registry-token }}
+      run: printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
 
+    # The functions image is code only, the same for every environment.
+    # Staging builds and probes it, unless the registry already holds the
+    # probed build of these exact sources (`:src-<hash>`), which is reused so
+    # an SPA-only release never restarts the stack. Production deploys the
+    # digest staging deployed (`functions-image`), never a rebuild.
+    - name: shift-functions (build and probe, or reuse)
+      id: functions-image
+      shell: bash
+      env:
+        ENVIRONMENT: ${{ inputs.environment }}
+        GIVEN: ${{ inputs.functions-image }}
+        REPOSITORY: ${{ steps.origin.outputs.functions-repository }}
+      run: |
+        ref="$(bash scripts/ci/deploy-images.sh functions-image)"
+        echo "ref=$ref" >> "$GITHUB_OUTPUT"
+
+    # A commit tag only: nothing pulls `<environment>-<sha>`, so pushing it
+    # changes nothing that runs. The digest it prints is the rollback handle
+    # (DEPLOY.md §8.7); a re-run of the job may push the tag again.
+    - name: Push shift-web (probed, not yet deployed)
+      id: web-push
+      shell: bash
+      env:
+        ENVIRONMENT: ${{ inputs.environment }}
+        REPOSITORY: ${{ steps.origin.outputs.web-repository }}
+      run: |
+        ref="$(bash scripts/ci/registry.sh push "shift-web:deploy-$GITHUB_SHA" "$REPOSITORY" "$ENVIRONMENT-$GITHUB_SHA")"
+        echo "ref=$ref" >> "$GITHUB_OUTPUT"
+
+    # --------------------------------------------------------------- tailnet
+    # An ephemeral node tagged tag:ci, from the OAuth client (H-9). The
+    # tailnet's ACL lets tag:ci reach the stacks' Postgres ports and the
+    # Coolify API only. The node logs out when the job ends.
+    - name: Join the tailnet (ephemeral, tag:ci)
+      uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4.4.0
+      with:
+        oauth-client-id: ${{ inputs.ts-oauth-client-id }}
+        oauth-secret: ${{ inputs.ts-oauth-secret }}
+        tags: tag:ci
+        use-cache: 'false'
+
+    # ------------------------------------------------------------ migrations
+    # The URL carries no password: the CLI reads it from PGPASSWORD, so it is
+    # never an argument. Host and port were shape-checked by require-config.
+    # Also the preflight of everything a later step needs from the runner and
+    # the database (psql, a connection), so nothing is found missing after the
+    # migration has been applied.
+    - name: supabase migration list (before)
+      shell: bash
+      env:
+        PGPASSWORD: ${{ inputs.db-password }}
+        PGCONNECT_TIMEOUT: '10'
+        DB_HOST: ${{ inputs.db-host }}
+        DB_PORT: ${{ inputs.db-port }}
+      run: |
+        command -v psql > /dev/null || { echo "::error::psql is not on the runner"; exit 1; }
+        psql "postgresql://postgres@$DB_HOST:$DB_PORT/postgres" -XAtc 'select 1' > /dev/null
+        pnpm exec supabase migration list --db-url "postgresql://postgres@$DB_HOST:$DB_PORT/postgres" \
+          --output-format json > "$RUNNER_TEMP/migrations-before.json"
+
+    # H-12: a production migration runs only after a backup recorded within
+    # the last 24 hours (scripts/ci/backup-gate.mjs). Story 20.7 replaces the
+    # operator's manual backup with an automated one at this step.
+    - name: A backup precedes a production migration
+      shell: bash
+      env:
+        ENVIRONMENT: ${{ inputs.environment }}
+        PRE_MIGRATION_BACKUP_AT: ${{ inputs.pre-migration-backup-at }}
+      run: node scripts/ci/backup-gate.mjs --environment "$ENVIRONMENT" "$RUNNER_TEMP/migrations-before.json"
+
+    # FIRST, before any image: the access token hook's function exists before
+    # GoTrue is (re)started with the hook (§9.4), and every column exists
+    # before the SPA that selects it (§5.2c). Migrations only, never the seed.
+    - name: supabase db push
+      shell: bash
+      env:
+        PGPASSWORD: ${{ inputs.db-password }}
+        PGCONNECT_TIMEOUT: '10'
+        DB_HOST: ${{ inputs.db-host }}
+        DB_PORT: ${{ inputs.db-port }}
+      run: pnpm exec supabase db push --db-url "postgresql://postgres@$DB_HOST:$DB_PORT/postgres" --yes
+
+    - name: supabase migration list (local and remote must agree)
+      shell: bash
+      env:
+        PGPASSWORD: ${{ inputs.db-password }}
+        PGCONNECT_TIMEOUT: '10'
+        DB_HOST: ${{ inputs.db-host }}
+        DB_PORT: ${{ inputs.db-port }}
+      run: |
+        pnpm exec supabase migration list --db-url "postgresql://postgres@$DB_HOST:$DB_PORT/postgres" \
+          --output-format json > "$RUNNER_TEMP/migrations.json"
+        node scripts/ci/check-migrations.mjs "$RUNNER_TEMP/migrations.json"
+
+    # ------------------------------------------------------------- functions
+    # Coolify's stack pulls `shift-functions:<environment>`. A deploy-only
+    # token cannot change that reference, so the tag is moved to the probed
+    # digest and the stack is restarted with its images pulled again: the
+    # whole stack, Postgres included (about a minute; DEPLOY.md §8.1). The
+    # restart happens only when the digest differs from the last one verified
+    # here (`<environment>-live`) and the channel tag names it too. The
+    # restart is shown by Postgres having started after the request, then by
+    # the notify probe (DEPLOY.md §6: a 401 INVOKE_SECRET_REFUSED to a caller
+    # without the invoke secret; no token is sent, so it can never trigger a
+    # send); only then is the digest recorded as `<environment>-live`. Which
+    # digest the container runs is not visible from here (20.5 checks it on
+    # the host). The logic, the probe included, is scripts/ci/deploy-images.sh,
+    # tested with stand-ins: a failure anywhere in it puts the channel tag back.
+    - name: Deploy shift-functions
+      shell: bash
+      env:
+        ENVIRONMENT: ${{ inputs.environment }}
+        REF: ${{ steps.functions-image.outputs.ref }}
+        COOLIFY_API_URL: ${{ inputs.coolify-api-url }}
+        COOLIFY_API_TOKEN: ${{ inputs.coolify-api-token }}
+        STACK_UUID: ${{ inputs.coolify-functions-uuid }}
+        SUPABASE_URL: ${{ steps.origin.outputs.supabase-url }}
+        PGPASSWORD: ${{ inputs.db-password }}
+        PGCONNECT_TIMEOUT: '10'
+        DB_HOST: ${{ inputs.db-host }}
+        DB_PORT: ${{ inputs.db-port }}
+      run: DB_URL="postgresql://postgres@$DB_HOST:$DB_PORT/postgres" bash scripts/ci/deploy-images.sh deploy-functions
+
+    # ------------------------------------------------------------------- web
+    # After the migration and the functions (§5.2c, and from 0045 the outbox
+    # holds push rows only this notify sends). Coolify's Docker-image
+    # application pulls `shift-web:<environment>`, now the probed digest; the
+    # deploy is done when the origin serves this build's index.html with this
+    # build's headers.
+    - name: Deploy shift-web
+      shell: bash
+      env:
+        ENVIRONMENT: ${{ inputs.environment }}
+        REF: ${{ steps.web-push.outputs.ref }}
+        COOLIFY_API_URL: ${{ inputs.coolify-api-url }}
+        COOLIFY_API_TOKEN: ${{ inputs.coolify-api-token }}
+        WEB_UUID: ${{ inputs.coolify-web-uuid }}
+        APP_ORIGIN: ${{ steps.origin.outputs.app-origin }}
+        DIST: apps/web/dist
+      run: bash scripts/ci/deploy-images.sh deploy-web
+
+    - name: Log out of GHCR
+      if: always()
+      shell: bash
+      run: docker logout ghcr.io || true
+
+    # Also on failure: the references pushed so far are what a rollback or a
+    # retry needs.
     - name: Summary
+      if: always()
       shell: bash
       env:
         ENVIRONMENT: ${{ inputs.environment }}
         APP_ORIGIN: ${{ steps.origin.outputs.app-origin }}
         SUPABASE_URL: ${{ steps.origin.outputs.supabase-url }}
+        FUNCTIONS_REF: ${{ steps.functions-image.outputs.ref }}
+        WEB_REF: ${{ steps.web-push.outputs.ref }}
       run: |
         {
-          echo "### Deployed ${ENVIRONMENT}"
+          echo "### Deploy of ${ENVIRONMENT} (see the job's result)"
           echo ""
           echo "- app: ${APP_ORIGIN}"
-          echo "- Supabase: ${SUPABASE_URL}"
+          echo "- API: ${SUPABASE_URL}"
           echo "- commit: ${GITHUB_SHA}"
+          echo "- shift-web (pushed): \`${WEB_REF:-not pushed}\`"
+          echo "- shift-functions (resolved): \`${FUNCTIONS_REF:-not resolved}\`"
+          echo ""
+          echo "Live only if this job succeeded. To roll back to a successful release later: DEPLOY.md §8.7, with its two digests."
         } >> "$GITHUB_STEP_SUMMARY"

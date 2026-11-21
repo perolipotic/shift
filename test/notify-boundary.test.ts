@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import type { Client } from 'pg';
 import { describe, expect, it, vi } from 'vitest';
 import webpush from 'web-push';
+import { parse as parseYaml } from 'yaml';
 
 import { FIXTURES, inRolledBackTransaction, noDatabase, organizationId } from './database.js';
 import { formatIsoDate as spaFormatIsoDate } from '../apps/web/src/lib/i18n/format.ts';
@@ -945,26 +946,27 @@ describe('notify reads its environment once, with one code per missing variable'
     },
   );
 
-  it('is handed every variable it reads but SUPABASE_URL by the deploy action', () => {
-    // The deploy action writes one env file for both functions with a
-    // heredoc; every name in it is a `NAME=` line. `SUPABASE_URL` is the
-    // Edge Runtime's own and is never set.
-    const action = readFileSync(join(repoRoot, '.github', 'actions', 'deploy', 'action.yml'), 'utf8');
-    const heredoc = /cat > "\$env_file" <<EOF\n([\s\S]*?)\n\s*EOF/.exec(action)?.[1] ?? '';
-    const written = [...heredoc.matchAll(/^\s*([A-Z][A-Z0-9_]*)=/gm)].map((match) => match[1] ?? '');
-    expect(written.length, 'the deploy action writes no function secrets').toBeGreaterThan(0);
+  it('is handed every variable it reads by the self-hosted stack’s functions container', () => {
+    // Story 20.6: the deploy no longer writes function secrets (AD-17 as
+    // amended: they live in Coolify). The stack's compose file gives the
+    // `supabase-edge-functions` container its environment as `- NAME=` lines,
+    // `SUPABASE_URL` (the internal gateway) included.
+    const compose = parseYaml(
+      readFileSync(join(repoRoot, 'deploy', 'coolify', 'supabase', 'docker-compose.yml'), 'utf8'),
+    ) as { services: Record<string, { environment?: string[] }> };
+    const environment = compose.services['supabase-edge-functions']?.environment ?? [];
+    const written = environment.map((entry) => /^([A-Z][A-Z0-9_]*)=/.exec(entry)?.[1] ?? '').filter(Boolean);
+    expect(written.length, 'the functions container is given no variable').toBeGreaterThan(0);
 
     const read: string[] = [];
     readConfiguration((name) => {
       read.push(name);
       return ENVIRONMENT[name];
     });
-    expect(read.filter((name) => name !== 'SUPABASE_URL').filter((name) => !written.includes(name))).toEqual([]);
+    expect(read.filter((name) => !written.includes(name))).toEqual([]);
 
-    const fromAction = readConfiguration((name) =>
-      name === 'SUPABASE_URL' || written.includes(name) ? ENVIRONMENT[name] : undefined,
-    );
-    expect(fromAction.ok).toBe(true);
+    const fromStack = readConfiguration((name) => (written.includes(name) ? ENVIRONMENT[name] : undefined));
+    expect(fromStack.ok).toBe(true);
   });
 
   it('answers every request 500 with the code when misconfigured, claiming nothing', async () => {

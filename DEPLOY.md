@@ -21,8 +21,9 @@ decorative until you do. The same goes for a Resend key (`re_*`): it is read by
 
 > **Self-hosting (Epic 20).** Shift is moving off Supabase cloud and Cloudflare
 > Pages onto our own server, run by Coolify. The self-hosted stack that
-> replaces each Supabase project is defined in §9; the sections before it still
-> describe the hosted setup until story 20.9 rewrites them.
+> replaces each Supabase project is defined in §9, and the pipeline that deploys
+> to it in §8 (story 20.6). §0–§7 still describe the hosted setup until story
+> 20.9 rewrites them; no environment uses it.
 
 ---
 
@@ -1403,9 +1404,9 @@ pull request to `main` and every push to `main`.
 | `e2e` | PR + `main`, four shards | Each shard on a runner of its own, so it never shares a stack with `test` or another shard (`e2e/README.md`): `supabase start -x edge-runtime,$SUPABASE_UNUSED_SERVICES`, the two local env files from `supabase status` (`scripts/ci/write-local-env.mjs`), `supabase functions serve admin-auth` and Vite on `127.0.0.1:5173`, then `pnpm test:e2e --shard=N/4`, which writes a blob report. Shard 1 then runs `pnpm test:smoke` against those same local servers (anonymous checks plus sign-in as the seeded `dvd-kastel-novi` / `ana.kovac`), so the smoke specs run on every PR. A failing shard uploads its traces and screenshots |
 | `e2e-report` | after `e2e` | Merges the shards' blob reports into one HTML report, uploaded as `e2e-report` |
 | `ci-passed` (check **CI passed**) | PR + `main`, always | The one check branch protection requires: fails if any of `quality`, `build`, `test`, `changes`, `e2e` failed, was cancelled or was skipped, except `e2e` skipped on a docs-only PR. `e2e-report` is not gated |
-| `deploy-staging` | `main`, deploys enabled | §5.2 against the `staging` Environment, then Pages `--branch staging` |
+| `deploy-staging` | `main`, deploys enabled | §8.1 against the `staging` stack in Coolify: images built and probed, migrations over the tailnet, images pushed to GHCR and deployed |
 | `smoke-staging` | after `deploy-staging` | `pnpm test:smoke` against the staging origin, with the smoke account if configured |
-| `deploy-production` | after `smoke-staging`, **after approval** | §5.3 against the `production` Environment, then Pages `--branch main` |
+| `deploy-production` | after `smoke-staging`, **after approval** | §8.1 against the `production` stack, with the functions digest staging deployed; a migration only after a recorded backup (§8.2 step 6) |
 | `smoke-production` | after `deploy-production` | `pnpm test:smoke`, anonymous |
 | `notify` | any failed or cancelled job on `main` | an error annotation and a run-summary line naming the failed and cancelled jobs; a Slack post if `SLACK_WEBHOOK_URL` is set |
 
@@ -1439,99 +1440,200 @@ that rule:
 
 ### 8.1 What a deploy job does, in order
 
-`.github/actions/deploy/action.yml`, once per environment — §5.2/§5.2b in the
-same order, with nothing skipped:
+`.github/actions/deploy/action.yml`, once per environment (story 20.6). The
+target is that environment's self-hosted stack and `shift-web` application in
+Coolify (§9); nothing is deployed to Supabase cloud or Cloudflare. Every step
+that can refuse a release runs **before** the runner reaches the server, so no
+migration is applied for a release whose images would be refused.
 
-1. check that every required secret and variable is set, has no leading or
-   trailing whitespace, and — for the project ref, the publishable key, the
-   secret key, the Resend key and the invoke secret — has the right shape,
-   naming each one that fails
-   (`scripts/ci/require-config.mjs`), then parse `APP_ORIGINS` once into a
-   normalized https-only list (`scripts/ci/origins.mjs`); all of this **before**
-   any remote command;
-2. `supabase link --project-ref …` — the database password reaches the CLI as
-   `SUPABASE_DB_PASSWORD` in the environment, never as an argument;
-3. `supabase db push` — migrations only, never `--include-seed`;
-4. `supabase migration list --output-format json`, failing the job if local and
-   remote disagree, or if it recognises no migration at all
-   (`scripts/ci/check-migrations.mjs`);
-5. rewrite `[auth] site_url` / `additional_redirect_urls` in the **runner's**
-   copy of `supabase/config.toml` to the normalized origins, and drop its
-   local-only `[auth.rate_limit]` table (`scripts/ci/set-auth-urls.mjs`) — the
-   committed file keeps its local values;
-6. `supabase config push` — after `db push`, always (§5.2b; what it sends: §8.6);
-7. `supabase secrets set --env-file` from a temporary file written by a heredoc
-   and deleted when the step ends (`SHIFT_SECRET_KEY`, `SHIFT_PUBLISHABLE_KEY`,
-   `SHIFT_ALLOWED_ORIGINS` = the normalized origins; for `notify`,
-   `NOTIFY_INVOKE_SECRET`, `RESEND_API_KEY`, `NOTIFY_EMAIL_FROM`,
-   `SHIFT_APP_URL` = the first origin, `VAPID_PRIVATE_KEY`, `VAPID_PUBLIC_KEY`
-   and `VAPID_SUBJECT`);
-8. `supabase functions deploy admin-auth`, then `supabase functions deploy
-   notify` — every time, which is idempotent. The Vault secrets the cron job
-   reads are set by hand, once per environment (§3a): the pipeline never
-   writes Vault. Then a probe: a POST to `notify` with no token must answer
-   `401 {"code":"INVOKE_SECRET_REFUSED"}`;
-9. `pnpm --filter "@shift/web..." build` with that environment's `VITE_*`
-   values, then a check that neither this environment's secret key, Resend
-   key, invoke secret or VAPID private key, nor any key-shaped `sb_secret_`
-   value, is in `apps/web/dist`;
-10. delete every `*.map` from `apps/web/dist`, so no source map is published (§4);
-11. `wrangler pages deploy apps/web/dist --branch staging|main`.
+1. **Check the configuration** (`scripts/ci/require-config.mjs`, in the job):
+   every item of §8.2 is set, has no leading or trailing whitespace, and has
+   its shape (an https API origin, a tailnet host and a port, a tailnet
+   Coolify URL, Coolify uuids and token, a `tskey-client-` secret, an
+   `sb_publishable_` key, an 87-character VAPID public key), naming each one
+   that fails; then `APP_ORIGINS` is parsed once (`scripts/ci/origins.mjs`).
+2. **Build `apps/web`** with that environment's `VITE_SUPABASE_URL` (=
+   `SUPABASE_API_URL`), `VITE_SUPABASE_PUBLISHABLE_KEY` and
+   `VITE_VAPID_PUBLIC_KEY`, so its CSP names its own API origin.
+3. **The bundle check** (`scripts/ci/check-bundle.mjs`): no `sb_secret_` key,
+   no JWT whose `role` is not `anon`, no Resend key, and not the private half
+   of this environment's VAPID public key. GitHub holds none of the stack's
+   runtime secrets any more, so the check refuses these shapes, not values:
+   a secret with no recognisable shape (the invoke secret, the JWT signing
+   secret, the Postgres password) is not looked for, and stays out of the
+   bundle because no `VITE_*` carries it. Then every `*.map` is deleted.
+4. **Build `shift-web` and probe it offline** with the same probe as the
+   `web-image` job (`scripts/ci/probe-web-image.sh`, §9.7), against this
+   build's `_headers`.
+5. **`shift-functions`.** Staging builds it and probes it offline
+   (`scripts/ci/probe-functions-image.sh`, §9.6), unless GHCR already holds
+   the probed build of the same sources (`:src-<hash>` of `deploy/functions`,
+   both functions, `.dockerignore` and the probe), which is reused, so a
+   release that changes only the SPA never restarts the stack. Production
+   never rebuilds it: it deploys the digest staging deployed in the same run,
+   and fails if none was handed over.
+6. **Push to GHCR** (`scripts/ci/registry.sh push`), logged in with the job's
+   own `GITHUB_TOKEN` on stdin: `ghcr.io/<owner>/shift-functions:<sha>` and
+   `:src-<hash>`, and `ghcr.io/<owner>/shift-web:<environment>-<sha>`.
+   Nothing pulls these tags, so pushing changes nothing that runs. They are
+   not immutable (a re-run of the job pushes a rebuilt image under the same
+   commit tag): **the digests in the run summary** are the rollback handles
+   (§8.7). A registry read that fails (a login, a rate limit) fails the step;
+   it is never taken for a missing tag. Only the two deploy jobs hold
+   `packages: write`, and they run only on a push to `main` with deploys
+   enabled.
+7. **Join the tailnet** as an ephemeral node tagged `tag:ci`
+   (`tailscale/github-action`, the OAuth client of §8.2). The tailnet ACL lets
+   `tag:ci` reach the two stacks' Postgres ports and the Coolify API only. The
+   node logs out when the job ends.
+8. **`supabase migration list --db-url`**, then **the backup gate**
+   (`scripts/ci/backup-gate.mjs`, H-12): if migrations are pending in
+   **production**, the job stops unless `PRE_MIGRATION_BACKUP_AT` records a
+   backup taken within the last 24 hours (§8.2 step 6). Staging needs none.
+9. **`supabase db push --db-url`**, migrations only, never the seed; then
+   `migration list --db-url` again, failing on any difference between local and
+   remote (`scripts/ci/check-migrations.mjs`). The URL is
+   `postgresql://postgres@$DB_HOST:$DB_PORT/postgres`: the password reaches
+   the CLI as `PGPASSWORD`, never in the URL or as an argument. GoTrue's
+   settings are not pushed: they are the stack's compose environment, held to
+   `config.toml` by a test (§9.3, §8.6).
+10. **Deploy `shift-functions`.** The stack runs
+    `ghcr.io/<owner>/shift-functions:<environment>` (its `SHIFT_FUNCTIONS_IMAGE`,
+    pulled on every start). A deploy-only Coolify token cannot change that
+    reference, so `registry.sh point` moves the tag to the probed digest (a
+    carbon copy of the manifest, verified), and
+    `POST /api/v1/services/<uuid>/restart?latest=true`
+    (`scripts/ci/coolify.mjs restart-service`) restarts the stack with its
+    images pulled again. **That restarts the whole stack, Postgres included**:
+    about a minute without the API, on every release that changes the
+    functions, and on no other. The step waits (10 minutes at most) until
+    Postgres reports a start time after the request, which shows the restart
+    ran; which digest the functions container then runs is not visible from
+    the runner (story 20.5 checks it on the host). If the digest equals the
+    last one verified here (`:<environment>-live`) and the channel tag names
+    it too, nothing restarts. `psql` and a connection are checked before the
+    migration, and every database step has a 10-second connect timeout. The
+    logic is `scripts/ci/deploy-images.sh`.
+11. **The `notify` probe**, in the same step: a POST to
+    `$SUPABASE_API_URL/functions/v1/notify` with no token must answer
+    `401 {"code":"INVOKE_SECRET_REFUSED"}`, retried for up to five minutes
+    while the stack starts. Only then does `:<environment>-live` record the
+    digest. **If anything in steps 10–11 fails** after the channel tag was
+    moved, the tag is put back on the digest it named before, so a later
+    restart brings the verified image back. The stack may already run the new
+    one (the restart may have happened): the job's warning says so, and
+    §8.7 is the way back. On an environment's first deploy there is nothing
+    to put back, and the job says that instead.
+12. **Deploy `shift-web`**, after the migration and the functions (§5.2c):
+    `registry.sh point` moves `ghcr.io/<owner>/shift-web:<environment>` to the
+    probed digest, `POST /api/v1/deploy?uuid=<uuid>&force=false`
+    (`coolify.mjs deploy-application`) has Coolify pull it and replace the
+    container, and `scripts/ci/wait-for-web.mjs` polls the first app origin
+    until `/` is byte-for-byte this build's `index.html` (10 minutes at most),
+    then that the live answer carries every header of this build's
+    `_headers` `/*` block with its exact value, HSTS included, and
+    `Cache-Control: no-cache` (it keeps polling while the old container still
+    answers with the old headers). A failure puts the channel tag back.
+    Traefik must add no security header of its own (no Coolify header
+    middleware on this resource): a second value would fail the check. As
+    for the functions, the container may already be the new one when the
+    check fails: redeploy (§8.7) to return to the restored tag.
+13. The run summary names both images by digest, failed runs included (a
+    failed run's digests are not a rollback target); the job's outputs give
+    the smoke jobs the app origin and the API URL. The waits are bounded by
+    wall clock (restart 10 minutes, probe 5, origin 10, each plus one last
+    try), about 26 minutes at worst, so with the builds the deploy jobs'
+    timeout is 45.
+
+The pipeline uses no `supabase link`, `config push`, `secrets set`,
+`functions deploy` or `wrangler`, and holds no Supabase account token, no
+Cloudflare token and no runtime secret of a stack. The Vault secrets the cron
+job reads are set by hand, once per stack (§3a, §9.4): the pipeline never
+writes Vault.
 
 ### 8.2 Configure it
 
 Nothing deploys until the repository variable `DEPLOY_ENABLED` is exactly
 `true`. Until then, pushes to `main` run `quality`, `build`, `test` and `e2e`
-only, stay green, and the run summary lists what is left to configure. Once it
-is `true`, a missing or malformed item fails the deploy job by name rather than
-being skipped.
+only, stay green, and the `build` job's run summary lists what is left to
+configure. Once it is `true`, a missing or malformed item fails the deploy job
+by name, before anything reaches the server, rather than being skipped.
 
-**1. Create the hosted projects by hand** — the pipeline never creates, pauses
-or un-pauses anything: the two Supabase projects (§2) and the Pages project with
-no Git connection (§4).
+**1. Stand each environment up in Coolify first** (story 20.5 for staging,
+20.9 for production): the stack from `deploy/coolify/supabase/` with
+`SHIFT_FUNCTIONS_IMAGE=ghcr.io/<owner>/shift-functions:<environment>`, and a
+Docker-image application for `shift-web` with image
+`ghcr.io/<owner>/shift-web` and tag `<environment>` (§9.7). The pipeline never
+creates a Coolify resource. Coolify pulls from GHCR with a registry credential
+on the server: a token with `read:packages` only (H-9), never the deploy
+job's. The first deploy's push creates the two GHCR packages (private) before
+Coolify is asked to pull them.
 
-**2. Create two Environments** under *Settings → Environments*. Both settings
-marked required are the gate; do not skip either.
+**2. Two Environments**, under *Settings → Environments*. Both settings marked
+required are the gate; do not skip either.
 
 | Environment | Deployment branches (**required**) | Required reviewers |
 | --- | --- | --- |
 | `staging` | *Selected branches* → `main` only | none |
 | `production` | *Selected branches* → `main` only | **required**: at least one person — `deploy-production` waits in the run until someone approves it |
 
-**3. Every deploy credential is an Environment secret, never a repository
-secret.** A repository secret is readable by any workflow job on any branch; an
-Environment secret only by a job that names that Environment — and with the
-branch restriction above, only from `main`, and for production only after
-approval. Set these on **each** of `staging` and `production`, with that
-environment's values:
+**3. On EACH Environment, these secrets** (Environment secrets, never
+repository secrets: a repository secret is readable by any job on any branch,
+an Environment secret only by a job that names that Environment, so only from
+`main`, and for production only after approval). Each value is that
+environment's own; staging and production never share one (H-8).
 
 | Name | Kind | Value |
 | --- | --- | --- |
-| `SUPABASE_ACCESS_TOKEN` | secret | a Supabase access token (`sbp_*`, §0) — see the warning below |
-| `SUPABASE_DB_PASSWORD` | secret | that project's database password (§0) |
-| `SUPABASE_SECRET_KEY` | secret | that project's `sb_secret_*` — reaches the function secrets (`SHIFT_SECRET_KEY`) and nothing else |
-| `RESEND_API_KEY` | secret | that environment's Resend key (`re_*`, §3a) — read by `notify` only |
-| `NOTIFY_INVOKE_SECRET` | secret | at least 32 characters (`openssl rand -hex 32`), the same value as that project's Vault secret `notify_invoke_secret` (§3a) |
-| `VAPID_PRIVATE_KEY` | secret | the Web Push private key (43 characters, §3a) — read by `notify` only |
-| `VAPID_PUBLIC_KEY` | variable | the Web Push public key (87 characters, §3a) — `notify`'s, and the build's `VITE_VAPID_PUBLIC_KEY`; public by design |
-| `VAPID_SUBJECT` | variable | who a push service may contact: `mailto:<address>` or an `https:` URL |
-| `NOTIFY_EMAIL_FROM` | variable | the sender, on the domain verified in Resend (§3a), e.g. `Shift <obavijesti@obavijesti.example.org>` |
-| `CLOUDFLARE_API_TOKEN` | secret | a Cloudflare API token with *Account → Cloudflare Pages → Edit* |
-| `SUPABASE_PROJECT_REF` | variable | the project ref (20 lowercase letters and digits); the project URL is `https://<ref>.supabase.co` |
-| `SUPABASE_PUBLISHABLE_KEY` | variable | `sb_publishable_*` — public by design, it is inlined into the bundle |
-| `APP_ORIGINS` | variable | comma-separated bare **https** origins the app is served from, **primary first**: staging `https://staging.<project>.pages.dev`; production `https://<project>.pages.dev` or the custom domain first, then any other hostname. The first is the auth `site_url`, the Environment URL and the smoke's target; all of them are redirect URLs and `SHIFT_ALLOWED_ORIGINS`. No empty entries, no paths, no trailing slash |
-| `CLOUDFLARE_ACCOUNT_ID` | variable | the Cloudflare account id |
-| `CLOUDFLARE_PAGES_PROJECT` | variable | the Pages project name (`<project>`) |
+| `SUPABASE_DB_PASSWORD` | secret | the stack's Postgres password (Coolify's generated `SERVICE_PASSWORD_POSTGRES`), for `db push` and `migration list` only |
+| `COOLIFY_API_TOKEN` | secret | a Coolify API token with the **deploy** permission only (*Keys & Tokens → API tokens*), `<id>\|<token>`. It can queue a deploy or a restart and nothing else: it cannot read or change a resource's settings or secrets |
+| `TS_OAUTH_CLIENT_ID` | secret | a Tailscale OAuth client with the `auth_keys` scope, limited to the tag `tag:ci` |
+| `TS_OAUTH_SECRET` | secret | that client's secret (`tskey-client-…`) |
 
-> **A Supabase personal access token is account-wide.** It is not scoped to a
-> project: the token stored on `staging` can reach the production project too,
-> and so can anything that reads it. So the real gate is not which token sits
-> where — it is that the token exists only as an Environment secret, that both
-> Environments accept `main` only, and that production needs a reviewer. Use a
-> **separate token per environment** anyway (from separate Supabase accounts or
-> organization members where you can), so one can be revoked without the other
-> and a leak is attributable. The Cloudflare token can be narrowed to the one
-> account; it still covers every Pages project in it.
+**4. On EACH Environment, these variables** (public or non-secret):
+
+| Name | Kind | Value |
+| --- | --- | --- |
+| `APP_ORIGINS` | variable | the app's bare **https** origin, `https://staging.<domain>` or `https://app.<domain>` (comma-separated if there are more; the first is the one checked, the Environment URL and the smoke's target). It must equal the stack's `SHIFT_APP_URL` |
+| `SUPABASE_API_URL` | variable | the stack's public API origin, Kong's domain: `https://api.staging.<domain>` or `https://api.<domain>` |
+| `SUPABASE_PUBLISHABLE_KEY` | variable | the stack's publishable key, `sb_publishable_` + Coolify's `SERVICE_PASSWORD_64_PUBLISHABLEKEY` (§9.2). Public by design: it is inlined into the bundle |
+| `VAPID_PUBLIC_KEY` | variable | the stack's Web Push public key (87 characters), the same value as its `VAPID_PUBLIC_KEY` in Coolify |
+| `DB_HOST` | variable | the server's tailnet host, where `tailscale serve` publishes the stack's Postgres: its full MagicDNS name (`<name>.<tailnet>.ts.net`) or Tailscale address (Tailscale's CGNAT range). A public host name or a bare label is refused: the database password goes to it, and a bare label could be answered by the runner's own DNS |
+| `DB_PORT` | variable | that environment's Postgres port on the tailnet |
+| `COOLIFY_API_URL` | variable | Coolify's API origin **on the tailnet**, `http://<name>.<tailnet>.ts.net:<port>` or a Tailscale address (plain http is accepted for a tailnet host only) |
+| `COOLIFY_WEB_UUID` | variable | the `shift-web` application's uuid in Coolify |
+| `COOLIFY_FUNCTIONS_UUID` | variable | the Supabase stack's (service's) uuid in Coolify |
+
+**5. The tailnet ACL** (the founder's): `tag:ci` may reach the two Postgres
+ports and the Coolify API port on the server, and nothing else; the OAuth
+client may create keys for `tag:ci` only. Keys it creates are ephemeral.
+
+What this does NOT separate (accepted until 20.9): both environments join as
+the same `tag:ci`, so a staging job can reach production's Postgres port (it
+still needs production's password, which only the approved production job
+holds), and a Coolify API token is scoped to a team, not a project, so
+staging's deploy-only token could queue a deploy or restart of a production
+resource. Such a call can only redeploy what production's channel tags name,
+and only the approved production job moves those; it is still a restart the
+production reviewer did not approve. Per-environment tags
+(`tag:ci-staging`, `tag:ci-production`) and per-environment Coolify teams
+are the fix, owned by 20.9. The Tailscale action passes the OAuth secret to
+`tailscale up` as an argument on the (single-use) runner; it never reaches
+the log.
+
+**6. Production migrations: the backup before them** (H-12;
+`PRE_MIGRATION_BACKUP_AT`, a `production` Environment variable). When a
+release carries migrations, `deploy-production` stops before `db push` unless
+this records a backup taken in the last 24 hours. Before approving such a
+release: take a backup of the production database in Coolify (or a
+`pg_dump -Fc` over the tailnet to a founder device, never into the
+repository or an artifact), set `PRE_MIGRATION_BACKUP_AT` to its UTC time as
+`YYYY-MM-DDTHH:MMZ`, then approve (or re-run the job). A time up to five
+minutes ahead of the runner's clock is accepted (clock skew); later is
+refused. **Clear the variable after the release**: the gate cannot tell
+which release a backup was taken for, so a value left set lets any other
+release with migrations through for 24 hours. Releases without migrations
+ignore it. Story 20.7 replaces this manual step with an automated backup.
 
 Repository-level, only two things, neither a deploy credential:
 
@@ -1540,14 +1642,17 @@ Repository-level, only two things, neither a deploy credential:
 | `DEPLOY_ENABLED` | variable | `true` to turn deploys on; anything else (or unset) keeps them off |
 | `SLACK_WEBHOOK_URL` | secret, optional | an incoming-webhook URL for `notify`; unset means no Slack post |
 
-A secret key never goes into a variable, and a publishable key that starts
-`sb_secret_` is refused by the pre-deploy check, by the app at runtime (§4) and
-by the bundle check before upload.
+**Never in GitHub:** the stack's secret key, the Resend key
+(`RESEND_API_KEY`), the invoke secret (`NOTIFY_INVOKE_SECRET`), the VAPID
+private key (`VAPID_PRIVATE_KEY`), the JWT signing secret, any Supabase
+account token or Cloudflare token. They live in the stack's Coolify
+environment only (AD-17 as amended, §9.2). The GHCR push credential is the
+job's own `GITHUB_TOKEN`; no registry token is stored anywhere in GitHub.
 
-**4. The smoke account (staging only, optional).** With all three set on the
+**7. The smoke account (staging only, optional).** With all three set on the
 `staging` Environment, `smoke-staging` also signs in and checks it lands on
-`/danas`. With none of them set that one case is skipped and the rest still run;
-with only one or two set, the smoke fails as misconfigured.
+`/danas`. With none of them set that one case is skipped and the rest still
+run; with only one or two set, the smoke fails as misconfigured.
 
 | Name | Kind | Value |
 | --- | --- | --- |
@@ -1559,8 +1664,10 @@ Provision it by hand with §7 against **staging**, as its own organization (for
 example `smoke`), never inside a real tenant. `smoke-production` is anonymous;
 production has no smoke account.
 
-**5. Turn it on:** set `DEPLOY_ENABLED` to `true`, then push to `main` (or
-re-run the latest `main` run).
+**8. Turn it on:** set `DEPLOY_ENABLED` to `true`, then push to `main` (or
+re-run the latest `main` run). Read the first run's deploy logs end to end:
+the Coolify calls (§8.1 steps 10 and 12) are written against Coolify v4.7.6's
+API and have never run against our instance.
 
 ### 8.3 The remote smoke
 
@@ -1576,7 +1683,8 @@ It never signs out: a sign-out revokes every session of the account.
 correctly configured project it is refused; if signup is open, **the probe has
 just created an account** (`smoke-probe-<uuid>@example.invalid`) on that
 project. The failure message names the address: delete it under
-*Authentication → Users*, re-run `supabase config push` and re-probe (§6). The
+*Authentication → Users* (Studio, over the tailnet), check the stack's
+`GOTRUE_DISABLE_SIGNUP` (§9.3), redeploy it and re-probe (§6). The
 probe never retries, so one failed run creates at most one such account.
 
 Run it locally against the dev server; the project URL and publishable key fall
@@ -1591,16 +1699,33 @@ SMOKE_BASE_URL=http://127.0.0.1:5173 SMOKE_ORG=dvd-kastel-novi \
 
 ### 8.4 When the pipeline is not an option
 
-The manual runbook in §5 stays the fallback — a hotfix while Actions is down, or
-a first promotion before the Environments exist. A manual promotion and a
-pipeline deploy must never overlap, and nothing but you can stop that:
+The pipeline is the only thing that builds, probes and publishes an image:
+no founder device holds a GHCR write credential, and none should. Without
+Actions, the manual path can therefore only **promote what the pipeline
+already published**: apply migrations and point Coolify at a release whose
+digests a run summary names. A release that was never built waits for
+Actions. A manual promotion and a pipeline deploy must never overlap, and
+nothing but you can stop that:
 
 1. set the repository variable `DEPLOY_ENABLED` to anything but `true` (for
-   example `paused`) — runs already past their deploy gate are not stopped, so
+   example `paused`); runs already past their deploy gate are not stopped, so
    let any in-flight deploy finish, or cancel it, first;
-2. run §5.2 then §5.3 by hand, including the `wrangler pages deploy` at the end
-   of §5.3, and verify with §6;
-3. set `DEPLOY_ENABLED` back to `true`.
+2. from a founder device on the tailnet, at the checkout of that release's
+   commit: for production with pending migrations, a backup first (§8.2
+   step 6); `PGPASSWORD=… pnpm exec supabase db push --db-url
+   "postgresql://postgres@<tailnet host>:<port>/postgres"`, then
+   `migration list --db-url … --output-format json` and
+   `scripts/ci/check-migrations.mjs` on its output;
+3. in Coolify, pin the stack and the `shift-web` application to that
+   release's digests exactly as a rollback does (§8.7), functions first, and
+   verify with §6 and §9.5 step 7b;
+4. leave the pins in place until the pipeline deploys again: before setting
+   `DEPLOY_ENABLED` back to `true`, set both resources back to their channel
+   tag (`<environment>`) in the same sitting as the next pipeline run, and
+   check that run's summary shows the release you expect.
+
+The hosted runbook in §5 describes Supabase cloud and Cloudflare Pages, which
+no environment uses any more; story 20.9 rewrites it.
 
 ### 8.5 What "no test skipped" covers
 
@@ -1612,48 +1737,52 @@ and the app is built — so a skip there means a prerequisite silently went
 missing. It also means **an `it.skip`, `it.todo` or `describe.skip` in a root
 test now fails CI**: remove the case, or finish it, instead of parking it.
 
-### 8.6 What `config push` sends, and whether that is safe
+### 8.6 What replaced `config push`
 
-`supabase config push` sends the sections of `supabase/config.toml` that have a
-hosted counterpart, and **overwrites** the hosted values with them. So for every
-setting it covers, `config.toml` is the source of truth; anything changed in the
-dashboard for those settings is reverted on the next deploy.
-
-| Section | Sent | Hosted effect | Safe? |
-| --- | --- | --- | --- |
-| `project_id`, every `port` | no | local only | — |
-| `[api]` `schemas`, `extra_search_path`, `max_rows` | yes | PostgREST exposes `public` and `graphql_public`, caps a response at 1000 rows | yes — the same values the local suite runs against |
-| `[db]` `major_version = 17` | checked, not changed | the CLI compares it with the project's Postgres version | yes, **if the projects run Postgres 17** — create them on 17 (a mismatch is reported, not fixed) |
-| `[db.seed]` | no | `db push` without `--include-seed` never applies `seed.sql` | — |
-| `[studio]`, `[local_smtp]` | no | local only | — |
-| `[auth]` `site_url`, `additional_redirect_urls` | yes | rewritten per environment first (§8.1 step 5) | yes |
-| `[auth]` `jwt_expiry`, refresh-token rotation and reuse interval | yes | one-hour tokens, rotated refresh tokens | yes |
-| `[auth]` `enable_signup = false`, `enable_anonymous_sign_ins = false` | yes | no self-service or anonymous accounts (§5.2a) | yes — this is the point of the push |
-| `[auth.email]` `enable_signup = true`, `enable_confirmations = false`, `double_confirm_changes` | yes | the email/password provider on (sign-in needs it, §5.2a); no confirmation mail, since `.shift.invalid` addresses receive none | yes |
-| `[auth.sms]` `enable_signup = false` | yes | no phone signup | yes |
-| `[auth.hook.custom_access_token]` | yes | the hook on, calling the function `db push` just created (§5.2b) | yes, in this order only |
-| `[auth.rate_limit]` `sign_in_sign_ups`, `token_refresh` | no — dropped from the runner's copy (§8.1 step 5) | the CLI's defaults, as if the table were absent | yes — the raised values are for the local E2E stack only |
-| auth sections **absent** from the file (SMTP, MFA, external providers, templates) and the rate limits once dropped | defaults | the CLI may send its defaults for them, reverting any dashboard change | acceptable today — none is configured in the dashboard. Before configuring one there, put it in `config.toml` instead (Ask First: it changes `config.toml`) |
-| `[edge_runtime]` | no | local only | — |
-| `[functions.admin-auth]` `verify_jwt = true` | by `functions deploy`, not `config push` | the gateway rejects a call without a JWT before the function runs | yes |
-
-Nothing in the file needs changing for hosted environments. The `config push`
-step's log shows the diff it applied; read it on the first deploy to each
-environment.
+On the hosted platform, `supabase config push` sent `config.toml`'s auth and
+API settings to each project on every deploy. A self-hosted stack has no such
+endpoint: GoTrue and PostgREST are configured by the stack's compose
+environment (§9.3), and **the pipeline does not push it**. Their parity with
+`supabase/config.toml` (signup off, the email provider on, anonymous sign-ins
+off, autoconfirm, JWT expiry, refresh rotation and reuse interval, the
+minimum password length, the access token hook, PostgREST's schemas, search
+path and row cap) is `test/self-hosted-stack.test.ts`, which runs on every
+pull request. A change to one of those settings is a reviewed change of
+`config.toml` and the compose file together, applied in Coolify by the
+operator (redeploy the stack after the migration that needs it, §9.4).
+`config.toml`'s `[auth.rate_limit]` stays local-only.
 
 ### 8.7 Rolling back
 
-- **The SPA.** Cloudflare keeps every deployment. *Workers & Pages → <project> →
-  Deployments*, pick the previous production deployment, *Rollback to this
-  deployment* (for staging, the previous `staging` deployment). It is instant
-  and changes nothing in Supabase. The next push to `main` deploys again.
-- **The function.** Check out the previous commit and run
-  `supabase functions deploy admin-auth --project-ref <ref>` (§5.2). `notify`
-  likewise, but never to a version older than story 10.4 while `0045` is
-  applied: an older `notify` emails every `push` row (§5.3).
+Every deploy's run summary names its two images by digest:
+`ghcr.io/<owner>/shift-web@sha256:<hex>` and
+`ghcr.io/<owner>/shift-functions@sha256:<hex>`. The commit tags beside them
+(`shift-web:<environment>-<sha>`, `shift-functions:<sha>`) are convenient but
+a re-run can overwrite them; the digest cannot change. To roll back to an
+earlier release, **redeploy its images through Coolify, by digest**:
+
+- **The SPA.** In Coolify, the environment's `shift-web` application:
+  *Configuration → General → Docker Image Tag* = `sha256-<hex>` (Coolify
+  v4.7.6 reads a tag starting `sha256-` as the image digest), save,
+  *Redeploy*. It changes nothing in the database. Check the origin serves the
+  old build (§6).
+- **The functions.** The stack's environment: `SHIFT_FUNCTIONS_IMAGE` =
+  `ghcr.io/<owner>/shift-functions@sha256:<hex>`, save, *Restart* (the
+  stack, Postgres included, restarts for about a minute). Never to a
+  `notify` older than story 10.4 while `0045` is applied: an older `notify`
+  emails every `push` row (§5.3).
+- **Then set both back to the channel tag** (`<environment>`) before the next
+  deploy. Until then the pipeline still moves the channel tag but Coolify keeps
+  running the pinned one: `wait-for-web.mjs` fails the next deploy loudly for
+  the SPA, but nothing notices for the functions (the pipeline compares with
+  the digest it last verified, `:<environment>-live`, not with what Coolify
+  runs, and the `notify` probe answers the same from either). Pause deploys
+  (`DEPLOY_ENABLED`) while a rollback is in force, and revert the bad commit on
+  `main` so the next release is a fix, not the same image again.
 - **Migrations are forward-fix only** (§5.4). There is no down-migration and
-  no `db reset` against a hosted project, ever. A bad migration is corrected by
-  the next migration, promoted the same way.
+  no reset of a stack's database, ever. A bad migration is corrected by the
+  next migration, promoted the same way. A restore from backup is the only way
+  back (story 20.7), and it loses every write since the backup.
 
 Because the database cannot roll back, write schema changes so the SPA can —
 **expand, then contract**:
@@ -1668,9 +1797,9 @@ Because the database cannot roll back, write schema changes so the SPA can —
 
 Never drop or rename a column that the live bundle reads in the same release
 that stops reading it: the deploy pushes the migration first, so between
-`db push` and the upload every signed-in screen that reads it fails (§5.2c), and
-rolling the SPA back afterwards lands on a bundle that reads a column that no
-longer exists.
+`db push` and the new image going live every signed-in screen that reads it
+fails (§5.2c), and rolling the SPA back afterwards lands on a bundle that reads
+a column that no longer exists.
 
 ---
 
@@ -2136,12 +2265,15 @@ starts each worker from its bundle with remote modules disallowed, so a cold
 start reads a local file and fetches nothing; a missing bundle is
 `500 {"code":"FUNCTION_UNAVAILABLE"}`, never a fall-back to source. The image
 holds code only: no key, no secret, no address. CI's `functions-image` job
-builds it on every run (never pushed: pushing and tagging by commit is story
-20.6) and probes it on an `--internal` network beside a stand-in GoTrue
-(`scripts/ci/probe-functions-image.sh`): both workers start from their
-bundles, and `admin-auth`'s handler answers `PAYLOAD_INVALID`.
-The compose names it per environment as `SHIFT_FUNCTIONS_IMAGE`
-(`<registry>/shift-functions:<sha>`). Its healthcheck is a TCP connect to the
+builds it on every run (never pushed) and probes it on an `--internal`
+network beside a stand-in GoTrue (`scripts/ci/probe-functions-image.sh`):
+both workers start from their bundles, and `admin-auth`'s handler answers
+`PAYLOAD_INVALID`. The staging deploy job builds and probes it the same way
+and pushes that very image to GHCR (story 20.6, §8.1). The compose names it
+per environment as `SHIFT_FUNCTIONS_IMAGE`, set once to the channel tag
+`ghcr.io/<owner>/shift-functions:<environment>`, which the pipeline moves to
+each release's probed digest; `pull_policy: always` makes every start pull
+it. Its healthcheck is a TCP connect to the
 main service with the image's own `bash`; the router answers no health path.
 
 **CORS.** Kong's functions route answers CORS for `SHIFT_APP_URL` alone (no
@@ -2257,13 +2389,17 @@ writable by uid 101, the image's own `HEALTHCHECK` command, and
 `render-headers.sh`'s refusals under the image's busybox. The image's
 `HEALTHCHECK` fetches `/` with its own busybox `wget` every 30 s.
 That `dist` is built with no environment's `VITE_*`, so
-it proves the image only. Story 20.6's deploy job builds `shift-web` per
-environment from that environment's own build (its `VITE_SUPABASE_URL`, so
-its CSP names its own API origin), pushes it as `<registry>/shift-web:<sha>`
-and deploys it through the Coolify API; Coolify never builds from Git.
+it proves the image only. The deploy job (story 20.6, §8.1) builds `shift-web`
+per environment from that environment's own build (its `VITE_SUPABASE_URL`,
+so its CSP names its own API origin), probes it the same way, pushes that
+image as `ghcr.io/<owner>/shift-web:<environment>-<sha>`, moves
+`:<environment>` to its digest and has Coolify deploy it; Coolify never builds
+from Git.
 
-**In Coolify** (story 20.5): a Docker-image resource per environment, port
-8080, the domain `https://app.<domain>`. Traefik terminates TLS (Let's
+**In Coolify** (story 20.5): a Docker-image resource per environment, image
+`ghcr.io/<owner>/shift-web` with the tag `<environment>` (the channel tag the
+pipeline moves; never a digest or a commit tag, except during a rollback,
+§8.7), port 8080, the domain `https://app.<domain>`. Traefik terminates TLS (Let's
 Encrypt) and redirects HTTP to HTTPS; a browser honours HSTS only from an
 HTTPS answer, so the first visit over HTTPS pins the host for a year.
 Run it with a read-only root and a tmpfs on `/tmp` if Coolify allows it; it

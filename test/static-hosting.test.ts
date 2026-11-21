@@ -264,10 +264,12 @@ describe('source maps stay off the CDN', () => {
     expect(config).toMatch(/^\s*sourcemap: 'hidden',$/m);
   });
 
-  it('deletes every map from the upload before the deploy publishes it', () => {
+  it('deletes every map from the build before the deploy puts it in the image', () => {
+    // Story 20.6: the deploy builds `shift-web` from this dist; the image is
+    // what is published.
     const action = readFileSync(join(repoRoot, '.github', 'actions', 'deploy', 'action.yml'), 'utf8');
     const deleted = action.indexOf("find apps/web/dist -name '*.map' -type f -delete");
-    const published = action.indexOf('wrangler pages deploy apps/web/dist');
+    const published = action.indexOf('docker build --pull -f deploy/web/Dockerfile');
 
     expect(deleted).toBeGreaterThan(-1);
     expect(published).toBeGreaterThan(deleted);

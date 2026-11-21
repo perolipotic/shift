@@ -50,7 +50,67 @@ export const FORMATS = {
     /^(?:mailto:[^<>@\s]+@[^<>@\s]+\.[^<>@\s]+|https:\/\/\S+)$/.test(value)
       ? null
       : 'is not a VAPID subject (mailto:addr or an https URL)',
+  // Story 20.6: the self-hosted stack's configuration (DEPLOY.md §8.2).
+  // The stack's public API origin (Kong's domain), `https://api.<domain>`.
+  'https-origin': (value) => (isOrigin(value, ['https:']) ? null : 'is not a bare https origin (https://host, no path)'),
+  // Postgres's host on the tailnet (H-5): a full MagicDNS name or a Tailscale
+  // address, never a public name, a bare label (the runner's own DNS search
+  // domain could answer it), a URL, a user@ or a port. The superuser password
+  // goes to it.
+  'tailnet-host': (value) =>
+    isTailnetHost(value) ? null : 'is not a tailnet host (<name>.<tailnet>.ts.net, or an address in 100.64.0.0/10)',
+  port: (value) =>
+    /^[1-9][0-9]{0,4}$/.test(value) && Number(value) <= 65535 ? null : 'is not a TCP port (1–65535)',
+  // Coolify's API is reached over the tailnet only (H-2).
+  'tailnet-url': (value) => tailnetUrlProblem(value),
+  // Coolify's resource ids are lowercase letters and digits.
+  'coolify-uuid': (value) =>
+    /^[a-z0-9]{8,64}$/.test(value) ? null : 'is not a Coolify resource uuid (lowercase letters and digits)',
+  // A Coolify (Laravel Sanctum) API token: `<id>|<token>`.
+  'coolify-token': (value) =>
+    /^[0-9]+\|[A-Za-z0-9]{32,}$/.test(value) ? null : 'is not a Coolify API token (<id>|<token>)',
+  'ts-oauth-secret': (value) =>
+    /^tskey-client-[A-Za-z0-9-]{16,}$/.test(value) ? null : 'is not a Tailscale OAuth client secret (tskey-client-…)',
 };
+
+/**
+ * @param {string} value
+ * @param {readonly string[]} protocols
+ */
+function isOrigin(value, protocols) {
+  try {
+    const url = new URL(value);
+    return protocols.includes(url.protocol) && url.origin === value;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A tailnet host: a full MagicDNS name (`<name>.<tailnet>.ts.net`) or a
+ * Tailscale address (100.64.0.0/10). A bare label is refused: if MagicDNS is
+ * not answering, the runner's own search domain would resolve it.
+ *
+ * @param {string} host
+ */
+function isTailnetHost(host) {
+  const label = '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?';
+  if (new RegExp(`^${label}\\.(?:${label}\\.)*ts\\.net$`).test(host)) return true;
+  const octet = '(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])';
+  return new RegExp(`^100\\.(?:6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\\.${octet}\\.${octet}$`).test(host);
+}
+
+/**
+ * Coolify's API, on the tailnet only (H-2): http or https, to a tailnet host.
+ *
+ * @param {string} value
+ * @returns {string | null}
+ */
+function tailnetUrlProblem(value) {
+  const shape = 'is not a Coolify API origin on the tailnet (http://<name>.<tailnet>.ts.net:<port>, lowercase, no path)';
+  if (!isOrigin(value, ['http:', 'https:'])) return shape;
+  return isTailnetHost(new URL(value).hostname) ? null : `${shape}: the host is not a tailnet host`;
+}
 
 /**
  * @typedef {{ kind: 'secret' | 'var', name: string, format: string | null }} Requirement

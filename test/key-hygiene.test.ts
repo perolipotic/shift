@@ -384,11 +384,13 @@ describe('notify secret hygiene (story 10.1)', () => {
     );
   });
 
-  it('names every notify secret in DEPLOY.md, the functions .env.example and the deploy action', () => {
+  // Story 20.6 (AD-17 as amended): the deploy action no longer carries them;
+  // the self-hosted stack's functions container is where they are set.
+  it('names every notify secret in DEPLOY.md, the functions .env.example and the stack’s compose file', () => {
     for (const relativePath of [
       'DEPLOY.md',
       join('supabase', 'functions', '.env.example'),
-      join('.github', 'actions', 'deploy', 'action.yml'),
+      join('deploy', 'coolify', 'supabase', 'docker-compose.yml'),
     ]) {
       const text = readFileSync(join(repoRoot, relativePath), 'utf8');
       for (const name of NOTIFY_SECRET_NAMES) {

@@ -18,6 +18,11 @@
 #                        skipped on a docs-only PR)
 #   main only, and only when vars.DEPLOY_ENABLED == 'true':
 #            deploy-staging → smoke-staging → deploy-production (approval) → smoke-production
+#            Story 20.6: each deploy job targets a self-hosted stack run by
+#            Coolify (.github/actions/deploy): it builds and probes the images,
+#            joins the tailnet as an ephemeral tag:ci node, migrates over it,
+#            pushes the probed images to GHCR with its own GITHUB_TOKEN (the
+#            only jobs with packages: write) and has Coolify deploy them
 #            notify    on any failure on main
 #
 # Pull requests stop after `ci-passed` (the check named "CI passed"). Every third-party action is pinned
@@ -48,9 +53,8 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  # Supabase CLI and Wrangler: no prompts, no telemetry, no update nag.
+  # Supabase CLI: no prompts, no telemetry, no update nag.
   SUPABASE_TELEMETRY_DISABLED: '1'
-  WRANGLER_SEND_METRICS: 'false'
   # Local stack services no CI job uses, left out of `supabase start`: Studio
   # and its postgres-meta, the analytics pair (logflare, vector), Realtime (the
   # app opens no channel) and the mail catcher (no account has a real address).
@@ -89,7 +93,7 @@ jobs:
       - name: ShellCheck
         run: |
           shellcheck --version
-          shellcheck -x deploy/host/*.sh deploy/web/render-headers.sh
+          shellcheck -x deploy/host/*.sh deploy/web/render-headers.sh scripts/ci/registry.sh scripts/ci/deploy-images.sh
 
       - uses: ./.github/actions/setup
 
@@ -137,9 +141,11 @@ jobs:
             echo "To turn deploys on, configure what DEPLOY.md → *CI/CD* lists, then set \`DEPLOY_ENABLED=true\`:"
             echo ""
             echo "- environments \`staging\` and \`production\`, both restricted to the \`main\` branch, production with a required reviewer"
-            echo "- on EACH environment, secrets \`SUPABASE_ACCESS_TOKEN\`, \`SUPABASE_DB_PASSWORD\`, \`SUPABASE_SECRET_KEY\`, \`CLOUDFLARE_API_TOKEN\`, \`RESEND_API_KEY\`, \`NOTIFY_INVOKE_SECRET\`, \`VAPID_PRIVATE_KEY\` and variables \`SUPABASE_PROJECT_REF\`, \`SUPABASE_PUBLISHABLE_KEY\`, \`APP_ORIGINS\`, \`CLOUDFLARE_ACCOUNT_ID\`, \`CLOUDFLARE_PAGES_PROJECT\`, \`NOTIFY_EMAIL_FROM\`, \`VAPID_PUBLIC_KEY\`, \`VAPID_SUBJECT\`"
-            echo "- on EACH environment's database, the Vault secrets \`notify_url\` and \`notify_invoke_secret\` (DEPLOY.md §3a)"
-            echo "- no deploy credential as a repository secret"
+            echo "- on EACH environment, secrets \`SUPABASE_DB_PASSWORD\`, \`COOLIFY_API_TOKEN\`, \`TS_OAUTH_CLIENT_ID\`, \`TS_OAUTH_SECRET\` and variables \`APP_ORIGINS\`, \`SUPABASE_API_URL\`, \`SUPABASE_PUBLISHABLE_KEY\`, \`VAPID_PUBLIC_KEY\`, \`DB_HOST\`, \`DB_PORT\`, \`COOLIFY_API_URL\`, \`COOLIFY_WEB_UUID\`, \`COOLIFY_FUNCTIONS_UUID\`"
+            echo "- each environment's stack stood up in Coolify (story 20.5), pulling \`shift-web:<environment>\` and \`shift-functions:<environment>\` from GHCR with a \`read:packages\`-only credential on the server"
+            echo "- the tailnet ACL: \`tag:ci\` reaches the Postgres ports and the Coolify API only; the OAuth client creates \`tag:ci\` keys only"
+            echo "- before a production release with migrations: a backup in Coolify, then the production variable \`PRE_MIGRATION_BACKUP_AT\` (DEPLOY.md §8.2)"
+            echo "- no deploy credential as a repository secret; no runtime secret in GitHub at all (they live in Coolify)"
           } >> "$GITHUB_STEP_SUMMARY"
 
   # Story 20.2: the self-hosted stack's functions image, BUILT ONLY. Nothing is
@@ -460,7 +466,12 @@ jobs:
     needs: [test, e2e]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 45
+    # The only jobs that may push to GHCR (packages: write), and only here:
+    # a push to main, deploys enabled, the staging Environment's branch rule.
+    permissions:
+      contents: read
+      packages: write
     environment:
       name: staging
       url: ${{ steps.deploy.outputs.app-origin }}
@@ -470,6 +481,7 @@ jobs:
     outputs:
       app-origin: ${{ steps.deploy.outputs.app-origin }}
       supabase-url: ${{ steps.deploy.outputs.supabase-url }}
+      functions-image: ${{ steps.deploy.outputs.functions-image }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -477,29 +489,26 @@ jobs:
 
       - name: Check configuration
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_PAGES_PROJECT: ${{ vars.CLOUDFLARE_PAGES_PROJECT }}
-          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
-          SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
           APP_ORIGINS: ${{ vars.APP_ORIGINS }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-          NOTIFY_INVOKE_SECRET: ${{ secrets.NOTIFY_INVOKE_SECRET }}
-          NOTIFY_EMAIL_FROM: ${{ vars.NOTIFY_EMAIL_FROM }}
-          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          SUPABASE_API_URL: ${{ vars.SUPABASE_API_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
           VAPID_PUBLIC_KEY: ${{ vars.VAPID_PUBLIC_KEY }}
-          VAPID_SUBJECT: ${{ vars.VAPID_SUBJECT }}
+          DB_HOST: ${{ vars.DB_HOST }}
+          DB_PORT: ${{ vars.DB_PORT }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          COOLIFY_API_URL: ${{ vars.COOLIFY_API_URL }}
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+          COOLIFY_WEB_UUID: ${{ vars.COOLIFY_WEB_UUID }}
+          COOLIFY_FUNCTIONS_UUID: ${{ vars.COOLIFY_FUNCTIONS_UUID }}
+          TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          TS_OAUTH_SECRET: ${{ secrets.TS_OAUTH_SECRET }}
         run: >-
           node scripts/ci/require-config.mjs --environment staging
-          secret:SUPABASE_ACCESS_TOKEN secret:CLOUDFLARE_API_TOKEN
-          var:CLOUDFLARE_ACCOUNT_ID var:CLOUDFLARE_PAGES_PROJECT
-          var:SUPABASE_PROJECT_REF:project-ref var:SUPABASE_PUBLISHABLE_KEY:publishable var:APP_ORIGINS
-          secret:SUPABASE_DB_PASSWORD secret:SUPABASE_SECRET_KEY:secret
-          secret:RESEND_API_KEY:resend secret:NOTIFY_INVOKE_SECRET:invoke-secret var:NOTIFY_EMAIL_FROM
-          secret:VAPID_PRIVATE_KEY:vapid-private var:VAPID_PUBLIC_KEY:vapid-public var:VAPID_SUBJECT:vapid-subject
+          var:APP_ORIGINS var:SUPABASE_API_URL:https-origin var:SUPABASE_PUBLISHABLE_KEY:publishable
+          var:VAPID_PUBLIC_KEY:vapid-public var:DB_HOST:tailnet-host var:DB_PORT:port secret:SUPABASE_DB_PASSWORD
+          var:COOLIFY_API_URL:tailnet-url secret:COOLIFY_API_TOKEN:coolify-token
+          var:COOLIFY_WEB_UUID:coolify-uuid var:COOLIFY_FUNCTIONS_UUID:coolify-uuid
+          secret:TS_OAUTH_CLIENT_ID secret:TS_OAUTH_SECRET:ts-oauth-secret
 
       - uses: ./.github/actions/setup
 
@@ -508,22 +517,20 @@ jobs:
         uses: ./.github/actions/deploy
         with:
           environment: staging
-          pages-branch: staging
           app-origins: ${{ vars.APP_ORIGINS }}
-          supabase-project-ref: ${{ vars.SUPABASE_PROJECT_REF }}
-          supabase-access-token: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          supabase-db-password: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          supabase-api-url: ${{ vars.SUPABASE_API_URL }}
           supabase-publishable-key: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
-          supabase-secret-key: ${{ secrets.SUPABASE_SECRET_KEY }}
-          resend-api-key: ${{ secrets.RESEND_API_KEY }}
-          notify-invoke-secret: ${{ secrets.NOTIFY_INVOKE_SECRET }}
-          notify-email-from: ${{ vars.NOTIFY_EMAIL_FROM }}
-          vapid-private-key: ${{ secrets.VAPID_PRIVATE_KEY }}
           vapid-public-key: ${{ vars.VAPID_PUBLIC_KEY }}
-          vapid-subject: ${{ vars.VAPID_SUBJECT }}
-          cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          cloudflare-account-id: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          cloudflare-pages-project: ${{ vars.CLOUDFLARE_PAGES_PROJECT }}
+          db-host: ${{ vars.DB_HOST }}
+          db-port: ${{ vars.DB_PORT }}
+          db-password: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          coolify-api-url: ${{ vars.COOLIFY_API_URL }}
+          coolify-api-token: ${{ secrets.COOLIFY_API_TOKEN }}
+          coolify-web-uuid: ${{ vars.COOLIFY_WEB_UUID }}
+          coolify-functions-uuid: ${{ vars.COOLIFY_FUNCTIONS_UUID }}
+          ts-oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          ts-oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          registry-token: ${{ github.token }}
 
   # The SPA, the Supabase environment it was built with, signup refused,
   # admin-auth CORS, and — with the smoke account configured — a sign-in that
@@ -571,9 +578,14 @@ jobs:
   # "CI/CD"). Starts only if staging deployed AND its smoke passed.
   deploy-production:
     name: Deploy production
-    needs: smoke-staging
+    # deploy-staging is already implied by smoke-staging; named so its
+    # functions digest can be read.
+    needs: [deploy-staging, smoke-staging]
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
     environment:
       name: production
       url: ${{ steps.deploy.outputs.app-origin }}
@@ -593,53 +605,52 @@ jobs:
 
       - name: Check configuration
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_PAGES_PROJECT: ${{ vars.CLOUDFLARE_PAGES_PROJECT }}
-          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
-          SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
           APP_ORIGINS: ${{ vars.APP_ORIGINS }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-          NOTIFY_INVOKE_SECRET: ${{ secrets.NOTIFY_INVOKE_SECRET }}
-          NOTIFY_EMAIL_FROM: ${{ vars.NOTIFY_EMAIL_FROM }}
-          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          SUPABASE_API_URL: ${{ vars.SUPABASE_API_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
           VAPID_PUBLIC_KEY: ${{ vars.VAPID_PUBLIC_KEY }}
-          VAPID_SUBJECT: ${{ vars.VAPID_SUBJECT }}
+          DB_HOST: ${{ vars.DB_HOST }}
+          DB_PORT: ${{ vars.DB_PORT }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          COOLIFY_API_URL: ${{ vars.COOLIFY_API_URL }}
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+          COOLIFY_WEB_UUID: ${{ vars.COOLIFY_WEB_UUID }}
+          COOLIFY_FUNCTIONS_UUID: ${{ vars.COOLIFY_FUNCTIONS_UUID }}
+          TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          TS_OAUTH_SECRET: ${{ secrets.TS_OAUTH_SECRET }}
         run: >-
           node scripts/ci/require-config.mjs --environment production
-          secret:SUPABASE_ACCESS_TOKEN secret:CLOUDFLARE_API_TOKEN
-          var:CLOUDFLARE_ACCOUNT_ID var:CLOUDFLARE_PAGES_PROJECT
-          var:SUPABASE_PROJECT_REF:project-ref var:SUPABASE_PUBLISHABLE_KEY:publishable var:APP_ORIGINS
-          secret:SUPABASE_DB_PASSWORD secret:SUPABASE_SECRET_KEY:secret
-          secret:RESEND_API_KEY:resend secret:NOTIFY_INVOKE_SECRET:invoke-secret var:NOTIFY_EMAIL_FROM
-          secret:VAPID_PRIVATE_KEY:vapid-private var:VAPID_PUBLIC_KEY:vapid-public var:VAPID_SUBJECT:vapid-subject
+          var:APP_ORIGINS var:SUPABASE_API_URL:https-origin var:SUPABASE_PUBLISHABLE_KEY:publishable
+          var:VAPID_PUBLIC_KEY:vapid-public var:DB_HOST:tailnet-host var:DB_PORT:port secret:SUPABASE_DB_PASSWORD
+          var:COOLIFY_API_URL:tailnet-url secret:COOLIFY_API_TOKEN:coolify-token
+          var:COOLIFY_WEB_UUID:coolify-uuid var:COOLIFY_FUNCTIONS_UUID:coolify-uuid
+          secret:TS_OAUTH_CLIENT_ID secret:TS_OAUTH_SECRET:ts-oauth-secret
 
       - uses: ./.github/actions/setup
 
+      # The functions image is not rebuilt: production deploys the digest
+      # staging probed, deployed and smoke-tested in this same run.
       - name: Deploy
         id: deploy
         uses: ./.github/actions/deploy
         with:
           environment: production
-          pages-branch: main
           app-origins: ${{ vars.APP_ORIGINS }}
-          supabase-project-ref: ${{ vars.SUPABASE_PROJECT_REF }}
-          supabase-access-token: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          supabase-db-password: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          supabase-api-url: ${{ vars.SUPABASE_API_URL }}
           supabase-publishable-key: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
-          supabase-secret-key: ${{ secrets.SUPABASE_SECRET_KEY }}
-          resend-api-key: ${{ secrets.RESEND_API_KEY }}
-          notify-invoke-secret: ${{ secrets.NOTIFY_INVOKE_SECRET }}
-          notify-email-from: ${{ vars.NOTIFY_EMAIL_FROM }}
-          vapid-private-key: ${{ secrets.VAPID_PRIVATE_KEY }}
           vapid-public-key: ${{ vars.VAPID_PUBLIC_KEY }}
-          vapid-subject: ${{ vars.VAPID_SUBJECT }}
-          cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          cloudflare-account-id: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          cloudflare-pages-project: ${{ vars.CLOUDFLARE_PAGES_PROJECT }}
+          db-host: ${{ vars.DB_HOST }}
+          db-port: ${{ vars.DB_PORT }}
+          db-password: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          coolify-api-url: ${{ vars.COOLIFY_API_URL }}
+          coolify-api-token: ${{ secrets.COOLIFY_API_TOKEN }}
+          coolify-web-uuid: ${{ vars.COOLIFY_WEB_UUID }}
+          coolify-functions-uuid: ${{ vars.COOLIFY_FUNCTIONS_UUID }}
+          ts-oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          ts-oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          registry-token: ${{ github.token }}
+          functions-image: ${{ needs.deploy-staging.outputs.functions-image }}
+          pre-migration-backup-at: ${{ vars.PRE_MIGRATION_BACKUP_AT }}
 
   # Anonymous: production has no smoke account, so nothing here signs in.
   smoke-production:
