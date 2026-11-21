@@ -10,9 +10,12 @@
 #            e2e-report  merges the four shards' reports into one HTML report
 #            functions-image  builds the `shift-functions` image (story 20.2),
 #                        never pushed, and probes it with no route to the internet
+#            web-image   builds the `shift-web` image (story 20.3) from the build
+#                        job's apps/web/dist, never pushed, and probes it with
+#                        no network
 #            ci-passed   the one required check on main: quality, build, test,
-#                        functions-image and e2e passed (e2e may be skipped on a
-#                        docs-only PR)
+#                        functions-image, web-image and e2e passed (e2e may be
+#                        skipped on a docs-only PR)
 #   main only, and only when vars.DEPLOY_ENABLED == 'true':
 #            deploy-staging → smoke-staging → deploy-production (approval) → smoke-production
 #            notify    on any failure on main
@@ -152,6 +155,35 @@ jobs:
       - name: Probe it offline
         run: bash scripts/ci/probe-functions-image.sh "shift-functions:ci-$GITHUB_SHA"
 
+  # Story 20.3: the SPA's image, BUILT ONLY, from the `build` job's dist (built
+  # with no environment's VITE_*, so its CSP names no Supabase origin): this
+  # proves the image, not a deploy. Building it per environment from that
+  # environment's own build, and pushing it, is story 20.6's deploy job. No
+  # registry credential exists here. The probe runs it with `--network none`
+  # and a read-only root, and checks every response against the same
+  # dist/_headers.
+  web-image:
+    name: Web image (build, offline probe)
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download apps/web/dist
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: web-dist
+          path: apps/web/dist
+
+      - name: Build shift-web (not pushed)
+        run: docker build --pull -f deploy/web/Dockerfile -t "shift-web:ci-$GITHUB_SHA" .
+
+      - name: Probe it offline
+        run: bash scripts/ci/probe-web-image.sh "shift-web:ci-$GITHUB_SHA" apps/web/dist
+
   test:
     name: Test (Vitest, local Supabase)
     needs: build
@@ -172,8 +204,13 @@ jobs:
         run: bash scripts/ci/start-supabase.sh "$SUPABASE_UNUSED_SERVICES"
 
       # The build-gated root tests read apps/web/dist and fail on a stale one.
+      # Story 20.3: a placeholder origin in `.env.production.local` (gitignored;
+      # read by `vite build` and by `static-hosting.test.ts`'s `loadEnv`, never
+      # by Vitest's `test` mode), so the built CSP's origin wiring is asserted.
       - name: Build
-        run: pnpm build
+        run: |
+          printf 'VITE_SUPABASE_URL=https://api.example.test\n' > apps/web/.env.production.local
+          pnpm build
 
       # Arguments to `pnpm test` reach its last command, the root `vitest run`.
       - name: pnpm test
@@ -385,7 +422,7 @@ jobs:
   # A flake on main does not, and a docs-only PR skips E2E even then.
   ci-passed:
     name: CI passed
-    needs: [quality, build, test, functions-image, changes, e2e]
+    needs: [quality, build, test, functions-image, web-image, changes, e2e]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -630,7 +667,7 @@ jobs:
   # ------------------------------------------------------------------ notify
   notify:
     name: Notify
-    needs: [quality, build, test, functions-image, e2e, deploy-staging, smoke-staging, deploy-production, smoke-production]
+    needs: [quality, build, test, functions-image, web-image, e2e, deploy-staging, smoke-staging, deploy-production, smoke-production]
     if: (failure() || cancelled()) && github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 5

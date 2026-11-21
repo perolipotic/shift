@@ -442,11 +442,19 @@ Deep links need no configuration beyond what is committed:
 There is no server to route it any other way.
 
 Security headers are committed too: `apps/web/public/_headers` sets
-`X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options` and a restrictive
-`Permissions-Policy` on every path, and the build copies it into `dist/`. There
-is no Content-Security-Policy yet: it needs the deployed Supabase origin and a
-deployed host to verify it against (see `deferred-work.md`). Check the headers
-after a deploy with `curl -sI https://<host>/ | grep -iE 'x-content-type|referrer|x-frame|permissions'`.
+`X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options`, a restrictive
+`Permissions-Policy` and (story 20.3) `Strict-Transport-Security` on every
+path, and the build copies it into `dist/` and appends a
+`Content-Security-Policy-Report-Only` derived from `VITE_SUPABASE_URL` (§9.7).
+It is not enforced until story 20.5 has verified it on staging. Check the headers
+after a deploy with
+`curl -sI https://<host>/ | grep -iE 'x-content-type|referrer|x-frame|permissions|strict-transport-security|content-security-policy'`.
+
+While Pages is still deployed (deploys are off today), the HSTS line and the
+Report-Only CSP reach Pages too: Pages reads the same built `_headers`. COOP
+and CORP (`Cross-Origin-Opener-Policy`, `Cross-Origin-Resource-Policy`) are
+deliberately not added: the image's headers equal today's hosting's, and
+adding them is a later hardening decision.
 
 ---
 
@@ -1694,6 +1702,7 @@ in Coolify; a change is a reviewed PR here, then pasted again.
 | `supabase-meta` | `supabase/postgres-meta:v0.98.0` | Studio's database API | the stack's network |
 | `supabase-studio` | `supabase/studio:2026.08.17-sha-0c1da8f` | the dashboard | `127.0.0.1:<loopback-port>` only, over the tailnet. **No domain, no Kong route** |
 | `supabase-edge-functions` | `shift-functions` (story 20.2): `supabase/edge-runtime:v1.74.3` with the router and both functions baked in, built by CI | the router, `admin-auth` and `notify` (§9.6) | through Kong's `/functions/v1/` |
+| `shift-web` (its own Coolify resource, not in the compose) | `shift-web` (story 20.3): `nginxinc/nginx-unprivileged:1.30.6-alpine3.24` (by digest) with the built SPA, built by CI | the SPA: `dist`, `_headers`' headers on every response, the SPA fallback, caching (§9.7) | the internet, at `app.<domain>`, through Coolify's Traefik with TLS |
 
 **Studio has no login of its own.** Whoever reaches its port is an
 administrator of the database. Its only protection is H-5: it publishes on the
@@ -2159,3 +2168,103 @@ on the host by story 20.5 (`deferred-work.md`):
 **Cron.** Vault's `notify_url` on a self-hosted stack is
 `http://supabase-kong:8000/functions/v1/notify`, the internal gateway: the
 scheduled call never leaves the host (§9.4, §9.5 step 7b).
+
+### 9.7 The SPA: the `shift-web` image (story 20.3)
+
+On Cloudflare Pages, `_redirects` gave the SPA fallback and `_headers` the
+security headers. Self-hosted, nothing reads either file, so the SPA ships as
+its own image, `shift-web` (`deploy/web/Dockerfile`), and serves both itself.
+It is a static server and nothing more (AD-14): no application code, no
+proxying, no key.
+
+**The base.** `nginxinc/nginx-unprivileged:1.30.6-alpine3.24`, pinned by tag
+and index digest: F5's nginx built to run as uid 101, listening on 8080, with
+its pid and temp files in `/tmp`. The image's config and files are owned by
+root and not writable by uid 101 (the base leaves `/etc/nginx` to uid 101),
+`server_tokens` is off, and `nginx -t` checks the config at build; the server
+then runs as uid 101. It listens on IPv4 only: a container without IPv6
+cannot bind `[::]`.
+
+**The headers.** One file holds every security header: the BUILT
+`apps/web/dist/_headers`, whose `/*` block is `public/_headers`
+(`X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options`,
+`Permissions-Policy` and `Strict-Transport-Security: max-age=31536000;
+includeSubDomains`, no preload) plus the build's CSP line. At image build,
+`deploy/web/render-headers.sh` (POSIX sh and awk, run in the base's busybox)
+turns each header into `add_header <Name> "<value>" always;`, value unchanged,
+and every nginx location includes the result, so every response, errors
+included, carries every header. The script refuses, and the image build fails,
+on a block other than `/*` or a second `/*` block, a `!` detach, a header
+named twice, a header nginx sets itself or that frames the response
+(`Cache-Control`, `Content-Type`, `Content-Length`, `Server`, `Date`, `ETag`,
+`Last-Modified`, `Vary`, `Content-Encoding`, `Accept-Ranges`, `Content-Range`,
+`Connection`, `Keep-Alive`, `Transfer-Encoding`, `Location`, `Expires`), or a value holding `"`, `$`, `\`, a control character or
+a non-ASCII character. Nothing else in the image sets a security header.
+
+**The CSP.** The Vite build (`vite.config.ts`, from
+`apps/web/src/lib/content-security-policy.ts`) derives it from the same
+`VITE_SUPABASE_URL` the bundle is built with, and the SHA-256 of each inline
+script of the built `index.html` (the theme pre-script), so it cannot drift
+from either:
+
+```text
+default-src 'self'; script-src 'self' 'sha256-<inline script>';
+style-src 'self' 'unsafe-inline'; img-src 'self' <supabase origin>;
+connect-src 'self' <supabase origin>; font-src 'self'; worker-src 'self';
+manifest-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none';
+frame-src 'none'; frame-ancestors 'none'
+```
+
+It ships as `Content-Security-Policy-Report-Only`: browsers report what it
+would block in the console, and block nothing. There is no `report-uri` (no
+endpoint receives reports). Story 20.5 reads those messages on staging, then
+makes it enforcing by changing `CSP_HEADER` alone. A `VITE_SUPABASE_URL` that
+is not an `http(s)` URL with a plain host fails the build; an empty one (CI's
+`build` job) gives the policy with no Supabase origin. Styles keep
+`'unsafe-inline'`: `index.html` has inline `<style>` blocks and a `style=`
+attribute, and React writes `style` attributes.
+
+**Routing and caching** (`deploy/web/default.conf`):
+
+| Request | Answer |
+| --- | --- |
+| `/`, a deep link (`/kalendar/2026-09`), any unknown path outside `/assets/` | `200 index.html`, `Cache-Control: no-cache` |
+| `/sw.js`, `/push-sw.js`, `/site.webmanifest` (`application/manifest+json`), the icons | `200`, `no-cache`: revalidated on every use, so a deploy is seen at once |
+| `/assets/<hashed>` | `200`, `public, max-age=31536000, immutable` (on a success only) |
+| a missing `/assets/…` file, and `/assets/` itself | a plain-text `404`, never `index.html`, never immutable |
+| any `*.map` | `404` |
+
+A missing root file such as `/sw.js` keeps answering the shell with 200, as
+Cloudflare Pages did: the fallback rule is the same for every path outside
+`/assets/` (parity, a reviewed decision), with one exception: a missing
+`/site.webmanifest` is a plain-text 404, never the shell under the manifest's
+type (every build emits it).
+
+**No source map** is in the image: `.dockerignore` keeps the web build's maps
+(`apps/web/dist/**/*.map`) out of the build context, and the build fails if
+one is left. `_headers` and `_redirects` are not copied in either. The build
+also fails if `dist/_headers` has no Content-Security-Policy line (a stale or
+pre-plugin `dist`).
+
+**Build and probe.** CI's `web-image` job builds the image from the `build`
+job's `dist` (never pushed) and probes it with `--network none` and a
+read-only root (`scripts/ci/probe-web-image.sh`): the table above, every
+header of that `dist/_headers` exactly once with its exact value on every
+answer (the 404s, a `POST`'s 405, a `HEAD`, a revalidation's 304 and the 400
+nginx gives an oversized header before choosing a location included), gzip on
+the entry chunk the page names, uid 101, no map, no file outside `/tmp`
+writable by uid 101, the image's own `HEALTHCHECK` command, and
+`render-headers.sh`'s refusals under the image's busybox. The image's
+`HEALTHCHECK` fetches `/` with its own busybox `wget` every 30 s.
+That `dist` is built with no environment's `VITE_*`, so
+it proves the image only. Story 20.6's deploy job builds `shift-web` per
+environment from that environment's own build (its `VITE_SUPABASE_URL`, so
+its CSP names its own API origin), pushes it as `<registry>/shift-web:<sha>`
+and deploys it through the Coolify API; Coolify never builds from Git.
+
+**In Coolify** (story 20.5): a Docker-image resource per environment, port
+8080, the domain `https://app.<domain>`. Traefik terminates TLS (Let's
+Encrypt) and redirects HTTP to HTTPS; a browser honours HSTS only from an
+HTTPS answer, so the first visit over HTTPS pins the host for a year.
+Run it with a read-only root and a tmpfs on `/tmp` if Coolify allows it; it
+needs no other writable path.
