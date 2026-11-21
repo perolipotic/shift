@@ -70,6 +70,13 @@ export const LOAN_REASON_MAX = 200;
 /** How many shift lines *Što se mijenja* shows before `i još {n}`. */
 export const LOAN_SHOWN_SHIFTS = 10;
 
+/**
+ * How many days before `from` and after `to` the preview reads legs, so a
+ * no-rest run reaching past the reported window keeps its whole total
+ * (FR-26's figure). A run longer than this is cut alike on both sides.
+ */
+export const LOAN_DUTY_REACH_DAYS = 7;
+
 /** The draft loan's id in the "after": no stored loan (a uuid) carries it. */
 export const LOAN_DRAFT_ID = 'loan-draft';
 
@@ -398,9 +405,10 @@ function scheduleInputOf(snapshot: CalendarSnapshot): ScheduleInput {
  * and its one "after":
  * - per date of `[from, to]`, the working shifts the member loses and gains
  *   (by team and type, so an unchanged date says nothing; design note 3);
- * - over `[from − 1, to + 1]` in the "after", every two working legs of two
- *   different teams that overlap (double booking), and every duty
- *   (`dutiesOf`) joining legs of two different teams, with its total — each
+ * - with a leg over `[from − 1, to + 1]` in the "after", every two working
+ *   legs of two different teams that overlap (double booking), and every
+ *   duty (`dutiesOf`, its legs read {@link LOAN_DUTY_REACH_DAYS} days either
+ *   side) joining legs of two different teams, with its total — each
  *   only when `before` does not already hold it over the same window (the
  *   same legs, by date, team and type), so a double shift an override made
  *   before the loan is not the loan's;
@@ -413,7 +421,21 @@ function scheduleInputOf(snapshot: CalendarSnapshot): ScheduleInput {
 export function loanPreviewOf(before: CalendarSnapshot, after: CalendarSnapshot, span: LoanSpan): LoanPreview {
   const covered = datesBetween(span.from, span.to);
   const edges = [previousIsoDate(span.from), nextIsoDate(span.to)].filter((date): date is string => date !== null);
-  const window = [...covered, ...edges].sort();
+  // REPORTED over `[from − 1, to + 1]`; the legs are read further out
+  // ({@link LOAN_DUTY_REACH_DAYS}), so a no-rest run crossing the window's
+  // edge keeps its whole total and is cut alike on both sides. Outside
+  // `[from, to]` both sides are the same, so a run or a double the loan makes
+  // always has a leg in the reported window.
+  const reported = new Set([...covered, ...edges]);
+  const reach = (date: string, step: (date: string) => string | null): string[] => {
+    const dates: string[] = [];
+
+    for (let at = step(date), n = 0; at !== null && n < LOAN_DUTY_REACH_DAYS; at = step(at), n += 1) dates.push(at);
+
+    return dates;
+  };
+  const window = [...new Set([...reach(span.from, previousIsoDate), ...covered, ...reach(span.to, nextIsoDate)])].sort();
+  const inReported = (legs: readonly LoanLeg[]): boolean => legs.some((leg) => reported.has(leg.date));
   const was = scheduleDaysOf(before, span.memberId, window);
   const will = scheduleDaysOf(after, span.memberId, window);
   const lines: LoanShiftLine[] = [];
@@ -447,7 +469,9 @@ export function loanPreviewOf(before: CalendarSnapshot, after: CalendarSnapshot,
     dutiesOf(legs).filter((duty) => new Set(duty.legs.map((leg) => leg.teamId)).size > 1);
   const legsBefore = legsOf(before, was);
   const legsAfter = legsOf(after, will);
-  const pairKey = ([first, second]: readonly [LoanLeg, LoanLeg]): string => JSON.stringify([legKey(first), legKey(second)]);
+  // ORDER-FREE: two legs with one start come in the day's shift order, which
+  // may differ between the sides, so the same pair keys alike either way.
+  const pairKey = ([first, second]: readonly [LoanLeg, LoanLeg]): string => JSON.stringify([legKey(first), legKey(second)].sort());
   const dutyKey = (duty: { readonly legs: readonly LoanLeg[] }): string => JSON.stringify(duty.legs.map(legKey));
   const pairsBefore = new Set(pairsOf(legsBefore).map(pairKey));
   const dutiesBefore = new Set(dutiesAcrossOf(legsBefore).map(dutyKey));
@@ -456,14 +480,14 @@ export function loanPreviewOf(before: CalendarSnapshot, after: CalendarSnapshot,
     type: nameOf(after.types, leg.shiftTypeId, 'shift type'),
   });
   const doubles = pairsOf(legsAfter)
-    .filter((pair) => !pairsBefore.has(pairKey(pair)))
+    .filter((pair) => inReported(pair) && !pairsBefore.has(pairKey(pair)))
     .map((pair): LoanDoubleLine => {
       const [first, second] = pair;
 
       return { key: pairKey(pair), date: first.date, first: named(first), second: named(second) };
     });
   const restGaps = dutiesAcrossOf(legsAfter)
-    .filter((duty) => !dutiesBefore.has(dutyKey(duty)))
+    .filter((duty) => inReported(duty.legs) && !dutiesBefore.has(dutyKey(duty)))
     .map((duty): LoanRestGapLine => {
       const teams = duty.legs
         .map((leg) => nameOf(after.teams, leg.teamId, 'team'))
@@ -542,7 +566,7 @@ export function shownLoanPreviewOf(snapshot: CalendarSnapshot | null, span: Loan
 
     return empty ? null : preview;
   } catch (cause) {
-    console.error(cause);
+    console.error(LOAN_UNAVAILABLE, cause);
 
     return null;
   }

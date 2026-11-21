@@ -71,7 +71,7 @@ export function MemberLoanDialog({ edit }: { readonly edit: MemberEdit }): React
       <span className="grid gap-1 text-sm">
         <span className="block font-medium">{t('loans.changes')}</span>
         {preview.shifts.map((line) => (
-          <span key={`${line.side}${line.date}${line.team}${line.type}`} className="block">
+          <span key={JSON.stringify([line.side, line.date, line.team, line.type])} className="block">
             {t(loanShiftMessageKey(line), {
               team: line.team,
               type: line.type,

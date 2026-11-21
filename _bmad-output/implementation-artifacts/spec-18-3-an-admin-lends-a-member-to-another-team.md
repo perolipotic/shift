@@ -88,6 +88,15 @@ context:
 - Given no loan drafted, when the member page renders, then nothing it showed before changes but the card's new button.
 - Given the DB-free root tests, domain and web suites, typecheck and lint, when run, then they pass.
 
+### Review Findings
+
+- [x] [Review][Patch] A no-rest run crossing the window is cut short [apps/web/src/features/members/services/loan.ts:loanPreviewOf]
+- [x] [Review][Patch] A double booking's key follows the day's shift order [apps/web/src/features/members/services/loan.ts:loanPreviewOf]
+- [x] [Review][Patch] A checked refusal does not re-read the members list [apps/web/src/features/members/hooks/use-member-loan.ts:refuseChecked]
+- [x] [Review][Patch] The preview's log has no `LOAN_UNAVAILABLE` tag [apps/web/src/features/members/services/loan.ts:shownLoanPreviewOf]
+- [x] [Review][Patch] The shift line's React key can collide [apps/web/src/features/members/components/member-loan-dialog.tsx]
+- [x] [Review][Patch] No case for a loan ending yesterday [test/rls-isolation.test.ts]
+
 ## Design Notes
 
 1. Past dates are allowed (as leave records): a late-entered loan is a correction; it is not notified when wholly past.
@@ -97,6 +106,9 @@ context:
 5. Overrides the loan makes newly apply (e.g. one putting the lent member back on their home team) are not listed as override rows; their effect is in the gained lines and, when they overlap or chain, in the double-booking and no-rest lines. Only overrides made inert are listed (FR-90's "inapplicable"). Recorded after the epic AC audit called it an unlisted narrowing of AC 2.
 6. Not notified, by 0043/0045's existing recipient rules: a loan wholly before the organization's today, the admin who lends themselves, and a member with no channel or inactive today. Recorded after the epic AC audit called AC 3's narrowing unlisted.
 7. A 42501 at insert means not an active admin, or the policy refusing a home or archived team after the fresh check (a race); one neutral message names all three, and the calendar, teams and members are re-read.
+8. AC 3's "the change history records it" is met by 18.2's two audit triggers on `team_loans` (one INSERT event per loan); *Povijest promjena* shows it as record `other` until 18.5 adds the record and its wording (Never list; `deferred-work.md`, 18.2's 18.5 entry). Recorded after the second review's epic AC audit.
+9. Double bookings and no-rest runs are reported only across two teams (AC 2's "the rest gap" is the loan's boundary): inside the borrowing team alone the run is that team's own rotation, which the loan does not make. The legs are read 7 days either side of the range (`LOAN_DUTY_REACH_DAYS`) so a run crossing `from − 1` or `to + 1` keeps its whole total; a line is reported when one of its legs falls in `[from − 1, to + 1]`. Recorded after the second review.
+10. The notification's copy is `obavijesti.loanMade`, not under `loans`: every `notify` message lives in `obavijesti`, mirrored in `messages.ts` and pinned by `notify-boundary`. The dialog's copy is all in `loans`. Recorded after the second review's epic AC audit.
 
 ## Verification
 
@@ -107,7 +119,7 @@ context:
 - `pnpm exec vitest run test/resource-hygiene.test.ts test/supabase-scaffold.test.ts test/key-hygiene.test.ts test/localization-guard.test.ts test/import-cycles.test.ts test/feature-boundaries.test.ts` -- pass.
 - Not run locally: 0063, provisioning, rls-isolation, notify-boundary, e2e (STRICT DATABASE RULE); CI is the gate. They fail locally only because 0063 is unapplied; their expected trigger text, codes and operands were reasoned, not executed.
 
-**Results (2026-11-21, after the review patches):** typecheck and lint clean; domain 17 files, 893 passed; web 174 files, 6559 passed (35 in `loan.test.ts`); DB-free root (resource-hygiene, supabase-scaffold, key-hygiene, localization-guard, import-cycles, feature-boundaries) 2415 passed, 2 skipped. Every matrix row is covered in `loan.test.ts` at the service level; the "card says saved" and erasure-dialog rows have no rendered or e2e test (deferred to 18.4). Matrix dates are illustrative: on the pilot fixture A is off on the 10th and 11th, so the tests use the dates the fixture works (the 12th).
+**Results (2026-11-21, after the second review's patches):** typecheck and lint clean; domain 17 files, 893 passed; web 174 files, 6560 passed (36 in `loan.test.ts`); DB-free root (resource-hygiene, supabase-scaffold, key-hygiene, localization-guard, import-cycles, feature-boundaries) 2415 passed, 2 skipped. Every matrix row is covered in `loan.test.ts` at the service level; the "card says saved" and erasure-dialog rows have no rendered or e2e test (deferred to 18.4). Matrix dates are illustrative: on the pilot fixture A is off on the 10th and 11th, so the tests use the dates the fixture works (the 12th).
 
 ## Spec Change Log
 
@@ -122,6 +134,40 @@ None (no bad_spec loopback). Design Notes 4–7 added from the review.
 - Deferred to 18.4 (`deferred-work.md`): 0063 would notify again on 18.4's amend insert; lending an inactive member; an e2e spec for the dialog.
 - Rejected: dates read from refs and the team from state (the team dialog's own pattern); DESIGN.md untouched (no component changed: the dialog is the existing Dialog, Select, Input); cross-organization team in the notify trigger (0062's composite keys make it unrepresentable); a windowed snapshot missing loans (`calendar_team_loans()` returns every live loan); sprint-status and checkboxes (bookkeeping, done here).
 - Epic AC audit: no AC not met; the two unlisted narrowings are recorded in Design Notes 5 and 6.
+
+### 2026-11-21 — Second review pass (unattended)
+- Layers: blind, edge-case, verification-gap, acceptance, epic AC (5 of 5; artifact renderer: no generated file).
+- intent_gap 0, bad_spec 0, patch 6, defer 0, the rest rejected.
+- Patched:
+  - a no-rest run crossing `from − 1` or `to + 1` was cut at the window, understating FR-26's total and keying differently before and after; legs are now read `LOAN_DUTY_REACH_DAYS` (7) days either side, reported when a leg is in `[from − 1, to + 1]` (new test, which fails at a reach of 1);
+  - a double booking's key followed the day's shift order, so a pre-existing pair could read as new; the key is now order-free;
+  - a refusal from the fresh check re-read the calendar and teams but not the members list, unlike the team move's `refuseTeamChecked` and the insert's own re-reads;
+  - `shownLoanPreviewOf` logged without the `LOAN_UNAVAILABLE` tag;
+  - the shift line's React key joined user-entered names with no separator;
+  - rls-isolation had no case for a loan ending yesterday (an off-by-one at the "wholly past" boundary passed every case); one is added (unrun, as the rest). EXPERIENCE.md now names every recipient rule.
+- Epic AC audit: the history half of AC 3, the cross-team-only rest gap and `obavijesti.loanMade` are recorded in Design Notes 8–10. No AC is unmet.
+- Rejected:
+  - year bounds: `isIsoDate` years are 0001–9999, which 0062's check admits;
+  - the self-lend case's team: `other` is a throwaway team, never the caller's;
+  - 23503 as stale: teams are never deleted and composite keys keep tenants apart;
+  - NUL in the reason: not typeable;
+  - 42501 named as archived or home: the neutral message is Design Note 7;
+  - untimed working shifts never flagged as double: a double is defined by time spans;
+  - `dutiesOf` drops overlapping legs: the overlap is the double line;
+  - `gone` closing on a transient null: query data is kept during a refetch;
+  - no `stopped` guard on the erasure confirmation: the loan has no history key, and the fresh check refuses home, archived and overlap;
+  - the header's wrapper `div`: nothing visible changes;
+  - the notices in one card branch: `renderTeam` has one branch;
+  - the "after" built twice: the same derivation, each memoised in the hook;
+  - literal element ids: the team dialog's own pattern;
+  - the team list frozen at open: the fresh check refuses;
+  - silent trigger skips: 0043's pattern;
+  - spec `status: done` beside sprint `review`: the workflow's convention;
+  - the RESOLVED ledger entry keeping its old text: the ledger's convention;
+  - existing loans not listed and a one-day loan read "Od X do X": 18.5's loan marks, and cosmetic;
+  - the email switch and inactive recipients untested here: `notify_members` and its tests own them;
+  - the matrix dates: frozen, and covered by Results;
+  - the hook and dialog untested: already deferred to 18.4.
 
 ## Auto Run Result
 

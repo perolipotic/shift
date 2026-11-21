@@ -219,13 +219,18 @@ export function useMemberLoan(screen: MemberScreen) {
     focusRefused(code);
   }
 
-  /** A loan the fresh snapshot refuses: said, and the calendar and teams read again. */
+  /**
+   * A loan the fresh snapshot refuses: said, and the calendar, teams and
+   * members read again (as the team move's `refuseTeamChecked`): a home-team
+   * or stale refusal can come from a team move written meanwhile, and the
+   * members list decides the offer and *sada u timu*.
+   */
   async function refuseChecked(memberId: string, code: LoanSnapshotRefusal): Promise<void> {
     refuse(memberId, code);
 
     try {
       await queryClient.invalidateQueries({ queryKey: CALENDAR_KEY });
-      await queryClient.invalidateQueries({ queryKey: TEAMS_LIST_KEY });
+      for (const queryKey of LOAN_REFUSAL_REREADS) await queryClient.invalidateQueries({ queryKey });
     } catch (cause) {
       console.error(LOAN_UNAVAILABLE, cause);
     }

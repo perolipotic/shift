@@ -191,6 +191,19 @@ describe('Lend: the one "after" and what it changes', () => {
     expect(preview.doubles).toEqual([]);
   });
 
+  it('keeps a no-rest run’s whole total when it starts before the day ahead of the loan', async () => {
+    // A works Noć on the 8th and Ana is put on B's Dan of the 9th: A Noć 8th, B Dan 9th, A Noć 9th, C Dan 10th.
+    const snapshot = await snapshotOf({
+      overrides: [calendarOverrideRow('type-a-8', A, '2026-10-08', 'pilot-noc'), calendarOverrideRow('type-b-9', B, '2026-10-09', 'pilot-dan')],
+      rosterOverrides: [calendarRosterOverrideRow('on-b-9', B, '2026-10-09', null, ANA)],
+    });
+    const preview = previewOf(snapshot);
+
+    expect(preview.restGaps).toEqual([
+      { key: expect.any(String), date: '2026-10-08', teams: ['Smjena A', 'Smjena B', 'Smjena A', 'Smjena C'], totalMinutes: 2880 },
+    ]);
+  });
+
   it('shows the first ten shift lines and counts the rest', () => {
     const preview = previewOf(plain, { ...SPAN, from: '2026-10-10', to: '2026-10-31' });
 

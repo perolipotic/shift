@@ -27244,13 +27244,16 @@ describe('the lent member is told of a loan (story 18.3, 0063)', () => {
   }
 
   it.skipIf(noDatabase).each(FIXTURES)(
-    'tells the $fixture lent member by email and by push, with the dates and the loan team, and nothing of a wholly past loan',
+    'tells the $fixture lent member by email and by push, with the dates and the loan team, and nothing of a wholly past loan, one ending yesterday included',
     async ({ slug, admin }) => {
       await inRolledBackTransaction(async (client) => {
         const caller = await memberByUsername(client, slug, admin);
         const organization = caller.organizationId;
         const { member, other } = await lendingScene(client, organization, caller.authUserId);
+        // A second lent member for the loan ending yesterday, which would share dates with `endingToday`.
+        const { member: late, other: lateTeam } = await lendingScene(client, organization, caller.authUserId);
         await client.query('update members set email = $2 where id = $1', [member.id, `${member.id}@example.org`]);
+        await client.query('update members set email = $2 where id = $1', [late.id, `${late.id}@example.org`]);
         await client.query(
           `insert into push_subscriptions (organization_id, member_id, endpoint, p256dh, auth)
            values ($1, $2, $3, $4, $5)`,
@@ -27261,11 +27264,13 @@ describe('the lent member is told of a loan (story 18.3, 0063)', () => {
         const ahead = `[${await day(10)},${await day(12)}]`;
         const past = `[${await day(-12)},${await day(-10)}]`;
         const endingToday = `[${await day(-3)},${await day(0)}]`;
+        const endingYesterday = `[${await day(-3)},${await day(-1)}]`;
 
         await actAs(client, caller.authUserId, organization);
         const told = await insertLoan(client, { organization, member: member.id, team: other, during: ahead });
         const silent = await insertLoan(client, { organization, member: member.id, team: other, during: past });
         const today = await insertLoan(client, { organization, member: member.id, team: other, during: endingToday });
+        const yesterday = await insertLoan(client, { organization, member: late.id, team: lateTeam, during: endingYesterday });
         await actAsOwner(client);
         const { rows: operands } = await client.query<{ operands: Record<string, unknown> }>(
           `select operands from notification_outbox where subject_id = $1 and channel = 'email'`,
@@ -27277,6 +27282,8 @@ describe('the lent member is told of a loan (story 18.3, 0063)', () => {
           { startDate: await day(10), endDate: await day(12), teamName: teams[0]?.name },
         ]);
         expect(await loanRowsOf(client, silent), `${slug}: a wholly past loan was told`).toEqual([]);
+        // The "wholly past" boundary: a loan whose last day was yesterday is not news.
+        expect(await loanRowsOf(client, yesterday), `${slug}: a loan ending yesterday was told`).toEqual([]);
         expect(await loanRowsOf(client, today), `${slug}: a loan ending today was not told`).toEqual([
           `email:LOAN_MADE:${member.id}`,
           `push:LOAN_MADE:${member.id}`,
